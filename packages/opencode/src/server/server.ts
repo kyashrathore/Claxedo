@@ -52,6 +52,7 @@ export namespace Server {
   const log = Log.create({ service: "server" })
 
   export const Default = lazy(() => createApp({}))
+  export const App = Default
 
   export const createApp = (opts: { cors?: string[] }): Hono => {
     const app = new Hono()

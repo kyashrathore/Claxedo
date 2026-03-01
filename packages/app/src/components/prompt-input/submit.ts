@@ -27,6 +27,8 @@ const pending = new Map<string, PendingPrompt>()
 
 type PromptSubmitInput = {
   info: Accessor<{ id: string } | undefined>
+  sessionID?: Accessor<string | undefined>
+  sessionDirectory?: Accessor<string | undefined>
   imageAttachments: Accessor<ImageAttachmentPart[]>
   commentCount: Accessor<number>
   autoAccept: Accessor<boolean>
@@ -42,6 +44,9 @@ type PromptSubmitInput = {
   newSessionWorktree?: Accessor<string | undefined>
   onNewSessionWorktreeReset?: () => void
   onSubmit?: () => void
+  navigateOnCreate?: Accessor<boolean>
+  system?: Accessor<string | undefined>
+  agent?: Accessor<string | undefined>
 }
 
 type CommentItem = {
@@ -75,7 +80,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   }
 
   const abort = async () => {
-    const sessionID = params.id
+    const sessionID = input.sessionID?.() ?? params.id
     if (!sessionID) return Promise.resolve()
 
     globalSync.todo.set(sessionID, [])
@@ -142,8 +147,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     input.addToHistory(currentPrompt, mode)
     input.resetHistoryNavigation()
 
-    const projectDirectory = sdk.directory
-    const isNewSession = !params.id
+    const projectDirectory = input.sessionDirectory?.() || sdk.directory
+    const explicitSessionID = input.sessionID?.()
+    const isNewSession = !explicitSessionID && !params.id
     const shouldAutoAccept = isNewSession && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"
 
@@ -190,6 +196,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     let session = input.info()
+    if (!session && explicitSessionID) session = { id: explicitSessionID }
     if (!session && isNewSession) {
       session = await client.session
         .create()
@@ -203,17 +210,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         })
       if (session) {
         if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
-        layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
-        navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
+        if (input.navigateOnCreate?.() ?? true) {
+          layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
+          navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
+        }
       }
-    }
-    if (!session) {
-      showToast({
-        title: language.t("prompt.toast.promptSendFailed.title"),
-        description: language.t("prompt.toast.promptSendFailed.description"),
-      })
-      return
-    }
+    if (!session) return
 
     input.onSubmit?.()
 

@@ -10,6 +10,7 @@
     "dev:desktop": "bun --cwd packages/desktop tauri dev",
     "dev:web": "bun --cwd packages/app dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
+    "web:dev:local": "bun ./script/web-dev-local.ts",
     "typecheck": "bun turbo typecheck",
     "prepare": "husky",
     "random": "echo 'Random script'",
@@ -50,6 +51,7 @@
       "fuzzysort": "3.1.0",
       "luxon": "3.6.1",
       "marked": "17.0.1",
+      "mermaid": "11.4.1",
       "marked-shiki": "1.2.1",
       "@playwright/test": "1.51.0",
       "typescript": "5.8.2",
@@ -110,6 +112,8 @@
   },
   "patchedDependencies": {
     "@standard-community/standard-openapi@0.2.9": "patches/@standard-community%2Fstandard-openapi@0.2.9.patch",
-    "@openrouter/ai-sdk-provider@1.5.4": "patches/@openrouter%2Fai-sdk-provider@1.5.4.patch"
+    "@openrouter/ai-sdk-provider@1.5.4": "patches/@openrouter%2Fai-sdk-provider@1.5.4.patch",
+    "ghostty-web@0.3.0": "patches/ghostty-web@0.3.0.patch",
+    "@floating-ui/utils@0.2.10": "patches/@floating-ui+utils@0.2.10.patch"
   }
 }

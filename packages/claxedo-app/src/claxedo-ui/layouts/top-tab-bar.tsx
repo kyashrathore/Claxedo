@@ -1,0 +1,1259 @@
+/**
+ * Top Tab Bar Component
+ *
+ * Horizontal tab bar for sessions, terminals, and file tabs.
+ * Features:
+ * - Drag-to-reorder tabs
+ * - Close buttons on hover
+ * - Badge display for changes
+ * - Keyboard navigation
+ */
+
+import { For, Show, createMemo, createSignal, createEffect, on, onCleanup } from "solid-js"
+import { Portal } from "solid-js/web"
+import { SortableProvider, createSortable, createDroppable } from "@thisbeyond/solid-dnd"
+import { useClaxedoLayout, type TabItem, type TabType } from "../context/claxedo-layout"
+import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Popover } from "@opencode-ai/ui/popover"
+import { List } from "@opencode-ai/ui/list"
+import { useLanguage } from "@opencode-ai/claxedo-app"
+import { useTheme } from "@opencode-ai/ui/theme"
+import { getFilename } from "@opencode-ai/util/path"
+import { getTerminalCommands } from "../../components/settings-terminals"
+import { useOptionalTerminal } from "@/context/terminal"
+import { createDebugLogger } from "../../overrides/utils/debug"
+// Loading indicator - pulsing dot
+const PULSE_INTERVAL = 500
+const tabbarDebug = createDebugLogger("terminal.tabbar", "terminal:tabbar", {
+  legacyKey: "opencode.debug.terminal",
+})
+
+/** Pulsing dot component for loading state */
+function LoadingIndicator(props: { class?: string }) {
+  const [visible, setVisible] = createSignal(true)
+
+  const interval = setInterval(() => {
+    setVisible((prev) => !prev)
+  }, PULSE_INTERVAL)
+
+  onCleanup(() => clearInterval(interval))
+
+  return (
+    <span
+      class={`relative flex shrink-0 ${props.class ?? ""}`}
+      style={{ width: "10px", height: "10px" }}
+      aria-hidden="true"
+    >
+      <span
+        class="absolute inline-flex rounded-full"
+        style={{
+          width: "10px",
+          height: "10px",
+          "background-color": "#f59e0b", // amber-500
+          opacity: visible() ? 1 : 0.4,
+          transition: "opacity 200ms ease-in-out",
+        }}
+      />
+    </span>
+  )
+}
+
+/** Attention dot indicator (red pulsing dot) */
+function AttentionDot(props: { class?: string }) {
+  return (
+    <span class={`relative flex shrink-0 ${props.class ?? ""}`} style={{ width: "10px", height: "10px" }}>
+      <span
+        class="absolute inline-flex animate-ping rounded-full"
+        style={{
+          width: "10px",
+          height: "10px",
+          "background-color": "#f87171", // red-400
+          opacity: 0.75,
+        }}
+      />
+      <span
+        class="relative inline-flex rounded-full"
+        style={{
+          width: "10px",
+          height: "10px",
+          "background-color": "#ef4444", // red-500
+        }}
+      />
+    </span>
+  )
+}
+
+/** Done indicator (green dot) */
+function DoneDot(props: { class?: string }) {
+  return (
+    <span class={`relative flex shrink-0 ${props.class ?? ""}`} style={{ width: "10px", height: "10px" }}>
+      <span
+        class="relative inline-flex rounded-full"
+        style={{
+          width: "10px",
+          height: "10px",
+          "background-color": "#22c55e", // green-500
+        }}
+      />
+    </span>
+  )
+}
+
+// Get terminal commands (reads from localStorage with defaults)
+const getCommands = () => {
+  const stored = getTerminalCommands()
+  return {
+    claude: stored.claude,
+    codex: stored.codex,
+    terminal: "",
+    custom: stored.custom,
+  }
+}
+
+// Icon mapping for tab types
+export const TAB_ICONS: Record<
+  TabType,
+  "bubble-5" | "console" | "code" | "folder" | "window-cursor" | "page" | "layout-right"
+> = {
+  session: "bubble-5",
+  terminal: "console",
+  review: "code",
+  file: "folder",
+  context: "window-cursor",
+  page: "page",
+  "multi-pane": "layout-right",
+}
+
+export type TopTabBarProps = {
+  groupId?: string
+  onNewSession?: () => void
+  onNewTerminal?: (command?: string, title?: string) => void
+  onNewPage?: () => void
+  onTabSelect?: (tab: TabItem) => void
+  onSidebarToggle?: () => void
+  onSettings?: () => void
+  sidebarPinned?: boolean
+  mobileSidebarOpen?: boolean
+  showSidebarToggle?: boolean
+  worktreeInfo?: (directory: string) => { name: string; isMain: boolean; tooltip?: string } | undefined
+  class?: string
+}
+
+function SortableTab(props: {
+  tab: TabItem
+  isActive: boolean
+  onClose: (tabId: string) => void
+  onSelect?: (tab: TabItem) => void
+  onSetActive: (tabId: string) => void
+  onDblClick: (dir: string) => void
+  onContextMenu?: (e: MouseEvent, tabId: string) => void
+  worktreeColor?: string
+}) {
+  const sortable = createSortable(props.tab.id)
+
+  const handleSelect = () => {
+    props.onSetActive(props.tab.id)
+    props.onSelect?.(props.tab)
+  }
+
+  const handleDblClick = () => {
+    props.onDblClick(props.tab.directory)
+  }
+
+  const handleAuxClick = (e: MouseEvent) => {
+    if (e.button !== 1 || !props.tab.closable) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    const tabId = props.tab.id
+    tabbarDebug.log("close click aux", { tabId, tabType: props.tab.type })
+    queueMicrotask(() => props.onClose(tabId))
+  }
+
+  const handleClose = (e: MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.stopImmediatePropagation()
+    const tabId = props.tab.id
+    tabbarDebug.log("close click", { tabId, tabType: props.tab.type })
+    queueMicrotask(() => props.onClose(tabId))
+  }
+
+  const handleContextMenu = (e: MouseEvent) => {
+    props.onContextMenu?.(e, props.tab.id)
+  }
+
+  return (
+    <div
+      // @ts-ignore - solid-dnd directive
+      use:sortable
+      data-tab-id={props.tab.id}
+      class={`group relative flex items-center h-10 pl-2 pr-0 cursor-pointer flex-shrink-0 max-w-[200px] min-w-[100px] select-none transition-colors duration-150 max-md:min-w-[60px] max-md:max-w-[150px] max-md:pl-1.5 ${
+        props.isActive ? "bg-background-stronger border border-b-0" : "bg-transparent hover:bg-surface-base-hover/40"
+      }`}
+      classList={{ "opacity-50": sortable.isActiveDraggable }}
+      style={props.isActive ? { "border-color": props.worktreeColor ?? "transparent" } : undefined}
+      onClick={handleSelect}
+      onDblClick={handleDblClick}
+      onAuxClick={handleAuxClick}
+      onContextMenu={handleContextMenu}
+    >
+      <div class="flex items-center gap-1 min-w-0 flex-1 group/title">
+        <span
+          class={`text-[13px] max-md:text-[12px] font-[450] whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0 transition-colors duration-100 ${
+            props.isActive ? "text-text-strong font-medium" : "text-text-weak group-hover:text-text-base"
+          }`}
+        >
+          {props.tab.title}
+        </span>
+      </div>
+
+      {/* Loading spinner - shows when session/terminal is working */}
+      <Show when={props.tab.loading}>
+        <LoadingIndicator class="mx-1" />
+      </Show>
+
+      {/* Attention dot - shows when terminal needs attention (e.g., interrupted) */}
+      <Show when={props.tab.attention && !props.tab.loading}>
+        <AttentionDot class="flex-shrink-0 mx-1" />
+      </Show>
+
+      {/* Done dot - shows after an agent completes at least one turn, only on inactive tabs */}
+      <Show when={props.tab.done && !props.tab.loading && !props.tab.attention && !props.isActive}>
+        <DoneDot class="flex-shrink-0 mx-1" />
+      </Show>
+
+      {/* Close button - full height, no margin */}
+      <Show when={props.tab.closable}>
+        <button
+          type="button"
+          class={`flex items-center justify-center w-8 h-10 p-0 bg-transparent border-none cursor-pointer flex-shrink-0 transition-all duration-100 ${
+            props.isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          } text-icon-weak hover:bg-surface-base-hover hover:text-icon-base`}
+          onPointerDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            e.stopImmediatePropagation()
+          }}
+          onClick={handleClose}
+          aria-label="Close tab"
+        >
+          <Icon name="close" size="small" />
+        </button>
+      </Show>
+    </div>
+  )
+}
+
+export function TabDragOverlay(props: { tab: TabItem | undefined }) {
+  return (
+    <Show when={props.tab}>
+      {(tab) => (
+        <div class="flex items-center h-10 px-2 cursor-pointer flex-shrink-0 max-w-[200px] min-w-[100px] select-none bg-surface-raised-base shadow-[0_4px_8px_rgba(0,0,0,0.2)]">
+          <Icon name={TAB_ICONS[tab().type]} size="small" class="hidden" />
+          <span class="text-[13px] font-[450] text-text-weak whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0">
+            {tab().title}
+          </span>
+        </div>
+      )}
+    </Show>
+  )
+}
+
+// Worktree border colors for dark mode — brightened for better visibility
+const DARK_WORKTREE_COLORS: Record<string, string> = {
+  "#3b82f6": "#60a5fa", // blue → bright blue
+  "#22c55e": "#4ade80", // green → bright green
+  "#a855f7": "#c084fc", // purple → bright purple
+  "#f97316": "#fb923c", // orange → bright orange
+  "#ec4899": "#f472b6", // pink → bright pink
+  "#14b8a6": "#2dd4bf", // teal → bright teal
+  "#f59e0b": "#fbbf24", // amber → bright amber
+  "#6366f1": "#818cf8", // indigo → bright indigo
+  "#ef4444": "#f87171", // red → bright red
+  "#06b6d4": "#22d3ee", // cyan → bright cyan
+}
+
+function brightenWorktreeColor(color: string | undefined, mode: string): string {
+  if (!color || color === "transparent") return "transparent"
+  if (mode === "dark") return DARK_WORKTREE_COLORS[color] ?? color
+  return color
+}
+
+export function TopTabBar(props: TopTabBarProps) {
+  const claxedo = useClaxedoLayout()
+  const terminal = useOptionalTerminal()
+  const language = useLanguage()
+  const theme = useTheme()
+  const wtBorderColor = (color: string | undefined) => brightenWorktreeColor(color, theme.mode())
+
+  // Use group-specific tabs when groupId is provided, otherwise backward-compatible topTabs
+  const tabs = createMemo(() => (props.groupId ? claxedo.groupTabs(props.groupId) : claxedo.topTabs))
+  const wt = createMemo(() => (props.groupId ? claxedo.groupWorktree(props.groupId) : claxedo.worktree))
+
+  const [contextMenu, setContextMenu] = createSignal<{ tabId: string; x: number; y: number } | null>(null)
+  const closingTabs = new Set<string>()
+  const active = createMemo(() => tabs().active())
+  const pinned = createMemo(() => wt().pinned())
+  const selected = createMemo(() => wt().default())
+  const scope = createMemo(() => {
+    const tab = active()
+    if (tab && (tab.type === "session" || tab.type === "review" || tab.type === "context" || tab.type === "file")) {
+      return tab.directory
+    }
+    return selected()
+  })
+
+  const tabScopeDir = (tab: TabItem) => {
+    if (tab.type === "review" || tab.type === "context" || tab.type === "file") {
+      return scope() ?? tab.directory
+    }
+    return tab.directory
+  }
+
+  const orderedTabs = createMemo(() => tabs().visualOrderedItems())
+  const scopeFilteredTabs = createMemo(() => {
+    const pin = pinned()
+    if (pin) return orderedTabs().filter((t) => tabScopeDir(t) === pin)
+
+    const dir = scope()
+    if (!dir) return orderedTabs()
+
+    return orderedTabs().filter((t) => {
+      if (t.type === "review" || t.type === "context" || t.type === "file") return tabScopeDir(t) === dir
+      return true
+    })
+  })
+  const visibleTabs = createMemo(() => {
+    const list = scopeFilteredTabs()
+    const groups = new Map<string, TabItem[]>()
+    for (const tab of list) {
+      const dir = tabScopeDir(tab)
+      const existing = groups.get(dir)
+      if (existing) {
+        existing.push(tab)
+        continue
+      }
+      groups.set(dir, [tab])
+    }
+    return Array.from(groups.values()).flat()
+  })
+
+  // When filtering, auto-select first visible tab if active tab is filtered out
+  createEffect(() => {
+    const visible = visibleTabs()
+    const currentActive = active()
+    if (!currentActive) return
+    const isActiveVisible = visible.some((t) => t.id === currentActive.id)
+    if (!isActiveVisible && visible.length > 0) {
+      tabs().setActive(visible[0].id)
+    }
+  })
+
+  const tabIds = createMemo(() => visibleTabs().map((t) => t.id))
+  const visibleWithMeta = createMemo(() => {
+    const list = visibleTabs()
+    return list.map((tab, index) => {
+      if (index === 0) return { tab, showDivider: false }
+      const prev = list[index - 1]
+      return {
+        tab,
+        showDivider: tabScopeDir(prev) !== tabScopeDir(tab),
+      }
+    })
+  })
+  const selectedGroupDir = createMemo(() => pinned() ?? selected() ?? null)
+  const actionInsertAfterIndex = createMemo(() => {
+    const target = selectedGroupDir()
+    if (!target) return -1
+    const list = visibleWithMeta()
+    const start = list.findIndex((entry) => tabScopeDir(entry.tab) === target)
+    if (start < 0) return -1
+    let end = start
+    for (let i = start + 1; i < list.length; i++) {
+      if (tabScopeDir(list[i].tab) !== target) break
+      end = i
+    }
+    return end
+  })
+  const showActionButtons = createMemo(() => !!(wt().default() || active()?.directory))
+
+  // Get color for active worktree (for action buttons)
+  const activeWorktreeColor = createMemo(() => {
+    const dir = pinned() ?? selected() ?? active()?.directory
+    if (dir) return claxedo.getWorktreeColor(dir)
+    if (!props.groupId) return undefined
+    return claxedo.getActiveWorktreeColor(props.groupId)
+  })
+
+  const droppable = createDroppable(`group-zone-${props.groupId ?? "default"}`)
+
+  const handleTabClose = (tabId: string) => {
+    if (closingTabs.has(tabId)) {
+      tabbarDebug.log("close ignored: already closing", { tabId })
+      return
+    }
+    closingTabs.add(tabId)
+    const tab = tabs()
+      .items()
+      .find((t) => t.id === tabId)
+    const terminalIds =
+      tab?.type === "terminal"
+        ? new Set<string>(
+            [...claxedo.terminal.ids(tab.id), tab.terminalId].filter(
+              (id): id is string => typeof id === "string" && id.length > 0 && !id.startsWith("pending-"),
+            ),
+          )
+        : undefined
+    tabbarDebug.log("close requested", {
+      tabId,
+      tabType: tab?.type,
+      terminalIds: terminalIds ? [...terminalIds] : [],
+    })
+    tabbarDebug.log("close execute", { tabId })
+    try {
+      tabs().close(tabId)
+    } catch (error) {
+      tabbarDebug.log("close failed", {
+        tabId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      closingTabs.delete(tabId)
+      return
+    }
+    if (terminalIds && terminalIds.size > 0 && terminal) {
+      queueMicrotask(() => {
+        for (const id of terminalIds) {
+          void terminal.close(id)
+        }
+      })
+    }
+    queueMicrotask(() => {
+      closingTabs.delete(tabId)
+      tabbarDebug.log("close complete", { tabId })
+    })
+  }
+
+  const handleTabSetActive = (tabId: string) => {
+    tabs().setActive(tabId)
+  }
+
+  const handleTabDblClick = (dir: string) => {
+    wt().setDefault(dir)
+    if (wt().pinned() === dir) {
+      wt().setPinned(null)
+      return
+    }
+    wt().setPinned(dir)
+  }
+
+  const handleTabContextMenu = (e: MouseEvent, tabId: string) => {
+    e.preventDefault()
+    setContextMenu({ tabId, x: e.clientX, y: e.clientY })
+  }
+
+  // Close context menu on click anywhere
+  const closeContextMenu = () => setContextMenu(null)
+
+  // Scroll active tab into view when it changes (e.g., new tab created off-screen)
+  let tabScrollContainer: HTMLDivElement | undefined
+  createEffect(
+    on(
+      () => tabs().activeId(),
+      (activeId) => {
+        if (!activeId || !tabScrollContainer) return
+        requestAnimationFrame(() => {
+          const el = tabScrollContainer?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeId)}"]`)
+          if (typeof el?.scrollIntoView === "function") {
+            el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+          }
+        })
+      },
+    ),
+  )
+
+  return (
+    <div
+      class={`flex items-center h-10 bg-background-base pr-2 gap-0 overflow-hidden border-b border-border-weak-base box-content ${props.class ?? ""}`}
+    >
+      {/* Sidebar toggle button - hamburger on mobile, layout icon on desktop. Only on primary panel. */}
+      <Show when={props.showSidebarToggle !== false}>
+        <Tooltip value={props.sidebarPinned ? "Hide Sidebar" : "Show Sidebar"}>
+          <div class="flex items-center">
+            {/* Mobile: hamburger/close icon */}
+            <IconButton
+              icon={props.mobileSidebarOpen ? "close" : "menu"}
+              variant="ghost"
+              class="shrink-0 mr-2 rounded md:hidden"
+              onClick={() => props.onSidebarToggle?.()}
+              aria-label={props.mobileSidebarOpen ? "Close Menu" : "Open Menu"}
+            />
+          </div>
+        </Tooltip>
+      </Show>
+
+      {/* Droppable zone wraps the tab bar area for cross-panel drops */}
+      <div
+        ref={tabScrollContainer}
+        // @ts-ignore - solid-dnd directive
+        use:droppable
+        class="flex items-center gap-0 min-w-0 overflow-x-auto overflow-y-hidden flex-1 no-scrollbar"
+      >
+        <SortableProvider ids={tabIds()}>
+          <For each={visibleWithMeta()}>
+            {(entry, i) => {
+              const tab = entry.tab
+              const color = wtBorderColor(claxedo.getWorktreeColor(tabScopeDir(tab)))
+              return (
+                <>
+                  <div class="flex items-center" style={{ "box-shadow": `inset 0 -1px 0 0 ${color}` }}>
+                    <Show when={entry.showDivider}>
+                      <div class="w-px h-10 bg-border-weak-base flex-shrink-0" />
+                    </Show>
+                    <SortableTab
+                      tab={tab}
+                      isActive={tabs().activeId() === tab.id}
+                      onClose={handleTabClose}
+                      onSelect={props.onTabSelect}
+                      onSetActive={handleTabSetActive}
+                      onDblClick={handleTabDblClick}
+                      onContextMenu={handleTabContextMenu}
+                      worktreeColor={color}
+                    />
+                  </div>
+                  <Show when={showActionButtons() && actionInsertAfterIndex() === i()}>
+                    <div
+                      data-tab-actions="true"
+                      class="flex items-center gap-0 flex-shrink-0"
+                      style={{ "box-shadow": `inset 0 -1px 0 0 ${wtBorderColor(activeWorktreeColor())}` }}
+                    >
+                      <Tooltip value={language.t("command.session.new")}>
+                        <button
+                          type="button"
+                          class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0"
+                          onClick={() => props.onNewSession?.()}
+                          aria-label={language.t("command.session.new")}
+                        >
+                          <Icon name="plus-small" size="small" />
+                        </button>
+                      </Tooltip>
+
+                      {/* Claude button */}
+                      <Tooltip value="New Claude Terminal">
+                        <button
+                          type="button"
+                          class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0"
+                          onClick={() => props.onNewTerminal?.(getCommands().claude, "Claude")}
+                          aria-label="New Claude Terminal"
+                        >
+                          <span class="text-xs font-bold">C</span>
+                        </button>
+                      </Tooltip>
+
+                      {/* Codex button */}
+                      <Tooltip value="New Codex Terminal">
+                        <button
+                          type="button"
+                          class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0"
+                          onClick={() => props.onNewTerminal?.(getCommands().codex, "Codex")}
+                          aria-label="New Codex Terminal"
+                        >
+                          <span class="text-xs font-bold">X</span>
+                        </button>
+                      </Tooltip>
+
+                      {/* Terminal button */}
+                      <Tooltip value="New Terminal">
+                        <button
+                          type="button"
+                          class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0"
+                          onClick={() => props.onNewTerminal?.()}
+                          aria-label="New Terminal"
+                        >
+                          <Icon name="console" size="small" />
+                        </button>
+                      </Tooltip>
+
+                      {/* Page button */}
+                      <Tooltip value="New Page">
+                        <button
+                          type="button"
+                          class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0"
+                          onClick={() => props.onNewPage?.()}
+                          aria-label="New Page"
+                        >
+                          <Icon name="page" size="small" />
+                        </button>
+                      </Tooltip>
+
+                      {/* More dropdown */}
+                      <DropdownMenu>
+                        <DropdownMenu.Trigger class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors cursor-pointer border-none bg-transparent shrink-0">
+                          <Icon name="chevron-down" size="small" />
+                        </DropdownMenu.Trigger>
+                        <DropdownMenu.Portal>
+                          <DropdownMenu.Content class="z-[200]">
+                            <DropdownMenu.Item onSelect={() => props.onNewTerminal?.(getCommands().claude, "Claude")}>
+                              <span class="font-bold mr-2">C</span>
+                              Claude
+                            </DropdownMenu.Item>
+                            <DropdownMenu.Item onSelect={() => props.onNewTerminal?.(getCommands().codex, "Codex")}>
+                              <span class="font-bold mr-2">X</span>
+                              Codex
+                            </DropdownMenu.Item>
+                            <DropdownMenu.Item onSelect={() => props.onNewTerminal?.()}>
+                              <Icon name="console" size="small" class="mr-2" />
+                              Terminal
+                            </DropdownMenu.Item>
+                            <DropdownMenu.Item onSelect={() => props.onNewPage?.()}>
+                              <Icon name="page" size="small" class="mr-2" />
+                              Page
+                            </DropdownMenu.Item>
+                            {/* Custom commands from settings */}
+                            <Show when={getCommands().custom.length > 0}>
+                              <DropdownMenu.Separator />
+                              <For each={getCommands().custom}>
+                                {(cmd) => (
+                                  <Show when={cmd.name && cmd.command}>
+                                    <DropdownMenu.Item onSelect={() => props.onNewTerminal?.(cmd.command, cmd.name)}>
+                                      <Icon name="console" size="small" class="mr-2" />
+                                      {cmd.name}
+                                    </DropdownMenu.Item>
+                                  </Show>
+                                )}
+                              </For>
+                            </Show>
+                            <DropdownMenu.Separator />
+                            <DropdownMenu.Item onSelect={() => props.onSettings?.()}>
+                              <Icon name="settings-gear" size="small" class="mr-2" />
+                              Configure...
+                            </DropdownMenu.Item>
+                          </DropdownMenu.Content>
+                        </DropdownMenu.Portal>
+                      </DropdownMenu>
+                    </div>
+                  </Show>
+                </>
+              )
+            }}
+          </For>
+        </SortableProvider>
+
+        {/* Fallback: selected workspace group not visible in tabs, keep actions at end */}
+        <Show when={showActionButtons() && actionInsertAfterIndex() === -1}>
+          <div
+            data-tab-actions="true"
+            class="flex items-center gap-0 flex-shrink-0"
+            style={{ "box-shadow": `inset 0 -1px 0 0 ${wtBorderColor(activeWorktreeColor())}` }}
+          >
+            <Tooltip value={language.t("command.session.new")}>
+              <button
+                type="button"
+                class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0"
+                onClick={() => props.onNewSession?.()}
+                aria-label={language.t("command.session.new")}
+              >
+                <Icon name="plus-small" size="small" />
+              </button>
+            </Tooltip>
+
+            <Tooltip value="New Claude Terminal">
+              <button
+                type="button"
+                class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0"
+                onClick={() => props.onNewTerminal?.(getCommands().claude, "Claude")}
+                aria-label="New Claude Terminal"
+              >
+                <span class="text-xs font-bold">C</span>
+              </button>
+            </Tooltip>
+
+            <Tooltip value="New Codex Terminal">
+              <button
+                type="button"
+                class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0"
+                onClick={() => props.onNewTerminal?.(getCommands().codex, "Codex")}
+                aria-label="New Codex Terminal"
+              >
+                <span class="text-xs font-bold">X</span>
+              </button>
+            </Tooltip>
+
+            <Tooltip value="New Terminal">
+              <button
+                type="button"
+                class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0"
+                onClick={() => props.onNewTerminal?.()}
+                aria-label="New Terminal"
+              >
+                <Icon name="console" size="small" />
+              </button>
+            </Tooltip>
+
+            <Tooltip value="New Page">
+              <button
+                type="button"
+                class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0"
+                onClick={() => props.onNewPage?.()}
+                aria-label="New Page"
+              >
+                <Icon name="page" size="small" />
+              </button>
+            </Tooltip>
+
+            <DropdownMenu>
+              <DropdownMenu.Trigger class="flex items-center justify-center w-8 h-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors cursor-pointer border-none bg-transparent shrink-0">
+                <Icon name="chevron-down" size="small" />
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content class="z-[200]">
+                  <DropdownMenu.Item onSelect={() => props.onNewTerminal?.(getCommands().claude, "Claude")}>
+                    <span class="font-bold mr-2">C</span>
+                    Claude
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item onSelect={() => props.onNewTerminal?.(getCommands().codex, "Codex")}>
+                    <span class="font-bold mr-2">X</span>
+                    Codex
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item onSelect={() => props.onNewTerminal?.()}>
+                    <Icon name="console" size="small" class="mr-2" />
+                    Terminal
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item onSelect={() => props.onNewPage?.()}>
+                    <Icon name="page" size="small" class="mr-2" />
+                    Page
+                  </DropdownMenu.Item>
+                  <Show when={getCommands().custom.length > 0}>
+                    <DropdownMenu.Separator />
+                    <For each={getCommands().custom}>
+                      {(cmd) => (
+                        <Show when={cmd.name && cmd.command}>
+                          <DropdownMenu.Item onSelect={() => props.onNewTerminal?.(cmd.command, cmd.name)}>
+                            <Icon name="console" size="small" class="mr-2" />
+                            {cmd.name}
+                          </DropdownMenu.Item>
+                        </Show>
+                      )}
+                    </For>
+                  </Show>
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.Item onSelect={() => props.onSettings?.()}>
+                    <Icon name="settings-gear" size="small" class="mr-2" />
+                    Configure...
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu>
+          </div>
+        </Show>
+      </div>
+
+      {/* Tab context menu - portaled to body to escape overflow clipping */}
+      <Show when={contextMenu()}>
+        {(menu) => {
+          const groupId = () => props.groupId
+          const isSplit = () => claxedo.split.active()
+          const groups = () => claxedo.split.groups()
+          const otherGroupId = () => {
+            const all = groups()
+            const gId = groupId()
+            return all.find((g) => g.id !== gId)?.id
+          }
+          return (
+            <Portal>
+              <div
+                class="fixed inset-0 z-[300]"
+                onClick={closeContextMenu}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  closeContextMenu()
+                }}
+              />
+              <div
+                class="fixed z-[301] bg-background-base border border-border-weak-base rounded-md shadow-lg py-1 min-w-[180px]"
+                style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
+              >
+                <Show when={!isSplit()}>
+                  <button
+                    type="button"
+                    class="w-full px-3 py-1.5 text-left text-[13px] text-text-base hover:bg-surface-base-hover transition-colors"
+                    onClick={() => {
+                      const gId = groupId()
+                      if (gId) {
+                        claxedo.dispatch({
+                          type: "TabMoveAcrossGroupsRequested",
+                          tabId: menu().tabId,
+                          fromGroupId: gId,
+                          toGroupId: "new",
+                        })
+                      }
+                      closeContextMenu()
+                    }}
+                  >
+                    Open in Split View
+                  </button>
+                </Show>
+                <Show when={isSplit() && otherGroupId()}>
+                  <button
+                    type="button"
+                    class="w-full px-3 py-1.5 text-left text-[13px] text-text-base hover:bg-surface-base-hover transition-colors"
+                    onClick={() => {
+                      const gId = groupId()
+                      const other = otherGroupId()
+                      if (gId && other) {
+                        claxedo.dispatch({
+                          type: "TabMoveAcrossGroupsRequested",
+                          tabId: menu().tabId,
+                          fromGroupId: gId,
+                          toGroupId: other,
+                        })
+                      }
+                      closeContextMenu()
+                    }}
+                  >
+                    Move to Other Panel
+                  </button>
+                </Show>
+                <button
+                  type="button"
+                  class="w-full px-3 py-1.5 text-left text-[13px] text-text-base hover:bg-surface-base-hover transition-colors"
+                  onClick={() => {
+                    handleTabClose(menu().tabId)
+                    closeContextMenu()
+                  }}
+                >
+                  Close Tab
+                </button>
+              </div>
+            </Portal>
+          )
+        }}
+      </Show>
+    </div>
+  )
+}
+
+/**
+ * Individual tab component for use outside the tab bar
+ * (e.g., for rendering a single tab in a different context)
+ */
+export function TopTab(props: { tab: TabItem; active?: boolean; onSelect?: () => void; onClose?: () => void }) {
+  const handleClick = (e: MouseEvent) => {
+    if (e.button === 1 && props.tab.closable) {
+      e.preventDefault()
+      queueMicrotask(() => props.onClose?.())
+      return
+    }
+    props.onSelect?.()
+  }
+
+  return (
+    <div
+      class={`group relative flex items-center h-10 pl-2 pr-0 cursor-pointer flex-shrink-0 max-w-[200px] min-w-[100px] select-none transition-colors duration-150 max-md:min-w-[60px] max-md:max-w-[150px] max-md:pl-1.5 ${
+        props.active
+          ? "bg-background-stronger border border-b-0 border-transparent"
+          : "bg-transparent hover:bg-surface-base-hover/40"
+      }`}
+      onMouseDown={handleClick}
+      onAuxClick={handleClick}
+    >
+      <span
+        class={`text-[13px] max-md:text-[12px] font-[450] whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0 transition-colors duration-100 ${
+          props.active ? "text-text-strong font-medium" : "text-text-weak group-hover:text-text-base"
+        }`}
+      >
+        {props.tab.title}
+      </span>
+
+      {/* Loading spinner - shows when session/terminal is working */}
+      <Show when={props.tab.loading}>
+        <LoadingIndicator class="mx-1" />
+      </Show>
+
+      {/* Attention dot - shows when terminal needs attention (e.g., interrupted) */}
+      <Show when={props.tab.attention && !props.tab.loading}>
+        <AttentionDot class="flex-shrink-0 mx-1" />
+      </Show>
+
+      {/* Done dot - shows after an agent completes at least one turn, only on inactive tabs */}
+      <Show when={props.tab.done && !props.tab.loading && !props.tab.attention && !props.active}>
+        <DoneDot class="flex-shrink-0 mx-1" />
+      </Show>
+
+      <Show when={props.tab.closable}>
+        <button
+          type="button"
+          class={`flex items-center justify-center w-8 h-10 p-0 bg-transparent border-none cursor-pointer flex-shrink-0 transition-all duration-100 ${
+            props.active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          } text-icon-weak hover:bg-surface-base-hover hover:text-icon-base`}
+          onClick={(e) => {
+            e.stopPropagation()
+            queueMicrotask(() => props.onClose?.())
+          }}
+          aria-label="Close tab"
+        >
+          <Icon name="close" size="small" />
+        </button>
+      </Show>
+    </div>
+  )
+}
+
+export type WorkspaceBarItem = {
+  id: string
+  directory: string
+  name: string
+  notification?: boolean
+  isMain?: boolean
+  isCloud?: boolean
+  canDelete?: boolean
+  projectWorktree?: string
+}
+
+export type WorkspaceBarProject = {
+  id: string
+  name: string
+  worktree: string
+  workspaces: WorkspaceBarItem[]
+}
+
+export type WorkspaceBarProps = {
+  projects: WorkspaceBarProject[]
+  defaultDirectory?: string | null
+  pinnedDirectory?: string | null
+  activeProjectId?: string
+  onWorktreeClick?: (projectId: string, directory: string) => void
+  onWorktreeDblClick?: (projectId: string, directory: string) => void
+  onWorktreeDelete?: (projectId: string, workspace: WorkspaceBarItem) => Promise<void> | void
+  onProjectClick?: (projectId: string) => void
+  onNewWorktree?: (projectId: string) => Promise<WorkspaceBarItem | undefined>
+  allProjects?: import("./rail-sidebar").ProjectItem[]
+  visibleWorkspaces?: Set<string>
+  onToggleWorkspace?: (directory: string, visible: boolean) => void
+  class?: string
+}
+
+/** Green notification dot for workspaces with activity */
+function WorkspaceNotificationDot() {
+  return (
+    <span class="relative flex" style={{ width: "8px", height: "8px" }}>
+      <span
+        class="animate-ping absolute inline-flex rounded-full"
+        style={{
+          width: "8px",
+          height: "8px",
+          "background-color": "#22c55e",
+          opacity: 0.75,
+        }}
+      />
+      <span
+        class="relative inline-flex rounded-full"
+        style={{
+          width: "8px",
+          height: "8px",
+          "background-color": "#22c55e",
+        }}
+      />
+    </span>
+  )
+}
+
+/** Project group component - shows project name and its workspaces */
+function WorkspaceBarProjectGroup(props: {
+  project: WorkspaceBarProject
+  defaultDirectory?: string | null
+  pinnedDirectory?: string | null
+  onWorktreeClick?: (projectId: string, directory: string) => void
+  onWorktreeDblClick?: (projectId: string, directory: string) => void
+  onProjectClick?: (projectId: string) => void
+  onNewWorktree?: (projectId: string) => Promise<WorkspaceBarItem | undefined>
+}) {
+  const claxedo = useClaxedoLayout()
+  const theme = useTheme()
+  const current = () => props.pinnedDirectory ?? props.defaultDirectory
+  const [creating, setCreating] = createSignal<"idle" | "loading" | "done">("idle")
+  const [createdName, setCreatedName] = createSignal<string | null>(null)
+
+  const handleNewWorktree = async () => {
+    if (creating() !== "idle") return
+    const handler = props.onNewWorktree
+    if (!handler) return
+
+    setCreating("loading")
+    try {
+      const result = await handler(props.project.id)
+      if (result) {
+        setCreatedName(result.name)
+        setCreating("done")
+        // Reset after a short delay
+        setTimeout(() => {
+          setCreating("idle")
+          setCreatedName(null)
+        }, 1500)
+      } else {
+        setCreating("idle")
+      }
+    } catch {
+      setCreating("idle")
+    }
+  }
+
+  return (
+    <div
+      class={`group/project flex items-center gap-0 rounded px-2 py-1 -mx-1 transition-colors hover:bg-surface-base-hover/30`}
+    >
+      {/* Project name - always dim, clicking it selects the project's main workspace */}
+      <button
+        type="button"
+        class="text-[13px] font-medium font-mono text-text-weak transition-colors px-1 py-1 -ml-1 rounded hover:bg-surface-base-hover/30"
+        onClick={() => props.onProjectClick?.(props.project.id)}
+      >
+        {props.project.name}
+      </button>
+
+      {/* Workspaces */}
+      <For each={props.project.workspaces}>
+        {(ws) => {
+          const isCurrent = () => ws.directory === current()
+          const isPinned = () => ws.directory === props.pinnedDirectory
+          const text = () => (isCurrent() ? "text-text-base font-semibold" : "text-text-weak hover:text-text-base")
+          const line = () => (isPinned() ? "underline underline-offset-4" : "")
+          let suppressClick = false
+
+          const dotColor = () => brightenWorktreeColor(claxedo.getWorktreeColor(ws.directory), theme.mode())
+
+          return (
+            <button
+              type="button"
+              class={`flex items-center gap-1 px-2 py-1.5 rounded text-[13px] cursor-pointer transition-colors hover:bg-surface-base-hover/30 ${text()}`}
+              onClick={(e) => {
+                const target = e.target
+                if (target instanceof Element && target.closest('[data-workspace-indicator="true"]')) return
+                if (suppressClick) {
+                  suppressClick = false
+                  return
+                }
+                if (e.detail !== 1) return
+                props.onWorktreeClick?.(props.project.id, ws.directory)
+              }}
+              onDblClick={() => {
+                props.onWorktreeDblClick?.(props.project.id, ws.directory)
+              }}
+            >
+              <span class="text-text-weak/50">/</span>
+              <span
+                class="group/dot flex items-center justify-center size-5 shrink-0 cursor-pointer relative"
+                title="Toggle processes (⇧⌘P)"
+                data-workspace-indicator="true"
+                onPointerDown={(e) => {
+                  suppressClick = true
+                  e.stopPropagation()
+                  e.preventDefault()
+                }}
+                onClick={(e) => {
+                  suppressClick = true
+                  e.stopPropagation()
+                  e.preventDefault()
+                  claxedo.processPane.requestToggle(ws.directory)
+                  queueMicrotask(() => {
+                    suppressClick = false
+                  })
+                }}
+              >
+                <Show when={isCurrent() && claxedo.processPane.crashedWhileClosed()}>
+                  <span
+                    class="absolute inset-0 m-auto size-3.5 rounded-full animate-ping"
+                    style={{ "background-color": "#ef4444", opacity: 0.5 }}
+                  />
+                </Show>
+                <span
+                  class="size-2.5 rounded-sm shrink-0 transition-transform group-hover/dot:scale-125"
+                  style={{
+                    "background-color":
+                      isCurrent() && claxedo.processPane.crashedWhileClosed() ? "#ef4444" : dotColor(),
+                  }}
+                />
+              </span>
+              <span class={line()}>{ws.name}</span>
+              <Show when={ws.notification}>
+                <WorkspaceNotificationDot />
+              </Show>
+            </button>
+          )
+        }}
+      </For>
+
+      <Show when={props.onNewWorktree}>
+        <Show
+          when={creating() === "idle"}
+          fallback={
+            <div class="flex items-center gap-1 px-2 text-[13px] text-text-weak shrink-0">
+              <Show when={creating() === "loading"}>
+                <div class="size-3 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />
+              </Show>
+              <Show when={creating() === "done" && createdName()}>
+                <span class="text-text-weak">/</span>
+                <span class="text-text-base font-semibold">{createdName()}</span>
+                <Icon name="check-small" size="small" class="text-green-500" />
+              </Show>
+            </div>
+          }
+        >
+          <button
+            type="button"
+            class="flex items-center justify-center size-6 rounded text-icon-weak hover:text-icon-base hover:bg-surface-base-hover active:bg-surface-base-active transition-colors shrink-0 ml-1"
+            onClick={handleNewWorktree}
+            aria-label="Create worktree"
+          >
+            <Icon name="plus-small" size="small" />
+          </button>
+        </Show>
+      </Show>
+    </div>
+  )
+}
+
+/**
+ * Workspace bar showing projects and their workspaces.
+ * Always displays all workspaces — no hover animation or collapsed state.
+ */
+export function WorkspaceBar(props: WorkspaceBarProps) {
+  const prefix = createMemo(() => (props.pinnedDirectory ? "Filtered by" : "Default workspace"))
+
+  return (
+    <div class={`relative h-9 bg-background-base border-b border-border-weak-base/50 ${props.class ?? ""}`}>
+      <div class="flex items-center h-full px-3 gap-0">
+        <span class="shrink-0 text-[13px] font-medium text-text-weak mr-2 whitespace-nowrap">{prefix()}:</span>
+        <div class="flex items-center gap-0 min-w-0 overflow-x-auto no-scrollbar">
+          <For each={props.projects}>
+            {(project, index) => (
+              <>
+                <Show when={index() > 0}>
+                  <div class="w-px h-5 bg-border-weak-base mx-2 shrink-0" />
+                </Show>
+                <WorkspaceBarProjectGroup
+                  project={project}
+                  defaultDirectory={props.defaultDirectory}
+                  pinnedDirectory={props.pinnedDirectory}
+                  onWorktreeClick={props.onWorktreeClick}
+                  onWorktreeDblClick={props.onWorktreeDblClick}
+                  onProjectClick={props.onProjectClick}
+                  onNewWorktree={props.onNewWorktree}
+                />
+              </>
+            )}
+          </For>
+        </div>
+
+        {/* More button (three vertical dots) */}
+        <Show when={props.allProjects}>
+          <div class="flex items-center justify-center ml-2 border-l border-border-weak-base pl-2 shrink-0">
+            <Popover
+              placement="bottom-end"
+              trigger={<Icon name="kebab" size="small" />}
+              triggerAs="button"
+              triggerProps={{
+                class:
+                  "flex items-center justify-center size-6 rounded text-icon-weak hover:text-icon-base hover:bg-surface-base-hover transition-colors cursor-pointer border-none bg-transparent",
+              }}
+              class="w-[300px] [&_[data-slot=popover-body]]:p-0 [&_[data-slot=list-item]:hover_.ws-delete]:opacity-100 [&_[data-slot=list-item][data-active=true]_.ws-delete]:opacity-100"
+            >
+              <div class="flex flex-col max-h-[400px]">
+                {(() => {
+                  // Flatten projects to items
+                  const items = createMemo(() => {
+                    const list: Array<{
+                      id: string
+                      name: string
+                      directory: string
+                      projectId: string
+                      projectName: string
+                      isMain: boolean
+                    }> = []
+                    for (const p of props.allProjects ?? []) {
+                      // Main
+                      list.push({
+                        id: p.worktree,
+                        name: "main",
+                        directory: p.worktree,
+                        projectId: p.id,
+                        projectName: p.name || getFilename(p.worktree),
+                        isMain: true,
+                      })
+                      // Sandboxes
+                      for (const s of p.sandboxes ?? []) {
+                        if (s === p.worktree) continue
+                        list.push({
+                          id: s,
+                          name: getFilename(s),
+                          directory: s,
+                          projectId: p.id,
+                          projectName: p.name || getFilename(p.worktree),
+                          isMain: false,
+                        })
+                      }
+                    }
+                    return list
+                  })
+
+                  // Calculate currently visible workspaces (both explicit and implicit)
+                  const visibleSet = createMemo(() => {
+                    const s = new Set<string>()
+                    for (const p of props.projects) {
+                      for (const w of p.workspaces) {
+                        s.add(w.directory)
+                      }
+                    }
+                    return s
+                  })
+
+                  return (
+                    <List
+                      items={items()}
+                      key={(item) => item.directory}
+                      groupBy={(item) => item.projectName}
+                      search={{ placeholder: "Filter workspaces...", autofocus: true }}
+                      onSelect={(item) => {
+                        if (!item) return
+                        const isVisible = visibleSet().has(item.directory)
+                        props.onToggleWorkspace?.(item.directory, !isVisible)
+                      }}
+                      children={(item) => (
+                        <div class="flex items-center gap-2 w-full text-left">
+                          <span class="text-text-base truncate flex-1">{item.name}</span>
+                          <Show when={!item.isMain && props.onWorktreeDelete}>
+                            <button
+                              type="button"
+                              class="ws-delete flex items-center justify-center size-5 rounded text-icon-weak hover:text-icon-critical-base transition-colors shrink-0 opacity-0"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                props.onWorktreeDelete?.(item.projectId, {
+                                  id: item.id,
+                                  name: item.name,
+                                  directory: item.directory,
+                                })
+                              }}
+                            >
+                              <Icon name="trash" size="small" />
+                            </button>
+                          </Show>
+                          <Show when={visibleSet().has(item.directory)}>
+                            <span class="inline-flex items-center justify-center shrink-0">
+                              <Icon name="check-small" />
+                            </span>
+                          </Show>
+                        </div>
+                      )}
+                    />
+                  )
+                })()}
+              </div>
+            </Popover>
+          </div>
+        </Show>
+      </div>
+    </div>
+  )
+}

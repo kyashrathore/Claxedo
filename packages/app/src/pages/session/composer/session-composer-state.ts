@@ -9,55 +9,62 @@ import { usePermission } from "@/context/permission"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { todoState } from "./session-composer-helpers"
+import { resolveComposerSessionID } from "./session-composer-scope"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 
 const idle = { type: "idle" as const }
 
-export function createSessionComposerBlocked() {
+type SessionComposerInput = {
+  sessionID?: () => string | undefined
+}
+
+export function createSessionComposerBlocked(input?: SessionComposerInput) {
   const params = useParams()
   const permission = usePermission()
   const sdk = useSDK()
   const sync = useSync()
+  const sessionID = createMemo(() => resolveComposerSessionID(input, params.id))
   const permissionRequest = createMemo(() =>
-    sessionPermissionRequest(sync.data.session, sync.data.permission, params.id, (item) => {
+    sessionPermissionRequest(sync.data.session, sync.data.permission, sessionID(), (item) => {
       return !permission.autoResponds(item, sdk.directory)
     }),
   )
-  const questionRequest = createMemo(() => sessionQuestionRequest(sync.data.session, sync.data.question, params.id))
+  const questionRequest = createMemo(() => sessionQuestionRequest(sync.data.session, sync.data.question, sessionID()))
 
   return createMemo(() => {
-    const id = params.id
+    const id = sessionID()
     if (!id) return false
     return !!permissionRequest() || !!questionRequest()
   })
 }
 
-export function createSessionComposerState(options?: { closeMs?: number | (() => number) }) {
+export function createSessionComposerState(input?: SessionComposerInput, options?: { closeMs?: number | (() => number) }) {
   const params = useParams()
   const sdk = useSDK()
   const sync = useSync()
   const globalSync = useGlobalSync()
   const language = useLanguage()
   const permission = usePermission()
+  const sessionID = createMemo(() => resolveComposerSessionID(input, params.id))
 
   const questionRequest = createMemo((): QuestionRequest | undefined => {
-    return sessionQuestionRequest(sync.data.session, sync.data.question, params.id)
+    return sessionQuestionRequest(sync.data.session, sync.data.question, sessionID())
   })
 
   const permissionRequest = createMemo((): PermissionRequest | undefined => {
-    return sessionPermissionRequest(sync.data.session, sync.data.permission, params.id, (item) => {
+    return sessionPermissionRequest(sync.data.session, sync.data.permission, sessionID(), (item) => {
       return !permission.autoResponds(item, sdk.directory)
     })
   })
 
   const blocked = createMemo(() => {
-    const id = params.id
+    const id = sessionID()
     if (!id) return false
     return !!permissionRequest() || !!questionRequest()
   })
 
   const todos = createMemo((): Todo[] => {
-    const id = params.id
+    const id = sessionID()
     if (!id) return []
     return globalSync.data.session_todo[id] ?? []
   })
@@ -67,7 +74,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   )
 
   const status = createMemo(() => {
-    const id = params.id
+    const id = sessionID()
     if (!id) return idle
     return sync.data.session_status[id] ?? idle
   })
@@ -125,7 +132,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
 
   // Keep stale turn todos from reopening if the model never clears them.
   const clear = () => {
-    const id = params.id
+    const id = sessionID()
     if (!id) return
     globalSync.todo.set(id, [])
     sync.set("todo", id, [])

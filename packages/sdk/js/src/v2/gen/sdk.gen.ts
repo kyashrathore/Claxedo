@@ -117,6 +117,7 @@ import type {
   SessionDeleteMessageResponses,
   SessionDeleteResponses,
   SessionDiffResponses,
+  SessionDiffTargetsResponses,
   SessionForkResponses,
   SessionGetErrors,
   SessionGetResponses,
@@ -556,6 +557,7 @@ export class Pty extends HeyApiClient {
       env?: {
         [key: string]: string
       }
+      previousPtyId?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -571,6 +573,7 @@ export class Pty extends HeyApiClient {
             { in: "body", key: "cwd" },
             { in: "body", key: "title" },
             { in: "body", key: "env" },
+            { in: "body", key: "previousPtyId" },
           ],
         },
       ],
@@ -1357,6 +1360,25 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
+   * Get diff base targets
+   *
+   * Get auto-detected and common git refs that can be used as base targets for review diffs.
+   */
+  public diffTargets<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
+    return (options?.client ?? this.client).get<SessionDiffTargetsResponses, unknown, ThrowOnError>({
+      url: "/session/diff-targets",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Delete session
    *
    * Delete a session and permanently remove all associated data, including messages and history.
@@ -1708,7 +1730,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Get message diff
    *
-   * Get the file changes (diff) that resulted from a specific user message in the session.
+   * Get session diffs or git-based diffs for review modes.
    */
   public diff<ThrowOnError extends boolean = false>(
     parameters: {
@@ -1716,6 +1738,9 @@ export class Session2 extends HeyApiClient {
       directory?: string
       workspace?: string
       messageID?: string
+      mode?: "session" | "session-turn" | "staged" | "uncommitted" | "vs-base" | "to-from"
+      fromRef?: string
+      toRef?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1728,6 +1753,9 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "query", key: "messageID" },
+            { in: "query", key: "mode" },
+            { in: "query", key: "fromRef" },
+            { in: "query", key: "toRef" },
           ],
         },
       ],

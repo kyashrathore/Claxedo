@@ -11,10 +11,12 @@ import { PtyID } from "./schema"
 
 export namespace Pty {
   const log = Log.create({ service: "pty" })
+  const DEBUG_RESIZE = process.env.OPENCODE_DEBUG_PTY_RESIZE === "1"
 
   const BUFFER_LIMIT = 1024 * 1024 * 2
   const BUFFER_CHUNK = 64 * 1024
   const encoder = new TextEncoder()
+  const decoder = new TextDecoder()
 
   type Socket = {
     readyState: number
@@ -58,6 +60,7 @@ export namespace Pty {
     cwd: z.string().optional(),
     title: z.string().optional(),
     env: z.record(z.string(), z.string()).optional(),
+    previousPtyId: z.string().optional(),
   })
 
   export type CreateInput = z.infer<typeof CreateInput>
@@ -134,6 +137,16 @@ export namespace Pty {
       TERM: "xterm-256color",
       OPENCODE_TERMINAL: "1",
     } as Record<string, string>
+    if (DEBUG_RESIZE) {
+      log.info("pty create env", {
+        id,
+        cwd,
+        shell: command,
+        term: env.TERM,
+        columns: env.COLUMNS,
+        lines: env.LINES,
+      })
+    }
 
     if (process.platform === "win32") {
       env.LC_ALL = "C.UTF-8"
@@ -212,6 +225,14 @@ export namespace Pty {
       session.info.title = input.title
     }
     if (input.size) {
+      if (DEBUG_RESIZE) {
+        log.info("pty.update size", {
+          id,
+          cols: input.size.cols,
+          rows: input.size.rows,
+          subscribers: session.subscribers.size,
+        })
+      }
       session.process.resize(input.size.cols, input.size.rows)
     }
     Bus.publish(Event.Updated, { info: session.info })
@@ -254,7 +275,10 @@ export namespace Pty {
   export function connect(id: string, ws: Socket, cursor?: number) {
     const session = state().get(id)
     if (!session) {
-      ws.close()
+      // Client is attempting to attach to a PTY that no longer exists (commonly
+      // after a backend restart). Close with a non-1000 code so UIs treat it as
+      // a connect error and recreate the session.
+      ws.close(1008, "Session not found")
       return
     }
     log.info("client connected to session", { id })
@@ -276,6 +300,15 @@ export namespace Pty {
 
     const from =
       cursor === -1 ? end : typeof cursor === "number" && Number.isSafeInteger(cursor) ? Math.max(0, cursor) : 0
+    if (DEBUG_RESIZE) {
+      log.info("pty.connect cursor", {
+        id,
+        start,
+        end,
+        requested: cursor,
+        from,
+      })
+    }
 
     const data = (() => {
       if (!session.buffer) return ""
@@ -305,8 +338,21 @@ export namespace Pty {
       return
     }
     return {
-      onMessage: (message: string | ArrayBuffer) => {
-        session.process.write(String(message))
+      onMessage: (message: unknown) => {
+        const data =
+          typeof message === "object" && message !== null && "data" in message
+            ? (message as { data: unknown }).data
+            : message
+        const input =
+          typeof data === "string"
+            ? data
+            : data instanceof ArrayBuffer || ArrayBuffer.isView(data)
+              ? decoder.decode(data)
+              : typeof data === "number" || typeof data === "boolean"
+                ? String(data)
+                : ""
+        if (!input) return
+        session.process.write(input)
       },
       onClose: () => {
         log.info("client disconnected from session", { id })

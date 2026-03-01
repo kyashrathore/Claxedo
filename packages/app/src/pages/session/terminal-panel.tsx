@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
+import { createMediaQuery } from "@solid-primitives/media"
 import { useParams } from "@solidjs/router"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
@@ -26,10 +27,12 @@ export function TerminalPanel() {
   const language = useLanguage()
   const command = useCommand()
 
+  const isDesktop = createMediaQuery("(min-width: 768px)")
   const sessionKey = createMemo(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
   const view = createMemo(() => layout.view(sessionKey))
 
   const opened = createMemo(() => view().terminal.opened())
+  const open = createMemo(() => isDesktop() && opened())
   const size = createSizing()
   const height = createMemo(() => layout.terminal.height())
   const close = () => view().terminal.close()
@@ -106,7 +109,7 @@ export function TerminalPanel() {
 
   createEffect(
     on(
-      () => [opened(), terminal.active()] as const,
+      () => [open(), terminal.active()] as const,
       ([next, id]) => {
         if (!next || !id) return
         const stop = focus(id)
@@ -116,7 +119,7 @@ export function TerminalPanel() {
   )
 
   createEffect(() => {
-    if (opened()) return
+    if (open()) return
     const active = document.activeElement
     if (!(active instanceof HTMLElement)) return
     if (!root?.contains(active)) return
@@ -186,27 +189,27 @@ export function TerminalPanel() {
       id="terminal-panel"
       role="region"
       aria-label={language.t("terminal.title")}
-      aria-hidden={!opened()}
-      inert={!opened()}
+      aria-hidden={!open()}
+      inert={!open()}
       class="relative w-full shrink-0 overflow-hidden bg-background-stronger"
       classList={{
-        "border-t border-border-weak-base": opened(),
+        "border-t border-border-weak-base": open(),
         "transition-[height] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[height] motion-reduce:transition-none":
           !size.active(),
       }}
-      style={{ height: opened() ? `${pane()}px` : "0px" }}
+      style={{ height: open() ? `${pane()}px` : "0px" }}
     >
       <div
         class="absolute inset-x-0 top-0 flex flex-col"
         classList={{
-          "translate-y-0": opened(),
-          "translate-y-full pointer-events-none": !opened(),
+          "translate-y-0": open(),
+          "translate-y-full pointer-events-none": !open(),
           "transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform motion-reduce:transition-none":
             !size.active(),
         }}
         style={{ height: `${pane()}px` }}
       >
-        <div class="hidden md:block" onPointerDown={() => size.start()}>
+        <div onPointerDown={() => size.start()}>
           <ResizeHandle
             direction="vertical"
             size={pane()}
@@ -224,7 +227,7 @@ export function TerminalPanel() {
           when={terminal.ready()}
           fallback={
             <div class="flex flex-col h-full pointer-events-none">
-              <div class="h-10 flex items-center gap-2 px-2 border-b border-border-weaker-base bg-background-stronger overflow-hidden">
+              <div class="h-10 flex items-center gap-2 px-2 border-b border-border-weak-base bg-background-stronger overflow-hidden">
                 <For each={handoff()}>
                   {(title) => (
                     <div class="px-2 py-1 rounded-md bg-surface-base text-14-regular text-text-weak truncate max-w-40">
@@ -257,12 +260,12 @@ export function TerminalPanel() {
                 onChange={(id) => terminal.open(id)}
                 class="!h-auto !flex-none"
               >
-                <Tabs.List class="h-10 border-b border-border-weaker-base">
+                <Tabs.List class="h-10">
                   <SortableProvider ids={ids()}>
                     <For each={ids()}>
                       {(id) => (
-                        <Show when={byId().get(id)}>
-                          {(pty) => <SortableTerminalTab terminal={pty()} onClose={close} />}
+                        <Show when={byId().get(id)} keyed>
+                          {(pty) => <SortableTerminalTab terminal={pty} onClose={close} />}
                         </Show>
                       )}
                     </For>
@@ -277,7 +280,7 @@ export function TerminalPanel() {
                         icon="plus-small"
                         variant="ghost"
                         iconSize="large"
-                        onClick={terminal.new}
+                        onClick={() => terminal.new()}
                         aria-label={language.t("command.terminal.new")}
                       />
                     </TooltipKeybind>
@@ -287,12 +290,12 @@ export function TerminalPanel() {
               <div class="flex-1 min-h-0 relative">
                 <Show when={terminal.active()} keyed>
                   {(id) => (
-                    <Show when={byId().get(id)}>
+                    <Show when={byId().get(id)} keyed>
                       {(pty) => (
                         <div id={`terminal-wrapper-${id}`} class="absolute inset-0">
                           <Terminal
-                            pty={pty()}
-                            autoFocus={opened()}
+                            pty={pty}
+                            autoFocus={open()}
                             onConnect={() => terminal.trim(id)}
                             onCleanup={terminal.update}
                             onConnectError={() => terminal.clone(id)}
@@ -305,14 +308,14 @@ export function TerminalPanel() {
               </div>
             </div>
             <DragOverlay>
-              <Show when={store.activeDraggable}>
+              <Show when={store.activeDraggable} keyed>
                 {(draggedId) => (
-                  <Show when={byId().get(draggedId())}>
+                  <Show when={byId().get(draggedId)} keyed>
                     {(t) => (
                       <div class="relative p-1 h-10 flex items-center bg-background-stronger text-14-regular">
                         {terminalTabLabel({
-                          title: t().title,
-                          titleNumber: t().titleNumber,
+                          title: t.title,
+                          titleNumber: t.titleNumber,
                           t: language.t as (key: string, vars?: Record<string, string | number | boolean>) => string,
                         })}
                       </div>

@@ -62,6 +62,14 @@ interface PromptInputProps {
   newSessionWorktree?: string
   onNewSessionWorktreeReset?: () => void
   onSubmit?: () => void
+  /** Explicit session ID — bypasses route params for embedded contexts (e.g. page dock). */
+  sessionID?: string
+  /** When true, skip navigation after creating a new session. */
+  navigateOnCreate?: boolean
+  /** System prompt injected with every request. */
+  system?: string
+  /** Override agent name for this input. */
+  agent?: string
 }
 
 const EXAMPLES = [
@@ -154,12 +162,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     requestAnimationFrame(scrollCursorIntoView)
   }
 
-  const sessionKey = createMemo(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
+  const resolvedSessionId = () => props.sessionID ?? params.id
+  const sessionKey = createMemo(() => `${params.dir}${resolvedSessionId() ? "/" + resolvedSessionId() : ""}`)
   const tabs = createMemo(() => layout.tabs(sessionKey))
   const view = createMemo(() => layout.view(sessionKey))
 
   const commentInReview = (path: string) => {
-    const sessionID = params.id
+    const sessionID = resolvedSessionId()
     if (!sessionID) return false
 
     const diffs = sync.data.session_diff[sessionID]
@@ -224,10 +233,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     return paths
   })
-  const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
+  const info = createMemo(() => {
+    const sid = resolvedSessionId()
+    return sid ? sync.session.get(sid) : undefined
+  })
   const status = createMemo(
     () =>
-      sync.data.session_status[params.id ?? ""] ?? {
+      sync.data.session_status[resolvedSessionId() ?? ""] ?? {
         type: "idle",
       },
   )
@@ -244,6 +256,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     draggingType: "image" | "@mention" | null
     mode: "normal" | "shell"
     applyingHistory: boolean
+    pendingAutoAccept: boolean
   }>({
     popover: null,
     historyIndex: -1,
@@ -252,6 +265,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     draggingType: null,
     mode: "normal",
     applyingHistory: false,
+    pendingAutoAccept: false,
   })
 
   const buttonsSpring = useSpring(() => (store.mode === "normal" ? 1 : 0), { visualDuration: 0.2, bounce: 0 })
@@ -268,7 +282,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
 
   const hasUserPrompt = createMemo(() => {
-    const sessionID = params.id
+    const sessionID = resolvedSessionId()
     if (!sessionID) return false
     const messages = sync.data.message[sessionID]
     if (!messages) return false
@@ -301,6 +315,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       example: suggest() ? language.t(EXAMPLES[store.placeholder]) : "",
       suggest: suggest(),
       t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params as never),
+    }),
+  )
+
+  createEffect(
+    on(sessionKey, () => {
+      setStore("pendingAutoAccept", false)
     }),
   )
 
@@ -473,8 +493,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   createEffect(() => {
-    params.id
-    if (params.id) return
+    const id = resolvedSessionId()
+    if (id) return
     if (!suggest()) return
     const interval = setInterval(() => {
       setStore("placeholder", (prev) => (prev + 1) % EXAMPLES.length)
@@ -968,12 +988,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const variants = createMemo(() => ["default", ...local.model.variant.list()])
   const accepting = createMemo(() => {
     const id = params.id
-    if (!id) return permission.isAutoAcceptingDirectory(sdk.directory)
+    if (!id) return store.pendingAutoAccept
     return permission.isAutoAccepting(id, sdk.directory)
   })
 
   const { abort, handleSubmit } = createPromptSubmit({
     info,
+    sessionID: () => props.sessionID,
     imageAttachments,
     commentCount,
     autoAccept: () => accepting(),
@@ -991,6 +1012,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     newSessionWorktree: () => props.newSessionWorktree,
     onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
     onSubmit: props.onSubmit,
+    navigateOnCreate: () => props.navigateOnCreate ?? true,
+    system: () => props.system,
+    agent: () => props.agent,
   })
 
   const handleKeyDown = (event: KeyboardEvent) => {
@@ -1141,6 +1165,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
   }
 
+  const variants = createMemo(() => ["default", ...local.model.variant.list()])
+  const accepting = createMemo(() => {
+    const id = resolvedSessionId()
+    if (!id) return false
+    return permission.isAutoAccepting(id, sdk.directory)
+  })
+
   return (
     <div class="relative size-full _max-h-[320px] flex flex-col gap-0">
       <PromptPopover
@@ -1218,9 +1249,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               aria-multiline="true"
               aria-label={placeholder()}
               contenteditable="true"
-              autocapitalize={store.mode === "normal" ? "sentences" : "off"}
-              autocorrect={store.mode === "normal" ? "on" : "off"}
-              spellcheck={store.mode === "normal"}
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck={false}
               onInput={handleInput}
               onPaste={handlePaste}
               onCompositionStart={handleCompositionStart}
@@ -1342,11 +1373,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   data-action="prompt-permissions"
                   variant="ghost"
                   onClick={() => {
-                    if (!params.id) {
-                      permission.toggleAutoAcceptDirectory(sdk.directory)
+                    const id = resolvedSessionId()
+                    if (!id) {
+                      setStore("pendingAutoAccept", (value) => !value)
                       return
                     }
-                    permission.toggleAutoAccept(params.id, sdk.directory)
+                    permission.toggleAutoAccept(id, sdk.directory)
                   }}
                   classList={{
                     "size-6 flex items-center justify-center": true,
@@ -1389,29 +1421,38 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 <div class="size-4 shrink-0" />
               </div>
               <div class="flex items-center gap-1.5 min-w-0 flex-1">
-                <TooltipKeybind
-                  placement="top"
-                  gutter={4}
-                  title={language.t("command.agent.cycle")}
-                  keybind={command.keybind("agent.cycle")}
+                <Show
+                  when={!props.agent}
+                  fallback={
+                    <div class="h-7 flex items-center max-w-[160px] min-w-0 px-2">
+                      <span class="truncate text-13-regular capitalize text-text-weak">{props.agent}</span>
+                    </div>
+                  }
                 >
-                  <Select
-                    size="normal"
-                    options={agentNames()}
-                    current={local.agent.current()?.name ?? ""}
-                    onSelect={local.agent.set}
-                    class="capitalize max-w-[160px]"
-                    valueClass="truncate text-13-regular"
-                    triggerStyle={{
-                      height: "28px",
-                      opacity: buttonsSpring(),
-                      transform: `scale(${0.95 + buttonsSpring() * 0.05})`,
-                      filter: `blur(${(1 - buttonsSpring()) * 2}px)`,
-                      "pointer-events": buttonsSpring() > 0.5 ? "auto" : "none",
-                    }}
-                    variant="ghost"
-                  />
-                </TooltipKeybind>
+                  <TooltipKeybind
+                    placement="top"
+                    gutter={4}
+                    title={language.t("command.agent.cycle")}
+                    keybind={command.keybind("agent.cycle")}
+                  >
+                    <Select
+                      size="normal"
+                      options={agentNames()}
+                      current={local.agent.current()?.name ?? ""}
+                      onSelect={local.agent.set}
+                      class="capitalize max-w-[160px]"
+                      valueClass="truncate text-13-regular"
+                      triggerStyle={{
+                        height: "28px",
+                        opacity: buttonsSpring(),
+                        transform: `scale(${0.95 + buttonsSpring() * 0.05})`,
+                        filter: `blur(${(1 - buttonsSpring()) * 2}px)`,
+                        "pointer-events": buttonsSpring() > 0.5 ? "auto" : "none",
+                      }}
+                      variant="ghost"
+                    />
+                  </TooltipKeybind>
+                </Show>
                 <Show
                   when={providers.paid().length > 0}
                   fallback={

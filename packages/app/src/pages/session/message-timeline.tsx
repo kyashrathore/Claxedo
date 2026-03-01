@@ -192,6 +192,12 @@ export function MessageTimeline(props: {
   mobileChanges: boolean
   mobileFallback: JSX.Element
   actions?: UserActions
+  /** Explicit session ID for embedded/session-param contexts. */
+  sessionID?: string
+  /** Explicit encoded directory for embedded/session-param contexts. */
+  directory?: string
+  /** Optional session navigation override for non-route flows. */
+  onNavigateToSession?: (sessionID?: string) => void
   scroll: { overflow: boolean; bottom: boolean }
   onResumeScroll: () => void
   setScrollRef: (el: HTMLDivElement | undefined) => void
@@ -200,6 +206,8 @@ export function MessageTimeline(props: {
   onMarkScrollGesture: (target?: EventTarget | null) => void
   hasScrollGesture: () => boolean
   onUserScroll: () => void
+  isDesktop?: boolean
+  onScrollSpyScroll?: () => void
   onTurnBackfillScroll: () => void
   onAutoScrollInteraction: (event: MouseEvent) => void
   centered: boolean
@@ -210,6 +218,9 @@ export function MessageTimeline(props: {
   onLoadEarlier: () => void
   renderedUserMessages: UserMessage[]
   anchor: (id: string) => string
+  onPreserveScrollAnchor?: (anchor: HTMLElement) => void
+  onRegisterMessage?: (el: HTMLDivElement, id: string) => void
+  onUnregisterMessage?: (id: string) => void
 }) {
   let touchGesture: number | undefined
 
@@ -221,9 +232,10 @@ export function MessageTimeline(props: {
   const dialog = useDialog()
   const language = useLanguage()
 
+  const directory = createMemo(() => props.directory ?? params.dir)
+  const sessionID = createMemo(() => props.sessionID ?? params.id)
   const rendered = createMemo(() => props.renderedUserMessages.map((message) => message.id))
-  const sessionKey = createMemo(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
-  const sessionID = createMemo(() => params.id)
+  const sessionKey = createMemo(() => `${directory() ?? ""}${sessionID() ? "/" + sessionID() : ""}`)
   const sessionMessages = createMemo(() => {
     const id = sessionID()
     if (!id) return emptyMessages
@@ -292,6 +304,25 @@ export function MessageTimeline(props: {
 
     return undefined
   })
+  const navigateToSession = (id: string | undefined) => {
+    if (!id) return
+    if (props.onNavigateToSession) {
+      props.onNavigateToSession(id)
+      return
+    }
+    const dir = directory()
+    if (!dir) return
+    navigate(`/${dir}/session/${id}`)
+  }
+  const navigateToNewSession = () => {
+    if (props.onNavigateToSession) {
+      props.onNavigateToSession(undefined)
+      return
+    }
+    const dir = directory()
+    if (!dir) return
+    navigate(`/${dir}/session`)
+  }
   const info = createMemo(() => {
     const id = sessionID()
     if (!id) return
@@ -380,17 +411,17 @@ export function MessageTimeline(props: {
       })
   }
 
-  const navigateAfterSessionRemoval = (sessionID: string, parentID?: string, nextSessionID?: string) => {
-    if (params.id !== sessionID) return
+  const navigateAfterSessionRemoval = (removedSessionID: string, parentID?: string, nextSessionID?: string) => {
+    if (sessionID() !== removedSessionID) return
     if (parentID) {
-      navigate(`/${params.dir}/session/${parentID}`)
+      navigateToSession(parentID)
       return
     }
     if (nextSessionID) {
-      navigate(`/${params.dir}/session/${nextSessionID}`)
+      navigateToSession(nextSessionID)
       return
     }
-    navigate(`/${params.dir}/session`)
+    navigateToNewSession()
   }
 
   const archiveSession = async (sessionID: string) => {
@@ -481,9 +512,7 @@ export function MessageTimeline(props: {
   }
 
   const navigateParent = () => {
-    const id = parentID()
-    if (!id) return
-    navigate(`/${params.dir}/session/${id}`)
+    navigateToSession(parentID())
   }
 
   function DialogDeleteSession(props: { sessionID: string }) {
@@ -580,6 +609,7 @@ export function MessageTimeline(props: {
             props.onUserScroll()
             props.onAutoScrollHandleScroll()
             props.onMarkScrollGesture(e.currentTarget)
+            if (props.isDesktop) props.onScrollSpyScroll?.()
           }}
           onClick={props.onAutoScrollInteraction}
           class="relative min-w-0 w-full h-full"
@@ -766,6 +796,10 @@ export function MessageTimeline(props: {
                     <div
                       id={props.anchor(messageID)}
                       data-message-id={messageID}
+                      ref={(el) => {
+                        props.onRegisterMessage?.(el, messageID)
+                        onCleanup(() => props.onUnregisterMessage?.(messageID))
+                      }}
                       classList={{
                         "min-w-0 w-full max-w-full": true,
                         "md:max-w-200 2xl:max-w-[1000px]": props.centered,

@@ -1,0 +1,35 @@
+{
+  "processes": [
+    {
+      "id": "opencode-dev",
+      "name": "opencode:dev",
+      "command": "bun run opencode:dev",
+      "cwd": "packages/claxedo-app",
+      "env": {
+        "OPENCODE_SERVER_PASSWORD": ""
+      },
+      "autoStart": true,
+      "restartPolicy": "on-failure",
+      "maxRestarts": 3,
+      "portless": {
+        "hostname": "opencode",
+        "portMode": "flag",
+        "portValue": "--port"
+      }
+    },
+    {
+      "id": "claxedo-app",
+      "name": "claxedo",
+      "command": "bun run dev",
+      "cwd": "packages/claxedo-app",
+      "autoStart": true,
+      "restartPolicy": "on-failure",
+      "maxRestarts": 3,
+      "portless": {
+        "hostname": "claxedo",
+        "portMode": "env",
+        "portValue": "PORT"
+      }
+    }
+  ]
+}
