@@ -495,9 +495,40 @@ _claxedo_debug "PATH updated"
 }
 
 /**
- * Path to the unified Claxedo MCP server script (resolved from this module)
+ * Resolve the claxedo-mcp command.
+ *
+ * Checks two locations in order:
+ * 1. Sibling of process.execPath — works in Tauri sidecar mode (claxedo-mcp compiled alongside opencode-cli)
+ * 2. Source file via import.meta.url — works in dev mode (bun runs the .ts directly)
  */
-const CLAXEDO_MCP_PATH = new URL("../mcp/claxedo-mcp.ts", import.meta.url).pathname
+function resolveClaxedoMcpCommand(): string[] {
+  // 1. Compiled binary adjacent to the running process (Tauri sidecar mode)
+  const execDir = path.dirname(process.execPath)
+  try {
+    const entries = fs.readdirSync(execDir)
+    for (const entry of entries) {
+      if (entry === "claxedo-mcp" || entry.startsWith("claxedo-mcp-")) {
+        const candidate = path.join(execDir, entry)
+        try {
+          fs.accessSync(candidate, fs.constants.X_OK)
+          log.info("Resolved claxedo-mcp from sidecar directory", { path: candidate })
+          return [candidate]
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // 2. Source file via import.meta.url (development mode)
+  try {
+    const sourcePath = new URL("../mcp/claxedo-mcp.ts", import.meta.url).pathname
+    if (fs.existsSync(sourcePath)) {
+      return ["bun", sourcePath]
+    }
+  } catch {}
+
+  log.warn("Could not resolve claxedo-mcp binary or source file")
+  return []
+}
 
 /**
  * Generate the doc agent markdown config (merged council + page assistant)
@@ -525,11 +556,16 @@ Call it without arguments to use \`CLAXEDO_TAB_ID\` / \`CLAXEDO_TERMINAL_ID\`, o
  * Generate the opencode.jsonc MCP config
  */
 function generateOpencodeJsonc(port: number): string {
+  const command = resolveClaxedoMcpCommand()
+  if (!command.length) {
+    log.warn("Skipping claxedo-mcp in opencode.jsonc — binary not found")
+    return JSON.stringify({}, null, 2) + "\n"
+  }
   const config = {
     mcp: {
       "claxedo-mcp": {
         type: "local",
-        command: ["bun", CLAXEDO_MCP_PATH],
+        command,
         environment: {
           OPENCODE_API_URL: `http://localhost:${port}`,
         },
