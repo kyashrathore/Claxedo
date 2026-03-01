@@ -1,0 +1,1 @@
+import{t as e}from"./vendor-solid-BbVHjKu5.js";var t=e('<div class="p-8 max-w-4xl mx-auto"><p class=text-text-weak>Permissions are now managed through the general settings page.');function s(){return t()}export{s as default};

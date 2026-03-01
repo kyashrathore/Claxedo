@@ -44,6 +44,33 @@ export function SessionComposerRegion(props: {
     onRestore: (id: string) => void
   }
   setPromptDockRef: (el: HTMLDivElement) => void
+  visualDuration?: number
+  bounce?: number
+  dockOpenVisualDuration?: number
+  dockOpenBounce?: number
+  dockCloseVisualDuration?: number
+  dockCloseBounce?: number
+  drawerExpandVisualDuration?: number
+  drawerExpandBounce?: number
+  drawerCollapseVisualDuration?: number
+  drawerCollapseBounce?: number
+  subtitleDuration?: number
+  subtitleTravel?: number
+  subtitleEdge?: number
+  countDuration?: number
+  countMask?: number
+  countMaskHeight?: number
+  countWidthDuration?: number
+  /** Explicit session ID — bypasses route params for embedded contexts (e.g. page dock). */
+  sessionID?: string
+  /** Explicit encoded directory — bypasses route params for embedded contexts. */
+  sessionDirectory?: string
+  /** When true, skip navigation after creating a new session. */
+  navigateOnCreate?: boolean
+  /** System prompt injected with every request. */
+  system?: string
+  /** Override agent name for this input. */
+  agent?: string
 }) {
   const navigate = useNavigate()
   const prompt = usePrompt()
@@ -51,7 +78,12 @@ export function SessionComposerRegion(props: {
   const route = useSessionKey()
   const sync = useSync()
 
-  const handoffPrompt = createMemo(() => getSessionHandoff(route.sessionKey())?.prompt)
+  const sessionKey = createMemo(() => {
+    const id = props.sessionID ?? route.params.id
+    const dir = props.sessionDirectory ?? route.params.dir
+    return `${dir ?? ""}${id ? "/" + id : ""}`
+  })
+  const handoffPrompt = createMemo(() => getSessionHandoff(sessionKey())?.prompt)
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
   const parentID = createMemo(() => info()?.parentID)
   const child = createMemo(() => !!parentID())
@@ -71,7 +103,7 @@ export function SessionComposerRegion(props: {
 
   createEffect(() => {
     if (!prompt.ready()) return
-    setSessionHandoff(route.sessionKey(), { prompt: previewPrompt() })
+    setSessionHandoff(sessionKey(), { prompt: previewPrompt() })
   })
 
   const [store, setStore] = createStore({
@@ -260,6 +292,10 @@ export function SessionComposerRegion(props: {
                       onQueue={props.followup?.onQueue}
                       onAbort={props.followup?.onAbort}
                       onSubmit={props.onSubmit}
+                      sessionID={props.sessionID}
+                      navigateOnCreate={props.navigateOnCreate}
+                      system={props.system}
+                      agent={props.agent}
                     />
                   </Show>
                 }

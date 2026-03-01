@@ -5,15 +5,16 @@ import { List, type ListRef } from "@opencode-ai/ui/list"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { type Component, Show } from "solid-js"
+import { createMemo, type Component, onCleanup, onMount, Show } from "solid-js"
 import { useLocal } from "@/context/local"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { ModelTooltip } from "./model-tooltip"
 import { useLanguage } from "@/context/language"
+import { getExtensions } from "@opencode-ai/app-shared"
 
 type ModelState = ReturnType<typeof useLocal>["model"]
 
-export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props) => {
+export const DialogSelectModelUnpaid: Component<{ model?: ModelState; provider?: string }> = (props) => {
   const model = props.model ?? useLocal().model
   const dialog = useDialog()
   const providers = useProviders()
@@ -31,23 +32,34 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
     })
   }
 
+  const models = createMemo(() =>
+    model.list().filter((m) => (props.provider ? m.provider.id === props.provider : true)),
+  )
+
   let listRef: ListRef | undefined
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") return
     listRef?.onKeyDown(e)
   }
+
+  onMount(() => {
+    document.addEventListener("keydown", handleKey)
+    onCleanup(() => {
+      document.removeEventListener("keydown", handleKey)
+    })
+  })
 
   return (
     <Dialog
       title={language.t("dialog.model.select.title")}
       class="overflow-y-auto [&_[data-slot=dialog-body]]:overflow-visible [&_[data-slot=dialog-body]]:flex-none"
     >
-      <div class="flex flex-col gap-3 px-2.5" onKeyDown={handleKeyDown}>
+      <div class="flex flex-col gap-3 px-2.5">
         <div class="text-14-medium text-text-base px-2.5">{language.t("dialog.model.unpaid.freeModels.title")}</div>
         <List
           class="[&_[data-slot=list-scroll]]:overflow-visible"
           ref={(ref) => (listRef = ref)}
-          items={model.list}
+          items={models}
           current={model.current()}
           key={(x) => `${x.provider.id}:${x.id}`}
           itemWrapper={(item, node) => (

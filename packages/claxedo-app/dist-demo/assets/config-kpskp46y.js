@@ -1,0 +1,1 @@
+import{i as a,c as e,t as r}from"./vendor-solid-BbVHjKu5.js";import{j as o}from"./demo-BVe8V8lJ.js";import"./vendor-dnd-BqzYFuVW.js";var m=r('<div class="p-8 max-w-4xl mx-auto">');function p(){return(()=>{var t=m();return a(t,e(o,{})),t})()}export{p as default};

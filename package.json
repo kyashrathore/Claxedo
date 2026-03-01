@@ -12,6 +12,7 @@
     "dev:console": "ulimit -n 10240 2>/dev/null; bun run --cwd packages/console/app dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
     "lint": "oxlint",
+    "web:dev:local": "bun ./script/web-dev-local.ts",
     "typecheck": "bun turbo typecheck",
     "postinstall": "bun run --cwd packages/opencode fix-node-pty",
     "prepare": "husky",
@@ -60,6 +61,7 @@
       "fuzzysort": "3.1.0",
       "luxon": "3.6.1",
       "marked": "17.0.1",
+      "mermaid": "11.4.1",
       "marked-shiki": "1.2.1",
       "remend": "1.3.0",
       "@playwright/test": "1.59.1",
@@ -129,6 +131,12 @@
   "patchedDependencies": {
     "@npmcli/agent@4.0.0": "patches/@npmcli%2Fagent@4.0.0.patch",
     "@standard-community/standard-openapi@0.2.9": "patches/@standard-community%2Fstandard-openapi@0.2.9.patch",
-    "solid-js@1.9.10": "patches/solid-js@1.9.10.patch"
+    "solid-js@1.9.10": "patches/solid-js@1.9.10.patch",
+    "@ai-sdk/provider-utils@4.0.21": "patches/@ai-sdk%2Fprovider-utils@4.0.21.patch",
+    "@ai-sdk/anthropic@3.0.64": "patches/@ai-sdk%2Fanthropic@3.0.64.patch",
+    "@openrouter/ai-sdk-provider@1.5.4": "patches/@openrouter%2Fai-sdk-provider@1.5.4.patch",
+    "@ai-sdk/xai@2.0.51": "patches/@ai-sdk%2Fxai@2.0.51.patch",
+    "ghostty-web@0.3.0": "patches/ghostty-web@0.3.0.patch",
+    "@floating-ui/utils@0.2.10": "patches/@floating-ui+utils@0.2.10.patch"
   }
 }

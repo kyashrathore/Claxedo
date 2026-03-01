@@ -57,6 +57,31 @@ function signatureFromEvent(event: KeyboardEvent) {
   return signature(normalizeKey(event.key), event.ctrlKey, event.metaKey, event.shiftKey, event.altKey)
 }
 
+function isTerminalElement(target: EventTarget | null | undefined) {
+  if (!(target instanceof Element)) return false
+  return !!target.closest('[data-component="terminal"]')
+}
+
+export function isTerminalEvent(event: Pick<KeyboardEvent, "target" | "composedPath">) {
+  if (isTerminalElement(event.target)) return true
+  if (typeof event.composedPath === "function" && event.composedPath().some((item) => isTerminalElement(item))) return true
+  if (typeof document === "object" && isTerminalElement(document.activeElement)) return true
+  return false
+}
+
+const RESERVED_TERMINAL_SIGS = new Set([
+  signature("d", false, true, false, false),
+  signature("d", false, true, true, false),
+  signature("w", false, true, false, false),
+  signature("d", true, false, false, false),
+  signature("d", true, false, true, false),
+  signature("w", true, false, false, false),
+])
+
+export function isReservedTerminalShortcut(sig: string) {
+  return RESERVED_TERMINAL_SIGS.has(sig)
+}
+
 function isAllowedEditableKeybind(id: string | undefined) {
   if (!id) return false
   return EDITABLE_KEYBIND_IDS.has(actionId(id))
@@ -359,6 +384,8 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       if (suspended() || dialog.active) return
 
       const sig = signatureFromEvent(event)
+      if (isTerminalEvent(event) && isReservedTerminalShortcut(sig)) return
+
       const isPalette = palette().has(sig)
       const option = keymap().get(sig)
       const modified = event.ctrlKey || event.metaKey || event.altKey

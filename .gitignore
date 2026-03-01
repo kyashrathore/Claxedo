@@ -28,4 +28,9 @@ opencode-dev
 UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
-tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Claxedo development artifacts
+**/.dev-docs/
+packages/claxedo-app/dev-docs/
+packages/claxedo-app/dist-opencode/

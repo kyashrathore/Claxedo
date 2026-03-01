@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "processes": {
+      "type": "array",
+      "items": {
+        "ref": "ProcessConfig",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "command": {
+            "type": "string"
+          },
+          "args": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "env": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "autoStart": {
+            "default": false,
+            "type": "boolean"
+          },
+          "restartPolicy": {
+            "default": "never",
+            "type": "string",
+            "enum": [
+              "never",
+              "on-failure",
+              "always"
+            ]
+          },
+          "maxRestarts": {
+            "default": 3,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "color": {
+            "type": "string"
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "port": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9._-]+$"
+              },
+              "inject": {
+                "type": "string"
+              },
+              "preferred": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "onConflict": {
+                "type": "string",
+                "enum": [
+                  "pick-new",
+                  "kill-existing"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "inject"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "command"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "processes"
+  ],
+  "additionalProperties": false
+}
