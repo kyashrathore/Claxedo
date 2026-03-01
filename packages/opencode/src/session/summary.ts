@@ -5,11 +5,16 @@ import { Session } from "."
 import { MessageV2 } from "./message-v2"
 import { Identifier } from "@/id/id"
 import { Snapshot } from "@/snapshot"
+import { Vcs } from "@/project/vcs"
 
 import { Storage } from "@/storage/storage"
 import { Bus } from "@/bus"
 
 export namespace SessionSummary {
+  export const diffTargets = fn(z.object({}), async () => {
+    return Vcs.diffBaseTargets()
+  })
+
   function unquoteGitPath(input: string) {
     if (!input.startsWith('"')) return input
     if (!input.endsWith('"')) return input
@@ -112,11 +117,45 @@ export namespace SessionSummary {
   }
 
   export const diff = fn(
-    z.object({
-      sessionID: Identifier.schema("session"),
-      messageID: Identifier.schema("message").optional(),
-    }),
+    z
+      .object({
+        sessionID: Identifier.schema("session"),
+        messageID: Identifier.schema("message").optional(),
+        mode: Vcs.DiffMode.optional(),
+        fromRef: z.string().optional(),
+        toRef: z.string().optional(),
+      })
+      .superRefine((input, ctx) => {
+        if (input.mode !== "to-from") return
+        if (input.fromRef && input.toRef) return
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "fromRef and toRef are required when mode is to-from",
+          path: ["fromRef"],
+        })
+      }),
     async (input) => {
+      if (input.mode === "staged") {
+        return Vcs.diffStaged()
+      }
+
+      if (input.mode === "uncommitted") {
+        return Vcs.diffUncommitted()
+      }
+
+      if (input.mode === "vs-base") {
+        return Vcs.diffVsBase(input.fromRef)
+      }
+
+      if (input.mode === "to-from") {
+        const fromRef = input.fromRef
+        const toRef = input.toRef
+        if (!fromRef || !toRef) {
+          throw new Error("fromRef and toRef are required when mode is to-from")
+        }
+        return Vcs.diffRange(fromRef, toRef)
+      }
+
       const diffs = await Storage.read<Snapshot.FileDiff[]>(["session_diff", input.sessionID]).catch(() => [])
       const next = diffs.map((item) => {
         const file = unquoteGitPath(item.file)

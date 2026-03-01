@@ -1,4 +1,4 @@
-import { useMarked } from "../context/marked"
+import { useMarked, type MermaidRenderer } from "../context/marked"
 import { useI18n } from "../context/i18n"
 import DOMPurify from "dompurify"
 import morphdom from "morphdom"
@@ -116,76 +116,53 @@ function setCopyState(button: HTMLButtonElement, labels: CopyLabels, copied: boo
   button.setAttribute("data-tooltip", labels.copy)
 }
 
-function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels) {
-  const parent = block.parentElement
-  if (!parent) return
-  const wrapped = parent.getAttribute("data-component") === "markdown-code"
-  if (!wrapped) {
-    const wrapper = document.createElement("div")
-    wrapper.setAttribute("data-component", "markdown-code")
-    parent.replaceChild(wrapper, block)
-    wrapper.appendChild(block)
-    wrapper.appendChild(createCopyButton(labels))
-    return
-  }
-
-  const buttons = Array.from(parent.querySelectorAll('[data-slot="markdown-copy-button"]')).filter(
-    (el): el is HTMLButtonElement => el instanceof HTMLButtonElement,
-  )
-
-  if (buttons.length === 0) {
-    parent.appendChild(createCopyButton(labels))
-    return
-  }
-
-  for (const button of buttons.slice(1)) {
-    button.remove()
-  }
-}
-
-function markCodeLinks(root: HTMLDivElement) {
-  const codeNodes = Array.from(root.querySelectorAll(":not(pre) > code"))
-  for (const code of codeNodes) {
-    const href = codeUrl(code.textContent ?? "")
-    const parentLink =
-      code.parentElement instanceof HTMLAnchorElement && code.parentElement.classList.contains("external-link")
-        ? code.parentElement
-        : null
-
-    if (!href) {
-      if (parentLink) parentLink.replaceWith(code)
-      continue
-    }
-
-    if (parentLink) {
-      parentLink.href = href
-      continue
-    }
-
-    const link = document.createElement("a")
-    link.href = href
-    link.className = "external-link"
-    link.target = "_blank"
-    link.rel = "noopener noreferrer"
-    code.parentNode?.replaceChild(link, code)
-    link.appendChild(code)
-  }
-}
-
-function decorate(root: HTMLDivElement, labels: CopyLabels) {
-  const blocks = Array.from(root.querySelectorAll("pre"))
-  for (const block of blocks) {
-    ensureCodeWrapper(block, labels)
-  }
-  markCodeLinks(root)
-}
-
 function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels) {
   const timeouts = new Map<HTMLButtonElement, ReturnType<typeof setTimeout>>()
 
   const updateLabel = (button: HTMLButtonElement) => {
     const copied = button.getAttribute("data-copied") === "true"
     setCopyState(button, labels, copied)
+  }
+
+  const ensureWrapper = (block: HTMLPreElement) => {
+    const parent = block.parentElement
+    if (!parent) return
+    const wrapped = parent.getAttribute("data-component") === "markdown-code"
+    if (wrapped) return
+    const wrapper = document.createElement("div")
+    wrapper.setAttribute("data-component", "markdown-code")
+    parent.replaceChild(wrapper, block)
+    wrapper.appendChild(block)
+    wrapper.appendChild(createCopyButton(labels))
+  }
+
+  const markCodeLinks = () => {
+    const codeNodes = Array.from(root.querySelectorAll(":not(pre) > code"))
+    for (const code of codeNodes) {
+      const href = codeUrl(code.textContent ?? "")
+      const parentLink =
+        code.parentElement instanceof HTMLAnchorElement && code.parentElement.classList.contains("external-link")
+          ? code.parentElement
+          : null
+
+      if (!href) {
+        if (parentLink) parentLink.replaceWith(code)
+        continue
+      }
+
+      if (parentLink) {
+        parentLink.href = href
+        continue
+      }
+
+      const link = document.createElement("a")
+      link.href = href
+      link.className = "external-link"
+      link.target = "_blank"
+      link.rel = "noopener noreferrer"
+      code.parentNode?.replaceChild(link, code)
+      link.appendChild(code)
+    }
   }
 
   const handleClick = async (event: MouseEvent) => {
@@ -207,7 +184,12 @@ function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels) {
     timeouts.set(button, timeout)
   }
 
-  decorate(root, labels)
+  const blocks = Array.from(root.querySelectorAll("pre"))
+  for (const block of blocks) {
+    if (block.closest('[data-component="mermaid"]')) continue
+    ensureWrapper(block)
+  }
+  markCodeLinks()
 
   const buttons = Array.from(root.querySelectorAll('[data-slot="markdown-copy-button"]'))
   for (const button of buttons) {
@@ -220,6 +202,58 @@ function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels) {
     root.removeEventListener("click", handleClick)
     for (const timeout of timeouts.values()) {
       clearTimeout(timeout)
+    }
+  }
+}
+
+let mermaidModule: Promise<typeof import("mermaid")> | null = null
+let mermaidId = 0
+
+function getMermaid() {
+  if (!mermaidModule) {
+    mermaidModule = import("mermaid")
+      .then((m) => {
+        m.default.initialize({ startOnLoad: false, securityLevel: "loose" })
+        return m
+      })
+      .catch((e) => {
+        mermaidModule = null
+        throw e
+      })
+  }
+  return mermaidModule
+}
+
+async function renderMermaidBlock(source: string, renderer?: MermaidRenderer): Promise<string> {
+  if (renderer) return renderer(source)
+  const m = await getMermaid()
+  const result = await m.default.render(`mermaid-${++mermaidId}`, source)
+  return result.svg
+}
+
+async function setupMermaid(root: HTMLDivElement, renderer?: MermaidRenderer) {
+  const containers = Array.from(
+    root.querySelectorAll<HTMLDivElement>('[data-component="mermaid"]:not([data-rendered])'),
+  )
+  if (!containers.length) return
+
+  for (const container of containers) {
+    const code = container.querySelector("code")
+    const source = code?.textContent
+    if (!source) continue
+
+    try {
+      const svg = await renderMermaidBlock(source, renderer)
+      const wrapper = document.createElement("div")
+      wrapper.setAttribute("data-slot", "mermaid-svg")
+      wrapper.innerHTML = svg
+      const pre = container.querySelector("pre")
+      if (pre) pre.style.display = "none"
+      container.appendChild(wrapper)
+      container.setAttribute("data-rendered", "true")
+    } catch (e) {
+      console.error("[mermaid] render failed:", e)
+      container.setAttribute("data-rendered", "error")
     }
   }
 }
@@ -287,15 +321,44 @@ export function Markdown(
 
     const temp = document.createElement("div")
     temp.innerHTML = content
-    decorate(temp, {
-      copy: i18n.t("ui.message.copy"),
-      copied: i18n.t("ui.message.copied"),
-    })
 
     morphdom(container, temp, {
       childrenOnly: true,
       onBeforeElUpdated: (fromEl, toEl) => {
         if (fromEl.isEqualNode(toEl)) return false
+        if (fromEl.getAttribute("data-component") === "mermaid") {
+          if (toEl.getAttribute("data-component") !== "mermaid") return true
+          const rendered = fromEl.getAttribute("data-rendered")
+          const fromCode = fromEl.querySelector("code")?.textContent
+          const toCode = toEl.querySelector("code")?.textContent
+          if (rendered === "true" && fromCode === toCode) return false
+          if (rendered) {
+            fromEl.removeAttribute("data-rendered")
+            const svgSlot = fromEl.querySelector('[data-slot="mermaid-svg"]')
+            if (svgSlot) svgSlot.remove()
+            const pre = fromEl.querySelector("pre")
+            if (pre) pre.style.display = ""
+            const fromCodeEl = fromEl.querySelector("code")
+            const toCodeEl = toEl.querySelector("code")
+            if (fromCodeEl && toCodeEl) fromCodeEl.textContent = toCodeEl.textContent
+          }
+          return false
+        }
+        if (fromEl.getAttribute("data-component") === "markdown-code") {
+          const fromPre = fromEl.querySelector("pre")
+          const toPre = toEl.querySelector("pre")
+          if (fromPre && toPre && !fromPre.isEqualNode(toPre)) {
+            morphdom(fromPre, toPre)
+          }
+          return false
+        }
+        return true
+      },
+      onBeforeNodeDiscarded: (node) => {
+        if (node instanceof Element) {
+          if (node.getAttribute("data-slot") === "markdown-copy-button") return false
+          if (node.getAttribute("data-component") === "markdown-code") return false
+        }
         return true
       },
     })
@@ -307,6 +370,7 @@ export function Markdown(
         copy: i18n.t("ui.message.copy"),
         copied: i18n.t("ui.message.copied"),
       })
+      void setupMermaid(container, marked.renderMermaid)
     }, 150)
   })
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
+import { resolveComposerSessionID } from "./session-composer-scope"
 
 const session = (input: { id: string; parentID?: string }) =>
   ({
@@ -101,5 +102,17 @@ describe("sessionQuestionRequest", () => {
     }
 
     expect(sessionQuestionRequest(sessions, questions, "root")?.id).toBe("q-grand")
+  })
+})
+
+describe("resolveComposerSessionID", () => {
+  test("prefers explicit accessor over route session id", () => {
+    const id = resolveComposerSessionID({ sessionID: () => "pane-session" }, "route-session")
+    expect(id).toBe("pane-session")
+  })
+
+  test("falls back to route session id when accessor missing", () => {
+    const id = resolveComposerSessionID(undefined, "route-session")
+    expect(id).toBe("route-session")
   })
 })

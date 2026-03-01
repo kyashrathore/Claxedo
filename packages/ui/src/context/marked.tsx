@@ -440,6 +440,11 @@ async function highlightCodeBlocks(html: string): Promise<string> {
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
 
+    if (lang === "mermaid") {
+      result = result.replace(fullMatch, () => mermaidPlaceholder(code))
+      continue
+    }
+
     let language = lang || "text"
     if (!(language in bundledLanguages)) {
       language = "text"
@@ -459,11 +464,17 @@ async function highlightCodeBlocks(html: string): Promise<string> {
   return result
 }
 
+function mermaidPlaceholder(code: string): string {
+  const escaped = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  return `<div data-component="mermaid"><pre><code class="language-mermaid">${escaped}</code></pre></div>`
+}
+
+export type MermaidRenderer = (source: string) => Promise<string>
 export type NativeMarkdownParser = (markdown: string) => Promise<string>
 
 export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
   name: "Marked",
-  init: (props: { nativeParser?: NativeMarkdownParser }) => {
+  init: (props: { nativeParser?: NativeMarkdownParser; mermaidRenderer?: MermaidRenderer }) => {
     const jsParser = marked.use(
       {
         renderer: {
@@ -479,6 +490,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       }),
       markedShiki({
         async highlight(code, lang) {
+          if (lang === "mermaid") return mermaidPlaceholder(code)
           const highlighter = await getSharedHighlighter({ themes: ["OpenCode"], langs: [] })
           if (!(lang in bundledLanguages)) {
             lang = "text"
@@ -495,6 +507,8 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       }),
     )
 
+    const renderMermaid = props.mermaidRenderer
+
     if (props.nativeParser) {
       const nativeParser = props.nativeParser
       return {
@@ -503,9 +517,13 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
           const withMath = renderMathExpressions(html)
           return highlightCodeBlocks(withMath)
         },
+        renderMermaid,
       }
     }
 
-    return jsParser
+    return {
+      parse: (markdown: string) => jsParser.parse(markdown) as Promise<string>,
+      renderMermaid,
+    }
   },
 })

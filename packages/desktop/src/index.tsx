@@ -22,7 +22,7 @@ import { relaunch } from "@tauri-apps/plugin-process"
 import { open as shellOpen } from "@tauri-apps/plugin-shell"
 import { Store } from "@tauri-apps/plugin-store"
 import { check, type Update } from "@tauri-apps/plugin-updater"
-import { createResource, type JSX, onCleanup, onMount, Show } from "solid-js"
+import { createResource, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../package.json"
 import { initI18n, t } from "./i18n"
@@ -30,8 +30,9 @@ import { UPDATER_ENABLED } from "./updater"
 import { webviewZoom } from "./webview-zoom"
 import "./styles.css"
 import { Channel } from "@tauri-apps/api/core"
-import { commands, ServerReadyData, type InitStep } from "./bindings"
+import { commands, events, ServerReadyData, type InitStep, type LicenseStatus } from "./bindings"
 import { createMenu } from "./menu"
+import { ActivationScreen } from "./activation-screen"
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
@@ -368,6 +369,8 @@ const createPlatform = (): Platform => {
 
     parseMarkdown: (markdown: string) => commands.parseMarkdownCommand(markdown),
 
+    renderMermaid: (source: string) => commands.renderMermaidCommand(source),
+
     webviewZoom,
 
     checkAppExists: async (appName: string) => {
@@ -436,8 +439,9 @@ render(() => {
   return (
     <PlatformProvider value={platform}>
       <AppBaseProviders>
-        <ServerGate>
-          {(data) => {
+        <LicenseGate>
+          <ServerGate>
+            {(data) => {
             const http = {
               url: data.url,
               username: data.username ?? undefined,
@@ -468,11 +472,49 @@ render(() => {
               </Show>
             )
           }}
-        </ServerGate>
+          </ServerGate>
+        </LicenseGate>
       </AppBaseProviders>
     </PlatformProvider>
   )
 }, root!)
+
+// Gate component that checks license before allowing app boot
+function LicenseGate(props: { children: JSX.Element }) {
+  const [licenseStatus, { mutate }] = createResource(() => commands.validateLicenseOnBoot())
+  const [activated, setActivated] = createSignal(false)
+
+  onMount(() => {
+    const unlisten = events.licenseRevoked.listen(() => {
+      mutate({ status: "unactivated" })
+      setActivated(false)
+    })
+    onCleanup(() => {
+      unlisten.then((fn) => fn())
+    })
+  })
+
+  return (
+    <Show
+      when={licenseStatus()?.status === "activated" || activated()}
+      fallback={
+        <Show
+          when={licenseStatus()?.status === "unactivated"}
+          fallback={
+            <div class="h-screen w-screen flex flex-col items-center justify-center bg-background-base">
+              <Splash class="w-16 h-20 opacity-50 animate-pulse" />
+              <div data-tauri-decorum-tb class="flex flex-row absolute top-0 right-0 z-10 h-10" />
+            </div>
+          }
+        >
+          <ActivationScreen onActivated={() => setActivated(true)} />
+        </Show>
+      }
+    >
+      {props.children}
+    </Show>
+  )
+}
 
 // Gate component that waits for the server to be ready
 function ServerGate(props: { children: (data: ServerReadyData) => JSX.Element }) {

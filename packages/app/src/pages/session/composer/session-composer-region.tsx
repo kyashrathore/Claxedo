@@ -38,12 +38,26 @@ export function SessionComposerRegion(props: {
   countMask?: number
   countMaskHeight?: number
   countWidthDuration?: number
+  /** Explicit session ID — bypasses route params for embedded contexts (e.g. page dock). */
+  sessionID?: string
+  /** Explicit encoded directory — bypasses route params for embedded contexts. */
+  sessionDirectory?: string
+  /** When true, skip navigation after creating a new session. */
+  navigateOnCreate?: boolean
+  /** System prompt injected with every request. */
+  system?: string
+  /** Override agent name for this input. */
+  agent?: string
 }) {
   const params = useParams()
   const prompt = usePrompt()
   const language = useLanguage()
 
-  const sessionKey = createMemo(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
+  const sessionKey = createMemo(() => {
+    const id = props.sessionID ?? params.id
+    const dir = props.sessionDirectory ?? params.dir
+    return `${dir ?? ""}${id ? "/" + id : ""}`
+  })
   const handoffPrompt = createMemo(() => getSessionHandoff(sessionKey())?.prompt)
 
   const previewPrompt = () =>
@@ -222,6 +236,10 @@ export function SessionComposerRegion(props: {
                 newSessionWorktree={props.newSessionWorktree}
                 onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
                 onSubmit={props.onSubmit}
+                sessionID={props.sessionID}
+                navigateOnCreate={props.navigateOnCreate}
+                system={props.system}
+                agent={props.agent}
               />
             </div>
           </Show>
