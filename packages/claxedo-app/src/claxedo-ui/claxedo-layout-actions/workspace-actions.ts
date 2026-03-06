@@ -23,7 +23,7 @@ export function createWorkspaceActions(props: ActionProps, nav: Nav) {
 
     const focusedId = props.claxedo.split.focusedId()
     const tabs = focusedId ? props.claxedo.groupTabs(focusedId) : props.claxedo.topTabs
-    const existing = tabs.orderedItems().find((tab) => tab.directory === workspaceDir)
+    const existing = tabs.orderedItems().find((tab) => tab.directory === workspaceDir && tab.type !== "process")
 
     if (existing) {
       tabs.setActive(existing.id)

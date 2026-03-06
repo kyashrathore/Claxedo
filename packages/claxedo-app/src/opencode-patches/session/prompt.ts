@@ -954,7 +954,20 @@ export namespace SessionPrompt {
   }
 
   async function createUserMessage(input: PromptInput) {
-    const agent = await Agent.get(input.agent ?? (await Agent.defaultAgent()))
+    const requested = input.agent ?? (await Agent.defaultAgent())
+    const direct = await Agent.get(requested)
+    const fallbackName = await Agent.defaultAgent()
+    const fallback = await Agent.get(fallbackName)
+    const agent = direct ?? fallback
+    if (!agent) {
+      throw new Error(`agent "${requested}" not found and default agent "${fallbackName}" is unavailable`)
+    }
+    if (!direct && input.agent) {
+      log.warn("requested agent not found, falling back to default", {
+        requested: input.agent,
+        fallback: fallbackName,
+      })
+    }
 
     const model = input.model ?? agent.model ?? (await lastModel(input.sessionID))
     const full =
@@ -1495,7 +1508,19 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     if (session.revert) {
       await SessionRevert.cleanup(session)
     }
-    const agent = await Agent.get(input.agent)
+    const direct = await Agent.get(input.agent)
+    const fallbackName = await Agent.defaultAgent()
+    const fallback = await Agent.get(fallbackName)
+    const agent = direct ?? fallback
+    if (!agent) {
+      throw new Error(`agent "${input.agent}" not found and default agent "${fallbackName}" is unavailable`)
+    }
+    if (!direct) {
+      log.warn("requested shell agent not found, falling back to default", {
+        requested: input.agent,
+        fallback: fallbackName,
+      })
+    }
     const model = input.model ?? agent.model ?? (await lastModel(input.sessionID))
     const userMsg: MessageV2.User = {
       id: Identifier.ascending("message"),
@@ -1504,7 +1529,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         created: Date.now(),
       },
       role: "user",
-      agent: input.agent,
+      agent: agent.name,
       model: {
         providerID: model.providerID,
         modelID: model.modelID,

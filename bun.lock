@@ -91,7 +91,7 @@
     },
     "packages/claxedo-app": {
       "name": "@opencode-ai/claxedo-app",
-      "version": "0.0.9",
+      "version": "0.0.56",
       "dependencies": {
         "@clerk/clerk-js": "^5.35.0",
         "@modelcontextprotocol/sdk": "1.25.2",
@@ -100,6 +100,7 @@
         "@opencode-ai/sdk": "workspace:*",
         "@opencode-ai/ui": "workspace:*",
         "@opencode-ai/util": "workspace:*",
+        "@opentelemetry/api": "^1.9.0",
         "@sentry/bun": "^9.0.0",
         "@solid-primitives/event-bus": "1.1.2",
         "@solid-primitives/i18n": "2.2.1",

@@ -411,6 +411,17 @@ const tick = () => new Promise<void>((r) => setTimeout(r, 50))
 // ── Tests ──────────────────────────────────────────────────────────────
 
 describe("initial state", () => {
+  test("loaded flips true after initial boot fetch settles", async () => {
+    const { api, dispose } = createTestProcessPane()
+    try {
+      expect(api.loaded()).toBe(false)
+      await tick()
+      expect(api.loaded()).toBe(true)
+    } finally {
+      dispose()
+    }
+  })
+
   test("configs returns empty array when server has no configs", async () => {
     const { api, dispose } = createTestProcessPane()
     try {

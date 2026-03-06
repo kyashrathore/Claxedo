@@ -75,6 +75,7 @@
     "@opencode-ai/sdk": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@opencode-ai/util": "workspace:*",
+    "@opentelemetry/api": "^1.9.0",
     "@sentry/bun": "^9.0.0",
     "@solid-primitives/event-bus": "1.1.2",
     "@solid-primitives/i18n": "2.2.1",

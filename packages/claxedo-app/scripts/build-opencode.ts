@@ -178,7 +178,10 @@ async function main() {
     log("Applying Claxedo patches to packages/opencode/src...")
     patchedFiles = await applyPatches()
 
-    // Step 2: Install patch-only dependencies that aren't in opencode's package.json
+    // Step 2: Install patch-only dependencies into opencode's node_modules
+    // Our patches import @sentry/bun and @opentelemetry/api which aren't in
+    // opencode's package.json. These deps live in claxedo-app but bun doesn't
+    // hoist them to the workspace root, so the opencode bundler can't find them.
     const patchDeps = ["@sentry/bun", "@opentelemetry/api"]
     log("Installing patch dependencies:", patchDeps.join(", "))
     await $`bun add ${patchDeps} --no-save`.cwd(OPENCODE_DIR)

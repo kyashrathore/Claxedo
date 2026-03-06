@@ -201,7 +201,7 @@ function ProcessLeafContent(props: { processId: string; directory: string }) {
       fallback={
         <div class="flex flex-col items-center justify-center h-full text-text-weak gap-3">
           <Show
-            when={pp.ready()}
+            when={pp.loaded()}
             fallback={
               <div class="size-6 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />
             }
@@ -229,13 +229,13 @@ function ProcessLeafContent(props: { processId: string; directory: string }) {
 /** Placeholder leaf shown before process configs are loaded, or empty state when none exist. */
 function ProcessPlaceholder(props: { directory: string }) {
   const pp = useProcessPane()
-  const configsLoaded = createMemo(() => pp.ready())
+  const loaded = createMemo(() => pp.loaded())
   const hasConfigs = createMemo(() => pp.configs().length > 0)
 
   return (
     <div class="flex flex-col items-center justify-center h-full text-text-weak gap-3">
       <Show
-        when={configsLoaded() && !hasConfigs()}
+        when={loaded() && !hasConfigs()}
         fallback={
           <div class="size-6 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />
         }

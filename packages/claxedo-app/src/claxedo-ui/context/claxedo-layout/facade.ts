@@ -10,6 +10,7 @@ import { createTabTypeRegistry } from "./tab-type-registry"
 import { createTerminalState } from "./terminal"
 import { createWorkspaceRecency } from "./workspace-recency"
 import { type ClaxedoLayoutStore, type TabItem } from "./types"
+import { createDebugLogger } from "../../../overrides/utils/debug"
 
 const _suppressedAutoTab = new Set<string>()
 
@@ -32,6 +33,29 @@ export function createClaxedoLayoutFacade(input: {
   ready: Accessor<boolean>
 }) {
   const { store, setStore, ready } = input
+  const debug = createDebugLogger("layout.process", "layout:process", {
+    legacyKey: "opencode.debug.terminal",
+  })
+  const real = (dir?: string | null) => {
+    if (!dir || dir === "__process__") return
+    return dir
+  }
+  const snap = (groupId: string) => {
+    const group = store.groups.find((g) => g.id === groupId)
+    if (!group) return { found: false }
+    return {
+      found: true,
+      activeId: group.tabs.activeId,
+      defaultDir: group.worktree.default,
+      pinnedDir: group.worktree.pinned,
+      tabs: group.tabs.items.map((tab) => ({
+        id: tab.id,
+        type: tab.type,
+        dir: tab.directory,
+        active: tab.id === group.tabs.activeId,
+      })),
+    }
+  }
 
   const focusedGroup = () => {
     const id = store.split.focusedId
@@ -248,7 +272,7 @@ export function createClaxedoLayoutFacade(input: {
   const defaultForNewGroup = () => {
     const primary = store.groups[0]
     if (!primary) return null
-    if (primary.worktree.default) return primary.worktree.default
+    if (real(primary.worktree.default)) return primary.worktree.default
     if (!primary.tabs.activeId) return null
     const active = primary.tabs.items.find((t) => t.id === primary.tabs.activeId)
     // Skip process tab — it uses a synthetic "__process__" directory
@@ -268,6 +292,92 @@ export function createClaxedoLayoutFacade(input: {
     store,
     setStore,
   })
+
+  const resolve = (groupId: string, dir?: string) => {
+    const group = store.groups.find((g) => g.id === groupId)
+    if (!group) return
+    const out =
+      real(dir) ??
+      real(group.worktree.pinned) ??
+      real(group.worktree.default) ??
+      real(group.tabs.items.find((tab) => tab.id === group.tabs.activeId && tab.type !== "process")?.directory) ??
+      real(group.tabs.items.find((tab) => tab.type !== "process")?.directory)
+    debug.verbose("resolve", {
+      groupId,
+      in: dir ?? null,
+      out: out ?? null,
+      ...snap(groupId),
+    })
+    return out
+  }
+
+  const repair = (groupId: string, dir?: string) => {
+    const next = resolve(groupId, dir)
+    if (!next) {
+      debug.log("repair skipped", {
+        groupId,
+        in: dir ?? null,
+        reason: "no-directory",
+        ...snap(groupId),
+      })
+      return
+    }
+    const gi = store.groups.findIndex((g) => g.id === groupId)
+    if (gi === -1) return
+
+    const exact = store.groups[gi].tabs.items.find((tab) => tab.type === "process" && tab.directory === next)
+    if (exact) {
+      if (!real(store.groups[gi].worktree.default)) {
+        setStore("groups", gi, "worktree", "default", next)
+      }
+      debug.verbose("repair exact", {
+        groupId,
+        dir: next,
+        tabId: exact.id,
+      })
+      return exact
+    }
+
+    const tab = store.groups[gi].tabs.items.find((item) => item.type === "process" && !real(item.directory))
+    if (!tab) {
+      debug.log("repair skipped", {
+        groupId,
+        dir: next,
+        reason: "no-stale-process-tab",
+        ...snap(groupId),
+      })
+      return
+    }
+
+    batch(() => {
+      if (!real(store.groups[gi].worktree.default)) {
+        setStore("groups", gi, "worktree", "default", next)
+      }
+      setStore("groups", gi, "tabs", "items", (items) =>
+        items.map((item) => (item.id === tab.id ? { ...item, directory: next } : item)),
+      )
+    })
+
+    if (multiPaneState.getState(tab.id)) {
+      for (const leafId of multiPaneState.leafIds(tab.id)) {
+        const content = multiPaneState.getContent(tab.id, leafId)
+        if (!content || content.type !== "process" || content.directory === next) continue
+        multiPaneState.setContent(tab.id, leafId, {
+          ...content,
+          directory: next,
+        })
+      }
+    }
+
+    debug.log("repair applied", {
+      groupId,
+      from: tab.directory,
+      to: next,
+      tabId: tab.id,
+      ...snap(groupId),
+    })
+    return { ...tab, directory: next }
+  }
 
   // ── Ensure existing process tabs have multi-pane state ─────────────
   // Process tabs are only created via the "Processes" menu option.
@@ -290,25 +400,26 @@ export function createClaxedoLayoutFacade(input: {
           const gi = store.groups.findIndex((g) => g.id === group.id)
           if (gi === -1) continue
           for (const processTab of group.processTabs) {
-            const resolvedDirectory =
-              (processTab.directory && processTab.directory !== "__process__" ? processTab.directory : undefined) ??
-              group.defaultDirectory ??
-              group.pinnedDirectory ??
-              group.fallbackDirectory ??
-              undefined
-            if (!resolvedDirectory) continue
+            const dir = real(processTab.directory) ?? resolve(group.id)
+            if (!dir) continue
 
-            if (processTab.directory !== resolvedDirectory) {
+            batch(() => {
+              if (!real(store.groups[gi].worktree.default)) {
+                setStore("groups", gi, "worktree", "default", dir)
+              }
+            })
+
+            if (processTab.directory !== dir) {
               setStore("groups", gi, "tabs", "items", (items) =>
-                items.map((tab) => (tab.id === processTab.id ? { ...tab, directory: resolvedDirectory } : tab)),
+                items.map((tab) => (tab.id === processTab.id ? { ...tab, directory: dir } : tab)),
               )
             }
 
             if (!multiPaneState.getState(processTab.id)) {
               multiPaneState.initTab(
                 processTab.id,
-                resolvedDirectory,
-                processSessionLayout({ directory: resolvedDirectory }),
+                dir,
+                processSessionLayout({ directory: dir }),
               )
               continue
             }
@@ -316,10 +427,10 @@ export function createClaxedoLayoutFacade(input: {
             for (const leafId of multiPaneState.leafIds(processTab.id)) {
               const content = multiPaneState.getContent(processTab.id, leafId)
               if (!content || content.type !== "process") continue
-              if (content.directory === resolvedDirectory) continue
+              if (content.directory === dir) continue
               multiPaneState.setContent(processTab.id, leafId, {
                 ...content,
-                directory: resolvedDirectory,
+                directory: dir,
               })
             }
           }
@@ -337,10 +448,41 @@ export function createClaxedoLayoutFacade(input: {
     if (!gid) return undefined
     const group = store.groups.find((g) => g.id === gid)
     if (!group) return undefined
-    if (!directory) return group.tabs.items.find((t) => t.type === "process")
-    const exact = group.tabs.items.find((t) => t.type === "process" && t.directory === directory)
-    if (exact) return exact
-    return group.tabs.items.find((t) => t.type === "process" && t.directory === "__process__")
+    const dir = resolve(gid, directory)
+    if (!directory && !dir) {
+      const tab = group.tabs.items.find((t) => t.type === "process" && !!real(t.directory))
+      debug.log("find process tab", {
+        gid,
+        in: null,
+        dir: null,
+        tabId: tab?.id,
+        reason: tab ? "real-process-fallback" : "no-real-process-tab",
+        ...snap(gid),
+      })
+      return tab
+    }
+    if (!dir) return undefined
+    const exact = group.tabs.items.find((t) => t.type === "process" && t.directory === dir)
+    if (exact) {
+      debug.verbose("find process tab", {
+        gid,
+        in: directory ?? null,
+        dir,
+        tabId: exact.id,
+        reason: "exact",
+      })
+      return exact
+    }
+    const tab = repair(gid, dir)
+    debug.log("find process tab", {
+      gid,
+      in: directory ?? null,
+      dir,
+      tabId: tab?.id,
+      reason: tab ? "repaired" : "missing",
+      ...snap(gid),
+    })
+    return tab
   }
 
   /** Check if the process tab for a directory is currently active in the focused group. */
@@ -358,16 +500,30 @@ export function createClaxedoLayoutFacade(input: {
     targetDirectory: () => store.processPane.targetDirectory,
     /** Fire a toggle request: if process tab is active, switch back; otherwise activate it. */
     requestToggle(directory?: string) {
-      setStore("processPane", "targetDirectory", directory ?? null)
       const gid = store.split.focusedId ?? store.groups[0]?.id
+      const dir = gid ? resolve(gid, directory) : real(directory)
+      setStore("processPane", "targetDirectory", dir ?? null)
+      debug.log("request toggle", {
+        gid: gid ?? null,
+        in: directory ?? null,
+        dir: dir ?? null,
+        target: store.processPane.targetDirectory ?? null,
+      })
       if (!gid) return
       const gi = store.groups.findIndex((g) => g.id === gid)
       if (gi === -1) return
       const group = store.groups[gi]
-      const processTab =
-        group.tabs.items.find((t) => t.type === "process" && (!directory || t.directory === directory)) ??
-        (directory ? group.tabs.items.find((t) => t.type === "process" && t.directory === "__process__") : undefined)
-      if (!processTab) return
+      const processTab = directory ? (dir ? findProcessTab(dir, gid) : undefined) : findProcessTab(undefined, gid)
+      if (!processTab) {
+        debug.log("request toggle blocked", {
+          gid,
+          in: directory ?? null,
+          dir: dir ?? null,
+          reason: "no-process-tab",
+          ...snap(gid),
+        })
+        return
+      }
 
       if (group.tabs.activeId === processTab.id) {
         // Toggle off: switch to the most recent non-process tab
@@ -383,21 +539,35 @@ export function createClaxedoLayoutFacade(input: {
     },
     /** Request the process tab to be activated (no toggle-back). */
     requestOpen(directory?: string) {
-      setStore("processPane", "targetDirectory", directory ?? null)
       const gid = store.split.focusedId ?? store.groups[0]?.id
+      const dir = gid ? resolve(gid, directory) : real(directory)
+      setStore("processPane", "targetDirectory", dir ?? null)
+      debug.log("request open", {
+        gid: gid ?? null,
+        in: directory ?? null,
+        dir: dir ?? null,
+        target: store.processPane.targetDirectory ?? null,
+      })
       if (!gid) return
       const gi = store.groups.findIndex((g) => g.id === gid)
       if (gi === -1) return
-      const processTab =
-        store.groups[gi].tabs.items.find((t) => t.type === "process" && (!directory || t.directory === directory)) ??
-        (directory ? store.groups[gi].tabs.items.find((t) => t.type === "process" && t.directory === "__process__") : undefined)
-      if (!processTab) return
+      const processTab = directory ? (dir ? findProcessTab(dir, gid) : undefined) : findProcessTab(undefined, gid)
+      if (!processTab) {
+        debug.log("request open blocked", {
+          gid,
+          in: directory ?? null,
+          dir: dir ?? null,
+          reason: "no-process-tab",
+          ...snap(gid),
+        })
+        return
+      }
       setStore("groups", gi, "tabs", "activeId", processTab.id)
       setStore("processPane", "crashedWhileClosed", false)
     },
     /** Set/clear the current process pane target directory without opening/toggling. */
     setTargetDirectory(directory: string | null) {
-      setStore("processPane", "targetDirectory", directory)
+      setStore("processPane", "targetDirectory", real(directory) ?? null)
     },
     /** True when a process crashed while the process tab is not active — drives workspace dot alert ring. */
     crashedWhileClosed: () => store.processPane.crashedWhileClosed,

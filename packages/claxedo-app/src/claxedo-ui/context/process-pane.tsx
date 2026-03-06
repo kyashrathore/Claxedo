@@ -8,7 +8,7 @@
  * Lives inside DirectoryScope, outside GroupContentRenderer.
  */
 
-import { batch, createEffect, createRenderEffect, on, onCleanup, untrack } from "solid-js"
+import { batch, createEffect, createRenderEffect, createSignal, on, onCleanup, untrack } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useSDK } from "@/context/sdk"
@@ -21,6 +21,7 @@ import type { Process } from "../../opencode-patches/process/process"
 import { useClaxedoLayout } from "./claxedo-layout"
 import { createProcessOwnership, createTerminalTabOps } from "../stores/process-ownership"
 import { AddProcessDialog } from "../components/add-process-dialog"
+import { createDebugLogger } from "../../overrides/utils/debug"
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ type ProcessPaneStore = {
 
 const DEFAULT_PANE_HEIGHT = 300
 const MIN_PANE_HEIGHT = 100
+const FETCH_TIMEOUT = 5_000
 
 function processUrl(baseUrl: string, path: string): string {
   return `${baseUrl}/process${path}`
@@ -53,7 +55,11 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     const globalSDK = useGlobalSDK()
     const platform = usePlatform()
     const claxedo = useClaxedoLayout()
+    const debug = createDebugLogger("layout.process", "layout:process", {
+      legacyKey: "opencode.debug.terminal",
+    })
     const terminalCtx = useOptionalTerminal()
+    const [loaded, setLoaded] = createSignal(false)
 
     // Create ownership + tab-ops adapters.  These delegate to the current
     // ClaxedoLayout terminal state.  When the global terminal store (T2) lands,
@@ -86,11 +92,27 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     // ── HTTP helpers ─────────────────────────────────────────────────
 
     async function fetchProcesses(): Promise<boolean> {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
       try {
+        debug.verbose("fetch start", {
+          dir: sdk.directory,
+          tabId: props?.tabId,
+          persistedReady: ready(),
+          loaded: loaded(),
+        })
         const res = await fetchFn(processUrl(sdk.url, ""), {
           headers: headers(),
+          signal: controller.signal,
         })
-        if (!res.ok) return false
+        if (!res.ok) {
+          debug.log("fetch failed", {
+            dir: sdk.directory,
+            tabId: props?.tabId,
+            status: res.status,
+          })
+          return false
+        }
         const data = (await res.json()) as {
           configs: ProcessConfig[]
           processes: ManagedProcess[]
@@ -146,10 +168,23 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
         lastFetchedPtyIds = currentPtyIds
         cleanupStaleProcessTabs(currentPtyIds)
 
+        debug.log("fetch ok", {
+          dir: sdk.directory,
+          tabId: props?.tabId,
+          configs: data.configs.length,
+          processes: data.processes.length,
+        })
         return true
       } catch (e) {
+        debug.log("fetch error", {
+          dir: sdk.directory,
+          tabId: props?.tabId,
+          error: e instanceof Error ? e.message : String(e),
+        })
         console.error("[process-pane] Failed to fetch processes", e)
         return false
+      } finally {
+        clearTimeout(timeout)
       }
     }
 
@@ -400,12 +435,23 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     // Retry on init: gateway may still be waking up after system sleep.
     // 3 attempts with exponential backoff (1s, 2s, 4s).
     void (async () => {
+      let ok = false
       try {
         for (let attempt = 0; attempt < 3; attempt++) {
-          if (await fetchProcesses()) return
+          ok = await fetchProcesses()
+          if (ok) return
           await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)))
         }
       } finally {
+        setLoaded(true)
+        debug.log("boot settled", {
+          dir: sdk.directory,
+          tabId: props?.tabId,
+          ok,
+          configs: store.configs.length,
+          processes: Object.keys(store.processes).length,
+          persistedReady: ready(),
+        })
         ownership.resolveInitialProcessPty()
       }
     })()
@@ -461,7 +507,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     // Each process config gets its own leaf in the process tab's multi-pane tree.
 
     const findProcessTabId = (): string | undefined => {
-      const tabId = props.tabId
+      const tabId = props?.tabId
       if (!tabId) return undefined
       const groupId = claxedo.findTabGroup(tabId)
       if (!groupId) return undefined
@@ -472,13 +518,36 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
 
     createEffect(
       on(
-        () => store.configs.map((c) => ({ id: c.id, name: c.name })),
-        (configEntries) => {
+        () => {
           const tabId = findProcessTabId()
+          const configSig = store.configs.map((c) => `${c.id}:${c.name}`).join("|")
+          const leafSig = tabId
+            ? claxedo.select.multiPaneLeafView(tabId).map((leaf) => {
+                const content = leaf.content
+                if (!content || content.type !== "process") return `${leaf.id}:`
+                return `${leaf.id}:${content.processId ?? ""}:${content.title ?? ""}:${content.directory ?? ""}`
+              }).join("|")
+            : ""
+          return [tabId, sdk.directory, configSig, leafSig, loaded()] as const
+        },
+        ([tabId, dir, _configSig, _leafSig, isLoaded]) => {
           if (!tabId) return
+          if (!isLoaded && store.configs.length === 0) return
 
+          const configEntries = store.configs.map((c) => ({ id: c.id, name: c.name }))
           const leaves = claxedo.select.multiPaneLeafView(tabId)
-          const dir = sdk.directory
+
+          debug.verbose("leaf sync", {
+            tabId,
+            dir,
+            loaded: isLoaded,
+            configs: configEntries.map((c) => c.id),
+            leaves: leaves.map((leaf) => ({
+              id: leaf.id,
+              type: leaf.content?.type,
+              processId: leaf.content?.type === "process" ? leaf.content.processId ?? null : null,
+            })),
+          })
 
           // Build maps: processId → leafId, leafId → processId
           const processIdToLeaf = new Map<string, string>()
@@ -491,9 +560,9 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             if (content.processId) {
               processIdToLeaf.set(content.processId, leaf.id)
               leafToProcessId.set(leaf.id, content.processId)
-            } else {
-              placeholderLeafId = leaf.id
+              continue
             }
+            placeholderLeafId = leaf.id
           }
 
           const configIds = new Set(configEntries.map((c) => c.id))
@@ -502,29 +571,38 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             // Handle first load: replace placeholder with first config
             if (placeholderLeafId && configEntries.length > 0) {
               const first = configEntries[0]
-              claxedo.multiPane.setContent(tabId, placeholderLeafId!, {
+              claxedo.multiPane.setContent(tabId, placeholderLeafId, {
                 type: "process",
                 directory: dir,
                 processId: first.id,
                 title: first.name,
               })
-              processIdToLeaf.set(first.id, placeholderLeafId!)
-              leafToProcessId.set(placeholderLeafId!, first.id)
+              debug.log("leaf placeholder promoted", {
+                tabId,
+                dir,
+                leafId: placeholderLeafId,
+                processId: first.id,
+              })
+              processIdToLeaf.set(first.id, placeholderLeafId)
+              leafToProcessId.set(placeholderLeafId, first.id)
               placeholderLeafId = undefined
             }
 
             // Add new configs
             for (const config of configEntries) {
               if (processIdToLeaf.has(config.id)) continue
-              // Find an existing leaf to split from
               const existingLeafId = processIdToLeaf.values().next().value ?? placeholderLeafId
               if (!existingLeafId) {
-                // No leaves at all — shouldn't happen, but initialize
                 claxedo.multiPane.initTabWithContent(tabId, {
                   type: "process",
                   directory: dir,
                   processId: config.id,
                   title: config.name,
+                })
+                debug.log("leaf sync reinit", {
+                  tabId,
+                  dir,
+                  processId: config.id,
                 })
                 return
               }
@@ -534,16 +612,26 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
                 processId: config.id,
                 title: config.name,
               })
-              if (newLeafId) {
-                processIdToLeaf.set(config.id, newLeafId)
-              }
+              if (!newLeafId) continue
+              debug.log("leaf added", {
+                tabId,
+                dir,
+                leafId: newLeafId,
+                processId: config.id,
+              })
+              processIdToLeaf.set(config.id, newLeafId)
             }
 
             // Remove leaves for deleted configs
             for (const [leafId, processId] of leafToProcessId) {
-              if (!configIds.has(processId)) {
-                claxedo.multiPane.closeLeaf(tabId, leafId)
-              }
+              if (configIds.has(processId)) continue
+              claxedo.multiPane.closeLeaf(tabId, leafId)
+              debug.log("leaf removed", {
+                tabId,
+                dir,
+                leafId,
+                processId,
+              })
             }
 
             // Update titles for existing leaves
@@ -551,12 +639,11 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
               const leafId = processIdToLeaf.get(config.id)
               if (!leafId) continue
               const leaf = leaves.find((l) => l.id === leafId)
-              if (leaf?.content && leaf.content.title !== config.name) {
-                claxedo.multiPane.setContent(tabId, leafId, {
-                  ...leaf.content,
-                  title: config.name,
-                })
-              }
+              if (!leaf?.content || leaf.content.title === config.name) continue
+              claxedo.multiPane.setContent(tabId, leafId, {
+                ...leaf.content,
+                title: config.name,
+              })
             }
           })
         },
@@ -568,6 +655,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
 
     const api = {
       ready: () => ready(),
+      loaded,
 
       // Convenience wrappers — delegates to claxedo layout's tab-based process pane state
       isOpen: () => claxedo.processPane.isActive(),

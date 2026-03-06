@@ -190,7 +190,7 @@ function GroupPanel(gp: GroupPanelProps) {
   /** Resolve a real workspace directory, excluding process-tab sentinel values. */
   const resolveDir = () => {
     const d = wt.default()
-    if (d) return d
+    if (d && d !== "__process__") return d
     const active = activeTab()
     if (active && active.type !== "process") return active.directory
     return undefined

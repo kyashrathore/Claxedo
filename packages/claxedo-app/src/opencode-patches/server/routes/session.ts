@@ -9,13 +9,16 @@ import { SessionCompaction } from "../../session/compaction"
 import { SessionRevert } from "../../session/revert"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
+import { Vcs } from "@/project/vcs"
 import { Todo } from "../../session/todo"
 import { Agent } from "../../agent/agent"
 import { Snapshot } from "@/snapshot"
 import { Log } from "../../util/log"
+import { Instance } from "@/project/instance"
 import { PermissionNext } from "@/permission/next"
 import { errors } from "../error"
 import { lazy } from "../../util/lazy"
+import { withSpan, SpanKind, startTimer } from "../../observability/index.ts"
 
 const log = Log.create({ service: "server" })
 
@@ -86,6 +89,59 @@ export const SessionRoutes = lazy(() =>
       }),
       async (c) => {
         const result = SessionStatus.list()
+        return c.json(result)
+      },
+    )
+    .get(
+      "/diff-targets",
+      describeRoute({
+        summary: "Get diff base targets",
+        description: "Get auto-detected and common git refs that can be used as base targets for review diffs.",
+        operationId: "session.diffTargets",
+        responses: {
+          200: {
+            description: "Diff base targets",
+            content: {
+              "application/json": {
+                schema: resolver(Vcs.DiffBaseTargets),
+              },
+            },
+          },
+        },
+      }),
+      validator(
+        "query",
+        z.object({
+          directory: z.string().optional(),
+        }),
+      ),
+      async (c) => {
+        const query = c.req.valid("query")
+        log.info("session diff targets request", {
+          queryDirectory: query.directory,
+          instanceDirectory: Instance.directory,
+          instanceWorktree: Instance.worktree,
+          projectID: Instance.project.id,
+          projectVcs: Instance.project.vcs,
+        })
+        const result = await SessionSummary.diffTargets({}).catch((error) => {
+          log.error("session diff targets failed", {
+            queryDirectory: query.directory,
+            instanceDirectory: Instance.directory,
+            instanceWorktree: Instance.worktree,
+            projectID: Instance.project.id,
+            projectVcs: Instance.project.vcs,
+            error,
+          })
+          throw error
+        })
+        log.info("session diff targets success", {
+          queryDirectory: query.directory,
+          instanceDirectory: Instance.directory,
+          instanceWorktree: Instance.worktree,
+          defaultRef: result.defaultRef,
+          candidates: result.candidates.length,
+        })
         return c.json(result)
       },
     )
@@ -203,7 +259,16 @@ export const SessionRoutes = lazy(() =>
       validator("json", Session.create.schema.optional()),
       async (c) => {
         const body = c.req.valid("json") ?? {}
-        const session = await Session.create(body)
+        const session = await withSpan(
+          "opencode.session.create",
+          async (span) => {
+            const result = await Session.create(body)
+            span.setAttribute("session.id", result.id)
+            span.setAttribute("session.title", result.title)
+            return result
+          },
+          { kind: SpanKind.INTERNAL }
+        )
         return c.json(session)
       },
     )
@@ -415,7 +480,7 @@ export const SessionRoutes = lazy(() =>
       "/:sessionID/diff",
       describeRoute({
         summary: "Get message diff",
-        description: "Get the file changes (diff) that resulted from a specific user message in the session.",
+        description: "Get session diffs or git-based diffs for review modes.",
         operationId: "session.diff",
         responses: {
           200: {
@@ -436,17 +501,69 @@ export const SessionRoutes = lazy(() =>
       ),
       validator(
         "query",
-        z.object({
-          messageID: SessionSummary.diff.schema.shape.messageID,
-        }),
+        z
+          .object({
+            messageID: SessionSummary.diff.schema.shape.messageID,
+            mode: SessionSummary.diff.schema.shape.mode,
+            fromRef: SessionSummary.diff.schema.shape.fromRef,
+            toRef: SessionSummary.diff.schema.shape.toRef,
+          })
+          .superRefine((query, ctx) => {
+            if (query.mode !== "to-from") return
+            if (query.fromRef && query.toRef) return
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "fromRef and toRef are required when mode is to-from",
+              path: ["fromRef"],
+            })
+          }),
       ),
       async (c) => {
         const query = c.req.valid("query")
         const params = c.req.valid("param")
+        const shouldLog = !!query.mode
+        if (shouldLog) {
+          log.info("session diff request", {
+            sessionID: params.sessionID,
+            mode: query.mode,
+            fromRef: query.fromRef,
+            toRef: query.toRef,
+            queryDirectory: c.req.query("directory"),
+            instanceDirectory: Instance.directory,
+            instanceWorktree: Instance.worktree,
+          })
+        }
         const result = await SessionSummary.diff({
           sessionID: params.sessionID,
           messageID: query.messageID,
+          mode: query.mode,
+          fromRef: query.fromRef,
+          toRef: query.toRef,
+        }).catch((error) => {
+          if (shouldLog) {
+            log.error("session diff failed", {
+              sessionID: params.sessionID,
+              mode: query.mode,
+              fromRef: query.fromRef,
+              toRef: query.toRef,
+              queryDirectory: c.req.query("directory"),
+              instanceDirectory: Instance.directory,
+              instanceWorktree: Instance.worktree,
+              error,
+            })
+          }
+          throw error
         })
+        if (shouldLog) {
+          log.info("session diff success", {
+            sessionID: params.sessionID,
+            mode: query.mode,
+            files: result.length,
+            queryDirectory: c.req.query("directory"),
+            instanceDirectory: Instance.directory,
+            instanceWorktree: Instance.worktree,
+          })
+        }
         return c.json(result)
       },
     )
