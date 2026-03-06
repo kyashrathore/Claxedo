@@ -9,6 +9,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
 import { type ImageAttachmentPart, type Prompt, usePrompt } from "@/context/prompt"
+import { usePermission } from "@/context/permission"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { Identifier } from "@/utils/id"
@@ -32,6 +33,7 @@ type PromptSubmitInput = {
   sessionDirectory?: Accessor<string | undefined>
   imageAttachments: Accessor<ImageAttachmentPart[]>
   commentCount: Accessor<number>
+  autoAccept: Accessor<boolean>
   mode: Accessor<"normal" | "shell">
   working: Accessor<boolean>
   editor: () => HTMLDivElement | undefined
@@ -66,6 +68,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const sync = useSync()
   const globalSync = useGlobalSync()
   const local = useLocal()
+  const permission = usePermission()
   const prompt = usePrompt()
   const layout = useLayout()
   const language = useLanguage()
@@ -164,6 +167,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const projectDirectory = input.sessionDirectory?.() || sdk.directory
     const explicitSessionID = input.sessionID?.()
     const isNewSession = !explicitSessionID || explicitSessionID === "new"
+    const shouldAutoAccept = isNewSession && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"
 
     let sessionDirectory = projectDirectory
@@ -221,6 +225,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           })
           return undefined
         })
+      if (session && shouldAutoAccept) {
+        permission.enableAutoAccept(session.id, sessionDirectory)
+      }
       if (session && !sessionParams) {
         // Non-multi-pane: navigate to the new session
         if (input.navigateOnCreate?.() ?? true) {

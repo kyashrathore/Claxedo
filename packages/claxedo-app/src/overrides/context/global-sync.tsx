@@ -25,6 +25,7 @@ import {
 } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/util/path"
+import { formatServerError } from "@/utils/server-errors"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
 import { Persist, persisted } from "@/utils/persist"
@@ -384,7 +385,7 @@ function createGlobalSync() {
       .catch((err) => {
         console.error("Failed to load sessions", err)
         const project = getFilename(directory)
-        showToast({ title: language.t("toast.session.listFailed.title", { project }), description: err.message })
+        showToast({ variant: "error", title: language.t("toast.session.listFailed.title", { project }), description: formatServerError(err, language.t) })
       })
 
     sessionLoads.set(directory, promise)
@@ -413,6 +414,7 @@ function createGlobalSync() {
         setStore: child[1],
         vcsCache: cache,
         loadSessions,
+        translate: language.t,
       })
     })()
 
@@ -491,6 +493,8 @@ function createGlobalSync() {
       connectErrorTitle: language.t("dialog.server.add.error"),
       connectErrorDescription: language.t("error.globalSync.connectFailed", { url: globalSDK.url }),
       requestFailedTitle: language.t("common.requestFailed"),
+      translate: language.t,
+      formatMoreCount: (count) => language.t("common.moreCountSuffix", { count }),
       setGlobalStore,
     })
   }
