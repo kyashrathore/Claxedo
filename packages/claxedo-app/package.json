@@ -1,6 +1,6 @@
 {
   "name": "@opencode-ai/claxedo-app",
-  "version": "0.0.9",
+  "version": "0.0.56",
   "description": "Cloud extension package for OpenCode (Claxedo)",
   "type": "module",
   "exports": {
