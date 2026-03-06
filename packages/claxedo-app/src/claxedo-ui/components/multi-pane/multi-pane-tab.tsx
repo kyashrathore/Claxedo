@@ -13,26 +13,65 @@ import { processSessionLayout, reviewSessionLayout } from "../../context/claxedo
 import { GenericFlatPaneRenderer } from "./generic-flat-pane-renderer"
 import { ProcessPaneProvider } from "../../context/process-pane"
 import { SDKProvider } from "@/context/sdk"
+import { createDebugLogger } from "../../../overrides/utils/debug"
 
 export function MultiPaneTab(props: { tabId: string; groupId: string }) {
   const claxedo = useClaxedoLayout()
+  const debug = createDebugLogger("layout.process", "layout:process", {
+    legacyKey: "opencode.debug.terminal",
+  })
   const state = createMemo(() => claxedo.multiPane.getState(props.tabId))
-
-  // Determine if this tab is a process tab
-  const isProcessTab = createMemo(() => {
+  const tab = createMemo(() => {
     const tabs = claxedo.groupTabs(props.groupId)
-    const tab = tabs.items().find((t) => t.id === props.tabId)
-    return tab?.type === "process"
+    return tabs.items().find((t) => t.id === props.tabId)
   })
 
+  // Determine if this tab is a process tab
+  const isProcessTab = createMemo(() => tab()?.type === "process")
+
   const processDirectory = createMemo(() => {
-    const tabs = claxedo.groupTabs(props.groupId)
-    const tab = tabs.items().find((t) => t.id === props.tabId)
-    const dir = tab?.directory ?? ""
+    const dir = tab()?.directory ?? ""
     // "__process__" is a placeholder used before a real worktree default is set — not a valid path
     if (!dir || dir === "__process__") return ""
     return dir
   })
+
+  createEffect(
+    on(
+      () => [props.groupId, props.tabId, tab()?.type, tab()?.directory, !!state(), processDirectory()] as const,
+      ([groupId, tabId, type, dir, ready, processDir]) => {
+        if (type !== "process") return
+        if (!ready) {
+          debug.log("tab spinner", {
+            groupId,
+            tabId,
+            type,
+            dir: dir ?? null,
+            processDir: processDir || null,
+            reason: "missing-multi-pane-state",
+          })
+          return
+        }
+        if (processDir) {
+          debug.verbose("tab ready", {
+            groupId,
+            tabId,
+            dir: processDir,
+          })
+          return
+        }
+        debug.log("tab spinner", {
+          groupId,
+          tabId,
+          type,
+          dir: dir ?? null,
+          processDir: null,
+          reason: "invalid-process-directory",
+        })
+      },
+      { defer: true },
+    ),
+  )
 
   // Lazy-initialize multi-pane state for persisted tabs that don't have it yet
   createEffect(
@@ -69,6 +108,11 @@ export function MultiPaneTab(props: { tabId: string; groupId: string }) {
           return
         }
         if (tab.type === "process" && tab.directory) {
+          debug.verbose("init process tab", {
+            groupId,
+            tabId,
+            dir: tab.directory,
+          })
           claxedo.multiPane.initTab(
             tabId,
             tab.directory,

@@ -255,6 +255,80 @@ describe("selector and command surface", () => {
     }
   })
 
+  test("legacy process tab resolves to the requested workspace before opening", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { g1 } = splitInto2(api)
+      const tabs = api.groupTabs(g1)
+
+      const sid = tabs.addSession("/ws-main", "s-main", "Main")
+      const id = tabs.add({
+        type: "process",
+        directory: "__process__",
+        title: "Processes",
+        closable: false,
+        pinned: true,
+      })
+      tabs.setActive(sid)
+      api.dispatch({ type: "ProcessPaneOpenRequested", directory: "/ws-main" })
+
+      const tab = tabs.items().find((item: any) => item.id === id)
+      expect(tab?.directory).toBe("/ws-main")
+      expect(tabs.activeId()).toBe(id)
+      expect(api.groupWorktree(g1).default()).toBe("/ws-main")
+      expect(api.processPane.isActive("/ws-main")).toBe(true)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("process sentinel does not become the group default", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { g1 } = splitInto2(api)
+      const tabs = api.groupTabs(g1)
+
+      tabs.add({
+        type: "process",
+        directory: "__process__",
+        title: "Processes",
+        closable: false,
+        pinned: true,
+      })
+
+      expect(api.groupWorktree(g1).default()).toBeNull()
+
+      tabs.addSession("/ws-main", "new", "New Session")
+      expect(api.groupWorktree(g1).default()).toBe("/ws-main")
+    } finally {
+      dispose()
+    }
+  })
+
+  test("closing the last real tab does not replace the group default with a process sentinel", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { g1 } = splitInto2(api)
+      const tabs = api.groupTabs(g1)
+
+      const sid = tabs.addSession("/ws-main", "s-main", "Main")
+      const pid = tabs.add({
+        type: "process",
+        directory: "__process__",
+        title: "Processes",
+        closable: false,
+        pinned: true,
+      })
+
+      tabs.setActive(pid)
+      tabs.close(sid)
+
+      expect(api.groupWorktree(g1).default()).toBe("/ws-main")
+    } finally {
+      dispose()
+    }
+  })
+
   test("groupTabs wrappers keep tab navigation behavior", () => {
     const { api, dispose } = createTestLayout()
     try {

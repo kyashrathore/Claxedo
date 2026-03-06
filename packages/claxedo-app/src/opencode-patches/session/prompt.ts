@@ -3,7 +3,7 @@ import os from "os"
 import fs from "fs/promises"
 import z from "zod"
 import { Filesystem } from "../util/filesystem"
-import { SessionID, MessageID, PartID } from "./schema"
+import { Identifier } from "../id/id"
 import { MessageV2 } from "./message-v2"
 import { Log } from "../util/log"
 import { SessionRevert } from "./revert"
@@ -31,8 +31,7 @@ import { Flag } from "../flag/flag"
 import { ulid } from "ulid"
 import { spawn } from "child_process"
 import { Command } from "../command"
-import { $ } from "bun"
-import { pathToFileURL, fileURLToPath } from "url"
+import { $, fileURLToPath, pathToFileURL } from "bun"
 import { ConfigMarkdown } from "../config/markdown"
 import { SessionSummary } from "./summary"
 import { NamedError } from "@opencode-ai/util/error"
@@ -84,14 +83,14 @@ export namespace SessionPrompt {
     },
   )
 
-  export function assertNotBusy(sessionID: SessionID) {
+  export function assertNotBusy(sessionID: string) {
     const match = state()[sessionID]
     if (match) throw new Session.BusyError(sessionID)
   }
 
   export const PromptInput = z.object({
-    sessionID: SessionID.zod,
-    messageID: MessageID.zod.optional(),
+    sessionID: Identifier.schema("session"),
+    messageID: Identifier.schema("message").optional(),
     model: z
       .object({
         providerID: z.string(),
@@ -254,7 +253,7 @@ export namespace SessionPrompt {
     return s[sessionID].abort.signal
   }
 
-  export function cancel(sessionID: SessionID) {
+  export function cancel(sessionID: string) {
     log.info("cancel", { sessionID })
     const s = state()
     const match = s[sessionID]
@@ -269,7 +268,7 @@ export namespace SessionPrompt {
   }
 
   export const LoopInput = z.object({
-    sessionID: SessionID.zod,
+    sessionID: Identifier.schema("session"),
     resume_existing: z.boolean().optional(),
   })
   export const loop = fn(LoopInput, async (input) => {
@@ -354,7 +353,7 @@ export namespace SessionPrompt {
         const taskTool = await TaskTool.init()
         const taskModel = task.model ? await Provider.getModel(task.model.providerID, task.model.modelID) : model
         const assistantMessage = (await Session.updateMessage({
-          id: MessageID.ascending(),
+          id: Identifier.ascending("message"),
           role: "assistant",
           parentID: lastUser.id,
           sessionID,
@@ -379,7 +378,7 @@ export namespace SessionPrompt {
           },
         })) as MessageV2.Assistant
         let part = (await Session.updatePart({
-          id: PartID.ascending(),
+          id: Identifier.ascending("part"),
           messageID: assistantMessage.id,
           sessionID: assistantMessage.sessionID,
           type: "tool",
@@ -448,7 +447,7 @@ export namespace SessionPrompt {
         })
         const attachments = result?.attachments?.map((attachment) => ({
           ...attachment,
-          id: PartID.ascending(),
+          id: Identifier.ascending("part"),
           sessionID,
           messageID: assistantMessage.id,
         }))
@@ -503,7 +502,7 @@ export namespace SessionPrompt {
           // If we create assistant messages w/ out user ones following mid loop thinking signatures
           // will be missing and it can cause errors for models like gemini for example
           const summaryUserMsg: MessageV2.User = {
-            id: MessageID.ascending(),
+            id: Identifier.ascending("message"),
             sessionID,
             role: "user",
             time: {
@@ -514,7 +513,7 @@ export namespace SessionPrompt {
           }
           await Session.updateMessage(summaryUserMsg)
           await Session.updatePart({
-            id: PartID.ascending(),
+            id: Identifier.ascending("part"),
             messageID: summaryUserMsg.id,
             sessionID,
             type: "text",
@@ -567,7 +566,7 @@ export namespace SessionPrompt {
 
       const processor = SessionProcessor.create({
         assistantMessage: (await Session.updateMessage({
-          id: MessageID.ascending(),
+          id: Identifier.ascending("message"),
           parentID: lastUser.id,
           role: "assistant",
           mode: agent.name,
@@ -650,12 +649,7 @@ export namespace SessionPrompt {
       await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
       // Build system prompt, adding structured output instruction if needed
-      const skills = await SystemPrompt.skills(agent)
-      const system = [
-        ...(await SystemPrompt.environment(model)),
-        ...(skills ? [skills] : []),
-        ...(await InstructionPrompt.system()),
-      ]
+      const system = [...(await SystemPrompt.environment(model)), ...(await InstructionPrompt.system())]
       const format = lastUser.format ?? { type: "text" }
       if (format.type === "json_schema") {
         system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
@@ -731,7 +725,7 @@ export namespace SessionPrompt {
     throw new Error("Impossible")
   })
 
-  async function lastModel(sessionID: SessionID) {
+  async function lastModel(sessionID: string) {
     for await (const item of MessageV2.stream(sessionID)) {
       if (item.info.role === "user" && item.info.model) return item.info.model
     }
@@ -813,7 +807,7 @@ export namespace SessionPrompt {
             ...result,
             attachments: result.attachments?.map((attachment) => ({
               ...attachment,
-              id: PartID.ascending(),
+              id: Identifier.ascending("part"),
               sessionID: ctx.sessionID,
               messageID: input.processor.message.id,
             })),
@@ -916,7 +910,7 @@ export namespace SessionPrompt {
           output: truncated.content,
           attachments: attachments.map((attachment) => ({
             ...attachment,
-            id: PartID.ascending(),
+            id: Identifier.ascending("part"),
             sessionID: ctx.sessionID,
             messageID: input.processor.message.id,
           })),
@@ -960,7 +954,20 @@ export namespace SessionPrompt {
   }
 
   async function createUserMessage(input: PromptInput) {
-    const agent = await Agent.get(input.agent ?? (await Agent.defaultAgent()))
+    const requested = input.agent ?? (await Agent.defaultAgent())
+    const direct = await Agent.get(requested)
+    const fallbackName = await Agent.defaultAgent()
+    const fallback = await Agent.get(fallbackName)
+    const agent = direct ?? fallback
+    if (!agent) {
+      throw new Error(`agent "${requested}" not found and default agent "${fallbackName}" is unavailable`)
+    }
+    if (!direct && input.agent) {
+      log.warn("requested agent not found, falling back to default", {
+        requested: input.agent,
+        fallback: fallbackName,
+      })
+    }
 
     const model = input.model ?? agent.model ?? (await lastModel(input.sessionID))
     const full =
@@ -970,7 +977,7 @@ export namespace SessionPrompt {
     const variant = input.variant ?? (agent.variant && full?.variants?.[agent.variant] ? agent.variant : undefined)
 
     const info: MessageV2.Info = {
-      id: input.messageID ?? MessageID.ascending(),
+      id: input.messageID ?? Identifier.ascending("message"),
       role: "user",
       sessionID: input.sessionID,
       time: {
@@ -988,7 +995,7 @@ export namespace SessionPrompt {
     type Draft<T> = T extends MessageV2.Part ? Omit<T, "id"> & { id?: string } : never
     const assign = (part: Draft<MessageV2.Part>): MessageV2.Part => ({
       ...part,
-      id: part.id ? PartID.make(part.id) : PartID.ascending(),
+      id: part.id ?? Identifier.ascending("part"),
     })
 
     const parts = await Promise.all(
@@ -1334,7 +1341,7 @@ export namespace SessionPrompt {
     if (!Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE) {
       if (input.agent.name === "plan") {
         userMessage.parts.push({
-          id: PartID.ascending(),
+          id: Identifier.ascending("part"),
           messageID: userMessage.info.id,
           sessionID: userMessage.info.sessionID,
           type: "text",
@@ -1345,7 +1352,7 @@ export namespace SessionPrompt {
       const wasPlan = input.messages.some((msg) => msg.info.role === "assistant" && msg.info.agent === "plan")
       if (wasPlan && input.agent.name === "build") {
         userMessage.parts.push({
-          id: PartID.ascending(),
+          id: Identifier.ascending("part"),
           messageID: userMessage.info.id,
           sessionID: userMessage.info.sessionID,
           type: "text",
@@ -1365,7 +1372,7 @@ export namespace SessionPrompt {
       const exists = await Filesystem.exists(plan)
       if (exists) {
         const part = await Session.updatePart({
-          id: PartID.ascending(),
+          id: Identifier.ascending("part"),
           messageID: userMessage.info.id,
           sessionID: userMessage.info.sessionID,
           type: "text",
@@ -1384,7 +1391,7 @@ export namespace SessionPrompt {
       const exists = await Filesystem.exists(plan)
       if (!exists) await fs.mkdir(path.dirname(plan), { recursive: true })
       const part = await Session.updatePart({
-        id: PartID.ascending(),
+        id: Identifier.ascending("part"),
         messageID: userMessage.info.id,
         sessionID: userMessage.info.sessionID,
         type: "text",
@@ -1467,7 +1474,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
   }
 
   export const ShellInput = z.object({
-    sessionID: SessionID.zod,
+    sessionID: Identifier.schema("session"),
     agent: z.string(),
     model: z
       .object({
@@ -1501,16 +1508,28 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     if (session.revert) {
       await SessionRevert.cleanup(session)
     }
-    const agent = await Agent.get(input.agent)
+    const direct = await Agent.get(input.agent)
+    const fallbackName = await Agent.defaultAgent()
+    const fallback = await Agent.get(fallbackName)
+    const agent = direct ?? fallback
+    if (!agent) {
+      throw new Error(`agent "${input.agent}" not found and default agent "${fallbackName}" is unavailable`)
+    }
+    if (!direct) {
+      log.warn("requested shell agent not found, falling back to default", {
+        requested: input.agent,
+        fallback: fallbackName,
+      })
+    }
     const model = input.model ?? agent.model ?? (await lastModel(input.sessionID))
     const userMsg: MessageV2.User = {
-      id: MessageID.ascending(),
+      id: Identifier.ascending("message"),
       sessionID: input.sessionID,
       time: {
         created: Date.now(),
       },
       role: "user",
-      agent: input.agent,
+      agent: agent.name,
       model: {
         providerID: model.providerID,
         modelID: model.modelID,
@@ -1519,7 +1538,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     await Session.updateMessage(userMsg)
     const userPart: MessageV2.Part = {
       type: "text",
-      id: PartID.ascending(),
+      id: Identifier.ascending("part"),
       messageID: userMsg.id,
       sessionID: input.sessionID,
       text: "The following tool was executed by the user",
@@ -1528,7 +1547,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     await Session.updatePart(userPart)
 
     const msg: MessageV2.Assistant = {
-      id: MessageID.ascending(),
+      id: Identifier.ascending("message"),
       sessionID: input.sessionID,
       parentID: userMsg.id,
       mode: input.agent,
@@ -1554,7 +1573,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     await Session.updateMessage(msg)
     const part: MessageV2.Part = {
       type: "tool",
-      id: PartID.ascending(),
+      id: Identifier.ascending("part"),
       messageID: msg.id,
       sessionID: input.sessionID,
       tool: "bash",
@@ -1634,7 +1653,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     const proc = spawn(shell, args, {
       cwd,
       detached: process.platform !== "win32",
-      windowsHide: process.platform === "win32",
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
@@ -1718,8 +1736,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
   }
 
   export const CommandInput = z.object({
-    messageID: MessageID.zod.optional(),
-    sessionID: SessionID.zod,
+    messageID: Identifier.schema("message").optional(),
+    sessionID: Identifier.schema("session"),
     agent: z.string().optional(),
     model: z.string().optional(),
     arguments: z.string(),
