@@ -82,15 +82,6 @@ describe("pagesApi", () => {
     expect(calls[0].init?.method).toBe("DELETE")
   })
 
-  test("ai(input) calls POST /api/pages/ai", async () => {
-    const input = { action: "improve" as const, text: "hello" }
-    await pagesApi.ai(input)
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/ai")
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify(input))
-  })
-
   test("exportMarkdown(id) calls GET /:id/export/markdown", async () => {
     okJson = {
       id: "p1",
@@ -204,7 +195,6 @@ describe("pagesApi", () => {
     await pagesApi.create("t")
     await pagesApi.update("x", { title: "t" })
     await pagesApi.delete("x")
-    await pagesApi.ai({ action: "fix" })
     await pagesApi.exportMarkdown("x")
     await pagesApi.importMarkdown("x", "hello")
     await pagesApi.syncMarkdown("x")
@@ -213,7 +203,7 @@ describe("pagesApi", () => {
     await pagesApi.arenaMessage("x", { text: "hello" })
     await pagesApi.arenaControl("x", { action: "pause" })
 
-    expect(calls).toHaveLength(13)
+    expect(calls).toHaveLength(12)
     for (const call of calls) {
       const headers = call.init?.headers as Record<string, string> | undefined
       expect(headers).toBeDefined()

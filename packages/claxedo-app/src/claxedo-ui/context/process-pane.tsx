@@ -8,17 +8,19 @@
  * Lives inside DirectoryScope, outside GroupContentRenderer.
  */
 
-import { batch, createEffect, createRenderEffect, createSignal, on, onCleanup } from "solid-js"
+import { batch, createEffect, createRenderEffect, on, onCleanup, untrack } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useSDK } from "@/context/sdk"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { usePlatform } from "@/context/platform"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Persist, persisted } from "@/utils/persist"
 import { useOptionalTerminal } from "@/context/terminal"
 import type { Process } from "../../opencode-patches/process/process"
 import { useClaxedoLayout } from "./claxedo-layout"
 import { createProcessOwnership, createTerminalTabOps } from "../stores/process-ownership"
+import { AddProcessDialog } from "../components/add-process-dialog"
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -30,8 +32,6 @@ type ProcessPaneStore = {
   configs: ProcessConfig[]
   processes: Record<string, ManagedProcess>
   paneHeight: number
-  paneWidths: number[]
-  scrollIndex: number
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ function processUrl(baseUrl: string, path: string): string {
 export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimpleContext({
   name: "ProcessPane",
   gate: false,
-  init: () => {
+  init: (props: { tabId?: string }) => {
     const sdk = useSDK()
     const globalSDK = useGlobalSDK()
     const platform = usePlatform()
@@ -68,20 +68,20 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
       "x-opencode-directory": sdk.directory,
     })
 
-    // Persisted UI state (height, widths, scroll — NOT visibility)
+    const dialog = useDialog()
+
+    // Persisted UI state (height — NOT visibility)
     const [store, setStore, , ready] = persisted(
       Persist.workspace(sdk.directory, "process-pane"),
       createStore<ProcessPaneStore>({
         configs: [],
         processes: {},
         paneHeight: DEFAULT_PANE_HEIGHT,
-        paneWidths: [],
-        scrollIndex: 0,
       }),
     )
 
-    // Pane visibility is NOT persisted — always starts closed on reload
-    const [isOpen, setIsOpen] = createSignal(false)
+    // Process tab visibility: the process tab is "open" when it's the active tab.
+    // We no longer need a signal — the tab active state handles it.
 
     // ── HTTP helpers ─────────────────────────────────────────────────
 
@@ -137,9 +137,6 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
               ownership.ownProcess(configId, ptyId)
             }
           }
-
-          // Sync paneWidths to match config count
-          syncPaneWidths(data.configs.length)
         })
 
         // After owning all CURRENT process PTYs, clean up stale ones.
@@ -302,8 +299,8 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
               restartCount,
               exitedAt: Date.now(),
             })
-            // Alert workspace dot indicator when pane is closed
-            if (!isOpen()) {
+            // Alert workspace dot indicator when process tab is not active
+            if (!claxedo.processPane.isActive()) {
               claxedo.processPane.setCrashedWhileClosed(true)
             }
             break
@@ -344,7 +341,6 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             const configIds = new Set(configs.map((c) => c.id))
             batch(() => {
               setStore("configs", reconcile(configs, { key: "id" }))
-              syncPaneWidths(configs.length)
               // Reconcile process entries: keep existing for known configs,
               // create idle entries for new configs, drop removed ones.
               const next: Record<string, ManagedProcess> = {}
@@ -369,28 +365,6 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
       onCleanup(unsub)
     })
 
-    // ── Pane width management ────────────────────────────────────────
-
-    const DEFAULT_PANEL_WIDTH = 400
-    const MIN_PANEL_WIDTH = 200
-
-    function syncPaneWidths(count: number) {
-      if (count === 0) {
-        setStore("paneWidths", [])
-        return
-      }
-      const current = store.paneWidths
-      // Migrate from old fractional widths (0-1) to pixel widths
-      const needsMigration = current.length > 0 && current.some((w) => w < 10)
-      if (current.length === count && !needsMigration) return
-      const next = Array.from({ length: count }, (_, i) =>
-        !needsMigration && i < current.length && current[i] >= MIN_PANEL_WIDTH
-          ? current[i]
-          : DEFAULT_PANEL_WIDTH,
-      )
-      setStore("paneWidths", next)
-    }
-
     // ── Tab integration ──────────────────────────────────────────────
 
     // Track configIds that should be opened in a tab once their ptyId
@@ -409,21 +383,6 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
       const tabId = tabOps.addTerminalTab(dir, ptyId, title)
       if (tabId) tabOps.setActiveTab(tabId)
     }
-
-    // ── Pane visibility (per-workspace, persisted) ──────────────────
-
-    // Watch global toggle requests (keyboard shortcut, top-tab-bar same-workspace click)
-    createRenderEffect(
-      on(
-        () => claxedo.processPane.toggleVersion(),
-        () => {
-          const next = !isOpen()
-          setIsOpen(next)
-          if (next) claxedo.processPane.setCrashedWhileClosed(false)
-        },
-        { defer: true },
-      ),
-    )
 
     // ── Initial fetch ────────────────────────────────────────────────
 
@@ -450,12 +409,6 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
         ownership.resolveInitialProcessPty()
       }
     })()
-
-    // Consume pending-open request (from top-tab-bar workspace-switch click)
-    if (claxedo.processPane.consumePendingOpen()) {
-      setIsOpen(true)
-      claxedo.processPane.setCrashedWhileClosed(false)
-    }
 
     // ── Deferred stale tab cleanup ────────────────────────────────────
     // On desktop (Tauri), the ClaxedoLayout store uses async persistence.
@@ -503,41 +456,136 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
       document.removeEventListener("visibilitychange", onVisibilityChange)
     })
 
+    // ── Dynamic leaf sync ─────────────────────────────────────────────
+    // Watch configs and sync multi-pane leaves to match.
+    // Each process config gets its own leaf in the process tab's multi-pane tree.
+
+    const findProcessTabId = (): string | undefined => {
+      const tabId = props.tabId
+      if (!tabId) return undefined
+      const groupId = claxedo.findTabGroup(tabId)
+      if (!groupId) return undefined
+      const tab = claxedo.groupTabs(groupId).items().find((item) => item.id === tabId)
+      if (!tab || tab.type !== "process") return undefined
+      return tabId
+    }
+
+    createEffect(
+      on(
+        () => store.configs.map((c) => ({ id: c.id, name: c.name })),
+        (configEntries) => {
+          const tabId = findProcessTabId()
+          if (!tabId) return
+
+          const leaves = claxedo.select.multiPaneLeafView(tabId)
+          const dir = sdk.directory
+
+          // Build maps: processId → leafId, leafId → processId
+          const processIdToLeaf = new Map<string, string>()
+          const leafToProcessId = new Map<string, string>()
+          let placeholderLeafId: string | undefined
+
+          for (const leaf of leaves) {
+            const content = leaf.content
+            if (!content || content.type !== "process") continue
+            if (content.processId) {
+              processIdToLeaf.set(content.processId, leaf.id)
+              leafToProcessId.set(leaf.id, content.processId)
+            } else {
+              placeholderLeafId = leaf.id
+            }
+          }
+
+          const configIds = new Set(configEntries.map((c) => c.id))
+
+          batch(() => {
+            // Handle first load: replace placeholder with first config
+            if (placeholderLeafId && configEntries.length > 0) {
+              const first = configEntries[0]
+              claxedo.multiPane.setContent(tabId, placeholderLeafId!, {
+                type: "process",
+                directory: dir,
+                processId: first.id,
+                title: first.name,
+              })
+              processIdToLeaf.set(first.id, placeholderLeafId!)
+              leafToProcessId.set(placeholderLeafId!, first.id)
+              placeholderLeafId = undefined
+            }
+
+            // Add new configs
+            for (const config of configEntries) {
+              if (processIdToLeaf.has(config.id)) continue
+              // Find an existing leaf to split from
+              const existingLeafId = processIdToLeaf.values().next().value ?? placeholderLeafId
+              if (!existingLeafId) {
+                // No leaves at all — shouldn't happen, but initialize
+                claxedo.multiPane.initTabWithContent(tabId, {
+                  type: "process",
+                  directory: dir,
+                  processId: config.id,
+                  title: config.name,
+                })
+                return
+              }
+              const newLeafId = claxedo.multiPane.splitLeaf(tabId, "v", existingLeafId, {
+                type: "process",
+                directory: dir,
+                processId: config.id,
+                title: config.name,
+              })
+              if (newLeafId) {
+                processIdToLeaf.set(config.id, newLeafId)
+              }
+            }
+
+            // Remove leaves for deleted configs
+            for (const [leafId, processId] of leafToProcessId) {
+              if (!configIds.has(processId)) {
+                claxedo.multiPane.closeLeaf(tabId, leafId)
+              }
+            }
+
+            // Update titles for existing leaves
+            for (const config of configEntries) {
+              const leafId = processIdToLeaf.get(config.id)
+              if (!leafId) continue
+              const leaf = leaves.find((l) => l.id === leafId)
+              if (leaf?.content && leaf.content.title !== config.name) {
+                claxedo.multiPane.setContent(tabId, leafId, {
+                  ...leaf.content,
+                  title: config.name,
+                })
+              }
+            }
+          })
+        },
+        { defer: true },
+      ),
+    )
+
     // ── Exported API ─────────────────────────────────────────────────
 
-    return {
+    const api = {
       ready: () => ready(),
+
+      // Convenience wrappers — delegates to claxedo layout's tab-based process pane state
+      isOpen: () => claxedo.processPane.isActive(),
+      toggle: () => {
+        claxedo.processPane.requestToggle()
+        // Clear the crash indicator when the pane opens
+        if (claxedo.processPane.isActive()) {
+          claxedo.processPane.setCrashedWhileClosed(false)
+        }
+      },
 
       // Config accessors
       configs: () => store.configs,
 
-      // Pane visibility — per-workspace, NOT persisted (starts closed on reload)
-      isOpen,
-      toggle() {
-        const next = !isOpen()
-        setIsOpen(next)
-        if (next) claxedo.processPane.setCrashedWhileClosed(false)
-      },
-
-      // Pane sizing
+      // Pane sizing (no longer drives height — tab fills available space)
       paneHeight: () => Math.max(store.paneHeight, MIN_PANE_HEIGHT),
       setPaneHeight(height: number) {
         setStore("paneHeight", Math.max(height, MIN_PANE_HEIGHT))
-      },
-
-      paneWidths: () => store.paneWidths,
-      setPaneWidth(index: number, width: number) {
-        if (index < 0 || index >= store.paneWidths.length) return
-        setStore("paneWidths", index, width)
-      },
-
-      // Scroll position for horizontal navigation
-      scrollIndex: () => store.scrollIndex,
-      scrollLeft() {
-        setStore("scrollIndex", (i) => Math.max(0, i - 1))
-      },
-      scrollRight() {
-        setStore("scrollIndex", (i) => Math.min(store.configs.length - 1, i + 1))
       },
 
       // Derived state
@@ -577,10 +625,9 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
         try {
           const proc = await postAction<ManagedProcess>(`/${configId}/start`)
           applyProcess(proc)
-          // Auto-open the pane so the user sees the terminal
-          if (proc?.ptyId && !isOpen()) {
-            setIsOpen(true)
-            claxedo.processPane.setCrashedWhileClosed(false)
+          // Auto-activate the process tab so the user sees the terminal
+          if (proc?.ptyId && !claxedo.processPane.isActive()) {
+            claxedo.processPane.requestOpen()
           }
         } finally {
           ownership.resolveProcessPty()
@@ -636,8 +683,8 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             })
             const proc = await postAction<ManagedProcess>(`/${configId}/start`)
             applyProcess(proc)
-            if (proc?.ptyId && !isOpen()) {
-              setIsOpen(true)
+            if (proc?.ptyId && !claxedo.processPane.isActive()) {
+              claxedo.processPane.requestOpen()
             }
             return
           }
@@ -753,5 +800,35 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
       // Refresh from server
       refresh: fetchProcesses,
     }
+
+    // ── Action bridge ────────────────────────────────────────────────
+    // Consume pending actions from the tab bar buttons.
+    createEffect(
+      on(
+        () => claxedo.processPane.pendingAction(),
+        (action) => {
+          if (!action) return
+          claxedo.processPane.clearPendingAction()
+
+          switch (action) {
+            case "startAll":
+              void api.startAll()
+              break
+            case "stopAll":
+              void api.stopAll()
+              break
+            case "add":
+              dialog.show(() => (
+                <AddProcessDialog
+                  onDone={() => fetchProcesses()}
+                />
+              ))
+              break
+          }
+        },
+      ),
+    )
+
+    return api
   },
 })

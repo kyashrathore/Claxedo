@@ -103,7 +103,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }),
     )
 
-    // Merge props.servers (with password) + store.list, deduped by key (props.servers win)
+    // Merge props.servers (with password) + store.list, deduped by key (props.servers win).
+    // Always include the defaultServer so current() never returns undefined on fresh starts.
     const allServers = createMemo((): Array<ServerConnection.Any> => {
       const servers = [
         ...(props.servers ?? []),
@@ -122,6 +123,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           return [ServerConnection.key(conn), conn]
         }),
       )
+
+      // Ensure the default server is always available as a connection
+      if (!deduped.has(props.defaultServer)) {
+        const url = normalizeServerUrl(props.defaultServer as string)
+        if (url) {
+          deduped.set(props.defaultServer, { type: "http", http: { url } })
+        }
+      }
 
       return [...deduped.values()]
     })

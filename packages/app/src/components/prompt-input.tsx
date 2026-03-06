@@ -987,7 +987,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const variants = createMemo(() => ["default", ...local.model.variant.list()])
   const accepting = createMemo(() => {
-    const id = params.id
+    const id = resolvedSessionId()
     if (!id) return store.pendingAutoAccept
     return permission.isAutoAccepting(id, sdk.directory)
   })
@@ -1164,13 +1164,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       handleSubmit(event)
     }
   }
-
-  const variants = createMemo(() => ["default", ...local.model.variant.list()])
-  const accepting = createMemo(() => {
-    const id = resolvedSessionId()
-    if (!id) return false
-    return permission.isAutoAccepting(id, sdk.directory)
-  })
 
   return (
     <div class="relative size-full _max-h-[320px] flex flex-col gap-0">

@@ -160,28 +160,19 @@ describe("empty split group stays empty until explicit creation", () => {
 // ===========================================================================
 
 describe("session directory matches group worktree", () => {
-  test("uses group worktree for session directory, not route URL", () => {
+  test("empty split group does not auto-create session", () => {
     const { api, dispose } = setup()
     try {
       const { g2 } = setupSplit(api)
       api.groupWorktree(g2).setDefault("/ws-sandbox")
       api.split.setFocus(g2)
 
-      // If the system creates a session, the directory must come from the
-      // group's worktree.default, not activeWorkspaceId (route URL).
-      const fired = shouldAutoCreate(api, "/ws-main")
+      // topTabs.activeId() returns "__split_empty__" sentinel for empty split groups,
+      // which prevents shouldAutoCreate from firing. The group stays empty.
+      expect(shouldAutoCreate(api, "/ws-main")).toBe(false)
 
-      if (fired) {
-        // Current code fires and uses the route dir — assert correct dir.
-        api.topTabs.addSession("/ws-main", "new", "New Session")
-        const tab = api.groupTabs(g2).findSession("/ws-main", "new")
-          ?? api.groupTabs(g2).findSession("/ws-sandbox", "new")
-        expect(tab).toBeDefined()
-        expect(tab!.directory).toBe("/ws-sandbox")
-      } else {
-        // Correct behaviour — no auto-create at all.
-        expect(api.groupTabs(g2).items()).toHaveLength(0)
-      }
+      // Group is empty — no session was created
+      expect(api.groupTabs(g2).items()).toHaveLength(0)
     } finally {
       dispose()
     }

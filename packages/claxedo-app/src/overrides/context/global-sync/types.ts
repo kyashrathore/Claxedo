@@ -141,6 +141,22 @@ export type RootLoadResult = {
   limited: boolean
 }
 
+export type GlobalSessionItem = {
+  id: string
+  title: string
+  directory: string
+  projectID: string
+  time: { created: number; updated: number }
+}
+
+export type GlobalSessionState = {
+  byProject: Record<string, GlobalSessionItem[]>
+  projectState: Record<string, { hasMore: boolean; loading: boolean }>
+  loading: boolean
+  loaded: boolean
+  initialCursor?: number
+}
+
 export const MAX_DIR_STORES = 30
 export const DIR_IDLE_TTL_MS = 20 * 60 * 1000
 export const SESSION_RECENT_WINDOW = 4 * 60 * 60 * 1000

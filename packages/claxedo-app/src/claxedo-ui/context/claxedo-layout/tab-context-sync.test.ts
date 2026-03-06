@@ -10,11 +10,14 @@ describe("tab context sync", () => {
   test("buildTabContextSnapshot maps pane metadata and terminal ids", () => {
     const tab: TabItem = {
       id: "tab-1",
-      type: "session",
+      type: "review-workspace",
       directory: "/ws",
       sessionId: "s-1",
       terminalId: "pty-a",
       title: "Session 1",
+      reviewMode: "uncommitted",
+      reviewFromRef: "main",
+      reviewToRef: "HEAD",
       closable: true,
     }
 
@@ -50,7 +53,10 @@ describe("tab context sync", () => {
 
     expect(snapshot.groupId).toBe("g-1")
     expect(snapshot.tabId).toBe("tab-1")
-    expect(snapshot.tabType).toBe("session")
+    expect(snapshot.tabType).toBe("review-workspace")
+    expect(snapshot.reviewMode).toBe("uncommitted")
+    expect(snapshot.reviewFromRef).toBe("main")
+    expect(snapshot.reviewToRef).toBe("HEAD")
     expect(snapshot.activeLeafId).toBe("leaf-right")
     expect(snapshot.focusedLeafId).toBe("leaf-right")
     expect(snapshot.panes).toHaveLength(2)
@@ -79,6 +85,9 @@ describe("tab context sync", () => {
       directory: "/ws",
       title: "Session",
       sessionId: "s-1",
+      reviewMode: undefined,
+      reviewFromRef: undefined,
+      reviewToRef: undefined,
       pageId: undefined,
       terminalId: undefined,
       activeLeafId: "leaf-a",

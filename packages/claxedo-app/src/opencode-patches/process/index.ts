@@ -14,55 +14,50 @@ import { parse as parseJsonc } from "jsonc-parser"
 import path from "path"
 import fs from "fs/promises"
 import { watch, type FSWatcher } from "node:fs"
+import { createServer } from "node:net"
 import { buildSafeEnv } from "../pty/env"
 import { Process } from "./process"
-import { buildPortlessCommand, configChanged, resolvePortlessBin } from "./portless"
 
-export { Process, buildPortlessCommand, configChanged }
+// -- Portpick helpers (inlined to avoid workspace dependency in patched server) --
+
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer()
+    srv.listen(0, () => {
+      const addr = srv.address()
+      if (!addr || typeof addr === "string") {
+        srv.close()
+        reject(new Error("Failed to get port from server address"))
+        return
+      }
+      const port = addr.port
+      srv.close(() => resolve(port))
+    })
+    srv.on("error", reject)
+  })
+}
+
+function resolvePortTemplates(
+  env: Record<string, string>,
+  pm: Record<string, number>,
+): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [key, value] of Object.entries(env)) {
+    result[key] = value.replace(/\{\{port:([a-zA-Z0-9._-]+)\}\}/g, (_match, name) => {
+      const port = pm[name]
+      return port !== undefined ? String(port) : _match
+    })
+  }
+  return result
+}
+
+function isFlag(inject: string): boolean {
+  return inject.startsWith("-")
+}
+
+export { Process, configChanged }
 
 const log = Log.create({ service: "process" })
-
-const PORTLESS_PORT = 1355
-
-async function isPortlessRunning(): Promise<boolean> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${PORTLESS_PORT}/`, {
-      method: "HEAD",
-      signal: AbortSignal.timeout(500),
-    })
-    return res.headers.get("x-portless") === "1"
-  } catch {
-    return false
-  }
-}
-
-async function ensurePortlessDaemon(): Promise<void> {
-  if (await isPortlessRunning()) return
-
-  const portlessBin = await resolvePortlessBin()
-  if (!portlessBin) {
-    log.warn("portless binary not found, skipping daemon start")
-    return
-  }
-
-  log.info("starting portless daemon")
-  const proc = Bun.spawn([portlessBin, "proxy", "start"], {
-    stdout: "ignore",
-    stderr: "ignore",
-    stdin: "ignore",
-  })
-  await proc.exited
-
-  // Poll for readiness (max 5s)
-  for (let i = 0; i < 20; i++) {
-    await new Promise((r) => setTimeout(r, 250))
-    if (await isPortlessRunning()) {
-      log.info("portless daemon ready")
-      return
-    }
-  }
-  log.warn("portless daemon did not start within timeout")
-}
 
 const CONFIG_FILE = ".opencode/processes.jsonc"
 
@@ -303,7 +298,19 @@ async function reconcileFromDisk(): Promise<void> {
 /**
  * Check if two process configs differ in execution-relevant fields.
  */
-// configChanged and buildPortlessCommand imported from ./portless
+function configChanged(a: Process.ProcessConfig, b: Process.ProcessConfig): boolean {
+  if (a.command !== b.command) return true
+  if (JSON.stringify(a.args) !== JSON.stringify(b.args)) return true
+  if (a.cwd !== b.cwd) return true
+  if (JSON.stringify(a.env) !== JSON.stringify(b.env)) return true
+  if (a.restartPolicy !== b.restartPolicy) return true
+  if (a.maxRestarts !== b.maxRestarts) return true
+  const ap = a.port
+  const bp = b.port
+  if (!ap && !bp) return false
+  if (!ap || !bp) return true
+  return ap.name !== bp.name || ap.inject !== bp.inject
+}
 
 /**
  * Start a process by config ID.
@@ -325,23 +332,24 @@ export async function start(configId: string): Promise<Process.ManagedProcess | 
 
   const cwd = config.cwd ? path.resolve(Instance.directory, config.cwd) : Instance.directory
 
+  // --- Port assignment ---
+  const assignedPort = config.port ? await findFreePort() : undefined
+  if (config.port && assignedPort !== undefined) {
+    log.info("portpick: assigned port", { configId, name: config.port.name, port: assignedPort })
+  }
+
+  // Build port map from all running processes + this one
+  const pm = portMap()
+  if (config.port && assignedPort !== undefined) {
+    pm[config.port.name] = assignedPort
+  }
+
   const env: Record<string, string> = {
     ...buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }),
-    ...(config.env || {}),
+    ...resolvePortTemplates(config.env || {}, pm),
     OPENCODE_TERMINAL: "1",
     OPENCODE_PROCESS: config.name,
     OPENCODE_PROCESS_ID: configId,
-  }
-
-  // Ensure portless binary's directory is in PATH
-  if (config.portless) {
-    const portlessBin = await resolvePortlessBin()
-    if (portlessBin) {
-      const binDir = path.dirname(portlessBin)
-      if (env.PATH && !env.PATH.includes(binDir)) {
-        env.PATH = `${binDir}${path.delimiter}${env.PATH}`
-      }
-    }
   }
 
   const proc: Process.ManagedProcess = {
@@ -352,35 +360,29 @@ export async function start(configId: string): Promise<Process.ManagedProcess | 
     exitCode: undefined,
     startedAt: Date.now(),
     exitedAt: undefined,
+    assignedPort,
   }
   s.processes.set(configId, proc)
   Bus.publish(Process.Event.Status, { configId, status: "starting" })
 
   try {
-    // Start a persistent interactive shell. The command runs INSIDE the shell,
-    // so when it crashes/exits the shell (and terminal) stays alive — the user
-    // sees the exit status and can interact or re-run.
     const shell = process.env.SHELL || (process.platform === "darwin" ? "/bin/zsh" : "/bin/sh")
     let fullCommand = config.args?.length
       ? [config.command, ...config.args].join(" ")
       : config.command
 
-    if (config.portless) {
-      await ensurePortlessDaemon()
-      const portlessBin = await resolvePortlessBin()
-      if (!portlessBin) {
-        log.warn("portless binary not found, running without portless", { configId })
+    // Inject port via flag or env var
+    if (config.port && assignedPort !== undefined) {
+      if (isFlag(config.port.inject)) {
+        fullCommand = `${fullCommand} ${config.port.inject} ${assignedPort}`
       } else {
-        const hostname = config.portless.hostname.trim().toLowerCase()
-        const mode = config.portless.portMode || "env"
-        const value = config.portless.portValue || "PORT"
-        fullCommand = buildPortlessCommand(fullCommand, portlessBin, hostname, mode, value)
+        env[config.port.inject] = String(assignedPort)
       }
     }
 
     const info = await Pty.create({
       command: shell,
-      args: [],   // interactive shell — no -c flag
+      args: [],
       cwd,
       title: config.name,
       env,
@@ -390,9 +392,6 @@ export async function start(configId: string): Promise<Process.ManagedProcess | 
     proc.status = "running"
     s.processes.set(configId, proc)
 
-    // Send the command to the interactive shell.
-    // Wait for the shell to initialize (load rc files, print prompt).
-    // There is no PTY "shell ready" event, so we use a delay heuristic.
     await new Promise((r) => setTimeout(r, 250))
     try {
       Pty.write(info.id, fullCommand + "; printf '\\033]777;process-exit;%d\\007' $?\n")
@@ -402,7 +401,7 @@ export async function start(configId: string): Promise<Process.ManagedProcess | 
 
     Bus.publish(Process.Event.Started, { configId, ptyId: info.id })
     Bus.publish(Process.Event.Status, { configId, status: "running" })
-    log.info("process started", { configId, name: config.name, ptyId: info.id })
+    log.info("process started", { configId, name: config.name, ptyId: info.id, port: assignedPort })
 
     return proc
   } catch (err) {
@@ -782,9 +781,50 @@ export function getConfig(id: string): Process.ProcessConfig | undefined {
   return state().configs.get(id)
 }
 
-// --- Internal helpers ---
+// --- Exported helpers ---
 
-function resolveProcess(configIdOrPtyId: string): { configId: string; proc: Process.ManagedProcess | undefined } {
+export function findByName(name: string): Process.ManagedProcess | undefined {
+  const s = state()
+  const lower = name.toLowerCase()
+  for (const [configId, config] of s.configs) {
+    if (config.name.toLowerCase() === lower) {
+      return s.processes.get(configId)
+    }
+  }
+  return undefined
+}
+
+/**
+ * Find a managed process by its port name (from config.port.name).
+ */
+export function findByPortName(name: string): { configId: string; config: Process.ProcessConfig; proc: Process.ManagedProcess } | undefined {
+  const s = state()
+  for (const [configId, config] of s.configs) {
+    if (config.port?.name === name) {
+      const proc = s.processes.get(configId)
+      if (proc) return { configId, config, proc }
+    }
+  }
+  return undefined
+}
+
+/**
+ * Build a map of port name → assigned port for all running processes with portpick.
+ */
+export function portMap(): Record<string, number> {
+  const s = state()
+  const map: Record<string, number> = {}
+  for (const [configId, config] of s.configs) {
+    if (!config.port?.name) continue
+    const proc = s.processes.get(configId)
+    if (proc?.assignedPort) {
+      map[config.port.name] = proc.assignedPort
+    }
+  }
+  return map
+}
+
+export function resolveProcess(configIdOrPtyId: string): { configId: string; proc: Process.ManagedProcess | undefined } {
   const s = state()
 
   // Try config ID first

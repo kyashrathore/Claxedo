@@ -1,4 +1,5 @@
 import type { FileDiff, Session } from "@opencode-ai/sdk/v2"
+import type { ReviewMode } from "./types"
 
 export type ReviewPopoverMode = "session-turn" | "session" | "staged" | "committed" | "uncommitted" | "to-from"
 
@@ -40,6 +41,16 @@ export const REVIEW_POPOVER_MODES = [
   "uncommitted",
   "to-from",
 ] as const satisfies readonly ReviewPopoverMode[]
+
+export const REVIEW_MODE_LABEL: Record<ReviewMode, string> = {
+  "session-turn": "Session turn",
+  session: "Session",
+  staged: "Staged",
+  committed: "Committed",
+  uncommitted: "Uncommitted",
+  "vs-base": "vs base (legacy)",
+  "to-from": "to / from",
+}
 
 type Patch = Partial<ReviewModeStats>
 

@@ -6,10 +6,14 @@
  * Same pattern as the terminal FlatPaneRenderer.
  */
 
-import { For, createMemo, createEffect, on } from "solid-js"
+import { For, Show, createMemo, createEffect, on } from "solid-js"
+import { Portal } from "solid-js/web"
+import { Icon } from "@opencode-ai/ui/icon"
 import { useClaxedoLayout } from "../../context/claxedo-layout"
 import { GenericLeafNode } from "./generic-leaf-node"
+import { FloatingSessionOverlay } from "./floating-session-overlay"
 import { requestTerminalFitOnPaneFocus } from "./terminal-fit"
+import { createMultiPaneInteractions } from "./pane-interactions"
 
 export function GenericFlatPaneRenderer(props: { tabId: string; groupId: string }) {
   const claxedo = useClaxedoLayout()
@@ -20,6 +24,19 @@ export function GenericFlatPaneRenderer(props: { tabId: string; groupId: string 
 
   const isOnlyLeaf = createMemo(() => leafIds().length <= 1)
   const focusedLeaf = createMemo(() => leaves().find((leaf) => leaf.focused))
+
+  const { moveState, overState, dragPos, dragActive, startMove } = createMultiPaneInteractions({
+    tabId: props.tabId,
+    claxedo,
+  })
+
+  /** Title of the pane being dragged, for the floating preview. */
+  const dragTitle = createMemo(() => {
+    const m = moveState()
+    if (!m) return ""
+    const leaf = leafMap().get(m.id)
+    return leaf?.title ?? leaf?.content?.type ?? "Pane"
+  })
 
   createEffect(
     on(
@@ -58,13 +75,32 @@ export function GenericFlatPaneRenderer(props: { tabId: string; groupId: string 
                 content={() => leaf()?.content}
                 isFocused={() => leaf()?.focused ?? false}
                 isZoomed={() => leaf()?.zoomed ?? false}
+                isFloating={() => leaf()?.floating ?? false}
                 isOnlyLeaf={isOnlyLeaf}
+                isDragging={() => moveState()?.id === leafId}
+                isDragOver={() => overState() === leafId}
+                isDragActive={dragActive}
+                onStartMove={(e) => startMove(e, leafId)}
                 onClose={() => claxedo.dispatch({ type: "PaneCloseRequested", tabId: props.tabId, leafId })}
                 onFocus={() => claxedo.dispatch({ type: "PaneFocusRequested", tabId: props.tabId, leafId })}
               />
             </div>
           )
         }}
+      </For>
+
+      {/* Floating session overlay */}
+      <For each={leaves().filter((l) => l.floating)}>
+        {(leaf) => (
+          <FloatingSessionOverlay
+            tabId={props.tabId}
+            groupId={props.groupId}
+            leafId={leaf.id}
+            content={() => leaf.content}
+            onDock={() => claxedo.dispatch({ type: "PaneUnfloatRequested", tabId: props.tabId })}
+            onClose={() => claxedo.dispatch({ type: "PaneCloseRequested", tabId: props.tabId, leafId: leaf.id })}
+          />
+        )}
       </For>
 
       {/* Resize handles */}
@@ -118,6 +154,26 @@ export function GenericFlatPaneRenderer(props: { tabId: string; groupId: string 
           />
         )}
       </For>
+
+      {/* Floating drag preview — follows cursor while dragging */}
+      <Show when={dragActive() && dragPos()}>
+        {(pos) => (
+          <Portal>
+            <div
+              class="fixed z-50 pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background-stronger border border-border-weak-base shadow-lg"
+              style={{
+                left: `${pos().x + 12}px`,
+                top: `${pos().y - 14}px`,
+              }}
+            >
+              <Icon name="chevron-grabber-vertical" size="small" class="text-icon-weak-base" />
+              <span class="text-[12px] font-medium text-text-base whitespace-nowrap max-w-[200px] overflow-hidden text-ellipsis">
+                {dragTitle()}
+              </span>
+            </div>
+          </Portal>
+        )}
+      </Show>
     </div>
   )
 }

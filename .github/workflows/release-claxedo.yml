@@ -176,14 +176,20 @@ jobs:
           chmod +x src-tauri/sidecars/opencode-cli-${{ matrix.target }}
           ls -la src-tauri/sidecars/
 
-      - name: Compile portless sidecar
-        if: runner.os != 'Windows'
+      - name: Compile claxedo-mcp sidecar
         working-directory: packages/desktop
         shell: bash
         run: |
           set -euo pipefail
-          RUST_TARGET=${{ matrix.target }} bun run compile-portless
-          ls -la src-tauri/sidecars/portless-*
+          MCP_SOURCE="../claxedo-app/src/opencode-patches/mcp/claxedo-mcp.ts"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            MCP_DEST="src-tauri/sidecars/claxedo-mcp-${{ matrix.target }}.exe"
+          else
+            MCP_DEST="src-tauri/sidecars/claxedo-mcp-${{ matrix.target }}"
+          fi
+          bun build --compile "$MCP_SOURCE" --outfile "$MCP_DEST"
+          chmod +x "$MCP_DEST"
+          ls -la src-tauri/sidecars/claxedo-mcp-*
 
       - name: Build frontend
         working-directory: packages/claxedo-app
@@ -283,7 +289,7 @@ jobs:
             "mainBinaryName": "Claxedo",
             "identifier": "ai.claxedo.desktop",
             "bundle": {
-              "externalBin": ["sidecars/opencode-cli"],
+              "externalBin": ["sidecars/opencode-cli", "sidecars/claxedo-mcp"],
               "icon": [
                 "icons/claxedo/32x32.png",
                 "icons/claxedo/128x128.png",

@@ -13,6 +13,7 @@ import type { InitError } from "@/pages/error"
 import {
   createContext,
   createEffect,
+  createSignal,
   untrack,
   getOwner,
   useContext,
@@ -34,8 +35,9 @@ import { estimateRootSessionTotal, loadRootSessionsWithFallback, shouldUseSessio
 import { applyDirectoryEvent, applyGlobalEvent } from "@/context/global-sync/event-reducer"
 import { bootstrapDirectory, bootstrapGlobal } from "@/context/global-sync/bootstrap"
 import { sanitizeProject } from "@/context/global-sync/utils"
-import type { ProjectMeta } from "@/context/global-sync/types"
+import type { ProjectMeta, GlobalSessionItem, GlobalSessionState } from "@/context/global-sync/types"
 import { SESSION_RECENT_LIMIT } from "@/context/global-sync/types"
+import type { Session, GlobalSession } from "@opencode-ai/sdk/v2/client"
 
 type GlobalStore = {
   ready: boolean
@@ -66,10 +68,159 @@ function createGlobalSync() {
   const sessionLoads = new Map<string, Promise<void>>()
   const sessionMeta = new Map<string, { limit: number }>()
 
-  const [projectCache, setProjectCache, , projectCacheReady] = persisted(
+  // Global sessions store — one fetch for all projects
+  const [globalSessionStore, setGlobalSessionStore] = createStore<GlobalSessionState>({
+    byProject: {},
+    projectState: {},
+    loading: false,
+    loaded: false,
+  })
+
+  function toGlobalSessionItem(s: GlobalSession): GlobalSessionItem {
+    return {
+      id: s.id,
+      title: s.title || "New Session",
+      directory: s.directory,
+      projectID: s.projectID,
+      time: { created: s.time.created, updated: s.time.updated },
+    }
+  }
+
+  function insertSorted(arr: GlobalSessionItem[], item: GlobalSessionItem): GlobalSessionItem[] {
+    const next = arr.filter((x) => x.id !== item.id)
+    const idx = next.findIndex((x) => (x.time.updated ?? 0) < (item.time.updated ?? 0))
+    if (idx === -1) next.push(item)
+    else next.splice(idx, 0, item)
+    return next
+  }
+
+  async function loadGlobalSessions() {
+    if (globalSessionStore.loaded || globalSessionStore.loading) return
+    setGlobalSessionStore("loading", true)
+    try {
+      const result = await globalSDK.client.experimental.session.list({
+        roots: true,
+        limit: 100,
+      })
+      const sessions = (result.data ?? []).filter((s) => !!s?.id && !s.parentID && !s.time?.archived)
+      const cursor = result.response?.headers?.get("x-next-cursor")
+
+      // Group by projectID
+      const grouped: Record<string, GlobalSessionItem[]> = {}
+      for (const s of sessions) {
+        const item = toGlobalSessionItem(s)
+        if (!grouped[item.projectID]) grouped[item.projectID] = []
+        grouped[item.projectID].push(item)
+      }
+      // Sort each group by time.updated desc
+      for (const pid of Object.keys(grouped)) {
+        grouped[pid].sort((a, b) => (b.time.updated ?? 0) - (a.time.updated ?? 0))
+      }
+
+      setGlobalSessionStore(
+        produce((draft) => {
+          draft.byProject = grouped
+          draft.loading = false
+          draft.loaded = true
+          if (cursor) draft.initialCursor = Number(cursor)
+          // Mark hasMore for projects when cursor exists
+          if (cursor) {
+            for (const pid of Object.keys(grouped)) {
+              if (!draft.projectState[pid]) draft.projectState[pid] = { hasMore: false, loading: false }
+              draft.projectState[pid].hasMore = true
+            }
+          }
+        }),
+      )
+    } catch (err) {
+      console.error("Failed to load global sessions", err)
+      setGlobalSessionStore("loading", false)
+    }
+  }
+
+  async function loadMoreForProject(projectWorktree: string, sandboxes: string[]) {
+    // Find projectID from the child store
+    const [childStore] = children.child(projectWorktree, { bootstrap: false })
+    const projectID = childStore.project
+    if (!projectID) return
+
+    const pState = globalSessionStore.projectState[projectID]
+    if (pState?.loading) return
+
+    setGlobalSessionStore("projectState", projectID, { hasMore: pState?.hasMore ?? true, loading: true })
+
+    try {
+      const directories = [projectWorktree, ...sandboxes.filter((s) => s !== projectWorktree)]
+      const allNew: GlobalSessionItem[] = []
+
+      for (const dir of directories) {
+        const result = await globalSDK.client.experimental.session.list({
+          directory: dir,
+          roots: true,
+          limit: 20,
+        })
+        const sessions = (result.data ?? []).filter((s) => !!s?.id && !s.parentID && !s.time?.archived)
+        for (const s of sessions) {
+          allNew.push(toGlobalSessionItem(s))
+        }
+        const cursor = result.response?.headers?.get("x-next-cursor")
+
+        setGlobalSessionStore(
+          produce((draft) => {
+            const existing = draft.byProject[projectID] ?? []
+            const existingIds = new Set(existing.map((x) => x.id))
+            const merged = [...existing]
+            for (const item of allNew.filter((x) => x.directory === dir && !existingIds.has(x.id))) {
+              merged.push(item)
+            }
+            merged.sort((a, b) => (b.time.updated ?? 0) - (a.time.updated ?? 0))
+            draft.byProject[projectID] = merged
+            if (!draft.projectState[projectID]) draft.projectState[projectID] = { hasMore: false, loading: false }
+            draft.projectState[projectID].hasMore = !!cursor
+          }),
+        )
+      }
+    } catch (err) {
+      console.error("Failed to load more sessions for project", err)
+    } finally {
+      setGlobalSessionStore("projectState", projectID, "loading", false)
+    }
+  }
+
+  function applySessionEventToGlobal(info: Session, type: "created" | "updated" | "deleted") {
+    const projectID = info.projectID
+    if (!projectID) return
+    if (info.parentID) return // Only track root sessions
+
+    setGlobalSessionStore(
+      produce((draft) => {
+        const existing = draft.byProject[projectID] ?? []
+
+        if (type === "deleted" || (type === "updated" && info.time?.archived)) {
+          draft.byProject[projectID] = existing.filter((x) => x.id !== info.id)
+          return
+        }
+
+        const item: GlobalSessionItem = {
+          id: info.id,
+          title: info.title || "New Session",
+          directory: info.directory,
+          projectID,
+          time: { created: info.time.created, updated: info.time.updated },
+        }
+        draft.byProject[projectID] = insertSorted(existing, item)
+      }),
+    )
+  }
+
+  const [projectCache, setProjectCache, projectInit] = persisted(
     Persist.global("globalSync.project", ["globalSync.project.v1"]),
     createStore({ value: [] as Project[] }),
   )
+  const [projectCacheReady, setProjectCacheReady] = createSignal(!(projectInit instanceof Promise))
+  if (projectInit instanceof Promise) {
+    void projectInit.then(() => setProjectCacheReady(true))
+  }
 
   const [globalStore, setGlobalStore] = createStore<GlobalStore>({
     ready: false,
@@ -310,6 +461,18 @@ function createGlobalSync() {
           .then((x) => setStore("lsp", x.data ?? []))
       },
     })
+
+    // Sync session events to global sessions store
+    if (globalSessionStore.loaded) {
+      const sessionEventType = event.type === "session.created" ? "created"
+        : event.type === "session.updated" ? "updated"
+        : event.type === "session.deleted" ? "deleted"
+        : null
+      if (sessionEventType) {
+        const info = (event.properties as { info: Session }).info
+        applySessionEventToGlobal(info, sessionEventType)
+      }
+    }
   })
 
   onCleanup(unsub)
@@ -367,6 +530,11 @@ function createGlobalSync() {
       loadSessions,
       meta: projectMeta,
       icon: projectIcon,
+    },
+    globalSessions: {
+      store: globalSessionStore,
+      load: loadGlobalSessions,
+      loadMore: loadMoreForProject,
     },
     todo: {
       set: (sessionID: string, todos: Todo[] | undefined) => {

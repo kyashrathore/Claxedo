@@ -2,7 +2,7 @@ import { createEffect, on, type Accessor } from "solid-js"
 import { produce, type SetStoreFunction } from "solid-js/store"
 import { createTabActions } from "./tab-actions"
 import { getTabHooks as getTabHooksFromRegistry, type TabLifecycleHooks } from "./tab-type-registry"
-import { defaultGroupLayout, type ClaxedoLayoutStore } from "./types"
+import { type ClaxedoLayoutStore } from "./types"
 import { createDebugLogger } from "../../../overrides/utils/debug"
 import type { TabItem, TopTabsState, TabType } from "./types"
 
@@ -156,23 +156,7 @@ export function createGroupAccessors(input: {
   }
 
   const groupLayout = (groupId: string) => {
-    const idx = () => store.groups.findIndex((g) => g.id === groupId)
-    const dl = defaultGroupLayout()
     return {
-      fileTree: {
-        opened: (() => store.groups[idx()]?.layout?.fileTree?.opened ?? dl.fileTree.opened) as Accessor<boolean>,
-        width: (() => store.groups[idx()]?.layout?.fileTree?.width ?? dl.fileTree.width) as Accessor<number>,
-        tab: (() => "all") as Accessor<string>,
-        setOpened(v: boolean) {
-          const i = idx()
-          if (i !== -1) setStore("groups", i, "layout", "fileTree", "opened", v)
-        },
-        setWidth(v: number) {
-          const i = idx()
-          if (i !== -1) setStore("groups", i, "layout", "fileTree", "width", v)
-        },
-        setTab(_v: string) {},
-      },
       session: {
         width: (() => 600) as Accessor<number>,
         collapsed: (() => false) as Accessor<boolean>,

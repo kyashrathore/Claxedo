@@ -455,17 +455,7 @@ export const {
     })
 
     onMount(() => {
-      const roots = server.projects
-        .list()
-        .filter((project) => validWorktree(project.worktree))
-        .map((project) => rootFor(project.worktree))
-        .filter((directory, index, all) => all.indexOf(directory) === index)
-      if (roots.length === 0) return
-
-      const preferred = server.projects.last()
-      const first = preferred && roots.includes(preferred) ? preferred : roots[0]
-      if (first) void globalSync.project.loadSessions(first)
-      // Other workspaces bootstrap on-demand when user navigates to them
+      void globalSync.globalSessions.load()
     })
 
     // Sync API projects to sidebar - ensures projects from server appear in sidebar

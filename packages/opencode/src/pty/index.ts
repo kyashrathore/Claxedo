@@ -120,6 +120,10 @@ export namespace Pty {
     return state().get(id)?.info
   }
 
+  export function readBuffer(id: string): string | undefined {
+    return state().get(id)?.buffer
+  }
+
   export async function create(input: CreateInput) {
     const id = PtyID.ascending()
     const command = input.command || Shell.preferred()

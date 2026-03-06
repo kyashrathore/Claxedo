@@ -82,10 +82,11 @@ export function createSplitActions(input: {
       }
 
       const newId = `g-${Date.now()}`
+      const dir = defaultForNewGroup()
       const newGroup: GroupState = {
         id: newId,
-        tabs: createEmptyTabsState(),
-        worktree: { default: defaultForNewGroup(), pinned: null },
+        tabs: { items: [], activeId: null, order: [], closedTabs: [] },
+        worktree: { default: dir, pinned: null },
         layout: defaultGroupLayout(),
       }
       batch(() => {

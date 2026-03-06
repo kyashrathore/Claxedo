@@ -178,6 +178,33 @@ if (!skipSidecar) {
 
   // eslint-disable-next-line no-console
   console.log(`[claxedo] Sidecar copied to ${destBinary}`)
+
+  // Compile claxedo-mcp as a standalone binary alongside the sidecar
+  // eslint-disable-next-line no-console
+  console.log(`[claxedo] Step 1b: Compiling claxedo-mcp binary...`)
+
+  const mcpSource = path.join(CLAXEDO_APP_DIR, "src/opencode-patches/mcp/claxedo-mcp.ts")
+  const mcpDest = path.join(sidecarDir, `claxedo-mcp-${rustTarget}${process.platform === "win32" ? ".exe" : ""}`)
+
+  const mcpBuild = await $`bun build --compile ${mcpSource} --outfile ${mcpDest}`.nothrow()
+  if (mcpBuild.exitCode !== 0) {
+    // eslint-disable-next-line no-console
+    console.error(`[claxedo] claxedo-mcp build failed with exit code ${mcpBuild.exitCode}`)
+    process.exit(mcpBuild.exitCode)
+  }
+  await fs.promises.chmod(mcpDest, 0o755)
+
+  // On Windows, copy to both target variants
+  if (process.platform === "win32") {
+    const altTargets = ["x86_64-pc-windows-msvc", "x86_64-pc-windows-gnu"].filter((t) => t !== rustTarget)
+    for (const alt of altTargets) {
+      const altDest = path.join(sidecarDir, `claxedo-mcp-${alt}.exe`)
+      await fs.promises.copyFile(mcpDest, altDest)
+    }
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(`[claxedo] claxedo-mcp compiled to ${mcpDest}`)
 } else {
   // eslint-disable-next-line no-console
   console.log(`[claxedo] Step 1: Skipping sidecar build (--skip-sidecar)`)

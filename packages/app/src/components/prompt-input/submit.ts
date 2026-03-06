@@ -215,6 +215,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
         }
       }
+    }
     if (!session) return
 
     input.onSubmit?.()

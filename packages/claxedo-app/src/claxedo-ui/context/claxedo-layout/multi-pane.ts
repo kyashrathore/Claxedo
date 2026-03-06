@@ -14,6 +14,41 @@ function generateId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+function clonePane(pane: Pane): Pane {
+  if (pane.t === "leaf") return { t: "leaf", id: pane.id }
+  return {
+    t: "split",
+    dir: pane.dir,
+    a: clonePane(pane.a),
+    b: clonePane(pane.b),
+    size: pane.size,
+  }
+}
+
+function leafEdges(
+  pane: Pane,
+  leafId: string,
+  edges: { left: boolean; right: boolean } = { left: true, right: true },
+): { left: boolean; right: boolean } | undefined {
+  if (pane.t === "leaf") return pane.id === leafId ? edges : undefined
+  if (pane.dir === "v") {
+    return (
+      leafEdges(pane.a, leafId, { left: edges.left, right: false }) ??
+      leafEdges(pane.b, leafId, { left: false, right: edges.right })
+    )
+  }
+  return leafEdges(pane.a, leafId, edges) ?? leafEdges(pane.b, leafId, edges)
+}
+
+function liveContents(layout: PaneLayout): Array<[string, PaneContent]> {
+  const ids = new Set(paneList(layout.pane))
+  return Object.entries(layout.contents).filter(([leafId]) => ids.has(leafId))
+}
+
+function pruneContents(layout: PaneLayout): Record<string, PaneContent> {
+  return Object.fromEntries(liveContents(layout))
+}
+
 function defaultLayout(directory?: string): PaneLayout {
   const leafId = generateId("leaf")
   const contents: Record<string, PaneContent> = {}
@@ -29,7 +64,7 @@ function defaultLayout(directory?: string): PaneLayout {
   }
 }
 
-function pageSessionLayout(input: { directory: string; pageId: string; title: string }): PaneLayout {
+function pageSessionLayout(input: { directory: string; pageId: string; filePath?: string; title: string }): PaneLayout {
   const pageLeaf = generateId("leaf")
   const sessionLeaf = generateId("leaf")
   return {
@@ -48,6 +83,7 @@ function pageSessionLayout(input: { directory: string; pageId: string; title: st
           type: "page",
           directory: input.directory,
           pageId: input.pageId,
+          filePath: input.filePath,
           title: input.title,
           intent: {
             name: "doc",
@@ -80,6 +116,80 @@ function pageSessionLayout(input: { directory: string; pageId: string; title: st
       ),
     },
     focus: pageLeaf,
+  }
+}
+
+export function processSessionLayout(input: { directory: string }): PaneLayout {
+  const processLeaf = generateId("leaf")
+  return {
+    id: generateId("layout"),
+    name: "default",
+    pane: { t: "leaf", id: processLeaf },
+    contents: {
+      [processLeaf]: withPaneIntentName(
+        {
+          type: "process",
+          directory: input.directory,
+        },
+        processLeaf,
+      ),
+    },
+    focus: processLeaf,
+  }
+}
+
+export function reviewSessionLayout(input: {
+  directory: string
+  sessionId: string
+  reviewMode?: import("./types").ReviewMode
+  reviewFromRef?: string
+  reviewToRef?: string
+}): PaneLayout {
+  const reviewLeaf = generateId("leaf")
+  const sessionLeaf = generateId("leaf")
+  return {
+    id: generateId("layout"),
+    name: "default",
+    pane: {
+      t: "split",
+      dir: "v",
+      a: { t: "leaf", id: sessionLeaf },
+      b: { t: "leaf", id: reviewLeaf },
+      size: 0.45,
+    },
+    contents: {
+      [reviewLeaf]: withPaneIntentName(
+        {
+          type: "review-workspace",
+          directory: input.directory,
+          sessionId: input.sessionId,
+          reviewMode: input.reviewMode ?? "session",
+          reviewFromRef: input.reviewFromRef,
+          reviewToRef: input.reviewToRef,
+          intent: {
+            name: "review",
+            role: "reviewer",
+            refs: ["session"],
+          },
+        },
+        reviewLeaf,
+      ),
+      [sessionLeaf]: withPaneIntentName(
+        {
+          type: "session",
+          directory: input.directory,
+          sessionId: input.sessionId,
+          title: "Session",
+          intent: {
+            name: "session",
+            role: "assistant",
+            refs: ["review"],
+          },
+        },
+        sessionLeaf,
+      ),
+    },
+    focus: reviewLeaf,
   }
 }
 
@@ -155,7 +265,7 @@ export function createMultiPaneState(input: {
       })
     },
 
-    initPageSessionTab(tabId: string, input: { directory: string; pageId: string; title: string }) {
+    initPageSessionTab(tabId: string, input: { directory: string; pageId: string; filePath?: string; title: string }) {
       const layout = pageSessionLayout(input)
       setStore("multiPane", tabId, {
         layouts: [layout],
@@ -233,10 +343,8 @@ export function createMultiPaneState(input: {
       const ids = paneList(layout.pane)
       if (ids.length <= 1) return // Don't close last pane
       reduceInLayout(tabId, { type: "close", id: leafId })
-      // Remove content entry
-      const contents = { ...layout.contents }
-      delete contents[leafId]
-      setStore("multiPane", tabId, "layouts", idx, "contents", contents)
+      const nextLayout = store.multiPane[tabId]!.layouts[idx]
+      setStore("multiPane", tabId, "layouts", idx, "contents", pruneContents(nextLayout))
     },
 
     resize(tabId: string, path: string, size: number) {
@@ -267,6 +375,144 @@ export function createMultiPaneState(input: {
       const content = layout.contents[leafId]
       if (!content) return
       return withPaneIntentName(content, leafId)
+    },
+
+    float(tabId: string, leafId: string) {
+      const idx = activeLayoutIndex(tabId)
+      if (idx === -1) return
+      const layout = store.multiPane[tabId]!.layouts[idx]
+      // Only allow floating a session leaf
+      const content = layout.contents[leafId]
+      if (!content || content.type !== "session") return
+      setStore("multiPane", tabId, "layouts", idx, "floating", leafId)
+    },
+
+    unfloat(tabId: string) {
+      const idx = activeLayoutIndex(tabId)
+      if (idx === -1) return
+      setStore("multiPane", tabId, "layouts", idx, "floating", undefined)
+    },
+
+    /** Check whether the active layout for a tab contains a filetree pane */
+    hasFileTree(tabId: string): boolean {
+      const layout = activeLayout(tabId)
+      if (!layout) return false
+      return liveContents(layout).some(([, content]) => content.type === "filetree")
+    },
+
+    /** Check whether the active layout for a tab contains a review workspace pane */
+    hasReviewWorkspace(tabId: string): boolean {
+      const layout = activeLayout(tabId)
+      if (!layout) return false
+      return liveContents(layout).some(([, content]) => content.type === "review-workspace")
+    },
+
+    /** Toggle a filetree pane in the active layout. If one exists, remove it; otherwise insert one. */
+    toggleFileTree(tabId: string, directory: string) {
+      const layout = activeLayout(tabId)
+      if (!layout) return
+
+      const existing = liveContents(layout).find(([, content]) => content.type === "filetree")
+      if (!existing && Object.values(layout.contents).some((content) => content.type === "filetree")) {
+        const idx = activeLayoutIndex(tabId)
+        if (idx !== -1) setStore("multiPane", tabId, "layouts", idx, "contents", pruneContents(layout))
+      }
+      if (existing) {
+        // Remove it — reuse closeLeaf (but only if not the last pane)
+        const ids = paneList(layout.pane)
+        if (ids.length > 1) {
+          const idx = activeLayoutIndex(tabId)
+          if (idx === -1) return
+          reduceInLayout(tabId, { type: "close", id: existing[0] })
+          const nextLayout = store.multiPane[tabId]!.layouts[idx]
+          setStore("multiPane", tabId, "layouts", idx, "contents", pruneContents(nextLayout))
+        }
+        return
+      }
+
+      const reviewLeafId =
+        (layout.focus && layout.contents[layout.focus]?.type === "review-workspace" ? layout.focus : undefined) ??
+        Object.entries(layout.contents).find(([, c]) => c.type === "review-workspace")?.[0]
+      const reviewEdges = reviewLeafId ? leafEdges(layout.pane, reviewLeafId) : undefined
+      const openRight = !!reviewEdges?.right && !reviewEdges.left
+      const idx = activeLayoutIndex(tabId)
+      if (idx === -1) return
+      const newLeafId = generateId("leaf")
+      const currentRoot = clonePane(layout.pane)
+      const newRoot: Pane = {
+        t: "split",
+        dir: "v",
+        a: openRight ? currentRoot : { t: "leaf", id: newLeafId },
+        b: openRight ? { t: "leaf", id: newLeafId } : currentRoot,
+        size: openRight ? 0.8 : 0.2,
+      }
+      setStore("multiPane", tabId, "layouts", idx, "pane", newRoot)
+      setStore("multiPane", tabId, "layouts", idx, "contents", newLeafId, withPaneIntentName({
+        type: "filetree",
+        directory,
+      }, newLeafId))
+      // Don't steal focus — keep existing focused leaf
+    },
+
+    /** Toggle a review-workspace pane in the active layout. */
+    toggleReviewWorkspace(
+      tabId: string,
+      directory: string,
+      sessionId?: string,
+      reviewMode?: import("./types").ReviewMode,
+    ) {
+      const layout = activeLayout(tabId)
+      if (!layout) return
+      const sid = sessionId && sessionId !== "new" ? sessionId : "new"
+      const mode = reviewMode ?? (sid === "new" ? "uncommitted" : "session")
+
+      const existing = liveContents(layout).find(([, content]) => content.type === "review-workspace")
+      if (!existing && Object.values(layout.contents).some((content) => content.type === "review-workspace")) {
+        const idx = activeLayoutIndex(tabId)
+        if (idx !== -1) setStore("multiPane", tabId, "layouts", idx, "contents", pruneContents(layout))
+      }
+      if (existing) {
+        const ids = paneList(layout.pane)
+        if (ids.length > 1) {
+          const idx = activeLayoutIndex(tabId)
+          if (idx === -1) return
+          reduceInLayout(tabId, { type: "close", id: existing[0] })
+          const nextLayout = store.multiPane[tabId]!.layouts[idx]
+          setStore("multiPane", tabId, "layouts", idx, "contents", pruneContents(nextLayout))
+        }
+        return
+      }
+
+      const idx = activeLayoutIndex(tabId)
+      if (idx === -1) return
+      const newLeafId = generateId("leaf")
+      const currentRoot = clonePane(layout.pane)
+      const newRoot: Pane = {
+        t: "split",
+        dir: "v",
+        a: currentRoot,
+        b: { t: "leaf", id: newLeafId },
+        size: 0.65,
+      }
+      setStore("multiPane", tabId, "layouts", idx, "pane", newRoot)
+      setStore(
+        "multiPane",
+        tabId,
+        "layouts",
+        idx,
+        "contents",
+        newLeafId,
+        withPaneIntentName(
+          {
+            type: "review-workspace",
+            directory,
+            sessionId: sid,
+            reviewMode: mode,
+          },
+          newLeafId,
+        ),
+      )
+      setStore("multiPane", tabId, "layouts", idx, "focus", newLeafId)
     },
 
     /** Get all leaf IDs for the active layout */

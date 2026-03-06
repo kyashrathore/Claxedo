@@ -1105,11 +1105,7 @@
     height: 1em;
   }
   .notion-ai-prompt-send-busy .notion-ai-send-icon {
-    animation: notion-ai-send-spin 0.7s linear infinite;
-  }
-  @keyframes notion-ai-send-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    opacity: 0.8;
   }
   .notion-ai-menu-title {
     font-size: 11px;
@@ -1140,50 +1136,30 @@
   .notion-ai-menu-list::-webkit-scrollbar {
     display: none;
   }
-  .notion-ai-runlog {
-    width: calc(100% - 34px);
-    margin: 0 auto;
-    padding: 8px 10px;
-    border: 1px solid var(--border-weak-base);
-    border-radius: 11px;
-    background: color-mix(in oklch, var(--background-stronger) 95%, transparent);
-    box-shadow: var(--shadow-sm);
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    max-height: 120px;
-    overflow: auto;
+  /* Pulsating three-dot indicator for AI busy state */
+  .notion-ai-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    vertical-align: middle;
+    padding: 0 2px;
   }
-  .notion-ai-runlog-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 7px;
-    font-size: 12px;
-    line-height: 1.35;
-    color: var(--text-weak);
+  .notion-ai-dots::before,
+  .notion-ai-dots > span,
+  .notion-ai-dots::after {
+    content: "";
+    display: block;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: notion-ai-dot-pulse 1.2s ease-in-out infinite;
   }
-  .notion-ai-runlog-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    margin-top: 5px;
-    background: color-mix(in oklch, var(--text-weaker) 75%, transparent);
-    flex-shrink: 0;
-  }
-  .notion-ai-runlog-item-success {
-    color: color-mix(in oklch, #16a34a 65%, var(--text-base));
-  }
-  .notion-ai-runlog-item-success .notion-ai-runlog-dot {
-    background: color-mix(in oklch, #16a34a 70%, transparent);
-  }
-  .notion-ai-runlog-item-error {
-    color: color-mix(in oklch, #ef4444 72%, var(--text-base));
-  }
-  .notion-ai-runlog-item-error .notion-ai-runlog-dot {
-    background: color-mix(in oklch, #ef4444 75%, transparent);
-  }
-  .notion-ai-runlog-text {
-    white-space: normal;
+  .notion-ai-dots > span { animation-delay: 0.2s; }
+  .notion-ai-dots::after { animation-delay: 0.4s; }
+  @keyframes notion-ai-dot-pulse {
+    0%, 60%, 100% { opacity: 0.25; transform: scale(0.85); }
+    30% { opacity: 1; transform: scale(1); }
   }
   .notion-ai-preview {
     position: fixed;
@@ -1371,10 +1347,10 @@
     color: var(--text-weaker);
   }
 
-  /* ── Right-side TOC rail ── */
+  /* ── Right-side TOC rail (scoped to pane, not viewport) ── */
   .notion-toc-wrap {
-    position: fixed;
-    right: calc(18px + var(--file-tree-offset, 0px));
+    position: absolute;
+    right: 18px;
     top: 50%;
     transform: translateY(-50%);
     z-index: 45;
@@ -1385,7 +1361,7 @@
   }
   .notion-toc-wrap-side-right {
     left: auto;
-    right: calc(var(--page-side-dock-width, calc(50% - 12px)) + 16px + var(--file-tree-offset, 0px));
+    right: calc(var(--page-side-dock-width, calc(50% - 12px)) + 16px);
   }
   .notion-toc-wrap-side-left .notion-toc-menu {
     left: calc(100% + 1px);
@@ -1649,12 +1625,6 @@
       padding: 8px 8px 8px;
       border-radius: 0 0 12px 12px;
       max-height: none;
-    }
-    .notion-ai-runlog {
-      width: calc(100% - 6px);
-      margin-top: 3px;
-      padding: 7px 8px;
-      max-height: 104px;
     }
     .notion-ai-menu-item {
       padding: 7px 10px;

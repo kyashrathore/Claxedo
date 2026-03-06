@@ -93,6 +93,9 @@ function createTestLayout() {
     dispose = d
     return initLayout()
   })
+  // Tests exercise floating hover behavior — start unpinned and collapsed
+  api.rail.unpin()
+  api.rail.collapse()
   return { api, dispose }
 }
 

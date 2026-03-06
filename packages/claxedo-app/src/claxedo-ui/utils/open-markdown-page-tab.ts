@@ -2,7 +2,7 @@ import { getFilename } from "@opencode-ai/util/path"
 import { pagesApi } from "../../utils/pages-api"
 
 type Tabs = {
-  addPage: (pageId: string, title: string, directory?: string) => string
+  addPage: (pageId: string, title: string, directory?: string, filePath?: string) => string
   setActive: (tabId: string) => void
 }
 
@@ -122,6 +122,6 @@ export async function openMarkdownPageTab(input: { directory: string; path: stri
 
   map[key] = page.id
   writeStore(map)
-  const tabId = input.tabs.addPage(page.id, page.title || title, directory)
+  const tabId = input.tabs.addPage(page.id, page.title || title, directory, path)
   if (tabId) input.tabs.setActive(tabId)
 }

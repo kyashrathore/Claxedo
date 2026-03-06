@@ -27,7 +27,6 @@ import {
   type JSX,
   type Accessor,
 } from "solid-js"
-import { createMediaQuery } from "@solid-primitives/media"
 import { DragDropProvider, DragDropSensors, DragOverlay, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { useClaxedoLayout, ClaxedoLayoutProvider, type TabItem } from "../context/claxedo-layout"
@@ -35,9 +34,6 @@ import { RailSidebar, type ProjectItem, type WorkspaceItem } from "./rail-sideba
 import { TopTabBar, TabDragOverlay, WorkspaceBar, type WorkspaceBarProject } from "./top-tab-bar"
 import { GroupContentRenderer } from "../components/group-content-renderer"
 import { toggleMarkdownPreview, isMarkdownPath } from "../components/tab-file"
-import { FileTreeSidebar } from "../components/file-tree-sidebar"
-import { ProcessPane } from "../components/process-pane"
-import { ProcessPaneProvider } from "../context/process-pane"
 import { SDKProvider } from "@/context/sdk"
 import { useCommand, useServer, getAvatarColors } from "@opencode-ai/claxedo-app"
 import { Avatar } from "@opencode-ai/ui/avatar"
@@ -132,9 +128,19 @@ export type RailLayoutProps = ParentProps<{
   onNewPage?: (groupId?: string) => void
 
   /**
+   * Callback to create a new review workspace tab
+   */
+  onNewReview?: (workspaceDir: string, groupId?: string) => void
+
+  /**
    * Callback when a tab is selected
    */
   onTabSelect?: (tab: import("../context/claxedo-layout").TabItem) => void
+
+  /**
+   * Callback when a tab is closed (to sync URL with the new active tab)
+   */
+  onTabClose?: (nextActiveTab: import("../context/claxedo-layout").TabItem | undefined) => void
 
   /**
    * Render function for empty state (shown when no project selected)
@@ -176,31 +182,103 @@ function GroupPanel(gp: GroupPanelProps) {
     legacyKey: "opencode.debug.terminal",
   })
   const wt = claxedo.groupWorktree(gp.groupId)
-  const gl = createMemo(() => claxedo.groupLayout(gp.groupId))
   const tabs = createMemo(() => claxedo.groupTabs(gp.groupId))
-  const mobile = createMediaQuery("(max-width: 767px)")
-  const sidebarDir = createMemo(() => wt.default() ?? tabs().active()?.directory)
+  const activeTab = createMemo(() => claxedo.select.groupActiveTab(gp.groupId))
 
-  // Derive ProcessPane directory from focused group rather than URL.
-  // ProcessPane is a single global pane and should attach to the currently
-  // focused group so opening from group B renders in group B.
-  const processPaneDir = createMemo(() => {
-    const target = claxedo.processPane?.targetDirectory?.()
-    if (target) return target
-    const focusedId = claxedo.split.focusedId()
-    if (!focusedId) return undefined
-    const fwt = claxedo.groupWorktree(focusedId)
-    return fwt.default() ?? claxedo.groupTabs(focusedId).active()?.directory
+  const hasProjects = () => gp.props.projects.length > 0
+
+  /** Resolve a real workspace directory, excluding process-tab sentinel values. */
+  const resolveDir = () => {
+    const d = wt.default()
+    if (d) return d
+    const active = activeTab()
+    if (active && active.type !== "process") return active.directory
+    return undefined
+  }
+
+  const resolveSessionId = () => {
+    const current = activeTab()
+    if (!current) return
+    if (current.sessionId && current.sessionId !== "new") return current.sessionId
+    const layout = claxedo.multiPane.activeLayout(current.id)
+    const values = layout ? Object.values(layout.contents) : []
+    return values.find(
+      (content) =>
+        (content.type === "session" ||
+          content.type === "review" ||
+          content.type === "review-workspace" ||
+          content.type === "context") &&
+        content.sessionId &&
+        content.sessionId !== "new",
+    )?.sessionId
+  }
+
+  const hasCurrentProcessTab = createMemo(() => {
+    const dir = resolveDir()
+    if (!dir) return false
+    return tabs().items().some((t) => t.type === "process" && t.directory === dir)
   })
 
   return (
     <div class="flex flex-col h-full w-full overflow-hidden">
+      {/* When no projects exist, show only the empty state */}
+      <Show when={!hasProjects()}>
+        <div class="flex flex-col items-center justify-center h-full text-text-weak gap-4">
+          <span class="text-14-regular">No projects yet. Create one to get started.</span>
+          <Button icon="plus-small" onClick={() => gp.props.onNewProject?.()}>
+            New Project
+          </Button>
+        </div>
+      </Show>
+
+      <Show when={hasProjects()}>
       {/* Workspace bar - shows projects and their workspaces */}
       <WorkspaceBar
         projects={gp.workspaceBarProjects()}
         defaultDirectory={wt.default()}
         pinnedDirectory={wt.pinned()}
         activeProjectId={gp.props.activeProjectId}
+        onNewSession={() => {
+          const dir = resolveDir()
+          if (!dir) return
+          flow.log("new session button", {
+            groupId: gp.groupId,
+            dir,
+            defaultDir: wt.default(),
+            activeTabId: tabs().activeId(),
+            activeTabDir: tabs().active()?.directory,
+          })
+          gp.props.onNewSession?.(dir, gp.groupId)
+        }}
+        onNewTerminal={(command, title) => {
+          const dir = resolveDir()
+          if (!dir) return
+          flow.log("new terminal button", {
+            groupId: gp.groupId,
+            dir,
+            command,
+            title,
+            defaultDir: wt.default(),
+            activeTabId: tabs().activeId(),
+            activeTabDir: tabs().active()?.directory,
+          })
+          gp.props.onNewTerminal?.(dir, command, title, gp.groupId)
+        }}
+        onNewPage={() => gp.props.onNewPage?.(gp.groupId)}
+        onProcesses={() => {
+          const dir = resolveDir()
+          if (!dir) return
+          const process = tabs().items().find((t) => t.type === "process" && t.directory === dir)
+          claxedo.processPane.setTargetDirectory?.(dir)
+          claxedo.dispatch({ type: "SplitFocusRequested", groupId: gp.groupId })
+          if (process) {
+            tabs().setActive(process.id)
+            return
+          }
+          tabs().addProcess(dir)
+        }}
+        onSettings={gp.props.onSettings}
+        showProcesses={!hasCurrentProcessTab()}
         allProjects={gp.allProjects}
         visibleWorkspaces={gp.visibleWorkspaces}
         onToggleWorkspace={gp.onToggleWorkspace}
@@ -276,35 +354,44 @@ function GroupPanel(gp: GroupPanelProps) {
       >
         <TopTabBar
           groupId={gp.groupId}
-          onNewSession={() => {
-            const dir = wt.default() ?? tabs().active()?.directory
+          onNewReview={() => {
+            const dir = resolveDir()
             if (!dir) return
-            flow.log("new session button", {
-              groupId: gp.groupId,
-              dir,
-              defaultDir: wt.default(),
-              activeTabId: tabs().activeId(),
-              activeTabDir: tabs().active()?.directory,
-            })
-            gp.props.onNewSession?.(dir, gp.groupId)
+            gp.props.onNewReview?.(dir, gp.groupId)
           }}
-          onNewTerminal={(command, title) => {
-            const dir = wt.default() ?? tabs().active()?.directory
+          onToggleReviewPane={() => {
+            const dir = resolveDir()
             if (!dir) return
-            flow.log("new terminal button", {
-              groupId: gp.groupId,
-              dir,
-              command,
-              title,
-              defaultDir: wt.default(),
-              activeTabId: tabs().activeId(),
-              activeTabDir: tabs().active()?.directory,
-            })
-            gp.props.onNewTerminal?.(dir, command, title, gp.groupId)
+            const current = activeTab()
+            if (!current) return
+            const sessionId = resolveSessionId()
+            const mode = sessionId ? "session" : "uncommitted"
+            claxedo.multiPane.toggleReviewWorkspace(current.id, dir, sessionId, mode)
           }}
-          onNewPage={() => gp.props.onNewPage?.(gp.groupId)}
           onTabSelect={gp.props.onTabSelect}
-          onSettings={gp.props.onSettings}
+          onTabClose={gp.props.onTabClose}
+          onToggleFileTree={() => {
+            const dir = resolveDir()
+            if (!dir) return
+            const current = activeTab()
+            if (!current) return
+            claxedo.dispatch({
+              type: "FileTreePaneToggleRequested",
+              tabId: current.id,
+              directory: dir,
+            })
+          }}
+          fileTreeActive={(() => {
+            const current = activeTab()
+            return current ? claxedo.multiPane.hasFileTree(current.id) : false
+          })()}
+          reviewPaneActive={(() => {
+            const current = activeTab()
+            return current ? claxedo.multiPane.hasReviewWorkspace(current.id) : false
+          })()}
+          onStartAllProcesses={() => claxedo.processPane.requestStartAll()}
+          onStopAllProcesses={() => claxedo.processPane.requestStopAll()}
+          onAddProcess={() => claxedo.processPane.requestAddProcess()}
           onSidebarToggle={() => {
             if (window.innerWidth < 768) {
               gp.toggleMobileSidebar()
@@ -327,53 +414,24 @@ function GroupPanel(gp: GroupPanelProps) {
         </Show>
       </div>
 
-      {/* Content area wrapper — relative positioned so ProcessPane overlays on top */}
-      <div class="relative flex-1 min-h-0 overflow-hidden isolate">
-        <div class="relative size-full min-h-0 flex overflow-hidden">
-          {/* Main content - rendered by GroupContentRenderer based on active tab.
-              Do not gate on route-level activeWorkspaceId; groups can have active tabs
-              for workspaces not reflected in the current URL (split/group-specific state). */}
-          <div class="flex-1 min-w-0 min-h-0 h-full">
-            <GroupContentRenderer
-              groupId={gp.groupId}
-              renderEmpty={() => (
-                <div class="flex flex-col items-center justify-center h-full text-text-weak gap-4">
-                  <span class="text-14-regular">Select a session or create a new one</span>
-                  <Button icon="plus-small" onClick={() => gp.props.onNewProject?.()}>
-                    New Project
-                  </Button>
-                </div>
-              )}
-            />
-          </div>
-
-          <FileTreeSidebar
-            groupId={gp.groupId}
-            directory={sidebarDir()}
-            opened={gl().fileTree.opened()}
-            width={gl().fileTree.width()}
-            mobile={mobile()}
-            onResize={gl().fileTree.setWidth}
-            onCollapse={() => gl().fileTree.setOpened(false)}
-            onCloseMobile={() => gl().fileTree.setOpened(false)}
-          />
-        </div>
-
-        {/* Process pane — absolute overlay from bottom, does not squeeze tab content.
-            Wrapped with SDKProvider + ProcessPaneProvider to provide SDK context
-            for HTTP calls and Terminal component.
-            Renders only in the focused group to keep a single pane instance
-            while matching the user's active split panel. */}
-        <Show when={claxedo.split.focusedId() === gp.groupId && processPaneDir()} keyed>
-          {(dir) => (
-            <SDKProvider directory={() => dir}>
-              <ProcessPaneProvider>
-                <ProcessPane />
-              </ProcessPaneProvider>
-            </SDKProvider>
+      {/* Content area */}
+      <div class="relative flex-1 min-h-0 overflow-hidden">
+        {/* Main content - rendered by GroupContentRenderer based on active tab.
+            Do not gate on route-level activeWorkspaceId; groups can have active tabs
+            for workspaces not reflected in the current URL (split/group-specific state). */}
+        <GroupContentRenderer
+          groupId={gp.groupId}
+          renderEmpty={() => (
+            <div class="flex flex-col items-center justify-center h-full text-text-weak gap-4">
+              <span class="text-14-regular">Select a session or create a new one</span>
+              <Button icon="plus-small" onClick={() => gp.props.onNewProject?.()}>
+                New Project
+              </Button>
+            </div>
           )}
-        </Show>
+        />
       </div>
+      </Show>
     </div>
   )
 }
@@ -534,7 +592,7 @@ function SharedTabDragDrop(props: { children: JSX.Element }) {
   )
 }
 
-function RailLayoutInner(props: RailLayoutProps) {
+function RailLayoutBody(props: RailLayoutProps) {
   const claxedo = useClaxedoLayout()
   const command = useCommand()
   const server = useServer()
@@ -795,43 +853,24 @@ function RailLayoutInner(props: RailLayoutProps) {
       tabDirs.add(dir)
     }
 
-    // Find projects that have tabs open OR are visible, and build workspace list
-    const projectMap = new Map<string, WorkspaceBarProject>()
-
-    for (const dir of tabDirs) {
-      // Find which project this directory belongs to
-      const project = props.projects.find((p) => p.worktree === dir || p.sandboxes?.includes(dir))
-      if (!project) continue
-
-      // Get or create project entry
-      let projEntry = projectMap.get(project.id)
-      if (!projEntry) {
-        projEntry = {
-          id: project.id,
-          name: project.name || getFilename(project.worktree),
-          worktree: project.worktree,
-          workspaces: [],
-        }
-        projectMap.set(project.id, projEntry)
-      }
-
-      // Check if workspace already added
-      if (projEntry.workspaces.some((ws) => ws.directory === dir)) continue
-
-      // Add workspace to project
-      const isMain = dir === project.worktree
-      projEntry.workspaces.push({
-        id: dir,
-        directory: dir,
-        name: isMain ? "main" : getFilename(dir),
-        notification: false,
-        isMain,
-        projectWorktree: project.worktree,
-        canDelete: !isMain,
-      })
-    }
-
-    return Array.from(projectMap.values())
+    return props.projects.flatMap((project) => {
+      const workspaces = getProjectWorkspaces(project).filter((workspace) => tabDirs.has(workspace.directory))
+      if (workspaces.length === 0) return []
+      return [{
+        id: project.id,
+        name: project.name || getFilename(project.worktree),
+        worktree: project.worktree,
+        workspaces: workspaces.map((workspace) => ({
+          id: workspace.id,
+          directory: workspace.directory,
+          name: workspace.name || getFilename(workspace.directory),
+          notification: false,
+          isMain: workspace.isMain,
+          projectWorktree: workspace.projectWorktree,
+          canDelete: workspace.canDelete,
+        })),
+      }]
+    })
   })
 
   const worktreeInfo = (dir: string) => {
@@ -931,7 +970,7 @@ function RailLayoutInner(props: RailLayoutProps) {
 
         {/* Collapsed sidebar strip — compact project icons + toggle when sidebar is unpinned */}
         <Show when={!sidebarPinned()}>
-          <div class="shrink-0 flex flex-col border-r border-border-weak-base" style={{ width: "40px" }}>
+          <div class="shrink-0 flex flex-col border-r border-border-weak-base/50" style={{ width: "40px" }}>
             {/* Top — matches workspace bar height so borders align */}
             <div class="h-9 shrink-0 flex items-center justify-center border-b border-border-weak-base/50">
               <Tooltip placement="right" value="Show Sidebar">
@@ -975,7 +1014,7 @@ function RailLayoutInner(props: RailLayoutProps) {
             </div>
           </div>
         </Show>
-        <div class="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden bg-background-stronger transition-all duration-200 ease-out border-l border-border-weak-base max-md:!border-l-0">
+        <div class="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden bg-background-stronger transition-all duration-200 ease-out">
           <SharedTabDragDrop>
             <div
               class="flex flex-1 min-h-0 overflow-hidden"
@@ -988,6 +1027,8 @@ function RailLayoutInner(props: RailLayoutProps) {
                       <SplitResizeHandle index={i()} />
                     </Show>
                     <div
+                      data-group-id={group.id}
+                      data-group-focused={group.id === claxedo.split.focusedId() ? "" : undefined}
                       style={{
                         flex: claxedo.split.hidden() ? "1 1 100%" : `0 0 ${claxedo.split.sizes()[i()] * 100}%`,
                         opacity: claxedo.split.active() && group.id !== claxedo.split.focusedId() ? "0.7" : "1",
@@ -1038,6 +1079,19 @@ function RailLayoutInner(props: RailLayoutProps) {
       </div>
     </div>
   )
+}
+
+function RailLayoutInner(props: RailLayoutProps) {
+  try {
+    useClaxedoLayout()
+    return <RailLayoutBody {...props} />
+  } catch {
+    return (
+      <ClaxedoLayoutProvider>
+        <RailLayoutBody {...props} />
+      </ClaxedoLayoutProvider>
+    )
+  }
 }
 
 /**

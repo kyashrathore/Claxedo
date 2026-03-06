@@ -335,39 +335,6 @@ export const slashCommandItems: SlashCommandItem[] = [
     },
   },
   {
-    id: "text-red",
-    group: "Inline styles",
-    title: "Text color red",
-    description: "Set selected text color",
-    icon: "A",
-    search: "text color red",
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setColor("#ef4444").run()
-    },
-  },
-  {
-    id: "subscript",
-    group: "Inline styles",
-    title: "Subscript",
-    description: "Toggle subscript",
-    icon: "x₂",
-    search: "subscript",
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).toggleSubscript().run()
-    },
-  },
-  {
-    id: "superscript",
-    group: "Inline styles",
-    title: "Superscript",
-    description: "Toggle superscript",
-    icon: "x²",
-    search: "superscript",
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).toggleSuperscript().run()
-    },
-  },
-  {
     id: "link",
     group: "Inline styles",
     title: "Link",
@@ -385,39 +352,6 @@ export const slashCommandItems: SlashCommandItem[] = [
         return
       }
       editor.chain().focus().deleteRange(range).setLink({ href: value }).run()
-    },
-  },
-  {
-    id: "align-left",
-    group: "Layout",
-    title: "Align left",
-    description: "Set text alignment to left",
-    icon: "≡",
-    search: "left align text",
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setTextAlign("left").run()
-    },
-  },
-  {
-    id: "align-center",
-    group: "Layout",
-    title: "Align center",
-    description: "Set text alignment to center",
-    icon: "≣",
-    search: "center align text",
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setTextAlign("center").run()
-    },
-  },
-  {
-    id: "align-right",
-    group: "Layout",
-    title: "Align right",
-    description: "Set text alignment to right",
-    icon: "☰",
-    search: "right align text",
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setTextAlign("right").run()
     },
   },
   {

@@ -10,8 +10,10 @@ import { describeRoute, validator, resolver } from "hono-openapi"
 import z from "zod"
 import { lazy } from "@/util/lazy"
 import { errors } from "@/server/error"
+import { Pty } from "@/pty"
 import { Process } from "./process"
 import * as ProcessManager from "./index"
+import { collectDiagnostics, terminateDiagnostic } from "./diagnostics"
 
 export const ProcessRoutes = lazy(() =>
   new Hono()
@@ -271,6 +273,160 @@ export const ProcessRoutes = lazy(() =>
       async (c) => {
         await ProcessManager.stopAll()
         return c.json(true)
+      },
+    )
+    .get(
+      "/diagnostics",
+      describeRoute({
+        summary: "Get process diagnostics",
+        description:
+          "Return managed process state, tracked PTYs, and OS-level processes spawned by OpenCode/Claxedo, " +
+          "including memory and CPU usage plus stale/suspect classification.",
+        operationId: "process.diagnostics",
+        responses: {
+          200: {
+            description: "Diagnostics snapshot",
+            content: {
+              "application/json": {
+                schema: resolver(Process.DiagnosticSnapshot),
+              },
+            },
+          },
+        },
+      }),
+      async (c) => {
+        const snapshot = await collectDiagnostics({
+          directory: c.req.query("directory") || c.req.header("x-opencode-directory") || process.cwd(),
+          configs: ProcessManager.configs(),
+          processes: ProcessManager.list(),
+          ptys: Pty.list(),
+        })
+        return c.json(snapshot)
+      },
+    )
+    .post(
+      "/diagnostics/terminate",
+      describeRoute({
+        summary: "Terminate diagnostic target",
+        description:
+          "Terminate a managed process, tracked PTY, or raw OS process surfaced by process diagnostics.",
+        operationId: "process.diagnostics.terminate",
+        responses: {
+          200: {
+            description: "Target terminated",
+            content: {
+              "application/json": {
+                schema: resolver(z.boolean()),
+              },
+            },
+          },
+          ...errors(400),
+        },
+      }),
+      validator("json", Process.DiagnosticTerminateInput),
+      async (c) => {
+        const body = c.req.valid("json")
+        if (body.process_id) {
+          await ProcessManager.stop(body.process_id, body.signal)
+          return c.json(true)
+        }
+        if (body.pty_id) {
+          await Pty.remove(body.pty_id)
+          return c.json(true)
+        }
+        await terminateDiagnostic(body)
+        return c.json(true)
+      },
+    )
+    .get(
+      "/port-map",
+      describeRoute({
+        summary: "Get port map",
+        description:
+          "Returns a map of port name to assigned port number for all running portpick processes.",
+        operationId: "process.portMap",
+        responses: {
+          200: {
+            description: "Port name to port number map",
+            content: {
+              "application/json": {
+                schema: resolver(z.record(z.string(), z.number())),
+              },
+            },
+          },
+        },
+      }),
+      async (c) => {
+        return c.json(ProcessManager.portMap())
+      },
+    )
+    .get(
+      "/logs",
+      describeRoute({
+        summary: "Get process/terminal logs",
+        description:
+          "Read the PTY output buffer for a managed process or terminal session. " +
+          "Accepts pty_id, terminal_id, process_id, or name to resolve the target PTY. " +
+          "Returns the last N lines (default 100) as plain text.",
+        operationId: "process.logs",
+        responses: {
+          200: {
+            description: "Log output as plain text",
+            content: { "text/plain": { schema: resolver(z.string()) } },
+          },
+          ...errors(400, 404),
+        },
+      }),
+      validator(
+        "query",
+        z.object({
+          pty_id: z.string().optional(),
+          terminal_id: z.string().optional(),
+          process_id: z.string().optional(),
+          name: z.string().optional(),
+          lines: z.coerce.number().int().min(1).max(10000).optional(),
+        }),
+      ),
+      async (c) => {
+        const { pty_id, terminal_id, process_id, name, lines: lineCount } = c.req.valid("query")
+        const maxLines = lineCount ?? 100
+
+        // Resolve to a pty ID
+        let ptyId: string | undefined
+
+        if (pty_id) {
+          ptyId = pty_id
+        } else if (terminal_id) {
+          // terminal_id is treated as pty_id in Claxedo
+          ptyId = terminal_id
+        } else if (process_id) {
+          const proc = ProcessManager.get(process_id)
+          ptyId = proc?.ptyId
+          if (!ptyId) {
+            return c.json({ error: `Process ${process_id} not found or has no PTY` }, 404)
+          }
+        } else if (name) {
+          const proc = ProcessManager.findByName(name)
+          ptyId = proc?.ptyId
+          if (!ptyId) {
+            return c.json({ error: `Process named '${name}' not found or has no PTY` }, 404)
+          }
+        } else {
+          return c.json({ error: "Provide one of: pty_id, terminal_id, process_id, name" }, 400)
+        }
+
+        const buffer = Pty.readBuffer(ptyId)
+        if (buffer === undefined) {
+          return c.json({ error: `PTY ${ptyId} not found` }, 404)
+        }
+
+        if (!buffer) {
+          return c.text("")
+        }
+
+        const allLines = buffer.split("\n")
+        const tail = allLines.slice(-maxLines)
+        return c.text(tail.join("\n"))
       },
     ),
 )

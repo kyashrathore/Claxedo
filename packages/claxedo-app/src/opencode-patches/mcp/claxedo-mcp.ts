@@ -93,6 +93,47 @@ type TabContextResponse = {
   error?: string
 }
 
+type AgentHooksStatus = {
+  ready: boolean
+  wrappers: string[]
+  customWrappers: string[]
+}
+
+type TerminalSessionState = {
+  terminalId: string
+  tabId?: string
+  workspaceId?: string
+  provider?: string
+  sessionId?: string | null
+  transcriptPath?: string | null
+  refName?: string
+  prompt?: string
+  lastAssistantMessage?: string
+  eventType?: "Busy" | "Idle" | "UserActionRequired" | "Error"
+  updatedAt: number
+}
+
+type TerminalSessionResponse = {
+  success: boolean
+  source?: string
+  terminalId?: string
+  session?: TerminalSessionState
+  error?: string
+}
+
+type SessionMessage = {
+  info?: { id?: string; role?: string }
+  parts?: Array<{ type?: string; text?: string; ignored?: boolean }>
+}
+
+type AgentHooksSetup = {
+  success: boolean
+  message?: string
+  error?: string
+  wrappers?: string[]
+  customWrappers?: string[]
+}
+
 const normalizePaneName = (value: string) => clean(value).replace(/^#/, "").toLowerCase()
 
 const paneMeta = (meta: Record<string, string> | undefined) => {
@@ -254,7 +295,7 @@ type ProcessConfig = {
   restartPolicy: "never" | "on-failure" | "always"
   maxRestarts: number
   color?: string
-  portless?: { hostname: string; portMode: "env" | "flag"; portValue: string }
+  port?: { name: string; inject: string }
 }
 
 type ManagedProcess = {
@@ -265,6 +306,7 @@ type ManagedProcess = {
   exitCode?: number
   startedAt?: number
   exitedAt?: number
+  assignedPort?: number
 }
 
 type ProcessListResponse = { configs: ProcessConfig[]; processes: ManagedProcess[] }
@@ -273,8 +315,18 @@ const formatProcess = (config: ProcessConfig, proc?: ManagedProcess): string => 
   const status = proc?.status || "idle"
   const restart = proc && proc.restartCount > 0 ? ` (restarts: ${proc.restartCount})` : ""
   const exit = proc?.exitCode !== undefined ? ` exit=${proc.exitCode}` : ""
-  const portless = config.portless ? ` [portless: ${config.portless.hostname}]` : ""
-  return `${config.name} (${config.id}): ${status}${exit}${restart}${portless}\n  command: ${config.command}${config.args.length ? " " + config.args.join(" ") : ""}\n  restart: ${config.restartPolicy}, autoStart: ${config.autoStart}`
+  const port = config.port ? ` [port: ${config.port.name}${proc?.assignedPort ? `=${proc.assignedPort}` : ""}]` : ""
+  return `${config.name} (${config.id}): ${status}${exit}${restart}${port}\n  command: ${config.command}${config.args.length ? " " + config.args.join(" ") : ""}\n  restart: ${config.restartPolicy}, autoStart: ${config.autoStart}`
+}
+
+const findConfigByPortName = (
+  name: string,
+  data: ProcessListResponse,
+): { config: ProcessConfig; proc?: ManagedProcess } | undefined => {
+  const config = data.configs.find((c) => c.port?.name === name)
+  if (!config) return undefined
+  const proc = data.processes.find((p) => p.configId === config.id)
+  return { config, proc }
 }
 
 // ===========================================================================
@@ -671,6 +723,850 @@ server.registerTool(
 )
 
 // ---------------------------------------------------------------------------
+// Portpick tools (port-based process management)
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  "portpick_register",
+  {
+    description:
+      "Register a new dev server or long-running process with automatic port assignment. " +
+      "This creates a process config in .opencode/processes.jsonc. The process starts idle — " +
+      "call portpick_start afterward to launch it. " +
+      "Each process gets a unique port name (e.g. 'api', 'frontend') that other processes can reference " +
+      "using {{port:name}} templates in their env vars. " +
+      "Example: register a Vite frontend with env VITE_API_URL=http://localhost:{{port:api}} " +
+      "so it automatically discovers the API server's port.",
+    inputSchema: {
+      name: z.string().regex(/^[a-z0-9._-]+$/).describe(
+        "Unique port name for this process (lowercase alphanumeric, dots, hyphens). " +
+        "Used as the identifier in {{port:name}} templates. Example: 'api', 'frontend', 'opencode'.",
+      ),
+      command: z.string().describe("Shell command to run (e.g. 'bun run dev', 'npm start', 'cargo watch -x run')."),
+      cwd: z.string().optional().describe("Working directory relative to project root. Defaults to project root."),
+      port_via: z
+        .string()
+        .describe(
+          "How to pass the assigned port to the process. " +
+          "Env var name (e.g. 'PORT', 'VITE_PORT') sets that env var. " +
+          "CLI flag (e.g. '--port', '-p') appends the flag and port number to the command.",
+        ),
+      env: z.record(z.string(), z.string()).optional().describe(
+        "Extra environment variables. Use {{port:name}} to reference another process's port. " +
+        "Example: { \"BACKEND_URL\": \"http://localhost:{{port:api}}\" }",
+      ),
+      auto_start: z.boolean().optional().describe("Automatically start when the project opens. Default: false."),
+      restart_policy: z.enum(["never", "on-failure", "always"]).optional().describe("When to restart after exit. Default: never."),
+      directory: z.string().optional().describe("Project directory."),
+    },
+  },
+  async (args) => {
+    const { directory, name, command, cwd, port_via, env, auto_start, restart_policy } = args
+    const body = {
+      name,
+      command,
+      ...(cwd ? { cwd } : {}),
+      ...(env ? { env } : {}),
+      autoStart: auto_start ?? false,
+      restartPolicy: restart_policy ?? "never",
+      port: { name, inject: port_via },
+    }
+    const config = await httpRequest<ProcessConfig>(
+      "/process",
+      { method: "POST", body: JSON.stringify(body) },
+      "json",
+      directory,
+    )
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Registered portpick process: ${config.name} (${config.id})\n  port.name=${name}, port.inject=${port_via}`,
+        },
+      ],
+    }
+  },
+)
+
+server.registerTool(
+  "portpick_start",
+  {
+    description:
+      "Start a registered portpick process by its port name. " +
+      "Finds a free OS port, injects it into the process (via env var or CLI flag as configured), " +
+      "and resolves any {{port:name}} templates in its env vars using ports from already-running processes. " +
+      'Pass "*" to start all portpick processes in config order (dependencies first). ' +
+      "Important: if process B depends on process A's port (via {{port:A}}), start A first " +
+      "so its port is available for template resolution.",
+    inputSchema: {
+      name: z.string().describe(
+        'Port name of the process to start (e.g. "api", "frontend"). ' +
+        'Pass "*" to start all portpick processes sequentially in config order.',
+      ),
+      directory: z.string().optional().describe("Project directory."),
+    },
+  },
+  async (args) => {
+    const directory = clean(args.directory) || DEFAULT_DIR
+    const data = await httpRequest<ProcessListResponse>("/process", { method: "GET" }, "json", directory)
+
+    if (args.name === "*") {
+      const portConfigs = data.configs.filter((c) => c.port)
+      if (!portConfigs.length) {
+        return { content: [{ type: "text" as const, text: "No portpick processes configured." }] }
+      }
+      const results: string[] = []
+      for (const config of portConfigs) {
+        const proc = data.processes.find((p) => p.configId === config.id)
+        if (proc && (proc.status === "running" || proc.status === "starting")) {
+          results.push(`${config.port!.name}: already running`)
+          continue
+        }
+        const started = await httpRequest<ManagedProcess>(
+          `/process/${encodeURIComponent(config.id)}/start`,
+          { method: "POST" },
+          "json",
+          directory,
+        )
+        results.push(`${config.port!.name}: ${started.status}${started.assignedPort ? ` (port ${started.assignedPort})` : ""}`)
+      }
+      return { content: [{ type: "text" as const, text: results.join("\n") }] }
+    }
+
+    const found = findConfigByPortName(args.name, data)
+    if (!found) {
+      return {
+        content: [{ type: "text" as const, text: `No portpick process with name "${args.name}" found.` }],
+        isError: true,
+      }
+    }
+    const proc = await httpRequest<ManagedProcess>(
+      `/process/${encodeURIComponent(found.config.id)}/start`,
+      { method: "POST" },
+      "json",
+      directory,
+    )
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Started ${args.name} (${found.config.id}): ${proc.status}${proc.assignedPort ? ` on port ${proc.assignedPort}` : ""}`,
+        },
+      ],
+    }
+  },
+)
+
+server.registerTool(
+  "portpick_stop",
+  {
+    description:
+      "Stop a running portpick process by its port name. " +
+      "Sends Ctrl-C, then SIGTERM after 2s, then SIGKILL after 5s. " +
+      "The assigned port is released and will not be reused on next start (a new port is picked). " +
+      'Pass "*" to stop all portpick processes in reverse config order. ' +
+      "Stop dependent processes first to avoid connection errors.",
+    inputSchema: {
+      name: z.string().describe(
+        'Port name of the process to stop (e.g. "api"). ' +
+        'Pass "*" to stop all portpick processes.',
+      ),
+      directory: z.string().optional().describe("Project directory."),
+    },
+  },
+  async (args) => {
+    const directory = clean(args.directory) || DEFAULT_DIR
+    const data = await httpRequest<ProcessListResponse>("/process", { method: "GET" }, "json", directory)
+
+    if (args.name === "*") {
+      const portConfigs = data.configs.filter((c) => c.port)
+      if (!portConfigs.length) {
+        return { content: [{ type: "text" as const, text: "No portpick processes configured." }] }
+      }
+      for (const config of [...portConfigs].reverse()) {
+        const proc = data.processes.find((p) => p.configId === config.id)
+        if (proc && (proc.status === "running" || proc.status === "starting" || proc.status === "restarting")) {
+          await httpRequest<boolean>(
+            `/process/${encodeURIComponent(config.id)}/stop`,
+            { method: "POST" },
+            "json",
+            directory,
+          )
+        }
+      }
+      return { content: [{ type: "text" as const, text: "All portpick processes stopped." }] }
+    }
+
+    const found = findConfigByPortName(args.name, data)
+    if (!found) {
+      return {
+        content: [{ type: "text" as const, text: `No portpick process with name "${args.name}" found.` }],
+        isError: true,
+      }
+    }
+    await httpRequest<boolean>(
+      `/process/${encodeURIComponent(found.config.id)}/stop`,
+      { method: "POST" },
+      "json",
+      directory,
+    )
+    return { content: [{ type: "text" as const, text: `Stopped ${args.name} (${found.config.id}).` }] }
+  },
+)
+
+server.registerTool(
+  "portpick_list",
+  {
+    description:
+      "List all portpick-enabled processes with their current state. " +
+      "Shows each process's port name, assigned port number (if running), status, command, and injection method. " +
+      "Use this to discover available port names for {{port:name}} templates, " +
+      "check which ports are currently assigned, or verify processes are running before making requests.",
+    inputSchema: {
+      directory: z.string().optional().describe("Project directory."),
+    },
+  },
+  async (args) => {
+    const data = await httpRequest<ProcessListResponse>("/process", { method: "GET" }, "json", args.directory)
+    const portConfigs = data.configs.filter((c) => c.port)
+    if (!portConfigs.length) {
+      return { content: [{ type: "text" as const, text: "No portpick processes configured." }] }
+    }
+    const lines = portConfigs.map((config) => {
+      const proc = data.processes.find((p) => p.configId === config.id)
+      const status = proc?.status || "idle"
+      const port = proc?.assignedPort ? `:${proc.assignedPort}` : ""
+      return `${config.port!.name}${port} (${config.id}): ${status}\n  command: ${config.command}\n  inject: ${config.port!.inject}`
+    })
+    return { content: [{ type: "text" as const, text: lines.join("\n\n") }] }
+  },
+)
+
+server.registerTool(
+  "portpick_remove",
+  {
+    description:
+      "Remove a portpick process configuration by its port name. " +
+      "If the process is currently running, it is stopped first. " +
+      "The config is deleted from .opencode/processes.jsonc. " +
+      "Any other processes referencing this port name via {{port:name}} templates " +
+      "will have unresolved templates on their next start.",
+    inputSchema: {
+      name: z.string().describe("Port name of the process to remove (e.g. 'api')."),
+      directory: z.string().optional().describe("Project directory."),
+    },
+  },
+  async (args) => {
+    const directory = clean(args.directory) || DEFAULT_DIR
+    const data = await httpRequest<ProcessListResponse>("/process", { method: "GET" }, "json", directory)
+    const found = findConfigByPortName(args.name, data)
+    if (!found) {
+      return {
+        content: [{ type: "text" as const, text: `No portpick process with name "${args.name}" found.` }],
+        isError: true,
+      }
+    }
+    await httpRequest<boolean>(
+      `/process/${encodeURIComponent(found.config.id)}`,
+      { method: "DELETE" },
+      "json",
+      directory,
+    )
+    return { content: [{ type: "text" as const, text: `Removed portpick process "${args.name}" (${found.config.id}).` }] }
+  },
+)
+
+// ---------------------------------------------------------------------------
+// Log retrieval tools
+// ---------------------------------------------------------------------------
+
+type PtyInfo = { id: string; title: string; command: string; args: string[]; cwd: string; status: string; pid: number }
+
+const messageText = (message: SessionMessage) =>
+  (message.parts || [])
+    .filter((part) => part.type === "text" && !part.ignored)
+    .map((part) => clean(part.text))
+    .filter(Boolean)
+    .join("\n")
+
+const formatSessionMessages = (messages: SessionMessage[]) =>
+  messages
+    .map((message, idx) => {
+      const role = clean(message.info?.role) || "unknown"
+      const id = clean(message.info?.id)
+      const text = messageText(message)
+      const body = text.length > 1200 ? `${text.slice(0, 1200)}...` : text
+      return `${idx + 1}. ${role}${id ? ` [${id}]` : ""}\n${body || "(no text content)"}`
+    })
+    .join("\n\n")
+
+/**
+ * Resolve log-target identifiers into a URLSearchParams for the /process/logs endpoint.
+ * Returns undefined when no identifier is provided.
+ */
+const resolveLogQuery = (args: {
+  pty_id?: string
+  terminal_id?: string
+  process_id?: string
+  name?: string
+  lines?: number
+}) => {
+  const query = new URLSearchParams()
+  if (args.lines) query.set("lines", String(args.lines))
+
+  if (clean(args.pty_id)) {
+    query.set("pty_id", clean(args.pty_id))
+  } else if (clean(args.terminal_id) || clean(process.env.CLAXEDO_TERMINAL_ID)) {
+    const termId = clean(args.terminal_id) || clean(process.env.CLAXEDO_TERMINAL_ID)
+    if (termId) query.set("pty_id", termId)
+  } else if (clean(args.process_id)) {
+    query.set("process_id", clean(args.process_id))
+  } else if (clean(args.name)) {
+    query.set("name", clean(args.name))
+  } else {
+    return undefined
+  }
+  return query
+}
+
+server.registerTool(
+  "get_logs",
+  {
+    description:
+      "Get terminal output (logs) from a managed process or any PTY session (terminal tab/pane). " +
+      "Accepts a process config ID, process name, PTY ID, or terminal ID. " +
+      "Returns the captured output from the disk-backed history (up to 16 MiB). " +
+      "Use `lines` to get only the last N lines of output.",
+    inputSchema: {
+      process_id: z
+        .string()
+        .optional()
+        .describe("Process config ID (e.g. proc_...). Use list_processes to find available IDs."),
+      name: z
+        .string()
+        .optional()
+        .describe("Process name (e.g. 'dev-server'). Case-insensitive match against configured process names."),
+      pty_id: z
+        .string()
+        .optional()
+        .describe("PTY session ID (e.g. pty_...). Use this for terminal tabs/panes that are not managed processes."),
+      terminal_id: z
+        .string()
+        .optional()
+        .describe(
+          "Terminal ID from tab context. Resolves to the matching PTY session. " +
+            "Defaults to CLAXEDO_TERMINAL_ID env if not provided.",
+        ),
+      lines: z
+        .number()
+        .int()
+        .min(1)
+        .max(10000)
+        .optional()
+        .describe(
+          "Return only the last N lines of output. Useful for checking recent logs without fetching everything.",
+        ),
+      directory: z.string().optional().describe("Project directory."),
+    },
+  },
+  async (args) => {
+    const directory = clean(args.directory) || DEFAULT_DIR
+
+    const query = resolveLogQuery(args)
+    if (!query) {
+      // No identifier provided — try to list what's available
+      const data = await httpRequest<ProcessListResponse>("/process", { method: "GET" }, "json", directory).catch(
+        () => ({ configs: [], processes: [] }) as ProcessListResponse,
+      )
+      const ptys = await httpRequest<PtyInfo[]>("/pty", { method: "GET" }, "json", directory).catch(
+        () => [] as PtyInfo[],
+      )
+
+      const processLines = data.configs.map((config) => {
+        const proc = data.processes.find((p) => p.configId === config.id)
+        return `- ${config.name} (${config.id}) [${proc?.status || "idle"}]${proc?.ptyId ? ` pty=${proc.ptyId}` : ""}`
+      })
+      const ptyLines = ptys
+        .filter((p) => !data.processes.some((proc) => proc.ptyId === p.id))
+        .map((p) => `- ${p.title} (${p.id}) [${p.status}]`)
+
+      const lines = [
+        "No identifier provided. Specify one of: process_id, name, pty_id, or terminal_id.",
+        "",
+        ...(processLines.length ? ["Managed processes:", ...processLines] : ["No managed processes."]),
+        ...(ptyLines.length ? ["", "Other terminal sessions:", ...ptyLines] : []),
+      ]
+      return { content: [{ type: "text" as const, text: lines.join("\n") }], isError: true }
+    }
+
+    try {
+      const output = await httpRequest<string>(
+        `/process/logs?${query.toString()}`,
+        { method: "GET" },
+        "text",
+        directory,
+      )
+
+      if (!output || !output.trim()) {
+        return { content: [{ type: "text" as const, text: "Session found but no output captured yet." }] }
+      }
+
+      return { content: [{ type: "text" as const, text: output }] }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { content: [{ type: "text" as const, text: `Failed to get logs: ${msg}` }], isError: true }
+    }
+  },
+)
+
+server.registerTool(
+  "get_current_session",
+  {
+    description:
+      "Resolve the currently tracked agent session for a terminal. " +
+      "This uses lifecycle hook metadata (provider/session id), not PTY log scraping.",
+    inputSchema: {
+      terminal_id: z.string().optional().describe("Target terminal id. Defaults to CLAXEDO_TERMINAL_ID env."),
+      tab_id: z.string().optional().describe("Optional tab id fallback when terminal id is unknown."),
+      format: z.enum(["prompt", "json"]).optional().describe("Response format. prompt=human summary (default)."),
+      directory: z.string().optional().describe("Project directory."),
+    },
+  },
+  async (args) => {
+    const terminalID = clean(args.terminal_id) || clean(process.env.CLAXEDO_TERMINAL_ID)
+    const tabID = clean(args.tab_id) || clean(process.env.CLAXEDO_TAB_ID)
+    if (!terminalID && !tabID) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text:
+              "get_current_session needs `terminal_id` or `tab_id`. " +
+              "When running inside a Claxedo terminal, CLAXEDO_TERMINAL_ID should be set automatically.",
+          },
+        ],
+        isError: true,
+      }
+    }
+
+    const query = new URLSearchParams()
+    if (terminalID) query.set("terminalId", terminalID)
+    if (tabID) query.set("tabId", tabID)
+
+    const result = await httpRequest<TerminalSessionResponse>(
+      `/hook/terminal-session?${query.toString()}`,
+      { method: "GET" },
+      "json",
+      args.directory,
+    ).catch(() => undefined)
+
+    if (!result?.success || !result.session) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "No tracked terminal session found yet. Start an agent run in this terminal and try again.",
+          },
+        ],
+        isError: true,
+      }
+    }
+
+    const format = args.format || "prompt"
+    if (format === "json") {
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+      }
+    }
+
+    const session = result.session
+    const lines = [
+      `Source: ${clean(result.source) || "unknown"}`,
+      `Terminal: ${session.terminalId}`,
+      clean(session.tabId) ? `Tab: ${session.tabId}` : "",
+      clean(session.provider) ? `Provider: ${session.provider}` : "",
+      session.sessionId === null
+        ? "Session: null (terminal exited)"
+        : clean(session.sessionId)
+          ? `Session: ${session.sessionId}`
+          : "Session: (none)",
+      clean(session.refName) ? `Ref: ${session.refName}` : "",
+      clean(session.prompt) ? `Prompt: ${session.prompt}` : "",
+      clean(session.lastAssistantMessage) ? `Assistant: ${session.lastAssistantMessage}` : "",
+      session.transcriptPath === null
+        ? "Transcript: null"
+        : clean(session.transcriptPath)
+          ? `Transcript: ${session.transcriptPath}`
+          : "",
+      clean(session.eventType) ? `Last event: ${session.eventType}` : "",
+      Number.isFinite(session.updatedAt) ? `Updated: ${new Date(session.updatedAt).toISOString()}` : "",
+    ].filter(Boolean)
+
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] }
+  },
+)
+
+server.registerTool(
+  "session_messages",
+  {
+    description:
+      "Get structured messages for an agent session. " +
+      "Resolves current session by terminal first, then fetches `/session/:id/message` when available.",
+    inputSchema: {
+      session_id: z
+        .string()
+        .optional()
+        .describe("Explicit session id. If omitted, resolve from terminal session tracking."),
+      terminal_id: z
+        .string()
+        .optional()
+        .describe("Terminal id to resolve current session. Defaults to CLAXEDO_TERMINAL_ID."),
+      tab_id: z.string().optional().describe("Optional tab id fallback when terminal id is unavailable."),
+      provider: z.string().optional().describe("Optional provider override (opencode, claude, codex, etc)."),
+      limit: z.number().int().min(1).max(500).optional().describe("Maximum messages to fetch. Default: 50."),
+      format: z.enum(["prompt", "json"]).optional().describe("Response format. prompt=human summary (default)."),
+      directory: z.string().optional().describe("Project directory."),
+    },
+  },
+  async (args) => {
+    const directory = clean(args.directory) || DEFAULT_DIR
+    const limit = args.limit || 50
+    const format = args.format || "prompt"
+    let provider = clean(args.provider).toLowerCase()
+    let sessionID = clean(args.session_id)
+    let transcriptPath = ""
+    let source = "explicit"
+    let terminalID = clean(args.terminal_id) || clean(process.env.CLAXEDO_TERMINAL_ID)
+    let tabID = clean(args.tab_id) || clean(process.env.CLAXEDO_TAB_ID)
+
+    if (!sessionID) {
+      if (!terminalID && !tabID) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                "session_messages needs `session_id`, or a `terminal_id`/`tab_id` to resolve current session. " +
+                "When running inside a Claxedo terminal, CLAXEDO_TERMINAL_ID should be set automatically.",
+            },
+          ],
+          isError: true,
+        }
+      }
+      const query = new URLSearchParams()
+      if (terminalID) query.set("terminalId", terminalID)
+      if (tabID) query.set("tabId", tabID)
+      const tracked = await httpRequest<TerminalSessionResponse>(
+        `/hook/terminal-session?${query.toString()}`,
+        { method: "GET" },
+        "json",
+        directory,
+      ).catch(() => undefined)
+      if (!tracked?.success || !tracked.session) {
+        return {
+          content: [{ type: "text" as const, text: "No tracked session found for this terminal/tab yet." }],
+          isError: true,
+        }
+      }
+      source = clean(tracked.source) || "tracked"
+      terminalID = clean(tracked.terminalId) || terminalID
+      provider = provider || clean(tracked.session.provider).toLowerCase()
+      transcriptPath = clean(tracked.session.transcriptPath)
+      if (tracked.session.sessionId !== null) {
+        sessionID = clean(tracked.session.sessionId)
+      }
+    }
+
+    const fetchMessages = async (id: string) => {
+      const query = new URLSearchParams({ limit: String(limit) })
+      return httpRequest<SessionMessage[]>(
+        `/session/${encodeURIComponent(id)}/message?${query.toString()}`,
+        { method: "GET" },
+        "json",
+        directory,
+      )
+    }
+
+    if (sessionID) {
+      try {
+        const messages = await fetchMessages(sessionID)
+        if (format === "json") {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    source,
+                    provider: provider || "opencode",
+                    terminal_id: terminalID || undefined,
+                    tab_id: tabID || undefined,
+                    session_id: sessionID,
+                    count: messages.length,
+                    messages,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          }
+        }
+
+        const heading = `Session ${sessionID} (${provider || "opencode"}) messages: ${messages.length}`
+        const body = formatSessionMessages(messages)
+        return {
+          content: [{ type: "text" as const, text: `${heading}\n\n${body || "(no messages found)"}` }],
+        }
+      } catch (err) {
+        if (!transcriptPath) {
+          const msg = err instanceof Error ? err.message : String(err)
+          return {
+            content: [{ type: "text" as const, text: `Failed to fetch session messages: ${msg}` }],
+            isError: true,
+          }
+        }
+      }
+    }
+
+    if (!transcriptPath) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text:
+              "No structured messages available. " +
+              "This provider may not expose OpenCode session routes and no transcript path was recorded.",
+          },
+        ],
+        isError: true,
+      }
+    }
+
+    const file = Bun.file(transcriptPath)
+    if (!(await file.exists())) {
+      return {
+        content: [{ type: "text" as const, text: `Transcript file not found: ${transcriptPath}` }],
+        isError: true,
+      }
+    }
+
+    const raw = await file.text()
+    const text = raw.length > 60_000 ? raw.slice(-60_000) : raw
+    if (format === "json") {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              {
+                source,
+                provider: provider || undefined,
+                terminal_id: terminalID || undefined,
+                tab_id: tabID || undefined,
+                session_id: sessionID || null,
+                transcript_path: transcriptPath,
+                text,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      }
+    }
+
+    const heading = `Transcript fallback (${provider || "unknown"})`
+    return {
+      content: [{ type: "text" as const, text: `${heading}\nPath: ${transcriptPath}\n\n${text}` }],
+    }
+  },
+)
+
+server.registerTool(
+  "summarize_logs",
+  {
+    description:
+      "Summarize terminal output (logs) into a short title and 2-5 sentence summary using an LLM. " +
+      "Pass raw log text directly via `text`, or use identifiers (process_id, name, pty_id, terminal_id) " +
+      "to fetch logs first. Returns a structured title + summary.",
+    inputSchema: {
+      text: z
+        .string()
+        .optional()
+        .describe("Raw log text to summarize. If provided, skips fetching logs from a process/PTY."),
+      process_id: z
+        .string()
+        .optional()
+        .describe("Process config ID (e.g. proc_...). Fetches logs from this process before summarizing."),
+      name: z
+        .string()
+        .optional()
+        .describe("Process name (e.g. 'dev-server'). Fetches logs from this process before summarizing."),
+      pty_id: z
+        .string()
+        .optional()
+        .describe("PTY session ID (e.g. pty_...). Fetches logs from this PTY before summarizing."),
+      terminal_id: z
+        .string()
+        .optional()
+        .describe("Terminal ID from tab context. Fetches logs from this terminal before summarizing."),
+      lines: z
+        .number()
+        .int()
+        .min(1)
+        .max(10000)
+        .optional()
+        .describe("Limit log fetch to last N lines (only used when fetching, not with raw `text`)."),
+      directory: z.string().optional().describe("Project directory."),
+    },
+  },
+  async (args) => {
+    const directory = clean(args.directory) || DEFAULT_DIR
+    const MAX_LOG_CHARS = 50_000
+
+    // Step 1: Resolve log text — either from `text` param or by fetching
+    let logText = clean(args.text)
+
+    if (!logText) {
+      const query = resolveLogQuery(args)
+      if (!query) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "summarize_logs needs log text. Provide `text` directly, or specify one of: process_id, name, pty_id, terminal_id.",
+            },
+          ],
+          isError: true,
+        }
+      }
+
+      try {
+        logText = await httpRequest<string>(`/process/logs?${query.toString()}`, { method: "GET" }, "text", directory)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        return { content: [{ type: "text" as const, text: `Failed to fetch logs: ${msg}` }], isError: true }
+      }
+    }
+
+    if (!logText || !logText.trim()) {
+      return { content: [{ type: "text" as const, text: "No log output to summarize." }] }
+    }
+
+    // Truncate to last ~50K chars for model context limits
+    const truncated = logText.length > MAX_LOG_CHARS ? logText.slice(-MAX_LOG_CHARS) : logText
+
+    // Step 2: Create a temporary session
+    let sessionID: string
+    try {
+      const data = (await httpRequest(
+        "/session",
+        { method: "POST", body: JSON.stringify({ title: "Log Summary" }) },
+        "json",
+        directory,
+      )) as { id?: string; data?: { id?: string } } | null
+      sessionID = clean(data?.id || data?.data?.id)
+      if (!sessionID) throw new Error("No session id returned")
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { content: [{ type: "text" as const, text: `Failed to create session: ${msg}` }], isError: true }
+    }
+
+    // Step 3: Send message with log analysis prompt
+    const system = [
+      "You are a log analysis assistant. Analyze the provided terminal/process output and return a JSON object with exactly two fields:",
+      '- "title": A concise title (max 80 characters) describing what the logs show (e.g. "Next.js dev server startup with 3 TypeScript errors")',
+      '- "summary": A 2-5 sentence summary of the key information, errors, warnings, or status shown in the logs.',
+      "",
+      "Return ONLY valid JSON, no markdown fences, no extra text.",
+      'Example: {"title": "Vite build failed with missing module", "summary": "The Vite build process failed due to a missing module \'@utils/helpers\'. The error occurred during the transform phase at line 42 of src/index.ts. This is likely caused by a missing dependency or incorrect import path."}',
+    ].join("\n")
+
+    type MessageResult = {
+      info?: { id?: string; error?: { message?: string; data?: { message?: string } } | null }
+      parts?: Array<{ type: string; text?: string; ignored?: boolean }>
+    }
+
+    // Clean up the temporary session after use
+    const deleteSession = () => {
+      httpRequest(
+        `/session/${encodeURIComponent(sessionID)}`,
+        { method: "DELETE" },
+        "json",
+        directory,
+      ).catch(() => {})
+    }
+
+    try {
+      const result = (await httpRequest(
+        `/session/${encodeURIComponent(sessionID)}/message`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            system,
+            parts: [{ type: "text", text: truncated }],
+          }),
+        },
+        "json",
+        directory,
+      )) as MessageResult | null
+
+      // Try to get text from message detail if direct result is empty
+      let responseText = (result?.parts || [])
+        .filter((p) => p.type === "text" && !p.ignored)
+        .map((p) => p.text || "")
+        .join("")
+        .trim()
+
+      if (!responseText && result?.info?.id) {
+        const detail = (await httpRequest(
+          `/session/${encodeURIComponent(sessionID)}/message/${encodeURIComponent(result.info.id)}`,
+          { method: "GET" },
+          "json",
+          directory,
+        )) as MessageResult | null
+        responseText = (detail?.parts || [])
+          .filter((p) => p.type === "text" && !p.ignored)
+          .map((p) => p.text || "")
+          .join("")
+          .trim()
+      }
+
+      if (!responseText) {
+        const errMsg = result?.info?.error?.data?.message || result?.info?.error?.message
+        return {
+          content: [{ type: "text" as const, text: errMsg ? `LLM error: ${errMsg}` : "LLM returned empty response." }],
+          isError: true,
+        }
+      }
+
+      // Step 4: Parse JSON from response
+      try {
+        // Strip markdown fences if present
+        const jsonStr = responseText.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "")
+        const parsed = JSON.parse(jsonStr) as { title?: string; summary?: string }
+        const title = clean(parsed.title).slice(0, 80) || "Log Summary"
+        const summary = clean(parsed.summary) || responseText
+        return {
+          content: [{ type: "text" as const, text: `**${title}**\n\n${summary}` }],
+        }
+      } catch {
+        // If JSON parsing fails, return the raw LLM response
+        return {
+          content: [{ type: "text" as const, text: responseText }],
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { content: [{ type: "text" as const, text: `Failed to summarize logs: ${msg}` }], isError: true }
+    } finally {
+      deleteSession()
+    }
+  },
+)
+
+// ---------------------------------------------------------------------------
 // Page tools
 // ---------------------------------------------------------------------------
 
@@ -769,6 +1665,83 @@ server.registerTool(
         {
           type: "text" as const,
           text: tabContextPrompt(context, clean(resolved.source) || "unknown", pane),
+        },
+      ],
+    }
+  },
+)
+
+server.registerTool(
+  "agent_hooks_status",
+  {
+    description:
+      "Get Claxedo agent hook readiness and active wrapper binaries. " +
+      "Use this to debug why CLI agent lifecycle status might be missing in panes.",
+    inputSchema: {
+      directory: z.string().optional().describe("Project directory."),
+    },
+  },
+  async (args) => {
+    const status = await httpRequest<AgentHooksStatus>("/hook/setup/status", { method: "GET" }, "json", args.directory)
+    const wrappers = status.wrappers?.length ? status.wrappers.join(", ") : "(none)"
+    const custom = status.customWrappers?.length ? status.customWrappers.join(", ") : "(none)"
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Agent hooks ready: ${status.ready ? "yes" : "no"}\nWrappers: ${wrappers}\nCustom wrappers: ${custom}`,
+        },
+      ],
+    }
+  },
+)
+
+server.registerTool(
+  "configure_agent_wrappers",
+  {
+    description:
+      "Configure extra generic CLI wrappers for lifecycle tracking (for example aider, goose, pi), then re-run setup. " +
+      "Wrapper names are sanitized and restricted to safe binary-like identifiers.",
+    inputSchema: {
+      wrappers: z
+        .array(z.string())
+        .optional()
+        .describe("Wrapper names to add or replace (e.g. ['aider','goose','pi'])."),
+      replace: z
+        .boolean()
+        .optional()
+        .describe("Replace current custom wrapper list instead of merging. Default: false."),
+      force: z.boolean().optional().describe("Force overwrite generated wrapper files. Default: false."),
+      directory: z.string().optional().describe("Project directory."),
+    },
+  },
+  async (args) => {
+    const payload = {
+      force: args.force ?? false,
+      wrappers: args.wrappers,
+      replaceWrappers: args.replace ?? false,
+    }
+    const result = await httpRequest<AgentHooksSetup>(
+      "/hook/setup",
+      { method: "POST", body: JSON.stringify(payload) },
+      "json",
+      args.directory,
+    )
+
+    if (!result.success) {
+      return {
+        content: [{ type: "text" as const, text: result.error || "Failed to configure agent wrappers." }],
+        isError: true,
+      }
+    }
+
+    const wrappers = (result.wrappers ?? []).join(", ") || "(none)"
+    const custom = (result.customWrappers ?? []).join(", ") || "(none)"
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `${result.message || "Agent hooks configured."}\nWrappers: ${wrappers}\nCustom wrappers: ${custom}`,
         },
       ],
     }

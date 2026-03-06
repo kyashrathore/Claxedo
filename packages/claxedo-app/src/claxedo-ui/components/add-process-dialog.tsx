@@ -14,7 +14,6 @@ import { createStore, produce } from "solid-js/store"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
 import { TextField } from "@opencode-ai/ui/text-field"
-import { Select } from "@opencode-ai/ui/select"
 import { Switch } from "@opencode-ai/ui/switch"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -33,13 +32,6 @@ const RESTART_POLICIES = [
 
 type EnvEntry = { key: string; value: string }
 
-type PortMode = "env" | "flag"
-
-const PORT_MODES = [
-  { value: "env" as const, label: "Env variable" },
-  { value: "flag" as const, label: "CLI flag" },
-]
-
 type FormStore = {
   name: string
   command: string
@@ -48,10 +40,9 @@ type FormStore = {
   autoStart: boolean
   restartPolicy: Process.RestartPolicy
   maxRestarts: number
-  usePortless: boolean
-  hostname: string
-  portMode: PortMode
-  portValue: string
+  usePort: boolean
+  portName: string
+  portInject: string
   saving: boolean
   deleting: boolean
 }
@@ -86,10 +77,9 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
     autoStart: props.config?.autoStart ?? false,
     restartPolicy: props.config?.restartPolicy ?? "never",
     maxRestarts: props.config?.maxRestarts ?? 3,
-    usePortless: !!props.config?.portless,
-    hostname: props.config?.portless?.hostname ?? "",
-    portMode: props.config?.portless?.portMode ?? "env",
-    portValue: props.config?.portless?.portValue ?? "PORT",
+    usePort: !!props.config?.port,
+    portName: props.config?.port?.name ?? "",
+    portInject: props.config?.port?.inject ?? "PORT",
     saving: false,
     deleting: false,
   })
@@ -116,24 +106,23 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
       autoStart: store.autoStart,
       restartPolicy: store.restartPolicy,
       maxRestarts: store.maxRestarts,
-      portless: store.usePortless ? {
-        hostname: effectiveHostname(),
-        portMode: store.portMode,
-        portValue: store.portValue.trim() || (store.portMode === "env" ? "PORT" : "--port"),
+      port: store.usePort ? {
+        name: effectivePortName(),
+        inject: store.portInject.trim() || "PORT",
       } : undefined,
     }
   }
 
-  const derivedHostname = () =>
-    store.name.trim().toLowerCase().replace(/[^a-z0-9.-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || ""
+  const derivedPortName = () =>
+    store.name.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || ""
 
-  const effectiveHostname = () =>
-    store.hostname.trim() || derivedHostname()
+  const effectivePortName = () =>
+    store.portName.trim() || derivedPortName()
 
   const canSubmit = () =>
     store.name.trim().length > 0 &&
     store.command.trim().length > 0 &&
-    (!store.usePortless || effectiveHostname().length > 0) &&
+    (!store.usePort || effectivePortName().length > 0) &&
     !store.saving
 
   const handleSubmit = async (e: SubmitEvent) => {
@@ -323,70 +312,41 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
           </button>
         </div>
 
-        {/* Portless integration (not available on Windows) */}
-        <Show when={platform.os !== "windows"}>
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center gap-2">
-              <Switch
-                checked={store.usePortless}
-                onChange={(v) => setStore("usePortless", v)}
-              >
-                Use Portless
-              </Switch>
-              <a
-                href="https://github.com/vercel-labs/portless"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-[11px] text-accent hover:underline"
-              >
-                What's this?
-              </a>
-            </div>
-            <Show when={store.usePortless}>
-              <TextField
-                type="text"
-                label="Hostname"
-                description={`Access at http://${effectiveHostname() || "<hostname>"}.localhost:1355`}
-                placeholder={derivedHostname() || "my-app"}
-                value={store.hostname}
-                onChange={(v) => setStore("hostname", v)}
-                spellcheck={false}
-                class="font-mono text-xs"
-              />
-              <div class="flex flex-col gap-1.5">
-                <label class="text-12-medium text-text-weak">How does your app accept a port?</label>
-                <div class="flex items-center gap-2">
-                  <Select
-                    options={PORT_MODES}
-                    current={PORT_MODES.find((m) => m.value === store.portMode)}
-                    value={(x) => x.value}
-                    label={(x) => x.label}
-                    onSelect={(x) => {
-                      if (!x) return
-                      setStore("portMode", x.value)
-                      setStore("portValue", x.value === "env" ? "PORT" : "--port")
-                    }}
-                    size="small"
-                    variant="ghost"
-                  />
-                  <input
-                    type="text"
-                    placeholder={store.portMode === "env" ? "PORT" : "--port"}
-                    value={store.portValue}
-                    onInput={(e) => setStore("portValue", e.currentTarget.value)}
-                    class="flex-1 min-w-0 bg-surface-inset border border-border rounded-md px-2 py-1.5 text-12-regular font-mono text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
-                    spellcheck={false}
-                  />
-                </div>
-                <span class="text-[11px] text-text-weak">
-                  {store.portMode === "env"
-                    ? `Portless sets ${store.portValue.trim() || "PORT"} to the assigned port`
-                    : `Appends ${store.portValue.trim() || "--port"} <port> to your command`}
-                </span>
-              </div>
-            </Show>
-          </div>
-        </Show>
+        {/* Port assignment (portpick) */}
+        <div class="flex flex-col gap-2">
+          <Switch
+            checked={store.usePort}
+            onChange={(v) => setStore("usePort", v)}
+          >
+            Assign port
+          </Switch>
+          <Show when={store.usePort}>
+            <TextField
+              type="text"
+              label="Port name"
+              description="Used in {{port:name}} templates for cross-service references"
+              placeholder={derivedPortName() || "my-app"}
+              value={store.portName}
+              onChange={(v) => setStore("portName", v)}
+              spellcheck={false}
+              class="font-mono text-xs"
+            />
+            <TextField
+              type="text"
+              label="Port inject"
+              description={
+                store.portInject.trim().startsWith("-")
+                  ? `Appends ${store.portInject.trim()} <port> to your command`
+                  : `Sets env var ${store.portInject.trim() || "PORT"} to the assigned port`
+              }
+              placeholder="PORT or --port"
+              value={store.portInject}
+              onChange={(v) => setStore("portInject", v)}
+              spellcheck={false}
+              class="font-mono text-xs"
+            />
+          </Show>
+        </div>
 
       </div>
 

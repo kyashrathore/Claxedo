@@ -60,7 +60,6 @@ function defaults(overrides: Partial<ProcessPanePanelProps> = {}): ProcessPanePa
   return {
     config: BASE_CONFIG,
     process: undefined,
-    isLast: true,
     onStart: vi.fn(),
     onStop: vi.fn(),
     onRestart: vi.fn(),

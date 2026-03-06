@@ -62,17 +62,32 @@ const claxedo = {
     setDefault: vi.fn(),
   }),
   groupLayout: () => ({
-    fileTree: {
-      opened: () => false,
-      width: () => 320,
-      setOpened: vi.fn(),
+    session: {
+      width: () => 600,
+      collapsed: () => false,
+      panelMode: () => 0,
       setWidth: vi.fn(),
+      setCollapsed: vi.fn(),
+      setPanelMode: vi.fn(),
+    },
+    reviewPanel: {
+      opened: () => false,
+      setOpened: vi.fn(),
     },
   }),
   workspaceRecency: {
     recordAccess: vi.fn(),
   },
   cleanupDeletedWorktree: vi.fn(),
+  select: {
+    visibleGroups: () => [{ id: "g1" }, { id: "g2" }],
+    groupActiveTab: (groupId: string) => makeTabs(groupId).active(),
+  },
+  dispatch: vi.fn(),
+  findTabGroup: vi.fn(),
+  canDragTabBetweenWorktrees: () => true,
+  enabled: () => true,
+  processPane: { setTargetDirectory: vi.fn() },
 }
 
 vi.mock("../context/claxedo-layout", () => ({
@@ -103,9 +118,6 @@ vi.mock("../components/group-content-renderer", () => ({
   GroupContentRenderer: () => <div data-testid="group-content" />,
 }))
 
-vi.mock("../components/file-tree-sidebar", () => ({
-  FileTreeSidebar: () => <div data-testid="file-tree-sidebar" />,
-}))
 
 vi.mock("../components/process-pane", () => ({
   ProcessPane: () => <div data-testid="process-pane" />,

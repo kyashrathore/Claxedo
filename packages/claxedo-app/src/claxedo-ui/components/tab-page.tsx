@@ -13,21 +13,19 @@ import Underline from "@tiptap/extension-underline"
 import Highlight from "@tiptap/extension-highlight"
 import { TextStyle } from "@tiptap/extension-text-style"
 import Color from "@tiptap/extension-color"
-import TextAlign from "@tiptap/extension-text-align"
 import Image from "@tiptap/extension-image"
 import { Table } from "@tiptap/extension-table"
 import TableRow from "@tiptap/extension-table-row"
 import TableHeader from "@tiptap/extension-table-header"
 import TableCell from "@tiptap/extension-table-cell"
-import Subscript from "@tiptap/extension-subscript"
-import Superscript from "@tiptap/extension-superscript"
 import TaskList from "@tiptap/extension-task-list"
 import TaskItem from "@tiptap/extension-task-item"
 import { TextSelection, Transaction } from "@tiptap/pm/state"
 import { SlashCommands } from "./slash-commands"
 import { MermaidCodeBlock } from "./mermaid-block"
 import "./tab-page.css"
-import { pagesApi, type Page, type PageAiAction, type ArenaWaveState } from "../../utils/pages-api"
+import { pagesApi, type Page, type ArenaWaveState } from "../../utils/pages-api"
+import type { PageAiAction, AiPanelPos, AiSelection, AiDraft } from "./tab-page-utils"
 import { useSync } from "@opencode-ai/claxedo-app"
 import { useSDK } from "@/context/sdk"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -35,7 +33,9 @@ import { PageArenaDock } from "./page-arena-dock"
 import { useLanguage } from "@/context/language"
 import { useClaxedoLayout } from "../context/claxedo-layout"
 import { useGroupId } from "../context/group-id"
-import { markdownPathFromHref, openMarkdownPageTab } from "../utils/open-markdown-page-tab"
+import { usePane, queryModel, querySessionId, queryPeerLeaf } from "../context/pane-bus"
+import { markdownPathFromHref } from "../utils/open-markdown-page-tab"
+import { getFilename } from "@opencode-ai/util/path"
 import {
   reduceOverlay,
   diffNodes,
@@ -49,6 +49,10 @@ import {
   actionNeedsSelection,
   calcAnchoredPopover,
   handleScopedSelectAll,
+  buildPageAiSetup,
+  buildPageAiMessage,
+  extractTextFromParts,
+  PAGE_AI_SYSTEM,
   TOOLBAR_ITEMS,
   FLOATING_TOOLBAR_KEYS,
   FLOATING_TOOLBAR_ITEMS,
@@ -66,6 +70,9 @@ export type TabPageProps = {
   pageId: string
   sessionId?: string
   directory?: string
+  filePath?: string
+  leafId?: string
+  tabId?: string
   onTitleChange?: (title: string) => void
 }
 
@@ -117,6 +124,9 @@ export function TabPage(props: TabPageProps) {
               pageId={props.pageId}
               sessionId={props.sessionId}
               directory={props.directory}
+              filePath={props.filePath}
+              leafId={props.leafId}
+              tabId={props.tabId}
               saving={saving()}
               onSavingChange={setSaving}
               onTitleChange={props.onTitleChange}
@@ -132,8 +142,6 @@ export function TabPage(props: TabPageProps) {
   )
 }
 
-type AiPanelPos = { x: number; y: number; width: number }
-type AiSelection = { from: number; to: number }
 type AiRequest = {
   action: PageAiAction
   instruction?: string
@@ -142,106 +150,6 @@ type AiRequest = {
   context: string
   panel: AiPanelPos
 }
-type AiDraft = {
-  text: string
-  selection: AiSelection | null
-  original: string
-  range: AiSelection | null
-  inline: boolean
-}
-type AiLogEntry = {
-  id: number
-  level: "info" | "success" | "error"
-  text: string
-}
-
-type MarkdownHandle = {
-  name: string
-  getFile: () => Promise<File>
-  createWritable?: () => Promise<{ write: (chunk: string) => Promise<void>; close: () => Promise<void> }>
-  queryPermission?: (descriptor: { mode: "read" | "readwrite" }) => Promise<PermissionState>
-  requestPermission?: (descriptor: { mode: "read" | "readwrite" }) => Promise<PermissionState>
-}
-
-type LinkedMarkdown = {
-  page_id: string
-  handle: MarkdownHandle
-  name: string
-  doc_hash: string
-  file_hash: string
-  updated_at: number
-}
-
-const linkedDbName = "claxedo-page-links"
-const linkedStoreName = "links"
-
-function linkedSupported() {
-  return typeof window !== "undefined" && typeof window.indexedDB !== "undefined"
-}
-
-function linkedDb() {
-  if (!linkedSupported()) return Promise.resolve<IDBDatabase | null>(null)
-  return new Promise<IDBDatabase | null>((resolve) => {
-    const req = window.indexedDB.open(linkedDbName, 1)
-    req.onupgradeneeded = () => {
-      const db = req.result
-      if (!db.objectStoreNames.contains(linkedStoreName)) db.createObjectStore(linkedStoreName, { keyPath: "page_id" })
-    }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => resolve(null)
-  })
-}
-
-async function linkedLoad(page_id: string) {
-  const db = await linkedDb()
-  if (!db) return null
-  return await new Promise<LinkedMarkdown | null>((resolve) => {
-    const tx = db.transaction(linkedStoreName, "readonly")
-    const store = tx.objectStore(linkedStoreName)
-    const req = store.get(page_id)
-    req.onsuccess = () => {
-      const value = req.result
-      if (!value || typeof value !== "object") {
-        resolve(null)
-        return
-      }
-      resolve(value as LinkedMarkdown)
-    }
-    req.onerror = () => resolve(null)
-  })
-}
-
-async function linkedSave(value: LinkedMarkdown) {
-  const db = await linkedDb()
-  if (!db) return false
-  return await new Promise<boolean>((resolve) => {
-    const tx = db.transaction(linkedStoreName, "readwrite")
-    tx.oncomplete = () => resolve(true)
-    tx.onerror = () => resolve(false)
-    tx.objectStore(linkedStoreName).put(value)
-  })
-}
-
-async function linkedClear(page_id: string) {
-  const db = await linkedDb()
-  if (!db) return false
-  return await new Promise<boolean>((resolve) => {
-    const tx = db.transaction(linkedStoreName, "readwrite")
-    tx.oncomplete = () => resolve(true)
-    tx.onerror = () => resolve(false)
-    tx.objectStore(linkedStoreName).delete(page_id)
-  })
-}
-
-async function sha(text: string) {
-  if (typeof window === "undefined" || !window.crypto?.subtle) return text
-  const bytes = new TextEncoder().encode(text)
-  const hash = await window.crypto.subtle.digest("SHA-256", bytes)
-  return Array.from(new Uint8Array(hash))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
-}
-
 // ── PageEditor (inner, mounts only when page is loaded) ────────────────
 
 function PageEditor(props: {
@@ -249,6 +157,9 @@ function PageEditor(props: {
   pageId: string
   sessionId?: string
   directory?: string
+  filePath?: string
+  leafId?: string
+  tabId?: string
   saving: boolean
   loading: boolean
   onSavingChange: (v: boolean) => void
@@ -271,6 +182,7 @@ function PageEditor(props: {
   })()
   const emptyTabs = {
     addPage: () => "",
+    addFile: () => "",
     setActive: () => {},
   }
   let editorRef!: HTMLDivElement
@@ -278,10 +190,12 @@ function PageEditor(props: {
   let titleTimer: ReturnType<typeof setTimeout> | undefined
   let toolbarTimer: ReturnType<typeof setTimeout> | undefined
   let aiRun = 0
-  let aiLogSeq = 0
   let selecting = false
-  const dockSessionId = () => props.sessionId
-  const dockEnabled = () => !!dockSessionId() && !!props.directory && props.directory !== "__pages__"
+  /** Fast path: skip message-count API call for repeat actions within same mount. */
+  let setupCheckedForSession: string | undefined
+  const peerSessionId = () => (props.tabId ? querySessionId(props.tabId) : undefined)
+  const dockSessionId = createMemo(() => peerSessionId())
+  const dockEnabled = () => !!props.sessionId && !!props.directory && props.directory !== "__pages__"
   const pageSdk =
     props.directory && props.directory !== "__pages__"
       ? (() => {
@@ -325,9 +239,6 @@ function PageEditor(props: {
   const [tick, setTick] = createSignal(0)
   const [aiBusy, setAiBusy] = createSignal(false)
   const [aiError, setAiError] = createSignal<string | undefined>()
-  const [mdBusy, setMdBusy] = createSignal<"" | "import" | "sync" | "push">("")
-  const [linked, setLinked] = createSignal<LinkedMarkdown | null>(null)
-  const [linkNeed, setLinkNeed] = createSignal<"none" | "pull" | "push" | "conflict">("none")
   const [overlay, setOverlay] = createSignal<OverlayState>({ type: "hidden" })
   const [moreMenuOpen, setMoreMenuOpen] = createSignal(false)
   const [tableMenuOpen, setTableMenuOpen] = createSignal(false)
@@ -337,7 +248,6 @@ function PageEditor(props: {
   const [aiLastRequest, setAiLastRequest] = createSignal<AiRequest | null>(null)
   const [aiAnchor, setAiAnchor] = createSignal<number | null>(null)
   const [aiSelection, setAiSelection] = createSignal<AiSelection | null>(null)
-  const [aiLogs, setAiLogs] = createSignal<AiLogEntry[]>([])
   const [dockPosition, setDockPosition] = createSignal<"left" | "right">("right")
   const [dockWidth, setDockWidth] = createSignal(620)
   const [dockMode, setDockMode] = createSignal<"session" | "arena">("session")
@@ -345,14 +255,13 @@ function PageEditor(props: {
   const [arenaWaves, setArenaWaves] = createSignal<ArenaWaveState[]>([])
   const [arenaTabs, setArenaTabs] = createSignal<string[]>([])
   const [arenaWave, setArenaWave] = createSignal("")
-  const sideDock = () => dockEnabled()
   const clampDockWidth = (value: number) => {
     if (typeof window === "undefined") return Math.max(360, Math.min(900, Math.round(value)))
     const max = Math.max(420, window.innerWidth - 320)
     return Math.max(360, Math.min(max, Math.round(value)))
   }
   const startDockResize = (event: PointerEvent) => {
-    if (!sideDock()) return
+    if (!dockEnabled()) return
     const side = dockPosition()
     event.preventDefault()
     const move = (next: PointerEvent) => {
@@ -386,11 +295,12 @@ function PageEditor(props: {
     return sid && dockSync ? (dockSync.data.message[sid] ?? []) : []
   }
 
-  createEffect(() => {
-    const sid = dockSessionId()
-    if (!sid || !dockSync) return
-    void dockSync.session.sync(sid)
-  })
+  createEffect(
+    on(dockSessionId, (sid) => {
+      if (!sid || !dockSync) return
+      void dockSync.session.sync(sid)
+    }),
+  )
 
   // Auto-refetch page when doc agent uses update_page_markdown tool.
   // Uses the sync store's typed Part data (populated via SSE events) rather
@@ -572,15 +482,12 @@ function PageEditor(props: {
       Underline,
       TextStyle,
       Color,
-      Highlight.configure({ multicolor: true }),
-      TextAlign.configure({ types: ["heading", "paragraph"] }),
+      Highlight,
       Image.configure({ allowBase64: true }),
       Table.configure({ resizable: true }),
       TableRow,
       TableHeader,
       TableCell,
-      Subscript,
-      Superscript,
       TaskList,
       TaskItem.configure({ nested: true }),
       SlashCommands,
@@ -853,17 +760,49 @@ function PageEditor(props: {
     scheduleToolbar(80)
   }
 
-  const appendAiLog = (text: string, level: AiLogEntry["level"] = "info") => {
-    setAiLogs((prev) => [...prev.slice(-31), { id: ++aiLogSeq, level, text }])
-  }
-
-  const appendAiLogIfActive = (run: number, text: string, level: AiLogEntry["level"] = "info") => {
-    if (run !== aiRun) return
-    appendAiLog(text, level)
+  /**
+   * Create a session on demand when the session pane exists but still has
+   * sessionId "new" (user hasn't sent a message yet). Updates the pane
+   * content so the session:provide handler returns the real ID going forward.
+   */
+  const ensurePeerSession = async (): Promise<string | undefined> => {
+    if (!props.tabId || !props.directory || !pageSdk || !claxedo) return undefined
+    // Find the session pane in our tab
+    const peer = queryPeerLeaf(props.tabId, "session:provide")
+    if (!peer) return undefined
+    try {
+      const created = await pageSdk.client.session.create({ directory: props.directory })
+      const newId = created.data?.id
+      if (!newId) return undefined
+      // Update the pane content so SessionPaneBusConsumer sees the real ID
+      const layout = claxedo.multiPane.activeLayout(props.tabId)
+      if (layout) {
+        const leafContent = layout.contents[peer.leafId]
+        if (leafContent && leafContent.type === "session") {
+          claxedo.multiPane.setContent(props.tabId, peer.leafId, { ...leafContent, sessionId: newId })
+        }
+      }
+      return newId
+    } catch {
+      return undefined
+    }
   }
 
   const executeAiRequest = async (request: AiRequest) => {
     if (aiBusy()) return
+    if (!pageSdk) {
+      setAiError("No active session — open a session in the side pane first.")
+      return
+    }
+    let sessionID = peerSessionId()
+    if (!sessionID) {
+      // Session pane exists but has no session yet — create one on demand
+      sessionID = await ensurePeerSession()
+    }
+    if (!sessionID) {
+      setAiError("No session pane found — open a session in the side pane first.")
+      return
+    }
     const current = aiPreview()
     if (current?.draft.inline) restoreDraftOriginal(current.draft)
     overlayEvent({ type: "CLEAR_PREVIEW" })
@@ -871,10 +810,6 @@ function PageEditor(props: {
     setAiBusy(true)
     setAiError(undefined)
     setAiLastRequest(request)
-    setAiLogs([])
-    appendAiLog(
-      request.selection ? "Preparing AI edit on selected text." : "Preparing AI generation for current page context.",
-    )
     let range: AiSelection | null = null
     const original = request.selection ? request.text : ""
     const abortInline = () => {
@@ -886,30 +821,45 @@ function PageEditor(props: {
     }
 
     try {
-      appendAiLogIfActive(run, "Sending request to AI backend.")
-      const result = await pagesApi.ai({
-        action: request.action,
-        text: request.text,
-        context: request.context,
-        instruction: request.instruction,
-        page_id: props.pageId,
+      // Build per-action message; prepend setup only if session has no messages yet
+      const actionMsg = buildPageAiMessage(request.action, request.text || request.context, request.instruction)
+      let needsSetup = false
+      if (setupCheckedForSession !== sessionID) {
+        const existing = await pageSdk.client.session.messages({ sessionID, limit: 1 })
+          .then((r) => r.data ?? [])
+          .catch(() => [])
+        needsSetup = existing.length === 0
+        setupCheckedForSession = sessionID
+      }
+      const effectiveFilePath = props.filePath || (props.pageId ? `.claxedo/pages/${props.pageId}.md` : undefined)
+      const promptText = needsSetup
+        ? buildPageAiSetup({ pageTitle: title(), filePath: effectiveFilePath }) + "\n\n---\n\n" + actionMsg
+        : actionMsg
+      // Query the sibling session pane for its currently selected model
+      const model = props.tabId ? queryModel(props.tabId) : undefined
+      const response = await pageSdk.client.session.prompt({
+        sessionID,
+        system: PAGE_AI_SYSTEM,
+        parts: [{ type: "text" as const, text: promptText }],
+        ...(model ? { model } : {}),
       })
+      if (response.error) throw new Error((response.error as { message?: string }).message || "AI request failed")
+      const info = response.data?.info as { error?: { type?: string; message?: string } } | undefined
+      if (info?.error) throw new Error(info.error.message || `Model error: ${info.error.type || "unknown"}`)
       if (run !== aiRun) {
         abortInline()
         return
       }
-      appendAiLogIfActive(run, "Model response received.")
-      const output = result.text.trim()
+      const responseText = extractTextFromParts((response.data?.parts ?? []) as Parameters<typeof extractTextFromParts>[0])
+      const output = responseText.trim()
       if (!output) throw new Error("AI returned empty output")
       if (request.selection) {
-        appendAiLogIfActive(run, "Rendering inline diff preview.")
         const start = replaceRange(request.selection, diffNodes(original, ""))
         if (!start) throw new Error("Failed to render AI diff preview")
         range = start
         const steps = Math.max(8, Math.min(42, Math.floor(output.length / 24)))
         const delay = Math.max(12, Math.min(28, Math.round(720 / Math.max(1, steps))))
         let prev = 0
-        let mark = 25
         for (let i = 1; i <= steps; i += 1) {
           if (run !== aiRun || !range) {
             abortInline()
@@ -923,11 +873,6 @@ function PageEditor(props: {
           const next = replaceRange(range, nodes.length ? nodes : plainNodes(partial))
           if (!next) throw new Error("Failed to render AI diff preview")
           range = next
-          const percent = output.length ? Math.round((nextCount / output.length) * 100) : 100
-          if (percent >= mark) {
-            appendAiLogIfActive(run, `Streaming preview ${Math.min(percent, 100)}%.`)
-            mark += 25
-          }
           await new Promise<void>((resolve) => setTimeout(resolve, delay))
         }
       }
@@ -948,7 +893,6 @@ function PageEditor(props: {
           draft: { text: output, selection: request.selection, original, range, inline: true },
         })
       }
-      appendAiLogIfActive(run, "AI draft ready.", "success")
       setTick((x) => x + 1)
       scheduleToolbar(60)
     } catch (err) {
@@ -959,7 +903,6 @@ function PageEditor(props: {
       abortInline()
       const message = err instanceof Error ? err.message : String(err)
       setAiError(message)
-      appendAiLogIfActive(run, message, "error")
     } finally {
       if (run === aiRun) setAiBusy(false)
     }
@@ -970,7 +913,7 @@ function PageEditor(props: {
     if (!e || aiBusy()) return
 
     const live = getSelection()
-    const selection = pickAiSelection(live, aiSelection(), e.state.doc.content.size)
+    let selection = pickAiSelection(live, aiSelection(), e.state.doc.content.size)
     if (!selection && actionNeedsSelection(action)) {
       setAiError("Select text first.")
       return
@@ -982,8 +925,17 @@ function PageEditor(props: {
       return
     }
 
-    const selected = selection ? e.state.doc.textBetween(selection.from, selection.to, "\n", "\n") : ""
-    const context = e.getText().slice(0, 14000)
+    // For custom action without selection: anchor at cursor for inline insertion
+    if (action === "custom" && !selection) {
+      const pos = aiAnchor() ?? e.state.selection.from
+      selection = { from: pos, to: pos }
+    }
+
+    const hasRealSelection = selection !== null && selection.from !== selection.to
+    const selected = hasRealSelection ? e.state.doc.textBetween(selection!.from, selection!.to, "\n", "\n") : ""
+    // Full page context only for actions that operate on the whole document (summarize, continue).
+    // Custom action without selection gets empty context — the instruction alone drives the model.
+    const context = (action === "custom" && !hasRealSelection) ? "" : e.getText().slice(0, 14000)
     const request: AiRequest = {
       action,
       instruction: prompt,
@@ -1100,15 +1052,12 @@ function PageEditor(props: {
   }
 
   const stopAiRequest = () => {
-    const wasBusy = aiBusy()
     aiRun += 1
     setAiBusy(false)
-    if (wasBusy) appendAiLog("Request canceled.", "error")
   }
 
   const resetAiComposer = () => {
     setCustomAiValue("")
-    setAiLogs([])
     setAiError(undefined)
   }
 
@@ -1136,6 +1085,23 @@ function PageEditor(props: {
       resizeAiPrompt()
       customAiInputRef?.focus()
     }, 0)
+  }
+
+  // ── Pane bus registration for cross-pane Page AI ──
+  if (props.leafId && props.tabId) {
+    usePane({
+      leafId: props.leafId,
+      tabId: props.tabId,
+      type: "page",
+      name: () => title() || "Page",
+      capabilities: ["page-ai:receive"],
+      handlers: {
+        "page-ai:receive": {
+          onAction: (action, instruction) => void runAiAction(action as PageAiAction, instruction),
+          onOpen: () => openAiComposer(),
+        },
+      },
+    })
   }
 
   const toggleLinkMenu = () => {
@@ -1319,13 +1285,8 @@ function PageEditor(props: {
   }
 
   const openLinkedMarkdown = (path: string) => {
-    if (!props.directory || !pageSdk) return
-    void openMarkdownPageTab({
-      directory: props.directory,
-      path,
-      sdk: pageSdk,
-      tabs: dockTabs(),
-    })
+    if (!props.directory) return
+    dockTabs().addFile(props.directory, path, getFilename(path))
   }
 
   const onMarkdownLinkClick = (event: MouseEvent) => {
@@ -1526,7 +1487,12 @@ function PageEditor(props: {
           props.onSavingChange(true)
           pagesApi
             .update(props.pageId, { content: next })
-            .then(() => setSavedContent(next))
+            .then(() => {
+              setSavedContent(next)
+              if (props.filePath && props.directory && props.directory !== "__pages__") {
+                pagesApi.writeback(props.pageId, props.filePath, props.directory).catch(() => {})
+              }
+            })
             .catch((e) => console.error("Failed to save page:", e))
             .finally(() => props.onSavingChange(false))
         }, 1500)
@@ -1565,16 +1531,6 @@ function PageEditor(props: {
     return raw
   }
 
-  const isConflict = (error: unknown) => {
-    const raw = error instanceof Error ? error.message : String(error)
-    try {
-      const value = JSON.parse(raw) as { conflict?: boolean }
-      return value?.conflict === true
-    } catch {
-      return false
-    }
-  }
-
   const pageEmpty = () => {
     tick()
     const e = editor()
@@ -1602,269 +1558,35 @@ function PageEditor(props: {
     scheduleToolbar(60)
   }
 
-  const ensurePermission = async (handle: MarkdownHandle, mode: "read" | "readwrite") => {
-    if (!handle.queryPermission && !handle.requestPermission) return true
-    const current = handle.queryPermission ? await handle.queryPermission.call(handle, { mode }) : "prompt"
-    if (current === "granted") return true
-    if (current === "denied") return false
-    const next = handle.requestPermission ? await handle.requestPermission.call(handle, { mode }) : "denied"
-    return next === "granted"
-  }
-
-  const exportState = async () => {
-    const exported = await pagesApi.exportMarkdown(props.pageId)
-    return {
-      markdown: exported.markdown,
-      doc_hash: exported.meta.doc_hash,
-    }
-  }
-
-  const importText = async (
-    markdown: string,
-    mode: "import" | "sync" = "import",
-    conflictMessage = "Linked markdown changed against newer page content. Overwrite page content from linked markdown?",
-    allowConfirm = true,
-  ) => {
-    const value = markdown.trim()
-    if (!value) {
-      setAiError("Selected markdown file is empty.")
-      return false
-    }
-    if (mode === "import" && !pageEmpty()) {
-      if (!window.confirm("Importing markdown will replace current page content. Continue?")) return false
-    }
-    setMdBusy(mode)
-    setAiError(undefined)
-    let force = mode === "import"
-    while (true) {
-      try {
-        const result = await pagesApi.importMarkdown(props.pageId, value, force)
-        applyPage(result.page)
-        setMdBusy("")
-        return true
-      } catch (error) {
-        if (!force && allowConfirm && isConflict(error) && window.confirm(conflictMessage)) {
-          force = true
-          continue
-        }
-        if (!force && !allowConfirm && isConflict(error)) setLinkNeed("conflict")
-        setAiError(errText(error))
-        setMdBusy("")
-        return false
-      }
-    }
-  }
-
-  const pullLinked = async (allowConfirm = true) => {
-    const link = linked()
-    if (!link || mdBusy()) return
-    if (!(await ensurePermission(link.handle, "read"))) {
-      setAiError("Permission denied for linked markdown file.")
-      return
-    }
-    const file = await link.handle.getFile.call(link.handle)
-    const text = await file.text()
-    const file_hash = await sha(text)
-    const imported = await importText(
-      text,
-      "sync",
-      "Both page and linked markdown changed. Pull from linked markdown and overwrite page changes?",
-      allowConfirm,
-    )
-    if (!imported) return
-    const state = await exportState()
-    const next = {
-      ...link,
-      name: file.name || link.name,
-      doc_hash: state.doc_hash,
-      file_hash,
-      updated_at: Date.now(),
-    }
-    await linkedSave(next)
-    setLinked(next)
-    setLinkNeed("none")
-  }
-
-  const pushLinked = async () => {
-    const link = linked()
-    if (!link || mdBusy()) return
-    if (!(await ensurePermission(link.handle, "readwrite"))) {
-      setAiError("Permission denied for linked markdown file write.")
-      return
-    }
-    if (
-      linkNeed() === "conflict" &&
-      !window.confirm("Both page and linked markdown changed. Overwrite linked markdown with page content?")
-    ) {
-      return
-    }
-    if (!link.handle.createWritable) {
-      setAiError("Browser does not allow writing to linked markdown.")
-      return
-    }
-    setMdBusy("push")
-    setAiError(undefined)
-    try {
-      const state = await exportState()
-      const stream = await link.handle.createWritable.call(link.handle)
-      await stream.write(state.markdown)
-      await stream.close()
-      const file_hash = await sha(state.markdown)
-      const next = {
-        ...link,
-        doc_hash: state.doc_hash,
-        file_hash,
-        updated_at: Date.now(),
-      }
-      await linkedSave(next)
-      setLinked(next)
-      setLinkNeed("none")
-      setMdBusy("")
-    } catch (error) {
-      setAiError(errText(error))
-      setMdBusy("")
-    }
-  }
-
-  const checkLinked = async (autoPull = false) => {
-    const link = linked()
-    if (!link) {
-      setLinkNeed("none")
-      return
-    }
-    try {
-      if (!(await ensurePermission(link.handle, "read"))) {
-        setLinkNeed("none")
-        return
-      }
-      const [state, file] = await Promise.all([exportState(), link.handle.getFile.call(link.handle)])
-      const text = await file.text()
-      const file_hash = await sha(text)
-      const pageChanged = state.doc_hash !== link.doc_hash
-      const fileChanged = file_hash !== link.file_hash
-      if (!pageChanged && !fileChanged) {
-        setLinkNeed("none")
-        return
-      }
-      if (!pageChanged && fileChanged) {
-        if (autoPull) {
-          await pullLinked(false)
-          return
-        }
-        setLinkNeed("pull")
-        return
-      }
-      if (pageChanged && !fileChanged) {
-        setLinkNeed("push")
-        return
-      }
-      setLinkNeed("conflict")
-    } catch {
-      setLinkNeed("none")
-    }
-  }
-
-  const loadLinked = async () => {
-    const value = await linkedLoad(props.pageId)
-    setLinked(value)
-    if (!value) {
-      setLinkNeed("none")
-      return
-    }
-    await checkLinked(true)
-  }
+  const [mdBusy, setMdBusy] = createSignal(false)
 
   const importMarkdown = () => {
     if (mdBusy()) return
-    const picker = window as Window & { showOpenFilePicker?: () => Promise<MarkdownHandle[]> }
-    const open = picker.showOpenFilePicker
-    if (open) {
-      void (async () => {
-        let handle: MarkdownHandle | null = null
-        try {
-          const selected = await open.call(picker)
-          handle = selected[0] || null
-        } catch {
-          return
-        }
-        if (!handle) return
-        if (!(await ensurePermission(handle, "readwrite"))) {
-          setAiError("Permission denied for markdown file.")
-          return
-        }
-        const file = await handle.getFile.call(handle)
-        const text = await file.text()
-        const imported = await importText(text, "import")
-        if (!imported) return
-        const state = await exportState()
-        const record = {
-          page_id: props.pageId,
-          handle,
-          name: file.name || handle.name || "linked.md",
-          doc_hash: state.doc_hash,
-          file_hash: await sha(text),
-          updated_at: Date.now(),
-        }
-        await linkedSave(record)
-        setLinked(record)
-        setLinkNeed("none")
-      })()
-      return
-    }
     const input = document.createElement("input")
     input.type = "file"
     input.accept = ".md,text/markdown,text/plain"
     input.onchange = async () => {
       const file = input.files?.[0]
       if (!file) return
-      const imported = await importText(await file.text(), "import")
-      if (!imported) return
-      await linkedClear(props.pageId)
-      setLinked(null)
-      setLinkNeed("none")
+      const text = file.text ? await file.text() : ""
+      if (!text.trim()) {
+        setAiError("Selected markdown file is empty.")
+        return
+      }
+      if (!pageEmpty() && !window.confirm("Importing markdown will replace current page content. Continue?")) return
+      setMdBusy(true)
+      setAiError(undefined)
+      try {
+        const result = await pagesApi.importMarkdown(props.pageId, text, true)
+        applyPage(result.page)
+      } catch (error) {
+        setAiError(errText(error))
+      } finally {
+        setMdBusy(false)
+      }
     }
     input.click()
   }
-
-  const syncMarkdown = async () => {
-    await pullLinked(true)
-  }
-
-  const updateLinkedMarkdown = async () => {
-    await pushLinked()
-  }
-
-  createEffect(
-    on(
-      () => props.pageId,
-      () => {
-        void loadLinked()
-      },
-    ),
-  )
-
-  createEffect(
-    on(
-      () => savedContent(),
-      () => {
-        if (!linked() || mdBusy()) return
-        void checkLinked(false)
-      },
-      { defer: true },
-    ),
-  )
-
-  createEffect(
-    on(
-      () => linkNeed(),
-      (need) => {
-        if (need !== "push") return
-        if (!linked() || mdBusy()) return
-        void updateLinkedMarkdown()
-      },
-      { defer: true },
-    ),
-  )
 
   onCleanup(() => {
     if (saveTimer) clearTimeout(saveTimer)
@@ -1895,34 +1617,22 @@ function PageEditor(props: {
       <div
         class="notion-page-shell"
         classList={{
-          "notion-page-shell-with-side-dock": sideDock(),
-          "notion-page-shell-with-left-dock": sideDock() && dockPosition() === "left",
-          "notion-page-shell-with-right-dock": sideDock() && dockPosition() === "right",
+          "notion-page-shell-with-side-dock": dockEnabled(),
+          "notion-page-shell-with-left-dock": dockEnabled() && dockPosition() === "left",
+          "notion-page-shell-with-right-dock": dockEnabled() && dockPosition() === "right",
         }}
-        style={sideDock() ? { "--page-side-dock-width": `${dockWidth()}px` } : undefined}
+        style={dockEnabled() ? { "--page-side-dock-width": `${dockWidth()}px` } : undefined}
       >
         <div class="notion-page-actions">
           <Show when={pageEmpty()}>
             <button
               type="button"
               class="notion-page-action-btn notion-page-action-btn-primary"
-              disabled={!!mdBusy()}
+              disabled={mdBusy()}
               onClick={importMarkdown}
             >
-              {mdBusy() === "import" ? "Importing..." : "Import Markdown"}
+              {mdBusy() ? "Importing..." : "Import Markdown"}
             </button>
-          </Show>
-          <Show when={!pageEmpty()}>
-            <Show when={!!linked() && (linkNeed() === "pull" || linkNeed() === "conflict")}>
-              <button
-                type="button"
-                class="notion-page-action-btn"
-                disabled={!!mdBusy()}
-                onClick={() => void syncMarkdown()}
-              >
-                {mdBusy() === "sync" ? "Syncing..." : "Sync Markdown"}
-              </button>
-            </Show>
           </Show>
         </div>
         {/* Ghost title */}
@@ -2120,7 +1830,7 @@ function PageEditor(props: {
                 openAiComposer()
               }}
             >
-              {aiBusy() ? "…" : "Ask AI"}
+              {aiBusy() ? <span class="notion-ai-dots"><span /></span> : "Ask AI"}
             </button>
             <div class="notion-toolbar-divider" />
             <For each={FLOATING_TOOLBAR_ITEMS}>
@@ -2412,7 +2122,7 @@ function PageEditor(props: {
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={runCustomAiPrompt}
                 >
-                  <span class="notion-ai-send-icon">{aiBusy() ? "↻" : "↑"}</span>
+                  <span class="notion-ai-send-icon">{aiBusy() ? <span class="notion-ai-dots"><span /></span> : "↑"}</span>
                 </button>
               </div>
             </div>
@@ -2429,24 +2139,6 @@ function PageEditor(props: {
                     >
                       {item.label}
                     </button>
-                  )}
-                </For>
-              </div>
-            </Show>
-            <Show when={aiLogs().length > 0}>
-              <div class="notion-ai-runlog" role="status" aria-live="polite">
-                <For each={aiLogs().slice(-6)}>
-                  {(entry) => (
-                    <div
-                      class="notion-ai-runlog-item"
-                      classList={{
-                        "notion-ai-runlog-item-success": entry.level === "success",
-                        "notion-ai-runlog-item-error": entry.level === "error",
-                      }}
-                    >
-                      <span class="notion-ai-runlog-dot" />
-                      <span class="notion-ai-runlog-text">{entry.text}</span>
-                    </div>
                   )}
                 </For>
               </div>
@@ -2529,13 +2221,10 @@ function PageEditor(props: {
         <div
           class="notion-toc-wrap"
           classList={{
-            "notion-toc-wrap-side-right": sideDock() && dockPosition() === "right",
+            "notion-toc-wrap-side-right": dockEnabled() && dockPosition() === "right",
           }}
           style={{
-            ...(sideDock() ? { "--page-side-dock-width": `${dockWidth()}px` } : {}),
-            ...(claxedo && groupId && claxedo.groupLayout(groupId).fileTree.opened()
-              ? { "--file-tree-offset": `${claxedo.groupLayout(groupId).fileTree.width()}px` }
-              : {}),
+            ...(dockEnabled() ? { "--page-side-dock-width": `${dockWidth()}px` } : {}),
           }}
         >
           <div class="notion-toc-menu">

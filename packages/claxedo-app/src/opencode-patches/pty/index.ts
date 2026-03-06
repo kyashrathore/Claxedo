@@ -250,6 +250,9 @@ export namespace Pty {
     // CLAXEDO PATCH: Instrumentation — first byte timing
     createdAt: number
     firstByteAt: number | undefined
+    // CLAXEDO PATCH: Captured Instance.directory for use in async callbacks
+    // (onExit, onData, onClose fire outside AsyncLocalStorage context)
+    directory: string
   }
 
   // CLAXEDO PATCH: Centralized session cleanup with guards
@@ -268,15 +271,18 @@ export namespace Pty {
 
       // Remove from state after a delay to allow reconnection/debugging
       setTimeout(() => {
-        if (state().get(id) === session) {
-          for (const ws of session.subscribers) {
-            ws.close()
+        // CLAXEDO PATCH: Re-establish context — setTimeout fires outside AsyncLocalStorage
+        void Instance.provide({ directory: session.directory, fn: () => {
+          if (state().get(id) === session) {
+            for (const ws of session.subscribers) {
+              ws.close()
+            }
+            session.subscribers.clear()
+            state().delete(id)
+            session.removed = true
+            if (DEBUG) log.info("garbage collected exited session", { id })
           }
-          session.subscribers.clear()
-          state().delete(id)
-          session.removed = true
-          if (DEBUG) log.info("garbage collected exited session", { id })
-        }
+        }})
       }, 1000 * 60) // 1 minute retention
       return
     }
@@ -482,6 +488,11 @@ export namespace Pty {
     // This lets the WebSocket connect handler replay the old scrollback.
     const restored = previousPtyId ? history.snapshot() : ""
 
+    // CLAXEDO PATCH: Capture Instance.directory while AsyncLocalStorage context
+    // is still active. PTY callbacks (onExit, onData, onClose) fire outside
+    // the original request context, so we re-establish it via Instance.provide.
+    const instanceDir = Instance.directory
+
     const session: ActiveSession = {
       info,
       process: ptyProcess,
@@ -501,6 +512,7 @@ export namespace Pty {
       lowWatermark: QUEUE_LOW_WATERMARK,
       createdAt: performance.now(),
       firstByteAt: undefined,
+      directory: instanceDir,
     }
     state().set(id, session)
     ptyProcess.onData((data) => {
@@ -524,14 +536,16 @@ export namespace Pty {
       if (parsed.cwd && parsed.cwd !== session.info.cwd) {
         session.info.cwd = parsed.cwd
         if (DEBUG) log.info("cwd updated", { id, cwd: parsed.cwd })
-        Bus.publish(Event.Updated, { info: session.info })
+        // CLAXEDO PATCH: Re-establish context for Bus.publish (fires outside AsyncLocalStorage)
+        void Instance.provide({ directory: session.directory, fn: () => Bus.publish(Event.Updated, { info: session.info }) })
       }
 
       // CLAXEDO PATCH: OSC process-exit detection (inner command exit)
       const exitParsed = oscProcessExit(session.processExitBuf, data)
       session.processExitBuf = exitParsed.buf
       if (exitParsed.exitCode !== undefined) {
-        Bus.publish(Event.Stream, { id, kind: "command-exit", exitCode: exitParsed.exitCode })
+        // CLAXEDO PATCH: Re-establish context for Bus.publish
+        void Instance.provide({ directory: session.directory, fn: () => Bus.publish(Event.Stream, { id, kind: "command-exit", exitCode: exitParsed.exitCode }) })
       }
 
       // CLAXEDO PATCH: safeBroadcast instead of raw broadcast
@@ -559,9 +573,12 @@ export namespace Pty {
       session.exited = true
       log.info("session exited", { id, exitCode })
       session.info.status = "exited"
-      Bus.publish(Event.Exited, { id, exitCode })
-      Bus.publish(Event.Stream, { id, kind: "exit", exitCode })
-      await cleanupSession(id, session, "exit")
+      // CLAXEDO PATCH: Re-establish context — onExit fires outside AsyncLocalStorage
+      await Instance.provide({ directory: session.directory, fn: async () => {
+        Bus.publish(Event.Exited, { id, exitCode })
+        Bus.publish(Event.Stream, { id, kind: "exit", exitCode })
+        await cleanupSession(id, session, "exit")
+      }})
     })
     Bus.publish(Event.Created, { info })
     return info
@@ -704,7 +721,8 @@ export namespace Pty {
       onClose: () => {
         log.info("client disconnected from session", { id })
         session.subscribers.delete(ws)
-        Bus.publish(Event.Stream, { id, kind: "disconnect" })
+        // CLAXEDO PATCH: Re-establish context — onClose fires outside AsyncLocalStorage
+        void Instance.provide({ directory: session.directory, fn: () => Bus.publish(Event.Stream, { id, kind: "disconnect" }) })
         // CLAXEDO PATCH: Reset ready flag when all clients disconnect
         if (session.subscribers.size === 0) {
           session.ready = false

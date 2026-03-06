@@ -16,19 +16,9 @@ export function GroupLayoutProvider(props: ParentProps<{ groupId: string }>) {
   const gl = claxedo.groupLayout(props.groupId)
 
   // Create a layout value that delegates everything to the parent
-  // except fileTree, session, and reviewPanel, which use per-group state.
+  // except session and reviewPanel, which use per-group state.
   const modifiedLayout = {
     ...parentLayout,
-    fileTree: {
-      opened: gl.fileTree.opened,
-      width: gl.fileTree.width,
-      tab: gl.fileTree.tab,
-      setTab: gl.fileTree.setTab,
-      open() { gl.fileTree.setOpened(true) },
-      close() { gl.fileTree.setOpened(false) },
-      toggle() { gl.fileTree.setOpened(!gl.fileTree.opened()) },
-      resize(width: number) { gl.fileTree.setWidth(width) },
-    },
     session: {
       width: gl.session.width,
       collapsed: gl.session.collapsed,

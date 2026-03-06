@@ -13,6 +13,7 @@ function baseName(content: PaneContent) {
   if (content.type === "session") return "session"
   if (content.type === "terminal") return "terminal"
   if (content.type === "review") return "review"
+  if (content.type === "review-workspace") return "review-workspace"
   if (content.type === "context") return "context"
   if (content.type === "file") return "file"
   if (content.type === "page") return "page"

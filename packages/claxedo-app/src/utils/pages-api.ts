@@ -15,22 +15,6 @@ export type Page = {
 
 export type PageAiAction = "improve" | "fix" | "shorten" | "lengthen" | "summarize" | "continue" | "custom"
 
-export type PageAiRequest = {
-  action: PageAiAction
-  text?: string
-  context?: string
-  instruction?: string
-  model?: string
-  page_id?: string
-  pageId?: string
-}
-
-export type PageAiResponse = {
-  text: string
-  provider: string
-  model: string
-}
-
 export type PageMarkdownExport = {
   id: string
   title: string
@@ -203,13 +187,6 @@ export const pagesApi = {
     })
   },
 
-  ai(input: PageAiRequest): Promise<PageAiResponse> {
-    return request<PageAiResponse>(`${base()}/ai`, {
-      method: "POST",
-      body: JSON.stringify(input),
-    })
-  },
-
   exportMarkdown(id: string): Promise<PageMarkdownExport> {
     return request<PageMarkdownExport>(`${base()}/${id}/export/markdown`)
   },
@@ -267,6 +244,13 @@ export const pagesApi = {
     return request<{ ok: boolean; state: ArenaState }>(`${base()}/${id}/arena/control`, {
       method: "POST",
       body: JSON.stringify(input),
+    })
+  },
+
+  writeback(id: string, filePath: string, directory: string): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`${base()}/${id}/writeback`, {
+      method: "POST",
+      body: JSON.stringify({ filePath, directory }),
     })
   },
 

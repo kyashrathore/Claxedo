@@ -4,7 +4,6 @@ import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/context/local"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore, produce } from "solid-js/store"
-import { SessionContextUsage } from "@/components/session-context-usage"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Select } from "@opencode-ai/ui/select"
@@ -367,6 +366,22 @@ export default function Page() {
   const paneLeafId = createMemo(() => sessionParams?.leafId?.())
   const paneIntentDefaults = createMemo(() => paneDefaults(paneLayout(), paneLeafId()))
   const paneIntentSystem = createMemo(() => paneRefSystem(paneLayout(), paneLeafId()))
+
+  // Inject default prompt text from pane intent (e.g. process tab session pane)
+  {
+    let injected = false
+    createEffect(
+      on(
+        () => [paneIntentDefaults()?.prompt, prompt.ready(), prompt.dirty()] as const,
+        ([defaultPrompt, ready, dirty]) => {
+          if (injected || !defaultPrompt || !ready || dirty) return
+          injected = true
+          const text = defaultPrompt
+          prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+        },
+      ),
+    )
+  }
 
   // Derive session ID from context (multi-pane), group fallback, or route params.
   // Use prev-value guard: once we resolve a real session ID, prevent transient

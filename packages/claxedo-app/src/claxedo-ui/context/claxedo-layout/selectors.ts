@@ -19,6 +19,7 @@ export type MultiPaneLeafView = {
   focused: boolean
   zoomed: boolean
   hidden: boolean
+  floating: boolean
   title: string
 }
 
@@ -44,6 +45,8 @@ function contentTitle(content: PaneContent | undefined) {
   if (content.type === "review") return "Review"
   if (content.type === "page") return "Page"
   if (content.type === "context") return "Context"
+  if (content.type === "process") return "Processes"
+  if (content.type === "filetree") return "Files"
   return content.type
 }
 
@@ -59,7 +62,7 @@ export function createLayoutSelectors(input: { store: ClaxedoLayoutStore }) {
     if (!current) return
     const pinned = item.worktree.pinned
     if (!pinned || current.directory === pinned) return current
-    return ordered(item).find((tab) => tab.directory === pinned) ?? current
+    return ordered(item).find((tab) => tab.directory === pinned && tab.type !== "process") ?? current
   }
 
   const visibleGroupTabs = (groupId: string) => {
@@ -67,7 +70,7 @@ export function createLayoutSelectors(input: { store: ClaxedoLayoutStore }) {
     if (!item) return []
     const pinned = item.worktree.pinned
     if (!pinned) return ordered(item)
-    return ordered(item).filter((tab) => tab.directory === pinned)
+    return ordered(item).filter((tab) => tab.pinned || tab.directory === pinned)
   }
 
   const visibleGroups = () => {
@@ -93,15 +96,21 @@ export function createLayoutSelectors(input: { store: ClaxedoLayoutStore }) {
     const layout = state.layouts.find((item) => item.id === state.activeLayoutId) ?? state.layouts[0]
     if (!layout) return []
     const rects = computeLeafRects(layout.pane)
+    const floatingId = layout.floating
     return rects.map((rect) => {
       const content = layout.contents[rect.id]
+      const isFloating = floatingId === rect.id
+      // When a leaf is floating, it's hidden from normal layout (rendered as overlay)
+      // Its sibling takes full space (effectively zoomed)
+      const hasFloating = floatingId !== undefined && floatingId !== rect.id
       return {
         id: rect.id,
         rect,
         content,
         focused: layout.focus === rect.id,
-        zoomed: layout.zoom === rect.id,
-        hidden: layout.zoom !== undefined && layout.zoom !== rect.id,
+        zoomed: layout.zoom === rect.id || hasFloating,
+        hidden: (layout.zoom !== undefined && layout.zoom !== rect.id) || isFloating,
+        floating: isFloating,
         title: contentTitle(content),
       }
     })
