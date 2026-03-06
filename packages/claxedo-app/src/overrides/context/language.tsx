@@ -20,6 +20,7 @@ import { dict as no } from "@/i18n/no"
 import { dict as br } from "@/i18n/br"
 import { dict as th } from "@/i18n/th"
 import { dict as bs } from "@/i18n/bs"
+import { dict as tr } from "@/i18n/tr"
 import { dict as uiEn } from "@opencode-ai/ui/i18n/en"
 import { dict as uiZh } from "@opencode-ai/ui/i18n/zh"
 import { dict as uiZht } from "@opencode-ai/ui/i18n/zht"
@@ -36,6 +37,7 @@ import { dict as uiNo } from "@opencode-ai/ui/i18n/no"
 import { dict as uiBr } from "@opencode-ai/ui/i18n/br"
 import { dict as uiTh } from "@opencode-ai/ui/i18n/th"
 import { dict as uiBs } from "@opencode-ai/ui/i18n/bs"
+import { dict as uiTr } from "@opencode-ai/ui/i18n/tr"
 
 export type Locale =
   | "en"
@@ -54,6 +56,7 @@ export type Locale =
   | "br"
   | "th"
   | "bs"
+  | "tr"
 
 type RawDictionary = typeof en & typeof uiEn
 type Dictionary = i18n.Flatten<RawDictionary>
@@ -75,6 +78,7 @@ const LOCALES: readonly Locale[] = [
   "no",
   "br",
   "th",
+  "tr",
 ]
 
 type ParityKey = "command.session.previous.unseen" | "command.session.next.unseen"
@@ -94,6 +98,7 @@ const PARITY_CHECK: Record<Exclude<Locale, "en">, Record<ParityKey, string>> = {
   br,
   th,
   bs,
+  tr,
 }
 void PARITY_CHECK
 
@@ -114,6 +119,37 @@ const INTL: Record<Locale, string> = {
   br: "pt-BR",
   th: "th",
   bs: "bs",
+  tr: "tr",
+}
+
+function cookie(locale: Locale) {
+  return `oc_locale=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`
+}
+
+const localeMatchers: Array<{ locale: Locale; match: (language: string) => boolean }> = [
+  { locale: "zht", match: (language) => language.startsWith("zh") && language.includes("hant") },
+  { locale: "zh", match: (language) => language.startsWith("zh") },
+  { locale: "ko", match: (language) => language.startsWith("ko") },
+  { locale: "de", match: (language) => language.startsWith("de") },
+  { locale: "es", match: (language) => language.startsWith("es") },
+  { locale: "fr", match: (language) => language.startsWith("fr") },
+  { locale: "da", match: (language) => language.startsWith("da") },
+  { locale: "ja", match: (language) => language.startsWith("ja") },
+  { locale: "pl", match: (language) => language.startsWith("pl") },
+  { locale: "ru", match: (language) => language.startsWith("ru") },
+  { locale: "ar", match: (language) => language.startsWith("ar") },
+  {
+    locale: "no",
+    match: (language) => language.startsWith("no") || language.startsWith("nb") || language.startsWith("nn"),
+  },
+  { locale: "br", match: (language) => language.startsWith("pt") },
+  { locale: "th", match: (language) => language.startsWith("th") },
+  { locale: "bs", match: (language) => language.startsWith("bs") },
+  { locale: "tr", match: (language) => language.startsWith("tr") },
+]
+
+function normalizeLocale(value: string): Locale {
+  return LOCALES.includes(value as Locale) ? (value as Locale) : "en"
 }
 
 function detectLocale(): Locale {
@@ -122,28 +158,9 @@ function detectLocale(): Locale {
   const languages = navigator.languages?.length ? navigator.languages : [navigator.language]
   for (const language of languages) {
     if (!language) continue
-    if (language.toLowerCase().startsWith("zh")) {
-      if (language.toLowerCase().includes("hant")) return "zht"
-      return "zh"
-    }
-    if (language.toLowerCase().startsWith("ko")) return "ko"
-    if (language.toLowerCase().startsWith("de")) return "de"
-    if (language.toLowerCase().startsWith("es")) return "es"
-    if (language.toLowerCase().startsWith("fr")) return "fr"
-    if (language.toLowerCase().startsWith("da")) return "da"
-    if (language.toLowerCase().startsWith("ja")) return "ja"
-    if (language.toLowerCase().startsWith("pl")) return "pl"
-    if (language.toLowerCase().startsWith("ru")) return "ru"
-    if (language.toLowerCase().startsWith("ar")) return "ar"
-    if (
-      language.toLowerCase().startsWith("no") ||
-      language.toLowerCase().startsWith("nb") ||
-      language.toLowerCase().startsWith("nn")
-    )
-      return "no"
-    if (language.toLowerCase().startsWith("pt")) return "br"
-    if (language.toLowerCase().startsWith("th")) return "th"
-    if (language.toLowerCase().startsWith("bs")) return "bs"
+    const normalized = language.toLowerCase()
+    const match = localeMatchers.find((entry) => entry.match(normalized))
+    if (match) return match.locale
   }
 
   return "en"
@@ -159,32 +176,8 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
       }),
     )
 
-    const intl = createMemo(() => INTL[store.locale as Locale] ?? "en")
-
-    const locale = createMemo<Locale>(() => {
-      if (store.locale === "zh") return "zh"
-      if (store.locale === "zht") return "zht"
-      if (store.locale === "ko") return "ko"
-      if (store.locale === "de") return "de"
-      if (store.locale === "es") return "es"
-      if (store.locale === "fr") return "fr"
-      if (store.locale === "da") return "da"
-      if (store.locale === "ja") return "ja"
-      if (store.locale === "pl") return "pl"
-      if (store.locale === "ru") return "ru"
-      if (store.locale === "ar") return "ar"
-      if (store.locale === "no") return "no"
-      if (store.locale === "br") return "br"
-      if (store.locale === "th") return "th"
-      if (store.locale === "bs") return "bs"
-      return "en"
-    })
-
-    createEffect(() => {
-      const current = locale()
-      if (store.locale === current) return
-      setStore("locale", current)
-    })
+    const locale = createMemo<Locale>(() => normalizeLocale(store.locale))
+    const intl = createMemo(() => INTL[locale()])
 
     // Capture extension strings once; extensions are registered before rendering.
     const ext = getExtensions()
@@ -209,6 +202,7 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
       if (current === "br") return { ...base, ...i18n.flatten({ ...br, ...uiBr }), ...extra }
       if (current === "th") return { ...base, ...i18n.flatten({ ...th, ...uiTh }), ...extra }
       if (current === "bs") return { ...base, ...i18n.flatten({ ...bs, ...uiBs }), ...extra }
+      if (current === "tr") return { ...base, ...i18n.flatten({ ...tr, ...uiTr }), ...extra }
       return { ...base, ...i18n.flatten({ ...ko, ...uiKo }), ...extra }
     })
 
@@ -231,6 +225,7 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
       br: "language.br",
       th: "language.th",
       bs: "language.bs",
+      tr: "language.tr",
     }
 
     const label = (value: Locale) => t(labelKey[value])
@@ -238,6 +233,7 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
     createEffect(() => {
       if (typeof document !== "object") return
       document.documentElement.lang = locale()
+      document.cookie = cookie(locale())
     })
 
     return {
@@ -248,7 +244,7 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
       label,
       t,
       setLocale(next: Locale) {
-        setStore("locale", next)
+        setStore("locale", normalizeLocale(next))
       },
     }
   },

@@ -19,12 +19,17 @@ let demoSoundState = {
 
 // To prevent audio from overlapping/playing very quickly when navigating the settings menus,
 // delay the playback by 100ms during quick selection changes and pause existing sounds.
-const playDemoSound = (src: string) => {
+const stopDemoSound = () => {
   if (demoSoundState.cleanup) {
     demoSoundState.cleanup()
   }
-
   clearTimeout(demoSoundState.timeout)
+  demoSoundState.cleanup = undefined
+}
+
+const playDemoSound = (src: string | undefined) => {
+  stopDemoSound()
+  if (!src) return
 
   demoSoundState.timeout = setTimeout(() => {
     demoSoundState.cleanup = playSound(src)

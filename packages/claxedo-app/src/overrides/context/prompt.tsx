@@ -178,7 +178,8 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
         setStore("context", "items", (items) =>
           items.map((item) => {
             if (item.type !== "file" || item.path !== path || item.commentID !== commentID) return item
-            return { ...item, ...next, key: item.key }
+            const value = { ...item, ...next }
+            return { ...value, key: keyForItem(value) }
           }),
         )
       },

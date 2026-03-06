@@ -28,7 +28,7 @@ import { buildNotificationIndex } from "@/context/notification-index"
 type NotificationBase = {
   directory?: string
   session?: string
-  metadata?: any
+  metadata?: unknown
   time: number
   viewed: boolean
 }
