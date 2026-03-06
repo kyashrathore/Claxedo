@@ -1347,6 +1347,7 @@ export default function Page() {
     showAllFiles,
     tabForPath: file.tab,
     openTab: tabs().open,
+    setActive: tabs().setActive,
     loadFile: file.load,
   })
 
@@ -1917,6 +1918,7 @@ export default function Page() {
 
           <SessionComposerRegion
             state={composerState}
+            ready={messagesReady()}
             sessionID={sessionID()}
             sessionDirectory={params.dir}
             agent={paneIntentDefaults()?.agent}

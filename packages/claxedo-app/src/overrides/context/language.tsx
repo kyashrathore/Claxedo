@@ -97,6 +97,25 @@ const PARITY_CHECK: Record<Exclude<Locale, "en">, Record<ParityKey, string>> = {
 }
 void PARITY_CHECK
 
+const INTL: Record<Locale, string> = {
+  en: "en",
+  zh: "zh-Hans",
+  zht: "zh-Hant",
+  ko: "ko",
+  de: "de",
+  es: "es",
+  fr: "fr",
+  da: "da",
+  ja: "ja",
+  pl: "pl",
+  ru: "ru",
+  ar: "ar",
+  no: "nb-NO",
+  br: "pt-BR",
+  th: "th",
+  bs: "bs",
+}
+
 function detectLocale(): Locale {
   if (typeof navigator !== "object") return "en"
 
@@ -139,6 +158,8 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
         locale: detectLocale() as Locale,
       }),
     )
+
+    const intl = createMemo(() => INTL[store.locale as Locale] ?? "en")
 
     const locale = createMemo<Locale>(() => {
       if (store.locale === "zh") return "zh"
@@ -222,6 +243,7 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
     return {
       ready,
       locale,
+      intl,
       locales: LOCALES,
       label,
       t,
