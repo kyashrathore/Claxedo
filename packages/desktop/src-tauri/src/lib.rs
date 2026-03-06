@@ -8,6 +8,7 @@ pub mod linux_windowing;
 mod logging;
 mod markdown;
 mod mermaid;
+mod os;
 mod perf;
 mod server;
 mod window_customizer;
