@@ -178,7 +178,12 @@ async function main() {
     log("Applying Claxedo patches to packages/opencode/src...")
     patchedFiles = await applyPatches()
 
-    // Step 2: Run build from opencode directory (uses monorepo node_modules)
+    // Step 2: Install patch-only dependencies that aren't in opencode's package.json
+    const patchDeps = ["@sentry/bun", "@opentelemetry/api"]
+    log("Installing patch dependencies:", patchDeps.join(", "))
+    await $`bun add ${patchDeps} --no-save`.cwd(OPENCODE_DIR)
+
+    // Step 3: Run build from opencode directory (uses monorepo node_modules)
     log("Running build...")
     const buildArgs: string[] = []
     if (singleFlag) buildArgs.push("--single")
@@ -186,7 +191,7 @@ async function main() {
 
     await $`bun run script/build.ts ${buildArgs}`.cwd(OPENCODE_DIR)
 
-    // Step 3: Copy output
+    // Step 4: Copy output
     const opencodeDistDir = path.join(OPENCODE_DIR, "dist")
     if (fs.existsSync(opencodeDistDir)) {
       log(`Copying build output to ${OUTPUT_DIR}...`)
@@ -201,7 +206,7 @@ async function main() {
       log("Warning: No dist directory found after build")
     }
   } finally {
-    // Step 4: Always restore original files
+    // Step 5: Always restore original files
     await restoreFiles(patchedFiles)
   }
 
