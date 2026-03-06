@@ -33,3 +33,6 @@ logs/
 **/.dev-docs/
 packages/claxedo-app/dev-docs/
 packages/claxedo-app/dist-opencode/
+
+# Claxedo runtime data
+.claxedo/

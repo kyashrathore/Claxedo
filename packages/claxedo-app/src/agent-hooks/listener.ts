@@ -15,11 +15,14 @@
  * - This unifies the notification behavior between terminal CLI agents and sessions
  */
 
-import { createEffect, onCleanup } from "solid-js"
+import { batch, createEffect, onCleanup } from "solid-js"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useSettings } from "@/context/settings"
 import { playSound, soundSrc } from "@/utils/sound"
 import { useClaxedoLayout, type TabItem, type TerminalAgentStatus } from "../claxedo-ui/context/claxedo-layout"
+import { createDebugLogger } from "../overrides/utils/debug"
+
+const lifecycleDebug = createDebugLogger("agent.lifecycle", "agent:lifecycle", { defaultLevel: 0 })
 
 /**
  * Hook that listens for agent lifecycle events and updates tab status
@@ -50,79 +53,94 @@ export function useAgentLifecycleListener() {
         tabId: string
         terminalId?: string
         workspaceId?: string
-        eventType: "Start" | "Stop" | "PermissionRequest"
+        eventType: "Busy" | "Idle" | "UserActionRequired" | "Error" | "Start" | "Stop" | "PermissionRequest"
       }
 
       const actualTerminalId = terminalId || tabId
 
-      // Update per-terminal status first, even if we can't map it to a tab yet.
-      // This prevents losing state when events arrive before the terminal tab is created/migrated.
+      lifecycleDebug.log("event", { eventType, tabId, terminalId, actualTerminalId })
+
+      // Server sends: Busy/Start → working, Idle/Stop → idle, UserActionRequired/PermissionRequest → permission
       const terminalStatus: TerminalAgentStatus = (() => {
-        if (eventType === "Start") return "working"
-        if (eventType === "Stop") return "idle"
+        if (eventType === "Busy" || eventType === "Start") return "working"
+        if (eventType === "Idle" || eventType === "Stop") return "idle"
         return "permission"
       })()
 
-      claxedo.terminal.setAgentStatus(actualTerminalId, terminalStatus)
+      // batch() ensures all store updates (setAgentStatus + patchTab) are atomic.
+      // Without it, setAgentStatus triggers reactive effects before patchTab runs,
+      // causing pane status to briefly see "idle" + tab.done=false → grey instead of green.
+      batch(() => {
+        claxedo.terminal.setAgentStatus(actualTerminalId, terminalStatus)
 
-      // Find the tab to update
-      const tabs = claxedo.topTabs.items()
+        // Find the tab across ALL groups (not just focused group)
+        const groups = claxedo.split.groups()
+        let tab: TabItem | undefined
+        let tabGroupId: string | undefined
 
-      let tab = tabs.find((t) => t.id === tabId)
-
-      // If not found by tabId, look for a terminal tab that owns this PTY
-      if (!tab && terminalId) {
-        tab = tabs.find((t) => t.type === "terminal" && t.terminalId === terminalId)
-      }
-
-      // Also try using tabId as terminalId (shell hooks pass PTY ID as tabId for simplicity)
-      if (!tab) {
-        tab = tabs.find((t) => t.type === "terminal" && t.terminalId === tabId)
-      }
-
-      // For split pane terminals: look up the owner tab via terminalOwner mapping
-      if (!tab) {
-        const ptyId = terminalId || tabId
-        const ownerTabId = claxedo.terminal.owner(ptyId)
-        if (ownerTabId) {
-          tab = tabs.find((t) => t.id === ownerTabId)
+        for (const group of groups) {
+          const allTabs = group.tabs.items
+          let found = allTabs.find((t) => t.id === tabId)
+          if (!found && terminalId) {
+            found = allTabs.find((t) => t.type === "terminal" && t.terminalId === terminalId)
+          }
+          if (!found) {
+            found = allTabs.find((t) => t.type === "terminal" && t.terminalId === tabId)
+          }
+          if (!found) {
+            const ptyId = terminalId || tabId
+            const ownerTabId = claxedo.terminal.owner(ptyId)
+            if (ownerTabId) {
+              found = allTabs.find((t) => t.id === ownerTabId)
+            }
+          }
+          if (found) {
+            tab = found
+            tabGroupId = group.id
+            break
+          }
         }
-      }
 
-      if (!tab) return
+        if (!tab || !tabGroupId) {
+          lifecycleDebug.log("tab not found", { tabId, terminalId })
+          return
+        }
 
-      // Check if this tab is currently active
-      const isActiveTab = claxedo.topTabs.activeId() === tab.id
+        // Check if this tab is currently active in its group and the group is focused
+        const isActiveTab =
+          claxedo.split.focusedId() === tabGroupId &&
+          groups.find((g) => g.id === tabGroupId)?.tabs.activeId === tab.id
 
-      // For Stop events: show done dot if tab is not active (user is "away")
-      // This handles Codex which doesn't send Start events
-      if (eventType === "Stop" && !isActiveTab) {
-        claxedo.topTabs.patch(tab.id, { loading: false, done: true })
-        // Play sound notification
-        playSound(soundSrc(settings.sounds.agent()))
-        return
-      }
+        // For Idle/Stop events: show done dot if tab is not active (user is "away")
+        // This handles Codex which doesn't send Start events
+        if ((eventType === "Idle" || eventType === "Stop") && !isActiveTab) {
+          claxedo.patchTab(tab.id, { loading: false, done: true })
+          // Play sound notification
+          playSound(soundSrc(settings.sounds.agent()))
+          return
+        }
 
-      // Compute aggregated tab status from all terminals in this tab
-      const aggregated = claxedo.terminal.getTabAgentStatus(tab.id)
+        // Compute aggregated tab status from all terminals in this tab
+        const aggregated = claxedo.terminal.getTabAgentStatus(tab.id)
 
-      // Update the tab with aggregated status
-      const patch: { loading: boolean; attention?: boolean; done?: boolean } = {
-        loading: aggregated.loading,
-        done: aggregated.done,
-      }
+        // Update the tab with aggregated status
+        const patch: { loading: boolean; attention?: boolean; done?: boolean } = {
+          loading: aggregated.loading,
+          done: aggregated.done,
+        }
 
-      // Attention handling:
-      // - Set attention=true when THIS terminal sends PermissionRequest
-      // - Clear attention only when all terminals are idle (no more permission needed)
-      // - User focus clears attention (handled by useClearAttentionOnFocus)
-      if (eventType === "PermissionRequest") {
-        patch.attention = true
-      } else if (!aggregated.attention) {
-        patch.attention = false
-      }
+        // Attention handling:
+        // - Set attention=true when THIS terminal sends PermissionRequest
+        // - Clear attention only when all terminals are idle (no more permission needed)
+        // - User focus clears attention (handled by useClearAttentionOnFocus)
+        if (eventType === "UserActionRequired" || eventType === "PermissionRequest") {
+          patch.attention = true
+        } else if (!aggregated.attention) {
+          patch.attention = false
+        }
 
-      claxedo.topTabs.patch(tab.id, patch)
+        claxedo.patchTab(tab.id, patch)
+      })
     })
 
     onCleanup(() => {
@@ -252,12 +270,12 @@ export function useClearAttentionOnFocus() {
       // Update the tab's done status immediately to hide the green dot.
       // For session tabs (no terminals), getTabAgentStatus returns done:false which clears it.
       const aggregated = claxedo.terminal.getTabAgentStatus(activeId)
-      claxedo.topTabs.patch(activeId, { done: aggregated.done })
+      claxedo.patchTab(activeId, { done: aggregated.done })
     }
 
     if (tab?.attention) {
       // Clear attention when tab is focused
-      claxedo.topTabs.patch(activeId, { attention: false })
+      claxedo.patchTab(activeId, { attention: false })
 
       // Heuristic: when a terminal tab is focused while it was in "permission" state,
       // assume the user is about to respond and restore the "working" indicator.
@@ -274,8 +292,54 @@ export function useClearAttentionOnFocus() {
       }
 
       const aggregated = claxedo.terminal.getTabAgentStatus(activeId)
-      claxedo.topTabs.patch(activeId, { loading: aggregated.loading, done: aggregated.done })
+      claxedo.patchTab(activeId, { loading: aggregated.loading, done: aggregated.done })
     }
+  })
+}
+
+/**
+ * Hook that clears stuck agent status indicators when a PTY exits.
+ *
+ * This is a defense-in-depth frontend fallback for when the server-side
+ * agent.lifecycle Idle emit doesn't arrive (e.g. network drop). It
+ * subscribes to pty.exited events and clears any "working" or "permission"
+ * status left on the terminal.
+ */
+export function usePtyExitCleanup() {
+  const globalSDK = useGlobalSDK()
+  const claxedo = useClaxedoLayout()
+
+  createEffect(() => {
+    const unsub = globalSDK.event.listen((e) => {
+      const event = e.details as unknown as { type: string; properties: Record<string, any> }
+      if (event.type !== "pty.exited") return
+
+      const ptyId = event.properties?.id as string | undefined
+      if (!ptyId) return
+
+      // Only act if this terminal was tracked and still has a non-idle status
+      if (!claxedo.terminal.isTracked(ptyId)) return
+      const status = claxedo.terminal.agentStatus(ptyId)
+      if (status === "idle") return
+
+      lifecycleDebug.log("pty.exited cleanup", { ptyId, previousStatus: status })
+
+      batch(() => {
+        claxedo.terminal.setAgentStatus(ptyId, "idle")
+
+        const ownerTabId = claxedo.terminal.owner(ptyId)
+        if (!ownerTabId) return
+
+        const aggregated = claxedo.terminal.getTabAgentStatus(ownerTabId)
+        claxedo.patchTab(ownerTabId, {
+          loading: aggregated.loading,
+          done: aggregated.done,
+          attention: aggregated.attention ? undefined : false,
+        })
+      })
+    })
+
+    onCleanup(unsub)
   })
 }
 
@@ -287,4 +351,5 @@ export function useAgentHooks() {
   useAgentLifecycleListener()
   useSessionStatusListener()
   useClearAttentionOnFocus()
+  usePtyExitCleanup()
 }

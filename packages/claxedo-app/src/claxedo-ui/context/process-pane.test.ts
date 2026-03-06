@@ -130,23 +130,21 @@ function createMockClaxedoLayout() {
   return {
     ready: () => layoutReady,
     processPane: {
-      isOpen: () => isOpen,
-      toggle() {
+      isActive: () => isOpen,
+      requestToggle() {
         isOpen = !isOpen
       },
-      setOpen(v: boolean) {
-        isOpen = v
+      requestOpen() {
+        isOpen = true
       },
-      toggleVersion: () => toggleVer,
-      consumePendingOpen() {
-        const v = pendingOpen
-        pendingOpen = false
-        return v
-      },
+      targetDirectory: () => null,
+      setTargetDirectory(_dir: string | null) {},
       crashedWhileClosed: () => crashedWhileClosed,
       setCrashedWhileClosed(v: boolean) {
         crashedWhileClosed = v
       },
+      pendingAction: () => null,
+      clearPendingAction() {},
     },
     split: {
       focusedId: () => undefined,
@@ -201,6 +199,18 @@ function createMockClaxedoLayout() {
         }
       },
     }),
+    select: {
+      visibleGroups: () => groups,
+      multiPaneLeafView: () => [],
+    },
+    multiPane: {
+      initTabWithContent: () => {},
+      setContent: () => {},
+      splitLeaf: () => undefined,
+      closeLeaf: () => {},
+      getState: () => undefined,
+      leafIds: () => [],
+    },
     // test helpers
     _addedTerminals: addedTerminals,
     _getActiveTab: () => activeTabId,
@@ -284,6 +294,17 @@ beforeAll(async () => {
     get useOptionalTerminal() {
       return () => mockTerminalCtx
     },
+  }))
+
+  mock.module("@opencode-ai/ui/context/dialog", () => ({
+    useDialog: () => ({
+      show: () => {},
+      close: () => {},
+    }),
+  }))
+
+  mock.module("../components/add-process-dialog", () => ({
+    AddProcessDialog: () => null,
   }))
 
   await import("./process-pane")
@@ -490,92 +511,6 @@ describe("pane sizing", () => {
     }
   })
 
-  test("paneWidths have default pixel width when configs change count", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG, SAMPLE_CONFIG_2],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      const widths = api.paneWidths()
-      expect(widths).toHaveLength(2)
-      // Default pixel width is 400
-      expect(widths[0]).toBe(400)
-      expect(widths[1]).toBe(400)
-    } finally {
-      dispose()
-    }
-  })
-
-  test("paneWidths returns empty array when no configs", async () => {
-    const { api, dispose } = createTestProcessPane()
-    try {
-      await tick()
-      expect(api.paneWidths()).toEqual([])
-    } finally {
-      dispose()
-    }
-  })
-})
-
-describe("scroll navigation", () => {
-  test("scrollIndex starts at 0", () => {
-    const { api, dispose } = createTestProcessPane()
-    try {
-      expect(api.scrollIndex()).toBe(0)
-    } finally {
-      dispose()
-    }
-  })
-
-  test("scrollLeft does not go below 0", () => {
-    const { api, dispose } = createTestProcessPane()
-    try {
-      api.scrollLeft()
-      expect(api.scrollIndex()).toBe(0)
-    } finally {
-      dispose()
-    }
-  })
-
-  test("scrollRight increments scrollIndex", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG, SAMPLE_CONFIG_2, { ...SAMPLE_CONFIG, id: "proc_third", name: "Worker" }],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      api.scrollRight()
-      expect(api.scrollIndex()).toBe(1)
-      api.scrollRight()
-      expect(api.scrollIndex()).toBe(2)
-    } finally {
-      dispose()
-    }
-  })
-
-  test("scrollRight does not exceed configs length", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      api.scrollRight()
-      api.scrollRight()
-      api.scrollRight()
-      // With 1 config, max index is 0 (length - 1)
-      expect(api.scrollIndex()).toBe(0)
-    } finally {
-      dispose()
-    }
-  })
 })
 
 describe("SSE event processing", () => {
@@ -1009,85 +944,7 @@ describe("refresh", () => {
   })
 })
 
-describe("pane width sync on config changes", () => {
-  test("paneWidths use default pixel width when config.changed adds a process", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      expect(api.paneWidths()).toHaveLength(1)
-      expect(api.paneWidths()[0]).toBe(400) // DEFAULT_PANEL_WIDTH
-
-      // SSE adds a second config
-      emitSSE("process.config.changed", { configs: [SAMPLE_CONFIG, SAMPLE_CONFIG_2] })
-
-      expect(api.paneWidths()).toHaveLength(2)
-      expect(api.paneWidths()[0]).toBe(400)
-      expect(api.paneWidths()[1]).toBe(400)
-    } finally {
-      dispose()
-    }
-  })
-
-  test("paneWidths reset to empty when all configs removed", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      expect(api.paneWidths()).toHaveLength(1)
-
-      emitSSE("process.config.changed", { configs: [] })
-
-      expect(api.paneWidths()).toEqual([])
-    } finally {
-      dispose()
-    }
-  })
-
-  test("setPaneWidth updates individual panel pixel width", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG, SAMPLE_CONFIG_2],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-
-      api.setPaneWidth(0, 500)
-      expect(api.paneWidths()[0]).toBe(500)
-      // Second width unchanged
-      expect(api.paneWidths()[1]).toBe(400) // DEFAULT_PANEL_WIDTH
-    } finally {
-      dispose()
-    }
-  })
-
-  test("setPaneWidth ignores out-of-range index", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      const before = [...api.paneWidths()]
-      api.setPaneWidth(5, 0.3) // index out of range
-      expect(api.paneWidths()).toEqual(before)
-    } finally {
-      dispose()
-    }
-  })
-})
+// pane width sync tests removed — multi-pane system handles layout now
 
 describe("state machine transitions", () => {
   test("stop clears ptyId immediately and transitions to stopped", async () => {
@@ -1781,7 +1638,7 @@ describe("stale persisted state cleared on mount", () => {
     }
   })
 
-  test("layout (paneHeight, paneWidths) preserved — only processes cleared", async () => {
+  test("layout (paneHeight) preserved — only processes cleared", async () => {
     const { api, dispose } = createTestProcessPane({
       "GET": () => ({
         configs: [SAMPLE_CONFIG],
@@ -1792,11 +1649,9 @@ describe("stale persisted state cleared on mount", () => {
       await tick()
       // Set custom layout values
       api.setPaneHeight(500)
-      api.setPaneWidth(0, 600)
 
       // Values should survive — only processes are cleared on mount
       expect(api.paneHeight()).toBe(500)
-      expect(api.paneWidths()[0]).toBe(600)
     } finally {
       dispose()
     }

@@ -186,12 +186,12 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         if (!groupId) return
         const groupTabs = claxedo.groupTabs(groupId)
         const active = groupTabs.active()
-        if (active?.type === "review") {
+        if (active?.type === "review-workspace") {
           groupTabs.close(active.id)
           return
         }
         const title = sync.session.get(sessionID)?.title ?? "Session"
-        const id = groupTabs.addReview(dir, sessionID, title, undefined, "session-turn")
+        const id = groupTabs.addReviewWorkspace(dir, sessionID, title, undefined, "session")
         if (id) groupTabs.setActive(id)
       },
     }),

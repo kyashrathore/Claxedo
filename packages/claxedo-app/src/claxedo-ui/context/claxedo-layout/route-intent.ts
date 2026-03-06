@@ -27,9 +27,26 @@ type GroupTabs = {
 type TopTabs = {
   addSession: (directory: string, sessionId: string, title: string, badge?: Badge) => string | undefined
   addTerminal: (directory: string, terminalId: string, title: string) => string | undefined
-  addPage: (pageId: string, title: string, directory?: string) => string | undefined
+  addPage: (pageId: string, title: string, directory?: string, filePath?: string) => string | undefined
   addFile: (directory: string, filePath: string, title: string) => string | undefined
-  addReview: (directory: string, sessionId: string, title: string) => string | undefined
+  addReview: (
+    directory: string,
+    sessionId: string,
+    title: string,
+    badge?: Badge,
+    reviewMode?: TabItem["reviewMode"],
+    reviewFromRef?: string,
+    reviewToRef?: string,
+  ) => string | undefined
+  addReviewWorkspace: (
+    directory: string,
+    sessionId: string,
+    title: string,
+    badge?: Badge,
+    reviewMode?: TabItem["reviewMode"],
+    reviewFromRef?: string,
+    reviewToRef?: string,
+  ) => string | undefined
   addContext: (directory: string, sessionId: string, title: string) => string | undefined
   setActive: (tabId: string) => void
   activeId: () => string | null
@@ -143,6 +160,9 @@ export function createRouteIntentAdapter(input: {
 
     const title = asText(context.title) ?? "Recovered Tab"
     const type = asText(context.tabType) ?? ""
+    const reviewMode = asText(context.reviewMode) as TabItem["reviewMode"] | undefined
+    const reviewFromRef = asText(context.reviewFromRef)
+    const reviewToRef = asText(context.reviewToRef)
     const recovered = (() => {
       if (type === "page") {
         const pageId = asText(context.pageId)
@@ -162,7 +182,28 @@ export function createRouteIntentAdapter(input: {
       if (type === "review") {
         const sessionId = asText(context.sessionId)
         if (!sessionId) return
-        return input.claxedo.topTabs.addReview(directory, sessionId, title || "Session")
+        return input.claxedo.topTabs.addReview(
+          directory,
+          sessionId,
+          title || "Session",
+          undefined,
+          reviewMode,
+          reviewFromRef,
+          reviewToRef,
+        )
+      }
+      if (type === "review-workspace") {
+        const sessionId = asText(context.sessionId)
+        if (!sessionId) return
+        return input.claxedo.topTabs.addReviewWorkspace(
+          directory,
+          sessionId,
+          title || "Session",
+          undefined,
+          reviewMode,
+          reviewFromRef,
+          reviewToRef,
+        )
       }
       if (type === "context") {
         const sessionId = asText(context.sessionId)

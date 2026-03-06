@@ -22,15 +22,11 @@ type ProcessStatus = Process.Status
 export type ProcessPanePanelProps = {
   config: Process.ProcessConfig
   process: Process.ManagedProcess | undefined
-  /** Whether this panel is the last one (no right-edge drag handle) */
-  isLast: boolean
   onStart: () => void
   onStop: () => void
   onRestart: () => void
   /** Open the edit dialog for this process config */
   onEdit?: () => void
-  /** Right-edge resize handle callback */
-  onResizeStart?: (event: PointerEvent) => void
 }
 
 const STATUS_COLORS: Record<ProcessStatus, string> = {
@@ -91,11 +87,10 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
   const isActive = createMemo(() => ["running", "starting", "restarting", "stopping"].includes(status()))
   const canStop = createMemo(() => hasTerminal() || isActive())
   const canStart = createMemo(() => !hasTerminal() && !isActive())
-  const portlessUrl = createMemo(() => {
-    if (!props.config.portless?.hostname) return undefined
-    const h = props.config.portless.hostname.trim().toLowerCase()
-    if (!h) return undefined
-    return `http://${h.endsWith(".localhost") ? h : h + ".localhost"}:1355`
+  const portUrl = createMemo(() => {
+    const port = props.process?.assignedPort
+    if (!port) return undefined
+    return `http://localhost:${port}`
   })
 
   // Construct a LocalPTY object from the managed process data.
@@ -124,15 +119,15 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
         <StatusDot status={status()} />
         <span class="text-[12px] font-medium text-text-weak whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0 flex items-center gap-1.5">
           {props.config.name}
-          <Show when={portlessUrl() && isActive()}>
+          <Show when={portUrl() && isActive()}>
             <a
-              href={portlessUrl()!}
+              href={portUrl()!}
               target="_blank"
               rel="noopener noreferrer"
               class="text-[11px] text-accent hover:underline font-normal truncate"
               onClick={(e) => e.stopPropagation()}
             >
-              {portlessUrl()}
+              {portUrl()}
             </a>
           </Show>
         </span>
@@ -222,13 +217,6 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
         </Show>
       </div>
 
-      {/* Right-edge drag handle */}
-      <Show when={props.onResizeStart}>
-        <div
-          class="absolute top-0 right-0 w-[4px] h-full cursor-col-resize z-10 hover:bg-blue-500/30 transition-colors"
-          onPointerDown={(e) => props.onResizeStart?.(e)}
-        />
-      </Show>
     </div>
   )
 }

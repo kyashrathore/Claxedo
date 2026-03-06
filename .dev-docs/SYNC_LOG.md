@@ -15,6 +15,48 @@ Each entry should include:
 
 ---
 
+## 2026-03-04
+
+**Status:** 🟢 Success
+
+- **Branch:** `sync/2026-03-04`
+- **Upstream Commit:** `upstream/dev@c4ffd93ca`
+- **Commits Rebased:** 11 (fork commits replayed onto upstream)
+- **Conflicts:** 10 files in commit 1/11 (squash commit), commits 2-11 applied cleanly
+  - `bun.lock`: Accepted upstream, regenerated via `bun install`
+  - `package.json` (root): Manual merge — kept both upstream's `dev:storybook` and our `web:dev:local` scripts
+  - `packages/opencode/package.json`: Manual merge — kept upstream's opentui version bumps (0.1.86), added our opentelemetry + sentry deps
+  - `packages/app/src/components/file-tree.tsx`: Kept ours (extension filtering — `hasMatchingFile`, eager child dir loading)
+  - `packages/app/src/components/prompt-input.tsx`: Merged — kept upstream's spring animations + our `props.agent` fallback support
+  - `packages/app/src/components/prompt-input/submit.ts`: Merged — kept upstream's `shouldAutoAccept` + our `sessionDirectory`/`sessionID`/`navigateOnCreate`
+  - `packages/app/src/pages/layout.tsx`: Conflict 1: kept upstream's `visibleSessionDirs` set-based dedup. Conflict 2: kept ours (misaligned `createWorkspace` vs `SessionItem` code)
+  - `packages/app/src/pages/session/composer/session-composer-region.tsx`: Merged — combined upstream animation props + our embedded context props
+  - `packages/app/src/pages/session/composer/session-composer-state.ts`: Merged — added both `input?: SessionComposerInput` and `options?: { closeMs? }` params
+  - `packages/app/src/pages/session/message-timeline.tsx`: Merged — kept upstream's session tracking memos (pending, sessionStatus, activeMessageID) + our embedded context navigation helpers
+- **Upstream Drift Fixes:**
+  - `global-sync.tsx` override: upstream changed `persisted()` API from 4-tuple to 3-tuple (`projectInit` Promise instead of `projectCacheReady` accessor). Updated override to use `projectInit` and derive a `projectCacheReady` signal from it.
+  - `terminal.tsx` override: upstream refactored terminal colors from `createSignal` to `createMemo`. Updated override to match (`createMemo(getTerminalColors)` instead of `createSignal`/`setTerminalColors`).
+  - Removed duplicate `variants`/`accepting` declarations in `prompt-input.tsx` (upstream already defines them)
+  - Updated `accepting` memo to use `resolvedSessionId()` instead of `params.id` for embedded context support
+  - Fixed missing closing brace in `submit.ts` `navigateOnCreate` logic
+- **Notable Upstream Changes:**
+  - Animation system: `buttonsSpring()` for shell/normal mode transitions in prompt input
+  - `pendingAutoAccept`: Pre-session auto-accept toggle for new sessions
+  - SolidJS refactoring (#13399): Broad cleanup across app components
+  - `visibleSessionDirs` dedup approach for session loading
+  - `closeMs` option for `createSessionComposerState`
+  - Tab normalization moved from session.tsx to layout context (path helpers)
+  - `deferRender` state for session switch jank prevention
+  - Queued messages display (#15587)
+  - Auto-compaction recovery for 413 errors (#14707)
+  - Permission auto-respond default changed from `true` to `false`
+- **Remaining Drift Notes (lower priority):**
+  - `session.tsx` override: tab normalization functions duplicated (upstream moved to layout context)
+  - `layout.tsx` context override: missing new path normalization helpers
+- **Validation:** typecheck ✅, build ✅
+
+---
+
 ## 2026-03-02
 
 **Status:** 🟢 Success

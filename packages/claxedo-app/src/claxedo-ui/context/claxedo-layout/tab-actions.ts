@@ -197,6 +197,44 @@ export function createTabActions(
       })
     },
 
+    addReviewWorkspace(
+      dir: string,
+      sessionId: string,
+      title: string,
+      badge?: TabItem["badge"],
+      reviewMode?: TabItem["reviewMode"],
+      reviewFromRef?: string,
+      reviewToRef?: string,
+    ) {
+      if (!dir) return ""
+
+      const existing = getItems().find(
+        (t) =>
+          t.type === "review-workspace" &&
+          t.directory === dir &&
+          t.sessionId === sessionId &&
+          (t.reviewMode ?? "session") === (reviewMode ?? "session") &&
+          (t.reviewFromRef ?? "") === (reviewFromRef ?? "") &&
+          (t.reviewToRef ?? "") === (reviewToRef ?? ""),
+      )
+      if (existing) {
+        setActiveId(existing.id)
+        return existing.id
+      }
+
+      return tabActions.add({
+        type: "review-workspace",
+        directory: dir,
+        sessionId,
+        title: `Review: ${title}`,
+        badge,
+        reviewMode,
+        reviewFromRef,
+        reviewToRef,
+        closable: true,
+      })
+    },
+
     addContext(dir: string, sessionId: string, title: string) {
       if (!dir || !sessionId) return ""
 
@@ -233,7 +271,23 @@ export function createTabActions(
       })
     },
 
-    addPage(pageId: string, title: string, directory?: string) {
+    addProcess(dir: string) {
+      const existing = getItems().find((t) => t.type === "process" && t.directory === dir)
+      if (existing) {
+        setActiveId(existing.id)
+        return existing.id
+      }
+
+      return tabActions.add({
+        type: "process",
+        directory: dir,
+        title: "Processes",
+        closable: false,
+        pinned: true,
+      })
+    },
+
+    addPage(pageId: string, title: string, directory?: string, filePath?: string) {
       const existing = getItems().find((t) => t.type === "page" && t.pageId === pageId)
       if (existing) {
         if (existing.sessionId) {
@@ -241,6 +295,9 @@ export function createTabActions(
         }
         if (directory && existing.directory !== directory) {
           setItems((items) => (items ?? []).map((t) => (t.id === existing.id ? { ...t, directory } : t)))
+        }
+        if (filePath && existing.filePath !== filePath) {
+          setItems((items) => (items ?? []).map((t) => (t.id === existing.id ? { ...t, filePath } : t)))
         }
         setActiveId(existing.id)
         return existing.id
@@ -250,6 +307,7 @@ export function createTabActions(
         type: "page",
         directory: directory || "__pages__",
         pageId,
+        filePath,
         title,
         closable: true,
       })
@@ -300,9 +358,19 @@ export function createTabActions(
         if (activeId !== tabId) return activeId ?? null
         if (filteredItems.length === 0) return null
         const pos = base.indexOf(tabId)
-        if (pos === -1) return filteredItems[0]?.id ?? null
-        const next = Math.min(pos, filteredItems.length - 1)
-        return filteredItems[next]?.id ?? null
+        if (pos === -1) {
+          const same = filteredItems.find((item) => item.directory === tab.directory)
+          if (same) return same.id
+          return filteredItems[0]?.id ?? null
+        }
+
+        const byId = new Map(filteredItems.map((item) => [item.id, item] as const))
+        const ranked = [...base.slice(pos + 1), ...base.slice(0, pos).reverse()]
+          .map((id) => byId.get(id))
+          .filter((item): item is TabItem => !!item)
+        const same = ranked.find((item) => item.directory === tab.directory)
+        if (same) return same.id
+        return ranked[0]?.id ?? filteredItems[0]?.id ?? null
       })()
 
       debug.verbose("close apply", {
@@ -328,16 +396,13 @@ export function createTabActions(
           )
         }
       }
-      onClose?.(tab, filteredItems, active)
-      debug.verbose("close applied onClose", { trace, tabId })
-      setItems(() => filteredItems)
-      debug.verbose("close applied setItems", { trace, tabId })
-      setOrder(() => order)
-      debug.verbose("close applied setOrder", { trace, tabId })
-      setClosedTabs(() => closed)
-      debug.verbose("close applied setClosedTabs", { trace, tabId })
-      setActiveId(active)
-      debug.verbose("close applied setActiveId", { trace, tabId })
+      batch(() => {
+        onClose?.(tab, filteredItems, active)
+        setItems(() => filteredItems)
+        setOrder(() => order)
+        setClosedTabs(() => closed)
+        setActiveId(active)
+      })
       debug.log("close end", { trace, tabId })
     },
 
@@ -441,21 +506,50 @@ export function createTabActions(
       return order.map((id) => items.find((t) => t.id === id)).filter((t): t is TabItem => !!t)
     }) as Accessor<TabItem[]>,
 
-    /** Items grouped by directory then flattened — matches the visual tab bar order. */
+    /** Items grouped by directory then flattened — matches the visual tab bar order.
+     *  Unpinned tabs establish group order; pinned tabs are then prepended within their own group. */
     visualOrderedItems: (() => {
-      const ordered = tabActions.orderedItems()
-      const groups = new Map<string, TabItem[]>()
-      for (const tab of ordered) {
-        const existing = groups.get(tab.directory) || []
-        existing.push(tab)
-        groups.set(tab.directory, existing)
+      const items = getItems()
+      const currentOrder = getOrder()
+      const base = currentOrder.length ? currentOrder : items.map((item) => item.id)
+      const seen = new Set(base)
+      const missing = items.filter((item) => !seen.has(item.id)).map((item) => item.id)
+      const order = missing.length ? [...base, ...missing] : base
+      const ordered: TabItem[] = order
+        .map((id) => items.find((t) => t.id === id))
+        .filter((t): t is TabItem => !!t)
+
+      const groups = new Map<string, { pinned: TabItem[]; unpinned: TabItem[] }>()
+      const groupOrder: string[] = []
+      const ensure = (directory: string) => {
+        let entry = groups.get(directory)
+        if (entry) return entry
+        entry = { pinned: [], unpinned: [] }
+        groups.set(directory, entry)
+        groupOrder.push(directory)
+        return entry
       }
-      return Array.from(groups.values()).flat()
+
+      for (const tab of ordered) {
+        if (tab.pinned) continue
+        ensure(tab.directory).unpinned.push(tab)
+      }
+
+      for (const tab of ordered) {
+        if (!tab.pinned) continue
+        ensure(tab.directory).pinned.push(tab)
+      }
+      return groupOrder.flatMap((directory) => {
+        const group = groups.get(directory)
+        if (!group) return []
+        return [...group.pinned, ...group.unpinned]
+      })
     }) as Accessor<TabItem[]>,
 
     activateByIndex(index: number) {
       const ordered = tabActions.visualOrderedItems()
-      const tab = ordered[index]
+      const unpinned = ordered.filter((t) => !t.pinned)
+      const tab = unpinned[index]
       if (tab) setActiveId(tab.id)
     },
 

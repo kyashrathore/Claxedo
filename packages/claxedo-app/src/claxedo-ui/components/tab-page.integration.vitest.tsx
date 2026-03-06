@@ -22,8 +22,6 @@ const h = vi.hoisted(() => {
       update: vi.fn(),
       ai: vi.fn(),
       importMarkdown: vi.fn(),
-      syncMarkdown: vi.fn(),
-      exportMarkdown: vi.fn(),
     },
     setSelection: (_from: number, _to: number) => {},
     emitEditor: (_event: string, _payload?: unknown) => {},
@@ -191,87 +189,7 @@ beforeEach(() => {
     imported: true,
     conflict: false,
   })
-  h.api.syncMarkdown.mockResolvedValue({
-    page: { id: "p-1", title: "Page", content: "{}" },
-    imported: false,
-    conflict: false,
-  })
-  h.api.exportMarkdown.mockResolvedValue({
-    id: "p-1",
-    title: "Page",
-    markdown: "# Page",
-    meta: {
-      page_id: "p-1",
-      updated_at: "2026-01-01T00:00:00.000Z",
-      doc_hash: "x",
-      md_export_hash: "y",
-      md_export_base_doc_hash: "x",
-      derived_markdown: true,
-    },
-  })
 })
-
-function mockIndexedDB(seed: Array<{ page_id: string; value: unknown }> = []) {
-  const stores = new Map<string, Map<string, unknown>>()
-  if (seed.length) stores.set("links", new Map(seed.map((item) => [item.page_id, item.value])))
-  let opened = false
-  const request = (result: unknown) => {
-    const req = {} as {
-      result?: unknown
-      onsuccess?: (event: unknown) => void
-      onerror?: (event: unknown) => void
-      onupgradeneeded?: (event: unknown) => void
-    }
-    queueMicrotask(() => {
-      req.result = result
-      req.onsuccess?.({ target: req })
-    })
-    return req
-  }
-  const store = (name: string) => {
-    if (!stores.has(name)) stores.set(name, new Map())
-    const map = stores.get(name)!
-    return {
-      get: (key: string) => request(map.get(key)),
-      put: (value: { page_id?: string }) => {
-        if (value?.page_id) map.set(value.page_id, value)
-        return request(undefined)
-      },
-      delete: (key: string) => {
-        map.delete(key)
-        return request(undefined)
-      },
-    }
-  }
-  const db = {
-    objectStoreNames: {
-      contains: (name: string) => stores.has(name),
-    },
-    createObjectStore: (name: string) => store(name),
-    transaction: (name: string, _mode: string) => ({
-      objectStore: () => store(name),
-    }),
-  }
-  return {
-    open: (_name: string, _version: number) => {
-      const req = {} as {
-        result?: unknown
-        onsuccess?: (event: unknown) => void
-        onerror?: (event: unknown) => void
-        onupgradeneeded?: (event: unknown) => void
-      }
-      queueMicrotask(() => {
-        req.result = db
-        if (!opened) {
-          opened = true
-          req.onupgradeneeded?.({ target: req })
-        }
-        req.onsuccess?.({ target: req })
-      })
-      return req
-    },
-  }
-}
 
 describe("TabPage integration", () => {
   test("shows empty-page import markdown button", async () => {
@@ -390,89 +308,5 @@ describe("TabPage integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Import Markdown" }))
     await waitFor(() => expect(h.api.importMarkdown).toHaveBeenCalledWith("p-1", "# Imported", true))
     create.mockRestore()
-  })
-
-  test("linked markdown auto-pulls when file changed and page hash is unchanged", async () => {
-    const handle = {
-      name: "linked.md",
-      queryPermission: vi.fn(async () => "granted" as PermissionState),
-      requestPermission: vi.fn(async () => "granted" as PermissionState),
-      getFile: vi.fn(async () => ({ name: "linked.md", text: async () => "# v2" })),
-    }
-    const originalDb = window.indexedDB
-    ;(window as Window & { indexedDB: IDBFactory }).indexedDB = mockIndexedDB([
-      {
-        page_id: "p-1",
-        value: {
-          page_id: "p-1",
-          handle,
-          name: "linked.md",
-          doc_hash: "doc-hash-1",
-          file_hash: "stale-file-hash",
-          updated_at: Date.now(),
-        },
-      },
-    ]) as unknown as IDBFactory
-    h.api.exportMarkdown.mockImplementation(async () => ({
-      id: "p-1",
-      title: "Page",
-      markdown: "# Page",
-      meta: {
-        page_id: "p-1",
-        updated_at: "2026-01-01T00:00:00.000Z",
-        doc_hash: "doc-hash-1",
-        md_export_hash: "md-export-hash",
-        md_export_base_doc_hash: "doc-hash-1",
-        derived_markdown: true,
-      },
-    }))
-
-    render(() => <TabPage pageId="p-1" />)
-    await waitFor(() => expect(h.api.importMarkdown).toHaveBeenCalledWith("p-1", "# v2", false))
-    ;(window as Window & { indexedDB: IDBFactory }).indexedDB = originalDb
-  })
-
-  test("shows sync action when linked file and page both changed (conflict)", async () => {
-    const handle = {
-      name: "linked.md",
-      queryPermission: vi.fn(async () => "granted" as PermissionState),
-      requestPermission: vi.fn(async () => "granted" as PermissionState),
-      getFile: vi.fn(async () => ({ name: "linked.md", text: async () => "# v2" })),
-    }
-    const originalDb = window.indexedDB
-    ;(window as Window & { indexedDB: IDBFactory }).indexedDB = mockIndexedDB([
-      {
-        page_id: "p-1",
-        value: {
-          page_id: "p-1",
-          handle,
-          name: "linked.md",
-          doc_hash: "doc-hash-old",
-          file_hash: "stale-file-hash",
-          updated_at: Date.now(),
-        },
-      },
-    ]) as unknown as IDBFactory
-    h.api.exportMarkdown.mockImplementation(async () => ({
-      id: "p-1",
-      title: "Page",
-      markdown: "# Page",
-      meta: {
-        page_id: "p-1",
-        updated_at: "2026-01-01T00:00:00.000Z",
-        doc_hash: "doc-hash-new",
-        md_export_hash: "md-export-hash",
-        md_export_base_doc_hash: "doc-hash-new",
-        derived_markdown: true,
-      },
-    }))
-
-    h.setEmpty(false)
-    render(() => <TabPage pageId="p-1" />)
-    const sync = await screen.findByRole("button", { name: "Sync Markdown" })
-    expect(sync).toBeInTheDocument()
-    fireEvent.click(sync)
-    await waitFor(() => expect(h.api.importMarkdown).toHaveBeenCalledWith("p-1", "# v2", false))
-    ;(window as Window & { indexedDB: IDBFactory }).indexedDB = originalDb
   })
 })

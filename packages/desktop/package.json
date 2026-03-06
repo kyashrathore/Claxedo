@@ -10,7 +10,6 @@
     "dev": "vite",
     "build": "bun run typecheck && vite build",
     "preview": "vite preview",
-    "compile-portless": "bun -e \"import { compilePortless } from './scripts/utils.ts'; await compilePortless()\"",
     "perf:summary": "bun ./scripts/perf-summary.ts",
     "tauri": "tauri"
   },

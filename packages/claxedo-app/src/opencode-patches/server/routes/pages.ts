@@ -16,36 +16,6 @@ type Page = {
   updated_at: string
 }
 
-type PageAiAction = "improve" | "fix" | "shorten" | "lengthen" | "summarize" | "continue" | "custom"
-
-type PageAiBody = {
-  action?: string
-  text?: string
-  context?: string
-  instruction?: string
-  model?: string
-  page_id?: string
-  pageId?: string
-}
-
-type OpencodePart = {
-  type?: string
-  text?: string
-  ignored?: boolean
-  state?: { status?: string; output?: unknown } | null
-}
-
-type OpencodeError = {
-  name?: string
-  message?: string
-  data?: { message?: string; providerID?: string; modelID?: string }
-}
-
-type OpencodePromptResult = {
-  info?: { id?: string; providerID?: string; modelID?: string; error?: OpencodeError | null }
-  parts?: OpencodePart[]
-}
-
 type MarkdownMeta = {
   page_id?: string
   updated_at?: string
@@ -63,9 +33,6 @@ function pagesBaseDir() {
 
 const pageMirrorRoot = process.env.PAGES_FILE_ROOT || ".claxedo/pages"
 const pageMdAutoImport = clean(process.env.PAGES_MD_AUTO_IMPORT || "1") !== "0"
-const pageSessions = new Map<string, { id: string; updated_at: number }>()
-const promptCache = new Map<string, { expires_at: number; value: { text: string; provider: string; model: string } }>()
-
 const db = lazy(() => {
   // Use Instance.directory so the pages DB lives inside the workspace (persistent)
   // instead of process.cwd() which may be an ephemeral temp directory.
@@ -88,12 +55,6 @@ const db = lazy(() => {
 function clean(value: unknown) {
   if (typeof value !== "string") return ""
   return value.trim()
-}
-
-function positive(value: string, fallback: number) {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
-  return parsed
 }
 
 function listPages(): Page[] {
@@ -738,297 +699,6 @@ function generateId() {
   return `page_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
 
-function toAction(value: string): PageAiAction | null {
-  if (
-    value === "improve" ||
-    value === "fix" ||
-    value === "shorten" ||
-    value === "lengthen" ||
-    value === "summarize" ||
-    value === "continue" ||
-    value === "custom"
-  ) {
-    return value
-  }
-  return null
-}
-
-function aiPrompt(action: PageAiAction, text: string, context: string, instruction: string) {
-  if (action === "continue") {
-    return [
-      "Continue this writing naturally in the same style.",
-      "Return only the continuation text.",
-      context ? `Context:\n${context}` : `Start from:\n${text}`,
-    ].join("\n\n")
-  }
-  if (action === "summarize") {
-    return [
-      "Summarize this content concisely.",
-      "Return only the summary text.",
-      `Content:\n${text || context}`,
-    ].join("\n\n")
-  }
-  if (action === "custom") {
-    return [
-      `Instruction: ${instruction}`,
-      "Return only transformed text.",
-      `Content:\n${text || context}`,
-    ].join("\n\n")
-  }
-  const intent =
-    action === "improve"
-      ? "Improve clarity and flow."
-      : action === "fix"
-        ? "Fix grammar and spelling."
-        : action === "shorten"
-          ? "Make this shorter without losing meaning."
-          : "Expand this with useful detail while preserving intent."
-  return [intent, "Keep the same language and tone.", "Return only rewritten text.", `Text:\n${text}`].join("\n\n")
-}
-
-const pageAiAgent = clean(process.env.PAGES_AI_AGENT) || "build"
-const pageAiDefaultModel = clean(process.env.PAGES_AI_MODEL) || "opencode/big-pickle"
-const pageAiTimeoutMs = positive(clean(process.env.PAGES_AI_TIMEOUT_MS), 45_000)
-const pageAiCacheTtlMs = positive(clean(process.env.PAGES_AI_CACHE_TTL_MS), 180_000)
-const pageAiCacheMax = Math.max(16, positive(clean(process.env.PAGES_AI_CACHE_MAX), 200))
-const pageAiSessionTtlMs = positive(clean(process.env.PAGES_AI_SESSION_TTL_MS), 6 * 60 * 60 * 1000)
-
-const sessionKey = (body: PageAiBody) => clean(body.page_id || body.pageId) || "default"
-
-const modelRef = (value: string) => {
-  const source = clean(value) || pageAiDefaultModel
-  if (!source) return undefined
-  const idx = source.indexOf("/")
-  if (idx < 1 || idx >= source.length - 1) return undefined
-  return {
-    providerID: source.slice(0, idx),
-    modelID: source.slice(idx + 1),
-  }
-}
-
-const apiPath = (pathname: string, directory: string) => {
-  if (!directory) return pathname
-  const join = pathname.includes("?") ? "&" : "?"
-  return `${pathname}${join}directory=${encodeURIComponent(directory)}`
-}
-
-const extractText = (parts: OpencodePart[] | undefined) => {
-  const text = (parts || [])
-    .filter((part) => part.type === "text" && !part.ignored)
-    .map((part) => part.text || "")
-    .join("")
-    .trim()
-  if (text) return text
-  const toolText = (parts || [])
-    .filter((part) => part.type === "tool" && part.state?.status === "completed")
-    .map((part) => {
-      const output = part.state?.output
-      if (typeof output === "string") return output
-      if (!output || typeof output !== "object") return ""
-      const value = (output as { text?: unknown }).text
-      return typeof value === "string" ? value : ""
-    })
-    .join("\n")
-    .trim()
-  if (toolText) return toolText
-  return (parts || [])
-    .filter((part) => part.type === "reasoning")
-    .map((part) => part.text || "")
-    .join("")
-    .trim()
-}
-
-const extractError = (result: OpencodePromptResult | null | undefined) => {
-  const error = result?.info?.error
-  if (!error) return ""
-  const message = clean(error.data?.message || error.message)
-  if (!message) return "OpenCode model request failed"
-  const provider = clean(error.data?.providerID)
-  if (!provider) return message
-  return `${provider}: ${message}`
-}
-
-const pruneSessions = () => {
-  const now = Date.now()
-  for (const [key, value] of pageSessions.entries()) {
-    if (now - value.updated_at > pageAiSessionTtlMs) pageSessions.delete(key)
-  }
-}
-
-const cacheGet = (key: string) => {
-  const entry = promptCache.get(key)
-  if (!entry) return null
-  if (entry.expires_at <= Date.now()) {
-    promptCache.delete(key)
-    return null
-  }
-  return entry.value
-}
-
-const cacheSet = (key: string, value: { text: string; provider: string; model: string }) => {
-  promptCache.set(key, {
-    expires_at: Date.now() + pageAiCacheTtlMs,
-    value,
-  })
-  while (promptCache.size > pageAiCacheMax) {
-    const first = promptCache.keys().next().value as string | undefined
-    if (!first) break
-    promptCache.delete(first)
-  }
-}
-
-const opencodeFetch = async (origin: string, directory: string, pathname: string, init: RequestInit) => {
-  const timeout = AbortSignal.timeout(pageAiTimeoutMs)
-  const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout
-  const res = await fetch(`${origin}${apiPath(pathname, directory)}`, {
-    ...init,
-    signal,
-    headers: {
-      "Content-Type": "application/json",
-      ...init.headers,
-    },
-  })
-  if (res.ok) {
-    if (res.status === 204) return null
-    const text = await res.text()
-    if (!text.trim()) return null
-    try {
-      return JSON.parse(text)
-    } catch {
-      throw new Error("OpenCode returned invalid JSON")
-    }
-  }
-  const body = await res.text().catch(() => "")
-  const message = body || `OpenCode request failed (${res.status})`
-  const error = new Error(message) as Error & { status?: number }
-  error.status = res.status
-  throw error
-}
-
-const createPageSession = async (origin: string, directory: string, key: string) => {
-  const title = key === "default" ? "Page AI" : `Page AI • ${key}`
-  const result = (await opencodeFetch(origin, directory, "/session", {
-    method: "POST",
-    body: JSON.stringify({ title }),
-  })) as { id?: string } | null
-  const id = clean(result?.id)
-  if (!id) throw new Error("OpenCode did not return a session id")
-  pageSessions.set(key, { id, updated_at: Date.now() })
-  return id
-}
-
-const ensurePageSession = async (origin: string, directory: string, key: string) => {
-  pruneSessions()
-  const existing = pageSessions.get(key)
-  if (!existing) return await createPageSession(origin, directory, key)
-  pageSessions.set(key, { ...existing, updated_at: Date.now() })
-  return existing.id
-}
-
-const runSessionPrompt = async (
-  origin: string,
-  directory: string,
-  sessionID: string,
-  system: string,
-  prompt: string,
-  model: { providerID: string; modelID: string } | undefined,
-) => {
-  const result = (await opencodeFetch(origin, directory, `/session/${encodeURIComponent(sessionID)}/message`, {
-    method: "POST",
-    body: JSON.stringify({
-      agent: pageAiAgent,
-      system,
-      model,
-      parts: [{ type: "text", text: prompt }],
-    }),
-  })) as OpencodePromptResult | null
-
-  const initialError = extractError(result)
-  let text = extractText(result?.parts)
-  if (!text && result?.info?.id) {
-    const message = (await opencodeFetch(
-      origin,
-      directory,
-      `/session/${encodeURIComponent(sessionID)}/message/${encodeURIComponent(result.info.id)}`,
-      { method: "GET" },
-    )) as OpencodePromptResult | null
-    const messageError = extractError(message)
-    if (messageError) throw new Error(messageError)
-    text = extractText(message?.parts)
-  }
-  if (!text && initialError) throw new Error(initialError)
-  if (!text) throw new Error("OpenCode returned empty output")
-
-  const provider = clean(result?.info?.providerID) || model?.providerID || "opencode"
-  const modelID = clean(result?.info?.modelID) || model?.modelID || clean(pageAiDefaultModel)
-  return {
-    text,
-    provider,
-    model: modelID ? `${provider}/${modelID}` : provider,
-  }
-}
-
-const executeWithPageSession = async (
-  origin: string,
-  directory: string,
-  key: string,
-  system: string,
-  prompt: string,
-  model: { providerID: string; modelID: string } | undefined,
-) => {
-  const sessionID = await ensurePageSession(origin, directory, key)
-  try {
-    return await runSessionPrompt(origin, directory, sessionID, system, prompt, model)
-  } catch (error) {
-    if ((error as { status?: number }).status !== 404) throw error
-    pageSessions.delete(key)
-    const fresh = await createPageSession(origin, directory, key)
-    return await runSessionPrompt(origin, directory, fresh, system, prompt, model)
-  }
-}
-
-async function aiGenerate(origin: string, directory: string, body: PageAiBody) {
-  const action = toAction(clean(body.action || "improve"))
-  if (!action) return { status: 400, data: { error: "Invalid AI action" } }
-
-  const text = clean(body.text)
-  const context = clean(body.context)
-  const instruction = clean(body.instruction)
-  if (action === "custom" && !instruction) return { status: 400, data: { error: "instruction is required for custom action" } }
-  if (action !== "continue" && action !== "summarize" && action !== "custom" && !text) {
-    return { status: 400, data: { error: "text is required" } }
-  }
-
-  const system =
-    clean(process.env.PAGES_AI_SYSTEM_PROMPT) ||
-    "You are a writing assistant for a rich text page editor. Return only final text with no labels."
-  const prompt = aiPrompt(action, text, context, instruction)
-  const pageKey = sessionKey(body)
-  const model = modelRef(clean(body.model))
-  const key = JSON.stringify([
-    directory,
-    pageKey,
-    action,
-    text,
-    context,
-    instruction,
-    model?.providerID || "",
-    model?.modelID || "",
-    pageAiAgent,
-  ])
-  const cached = cacheGet(key)
-  if (cached) return { status: 200, data: cached }
-
-  try {
-    const result = await executeWithPageSession(origin, directory, pageKey, system, prompt, model)
-    cacheSet(key, result)
-    return { status: 200, data: result }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "OpenCode session request failed"
-    return { status: 502, data: { error: message } }
-  }
-}
-
 export const PagesRoutes = lazy(() =>
   new Hono()
     .get("/", (c) => {
@@ -1044,13 +714,6 @@ export const PagesRoutes = lazy(() =>
       const page = createPage(body.title, body.content)
       writeMirror(page)
       return c.json(page, 201)
-    })
-    .post("/ai", async (c) => {
-      const body = await c.req.json<PageAiBody>().catch(() => ({}))
-      const origin = new URL(c.req.url).origin
-      const directory = clean(c.req.query("directory") || c.req.header("x-opencode-directory"))
-      const result = await aiGenerate(origin, directory, body)
-      return c.json(result.data, result.status as 200 | 400 | 502)
     })
     .get("/:id/export/markdown", (c) => {
       const page = getPage(c.req.param("id"))
@@ -1112,6 +775,18 @@ export const PagesRoutes = lazy(() =>
       const result = syncFromMirror(page, Boolean(body.force))
       if (result.conflict) return c.json(result, 409)
       return c.json(result)
+    })
+    .post("/:id/writeback", async (c) => {
+      const body = await c.req.json<{ filePath?: string; directory?: string }>().catch(() => ({}))
+      const page = getPage(c.req.param("id"))
+      if (!page) return c.json({ error: "Not found" }, 404)
+      const filePath = clean(body.filePath)
+      const directory = clean(body.directory)
+      if (!filePath || !directory) return c.json({ error: "filePath and directory are required" }, 400)
+      const { markdown } = markdownFromContent(page.content)
+      const fullPath = path.isAbsolute(filePath) ? filePath : path.resolve(directory, filePath)
+      await Bun.write(fullPath, markdown + "\n")
+      return c.json({ ok: true })
     })
     .route("/:id/arena", PageArenaRoutes())
     .get("/:id", (c) => {

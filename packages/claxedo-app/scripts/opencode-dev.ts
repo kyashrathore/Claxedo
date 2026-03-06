@@ -195,7 +195,7 @@ async function main() {
       env: {
         ...process.env,
         // Ensure claxedo-app's node_modules/.bin is in PATH so bundled
-        // tools like portless are available to the patched server.
+        // tools are available to the patched server.
         PATH: `${path.join(CLAXEDO_APP_DIR, "node_modules/.bin")}${path.delimiter}${process.env.PATH}`,
         // Pass through CLAXEDO env vars for the agent hooks
         CLAXEDO_PORT: port,

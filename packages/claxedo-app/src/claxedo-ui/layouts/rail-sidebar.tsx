@@ -24,8 +24,8 @@ import { getAvatarColors, useLanguage, useGlobalSync, useServer } from "@opencod
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { StatusPopover } from "../../overrides/components/status-popover"
 import { DialogEditProject } from "../components/dialog-edit-project"
+import { DialogProcessDiagnostics } from "../components/dialog-process-diagnostics"
 import { getFilename } from "@opencode-ai/util/path"
-import type { Session } from "@opencode-ai/sdk/v2"
 
 export type SessionItem = {
   id: string
@@ -94,41 +94,20 @@ export function RailSidebar(props: RailSidebarProps) {
   const [projectLimits, setProjectLimits] = createSignal<Record<string, number>>({})
   const getProjectLimit = (projectId: string) => projectLimits()[projectId] ?? 5
 
-  // Get all sessions for a project (across all workspaces) - flat list
+  // Get all sessions for a project from global sessions store
   const getProjectSessions = (project: ProjectItem): { sessions: SessionItem[]; total: number; directory: string } => {
-    // Get all directories for this project (main + sandboxes)
-    const directories = [project.worktree, ...(project.sandboxes ?? []).filter(s => s !== project.worktree)]
-
-    // Collect all sessions from all workspaces
-    const allSessions: SessionItem[] = []
-    for (const dir of directories) {
-      let dirStore: any
-      try {
-        ;[dirStore] = globalSync.child(dir, { bootstrap: false })
-      } catch {
-        continue
-      }
-      if (!dirStore) continue
-      const sessions = (dirStore.session ?? [])
-        .filter((s: Session) => s.directory === dir && !s.parentID && !s.time?.archived)
-        .map((s: Session) => ({
-          id: s.id,
-          title: s.title || "New Session",
-          time: s.time?.updated ?? s.time?.created,
-          directory: dir // Track which workspace this session belongs to
-        }))
-      allSessions.push(...sessions)
-    }
-
-    // Sort by time descending
-    const sorted = allSessions.toSorted((a, b) => (b.time ?? 0) - (a.time ?? 0))
-
-    // Apply limit
+    const items = globalSync.globalSessions.store.byProject[project.id] ?? []
     const limit = getProjectLimit(project.id)
+    const sessions: SessionItem[] = items.slice(0, limit).map((s) => ({
+      id: s.id,
+      title: s.title,
+      time: s.time.updated ?? s.time.created,
+      directory: s.directory,
+    }))
     return {
-      sessions: sorted.slice(0, limit),
-      total: sorted.length,
-      directory: project.worktree // Default directory for new sessions
+      sessions,
+      total: items.length,
+      directory: project.worktree,
     }
   }
 
@@ -137,12 +116,10 @@ export function RailSidebar(props: RailSidebarProps) {
     const currentLimit = getProjectLimit(project.id)
     setProjectLimits(prev => ({ ...prev, [project.id]: currentLimit + 5 }))
 
-    // Trigger reload of sessions from all workspaces
-    const directories = [project.worktree, ...(project.sandboxes ?? []).filter(s => s !== project.worktree)]
-    for (const dir of directories) {
-      const [, setStore] = globalSync.child(dir)
-      setStore("limit", (limit: number) => limit + 5)
-      await globalSync.project.loadSessions(dir)
+    // Fetch more sessions from the server if needed
+    const items = globalSync.globalSessions.store.byProject[project.id] ?? []
+    if (currentLimit + 5 > items.length) {
+      await globalSync.globalSessions.loadMore(project.worktree, project.sandboxes ?? [])
     }
   }
 
@@ -159,6 +136,16 @@ export function RailSidebar(props: RailSidebarProps) {
 
   const handleMouseEnter = () => {
     claxedo.rail.cancelCollapse()
+  }
+
+  const activeDirectory = createMemo(() => {
+    if (props.activeWorkspaceId) return props.activeWorkspaceId
+    const activeProject = props.projects.find((project) => project.id === props.activeProjectId)
+    return activeProject?.worktree ?? props.projects[0]?.worktree
+  })
+
+  const openDiagnostics = () => {
+    dialog.show(() => <DialogProcessDiagnostics directory={activeDirectory()} />)
   }
 
   onMount(() => {
@@ -190,14 +177,14 @@ export function RailSidebar(props: RailSidebarProps) {
   return (
     <nav
       ref={railRef}
+      data-sidebar
+      data-pinned={claxedo.rail.pinned() ? "" : undefined}
       class={`h-full flex flex-col bg-background-base shadow-lg overflow-hidden z-[50] pointer-events-auto
         transition-all duration-200 ease-out
         max-md:!w-[280px] max-md:opacity-100 max-md:pointer-events-auto max-md:translate-x-0
-        ${claxedo.rail.pinned()
-          ? "opacity-100 translate-x-0"
-          : expanded()
-            ? "opacity-100 translate-x-0 border-r border-border-base"
-            : "md:opacity-0 md:-translate-x-2 md:pointer-events-none"}
+        ${claxedo.rail.pinned() || expanded()
+          ? "opacity-100 translate-x-0 border-r border-border-base"
+          : "md:opacity-0 md:-translate-x-2 md:pointer-events-none"}
       `}
       style={{ width: `${width()}px` }}
       onMouseEnter={handleMouseEnter}
@@ -354,7 +341,11 @@ export function RailSidebar(props: RailSidebarProps) {
                       {(() => {
                         const projectSessionData = createMemo(() => getProjectSessions(project))
                         const sessions = createMemo(() => projectSessionData()?.sessions ?? [])
-                        const hasMore = createMemo(() => (projectSessionData()?.total ?? 0) > sessions().length)
+                        const hasMore = createMemo(() => {
+                          const localMore = (projectSessionData()?.total ?? 0) > sessions().length
+                          const serverMore = globalSync.globalSessions.store.projectState[project.id]?.hasMore ?? false
+                          return localMore || serverMore
+                        })
 
                         return (
                           <div class="pl-4 pr-2 flex flex-col gap-0.5 mt-0.5">
@@ -475,6 +466,17 @@ export function RailSidebar(props: RailSidebarProps) {
         <div class="flex flex-col gap-1 py-2">
           {/* Collapsed footer - hidden on mobile */}
           <div class={`${expanded() ? "hidden" : "flex"} flex-col gap-1 max-md:hidden`}>
+            <Tooltip placement="right" value="Diagnostics">
+              <div class="flex items-center justify-center">
+                <IconButton
+                  icon="warning"
+                  variant="ghost"
+                  size="large"
+                  onClick={openDiagnostics}
+                  aria-label="Diagnostics"
+                />
+              </div>
+            </Tooltip>
             <Tooltip placement="right" value={language.t("sidebar.settings")}>
               <div class="flex items-center justify-center">
                 <IconButton
@@ -508,6 +510,14 @@ export function RailSidebar(props: RailSidebarProps) {
           </div>
           {/* Expanded footer - always shown on mobile */}
           <div class={`${expanded() ? "flex" : "hidden"} flex-col gap-1 max-md:flex`}>
+            <button
+              type="button"
+              class="w-full flex items-center gap-2 px-3 py-2 text-left rounded-md mx-2 text-text-weak hover:bg-surface-base-hover hover:text-text-base transition-colors"
+              onClick={openDiagnostics}
+            >
+              <Icon name="warning" size="normal" />
+              <span class="text-sm truncate">Diagnostics</span>
+            </button>
             <button
               type="button"
               class="w-full flex items-center gap-2 px-3 py-2 text-left rounded-md mx-2 text-text-weak hover:bg-surface-base-hover hover:text-text-base transition-colors"

@@ -375,7 +375,7 @@ describe("activeId tracking for tab scroll", () => {
 
       // The last tab added should be active
       expect(tabs.activeId()).toBe(ids[ids.length - 1])
-      // All 20 tabs should exist
+      // All 20 session tabs should exist
       expect(tabs.items()).toHaveLength(20)
     } finally {
       dispose()

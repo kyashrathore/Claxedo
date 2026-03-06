@@ -13,16 +13,16 @@ import { Portal } from "solid-js/web"
 import { getTabHostId } from "./tab-content-area"
 import { useClaxedoLayout } from "../context/claxedo-layout"
 import { useLayout } from "@opencode-ai/claxedo-app"
-import { useGlobalSDK } from "@opencode-ai/claxedo-app"
-import { TabFile } from "./tab-file"
+import { TabFile, isMarkdownPath } from "./tab-file"
 import { TabReview } from "./tab-review"
 import { TabContext } from "./tab-context"
-import { isMarkdownPath, openMarkdownPageTab } from "../utils/open-markdown-page-tab"
+import { openMarkdownPageTab } from "../utils/open-markdown-page-tab"
+import { useGlobalSDK } from "@opencode-ai/claxedo-app"
 
 export function TabPortal(props: ParentProps) {
   const claxedo = useClaxedoLayout()
   const layout = useLayout()
-  const sdk = useGlobalSDK()
+  const globalSDK = useGlobalSDK()
   const activeTab = createMemo(() => claxedo.topTabs.active())
   const messagesHidden = createMemo(() => layout.session.panelMode() === 5)
   const hostId = createMemo(() => {
@@ -57,15 +57,6 @@ export function TabPortal(props: ParentProps) {
             fromRef={tab.reviewFromRef}
             toRef={tab.reviewToRef}
             onViewFile={(path) => {
-              if (isMarkdownPath(path)) {
-                void openMarkdownPageTab({
-                  directory: tab.directory!,
-                  path,
-                  sdk,
-                  tabs: claxedo.topTabs,
-                })
-                return
-              }
               const title = path.split("/").at(-1) ?? path
               claxedo.topTabs.addFile(tab.directory!, path, title)
             }}
@@ -78,7 +69,21 @@ export function TabPortal(props: ParentProps) {
       if (!tab.filePath) return
       return (
         <div class="absolute inset-0 overflow-hidden">
-          <TabFile path={tab.filePath} />
+          <TabFile
+            path={tab.filePath}
+            onOpenInPageEditor={
+              isMarkdownPath(tab.filePath) && tab.directory
+                ? () => {
+                    void openMarkdownPageTab({
+                      directory: tab.directory!,
+                      path: tab.filePath!,
+                      sdk: globalSDK,
+                      tabs: claxedo.topTabs,
+                    })
+                  }
+                : undefined
+            }
+          />
         </div>
       )
     }

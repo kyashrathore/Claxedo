@@ -32,6 +32,10 @@ const claxedo = {
     groups: () => [{ id: "g-default" }],
     moveTab: vi.fn(),
   },
+  select: {
+    multiPaneLeafView: () => [] as any[],
+  },
+  dispatch: vi.fn(),
   processPane: {
     requestToggle: vi.fn(),
     requestOpen: vi.fn(),
@@ -39,6 +43,9 @@ const claxedo = {
   },
   terminal: {
     ids: () => [] as string[],
+    agentStatus: () => "idle",
+    isTracked: () => false,
+    seen: () => false,
   },
 }
 
@@ -69,6 +76,23 @@ vi.mock("@opencode-ai/ui/theme", () => ({
 
 vi.mock("@/context/terminal", () => ({
   useOptionalTerminal: () => undefined,
+}))
+
+vi.mock("@/context/global-sync", () => ({
+  useGlobalSync: () => ({
+    child: () => [{ session_status: {}, permission: {} }],
+  }),
+}))
+
+vi.mock("@/context/global-sdk", () => ({
+  useGlobalSDK: () => ({
+    url: "http://localhost:4096",
+    client: {
+      session: {
+        messages: async () => ({ data: [] }),
+      },
+    },
+  }),
 }))
 
 vi.mock("@opencode-ai/ui/icon", () => ({
@@ -112,6 +136,8 @@ vi.mock("../../components/settings-terminals", () => ({
 vi.mock("../../overrides/utils/debug", () => ({
   createDebugLogger: () => ({
     log: () => {},
+    verbose: () => {},
+    enabled: () => false,
   }),
 }))
 
@@ -230,12 +256,12 @@ describe("TopTabBar separators", () => {
       return null
     })
 
-    expect(nodes).toEqual(["t1", "t2", "t4", "actions", "t3"])
+    expect(nodes).toEqual(["t1", "t2", "t4", "t3", "actions"])
   })
 })
 
-describe("Workspace indicator click behavior", () => {
-  test("clicking current workspace indicator toggles process pane without selecting workspace", () => {
+describe("Workspace button click behavior", () => {
+  test("clicking workspace name selects workspace and does not toggle process pane", () => {
     const onWorktreeClick = vi.fn()
     const projects = [
       {
@@ -255,48 +281,13 @@ describe("Workspace indicator click behavior", () => {
       />
     ))
 
-    const dot = container.querySelector('[data-workspace-indicator="true"]') as HTMLElement
-    expect(dot).toBeTruthy()
-    fireEvent.pointerDown(dot)
-    fireEvent.click(dot)
+    const workspace = container.querySelector('[data-workspace-button="/ws/main"]') as HTMLElement | null
+    expect(workspace).toBeTruthy()
+    fireEvent.click(workspace!, { detail: 1 })
 
-    expect(claxedo.processPane.requestToggle).toHaveBeenCalledTimes(1)
-    expect(claxedo.processPane.requestToggle).toHaveBeenCalledWith("/ws/main")
+    expect(onWorktreeClick).toHaveBeenCalledTimes(1)
+    expect(onWorktreeClick).toHaveBeenCalledWith("p1", "/ws/main")
+    expect(claxedo.processPane.requestToggle).not.toHaveBeenCalled()
     expect(claxedo.processPane.requestOpen).not.toHaveBeenCalled()
-    expect(onWorktreeClick).not.toHaveBeenCalled()
-  })
-
-  test("clicking non-current workspace indicator toggles pane and does not select workspace", () => {
-    const onWorktreeClick = vi.fn()
-    const projects = [
-      {
-        id: "p1",
-        name: "Project",
-        worktree: "/ws/main",
-        workspaces: [
-          { id: "w1", directory: "/ws/main", name: "main" },
-          { id: "w2", directory: "/ws/feature", name: "feature" },
-        ],
-      },
-    ]
-
-    const { container } = render(() => (
-      <WorkspaceBar
-        projects={projects as any}
-        defaultDirectory="/ws/main"
-        pinnedDirectory={null}
-        onWorktreeClick={onWorktreeClick}
-      />
-    ))
-
-    const dots = Array.from(container.querySelectorAll('[data-workspace-indicator="true"]'))
-    expect(dots.length).toBe(2)
-    fireEvent.pointerDown(dots[1] as HTMLElement)
-    fireEvent.click(dots[1] as HTMLElement)
-
-    expect(claxedo.processPane.requestToggle).toHaveBeenCalledTimes(1)
-    expect(claxedo.processPane.requestToggle).toHaveBeenCalledWith("/ws/feature")
-    expect(claxedo.processPane.requestOpen).not.toHaveBeenCalled()
-    expect(onWorktreeClick).not.toHaveBeenCalled()
   })
 })

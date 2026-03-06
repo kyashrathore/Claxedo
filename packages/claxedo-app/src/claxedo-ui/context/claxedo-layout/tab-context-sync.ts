@@ -33,6 +33,9 @@ export type TabContextSnapshot = {
   directory: string
   title: string
   sessionId: string | undefined
+  reviewMode: TabItem["reviewMode"] | undefined
+  reviewFromRef: string | undefined
+  reviewToRef: string | undefined
   pageId: string | undefined
   terminalId: string | undefined
   activeLeafId: string | undefined
@@ -78,6 +81,9 @@ export function buildTabContextSnapshot(input: { groupId: string; tab: TabItem; 
     directory: input.tab.directory,
     title: input.tab.title,
     sessionId: input.tab.sessionId,
+    reviewMode: input.tab.reviewMode,
+    reviewFromRef: input.tab.reviewFromRef,
+    reviewToRef: input.tab.reviewToRef,
     pageId: input.tab.pageId,
     terminalId: input.tab.terminalId,
     activeLeafId: input.layout?.focus,

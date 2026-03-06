@@ -1,7 +1,7 @@
 import type { TerminalBackend } from "../terminal/backend/types"
 import { createBackend } from "#terminal-backend"
 import { retry } from "../terminal/retry"
-import { ComponentProps, createEffect, createSignal, onCleanup, onMount, splitProps } from "solid-js"
+import { ComponentProps, createEffect, createMemo, onCleanup, onMount, splitProps } from "solid-js"
 import { useSDK } from "@/context/sdk"
 import { monoFontFamily, useSettings } from "@/context/settings"
 import { LocalPTY } from "@/context/terminal"
@@ -36,6 +36,7 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onUpdate?: (pty: Partial<LocalPTY> & { id: string }) => void
   onConnect?: () => void
   onConnectError?: (error: unknown) => void
+  onAgentInterrupt?: () => void
   onSplitVertical?: () => void
   onSplitHorizontal?: () => void
   onFileLinkOpen?: (path: string, line?: number, col?: number) => void
@@ -234,12 +235,11 @@ export const Terminal = (props: TerminalProps) => {
     }
   }
 
-  const [terminalColors, setTerminalColors] = createSignal<TerminalColors>(getTerminalColors())
+  const terminalColors = createMemo(getTerminalColors)
 
   // Update theme when it changes
   createEffect(() => {
-    const colors = getTerminalColors()
-    setTerminalColors(colors)
+    const colors = terminalColors()
     backend?.setTheme(colors)
   })
 
@@ -517,6 +517,9 @@ export const Terminal = (props: TerminalProps) => {
       // Wire I/O: user input → server
       cleanups.push(
         b.onData((data: string) => {
+          // Ctrl+C ("\x03") or bare Escape ("\x1b", length 1 — excludes escape sequences like "\x1b[A")
+          if (data === "\x03" || data === "\x1b") props.onAgentInterrupt?.()
+
           stats.inputEvents += 1
           stats.inputBytes += data.length
           const filtered = stripTerminalRepliesFromInput(data)

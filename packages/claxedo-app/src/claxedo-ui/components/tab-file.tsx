@@ -39,6 +39,7 @@ export function toggleMarkdownPreview(path: string) {
 export type TabFileProps = {
   path: string
   class?: string
+  onOpenInPageEditor?: () => void
 }
 
 export function TabFile(props: TabFileProps) {
@@ -106,6 +107,17 @@ export function TabFile(props: TabFileProps) {
               size="small"
               onClick={() => toggleMarkdownPreview(props.path)}
               aria-label={previewing() ? "Show source" : "Preview markdown"}
+            />
+          </Tooltip>
+        </Show>
+        <Show when={props.onOpenInPageEditor}>
+          <Tooltip value="Open in Page Editor">
+            <IconButton
+              icon="file-text"
+              variant="ghost"
+              size="small"
+              onClick={() => props.onOpenInPageEditor?.()}
+              aria-label="Open in Page Editor"
             />
           </Tooltip>
         </Show>

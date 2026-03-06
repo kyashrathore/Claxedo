@@ -5,6 +5,8 @@ import { produce } from "solid-js/store"
 
 import type { SessionItem } from "../layouts/rail-sidebar"
 import { DialogDeleteSession } from "../components/dialogs"
+import { REVIEW_MODE_LABEL } from "../context/claxedo-layout/review-intent"
+import type { ReviewMode } from "../context/claxedo-layout/types"
 import type { ActionProps, Nav } from "./shared"
 import { findProjectForWorkspace, message } from "./shared"
 
@@ -65,6 +67,47 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     if (id) {
       tabs.setActive(id)
       nav(`/${base64Encode(workspaceDir)}/tab/${id}`, "new-session", {
+        workspaceDir,
+        requestedGroupId: groupId,
+        tabId: id,
+      })
+    }
+  }
+
+  const handleNewReview = async (workspaceDir: string, groupId?: string) => {
+    props.flowLog("new review click", {
+      workspaceDir,
+      requestedGroupId: groupId,
+      routeDir: props.activeWorkspaceId(),
+      focusedGroup: props.claxedo.split.focusedId(),
+    })
+
+    const groups = props.claxedo.split.groups()
+    const focusedId = props.claxedo.split.focusedId()
+    const matches = groups.filter((g) => props.claxedo.groupWorktree(g.id).default() === workspaceDir)
+    const targetGroupId = groupId ?? matches.find((g) => g.id === focusedId)?.id ?? matches[0]?.id ?? focusedId
+    const tabs = targetGroupId ? props.claxedo.groupTabs(targetGroupId) : props.claxedo.topTabs
+    if (targetGroupId) props.claxedo.dispatch({ type: "SplitFocusRequested", groupId: targetGroupId })
+
+    // Create a fresh session for the review — SDK requires a real session ID
+    const mode: ReviewMode = "uncommitted"
+    const title = `Review: ${REVIEW_MODE_LABEL[mode]}`
+    let sessionID: string | undefined
+    try {
+      const created = await props.globalSDK.client.session.create({
+        directory: workspaceDir,
+        title,
+      })
+      sessionID = created.data?.id
+    } catch {
+      // fall through
+    }
+    if (!sessionID) return
+
+    const id = tabs.addReviewWorkspace(workspaceDir, sessionID, title, undefined, mode)
+    if (id) {
+      tabs.setActive(id)
+      nav(`/${base64Encode(workspaceDir)}/tab/${id}`, "new-review", {
         workspaceDir,
         requestedGroupId: groupId,
         tabId: id,
@@ -153,6 +196,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
   return {
     handleSessionSelect,
     handleNewSession,
+    handleNewReview,
     handleDeleteSession,
     handleArchiveSession,
   }

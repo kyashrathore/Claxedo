@@ -20,6 +20,15 @@ function baseTopTabs(input?: {
     badge?: { additions: number; deletions: number },
   ) => string | undefined
   addPage?: (pageId: string, title: string, directory?: string) => string | undefined
+  addReviewWorkspace?: (
+    directory: string,
+    sessionId: string,
+    title: string,
+    badge?: { additions: number; deletions: number },
+    reviewMode?: TabItem["reviewMode"],
+    reviewFromRef?: string,
+    reviewToRef?: string,
+  ) => string | undefined
 }) {
   let items = input?.items ?? []
   let active = input?.active
@@ -40,6 +49,7 @@ function baseTopTabs(input?: {
       }),
     addFile: () => undefined,
     addReview: () => undefined,
+    addReviewWorkspace: input?.addReviewWorkspace ?? (() => undefined),
     addContext: () => undefined,
     setActive: (tabId: string) => {
       activeId = tabId
@@ -299,9 +309,224 @@ describe("route intent adapter", () => {
     expect(navCalls).toEqual([`/${base64Encode("/ws")}/tab/tab-page-1`])
   })
 
+  test("workspace root with no tabs creates a new session", async () => {
+    const addCalls: Array<{ directory: string; sessionId: string; title: string }> = []
+    const setActiveCalls: string[] = []
+    const navCalls: string[] = []
+
+    const topTabs = baseTopTabs({
+      items: [],
+      addSession(directory, sessionId, title) {
+        addCalls.push({ directory, sessionId, title })
+        return `tab-${sessionId}`
+      },
+    })
+
+    const input: AdapterInput = {
+      claxedo: {
+        dispatch: () => undefined,
+        findTabGroup: () => undefined,
+        split: { focusedId: () => "g-1" },
+        groupTabs: () => ({
+          items: () => [],
+          activeId: () => null,
+          setActive: () => undefined,
+        }),
+        groupWorktree: () => ({ setDefault: () => undefined }),
+        topTabs: {
+          ...topTabs,
+          setActive(tabId: string) { setActiveCalls.push(tabId) },
+        },
+      },
+      globalSync: { child: () => [{ session: [] }, undefined] },
+      globalSDK: {
+        url: "https://example.com",
+        client: { session: { update: async () => undefined } },
+      },
+      navigate(path) { navCalls.push(path) },
+    }
+
+    const adapter = createRouteIntentAdapter(input)
+    adapter.receive({
+      ready: true,
+      workspaceId: "/ws",
+      tabId: undefined,
+      sessionId: undefined,
+      pageId: undefined,
+      sessionTitle: "",
+      sessionBadge: undefined,
+    })
+    await waitTick()
+
+    // Route-intent should auto-create a session for workspace root with no tabs
+    expect(addCalls).toEqual([{ directory: "/ws", sessionId: "new", title: "New Session" }])
+    expect(setActiveCalls).toEqual(["tab-new"])
+    expect(navCalls).toEqual([`/${base64Encode("/ws")}/tab/tab-new`])
+  })
+
+  test("workspace root with existing tab for same directory activates it", async () => {
+    const setActiveCalls: string[] = []
+    const navCalls: string[] = []
+
+    const existingTab: TabItem = {
+      id: "tab-existing",
+      type: "session",
+      directory: "/ws",
+      sessionId: "s-1",
+      title: "Session 1",
+      closable: true,
+    }
+
+    const topTabs = baseTopTabs({
+      items: [existingTab],
+      activeId: null,
+    })
+
+    const input: AdapterInput = {
+      claxedo: {
+        dispatch: () => undefined,
+        findTabGroup: () => undefined,
+        split: { focusedId: () => "g-1" },
+        groupTabs: () => ({
+          items: () => [],
+          activeId: () => null,
+          setActive: () => undefined,
+        }),
+        groupWorktree: () => ({ setDefault: () => undefined }),
+        topTabs: {
+          ...topTabs,
+          setActive(tabId: string) { setActiveCalls.push(tabId) },
+        },
+      },
+      globalSync: { child: () => [{ session: [] }, undefined] },
+      globalSDK: {
+        url: "https://example.com",
+        client: { session: { update: async () => undefined } },
+      },
+      navigate(path) { navCalls.push(path) },
+    }
+
+    const adapter = createRouteIntentAdapter(input)
+    adapter.receive({
+      ready: true,
+      workspaceId: "/ws",
+      tabId: undefined,
+      sessionId: undefined,
+      pageId: undefined,
+      sessionTitle: "",
+      sessionBadge: undefined,
+    })
+    await waitTick()
+
+    // Should activate existing tab, not create a new one
+    expect(setActiveCalls).toEqual(["tab-existing"])
+    expect(navCalls).toEqual([`/${base64Encode("/ws")}/tab/tab-existing`])
+  })
+
   test("default title guard matches generated new-session titles", () => {
     expect(isDefaultSessionTitle("New session - 2026-01-01T10:00:00.000Z")).toBe(true)
     expect(isDefaultSessionTitle("Child session - 2026-01-01T10:00:00.000Z")).toBe(true)
     expect(isDefaultSessionTitle("Session title")).toBe(false)
+  })
+
+  test("recovers review workspace tabs with review refs", async () => {
+    const addCalls: Array<{
+      directory: string
+      sessionId: string
+      title: string
+      reviewMode: TabItem["reviewMode"] | undefined
+      reviewFromRef: string | undefined
+      reviewToRef: string | undefined
+    }> = []
+    const navCalls: string[] = []
+
+    const input: AdapterInput = {
+      claxedo: {
+        dispatch: () => undefined,
+        findTabGroup: () => undefined,
+        split: {
+          focusedId: () => "g-1",
+        },
+        groupTabs: () => ({
+          items: () => [],
+          activeId: () => null,
+          setActive: () => undefined,
+        }),
+        groupWorktree: () => ({
+          setDefault: () => undefined,
+        }),
+        topTabs: {
+          ...baseTopTabs({
+            addReviewWorkspace(directory, sessionId, title, _badge, reviewMode, reviewFromRef, reviewToRef) {
+              addCalls.push({
+                directory,
+                sessionId,
+                title,
+                reviewMode,
+                reviewFromRef,
+                reviewToRef,
+              })
+              return "tab-review"
+            },
+          }),
+          setActive: () => undefined,
+        },
+      },
+      globalSync: {
+        child: () => [{ session: [] }, undefined],
+      },
+      globalSDK: {
+        url: "https://example.com",
+        client: {
+          session: {
+            update: async () => undefined,
+          },
+        },
+      },
+      navigate(path) {
+        navCalls.push(path)
+      },
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            context: {
+              tabId: "review-tab",
+              tabType: "review-workspace",
+              directory: "/ws",
+              title: "Review: Uncommitted",
+              sessionId: "s-review",
+              reviewMode: "uncommitted",
+              reviewFromRef: "main",
+              reviewToRef: "HEAD",
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    }
+
+    const adapter = createRouteIntentAdapter(input)
+    adapter.receive({
+      ready: true,
+      workspaceId: "/ws",
+      tabId: "review-tab",
+      sessionId: undefined,
+      pageId: undefined,
+      sessionTitle: "",
+      sessionBadge: undefined,
+    })
+    await waitTick()
+    await waitTick()
+
+    expect(addCalls).toEqual([
+      {
+        directory: "/ws",
+        sessionId: "s-review",
+        title: "Review: Uncommitted",
+        reviewMode: "uncommitted",
+        reviewFromRef: "main",
+        reviewToRef: "HEAD",
+      },
+    ])
+    expect(navCalls).toEqual([`/${base64Encode("/ws")}/tab/tab-review`])
   })
 })

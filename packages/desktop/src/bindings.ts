@@ -21,19 +21,23 @@ export const commands = {
 	resolveAppPath: (appName: string) => __TAURI_INVOKE<string | null>("resolve_app_path", { appName }),
 	openPath: (path: string, appName: string | null) => __TAURI_INVOKE<null>("open_path", { path, appName }),
 	validateLicenseOnBoot: () => __TAURI_INVOKE<LicenseStatus>("validate_license_on_boot"),
-	activateLicense: (key: string) => __TAURI_INVOKE<void>("activate_license", { key }),
-	deactivateLicense: () => __TAURI_INVOKE<void>("deactivate_license"),
+	activateLicense: (key: string) => __TAURI_INVOKE<null>("activate_license", { key }),
+	deactivateLicense: () => __TAURI_INVOKE<null>("deactivate_license"),
 };
 
 /** Events */
 export const events = {
+	licenseRevoked: makeEvent<LicenseRevoked>("license-revoked"),
 	loadingWindowComplete: makeEvent<LoadingWindowComplete>("loading-window-complete"),
 	sqliteMigrationProgress: makeEvent<SqliteMigrationProgress>("sqlite-migration-progress"),
-	licenseRevoked: makeEvent<LicenseRevoked>("license-revoked"),
 };
 
 /* Types */
 export type InitStep = { phase: "server_waiting" } | { phase: "sqlite_waiting" } | { phase: "done" };
+
+export type LicenseRevoked = null;
+
+export type LicenseStatus = { status: "activated" } | { status: "unactivated" };
 
 export type LinuxDisplayBackend = "wayland" | "auto";
 
@@ -51,11 +55,6 @@ export type SqliteMigrationProgress = { type: "InProgress"; value: number } | { 
 export type WslConfig = {
 		enabled: boolean,
 	};
-
-export type LicenseRevoked = null;
-
-
-export type LicenseStatus = { status: "activated" } | { status: "unactivated" };
 
 export type WslPathMode = "windows" | "linux";
 

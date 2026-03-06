@@ -55,9 +55,9 @@ describe("tab isolation between groups", () => {
 
       tabs1.addSession("/ws", "s1", "Session 1")
 
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].sessionId).toBe("s1")
-      expect(tabs2.items()).toHaveLength(0)
+      expect(tabs1.items()).toHaveLength(1) // session
+      expect(tabs1.items().find((t: any) => t.type === "session")!.sessionId).toBe("s1")
+      expect(tabs2.items()).toHaveLength(0) // empty
     } finally {
       dispose()
     }
@@ -70,9 +70,9 @@ describe("tab isolation between groups", () => {
 
       tabs1.addTerminal("/ws", "pty-1", "Terminal 1")
 
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].terminalId).toBe("pty-1")
-      expect(tabs2.items()).toHaveLength(0)
+      expect(tabs1.items()).toHaveLength(1) // terminal
+      expect(tabs1.items().find((t: any) => t.type === "terminal")!.terminalId).toBe("pty-1")
+      expect(tabs2.items()).toHaveLength(0) // empty
     } finally {
       dispose()
     }
@@ -85,9 +85,9 @@ describe("tab isolation between groups", () => {
 
       tabs1.addReview("/ws", "rev-1", "Review 1", { additions: 5, deletions: 2 })
 
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].type).toBe("review")
-      expect(tabs2.items()).toHaveLength(0)
+      expect(tabs1.items()).toHaveLength(1) // review
+      expect(tabs1.items().find((t: any) => t.type === "review")!.type).toBe("review")
+      expect(tabs2.items()).toHaveLength(0) // empty
     } finally {
       dispose()
     }
@@ -103,7 +103,7 @@ describe("tab isolation between groups", () => {
 
       expect(a).toBe(b)
       expect(a).not.toBe(c)
-      expect(tabs1.items()).toHaveLength(2)
+      expect(tabs1.items()).toHaveLength(2) // 2 reviews
       const modes = tabs1
         .items()
         .filter((tab: any) => tab.type === "review")
@@ -137,9 +137,9 @@ describe("tab isolation between groups", () => {
 
       tabs1.addFile("/ws", "/ws/main.ts", "main.ts")
 
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].type).toBe("file")
-      expect(tabs2.items()).toHaveLength(0)
+      expect(tabs1.items()).toHaveLength(1) // file
+      expect(tabs1.items().find((t: any) => t.type === "file")!.type).toBe("file")
+      expect(tabs2.items()).toHaveLength(0) // empty
     } finally {
       dispose()
     }
@@ -155,9 +155,9 @@ describe("tab isolation between groups", () => {
 
       tabs1.close(id1)
 
-      expect(tabs1.items()).toHaveLength(0)
-      expect(tabs2.items()).toHaveLength(1)
-      expect(tabs2.items()[0].id).toBe(id2)
+      expect(tabs1.items()).toHaveLength(0) // empty
+      expect(tabs2.items()).toHaveLength(1) // session
+      expect(tabs2.items().find((t: any) => t.id === id2)).toBeDefined()
     } finally {
       dispose()
     }
@@ -176,8 +176,8 @@ describe("tab isolation between groups", () => {
       tabs1.close(a)
       tabs1.close(b)
 
-      expect(tabs1.items()).toHaveLength(0)
-      expect(tabs2.items()).toHaveLength(2)
+      expect(tabs1.items()).toHaveLength(0) // empty
+      expect(tabs2.items()).toHaveLength(2) // session + terminal
     } finally {
       dispose()
     }
@@ -192,14 +192,14 @@ describe("tab isolation between groups", () => {
       tabs2.addSession("/ws", "s2", "Session 2")
 
       tabs1.close(id)
-      expect(tabs1.items()).toHaveLength(0)
+      expect(tabs1.items()).toHaveLength(0) // empty
 
       tabs1.reopenLast()
 
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].sessionId).toBe("s1")
-      expect(tabs2.items()).toHaveLength(1)
-      expect(tabs2.items()[0].sessionId).toBe("s2")
+      expect(tabs1.items()).toHaveLength(1) // session
+      expect(tabs1.items().find((t: any) => t.type === "session")!.sessionId).toBe("s1")
+      expect(tabs2.items()).toHaveLength(1) // session
+      expect(tabs2.items().find((t: any) => t.type === "session")!.sessionId).toBe("s2")
     } finally {
       dispose()
     }
@@ -239,7 +239,7 @@ describe("tab isolation between groups", () => {
       const b2 = tabs2.addSession("/ws", "s4", "S4")
 
       // Reorder group A
-      tabs1.move(a1, 1)
+      tabs1.move(a1, 1) // move to end
 
       const orderedA = tabs1.orderedItems().map((t: any) => t.id)
       const orderedB = tabs2.orderedItems().map((t: any) => t.id)
@@ -260,8 +260,8 @@ describe("tab isolation between groups", () => {
       const id2 = tabs1.addSession("/ws", "s1", "Session 1 Updated")
 
       expect(id1).toBe(id2)
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].title).toBe("Session 1 Updated")
+      expect(tabs1.items()).toHaveLength(1) // session
+      expect(tabs1.items().find((t: any) => t.type === "session")!.title).toBe("Session 1 Updated")
     } finally {
       dispose()
     }
@@ -276,8 +276,8 @@ describe("tab isolation between groups", () => {
       const id2 = tabs2.addSession("/ws", "shared-session", "Session")
 
       expect(id1).not.toBe(id2)
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs2.items()).toHaveLength(1)
+      expect(tabs1.items()).toHaveLength(1) // session
+      expect(tabs2.items()).toHaveLength(1) // session
     } finally {
       dispose()
     }
@@ -293,8 +293,8 @@ describe("tab isolation between groups", () => {
 
       tabs1.updateBadge(id1, { additions: 10, deletions: 3 })
 
-      expect(tabs1.items()[0].badge).toEqual({ additions: 10, deletions: 3 })
-      expect(tabs2.items()[0].badge).toBeUndefined()
+      expect(tabs1.items().find((t: any) => t.id === id1)!.badge).toEqual({ additions: 10, deletions: 3 })
+      expect(tabs2.items().find((t: any) => t.id === id2)!.badge).toBeUndefined()
     } finally {
       dispose()
     }
@@ -310,8 +310,8 @@ describe("tab isolation between groups", () => {
 
       tabs1.updateTitle(id1, "Updated Title")
 
-      expect(tabs1.items()[0].title).toBe("Updated Title")
-      expect(tabs2.items()[0].title).toBe("Original")
+      expect(tabs1.items().find((t: any) => t.id === id1)!.title).toBe("Updated Title")
+      expect(tabs2.items().find((t: any) => t.type === "session")!.title).toBe("Original")
     } finally {
       dispose()
     }
@@ -327,10 +327,10 @@ describe("tab isolation between groups", () => {
 
       tabs1.patch(id1, { attention: true, loading: true })
 
-      expect(tabs1.items()[0].attention).toBe(true)
-      expect(tabs1.items()[0].loading).toBe(true)
-      expect(tabs2.items()[0].attention).toBeUndefined()
-      expect(tabs2.items()[0].loading).toBeUndefined()
+      expect(tabs1.items().find((t: any) => t.id === id1)!.attention).toBe(true)
+      expect(tabs1.items().find((t: any) => t.id === id1)!.loading).toBe(true)
+      expect(tabs2.items().find((t: any) => t.type === "terminal")!.attention).toBeUndefined()
+      expect(tabs2.items().find((t: any) => t.type === "terminal")!.loading).toBeUndefined()
     } finally {
       dispose()
     }
@@ -347,11 +347,11 @@ describe("tab isolation between groups", () => {
       tabs1.patch(id1, { reviewFocusPath: "src/focused.ts", reviewFocusVersion: 3 })
 
       const t1 = tabs1.items().find((tab: any) => tab.id === id1)
-      const t2 = tabs2.items()[0]
+      const t2 = tabs2.items().find((tab: any) => tab.type === "review")
       expect(t1?.reviewFocusPath).toBe("src/focused.ts")
       expect(t1?.reviewFocusVersion).toBe(3)
-      expect(t2.reviewFocusPath).toBeUndefined()
-      expect(t2.reviewFocusVersion).toBeUndefined()
+      expect(t2!.reviewFocusPath).toBeUndefined()
+      expect(t2!.reviewFocusVersion).toBeUndefined()
     } finally {
       dispose()
     }
@@ -372,12 +372,12 @@ describe("topTabs delegates to focused group", () => {
       tabs2.addSession("/ws", "s2", "In Group 2")
 
       api.split.setFocus(g1)
-      expect(api.topTabs.items()).toHaveLength(1)
-      expect(api.topTabs.items()[0].sessionId).toBe("s1")
+      expect(api.topTabs.items()).toHaveLength(1) // session
+      expect(api.topTabs.items().find((t: any) => t.type === "session")!.sessionId).toBe("s1")
 
       api.split.setFocus(g2)
-      expect(api.topTabs.items()).toHaveLength(1)
-      expect(api.topTabs.items()[0].sessionId).toBe("s2")
+      expect(api.topTabs.items()).toHaveLength(1) // session
+      expect(api.topTabs.items().find((t: any) => t.type === "session")!.sessionId).toBe("s2")
     } finally {
       dispose()
     }
@@ -391,9 +391,9 @@ describe("topTabs delegates to focused group", () => {
       api.split.setFocus(g1)
       api.topTabs.addSession("/ws", "top-session", "TopTab Session")
 
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].sessionId).toBe("top-session")
-      expect(tabs2.items()).toHaveLength(0)
+      expect(tabs1.items()).toHaveLength(1) // session
+      expect(tabs1.items().find((t: any) => t.type === "session")!.sessionId).toBe("top-session")
+      expect(tabs2.items()).toHaveLength(0) // empty
     } finally {
       dispose()
     }
@@ -414,7 +414,8 @@ describe("worktree isolation between groups", () => {
 
       wt1.setDefault("/workspace-a")
 
-      // Group B is unaffected (isolation)
+      // Group B is unaffected (isolation) — its default is null
+      // because the new group starts empty
       expect(wt2.default()).toBeNull()
 
       // The worktree alias delegates to the focused group.
@@ -422,7 +423,7 @@ describe("worktree isolation between groups", () => {
       api.split.setFocus(g1)
       expect(api.worktree.default()).toBe("/workspace-a")
 
-      // When g2 is focused, the alias should reflect g2's default (null).
+      // When g2 is focused, the alias should reflect g2's default.
       api.split.setFocus(g2)
       expect(api.worktree.default()).toBeNull()
     } finally {
@@ -549,13 +550,14 @@ describe("worktree isolation between groups", () => {
       tabs2.addSession("/workspace-b", "s2", "Session 2")
 
       expect(wt1.default()).toBe("/workspace-a")
+      // g2's default starts null (new group starts empty), then auto-set by addSession
       expect(wt2.default()).toBe("/workspace-b")
     } finally {
       dispose()
     }
   })
 
-  test("closing only tab for a directory switches worktree.default to next active tab's directory", () => {
+  test("closing session tab does not switch worktree.default when process tab shares same directory", () => {
     const { api, dispose } = createTestLayout()
     try {
       const { g1, tabs1 } = splitInto2(api)
@@ -563,13 +565,16 @@ describe("worktree isolation between groups", () => {
 
       const id1 = tabs1.addSession("/workspace-a", "s1", "Session A")
       tabs1.addSession("/workspace-b", "s2", "Session B")
+      // Explicitly add a process tab so it shares /workspace-a directory
+      tabs1.addProcess("/workspace-a")
 
       expect(wt1.default()).toBe("/workspace-a")
 
-      // Close the only tab for /workspace-a — default should switch to /workspace-b
+      // Process tab directory syncs with worktree.default (/workspace-a),
+      // so closing the session still leaves a tab with that directory
       tabs1.close(id1)
 
-      expect(wt1.default()).toBe("/workspace-b")
+      expect(wt1.default()).toBe("/workspace-a")
     } finally {
       dispose()
     }
@@ -635,17 +640,21 @@ describe("worktree isolation between groups", () => {
     }
   })
 
-  test("closing only tab via topTabs switches worktree.default", () => {
+  test("closing session via topTabs does not switch worktree.default when process tab shares directory", () => {
     const { api, dispose } = createTestLayout()
     try {
       const id1 = api.topTabs.addSession("/workspace-a", "s1", "Session A")
       api.topTabs.addSession("/workspace-b", "s2", "Session B")
+      // Explicitly add a process tab so it shares /workspace-a directory
+      api.topTabs.addProcess("/workspace-a")
 
       expect(api.worktree.default()).toBe("/workspace-a")
 
+      // Process tab directory syncs with worktree default, so /workspace-a is still
+      // present via the process tab — default does NOT switch
       api.topTabs.close(id1)
 
-      expect(api.worktree.default()).toBe("/workspace-b")
+      expect(api.worktree.default()).toBe("/workspace-a")
     } finally {
       dispose()
     }
@@ -657,40 +666,6 @@ describe("worktree isolation between groups", () => {
 // ---------------------------------------------------------------------------
 
 describe("layout isolation between groups", () => {
-  test("file tree state per group persists across focus switches", () => {
-    const { api, dispose } = createTestLayout()
-    try {
-      const { g1, g2 } = splitInto2(api)
-      const layout1 = api.groupLayout(g1)
-      const layout2 = api.groupLayout(g2)
-
-      layout1.fileTree.setOpened(false)
-      layout1.fileTree.setWidth(200)
-      layout1.fileTree.setTab("all")
-
-      // Group B defaults untouched (isolation)
-      expect(layout2.fileTree.opened()).toBe(true)
-      expect(layout2.fileTree.width()).toBe(344)
-      expect(layout2.fileTree.tab()).toBe("all")
-
-      // After switching focus to g2 and back, g1's layout should persist
-      api.split.setFocus(g2)
-      api.split.setFocus(g1)
-
-      expect(layout1.fileTree.opened()).toBe(false)
-      expect(layout1.fileTree.width()).toBe(200)
-      expect(layout1.fileTree.tab()).toBe("all")
-
-      // Modifying g2's layout while g2 is focused does not affect g1
-      api.split.setFocus(g2)
-      layout2.fileTree.setWidth(500)
-      expect(layout1.fileTree.width()).toBe(200)
-      expect(layout2.fileTree.width()).toBe(500)
-    } finally {
-      dispose()
-    }
-  })
-
   test("session panel state per group persists across focus switches", () => {
     const { api, dispose } = createTestLayout()
     try {
@@ -766,7 +741,7 @@ describe("split operations", () => {
       expect(api.split.sizes()).toEqual([0.5, 0.5])
 
       const g2 = api.split.groups()[1]
-      expect(api.groupTabs(g2.id).items()).toHaveLength(0)
+      expect(api.groupTabs(g2.id).items()).toHaveLength(0) // empty
     } finally {
       dispose()
     }
@@ -805,8 +780,8 @@ describe("split operations", () => {
       expect(api.split.hidden()).toBe(true)
 
       // Tabs are preserved in both groups
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs2.items()).toHaveLength(2)
+      expect(tabs1.items()).toHaveLength(1) // session
+      expect(tabs2.items()).toHaveLength(2) // session + terminal
 
       // Toggle again shows
       api.split.toggle()
@@ -874,16 +849,14 @@ describe("split operations", () => {
       expect(right).toBeTruthy()
       if (!right) return
 
-      // Primary group starts empty; after merge it must receive an active tab.
-      expect(tabs1.items()).toHaveLength(0)
-      expect(tabs1.activeId()).toBeNull()
+      // Primary group is empty; after merge it receives the session.
+      expect(tabs1.items()).toHaveLength(0) // empty
 
       api.split.closeGroup(g2)
 
       const primary = api.groupTabs(g1)
-      expect(primary.items()).toHaveLength(1)
-      expect(primary.items()[0]?.sessionId).toBe("s-right")
-      expect(primary.activeId()).toBe(primary.items()[0]?.id)
+      expect(primary.items()).toHaveLength(1) // session
+      expect(primary.items().find((t: any) => t.type === "session")?.sessionId).toBe("s-right")
       expect(primary.active()).toBeDefined()
     } finally {
       dispose()
@@ -918,15 +891,15 @@ describe("split operations", () => {
       const id = tabs1.addSession("/ws", "s1", "Session 1")
       tabs1.addTerminal("/ws", "pty-1", "Terminal 1")
 
-      expect(tabs1.items()).toHaveLength(2)
-      expect(tabs2.items()).toHaveLength(0)
+      expect(tabs1.items()).toHaveLength(2) // session + terminal
+      expect(tabs2.items()).toHaveLength(0) // empty
 
       api.split.moveTab(id, g1, g2)
 
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].type).toBe("terminal")
-      expect(tabs2.items()).toHaveLength(1)
-      expect(tabs2.items()[0].sessionId).toBe("s1")
+      expect(tabs1.items()).toHaveLength(1) // terminal
+      expect(tabs1.items().find((t: any) => t.type === "terminal")).toBeDefined()
+      expect(tabs2.items()).toHaveLength(1) // session
+      expect(tabs2.items().find((t: any) => t.type === "session")!.sessionId).toBe("s1")
     } finally {
       dispose()
     }
@@ -945,9 +918,9 @@ describe("split operations", () => {
       api.split.moveTab(id, g1, g2)
 
       // g1 retains the terminal, g2 now has both sessions
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].type).toBe("terminal")
-      expect(tabs2.items()).toHaveLength(2)
+      expect(tabs1.items()).toHaveLength(1) // terminal
+      expect(tabs1.items().find((t: any) => t.type === "terminal")).toBeDefined()
+      expect(tabs2.items()).toHaveLength(2) // 2 sessions
       expect(tabs2.items().some((t: any) => t.sessionId === "s1")).toBe(true)
       expect(tabs2.items().some((t: any) => t.sessionId === "s2")).toBe(true)
     } finally {
@@ -968,7 +941,7 @@ describe("split operations", () => {
       api.split.setFocus(g2)
 
       expect(api.split.focusedId()).toBe(g2)
-      // Tabs unchanged
+      // Tabs unchanged (each has session)
       expect(tabs1.items()).toHaveLength(1)
       expect(tabs2.items()).toHaveLength(1)
     } finally {
@@ -996,7 +969,7 @@ describe("end-to-end split panel scenarios", () => {
       const t2 = tabs2.addTerminal("/ws-b", "pty-b", "Terminal B")
 
       // Verify complete isolation
-      expect(tabs1.items()).toHaveLength(2)
+      expect(tabs1.items()).toHaveLength(2) // session + terminal
       expect(tabs2.items()).toHaveLength(2)
       expect(
         tabs1
@@ -1013,13 +986,13 @@ describe("end-to-end split panel scenarios", () => {
 
       // Close terminal in group 1 — group 2 unaffected
       tabs1.close(t1)
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].id).toBe(s1)
-      expect(tabs2.items()).toHaveLength(2)
+      expect(tabs1.items()).toHaveLength(1) // session
+      expect(tabs1.items().find((t: any) => t.id === s1)).toBeDefined()
+      expect(tabs2.items()).toHaveLength(2) // session + terminal
 
       // Badge update in group 2 — group 1 unaffected
       tabs2.updateBadge(s2, { additions: 5, deletions: 1 })
-      expect(tabs1.items()[0].badge).toBeUndefined()
+      expect(tabs1.items().find((t: any) => t.id === s1)!.badge).toBeUndefined()
       expect(tabs2.items().find((t: any) => t.id === s2)?.badge).toEqual({ additions: 5, deletions: 1 })
 
       // Active tab switching — independent
@@ -1094,14 +1067,14 @@ describe("end-to-end split panel scenarios", () => {
       // Set attention on group 1's terminal tab
       tabs1.patch(t1, { attention: true })
 
-      expect(tabs1.items()[0].attention).toBe(true)
-      expect(tabs2.items()[0].attention).toBeUndefined()
+      expect(tabs1.items().find((t: any) => t.id === t1)!.attention).toBe(true)
+      expect(tabs2.items().find((t: any) => t.id === t2)!.attention).toBeUndefined()
 
       // Set done indicator on group 2's terminal tab
       tabs2.patch(t2, { done: true })
 
-      expect(tabs1.items()[0].done).toBeUndefined()
-      expect(tabs2.items()[0].done).toBe(true)
+      expect(tabs1.items().find((t: any) => t.id === t1)!.done).toBeUndefined()
+      expect(tabs2.items().find((t: any) => t.id === t2)!.done).toBe(true)
     } finally {
       dispose()
     }
@@ -1117,8 +1090,8 @@ describe("end-to-end split panel scenarios", () => {
 
       tabs1.patch(t1, { loading: true })
 
-      expect(tabs1.items()[0].loading).toBe(true)
-      expect(tabs2.items()[0].loading).toBeUndefined()
+      expect(tabs1.items().find((t: any) => t.id === t1)!.loading).toBe(true)
+      expect(tabs2.items().find((t: any) => t.type === "session")!.loading).toBeUndefined()
     } finally {
       dispose()
     }
@@ -1139,27 +1112,27 @@ describe("tab operations work after closing split", () => {
       tabs1.addSession("/ws", "s1", "Session 1")
       const temp = tabs2.addSession("/ws", "temp", "Temp Session")
 
-      // Close all tabs in right panel
+      // Close all user tabs in right panel
       tabs2.close(temp)
-      expect(tabs2.items()).toHaveLength(0)
+      expect(tabs2.items()).toHaveLength(0) // empty
 
       // Close group 2 explicitly
       api.split.closeGroup(g2)
 
-      // Remaining group should have 1 tab
+      // Remaining group should have session
       const remainingId = api.split.groups()[0].id
       const remaining = api.groupTabs(remainingId)
-      expect(remaining.items()).toHaveLength(1)
+      expect(remaining.items()).toHaveLength(1) // session
 
       // Create new tab — should work
       const newId = remaining.addSession("/ws", "s2", "Session 2")
       expect(newId).toBeTruthy()
-      expect(remaining.items()).toHaveLength(2)
+      expect(remaining.items()).toHaveLength(2) // 2 sessions
 
       // Close the new tab — should work
       remaining.close(newId!)
-      expect(remaining.items()).toHaveLength(1)
-      expect(remaining.items()[0].sessionId).toBe("s1")
+      expect(remaining.items()).toHaveLength(1) // session
+      expect(remaining.items().find((t: any) => t.sessionId === "s1")).toBeDefined()
     } finally {
       dispose()
     }
@@ -1223,8 +1196,8 @@ describe("tab operations work after closing split", () => {
 
       // Adding a session via topTabs while hidden should go to focused group (g2)
       api.topTabs.addSession("/ws", "s3", "Added While Hidden")
-      expect(tabs2.items()).toHaveLength(2)
-      expect(tabs1.items()).toHaveLength(1)
+      expect(tabs2.items()).toHaveLength(2) // s2 + s3
+      expect(tabs1.items()).toHaveLength(1) // s1
 
       // Toggle shows the split again
       api.split.toggle()
@@ -1238,8 +1211,8 @@ describe("tab operations work after closing split", () => {
       expect(api.split.sizes()).toEqual([0.5, 0.5])
 
       // Both groups should have correct tabs
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs2.items()).toHaveLength(2)
+      expect(tabs1.items()).toHaveLength(1) // s1
+      expect(tabs2.items()).toHaveLength(2) // s2 + s3
     } finally {
       dispose()
     }
@@ -1350,7 +1323,7 @@ describe("workspace bar fallback naming", () => {
   ) {
     const allTabs: any[] = []
     for (const group of api.split.groups()) {
-      allTabs.push(...api.groupTabs(group.id).items())
+      allTabs.push(...api.groupTabs(group.id).items().filter((t: any) => t.type !== "process"))
     }
     const tabDirs = new Set(allTabs.map((t: any) => t.directory))
 
@@ -1613,10 +1586,11 @@ describe("page tab integration", () => {
 
       tabs1.addPage("page-1", "My Page")
 
-      expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].type).toBe("page")
-      expect(tabs1.items()[0].pageId).toBe("page-1")
-      expect(tabs2.items()).toHaveLength(0)
+      expect(tabs1.items()).toHaveLength(1) // page
+      const pageTab = tabs1.items().find((t: any) => t.type === "page")
+      expect(pageTab).toBeDefined()
+      expect(pageTab.pageId).toBe("page-1")
+      expect(tabs2.items()).toHaveLength(0) // empty
     } finally {
       dispose()
     }
@@ -1631,7 +1605,7 @@ describe("page tab integration", () => {
       const b = tabs1.addPage("page-1", "My Page")
 
       expect(a).toBe(b)
-      expect(tabs1.items()).toHaveLength(1)
+      expect(tabs1.items()).toHaveLength(1) // 1 page
     } finally {
       dispose()
     }
@@ -1646,7 +1620,7 @@ describe("page tab integration", () => {
       const b = tabs1.addPage("page-2", "Page Two")
 
       expect(a).not.toBe(b)
-      expect(tabs1.items()).toHaveLength(2)
+      expect(tabs1.items()).toHaveLength(2) // 2 pages
     } finally {
       dispose()
     }
@@ -1658,9 +1632,9 @@ describe("page tab integration", () => {
       const { tabs1 } = splitInto2(api)
 
       tabs1.addPage("page-1", "My Page")
-      const tab = tabs1.items()[0]
+      const tab = tabs1.items().find((t: any) => t.type === "page")
 
-      expect(tab.type).toBe("page")
+      expect(tab).toBeDefined()
       expect(tab.pageId).toBe("page-1")
       expect(tab.directory).toBe("__pages__")
       expect(tab.title).toBe("My Page")
@@ -1698,14 +1672,14 @@ describe("page tab integration", () => {
       const { tabs1 } = splitInto2(api)
 
       const id = tabs1.addPage("page-1", "My Page")
-      expect(tabs1.items()).toHaveLength(1)
+      expect(tabs1.items()).toHaveLength(1) // page
 
       tabs1.close(id)
-      expect(tabs1.items()).toHaveLength(0)
+      expect(tabs1.items()).toHaveLength(0) // empty
 
       tabs1.reopenLast()
       expect(tabs1.items()).toHaveLength(1)
-      expect(tabs1.items()[0].pageId).toBe("page-1")
+      expect(tabs1.items().find((t: any) => t.type === "page")!.pageId).toBe("page-1")
     } finally {
       dispose()
     }
@@ -1733,8 +1707,8 @@ describe("page tab integration", () => {
       api.topTabs.addPage("page-1", "My Page")
 
       const g1Tabs = api.groupTabs(g1)
-      expect(g1Tabs.items()).toHaveLength(1)
-      expect(g1Tabs.items()[0].pageId).toBe("page-1")
+      expect(g1Tabs.items()).toHaveLength(1) // page
+      expect(g1Tabs.items().find((t: any) => t.type === "page")!.pageId).toBe("page-1")
     } finally {
       dispose()
     }

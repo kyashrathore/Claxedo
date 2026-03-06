@@ -1,7 +1,7 @@
 import { $ } from "bun"
 import path from "path"
 
-import { compilePortless, copyBinaryToSidecarFolder, getCurrentSidecar, windowsify } from "./utils"
+import { copyBinaryToSidecarFolder, getCurrentSidecar, windowsify } from "./utils"
 
 if (Bun.env.OPENCODE_SKIP_SIDECAR === "1") {
   console.log("[predev] OPENCODE_SKIP_SIDECAR=1, skipping sidecar build/copy")
@@ -32,4 +32,3 @@ await $`cd ../opencode && bun run build --single --skip-install`.env({
 })
 
 await copyBinaryToSidecarFolder(binaryPath, RUST_TARGET)
-await compilePortless(RUST_TARGET)

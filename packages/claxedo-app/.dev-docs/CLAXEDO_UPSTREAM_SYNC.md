@@ -6,6 +6,7 @@ This document tracks how this fork is kept in sync with `upstream/dev`, and reco
 
 | Claxedo Version | Upstream Commit | Last Sync Date |
 |----------------|-----------------|----------------|
+| dev | c4ffd93ca | 2026-03-04 |
 | dev | d1938a472 | 2026-03-02 |
 | dev | 2a2082233 | 2026-02-28 |
 | dev | 799b2623c | 2026-02-26 |

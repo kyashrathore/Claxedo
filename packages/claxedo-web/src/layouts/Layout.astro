@@ -10,14 +10,15 @@ const { title } = Astro.props;
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="description" content="Claxedo - Multi-agent AI coding environment. Run 10+ parallel AI agents across multiple projects." />
+    <meta name="description" content="Claxedo — The parallel AI workspace built on OpenCode. Run multiple AI coding workflows at once with multi-pane layout, instant agent terminals, and workspace-aware AI context." />
     <meta name="viewport" content="width=device-width" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+    <link rel="preload" as="image" href="/screenshots/home-light.png" />
   </head>
   <body>
     <slot />
@@ -25,18 +26,136 @@ const { title } = Astro.props;
 </html>
 
 <style is:global>
+  /* ===== OpenCode / Claxedo Theme ===== */
   :root {
-    --bg-primary: #0a0a0f;
-    --bg-secondary: #12121a;
-    --bg-tertiary: #1a1a25;
-    --text-primary: #ffffff;
-    --text-secondary: #a0a0b0;
-    --text-muted: #606070;
-    --accent-primary: #6366f1;
-    --accent-secondary: #8b5cf6;
-    --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
-    --border-color: #2a2a35;
-    --glow-color: rgba(99, 102, 241, 0.3);
+    color-scheme: light;
+
+    /* Backgrounds — warm smoke palette */
+    --bg: #f8f7f7;
+    --bg-subtle: #f1f0f0;
+    --bg-muted: #e9e8e8;
+    --surface: #ffffff;
+    --surface-raised: #fdfcfc;
+
+    /* Text — warm grays */
+    --text: #211e1e;
+    --text-secondary: #656363;
+    --text-muted: #8e8b8b;
+    --text-weak: #bcbbbb;
+
+    /* Accent — cobalt blue */
+    --accent: #034cff;
+    --accent-hover: #1251ec;
+    --accent-light: rgba(3, 76, 255, 0.08);
+    --accent-medium: rgba(3, 76, 255, 0.15);
+    --accent-text: #1251ec;
+
+    /* Borders */
+    --border: #0b060032;
+    --border-subtle: #1100000f;
+    --border-hover: #04000044;
+
+    /* Success / status */
+    --success: #12c905;
+    --success-text: #008600;
+    --warning: #f59e0b;
+    --critical: #fc533a;
+    --critical-text: #da3319;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.08);
+
+    /* Radii — matching OpenCode (sharp, not rounded) */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 10px;
+
+    /* Fonts — matching OpenCode */
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-serif: 'Instrument Serif', Georgia, serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+    /* Dark surface (for terminal/code blocks) */
+    --dark-bg: #131010;
+    --dark-bg-raised: #1b1818;
+    --dark-border: #f7ecec3f;
+    --dark-text: #fcf9f9b2;
+    --dark-text-strong: #fdfbfbf0;
+    --dark-text-weak: #faf5f467;
+
+    /* Nav */
+    --nav-bg: rgba(248, 247, 247, 0.85);
+
+    /* Button */
+    --btn-primary-bg: #211e1e;
+    --btn-primary-hover: #3e3939;
+    --btn-primary-text: #ffffff;
+    --btn-secondary-bg: transparent;
+    --btn-secondary-border: var(--border);
+    --btn-secondary-hover-bg: #f1f0f0;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+
+      /* Backgrounds — dark smoke palette */
+      --bg: #131010;
+      --bg-subtle: #1b1818;
+      --bg-muted: #252121;
+      --surface: #1b1818;
+      --surface-raised: #252121;
+
+      /* Text — light warm tones */
+      --text: #f1ecec;
+      --text-secondary: #b7b1b1;
+      --text-muted: #716c6b;
+      --text-weak: #4b4646;
+
+      /* Accent — cobalt blue (dark mode) */
+      --accent: #89b5ff;
+      --accent-hover: #034cff;
+      --accent-light: rgba(137, 181, 255, 0.1);
+      --accent-medium: rgba(137, 181, 255, 0.18);
+      --accent-text: #89b5ff;
+
+      /* Borders */
+      --border: #f7ecec3f;
+      --border-subtle: #edd5d516;
+      --border-hover: #faf5f559;
+
+      /* Success / status */
+      --success: #12c905;
+      --success-text: #37db2e;
+      --critical-text: #fc533a;
+
+      /* Shadows */
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.12);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.2);
+      --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.3);
+
+      /* Dark surface (same as main in dark mode) */
+      --dark-bg: #0e0b0b;
+      --dark-bg-raised: #131010;
+      --dark-border: #f7ecec3f;
+      --dark-text: #fcf9f9b2;
+      --dark-text-strong: #fdfbfbf0;
+      --dark-text-weak: #faf5f467;
+
+      /* Nav */
+      --nav-bg: rgba(19, 16, 16, 0.85);
+
+      /* Button */
+      --btn-primary-bg: #f1ecec;
+      --btn-primary-hover: #fdfcfc;
+      --btn-primary-text: #131010;
+      --btn-secondary-bg: transparent;
+      --btn-secondary-border: var(--border);
+      --btn-secondary-hover-bg: #252121;
+    }
   }
 
   * {
@@ -46,10 +165,12 @@ const { title } = Astro.props;
   }
 
   html {
-    font-family: 'Inter', system-ui, sans-serif;
-    background: var(--bg-primary);
-    color: var(--text-primary);
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
     scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
@@ -58,7 +179,7 @@ const { title } = Astro.props;
   }
 
   code, .mono {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
   }
 
   a {
@@ -71,54 +192,70 @@ const { title } = Astro.props;
     cursor: pointer;
   }
 
+  img {
+    max-width: 100%;
+    display: block;
+  }
+
   .container {
-    max-width: 1200px;
+    max-width: 1140px;
     margin: 0 auto;
     padding: 0 24px;
   }
 
-  .gradient-text {
-    background: var(--accent-gradient);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+  .container-wide {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  .serif-italic {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 400;
+  }
+
+  .accent-text {
+    color: var(--accent-text);
   }
 
   .btn-primary {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 14px 28px;
-    background: var(--accent-gradient);
+    padding: 12px 24px;
+    background: var(--btn-primary-bg);
     border: none;
-    border-radius: 12px;
-    color: white;
-    font-weight: 600;
-    font-size: 16px;
-    transition: transform 0.2s, box-shadow 0.2s;
+    border-radius: var(--radius-md);
+    color: var(--btn-primary-text);
+    font-weight: 500;
+    font-size: 15px;
+    transition: background 0.15s, transform 0.15s;
+    line-height: 1.4;
   }
 
   .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px var(--glow-color);
+    background: var(--btn-primary-hover);
+    transform: translateY(-1px);
   }
 
   .btn-secondary {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 14px 28px;
-    background: transparent;
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    color: var(--text-primary);
-    font-weight: 600;
-    font-size: 16px;
-    transition: all 0.2s;
+    padding: 12px 24px;
+    background: var(--btn-secondary-bg);
+    border: 1px solid var(--btn-secondary-border);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    font-weight: 500;
+    font-size: 15px;
+    transition: all 0.15s;
+    line-height: 1.4;
   }
 
   .btn-secondary:hover {
-    border-color: var(--accent-primary);
-    background: rgba(99, 102, 241, 0.1);
+    border-color: var(--border-hover);
+    background: var(--btn-secondary-hover-bg);
   }
 </style>

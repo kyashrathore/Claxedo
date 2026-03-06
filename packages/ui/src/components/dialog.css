@@ -133,6 +133,16 @@
     width: min(calc(100vw - 32px), 960px);
     height: min(calc(100vh - 32px), 600px);
   }
+
+  &[data-size="full"] [data-slot="dialog-container"] {
+    width: calc(100vw - 24px);
+    height: calc(100vh - 24px);
+  }
+
+  &[data-size="full"] [data-slot="dialog-content"] {
+    height: 100%;
+    min-height: 100%;
+  }
 }
 
 [data-component="dialog"][data-transition] [data-slot="dialog-content"] {

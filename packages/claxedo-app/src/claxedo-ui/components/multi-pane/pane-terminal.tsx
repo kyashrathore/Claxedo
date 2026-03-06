@@ -10,13 +10,11 @@
  * - Handles clone-on-reconnect (WebSocket 1008)
  */
 
-import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { Show, batch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { Terminal } from "@/components/terminal"
 import { useTerminal } from "@/context/terminal"
-import { useSDK } from "@/context/sdk"
 import { useClaxedoLayout } from "../../context/claxedo-layout"
 import { WebSocketCloseError } from "../../../overrides/components/terminal-connection"
-import { isMarkdownPath, openMarkdownPageTab } from "../../utils/open-markdown-page-tab"
 import { requestTerminalFitOnPaneChange } from "./terminal-fit"
 import { shouldWaitForQueuedCreate } from "./pane-terminal-logic"
 
@@ -33,7 +31,6 @@ export interface PaneTerminalProps {
 export function PaneTerminal(props: PaneTerminalProps) {
   const claxedo = useClaxedoLayout()
   const terminal = useTerminal()
-  const sdk = useSDK()
   const tabs = createMemo(() => claxedo.groupTabs(props.groupId))
 
   const [realPtyId, setRealPtyId] = createSignal<string | undefined>(
@@ -163,6 +160,22 @@ export function PaneTerminal(props: PaneTerminalProps) {
           <Terminal
             pty={p()}
             onConnectError={handleConnectError}
+            onAgentInterrupt={() => {
+              const id = realPtyId()
+              if (!id) return
+              if (!claxedo.terminal.isTracked(id)) return
+              if (claxedo.terminal.agentStatus(id) === "idle") return
+
+              batch(() => {
+                claxedo.terminal.setAgentStatus(id, "idle")
+                const aggregated = claxedo.terminal.getTabAgentStatus(props.tabId)
+                claxedo.patchTab(props.tabId, {
+                  loading: aggregated.loading,
+                  done: aggregated.done,
+                  attention: aggregated.attention ? undefined : false,
+                })
+              })
+            }}
             onSplitVertical={() => {
               claxedo.dispatch({
                 type: "PaneSplitRequested",
@@ -185,15 +198,6 @@ export function PaneTerminal(props: PaneTerminalProps) {
               const dir = props.directory
               if (!dir) return
               if (filePath.startsWith("/") && !filePath.startsWith(dir + "/") && filePath !== dir) return
-              if (isMarkdownPath(filePath)) {
-                void openMarkdownPageTab({
-                  directory: dir,
-                  path: filePath,
-                  sdk,
-                  tabs: tabs(),
-                })
-                return
-              }
               const title = filePath.split("/").at(-1) ?? filePath
               const tabId = tabs().addFile(dir, filePath, title)
               if (tabId) tabs().setActive(tabId)
