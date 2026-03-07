@@ -7,6 +7,7 @@ const appUrl =
   clean(import.meta.env.CLAXEDO_APP_URL) ??
   (import.meta.env.DEV ? "http://localhost:4444" : "https://app.claxedo.com")
 const previewSrc = `${appUrl}?demo=1&embed=1`
+const contact = "https://discord.gg/opencode"
 
 const hero = {
   src: "/screenshots/hero-attached-review.png",
@@ -57,6 +58,20 @@ const proof = [
     desc: "Claude Code, Codex, Gemini CLI, Amp, Cursor agent, and other CLI tools all fit into the same workspace model.",
     src: "/screenshots/all-coding-agent-dark.png",
     alt: "Claxedo workspace with multiple coding agents",
+  },
+  {
+    tag: "Process management",
+    title: "Keep shared processes under control",
+    desc: "Run long-lived services inside the workspace, watch status at a glance, and keep ports and process state organized across projects.",
+    src: "/screenshots/long-running-process-dark.png",
+    alt: "Claxedo process management workspace",
+  },
+  {
+    tag: "Doc authoring",
+    title: "Write first-class docs beside the implementation",
+    desc: "Draft specs, notes, prompts, and working docs in the same workspace instead of scattering authoring across separate tools.",
+    src: "/screenshots/doc-dark.png",
+    alt: "Claxedo document authoring workspace",
   },
 ]
 
@@ -138,7 +153,7 @@ const faq = [
   },
   {
     q: "What platforms are supported?",
-    a: "macOS and Linux today. Windows support is planned.",
+    a: "macOS, Linux, and Windows. Claxedo uses a Tauri desktop shell, so the app targets all three major desktop platforms.",
   },
 ]
 
@@ -158,27 +173,14 @@ const pricing = {
     "Discord community access",
     "Lifetime support",
   ],
-  trust: [
-    "One-time purchase",
-    "macOS and Linux today",
-    "Bring your own API keys",
-  ],
   facts: [
     {
       q: "Supports",
       a: "Any CLI coding agent",
     },
     {
-      q: "Trial",
-      a: "Interactive browser preview",
-    },
-    {
-      q: "Desktop",
-      a: "License required for the full app",
-    },
-    {
-      q: "Windows",
-      a: "Planned",
+      q: "Refund",
+      a: "No-questions-asked for 7 days",
     },
   ],
 }
@@ -207,35 +209,22 @@ const pricing = {
         <a href="#faq">FAQ</a>
       </div>
       <div class="nav-actions">
-        <a href="/try" class="btn-secondary">Try Browser Preview</a>
-        <a href={pricing.href} class="btn-primary">Get The App</a>
+        <a href="#pricing" class="btn-primary">Get Claxedo for $99</a>
       </div>
     </nav>
 
     <section class="hero">
       <div class="hero-copy">
-        <span class="hero-kicker">Desktop workspace for parallel coding</span>
-        <h1 class="hero-title">Do more parallel work with any AI coding agent</h1>
+        <span class="hero-kicker">Built on OpenCode.</span>
+        <h1 class="hero-title">Do more parallel work. Use any agent.</h1>
         <p class="hero-sub">
-          Claxedo gives you a multi-pane desktop workspace to run Claude Code, Codex,
+          Claxedo gives you a multi-pane desktop workspace for Claude Code, Codex,
           Gemini CLI, and more, with review, process control, and workspace-aware context.
-          Built on OpenCode.
         </p>
         <div class="hero-actions">
-          <a href="/try" class="btn-primary">Try Browser Preview</a>
-          <a href="#pricing" class="btn-secondary">See Pricing</a>
+          <a href="#pricing" class="btn-primary">Get Claxedo for $99</a>
+          <a href="#demo" class="btn-secondary">See the workflow</a>
         </div>
-      </div>
-      <div class="hero-meta">
-        <div class="hero-badges">
-          <span>Built on OpenCode</span>
-          <span>macOS + Linux</span>
-          <span>Bring your own API keys</span>
-        </div>
-        <p class="hero-note">
-          Use the browser preview to understand the workflow first. The desktop app
-          is where you connect real projects, agents, and processes.
-        </p>
       </div>
     </section>
 
@@ -266,10 +255,6 @@ const pricing = {
             <li>{item}</li>
           ))}
         </ul>
-        <div class="demo-actions">
-          <a href="/try" class="btn-primary">Open Browser Preview</a>
-          <a href="#pricing" class="btn-secondary">See Desktop Pricing</a>
-        </div>
       </div>
     </section>
 
@@ -332,14 +317,36 @@ const pricing = {
       <div class="proof-grid">
         {proof.map((item) => (
           <article class="proof-card">
-            <img
-              src={item.src}
-              alt={item.alt}
-              width="1200"
-              height="780"
-              loading="lazy"
-              decoding="async"
-            />
+            <div class="proof-shot">
+              <button
+                type="button"
+                class="proof-open"
+                data-src={item.src}
+                data-alt={item.alt}
+                aria-label={`Open full screenshot for ${item.title}`}
+              >
+                <img
+                  src={item.src}
+                  alt={item.alt}
+                  width="3024"
+                  height="1964"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <span class="proof-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8 4H4v4"></path>
+                    <path d="M16 4h4v4"></path>
+                    <path d="M20 16v4h-4"></path>
+                    <path d="M8 20H4v-4"></path>
+                    <path d="M9 9 4 4"></path>
+                    <path d="m15 9 5-5"></path>
+                    <path d="m9 15-5 5"></path>
+                    <path d="m15 15 5 5"></path>
+                  </svg>
+                </span>
+              </button>
+            </div>
             <div class="proof-copy">
               <span class="proof-tag">{item.tag}</span>
               <h3>{item.title}</h3>
@@ -349,6 +356,18 @@ const pricing = {
         ))}
       </div>
     </section>
+
+    <dialog id="zoom" class="zoom" aria-label="Expanded screenshot viewer">
+      <div class="zoom-shell">
+        <button type="button" class="zoom-close" aria-label="Close screenshot viewer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M6 6 18 18"></path>
+            <path d="M18 6 6 18"></path>
+          </svg>
+        </button>
+        <img id="zoom-img" class="zoom-img" src="" alt="" />
+      </div>
+    </dialog>
 
     <section id="features" class="features-section">
       <div class="features-header">
@@ -395,32 +414,27 @@ const pricing = {
             <div class="pricing-price">
               <span class="pricing-amount-old">{pricing.price}</span>
               <span class="pricing-amount">{pricing.now}</span>
-              <span class="pricing-period">USD</span>
+              <span class="pricing-period">/lifetime</span>
             </div>
             <p class="pricing-early">Early bird pricing</p>
           </div>
-          <ul class="pricing-trust">
-            {pricing.trust.map((item) => (
-              <li>{item}</li>
-            ))}
-          </ul>
           <ul class="pricing-features">
             {pricing.list.map((item) => (
               <li><span class="check">+</span> {item}</li>
             ))}
           </ul>
           <div class="pricing-actions">
-            <a href={pricing.href} class="btn-primary pricing-cta">Get The Desktop App</a>
-            <a href="/try" class="btn-secondary pricing-cta-secondary">Try The Browser Preview</a>
+            <a href={pricing.href} class="btn-primary pricing-cta">Get Claxedo for $99</a>
           </div>
           <p class="pricing-note">
-            The browser preview uses demo data and mocked services. The full desktop app requires a license.
+            macOS, Linux, and Windows supported. 7-day no-questions-asked refund.
           </p>
         </div>
         <div class="pricing-facts">
           <div class="facts-head">
             <span class="section-tag">// Quick answers</span>
-            <h3>Put the buying objections next to the price.</h3>
+            <h3>Still not convinced?</h3>
+            <p class="facts-copy">Have a question before you buy? Reach out and we’ll help.</p>
           </div>
           <div class="facts-grid">
             {pricing.facts.map((item) => (
@@ -429,6 +443,9 @@ const pricing = {
                 <strong>{item.a}</strong>
               </article>
             ))}
+          </div>
+          <div class="facts-actions">
+            <a href={contact} class="btn-secondary facts-cta">Contact Us</a>
           </div>
         </div>
       </div>
@@ -577,21 +594,18 @@ const pricing = {
   }
 
   .hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(16rem, 0.75fr);
-    gap: calc(var(--padding) * 0.75);
-    align-items: end;
+    padding-top: calc(var(--padding) * 1.1);
   }
 
   .hero-copy {
-    max-width: 44rem;
+    max-width: 64rem;
   }
 
   .hero-kicker {
     display: inline-flex;
     align-items: center;
-    padding: 4px 10px;
-    margin-bottom: 1rem;
+    padding: 5px 10px;
+    margin-bottom: 1.25rem;
     border: 1px solid var(--border);
     font-family: var(--font-mono);
     font-size: 12px;
@@ -601,21 +615,22 @@ const pricing = {
   }
 
   .hero-title {
-    font-size: clamp(2.25rem, 6vw, 4.75rem);
-    line-height: 0.96;
-    font-weight: 600;
-    letter-spacing: -0.06em;
+    font-family: var(--font-display);
+    font-size: clamp(3rem, 7vw, 5.4rem);
+    line-height: 1.02;
+    font-weight: 650;
+    letter-spacing: -0.04em;
     color: var(--text-strong);
-    text-transform: uppercase;
     text-wrap: balance;
     margin-bottom: 1.25rem;
+    max-width: 14ch;
   }
 
   .hero-sub {
-    font-size: 1.1rem;
+    font-size: 1.14rem;
     line-height: 1.7;
     color: var(--text);
-    max-width: 42rem;
+    max-width: 46rem;
     margin-bottom: 1.5rem;
   }
 
@@ -623,39 +638,6 @@ const pricing = {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-  }
-
-  .hero-meta {
-    display: grid;
-    gap: 1rem;
-    align-self: stretch;
-    padding: 1.25rem;
-    border: var(--bw) solid var(--border);
-    background: var(--bg-weak);
-  }
-
-  .hero-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .hero-badges span {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 10px;
-    border: 1px solid var(--border);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    text-transform: uppercase;
-    color: var(--text-weak);
-    background: var(--bg);
-  }
-
-  .hero-note {
-    color: var(--text);
-    line-height: 1.7;
-    max-width: 22rem;
   }
 
   .wins {
@@ -750,7 +732,6 @@ const pricing = {
     line-height: 1.6;
   }
 
-  .demo-actions,
   .pricing-actions {
     display: flex;
     flex-wrap: wrap;
@@ -928,27 +909,97 @@ const pricing = {
 
   .proof-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1rem;
   }
 
   .proof-card {
     display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(18rem, 0.72fr);
     border: var(--bw) solid var(--border);
     overflow: hidden;
     background: var(--bg-weak);
   }
 
+  .proof-card:nth-child(even) .proof-shot {
+    order: 2;
+    border-left: var(--bw) solid var(--border);
+    border-right: none;
+  }
+
+  .proof-card:nth-child(even) .proof-copy {
+    order: 1;
+  }
+
+  .proof-shot {
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    border-right: var(--bw) solid var(--border);
+    background:
+      radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 28%, transparent), transparent 48%),
+      linear-gradient(180deg, var(--bg), var(--bg-weak));
+  }
+
+  .proof-open {
+    position: relative;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: zoom-in;
+  }
+
   .proof-card img {
     width: 100%;
-    aspect-ratio: 1.35 / 1;
-    object-fit: cover;
-    object-position: top left;
-    border-bottom: var(--bw) solid var(--border);
+    height: auto;
+    border: var(--bw) solid var(--border);
+    background: hsl(0, 9%, 7%);
+    transition: transform 0.22s ease, box-shadow 0.22s ease;
+  }
+
+  .proof-open:hover img,
+  .proof-open:focus-visible img {
+    transform: scale(1.01);
+    box-shadow: 0 20px 50px color-mix(in srgb, var(--text-strong) 20%, transparent);
+  }
+
+  .proof-open:focus-visible {
+    outline: none;
+  }
+
+  .proof-icon {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.6rem;
+    height: 2.6rem;
+    border: var(--bw) solid var(--border);
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    color: var(--text-strong);
+    border-radius: 999px;
+    backdrop-filter: blur(12px);
+    transition: transform 0.2s ease, background 0.2s ease;
+  }
+
+  .proof-icon svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .proof-open:hover .proof-icon,
+  .proof-open:focus-visible .proof-icon {
+    transform: translateY(-2px);
+    background: color-mix(in srgb, var(--bg) 94%, transparent);
   }
 
   .proof-copy {
-    padding: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 1.5rem;
   }
 
   .proof-tag {
@@ -981,6 +1032,72 @@ const pricing = {
   .faq-item p {
     color: var(--text);
     line-height: 1.7;
+  }
+
+  .zoom {
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    overflow: hidden;
+  }
+
+  .zoom[open] {
+    display: grid;
+    place-items: center;
+  }
+
+  .zoom::backdrop {
+    background: color-mix(in srgb, var(--bg-strong) 82%, transparent);
+    backdrop-filter: blur(14px);
+  }
+
+  .zoom-shell {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: min(94vw, 88rem);
+    max-height: calc(100dvh - 2rem);
+    padding: 1rem;
+  }
+
+  .zoom-close {
+    position: absolute;
+    top: 1.5rem;
+    right: 1.5rem;
+    z-index: 2;
+    display: grid;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: var(--bw) solid var(--border);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    color: var(--text-strong);
+    border-radius: 999px;
+    backdrop-filter: blur(14px);
+  }
+
+  .zoom-close svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .zoom-img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: calc(100dvh - 2rem);
+    object-fit: contain;
+    border: var(--bw) solid var(--border);
+    background: hsl(0, 9%, 7%);
+    box-shadow: 0 24px 80px color-mix(in srgb, var(--text-strong) 22%, transparent);
   }
 
   .features-grid {
@@ -1096,23 +1213,10 @@ const pricing = {
     color: var(--text-weak);
   }
 
-  .pricing-trust,
   .pricing-features {
     list-style: none;
     display: grid;
     gap: 10px;
-  }
-
-  .pricing-trust {
-    margin-bottom: 1.25rem;
-    padding: 0.95rem 0;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .pricing-trust li {
-    color: var(--text-strong);
-    line-height: 1.5;
   }
 
   .pricing-features {
@@ -1134,8 +1238,7 @@ const pricing = {
     font-family: var(--font-mono);
   }
 
-  .pricing-cta,
-  .pricing-cta-secondary {
+  .pricing-cta {
     flex: 1 1 13rem;
     justify-content: center;
   }
@@ -1154,6 +1257,11 @@ const pricing = {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     margin-top: 1rem;
+  }
+
+  .facts-copy {
+    color: var(--text);
+    line-height: 1.7;
   }
 
   .fact {
@@ -1175,6 +1283,15 @@ const pricing = {
     color: var(--text-strong);
     line-height: 1.5;
     font-size: 0.98rem;
+  }
+
+  .facts-actions {
+    margin-top: 1rem;
+  }
+
+  .facts-cta {
+    width: 100%;
+    justify-content: center;
   }
 
   .faq-list {
@@ -1268,15 +1385,29 @@ const pricing = {
       flex-wrap: wrap;
     }
 
-    .hero,
     .demo-copy,
     .pricing-layout {
       grid-template-columns: 1fr;
     }
 
-    .proof-grid,
     .features-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .proof-card {
+      grid-template-columns: 1fr;
+    }
+
+    .proof-card:nth-child(even) .proof-shot {
+      order: 0;
+      border-left: none;
+      border-right: none;
+      border-bottom: var(--bw) solid var(--border);
+    }
+
+    .proof-shot {
+      border-right: none;
+      border-bottom: var(--bw) solid var(--border);
     }
 
     .feature-cell:nth-child(4n) {
@@ -1335,6 +1466,7 @@ const pricing = {
 
     .hero-title {
       font-size: clamp(2rem, 14vw, 3.4rem);
+      max-width: none;
     }
 
     .proof-grid,
@@ -1374,6 +1506,11 @@ const pricing = {
       aspect-ratio: 1.45 / 1;
       transform: none;
       opacity: 1;
+    }
+
+    .zoom-close {
+      top: 1rem;
+      right: 1rem;
     }
   }
 </style>
@@ -1493,4 +1630,34 @@ const pricing = {
     window.addEventListener("scroll", handleScroll, { passive: true })
     handleScroll()
   }
+
+  const zoom = document.getElementById("zoom") as HTMLDialogElement | null
+  const shot = document.getElementById("zoom-img") as HTMLImageElement | null
+  const shut = document.querySelector<HTMLButtonElement>(".zoom-close")
+  const opens = document.querySelectorAll<HTMLButtonElement>(".proof-open")
+
+  function show(node: HTMLButtonElement) {
+    const src = node.dataset.src
+    if (!zoom || !shot || !src) return
+    shot.src = src
+    shot.alt = node.dataset.alt ?? ""
+    if (zoom.open) return
+    zoom.showModal()
+  }
+
+  opens.forEach((node) => {
+    node.addEventListener("click", () => show(node))
+  })
+
+  shut?.addEventListener("click", () => zoom?.close())
+
+  zoom?.addEventListener("click", (event) => {
+    if (event.target === zoom) zoom.close()
+  })
+
+  zoom?.addEventListener("close", () => {
+    if (!shot) return
+    shot.src = ""
+    shot.alt = ""
+  })
 </script>
