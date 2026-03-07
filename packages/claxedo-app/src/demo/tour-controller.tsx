@@ -12,7 +12,10 @@ import { useClaxedoLayout } from "../claxedo-ui/context/claxedo-layout"
 const TAB_MULTI_PANE = "tab-multi-demo-001"
 const TAB_PAGE = "tab-page-demo-001"
 const TAB_TERMINAL = "tab-terminal-claude"
-const TAB_WORKTREE = "tab-ses-wt-001"
+const TAB_SESSION = "tab-ses-wt-001"
+const TAB_EMPTY_PANE = "tab-empty-pane-demo"
+const TAB_PROCESS = "tab-process-demo"
+const TAB_WORKTREE = TAB_SESSION
 const TAB_DASHBOARD = "tab-ses-p2-001"
 
 // Leaf IDs from pre-seeded multi-pane layout
@@ -65,7 +68,7 @@ export function DemoTourController() {
           claxedo.multiPane.focus(TAB_MULTI_PANE, LEAF_SESSION)
           break
         case "process":
-          claxedo.topTabs.setActive(TAB_TERMINAL)
+          claxedo.topTabs.setActive(TAB_PROCESS)
           break
       }
     }

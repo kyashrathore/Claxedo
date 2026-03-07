@@ -51,7 +51,32 @@ export function GenericFlatPaneRenderer(props: { tabId: string; groupId: string 
   )
 
   return (
-    <div class="relative size-full">
+    <div class="relative size-full max-md:flex max-md:flex-col">
+      {/* Mobile pane tab bar — only shown when multiple panes exist */}
+      <Show when={!isOnlyLeaf()}>
+        <div class="hidden max-md:flex shrink-0 border-b border-border-weaker-base bg-background-stronger/80 overflow-x-auto">
+          <For each={leafIds()}>
+            {(leafId) => {
+              const leaf = createMemo(() => leafMap().get(leafId))
+              const title = createMemo(() => leaf()?.title ?? leaf()?.content?.type ?? "Pane")
+              return (
+                <button
+                  type="button"
+                  class="px-3 py-1.5 text-[11px] font-medium whitespace-nowrap border-r border-border-weaker-base/50 transition-colors"
+                  classList={{
+                    "text-text-strong bg-background-base": leaf()?.focused,
+                    "text-text-weak hover:text-text-base hover:bg-surface-base-hover": !leaf()?.focused,
+                  }}
+                  onClick={() => claxedo.dispatch({ type: "PaneFocusRequested", tabId: props.tabId, leafId })}
+                >
+                  {title()}
+                </button>
+              )
+            }}
+          </For>
+        </div>
+      </Show>
+      <div class="relative size-full max-md:flex-1 max-md:min-h-0">
       <For each={leafIds()}>
         {(leafId) => {
           const leaf = createMemo(() => leafMap().get(leafId))
@@ -59,7 +84,11 @@ export function GenericFlatPaneRenderer(props: { tabId: string; groupId: string 
           return (
             <div
               class="absolute overflow-hidden border-b border-l border-r border-border-weaker-base"
-              classList={{ hidden: leaf()?.hidden ?? false }}
+              classList={{
+                hidden: leaf()?.hidden ?? false,
+                "max-md:!hidden": !isOnlyLeaf() && !(leaf()?.focused),
+                "max-md:!inset-0 max-md:!w-full max-md:!h-full": !isOnlyLeaf() && (leaf()?.focused ?? false),
+              }}
               style={{
                 top: leaf()?.hidden ? "0" : `${(leaf()?.rect.top ?? 0) * 100}%`,
                 left: leaf()?.hidden ? "0" : `${(leaf()?.rect.left ?? 0) * 100}%`,
@@ -107,7 +136,7 @@ export function GenericFlatPaneRenderer(props: { tabId: string; groupId: string 
       <For each={handles()}>
         {(handle) => (
           <div
-            class="absolute z-10"
+            class="absolute z-10 max-md:hidden"
             style={{
               ...(handle.dir === "v"
                 ? {
@@ -174,6 +203,7 @@ export function GenericFlatPaneRenderer(props: { tabId: string; groupId: string 
           </Portal>
         )}
       </Show>
+      </div>
     </div>
   )
 }

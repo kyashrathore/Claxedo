@@ -634,8 +634,8 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
               aria-label={props.isFloating?.() ? "Dock session" : "Float session"}
             />
           </Show>
-          <IconButton icon="layout-right" variant="ghost" onClick={() => splitEmpty("v")} aria-label="Split right" />
-          <IconButton icon="layout-bottom" variant="ghost" onClick={() => splitEmpty("h")} aria-label="Split down" />
+          <IconButton icon="layout-right" variant="ghost" onClick={() => splitEmpty("v")} aria-label="Split right" class="max-md:hidden" />
+          <IconButton icon="layout-bottom" variant="ghost" onClick={() => splitEmpty("h")} aria-label="Split down" class="max-md:hidden" />
 
           <Show when={!props.isOnlyLeaf()}>
             <IconButton icon="close-small" variant="ghost" onClick={() => props.onClose()} aria-label="Close pane" />

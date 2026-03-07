@@ -27,6 +27,33 @@ const features = [
   { title: 'Connect on mobile', desc: 'Access your workspace from a tablet or phone through the web version when you\u2019re away from your desk.', from: 'claxedo' },
 ];
 
+const faq = [
+  {
+    q: 'What is Claxedo?',
+    a: 'Claxedo is a desktop workspace built on top of OpenCode. It adds multi-pane layouts, project tabs, process management, and a review surface so you can run multiple AI coding workflows in parallel.',
+  },
+  {
+    q: 'How does it relate to OpenCode?',
+    a: 'OpenCode is the open source foundation that handles AI sessions, model routing, and tool use. Claxedo syncs daily with upstream OpenCode and adds the workspace layer on top. You get all OpenCode features plus everything Claxedo adds.',
+  },
+  {
+    q: 'Which coding agents does it support?',
+    a: 'Any CLI-based coding agent \u2014 Claude Code, Codex, Gemini CLI, Amp, Cursor agent, and others. Each agent runs in its own managed terminal inside the workspace.',
+  },
+  {
+    q: 'Do I need my own API keys?',
+    a: 'Yes. Claxedo is a local workspace, not a hosted service. You bring your own API keys for whichever model provider you use \u2014 Anthropic, OpenAI, OpenRouter, or any compatible endpoint.',
+  },
+  {
+    q: 'Is there a free trial?',
+    a: 'There is a live demo on this site you can try immediately. The full desktop app requires a license.',
+  },
+  {
+    q: 'What platforms are supported?',
+    a: 'macOS and Linux. Windows support is planned.',
+  },
+];
+
 const pricing = {
   price: '$159',
   earlyBird: '$99',
@@ -65,9 +92,6 @@ const pricing = {
         <a href="#features">Features</a>
         <a href="#pricing">Pricing</a>
       </div>
-      <div class="nav-actions">
-        <a href="#pricing" class="btn-primary">Buy Now</a>
-      </div>
     </nav>
 
     <!-- Hero -->
@@ -86,7 +110,7 @@ const pricing = {
       </div>
     </section>
 
-    <!-- Product Preview — scroll animated -->
+    <!-- Product Preview — bleeds out on scroll, returns -->
     <section class="preview">
       <div class="preview-sticky" id="preview-sticky">
         <div class="preview-perspective" id="hero-perspective">
@@ -166,40 +190,32 @@ const pricing = {
       </div>
     </section>
 
-    <!-- CTA -->
-    <section class="cta-section">
-      <h2>Run multiple AI workflows in parallel</h2>
-      <p class="cta-description">
-        Claxedo extends OpenCode with a powerful multi-pane layout, instant agent terminals,
-        workspace-aware AI context, and integrated process control.
-      </p>
-      <a href="#pricing" class="btn-primary">Buy Now</a>
+    <!-- FAQ -->
+    <section id="faq" class="faq-section">
+      <div class="faq-header">
+        <span class="section-tag">// FAQ</span>
+        <h2>Frequently asked questions</h2>
+      </div>
+      <div class="faq-list">
+        {faq.map((item) => (
+          <details class="faq-item">
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
     </section>
 
     <!-- Footer -->
     <footer class="footer">
       <div class="footer-grid">
         <div class="footer-col">
-          <div class="footer-brand">
-            <svg class="brand-mark" viewBox="-100 -90 200 180" fill="none" xmlns="http://www.w3.org/2000/svg" stroke-linecap="round" aria-hidden="true">
-              <path class="brand-mark-arc" d="M 38,-72 A 84,84 0 1 0 38,72"></path>
-              <circle class="brand-mark-dot" cx="38" cy="-72" r="5"></circle>
-              <circle class="brand-mark-core" cx="38" cy="-72" r="2"></circle>
-              <circle class="brand-mark-dot" cx="38" cy="72" r="5"></circle>
-              <circle class="brand-mark-core" cx="38" cy="72" r="2"></circle>
-            </svg>
-            <span>Claxedo</span>
-          </div>
-          <p>The parallel AI workspace built on OpenCode.</p>
+          <a href="#features">Features</a>
         </div>
         <div class="footer-col">
-          <h4>Product</h4>
-          <a href="#features">Features</a>
-          <a href="#compare">Compare</a>
           <a href="#pricing">Pricing</a>
         </div>
         <div class="footer-col">
-          <h4>Foundation</h4>
           <a href="https://github.com/opencode-ai/opencode">OpenCode</a>
         </div>
       </div>
@@ -215,15 +231,17 @@ const pricing = {
   .page-frame {
     --padding: 3rem;
     --vpad: 1.5rem;
-    margin: 1rem;
+    max-width: 72rem;
+    margin: 1rem auto;
     border: var(--bw) solid var(--border);
+    overflow: visible;
   }
 
   @media (max-width: 30rem) {
     .page-frame {
       --padding: 1rem;
       --vpad: 0.75rem;
-      margin: 0.5rem;
+      margin: 0.5rem auto;
     }
   }
 
@@ -311,14 +329,14 @@ const pricing = {
     gap: 12px;
   }
 
-  /* ===== Product Preview (Scroll Animated) ===== */
+  /* ===== Product Preview (Full Bleed, Scroll Animated) ===== */
   .preview {
     position: relative;
-    height: 160vh;
-    border-top: var(--bw) solid var(--border);
+    height: 220vh;
   }
 
   .preview-sticky {
+    --bleed: 0px;
     position: sticky;
     top: 0;
     height: 100vh;
@@ -326,7 +344,9 @@ const pricing = {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 1rem;
+    padding: 2rem;
+    margin-left: calc(var(--bleed) * -1);
+    margin-right: calc(var(--bleed) * -1);
   }
 
   .preview-perspective {
@@ -435,10 +455,6 @@ const pricing = {
   }
 
   /* ===== Features ===== */
-  .features-section {
-    border-top: var(--bw) solid var(--border);
-  }
-
   .features-header {
     padding: var(--padding);
     padding-bottom: var(--vpad);
@@ -633,26 +649,72 @@ const pricing = {
     color: var(--text-weak);
   }
 
-  /* ===== CTA ===== */
-  .cta-section {
+  /* ===== FAQ ===== */
+  .faq-section {
     border-top: var(--bw) solid var(--border);
-    padding: var(--padding);
   }
 
-  .cta-section h2 {
+  .faq-header {
+    padding: var(--padding);
+    padding-bottom: var(--vpad);
+  }
+
+  .faq-header h2 {
     font-size: clamp(1.25rem, 3vw, 1.75rem);
     font-weight: 500;
     text-transform: uppercase;
     color: var(--text-strong);
     line-height: 1.25;
-    margin-bottom: 12px;
   }
 
-  .cta-description {
+  .faq-list {
+    border-top: var(--bw) solid var(--border);
+  }
+
+  .faq-item {
+    border-bottom: 1px solid var(--border);
+    padding: var(--vpad) var(--padding);
+  }
+
+  .faq-item:last-child {
+    border-bottom: none;
+  }
+
+  .faq-item summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    font-weight: 500;
+    color: var(--text-strong);
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+  }
+
+  .faq-item summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq-item summary::after {
+    content: '+';
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    color: var(--text-weak);
+    transition: transform 0.2s ease;
+  }
+
+  .faq-item[open] summary::after {
+    transform: rotate(45deg);
+  }
+
+  .faq-item p {
+    margin-top: 12px;
     color: var(--text);
-    max-width: 560px;
     line-height: 1.6;
-    margin-bottom: calc(var(--vpad) * 1.5);
+    max-width: 48rem;
   }
 
   /* ===== Footer ===== */
@@ -667,37 +729,12 @@ const pricing = {
   .footer-col {
     flex: 1;
     padding: var(--vpad) var(--padding);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    text-align: center;
+    text-transform: uppercase;
   }
 
   .footer-col + .footer-col {
     border-left: var(--bw) solid var(--border);
-  }
-
-  .footer-brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: 600;
-    color: var(--text-strong);
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    margin-bottom: 4px;
-  }
-
-  .footer-col p {
-    color: var(--text);
-    line-height: 1.5;
-  }
-
-  .footer-col h4 {
-    font-size: 1rem;
-    text-transform: uppercase;
-    color: var(--text-weak);
-    font-weight: normal;
-    margin-bottom: 4px;
   }
 
   .footer-col a {
@@ -827,11 +864,36 @@ const pricing = {
     }
   }
 
-  // ===== Hero Scroll Animation (3D -> flat) =====
+  // ===== Hero Scroll Animation (3D -> flat + bleed) =====
   const heroFrame = document.getElementById('hero-frame');
   const previewSection = document.querySelector<HTMLElement>('.preview');
+  const previewSticky = document.getElementById('preview-sticky');
 
-  if (heroFrame && previewSection) {
+  if (heroFrame && previewSection && previewSticky) {
+    const ease = (t: number) =>
+      t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+    const getMaxBleed = () => {
+      const frameRect = previewSection.closest('.page-frame')?.getBoundingClientRect();
+      return frameRect ? frameRect.left + parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bw') || '2') : 0;
+    };
+
+    let currentBleed = 0;
+    let targetBleed = 0;
+    let rafId = 0;
+    const LERP_SPEED = 0.04;
+
+    const animateBleed = () => {
+      const diff = targetBleed - currentBleed;
+      if (Math.abs(diff) < 0.5) {
+        currentBleed = targetBleed;
+      } else {
+        currentBleed += diff * LERP_SPEED;
+        rafId = requestAnimationFrame(animateBleed);
+      }
+      previewSticky.style.setProperty('--bleed', `${currentBleed}px`);
+    };
+
     const handleScroll = () => {
       const rect = previewSection.getBoundingClientRect();
       const windowH = window.innerHeight;
@@ -840,10 +902,9 @@ const pricing = {
       const scrolled = Math.min(Math.max(-rect.top, 0), scrollable);
       const progress = scrolled / scrollable;
 
+      // 3D intro: 0 → 0.4
       const introRaw = Math.min(progress / 0.4, 1);
-      const intro = introRaw < 0.5
-        ? 2 * introRaw * introRaw
-        : 1 - Math.pow(-2 * introRaw + 2, 2) / 2;
+      const intro = ease(introRaw);
 
       const translateY = 40 * (1 - intro);
       const scale = 0.95 + 0.05 * intro;
@@ -852,6 +913,25 @@ const pricing = {
 
       heroFrame.style.transform = `translateY(${translateY}px) scale(${scale}) rotateX(${rotateX}deg)`;
       heroFrame.style.opacity = String(opacity);
+
+      // Bleed from first scroll to end of preview section
+      const sectionEnd = previewSection.offsetTop + previewSection.offsetHeight - windowH;
+      const bleedP = sectionEnd > 0 ? Math.min(Math.max(window.scrollY / sectionEnd, 0), 1) : 0;
+      const maxBleed = getMaxBleed();
+
+      // expand 0→0.3 (very slow), hold 0.3→0.7, contract 0.7→1.0 (gradual)
+      if (bleedP < 0.3) {
+        const t = bleedP / 0.3;
+        targetBleed = t * t * t * t * maxBleed; // quartic ease-in
+      } else if (bleedP < 0.7) {
+        targetBleed = maxBleed;
+      } else {
+        const t = (bleedP - 0.7) / 0.3;
+        targetBleed = (1 - t * t) * maxBleed; // quadratic ease-out for gentle contraction
+      }
+
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(animateBleed);
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });

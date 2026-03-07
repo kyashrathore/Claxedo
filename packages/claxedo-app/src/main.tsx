@@ -134,52 +134,64 @@ async function startApp() {
         { worktree: demoProject, expanded: true },
         { worktree: dashboardProject, expanded: true },
       ]
+    const pageTabId = "tab-page-demo-001"
+    const terminalTabId = "tab-terminal-claude"
+    const sessionTabId = "tab-ses-wt-001"
+    const emptyPaneTabId = "tab-empty-pane-demo"
+    const processTabId = "tab-process-demo"
+    const baseTabs = [
+      {
+        id: multiPaneTabId,
+        type: "review-workspace",
+        directory: demoProject,
+        title: "Fix authentication middleware bug",
+        sessionId: "ses_demo_001",
+        reviewMode: "session",
+        closable: true,
+      },
+      {
+        id: pageTabId,
+        type: "page",
+        directory: demoProject,
+        title: "Project Architecture",
+        pageId: "page_demo_001",
+        closable: true,
+      },
+      {
+        id: sessionTabId,
+        type: "session",
+        directory: demoProject,
+        title: "Add Google OAuth provider",
+        sessionId: "ses_demo_001",
+        closable: true,
+      },
+      {
+        id: terminalTabId,
+        type: "terminal",
+        directory: demoProject,
+        title: "Claude",
+        terminalId: "pty_demo_001",
+        closable: true,
+      },
+      {
+        id: emptyPaneTabId,
+        type: "multi-pane",
+        directory: demoProject,
+        title: "New Pane",
+        closable: true,
+      },
+      {
+        id: processTabId,
+        type: "process",
+        directory: demoProject,
+        title: "Processes",
+        closable: true,
+      },
+    ]
     const tabs = embed
-      ? [
-        {
-          id: multiPaneTabId,
-          type: "review-workspace",
-          directory: demoProject,
-          title: "Fix authentication middleware bug",
-          sessionId: "ses_demo_001",
-          reviewMode: "session",
-          closable: true,
-        },
-      ]
+      ? baseTabs
       : [
-        {
-          id: multiPaneTabId,
-          type: "review-workspace",
-          directory: demoProject,
-          title: "Fix authentication middleware bug",
-          sessionId: "ses_demo_001",
-          reviewMode: "session",
-          closable: true,
-        },
-        {
-          id: "tab-page-demo-001",
-          type: "page",
-          directory: demoProject,
-          title: "Project Architecture",
-          pageId: "page_demo_001",
-          closable: true,
-        },
-        {
-          id: "tab-terminal-claude",
-          type: "terminal",
-          directory: demoProject,
-          title: "Claude",
-          terminalId: "pty_demo_001",
-          closable: true,
-        },
-        {
-          id: "tab-ses-wt-001",
-          type: "session",
-          directory: featureBranch,
-          title: "Add Google OAuth provider",
-          sessionId: "ses_wt_001",
-          closable: true,
-        },
+        ...baseTabs,
         {
           id: "tab-ses-wt-002",
           type: "session",
@@ -223,7 +235,7 @@ async function startApp() {
           id: "g-default",
           tabs: {
             items: tabs,
-            activeId: multiPaneTabId,
+            activeId: pageTabId,
             order: tabs.map((item) => item.id),
             closedTabs: [],
           },
@@ -233,7 +245,7 @@ async function startApp() {
       ],
       split: { direction: "h", sizes: [1], focusedId: "g-default" },
       enabled: true,
-      terminalOwner: embed ? {} : { "tab-terminal-claude": "pty_demo_001" },
+      terminalOwner: { [terminalTabId]: "pty_demo_001" },
       terminalAgentStatus: {},
       terminalAgentSeen: {},
       worktreeColorMap: colors,
@@ -277,6 +289,91 @@ async function startApp() {
             },
           ],
           activeLayoutId: layoutId,
+        },
+        [pageTabId]: {
+          layouts: [
+            {
+              id: "layout-page-001",
+              name: "default",
+              pane: { t: "leaf", id: "leaf-page-demo" },
+              contents: {
+                "leaf-page-demo": {
+                  type: "page",
+                  directory: demoProject,
+                  pageId: "page_demo_001",
+                  title: "Project Architecture",
+                },
+              },
+              focus: "leaf-page-demo",
+            },
+          ],
+          activeLayoutId: "layout-page-001",
+        },
+        [sessionTabId]: {
+          layouts: [
+            {
+              id: "layout-session-001",
+              name: "default",
+              pane: { t: "leaf", id: "leaf-session-wt" },
+              contents: {
+                "leaf-session-wt": {
+                  type: "session",
+                  directory: demoProject,
+                  sessionId: "ses_demo_001",
+                },
+              },
+              focus: "leaf-session-wt",
+            },
+          ],
+          activeLayoutId: "layout-session-001",
+        },
+        [terminalTabId]: {
+          layouts: [
+            {
+              id: "layout-terminal-001",
+              name: "default",
+              pane: { t: "leaf", id: "leaf-terminal-demo" },
+              contents: {
+                "leaf-terminal-demo": {
+                  type: "terminal",
+                  directory: demoProject,
+                  terminalId: "pty_demo_001",
+                  title: "Claude",
+                },
+              },
+              focus: "leaf-terminal-demo",
+            },
+          ],
+          activeLayoutId: "layout-terminal-001",
+        },
+        [emptyPaneTabId]: {
+          layouts: [
+            {
+              id: "layout-empty-001",
+              name: "default",
+              pane: { t: "leaf", id: "leaf-empty-demo" },
+              contents: {},
+              focus: "leaf-empty-demo",
+            },
+          ],
+          activeLayoutId: "layout-empty-001",
+        },
+        [processTabId]: {
+          layouts: [
+            {
+              id: "layout-process-001",
+              name: "default",
+              pane: { t: "leaf", id: "leaf-process-demo" },
+              contents: {
+                "leaf-process-demo": {
+                  type: "process",
+                  directory: demoProject,
+                },
+              },
+              focus: "leaf-process-demo",
+            },
+          ],
+          activeLayoutId: "layout-process-001",
         },
       },
     })

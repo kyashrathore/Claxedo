@@ -763,6 +763,65 @@ export async function createHandlers() {
         }),
       )
     }),
+    http.get(`${DEMO_BASE}/process`, () => {
+      return HttpResponse.json({
+        configs: [
+          {
+            id: "proc_dev_server",
+            name: "Dev Server",
+            command: "npm run dev",
+            autoStart: true,
+            restartOn: "crash",
+            portConflict: "kill",
+            env: {},
+          },
+          {
+            id: "proc_test_watch",
+            name: "Test Watch",
+            command: "npm run test:watch",
+            autoStart: false,
+            restartOn: "never",
+            portConflict: "skip",
+            env: {},
+          },
+          {
+            id: "proc_db",
+            name: "Database",
+            command: "docker compose up db",
+            autoStart: true,
+            restartOn: "crash",
+            portConflict: "skip",
+            env: {},
+          },
+        ],
+        processes: [],
+      })
+    }),
+    http.post(`${DEMO_BASE}/process/:id/start`, ({ params }) => {
+      return HttpResponse.json({
+        configId: params.id,
+        status: "running",
+        ptyId: `pty_proc_${params.id}`,
+        restartCount: 0,
+        startedAt: Date.now(),
+      })
+    }),
+    http.post(`${DEMO_BASE}/process/:id/stop`, ({ params }) => {
+      return HttpResponse.json({
+        configId: params.id,
+        status: "stopped",
+        restartCount: 0,
+      })
+    }),
+    http.post(`${DEMO_BASE}/process/:id/restart`, ({ params }) => {
+      return HttpResponse.json({
+        configId: params.id,
+        status: "running",
+        ptyId: `pty_proc_${params.id}`,
+        restartCount: 1,
+        startedAt: Date.now(),
+      })
+    }),
     http.all(`${DEMO_BASE}/*`, ({ request }) => {
       const path = new URL(request.url).pathname
       if (
