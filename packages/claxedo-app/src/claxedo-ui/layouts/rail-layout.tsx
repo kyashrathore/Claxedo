@@ -487,8 +487,8 @@ function SplitResizeHandle(props: { index: number }) {
     <div
       class={
         isH()
-          ? "w-px shrink-0 bg-border-weak-base cursor-col-resize hover:bg-blue-500/40 active:bg-blue-500/60 transition-colors"
-          : "h-px shrink-0 bg-border-weak-base cursor-row-resize hover:bg-blue-500/40 active:bg-blue-500/60 transition-colors"
+          ? "w-px shrink-0 bg-border-weak-base cursor-col-resize hover:bg-blue-500/40 active:bg-blue-500/60 transition-colors max-md:hidden"
+          : "h-px shrink-0 bg-border-weak-base cursor-row-resize hover:bg-blue-500/40 active:bg-blue-500/60 transition-colors max-md:hidden"
       }
       onPointerDown={handlePointerDown}
     />
@@ -1033,7 +1033,10 @@ function RailLayoutBody(props: RailLayoutProps) {
                         flex: claxedo.split.hidden() ? "1 1 100%" : `0 0 ${claxedo.split.sizes()[i()] * 100}%`,
                         opacity: claxedo.split.active() && group.id !== claxedo.split.focusedId() ? "0.7" : "1",
                       }}
-                      class="min-w-0 min-h-0 overflow-hidden relative transition-opacity"
+                      class="min-w-0 min-h-0 overflow-hidden relative transition-opacity max-md:!flex-auto"
+                      classList={{
+                        "max-md:hidden": group.id !== claxedo.split.focusedId() && !claxedo.split.hidden(),
+                      }}
                       on:pointerdown={() => claxedo.dispatch({ type: "SplitFocusRequested", groupId: group.id })}
                     >
                       {/* Close button for non-primary panels */}
