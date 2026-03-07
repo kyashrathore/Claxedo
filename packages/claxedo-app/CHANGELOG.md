@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.57] - 2026-03-08
+
+### Added
+- Expanded website use cases for process management and first-class doc authoring
+
+### Changed
+- Refined the Claxedo website hero, pricing copy, and platform messaging
+- Reworked the use-case gallery with full screenshots and an in-page viewer
+
+### Fixed
+- Screenshot zoom UI no longer opens as an oversized white dialog panel
+
 ## [0.0.8] - 2026-02-18
 
 ### Added
@@ -71,7 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Context scope issues between app-scope and directory-scope providers
 - Terminal state persistence across workspace navigation
 
-[Unreleased]: https://github.com/kyashrathore/opencode/compare/claxedo-v0.0.8...HEAD
+[Unreleased]: https://github.com/kyashrathore/opencode/compare/claxedo-v0.0.57...HEAD
+[0.0.57]: https://github.com/kyashrathore/opencode/releases/tag/claxedo-v0.0.57
 [0.0.8]: https://github.com/kyashrathore/opencode/releases/tag/claxedo-v0.0.8
 [0.0.4]: https://github.com/kyashrathore/opencode/compare/claxedo-v0.0.3...claxedo-v0.0.4
 [0.0.3]: https://github.com/kyashrathore/opencode/compare/claxedo-v0.0.2...claxedo-v0.0.3
