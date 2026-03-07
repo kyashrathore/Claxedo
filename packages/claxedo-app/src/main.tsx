@@ -128,12 +128,11 @@ async function startApp() {
     const reviewLeaf = "leaf-review-demo"
     const layoutId = "layout-demo-001"
     const multiPaneTabId = "tab-multi-demo-001"
-    const projects = embed
-      ? [{ worktree: demoProject, expanded: true }]
-      : [
-        { worktree: demoProject, expanded: true },
-        { worktree: dashboardProject, expanded: true },
-      ]
+    const projects = [
+      { worktree: demoProject, expanded: true },
+      { worktree: featureBranch, expanded: true },
+      { worktree: dashboardProject, expanded: true },
+    ]
     const pageTabId = "tab-page-demo-001"
     const terminalTabId = "tab-terminal-claude"
     const sessionTabId = "tab-ses-wt-001"
@@ -174,6 +173,22 @@ async function startApp() {
         closable: true,
       },
       {
+        id: "tab-ses-wt-002",
+        type: "session",
+        directory: featureBranch,
+        title: "Implement refresh token rotation",
+        sessionId: "ses_wt_002",
+        closable: true,
+      },
+      {
+        id: "tab-ses-p2-001",
+        type: "session",
+        directory: dashboardProject,
+        title: "Build real-time chart component",
+        sessionId: "ses_p2_001",
+        closable: true,
+      },
+      {
         id: emptyPaneTabId,
         type: "multi-pane",
         directory: demoProject,
@@ -188,36 +203,12 @@ async function startApp() {
         closable: true,
       },
     ]
-    const tabs = embed
-      ? baseTabs
-      : [
-        ...baseTabs,
-        {
-          id: "tab-ses-wt-002",
-          type: "session",
-          directory: featureBranch,
-          title: "Implement refresh token rotation",
-          sessionId: "ses_wt_002",
-          closable: true,
-        },
-        {
-          id: "tab-ses-p2-001",
-          type: "session",
-          directory: dashboardProject,
-          title: "Build real-time chart component",
-          sessionId: "ses_p2_001",
-          closable: true,
-        },
-      ]
-    const colors = embed
-      ? {
-        [demoProject]: "#3b82f6",
-      }
-      : {
-        [demoProject]: "#3b82f6",
-        [featureBranch]: "#a855f7",
-        [dashboardProject]: "#22c55e",
-      }
+    const tabs = baseTabs
+    const colors = {
+      [demoProject]: "#3b82f6",
+      [featureBranch]: "#a855f7",
+      [dashboardProject]: "#22c55e",
+    }
     seed(Persist.global("server"), {
       list: [],
       projects: {
@@ -346,6 +337,42 @@ async function startApp() {
           ],
           activeLayoutId: "layout-terminal-001",
         },
+        "tab-ses-wt-002": {
+          layouts: [
+            {
+              id: "layout-wt-002",
+              name: "default",
+              pane: { t: "leaf", id: "leaf-ses-wt-002" },
+              contents: {
+                "leaf-ses-wt-002": {
+                  type: "session",
+                  directory: featureBranch,
+                  sessionId: "ses_wt_002",
+                },
+              },
+              focus: "leaf-ses-wt-002",
+            },
+          ],
+          activeLayoutId: "layout-wt-002",
+        },
+        "tab-ses-p2-001": {
+          layouts: [
+            {
+              id: "layout-p2-001",
+              name: "default",
+              pane: { t: "leaf", id: "leaf-ses-p2-001" },
+              contents: {
+                "leaf-ses-p2-001": {
+                  type: "session",
+                  directory: dashboardProject,
+                  sessionId: "ses_p2_001",
+                },
+              },
+              focus: "leaf-ses-p2-001",
+            },
+          ],
+          activeLayoutId: "layout-p2-001",
+        },
         [emptyPaneTabId]: {
           layouts: [
             {
@@ -383,15 +410,11 @@ async function startApp() {
     // base64Encode("/home/demo/projects/my-app") = "L2hvbWUvZGVtby9wcm9qZWN0cy9teS1hcHA"
     seed(Persist.workspace(demoProject, "terminal.v2"), {
       active: "pty_demo_001",
-      all: embed
-        ? [
-          { id: "pty_demo_001", title: "claude", titleNumber: 1 },
-        ]
-        : [
-          { id: "pty_demo_001", title: "claude", titleNumber: 1 },
-          { id: "pty_demo_002", title: "codex", titleNumber: 2 },
-          { id: "pty_demo_003", title: "Terminal", titleNumber: 3 },
-        ],
+      all: [
+        { id: "pty_demo_001", title: "claude", titleNumber: 1 },
+        { id: "pty_demo_002", title: "codex", titleNumber: 2 },
+        { id: "pty_demo_003", title: "Terminal", titleNumber: 3 },
+      ],
     })
 
     // Start MSW with a hard timeout — never block rendering forever
