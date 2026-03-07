@@ -60,6 +60,7 @@ import { DialogEditProject } from "@/components/dialog-edit-project"
 import { Titlebar } from "@/components/titlebar"
 import { useServer } from "@/context/server"
 import { useLanguage, type Locale } from "@/context/language"
+import { createDebugLogger } from "../utils/debug"
 import {
   childMapByParent,
   displayName,
@@ -82,6 +83,9 @@ import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from 
 import { SidebarContent } from "@/pages/layout/sidebar-shell"
 
 export default function Layout(props: ParentProps) {
+  const debug = createDebugLogger("sync.prefetch", "sync:prefetch", {
+    legacyKey: "opencode.debug.terminal",
+  })
   const [store, setStore, , ready] = persisted(
     Persist.global("layout.page", ["layout.page.v1"]),
     createStore({
@@ -611,8 +615,11 @@ export default function Layout(props: ParentProps) {
   const prefetchChunk = 200
   const prefetchConcurrency = 1
   const prefetchPendingLimit = 6
+  const prefetchFailMs = 10_000
   const prefetchToken = { value: 0 }
   const prefetchQueues = new Map<string, PrefetchQueue>()
+  const prefetchFail = new Map<string, number>()
+  const prefetchKey = (directory: string, sessionID: string) => `${directory}\n${sessionID}`
 
   const PREFETCH_MAX_SESSIONS_PER_DIR = 10
   const prefetchedByDir = new Map<string, Map<string, true>>()
@@ -641,6 +648,13 @@ export default function Layout(props: ParentProps) {
     globalSDK.url
 
     prefetchToken.value += 1
+    if (debug.enabled(2)) {
+      debug.verbose("reset", {
+        dir: params.dir,
+        url: globalSDK.url,
+        token: prefetchToken.value,
+      })
+    }
     for (const q of prefetchQueues.values()) {
       q.pending.length = 0
       q.pendingSet.clear()
@@ -663,10 +677,24 @@ export default function Layout(props: ParentProps) {
 
   async function prefetchMessages(directory: string, sessionID: string, token: number) {
     const [store, setStore] = globalSync.child(directory, { bootstrap: false })
+    const key = prefetchKey(directory, sessionID)
 
+    debug.log("fetch start", { directory, sessionID, token, limit: prefetchChunk })
     return retry(() => globalSDK.client.session.messages({ directory, sessionID, limit: prefetchChunk }))
       .then((messages) => {
-        if (prefetchToken.value !== token) return
+        prefetchFail.delete(key)
+        if (prefetchToken.value !== token) {
+          if (debug.enabled(2)) {
+            debug.verbose("fetch skip", {
+              reason: "stale-token",
+              directory,
+              sessionID,
+              token,
+              current: prefetchToken.value,
+            })
+          }
+          return
+        }
 
         const items = (messages.data ?? []).filter((x) => !!x?.info?.id)
         const next = items
@@ -718,13 +746,38 @@ export default function Layout(props: ParentProps) {
             setStore("part", message.info.id, reconcile(mergedParts, { key: "id" }))
           }
         })
+        debug.log("fetch ok", {
+          directory,
+          sessionID,
+          token,
+          messages: items.length,
+        })
       })
-      .catch(() => undefined)
+      .catch((error) => {
+        prefetchFail.set(key, Date.now() + prefetchFailMs)
+        debug.log("fetch fail", {
+          directory,
+          sessionID,
+          token,
+          wait: prefetchFailMs,
+          error: errorMessage(error, "prefetch failed"),
+        })
+      })
   }
 
   const pumpPrefetch = (directory: string) => {
     const q = queueFor(directory)
-    if (q.running >= prefetchConcurrency) return
+    if (q.running >= prefetchConcurrency) {
+      if (debug.enabled(2)) {
+        debug.verbose("pump skip", {
+          reason: "concurrency",
+          directory,
+          running: q.running,
+          pending: q.pending.length,
+        })
+      }
+      return
+    }
 
     const sessionID = q.pending.shift()
     if (!sessionID) return
@@ -734,29 +787,121 @@ export default function Layout(props: ParentProps) {
     q.running += 1
 
     const token = prefetchToken.value
+    if (debug.enabled(2)) {
+      debug.verbose("pump start", {
+        directory,
+        sessionID,
+        token,
+        running: q.running,
+        pending: q.pending.length,
+      })
+    }
 
     void prefetchMessages(directory, sessionID, token).finally(() => {
       q.running -= 1
       q.inflight.delete(sessionID)
+      if (debug.enabled(2)) {
+        debug.verbose("pump done", {
+          directory,
+          sessionID,
+          running: q.running,
+          pending: q.pending.length,
+        })
+      }
       pumpPrefetch(directory)
     })
   }
 
   const prefetchSession = (session: Session, priority: "high" | "low" = "low") => {
+    if (server.healthy() !== true) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "server-unhealthy",
+          directory: session.directory,
+          sessionID: session.id,
+          priority,
+        })
+      }
+      return
+    }
+
     const directory = session.directory
-    if (!directory) return
+    if (!directory) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "missing-directory",
+          sessionID: session.id,
+          priority,
+        })
+      }
+      return
+    }
+    const wait = Math.max(0, (prefetchFail.get(prefetchKey(directory, session.id)) ?? 0) - Date.now())
+    if (wait > 0) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "cooldown",
+          directory,
+          sessionID: session.id,
+          priority,
+          wait,
+        })
+      }
+      return
+    }
 
     const [store] = globalSync.child(directory, { bootstrap: false })
     const cached = untrack(() => store.message[session.id] !== undefined)
-    if (cached) return
+    if (cached) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "cached",
+          directory,
+          sessionID: session.id,
+          priority,
+        })
+      }
+      return
+    }
 
     const q = queueFor(directory)
-    if (q.inflight.has(session.id)) return
-    if (q.pendingSet.has(session.id)) return
+    if (q.inflight.has(session.id)) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "inflight",
+          directory,
+          sessionID: session.id,
+          priority,
+        })
+      }
+      return
+    }
+    if (q.pendingSet.has(session.id)) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "pending",
+          directory,
+          sessionID: session.id,
+          priority,
+        })
+      }
+      return
+    }
 
     const lru = lruFor(directory)
     const known = lru.has(session.id)
-    if (!known && lru.size >= PREFETCH_MAX_SESSIONS_PER_DIR && priority !== "high") return
+    if (!known && lru.size >= PREFETCH_MAX_SESSIONS_PER_DIR && priority !== "high") {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "lru-limit",
+          directory,
+          sessionID: session.id,
+          priority,
+          size: lru.size,
+        })
+      }
+      return
+    }
     markPrefetched(directory, session.id)
 
     if (priority === "high") q.pending.unshift(session.id)
@@ -769,6 +914,15 @@ export default function Layout(props: ParentProps) {
       q.pendingSet.delete(dropped)
     }
 
+    if (debug.enabled(2)) {
+      debug.verbose("enqueue", {
+        directory,
+        sessionID: session.id,
+        priority,
+        running: q.running,
+        pending: q.pending.length,
+      })
+    }
     pumpPrefetch(directory)
   }
 

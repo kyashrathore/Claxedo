@@ -3,6 +3,30 @@
  */
 import { getAuthToken } from "./auth-client";
 
+/**
+ * Returns true when the app is running in demo/preview mode.
+ * Triggered by `?demo` query parameter in the URL.
+ * Cached — URL params don't change during the page lifecycle.
+ */
+function flag(cacheKey: string, query: string) {
+  if (typeof window === "undefined") return false
+  const known = (window as any)[cacheKey]
+  if (typeof known === "boolean") {
+    return known
+  }
+  const next = new URLSearchParams(window.location.search).has(query)
+  ;(window as any)[cacheKey] = next
+  return next
+}
+
+export function isDemoMode(): boolean {
+  return flag("__CLAXEDO_DEMO__", "demo")
+}
+
+export function isEmbedMode(): boolean {
+  return flag("__CLAXEDO_EMBED__", "embed")
+}
+
 function normalized(url: string | undefined): string | undefined {
   const trimmed = url?.trim()
   if (!trimmed) return
@@ -14,6 +38,9 @@ function normalized(url: string | undefined): string | undefined {
  * On desktop, reads the sidecar URL set during init.
  */
 export function getDefaultBaseUrl(): string {
+  // Demo mode: use current origin so MSW service worker intercepts all requests
+  if (isDemoMode()) return window.location.origin
+
   // Desktop: sidecar URL is set during init
   const serverUrl = (window as any).__OPENCODE__?.serverUrl as string | undefined
   if (serverUrl) return normalized(serverUrl) ?? serverUrl
@@ -40,6 +67,12 @@ export async function authFetch(
   input: string | URL | Request,
   init?: RequestInit
 ): Promise<Response> {
+  if (isDemoMode()) {
+    const url = typeof input === "string" ? input : input instanceof Request ? input.url : String(input)
+    if (url.includes("/api/pages")) {
+      console.log("[demo-authFetch] pages request:", init?.method ?? "GET", url)
+    }
+  }
   const token = await getAuthToken();
 
   // On desktop, fall back to Basic auth with the sidecar password

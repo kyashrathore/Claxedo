@@ -11,7 +11,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
-import { DialogSettings, useGlobalSync, useSync, useComments } from "@opencode-ai/claxedo-app"
+import { DialogSettings, useGlobalSync, useSync, useComments, useServer } from "@opencode-ai/claxedo-app"
 import { REVIEW_MODE_LABEL } from "../../context/claxedo-layout/review-intent"
 import { useClaxedoLayout, type PaneContent } from "../../context/claxedo-layout"
 import { DirectoryScope } from "../directory-scope"
@@ -268,11 +268,13 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
   const claxedo = useClaxedoLayout()
   const globalSync = useGlobalSync()
   const globalSDK = useGlobalSDK()
+  const server = useServer()
   const dialog = useDialog()
   const dim = () => (props.isZoomed() ? 1 : props.isFocused() ? 1 : 0.7)
   const { terminalSession, terminalLog, ensureTerminalSession } =
     createPreviewLoader({
       sdkUrl: () => globalSDK.url,
+      serverHealthy: () => server.healthy() === true,
       globalSyncChild: (dir, opts) => globalSync.child(dir, opts),
       fetchSessionMessages: (params) => globalSDK.client.session.messages(params),
       debug: paneLeafDebug,

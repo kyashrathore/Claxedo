@@ -1,7 +1,7 @@
 import { Show, Match, Switch, For, createMemo, createEffect, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 
-import { useSync, useFile, useComments } from "@opencode-ai/claxedo-app"
+import { useSync, useFile, useComments, useServer } from "@opencode-ai/claxedo-app"
 import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
@@ -35,6 +35,7 @@ export function TabReview(props: TabReviewProps) {
   const sync = useSync()
   const file = useFile()
   const comments = useComments()
+  const server = useServer()
   const sdk = useSDK()
   const debug = createDebugLogger("layout.review-diff", "layout:review-diff", {
     legacyKey: "opencode.debug.terminal",
@@ -55,7 +56,7 @@ export function TabReview(props: TabReviewProps) {
 
   createEffect(() => {
     const id = props.sessionId
-    if (!id || id === "new") return
+    if (!id || id === "new" || server.healthy() !== true) return
     void sync.session.sync(id)
     if (props.mode !== "session") return
     if (sync.data.session_diff[id] !== undefined) return

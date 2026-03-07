@@ -31,6 +31,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
+import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
 import { createOpenReviewFile, createSizing } from "@/pages/session/helpers"
@@ -52,6 +53,7 @@ export default function Page() {
   const layout = useLayout()
   const local = useLocal()
   const file = useFile()
+  const server = useServer()
   const sync = useSync()
   const dialog = useDialog()
   const language = useLanguage()
@@ -365,8 +367,8 @@ export default function Page() {
   const hasScrollGesture = () => Date.now() - ui.scrollGesture < scrollGestureWindowMs
 
   createEffect(
-    on([() => sdk.directory, () => params.id] as const, ([, id]) => {
-      if (!id) return
+    on([() => sdk.directory, () => params.id, () => server.healthy()] as const, ([, id, healthy]) => {
+      if (!id || healthy !== true) return
       untrack(() => {
         void sync.session.sync(id)
         void sync.session.todo(id)
@@ -839,6 +841,7 @@ export default function Page() {
   createEffect(() => {
     const id = params.id
     if (!id) return
+    if (server.healthy() !== true) return
 
     const wants = isDesktop()
       ? desktopFileTreeOpen() || (desktopReviewOpen() && activeTab() === "review")

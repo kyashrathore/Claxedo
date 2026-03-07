@@ -6,6 +6,7 @@ import { usePlatform } from "@/context/platform"
 import { Persist, persisted } from "@/utils/persist"
 import { validWorktree } from "@claxedo/utils/worktree"
 import { getExtensions } from "@opencode-ai/app-shared"
+import { createDebugLogger } from "../utils/debug"
 
 type StoredProject = { worktree: string; expanded: boolean }
 type StoredServer = string | ServerConnection.HttpBase | ServerConnection.Http
@@ -92,6 +93,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
   name: "Server",
   init: (props: { defaultServer: ServerConnection.Key; servers?: Array<ServerConnection.Any> }) => {
     const platform = usePlatform()
+    const debug = createDebugLogger("server.health", "server:health", {
+      legacyKey: "opencode.debug.terminal",
+    })
     const [store, setStore, _, ready] = persisted(
       Persist.global("server", ["server.v6", "server.v5", "server.v4", "server.v3"]),
       createStore({
@@ -233,18 +237,35 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       const u = url()
       if (!u) return
 
+      debug.log("watch", { url: u })
       setState("healthy", undefined)
 
       let alive = true
       let busy = false
 
       const run = () => {
-        if (busy) return
+        if (busy) {
+          if (debug.enabled(2)) {
+            debug.verbose("probe skip", { reason: "busy", url: u })
+          }
+          return
+        }
         busy = true
+        const start = Date.now()
+        if (debug.enabled(2)) {
+          debug.verbose("probe start", { url: u })
+        }
         void check(u)
           .then((next) => {
             if (!alive) return
+            const prev = state.healthy
             setState("healthy", next)
+            debug.log("probe result", {
+              url: u,
+              healthy: next,
+              prev,
+              ms: Date.now() - start,
+            })
           })
           .finally(() => {
             busy = false
@@ -257,6 +278,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       onCleanup(() => {
         alive = false
         clearInterval(interval)
+        if (debug.enabled(2)) {
+          debug.verbose("watch cleanup", { url: u })
+        }
       })
     })
 

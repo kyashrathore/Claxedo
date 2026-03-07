@@ -3,6 +3,7 @@ import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primi
 import { checksum } from "@opencode-ai/util/encode"
 import { createSignal, type Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
+import { isDemoMode } from "../../utils/api"
 
 type InitType = Promise<string> | string | null
 type PersistedWithReady<T> = [Store<T>, SetStoreFunction<T>, InitType, Accessor<boolean>]
@@ -15,8 +16,8 @@ type PersistTarget = {
 }
 
 const LEGACY_STORAGE = "default.dat"
-const GLOBAL_STORAGE = "opencode.global.dat"
 const LOCAL_PREFIX = "opencode."
+const GLOBAL_STORAGE = storageName("opencode.global.dat")
 const fallback = { disabled: false }
 
 const CACHE_MAX_ENTRIES = 500
@@ -192,10 +193,16 @@ function expectsJson(defaults: unknown) {
   return Array.isArray(defaults) || isRecord(defaults)
 }
 
+function storageName(name: string) {
+  if (!isDemoMode()) return name
+  if (!name.startsWith(LOCAL_PREFIX)) return `${LOCAL_PREFIX}demo.${name}`
+  return `${LOCAL_PREFIX}demo.${name.slice(LOCAL_PREFIX.length)}`
+}
+
 function workspaceStorage(dir: string) {
   const head = (dir ?? "").slice(0, 12) || "workspace"
   const sum = checksum(dir) ?? "0"
-  return `opencode.workspace.${head}.${sum}.dat`
+  return storageName(`opencode.workspace.${head}.${sum}.dat`)
 }
 
 function serverWorkspaceStorage(serverUrl: string, dir: string) {
@@ -208,7 +215,7 @@ function serverWorkspaceStorage(serverUrl: string, dir: string) {
   const serverSum = checksum(serverUrl) ?? "0"
   const dirHead = (dir ?? "").slice(0, 12) || "workspace"
   const dirSum = checksum(dir) ?? "0"
-  return `opencode.server.${serverHead}.${serverSum}.workspace.${dirHead}.${dirSum}.dat`
+  return storageName(`opencode.server.${serverHead}.${serverSum}.workspace.${dirHead}.${dirSum}.dat`)
 }
 
 function localStorageWithPrefix(prefix: string): SyncStorage {
@@ -337,6 +344,11 @@ export const Persist = {
     if (session) return Persist.serverSession(serverUrl, dir, session, key, legacy)
     return Persist.serverWorkspace(serverUrl, dir, key, legacy)
   },
+}
+
+export function rawPersistKey(target: { storage?: string; key: string }) {
+  if (!target.storage) return target.key
+  return `${target.storage}:${target.key}`
 }
 
 export function removePersisted(target: { storage?: string; key: string }) {
