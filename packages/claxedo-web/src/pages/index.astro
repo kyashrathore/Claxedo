@@ -1,82 +1,194 @@
 ---
-import Layout from '../layouts/Layout.astro';
+import Layout from "../layouts/Layout.astro"
 
-const clean = (value: string | undefined) => value?.trim().replace(/\/+$/, '');
+const clean = (value: string | undefined) => value?.trim().replace(/\/+$/, "")
 const appUrl =
   clean(import.meta.env.PUBLIC_CLAXEDO_APP_URL) ??
   clean(import.meta.env.CLAXEDO_APP_URL) ??
-  (import.meta.env.DEV ? 'http://localhost:4444' : 'https://app.claxedo.com');
-const previewSrc = `${appUrl}?demo=1&embed=1`;
+  (import.meta.env.DEV ? "http://localhost:4444" : "https://app.claxedo.com")
+const previewSrc = `${appUrl}?demo=1&embed=1`
 
 const hero = {
-  src: '/screenshots/hero-attached-review.png',
-  alt: 'Claxedo review workspace preview',
-};
+  src: "/screenshots/hero-attached-review.png",
+  alt: "Claxedo review workspace preview",
+}
 
-const features = [
-  { title: 'Strong open source foundation', desc: 'Built on OpenCode \u2014 a fully open source AI coding tool with an active community and transparent development.', from: 'opencode' },
-  { title: 'Any model, any provider', desc: 'Use any LLM through OpenRouter, Anthropic, OpenAI, or any compatible API endpoint.', from: 'opencode' },
-  { title: 'Theme & keyboard shortcuts', desc: 'Customize your environment with themes and rebindable keyboard shortcuts.', from: 'opencode' },
-  { title: 'Panes, tabs & groups', desc: 'Split panes for side-by-side viewing. Tabs across workspaces and projects without nested clicks. Multi tab groups for better organisation.', from: 'claxedo' },
-  { title: 'Any CLI coding agent', desc: 'Run Claude Code, Codex, Gemini CLI, Pi, Amp, Cursor agent, or any coding CLI \u2014 each in its own managed terminal.', from: 'claxedo' },
-  { title: 'Agent lifecycle awareness', desc: 'See which agents are running, waiting, or finished. Restart or stop them from the workspace.', from: 'claxedo' },
-  { title: 'Process management', desc: 'Configure processes, auto-run them across all workspaces, avoid port conflicts, and manage state per process.', from: 'claxedo' },
-  { title: 'Workspace-aware MCP', desc: 'Model Context Protocol integration that understands your full workspace, not just the active file.', from: 'claxedo' },
-  { title: 'Spec-driven pages', desc: 'Write specs, notes, and prompts inside the workspace. Coming soon: doc lifecycle from dump to explore to design to implement.', from: 'claxedo' },
-  { title: 'First class AI review', desc: 'A dedicated review surface for diffs, changed files, and agent output. Inspect every change before shipping.', from: 'claxedo' },
-  { title: 'Connect on mobile', desc: 'Access your workspace from a tablet or phone through the web version when you\u2019re away from your desk.', from: 'claxedo' },
-];
+const wins = [
+  "Run multiple AI coding agents side by side",
+  "Review changes before they hit your codebase",
+  "Keep terminals, processes, and workspace context organized",
+]
+
+const guide = [
+  "Side-by-side panes for parallel implementation work",
+  "Managed terminals for Claude Code, Codex, Gemini CLI, and more",
+  "A dedicated review surface for changed files and diffs",
+]
+
+const compare = [
+  {
+    title: "OpenCode",
+    desc: "Open source AI coding foundation for sessions, model routing, tool use, and the core coding loop.",
+  },
+  {
+    title: "Claxedo",
+    desc: "Desktop workspace layer for parallel agent workflows, review, process control, and multi-pane work.",
+  },
+]
+
+const proof = [
+  {
+    tag: "Parallel runs",
+    title: "Run multiple implementation tasks at once",
+    desc: "Split panes across active branches, keep each agent in its own terminal, and watch work progress without tab chaos.",
+    src: "/screenshots/multi-pane-dark.png",
+    alt: "Claxedo multi-pane workspace",
+  },
+  {
+    tag: "Review surface",
+    title: "Inspect diffs before anything lands",
+    desc: "Open a dedicated review workspace for changed files, session diffs, and comments before you decide what ships.",
+    src: "/screenshots/review-workspace-dark.png",
+    alt: "Claxedo review workspace",
+  },
+  {
+    tag: "Agent support",
+    title: "Use the coding agents you already prefer",
+    desc: "Claude Code, Codex, Gemini CLI, Amp, Cursor agent, and other CLI tools all fit into the same workspace model.",
+    src: "/screenshots/all-coding-agent-dark.png",
+    alt: "Claxedo workspace with multiple coding agents",
+  },
+]
+
+const claxedo = [
+  {
+    title: "Panes, tabs, and groups",
+    desc: "Keep multiple workspaces open without nested clicks, then split active work into side-by-side panes when you need parallel focus.",
+  },
+  {
+    title: "Any CLI coding agent",
+    desc: "Run Claude Code, Codex, Gemini CLI, Pi, Amp, Cursor agent, or any other coding CLI in its own managed terminal.",
+  },
+  {
+    title: "Agent lifecycle awareness",
+    desc: "See which agents are running, waiting, or finished, then stop or restart them from the workspace when needed.",
+  },
+  {
+    title: "Process management",
+    desc: "Configure shared processes, auto-run them across workspaces, avoid port collisions, and keep state per process.",
+  },
+  {
+    title: "Workspace-aware MCP",
+    desc: "Use Model Context Protocol with awareness of the active workspace instead of only the current file.",
+  },
+  {
+    title: "First-class AI review",
+    desc: "Inspect changed files, unified diffs, and agent output from a review surface built for multi-agent work.",
+  },
+  {
+    title: "Pages in the workspace",
+    desc: "Write specs, notes, prompts, and working docs inside the same workspace as the implementation work.",
+  },
+  {
+    title: "Mobile access",
+    desc: "Open the web workspace from a tablet or phone when you need to check progress away from your desk.",
+  },
+]
+
+const base = [
+  {
+    title: "Built on OpenCode",
+    desc: "Claxedo inherits the open source foundation, active upstream development, and transparent implementation model.",
+  },
+  {
+    title: "Any model, any provider",
+    desc: "Use Anthropic, OpenAI, OpenRouter, or any compatible endpoint with your own API keys.",
+  },
+  {
+    title: "Themes and shortcuts",
+    desc: "Customize the environment with themes and keyboard shortcuts instead of adapting to fixed defaults.",
+  },
+]
+
+const soon = {
+  title: "Doc lifecycle tooling",
+  desc: "Spec pages already ship today. Broader document flow from dump to explore to design to implement is still on the roadmap.",
+}
 
 const faq = [
   {
-    q: 'What is Claxedo?',
-    a: 'Claxedo is a desktop workspace built on top of OpenCode. It adds multi-pane layouts, project tabs, process management, and a review surface so you can run multiple AI coding workflows in parallel.',
+    q: "What is Claxedo?",
+    a: "Claxedo is a desktop workspace built on top of OpenCode. It adds multi-pane layouts, project tabs, process management, and a review surface so you can run multiple AI coding workflows in parallel.",
   },
   {
-    q: 'How does it relate to OpenCode?',
-    a: 'OpenCode is the open source foundation that handles AI sessions, model routing, and tool use. Claxedo syncs daily with upstream OpenCode and adds the workspace layer on top. You get all OpenCode features plus everything Claxedo adds.',
+    q: "How does it relate to OpenCode?",
+    a: "OpenCode is the open source foundation that handles AI sessions, model routing, and tool use. Claxedo syncs daily with upstream OpenCode and adds the workspace layer on top.",
   },
   {
-    q: 'Which coding agents does it support?',
-    a: 'Any CLI-based coding agent \u2014 Claude Code, Codex, Gemini CLI, Amp, Cursor agent, and others. Each agent runs in its own managed terminal inside the workspace.',
+    q: "Which coding agents does it support?",
+    a: "Any CLI-based coding agent, including Claude Code, Codex, Gemini CLI, Amp, Cursor agent, and others. Each agent runs in its own managed terminal inside the workspace.",
   },
   {
-    q: 'Do I need my own API keys?',
-    a: 'Yes. Claxedo is a local workspace, not a hosted service. You bring your own API keys for whichever model provider you use \u2014 Anthropic, OpenAI, OpenRouter, or any compatible endpoint.',
+    q: "Do I need my own API keys?",
+    a: "Yes. Claxedo is a local workspace, not a hosted service. You bring your own API keys for whichever model provider you use.",
   },
   {
-    q: 'Is there a free trial?',
-    a: 'There is a live demo on this site you can try immediately. The full desktop app requires a license.',
+    q: "Is there a free trial?",
+    a: "There is an interactive browser preview on this site that uses demo data and mocked services. The full desktop app requires a license.",
   },
   {
-    q: 'What platforms are supported?',
-    a: 'macOS and Linux. Windows support is planned.',
+    q: "What platforms are supported?",
+    a: "macOS and Linux today. Windows support is planned.",
   },
-];
+]
 
 const pricing = {
-  price: '$159',
-  earlyBird: '$99',
-  features: [
-    'Unlimited projects',
-    'Unlimited parallel agents',
-    'Multi-pane workspace',
-    'All agent integrations',
-    'Process management',
-    'Workspace-aware MCP',
-    'Page editor',
-    'GitHub source code access',
-    'Discord community access',
-    'Lifetime support',
+  price: "$159",
+  now: "$99",
+  href: "https://github.com/kyashrathore/Claxedo/releases",
+  list: [
+    "Unlimited projects",
+    "Unlimited parallel agents",
+    "Multi-pane workspace",
+    "All agent integrations",
+    "Process management",
+    "Workspace-aware MCP",
+    "Page editor",
+    "GitHub source code access",
+    "Discord community access",
+    "Lifetime support",
   ],
-  ctaHref: 'https://github.com/kyashrathore/Claxedo/releases',
-};
-
+  trust: [
+    "One-time purchase",
+    "macOS and Linux today",
+    "Bring your own API keys",
+  ],
+  facts: [
+    {
+      q: "Supports",
+      a: "Any CLI coding agent",
+    },
+    {
+      q: "Trial",
+      a: "Interactive browser preview",
+    },
+    {
+      q: "Desktop",
+      a: "License required for the full app",
+    },
+    {
+      q: "Windows",
+      a: "Planned",
+    },
+  ],
+}
 ---
 
-<Layout title="Claxedo — The Parallel AI Workspace">
+<Layout
+  title="Claxedo — Parallel AI Coding Workspace"
+  description="Do more parallel work with any AI coding agent. Claxedo is the desktop workspace for multi-agent coding, review, process control, and workspace-aware context, built on OpenCode."
+>
   <div class="page-frame">
-    <!-- Navigation -->
     <nav class="nav">
       <a href="/" class="nav-logo">
         <svg class="brand-mark" viewBox="-100 -90 200 180" fill="none" xmlns="http://www.w3.org/2000/svg" stroke-linecap="round" aria-hidden="true">
@@ -89,31 +201,81 @@ const pricing = {
         <span>Claxedo</span>
       </a>
       <div class="nav-links">
+        <a href="#demo">Demo</a>
         <a href="#features">Features</a>
         <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+      </div>
+      <div class="nav-actions">
+        <a href="/try" class="btn-secondary">Try Browser Preview</a>
+        <a href={pricing.href} class="btn-primary">Get The App</a>
       </div>
     </nav>
 
-    <!-- Hero -->
     <section class="hero">
-      <h1 class="hero-title">
-        The parallel AI workspace<br />
-        built on OpenCode
-      </h1>
-      <p class="hero-sub">
-        Keep multiple projects, workspaces, AI sessions, and terminals open at once.
-        Claxedo extends OpenCode with a powerful multi-pane layout, instant agent terminals,
-        and workspace-aware AI context.
-      </p>
-      <div class="hero-actions">
-        <a href="#pricing" class="btn-primary">Buy Now</a>
+      <div class="hero-copy">
+        <span class="hero-kicker">Desktop workspace for parallel coding</span>
+        <h1 class="hero-title">Do more parallel work with any AI coding agent</h1>
+        <p class="hero-sub">
+          Claxedo gives you a multi-pane desktop workspace to run Claude Code, Codex,
+          Gemini CLI, and more, with review, process control, and workspace-aware context.
+          Built on OpenCode.
+        </p>
+        <div class="hero-actions">
+          <a href="/try" class="btn-primary">Try Browser Preview</a>
+          <a href="#pricing" class="btn-secondary">See Pricing</a>
+        </div>
+      </div>
+      <div class="hero-meta">
+        <div class="hero-badges">
+          <span>Built on OpenCode</span>
+          <span>macOS + Linux</span>
+          <span>Bring your own API keys</span>
+        </div>
+        <p class="hero-note">
+          Use the browser preview to understand the workflow first. The desktop app
+          is where you connect real projects, agents, and processes.
+        </p>
       </div>
     </section>
 
-    <!-- Product Preview — bleeds out on scroll, returns -->
+    <section class="wins" aria-label="Why teams buy Claxedo">
+      <div class="wins-grid">
+        {wins.map((item) => (
+          <article class="win">
+            <span class="win-mark">{">>"}</span>
+            <p>{item}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section id="demo" class="demo-copy">
+      <div>
+        <span class="section-tag">// Browser preview</span>
+        <h2>Explore the Claxedo workflow in browser</h2>
+      </div>
+      <div class="demo-body">
+        <p>
+          This browser preview is backed by demo data and mocked services. Use it to
+          understand the workspace model, navigation, and review flow before moving
+          into the full desktop app.
+        </p>
+        <ul class="demo-list">
+          {guide.map((item) => (
+            <li>{item}</li>
+          ))}
+        </ul>
+        <div class="demo-actions">
+          <a href="/try" class="btn-primary">Open Browser Preview</a>
+          <a href="#pricing" class="btn-secondary">See Desktop Pricing</a>
+        </div>
+      </div>
+    </section>
+
     <section class="preview">
       <div class="preview-sticky" id="preview-sticky">
-        <div class="preview-perspective" id="hero-perspective">
+        <div class="preview-perspective">
           <div class="preview-frame" id="hero-frame">
             <div class="preview-shell" id="preview-shell">
               <div class="preview-poster-frame">
@@ -132,14 +294,14 @@ const pricing = {
               <iframe
                 id="demo-frame"
                 class="preview-app"
-                title="Claxedo live preview"
+                title="Claxedo browser preview"
                 loading="lazy"
                 tabindex="-1"
                 data-src={previewSrc}
               ></iframe>
               <div class="preview-banner" id="preview-banner" role="status" aria-live="polite">
                 <span class="preview-dot" aria-hidden="true"></span>
-                <span id="preview-banner-text">Loading live workspace&hellip;</span>
+                <span id="preview-banner-text">Loading browser preview...</span>
               </div>
             </div>
           </div>
@@ -147,50 +309,131 @@ const pricing = {
       </div>
     </section>
 
-    <!-- Features -->
-    <section id="features" class="features-section">
-      <div class="features-header">
-        <span class="section-tag">// Features</span>
-        <h2>What Claxedo adds to OpenCode</h2>
+    <section class="compare-section">
+      <div class="compare-header">
+        <span class="section-tag">// Relationship</span>
+        <h2>OpenCode gives you the foundation. Claxedo gives you the workspace layer.</h2>
       </div>
-      <div class="features-grid">
-        {features.map((f) => (
-          <article class="feature-cell">
-            <div class="feature-top">
-              <h3>{f.title}</h3>
-              <span class={`feature-tag ${f.from}`}>{f.from === 'opencode' ? 'OpenCode' : 'Claxedo'}</span>
-            </div>
-            <p>{f.desc}</p>
+      <div class="compare-grid">
+        {compare.map((item) => (
+          <article class="compare-card">
+            <h3>{item.title}</h3>
+            <p>{item.desc}</p>
           </article>
         ))}
       </div>
     </section>
 
-    <!-- Pricing -->
+    <section class="proof-section">
+      <div class="proof-header">
+        <span class="section-tag">// Use cases</span>
+        <h2>What the workflow looks like in practice</h2>
+      </div>
+      <div class="proof-grid">
+        {proof.map((item) => (
+          <article class="proof-card">
+            <img
+              src={item.src}
+              alt={item.alt}
+              width="1200"
+              height="780"
+              loading="lazy"
+              decoding="async"
+            />
+            <div class="proof-copy">
+              <span class="proof-tag">{item.tag}</span>
+              <h3>{item.title}</h3>
+              <p>{item.desc}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section id="features" class="features-section">
+      <div class="features-header">
+        <span class="section-tag">// Available now</span>
+        <h2>What you get in Claxedo today</h2>
+      </div>
+      <div class="features-grid">
+        {claxedo.map((item) => (
+          <article class="feature-cell">
+            <h3>{item.title}</h3>
+            <p>{item.desc}</p>
+          </article>
+        ))}
+      </div>
+      <div class="base-section">
+        <div class="base-head">
+          <span class="section-tag">// OpenCode foundation</span>
+          <h3>Claxedo keeps the OpenCode strengths underneath the workspace layer.</h3>
+        </div>
+        <div class="base-grid">
+          {base.map((item) => (
+            <article class="base-card">
+              <h4>{item.title}</h4>
+              <p>{item.desc}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+      <div class="soon-card">
+        <span class="section-tag">// Coming soon</span>
+        <h3>{soon.title}</h3>
+        <p>{soon.desc}</p>
+      </div>
+    </section>
+
     <section id="pricing" class="pricing">
       <div class="pricing-header">
         <span class="section-tag">// Pricing</span>
         <h2>One price, everything included</h2>
       </div>
-      <div class="pricing-card">
-        <div class="pricing-card-top">
-          <div class="pricing-price">
-            <span class="pricing-amount-old">{pricing.price}</span>
-            <span class="pricing-amount">{pricing.earlyBird}</span>
-            <span class="pricing-period">USD</span>
+      <div class="pricing-layout">
+        <div class="pricing-card">
+          <div class="pricing-card-top">
+            <div class="pricing-price">
+              <span class="pricing-amount-old">{pricing.price}</span>
+              <span class="pricing-amount">{pricing.now}</span>
+              <span class="pricing-period">USD</span>
+            </div>
+            <p class="pricing-early">Early bird pricing</p>
           </div>
-          <p class="pricing-early">Early bird pricing &mdash; limited time</p>
+          <ul class="pricing-trust">
+            {pricing.trust.map((item) => (
+              <li>{item}</li>
+            ))}
+          </ul>
+          <ul class="pricing-features">
+            {pricing.list.map((item) => (
+              <li><span class="check">+</span> {item}</li>
+            ))}
+          </ul>
+          <div class="pricing-actions">
+            <a href={pricing.href} class="btn-primary pricing-cta">Get The Desktop App</a>
+            <a href="/try" class="btn-secondary pricing-cta-secondary">Try The Browser Preview</a>
+          </div>
+          <p class="pricing-note">
+            The browser preview uses demo data and mocked services. The full desktop app requires a license.
+          </p>
         </div>
-        <ul class="pricing-features">
-          {pricing.features.map((f) => (
-            <li><span class="check">{'\u2713'}</span> {f}</li>
-          ))}
-        </ul>
-        <a href={pricing.ctaHref} class="btn-primary pricing-cta">Buy Now</a>
+        <div class="pricing-facts">
+          <div class="facts-head">
+            <span class="section-tag">// Quick answers</span>
+            <h3>Put the buying objections next to the price.</h3>
+          </div>
+          <div class="facts-grid">
+            {pricing.facts.map((item) => (
+              <article class="fact">
+                <span>{item.q}</span>
+                <strong>{item.a}</strong>
+              </article>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- FAQ -->
     <section id="faq" class="faq-section">
       <div class="faq-header">
         <span class="section-tag">// FAQ</span>
@@ -206,9 +449,11 @@ const pricing = {
       </div>
     </section>
 
-    <!-- Footer -->
     <footer class="footer">
       <div class="footer-grid">
+        <div class="footer-col">
+          <a href="#demo">Browser preview</a>
+        </div>
         <div class="footer-col">
           <a href="#features">Features</a>
         </div>
@@ -220,21 +465,24 @@ const pricing = {
         </div>
       </div>
       <div class="footer-bottom">
-        <p>Built on <a href="https://github.com/opencode-ai/opencode">OpenCode</a>. Synced daily with upstream.</p>
+        <p>
+          Built on <a href="https://github.com/opencode-ai/opencode">OpenCode</a>.
+          Synced daily with upstream.
+        </p>
       </div>
     </footer>
   </div>
 </Layout>
 
 <style>
-  /* ===== Page Frame (OpenCode bordered document) ===== */
   .page-frame {
     --padding: 3rem;
     --vpad: 1.5rem;
-    max-width: 72rem;
+    max-width: 76rem;
     margin: 1rem auto;
     border: var(--bw) solid var(--border);
     overflow: visible;
+    background: var(--bg);
   }
 
   @media (max-width: 30rem) {
@@ -245,13 +493,18 @@ const pricing = {
     }
   }
 
-  /* ===== Navigation ===== */
   .nav {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 1rem;
     padding: var(--vpad) var(--padding);
     border-bottom: var(--bw) solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(10px);
   }
 
   .nav-logo {
@@ -262,6 +515,7 @@ const pricing = {
     color: var(--text-strong);
     text-transform: uppercase;
     letter-spacing: 0.02em;
+    white-space: nowrap;
   }
 
   .brand-mark {
@@ -285,13 +539,15 @@ const pricing = {
     fill: var(--bg);
   }
 
-  .nav-links {
+  .nav-links,
+  .nav-actions {
     display: flex;
-    gap: 32px;
+    align-items: center;
+    gap: 12px;
   }
 
   .nav-links a {
-    font-size: 1rem;
+    font-size: 0.92rem;
     color: var(--text);
     text-transform: uppercase;
     letter-spacing: 0.02em;
@@ -302,46 +558,217 @@ const pricing = {
     color: var(--text-strong);
   }
 
-  /* ===== Hero ===== */
-  .hero {
+  .nav .btn-primary,
+  .nav .btn-secondary {
+    padding: 8px 14px;
+    font-size: 0.86rem;
+  }
+
+  .hero,
+  .wins,
+  .demo-copy,
+  .compare-section,
+  .proof-section,
+  .features-section,
+  .pricing,
+  .faq-header,
+  .footer-bottom {
     padding: var(--padding);
   }
 
-  .hero-title {
-    font-size: clamp(1.75rem, 4vw, 2.5rem);
-    font-weight: 500;
-    line-height: 1.25;
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(16rem, 0.75fr);
+    gap: calc(var(--padding) * 0.75);
+    align-items: end;
+  }
+
+  .hero-copy {
+    max-width: 44rem;
+  }
+
+  .hero-kicker {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
+    color: var(--text-weak);
+  }
+
+  .hero-title {
+    font-size: clamp(2.25rem, 6vw, 4.75rem);
+    line-height: 0.96;
+    font-weight: 600;
+    letter-spacing: -0.06em;
     color: var(--text-strong);
-    margin-bottom: var(--vpad);
+    text-transform: uppercase;
+    text-wrap: balance;
+    margin-bottom: 1.25rem;
   }
 
   .hero-sub {
-    font-size: 1rem;
-    line-height: 1.6;
+    font-size: 1.1rem;
+    line-height: 1.7;
     color: var(--text);
-    margin-bottom: calc(var(--vpad) * 1.5);
-    max-width: 560px;
+    max-width: 42rem;
+    margin-bottom: 1.5rem;
   }
 
   .hero-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 12px;
   }
 
-  /* ===== Product Preview (Full Bleed, Scroll Animated) ===== */
+  .hero-meta {
+    display: grid;
+    gap: 1rem;
+    align-self: stretch;
+    padding: 1.25rem;
+    border: var(--bw) solid var(--border);
+    background: var(--bg-weak);
+  }
+
+  .hero-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .hero-badges span {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var(--text-weak);
+    background: var(--bg);
+  }
+
+  .hero-note {
+    color: var(--text);
+    line-height: 1.7;
+    max-width: 22rem;
+  }
+
+  .wins {
+    border-top: var(--bw) solid var(--border);
+  }
+
+  .wins-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    border: var(--bw) solid var(--border);
+  }
+
+  .win {
+    display: flex;
+    gap: 12px;
+    padding: 1rem 1.1rem;
+    min-height: 100%;
+    border-right: var(--bw) solid var(--border);
+    background: var(--bg-weak);
+  }
+
+  .win:last-child {
+    border-right: none;
+  }
+
+  .win-mark {
+    color: var(--text-strong);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.8;
+    flex: none;
+  }
+
+  .win p {
+    color: var(--text-strong);
+    line-height: 1.6;
+  }
+
+  .demo-copy {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: calc(var(--padding) * 0.75);
+    align-items: start;
+    border-top: var(--bw) solid var(--border);
+  }
+
+  .section-tag {
+    display: block;
+    margin-bottom: 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-weak);
+  }
+
+  .demo-copy h2,
+  .compare-header h2,
+  .proof-header h2,
+  .features-header h2,
+  .pricing-header h2,
+  .faq-header h2 {
+    font-size: clamp(1.4rem, 3vw, 2.1rem);
+    line-height: 1.1;
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
+    color: var(--text-strong);
+    text-wrap: balance;
+  }
+
+  .demo-body {
+    max-width: 40rem;
+  }
+
+  .demo-body p {
+    color: var(--text);
+    line-height: 1.7;
+    margin-bottom: 1rem;
+  }
+
+  .demo-list {
+    display: grid;
+    gap: 10px;
+    margin: 0 0 1.25rem;
+    padding-left: 1.2rem;
+    color: var(--text-strong);
+  }
+
+  .demo-list li {
+    line-height: 1.6;
+  }
+
+  .demo-actions,
+  .pricing-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
   .preview {
     position: relative;
-    height: 220vh;
+    height: 160vh;
+    border-top: var(--bw) solid var(--border);
   }
 
   .preview-sticky {
     --bleed: 0px;
     position: sticky;
-    top: 0;
-    height: 100vh;
+    top: 5rem;
+    height: calc(100vh - 5rem);
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 2rem;
@@ -355,8 +782,8 @@ const pricing = {
     justify-content: center;
     perspective: 1200px;
     overflow: clip;
-    flex: 1;
     width: 100%;
+    height: 100%;
   }
 
   .preview-frame {
@@ -365,12 +792,13 @@ const pricing = {
     border: var(--bw) solid var(--border);
     overflow: hidden;
     will-change: transform, opacity;
-    transform: translateY(40px) scale(0.95) rotateX(2deg);
-    opacity: 0.7;
+    transform: translateY(28px) scale(0.965) rotateX(1.6deg);
+    opacity: 0.76;
     transition: transform 0.1s linear, opacity 0.1s linear;
   }
 
   .preview-shell {
+    --poster-zoom: 1.02;
     position: relative;
     width: 100%;
     height: 100%;
@@ -378,27 +806,25 @@ const pricing = {
     background: hsl(0, 9%, 7%);
   }
 
-  .preview-poster-frame {
+  .preview-poster-frame,
+  .preview-poster,
+  .preview-app {
     position: absolute;
     inset: 0;
-    display: block;
   }
 
   .preview-poster {
-    position: absolute;
-    inset: 0;
     width: 100%;
     height: 100%;
-    display: block;
     object-fit: cover;
-    object-position: top center;
+    object-position: top left;
+    transform: scale(var(--poster-zoom));
+    transform-origin: top left;
     background: hsl(0, 9%, 7%);
     transition: opacity 0.45s ease, transform 0.45s ease, filter 0.45s ease;
   }
 
   .preview-app {
-    position: absolute;
-    inset: 0;
     width: 100%;
     height: 100%;
     border: 0;
@@ -433,7 +859,7 @@ const pricing = {
 
   .preview-shell.is-live .preview-poster {
     opacity: 0;
-    transform: scale(1.015);
+    transform: scale(calc(var(--poster-zoom) + 0.02));
     filter: blur(10px);
   }
 
@@ -454,127 +880,185 @@ const pricing = {
     50% { opacity: 0.4; }
   }
 
-  /* ===== Features ===== */
-  .features-header {
-    padding: var(--padding);
-    padding-bottom: var(--vpad);
+  .compare-section,
+  .proof-section,
+  .features-section,
+  .pricing,
+  .faq-section,
+  .footer {
+    border-top: var(--bw) solid var(--border);
   }
 
-  .section-tag {
-    display: block;
+  .compare-header,
+  .proof-header,
+  .features-header,
+  .pricing-header {
+    margin-bottom: 1.5rem;
+  }
+
+  .compare-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    border: var(--bw) solid var(--border);
+  }
+
+  .compare-card {
+    padding: 1.5rem;
+    background: linear-gradient(180deg, var(--bg), var(--bg-weak));
+  }
+
+  .compare-card + .compare-card {
+    border-left: var(--bw) solid var(--border);
+  }
+
+  .compare-card h3 {
+    font-size: 1.1rem;
+    color: var(--text-strong);
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.75rem;
+  }
+
+  .compare-card p {
+    color: var(--text);
+    line-height: 1.7;
+    max-width: 30rem;
+  }
+
+  .proof-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .proof-card {
+    display: grid;
+    border: var(--bw) solid var(--border);
+    overflow: hidden;
+    background: var(--bg-weak);
+  }
+
+  .proof-card img {
+    width: 100%;
+    aspect-ratio: 1.35 / 1;
+    object-fit: cover;
+    object-position: top left;
+    border-bottom: var(--bw) solid var(--border);
+  }
+
+  .proof-copy {
+    padding: 1.1rem;
+  }
+
+  .proof-tag {
+    display: inline-flex;
+    margin-bottom: 10px;
     font-family: var(--font-mono);
     font-size: 12px;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
     color: var(--text-weak);
-    margin-bottom: 12px;
   }
 
-  .features-header h2 {
-    font-size: clamp(1.25rem, 3vw, 1.75rem);
-    font-weight: 500;
+  .proof-copy h3,
+  .feature-cell h3,
+  .base-card h4,
+  .soon-card h3,
+  .pricing-facts h3 {
+    font-size: 1rem;
+    font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: -0.02em;
     color: var(--text-strong);
-    line-height: 1.25;
+    margin-bottom: 0.6rem;
+  }
+
+  .proof-copy p,
+  .feature-cell p,
+  .base-card p,
+  .soon-card p,
+  .pricing-note,
+  .faq-item p {
+    color: var(--text);
+    line-height: 1.7;
   }
 
   .features-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    border-top: var(--bw) solid var(--border);
-  }
-
-  .feature-cell {
-    padding: calc(var(--vpad) * 0.8) calc(var(--padding) * 0.5);
-    border-bottom: var(--bw) solid var(--border);
-    border-right: var(--bw) solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .feature-cell:nth-child(3n) {
-    border-right: none;
-  }
-
-  /* last row: remove bottom border */
-  .feature-cell:nth-last-child(-n+2) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border: var(--bw) solid var(--border);
     border-bottom: none;
   }
 
-  .feature-top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
+  .feature-cell {
+    padding: 1.1rem;
+    border-right: var(--bw) solid var(--border);
+    border-bottom: var(--bw) solid var(--border);
+    min-height: 100%;
   }
 
-  .feature-cell h3 {
+  .feature-cell:nth-child(4n) {
+    border-right: none;
+  }
+
+  .base-section {
+    margin-top: 1rem;
+    border: var(--bw) solid var(--border);
+    background: var(--bg-weak);
+  }
+
+  .base-head {
+    padding: 1.25rem 1.25rem 0;
+  }
+
+  .base-head h3 {
     font-size: 1rem;
-    font-weight: 500;
-    text-transform: uppercase;
+    line-height: 1.5;
     color: var(--text-strong);
-    letter-spacing: -0.02em;
+    max-width: 40rem;
   }
 
-  .feature-tag {
-    flex-shrink: 0;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 2px 8px;
-    border: 1px solid var(--border);
-    color: var(--text-weak);
-  }
-
-  .feature-tag.claxedo {
-    color: var(--text-strong);
-    border-color: var(--text-strong);
-  }
-
-  .feature-cell p {
-    color: var(--text);
-    line-height: 1.6;
-  }
-
-  /* ===== Pricing ===== */
-  .pricing {
+  .base-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 1.25rem;
     border-top: var(--bw) solid var(--border);
-    padding: var(--padding);
   }
 
-  .pricing-header {
-    margin-bottom: var(--vpad);
+  .base-card {
+    padding: 1.1rem;
+    border-right: var(--bw) solid var(--border);
   }
 
-  .pricing-header h2 {
-    font-size: clamp(1.25rem, 3vw, 1.75rem);
-    font-weight: 500;
-    text-transform: uppercase;
-    color: var(--text-strong);
+  .base-card:last-child {
+    border-right: none;
+  }
+
+  .soon-card {
+    margin-top: 1rem;
+    padding: 1.25rem;
+    border: var(--bw) solid var(--border);
+  }
+
+  .pricing-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 0.95fr) minmax(18rem, 0.75fr);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .pricing-card,
+  .pricing-facts {
+    border: var(--bw) solid var(--border);
+    background: var(--bg-weak);
   }
 
   .pricing-card {
-    padding: calc(var(--vpad) * 1.5) calc(var(--padding) * 0.67);
-    display: flex;
-    flex-direction: column;
-    border: var(--bw) solid var(--border);
-    max-width: 480px;
+    padding: 1.5rem;
   }
 
   .pricing-card-top {
-    margin-bottom: var(--vpad);
-  }
-
-  .pricing-tier {
-    display: block;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    color: var(--text-weak);
-    margin-bottom: 16px;
+    margin-bottom: 1rem;
   }
 
   .pricing-price {
@@ -592,10 +1076,11 @@ const pricing = {
   }
 
   .pricing-amount {
-    font-size: 2.5rem;
+    font-size: 3rem;
     font-weight: 700;
     color: var(--text-strong);
-    letter-spacing: -0.03em;
+    letter-spacing: -0.06em;
+    line-height: 1;
   }
 
   .pricing-period {
@@ -609,62 +1094,87 @@ const pricing = {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-weak);
-    margin-top: 4px;
+  }
+
+  .pricing-trust,
+  .pricing-features {
+    list-style: none;
+    display: grid;
+    gap: 10px;
+  }
+
+  .pricing-trust {
+    margin-bottom: 1.25rem;
+    padding: 0.95rem 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .pricing-trust li {
+    color: var(--text-strong);
+    line-height: 1.5;
   }
 
   .pricing-features {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-bottom: calc(var(--vpad) * 1.5);
+    margin-bottom: 1.25rem;
   }
 
   .pricing-features li {
-    color: var(--text);
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    line-height: 1.4;
+    color: var(--text);
+    line-height: 1.45;
   }
 
-  .pricing-features li.muted {
-    color: var(--text-weaker);
+  .check {
+    display: inline-flex;
+    flex: none;
+    color: var(--text-strong);
+    font-family: var(--font-mono);
   }
 
-  .pricing-features li.muted .check,
-  .pricing-features li.muted .dash {
-    color: var(--text-weaker);
-  }
-
-  .pricing-cta {
-    display: block;
-    text-align: center;
-    margin-top: auto;
+  .pricing-cta,
+  .pricing-cta-secondary {
+    flex: 1 1 13rem;
+    justify-content: center;
   }
 
   .pricing-note {
-    margin-top: var(--vpad);
+    margin-top: 1rem;
+    font-size: 0.92rem;
+  }
+
+  .pricing-facts {
+    padding: 1.5rem;
+  }
+
+  .facts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 1rem;
+  }
+
+  .fact {
+    display: grid;
+    gap: 6px;
+    padding: 0.95rem;
+    border: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .fact span {
+    font-family: var(--font-mono);
     font-size: 12px;
+    text-transform: uppercase;
     color: var(--text-weak);
   }
 
-  /* ===== FAQ ===== */
-  .faq-section {
-    border-top: var(--bw) solid var(--border);
-  }
-
-  .faq-header {
-    padding: var(--padding);
-    padding-bottom: var(--vpad);
-  }
-
-  .faq-header h2 {
-    font-size: clamp(1.25rem, 3vw, 1.75rem);
-    font-weight: 500;
-    text-transform: uppercase;
+  .fact strong {
     color: var(--text-strong);
-    line-height: 1.25;
+    line-height: 1.5;
+    font-size: 0.98rem;
   }
 
   .faq-list {
@@ -687,7 +1197,7 @@ const pricing = {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-strong);
     text-transform: uppercase;
     letter-spacing: -0.01em;
@@ -698,7 +1208,7 @@ const pricing = {
   }
 
   .faq-item summary::after {
-    content: '+';
+    content: "+";
     flex-shrink: 0;
     font-family: var(--font-mono);
     font-size: 1.25rem;
@@ -712,29 +1222,23 @@ const pricing = {
 
   .faq-item p {
     margin-top: 12px;
-    color: var(--text);
-    line-height: 1.6;
     max-width: 48rem;
   }
 
-  /* ===== Footer ===== */
-  .footer {
-    border-top: var(--bw) solid var(--border);
-  }
-
   .footer-grid {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .footer-col {
-    flex: 1;
     padding: var(--vpad) var(--padding);
     text-align: center;
     text-transform: uppercase;
+    border-right: var(--bw) solid var(--border);
   }
 
-  .footer-col + .footer-col {
-    border-left: var(--bw) solid var(--border);
+  .footer-col:last-child {
+    border-right: none;
   }
 
   .footer-col a {
@@ -748,7 +1252,6 @@ const pricing = {
 
   .footer-bottom {
     border-top: var(--bw) solid var(--border);
-    padding: var(--vpad) var(--padding);
   }
 
   .footer-bottom p {
@@ -760,181 +1263,234 @@ const pricing = {
     color: var(--text-strong);
   }
 
-  /* ===== Responsive ===== */
-  @media (max-width: 60rem) {
-    .features-grid {
-      grid-template-columns: repeat(2, 1fr);
+  @media (max-width: 72rem) {
+    .nav {
+      flex-wrap: wrap;
     }
 
-    .feature-cell:nth-child(3n) {
+    .hero,
+    .demo-copy,
+    .pricing-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .proof-grid,
+    .features-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .feature-cell:nth-child(4n) {
       border-right: var(--bw) solid var(--border);
     }
 
     .feature-cell:nth-child(2n) {
       border-right: none;
     }
+  }
 
-    .feature-cell:nth-last-child(-n+2) {
-      border-bottom: var(--bw) solid var(--border);
+  @media (max-width: 52rem) {
+    .wins-grid,
+    .compare-grid,
+    .base-grid,
+    .facts-grid,
+    .footer-grid {
+      grid-template-columns: 1fr;
     }
 
-    .feature-cell:nth-last-child(-n+1) {
-      border-bottom: none;
+    .win,
+    .compare-card + .compare-card,
+    .base-card,
+    .footer-col {
+      border-right: none;
+      border-left: none;
+    }
+
+    .win,
+    .base-card,
+    .footer-col {
+      border-top: var(--bw) solid var(--border);
+    }
+
+    .wins-grid .win:first-child,
+    .base-grid .base-card:first-child,
+    .footer-grid .footer-col:first-child {
+      border-top: none;
     }
   }
 
   @media (max-width: 40rem) {
+    .nav-links {
+      display: none;
+    }
+
+    .nav-actions {
+      width: 100%;
+    }
+
+    .nav-actions .btn-primary,
+    .nav-actions .btn-secondary {
+      flex: 1 1 12rem;
+      justify-content: center;
+    }
+
+    .hero-title {
+      font-size: clamp(2rem, 14vw, 3.4rem);
+    }
+
+    .proof-grid,
     .features-grid {
       grid-template-columns: 1fr;
+    }
+
+    .feature-cell:nth-child(2n) {
+      border-right: none;
     }
 
     .feature-cell {
       border-right: none;
     }
 
-    .feature-cell:nth-child(3n) {
-      border-right: none;
+    .preview {
+      height: auto;
+      padding: 0 var(--padding) var(--padding);
     }
 
-    .feature-cell:nth-last-child(-n+2) {
-      border-bottom: var(--bw) solid var(--border);
+    .preview-sticky {
+      position: static;
+      top: auto;
+      height: auto;
+      padding: 0;
+      margin: 0;
     }
 
-    .feature-cell:last-child {
-      border-bottom: none;
-    }
-    .nav-links {
-      display: none;
-    }
-
-    .footer-grid {
-      flex-direction: column;
+    .preview-perspective {
+      perspective: none;
+      overflow: visible;
+      height: auto;
     }
 
-    .footer-col + .footer-col {
-      border-left: none;
-      border-top: var(--bw) solid var(--border);
+    .preview-frame {
+      height: auto;
+      aspect-ratio: 1.45 / 1;
+      transform: none;
+      opacity: 1;
     }
   }
 </style>
 
 <script>
-  const shell = document.getElementById('preview-shell');
-  const frame = document.getElementById('demo-frame') as HTMLIFrameElement | null;
-  const text = document.getElementById('preview-banner-text');
-  let boot = false;
-  let live = false;
-  let wait = 0;
+  const shell = document.getElementById("preview-shell")
+  const frame = document.getElementById("demo-frame") as HTMLIFrameElement | null
+  const text = document.getElementById("preview-banner-text")
+  let boot = false
+  let live = false
+  let wait = 0
 
   function start() {
-    if (boot || !shell || !frame) return;
-    const next = frame.dataset.src;
-    if (!next) return;
-    boot = true;
-    if (text) text.textContent = 'Loading live workspace\u2026';
+    if (boot || !shell || !frame) return
+    const next = frame.dataset.src
+    if (!next) return
+    boot = true
+    if (text) text.textContent = "Loading browser preview..."
     wait = window.setTimeout(() => {
-      if (!live && text) text.textContent = 'Still waking up the live workspace\u2026';
-    }, 3200);
-    frame.src = next;
+      if (!live && text) text.textContent = "Still loading the browser preview..."
+    }, 3200)
+    frame.src = next
   }
 
   function ready() {
-    live = true;
-    window.clearTimeout(wait);
-    shell?.classList.add('is-live');
-    if (text) text.textContent = 'Live workspace ready';
+    live = true
+    window.clearTimeout(wait)
+    shell?.classList.add("is-live")
+    if (text) text.textContent = "Browser preview ready"
   }
 
-  frame?.addEventListener('load', ready, { once: true });
+  frame?.addEventListener("load", ready, { once: true })
 
   if (shell && frame) {
-    if ('IntersectionObserver' in window) {
+    if ("IntersectionObserver" in window) {
       const io = new IntersectionObserver((entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        start();
-        io.disconnect();
-      }, { rootMargin: '280px 0px' });
-      io.observe(shell);
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        start()
+        io.disconnect()
+      }, { rootMargin: "280px 0px" })
+      io.observe(shell)
     }
 
-    if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(() => start(), { timeout: 1600 });
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(() => start(), { timeout: 1600 })
     } else {
-      window.setTimeout(() => start(), 900);
+      window.setTimeout(() => start(), 900)
     }
   }
 
-  // ===== Hero Scroll Animation (3D -> flat + bleed) =====
-  const heroFrame = document.getElementById('hero-frame');
-  const previewSection = document.querySelector<HTMLElement>('.preview');
-  const previewSticky = document.getElementById('preview-sticky');
+  const heroFrame = document.getElementById("hero-frame")
+  const previewSection = document.querySelector<HTMLElement>(".preview")
+  const previewSticky = document.getElementById("preview-sticky")
+  const small = window.matchMedia("(max-width: 40rem)")
 
-  if (heroFrame && previewSection && previewSticky) {
+  if (heroFrame && previewSection && previewSticky && !small.matches) {
     const ease = (t: number) =>
-      t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
 
     const getMaxBleed = () => {
-      const frameRect = previewSection.closest('.page-frame')?.getBoundingClientRect();
-      return frameRect ? frameRect.left + parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bw') || '2') : 0;
-    };
+      const frameRect = previewSection.closest(".page-frame")?.getBoundingClientRect()
+      return frameRect
+        ? frameRect.left + parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--bw") || "2")
+        : 0
+    }
 
-    let currentBleed = 0;
-    let targetBleed = 0;
-    let rafId = 0;
-    const LERP_SPEED = 0.04;
+    let currentBleed = 0
+    let targetBleed = 0
+    let rafId = 0
+    const speed = 0.05
 
     const animateBleed = () => {
-      const diff = targetBleed - currentBleed;
+      const diff = targetBleed - currentBleed
       if (Math.abs(diff) < 0.5) {
-        currentBleed = targetBleed;
+        currentBleed = targetBleed
       } else {
-        currentBleed += diff * LERP_SPEED;
-        rafId = requestAnimationFrame(animateBleed);
+        currentBleed += diff * speed
+        rafId = requestAnimationFrame(animateBleed)
       }
-      previewSticky.style.setProperty('--bleed', `${currentBleed}px`);
-    };
+      previewSticky.style.setProperty("--bleed", `${currentBleed}px`)
+    }
 
     const handleScroll = () => {
-      const rect = previewSection.getBoundingClientRect();
-      const windowH = window.innerHeight;
+      const rect = previewSection.getBoundingClientRect()
+      const windowH = window.innerHeight
+      const scrollable = Math.max(previewSection.offsetHeight - windowH, 1)
+      const scrolled = Math.min(Math.max(-rect.top, 0), scrollable)
+      const progress = scrolled / scrollable
 
-      const scrollable = Math.max(previewSection.offsetHeight - windowH, 1);
-      const scrolled = Math.min(Math.max(-rect.top, 0), scrollable);
-      const progress = scrolled / scrollable;
+      const intro = ease(Math.min(progress / 0.45, 1))
+      const translateY = 28 * (1 - intro)
+      const scale = 0.965 + 0.035 * intro
+      const rotateX = 1.6 * (1 - intro)
+      const opacity = 0.76 + 0.24 * intro
 
-      // 3D intro: 0 → 0.4
-      const introRaw = Math.min(progress / 0.4, 1);
-      const intro = ease(introRaw);
+      heroFrame.style.transform = `translateY(${translateY}px) scale(${scale}) rotateX(${rotateX}deg)`
+      heroFrame.style.opacity = String(opacity)
 
-      const translateY = 40 * (1 - intro);
-      const scale = 0.95 + 0.05 * intro;
-      const rotateX = 2 * (1 - intro);
-      const opacity = 0.7 + 0.3 * intro;
+      const sectionEnd = previewSection.offsetTop + previewSection.offsetHeight - windowH
+      const bleedP = sectionEnd > 0 ? Math.min(Math.max(window.scrollY / sectionEnd, 0), 1) : 0
+      const maxBleed = getMaxBleed()
 
-      heroFrame.style.transform = `translateY(${translateY}px) scale(${scale}) rotateX(${rotateX}deg)`;
-      heroFrame.style.opacity = String(opacity);
-
-      // Bleed from first scroll to end of preview section
-      const sectionEnd = previewSection.offsetTop + previewSection.offsetHeight - windowH;
-      const bleedP = sectionEnd > 0 ? Math.min(Math.max(window.scrollY / sectionEnd, 0), 1) : 0;
-      const maxBleed = getMaxBleed();
-
-      // expand 0→0.3 (very slow), hold 0.3→0.7, contract 0.7→1.0 (gradual)
       if (bleedP < 0.3) {
-        const t = bleedP / 0.3;
-        targetBleed = t * t * t * t * maxBleed; // quartic ease-in
+        const t = bleedP / 0.3
+        targetBleed = t * t * t * t * maxBleed
       } else if (bleedP < 0.7) {
-        targetBleed = maxBleed;
+        targetBleed = maxBleed
       } else {
-        const t = (bleedP - 0.7) / 0.3;
-        targetBleed = (1 - t * t) * maxBleed; // quadratic ease-out for gentle contraction
+        const t = (bleedP - 0.7) / 0.3
+        targetBleed = (1 - t * t) * maxBleed
       }
 
-      cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(animateBleed);
-    };
+      cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(animateBleed)
+    }
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true })
+    handleScroll()
   }
 </script>

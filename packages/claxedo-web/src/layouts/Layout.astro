@@ -1,17 +1,21 @@
 ---
 interface Props {
   title: string;
+  description?: string;
 }
 
-const { title } = Astro.props;
+const {
+  title,
+  description = "Claxedo is the desktop workspace for parallel AI coding. Run multiple coding agents, review changes, manage processes, and keep full workspace context visible, built on OpenCode.",
+} = Astro.props;
 ---
 
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="description" content="Claxedo — The parallel AI workspace built on OpenCode. Run multiple AI coding workflows at once with multi-pane layout, instant agent terminals, and workspace-aware AI context." />
-    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/svg+xml" href="/favicon-light.svg" media="(prefers-color-scheme: light)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

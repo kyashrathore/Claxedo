@@ -134,7 +134,6 @@ async function startApp() {
       { worktree: dashboardProject, expanded: true },
     ]
     const pageTabId = "tab-page-demo-001"
-    const terminalTabId = "tab-terminal-claude"
     const sessionTabId = "tab-ses-wt-001"
     const emptyPaneTabId = "tab-empty-pane-demo"
     const processTabId = "tab-process-demo"
@@ -162,14 +161,6 @@ async function startApp() {
         directory: demoProject,
         title: "Add Google OAuth provider",
         sessionId: "ses_demo_001",
-        closable: true,
-      },
-      {
-        id: terminalTabId,
-        type: "terminal",
-        directory: demoProject,
-        title: "Claude",
-        terminalId: "pty_demo_001",
         closable: true,
       },
       {
@@ -236,7 +227,7 @@ async function startApp() {
       ],
       split: { direction: "h", sizes: [1], focusedId: "g-default" },
       enabled: true,
-      terminalOwner: { [terminalTabId]: "pty_demo_001" },
+      terminalOwner: {},
       terminalAgentStatus: {},
       terminalAgentSeen: {},
       worktreeColorMap: colors,
@@ -318,25 +309,6 @@ async function startApp() {
           ],
           activeLayoutId: "layout-session-001",
         },
-        [terminalTabId]: {
-          layouts: [
-            {
-              id: "layout-terminal-001",
-              name: "default",
-              pane: { t: "leaf", id: "leaf-terminal-demo" },
-              contents: {
-                "leaf-terminal-demo": {
-                  type: "terminal",
-                  directory: demoProject,
-                  terminalId: "pty_demo_001",
-                  title: "Claude",
-                },
-              },
-              focus: "leaf-terminal-demo",
-            },
-          ],
-          activeLayoutId: "layout-terminal-001",
-        },
         "tab-ses-wt-002": {
           layouts: [
             {
@@ -403,18 +375,6 @@ async function startApp() {
           activeLayoutId: "layout-process-001",
         },
       },
-    })
-
-    // Pre-seed terminal tabs so they work when the terminal panel is opened.
-    // Terminal context uses base64Encode(directory) for the persist key, not the raw path.
-    // base64Encode("/home/demo/projects/my-app") = "L2hvbWUvZGVtby9wcm9qZWN0cy9teS1hcHA"
-    seed(Persist.workspace(demoProject, "terminal.v2"), {
-      active: "pty_demo_001",
-      all: [
-        { id: "pty_demo_001", title: "claude", titleNumber: 1 },
-        { id: "pty_demo_002", title: "codex", titleNumber: 2 },
-        { id: "pty_demo_003", title: "Terminal", titleNumber: 3 },
-      ],
     })
 
     // Start MSW with a hard timeout — never block rendering forever

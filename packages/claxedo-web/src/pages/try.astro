@@ -9,7 +9,7 @@ const appUrl = await shellUrl(import.meta.env.DEV);
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Try Claxedo — Browser Demo</title>
+    <title>Try Claxedo — Browser Preview</title>
     <link rel="icon" type="image/svg+xml" href="/favicon-light.svg" media="(prefers-color-scheme: light)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -51,8 +51,24 @@ const appUrl = await shellUrl(import.meta.env.DEV);
         border-radius: 12px;
         font-size: 0.75rem;
         font-weight: 500;
-        background: #0a2f0a;
-        color: #4ade80;
+        background: #2f2a0a;
+        color: #facc15;
+      }
+
+      .note {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        border-bottom: 1px solid #2a2a2a;
+        background: #131313;
+        color: #b8b8b8;
+        font-size: 0.82rem;
+        line-height: 1.5;
+      }
+
+      .note strong {
+        color: #f1f1f1;
       }
 
       #app-frame {
@@ -67,8 +83,13 @@ const appUrl = await shellUrl(import.meta.env.DEV);
     <div class="topbar">
       <a href="/">Claxedo</a>
       <span class="sep">/</span>
-      <span class="title">Try in Browser</span>
-      <span class="status">Demo</span>
+      <span class="title">Browser Preview</span>
+      <span class="status">Preview</span>
+    </div>
+
+    <div class="note">
+      <strong>Preview only.</strong>
+      <span>This browser experience uses demo data and mocked backend services. Real projects and agents run in the desktop app.</span>
     </div>
 
     <iframe id="app-frame" name="claxedo-demo" src={`${appUrl}?demo=1&embed=1`}></iframe>
