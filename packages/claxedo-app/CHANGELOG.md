@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.58] - 2026-03-08
+
+### Added
+
+### Changed
+
+### Fixed
+- Declared the demo `msw` dependency so clean release builds resolve `msw/browser` during app bundling
+- Restored Sentry observability typecheck compatibility in `packages/opencode`
+
 ## [0.0.57] - 2026-03-08
 
 ### Added
@@ -83,7 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Context scope issues between app-scope and directory-scope providers
 - Terminal state persistence across workspace navigation
 
-[Unreleased]: https://github.com/kyashrathore/opencode/compare/claxedo-v0.0.57...HEAD
+[Unreleased]: https://github.com/kyashrathore/opencode/compare/claxedo-v0.0.58...HEAD
+[0.0.58]: https://github.com/kyashrathore/opencode/releases/tag/claxedo-v0.0.58
 [0.0.57]: https://github.com/kyashrathore/opencode/releases/tag/claxedo-v0.0.57
 [0.0.8]: https://github.com/kyashrathore/opencode/releases/tag/claxedo-v0.0.8
 [0.0.4]: https://github.com/kyashrathore/opencode/compare/claxedo-v0.0.3...claxedo-v0.0.4
