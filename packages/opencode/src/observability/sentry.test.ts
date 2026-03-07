@@ -208,13 +208,13 @@ describe("onError filtering logic", () => {
   //   ) { captureException(...) }
 
   class NotFoundError extends Error {
-    name = "NotFoundError"
+    override name = "NotFoundError"
   }
   class HTTPException extends Error {
-    name = "HTTPException"
+    override name = "HTTPException"
   }
   class ModelNotFoundError extends Error {
-    name = "ModelNotFoundError"
+    override name = "ModelNotFoundError"
   }
 
   function shouldCapture(err: Error): boolean {

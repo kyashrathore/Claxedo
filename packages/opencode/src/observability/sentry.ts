@@ -6,13 +6,13 @@ const SENTRY_DSN =
 let initialized = false
 
 export function initSentry(): void {
+  const host = process.env.SENTRY_SERVER_NAME || undefined
   Sentry.init({
     dsn: SENTRY_DSN,
     environment: process.env.SENTRY_ENVIRONMENT || "production",
     release: process.env.SENTRY_RELEASE || undefined,
     tracesSampleRate: 0,
     sampleRate: 1.0,
-    serverName: process.env.SENTRY_SERVER_NAME || undefined,
     ignoreErrors: [
       "ECONNRESET",
       "EPIPE",
@@ -25,6 +25,7 @@ export function initSentry(): void {
         client: "desktop-sidecar",
         os_platform: process.platform,
         os_arch: process.arch,
+        ...(host ? { server_name: host } : {}),
       }
       return event
     },

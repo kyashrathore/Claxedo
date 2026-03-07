@@ -1,6 +1,6 @@
 {
   "name": "@opencode-ai/claxedo-app",
-  "version": "0.0.57",
+  "version": "0.0.58",
   "description": "Cloud extension package for OpenCode (Claxedo)",
   "type": "module",
   "exports": {
@@ -125,7 +125,7 @@
     "ghostty-web": "0.4.0",
     "luxon": "catalog:",
     "mermaid": "catalog:",
-
+    "msw": "^2.12.10",
     "remeda": "catalog:",
     "shell-quote": "^1.8.3",
     "solid-js": "catalog:",
