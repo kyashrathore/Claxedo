@@ -23,6 +23,8 @@ export type DebugLogger = ReturnType<typeof createDebugLogger>
 export type PreviewLoaderDeps = {
   /** SDK base URL getter */
   sdkUrl: () => string
+  /** Whether session API calls should run */
+  serverHealthy: () => boolean
   /** Global sync child store factory */
   globalSyncChild: (
     directory: string,
@@ -40,6 +42,8 @@ export type PreviewLoaderDeps = {
 
 export function createPreviewLoader(deps: PreviewLoaderDeps) {
   const inflight = new Set<string>()
+  const fail = new Map<string, number>()
+  const failMs = 10_000
   const [terminalSession, setTerminalSession] = createStore<Record<string, TerminalSessionPreview | null>>({})
   const [terminalLog, setTerminalLog] = createStore<Record<string, TerminalLogSummary | null>>({})
 
@@ -100,7 +104,19 @@ export function createPreviewLoader(deps: PreviewLoaderDeps) {
       }
       return
     }
+    if (!deps.serverHealthy()) {
+      if (deps.debug.enabled(2)) {
+        deps.debug.verbose("summary prefetch skipped", { reason: "server-unhealthy", directory, sessionId })
+      }
+      return
+    }
     const key = `session:${directory}:${sessionId}`
+    if ((fail.get(key) ?? 0) > Date.now()) {
+      if (deps.debug.enabled(2)) {
+        deps.debug.verbose("summary prefetch skipped", { reason: "session-failed", directory, sessionId })
+      }
+      return
+    }
     if (inflight.has(key)) {
       if (deps.debug.enabled(2)) {
         deps.debug.verbose("summary prefetch skipped", { reason: "session-inflight", directory, sessionId })
@@ -132,6 +148,7 @@ export function createPreviewLoader(deps: PreviewLoaderDeps) {
     void deps
       .fetchSessionMessages({ directory, sessionID: sessionId, limit: 8 })
       .then((result) => {
+        fail.delete(key)
         const rows = (result.data ?? []).filter((row) => !!row?.info?.id)
         if (!rows.length) {
           setStore("message", sessionId, [])
@@ -164,6 +181,7 @@ export function createPreviewLoader(deps: PreviewLoaderDeps) {
         }
       })
       .catch((error) => {
+        fail.set(key, Date.now() + failMs)
         deps.debug.log("summary prefetch failed", { directory, sessionId, error: errorText(error) })
       })
       .finally(() => {

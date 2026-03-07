@@ -26,6 +26,7 @@ import DefaultLayout from "@/pages/layout"
 import DirectoryLayout from "@/pages/directory-layout"
 import { ErrorPage } from "@/pages/error"
 import { getExtensions } from "@opencode-ai/app-shared"
+import { isDemoMode } from "@claxedo/utils/api"
 
 const Home = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
@@ -154,6 +155,8 @@ function AuthenticatedLayout(
   })()
 
   const resolveDefaultUrl = () => {
+    // Demo mode: use current origin so MSW service worker intercepts all requests
+    if (isDemoMode()) return window.location.origin
     if (props.defaultServer) return props.defaultServer as string
     if (stored) return stored
     if (location.hostname.includes("opencode.ai")) return "http://localhost:4096"

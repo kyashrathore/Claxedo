@@ -26,6 +26,9 @@ type PendingPrompt = {
 }
 
 const pending = new Map<string, PendingPrompt>()
+const isDemoMode = () =>
+  typeof window !== "undefined" &&
+  (((window as any).__CLAXEDO_DEMO__ as boolean | undefined) ?? new URLSearchParams(window.location.search).has("demo"))
 
 type PromptSubmitInput = {
   info: Accessor<{ id: string } | undefined>
@@ -490,6 +493,31 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const send = async () => {
       const ok = await waitForWorktree()
       if (!ok) return
+      if (isDemoMode()) {
+        const response = await client.session.prompt({
+          sessionID: session.id,
+          agent,
+          model,
+          messageID,
+          parts: requestParts,
+          variant,
+          ...(system ? { system } : {}),
+        })
+        if (response.error) throw response.error
+        const reply = response.data
+        if (reply?.info && reply.parts) {
+          sync.session.optimistic.add({
+            directory: sessionDirectory,
+            sessionID: session.id,
+            message: reply.info,
+            parts: reply.parts,
+          })
+        }
+        if (sessionDirectory === projectDirectory) {
+          sync.set("session_status", session.id, { type: "idle" })
+        }
+        return
+      }
       await client.session.promptAsync({
         sessionID: session.id,
         agent,

@@ -487,8 +487,8 @@ function SplitResizeHandle(props: { index: number }) {
     <div
       class={
         isH()
-          ? "w-1 shrink-0 bg-border-weak-base cursor-col-resize hover:bg-blue-500/40 active:bg-blue-500/60 transition-colors"
-          : "h-1 shrink-0 bg-border-weak-base cursor-row-resize hover:bg-blue-500/40 active:bg-blue-500/60 transition-colors"
+          ? "w-px shrink-0 bg-border-weak-base cursor-col-resize hover:bg-blue-500/40 active:bg-blue-500/60 transition-colors"
+          : "h-px shrink-0 bg-border-weak-base cursor-row-resize hover:bg-blue-500/40 active:bg-blue-500/60 transition-colors"
       }
       onPointerDown={handlePointerDown}
     />

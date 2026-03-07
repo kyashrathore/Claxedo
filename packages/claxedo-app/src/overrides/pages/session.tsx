@@ -28,6 +28,7 @@ import type { State } from "@/context/global-sync/types"
 import { useSDK } from "@/context/sdk"
 import { usePrompt } from "@/context/prompt"
 import { useComments } from "@/context/comments"
+import { useServer } from "@/context/server"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { usePermission } from "@/context/permission"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -334,6 +335,7 @@ export default function Page() {
   const local = useLocal()
   const file = useFile()
   const sync = useSync()
+  const server = useServer()
   const terminal = useTerminal()
   const dialog = useDialog()
   const fileComponent = useFileComponent()
@@ -1084,14 +1086,45 @@ export default function Page() {
 
   createEffect(
     on(
-      () => [sdk.directory, params.id] as const,
-      ([, id], prev) => {
-        if (!id || id === "new") return
+      () => [sdk.directory, params.id, server.healthy()] as const,
+      ([, id, healthy], prev) => {
+        if (!id || id === "new") {
+          if (debug.enabled(2)) {
+            debug.verbose("sync skip", {
+              reason: "invalid-session",
+              directory: sdk.directory,
+              id,
+              healthy,
+            })
+          }
+          return
+        }
+        if (healthy !== true) {
+          if (debug.enabled(2)) {
+            debug.verbose("sync skip", {
+              reason: "server-unhealthy",
+              directory: sdk.directory,
+              id,
+              healthy,
+            })
+          }
+          return
+        }
         // Skip sync only when transitioning from "new" → real ID during session
         // creation. The optimistic message is already in the store and SSE will
         // deliver real messages. On page refresh prev is undefined — we must sync.
-        if (prev?.[1] === "new") return
-        sync.session.sync(id)
+        if (prev?.[1] === "new") {
+          if (debug.enabled(2)) {
+            debug.verbose("sync skip", {
+              reason: "from-new",
+              directory: sdk.directory,
+              id,
+            })
+          }
+          return
+        }
+        debug.log("sync start", { directory: sdk.directory, id })
+        void sync.session.sync(id)
       },
     ),
   )

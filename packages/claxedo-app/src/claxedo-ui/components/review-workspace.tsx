@@ -20,7 +20,7 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 
-import { useSync, useFile, useComments } from "@opencode-ai/claxedo-app"
+import { useSync, useFile, useComments, useServer } from "@opencode-ai/claxedo-app"
 import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
@@ -79,6 +79,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const sync = useSync()
   const file = useFile()
   const comments = useComments()
+  const server = useServer()
   const sdk = useSDK()
   const language = useLanguage()
   const prompt = usePrompt()
@@ -305,7 +306,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   // Sync session data
   createEffect(() => {
     const id = props.sessionId
-    if (!id || id === "new") return
+    if (!id || id === "new" || server.healthy() !== true) return
     void sync.session.sync(id)
     if (activeMode() !== "session") return
     if (sync.data.session_diff[id] !== undefined) return

@@ -666,8 +666,11 @@ export default function Layout(props: ParentProps) {
   const prefetchChunk = 200
   const prefetchConcurrency = 1
   const prefetchPendingLimit = 6
+  const prefetchFailMs = 10_000
   const prefetchToken = { value: 0 }
   const prefetchQueues = new Map<string, PrefetchQueue>()
+  const prefetchFail = new Map<string, number>()
+  const prefetchKey = (directory: string, sessionID: string) => `${directory}\n${sessionID}`
 
   const PREFETCH_MAX_SESSIONS_PER_DIR = 10
   const prefetchedByDir = new Map<string, Set<string>>()
@@ -732,9 +735,11 @@ export default function Layout(props: ParentProps) {
 
   async function prefetchMessages(directory: string, sessionID: string, token: number) {
     const [store, setStore] = globalSync.child(directory, { bootstrap: false })
+    const key = prefetchKey(directory, sessionID)
 
     return retry(() => globalSDK.client.session.messages({ directory, sessionID, limit: prefetchChunk }))
       .then((messages) => {
+        prefetchFail.delete(key)
         if (prefetchToken.value !== token) return
         if (!lruFor(directory).has(sessionID)) return
 
@@ -762,7 +767,9 @@ export default function Layout(props: ParentProps) {
           }
         })
       })
-      .catch(() => undefined)
+      .catch(() => {
+        prefetchFail.set(key, Date.now() + prefetchFailMs)
+      })
   }
 
   const pumpPrefetch = (directory: string) => {
@@ -786,8 +793,11 @@ export default function Layout(props: ParentProps) {
   }
 
   const prefetchSession = (session: Session, priority: "high" | "low" = "low") => {
+    if (server.healthy() !== true) return
+
     const directory = session.directory
     if (!directory) return
+    if ((prefetchFail.get(prefetchKey(directory, session.id)) ?? 0) > Date.now()) return
 
     const [store] = globalSync.child(directory, { bootstrap: false })
     const cached = untrack(() => store.message[session.id] !== undefined)

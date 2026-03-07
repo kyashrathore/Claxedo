@@ -66,6 +66,9 @@ vi.mock("@opencode-ai/claxedo-app", () => ({
   useLanguage: () => ({
     t: (key: string) => key,
   }),
+  useServer: () => ({
+    healthy: () => true,
+  }),
 }))
 
 vi.mock("@opencode-ai/ui/theme", () => ({
@@ -118,11 +121,24 @@ vi.mock("@opencode-ai/ui/dropdown-menu", () => {
 })
 
 vi.mock("@opencode-ai/ui/popover", () => ({
-  Popover: (props: any) => <>{props.children}</>,
+  Popover: (props: any) => (
+    <>
+      {props.trigger}
+      {props.children}
+    </>
+  ),
 }))
 
 vi.mock("@opencode-ai/ui/list", () => ({
-  List: () => <div />,
+  List: (props: any) => (
+    <div>
+      {props.items.map((item: any) => (
+        <button data-list-item={item.directory} onClick={() => props.onSelect?.(item)}>
+          {props.children(item)}
+        </button>
+      ))}
+    </div>
+  ),
 }))
 
 vi.mock("../../components/settings-terminals", () => ({
@@ -261,6 +277,33 @@ describe("TopTabBar separators", () => {
 })
 
 describe("Workspace button click behavior", () => {
+  test("workspace bar shows only the current workspace with the Current label", () => {
+    const projects = [
+      {
+        id: "p1",
+        name: "Project",
+        worktree: "/ws/main",
+        workspaces: [
+          { id: "w1", directory: "/ws/main", name: "main" },
+          { id: "w2", directory: "/ws/feature", name: "feature" },
+        ],
+      },
+    ]
+
+    const { container, getByText, queryByText } = render(() => (
+      <WorkspaceBar
+        projects={projects as any}
+        defaultDirectory="/ws/main"
+        pinnedDirectory={null}
+      />
+    ))
+
+    expect(getByText("Current:")).toBeTruthy()
+    expect(container.querySelector('[data-workspace-button="/ws/main"]')).toBeTruthy()
+    expect(container.querySelector('[data-workspace-button="/ws/feature"]')).toBeFalsy()
+    expect(queryByText("feature")).toBeNull()
+  })
+
   test("clicking workspace name selects workspace and does not toggle process pane", () => {
     const onWorktreeClick = vi.fn()
     const projects = [
@@ -289,5 +332,40 @@ describe("Workspace button click behavior", () => {
     expect(onWorktreeClick).toHaveBeenCalledWith("p1", "/ws/main")
     expect(claxedo.processPane.requestToggle).not.toHaveBeenCalled()
     expect(claxedo.processPane.requestOpen).not.toHaveBeenCalled()
+  })
+
+  test("selecting a workspace from overflow switches to that workspace", () => {
+    const onWorktreeClick = vi.fn()
+
+    const { container } = render(() => (
+      <WorkspaceBar
+        projects={[
+          {
+            id: "p1",
+            name: "Project",
+            worktree: "/ws/main",
+            workspaces: [{ id: "w1", directory: "/ws/main", name: "main" }],
+          },
+        ] as any}
+        allProjects={[
+          {
+            id: "p1",
+            name: "Project",
+            worktree: "/ws/main",
+            sandboxes: ["/ws/feature"],
+          },
+        ] as any}
+        defaultDirectory="/ws/main"
+        pinnedDirectory={null}
+        onWorktreeClick={onWorktreeClick}
+      />
+    ))
+
+    const item = container.querySelector('[data-list-item="/ws/feature"]') as HTMLElement | null
+    expect(item).toBeTruthy()
+    fireEvent.click(item!)
+
+    expect(onWorktreeClick).toHaveBeenCalledTimes(1)
+    expect(onWorktreeClick).toHaveBeenCalledWith("p1", "/ws/feature")
   })
 })

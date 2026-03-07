@@ -300,18 +300,17 @@ describe("workspace bar integration with layout store", () => {
     }
   })
 
-  test("prefix label changes when pin state changes", () => {
+  test("prefix label stays as Current across pin state changes", () => {
     createRoot((dispose) => {
-      // Simulate pinned state transitions matching store behavior
       const states: Array<{ pinned: string | null; expected: string }> = [
-        { pinned: null, expected: "Default workspace" },
-        { pinned: "/p1/feature", expected: "Filtered by" },
-        { pinned: null, expected: "Default workspace" },
-        { pinned: "/p1/bugfix", expected: "Filtered by" },
+        { pinned: null, expected: "Current" },
+        { pinned: "/p1/feature", expected: "Current" },
+        { pinned: null, expected: "Current" },
+        { pinned: "/p1/bugfix", expected: "Current" },
       ]
 
       for (const { pinned, expected } of states) {
-        const prefix = pinned ? "Filtered by" : "Default workspace"
+        const prefix = "Current"
         expect(prefix).toBe(expected)
       }
       dispose()

@@ -19,7 +19,7 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Popover } from "@opencode-ai/ui/popover"
 import { List } from "@opencode-ai/ui/list"
-import { useLanguage } from "@opencode-ai/claxedo-app"
+import { useLanguage, useServer } from "@opencode-ai/claxedo-app"
 import { useTheme } from "@opencode-ai/ui/theme"
 import { getFilename } from "@opencode-ai/util/path"
 import { getTerminalCommands } from "../../components/settings-terminals"
@@ -449,7 +449,7 @@ function SortableTab(props: {
       ref={root}
       data-tab-id={props.tab.id}
       data-active={props.isActive ? "" : undefined}
-      class="group relative flex items-center h-10 cursor-pointer flex-shrink-0 select-none transition-all duration-200"
+      class="group relative flex items-center h-10 cursor-pointer flex-shrink-0 select-none transition-[background-color,opacity] duration-200"
       classList={{
         "opacity-50": sortable.isActiveDraggable,
         "pl-2 pr-0": true,
@@ -662,10 +662,12 @@ export function TopTabBar(props: TopTabBarProps) {
     }
     return Array.from(groups.values()).flat()
   })
+  const server = useServer()
 
   const { terminalSession, ensureSessionMessages, ensureTerminalSession } =
     createPreviewLoader({
       sdkUrl: () => globalSDK.url,
+      serverHealthy: () => server.healthy() === true,
       globalSyncChild: (dir, opts) => globalSync.child(dir, opts),
       fetchSessionMessages: (params) => globalSDK.client.session.messages(params),
       debug: tabbarDebug,
@@ -1410,11 +1412,22 @@ function WorkspaceBarProjectGroup(props: {
 }
 
 /**
- * Workspace bar showing projects and their workspaces.
- * Always displays all workspaces — no hover animation or collapsed state.
+ * Workspace bar showing the current project/workspace context.
+ * The full workspace list remains available from the overflow menu.
  */
 export function WorkspaceBar(props: WorkspaceBarProps) {
-  const prefix = createMemo(() => (props.pinnedDirectory ? "Filtered by" : "Default workspace"))
+  const prefix = createMemo(() => "Current")
+  const current = createMemo(() => props.pinnedDirectory ?? props.defaultDirectory)
+  const currentProjects = createMemo(() => {
+    const dir = current()
+    if (!dir) return []
+
+    return props.projects.flatMap((project) => {
+      const ws = project.workspaces.find((item) => item.directory === dir)
+      if (!ws) return []
+      return [{ ...project, workspaces: [ws] }]
+    })
+  })
   const showWorkspaceActions = createMemo(
     () =>
       !!(
@@ -1433,7 +1446,7 @@ export function WorkspaceBar(props: WorkspaceBarProps) {
         <span class="shrink-0 text-[13px] font-medium text-text-weak mr-2 whitespace-nowrap">{prefix()}:</span>
         <div class="flex items-center gap-0 min-w-0 overflow-hidden shrink">
           <div class="flex items-center gap-0 min-w-0 overflow-x-auto no-scrollbar">
-            <For each={props.projects}>
+            <For each={currentProjects()}>
               {(project, index) => (
                 <>
                   <Show when={index() > 0}>
@@ -1504,17 +1517,6 @@ export function WorkspaceBar(props: WorkspaceBarProps) {
                       return list
                     })
 
-                    // Calculate currently visible workspaces (both explicit and implicit)
-                    const visibleSet = createMemo(() => {
-                      const s = new Set<string>()
-                      for (const p of props.projects) {
-                        for (const w of p.workspaces) {
-                          s.add(w.directory)
-                        }
-                      }
-                      return s
-                    })
-
                     return (
                       <List
                         items={items()}
@@ -1523,8 +1525,11 @@ export function WorkspaceBar(props: WorkspaceBarProps) {
                         search={{ placeholder: "Filter workspaces...", autofocus: true }}
                         onSelect={(item) => {
                           if (!item) return
-                          const isVisible = visibleSet().has(item.directory)
-                          props.onToggleWorkspace?.(item.directory, !isVisible)
+                          if (props.onWorktreeClick) {
+                            props.onWorktreeClick(item.projectId, item.directory)
+                            return
+                          }
+                          props.onToggleWorkspace?.(item.directory, true)
                         }}
                         children={(item) => (
                           <div class="flex items-center gap-2 w-full text-left">
@@ -1545,7 +1550,7 @@ export function WorkspaceBar(props: WorkspaceBarProps) {
                                 <Icon name="trash" size="small" />
                               </button>
                             </Show>
-                            <Show when={visibleSet().has(item.directory)}>
+                            <Show when={current() === item.directory}>
                               <span class="inline-flex items-center justify-center shrink-0">
                                 <Icon name="check-small" />
                               </span>

@@ -1,0 +1,14 @@
+{
+  "name": "@anthropic-ai/opencode-core",
+  "version": "0.0.1",
+  "description": "OpenCode core server as a JS bundle",
+  "main": "index.js",
+  "bin": {
+    "opencode": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js serve --port 3000 --hostname 0.0.0.0"
+  },
+  "files": ["index.js"],
+  "license": "MIT"
+}

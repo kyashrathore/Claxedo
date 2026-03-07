@@ -38,6 +38,8 @@ import { createRouteIntentAdapter } from "./context/claxedo-layout/route-intent"
 import { buildTabContextSnapshot, createTabContextSyncAdapter } from "./context/claxedo-layout/tab-context-sync"
 
 import { useAgentHooks } from "../agent-hooks/listener"
+import { isDemoMode } from "../utils/api"
+import { DemoTourController } from "../demo/tour-controller"
 
 function decodeDir(encoded: string | undefined) {
   if (!encoded) return
@@ -464,6 +466,7 @@ export function ClaxedoLayout(props: ParentProps) {
   return (
     <ClaxedoLayoutProvider>
       <Toast.Region />
+      {isDemoMode() && <DemoTourController />}
       <ClaxedoStateBridge>
         <ClaxedoLayoutContent>{props.children}</ClaxedoLayoutContent>
       </ClaxedoStateBridge>
