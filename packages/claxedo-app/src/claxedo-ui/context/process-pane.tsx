@@ -8,7 +8,7 @@
  * Lives inside DirectoryScope, outside GroupContentRenderer.
  */
 
-import { batch, createEffect, createRenderEffect, createSignal, on, onCleanup } from "solid-js"
+import { batch, createEffect, createRenderEffect, createSignal, on, onCleanup, onMount } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useSDK } from "@/context/sdk"
@@ -58,6 +58,11 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     const debug = createDebugLogger("layout.process", "layout:process", {
       legacyKey: "opencode.debug.terminal",
     })
+    const inst = Math.random().toString(36).slice(2, 7)
+    const seed = {
+      tabId: props?.tabId ?? null,
+      dir: sdk.directory,
+    }
     const terminalCtx = useOptionalTerminal()
     const [loaded, setLoaded] = createSignal(false)
 
@@ -77,6 +82,66 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
         processes: {},
         paneHeight: DEFAULT_PANE_HEIGHT,
       }),
+    )
+    const sig = () =>
+      Object.values(store.processes)
+        .map((proc) => `${proc.configId}:${proc.status}:${proc.ptyId ?? "-"}`)
+        .sort()
+        .join("|")
+    const snap = () => {
+      const tabId = props?.tabId ?? null
+      const groupId = tabId ? (claxedo.findTabGroup(tabId) ?? null) : null
+      const group = groupId ? claxedo.groupTabs(groupId) : undefined
+      const tab = tabId ? group?.items().find((item) => item.id === tabId) : undefined
+      return {
+        inst,
+        seedTabId: seed.tabId,
+        seedDir: seed.dir,
+        dir: sdk.directory,
+        tabId,
+        groupId,
+        hasTab: !!tab,
+        tabType: tab?.type ?? null,
+        activeId: group?.activeId() ?? null,
+        ready: ready(),
+        loaded: loaded(),
+        configs: store.configs.length,
+        procSig: sig(),
+        leaves: tabId
+          ? claxedo.select.multiPaneLeafView(tabId).map((leaf) => ({
+              id: leaf.id,
+              type: leaf.content?.type ?? null,
+              processId: leaf.content?.type === "process" ? (leaf.content.processId ?? null) : null,
+            }))
+          : [],
+      }
+    }
+
+    onMount(() => {
+      debug.verbose("provider mount", snap())
+    })
+    createEffect(
+      on(
+        () => [sdk.directory, props?.tabId ?? "", claxedo.findTabGroup(props?.tabId ?? "") ?? null] as const,
+        ([dir, tabId, groupId], prev) => {
+          debug.verbose("provider anchor", {
+            inst,
+            prev: prev
+              ? {
+                  dir: prev[0] || null,
+                  tabId: prev[1] || null,
+                  groupId: prev[2],
+                }
+              : null,
+            next: {
+              dir: dir || null,
+              tabId: tabId || null,
+              groupId,
+            },
+          })
+        },
+        { defer: true },
+      ),
     )
 
     // Process tab visibility: the process tab is "open" when it's the active tab.
@@ -850,8 +915,8 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
               exitedAt: undefined,
             })
             sync()
-            const out = await run(`restart ${configId}`, () => client.start(configId, { interactive: false }))
-            const proc = out ? read(configId, out, existing, undefined, false) : restore(configId, existing)
+            const out = await run(`restart ${configId}`, () => client.start(configId, { interactive: true }))
+            const proc = out ? read(configId, out, existing) : restore(configId, existing)
             if (proc?.ptyId && !claxedo.processPane.isActive()) {
               claxedo.processPane.requestOpen()
             }
@@ -969,8 +1034,8 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
         pendingTabOpens.add(configId)
         void (async () => {
           try {
-            const out = await run(`open ${configId}`, () => client.start(configId, { interactive: false }))
-            const started = out ? read(configId, out, store.processes[configId], undefined, false) : undefined
+            const out = await run(`open ${configId}`, () => client.start(configId, { interactive: true }))
+            const started = out ? read(configId, out, store.processes[configId]) : undefined
             if (started?.ptyId) {
               pendingTabOpens.delete(configId)
               openTerminalTab(configId, started.ptyId)
@@ -1015,8 +1080,22 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
       ),
     )
 
+    createEffect(
+      on(
+        () => [props?.tabId ?? "", loaded(), ready(), store.configs.length, sig()] as const,
+        () => {
+          debug.verbose("provider state", snap())
+        },
+        { defer: true },
+      ),
+    )
+
     onCleanup(() => {
-      claxedo.processPane.setRunning(sdk.directory, false)
+      debug.log("provider cleanup", snap())
+      queueMicrotask(() => {
+        claxedo.processPane.setRunning(sdk.directory, false)
+        debug.verbose("provider cleanup settled", snap())
+      })
     })
 
     return api

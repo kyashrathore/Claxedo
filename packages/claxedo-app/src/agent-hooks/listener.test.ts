@@ -98,6 +98,11 @@ mock.module("../overrides/utils/debug", () => ({
   createDebugLogger: () => noopDebug,
   getDebugLevel: () => 0,
   isDebugEnabled: () => false,
+  setDebugTrace: () => {},
+  patchDebugTrace: () => {},
+  clearDebugTrace: () => {},
+  readDebugTraceHistory: () => [],
+  clearDebugTraceHistory: () => {},
 }))
 
 // The layout mock uses the real store via _test-helper

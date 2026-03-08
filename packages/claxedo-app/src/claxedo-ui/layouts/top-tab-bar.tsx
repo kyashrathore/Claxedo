@@ -607,12 +607,12 @@ function SortableTab(props: {
 
 export function TabDragOverlay(props: { tab: TabItem | undefined }) {
   return (
-    <Show when={props.tab}>
+    <Show when={props.tab} keyed>
       {(tab) => (
         <div class="flex items-center h-10 px-2 cursor-pointer flex-shrink-0 max-w-[200px] min-w-[100px] select-none bg-surface-raised-base shadow-[0_4px_8px_rgba(0,0,0,0.2)]">
-          <Icon name={TAB_ICONS[tab().type]} size="small" class="hidden" />
+          <Icon name={TAB_ICONS[tab.type]} size="small" class="hidden" />
           <span class="text-[13px] font-[450] text-text-weak whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0">
-            {tab().title}
+            {tab.title}
           </span>
         </div>
       )}
@@ -864,17 +864,6 @@ export function TopTabBar(props: TopTabBarProps) {
       leafId,
     })
   }
-  const visibleWithMeta = createMemo(() => {
-    const list = visibleTabs()
-    return list.map((tab, index) => {
-      if (index === 0) return { tab, showDivider: false }
-      const prev = list[index - 1]
-      return {
-        tab,
-        showDivider: tabScopeDir(prev) !== tabScopeDir(tab),
-      }
-    })
-  })
   const showPaneButtons = createMemo(() => !!(wt().default() || active()?.directory))
 
   const droppable = createDroppable(`group-zone-${props.groupId ?? "default"}`)
@@ -884,14 +873,8 @@ export function TopTabBar(props: TopTabBarProps) {
       claxedo.dispatch({ type: "SplitFocusRequested", groupId: props.groupId })
     }
     const tabItem = tabs().items().find((t) => t.id === tabId)
-    if (tabItem?.pinned) {
-      tabbarDebug.log("close ignored: tab is pinned", { tabId })
-      return
-    }
-    if (closingTabs.has(tabId)) {
-      tabbarDebug.log("close ignored: already closing", { tabId })
-      return
-    }
+    if (tabItem?.pinned) return
+    if (closingTabs.has(tabId)) return
     closingTabs.add(tabId)
     const tab = tabs()
       .items()
@@ -904,12 +887,7 @@ export function TopTabBar(props: TopTabBarProps) {
             ),
           )
         : undefined
-    tabbarDebug.log("close requested", {
-      tabId,
-      tabType: tab?.type,
-      terminalIds: terminalIds ? [...terminalIds] : [],
-    })
-    tabbarDebug.log("close execute", { tabId })
+    tabbarDebug.log("close", { tabId, tabType: tab?.type })
     try {
       tabs().close(tabId)
     } catch (error) {
@@ -920,17 +898,15 @@ export function TopTabBar(props: TopTabBarProps) {
       closingTabs.delete(tabId)
       return
     }
-    props.onTabClose?.(tabs().active())
-    if (terminalIds && terminalIds.size > 0 && terminal) {
-      queueMicrotask(() => {
+    const next = tabs().active()
+    queueMicrotask(() => {
+      props.onTabClose?.(next)
+      if (terminalIds && terminalIds.size > 0 && terminal) {
         for (const id of terminalIds) {
           void terminal.close(id)
         }
-      })
-    }
-    queueMicrotask(() => {
+      }
       closingTabs.delete(tabId)
-      tabbarDebug.log("close complete", { tabId })
     })
   }
 
@@ -1029,31 +1005,34 @@ export function TopTabBar(props: TopTabBarProps) {
         class="flex items-center gap-0 min-w-0 overflow-x-auto overflow-y-hidden flex-1 no-scrollbar"
       >
         <SortableProvider ids={tabIds()}>
-          <For each={visibleWithMeta()}>
-            {(entry, i) => {
-              const tab = entry.tab
+          <For each={visibleTabs()}>
+            {(tab, i) => {
               const color = wtBorderColor(claxedo.getWorktreeColor(tabScopeDir(tab)))
+              const showDivider = () => {
+                const idx = i()
+                if (idx === 0) return false
+                const prev = visibleTabs()[idx - 1]
+                return !!prev && tabScopeDir(prev) !== tabScopeDir(tab)
+              }
               return (
-                <>
-                  <div class="flex items-center" style={{ "box-shadow": `inset 0 -1px 0 0 ${color}` }}>
-                    <Show when={entry.showDivider}>
-                      <div class="w-px h-10 bg-border-weak-base flex-shrink-0" />
-                    </Show>
-                    <SortableTab
-                      tab={tab}
-                      isActive={tabs().activeId() === tab.id}
-                      onClose={handleTabClose}
-                      onSelect={props.onTabSelect}
-                      onSetActive={handleTabSetActive}
-                      onDblClick={handleTabDblClick}
-                      onContextMenu={handleTabContextMenu}
-                      worktreeColor={color}
-                      paneSummariesFn={paneSummaries}
-                      paneStatusFn={paneStatus}
-                      onPaneFocus={(leafId) => handlePaneFocus(tab.id, leafId)}
-                    />
-                  </div>
-                </>
+                <div class="flex items-center" style={{ "box-shadow": `inset 0 -1px 0 0 ${color}` }}>
+                  <Show when={showDivider()}>
+                    <div class="w-px h-10 bg-border-weak-base flex-shrink-0" />
+                  </Show>
+                  <SortableTab
+                    tab={tab}
+                    isActive={tabs().activeId() === tab.id}
+                    onClose={handleTabClose}
+                    onSelect={props.onTabSelect}
+                    onSetActive={handleTabSetActive}
+                    onDblClick={handleTabDblClick}
+                    onContextMenu={handleTabContextMenu}
+                    worktreeColor={color}
+                    paneSummariesFn={paneSummaries}
+                    paneStatusFn={paneStatus}
+                    onPaneFocus={(leafId) => handlePaneFocus(tab.id, leafId)}
+                  />
+                </div>
               )
             }}
           </For>
@@ -1097,7 +1076,7 @@ export function TopTabBar(props: TopTabBarProps) {
       </Show>
 
       {/* Tab context menu - portaled to body to escape overflow clipping */}
-      <Show when={contextMenu()}>
+      <Show when={contextMenu()} keyed>
         {(menu) => {
           const groupId = () => props.groupId
           const isSplit = () => claxedo.split.active()
@@ -1107,7 +1086,7 @@ export function TopTabBar(props: TopTabBarProps) {
             const gId = groupId()
             return all.find((g) => g.id !== gId)?.id
           }
-          const menuTab = () => tabs().items().find((t) => t.id === menu().tabId)
+          const menuTab = () => tabs().items().find((t) => t.id === menu.tabId)
           const isMenuTabPinned = () => !!menuTab()?.pinned
           return (
             <Portal>
@@ -1121,7 +1100,7 @@ export function TopTabBar(props: TopTabBarProps) {
               />
               <div
                 class="fixed z-[301] bg-background-base border border-border-weak-base rounded-md shadow-lg py-1 min-w-[180px]"
-                style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
+                style={{ left: `${menu.x}px`, top: `${menu.y}px` }}
               >
                 <Show when={!isSplit()}>
                   <button
@@ -1132,7 +1111,7 @@ export function TopTabBar(props: TopTabBarProps) {
                       if (gId) {
                         claxedo.dispatch({
                           type: "TabMoveAcrossGroupsRequested",
-                          tabId: menu().tabId,
+                          tabId: menu.tabId,
                           fromGroupId: gId,
                           toGroupId: "new",
                         })
@@ -1153,7 +1132,7 @@ export function TopTabBar(props: TopTabBarProps) {
                       if (gId && other) {
                         claxedo.dispatch({
                           type: "TabMoveAcrossGroupsRequested",
-                          tabId: menu().tabId,
+                          tabId: menu.tabId,
                           fromGroupId: gId,
                           toGroupId: other,
                         })
@@ -1168,7 +1147,7 @@ export function TopTabBar(props: TopTabBarProps) {
                   type="button"
                   class="w-full px-3 py-1.5 text-left text-[13px] text-text-base hover:bg-surface-base-hover transition-colors"
                   onClick={() => {
-                    const tabId = menu().tabId
+                    const tabId = menu.tabId
                     if (isMenuTabPinned()) {
                       tabs().patch(tabId, { pinned: false, closable: true })
                     } else {
@@ -1184,7 +1163,7 @@ export function TopTabBar(props: TopTabBarProps) {
                     type="button"
                     class="w-full px-3 py-1.5 text-left text-[13px] text-text-base hover:bg-surface-base-hover transition-colors"
                     onClick={() => {
-                      handleTabClose(menu().tabId)
+                      handleTabClose(menu.tabId)
                       closeContextMenu()
                     }}
                   >

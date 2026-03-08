@@ -1,5 +1,4 @@
 {
-  "$schema": "./processes.schema.json",
   "processes": [
     {
       "id": "proc_019ccbf08315ku2i7cnn3l",
@@ -12,7 +11,8 @@
       "maxRestarts": 3,
       "port": {
         "name": "run-opencode-patched-server",
-        "inject": "--port"
+        "inject": "--port",
+        "preferred": 4096
       }
     },
     {
@@ -29,7 +29,12 @@
       "maxRestarts": 3,
       "dependsOn": [
         "opencode-server"
-      ]
+      ],
+      "port": {
+        "name": "claxedo-app",
+        "inject": "PORT",
+        "preferred": 4444
+      }
     }
   ]
 }

@@ -5,7 +5,7 @@
  * compact pane header with split/create actions.
  */
 
-import { For, Show, Switch, Match, Suspense, lazy, createMemo, createEffect, createSignal, on, type Accessor } from "solid-js"
+import { For, Show, Switch, Match, Suspense, lazy, createMemo, createEffect, createSignal, on, onCleanup, onMount, type Accessor } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -180,9 +180,43 @@ function SessionPaneBusConsumer(props: { leafId: string; tabId: string; sessionI
 function ProcessLeafContent(props: { processId: string; directory: string }) {
   const pp = useProcessPane()
   const dialog = useDialog()
+  const debug = createDebugLogger("layout.process", "layout:process", {
+    legacyKey: "opencode.debug.terminal",
+  })
+  const inst = Math.random().toString(36).slice(2, 7)
 
   const config = createMemo(() => pp.configs().find((c) => c.id === props.processId))
   const process = createMemo(() => pp.processForConfig(props.processId))
+  const snap = () => ({
+    inst,
+    processId: props.processId,
+    dir: props.directory,
+    loaded: pp.loaded(),
+    configId: config()?.id ?? null,
+    status: process()?.status ?? null,
+    ptyId: process()?.ptyId ?? null,
+    configs: pp.configs().length,
+  })
+
+  onMount(() => {
+    debug.verbose("process leaf mount", snap())
+  })
+
+  onCleanup(() => {
+    debug.log("process leaf cleanup", snap())
+    queueMicrotask(() => {
+      debug.verbose("process leaf cleanup settled", snap())
+    })
+  })
+  createEffect(
+    on(
+      () => [pp.loaded(), config()?.id ?? null, process()?.status ?? null, process()?.ptyId ?? null] as const,
+      () => {
+        debug.verbose("process leaf state", snap())
+      },
+      { defer: true },
+    ),
+  )
 
   const openEditDialog = () => {
     const cfg = config()

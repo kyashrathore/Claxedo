@@ -87,6 +87,18 @@ export function createClaxedoLayoutFacade(input: {
     findTabGroup,
     multiPane: multiPaneState,
   })
+  // Closing a tab removes it from the tab list in the same transaction.
+  // Deferring multi-pane cleanup avoids tearing down a still-rendered pane
+  // subtree from the close hook itself, which can wedge the UI on process tabs.
+  const clearLater = (tabId: string) => {
+    queueMicrotask(() => {
+      // Guard: only clear if the tab was actually removed from items.
+      // If setGroupItems silently failed (idx === -1), the tab is still live
+      // and clearing its multi-pane state would cause content to vanish.
+      if (findTabGroup(tabId)) return
+      multiPaneState.clearTab(tabId)
+    })
+  }
 
   const tabTypes = createTabTypeRegistry()
 
@@ -100,7 +112,7 @@ export function createClaxedoLayoutFacade(input: {
       }),
     onClose: (tabId) => {
       terminalState.clearTerminalTabState(tabId)
-      multiPaneState.clearTab(tabId)
+      clearLater(tabId)
     },
     onReopen: (tab, helper) => {
       const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -125,7 +137,7 @@ export function createClaxedoLayoutFacade(input: {
   })
 
   tabTypes.register("multi-pane", {
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onAdd: (tab) => multiPaneState.initTab(tab.id, tab.directory),
   })
 
@@ -137,7 +149,7 @@ export function createClaxedoLayoutFacade(input: {
         sessionId: tab.sessionId,
         title: tab.title,
       }),
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
     mergeDedupeKey: (tab) => (tab.sessionId ? `session:${tab.sessionId}:${tab.directory}` : undefined),
   })
@@ -153,7 +165,7 @@ export function createClaxedoLayoutFacade(input: {
         reviewFromRef: tab.reviewFromRef,
         reviewToRef: tab.reviewToRef,
       }),
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
     mergeDedupeKey: (tab) =>
       tab.sessionId
@@ -181,7 +193,7 @@ export function createClaxedoLayoutFacade(input: {
           reviewToRef: tab.reviewToRef,
         }),
       ),
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
     mergeDedupeKey: (tab) =>
       tab.sessionId
@@ -204,7 +216,7 @@ export function createClaxedoLayoutFacade(input: {
         sessionId: tab.sessionId,
         title: tab.title,
       }),
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
     mergeDedupeKey: (tab) => (tab.sessionId ? `context:${tab.sessionId}:${tab.directory}` : undefined),
   })
@@ -217,7 +229,7 @@ export function createClaxedoLayoutFacade(input: {
         filePath: tab.filePath,
         title: tab.title,
       }),
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
   })
 
@@ -240,7 +252,7 @@ export function createClaxedoLayoutFacade(input: {
         title: tab.title,
       })
     },
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
   })
 
@@ -251,7 +263,7 @@ export function createClaxedoLayoutFacade(input: {
         tab.directory,
         processSessionLayout({ directory: tab.directory }),
       ),
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     excludeFromMerge: true,
     mergeDedupeKey: (tab) => `process:${tab.directory}`,
   })

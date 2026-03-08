@@ -10,7 +10,7 @@ mock.module("@/context/platform", () => ({
 describe("persisted storage", () => {
   beforeEach(() => {
     localStorage.clear()
-    delete (window as { __CLAXEDO_DEMO__?: boolean }).__CLAXEDO_DEMO__
+    window.location.href = "http://localhost/"
   })
 
   test("corrupted JSON is treated as missing for structured stores (and removed)", async () => {
@@ -86,7 +86,7 @@ describe("persisted storage", () => {
   })
 
   test("demo mode keeps persisted app state out of localStorage", async () => {
-    ;(window as { __CLAXEDO_DEMO__?: boolean }).__CLAXEDO_DEMO__ = true
+    window.location.href = "http://localhost/demo/"
 
     const real = JSON.stringify({
       list: ["https://real.example"],

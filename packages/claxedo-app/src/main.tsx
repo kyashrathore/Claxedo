@@ -33,14 +33,6 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
 const authFetch: typeof fetch = async (input, init) => {
   const token = await getAuthToken()
 
-  // Debug: log message endpoint calls in demo mode
-  if (isDemoMode()) {
-    const url = typeof input === "string" ? input : input instanceof Request ? input.url : ""
-    if (url.includes("/message")) {
-      console.log(`[demo-fetch] ${init?.method ?? "GET"} ${url}`)
-    }
-  }
-
   // Handle Request object input - headers are on the Request, not in init
   const existingHeaders = input instanceof Request ? input.headers : init?.headers
   const headers = new Headers(existingHeaders)
@@ -107,8 +99,6 @@ const platform: Platform = {
 async function startApp() {
   // In demo mode, start MSW to mock server responses before rendering
   if (isDemoMode()) {
-    const embed = isEmbedMode()
-
     for (const key of Object.keys(localStorage)) {
       if (!key.startsWith("opencode.demo.")) continue
       localStorage.removeItem(key)
@@ -374,17 +364,10 @@ async function startApp() {
       },
     })
 
-    // Start MSW with a hard timeout — never block rendering forever
-    console.log("[demo] starting MSW...")
+    // Start MSW with a hard timeout so demo rendering is never blocked forever.
     const mswReady = (async () => {
-      try {
-        const regs = await navigator.serviceWorker.getRegistrations()
-        for (const reg of regs) await reg.unregister()
-        console.log("[demo] cleared stale service workers")
-      } catch {}
       const { startWorker } = await import("./demo/browser")
       await startWorker({ onUnhandledRequest: "warn", quiet: false })
-      console.log("[demo] MSW started")
     })()
     const timeout = new Promise<void>((r) => {
       setTimeout(() => {

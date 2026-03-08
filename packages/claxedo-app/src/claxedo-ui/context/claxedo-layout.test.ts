@@ -659,6 +659,28 @@ describe("worktree isolation between groups", () => {
       dispose()
     }
   })
+
+  test("closing process tab defers multi-pane cleanup until after tab removal", async () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { g1 } = splitInto2(api)
+      const tabs = api.groupTabs(g1)
+
+      const id = tabs.addProcess("/workspace-a")
+      expect(api.multiPane.getState(id)).toBeDefined()
+
+      tabs.close(id)
+
+      expect(tabs.items().find((tab: any) => tab.id === id)).toBeUndefined()
+      expect(api.multiPane.getState(id)).toBeDefined()
+
+      await new Promise<void>((resolve) => queueMicrotask(resolve))
+
+      expect(api.multiPane.getState(id)).toBeUndefined()
+    } finally {
+      dispose()
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------

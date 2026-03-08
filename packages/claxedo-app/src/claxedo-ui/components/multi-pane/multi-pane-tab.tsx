@@ -7,7 +7,7 @@
  * multi-pane state get lazy-initialized on first render.
  */
 
-import { Show, createMemo, createEffect, on } from "solid-js"
+import { Show, createMemo, createEffect, on, onMount, onCleanup } from "solid-js"
 import { useClaxedoLayout } from "../../context/claxedo-layout"
 import { processSessionLayout, reviewSessionLayout } from "../../context/claxedo-layout/multi-pane"
 import { GenericFlatPaneRenderer } from "./generic-flat-pane-renderer"
@@ -20,33 +20,61 @@ export function MultiPaneTab(props: { tabId: string; groupId: string }) {
   const debug = createDebugLogger("layout.process", "layout:process", {
     legacyKey: "opencode.debug.terminal",
   })
+  const inst = Math.random().toString(36).slice(2, 7)
   const state = createMemo(() => claxedo.multiPane.getState(props.tabId))
   const tab = createMemo(() => {
     const tabs = claxedo.groupTabs(props.groupId)
     return tabs.items().find((t) => t.id === props.tabId)
   })
+  const kind = createMemo<NonNullable<ReturnType<typeof tab>>["type"] | null>((prev) => tab()?.type ?? prev ?? null, null)
+  const dir = createMemo<string>((prev) => {
+    const live = tab()?.directory
+    if (live && live !== "__process__") return live
+    const leaf = claxedo.select.multiPaneLeafView(props.tabId).find((item) => item.content?.type === "process")
+    const next = leaf?.content?.directory
+    if (next && next !== "__process__") return next
+    return prev ?? ""
+  }, "")
+  const snap = () => ({
+    inst,
+    groupId: props.groupId,
+    tabId: props.tabId,
+    liveType: tab()?.type ?? null,
+    liveDir: tab()?.directory ?? null,
+    kind: kind(),
+    hasTab: !!tab(),
+    hasState: !!state(),
+    processDir: dir() || null,
+    activeId: claxedo.groupTabs(props.groupId).activeId() ?? null,
+    leaves: claxedo.select.multiPaneLeafView(props.tabId).map((leaf) => ({
+      id: leaf.id,
+      type: leaf.content?.type ?? null,
+      processId: leaf.content?.type === "process" ? (leaf.content.processId ?? null) : null,
+    })),
+  })
 
-  // Determine if this tab is a process tab
-  const isProcessTab = createMemo(() => tab()?.type === "process")
+  onMount(() => {
+    debug.verbose("multi-pane mount", snap())
+  })
 
-  const processDirectory = createMemo(() => {
-    const dir = tab()?.directory ?? ""
-    // "__process__" is a placeholder used before a real worktree default is set — not a valid path
-    if (!dir || dir === "__process__") return ""
-    return dir
+  onCleanup(() => {
+    debug.log("multi-pane cleanup", snap())
+    queueMicrotask(() => {
+      debug.verbose("multi-pane cleanup settled", snap())
+    })
   })
 
   createEffect(
     on(
-      () => [props.groupId, props.tabId, tab()?.type, tab()?.directory, !!state(), processDirectory()] as const,
-      ([groupId, tabId, type, dir, ready, processDir]) => {
+      () => [props.groupId, props.tabId, kind(), tab()?.directory, !!state(), dir()] as const,
+      ([groupId, tabId, type, liveDir, ready, processDir]) => {
         if (type !== "process") return
         if (!ready) {
           debug.log("tab spinner", {
             groupId,
             tabId,
             type,
-            dir: dir ?? null,
+            dir: liveDir ?? null,
             processDir: processDir || null,
             reason: "missing-multi-pane-state",
           })
@@ -64,9 +92,46 @@ export function MultiPaneTab(props: { tabId: string; groupId: string }) {
           groupId,
           tabId,
           type,
-          dir: dir ?? null,
+          dir: liveDir ?? null,
           processDir: null,
           reason: "invalid-process-directory",
+        })
+      },
+      { defer: true },
+    ),
+  )
+  createEffect(
+    on(
+      () =>
+        [
+          !!state(),
+          kind() === "process",
+          dir(),
+          tab()?.id ?? null,
+          tab()?.type ?? null,
+          tab()?.directory ?? null,
+        ] as const,
+      ([ready, isProcess, dir, id, type, tabDir], prev) => {
+        debug.verbose("tab branch", {
+          inst,
+          prev: prev
+            ? {
+                ready: prev[0],
+                isProcess: prev[1],
+                dir: prev[2] || null,
+                id: prev[3],
+                type: prev[4],
+                tabDir: prev[5],
+              }
+            : null,
+          next: {
+            ready,
+            isProcess,
+            dir: dir || null,
+            id,
+            type,
+            tabDir,
+          },
         })
       },
       { defer: true },
@@ -146,18 +211,18 @@ export function MultiPaneTab(props: { tabId: string; groupId: string }) {
     <div class="flex flex-col h-full">
       <Show when={state()}>
         <Show
-          when={isProcessTab()}
+          when={kind() === "process"}
           fallback={paneRenderer()}
         >
           <Show
-            when={processDirectory()}
+            when={dir()}
             fallback={
               <div class="flex items-center justify-center h-full text-text-weak">
                 <div class="size-6 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />
               </div>
             }
           >
-            <SDKProvider directory={() => processDirectory()}>
+            <SDKProvider directory={() => dir()}>
               <ProcessPaneProvider tabId={props.tabId}>
                 {paneRenderer()}
               </ProcessPaneProvider>

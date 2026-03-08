@@ -177,6 +177,9 @@ function ClaxedoLayoutContent(props: ParentProps) {
     legacyKey: "opencode.debug.terminal",
   })
   const flowLog = (...args: unknown[]) => flowDebug.log(...args)
+  const syncDebug = createDebugLogger("layout.tab-sync", "layout:tab-sync", {
+    legacyKey: "opencode.debug.terminal",
+  })
 
   // Register process pane command
   command.register(() => [
@@ -210,6 +213,32 @@ function ClaxedoLayoutContent(props: ParentProps) {
     if (tabDir && tabDir !== "__pages__") return tabDir
     return routeWorkspaceId()
   })
+  const snap = () => {
+    const groupId = claxedo.split.focusedId()
+    const tab = groupId ? claxedo.groupTabs(groupId).active() : undefined
+    return {
+      params: {
+        dir: params.dir ?? null,
+        tabId: params.tabId ?? null,
+        id: params.id ?? null,
+        pageId: params.pageId ?? null,
+      },
+      groupId: groupId ?? null,
+      routeDir: routeWorkspaceId() ?? null,
+      activeDir: activeWorkspaceId() ?? null,
+      tab: tab
+        ? {
+            id: tab.id,
+            type: tab.type,
+            directory: tab.directory,
+            sessionId: tab.sessionId,
+            pageId: tab.pageId,
+            terminalId: tab.terminalId,
+            filePath: tab.filePath,
+          }
+        : null,
+    }
+  }
 
   // Get active project (the project that contains the current workspace)
   const activeProjectId = createMemo(() => {
@@ -286,26 +315,52 @@ function ClaxedoLayoutContent(props: ParentProps) {
     if (!dir) return
     if (initialTabEnsured()) return
     if (claxedo.topTabs.activeId()) {
+      syncDebug.log("ensure skipped: active tab exists", {
+        dir,
+        activeId: claxedo.topTabs.activeId(),
+        ...snap(),
+      })
       setInitialTabEnsured(true)
       return
     }
     if (params.tabId) {
+      syncDebug.log("ensure skipped: route already targets tab", {
+        dir,
+        ...snap(),
+      })
       setInitialTabEnsured(true)
       return
     }
     if (params.id) {
+      syncDebug.log("ensure skipped: route already targets session", {
+        dir,
+        ...snap(),
+      })
       setInitialTabEnsured(true)
       return
     }
     if (params.pageId) {
+      syncDebug.log("ensure skipped: route already targets page", {
+        dir,
+        ...snap(),
+      })
       setInitialTabEnsured(true)
       return
     }
     if (claxedo.isAutoTabSuppressed(dir)) {
+      syncDebug.log("ensure skipped: auto tab suppressed", {
+        dir,
+        ...snap(),
+      })
       setInitialTabEnsured(true)
       return
     }
     const id = claxedo.topTabs.addSession(dir, "new", "New Session")
+    syncDebug.log("ensure created tab", {
+      dir,
+      id: id ?? null,
+      ...snap(),
+    })
     if (id) claxedo.topTabs.setActive(id)
     setInitialTabEnsured(true)
   })
@@ -321,11 +376,42 @@ function ClaxedoLayoutContent(props: ParentProps) {
         return claxedo.groupTabs(focusedId).active()
       },
       (tab) => {
+        syncDebug.log("focused tab changed", {
+          next: tab
+            ? {
+                id: tab.id,
+                type: tab.type,
+                directory: tab.directory,
+                sessionId: tab.sessionId,
+                pageId: tab.pageId,
+                terminalId: tab.terminalId,
+              }
+            : null,
+          ...snap(),
+        })
         if (tab) {
           const dir = tab.directory === "__pages__" ? activeWorkspaceId() : tab.directory
-          if (!dir) return
+          if (!dir) {
+            syncDebug.log("navigate skipped: tab has no directory", {
+              tabId: tab.id,
+              ...snap(),
+            })
+            return
+          }
           claxedo.allowAutoTab(dir)
-          if (params.tabId === tab.id) return
+          if (params.tabId === tab.id) {
+            syncDebug.verbose("navigate skipped: route already in sync", {
+              dir,
+              tabId: tab.id,
+              ...snap(),
+            })
+            return
+          }
+          syncDebug.log("navigate to active tab", {
+            dir,
+            to: `/${base64Encode(dir)}/tab/${tab.id}`,
+            ...snap(),
+          })
           navigate(`/${base64Encode(dir)}/tab/${tab.id}`, { replace: true })
         } else if (params.tabId) {
           // All tabs closed — update URL bar to workspace root without triggering
@@ -333,9 +419,18 @@ function ClaxedoLayoutContent(props: ParentProps) {
           const dir = activeWorkspaceId()
           if (dir) {
             claxedo.suppressAutoTab(dir)
+            syncDebug.log("replace route with workspace root", {
+              dir,
+              to: `/${base64Encode(dir)}`,
+              ...snap(),
+            })
             window.history.replaceState(null, "", `/${base64Encode(dir)}`)
+            return
           }
+          syncDebug.log("replace skipped: no workspace for empty tab set", snap())
+          return
         }
+        syncDebug.verbose("focused tab cleared with no route tab", snap())
       },
       { defer: true },
     ),
@@ -437,9 +532,28 @@ function ClaxedoLayoutContent(props: ParentProps) {
         onNewReview={handleNewReview}
         onTabSelect={handleTabSelect}
         onTabClose={(nextTab) => {
+          syncDebug.log("tabbar close callback", {
+            next: nextTab
+              ? {
+                  id: nextTab.id,
+                  type: nextTab.type,
+                  directory: nextTab.directory,
+                  sessionId: nextTab.sessionId,
+                  pageId: nextTab.pageId,
+                  terminalId: nextTab.terminalId,
+                }
+              : null,
+            ...snap(),
+          })
           if (nextTab?.directory && nextTab.directory !== "__pages__") {
+            syncDebug.log("navigate from tabbar close", {
+              to: `/${base64Encode(nextTab.directory)}/tab/${nextTab.id}`,
+              ...snap(),
+            })
             navigate(`/${base64Encode(nextTab.directory)}/tab/${nextTab.id}`, { replace: true })
+            return
           }
+          syncDebug.log("tabbar close left route unchanged", snap())
         }}
         onDeleteSession={handleDeleteSession}
         onArchiveSession={handleArchiveSession}

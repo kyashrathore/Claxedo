@@ -73,23 +73,6 @@ export function createTabActions(
         existingCount: getItems().length,
       })
 
-      // Diagnostic: detect focus-steal when adding a session tab while terminal is active
-      const currentActive = getActiveId()
-      if (currentActive && tab.type === "session") {
-        const currentTab = getItems().find((t) => t.id === currentActive)
-        if (currentTab?.type === "terminal") {
-          // eslint-disable-next-line no-console
-          console.warn(
-            "[tab-actions] FOCUS STEAL via add(): new session tab while terminal active",
-            {
-              from: { id: currentActive, type: currentTab.type, terminalId: currentTab.terminalId },
-              newTab: { id, type: tab.type, sessionId: (tab as { sessionId?: string }).sessionId },
-            },
-            new Error("stack trace"),
-          )
-        }
-      }
-
       batch(() => {
         setItems((items) => [...(items || []), newTab])
         setOrder((order) => [...(order || []), id])
@@ -313,7 +296,7 @@ export function createTabActions(
     },
 
     close(tabId: string) {
-      const items = getItems().map(copy)
+      const items = getItems()
       if (!items || !Array.isArray(items)) return
 
       const index = items.findIndex((t) => t.id === tabId)
@@ -346,7 +329,7 @@ export function createTabActions(
       const closedTabs = getClosedTabs().map(copy)
       const orderIndex = base.indexOf(tabId)
       const closed = (() => {
-        const entry = { ...tab, _closedOrderIndex: orderIndex >= 0 ? orderIndex : undefined }
+        const entry = { ...copy(tab), _closedOrderIndex: orderIndex >= 0 ? orderIndex : undefined }
         const list = [entry, ...(closedTabs ?? [])]
         if (list.length <= MAX_CLOSED_TABS) return list
         return list.slice(0, MAX_CLOSED_TABS)
@@ -380,27 +363,26 @@ export function createTabActions(
         closedTabs: closed.length,
         nextActive: active,
       })
-      // Diagnostic: detect if closing a terminal tab results in a session tab becoming active
-      if (tab.type === "terminal" && active) {
-        const nextActiveTab = filteredItems.find((t) => t.id === active)
-        if (nextActiveTab?.type === "session") {
-          // eslint-disable-next-line no-console
-          console.warn(
-            "[tab-actions] FOCUS STEAL via close(): terminal closed → session activated",
-            {
-              closed: { id: tabId, type: tab.type, terminalId: tab.terminalId },
-              next: { id: active, type: nextActiveTab.type, sessionId: nextActiveTab.sessionId },
-            },
-            new Error("stack trace"),
-          )
+      const apply = (stage: string, fn: () => void) => {
+        try {
+          fn()
+        } catch (error) {
+          debug.log("close stage failed", {
+            trace,
+            tabId,
+            stage,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          })
+          throw error
         }
       }
       batch(() => {
-        onClose?.(tab, filteredItems, active)
-        setItems(() => filteredItems)
-        setOrder(() => order)
-        setClosedTabs(() => closed)
-        setActiveId(active)
+        apply("onClose", () => onClose?.(tab, filteredItems, active))
+        apply("setItems", () => setItems(() => filteredItems))
+        apply("setOrder", () => setOrder(() => order))
+        apply("setClosedTabs", () => setClosedTabs(() => closed))
+        apply("setActiveId", () => setActiveId(active))
       })
       debug.log("close end", { trace, tabId })
     },
@@ -438,23 +420,6 @@ export function createTabActions(
     },
 
     setActive(tabId: string) {
-      // Diagnostic: detect focus-steal from terminal → session
-      const currentActive = getActiveId()
-      if (currentActive && currentActive !== tabId) {
-        const currentTab = getItems().find((t) => t.id === currentActive)
-        const nextTab = getItems().find((t) => t.id === tabId)
-        if (currentTab?.type === "terminal" && nextTab?.type === "session") {
-          // eslint-disable-next-line no-console
-          console.warn(
-            "[tab-actions] FOCUS STEAL: terminal → session",
-            {
-              from: { id: currentActive, type: currentTab.type, terminalId: currentTab.terminalId },
-              to: { id: tabId, type: nextTab.type, sessionId: nextTab.sessionId },
-            },
-            new Error("stack trace"),
-          )
-        }
-      }
       produceAll((draft) => {
         if (!draft || !draft.items) return
         const exists = draft.items.find((t) => t.id === tabId)

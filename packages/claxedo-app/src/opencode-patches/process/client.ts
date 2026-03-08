@@ -18,13 +18,6 @@ function link(baseUrl: string, directory: string, path: string) {
   return `${baseUrl}/process${path}${path.includes("?") ? "&" : "?"}${q}`
 }
 
-function head(directory: string) {
-  return {
-    "Content-Type": "application/json",
-    "x-opencode-directory": directory,
-  }
-}
-
 async function body(res: Response) {
   if (typeof res.text !== "function") {
     if (typeof res.json !== "function") return undefined
@@ -84,12 +77,14 @@ export function createProcessClient(input: Input) {
   const fetch = input.fetch ?? globalThis.fetch.bind(globalThis)
 
   async function req(path: string, init?: RequestInit) {
+    const headers = new Headers(init?.headers)
+    headers.set("x-opencode-directory", input.directory)
+    if (init?.body !== undefined && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json")
+    }
     const res = await fetch(link(input.baseUrl, input.directory, path), {
       ...init,
-      headers: {
-        ...head(input.directory),
-        ...(init?.headers as Record<string, string> | undefined),
-      },
+      headers,
     })
     return { res, raw: await body(res) }
   }

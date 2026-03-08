@@ -12,6 +12,7 @@ import { DialogDeleteWorkspace } from "../components/dialogs"
 import type { ProjectItem, WorkspaceItem } from "../layouts/rail-sidebar"
 import type { WorkspaceBarItem } from "../layouts/top-tab-bar"
 import { getAuthToken } from "../../utils/auth-client"
+import { Worktree as WorktreeState } from "@/utils/worktree"
 import type { ActionProps, Nav } from "./shared"
 import { findProjectForWorkspace, message } from "./shared"
 
@@ -94,7 +95,7 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
     const ext = getExtensions()
     const worktree = project.worktree
 
-    const onWorktreeCreated = (created: string, name: string) => {
+    const onWorktreeCreated = async (created: string, name: string, wait = false) => {
       props.flowLog("workspace created", {
         projectId: project.id,
         created,
@@ -104,10 +105,41 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
         routeTab: props.params.tabId,
       })
 
-      props.globalSync.child(created)
+      const item = {
+        id: created,
+        directory: created,
+        name,
+        projectWorktree: worktree,
+        canDelete: true,
+      } satisfies WorkspaceBarItem
+
+      if (wait) WorktreeState.pending(created)
+      const [child] = props.globalSync.child(created)
       props.claxedo.workspaceRecency.recordAccess(project.id, created)
       props.claxedo.worktree.setPinned(null)
       props.claxedo.worktree.setDefault(created)
+
+      if (wait) {
+        const result = await WorktreeState.wait(created)
+        if (result.status === "failed") {
+          showToast({
+            title: "Failed to create worktree",
+            description: result.message,
+            variant: "error",
+          })
+          return
+        }
+
+        if (child.status === "loading") {
+          await new Promise<void>((resolve) => {
+            const id = setInterval(() => {
+              if (child.status === "loading") return
+              clearInterval(id)
+              resolve()
+            }, 100)
+          })
+        }
+      }
 
       const tabId = props.claxedo.topTabs.addSession(created, "new", "New Session")
       if (tabId) props.claxedo.topTabs.setActive(tabId)
@@ -119,13 +151,7 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
           tabId,
         })
 
-      return {
-        id: created,
-        directory: created,
-        name,
-        projectWorktree: worktree,
-        canDelete: true,
-      }
+      return item
     }
 
     const handleError = (err: unknown) => {
@@ -163,7 +189,7 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
       const result = await props.globalSDK.client.worktree.create({ directory: worktree, worktreeCreateInput: {} })
       const created = result.data?.directory
       const name = result.data?.name
-      if (created) return onWorktreeCreated(created, name ?? getFilename(created))
+      if (created) return onWorktreeCreated(created, name ?? getFilename(created), true)
     } catch (err) {
       handleError(err)
     }
