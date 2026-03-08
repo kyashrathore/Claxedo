@@ -17,8 +17,8 @@ type PersistTarget = {
 
 const LEGACY_STORAGE = "default.dat"
 const LOCAL_PREFIX = "opencode."
-const GLOBAL_STORAGE = storageName("opencode.global.dat")
 const fallback = { disabled: false }
+const demo = new Map<string, string>()
 
 const CACHE_MAX_ENTRIES = 500
 const CACHE_MAX_BYTES = 8 * 1024 * 1024
@@ -199,6 +199,10 @@ function storageName(name: string) {
   return `${LOCAL_PREFIX}demo.${name.slice(LOCAL_PREFIX.length)}`
 }
 
+function globalStorage() {
+  return storageName("opencode.global.dat")
+}
+
 function workspaceStorage(dir: string) {
   const head = (dir ?? "").slice(0, 12) || "workspace"
   const sum = checksum(dir) ?? "0"
@@ -310,13 +314,53 @@ function localStorageDirect(): SyncStorage {
   }
 }
 
+function memoryWithPrefix(prefix: string): SyncStorage {
+  const base = `${prefix}:`
+  const item = (key: string) => base + key
+  return {
+    getItem: (key) => demo.get(item(key)) ?? null,
+    setItem: (key, value) => {
+      demo.set(item(key), value)
+    },
+    removeItem: (key) => {
+      demo.delete(item(key))
+    },
+  }
+}
+
+function memoryDirect(): SyncStorage {
+  return {
+    getItem: (key) => demo.get(key) ?? null,
+    setItem: (key, value) => {
+      demo.set(key, value)
+    },
+    removeItem: (key) => {
+      demo.delete(key)
+    },
+  }
+}
+
+function webStorage(storage?: string): SyncStorage {
+  if (isDemoMode()) {
+    if (!storage) return memoryDirect()
+    return memoryWithPrefix(storage)
+  }
+  if (!storage) return localStorageDirect()
+  return localStorageWithPrefix(storage)
+}
+
+function webLegacy(): SyncStorage {
+  if (isDemoMode()) return memoryDirect()
+  return localStorageDirect()
+}
+
 export const Persist = {
   global(key: string, legacy?: string[]): PersistTarget {
-    return { storage: GLOBAL_STORAGE, key, legacy }
+    return { storage: globalStorage(), key, legacy }
   },
   serverGlobal(serverUrl: string, key: string, legacy?: string[]): PersistTarget {
     const serverSum = checksum(serverUrl) ?? "0"
-    return { storage: GLOBAL_STORAGE, key: `server:${serverSum}:${key}`, legacy }
+    return { storage: globalStorage(), key: `server:${serverSum}:${key}`, legacy }
   },
   workspace(dir: string, key: string, legacy?: string[]): PersistTarget {
     return { storage: workspaceStorage(dir), key: `workspace:${key}`, legacy }
@@ -351,6 +395,14 @@ export function rawPersistKey(target: { storage?: string; key: string }) {
   return `${target.storage}:${target.key}`
 }
 
+export function resetDemoPersisted() {
+  demo.clear()
+}
+
+export function setPersisted(target: { storage?: string; key: string }, value: unknown) {
+  webStorage(target.storage).setItem(target.key, JSON.stringify(value))
+}
+
 export function removePersisted(target: { storage?: string; key: string }) {
   const platform = usePlatform()
   const isDesktop = platform.platform === "desktop" && !!platform.storage
@@ -359,12 +411,7 @@ export function removePersisted(target: { storage?: string; key: string }) {
     return platform.storage?.(target.storage)?.removeItem(target.key)
   }
 
-  if (!target.storage) {
-    localStorageDirect().removeItem(target.key)
-    return
-  }
-
-  localStorageWithPrefix(target.storage).removeItem(target.key)
+  webStorage(target.storage).removeItem(target.key)
 }
 
 export function persisted<T>(
@@ -381,12 +428,11 @@ export function persisted<T>(
 
   const currentStorage = (() => {
     if (isDesktop) return platform.storage?.(config.storage)
-    if (!config.storage) return localStorageDirect()
-    return localStorageWithPrefix(config.storage)
+    return webStorage(config.storage)
   })()
 
   const legacyStorage = (() => {
-    if (!isDesktop) return localStorageDirect()
+    if (!isDesktop) return webLegacy()
     if (!config.storage) return platform.storage?.()
     return platform.storage?.(LEGACY_STORAGE)
   })()

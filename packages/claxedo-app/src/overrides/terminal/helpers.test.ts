@@ -1,5 +1,11 @@
-import { describe, expect, test, vi } from "bun:test"
+import { describe, expect, test, vi, mock } from "bun:test"
 import { setupKeyboardHandler, setupDropHandler } from "./helpers"
+
+const invoke = vi.fn()
+
+mock.module("@tauri-apps/api/core", () => ({
+  invoke,
+}))
 
 function key(input: { key: string; metaKey?: boolean; shiftKey?: boolean; ctrlKey?: boolean; altKey?: boolean }) {
   let prevented = false
@@ -104,6 +110,43 @@ function fakeContainer() {
 }
 
 describe("setupDropHandler", () => {
+  test("files-only Tauri drop saves file and writes escaped path", async () => {
+    const onWrite = vi.fn()
+    const container = fakeContainer()
+    const prev = (window as any).__TAURI__
+
+    invoke.mockReset()
+    invoke.mockResolvedValue("/tmp/image.png")
+    ;(window as any).__TAURI__ = {}
+
+    try {
+      setupDropHandler({} as never, container.el, { onWrite })
+
+      const dt = {
+        files: [new File(["hello"], "image.png", { type: "image/png" })],
+        getData: () => "",
+      }
+      const e = dropEvent(dt as unknown as DataTransfer)
+      container.dispatch("drop", e.event)
+
+      await new Promise((r) => setTimeout(r, 10))
+
+      expect(e.prevented()).toBe(true)
+      expect(e.stopped()).toBe(true)
+      expect(invoke).toHaveBeenCalledTimes(1)
+      expect(invoke).toHaveBeenCalledWith(
+        "save_dropped_file",
+        expect.objectContaining({
+          name: "image.png",
+        }),
+      )
+      expect(onWrite).toHaveBeenCalledTimes(1)
+      expect(onWrite.mock.calls[0][0]).toContain("/tmp/image.png")
+    } finally {
+      ;(window as any).__TAURI__ = prev
+    }
+  })
+
   test("files-only drop (Chrome/web) does NOT stopPropagation — event bubbles to global handler", async () => {
     const onWrite = vi.fn()
     const container = fakeContainer()

@@ -86,6 +86,15 @@ async function mockFetchFn(url: string, opts?: RequestInit): Promise<Response> {
     return new Promise<Response>(() => {})
   }
 
+  if (data && typeof (data as any).__status === "number") {
+    const status = (data as any).__status as number
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => data,
+    } as unknown as Response
+  }
+
   return {
     ok: true,
     status: 200,
@@ -119,6 +128,7 @@ function createMockClaxedoLayout() {
   let pendingProcessPtys = 1
 
   let crashedWhileClosed = false
+  const running = new Map<string, boolean>()
 
   // Mutable groups array for testing deferred tab cleanup
   let groups: MockGroup[] = []
@@ -142,6 +152,18 @@ function createMockClaxedoLayout() {
       crashedWhileClosed: () => crashedWhileClosed,
       setCrashedWhileClosed(v: boolean) {
         crashedWhileClosed = v
+      },
+      running(dir?: string) {
+        if (!dir) return false
+        return !!running.get(dir)
+      },
+      setRunning(dir: string | null | undefined, value: boolean) {
+        if (!dir) return
+        if (value) {
+          running.set(dir, true)
+          return
+        }
+        running.delete(dir)
       },
       pendingAction: () => null,
       clearPendingAction() {},
@@ -216,6 +238,7 @@ function createMockClaxedoLayout() {
     _getActiveTab: () => activeTabId,
     _getIsOpen: () => isOpen,
     _getCrashedWhileClosed: () => crashedWhileClosed,
+    _getRunning: (dir: string) => !!running.get(dir),
     _ownedPtys: ownedPtys,
     _setGroups(g: MockGroup[]) { groups = g },
     _getGroups: () => groups,
@@ -430,6 +453,20 @@ describe("initial state", () => {
     } finally {
       dispose()
     }
+  })
+
+  test("syncs running state by directory and clears it on dispose", async () => {
+    const { dispose } = createTestProcessPane({
+      "GET": () => ({
+        configs: [SAMPLE_CONFIG],
+        processes: [{ configId: "proc_abc123", ptyId: "pty_1", status: "running", restartCount: 0 }],
+      }),
+    })
+    await tick()
+    await tick()
+    expect(mockLayout._getRunning(DEFAULT_DIRECTORY)).toBe(true)
+    dispose()
+    expect(mockLayout._getRunning(DEFAULT_DIRECTORY)).toBe(false)
   })
 
   test("configs populates from server GET /process/ on mount", async () => {
@@ -900,17 +937,24 @@ describe("tab integration", () => {
     })
     try {
       await tick()
+      fetchState.responses["/start"] = () => ({
+        kind: "started",
+        process: {
+          configId: "proc_abc123",
+          status: "starting",
+          restartCount: 0,
+        },
+      })
 
       // No process running — openInTab should start and defer tab creation
       api.openInTab("proc_abc123")
 
+      await tick()
+
       // A start POST was sent
       const startCall = fetchState.calls.find((c) => c.url.includes("/start"))
       expect(startCall).toBeDefined()
-
-      // Wait for the async openInTab chain to resolve (postAction → applyProcess
-      // → pendingTabOpens.add) before emitting SSE
-      await tick()
+      expect(startCall?.body).toBeUndefined()
 
       // No tab yet (waiting for process.started)
       expect(mockLayout._addedTerminals).toHaveLength(0)
@@ -1081,6 +1125,7 @@ describe("state machine transitions", () => {
       const startCall = fetchState.calls.find((c) => c.url.includes("/start"))
       const restartCall = fetchState.calls.find((c) => c.url.includes("/restart"))
       expect(startCall).toBeDefined()
+      expect(startCall?.body).toBeUndefined()
       expect(restartCall).toBeUndefined()
     } finally {
       dispose()

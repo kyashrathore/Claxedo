@@ -10,6 +10,7 @@ mock.module("@/context/platform", () => ({
 describe("persisted storage", () => {
   beforeEach(() => {
     localStorage.clear()
+    delete (window as { __CLAXEDO_DEMO__?: boolean }).__CLAXEDO_DEMO__
   })
 
   test("corrupted JSON is treated as missing for structured stores (and removed)", async () => {
@@ -82,5 +83,48 @@ describe("persisted storage", () => {
     expect(raw).not.toBeNull()
     const parsed = JSON.parse(raw!) as { a: number; b: number }
     expect(parsed).toEqual({ a: 9, b: 2 })
+  })
+
+  test("demo mode keeps persisted app state out of localStorage", async () => {
+    ;(window as { __CLAXEDO_DEMO__?: boolean }).__CLAXEDO_DEMO__ = true
+
+    const real = JSON.stringify({
+      list: ["https://real.example"],
+      projects: { live: [{ worktree: "/real", expanded: true }] },
+      lastProject: { live: "/real" },
+      workspaceServer: {},
+    })
+    localStorage.setItem("opencode.global.dat:server", real)
+
+    const { Persist, persisted, resetDemoPersisted, setPersisted } = await import(`./persist?test=${Date.now()}`)
+    resetDemoPersisted()
+    setPersisted(Persist.global("server"), {
+      list: [],
+      projects: {
+        demo: [{ worktree: "/demo", expanded: true }],
+      },
+      lastProject: { demo: "/demo" },
+      workspaceServer: {},
+    })
+
+    createRoot(() => {
+      const store = createStore({
+        list: [] as string[],
+        projects: {} as Record<string, Array<{ worktree: string; expanded: boolean }>>,
+        lastProject: {} as Record<string, string>,
+        workspaceServer: {} as Record<string, string>,
+      })
+      const out = persisted(Persist.global("server"), store as any)
+      expect(out[0].projects).toEqual({
+        demo: [{ worktree: "/demo", expanded: true }],
+      })
+      out[1]("projects", "demo", [{ worktree: "/demo-2", expanded: false }])
+      out[3]()
+    })
+
+    await new Promise<void>((r) => setTimeout(r, 0))
+
+    expect(localStorage.getItem("opencode.global.dat:server")).toBe(real)
+    expect(localStorage.getItem("opencode.demo.global.dat:server")).toBeNull()
   })
 })

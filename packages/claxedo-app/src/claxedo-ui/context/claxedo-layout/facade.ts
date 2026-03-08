@@ -1,4 +1,4 @@
-import { batch, createEffect, createMemo, on, type Accessor } from "solid-js"
+import { batch, createEffect, createMemo, createSignal, on, type Accessor } from "solid-js"
 import type { SetStoreFunction } from "solid-js/store"
 import { createLayoutDispatcher } from "./commands"
 import { createGroupAccessors } from "./groups"
@@ -495,6 +495,30 @@ export function createClaxedoLayoutFacade(input: {
     return !!processTab && group.tabs.activeId === processTab.id
   }
 
+  // Transient signal — not persisted, set by ProcessPaneProvider effect
+  const [processesRunning, setProcessesRunning] = createSignal<Record<string, boolean>>({})
+
+  const running = (directory?: string | null) => {
+    const dir = real(directory)
+    if (!dir) return false
+    return !!processesRunning()[dir]
+  }
+
+  function setRunning(directory: string | null | undefined, value: boolean) {
+    const dir = real(directory)
+    if (!dir) return
+    setProcessesRunning((all) => {
+      if (value) {
+        if (all[dir]) return all
+        return { ...all, [dir]: true }
+      }
+      if (!all[dir]) return all
+      const next = { ...all }
+      delete next[dir]
+      return next
+    })
+  }
+
   const processPaneState = {
     /** Optional process pane target directory requested by top-bar workspace indicators. */
     targetDirectory: () => store.processPane.targetDirectory,
@@ -575,6 +599,10 @@ export function createClaxedoLayoutFacade(input: {
     setCrashedWhileClosed(value: boolean) {
       setStore("processPane", "crashedWhileClosed", value)
     },
+    /** True when any configured process is running/starting/restarting in the given workspace. */
+    running,
+    /** Set by ProcessPaneProvider to sync hasRunning() into the facade for one workspace. */
+    setRunning,
     /** Check if the process tab is the active tab in the focused group. */
     isActive: isProcessTabActive,
     /** Find the process tab in the focused group. */

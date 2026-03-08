@@ -282,8 +282,7 @@ export function createTabActions(
         type: "process",
         directory: dir,
         title: "Processes",
-        closable: false,
-        pinned: true,
+        closable: true,
       })
     },
 

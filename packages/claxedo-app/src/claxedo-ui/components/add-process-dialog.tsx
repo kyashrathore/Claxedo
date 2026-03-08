@@ -40,9 +40,12 @@ type FormStore = {
   autoStart: boolean
   restartPolicy: Process.RestartPolicy
   maxRestarts: number
+  dependsOn: string
   usePort: boolean
   portName: string
   portInject: string
+  portPreferred: string
+  portOnConflict: Process.PortConflictStrategy | undefined
   saving: boolean
   deleting: boolean
 }
@@ -77,9 +80,12 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
     autoStart: props.config?.autoStart ?? false,
     restartPolicy: props.config?.restartPolicy ?? "never",
     maxRestarts: props.config?.maxRestarts ?? 3,
+    dependsOn: props.config?.dependsOn?.join(", ") ?? "",
     usePort: !!props.config?.port,
     portName: props.config?.port?.name ?? "",
     portInject: props.config?.port?.inject ?? "PORT",
+    portPreferred: props.config?.port?.preferred?.toString() ?? "",
+    portOnConflict: props.config?.port?.onConflict,
     saving: false,
     deleting: false,
   })
@@ -98,6 +104,15 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
       if (k) env[k] = entry.value
     }
 
+    const dependsOnList = store.dependsOn
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+
+    const preferredPort = store.portPreferred.trim()
+      ? parseInt(store.portPreferred.trim(), 10)
+      : undefined
+
     return {
       name: store.name.trim(),
       command: store.command.trim(),
@@ -106,9 +121,12 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
       autoStart: store.autoStart,
       restartPolicy: store.restartPolicy,
       maxRestarts: store.maxRestarts,
+      ...(dependsOnList.length > 0 ? { dependsOn: dependsOnList } : {}),
       port: store.usePort ? {
         name: effectivePortName(),
         inject: store.portInject.trim() || "PORT",
+        ...(preferredPort && !isNaN(preferredPort) ? { preferred: preferredPort } : {}),
+        ...(store.portOnConflict ? { onConflict: store.portOnConflict } : {}),
       } : undefined,
     }
   }
@@ -238,9 +256,12 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
           autofocus
           type="text"
           label="Name"
-          placeholder="Dev server"
+          description="Lowercase, hyphens, dots, underscores only (e.g. my-server)"
+          placeholder="dev-server"
           value={store.name}
-          onChange={(v) => setStore("name", v)}
+          onChange={(v) => setStore("name", v.toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/-+/g, "-"))}
+          spellcheck={false}
+          class="font-mono text-xs"
           required
         />
 
@@ -312,6 +333,18 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
           </button>
         </div>
 
+        {/* Dependencies */}
+        <TextField
+          type="text"
+          label="Depends on"
+          description="Comma-separated process names. These will auto-start first."
+          placeholder="api-server, database"
+          value={store.dependsOn}
+          onChange={(v) => setStore("dependsOn", v)}
+          spellcheck={false}
+          class="font-mono text-xs"
+        />
+
         {/* Port assignment (portpick) */}
         <div class="flex flex-col gap-2">
           <Switch
@@ -345,6 +378,55 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
               spellcheck={false}
               class="font-mono text-xs"
             />
+            <TextField
+              type="text"
+              label="Preferred port"
+              description="Try this port first. If occupied, the conflict strategy below applies."
+              placeholder="3000"
+              value={store.portPreferred}
+              onChange={(v) => setStore("portPreferred", v)}
+              spellcheck={false}
+              class="font-mono text-xs"
+            />
+            <div class="flex flex-col gap-1">
+              <label class="text-12-medium text-text-weak">If port is occupied</label>
+              <p class="text-[11px] text-text-weaker">Auto-resolve strategy. Leave on "Ask me" to be prompted each time.</p>
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  class="flex-1 px-3 py-1.5 rounded-md text-12-regular border transition-colors"
+                  classList={{
+                    "border-accent bg-accent/10 text-text-strong": !store.portOnConflict,
+                    "border-border text-text-weak hover:border-border-strong": !!store.portOnConflict,
+                  }}
+                  onClick={() => setStore("portOnConflict", undefined as any)}
+                >
+                  Ask me
+                </button>
+                <button
+                  type="button"
+                  class="flex-1 px-3 py-1.5 rounded-md text-12-regular border transition-colors"
+                  classList={{
+                    "border-accent bg-accent/10 text-text-strong": store.portOnConflict === "pick-new",
+                    "border-border text-text-weak hover:border-border-strong": store.portOnConflict !== "pick-new",
+                  }}
+                  onClick={() => setStore("portOnConflict", "pick-new")}
+                >
+                  Pick new
+                </button>
+                <button
+                  type="button"
+                  class="flex-1 px-3 py-1.5 rounded-md text-12-regular border transition-colors"
+                  classList={{
+                    "border-accent bg-accent/10 text-text-strong": store.portOnConflict === "kill-existing",
+                    "border-border text-text-weak hover:border-border-strong": store.portOnConflict !== "kill-existing",
+                  }}
+                  onClick={() => setStore("portOnConflict", "kill-existing")}
+                >
+                  Kill existing
+                </button>
+              </div>
+            </div>
           </Show>
         </div>
 

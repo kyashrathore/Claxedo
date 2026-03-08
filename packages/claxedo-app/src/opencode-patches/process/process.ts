@@ -28,10 +28,31 @@ export namespace Process {
   ])
   export type Status = z.infer<typeof Status>
 
+  export const PortConflictStrategy = z.enum(["pick-new", "kill-existing"])
+  export type PortConflictStrategy = z.infer<typeof PortConflictStrategy>
+
+  export const PortConflictInfo = z.object({
+    type: z.literal("port-conflict"),
+    port: z.number().int(),
+    pid: z.number().int().optional(),
+    command: z.string().optional(),
+    /** If the occupier is one of our managed processes */
+    processName: z.string().optional(),
+    processId: z.string().optional(),
+    /** Workspace directory of the occupying process (if known) */
+    directory: z.string().optional(),
+  })
+  export type PortConflictInfo = z.infer<typeof PortConflictInfo>
+
+  export const LaunchRequest = z.object({
+    portConflict: PortConflictStrategy.optional(),
+  })
+  export type LaunchRequest = z.infer<typeof LaunchRequest>
+
   export const ProcessConfig = z
     .object({
       id: z.string().default(() => createId()),
-      name: z.string(),
+      name: z.string().min(1, "Name is required"),
       command: z.string(),
       args: z.array(z.string()).default([]),
       cwd: z.string().optional(),
@@ -40,9 +61,19 @@ export namespace Process {
       restartPolicy: RestartPolicy.default("never"),
       maxRestarts: z.number().int().min(0).default(3),
       color: z.string().optional(),
+      /** Processes (by name) that must be running before this one starts. */
+      dependsOn: z.array(z.string()).optional(),
       port: z.object({
         name: z.string().regex(/^[a-z0-9._-]+$/),
         inject: z.string(),
+        /** Preferred port number — try this port first before picking a random one. */
+        preferred: z.number().int().positive().optional(),
+        /**
+         * What to do when the preferred port is already in use.
+         * If unset, the caller is prompted interactively (409 conflict response).
+         * Set to "pick-new" or "kill-existing" to auto-resolve without prompting.
+         */
+        onConflict: PortConflictStrategy.optional(),
       }).optional(),
     })
     .meta({ ref: "ProcessConfig" })
@@ -70,6 +101,43 @@ export namespace Process {
     .meta({ ref: "ManagedProcess" })
 
   export type ManagedProcess = z.infer<typeof ManagedProcess>
+
+  export const LaunchResult = z
+    .discriminatedUnion("kind", [
+      z.object({
+        kind: z.literal("started"),
+        process: ManagedProcess,
+      }),
+      z.object({
+        kind: z.literal("already_running"),
+        process: ManagedProcess,
+      }),
+      z.object({
+        kind: z.literal("port_conflict"),
+        conflict: PortConflictInfo,
+      }),
+      z.object({
+        kind: z.literal("failed"),
+        error: z.string(),
+        process: ManagedProcess.optional(),
+      }),
+      z.object({
+        kind: z.literal("not_found"),
+        error: z.string(),
+      }),
+    ])
+    .meta({ ref: "ProcessLaunchResult" })
+
+  export type LaunchResult = z.infer<typeof LaunchResult>
+
+  export const ListResponse = z
+    .object({
+      configs: ProcessConfig.array(),
+      processes: ManagedProcess.array(),
+    })
+    .meta({ ref: "ProcessListResponse" })
+
+  export type ListResponse = z.infer<typeof ListResponse>
 
   export const DiagnosticStatus = z.enum(["active", "stale", "suspect"])
   export type DiagnosticStatus = z.infer<typeof DiagnosticStatus>

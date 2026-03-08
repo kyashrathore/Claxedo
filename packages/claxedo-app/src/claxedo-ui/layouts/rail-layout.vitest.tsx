@@ -87,7 +87,7 @@ const claxedo = {
   findTabGroup: vi.fn(),
   canDragTabBetweenWorktrees: () => true,
   enabled: () => true,
-  processPane: { setTargetDirectory: vi.fn() },
+  processPane: { setTargetDirectory: vi.fn(), running: vi.fn(() => false) },
 }
 
 vi.mock("../context/claxedo-layout", () => ({

@@ -209,13 +209,49 @@ type WorkspaceScopeButtonsProps = {
   onNewPage?: () => void
   onSettings?: () => void
   onProcesses?: () => void
-  showProcesses?: boolean
+  processAttention?: boolean
+  processActive?: boolean
+  processRunning?: boolean
+  hasProcesses?: boolean
   class?: string
 }
 
+/** State dot for the process chip — 6px circle with optional pulsing */
+function ProcessChipDot(props: { color: "red" | "green" | "gray" }) {
+  return (
+    <span class="relative flex shrink-0" style={{ width: "6px", height: "6px" }}>
+      <Show when={props.color === "red"}>
+        <span
+          class="absolute inline-flex animate-ping rounded-full"
+          style={{ width: "6px", height: "6px", "background-color": "#f87171", opacity: 0.75 }}
+        />
+      </Show>
+      <span
+        class="relative inline-flex rounded-full"
+        style={{
+          width: "6px",
+          height: "6px",
+          "background-color":
+            props.color === "red" ? "#ef4444" : props.color === "green" ? "#22c55e" : "#6b7280",
+        }}
+      />
+    </span>
+  )
+}
+
 function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
+  // Dot state: reflects actual process status
+  // Priority: crashed (red) > running (green) > stopped (gray) > none (no dot)
+  const dotState = () => {
+    if (props.processAttention) return "crashed" as const
+    if (props.processRunning) return "running" as const
+    if (props.hasProcesses) return "stopped" as const
+    return "none" as const
+  }
+
   return (
     <div class={`flex items-center gap-0 flex-shrink-0 ${props.class ?? ""}`}>
+      {/* Plain icon buttons — stateless creation actions */}
       <Tooltip value="New Session">
         <button
           type="button"
@@ -271,36 +307,39 @@ function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
         </button>
       </Tooltip>
 
+      {/* Process chip — stateful singleton */}
+      <Tooltip value={props.hasProcesses ? "Toggle Processes" : "Open Processes"}>
+        <button
+          type="button"
+          class="flex items-center gap-1.5 h-7 px-2 ml-1 rounded transition-colors shrink-0"
+          classList={{
+            "bg-surface-base-hover text-text-base": props.processActive,
+            "hover:bg-surface-base-hover text-text-weak": !props.processActive,
+          }}
+          onClick={() => props.onProcesses?.()}
+          aria-label="Processes"
+        >
+          <span class="text-[12px] font-medium leading-none">Processes</span>
+          <Show when={dotState() === "crashed"}>
+            <ProcessChipDot color="red" />
+          </Show>
+          <Show when={dotState() === "running"}>
+            <ProcessChipDot color="green" />
+          </Show>
+          <Show when={dotState() === "stopped"}>
+            <ProcessChipDot color="gray" />
+          </Show>
+        </button>
+      </Tooltip>
+
+      {/* Dropdown — overflow menu */}
       <DropdownMenu>
         <DropdownMenu.Trigger class="flex items-center justify-center w-8 h-8 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors cursor-pointer border-none bg-transparent shrink-0 rounded">
           <Icon name="chevron-down" size="small" />
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content class="z-[200]">
-            <DropdownMenu.Item onSelect={() => props.onNewTerminal?.(getCommands().claude, "Claude")}>
-              <span class="font-bold mr-2">C</span>
-              Claude
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => props.onNewTerminal?.(getCommands().codex, "Codex")}>
-              <span class="font-bold mr-2">X</span>
-              Codex
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => props.onNewTerminal?.()}>
-              <Icon name="console" size="small" class="mr-2" />
-              Terminal
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => props.onNewPage?.()}>
-              <Icon name="page" size="small" class="mr-2" />
-              Page
-            </DropdownMenu.Item>
-            <Show when={!!props.onProcesses}>
-              <DropdownMenu.Item onSelect={() => props.onProcesses?.()}>
-                <Icon name="pin" size="small" class="mr-2" />
-                Processes
-              </DropdownMenu.Item>
-            </Show>
             <Show when={getCommands().custom.length > 0}>
-              <DropdownMenu.Separator />
               <For each={getCommands().custom}>
                 {(cmd) => (
                   <Show when={cmd.name && cmd.command}>
@@ -311,8 +350,8 @@ function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
                   </Show>
                 )}
               </For>
+              <DropdownMenu.Separator />
             </Show>
-            <DropdownMenu.Separator />
             <DropdownMenu.Item onSelect={() => props.onSettings?.()}>
               <Icon name="settings-gear" size="small" class="mr-2" />
               Configure...
@@ -1258,7 +1297,10 @@ export type WorkspaceBarProps = {
   onNewPage?: () => void
   onProcesses?: () => void
   onSettings?: () => void
-  showProcesses?: boolean
+  processAttention?: boolean
+  processActive?: boolean
+  processRunning?: boolean
+  hasProcesses?: boolean
   onWorktreeClick?: (projectId: string, directory: string) => void
   onWorktreeDblClick?: (projectId: string, directory: string) => void
   onWorktreeDelete?: (projectId: string, workspace: WorkspaceBarItem) => Promise<void> | void
@@ -1466,12 +1508,12 @@ export function WorkspaceBar(props: WorkspaceBarProps) {
             </For>
           </div>
 
-          {/* More button (three vertical dots) */}
+          {/* More button */}
           <Show when={props.allProjects}>
-            <div class="flex items-center justify-center ml-2 border-l border-border-weak-base pl-2 shrink-0">
+            <div class="flex items-center justify-center ml-2 shrink-0">
               <Popover
                 placement="bottom-end"
-                trigger={<Icon name="kebab" size="small" />}
+                trigger={<Icon name="chevron-down" size="small" />}
                 triggerAs="button"
                 triggerProps={{
                   class:
@@ -1566,14 +1608,17 @@ export function WorkspaceBar(props: WorkspaceBarProps) {
           </Show>
 
           <Show when={showWorkspaceActions()}>
-            <div class="flex items-center justify-center ml-2 border-l border-border-weak-base pl-2 shrink-0">
+            <div class="flex items-center justify-center ml-2 border-l border-border-weak-base pl-2 pr-2 shrink-0">
               <WorkspaceScopeButtons
                 onNewSession={props.onNewSession}
                 onNewTerminal={props.onNewTerminal}
                 onNewPage={props.onNewPage}
                 onProcesses={props.onProcesses}
                 onSettings={props.onSettings}
-                showProcesses={props.showProcesses}
+                processAttention={props.processAttention}
+                processActive={props.processActive}
+                processRunning={props.processRunning}
+                hasProcesses={props.hasProcesses}
               />
             </div>
           </Show>

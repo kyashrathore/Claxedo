@@ -220,7 +220,7 @@ describe("selector and command surface", () => {
 
       const process = tabs.items().find((tab: any) => tab.id === processId)
       expect(process?.directory).toBe("/ws-main")
-      expect(process?.pinned).toBe(true)
+      expect(process?.pinned).toBeFalsy()
     } finally {
       dispose()
     }

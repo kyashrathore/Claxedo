@@ -15,8 +15,28 @@ import path from "path"
 import fs from "fs/promises"
 import { watch, type FSWatcher } from "node:fs"
 import { createServer } from "node:net"
+import z from "zod"
 import { buildSafeEnv } from "../pty/env"
 import { Process } from "./process"
+
+// -- Global port registry (cross-workspace, outside Instance.state scope) -----
+// Maps assigned port → workspace info so port conflict detection can tell the
+// user which workspace/process occupies a port, even across workspaces.
+
+interface PortRegistryEntry {
+  processName: string
+  processId: string
+}
+
+const globalPortRegistry = new Map<number, PortRegistryEntry>()
+
+function registerPort(port: number, entry: PortRegistryEntry): void {
+  globalPortRegistry.set(port, entry)
+}
+
+function unregisterPort(port: number): void {
+  globalPortRegistry.delete(port)
+}
 
 // -- Portpick helpers (inlined to avoid workspace dependency in patched server) --
 
@@ -37,6 +57,187 @@ function findFreePort(): Promise<number> {
   })
 }
 
+/**
+ * Try to bind to a specific port. Returns true if the port is free.
+ */
+function tryPort(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const srv = createServer()
+    srv.listen(port, () => {
+      srv.close(() => resolve(true))
+    })
+    srv.on("error", () => resolve(false))
+  })
+}
+
+/**
+ * Find the PID of a process listening on a given port (macOS/Linux).
+ * Returns undefined if not found.
+ */
+async function findPidOnPort(port: number): Promise<number | undefined> {
+  try {
+    const { execSync } = await import("child_process")
+    const cmd = process.platform === "darwin"
+      ? `lsof -ti:${port}`
+      : `fuser ${port}/tcp 2>/dev/null`
+    const output = execSync(cmd, { encoding: "utf-8", timeout: 5000 }).trim()
+    const pid = parseInt(output.split("\n")[0], 10)
+    return isNaN(pid) ? undefined : pid
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Detect the worktree (git root) for a given PID by reading its cwd.
+ * Returns the git toplevel, or the raw cwd if not inside a git repo.
+ */
+async function detectWorktreeForPid(pid: number): Promise<string | undefined> {
+  try {
+    const { execSync } = await import("child_process")
+    // Get the process's working directory
+    const cwd = process.platform === "darwin"
+      ? execSync(`lsof -a -p ${pid} -d cwd -Fn 2>/dev/null | grep ^n | cut -c2-`, { encoding: "utf-8", timeout: 5000 }).trim()
+      : execSync(`readlink /proc/${pid}/cwd 2>/dev/null`, { encoding: "utf-8", timeout: 5000 }).trim()
+    if (!cwd) return undefined
+    // Resolve to git worktree root
+    try {
+      return execSync(`git -C ${JSON.stringify(cwd)} rev-parse --show-toplevel 2>/dev/null`, { encoding: "utf-8", timeout: 5000 }).trim()
+    } catch {
+      // Not a git repo — return the raw cwd
+      return cwd
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Get detailed info about what's occupying a port.
+ * Checks the global port registry first (cross-workspace), then falls back
+ * to PID-level detection. Detects the workspace from the process's worktree.
+ */
+async function getPortOccupier(port: number): Promise<Process.PortConflictInfo> {
+  const info: Process.PortConflictInfo = { type: "port-conflict", port }
+
+  // Check global registry first — covers all workspaces
+  const registered = globalPortRegistry.get(port)
+  if (registered) {
+    info.processName = registered.processName
+    info.processId = registered.processId
+  }
+
+  const pid = await findPidOnPort(port)
+  if (!pid) return info
+  info.pid = pid
+
+  // Get command name
+  try {
+    const { execSync } = await import("child_process")
+    info.command = execSync(`ps -p ${pid} -o command=`, { encoding: "utf-8", timeout: 5000 }).trim()
+  } catch {}
+
+  // Detect workspace from the process's worktree
+  info.directory = await detectWorktreeForPid(pid)
+
+  // If registry didn't match, check current workspace's managed processes
+  if (!info.processName) {
+    const s = state()
+    for (const [configId, proc] of s.processes) {
+      if (!proc.ptyId) continue
+      const ptyInfo = Pty.get(proc.ptyId)
+      if (ptyInfo && ptyInfo.pid === pid) {
+        const config = s.configs.get(configId)
+        info.processName = config?.name
+        info.processId = configId
+        break
+      }
+    }
+  }
+
+  return info
+}
+
+/**
+ * Kill the process occupying a preferred port and reclaim it.
+ * Returns true if the port was successfully reclaimed.
+ */
+async function killAndReclaimPort(port: number): Promise<boolean> {
+  const pid = await findPidOnPort(port)
+  if (!pid) {
+    // Port may have been freed in the meantime
+    return await tryPort(port)
+  }
+
+  log.warn("portpick: killing existing process on preferred port", { port, pid })
+  try {
+    process.kill(pid, "SIGTERM")
+    await new Promise((r) => setTimeout(r, 1000))
+    if (await tryPort(port)) {
+      log.info("portpick: reclaimed preferred port after kill", { port })
+      return true
+    }
+    // SIGKILL as fallback
+    try { process.kill(pid, "SIGKILL") } catch {}
+    await new Promise((r) => setTimeout(r, 500))
+    if (await tryPort(port)) return true
+  } catch (err) {
+    log.warn("portpick: failed to kill process on port", { port, pid, err: String(err) })
+  }
+
+  log.warn("portpick: could not reclaim preferred port", { port })
+  return false
+}
+
+/**
+ * Resolve a port for a process config, handling preferred port and conflict strategy.
+ *
+ * @param config  Process config
+ * @param overrideStrategy  Explicit strategy from the caller (e.g. user chose in dialog).
+ *                          Takes precedence over config.port.onConflict.
+ * @returns  Assigned port number, or PortConflictInfo if the caller should prompt the user.
+ */
+async function resolvePort(
+  config: Process.ProcessConfig,
+  overrideStrategy?: Process.PortConflictStrategy,
+): Promise<number | Process.PortConflictInfo> {
+  if (!config.port) return await findFreePort()
+
+  const preferred = config.port.preferred
+  if (preferred === undefined) return await findFreePort()
+
+  // Try the preferred port
+  if (await tryPort(preferred)) {
+    log.info("portpick: using preferred port", { name: config.port.name, port: preferred })
+    return preferred
+  }
+
+  // Port is occupied — determine strategy
+  const strategy = overrideStrategy ?? config.port.onConflict
+
+  if (!strategy) {
+    // No strategy set — return conflict info for interactive resolution
+    log.info("portpick: preferred port occupied, prompting user", {
+      name: config.port.name,
+      preferred,
+    })
+    return await getPortOccupier(preferred)
+  }
+
+  if (strategy === "kill-existing") {
+    const reclaimed = await killAndReclaimPort(preferred)
+    if (reclaimed) return preferred
+    // Fall through to pick-new if kill failed
+  } else {
+    log.info("portpick: preferred port occupied, picking new", {
+      name: config.port.name,
+      preferred,
+    })
+  }
+
+  return await findFreePort()
+}
+
 function resolvePortTemplates(
   env: Record<string, string>,
   pm: Record<string, number>,
@@ -51,6 +252,22 @@ function resolvePortTemplates(
   return result
 }
 
+/**
+ * Extract port names referenced via {{port:name}} templates in a config's env vars.
+ */
+function extractPortDependencies(config: Process.ProcessConfig): string[] {
+  if (!config.env) return []
+  const names = new Set<string>()
+  for (const value of Object.values(config.env)) {
+    const re = /\{\{port:([a-zA-Z0-9._-]+)\}\}/g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(value)) !== null) {
+      names.add(m[1])
+    }
+  }
+  return Array.from(names)
+}
+
 function isFlag(inject: string): boolean {
   return inject.startsWith("-")
 }
@@ -60,6 +277,34 @@ export { Process, configChanged }
 const log = Log.create({ service: "process" })
 
 const CONFIG_FILE = ".opencode/processes.jsonc"
+const SCHEMA_FILE = ".opencode/processes.schema.json"
+
+/**
+ * Write the JSON Schema for processes.jsonc so editors provide autocompletion.
+ * Uses Zod v4's built-in `z.toJSONSchema()`.
+ */
+async function writeSchema(): Promise<void> {
+  const schemaPath = path.join(Instance.directory, SCHEMA_FILE)
+  try {
+    const raw = z.toJSONSchema(Process.ProcessConfigFile)
+    // Clean up: remove runtime-generated default for `id` since each process
+    // gets a unique ID — showing a stale default in the schema is misleading.
+    const items = (raw as any)?.properties?.processes?.items
+    if (items?.properties?.id?.default) {
+      delete items.properties.id.default
+    }
+    // Mark fields with defaults as not required for better editor UX
+    if (items?.required && items?.properties) {
+      items.required = items.required.filter((field: string) => {
+        return !items.properties[field]?.default && items.properties[field]?.default !== false
+      })
+    }
+    await fs.mkdir(path.dirname(schemaPath), { recursive: true })
+    await fs.writeFile(schemaPath, JSON.stringify(raw, null, 2) + "\n", "utf-8")
+  } catch (err) {
+    log.warn("failed to write process schema", { err: String(err) })
+  }
+}
 
 interface State {
   configs: Map<string, Process.ProcessConfig>
@@ -116,6 +361,8 @@ export async function loadConfig(): Promise<Process.ProcessConfig[]> {
       s.configs.set(config.id, config)
     }
     log.info("loaded process configs", { count: parsed.processes.length })
+    // Write schema file alongside config for editor autocompletion
+    void writeSchema()
     return parsed.processes
   } catch (err: any) {
     if (err?.code === "ENOENT") {
@@ -137,9 +384,12 @@ export async function saveConfig(configs: Process.ProcessConfig[]): Promise<void
   await fs.mkdir(dir, { recursive: true })
 
   const file: Process.ProcessConfigFile = {
+    $schema: "./processes.schema.json",
     processes: configs,
   }
   await fs.writeFile(filePath, JSON.stringify(file, null, 2) + "\n", "utf-8")
+  // Write schema file alongside config for editor autocompletion
+  void writeSchema()
 
   const s = state()
   s.configs.clear()
@@ -305,36 +555,194 @@ function configChanged(a: Process.ProcessConfig, b: Process.ProcessConfig): bool
   if (JSON.stringify(a.env) !== JSON.stringify(b.env)) return true
   if (a.restartPolicy !== b.restartPolicy) return true
   if (a.maxRestarts !== b.maxRestarts) return true
+  if (JSON.stringify(a.dependsOn) !== JSON.stringify(b.dependsOn)) return true
   const ap = a.port
   const bp = b.port
   if (!ap && !bp) return false
   if (!ap || !bp) return true
-  return ap.name !== bp.name || ap.inject !== bp.inject
+  return ap.name !== bp.name || ap.inject !== bp.inject || ap.preferred !== bp.preferred || ap.onConflict !== bp.onConflict
+}
+
+/**
+ * Resolve the ordered list of config IDs that must be started before this one.
+ * Combines explicit `dependsOn` names with implicit port template dependencies.
+ * Detects cycles and throws on circular dependencies.
+ */
+function deps(configId: string, pick?: Set<string>): string[] {
+  const s = state()
+  const config = s.configs.get(configId)
+  if (!config) return []
+
+  const depIds = new Set<string>()
+
+  if (config.dependsOn) {
+    for (const depName of config.dependsOn) {
+      const found = findConfigByName(depName)
+      if (found) {
+        depIds.add(found.id)
+      } else {
+        log.warn("dependsOn: referenced process not found", { configId, dependsOn: depName })
+      }
+    }
+  }
+
+  const portDeps = extractPortDependencies(config)
+  for (const portName of portDeps) {
+    if (config.port?.name === portName) continue
+    for (const [id, c] of s.configs) {
+      if (c.port?.name === portName && id !== configId && (!pick || pick.has(id))) {
+        depIds.add(id)
+      }
+    }
+  }
+
+  return Array.from(depIds).filter((id) => !pick || pick.has(id))
+}
+
+function resolveDependencyOrder(configId: string): string[] {
+  const order: string[] = []
+  const added = new Set<string>()
+  const seen = new Set<string>()
+  const stack = new Set<string>()
+
+  function visit(id: string) {
+    if (stack.has(id)) {
+      throw new Error(`Circular dependency detected involving process: ${id}`)
+    }
+    if (seen.has(id)) return
+
+    stack.add(id)
+    for (const depId of deps(id)) {
+      visit(depId)
+      if (!added.has(depId)) {
+        added.add(depId)
+        order.push(depId)
+      }
+    }
+    stack.delete(id)
+    seen.add(id)
+  }
+
+  visit(configId)
+  return order
+}
+
+/**
+ * Find a process config by display name (case-insensitive).
+ */
+function findConfigByName(name: string): Process.ProcessConfig | undefined {
+  const s = state()
+  const lower = name.toLowerCase()
+  for (const config of s.configs.values()) {
+    if (config.name.toLowerCase() === lower) return config
+  }
+  return undefined
+}
+
+async function ready(configId: string, ms = 15_000): Promise<boolean> {
+  const end = Date.now() + ms
+  while (Date.now() < end) {
+    const s = state()
+    const config = s.configs.get(configId)
+    const proc = s.processes.get(configId)
+    if (!config || !proc) return false
+    if (proc.status === "crashed" || proc.status === "stopped" || proc.status === "idle") return false
+    if (!config.port) {
+      if (proc.status === "running") return true
+    } else if (proc.assignedPort !== undefined && await findPidOnPort(proc.assignedPort)) {
+      return true
+    }
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  return false
+}
+
+function miss(error = "Process config not found"): Process.LaunchResult {
+  return {
+    kind: "not_found",
+    error,
+  }
+}
+
+function fail(error: string, process?: Process.ManagedProcess): Process.LaunchResult {
+  return {
+    kind: "failed",
+    error,
+    ...(process ? { process } : {}),
+  }
 }
 
 /**
  * Start a process by config ID.
+ * Auto-starts any dependencies (explicit `dependsOn` or inferred from `{{port:name}}` templates).
+ *
+ * @param configId  The process config ID to start.
+ * @param opts.portConflict  Explicit port conflict resolution strategy.
+ *   If the preferred port is occupied and this is not set (and config.port.onConflict is not set),
+ *   returns a PortConflictInfo instead of a ManagedProcess.
  */
-export async function start(configId: string): Promise<Process.ManagedProcess | undefined> {
+export async function start(
+  configId: string,
+  opts?: { portConflict?: Process.PortConflictStrategy },
+): Promise<Process.LaunchResult> {
   const s = state()
   const config = s.configs.get(configId)
   if (!config) {
     log.error("config not found", { configId })
-    return undefined
+    return miss()
   }
 
   // Check if already running
   const existing = s.processes.get(configId)
   if (existing && (existing.status === "running" || existing.status === "starting")) {
     log.info("process already running", { configId, status: existing.status })
-    return existing
+    return {
+      kind: "already_running",
+      process: existing,
+    }
+  }
+
+  // --- Auto-start dependencies ---
+  try {
+    const depOrder = resolveDependencyOrder(configId)
+    for (const depId of depOrder) {
+      const depProc = s.processes.get(depId)
+      if (depProc && (depProc.status === "running" || depProc.status === "starting")) continue
+      const depConfig = s.configs.get(depId)
+      log.info("auto-starting dependency", { configId, dependency: depConfig?.name ?? depId })
+      const started = await start(depId, { portConflict: "pick-new" })
+      if (started.kind !== "started" && started.kind !== "already_running") {
+        log.error("dependency failed to start", {
+          configId,
+          dependency: depConfig?.name ?? depId,
+          kind: started.kind,
+          error: "error" in started ? started.error : undefined,
+        })
+        return fail(`Dependency failed to start: ${depConfig?.name ?? depId}`)
+      }
+      if (!(await ready(depId))) {
+        log.error("dependency did not become ready", { configId, dependency: depConfig?.name ?? depId })
+        return fail(`Dependency did not become ready: ${depConfig?.name ?? depId}`)
+      }
+    }
+  } catch (err) {
+    log.error("dependency resolution failed", { configId, err: String(err) })
+    return fail(`Dependency resolution failed: ${String(err)}`)
   }
 
   const cwd = config.cwd ? path.resolve(Instance.directory, config.cwd) : Instance.directory
 
-  // --- Port assignment ---
-  const assignedPort = config.port ? await findFreePort() : undefined
-  if (config.port && assignedPort !== undefined) {
+  // --- Port assignment (with preferred port + conflict resolution) ---
+  let assignedPort: number | undefined
+  if (config.port) {
+    const portResult = await resolvePort(config, opts?.portConflict)
+    if (typeof portResult === "object") {
+      return {
+        kind: "port_conflict",
+        conflict: portResult,
+      }
+    }
+    assignedPort = portResult
     log.info("portpick: assigned port", { configId, name: config.port.name, port: assignedPort })
   }
 
@@ -399,18 +807,29 @@ export async function start(configId: string): Promise<Process.ManagedProcess | 
       log.warn("failed to write command to process shell", { configId, ptyId: info.id, err: String(e) })
     }
 
+    // Register port in global cross-workspace registry
+    if (assignedPort !== undefined) {
+      registerPort(assignedPort, {
+        processName: config.name,
+        processId: configId,
+      })
+    }
+
     Bus.publish(Process.Event.Started, { configId, ptyId: info.id })
     Bus.publish(Process.Event.Status, { configId, status: "running" })
     log.info("process started", { configId, name: config.name, ptyId: info.id, port: assignedPort })
 
-    return proc
+    return {
+      kind: "started",
+      process: proc,
+    }
   } catch (err) {
     proc.status = "crashed"
     proc.exitedAt = Date.now()
     s.processes.set(configId, proc)
     Bus.publish(Process.Event.Status, { configId, status: "crashed" })
     log.error("failed to start process", { configId, err: String(err) })
-    return proc
+    return fail(`Failed to start process: ${String(err)}`, proc)
   }
 }
 
@@ -424,6 +843,11 @@ export async function stop(configIdOrPtyId: string, signal?: string): Promise<vo
   if (!proc || !proc.ptyId) {
     log.info("no running process to stop", { id: configIdOrPtyId })
     return
+  }
+
+  // Unregister port from global registry
+  if (proc.assignedPort !== undefined) {
+    unregisterPort(proc.assignedPort)
   }
 
   // IMPORTANT: Set status to "stopping" BEFORE calling Pty.remove().
@@ -496,8 +920,9 @@ export async function stop(configIdOrPtyId: string, signal?: string): Promise<vo
 /**
  * Restart a process by config ID or pty ID.
  */
-export async function restart(configIdOrPtyId: string): Promise<Process.ManagedProcess | undefined> {
+export async function restart(configIdOrPtyId: string): Promise<Process.LaunchResult> {
   const { configId } = resolveProcess(configIdOrPtyId)
+  if (!state().configs.has(configId)) return miss()
   await stop(configId)
 
   // Reset restart count on manual restart
@@ -508,22 +933,85 @@ export async function restart(configIdOrPtyId: string): Promise<Process.ManagedP
     s.processes.set(configId, existing)
   }
 
-  return start(configId)
+  // Restart is non-interactive — default to pick-new if preferred port is occupied
+  const result = await start(configId, { portConflict: "pick-new" })
+  if (result.kind === "port_conflict") {
+    return fail(`Unexpected port conflict while restarting process: ${configId}`)
+  }
+  return result
+}
+
+/**
+ * Topologically sort configs by dependencies.
+ * Returns config IDs in an order where dependencies come first.
+ */
+function topologicalSort(configIds: string[]): string[] {
+  const s = state()
+  const idSet = new Set(configIds)
+  const visited = new Set<string>()
+  const result: string[] = []
+
+  function visit(id: string, stack: Set<string>) {
+    if (visited.has(id)) return
+    if (stack.has(id)) {
+      log.warn("circular dependency detected during topological sort, skipping", { id })
+      return
+    }
+    stack.add(id)
+
+    if (!s.configs.has(id)) {
+      stack.delete(id)
+      return
+    }
+
+    for (const depId of deps(id, idSet)) {
+      visit(depId, stack)
+    }
+
+    stack.delete(id)
+    visited.add(id)
+    result.push(id)
+  }
+
+  for (const id of configIds) {
+    visit(id, new Set())
+  }
+  return result
 }
 
 /**
  * Start all processes with autoStart=true that are not already running.
+ * Uses topological sort to respect dependency order.
+ * Dependencies are started even if they don't have autoStart=true.
  */
 export async function startAll(): Promise<void> {
   const s = state()
+  const autoStartIds = Array.from(s.configs.entries())
+    .filter(([, config]) => config.autoStart)
+    .map(([id]) => id)
+
+  // Collect all dependency IDs (including transitive) that need starting
+  const allIds = new Set<string>(autoStartIds)
+  for (const id of autoStartIds) {
+    try {
+      const deps = resolveDependencyOrder(id)
+      for (const depId of deps) allIds.add(depId)
+    } catch (err) {
+      log.error("dependency resolution failed in startAll", { id, err: String(err) })
+    }
+  }
+
+  const sorted = topologicalSort(Array.from(allIds))
   const started: string[] = []
-  for (const [configId, config] of s.configs) {
-    if (!config.autoStart) continue
+
+  for (const configId of sorted) {
     const proc = s.processes.get(configId)
     if (proc && (proc.status === "running" || proc.status === "starting")) continue
-    await start(configId)
-    started.push(config.name)
+    // Non-interactive: default to pick-new if no onConflict is configured
+    await start(configId, { portConflict: "pick-new" })
+    started.push(s.configs.get(configId)?.name ?? configId)
   }
+
   if (started.length) {
     log.info("auto-started processes", { names: started })
   }
@@ -605,7 +1093,8 @@ function applyRestartPolicy(
   setTimeout(() => {
     const current = s.processes.get(configId)
     if (current?.status !== "restarting") return
-    start(configId)
+    // Auto-restart is non-interactive — default to pick-new
+    start(configId, { portConflict: "pick-new" })
   }, delay)
 }
 
@@ -630,6 +1119,11 @@ export function initExitHandler(): () => void {
     const configId = matchedConfigId
     const proc = s.processes.get(configId)!
     const config = s.configs.get(configId)
+
+    // Unregister port from global registry on any exit
+    if (proc.assignedPort !== undefined) {
+      unregisterPort(proc.assignedPort)
+    }
 
     // Update process state
     proc.exitCode = exitCode
@@ -683,6 +1177,11 @@ export function initExitHandler(): () => void {
 
     // Only react if the process is currently "running"
     if (proc.status !== "running") return
+
+    // Unregister port from global registry on command-exit crash
+    if (proc.assignedPort !== undefined) {
+      unregisterPort(proc.assignedPort)
+    }
 
     const config = s.configs.get(configId)
 

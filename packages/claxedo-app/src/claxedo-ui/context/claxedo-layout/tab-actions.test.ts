@@ -36,7 +36,7 @@ function createActions(state: TopTabsState) {
 }
 
 describe("tab actions visual order", () => {
-  test("pinned process tab does not determine workspace group order", () => {
+  test("process tab groups with its workspace directory", () => {
     const state = createState(
       [
         {
@@ -44,8 +44,7 @@ describe("tab actions visual order", () => {
           type: "process",
           directory: "/ws-a",
           title: "Processes",
-          closable: false,
-          pinned: true,
+          closable: true,
         },
         {
           id: "b-session",
