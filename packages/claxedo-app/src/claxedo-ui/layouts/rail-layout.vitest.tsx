@@ -153,7 +153,14 @@ vi.mock("@opencode-ai/ui/icon-button", () => ({
 vi.mock("../../overrides/utils/debug", () => ({
   createDebugLogger: () => ({
     log: () => {},
+    verbose: () => {},
+    enabled: () => false,
   }),
+  setDebugTrace: () => {},
+  patchDebugTrace: () => {},
+  clearDebugTrace: () => {},
+  readDebugTraceHistory: () => [],
+  clearDebugTraceHistory: () => {},
 }))
 
 import { RailLayoutInner } from "./rail-layout"

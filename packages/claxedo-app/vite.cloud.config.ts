@@ -95,6 +95,10 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
       target: "esnext",
       outDir: "dist",
       rollupOptions: {
+        input: {
+          main: fileURLToPath(new URL("./index.html", import.meta.url)),
+          demo: fileURLToPath(new URL("./demo/index.html", import.meta.url)),
+        },
         output: {
           manualChunks: {
             'vendor-solid': ['solid-js', 'solid-js/web', 'solid-js/store'],

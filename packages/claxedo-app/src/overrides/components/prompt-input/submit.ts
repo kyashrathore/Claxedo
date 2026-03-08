@@ -16,6 +16,7 @@ import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "@/components/prompt-input/build-request-parts"
 import { setCursorPosition } from "@/components/prompt-input/editor-dom"
+import { isDemoMode } from "@claxedo/utils/api"
 import { useSessionParams } from "../../../claxedo-ui/context/session-params"
 import { useClaxedoLayout } from "../../../claxedo-ui/context/claxedo-layout"
 import { paneMentionSystem } from "../../../claxedo-ui/context/claxedo-layout/pane-intent"
@@ -26,9 +27,6 @@ type PendingPrompt = {
 }
 
 const pending = new Map<string, PendingPrompt>()
-const isDemoMode = () =>
-  typeof window !== "undefined" &&
-  (((window as any).__CLAXEDO_DEMO__ as boolean | undefined) ?? new URLSearchParams(window.location.search).has("demo"))
 
 type PromptSubmitInput = {
   info: Accessor<{ id: string } | undefined>

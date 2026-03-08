@@ -206,10 +206,11 @@ function AuthenticatedLayout(
 export function AppInterface(props: { defaultServer?: ServerConnection.Key; servers?: Array<ServerConnection.Any> }) {
   const ext = getExtensions()
   const routes = ext.app.routes ?? []
+  const base = isDemoMode() ? "/demo" : undefined
 
   return wrapProviders(
     ext.app.providers,
-    <Router>
+    <Router base={base}>
       {/* Extension routes (e.g. /login from cloud package) */}
       <For each={routes}>{(route) => <Route path={route.path} component={route.component} />}</For>
 

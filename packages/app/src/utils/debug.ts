@@ -1,4 +1,12 @@
 type DebugConfig = string | number | boolean | Record<string, string | number | boolean | undefined>
+type DebugTrace = Record<string, unknown>
+type DebugRecord = {
+  traceId: string
+  label: string
+  level: "log" | "verbose"
+  at: number
+  args: unknown[]
+}
 
 type DebugOptions = {
   legacyKey?: string
@@ -8,7 +16,76 @@ type DebugOptions = {
 declare global {
   interface Window {
     __OPENCODE_DEBUG__?: DebugConfig
+    __OPENCODE_DEBUG_TRACE__?: DebugTrace | null
+    __OPENCODE_DEBUG_HISTORY__?: DebugRecord[]
   }
+}
+
+const DEBUG_HISTORY_LIMIT = 200
+
+const plain = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+const currentTrace = () => {
+  if (typeof window === "undefined") return
+  return window.__OPENCODE_DEBUG_TRACE__ ?? undefined
+}
+
+const clone = (value: unknown, depth = 3): unknown => {
+  if (depth < 0) return "[depth]"
+  if (value === null || value === undefined) return value
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+    }
+  }
+  if (Array.isArray(value)) return value.slice(0, 30).map((item) => clone(item, depth - 1))
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {}
+    for (const [key, item] of Object.entries(value).slice(0, 30)) {
+      out[key] = clone(item, depth - 1)
+    }
+    return out
+  }
+  return String(value)
+}
+
+const remember = (label: string, level: "log" | "verbose", args: unknown[]) => {
+  if (typeof window === "undefined") return
+  const trace = currentTrace()
+  const id = trace?.id
+  if (typeof id !== "string" || !id) return
+  const list = (window.__OPENCODE_DEBUG_HISTORY__ ??= [])
+  list.push({
+    traceId: id,
+    label,
+    level,
+    at: Date.now(),
+    args: args.map((item) => clone(item)),
+  })
+  if (list.length <= DEBUG_HISTORY_LIMIT) return
+  list.splice(0, list.length - DEBUG_HISTORY_LIMIT)
+}
+
+const withTrace = (args: unknown[]) => {
+  const trace = currentTrace()
+  if (!trace) return args
+  if (args.length === 0) return [{ debugTrace: trace }]
+  const [first, second, ...rest] = args
+  if (typeof first === "string" && plain(second)) {
+    return [first, { ...second, debugTrace: trace }, ...rest]
+  }
+  if (plain(first)) {
+    return [{ ...first, debugTrace: trace }, second, ...rest].filter((value) => value !== undefined)
+  }
+  if (typeof first === "string") {
+    return [first, { debugTrace: trace }, second, ...rest].filter((value) => value !== undefined)
+  }
+  return [...args, { debugTrace: trace }]
 }
 
 const normalize = (value: unknown) => {
@@ -115,17 +192,57 @@ export function getDebugLevel(scope: string, options?: DebugOptions) {
   return clamp(options?.defaultLevel ?? 0)
 }
 
+export function setDebugTrace(trace: DebugTrace | null) {
+  if (typeof window === "undefined") return
+  window.__OPENCODE_DEBUG_TRACE__ = trace
+}
+
+export function patchDebugTrace(patch: DebugTrace) {
+  if (typeof window === "undefined") return
+  const current = window.__OPENCODE_DEBUG_TRACE__
+  if (!current) return
+  window.__OPENCODE_DEBUG_TRACE__ = { ...current, ...patch }
+}
+
+export function clearDebugTrace(id?: string) {
+  if (typeof window === "undefined") return
+  const current = window.__OPENCODE_DEBUG_TRACE__
+  if (!current) return
+  if (id && current.id !== id) return
+  window.__OPENCODE_DEBUG_TRACE__ = null
+}
+
+export function readDebugTraceHistory(id: string) {
+  if (typeof window === "undefined") return []
+  return (window.__OPENCODE_DEBUG_HISTORY__ ?? []).filter((item) => item.traceId === id)
+}
+
+export function clearDebugTraceHistory(id?: string) {
+  if (typeof window === "undefined") return
+  const list = window.__OPENCODE_DEBUG_HISTORY__
+  if (!list?.length) return
+  if (!id) {
+    window.__OPENCODE_DEBUG_HISTORY__ = []
+    return
+  }
+  window.__OPENCODE_DEBUG_HISTORY__ = list.filter((item) => item.traceId !== id)
+}
+
 export function createDebugLogger(scope: string, label: string, options?: DebugOptions) {
   const enabled = (level = 1) => getDebugLevel(scope, options) >= level
   const log = (...args: unknown[]) => {
     if (!enabled(1)) return
+    const entry = withTrace(args)
+    remember(label, "log", entry)
     // eslint-disable-next-line no-console
-    console.log(`[${label}]`, ...args)
+    console.log(`[${label}]`, ...entry)
   }
   const verbose = (...args: unknown[]) => {
     if (!enabled(2)) return
+    const entry = withTrace(args)
+    remember(label, "verbose", entry)
     // eslint-disable-next-line no-console
-    console.log(`[${label}:verbose]`, ...args)
+    console.log(`[${label}:verbose]`, ...entry)
   }
   return {
     level: () => getDebugLevel(scope, options),

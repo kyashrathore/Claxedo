@@ -6,7 +6,7 @@ const appUrl =
   clean(import.meta.env.PUBLIC_CLAXEDO_APP_URL) ??
   clean(import.meta.env.CLAXEDO_APP_URL) ??
   (import.meta.env.DEV ? "http://localhost:4444" : "https://app.claxedo.com")
-const previewSrc = `${appUrl}?demo=1&embed=1`
+const previewSrc = `${appUrl}/demo/?embed=1`
 const contact = "https://discord.gg/opencode"
 
 const hero = {

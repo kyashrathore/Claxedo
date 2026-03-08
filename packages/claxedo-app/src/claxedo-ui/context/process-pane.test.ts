@@ -49,18 +49,25 @@ const fetchState = {
   calls: [] as FetchCall[],
 }
 
+const dialogState = {
+  shows: 0,
+}
+
 async function mockFetchFn(url: string, opts?: RequestInit): Promise<Response> {
   const method = opts?.method ?? "GET"
   const body = opts?.body ? JSON.parse(opts.body as string) : undefined
   const headers: Record<string, string> = {}
-  if (opts?.headers) {
-    const h = opts.headers as Record<string, string>
-    for (const [k, v] of Object.entries(h)) headers[k] = v
+  for (const [k, v] of new Headers(opts?.headers).entries()) {
+    headers[k] = v
   }
   fetchState.calls.push({ url, method, body, headers })
 
+  const path = new URL(url).pathname
   const key = `${method} ${url}`
-  const handler = Object.entries(fetchState.responses).find(([pattern]) => key.includes(pattern))
+  const route = `${method} ${path}`
+  const handler = Object.entries(fetchState.responses).find(([pattern]) => {
+    return key.includes(pattern) || route.includes(pattern)
+  })
   const data = handler ? handler[1]() : {}
 
   // Support __fail sentinel for retry tests
@@ -88,10 +95,11 @@ async function mockFetchFn(url: string, opts?: RequestInit): Promise<Response> {
 
   if (data && typeof (data as any).__status === "number") {
     const status = (data as any).__status as number
+    const body = "__body" in (data as any) ? (data as any).__body : data
     return {
       ok: status >= 200 && status < 300,
       status,
-      json: async () => data,
+      json: async () => body,
     } as unknown as Response
   }
 
@@ -321,7 +329,9 @@ beforeAll(async () => {
 
   mock.module("@opencode-ai/ui/context/dialog", () => ({
     useDialog: () => ({
-      show: () => {},
+      show: () => {
+        dialogState.shows++
+      },
       close: () => {},
     }),
   }))
@@ -340,6 +350,7 @@ beforeEach(() => {
   mockLayout = createMockClaxedoLayout()
   mockTerminalCtx = createMockTerminalCtx()
   removedStalePtyIds.length = 0
+  dialogState.shows = 0
   fetchState.responses = { "GET": () => ({ configs: [], processes: [] }) }
   fetchState.calls = []
   // Reset visibilityState to prevent cross-test contamination
@@ -466,6 +477,7 @@ describe("initial state", () => {
     await tick()
     expect(mockLayout._getRunning(DEFAULT_DIRECTORY)).toBe(true)
     dispose()
+    await tick()
     expect(mockLayout._getRunning(DEFAULT_DIRECTORY)).toBe(false)
   })
 
@@ -818,6 +830,36 @@ describe("lifecycle actions", () => {
       expect(startCall).toBeDefined()
       expect(startCall!.method).toBe("POST")
       expect(startCall!.url).toContain("/process/proc_abc123/start")
+    } finally {
+      dispose()
+    }
+  })
+
+  test("start shows the port conflict dialog on 409", async () => {
+    fetchState.responses = {
+      "GET": () => ({
+        configs: [SAMPLE_CONFIG],
+        processes: [{ configId: "proc_abc123", status: "idle", restartCount: 0 }],
+      }),
+      "POST /process/proc_abc123/start": () => ({
+        __status: 409,
+        __body: {
+          kind: "port_conflict",
+          conflict: {
+            type: "port-conflict",
+            port: 4096,
+            processId: "proc_busy",
+            processName: "busy-server",
+          },
+        },
+      }),
+    }
+
+    const { api, dispose } = createTestProcessPane()
+    try {
+      await tick()
+      await api.start("proc_abc123")
+      expect(dialogState.shows).toBe(1)
     } finally {
       dispose()
     }

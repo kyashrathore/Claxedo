@@ -29,52 +29,66 @@ export function createGroupAccessors(input: {
     if (cached) return cached
 
     const idx = () => store.groups.findIndex((g) => g.id === groupId)
+    const slim = (tabs: TabItem[]) =>
+      tabs.map((tab) => ({
+        id: tab.id,
+        type: tab.type,
+        dir: tab.directory,
+      }))
     const setGroupItems = (fn: (items: TabItem[]) => TabItem[]) => {
       const i = idx()
-      debug.log("set tabs.items", {
-        groupId,
-        idx: i,
-        hasGroup: i !== -1,
-        groupCount: store.groups.length,
-      })
       if (i === -1) return
       const current = store.groups[i]?.tabs.items ?? []
       const next = fn(current)
+      debug.log("set tabs.items", {
+        groupId,
+        idx: i,
+        hasGroup: true,
+        groupCount: store.groups.length,
+        before: slim(current),
+        after: slim(next),
+        activeId: store.groups[i]?.tabs.activeId ?? null,
+      })
       setStore("groups", i, "tabs", "items", next)
     }
     const setGroupActive = (id: string | null) => {
       const i = idx()
-      debug.verbose("set tabs.activeId", {
+      if (i === -1) return
+      debug.log("set tabs.activeId", {
         groupId,
         idx: i,
-        hasGroup: i !== -1,
+        hasGroup: true,
+        prevActive: store.groups[i]?.tabs.activeId ?? null,
         nextActive: id,
       })
-      if (i === -1) return
       setStore("groups", i, "tabs", "activeId", id)
     }
     const setGroupOrder = (fn: (order: string[]) => string[]) => {
       const i = idx()
-      debug.log("set tabs.order", {
-        groupId,
-        idx: i,
-        hasGroup: i !== -1,
-      })
       if (i === -1) return
       const current = store.groups[i]?.tabs.order ?? []
       const next = fn(current)
+      debug.log("set tabs.order", {
+        groupId,
+        idx: i,
+        hasGroup: true,
+        before: current,
+        after: next,
+      })
       setStore("groups", i, "tabs", "order", next)
     }
     const setGroupClosedTabs = (fn: (tabs: TabItem[]) => TabItem[]) => {
       const i = idx()
-      debug.log("set tabs.closedTabs", {
-        groupId,
-        idx: i,
-        hasGroup: i !== -1,
-      })
       if (i === -1) return
       const current = store.groups[i]?.tabs.closedTabs ?? []
       const next = fn(current)
+      debug.log("set tabs.closedTabs", {
+        groupId,
+        idx: i,
+        hasGroup: true,
+        before: slim(current),
+        after: slim(next),
+      })
       setStore("groups", i, "tabs", "closedTabs", next)
     }
     const produceGroupTabs = (fn: (draft: TopTabsState) => void) => {

@@ -14,10 +14,10 @@ import { parse as parseJsonc } from "jsonc-parser"
 import path from "path"
 import fs from "fs/promises"
 import { watch, type FSWatcher } from "node:fs"
-import { createServer } from "node:net"
 import z from "zod"
 import { buildSafeEnv } from "../pty/env"
 import { Process } from "./process"
+import { findFreePort, findPidOnPort, tryPort } from "./portpick"
 
 // -- Global port registry (cross-workspace, outside Instance.state scope) -----
 // Maps assigned port → workspace info so port conflict detection can tell the
@@ -36,56 +36,6 @@ function registerPort(port: number, entry: PortRegistryEntry): void {
 
 function unregisterPort(port: number): void {
   globalPortRegistry.delete(port)
-}
-
-// -- Portpick helpers (inlined to avoid workspace dependency in patched server) --
-
-function findFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.listen(0, () => {
-      const addr = srv.address()
-      if (!addr || typeof addr === "string") {
-        srv.close()
-        reject(new Error("Failed to get port from server address"))
-        return
-      }
-      const port = addr.port
-      srv.close(() => resolve(port))
-    })
-    srv.on("error", reject)
-  })
-}
-
-/**
- * Try to bind to a specific port. Returns true if the port is free.
- */
-function tryPort(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const srv = createServer()
-    srv.listen(port, () => {
-      srv.close(() => resolve(true))
-    })
-    srv.on("error", () => resolve(false))
-  })
-}
-
-/**
- * Find the PID of a process listening on a given port (macOS/Linux).
- * Returns undefined if not found.
- */
-async function findPidOnPort(port: number): Promise<number | undefined> {
-  try {
-    const { execSync } = await import("child_process")
-    const cmd = process.platform === "darwin"
-      ? `lsof -ti:${port}`
-      : `fuser ${port}/tcp 2>/dev/null`
-    const output = execSync(cmd, { encoding: "utf-8", timeout: 5000 }).trim()
-    const pid = parseInt(output.split("\n")[0], 10)
-    return isNaN(pid) ? undefined : pid
-  } catch {
-    return undefined
-  }
 }
 
 /**

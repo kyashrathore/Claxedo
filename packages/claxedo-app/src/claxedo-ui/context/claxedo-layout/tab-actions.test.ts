@@ -132,4 +132,38 @@ describe("tab actions visual order", () => {
 
     expect(state.activeId).toBe("a-left")
   })
+
+  test("closing a tab preserves surviving tab object identity", () => {
+    const left = {
+      id: "left",
+      type: "session",
+      directory: "/ws-a",
+      title: "Left",
+      sessionId: "left",
+      closable: true,
+    } satisfies TabItem
+    const middle = {
+      id: "middle",
+      type: "process",
+      directory: "/ws-a",
+      title: "Processes",
+      closable: true,
+    } satisfies TabItem
+    const right = {
+      id: "right",
+      type: "terminal",
+      directory: "/ws-a",
+      title: "Right",
+      terminalId: "pty-right",
+      closable: true,
+    } satisfies TabItem
+    const state = createState([left, middle, right], ["left", "middle", "right"])
+    const actions = createActions(state)
+
+    actions.close("middle")
+
+    expect(state.items).toEqual([left, right])
+    expect(state.items[0]).toBe(left)
+    expect(state.items[1]).toBe(right)
+  })
 })

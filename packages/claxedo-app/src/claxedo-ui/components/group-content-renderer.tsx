@@ -16,15 +16,10 @@ import { useClaxedoLayout } from "../context/claxedo-layout"
 import { GroupLayoutProvider } from "./group-layout-provider"
 import { MultiPaneTab } from "./multi-pane/multi-pane-tab"
 import { retainMountedTabsPolicy } from "./retain-mounted-tabs-policy"
-import { createDebugLogger } from "../../overrides/utils/debug"
 
 export function GroupContentRenderer(props: { groupId: string; renderEmpty?: () => JSX.Element }) {
   const claxedo = useClaxedoLayout()
-  const debug = createDebugLogger("layout.group-render", "layout:group-render", {
-    legacyKey: "opencode.debug.terminal",
-  })
   const tabs = createMemo(() => claxedo.groupTabs(props.groupId))
-  const wt = claxedo.groupWorktree(props.groupId)
 
   const activeTab = createMemo(() => claxedo.select.groupActiveTab(props.groupId))
 
@@ -32,58 +27,44 @@ export function GroupContentRenderer(props: { groupId: string; renderEmpty?: () 
   // These tabs stay in the DOM even when inactive, hidden via CSS.
   const [mounted, setMounted] = createSignal<string[]>([])
 
-  createEffect(
-    on(
-      () =>
-        [
-          props.groupId,
-          wt.default(),
-          wt.pinned(),
-          tabs().activeId(),
-          tabs().active()?.directory,
-          activeTab()?.id,
-          activeTab()?.type,
-          activeTab()?.directory,
-          tabs().items().length,
-        ] as const,
-      ([groupId, defaultDir, pinnedDir, activeId, activeDir, resolvedId, resolvedType, resolvedDir, count]) => {
-        debug.log("tab selection", {
-          groupId,
-          defaultDir,
-          pinnedDir,
-          activeId,
-          activeDir,
-          resolvedId,
-          resolvedType,
-          resolvedDir,
-          tabCount: count,
-        })
-      },
-      { defer: true },
-    ),
-  )
-
   // Mounted-tab retention policy (track active tabs, prune closed tabs).
+  //
+  // Two phases:
+  // 1. SYNC — ensure the newly-active tab is in mounted immediately so its
+  //    component tree renders in the current frame.
+  // 2. DEFERRED — prune closed tabs via queueMicrotask.  Deferring avoids
+  //    disposing a complex component tree (SDKProvider → ProcessPaneProvider →
+  //    Terminal) during the same synchronous batch flush that removed the tab
+  //    from items.  SolidJS's cleanNode can crash when the disposal cascade
+  //    overlaps with a still-flushing reactive graph (the "Cannot read
+  //    properties of null (reading '0')" TypeError).
   createEffect(
     on(
       () => [activeTab()?.id, tabs().items()] as const,
-      ([activeId, items]) => {
-        const liveIds = new Set(items.map((tab) => tab.id))
-        setMounted((prev) => {
-          const next = retainMountedTabsPolicy({
-            mounted: prev,
-            activeId,
-            liveIds,
-          })
-          if (next.length !== prev.length) {
-            debug.verbose("prune mounted tabs", {
-              groupId: props.groupId,
-              before: prev,
-              after: next,
-              live: items.map((tab) => tab.id),
+      ([activeId, _items]) => {
+        // Phase 1 (sync): mount the new active tab immediately
+        if (activeId) {
+          setMounted((prev) =>
+            prev.includes(activeId) ? prev : [...prev, activeId],
+          )
+        }
+
+        // Phase 2 (deferred): prune dead tabs after the batch settles.
+        // Read fresh values inside the microtask so rapid successive closes
+        // always see the latest state.
+        queueMicrotask(() => {
+          const currentItems = tabs().items()
+          const currentActiveId = activeTab()?.id
+          const liveIds = new Set(currentItems.map((tab) => tab.id))
+          setMounted((prev) => {
+            const next = retainMountedTabsPolicy({
+              mounted: prev,
+              activeId: currentActiveId,
+              liveIds,
             })
-          }
-          return next.length === prev.length ? prev : next
+            const changed = next.length !== prev.length || next.some((id, i) => id !== prev[i])
+            return changed ? next : prev
+          })
         })
       },
     ),
@@ -92,44 +73,21 @@ export function GroupContentRenderer(props: { groupId: string; renderEmpty?: () 
   return (
     <GroupLayoutProvider groupId={props.groupId}>
       <div class="relative flex-1 min-h-0 h-full">
-        <Show when={!activeTab() && props.renderEmpty}>
+        <Show when={!activeTab() && props.renderEmpty} keyed>
           {(render) => (
             <div class="absolute inset-0 flex flex-col items-center justify-center p-8 text-center text-text-weak">
-              {render()()}
+              {render()}
             </div>
           )}
         </Show>
         <For each={mounted()}>
           {(tabId) => {
-            const tab = createMemo(() =>
-              tabs()
-                .items()
-                .find((t) => t.id === tabId),
-            )
             const isActive = createMemo(() => activeTab()?.id === tabId)
-            createEffect(() => {
-              const t = tab()
-              if (!t) return
-              if (!isActive()) return
-              debug.log("render active", {
-                groupId: props.groupId,
-                tabId: t.id,
-                type: t.type,
-                directory: t.directory,
-                sessionId: t.sessionId,
-                filePath: t.filePath,
-                terminalId: t.terminalId,
-              })
-            })
 
             return (
-              <Show when={tab()}>
-                {(t) => (
-                  <div class="absolute inset-0 overflow-hidden" classList={{ hidden: !isActive() }}>
-                    <MultiPaneTab tabId={t().id} groupId={props.groupId} />
-                  </div>
-                )}
-              </Show>
+              <div class="absolute inset-0 overflow-hidden" classList={{ hidden: !isActive() }}>
+                <MultiPaneTab tabId={tabId} groupId={props.groupId} />
+              </div>
             )
           }}
         </For>

@@ -15,6 +15,12 @@ async function getWorker() {
 
 export async function startWorker(opts?: Opts) {
   const api = await getWorker()
-  await api.start(opts)
+  await api.start({
+    ...opts,
+    serviceWorker: {
+      url: "/demo/mockServiceWorker.js",
+      options: { scope: "/demo/" },
+    },
+  })
   return api
 }
