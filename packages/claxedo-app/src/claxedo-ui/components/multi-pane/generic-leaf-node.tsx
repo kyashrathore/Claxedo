@@ -866,6 +866,7 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
                     setPaneContent({
                       type: "page",
                       directory: content().directory,
+                      sessionId: content().sessionId,
                       pageId,
                       title,
                     })
@@ -875,6 +876,7 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
                       setPaneContent({
                         type: "page",
                         directory: content().directory,
+                        sessionId: content().sessionId,
                         pageId: page.id,
                         title: page.title,
                       })
@@ -890,6 +892,17 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
               </Match>
 
               <Match when={content().type === "page" && content().pageId && content().pageId !== "__index__"}>
+                {(() => {
+                  const backToIndex = () => {
+                    setPaneContent({
+                      type: "page",
+                      directory: content().directory,
+                      sessionId: content().sessionId,
+                      pageId: "__index__",
+                      title: "Pages",
+                    })
+                  }
+                  return (
                 <Show
                   when={content().directory && content().directory !== "__pages__"}
                   fallback={
@@ -899,6 +912,7 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
                       filePath={content().filePath}
                       leafId={props.leafId}
                       tabId={props.tabId}
+                      onBackToIndex={backToIndex}
                     />
                   }
                 >
@@ -918,10 +932,13 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
                         filePath={content().filePath}
                         leafId={props.leafId}
                         tabId={props.tabId}
+                        onBackToIndex={backToIndex}
                       />
                     </DirectoryScope>
                   </GroupIdProvider>
                 </Show>
+                  )
+                })()}
               </Match>
             </Switch>
           )}
