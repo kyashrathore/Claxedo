@@ -9,11 +9,18 @@ export type Page = {
   id: string
   title: string
   content: string
+  status: string
   created_at: string
   updated_at: string
 }
 
-export type PageAiAction = "improve" | "fix" | "shorten" | "lengthen" | "summarize" | "continue" | "custom"
+export type PageStatus = {
+  id: string
+  name: string
+  color: string
+  position: number
+  transitions: string[]
+}
 
 export type PageMarkdownExport = {
   id: string
@@ -184,6 +191,24 @@ export const pagesApi = {
   delete(id: string): Promise<{ ok: boolean }> {
     return request<{ ok: boolean }>(`${base()}/${id}`, {
       method: "DELETE",
+    })
+  },
+
+  listStatuses(): Promise<PageStatus[]> {
+    return request<PageStatus[]>(`${base()}/statuses`)
+  },
+
+  saveStatuses(statuses: PageStatus[]): Promise<PageStatus[]> {
+    return request<PageStatus[]>(`${base()}/statuses`, {
+      method: "PUT",
+      body: JSON.stringify(statuses),
+    })
+  },
+
+  transitionStatus(pageId: string, status: string): Promise<Page> {
+    return request<Page>(`${base()}/${pageId}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
     })
   },
 
