@@ -1,5 +1,5 @@
-// Re-export upstream applyGlobalEvent unchanged
-export { applyGlobalEvent } from "../../../../../app/src/context/global-sync/event-reducer"
+// Re-export upstream applyGlobalEvent and cleanupDroppedSessionCaches unchanged
+export { applyGlobalEvent, cleanupDroppedSessionCaches } from "../../../../../app/src/context/global-sync/event-reducer"
 
 // Re-export upstream applyDirectoryEvent, extended with process event pass-through cases.
 // ProcessPaneProvider subscribes to SSE events directly via useGlobalSDK().event.listen(),
@@ -12,6 +12,7 @@ export { applyGlobalEvent } from "../../../../../app/src/context/global-sync/eve
 
 import { applyDirectoryEvent as upstreamApplyDirectoryEvent } from "../../../../../app/src/context/global-sync/event-reducer"
 import type { SetStoreFunction, Store } from "solid-js/store"
+import type { Todo } from "@opencode-ai/sdk/v2/client"
 import type { State, VcsCache } from "@/context/global-sync/types"
 
 export function applyDirectoryEvent(input: {
@@ -21,6 +22,7 @@ export function applyDirectoryEvent(input: {
   push: (directory: string) => void
   directory: string
   loadLsp: () => void
+  setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void
   vcsCache?: VcsCache
 }) {
   switch (input.event.type) {

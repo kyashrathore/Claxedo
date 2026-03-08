@@ -12,8 +12,6 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import type { InitError } from "@/pages/error"
 import {
   createContext,
-  createEffect,
-  createSignal,
   untrack,
   getOwner,
   useContext,
@@ -32,8 +30,8 @@ import { Persist, persisted } from "@/utils/persist"
 import { createRefreshQueue } from "@/context/global-sync/queue"
 import { createChildStoreManager } from "@/context/global-sync/child-store"
 import { trimSessions } from "@/context/global-sync/session-trim"
-import { estimateRootSessionTotal, loadRootSessionsWithFallback, shouldUseSessionCache } from "@/context/global-sync/session-load"
-import { applyDirectoryEvent, applyGlobalEvent } from "@/context/global-sync/event-reducer"
+import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "@/context/global-sync/session-load"
+import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "@/context/global-sync/event-reducer"
 import { bootstrapDirectory, bootstrapGlobal } from "@/context/global-sync/bootstrap"
 import { sanitizeProject } from "@/context/global-sync/utils"
 import type { ProjectMeta, GlobalSessionItem, GlobalSessionState } from "@/context/global-sync/types"
@@ -58,11 +56,6 @@ function createGlobalSync() {
   const language = useLanguage()
   const owner = getOwner()
   if (!owner) throw new Error("GlobalSync must be created within owner")
-
-  const stats = {
-    evictions: 0,
-    loadSessionsFallback: 0,
-  }
 
   const sdkCache = new Map<string, ReturnType<typeof createOpencodeClient>>()
   const booting = new Map<string, Promise<void>>()
@@ -218,11 +211,6 @@ function createGlobalSync() {
     Persist.global("globalSync.project", ["globalSync.project.v1"]),
     createStore({ value: [] as Project[] }),
   )
-  const [projectCacheReady, setProjectCacheReady] = createSignal(!(projectInit instanceof Promise))
-  if (projectInit instanceof Promise) {
-    void projectInit.then(() => setProjectCacheReady(true))
-  }
-
   const [globalStore, setGlobalStore] = createStore<GlobalStore>({
     ready: false,
     path: { state: "", config: "", worktree: "", directory: "", home: "" },
@@ -234,21 +222,49 @@ function createGlobalSync() {
     session_todo: {},
   })
 
-  const updateStats = (activeDirectoryStores: number) => {
-    if (!import.meta.env.DEV) return
-    ;(
-      globalThis as {
-        __OPENCODE_GLOBAL_SYNC_STATS?: {
-          activeDirectoryStores: number
-          evictions: number
-          loadSessionsFullFetchFallback: number
-        }
-      }
-    ).__OPENCODE_GLOBAL_SYNC_STATS = {
-      activeDirectoryStores,
-      evictions: stats.evictions,
-      loadSessionsFullFetchFallback: stats.loadSessionsFallback,
+  let projectWritten = false
+
+  const cacheProjects = () => {
+    setProjectCache(
+      "value",
+      untrack(() => globalStore.project.map(sanitizeProject)),
+    )
+  }
+
+  const setProjects = (next: Project[] | ((draft: Project[]) => void)) => {
+    projectWritten = true
+    if (typeof next === "function") {
+      setGlobalStore("project", produce(next))
+      cacheProjects()
+      return
     }
+    setGlobalStore("project", next)
+    cacheProjects()
+  }
+
+  const setBootStore = ((...input: unknown[]) => {
+    if (input[0] === "project" && Array.isArray(input[1])) {
+      setProjects(input[1] as Project[])
+      return input[1]
+    }
+    return (setGlobalStore as (...args: unknown[]) => unknown)(...input)
+  }) as typeof setGlobalStore
+
+  const set = ((...input: unknown[]) => {
+    if (input[0] === "project" && (Array.isArray(input[1]) || typeof input[1] === "function")) {
+      setProjects(input[1] as Project[] | ((draft: Project[]) => void))
+      return input[1]
+    }
+    return (setGlobalStore as (...args: unknown[]) => unknown)(...input)
+  }) as typeof setGlobalStore
+
+  if (projectInit instanceof Promise) {
+    void projectInit.then(() => {
+      if (projectWritten) return
+      const cached = projectCache.value
+      if (cached.length === 0) return
+      setGlobalStore("project", cached)
+    })
   }
 
   const paused = () => untrack(() => globalStore.reload) !== undefined
@@ -261,11 +277,6 @@ function createGlobalSync() {
 
   const children = createChildStoreManager({
     owner,
-    markStats: updateStats,
-    incrementEvictions: () => {
-      stats.evictions += 1
-      updateStats(Object.keys(children.children).length)
-    },
     isBooting: (directory) => booting.has(directory),
     isLoadingSessions: (directory) => sessionLoads.has(directory),
     onBootstrap: (directory) => {
@@ -291,29 +302,19 @@ function createGlobalSync() {
     return sdk
   }
 
-  createEffect(() => {
-    if (!projectCacheReady()) return
-    if (globalStore.project.length !== 0) return
-    const cached = projectCache.value
-    if (cached.length === 0) return
-    setGlobalStore("project", cached)
-  })
-
-  createEffect(() => {
-    if (!projectCacheReady()) return
-    const projects = globalStore.project
-    if (projects.length === 0) {
-      const cachedLength = untrack(() => projectCache.value.length)
-      if (cachedLength !== 0) return
+  const setSessionTodo = (sessionID: string, todos: Todo[] | undefined) => {
+    if (!sessionID) return
+    if (!todos) {
+      setGlobalStore(
+        "session_todo",
+        produce((draft) => {
+          delete draft[sessionID]
+        }),
+      )
+      return
     }
-    setProjectCache("value", projects.map(sanitizeProject))
-  })
-
-  createEffect(() => {
-    if (globalStore.reload !== "complete") return
-    setGlobalStore("reload", undefined)
-    queue.refresh()
-  })
+    setGlobalStore("session_todo", sessionID, reconcile(todos, { key: "id" }))
+  }
 
   async function loadSessions(directory: string) {
     const pending = sessionLoads.get(directory)
@@ -321,31 +322,15 @@ function createGlobalSync() {
 
     children.pin(directory)
     const [store, setStore] = children.child(directory, { bootstrap: false })
-    const cache = children.sessionCache.get(directory)
-    const cached = cache?.store.value
-    const fresh =
-      cache?.ready() &&
-      cached &&
-      shouldUseSessionCache({
-        at: cached.at,
-        now: Date.now(),
-        cachedLimit: cached.limit,
-        requestedLimit: store.limit,
-        sessionCount: cached.session.length,
-      })
-    if (fresh && cached) {
-      const next = trimSessions(cached.session, { limit: store.limit, permission: store.permission })
-      setStore("sessionTotal", cached.total)
-      setStore("session", reconcile(next, { key: "id" }))
-      sessionMeta.set(directory, { limit: cached.limit })
-      children.unpin(directory)
-      return
-    }
     const meta = sessionMeta.get(directory)
     if (meta && meta.limit >= store.limit) {
-      const next = trimSessions(store.session, { limit: store.limit, permission: store.permission })
+      const next = trimSessions(store.session, {
+        limit: store.limit,
+        permission: store.permission,
+      })
       if (next.length !== store.session.length) {
         setStore("session", reconcile(next, { key: "id" }))
+        cleanupDroppedSessionCaches(store, setStore, next, setSessionTodo)
       }
       children.unpin(directory)
       return
@@ -356,10 +341,6 @@ function createGlobalSync() {
       directory,
       limit,
       list: (query) => globalSDK.client.session.list(query),
-      onFallback: () => {
-        stats.loadSessionsFallback += 1
-        updateStats(Object.keys(children.children).length)
-      },
     })
       .then((x) => {
         const nonArchived = (x.data ?? [])
@@ -368,18 +349,16 @@ function createGlobalSync() {
           .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
         const limit = store.limit
         const childSessions = store.session.filter((s) => !!s.parentID)
-        const sessions = trimSessions([...nonArchived, ...childSessions], { limit, permission: store.permission })
+        const sessions = trimSessions([...nonArchived, ...childSessions], {
+          limit,
+          permission: store.permission,
+        })
         setStore(
           "sessionTotal",
           estimateRootSessionTotal({ count: nonArchived.length, limit: x.limit, limited: x.limited }),
         )
         setStore("session", reconcile(sessions, { key: "id" }))
-        cache?.setStore("value", {
-          at: Date.now(),
-          limit,
-          total: estimateRootSessionTotal({ count: nonArchived.length, limit: x.limit, limited: x.limited }),
-          session: nonArchived,
-        })
+        cleanupDroppedSessionCaches(store, setStore, sessions, setSessionTodo)
         sessionMeta.set(directory, { limit })
       })
       .catch((err) => {
@@ -435,14 +414,13 @@ function createGlobalSync() {
         event,
         project: globalStore.project,
         refresh: queue.refresh,
-        setGlobalProject(next) {
-          if (typeof next === "function") {
-            setGlobalStore("project", produce(next))
-            return
-          }
-          setGlobalStore("project", next)
-        },
+        setGlobalProject: setProjects,
       })
+      if (event.type === "server.connected" || event.type === "global.disposed") {
+        for (const directory of Object.keys(children.children)) {
+          queue.push(directory)
+        }
+      }
       return
     }
 
@@ -456,6 +434,7 @@ function createGlobalSync() {
       store,
       setStore,
       push: queue.push,
+      setSessionTodo,
       vcsCache: children.vcsCache.get(directory),
       loadLsp: () => {
         sdkFor(directory)
@@ -495,7 +474,7 @@ function createGlobalSync() {
       requestFailedTitle: language.t("common.requestFailed"),
       translate: language.t,
       formatMoreCount: (count) => language.t("common.moreCountSuffix", { count }),
-      setGlobalStore,
+      setGlobalStore: setBootStore,
     })
   }
 
@@ -513,7 +492,7 @@ function createGlobalSync() {
 
   return {
     data: globalStore,
-    set: setGlobalStore,
+    set,
     get ready() {
       return globalStore.ready
     },
@@ -522,13 +501,20 @@ function createGlobalSync() {
     },
     child: children.child,
     bootstrap,
-    updateConfig: (config: Config) => {
+    updateConfig: async (config: Config) => {
       setGlobalStore("reload", "pending")
-      return globalSDK.client.global.config.update({ config }).finally(() => {
-        setTimeout(() => {
-          setGlobalStore("reload", "complete")
-        }, 1000)
-      })
+      return globalSDK.client.global.config
+        .update({ config })
+        .then(bootstrap)
+        .then(() => {
+          queue.refresh()
+          setGlobalStore("reload", undefined)
+          queue.refresh()
+        })
+        .catch((error) => {
+          setGlobalStore("reload", undefined)
+          throw error
+        })
     },
     project: {
       loadSessions,
@@ -541,19 +527,7 @@ function createGlobalSync() {
       loadMore: loadMoreForProject,
     },
     todo: {
-      set: (sessionID: string, todos: Todo[] | undefined) => {
-        if (!sessionID) return
-        if (!todos) {
-          setGlobalStore(
-            "session_todo",
-            produce((draft) => {
-              delete draft[sessionID]
-            }),
-          )
-          return
-        }
-        setGlobalStore("session_todo", sessionID, reconcile(todos, { key: "id" }))
-      },
+      set: setSessionTodo,
     },
   }
 }
@@ -578,4 +552,4 @@ export function useGlobalSync() {
 }
 
 export { canDisposeDirectory, pickDirectoriesToEvict } from "@/context/global-sync/eviction"
-export { estimateRootSessionTotal, loadRootSessionsWithFallback, shouldUseSessionCache } from "@/context/global-sync/session-load"
+export { estimateRootSessionTotal, loadRootSessionsWithFallback } from "@/context/global-sync/session-load"

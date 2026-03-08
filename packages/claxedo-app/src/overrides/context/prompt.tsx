@@ -61,27 +61,23 @@ function isSelectionEqual(a?: FileSelection, b?: FileSelection) {
   )
 }
 
+function isPartEqual(partA: ContentPart, partB: ContentPart) {
+  switch (partA.type) {
+    case "text":
+      return partB.type === "text" && partA.content === partB.content
+    case "file":
+      return partB.type === "file" && partA.path === partB.path && isSelectionEqual(partA.selection, partB.selection)
+    case "agent":
+      return partB.type === "agent" && partA.name === partB.name
+    case "image":
+      return partB.type === "image" && partA.id === partB.id
+  }
+}
+
 export function isPromptEqual(promptA: Prompt, promptB: Prompt): boolean {
   if (promptA.length !== promptB.length) return false
   for (let i = 0; i < promptA.length; i++) {
-    const partA = promptA[i]
-    const partB = promptB[i]
-    if (partA.type !== partB.type) return false
-    if (partA.type === "text" && partA.content !== (partB as TextPart).content) {
-      return false
-    }
-    if (partA.type === "file") {
-      const fileA = partA as FileAttachmentPart
-      const fileB = partB as FileAttachmentPart
-      if (fileA.path !== fileB.path) return false
-      if (!isSelectionEqual(fileA.selection, fileB.selection)) return false
-    }
-    if (partA.type === "agent" && partA.name !== (partB as AgentPart).name) {
-      return false
-    }
-    if (partA.type === "image" && partA.id !== (partB as ImageAttachmentPart).id) {
-      return false
-    }
+    if (!isPartEqual(promptA[i], promptB[i])) return false
   }
   return true
 }
