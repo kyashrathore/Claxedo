@@ -24,10 +24,11 @@ import { TextSelection, Transaction } from "@tiptap/pm/state"
 import { SlashCommands } from "./slash-commands"
 import { MermaidCodeBlock } from "./mermaid-block"
 import "./tab-page.css"
-import { pagesApi, type Page, type ArenaWaveState } from "../../utils/pages-api"
+import { pagesApi, type Page, type PageStatus, type ArenaWaveState } from "../../utils/pages-api"
 import type { PageAiAction, AiPanelPos, AiSelection, AiDraft } from "./tab-page-utils"
 import { useSync } from "@opencode-ai/claxedo-app"
 import { useSDK } from "@/context/sdk"
+import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { PageArenaDock } from "./page-arena-dock"
 import { useLanguage } from "@/context/language"
@@ -74,6 +75,7 @@ export type TabPageProps = {
   leafId?: string
   tabId?: string
   onTitleChange?: (title: string) => void
+  onBackToIndex?: () => void
 }
 
 export function TabPage(props: TabPageProps) {
@@ -130,6 +132,7 @@ export function TabPage(props: TabPageProps) {
               saving={saving()}
               onSavingChange={setSaving}
               onTitleChange={props.onTitleChange}
+              onBackToIndex={props.onBackToIndex}
               loading={loading()}
             />
           </Match>
@@ -164,6 +167,7 @@ function PageEditor(props: {
   loading: boolean
   onSavingChange: (v: boolean) => void
   onTitleChange?: (title: string) => void
+  onBackToIndex?: () => void
 }) {
   type TocMark = { order: number; pos: number; title: string; level: number }
   const claxedo = (() => {
@@ -193,8 +197,23 @@ function PageEditor(props: {
   let selecting = false
   /** Fast path: skip message-count API call for repeat actions within same mount. */
   let setupCheckedForSession: string | undefined
+
+  // Persist page↔session binding in the pages DB so closing and reopening
+  // the dock reconnects to the same conversation instead of creating a fresh session.
+  const [boundSessionId, setBoundSessionId] = createSignal(props.page.session_id || undefined)
+  const savedSessionId = () => boundSessionId()
+  const saveSessionId = (id: string) => {
+    setBoundSessionId(id)
+    pagesApi.updateSessionId(props.pageId, id).catch(() => {})
+  }
+
   const peerSessionId = () => (props.tabId ? querySessionId(props.tabId) : undefined)
   const dockSessionId = createMemo(() => peerSessionId())
+
+  // When a session ID is resolved from the peer pane, persist the binding
+  createEffect(on(dockSessionId, (sid) => {
+    if (sid) saveSessionId(sid)
+  }, { defer: true }))
   const dockEnabled = () => !!props.sessionId && !!props.directory && props.directory !== "__pages__"
   const pageSdk =
     props.directory && props.directory !== "__pages__"
@@ -231,6 +250,30 @@ function PageEditor(props: {
   const [title, setTitle] = createSignal(props.page.title || "")
   const [savedTitle, setSavedTitle] = createSignal(props.page.title || "")
   const [savedContent, setSavedContent] = createSignal(props.page.content || "")
+  const [pageStatus, setPageStatus] = createSignal(props.page.status || "draft")
+  const [allStatuses, setAllStatuses] = createSignal<PageStatus[]>([])
+  const [statusDropdownOpen, setStatusDropdownOpen] = createSignal(false)
+
+  // Fetch status definitions
+  pagesApi.listStatuses().then(setAllStatuses).catch(() => {})
+
+  const currentStatus = createMemo(() => allStatuses().find((s) => s.id === pageStatus()))
+  const allowedTransitions = createMemo(() => {
+    const cur = currentStatus()
+    if (!cur) return allStatuses()
+    return allStatuses().filter((s) => cur.transitions.includes(s.id))
+  })
+
+  const handleStatusTransition = async (targetId: string) => {
+    setStatusDropdownOpen(false)
+    const prev = pageStatus()
+    setPageStatus(targetId)
+    try {
+      await pagesApi.transitionStatus(props.pageId, targetId)
+    } catch {
+      setPageStatus(prev)
+    }
+  }
 
   // Sync the page's actual title to the tab on initial mount
   if (props.page.title) props.onTitleChange?.(props.page.title)
@@ -771,9 +814,19 @@ function PageEditor(props: {
     const peer = queryPeerLeaf(props.tabId, "session:provide")
     if (!peer) return undefined
     try {
-      const created = await pageSdk.client.session.create({ directory: props.directory })
-      const newId = created.data?.id
+      // Reuse a previously saved session for this page if it still exists
+      const stored = savedSessionId()
+      let newId: string | undefined
+      if (stored) {
+        const existing = await pageSdk.client.session.get({ sessionID: stored }).catch(() => null)
+        if (existing?.data) newId = stored
+      }
+      if (!newId) {
+        const created = await pageSdk.client.session.create({ directory: props.directory })
+        newId = created.data?.id
+      }
       if (!newId) return undefined
+      saveSessionId(newId)
       // Update the pane content so SessionPaneBusConsumer sees the real ID
       const layout = claxedo.multiPane.activeLayout(props.tabId)
       if (layout) {
@@ -1616,6 +1669,7 @@ function PageEditor(props: {
     <>
       <div
         class="notion-page-shell"
+        onClick={() => statusDropdownOpen() && setStatusDropdownOpen(false)}
         classList={{
           "notion-page-shell-with-side-dock": dockEnabled(),
           "notion-page-shell-with-left-dock": dockEnabled() && dockPosition() === "left",
@@ -1623,6 +1677,66 @@ function PageEditor(props: {
         }}
         style={dockEnabled() ? { "--page-side-dock-width": `${dockWidth()}px` } : undefined}
       >
+        {/* Breadcrumb bar: back to index + status badge */}
+        <div class="flex items-center gap-2 pt-3 pb-1">
+          <Show when={props.onBackToIndex}>
+            <button
+              type="button"
+              class="flex items-center gap-1 text-[11px] text-text-weak hover:text-text-base transition-colors"
+              onClick={() => props.onBackToIndex?.()}
+            >
+              <Icon name="chevron-left" size="small" />
+              <span>Pages</span>
+            </button>
+            <span class="text-text-weaker text-[11px]">/</span>
+          </Show>
+          <div class="relative">
+            <button
+              type="button"
+              class="flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors hover:opacity-80"
+              style={{
+                "background-color": `${currentStatus()?.color || "#6b7280"}20`,
+                color: currentStatus()?.color || "#6b7280",
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                setStatusDropdownOpen((v) => !v)
+              }}
+            >
+              <div
+                class="w-1.5 h-1.5 rounded-full"
+                style={{ "background-color": currentStatus()?.color || "#6b7280" }}
+              />
+              {currentStatus()?.name || pageStatus()}
+              <Show when={allowedTransitions().length > 0}>
+                <Icon name="chevron-down" size="small" />
+              </Show>
+            </button>
+            <Show when={statusDropdownOpen() && allowedTransitions().length > 0}>
+              <div
+                class="absolute left-0 top-full mt-1 z-50 min-w-[140px] rounded-md border border-border-weak-base bg-background-base shadow-lg py-1"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <For each={allowedTransitions()}>
+                  {(target) => (
+                    <button
+                      type="button"
+                      class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-[11px] hover:bg-surface-base-hover transition-colors"
+                      onClick={() => handleStatusTransition(target.id)}
+                    >
+                      <div
+                        class="w-2 h-2 rounded-full shrink-0"
+                        style={{ "background-color": target.color }}
+                      />
+                      <span class="text-text-base">{target.name}</span>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
+        </div>
+
         <div class="notion-page-actions">
           <Show when={pageEmpty()}>
             <button

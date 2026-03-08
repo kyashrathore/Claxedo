@@ -10,6 +10,7 @@ export type Page = {
   title: string
   content: string
   status: string
+  session_id: string | null
   created_at: string
   updated_at: string
 }
@@ -202,6 +203,13 @@ export const pagesApi = {
     return request<PageStatus[]>(`${base()}/statuses`, {
       method: "PUT",
       body: JSON.stringify(statuses),
+    })
+  },
+
+  updateSessionId(pageId: string, sessionId: string | null): Promise<Page> {
+    return request<Page>(`${base()}/${pageId}/session`, {
+      method: "PATCH",
+      body: JSON.stringify({ session_id: sessionId }),
     })
   },
 

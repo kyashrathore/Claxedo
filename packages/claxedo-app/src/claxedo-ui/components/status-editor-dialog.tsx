@@ -7,6 +7,7 @@
 
 import { createSignal, For, Show } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
+import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { pagesApi, type PageStatus } from "../../utils/pages-api"
 
@@ -128,31 +129,35 @@ export function StatusEditorDialog(props: StatusEditorDialogProps) {
                     value={item.name}
                     onInput={(e) => updateItem(index(), { name: e.currentTarget.value })}
                   />
+                  <div class="flex items-center">
+                    <button
+                      type="button"
+                      class="flex items-center justify-center w-6 h-6 rounded transition-colors text-text-weaker hover:text-text-base hover:bg-surface-base-hover disabled:opacity-30 disabled:pointer-events-none"
+                      onClick={() => moveUp(index())}
+                      disabled={index() === 0}
+                      aria-label="Move up"
+                    >
+                      <div style="transform: rotate(180deg);">
+                        <Icon name="chevron-down" size="small" />
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      class="flex items-center justify-center w-6 h-6 rounded transition-colors text-text-weaker hover:text-text-base hover:bg-surface-base-hover disabled:opacity-30 disabled:pointer-events-none"
+                      onClick={() => moveDown(index())}
+                      disabled={index() === items().length - 1}
+                      aria-label="Move down"
+                    >
+                      <Icon name="chevron-down" size="small" />
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    class="text-text-weaker hover:text-text-base text-[11px]"
-                    onClick={() => moveUp(index())}
-                    disabled={index() === 0}
-                    aria-label="Move up"
-                  >
-                    ^
-                  </button>
-                  <button
-                    type="button"
-                    class="text-text-weaker hover:text-text-base text-[11px]"
-                    onClick={() => moveDown(index())}
-                    disabled={index() === items().length - 1}
-                    aria-label="Move down"
-                  >
-                    v
-                  </button>
-                  <button
-                    type="button"
-                    class="text-text-weaker hover:text-red-500 text-[11px]"
+                    class="flex items-center justify-center w-6 h-6 rounded transition-colors text-text-weaker hover:text-red-500 hover:bg-surface-base-hover"
                     onClick={() => removeStatus(index())}
                     aria-label="Delete status"
                   >
-                    x
+                    <Icon name="close-small" size="small" />
                   </button>
                 </div>
 

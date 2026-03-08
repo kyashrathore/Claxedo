@@ -13,6 +13,7 @@ type Page = {
   title: string
   content: string
   status: string
+  session_id: string | null
   created_at: string
   updated_at: string
 }
@@ -71,6 +72,11 @@ const db = lazy(() => {
     database.exec("ALTER TABLE pages ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'")
   }
 
+  // Migration: add session_id column to existing pages table
+  if (!columns.some((col) => col.name === "session_id")) {
+    database.exec("ALTER TABLE pages ADD COLUMN session_id TEXT DEFAULT NULL")
+  }
+
   // Status definitions table
   database.exec(`
     CREATE TABLE IF NOT EXISTS page_statuses (
@@ -100,11 +106,11 @@ function clean(value: unknown) {
 }
 
 function listPages(): Page[] {
-  return db().query("SELECT id, title, content, status, created_at, updated_at FROM pages ORDER BY updated_at DESC").all() as Page[]
+  return db().query("SELECT id, title, content, status, session_id, created_at, updated_at FROM pages ORDER BY updated_at DESC").all() as Page[]
 }
 
 function getPage(id: string): Page | undefined {
-  return db().query("SELECT id, title, content, status, created_at, updated_at FROM pages WHERE id = ?").get(id) as Page | undefined
+  return db().query("SELECT id, title, content, status, session_id, created_at, updated_at FROM pages WHERE id = ?").get(id) as Page | undefined
 }
 
 function createPage(title?: string, content?: string, status?: string): Page {
@@ -113,14 +119,16 @@ function createPage(title?: string, content?: string, status?: string): Page {
     title: clean(title) || "Untitled",
     content: typeof content === "string" ? content : "",
     status: clean(status) || "draft",
+    session_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
-  db().query("INSERT INTO pages (id, title, content, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(
+  db().query("INSERT INTO pages (id, title, content, status, session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
     page.id,
     page.title,
     page.content,
     page.status,
+    page.session_id,
     page.created_at,
     page.updated_at,
   )
@@ -902,6 +910,14 @@ export const PagesRoutes = lazy(() =>
       const fullPath = path.isAbsolute(filePath) ? filePath : path.resolve(directory, filePath)
       await Bun.write(fullPath, markdown + "\n")
       return c.json({ ok: true })
+    })
+    .patch("/:id/session", async (c) => {
+      const body = await c.req.json<{ session_id?: string | null }>().catch(() => ({}))
+      const page = getPage(c.req.param("id"))
+      if (!page) return c.json({ error: "Not found" }, 404)
+      const sessionId = body.session_id !== undefined ? (body.session_id || null) : null
+      db().query("UPDATE pages SET session_id = ? WHERE id = ?").run(sessionId, page.id)
+      return c.json(getPage(c.req.param("id")))
     })
     .post("/:id/status", async (c) => {
       const body = await c.req.json<{ status?: string }>().catch(() => ({}))

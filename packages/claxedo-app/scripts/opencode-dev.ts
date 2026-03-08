@@ -159,15 +159,43 @@ async function main() {
     log("Applying Claxedo patches...")
     await applyPatches(tempDir)
 
-    // Step 3: Create symlink to node_modules (avoid reinstalling)
+    // Step 3: Merge node_modules from both opencode and claxedo-app.
+    // Patches can import any dependency from either package, so we create
+    // a real node_modules dir and symlink entries from both sources.
+    // claxedo-app wins on conflicts (it's the downstream override).
     const sourceNodeModules = path.join(OPENCODE_DIR, "node_modules")
     const targetNodeModules = path.join(tempDir, "node_modules")
-    if (fs.existsSync(sourceNodeModules)) {
-      log("Symlinking node_modules...")
-      await fs.promises.symlink(sourceNodeModules, targetNodeModules)
-    } else {
+    const claxedaNodeModules = path.join(CLAXEDO_APP_DIR, "node_modules")
+
+    if (!fs.existsSync(sourceNodeModules)) {
       log("Installing dependencies...")
       await $`bun install`.cwd(tempDir)
+    } else {
+      log("Merging node_modules (opencode + claxedo-app)...")
+      await fs.promises.mkdir(targetNodeModules, { recursive: true })
+
+      // Link all entries from both sources; claxedo-app layered second wins ties.
+      for (const srcDir of [sourceNodeModules, claxedaNodeModules]) {
+        if (!fs.existsSync(srcDir)) continue
+        const entries = await fs.promises.readdir(srcDir, { withFileTypes: true })
+        for (const entry of entries) {
+          const src = path.join(srcDir, entry.name)
+          const dest = path.join(targetNodeModules, entry.name)
+          if (entry.name.startsWith("@")) {
+            // Scoped package — merge scope dir so both sources contribute
+            await fs.promises.mkdir(dest, { recursive: true })
+            const scopeEntries = await fs.promises.readdir(src, { withFileTypes: true })
+            for (const sub of scopeEntries) {
+              const subDest = path.join(dest, sub.name)
+              if (fs.existsSync(subDest)) await fs.promises.rm(subDest, { recursive: true })
+              await fs.promises.symlink(path.join(src, sub.name), subDest)
+            }
+          } else {
+            if (fs.existsSync(dest)) await fs.promises.rm(dest, { recursive: true })
+            await fs.promises.symlink(src, dest)
+          }
+        }
+      }
     }
 
     // Step 4: Run the server

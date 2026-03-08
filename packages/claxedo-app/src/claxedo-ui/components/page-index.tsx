@@ -1,11 +1,11 @@
 /**
  * PageIndex — Landing view listing all pages grouped by status.
  *
- * Fetches pages and status definitions on mount, groups pages by status,
- * and provides inline status transitions, create, delete, and open actions.
+ * Notion-style layout centered in the viewport with generous whitespace,
+ * collapsible status groups, and refined inline status transitions.
  */
 
-import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js"
+import { createSignal, createMemo, For, Show, onMount } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -24,6 +24,7 @@ export function PageIndex(props: PageIndexProps) {
   const [statuses, setStatuses] = createSignal<PageStatus[]>([])
   const [loading, setLoading] = createSignal(true)
   const [openDropdown, setOpenDropdown] = createSignal<string | null>(null)
+  const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set())
 
   const fetchData = async () => {
     setLoading(true)
@@ -54,7 +55,6 @@ export function PageIndex(props: PageIndexProps) {
         pages: pageList.filter((p) => p.status === status.id),
       })
     }
-    // Catch pages with unknown status
     const knownIds = new Set(statusList.map((s) => s.id))
     const orphans = pageList.filter((p) => !knownIds.has(p.status))
     if (orphans.length) {
@@ -124,6 +124,15 @@ export function PageIndex(props: PageIndexProps) {
   const formatDate = (iso: string) => {
     try {
       const d = new Date(iso)
+      const now = new Date()
+      const diffMs = now.getTime() - d.getTime()
+      const diffMin = Math.floor(diffMs / 60_000)
+      if (diffMin < 1) return "just now"
+      if (diffMin < 60) return `${diffMin}m ago`
+      const diffHr = Math.floor(diffMin / 60)
+      if (diffHr < 24) return `${diffHr}h ago`
+      const diffDay = Math.floor(diffHr / 24)
+      if (diffDay < 7) return `${diffDay}d ago`
       return d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
     } catch {
       return ""
@@ -136,157 +145,292 @@ export function PageIndex(props: PageIndexProps) {
     return statuses().filter((s) => current.transitions.includes(s.id))
   }
 
-  return (
-    <div class="flex flex-col h-full overflow-auto" onClick={() => setOpenDropdown(null)}>
-      {/* Header */}
-      <div class="flex items-center justify-between px-4 py-3 border-b border-border-weak-base">
-        <div class="flex items-center gap-2">
-          <Icon name="page" size="small" class="text-icon-weak-base" />
-          <span class="text-14-medium text-text-strong">Pages</span>
-        </div>
-        <div class="flex items-center gap-1">
-          <IconButton icon="settings-gear" variant="ghost" onClick={openStatusEditor} aria-label="Configure statuses" />
-          <IconButton icon="chevron-grabber-vertical" variant="ghost" onClick={fetchData} aria-label="Refresh" />
-        </div>
-      </div>
+  const MAX_VISIBLE = 8
 
-      {/* Content */}
-      <div class="flex-1 overflow-auto px-4 py-3">
-        <Show when={!loading()} fallback={
-          <div class="flex items-center justify-center py-12">
-            <div class="size-6 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />
+  const [expanded, setExpanded] = createSignal<Set<string>>(new Set())
+  const isExpanded = (id: string) => expanded().has(id)
+  const toggleExpanded = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleCollapse = (statusId: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(statusId)) next.delete(statusId)
+      else next.add(statusId)
+      return next
+    })
+  }
+
+  return (
+    <div
+      class="flex flex-col h-full overflow-hidden bg-background-base"
+      onClick={() => setOpenDropdown(null)}
+    >
+      {/* Scrollable content area — Notion-style centered shell */}
+      <div class="flex-1 min-h-0 overflow-auto">
+        <div style="width: min(100%, 920px); margin: 0 auto; padding: 0 60px;">
+
+          {/* Title area — mirrors notion-title spacing */}
+          <div style="margin-top: 80px; margin-bottom: 32px;">
+            <div class="flex items-center justify-between">
+              <h1 style="font-size: 40px; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; color: var(--text-strong); margin: 0;">
+                Pages
+              </h1>
+              <div class="flex items-center gap-1" style="margin-top: 8px;">
+                <IconButton icon="settings-gear" variant="ghost" onClick={openStatusEditor} aria-label="Configure statuses" />
+              </div>
+            </div>
+            <Show when={!loading() && pages().length > 0}>
+              <p style="font-size: 14px; color: var(--text-weaker); margin-top: 4px;">
+                {pages().length} {pages().length === 1 ? "page" : "pages"}
+              </p>
+            </Show>
           </div>
-        }>
-          <Show when={pages().length > 0} fallback={
-            <div class="flex flex-col items-center justify-center py-12 gap-3 text-text-weak">
-              <Icon name="page" size="large" class="text-icon-weak-base" />
-              <span class="text-12-regular">No pages yet</span>
+
+          {/* Loading state */}
+          <Show when={loading()}>
+            <div class="flex items-center gap-3 py-16" style="color: var(--text-weak);">
+              <div class="size-4 rounded-full border-2 border-current" style="border-top-color: transparent; animation: spin 0.6s linear infinite;" />
+              <span class="text-14-regular">Loading pages...</span>
+            </div>
+          </Show>
+
+          {/* Empty state */}
+          <Show when={!loading() && pages().length === 0}>
+            <div style="padding: 48px 0;">
+              <p class="text-14-regular" style="color: var(--text-weak); margin-bottom: 20px;">
+                No pages yet. Create your first page to get started.
+              </p>
               <button
                 type="button"
-                class="px-3 py-1.5 text-12-medium rounded-md bg-accent-base text-white hover:bg-accent-base/90 transition-colors"
+                class="text-14-medium"
+                style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border-weak-base); color: var(--text-base); background: var(--background-base); cursor: pointer; transition: all 150ms ease;"
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--surface-base-hover)"
+                  e.currentTarget.style.borderColor = "var(--border-strong-base)"
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "var(--background-base)"
+                  e.currentTarget.style.borderColor = "var(--border-weak-base)"
+                }}
                 onClick={handleCreate}
               >
-                + New Page
+                <Icon name="plus" size="small" />
+                New Page
               </button>
             </div>
-          }>
-            <For each={grouped()}>
-              {(group) => (
-                <Show when={group.pages.length > 0}>
-                  <div class="mb-4">
-                    {/* Status header */}
-                    <div class="flex items-center gap-2 mb-2">
-                      <div
-                        class="w-2 h-2 rounded-full shrink-0"
-                        style={{ "background-color": group.status.color }}
-                      />
-                      <span class="text-12-medium text-text-base">{group.status.name}</span>
-                      <span class="text-11-regular text-text-weaker">{group.pages.length}</span>
-                    </div>
+          </Show>
 
-                    {/* Page rows */}
-                    <div class="flex flex-col gap-0.5">
-                      <For each={group.pages}>
-                        {(page) => (
-                          <div class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-base-hover group/row transition-colors">
-                            <Icon name="page" size="small" class="shrink-0 text-icon-weak-base" />
+          {/* Status groups */}
+          <Show when={!loading() && pages().length > 0}>
+            <div style="display: flex; flex-direction: column; gap: 8px; padding-bottom: 120px;">
+              <For each={grouped()}>
+                {(group) => {
+                  const isCollapsed = () => collapsed().has(group.status.id)
+                  const count = () => group.pages.length
+                  const visiblePages = createMemo(() => {
+                    if (isExpanded(group.status.id) || group.pages.length <= MAX_VISIBLE) return group.pages
+                    return group.pages.slice(0, MAX_VISIBLE)
+                  })
+                  const hiddenCount = createMemo(() => group.pages.length - visiblePages().length)
+                  return (
+                    <Show when={count() > 0}>
+                      <div>
+                        {/* Status group header */}
+                        <button
+                          type="button"
+                          style="display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 0; border: none; background: none; cursor: pointer; user-select: none;"
+                          onClick={() => toggleCollapse(group.status.id)}
+                        >
+                          <div
+                            style={`width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; background-color: ${group.status.color};`}
+                          />
+                          <span class="text-12-medium" style="color: var(--text-base);">
+                            {group.status.name}
+                          </span>
+                          <span
+                            class="text-12-regular"
+                            style="color: var(--text-weaker); min-width: 16px;"
+                          >
+                            {count()}
+                          </span>
+                          <div style="flex: 1;" />
+                          <div
+                            style={`transition: transform 150ms ease; transform: rotate(${isCollapsed() ? "-90deg" : "0deg"}); color: var(--text-weaker);`}
+                          >
+                            <Icon name="chevron-down" size="small" />
+                          </div>
+                        </button>
 
-                            {/* Clickable title */}
-                            <button
-                              type="button"
-                              class="flex-1 text-left text-12-regular text-text-base hover:text-text-strong truncate"
-                              onClick={() => props.onOpenPage(page.id, page.title)}
-                            >
-                              {page.title || "Untitled"}
-                            </button>
+                        {/* Page rows */}
+                        <Show when={!isCollapsed()}>
+                          <div style="display: flex; flex-direction: column; gap: 1px; margin-left: 16px; border-left: 1px solid var(--border-weak-base); padding-left: 12px; margin-bottom: 4px;">
+                            <For each={visiblePages()}>
+                              {(page) => (
+                                <div
+                                  class="group/row"
+                                  style="display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 5px; transition: background-color 120ms ease; cursor: pointer;"
+                                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-base-hover)" }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent" }}
+                                  onClick={() => props.onOpenPage(page.id, page.title)}
+                                >
+                                  {/* Page icon */}
+                                  <div style="flex-shrink: 0; color: var(--icon-weak-base);">
+                                    <Icon name="page" size="small" />
+                                  </div>
 
-                            {/* Status badge / dropdown */}
-                            <div class="relative">
+                                  {/* Title */}
+                                  <span
+                                    class="text-14-regular"
+                                    style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-base);"
+                                  >
+                                    {page.title || "Untitled"}
+                                  </span>
+
+                                  {/* Status badge with transition dropdown */}
+                                  <div style="position: relative; flex-shrink: 0;" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      type="button"
+                                      style={`display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; border: none; font-size: 11px; font-weight: 500; letter-spacing: 0.01em; cursor: pointer; transition: opacity 120ms ease; background-color: ${group.status.color}14; color: ${group.status.color};`}
+                                      onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.75" }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.opacity = "1" }}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        if (allowedTransitions(page).length > 0) {
+                                          setOpenDropdown((prev) => (prev === page.id ? null : page.id))
+                                        }
+                                      }}
+                                    >
+                                      <div
+                                        style={`width: 6px; height: 6px; border-radius: 50%; background-color: ${group.status.color};`}
+                                      />
+                                      {group.status.name}
+                                      <Show when={allowedTransitions(page).length > 0}>
+                                        <Icon name="chevron-down" size="small" />
+                                      </Show>
+                                    </button>
+
+                                    {/* Dropdown */}
+                                    <Show when={openDropdown() === page.id && allowedTransitions(page).length > 0}>
+                                      <div
+                                        style="position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; min-width: 160px; border-radius: 8px; border: 1px solid var(--border-weak-base); background: var(--background-base); box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06); padding: 4px; animation: pageindex-dropdown-in 120ms ease;"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <div style="padding: 4px 8px 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-weaker);">
+                                          Move to
+                                        </div>
+                                        <For each={allowedTransitions(page)}>
+                                          {(target) => (
+                                            <button
+                                              type="button"
+                                              style="display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: none; border-radius: 5px; background: none; text-align: left; font-size: 12px; cursor: pointer; transition: background-color 100ms ease; color: var(--text-base);"
+                                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-base-hover)" }}
+                                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent" }}
+                                              onClick={() => handleTransition(page.id, target.id)}
+                                            >
+                                              <div
+                                                style={`width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; background-color: ${target.color};`}
+                                              />
+                                              <span>{target.name}</span>
+                                            </button>
+                                          )}
+                                        </For>
+                                      </div>
+                                    </Show>
+                                  </div>
+
+                                  {/* Relative date */}
+                                  <span
+                                    class="text-12-regular"
+                                    style="flex-shrink: 0; color: var(--text-weaker); white-space: nowrap;"
+                                  >
+                                    {formatDate(page.updated_at)}
+                                  </span>
+
+                                  {/* Delete */}
+                                  <button
+                                    type="button"
+                                    class="opacity-0 group-hover/row:opacity-100"
+                                    style="flex-shrink: 0; border: none; background: none; padding: 2px; cursor: pointer; color: var(--text-weaker); transition: color 120ms ease, opacity 120ms ease; border-radius: 3px;"
+                                    onMouseEnter={(e) => { e.currentTarget.style.color = "#ef4444" }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-weaker)" }}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleDelete(page.id)
+                                    }}
+                                    aria-label="Delete page"
+                                  >
+                                    <Icon name="close-small" size="small" />
+                                  </button>
+                                </div>
+                              )}
+                            </For>
+                            <Show when={hiddenCount() > 0}>
                               <button
                                 type="button"
-                                class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors hover:opacity-80"
-                                style={{
-                                  "background-color": `${group.status.color}20`,
-                                  color: group.status.color,
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setOpenDropdown((prev) => (prev === page.id ? null : page.id))
-                                }}
+                                class="text-12-regular"
+                                style="padding: 4px 8px; border: none; background: none; cursor: pointer; color: var(--text-weak); text-align: left; transition: color 120ms ease;"
+                                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-base)" }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-weak)" }}
+                                onClick={() => toggleExpanded(group.status.id)}
                               >
-                                {group.status.name}
-                                <Show when={allowedTransitions(page).length > 0}>
-                                  <Icon name="chevron-down" size="small" />
-                                </Show>
+                                {hiddenCount()} more...
                               </button>
-
-                              {/* Transition dropdown */}
-                              <Show when={openDropdown() === page.id && allowedTransitions(page).length > 0}>
-                                <div
-                                  class="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-md border border-border-weak-base bg-background-base shadow-lg py-1"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <For each={allowedTransitions(page)}>
-                                    {(target) => (
-                                      <button
-                                        type="button"
-                                        class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-[11px] hover:bg-surface-base-hover transition-colors"
-                                        onClick={() => handleTransition(page.id, target.id)}
-                                      >
-                                        <div
-                                          class="w-2 h-2 rounded-full shrink-0"
-                                          style={{ "background-color": target.color }}
-                                        />
-                                        <span class="text-text-base">{target.name}</span>
-                                      </button>
-                                    )}
-                                  </For>
-                                </div>
-                              </Show>
-                            </div>
-
-                            {/* Date */}
-                            <span class="text-[10px] text-text-weaker whitespace-nowrap">
-                              {formatDate(page.updated_at)}
-                            </span>
-
-                            {/* Delete */}
-                            <button
-                              type="button"
-                              class="opacity-0 group-hover/row:opacity-100 transition-opacity text-text-weaker hover:text-red-500"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleDelete(page.id)
-                              }}
-                              aria-label="Delete page"
-                            >
-                              <Icon name="close-small" size="small" />
-                            </button>
+                            </Show>
+                            <Show when={isExpanded(group.status.id) && group.pages.length > MAX_VISIBLE}>
+                              <button
+                                type="button"
+                                class="text-12-regular"
+                                style="padding: 4px 8px; border: none; background: none; cursor: pointer; color: var(--text-weak); text-align: left; transition: color 120ms ease;"
+                                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-base)" }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-weak)" }}
+                                onClick={() => toggleExpanded(group.status.id)}
+                              >
+                                Show less
+                              </button>
+                            </Show>
                           </div>
-                        )}
-                      </For>
-                    </div>
-                  </div>
-                </Show>
-              )}
-            </For>
+                        </Show>
+                      </div>
+                    </Show>
+                  )
+                }}
+              </For>
+
+              {/* New page row — inline with content */}
+              <button
+                type="button"
+                style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-left: 16px; border: none; background: none; cursor: pointer; border-radius: 5px; transition: background-color 120ms ease; color: var(--text-weak);"
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "var(--surface-base-hover)"
+                  e.currentTarget.style.color = "var(--text-base)"
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent"
+                  e.currentTarget.style.color = "var(--text-weak)"
+                }}
+                onClick={handleCreate}
+              >
+                <Icon name="plus" size="small" />
+                <span class="text-14-regular">New Page</span>
+              </button>
+            </div>
           </Show>
-        </Show>
+        </div>
       </div>
 
-      {/* Footer */}
-      <Show when={pages().length > 0}>
-        <div class="shrink-0 border-t border-border-weak-base px-4 py-2">
-          <button
-            type="button"
-            class="flex items-center gap-1.5 text-12-regular text-text-weak hover:text-text-base transition-colors"
-            onClick={handleCreate}
-          >
-            <Icon name="plus" size="small" />
-            <span>New Page</span>
-          </button>
-        </div>
-      </Show>
+      <style>{`
+        @keyframes pageindex-dropdown-in {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   )
 }

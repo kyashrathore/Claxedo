@@ -562,8 +562,7 @@ interface SelectAllState {
 
 // ── Page AI prompt helpers ─────────────────────────────────────────────
 
-export type { PageAiAction } from "../../utils/pages-api"
-import type { PageAiAction } from "../../utils/pages-api"
+export type PageAiAction = "improve" | "fix" | "shorten" | "lengthen" | "summarize" | "continue" | "custom"
 
 export const PAGE_AI_SYSTEM =
   "You are a writing assistant embedded in a rich text page editor. " +
