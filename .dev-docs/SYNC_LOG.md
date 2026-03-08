@@ -15,6 +15,32 @@ Each entry should include:
 
 ---
 
+## 2026-03-08
+
+**Status:** 🟢 Success
+
+- **Branch:** `sync/2026-03-08`
+- **Upstream Commit:** `upstream/dev@d15c2ce34`
+- **Commits Rebased:** 23 (fork commits replayed onto upstream)
+- **Conflicts:** 7 files in commit 1/23 (squash commit), commits 2-23 applied cleanly
+  - `bun.lock`: Accepted upstream, regenerated via `bun install`
+  - `packages/app/src/components/prompt-input.tsx`: Kept ours (has sessionID, navigateOnCreate, system, agent props for multi-session)
+  - `packages/app/src/context/global-sync/event-reducer.test.ts`: Kept ours (fork test modifications)
+  - `packages/app/src/pages/session/message-timeline.tsx`: Kept ours (sessionID prop for split panes)
+  - `packages/app/src/pages/session/terminal-panel.tsx`: Kept ours (fork terminal integration)
+  - `packages/ui/src/hooks/create-auto-scroll.tsx`: Restored upstream version (was incorrectly kept as ours during rebase)
+  - `sdks/vscode/package.json`: Kept upstream (modify/delete conflict — our squash had deleted it)
+- **Post-Rebase Drift Fixes:**
+  - `packages/ui/src/hooks/create-auto-scroll.tsx`: Upstream added `snapToBottom`, `smoothScrollToBottom`, `preserve` methods; uses column-reverse scroll + motion animations
+  - `packages/claxedo-app/src/claxedo-ui/components/compact-prompt-dock.tsx`: `BasicTool` renamed to `ToolCall` upstream; added `variant="panel"` prop
+- **Validation:**
+  - `bun install`: ✅ Pass
+  - `typecheck`: ✅ Pass
+  - `build`: ✅ Pass
+- **Note:** Files in `packages/app/` that were kept as ours (prompt-input, message-timeline, terminal-panel, sync, event-reducer.test) should be added to the upstream modifications registry since they contain intentional fork changes.
+
+---
+
 ## 2026-03-04
 
 **Status:** 🟢 Success
