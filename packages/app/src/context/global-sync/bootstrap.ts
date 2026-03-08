@@ -128,7 +128,7 @@ export async function bootstrapDirectory(input: {
       input.sdk.provider.list().then((x) => {
         input.setStore("provider", normalizeProviderList(x.data!))
       }),
-    agent: () => input.sdk.app.agents().then((x) => input.setStore("agent", x.data ?? [])),
+    agent: () => input.sdk.app.agents().then((x) => input.setStore("agent", Array.isArray(x.data) ? x.data : [])),
     config: () => input.sdk.config.get().then((x) => input.setStore("config", x.data!)),
   }
 
