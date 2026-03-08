@@ -12,10 +12,18 @@ type Page = {
   id: string
   title: string
   content: string
+  status: string
   created_at: string
   updated_at: string
 }
 
+type PageStatusDef = {
+  id: string
+  name: string
+  color: string
+  position: number
+  transitions: string
+}
 type MarkdownMeta = {
   page_id?: string
   updated_at?: string
@@ -33,6 +41,13 @@ function pagesBaseDir() {
 
 const pageMirrorRoot = process.env.PAGES_FILE_ROOT || ".claxedo/pages"
 const pageMdAutoImport = clean(process.env.PAGES_MD_AUTO_IMPORT || "1") !== "0"
+const DEFAULT_STATUSES: Array<{ id: string; name: string; color: string; position: number; transitions: string[] }> = [
+  { id: "draft", name: "Draft", color: "#6b7280", position: 0, transitions: ["in_review", "in_progress"] },
+  { id: "in_review", name: "In Review", color: "#f59e0b", position: 1, transitions: ["in_progress", "draft"] },
+  { id: "in_progress", name: "In Progress", color: "#3b82f6", position: 2, transitions: ["done", "in_review"] },
+  { id: "done", name: "Done", color: "#22c55e", position: 3, transitions: ["archived", "in_progress"] },
+  { id: "archived", name: "Archived", color: "#9ca3af", position: 4, transitions: ["draft"] },
+]
 const db = lazy(() => {
   // Use Instance.directory so the pages DB lives inside the workspace (persistent)
   // instead of process.cwd() which may be an ephemeral temp directory.
@@ -49,6 +64,33 @@ const db = lazy(() => {
       updated_at TEXT NOT NULL
     )
   `)
+
+  // Migration: add status column to existing pages table
+  const columns = database.query("PRAGMA table_info(pages)").all() as Array<{ name: string }>
+  if (!columns.some((col) => col.name === "status")) {
+    database.exec("ALTER TABLE pages ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'")
+  }
+
+  // Status definitions table
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS page_statuses (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#6b7280',
+      position INTEGER NOT NULL DEFAULT 0,
+      transitions TEXT NOT NULL DEFAULT '[]'
+    )
+  `)
+
+  // Seed defaults if empty
+  const count = database.query("SELECT COUNT(*) as c FROM page_statuses").get() as { c: number }
+  if (count.c === 0) {
+    const insert = database.prepare("INSERT INTO page_statuses (id, name, color, position, transitions) VALUES (?, ?, ?, ?, ?)")
+    for (const s of DEFAULT_STATUSES) {
+      insert.run(s.id, s.name, s.color, s.position, JSON.stringify(s.transitions))
+    }
+  }
+
   return database
 })
 
@@ -58,29 +100,82 @@ function clean(value: unknown) {
 }
 
 function listPages(): Page[] {
-  return db().query("SELECT id, title, content, created_at, updated_at FROM pages ORDER BY updated_at DESC").all() as Page[]
+  return db().query("SELECT id, title, content, status, created_at, updated_at FROM pages ORDER BY updated_at DESC").all() as Page[]
 }
 
 function getPage(id: string): Page | undefined {
-  return db().query("SELECT id, title, content, created_at, updated_at FROM pages WHERE id = ?").get(id) as Page | undefined
+  return db().query("SELECT id, title, content, status, created_at, updated_at FROM pages WHERE id = ?").get(id) as Page | undefined
 }
 
-function createPage(title?: string, content?: string): Page {
+function createPage(title?: string, content?: string, status?: string): Page {
   const page: Page = {
     id: generateId(),
     title: clean(title) || "Untitled",
     content: typeof content === "string" ? content : "",
+    status: clean(status) || "draft",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
-  db().query("INSERT INTO pages (id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)").run(
+  db().query("INSERT INTO pages (id, title, content, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(
     page.id,
     page.title,
     page.content,
+    page.status,
     page.created_at,
     page.updated_at,
   )
   return page
+}
+
+function listStatuses(): PageStatusDef[] {
+  return db().query("SELECT id, name, color, position, transitions FROM page_statuses ORDER BY position ASC").all() as PageStatusDef[]
+}
+
+function saveStatuses(statuses: Array<{ id: string; name: string; color: string; position: number; transitions: string[] }>): PageStatusDef[] {
+  const ids = statuses.map((s) => s.id)
+  if (new Set(ids).size !== ids.length) throw new Error("Duplicate status IDs")
+  for (const s of statuses) {
+    for (const t of s.transitions) {
+      if (!ids.includes(t)) throw new Error(`Transition target "${t}" does not exist`)
+    }
+  }
+
+  const database = db()
+  // Find removed statuses and reassign their pages to first status
+  const existing = listStatuses()
+  const removedIds = existing.map((s) => s.id).filter((id) => !ids.includes(id))
+  const fallbackStatus = statuses.length > 0 ? statuses.reduce((a, b) => (a.position < b.position ? a : b)).id : "draft"
+  if (removedIds.length) {
+    const placeholders = removedIds.map(() => "?").join(",")
+    database.query(`UPDATE pages SET status = ? WHERE status IN (${placeholders})`).run(fallbackStatus, ...removedIds)
+  }
+
+  database.exec("DELETE FROM page_statuses")
+  const insert = database.prepare("INSERT INTO page_statuses (id, name, color, position, transitions) VALUES (?, ?, ?, ?, ?)")
+  for (const s of statuses) {
+    insert.run(s.id, s.name, s.color, s.position, JSON.stringify(s.transitions))
+  }
+  return listStatuses()
+}
+
+function transitionPageStatus(pageId: string, targetStatus: string): { page?: Page; error?: string; status?: number } {
+  const page = getPage(pageId)
+  if (!page) return { error: "Not found", status: 404 }
+
+  const statuses = listStatuses()
+  const target = statuses.find((s) => s.id === targetStatus)
+  if (!target) return { error: `Status "${targetStatus}" does not exist`, status: 422 }
+
+  const current = statuses.find((s) => s.id === page.status)
+  if (current) {
+    const allowed = JSON.parse(current.transitions) as string[]
+    if (!allowed.includes(targetStatus)) {
+      return { error: `Transition from "${page.status}" to "${targetStatus}" is not allowed`, status: 422 }
+    }
+  }
+
+  db().query("UPDATE pages SET status = ?, updated_at = ? WHERE id = ?").run(targetStatus, new Date().toISOString(), pageId)
+  return { page: getPage(pageId) }
 }
 
 function updatePage(id: string, patch: { title?: string; content?: string }): Page | undefined {
@@ -701,6 +796,26 @@ function generateId() {
 
 export const PagesRoutes = lazy(() =>
   new Hono()
+    .get("/statuses", (c) => {
+      const statuses = listStatuses().map((s) => ({
+        ...s,
+        transitions: JSON.parse(s.transitions) as string[],
+      }))
+      return c.json(statuses)
+    })
+    .put("/statuses", async (c) => {
+      const body = await c.req.json<Array<{ id: string; name: string; color: string; position: number; transitions: string[] }>>().catch(() => [])
+      if (!Array.isArray(body) || body.length === 0) return c.json({ error: "Expected non-empty array of statuses" }, 400)
+      try {
+        const saved = saveStatuses(body).map((s) => ({
+          ...s,
+          transitions: JSON.parse(s.transitions) as string[],
+        }))
+        return c.json(saved)
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : "Invalid statuses" }, 422)
+      }
+    })
     .get("/", (c) => {
       const pages = listPages()
       pages.forEach((page) => {
@@ -710,8 +825,8 @@ export const PagesRoutes = lazy(() =>
       return c.json(pages)
     })
     .post("/", async (c) => {
-      const body = await c.req.json<{ title?: string; content?: string }>().catch(() => ({}))
-      const page = createPage(body.title, body.content)
+      const body = await c.req.json<{ title?: string; content?: string; status?: string }>().catch(() => ({}))
+      const page = createPage(body.title, body.content, body.status)
       writeMirror(page)
       return c.json(page, 201)
     })
@@ -787,6 +902,14 @@ export const PagesRoutes = lazy(() =>
       const fullPath = path.isAbsolute(filePath) ? filePath : path.resolve(directory, filePath)
       await Bun.write(fullPath, markdown + "\n")
       return c.json({ ok: true })
+    })
+    .post("/:id/status", async (c) => {
+      const body = await c.req.json<{ status?: string }>().catch(() => ({}))
+      const target = clean(body.status)
+      if (!target) return c.json({ error: "status is required" }, 400)
+      const result = transitionPageStatus(c.req.param("id"), target)
+      if (result.error) return c.json({ error: result.error }, (result.status ?? 422) as 404 | 422)
+      return c.json(result.page)
     })
     .route("/:id/arena", PageArenaRoutes())
     .get("/:id", (c) => {

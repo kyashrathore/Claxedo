@@ -26,6 +26,7 @@ import { TabReview } from "../tab-review"
 import { ReviewWorkspace } from "../review-workspace"
 import { TabFile } from "../tab-file"
 import { TabPage } from "../tab-page"
+import { PageIndex } from "../page-index"
 import { TabContext } from "../tab-context"
 import { PaneTerminal } from "./pane-terminal"
 import { FileTreePane } from "./file-tree-pane"
@@ -389,6 +390,7 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
     if (content.type === "file") return content.filePath?.split("/").at(-1) ?? "File"
     if (content.type === "review") return "Review"
     if (content.type === "review-workspace") return "Review Workspace"
+    if (content.type === "page" && content.pageId === "__index__") return "Pages"
     if (content.type === "page") return "Page"
     if (content.type === "context") return "Context"
     if (content.type === "process") return "Processes"
@@ -515,23 +517,12 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
   const addPageContent = () => {
     const target = directory()
     if (!target) return
-    void pagesApi
-      .create("Untitled")
-      .then((page) => {
-        setPaneContent({
-          type: "page",
-          directory: target,
-          pageId: page.id,
-          title: page.title,
-        })
-      })
-      .catch((error) => {
-        showToast({
-          title: "Failed to create page",
-          description: error instanceof Error ? error.message : String(error),
-          variant: "error",
-        })
-      })
+    setPaneContent({
+      type: "page",
+      directory: target,
+      pageId: "__index__",
+      title: "Pages",
+    })
   }
   const addReviewWorkspaceContent = async () => {
     const target = directory()
@@ -869,7 +860,36 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
                 </SDKProvider>
               </Match>
 
-              <Match when={content().type === "page" && content().pageId}>
+              <Match when={content().type === "page" && content().pageId === "__index__"}>
+                <PageIndex
+                  onOpenPage={(pageId, title) => {
+                    setPaneContent({
+                      type: "page",
+                      directory: content().directory,
+                      pageId,
+                      title,
+                    })
+                  }}
+                  onCreatePage={() => {
+                    void pagesApi.create("Untitled").then((page) => {
+                      setPaneContent({
+                        type: "page",
+                        directory: content().directory,
+                        pageId: page.id,
+                        title: page.title,
+                      })
+                    }).catch((error) => {
+                      showToast({
+                        title: "Failed to create page",
+                        description: error instanceof Error ? error.message : String(error),
+                        variant: "error",
+                      })
+                    })
+                  }}
+                />
+              </Match>
+
+              <Match when={content().type === "page" && content().pageId && content().pageId !== "__index__"}>
                 <Show
                   when={content().directory && content().directory !== "__pages__"}
                   fallback={
