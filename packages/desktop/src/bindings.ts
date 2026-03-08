@@ -20,6 +20,7 @@ export const commands = {
 	wslPath: (path: string, mode: "windows" | "linux" | null) => __TAURI_INVOKE<string>("wsl_path", { path, mode }),
 	resolveAppPath: (appName: string) => __TAURI_INVOKE<string | null>("resolve_app_path", { appName }),
 	openPath: (path: string, appName: string | null) => __TAURI_INVOKE<null>("open_path", { path, appName }),
+	saveDroppedFile: (name: string, data: number[]) => __TAURI_INVOKE<string>("save_dropped_file", { name, data }),
 	validateLicenseOnBoot: () => __TAURI_INVOKE<LicenseStatus>("validate_license_on_boot"),
 	activateLicense: (key: string) => __TAURI_INVOKE<null>("activate_license", { key }),
 	deactivateLicense: () => __TAURI_INVOKE<null>("deactivate_license"),

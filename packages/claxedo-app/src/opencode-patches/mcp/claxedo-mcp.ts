@@ -16,6 +16,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
+import { Process } from "../process/process"
+import { createProcessClient } from "../process/client"
 
 // ---------------------------------------------------------------------------
 // Shared HTTP helpers
@@ -284,32 +286,10 @@ const validateModel = async (value: string) => {
 // Process management types
 // ===========================================================================
 
-type ProcessConfig = {
-  id: string
-  name: string
-  command: string
-  args: string[]
-  cwd?: string
-  env?: Record<string, string>
-  autoStart: boolean
-  restartPolicy: "never" | "on-failure" | "always"
-  maxRestarts: number
-  color?: string
-  port?: { name: string; inject: string }
-}
-
-type ManagedProcess = {
-  configId: string
-  ptyId?: string
-  status: "idle" | "starting" | "running" | "stopping" | "stopped" | "crashed" | "restarting"
-  restartCount: number
-  exitCode?: number
-  startedAt?: number
-  exitedAt?: number
-  assignedPort?: number
-}
-
-type ProcessListResponse = { configs: ProcessConfig[]; processes: ManagedProcess[] }
+type ProcessConfig = Process.ProcessConfig
+type ManagedProcess = Process.ManagedProcess
+type ProcessListResponse = Process.ListResponse
+type LaunchResult = Process.LaunchResult
 
 const formatProcess = (config: ProcessConfig, proc?: ManagedProcess): string => {
   const status = proc?.status || "idle"
@@ -327,6 +307,37 @@ const findConfigByPortName = (
   if (!config) return undefined
   const proc = data.processes.find((p) => p.configId === config.id)
   return { config, proc }
+}
+
+const proc = (directory?: string) =>
+  createProcessClient({
+    baseUrl: ORIGIN,
+    directory: clean(directory) || DEFAULT_DIR,
+  })
+
+const detail = (proc: ManagedProcess) => {
+  const port = proc.assignedPort ? ` on port ${proc.assignedPort}` : ""
+  return `${proc.status}${port}`
+}
+
+const launch = (id: string, out: LaunchResult, ok: string, fail: string) => {
+  if (out.kind === "started") {
+    return { text: `Process ${id} ${ok}. Status: ${detail(out.process)}` }
+  }
+  if (out.kind === "already_running") {
+    return { text: `Process ${id} is already running. Status: ${detail(out.process)}` }
+  }
+  if (out.kind === "port_conflict") {
+    const owner = out.conflict.processName ? ` (${out.conflict.processName})` : ""
+    return {
+      text: `Process ${id} could not ${fail}: preferred port ${out.conflict.port} is in use${owner}.`,
+      isError: true as const,
+    }
+  }
+  return {
+    text: `Process ${id} could not ${fail}: ${out.error}`,
+    isError: true as const,
+  }
 }
 
 // ===========================================================================
@@ -537,7 +548,7 @@ server.registerTool(
     },
   },
   async (args) => {
-    const data = await httpRequest<ProcessListResponse>("/process", { method: "GET" }, "json", args.directory)
+    const data = await proc(args.directory).list()
     if (!data.configs.length) {
       return { content: [{ type: "text" as const, text: "No processes configured." }] }
     }
@@ -561,14 +572,11 @@ server.registerTool(
     },
   },
   async (args) => {
-    const proc = await httpRequest<ManagedProcess>(
-      `/process/${encodeURIComponent(args.id)}/start`,
-      { method: "POST" },
-      "json",
-      args.directory,
-    )
+    const out = await proc(args.directory).start(args.id, { interactive: false })
+    const result = launch(args.id, out, "started", "start")
     return {
-      content: [{ type: "text" as const, text: `Process ${args.id} started. Status: ${proc.status}` }],
+      content: [{ type: "text" as const, text: result.text }],
+      ...(result.isError ? { isError: true } : {}),
     }
   },
 )
@@ -583,12 +591,7 @@ server.registerTool(
     },
   },
   async (args) => {
-    await httpRequest<boolean>(
-      `/process/${encodeURIComponent(args.id)}/stop`,
-      { method: "POST" },
-      "json",
-      args.directory,
-    )
+    await proc(args.directory).stop(args.id)
     return { content: [{ type: "text" as const, text: `Process ${args.id} stopped.` }] }
   },
 )
@@ -603,14 +606,11 @@ server.registerTool(
     },
   },
   async (args) => {
-    const proc = await httpRequest<ManagedProcess>(
-      `/process/${encodeURIComponent(args.id)}/restart`,
-      { method: "POST" },
-      "json",
-      args.directory,
-    )
+    const out = await proc(args.directory).restart(args.id)
+    const result = launch(args.id, out, "restarted", "restart")
     return {
-      content: [{ type: "text" as const, text: `Process ${args.id} restarted. Status: ${proc.status}` }],
+      content: [{ type: "text" as const, text: result.text }],
+      ...(result.isError ? { isError: true } : {}),
     }
   },
 )
@@ -703,7 +703,7 @@ server.registerTool(
     },
   },
   async (args) => {
-    await httpRequest<boolean>("/process/start-all", { method: "POST" }, "json", args.directory)
+    await proc(args.directory).startAll()
     return { content: [{ type: "text" as const, text: "All autoStart processes started." }] }
   },
 )
@@ -717,7 +717,7 @@ server.registerTool(
     },
   },
   async (args) => {
-    await httpRequest<boolean>("/process/stop-all", { method: "POST" }, "json", args.directory)
+    await proc(args.directory).stopAll()
     return { content: [{ type: "text" as const, text: "All processes stopped." }] }
   },
 )
@@ -755,21 +755,40 @@ server.registerTool(
         "Extra environment variables. Use {{port:name}} to reference another process's port. " +
         "Example: { \"BACKEND_URL\": \"http://localhost:{{port:api}}\" }",
       ),
+      depends_on: z.array(z.string()).optional().describe(
+        "Process names that must be running before this one starts. " +
+        "Dependencies are auto-started when this process starts. " +
+        "Port template dependencies ({{port:name}}) are auto-detected — you only need this for non-port dependencies.",
+      ),
+      preferred_port: z.number().int().positive().optional().describe(
+        "Preferred port number. Tries this port first; if occupied, applies on_conflict strategy.",
+      ),
+      on_conflict: z.enum(["pick-new", "kill-existing"]).optional().describe(
+        "What to do when the preferred port is occupied. " +
+        "'pick-new' (default): pick a random free port. " +
+        "'kill-existing': kill the process on that port and take it.",
+      ),
       auto_start: z.boolean().optional().describe("Automatically start when the project opens. Default: false."),
       restart_policy: z.enum(["never", "on-failure", "always"]).optional().describe("When to restart after exit. Default: never."),
       directory: z.string().optional().describe("Project directory."),
     },
   },
   async (args) => {
-    const { directory, name, command, cwd, port_via, env, auto_start, restart_policy } = args
+    const { directory, name, command, cwd, port_via, env, depends_on, preferred_port, on_conflict, auto_start, restart_policy } = args
     const body = {
       name,
       command,
       ...(cwd ? { cwd } : {}),
       ...(env ? { env } : {}),
+      ...(depends_on?.length ? { dependsOn: depends_on } : {}),
       autoStart: auto_start ?? false,
       restartPolicy: restart_policy ?? "never",
-      port: { name, inject: port_via },
+      port: {
+        name,
+        inject: port_via,
+        ...(preferred_port ? { preferred: preferred_port } : {}),
+        ...(on_conflict ? { onConflict: on_conflict } : {}),
+      },
     }
     const config = await httpRequest<ProcessConfig>(
       "/process",
@@ -808,7 +827,8 @@ server.registerTool(
   },
   async (args) => {
     const directory = clean(args.directory) || DEFAULT_DIR
-    const data = await httpRequest<ProcessListResponse>("/process", { method: "GET" }, "json", directory)
+    const client = proc(directory)
+    const data = await client.list()
 
     if (args.name === "*") {
       const portConfigs = data.configs.filter((c) => c.port)
@@ -817,18 +837,21 @@ server.registerTool(
       }
       const results: string[] = []
       for (const config of portConfigs) {
-        const proc = data.processes.find((p) => p.configId === config.id)
-        if (proc && (proc.status === "running" || proc.status === "starting")) {
+        const running = data.processes.find((p) => p.configId === config.id)
+        if (running && (running.status === "running" || running.status === "starting")) {
           results.push(`${config.port!.name}: already running`)
           continue
         }
-        const started = await httpRequest<ManagedProcess>(
-          `/process/${encodeURIComponent(config.id)}/start`,
-          { method: "POST" },
-          "json",
-          directory,
-        )
-        results.push(`${config.port!.name}: ${started.status}${started.assignedPort ? ` (port ${started.assignedPort})` : ""}`)
+        const out = await client.start(config.id, { interactive: false })
+        if (out.kind === "started" || out.kind === "already_running") {
+          results.push(`${config.port!.name}: ${out.process.status}${out.process.assignedPort ? ` (port ${out.process.assignedPort})` : ""}`)
+          continue
+        }
+        if (out.kind === "port_conflict") {
+          results.push(`${config.port!.name}: port conflict on ${out.conflict.port}`)
+          continue
+        }
+        results.push(`${config.port!.name}: failed (${out.error})`)
       }
       return { content: [{ type: "text" as const, text: results.join("\n") }] }
     }
@@ -840,17 +863,24 @@ server.registerTool(
         isError: true,
       }
     }
-    const proc = await httpRequest<ManagedProcess>(
-      `/process/${encodeURIComponent(found.config.id)}/start`,
-      { method: "POST" },
-      "json",
-      directory,
-    )
+    const out = await client.start(found.config.id, { interactive: false })
+    if (out.kind !== "started" && out.kind !== "already_running") {
+      if (out.kind === "port_conflict") {
+        return {
+          content: [{ type: "text" as const, text: `Could not start ${args.name}: preferred port ${out.conflict.port} is in use.` }],
+          isError: true,
+        }
+      }
+      return {
+        content: [{ type: "text" as const, text: `Could not start ${args.name}: ${out.error}` }],
+        isError: true,
+      }
+    }
     return {
       content: [
         {
           type: "text" as const,
-          text: `Started ${args.name} (${found.config.id}): ${proc.status}${proc.assignedPort ? ` on port ${proc.assignedPort}` : ""}`,
+          text: `Started ${args.name} (${found.config.id}): ${out.process.status}${out.process.assignedPort ? ` on port ${out.process.assignedPort}` : ""}`,
         },
       ],
     }
@@ -876,7 +906,8 @@ server.registerTool(
   },
   async (args) => {
     const directory = clean(args.directory) || DEFAULT_DIR
-    const data = await httpRequest<ProcessListResponse>("/process", { method: "GET" }, "json", directory)
+    const client = proc(directory)
+    const data = await client.list()
 
     if (args.name === "*") {
       const portConfigs = data.configs.filter((c) => c.port)
@@ -886,12 +917,7 @@ server.registerTool(
       for (const config of [...portConfigs].reverse()) {
         const proc = data.processes.find((p) => p.configId === config.id)
         if (proc && (proc.status === "running" || proc.status === "starting" || proc.status === "restarting")) {
-          await httpRequest<boolean>(
-            `/process/${encodeURIComponent(config.id)}/stop`,
-            { method: "POST" },
-            "json",
-            directory,
-          )
+          await client.stop(config.id)
         }
       }
       return { content: [{ type: "text" as const, text: "All portpick processes stopped." }] }
@@ -904,12 +930,7 @@ server.registerTool(
         isError: true,
       }
     }
-    await httpRequest<boolean>(
-      `/process/${encodeURIComponent(found.config.id)}/stop`,
-      { method: "POST" },
-      "json",
-      directory,
-    )
+    await client.stop(found.config.id)
     return { content: [{ type: "text" as const, text: `Stopped ${args.name} (${found.config.id}).` }] }
   },
 )
@@ -927,7 +948,7 @@ server.registerTool(
     },
   },
   async (args) => {
-    const data = await httpRequest<ProcessListResponse>("/process", { method: "GET" }, "json", args.directory)
+    const data = await proc(args.directory).list()
     const portConfigs = data.configs.filter((c) => c.port)
     if (!portConfigs.length) {
       return { content: [{ type: "text" as const, text: "No portpick processes configured." }] }
@@ -958,7 +979,7 @@ server.registerTool(
   },
   async (args) => {
     const directory = clean(args.directory) || DEFAULT_DIR
-    const data = await httpRequest<ProcessListResponse>("/process", { method: "GET" }, "json", directory)
+    const data = await proc(directory).list()
     const found = findConfigByPortName(args.name, data)
     if (!found) {
       return {
@@ -1075,7 +1096,7 @@ server.registerTool(
     const query = resolveLogQuery(args)
     if (!query) {
       // No identifier provided — try to list what's available
-      const data = await httpRequest<ProcessListResponse>("/process", { method: "GET" }, "json", directory).catch(
+      const data = await proc(directory).list().catch(
         () => ({ configs: [], processes: [] }) as ProcessListResponse,
       )
       const ptys = await httpRequest<PtyInfo[]>("/pty", { method: "GET" }, "json", directory).catch(

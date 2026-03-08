@@ -40,6 +40,7 @@ const claxedo = {
     requestToggle: vi.fn(),
     requestOpen: vi.fn(),
     crashedWhileClosed: () => false,
+    running: () => false,
   },
   terminal: {
     ids: () => [] as string[],

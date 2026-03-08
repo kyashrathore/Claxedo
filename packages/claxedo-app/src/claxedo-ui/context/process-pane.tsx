@@ -8,7 +8,7 @@
  * Lives inside DirectoryScope, outside GroupContentRenderer.
  */
 
-import { batch, createEffect, createRenderEffect, createSignal, on, onCleanup, untrack } from "solid-js"
+import { batch, createEffect, createRenderEffect, createSignal, on, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useSDK } from "@/context/sdk"
@@ -18,9 +18,11 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Persist, persisted } from "@/utils/persist"
 import { useOptionalTerminal } from "@/context/terminal"
 import type { Process } from "../../opencode-patches/process/process"
+import { createProcessClient } from "../../opencode-patches/process/client"
 import { useClaxedoLayout } from "./claxedo-layout"
 import { createProcessOwnership, createTerminalTabOps } from "../stores/process-ownership"
 import { AddProcessDialog } from "../components/add-process-dialog"
+import { PortConflictDialog } from "../components/port-conflict-dialog"
 import { createDebugLogger } from "../../overrides/utils/debug"
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -28,6 +30,7 @@ import { createDebugLogger } from "../../overrides/utils/debug"
 type ProcessConfig = Process.ProcessConfig
 type ManagedProcess = Process.ManagedProcess
 type ProcessStatus = Process.Status
+type LaunchResult = Process.LaunchResult
 
 type ProcessPaneStore = {
   configs: ProcessConfig[]
@@ -40,10 +43,7 @@ type ProcessPaneStore = {
 const DEFAULT_PANE_HEIGHT = 300
 const MIN_PANE_HEIGHT = 100
 const FETCH_TIMEOUT = 5_000
-
-function processUrl(baseUrl: string, path: string): string {
-  return `${baseUrl}/process${path}`
-}
+const POST_TIMEOUT = 10_000
 
 // ── Context ────────────────────────────────────────────────────────────
 
@@ -67,13 +67,6 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     const ownership = createProcessOwnership(claxedo as any)
     const tabOps = createTerminalTabOps(claxedo as any)
 
-    const fetchFn = platform.fetch ?? globalThis.fetch
-
-    const headers = () => ({
-      "Content-Type": "application/json",
-      "x-opencode-directory": sdk.directory,
-    })
-
     const dialog = useDialog()
 
     // Persisted UI state (height — NOT visibility)
@@ -89,11 +82,48 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     // Process tab visibility: the process tab is "open" when it's the active tab.
     // We no longer need a signal — the tab active state handles it.
 
+    const states = () => {
+      const list: Array<ProcessStatus | undefined> = []
+      for (const id in store.processes) {
+        list.push(store.processes[id]?.status)
+      }
+      return list
+    }
+
+    const anyRunning = () => {
+      return states().some((status) => status === "running" || status === "starting" || status === "restarting")
+    }
+
+    const sync = () => {
+      claxedo.processPane.setRunning(sdk.directory, anyRunning())
+    }
+
+    const native = platform.fetch ?? globalThis.fetch
+
+    async function fetch(input: RequestInfo | URL, init?: RequestInit) {
+      const ms = (init?.method ?? "GET") === "GET" ? FETCH_TIMEOUT : POST_TIMEOUT
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), ms)
+      try {
+        const signal = init?.signal ? AbortSignal.any([ctrl.signal, init.signal]) : ctrl.signal
+        return await native(input, {
+          ...init,
+          signal,
+        })
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+
+    const client = createProcessClient({
+      baseUrl: sdk.url,
+      directory: sdk.directory,
+      fetch,
+    })
+
     // ── HTTP helpers ─────────────────────────────────────────────────
 
     async function fetchProcesses(): Promise<boolean> {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
       try {
         debug.verbose("fetch start", {
           dir: sdk.directory,
@@ -101,22 +131,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
           persistedReady: ready(),
           loaded: loaded(),
         })
-        const res = await fetchFn(processUrl(sdk.url, ""), {
-          headers: headers(),
-          signal: controller.signal,
-        })
-        if (!res.ok) {
-          debug.log("fetch failed", {
-            dir: sdk.directory,
-            tabId: props?.tabId,
-            status: res.status,
-          })
-          return false
-        }
-        const data = (await res.json()) as {
-          configs: ProcessConfig[]
-          processes: ManagedProcess[]
-        }
+        const data = await client.list()
 
         // Build the set of current process PTY IDs from server data.
         const currentPtyIds = new Set<string>()
@@ -160,6 +175,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             }
           }
         })
+        sync()
 
         // After owning all CURRENT process PTYs, clean up stale ones.
         // On reload, the persisted terminalOwner map has OLD ptyIds from
@@ -183,29 +199,15 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
         })
         console.error("[process-pane] Failed to fetch processes", e)
         return false
-      } finally {
-        clearTimeout(timeout)
       }
     }
 
-    /** POST an action and return the parsed JSON body (or undefined on error). */
-    const POST_TIMEOUT = 10_000
-    async function postAction<T = unknown>(path: string): Promise<T | undefined> {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), POST_TIMEOUT)
+    async function run<T>(label: string, task: () => Promise<T>) {
       try {
-        const res = await fetchFn(processUrl(sdk.url, path), {
-          method: "POST",
-          headers: headers(),
-          signal: controller.signal,
-        })
-        if (!res.ok) return undefined
-        return (await res.json().catch(() => undefined)) as T | undefined
+        return await task()
       } catch (e) {
-        console.error(`[process-pane] POST ${path} failed`, e)
+        console.error(`[process-pane] ${label} failed`, e)
         return undefined
-      } finally {
-        clearTimeout(timeout)
       }
     }
 
@@ -219,6 +221,74 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
         ownership.ownProcess(proc.configId, proc.ptyId)
         tabOps.removeAutoCreatedTab(proc.ptyId)
       }
+      sync()
+    }
+
+    function restore(configId: string, proc?: ManagedProcess, status?: ProcessStatus) {
+      if (proc) {
+        setStore("processes", configId, {
+          ...proc,
+          status: status ?? proc.status,
+        })
+        sync()
+        return
+      }
+      setStore("processes", configId, {
+        configId,
+        status: status ?? ("idle" as ProcessStatus),
+        restartCount: 0,
+        ptyId: undefined,
+        exitCode: undefined,
+        exitedAt: undefined,
+        startedAt: undefined,
+        assignedPort: undefined,
+      })
+      sync()
+    }
+
+    function show(configId: string, conflict: Process.PortConflictInfo, proc?: ManagedProcess) {
+      restore(configId, proc)
+      dialog.show(() => (
+        <PortConflictDialog
+          conflict={conflict}
+          configId={configId}
+          onResolve={(strategy) => {
+            dialog.close()
+            void api.start(configId, strategy)
+          }}
+          onCancel={() => dialog.close()}
+        />
+      ))
+    }
+
+    function read(
+      configId: string,
+      out: LaunchResult,
+      proc?: ManagedProcess,
+      status?: ProcessStatus,
+      prompt = true,
+    ) {
+      if (out.kind === "started" || out.kind === "already_running") {
+        applyProcess(out.process)
+        return out.process
+      }
+      if (out.kind === "port_conflict") {
+        if (prompt) {
+          show(configId, out.conflict, proc)
+          return
+        }
+        restore(configId, proc, status)
+        return
+      }
+      if (out.kind === "failed") {
+        if (out.process) {
+          applyProcess(out.process)
+          return out.process
+        }
+        restore(configId, proc, status)
+        return
+      }
+      restore(configId, proc, status)
     }
 
     /**
@@ -395,6 +465,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             break
           }
         }
+        sync()
       })
 
       onCleanup(unsub)
@@ -426,6 +497,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     // be stuck in "stopping"/"running" with dead ptyIds, causing
     // hasStopping() to disable Start All permanently if the fetch fails.
     setStore("processes", {})
+    sync()
 
     // The terminal detection counter starts at 1 (set in terminal.ts) to
     // block tab creation until this provider resolves. We keep that initial
@@ -678,17 +750,15 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
 
       // Derived state
       hasRunning: () => {
-        return Object.values(store.processes).some(
-          (p) => p && (p.status === "running" || p.status === "starting" || p.status === "restarting"),
-        )
+        return anyRunning()
       },
 
       hasStopping: () => {
-        return Object.values(store.processes).some((p) => p && p.status === "stopping")
+        return states().some((status) => status === "stopping")
       },
 
       hasCrashed: () => {
-        return Object.values(store.processes).some((p) => p && p.status === "crashed")
+        return states().some((status) => status === "crashed")
       },
 
       processForConfig(configId: string): ManagedProcess | undefined {
@@ -696,7 +766,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
       },
 
       // Lifecycle actions — read HTTP responses so we don't depend solely on SSE
-      async start(configId: string) {
+      async start(configId: string, portConflict?: Process.PortConflictStrategy) {
         // Optimistic: mark as starting
         const existing = store.processes[configId]
         setStore("processes", configId, {
@@ -706,13 +776,21 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
           exitCode: undefined,
           exitedAt: undefined,
         })
+        sync()
         // Tell the terminal system a process PTY is coming — prevents the
         // detection effect from creating a tab for the pty.created SSE that
         // arrives before process.started registers ownership.
         ownership.expectProcessPty()
         try {
-          const proc = await postAction<ManagedProcess>(`/${configId}/start`)
-          applyProcess(proc)
+          const out = await run(
+            `start ${configId}`,
+            () =>
+              client.start(
+                configId,
+                portConflict ? { portConflict } : { interactive: true },
+              ),
+          )
+          const proc = out ? read(configId, out, existing) : restore(configId, existing)
           // Auto-activate the process tab so the user sees the terminal
           if (proc?.ptyId && !claxedo.processPane.isActive()) {
             claxedo.processPane.requestOpen()
@@ -732,8 +810,9 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             status: "stopping" as ProcessStatus,
             ptyId: undefined,
           })
+          sync()
         }
-        await postAction(`/${configId}/stop`)
+        await run(`stop ${configId}`, () => client.stop(configId))
         // Belt-and-suspenders: the server's stop() waits for the PTY to exit,
         // so by the time the HTTP response arrives the process is definitely
         // stopped. Force the status in case the SSE event was missed.
@@ -743,6 +822,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             ...current,
             status: "stopped" as ProcessStatus,
           })
+          sync()
         }
       },
 
@@ -769,8 +849,9 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
               exitCode: undefined,
               exitedAt: undefined,
             })
-            const proc = await postAction<ManagedProcess>(`/${configId}/start`)
-            applyProcess(proc)
+            sync()
+            const out = await run(`restart ${configId}`, () => client.start(configId, { interactive: false }))
+            const proc = out ? read(configId, out, existing, undefined, false) : restore(configId, existing)
             if (proc?.ptyId && !claxedo.processPane.isActive()) {
               claxedo.processPane.requestOpen()
             }
@@ -779,13 +860,24 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
 
           // Running process: mark as restarting and clear ptyId so the Terminal
           // unmounts — when the new PTY arrives, it'll remount fresh.
+          const prev = existing
+            ? {
+                ...existing,
+                ptyId: undefined,
+              }
+            : undefined
           setStore("processes", configId, {
             ...existing,
             status: "restarting" as ProcessStatus,
             ptyId: undefined,
           })
-          const proc = await postAction<ManagedProcess>(`/${configId}/restart`)
-          applyProcess(proc)
+          sync()
+          const out = await run(`restart ${configId}`, () => client.restart(configId))
+          if (out) {
+            read(configId, out, prev, "stopped" as ProcessStatus, false)
+          } else {
+            restore(configId, prev, "stopped" as ProcessStatus)
+          }
         } finally {
           ownership.resolveProcessPty()
         }
@@ -793,13 +885,15 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
 
       async startAll() {
         // Start every config (not just autoStart — that's for server bootstrap)
+        // Use pick-new for batch start — don't prompt per process
         ownership.expectProcessPty()
         try {
           for (const config of store.configs) {
             const existing = store.processes[config.id]
             if (existing && (existing.status === "running" || existing.status === "starting")) continue
-            const proc = await postAction<ManagedProcess>(`/${config.id}/start`)
-            applyProcess(proc)
+            const out = await run(`start ${config.id}`, () => client.start(config.id, { interactive: false }))
+            if (out) read(config.id, out, existing, undefined, false)
+            else restore(config.id, existing)
           }
         } finally {
           ownership.resolveProcessPty()
@@ -823,6 +917,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             }
           }
         })
+        sync()
 
         // Stop each running process individually with optimistic updates,
         // rather than a single /stop-all call that blocks sequentially.
@@ -843,8 +938,9 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             }
           }
         })
+        sync()
         // Fire individual stop calls concurrently
-        await Promise.all(toStop.map((config) => postAction(`/${config.id}/stop`)))
+        await Promise.all(toStop.map((config) => run(`stop ${config.id}`, () => client.stop(config.id))))
         // Belt-and-suspenders: force any still-stopping processes to stopped.
         batch(() => {
           for (const config of toStop) {
@@ -857,6 +953,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             }
           }
         })
+        sync()
       },
 
       // Tab integration
@@ -869,15 +966,16 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
         }
         // Start the process, read response to get ptyId, then open tab
         ownership.expectProcessPty()
+        pendingTabOpens.add(configId)
         void (async () => {
           try {
-            const started = await postAction<ManagedProcess>(`/${configId}/start`)
-            applyProcess(started)
+            const out = await run(`open ${configId}`, () => client.start(configId, { interactive: false }))
+            const started = out ? read(configId, out, store.processes[configId], undefined, false) : undefined
             if (started?.ptyId) {
+              pendingTabOpens.delete(configId)
               openTerminalTab(configId, started.ptyId)
-            } else {
-              // Fall back to SSE-based pending open
-              pendingTabOpens.add(configId)
+            } else if (!out || (out.kind !== "started" && out.kind !== "already_running")) {
+              pendingTabOpens.delete(configId)
             }
           } finally {
             ownership.resolveProcessPty()
@@ -916,6 +1014,10 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
         },
       ),
     )
+
+    onCleanup(() => {
+      claxedo.processPane.setRunning(sdk.directory, false)
+    })
 
     return api
   },

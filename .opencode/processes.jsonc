@@ -1,3 +1,35 @@
 {
-  "processes": []
+  "$schema": "./processes.schema.json",
+  "processes": [
+    {
+      "id": "proc_019ccbf08315ku2i7cnn3l",
+      "name": "opencode-server",
+      "command": "bun run opencode:dev",
+      "args": [],
+      "cwd": "./packages/claxedo-app",
+      "autoStart": false,
+      "restartPolicy": "never",
+      "maxRestarts": 3,
+      "port": {
+        "name": "run-opencode-patched-server",
+        "inject": "--port"
+      }
+    },
+    {
+      "id": "proc_019ccbf29edfneqzlfhh93",
+      "name": "claxedo-app",
+      "command": "bun run dev",
+      "args": [],
+      "cwd": "./packages/claxedo-app",
+      "env": {
+        "VITE_OPENCODE_BACKEND_URL": "http://localhost:{{port:run-opencode-patched-server}}"
+      },
+      "autoStart": false,
+      "restartPolicy": "never",
+      "maxRestarts": 3,
+      "dependsOn": [
+        "opencode-server"
+      ]
+    }
+  ]
 }

@@ -278,7 +278,10 @@ function GroupPanel(gp: GroupPanelProps) {
           tabs().addProcess(dir)
         }}
         onSettings={gp.props.onSettings}
-        showProcesses={!hasCurrentProcessTab()}
+        processAttention={claxedo.processPane.crashedWhileClosed()}
+        processActive={claxedo.processPane.isActive()}
+        processRunning={claxedo.processPane.running(resolveDir())}
+        hasProcesses={hasCurrentProcessTab()}
         allProjects={gp.allProjects}
         visibleWorkspaces={gp.visibleWorkspaces}
         onToggleWorkspace={gp.onToggleWorkspace}

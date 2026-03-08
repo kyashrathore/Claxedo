@@ -30,10 +30,7 @@ export const ProcessRoutes = lazy(() =>
             content: {
               "application/json": {
                 schema: resolver(
-                  z.object({
-                    configs: Process.ProcessConfig.array(),
-                    processes: Process.ManagedProcess.array(),
-                  }),
+                  Process.ListResponse,
                 ),
               },
             },
@@ -150,28 +147,66 @@ export const ProcessRoutes = lazy(() =>
       "/:id/start",
       describeRoute({
         summary: "Start process",
-        description: "Start a process by its config ID. Creates a PTY and begins execution.",
+        description:
+          "Start a process by its config ID. Creates a PTY and begins execution. " +
+          "If the process has a preferred port that is occupied and no conflict resolution " +
+          "is configured or provided, returns 409 with conflict details for interactive resolution. " +
+          "Re-call with portConflict in the body to resolve.",
         operationId: "process.start",
         responses: {
           200: {
-            description: "Process started",
+            description: "Process launch result",
             content: {
               "application/json": {
-                schema: resolver(Process.ManagedProcess),
+                schema: resolver(Process.LaunchResult),
               },
             },
           },
-          ...errors(400, 404),
+          409: {
+            description: "Preferred port is occupied — caller should prompt user",
+            content: {
+              "application/json": {
+                schema: resolver(Process.LaunchResult),
+              },
+            },
+          },
+          404: {
+            description: "Process config not found",
+            content: {
+              "application/json": {
+                schema: resolver(Process.LaunchResult),
+              },
+            },
+          },
+          500: {
+            description: "Process failed to launch",
+            content: {
+              "application/json": {
+                schema: resolver(Process.LaunchResult),
+              },
+            },
+          },
+          ...errors(400),
         },
       }),
       validator("param", z.object({ id: z.string() })),
+      validator("json", Process.LaunchRequest.optional()),
       async (c) => {
         const id = c.req.valid("param").id
-        const managed = await ProcessManager.start(id)
-        if (!managed) {
-          return c.json({ error: "Process config not found" }, 404)
+        const body = c.req.valid("json")
+        const result = await ProcessManager.start(id, {
+          portConflict: body?.portConflict,
+        })
+        if (result.kind === "port_conflict") {
+          return c.json(result, 409)
         }
-        return c.json(managed)
+        if (result.kind === "not_found") {
+          return c.json(result, 404)
+        }
+        if (result.kind === "failed") {
+          return c.json(result, 500)
+        }
+        return c.json(result, 200)
       },
     )
     .post(
@@ -209,24 +244,43 @@ export const ProcessRoutes = lazy(() =>
         operationId: "process.restart",
         responses: {
           200: {
-            description: "Process restarted",
+            description: "Process relaunch result",
             content: {
               "application/json": {
-                schema: resolver(Process.ManagedProcess),
+                schema: resolver(Process.LaunchResult),
               },
             },
           },
-          ...errors(400, 404),
+          404: {
+            description: "Process config not found",
+            content: {
+              "application/json": {
+                schema: resolver(Process.LaunchResult),
+              },
+            },
+          },
+          500: {
+            description: "Process failed to relaunch",
+            content: {
+              "application/json": {
+                schema: resolver(Process.LaunchResult),
+              },
+            },
+          },
+          ...errors(400),
         },
       }),
       validator("param", z.object({ id: z.string() })),
       async (c) => {
         const id = c.req.valid("param").id
-        const managed = await ProcessManager.restart(id)
-        if (!managed) {
-          return c.json({ error: "Process config not found" }, 404)
+        const result = await ProcessManager.restart(id)
+        if (result.kind === "not_found") {
+          return c.json(result, 404)
         }
-        return c.json(managed)
+        if (result.kind === "failed") {
+          return c.json(result, 500)
+        }
+        return c.json(result, 200)
       },
     )
     .post(

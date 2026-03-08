@@ -13,7 +13,7 @@ import { initClaxedo, getDefaultConfig } from "./index"
 import { getAuthToken } from "./utils/auth-client"
 import { isDemoMode, isEmbedMode } from "./utils/api"
 import { ConfigProvider } from "./context/config"
-import { Persist, rawPersistKey } from "./overrides/utils/persist"
+import { Persist, resetDemoPersisted, setPersisted } from "./overrides/utils/persist"
 
 // Initialize cloud extensions before rendering
 const config = getDefaultConfig()
@@ -113,10 +113,7 @@ async function startApp() {
       if (!key.startsWith("opencode.demo.")) continue
       localStorage.removeItem(key)
     }
-
-    const seed = (target: { storage?: string; key: string }, value: unknown) => {
-      localStorage.setItem(rawPersistKey(target), JSON.stringify(value))
-    }
+    resetDemoPersisted()
 
     // Pre-seed the server store so the demo project auto-opens
     const demoProject = "/home/demo/projects/my-app"
@@ -200,7 +197,7 @@ async function startApp() {
       [featureBranch]: "#a855f7",
       [dashboardProject]: "#22c55e",
     }
-    seed(Persist.global("server"), {
+    setPersisted(Persist.global("server"), {
       list: [],
       projects: {
         [serverKey]: projects,
@@ -210,7 +207,7 @@ async function startApp() {
     })
 
     // Pre-seed claxedo layout with multi-pane session tab + other tabs
-    seed(Persist.global("claxedo.layout.v3"), {
+    setPersisted(Persist.global("claxedo.layout.v3"), {
       rail: { collapsed: true, hovered: false, pinned: false, locked: false },
       groups: [
         {
