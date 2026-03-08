@@ -96,7 +96,7 @@ function createGlobalSync() {
         roots: true,
         limit: 100,
       })
-      const sessions = (result.data ?? []).filter((s) => !!s?.id && !s.parentID && !s.time?.archived)
+      const sessions = (Array.isArray(result.data) ? result.data : []).filter((s) => !!s?.id && !s.parentID && !s.time?.archived)
       const cursor = result.response?.headers?.get("x-next-cursor")
 
       // Group by projectID
@@ -153,7 +153,7 @@ function createGlobalSync() {
           roots: true,
           limit: 20,
         })
-        const sessions = (result.data ?? []).filter((s) => !!s?.id && !s.parentID && !s.time?.archived)
+        const sessions = (Array.isArray(result.data) ? result.data : []).filter((s) => !!s?.id && !s.parentID && !s.time?.archived)
         for (const s of sessions) {
           allNew.push(toGlobalSessionItem(s))
         }

@@ -3,11 +3,12 @@ import type { Project, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
 export function normalizeProviderList(input: ProviderListResponse): ProviderListResponse {
+  if (!input?.all) return input ?? ({ all: [], connected: [], default: {} } as ProviderListResponse)
   return {
     ...input,
     all: input.all.map((provider) => ({
       ...provider,
-      models: Object.fromEntries(Object.entries(provider.models).filter(([, info]) => info.status !== "deprecated")),
+      models: Object.fromEntries(Object.entries(provider.models ?? {}).filter(([, info]) => info.status !== "deprecated")),
     })),
   }
 }
