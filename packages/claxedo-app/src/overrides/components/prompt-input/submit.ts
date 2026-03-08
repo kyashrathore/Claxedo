@@ -13,6 +13,7 @@ import { usePermission } from "@/context/permission"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { Identifier } from "@/utils/id"
+import { formatServerError } from "@/utils/server-errors"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "@/components/prompt-input/build-request-parts"
 import { setCursorPosition } from "@/components/prompt-input/editor-dom"
@@ -318,7 +319,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           .catch((err) => {
             showToast({
               title: language.t("prompt.toast.commandSendFailed.title"),
-              description: errorMessage(err),
+              description: formatServerError(err, language.t, language.t("common.requestFailed")),
             })
             restoreInput()
           })

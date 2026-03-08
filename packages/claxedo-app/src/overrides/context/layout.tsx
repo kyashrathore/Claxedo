@@ -80,6 +80,7 @@ export const {
       })()
 
       const fileTree = value.fileTree
+      const review = value.review
       const migratedFileTree = (() => {
         if (!isRecord(fileTree)) return fileTree
         if (fileTree.tab === "changes" || fileTree.tab === "all") return fileTree
@@ -93,11 +94,19 @@ export const {
         }
       })()
 
-      if (migratedSidebar === sidebar && migratedFileTree === fileTree) return value
+      const migratedReview = (() => {
+        if (!isRecord(review)) return review
+        if (typeof review.panelOpened === "boolean") return review
+        const opened = isRecord(fileTree) && typeof fileTree.opened === "boolean" ? fileTree.opened : true
+        return { ...review, panelOpened: opened }
+      })()
+
+      if (migratedSidebar === sidebar && migratedFileTree === fileTree && migratedReview === review) return value
       return {
         ...value,
         sidebar: migratedSidebar,
         fileTree: migratedFileTree,
+        review: migratedReview,
       }
     }
 

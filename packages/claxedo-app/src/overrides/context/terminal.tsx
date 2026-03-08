@@ -1,6 +1,6 @@
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createEffect, createRoot, onCleanup, useContext } from "solid-js"
+import { batch, createEffect, createRoot, on, onCleanup, useContext } from "solid-js"
 import { useSDK } from "@/context/sdk"
 import { Persist, persisted } from "@/utils/persist"
 import { clearInitialCommandMarker } from "../components/terminal-recovery"
@@ -435,6 +435,34 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
         }
       })
     },
+    trim(id: string) {
+      const index = store.all.findIndex((x) => x.id === id)
+      if (index === -1) return
+      setStore("all", index, (pty) => {
+        if (!pty.buffer && pty.cursor === undefined && pty.scrollY === undefined) return pty
+        return {
+          ...pty,
+          buffer: undefined,
+          cursor: undefined,
+          scrollY: undefined,
+        }
+      })
+    },
+    trimAll() {
+      setStore("all", (all) => {
+        const next = all.map((pty) => {
+          if (!pty.buffer && pty.cursor === undefined && pty.scrollY === undefined) return pty
+          return {
+            ...pty,
+            buffer: undefined,
+            cursor: undefined,
+            scrollY: undefined,
+          }
+        })
+        if (next.every((pty, index) => pty === all[index])) return all
+        return next
+      })
+    },
   }
 }
 
@@ -474,6 +502,19 @@ const terminalContext = createSimpleContext({
       workspace = next
       lastWorkspace = next
     })
+
+    createEffect(
+      on(
+        () => base64Encode(sdk.directory),
+        (next, prev) => {
+          if (!prev) return
+          if (next === prev) return
+          const prevEntry = cache.get(SERVER_SCOPED_PERSIST ? `${sdk.url}:${prev}:${WORKSPACE_KEY}` : `${prev}:${WORKSPACE_KEY}`)
+          prevEntry?.value.trimAll()
+        },
+        { defer: true },
+      ),
+    )
 
     const safeWorkspace = () => {
       if (workspace) return workspace
@@ -516,6 +557,8 @@ const terminalContext = createSimpleContext({
         safeWorkspace()?.previous()
       },
       removeStale: (ids: Set<string>) => safeWorkspace()?.removeStale(ids),
+      trim: (id: string) => safeWorkspace()?.trim(id),
+      trimAll: () => safeWorkspace()?.trimAll(),
     }
   },
 })

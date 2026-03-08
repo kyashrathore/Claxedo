@@ -8,3 +8,20 @@
   scrollbar-width: none !important;
 }
 
+/*
+ * Restore wider centered max-width for session composer and timeline.
+ * Upstream narrowed from 800px/1000px to 500px/700px (commit 66d0beba6)
+ * which is too narrow for Claxedo split panels.
+ */
+@media (min-width: 768px) {
+  .md\:max-w-\[500px\].md\:mx-auto {
+    max-width: 50rem; /* 800px */
+  }
+}
+@media (min-width: 1536px) {
+  .md\:mx-auto.\32xl\:max-w-\[700px\],
+  .\32xl\:max-w-\[700px\] {
+    max-width: 1000px;
+  }
+}
+

@@ -19,8 +19,6 @@ import { canDisposeDirectory, pickDirectoriesToEvict } from "@/context/global-sy
 
 export function createChildStoreManager(input: {
   owner: Owner
-  markStats: (activeDirectoryStores: number) => void
-  incrementEvictions: () => void
   isBooting: (directory: string) => boolean
   isLoadingSessions: (directory: string) => boolean
   onBootstrap: (directory: string) => void
@@ -106,7 +104,6 @@ export function createChildStoreManager(input: {
     }
     delete children[directory]
     input.onDispose(directory)
-    input.markStats(Object.keys(children).length)
     return true
   }
 
@@ -123,8 +120,7 @@ export function createChildStoreManager(input: {
     })
     if (list.length === 0) return
     for (const directory of list) {
-      if (!disposeDirectory(directory)) continue
-      input.incrementEvictions()
+      disposeDirectory(directory)
     }
   }
 
@@ -227,7 +223,6 @@ export function createChildStoreManager(input: {
         })
 
       runWithOwner(input.owner, init)
-      input.markStats(Object.keys(children).length)
     }
     mark(directory)
     const childStore = children[directory]
