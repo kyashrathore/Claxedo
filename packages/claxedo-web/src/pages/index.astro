@@ -7,7 +7,16 @@ const appUrl =
   clean(import.meta.env.CLAXEDO_APP_URL) ??
   (import.meta.env.DEV ? "http://localhost:4444" : "https://app.claxedo.com")
 const previewSrc = `${appUrl}/demo/?embed=1`
-const contact = "https://discord.gg/opencode"
+const contact = "https://discord.gg/jSyhEQyT"
+
+const dlBase = "https://github.com/kyashrathore/Claxedo/releases/download/claxedo-v0.0.59"
+const downloads = [
+  { label: "macOS (Apple Silicon)", href: `${dlBase}/Claxedo_0.0.59_aarch64.dmg` },
+  { label: "macOS (Intel)", href: `${dlBase}/Claxedo_0.0.59_x64.dmg` },
+  { label: "Windows", href: `${dlBase}/Claxedo_0.0.59_x64-setup.exe` },
+  { label: "Linux (.deb)", href: `${dlBase}/Claxedo_0.0.59_amd64.deb` },
+  { label: "Linux (.rpm)", href: `${dlBase}/Claxedo-0.0.59-1.x86_64.rpm` },
+]
 
 const hero = {
   src: "/screenshots/hero-attached-review.png",
@@ -158,8 +167,8 @@ const faq = [
 ]
 
 const pricing = {
-  price: "$159",
-  now: "$99",
+  price: "$99",
+  now: "Free",
   href: "https://github.com/kyashrathore/Claxedo/releases",
   list: [
     "Unlimited projects",
@@ -209,7 +218,14 @@ const pricing = {
         <a href="#faq">FAQ</a>
       </div>
       <div class="nav-actions">
-        <a href="#pricing" class="btn-primary">Get Claxedo for $99</a>
+        <div class="dl-wrap">
+          <button type="button" class="btn-primary dl-trigger">Download Free
+            <svg class="dl-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5l3 3 3-3"/></svg>
+          </button>
+          <div class="dl-menu">
+            {downloads.map((d) => <a href={d.href} class="dl-item">{d.label}</a>)}
+          </div>
+        </div>
       </div>
     </nav>
 
@@ -222,8 +238,15 @@ const pricing = {
           Gemini CLI, and more, with review, process control, and workspace-aware context.
         </p>
         <div class="hero-actions">
-          <a href="#pricing" class="btn-primary">Get Claxedo for $99</a>
-          <a href="#demo" class="btn-secondary">See the workflow</a>
+          <div class="dl-wrap">
+            <button type="button" class="btn-primary dl-trigger">Download Free
+              <svg class="dl-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5l3 3 3-3"/></svg>
+            </button>
+            <div class="dl-menu">
+              {downloads.map((d) => <a href={d.href} class="dl-item">{d.label}</a>)}
+            </div>
+          </div>
+          <a href={contact} class="btn-secondary" target="_blank" rel="noopener">Join Discord</a>
         </div>
       </div>
     </section>
@@ -414,9 +437,9 @@ const pricing = {
             <div class="pricing-price">
               <span class="pricing-amount-old">{pricing.price}</span>
               <span class="pricing-amount">{pricing.now}</span>
-              <span class="pricing-period">/lifetime</span>
+              <span class="pricing-period">during beta</span>
             </div>
-            <p class="pricing-early">Early bird pricing</p>
+            <p class="pricing-early">Free for beta users</p>
           </div>
           <ul class="pricing-features">
             {pricing.list.map((item) => (
@@ -424,17 +447,24 @@ const pricing = {
             ))}
           </ul>
           <div class="pricing-actions">
-            <a href={pricing.href} class="btn-primary pricing-cta">Get Claxedo for $99</a>
+            <div class="dl-wrap dl-wrap--up">
+              <button type="button" class="btn-primary pricing-cta dl-trigger">Download Free
+                <svg class="dl-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5l3 3 3-3"/></svg>
+              </button>
+              <div class="dl-menu">
+                {downloads.map((d) => <a href={d.href} class="dl-item">{d.label}</a>)}
+              </div>
+            </div>
           </div>
           <p class="pricing-note">
-            macOS, Linux, and Windows supported. 7-day no-questions-asked refund.
+            macOS, Linux, and Windows supported. Free during beta.
           </p>
         </div>
         <div class="pricing-facts">
           <div class="facts-head">
             <span class="section-tag">// Quick answers</span>
             <h3>Still not convinced?</h3>
-            <p class="facts-copy">Have a question before you buy? Reach out and we’ll help.</p>
+            <p class="facts-copy">Have a question? Reach out and we’ll help.</p>
           </div>
           <div class="facts-grid">
             {pricing.facts.map((item) => (
@@ -522,6 +552,13 @@ const pricing = {
     z-index: 20;
     background: color-mix(in srgb, var(--bg) 92%, transparent);
     backdrop-filter: blur(10px);
+    transition: opacity 0.35s ease, filter 0.35s ease;
+  }
+
+  .nav.is-dimmed {
+    opacity: 0;
+    filter: blur(8px);
+    pointer-events: none;
   }
 
   .nav-logo {
@@ -638,6 +675,77 @@ const pricing = {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
+    align-items: flex-start;
+  }
+
+  /* download dropdown */
+  .dl-wrap {
+    position: relative;
+  }
+
+  .dl-trigger {
+    cursor: pointer;
+  }
+
+  .dl-caret {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    transition: transform 0.2s ease;
+  }
+
+  .dl-wrap.is-open .dl-caret {
+    transform: rotate(180deg);
+  }
+
+  .dl-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 100%;
+    width: max-content;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    border: var(--bw) solid var(--border);
+    z-index: 40;
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
+  .dl-wrap.is-open .dl-menu {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  .dl-wrap--up .dl-menu {
+    top: auto;
+    bottom: calc(100% + 6px);
+    transform: translateY(4px);
+  }
+
+  .dl-wrap--up.is-open .dl-menu {
+    transform: none;
+  }
+
+  .dl-item {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    color: var(--text);
+    white-space: nowrap;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .dl-item:hover {
+    background: var(--bg-weak);
+    color: var(--text-strong);
+  }
+
+  .dl-item + .dl-item {
+    border-top: var(--bw) solid var(--border);
   }
 
   .wins {
@@ -740,21 +848,22 @@ const pricing = {
 
   .preview {
     position: relative;
-    height: 160vh;
+    height: 260vh;
     border-top: var(--bw) solid var(--border);
   }
 
   .preview-sticky {
     --bleed: 0px;
     position: sticky;
-    top: 5rem;
-    height: calc(100vh - 5rem);
+    top: 0;
+    height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 2rem;
     margin-left: calc(var(--bleed) * -1);
     margin-right: calc(var(--bleed) * -1);
+    z-index: 25;
   }
 
   .preview-perspective {
@@ -1566,6 +1675,8 @@ const pricing = {
   const previewSticky = document.getElementById("preview-sticky")
   const small = window.matchMedia("(max-width: 40rem)")
 
+  const nav = document.querySelector<HTMLElement>(".nav")
+
   if (heroFrame && previewSection && previewSticky && !small.matches) {
     const ease = (t: number) =>
       t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
@@ -1581,6 +1692,7 @@ const pricing = {
     let targetBleed = 0
     let rafId = 0
     const speed = 0.05
+    let wasFull = false
 
     const animateBleed = () => {
       const diff = targetBleed - currentBleed
@@ -1600,7 +1712,7 @@ const pricing = {
       const scrolled = Math.min(Math.max(-rect.top, 0), scrollable)
       const progress = scrolled / scrollable
 
-      const intro = ease(Math.min(progress / 0.45, 1))
+      const intro = ease(Math.min(progress / 0.3, 1))
       const translateY = 28 * (1 - intro)
       const scale = 0.965 + 0.035 * intro
       const rotateX = 1.6 * (1 - intro)
@@ -1608,6 +1720,13 @@ const pricing = {
 
       heroFrame.style.transform = `translateY(${translateY}px) scale(${scale}) rotateX(${rotateX}deg)`
       heroFrame.style.opacity = String(opacity)
+
+      /* full-focus phase: after intro completes, dim navbar */
+      const isFull = intro >= 0.98
+      if (isFull !== wasFull) {
+        wasFull = isFull
+        nav?.classList.toggle("is-dimmed", isFull)
+      }
 
       const sectionEnd = previewSection.offsetTop + previewSection.offsetHeight - windowH
       const bleedP = sectionEnd > 0 ? Math.min(Math.max(window.scrollY / sectionEnd, 0), 1) : 0
@@ -1660,4 +1779,26 @@ const pricing = {
     shot.src = ""
     shot.alt = ""
   })
+
+  /* download dropdown toggle */
+  const dlTriggers = document.querySelectorAll<HTMLButtonElement>(".dl-trigger")
+
+  function closeAll(except?: Element) {
+    document.querySelectorAll(".dl-wrap.is-open").forEach((w) => {
+      if (w !== except) w.classList.remove("is-open")
+    })
+  }
+
+  dlTriggers.forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation()
+      const wrap = btn.closest(".dl-wrap")
+      if (!wrap) return
+      const opening = !wrap.classList.contains("is-open")
+      closeAll(wrap)
+      wrap.classList.toggle("is-open", opening)
+    })
+  })
+
+  document.addEventListener("click", () => closeAll())
 </script>
