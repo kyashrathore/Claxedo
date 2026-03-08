@@ -6,6 +6,7 @@ This document tracks how this fork is kept in sync with `upstream/dev`, and reco
 
 | Claxedo Version | Upstream Commit | Last Sync Date |
 |----------------|-----------------|----------------|
+| dev | d15c2ce34 | 2026-03-08 |
 | dev | c4ffd93ca | 2026-03-04 |
 | dev | d1938a472 | 2026-03-02 |
 | dev | 2a2082233 | 2026-02-28 |
@@ -53,6 +54,12 @@ When rebasing `fork/dev` onto `upstream/dev`, use this table to decide conflict 
 | `packages/opencode/src/pty/index.ts` | Upstream manages this; we do NOT modify it | Accept upstream |
 | `packages/opencode/src/server/routes/pty.ts` | Upstream manages this; we do NOT modify it | Accept upstream |
 | `packages/app/src/utils/server-health.ts` | Widen `checkServerHealth` to accept `HttpBase` objects (upstream API compat) | Merge carefully |
+| `packages/app/src/components/prompt-input.tsx` | Adds `sessionID`, `navigateOnCreate`, `system`, `agent` props for embedded/multi-session contexts | Merge carefully |
+| `packages/app/src/pages/session/message-timeline.tsx` | Adds `sessionID` prop for split panes | Merge carefully |
+| `packages/app/src/pages/session/terminal-panel.tsx` | Fork terminal integration changes | Merge carefully |
+| `packages/app/src/context/sync.tsx` | Fork session cache + debug logging modifications | Merge carefully |
+| `packages/app/src/context/global-sync/event-reducer.test.ts` | Fork test modifications | Keep ours |
+| `packages/app/src/pages/session/composer/session-composer-region.tsx` | Adds sessionID, sessionDirectory, navigateOnCreate, system, agent props | Merge carefully |
 
 ## Notes
 
