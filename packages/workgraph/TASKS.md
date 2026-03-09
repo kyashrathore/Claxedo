@@ -1,327 +1,105 @@
 # WorkGraph: Pending Work
 
-Status snapshot as of 2026-03-09. Each task is independent and can be picked up by a separate agent.
+Status snapshot as of 2026-03-10. 645 tests pass across 56 files.
 
 ---
 
-## P0 — Server Cannot Start
+## Completed Tasks
 
-### TASK-01: Fix self-referencing import in workgraph-bridge.ts
+The following tasks from the original list have been completed:
 
-**File:** `src/orchestrator/workgraph-bridge.ts`
-**Problem:** Line 1 imports `from "@opencode-ai/workgraph"` — the package's own npm name. Bun cannot resolve it because the package is not published/symlinked.
-**Fix:** Change the import to relative paths:
-- `WorkGraph` class → `../model/workgraph`
-- `WorkItem` type → `../model/types`
-
-**Verify:** `bun run src/server.ts` starts without "Cannot find module" error.
-
----
-
-### TASK-02: Fix stale tsconfig.json project references
-
-**File:** `tsconfig.json`
-**Problem:** `references` points to `../orchestrator-graph` and `../orchestrator-events` — packages deleted during consolidation. Also `rootDir: "./src"` conflicts with `include: ["test/**/*"]`.
-**Fix:**
-- Remove both stale `references` entries (or remove the `references` array entirely).
-- Either add `test/` to a separate tsconfig or change `rootDir` to `.`.
-
-**Verify:** `bunx tsc --noEmit` no longer errors on missing project references.
+- **TASK-01** — Fixed self-referencing import in workgraph-bridge.ts (uses relative imports now)
+- **TASK-02** — Fixed tsconfig.json (removed stale references, fixed rootDir)
+- **TASK-03** — Fixed all test imports to use new subdirectory paths
+- **TASK-04** — Replaced all @opencode-ai/orchestrator-* imports with relative paths
+- **TASK-05** — Fixed src/model/ imports (workgraph.ts, hooks.ts use relative paths)
+- **TASK-06** — Deleted team/handoff reducers, tests, and schema tables
+- **TASK-07** — Deleted decision/lead/message reducers, tests, and schema tables
+- **TASK-08** — Deleted planning reducer and test
+- **TASK-09** — Removed team_id, replaced DecomposedTask with TaskInfo, added role field
+- **TASK-10** — Deleted capability packs (execution, research, ux) and tests
+- **TASK-11** — Deleted renderers (html-brief, markdown) and tests
+- **TASK-13** — Removed artifacts_current from schema
+- **TASK-16** — Created .dev-docs/@tests.md
 
 ---
 
-## P1 — 63 of 67 Tests Fail (Broken Imports)
-
-### TASK-03: Fix test imports — old flat paths
-
-**Scope:** 53 test files under `test/` use pre-consolidation flat import paths.
-**Problem:** When 14 packages were merged into one, source files moved into subdirectories but test imports were never updated.
-
-**Import mapping (apply to ALL test files):**
-
-| Old import | New import |
-|---|---|
-| `../src/reducers/*` | `../src/orchestrator/core/reducers/*` |
-| `../src/gates` | `../src/orchestrator/graph/gates` |
-| `../src/graph` | `../src/orchestrator/graph/graph` |
-| `../src/scheduler` | `../src/orchestrator/core/scheduler` |
-| `../src/schema` | `../src/orchestrator/events/schema` |
-| `../src/event-types` | `../src/orchestrator/events/event-types` |
-| `../src/reducer` | `../src/model/reducer` |
-| `../src/workgraph` | `../src/model/workgraph` |
-| `../src/db` | `../src/model/db` |
-| `../src/types` | `../src/model/types` |
-| `../src/hooks` | `../src/model/hooks` |
-| `../src/services/*` | `../src/orchestrator/core/services/*` |
-| `../src/sync` | `../src/orchestrator/sync/sync` |
-| `../src/conflict` | `../src/orchestrator/sync/conflict` |
-| `../src/capabilities` | `../src/orchestrator/core/capabilities` |
-| `../src/quality-gate` | `../src/orchestrator/core/quality-gate` |
-| `../src/routing` | `../src/orchestrator/core/routing` |
-| `../src/github` | `../src/connectors/github/github` |
-| `../src/jira` | `../src/connectors/jira/jira` |
-| `../src/linear` | `../src/connectors/linear/linear` |
-| `../src/html-renderer` | `../src/renderers/html-brief/html-renderer` |
-| `../src/renderer` | `../src/renderers/markdown/renderer` |
-
-**Verify:** `bun test` — all 67 test files load without import errors.
-
----
-
-### TASK-04: Fix test imports — deleted package names
-
-**Scope:** ~30 test files import from `@opencode-ai/orchestrator-graph`, `@opencode-ai/orchestrator-events`, `@opencode-ai/orchestrator-core`.
-**Fix:** Replace with relative imports per this mapping:
-
-| Old package import | New relative import |
-|---|---|
-| `@opencode-ai/orchestrator-graph` (`GraphEngine`) | `../src/orchestrator/graph/graph` |
-| `@opencode-ai/orchestrator-events` (`EventEnvelope`, `ConnectorInterface`) | `../src/orchestrator/events/schema` or `../src/orchestrator/events/connector` |
-| `@opencode-ai/orchestrator-core/src/capabilities` | `../src/orchestrator/core/capabilities` |
-
-**Verify:** `bun test` — no "Cannot find module @opencode-ai/*" errors.
-
----
-
-### TASK-05: Fix source imports — deleted package names in src/
-
-**Scope:** Source files in `src/model/` still import from `@opencode-ai/*` packages.
-**Files:**
-- `src/model/workgraph.ts` — imports from `@opencode-ai/orchestrator-graph`
-- `src/model/hooks.ts` — imports from `@opencode-ai/orchestrator-events`
-**Fix:** Replace with relative imports to the local files.
-
-**Verify:** `bun run src/server.ts` starts. `bun test` passes for workgraph.test.ts and hooks.test.ts.
-
----
-
-## P2 — Remove Dead Code (Per Simplified Spec v2)
-
-### TASK-06: Delete team-related reducers and schema
-
-**Delete these files entirely:**
-- `src/orchestrator/core/reducers/team.ts` (72 lines — team_created, team_status_changed, team_member_added handlers)
-- `src/orchestrator/core/reducers/handoff.ts` (72 lines — handoff_requested/accepted/rejected handlers)
-
-**Delete these test files:**
-- `test/team_reducer.test.ts`
-- `test/handoff_reducer.test.ts`
-
-**Update `src/orchestrator/core/reducers/index.ts`:**
-- Remove `team` and `handoff` from `RootState` and `rootReducer` composition.
-
-**Delete from `src/orchestrator/core/db/schema.ts`:**
-- `teams_current` table definition
-- `team_members_current` table definition
-- `handoffs_current` table definition
-
-**Update `src/app.ts`:**
-- Remove `CREATE TABLE teams_current` SQL
-- Remove `POST /runs/:run_id/teams` endpoint
-- Remove `GET /runs/:run_id/teams` endpoint
-
-**Verify:** `bun test` still passes for all non-deleted tests. Server starts without team tables.
-
----
-
-### TASK-07: Delete unused decision/lead/message reducers
-
-**Delete these files entirely:**
-- `src/orchestrator/core/reducers/decision.ts` (decision_proposed/challenged/accepted/rejected — never emitted)
-- `src/orchestrator/core/reducers/lead.ts` (lead_plan_created/gap_detected/reroute_requested — never emitted)
-- `src/orchestrator/core/reducers/message.ts` (message_posted — MessageState never queried)
-
-**Delete these test files:**
-- `test/decision_reducer.test.ts`
-- `test/lead_reducer.test.ts` (if exists)
-- `test/message_reducer.test.ts`
-
-**Delete from `src/orchestrator/core/db/schema.ts`:**
-- `messages_current` table definition
-- `decisions_current` table definition
-
-**Update `src/orchestrator/core/reducers/index.ts`:**
-- Remove `decision`, `lead`, `message` from `RootState` and `rootReducer`.
-
-**Update `src/app.ts`:**
-- Remove `CREATE TABLE messages_current` SQL
-- Remove `POST /runs/:run_id/messages` endpoint
-- Remove `GET /runs/:run_id/messages` endpoint
-
-**Verify:** `bun test` passes. No references to deleted reducers remain.
-
----
-
-### TASK-08: Delete unused planning reducer
-
-**Delete:**
-- `src/orchestrator/core/reducers/planning.ts` (question_scoped, route_scored, route_selected, dispatch_requested handlers — none emitted in source)
-
-**Delete test:**
-- `test/planning_reducer.test.ts`
-
-**Update `src/orchestrator/core/reducers/index.ts`:**
-- Remove `planning` from `RootState` and `rootReducer`.
-
-**Verify:** `bun test` passes.
-
----
-
-### TASK-09: Remove team_id from nodes, executor, graph-builder, session-bridge
-
-**Files to modify:**
-- `src/orchestrator/types.ts` — remove `team` from `DecomposedTask`, remove `teams` from `DecompositionPlan`, remove `team_id_map` from `OrchestratorRunState`. Add `role` field to `DecomposedTask`.
-- `src/orchestrator/graph-builder.ts` — remove team creation loop (lines ~25-55), remove `team_id` from node creation. Add `role` field.
-- `src/orchestrator/executor.ts` — remove `team_id` from message storage, remove team_id references.
-- `src/orchestrator/session-bridge.ts` — replace `task.team` agent lookup with `node.role`.
-- `src/orchestrator/planner.ts` — update decomposition prompt: remove team assignment, add role assignment (architect, developer, code_reviewer, qa, pm, designer).
-- `src/orchestrator/core/reducers/node.ts` — remove `team_id` from `NodeState`.
-- `src/orchestrator/core/db/schema.ts` — remove `team_id` column from `nodes_current`.
-- `src/ui/dashboard.html.ts` — remove team rendering (team table, team colors on canvas, team grouping in messages).
-
-**Verify:** `bun test` passes. Server starts. `POST /orchestrate` with a test goal produces nodes with `role` instead of `team_id`.
-
----
-
-### TASK-10: Delete unused capability packs
-
-**Delete these directories entirely:**
-- `src/capabilities/execution/`
-- `src/capabilities/research/`
-- `src/capabilities/ux/`
-
-**Delete test files:**
-- `test/capabilities/execution-pack.test.ts`
-- `test/capabilities/research-pack.test.ts`
-- `test/capabilities/ux-pack.test.ts`
-
-**Check:** `src/orchestrator/core/capabilities.ts` — if `CapabilityRegistry` is never instantiated in source, delete it too.
-
-**Verify:** No import errors. `bun test` passes.
-
----
-
-### TASK-11: Delete unused renderers
-
-**Delete these directories entirely:**
-- `src/renderers/html-brief/`
-- `src/renderers/markdown/`
-
-**Delete test files:**
-- `test/renderers/html-renderer.test.ts`
-- `test/renderers/renderer.test.ts`
-
-**Verify:** No import errors. `bun test` passes.
-
----
+## Remaining Work
 
 ### TASK-12: Wire connectors into app or delete them
 
-**Current state:** `src/connectors/github/`, `src/connectors/jira/`, `src/connectors/linear/` exist but are never instantiated in source code. Only tests import them (with broken paths).
+**Status:** Connectors exist with passing tests but are not wired into the app.
+**Current state:** `src/connectors/github/`, `src/connectors/jira/`, `src/connectors/linear/` exist with working test suites. Hydration routes in `src/routes/hydration.ts` exist but don't instantiate connectors.
 
-**Decision needed:** Either:
-- **(A) Keep and wire:** Register connectors in `app.ts` or a service, so hydration routes actually use them.
-- **(B) Delete:** Remove all three connector directories + their tests. Hydration routes become stubs until connectors are needed.
-
-If keeping, fix the test imports first (TASK-03/04).
-
----
-
-### TASK-13: Delete unused artifacts_current schema
-
-**File:** `src/orchestrator/core/db/schema.ts`
-**Delete:** `artifacts_current` table definition (never created in DB, never queried).
-
-**Verify:** No references to it in source.
+**Decision needed:**
+- **(A) Keep and wire:** Register connectors in a service so hydration routes use them.
+- **(B) Delete:** Remove connector directories + tests. Hydration routes become stubs.
 
 ---
-
-## P3 — Add Scratchpad Context Flow (Per Spec v2)
 
 ### TASK-14: Implement upstream scratchpad injection in executor
 
+**Status:** Not implemented.
 **Spec reference:** SPEC.md Section 7.4 — `collectUpstreamScratchpads`
-**What:** When the executor dispatches a node, gather scratchpad entries from all completed upstream nodes (connected via hard/review_gate edges) and append them to the agent's prompt.
+**What:** The executor's `spawnTaskAgent` function (in `src/orchestrator/executor.ts`) currently reads only the node's own scratchpad entry for its prompt. It should also gather scratchpad entries from completed upstream dependencies and include them in the task agent's prompt.
+
+**Note:** The MCP `read_scratchpads` tool already does this when a task agent calls it explicitly — this task is about auto-injecting upstream context into the initial prompt so agents don't have to call `read_scratchpads` manually.
+
 **Files:**
-- `src/orchestrator/executor.ts` — add `collectUpstreamScratchpads(db, node)` and call it before `executeNode`.
-- `src/orchestrator/core/db/schema.ts` — ensure `scratchpad_entries` table has `node_id` (it already does per dead-code analysis).
+- `src/orchestrator/executor.ts` — in `spawnTaskAgent()`, after reading the node's own scratchpad, query upstream dependency scratchpads and append to the prompt.
 
-**Test:** Integration test: create 2 nodes (A→B hard edge), write scratchpad on A, complete A, dispatch B — verify B's prompt includes A's scratchpad content.
+**Test:** The e2e test suite (`test/integration/e2e-mcp-orchestration.test.ts`) already tests scratchpad communication via explicit tool calls. A new test should verify that the executor's spawned prompt includes upstream scratchpad content automatically.
 
 ---
 
-### TASK-15: Implement role/skill file loading in SessionBackend
+### TASK-15: Wire skill file loading into agent prompts
 
-**Spec reference:** SPEC.md Section 4.3, 10.2
-**What:** When creating a session for a node, load `skills/{role}.md` and prepend it to the agent's system prompt.
+**Status:** Partial — skill files exist, loading not wired.
+**Current state:** `skills/` directory contains 6 files: `architect.md`, `developer.md`, `code_reviewer.md`, `qa.md`, `pm.md`, `designer.md`. These are not loaded or injected into agent prompts.
+
+**What:** When the executor spawns a task agent, load `skills/{role}.md` and prepend it to the agent's system prompt.
+
 **Files:**
-- `src/orchestrator/backends.ts` (or `session-bridge.ts`) — add `loadSkillFile(role)` function.
-- Create `skills/` directory with starter skill files: `architect.md`, `developer.md`, `code_reviewer.md`, `qa.md`, `pm.md`, `designer.md`.
+- `src/orchestrator/executor.ts` — in `spawnTaskAgent()`, read the skill file for the node's role and prepend to `taskPrompt`.
 
-**Test:** Unit test: `loadSkillFile("developer")` returns content of `skills/developer.md`. Integration test: dispatched node with role="developer" has skill file content in prompt.
-
----
-
-## P4 — Test Quality & Coverage
-
-### TASK-16: Create .dev-docs/@tests.md for workgraph
-
-**What:** Create `packages/workgraph/.dev-docs/@tests.md` documenting:
-- Test architecture (bun:test, SQLite :memory:, test/ directory structure)
-- How to run tests (`bun test`, `bun test test/specific-file.test.ts`)
-- Test categories: unit (reducers, services, model), integration (pipelines, sync, connectors), smoke (ACP)
-- Coverage gaps (listed below)
-- Testing conventions (factory helpers, mock patterns, event-driven assertions)
+**Test:** Unit test: loading a skill file returns its content. Integration test: spawned agent prompt contains skill file content.
 
 ---
 
-### TASK-17: Add missing integration tests
+### TASK-17: Fill remaining integration test gaps
 
-**Current gaps (no integration test coverage):**
-- Full goal → plan → execute → complete cycle (e2e-pipeline.test.ts exists but may be broken)
-- Failure cascade: fail one node → verify dependents marked failed
-- Retry: fail a node once → verify it retries and succeeds
-- Concurrency: dispatch more nodes than `maxActivePerRun` → verify queuing
-- Scratchpad context flow: upstream scratchpad → downstream prompt (requires TASK-14 first)
-- Skill file loading per role (requires TASK-15 first)
+**Status:** Partial — e2e suite covers most scenarios, some gaps remain.
+**Already covered by `test/integration/e2e-mcp-orchestration.test.ts` (35 tests):**
+- Full plan → execute → complete cycle
+- Failure cascade (max retries → downstream nodes fail)
+- Retry then success
+- Scratchpad communication (via explicit MCP tool calls)
+- Cancel mid-execution
+- Concurrent runs
+- Event audit trail
 
-**Test location:** `test/integration/`
+**Still missing:**
+- Automatic upstream scratchpad injection in executor prompt (requires TASK-14)
+- Skill file loading per role in executor prompt (requires TASK-15)
+- Concurrency limit test: exceed `maxActivePerRun` → verify queuing
 
 ---
 
-### TASK-18: Audit and fix existing test quality
+### TASK-18: Clean up stale collaboration tests
 
-**Known issues:**
-- `test/collaboration.test.ts` tests team handoffs — needs rewrite for scratchpad model
-- `test/integration/collaboration-flow.test.ts` tests multi-team message flows — needs rewrite or delete
-- Several reducer tests (team, handoff, decision, lead, message, planning) test deleted code — delete them (covered in TASK-06/07/08)
-- Remaining tests need quality check: are assertions meaningful? Do they test behavior or just structure?
+**Status:** Partial — deleted reducer tests cleaned, collaboration tests still reference team model.
+**Files:**
+- `test/integration/collaboration-flow.test.ts` — still references `teamId` in message payloads. Needs rewrite to use role-based scratchpad model, or delete if collaboration tests are no longer relevant.
 
 ---
 
 ## Task Dependency Graph
 
 ```
-TASK-01 ──┐
-TASK-02 ──┤
-TASK-05 ──┼──→ Server starts
-          │
-TASK-03 ──┤
-TASK-04 ──┼──→ Tests load (import errors fixed)
-          │
-          ├──→ TASK-06 (delete team reducers)
-          ├──→ TASK-07 (delete decision/lead/message reducers)
-          ├──→ TASK-08 (delete planning reducer)
-          ├──→ TASK-09 (remove team_id, add role) ──→ TASK-14 (scratchpad flow)
-          │                                        ──→ TASK-15 (skill files)
-          ├──→ TASK-10 (delete capability packs)
-          ├──→ TASK-11 (delete renderers)
-          ├──→ TASK-12 (connectors: wire or delete)
-          ├──→ TASK-13 (delete artifacts_current)
-          │
-          └──→ TASK-16 (@tests.md)
-               TASK-17 (integration tests) — depends on TASK-14, TASK-15
-               TASK-18 (test audit) — depends on TASK-06/07/08
-```
+TASK-12 (connectors: wire or delete) — independent, decision needed
 
-**Parallelism:** TASK-01 through TASK-05 can run in parallel. TASK-06 through TASK-13 can run in parallel after imports are fixed. TASK-14 and TASK-15 depend on TASK-09. TASK-16/17/18 are last.
+TASK-14 (auto scratchpad injection) ──→ TASK-17 (remaining integration tests)
+TASK-15 (skill file loading)        ──→ TASK-17 (remaining integration tests)
+
+TASK-18 (collaboration test cleanup) — independent
+```
