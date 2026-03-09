@@ -1,13 +1,9 @@
 {
   "extends": "@tsconfig/bun/tsconfig.json",
   "compilerOptions": {
-    "rootDir": "./src",
+    "rootDir": ".",
     "outDir": "./dist",
     "moduleResolution": "bundler"
   },
-  "include": ["src/**/*", "test/**/*"],
-  "references": [
-    { "path": "../orchestrator-graph" },
-    { "path": "../orchestrator-events" }
-  ]
+  "include": ["src/**/*", "test/**/*"]
 }

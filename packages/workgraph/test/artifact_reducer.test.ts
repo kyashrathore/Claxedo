@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
-import { artifactReducer, type ArtifactState } from "../src/reducers/artifact";
+import type { EventEnvelope } from "../src/orchestrator/events/schema";
+import { artifactReducer, type ArtifactState } from "../src/orchestrator/core/reducers/artifact";
 
 function makeEvent(overrides: Partial<EventEnvelope> = {}): EventEnvelope {
   return {

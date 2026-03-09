@@ -23,24 +23,10 @@ export const runs_current = sqliteTable('runs_current', {
   status: text('status').notNull(),
 });
 
-export const teams_current = sqliteTable('teams_current', {
-  team_id: text('team_id').primaryKey(),
-  run_id: text('run_id').notNull(),
-  name: text('name').notNull(),
-  status: text('status').notNull(),
-});
-
-export const team_members_current = sqliteTable('team_members_current', {
-  id: text('id').primaryKey(),
-  team_id: text('team_id').notNull(),
-  agent_id: text('agent_id').notNull(),
-  role: text('role').notNull(),
-});
-
 export const nodes_current = sqliteTable('nodes_current', {
   node_id: text('node_id').primaryKey(),
   run_id: text('run_id').notNull(),
-  team_id: text('team_id').notNull(),
+  role: text('role').notNull().default('developer'),
   kind: text('kind').notNull(),
   status: text('status').notNull(),
   retry_count: integer('retry_count').notNull(),
@@ -52,43 +38,6 @@ export const dependency_edges_current = sqliteTable('dependency_edges_current', 
   source_id: text('source_id').notNull(),
   target_id: text('target_id').notNull(),
   type: text('type').notNull(),
-});
-
-export const messages_current = sqliteTable('messages_current', {
-  id: text('id').primaryKey(),
-  run_id: text('run_id').notNull(),
-  team_id: text('team_id').notNull(),
-  sender_id: text('sender_id').notNull(),
-  content: text('content').notNull(),
-  message_type: text('message_type').notNull(),
-  created_at: text('created_at').notNull(),
-});
-
-export const handoffs_current = sqliteTable('handoffs_current', {
-  id: text('id').primaryKey(),
-  run_id: text('run_id').notNull(),
-  from_team_id: text('from_team_id').notNull(),
-  to_team_id: text('to_team_id').notNull(),
-  status: text('status').notNull(),
-  payload: text('payload').notNull(),
-});
-
-export const artifacts_current = sqliteTable('artifacts_current', {
-  id: text('id').primaryKey(),
-  run_id: text('run_id').notNull(),
-  node_id: text('node_id').notNull(),
-  content: text('content').notNull(),
-  version: integer('version').notNull(),
-  provenance: text('provenance').notNull(),
-});
-
-export const decisions_current = sqliteTable('decisions_current', {
-  id: text('id').primaryKey(),
-  run_id: text('run_id').notNull(),
-  proposal: text('proposal').notNull(),
-  status: text('status').notNull(),
-  challenger_id: text('challenger_id'),
-  evidence: text('evidence'),
 });
 
 export const sync_outbox = sqliteTable('sync_outbox', {

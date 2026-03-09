@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { GraphEngine, type Node, type Edge } from "../src/graph";
-import { GateTracker } from "../src/gates";
+import { GraphEngine, type Node, type Edge } from "../src/orchestrator/graph/graph";
+import { GateTracker } from "../src/orchestrator/graph/gates";
 
 describe("GraphEngine", () => {
   it("should detect a simple hard cycle between nodes", () => {

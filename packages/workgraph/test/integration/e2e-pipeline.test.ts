@@ -1,18 +1,19 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
-import { appendEvent, getEvents, replayEvents } from "../../src/services/event-store";
-import { rootReducer, initialRootState, type RootState } from "../../src/reducers/index";
-import { PlanningService } from "../../src/services/planning";
-import { resolveRoute, type CapabilityDescription } from "../../src/routing";
-import { CollaborationService } from "../../src/services/collaboration";
-import { LeadLoop } from "../../src/services/lead-loop";
-import { Watchdog } from "../../src/services/watchdog";
-import { ScratchpadService } from "../../src/services/scratchpad";
-import { getReadyNodes, LeaseManager, type TeamPolicy } from "../../src/scheduler";
-import { GraphEngine, type Node, type Edge, GateTracker } from "@opencode-ai/orchestrator-graph";
-import { computeHash } from "../../src/services/hash-chain";
+import type { EventEnvelope } from "../../src/orchestrator/events/schema";
+import { appendEvent, getEvents, replayEvents } from "../../src/orchestrator/core/services/event-store";
+import { rootReducer, initialRootState, type RootState } from "../../src/orchestrator/core/reducers/index";
+import { PlanningService } from "../../src/orchestrator/core/services/planning";
+import { resolveRoute, type CapabilityDescription } from "../../src/orchestrator/core/routing";
+import { CollaborationService } from "../../src/orchestrator/core/services/collaboration";
+import { LeadLoop } from "../../src/orchestrator/core/services/lead-loop";
+import { Watchdog } from "../../src/orchestrator/core/services/watchdog";
+import { ScratchpadService } from "../../src/orchestrator/core/services/scratchpad";
+import { getReadyNodes, LeaseManager, type TeamPolicy } from "../../src/orchestrator/core/scheduler";
+import { GraphEngine, type Node, type Edge } from "../../src/orchestrator/graph/graph";
+import { GateTracker } from "../../src/orchestrator/graph/gates";
+import { computeHash } from "../../src/orchestrator/core/services/hash-chain";
 
 describe("E2E Pipeline Integration", () => {
   let db: ReturnType<typeof drizzle>;
@@ -365,12 +366,6 @@ describe("E2E Pipeline Integration", () => {
     expect(finalState.run.runs[runId].goal).toBe(goal);
     expect(finalState.run.runs[runId].status).toBe("planned");
 
-    // Verify teams were created
-    for (const teamId of teamIds) {
-      expect(finalState.team.teams[teamId]).toBeDefined();
-      expect(finalState.team.teams[teamId].members).toContain(`agent_${teamId}`);
-    }
-
     // Verify all question nodes exist
     for (let i = 0; i < dispatched.length; i++) {
       expect(finalState.node.nodes[`node_q${i}`]).toBeDefined();
@@ -387,28 +382,10 @@ describe("E2E Pipeline Integration", () => {
       expect(edge.target_id).toBe(synthesisNodeId);
     }
 
-    // Verify planning state
-    expect(finalState.planning.plans[runId]).toBeDefined();
-    expect(finalState.planning.plans[runId].dispatched).toBe(true);
-    expect(finalState.planning.plans[runId].questions.length).toBe(plan.questions.length);
-
-    // Verify handoff
-    expect(finalState.handoff.handoffs["h_reroute"]).toBeDefined();
-    expect(finalState.handoff.handoffs["h_reroute"].status).toBe("accepted");
-
     // Verify artifact
     expect(finalState.artifact.artifacts[promoted!.artifact.id]).toBeDefined();
 
-    // Verify decision
-    expect(finalState.decision.decisions["decision_approach"]).toBeDefined();
-    expect(finalState.decision.decisions["decision_approach"].status).toBe("accepted");
-
-    // Verify lead plans
-    expect(finalState.lead.leadPlans["lead_plan_1"]).toBeDefined();
-    expect(finalState.lead.leadPlans["lead_plan_1"].gaps.length).toBeGreaterThan(0);
-    expect(finalState.lead.leadPlans["lead_plan_1"].reroutes.length).toBeGreaterThan(0);
-
-    // Verify collaboration state
+    // Verify collaboration state (service-level, not reducer state)
     const allMessages = collaboration.getMessages(runId);
     expect(allMessages.length).toBeGreaterThanOrEqual(2);
 
@@ -429,7 +406,6 @@ describe("E2E Pipeline Integration", () => {
 
     // Emit a small set of events
     await emitEvent("run_created", { goal: "Simple goal" });
-    await emitEvent("team_created", { team_id: "t1", name: "Team 1" });
     await emitEvent("node_created", { node_id: "n1", kind: "lead_task", team_id: "t1" });
     await emitEvent("node_status_changed", { node_id: "n1", status: "active" });
     await emitEvent("node_status_changed", { node_id: "n1", status: "completed" });
@@ -525,8 +501,8 @@ describe("E2E Pipeline Integration", () => {
 
     // All events emitted by emitEvent are hash-chained
     await emitEvent("run_created", { goal: "Hash chain test" });
-    await emitEvent("team_created", { team_id: "t1", name: "T1" });
     await emitEvent("node_created", { node_id: "n1", kind: "lead_task", team_id: "t1" });
+    await emitEvent("edge_added", { id: "e1", source_id: "n1", target_id: "n2", type: "hard" });
 
     const events = await getEvents(db, runId);
     expect(events).toHaveLength(3);

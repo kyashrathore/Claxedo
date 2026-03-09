@@ -1,5 +1,5 @@
 import { describe, it, expect, mock } from "bun:test";
-import { GitHubConnector } from "../src/github";
+import { GitHubConnector } from "../../src/connectors/github/github";
 
 describe("GitHubConnector", () => {
   it("should hydrate a normalize issue model from a github issue", async () => {

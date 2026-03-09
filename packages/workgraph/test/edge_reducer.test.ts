@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
-import { edgeReducer, type EdgeState } from "../src/reducers/edge";
+import type { EventEnvelope } from "../src/orchestrator/events/schema";
+import { edgeReducer, type EdgeState } from "../src/orchestrator/core/reducers/edge";
 
 function makeEvent(overrides: Partial<EventEnvelope> = {}): EventEnvelope {
   return {

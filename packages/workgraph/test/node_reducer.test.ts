@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
-import { nodeReducer, type NodeState } from "../src/reducers/node";
+import type { EventEnvelope } from "../src/orchestrator/events/schema";
+import { nodeReducer, type NodeState } from "../src/orchestrator/core/reducers/node";
 
 function makeEvent(overrides: Partial<EventEnvelope> = {}): EventEnvelope {
   return {
@@ -28,19 +28,19 @@ describe("nodeReducer", () => {
   it("should create a node on node_created with pending status and retry_count 0", () => {
     const event = makeEvent({
       type: "node_created",
-      payload_json: JSON.stringify({ node_id: "node_1", kind: "task", team_id: "team_1" }),
+      payload_json: JSON.stringify({ node_id: "node_1", kind: "task", role: "developer" }),
     });
     const result = nodeReducer(initialState, event);
     expect(result.nodes["node_1"]).toBeDefined();
     expect(result.nodes["node_1"].kind).toBe("task");
     expect(result.nodes["node_1"].status).toBe("pending");
-    expect(result.nodes["node_1"].team_id).toBe("team_1");
+    expect(result.nodes["node_1"].role).toBe("developer");
     expect(result.nodes["node_1"].retry_count).toBe(0);
   });
 
   it("should update status on node_status_changed and increment retry_count for retryable", () => {
     const stateWithNode: NodeState = {
-      nodes: { node_1: { kind: "task", status: "pending", team_id: "team_1", retry_count: 0 } }
+      nodes: { node_1: { kind: "task", status: "pending", role: "developer", retry_count: 0 } }
     };
     const event = makeEvent({
       type: "node_status_changed",
@@ -53,7 +53,7 @@ describe("nodeReducer", () => {
 
   it("should not increment retry_count for non-retryable status changes", () => {
     const stateWithNode: NodeState = {
-      nodes: { node_1: { kind: "task", status: "pending", team_id: "team_1", retry_count: 0 } }
+      nodes: { node_1: { kind: "task", status: "pending", role: "developer", retry_count: 0 } }
     };
     const event = makeEvent({
       type: "node_status_changed",

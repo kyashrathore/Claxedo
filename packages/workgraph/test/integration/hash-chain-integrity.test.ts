@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
-import { computeHash, verifyChain } from "../../src/services/hash-chain";
+import type { EventEnvelope } from "../../src/orchestrator/events/schema";
+import { computeHash, verifyChain } from "../../src/orchestrator/core/services/hash-chain";
 
 describe("Hash Chain Integrity Integration", () => {
   let counter: number;

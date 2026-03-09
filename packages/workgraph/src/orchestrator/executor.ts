@@ -1,16 +1,38 @@
 import { ulid } from "ulid";
 import type { EventEnvelope } from "./events";
 import type { OrchestratorRunState, NodeAgentHistory } from "./types";
-import { planOrchestration } from "./planner";
 import { generateHash, insertEvent, getNextSeq } from "../db/helpers";
 import type { AgentRecord } from "../routes/agent";
 import { buildMetadata } from "./session-bridge";
 import type { OrchestratorMetadata } from "./types-ui";
-import { onNodeCompleted, onRunCompleted, unlinkRun } from "./workgraph-bridge";
-import type { ExecutionBackend, TaskHandle } from "./backends";
-import { SubprocessBackend } from "./backends";
+import {
+  onNodeCompleted as wgOnNodeCompleted,
+  onRunCompleted,
+  unlinkRun,
+  linkRun,
+} from "./workgraph-bridge";
 
 const MAX_RETRIES = 2;
+
+// ---------------------------------------------------------------------------
+// Function type interfaces
+// ---------------------------------------------------------------------------
+
+export interface SpawnAgentFn {
+  (prompt: string, runId: string, nodeId: string): Promise<AgentRecord>;
+}
+
+export interface GetAgentFn {
+  (agentId: string): AgentRecord | undefined;
+}
+
+export interface WaitForAgentFn {
+  (agentId: string): Promise<AgentRecord>;
+}
+
+// ---------------------------------------------------------------------------
+// In-memory orchestration state
+// ---------------------------------------------------------------------------
 
 /** Active orchestration runs keyed by run_id */
 const orchestrations = new Map<string, OrchestratorRunState>();
@@ -24,12 +46,8 @@ export function getAllOrchestrations(): OrchestratorRunState[] {
 }
 
 export function clearAllIntervals(): void {
-  for (const state of orchestrations.values()) {
-    if (state.interval) {
-      clearInterval(state.interval);
-      state.interval = null;
-    }
-  }
+  // No-op in MCP-driven mode (no polling intervals)
+  // Kept for backward compatibility with server.ts
 }
 
 /**
@@ -43,85 +61,248 @@ export function getRunMetadata(db: any, runId: string): OrchestratorMetadata | u
 }
 
 // ---------------------------------------------------------------------------
-// Legacy interfaces (kept for backward compatibility with tests)
+// Planner prompt
 // ---------------------------------------------------------------------------
 
-interface SpawnAgentFn {
-  (prompt: string, runId: string, nodeId: string): Promise<AgentRecord>;
-}
+const PLANNER_PROMPT_PREFIX = `You are a technical project planner. Break the following goal into small, PR-sized tasks. Use the provided tools to build a task graph. For each task, call create_node with a title, kind, role, prompt, and depends_on. Available roles: architect, developer, code_reviewer, qa, pm, designer. When the graph is complete, call validate_graph to check for issues, then call finish_planning with a summary.
 
-interface GetAgentFn {
-  (agentId: string): AgentRecord | undefined;
-}
+Goal: `;
 
 // ---------------------------------------------------------------------------
-// Cascading async execution — no setInterval
+// startOrchestration — MCP-driven entry point
 // ---------------------------------------------------------------------------
 
 /**
- * Execute an orchestration run using cascading async execution.
+ * Start an orchestration run for a goal.
  *
- * Core loop (mirrors tool.ts Phase 3):
- *   while (completed + failed < totalNodes):
- *     ready = findReadyNodes()
- *     if no ready and no running → deadlock, break
- *     if no ready but some running → await nextCompletion()
- *     executions = ready.map(node => executeNode(node))
- *     await Promise.allSettled(executions)
+ * In the MCP-driven model:
+ *   1. Create initial state (phase="planning")
+ *   2. Store in orchestrations map
+ *   3. Spawn the PLANNER agent with MCP tools configured
+ *   4. The planner builds the graph via MCP tools and calls finish_planning
+ *   5. finish_planning triggers onPlanningComplete which starts the execution cascade
+ *
+ * The planner agent is fire-and-forget — this function returns immediately
+ * after spawning it. The planner calls finish_planning MCP tool when done,
+ * which triggers the execution cascade.
  */
-export async function executeOrchestration(
+export async function startOrchestration(
   db: any,
-  state: OrchestratorRunState,
-  backend: ExecutionBackend,
-  parentSessionID?: string,
+  runId: string,
+  goal: string,
+  spawnAgentFn: SpawnAgentFn,
+  getAgentFn: GetAgentFn,
+  waitForAgentFn: WaitForAgentFn,
+  workItemId?: string,
+): Promise<OrchestratorRunState> {
+  const state: OrchestratorRunState = {
+    run_id: runId,
+    phase: "planning",
+    planner_agent_id: null,
+    node_agents: new Map(),
+    error: null,
+    created_at: new Date().toISOString(),
+    result: null,
+    work_item_id: workItemId,
+    node_work_items: new Map(),
+  };
+
+  orchestrations.set(runId, state);
+
+  // Link run to WorkGraph item if provided
+  if (workItemId) {
+    linkRun(runId, workItemId);
+  }
+
+  // Spawn the planner agent (fire and forget)
+  try {
+    const plannerPrompt = PLANNER_PROMPT_PREFIX + goal;
+    const plannerAgent = await spawnAgentFn(plannerPrompt, runId, "");
+    state.planner_agent_id = plannerAgent.id;
+    console.log(`[executor] ${runId} planner agent spawned: ${plannerAgent.id}`);
+  } catch (err) {
+    state.phase = "failed";
+    state.error = `Failed to spawn planner agent: ${(err as Error).message}`;
+    updateRunStatus(db, runId, "failed");
+    console.error(`[executor] ${runId} failed to spawn planner:`, err);
+  }
+
+  return state;
+}
+
+// ---------------------------------------------------------------------------
+// onPlanningComplete — called by MCP finish_planning tool handler
+// ---------------------------------------------------------------------------
+
+/**
+ * Called when the planner agent finishes building the graph via MCP tools
+ * and calls the `finish_planning` tool.
+ *
+ * Transitions from planning → executing and kicks off the execution cascade
+ * by finding ready nodes and spawning task agents for each.
+ */
+export async function onPlanningComplete(
+  db: any,
+  runId: string,
+  summary: string,
+  spawnAgentFn: SpawnAgentFn,
 ): Promise<void> {
+  const state = orchestrations.get(runId);
+  if (!state) {
+    console.error(`[executor] onPlanningComplete: run ${runId} not found`);
+    return;
+  }
+
+  if (state.phase !== "planning") {
+    console.warn(`[executor] onPlanningComplete: run ${runId} in unexpected phase '${state.phase}'`);
+    return;
+  }
+
   state.phase = "executing";
-  orchestrations.set(state.run_id, state);
+  console.log(`[executor] ${runId} planning complete, transitioning to executing. Summary: "${summary.slice(0, 120)}"`);
 
-  const runId = state.run_id;
-  const completed = new Set<string>();
-  const failed = new Set<string>();
-  const running = new Set<string>();
-  const handles = new Map<string, TaskHandle>();
-
-  // Shared promise resolver for cascading: when any node completes,
-  // the outer loop can wake up to find newly-ready nodes.
-  let resolveNext: (() => void) | null = null;
-  function nextCompletion(): Promise<void> {
-    return new Promise<void>((r) => {
-      resolveNext = r;
-    });
-  }
-  function signalCompletion(): void {
-    if (resolveNext) {
-      const fn = resolveNext;
-      resolveNext = null;
-      fn();
-    }
-  }
-
-  // Get all nodes for this run
+  // Check if there are any nodes at all
   const allNodes = db
     .query("SELECT node_id, status FROM nodes_current WHERE run_id = ?")
     .all(runId) as Array<{ node_id: string; status: string }>;
 
-  // Pre-populate completed/failed from DB state (in case of resume)
-  for (const node of allNodes) {
-    if (node.status === "completed") completed.add(node.node_id);
-    if (node.status === "failed") failed.add(node.node_id);
-  }
-
-  const totalNodes = allNodes.length;
-  if (totalNodes === 0) {
+  if (allNodes.length === 0) {
+    console.log(`[executor] ${runId} no nodes found, marking completed`);
     state.phase = "completed";
+    state.result = summary;
     updateRunStatus(db, runId, "completed");
+    onRunCompleted(runId).catch((err) =>
+      console.warn("[executor] workgraph onRunCompleted error:", err)
+    );
     return;
   }
 
-  // Build dependency map: nodeId → source node IDs that must complete
+  // Find ready nodes and spawn task agents
+  const readyNodeIds = findReadyNodes(db, runId);
+  console.log(`[executor] ${runId} found ${readyNodeIds.length} ready nodes after planning`);
+
+  for (const nodeId of readyNodeIds) {
+    await spawnTaskAgent(db, state, nodeId, spawnAgentFn);
+  }
+
+  // If no nodes are ready and none are running, check for deadlock
+  if (readyNodeIds.length === 0) {
+    const active = allNodes.filter((n) => n.status === "active");
+    if (active.length === 0) {
+      console.error(`[executor] ${runId} deadlock after planning: no ready or active nodes`);
+      state.phase = "failed";
+      state.error = "Deadlock: no nodes are ready and none are running after planning";
+      updateRunStatus(db, runId, "failed");
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// onNodeStatusUpdate — called by MCP update_status tool handler
+// ---------------------------------------------------------------------------
+
+/**
+ * Called when a task agent finishes a node (via the `update_status` MCP tool).
+ *
+ * Handles:
+ *   - Marking the node completed/failed in the DB
+ *   - Retry logic for failed nodes
+ *   - Cascade: finding newly ready nodes and spawning agents for them
+ *   - Cascade failure to dependent nodes when retries exhausted
+ *   - Detecting run completion or failure
+ */
+export async function onNodeStatusUpdate(
+  db: any,
+  runId: string,
+  nodeId: string,
+  status: "completed" | "failed",
+  spawnAgentFn: SpawnAgentFn,
+  errorMessage?: string,
+): Promise<void> {
+  const state = orchestrations.get(runId);
+  if (!state) {
+    console.error(`[executor] onNodeStatusUpdate: run ${runId} not found`);
+    return;
+  }
+
+  if (state.phase !== "executing") {
+    console.warn(`[executor] onNodeStatusUpdate: run ${runId} in phase '${state.phase}', ignoring`);
+    return;
+  }
+
+  // Update agent history
+  const history = state.node_agents.get(nodeId);
+  if (history) {
+    const lastEntry = history.history[history.history.length - 1];
+    if (lastEntry) {
+      lastEntry.status = status;
+      lastEntry.finished_at = new Date().toISOString();
+    }
+    history.current_agent_id = null;
+  }
+
+  if (status === "completed") {
+    console.log(`[executor] ${runId} node ${nodeId} completed`);
+    updateNodeStatus(db, runId, nodeId, "completed");
+    wgOnNodeCompleted(runId);
+  } else {
+    // Failed — check retry count
+    const dbNode = db
+      .query("SELECT retry_count FROM nodes_current WHERE node_id = ?")
+      .get(nodeId) as { retry_count: number } | null;
+    const retryCount = dbNode?.retry_count ?? 0;
+
+    console.error(
+      `[executor] ${runId} node ${nodeId} failed (retry ${retryCount}/${MAX_RETRIES}): ${errorMessage?.slice(0, 200) ?? "(no error message)"}`,
+    );
+
+    if (retryCount < MAX_RETRIES) {
+      // Retry: increment count, re-spawn agent
+      db.run(
+        "UPDATE nodes_current SET retry_count = retry_count + 1 WHERE node_id = ?",
+        [nodeId],
+      );
+      console.log(`[executor] ${runId} node ${nodeId} retrying (attempt ${retryCount + 1})`);
+      await spawnTaskAgent(db, state, nodeId, spawnAgentFn);
+      return;
+    }
+
+    // All retries exhausted — mark failed
+    console.error(`[executor] ${runId} node ${nodeId} max retries exhausted — marking failed`);
+    updateNodeStatus(db, runId, nodeId, "failed");
+
+    // Cascade failure to dependent nodes
+    cascadeFailure(db, runId, nodeId);
+  }
+
+  // Check if the run is complete
+  await checkRunCompletion(db, runId, state, spawnAgentFn);
+}
+
+// ---------------------------------------------------------------------------
+// findReadyNodes — query DB for pending nodes with all deps satisfied
+// ---------------------------------------------------------------------------
+
+/**
+ * Find nodes that are ready to execute: pending status with all hard
+ * dependencies completed.
+ *
+ * Also cascades failure to nodes whose dependencies have failed.
+ */
+export function findReadyNodes(db: any, runId: string): string[] {
+  const allNodes = db
+    .query("SELECT node_id, status FROM nodes_current WHERE run_id = ?")
+    .all(runId) as Array<{ node_id: string; status: string }>;
+
   const edges = db
     .query("SELECT source_id, target_id FROM dependency_edges_current WHERE run_id = ?")
     .all(runId) as Array<{ source_id: string; target_id: string }>;
+
+  // Build status map and dependency map
+  const statusMap = new Map<string, string>();
+  for (const node of allNodes) {
+    statusMap.set(node.node_id, node.status);
+  }
 
   const dependenciesOf = new Map<string, string[]>();
   for (const edge of edges) {
@@ -130,230 +311,176 @@ export async function executeOrchestration(
     dependenciesOf.set(edge.target_id, deps);
   }
 
-  function findReadyNodes(): string[] {
-    const ready: string[] = [];
-    for (const node of allNodes) {
-      if (completed.has(node.node_id) || failed.has(node.node_id) || running.has(node.node_id)) {
-        continue;
-      }
-      const deps = dependenciesOf.get(node.node_id) || [];
-      const allDepsCompleted = deps.every((depId) => completed.has(depId));
-      // If any dep has failed, this node is blocked forever
-      const anyDepFailed = deps.some((depId) => failed.has(depId));
-      if (anyDepFailed) {
-        // Mark as failed since dependency failed
-        failed.add(node.node_id);
-        updateNodeStatus(db, runId, node.node_id, "failed");
-        continue;
-      }
-      if (allDepsCompleted) {
-        ready.push(node.node_id);
-      }
-    }
-    return ready;
-  }
+  const ready: string[] = [];
 
-  function getNodePrompt(nodeId: string): string {
-    // Try direct lookup via node_id column
-    const metaMsg = db
-      .query(
-        "SELECT content FROM messages_current WHERE run_id = ? AND message_type = 'node_metadata' AND node_id = ?"
-      )
-      .get(runId, nodeId) as { content: string } | null;
+  for (const node of allNodes) {
+    if (node.status !== "pending") continue;
 
-    if (metaMsg) return metaMsg.content;
+    const deps = dependenciesOf.get(node.node_id) || [];
 
-    // Fallback: look up from plan
-    if (state.plan) {
-      for (const task of state.plan.tasks) {
-        if (state.task_node_map.get(task.id) === nodeId) {
-          return task.prompt;
-        }
-      }
+    // If any dependency failed, this node is blocked forever → cascade failure
+    const anyDepFailed = deps.some((depId) => statusMap.get(depId) === "failed");
+    if (anyDepFailed) {
+      updateNodeStatus(db, runId, node.node_id, "failed");
+      statusMap.set(node.node_id, "failed");
+      continue;
     }
 
-    return `Execute task for node ${nodeId}`;
-  }
-
-  function getTaskForNode(nodeId: string) {
-    if (!state.plan) return undefined;
-    for (const task of state.plan.tasks) {
-      if (state.task_node_map.get(task.id) === nodeId) {
-        return task;
-      }
+    // All deps must be completed for the node to be ready
+    const allDepsCompleted = deps.every((depId) => statusMap.get(depId) === "completed");
+    if (allDepsCompleted) {
+      ready.push(node.node_id);
     }
-    return undefined;
   }
 
-  async function executeNode(nodeId: string): Promise<void> {
-    running.add(nodeId);
-    updateNodeStatus(db, runId, nodeId, "active");
+  return ready;
+}
 
-    const task = getTaskForNode(nodeId);
-    const prompt = getNodePrompt(nodeId);
-    const taskForBackend = task || {
-      id: nodeId,
-      title: nodeId,
-      kind: "code_gen",
-      team: "",
-      prompt,
-      depends_on: [],
-    };
+// ---------------------------------------------------------------------------
+// spawnTaskAgent — spawn a task agent for a ready node
+// ---------------------------------------------------------------------------
 
-    // Track in node_agents for backward compatibility
+/**
+ * Spawn a task agent for a given node.
+ *
+ * 1. Get the node's prompt from scratchpad_entries
+ * 2. Build a task prompt that instructs the agent to use MCP tools
+ * 3. Spawn the agent via spawnAgentFn
+ * 4. Track in state.node_agents
+ * 5. Fire and forget — does NOT await completion
+ */
+async function spawnTaskAgent(
+  db: any,
+  state: OrchestratorRunState,
+  nodeId: string,
+  spawnAgentFn: SpawnAgentFn,
+): Promise<void> {
+  const runId = state.run_id;
+
+  // Get node metadata from DB
+  const dbNode = db
+    .query("SELECT node_id, role, kind, title FROM nodes_current WHERE node_id = ?")
+    .get(nodeId) as { node_id: string; role: string; kind: string; title: string } | null;
+
+  const role = dbNode?.role || "developer";
+  const title = dbNode?.title || nodeId;
+
+  // Get the node's prompt from scratchpad entries
+  let nodePrompt = "";
+  const scratchpad = db
+    .query(
+      "SELECT content FROM scratchpad_entries WHERE run_id = ? AND node_id = ? ORDER BY created_at ASC LIMIT 1",
+    )
+    .get(runId, nodeId) as { content: string } | null;
+
+  if (scratchpad) {
+    nodePrompt = scratchpad.content;
+  }
+
+  if (!nodePrompt) {
+    nodePrompt = `Execute task: ${title}`;
+  }
+
+  // Build the full prompt instructing the agent to use MCP tools
+  const taskPrompt = `You are a ${role}. Execute the following task. Use read_scratchpads to get context from upstream tasks. Use write_scratchpad to record your findings. When done, call update_status with status 'completed'. If you encounter an unrecoverable error, call update_status with status 'failed'.
+
+Task: ${title}
+
+${nodePrompt}`;
+
+  // Mark node as active before spawning
+  updateNodeStatus(db, runId, nodeId, "active");
+
+  try {
+    console.log(`[executor] ${runId} spawning task agent for node ${nodeId} (${role}): "${title}"`);
+    const agent = await spawnAgentFn(taskPrompt, runId, nodeId);
+
+    // Track in node_agents
     const history: NodeAgentHistory = state.node_agents.get(nodeId) || {
       current_agent_id: null,
       history: [],
     };
+    history.current_agent_id = agent.id;
+    history.history.push({
+      agent_id: agent.id,
+      status: "running",
+      started_at: new Date().toISOString(),
+      finished_at: null,
+    });
+    state.node_agents.set(nodeId, history);
 
-    let retryCount = 0;
-    const dbNode = db
-      .query("SELECT retry_count FROM nodes_current WHERE node_id = ?")
-      .get(nodeId) as { retry_count: number } | null;
-    if (dbNode) retryCount = dbNode.retry_count;
-
-    let lastError: string | undefined;
-
-    for (let attempt = retryCount; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        console.log(`[executor] ${runId} launching task for node ${nodeId} (attempt ${attempt})`);
-        const handle = await backend.launch(taskForBackend, runId, nodeId, parentSessionID);
-
-        // Track agent/session in history
-        history.current_agent_id = handle.id;
-        history.history.push({
-          agent_id: handle.id,
-          status: "running",
-          started_at: new Date().toISOString(),
-          finished_at: null,
-        });
-        state.node_agents.set(nodeId, history);
-        handles.set(nodeId, handle);
-
-        console.log(`[executor] ${runId} node ${nodeId} handle ${handle.id} — awaiting completion`);
-
-        const result = await handle.await();
-
-        // Update history
-        const lastEntry = history.history[history.history.length - 1];
-        if (lastEntry) {
-          lastEntry.status = result.status === "completed" ? "completed" : "failed";
-          lastEntry.finished_at = new Date().toISOString();
-        }
-        history.current_agent_id = null;
-
-        if (result.status === "completed") {
-          // Store agent output
-          if (result.output.trim()) {
-            const node = db
-              .query("SELECT team_id FROM nodes_current WHERE node_id = ?")
-              .get(nodeId) as { team_id: string } | null;
-            const teamId = node?.team_id || "system";
-            const msgId = `msg_${ulid()}`;
-            db.run(
-              "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at, node_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-              [msgId, runId, teamId, handle.id, result.output, "agent_output", new Date().toISOString(), nodeId]
-            );
-          }
-
-          console.log(`[executor] ${runId} node ${nodeId} completed`);
-          completed.add(nodeId);
-          running.delete(nodeId);
-          updateNodeStatus(db, runId, nodeId, "completed");
-          onNodeCompleted(runId);
-          handles.delete(nodeId);
-          signalCompletion();
-          return;
-        } else {
-          // Failed
-          lastError = result.error;
-          const node = db
-            .query("SELECT team_id FROM nodes_current WHERE node_id = ?")
-            .get(nodeId) as { team_id: string } | null;
-          const teamId = node?.team_id || "system";
-          const errorContent = result.error || `Task failed`;
-          const msgId = `msg_${ulid()}`;
-          db.run(
-            "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at, node_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [msgId, runId, teamId, handle.id, errorContent, "agent_error", new Date().toISOString(), nodeId]
-          );
-
-          console.error(`[executor] ${runId} node ${nodeId} failed (attempt ${attempt}/${MAX_RETRIES}): ${lastError?.slice(0, 200)}`);
-
-          if (attempt < MAX_RETRIES) {
-            // Retry: increment count and try again
-            db.run(
-              "UPDATE nodes_current SET retry_count = retry_count + 1 WHERE node_id = ?",
-              [nodeId]
-            );
-            console.log(`[executor] ${runId} node ${nodeId} retrying...`);
-            handles.delete(nodeId);
-            continue;
-          }
-        }
-      } catch (err) {
-        lastError = (err as Error).message;
-        console.error(`[executor] ${runId} node ${nodeId} launch error:`, err);
-
-        const lastEntry = history.history[history.history.length - 1];
-        if (lastEntry) {
-          lastEntry.status = "failed";
-          lastEntry.finished_at = new Date().toISOString();
-        }
-        history.current_agent_id = null;
-
-        if (attempt < MAX_RETRIES) {
-          db.run(
-            "UPDATE nodes_current SET retry_count = retry_count + 1 WHERE node_id = ?",
-            [nodeId]
-          );
-          handles.delete(nodeId);
-          continue;
-        }
-      }
-    }
-
-    // All retries exhausted
-    console.error(`[executor] ${runId} node ${nodeId} max retries exhausted — marking failed`);
-    failed.add(nodeId);
-    running.delete(nodeId);
-    updateNodeStatus(db, runId, nodeId, "failed");
-    handles.delete(nodeId);
-    signalCompletion();
+    console.log(`[executor] ${runId} agent ${agent.id} spawned for node ${nodeId}`);
+  } catch (err) {
+    console.error(`[executor] ${runId} failed to spawn agent for node ${nodeId}:`, err);
+    // Revert to pending so it can be retried on next cascade
+    updateNodeStatus(db, runId, nodeId, "pending");
   }
+}
 
-  // --- Main execution loop ---
-  try {
-    while (completed.size + failed.size < totalNodes) {
-      const ready = findReadyNodes();
+// ---------------------------------------------------------------------------
+// cascadeFailure — mark downstream dependents as failed
+// ---------------------------------------------------------------------------
 
-      if (ready.length === 0 && running.size === 0) {
-        // Deadlock: no pending or ready nodes, nothing running
-        console.error(`[executor] ${runId} deadlock: ${failed.size} failed, ${completed.size} completed, ${totalNodes - completed.size - failed.size} unreachable`);
-        state.error = "Deadlock: remaining nodes have unsatisfied dependencies";
-        break;
-      }
+/**
+ * Cascade failure to all nodes that depend (directly or transitively) on a
+ * failed node. Only affects nodes that are still pending.
+ */
+function cascadeFailure(db: any, runId: string, failedNodeId: string): void {
+  // Find all edges from the failed node to its dependents
+  const edges = db
+    .query("SELECT target_id FROM dependency_edges_current WHERE run_id = ? AND source_id = ?")
+    .all(runId, failedNodeId) as Array<{ target_id: string }>;
 
-      if (ready.length === 0 && running.size > 0) {
-        // Wait for any running node to complete, then check again
-        await nextCompletion();
-        continue;
-      }
+  for (const edge of edges) {
+    const targetNode = db
+      .query("SELECT status FROM nodes_current WHERE node_id = ?")
+      .get(edge.target_id) as { status: string } | null;
 
-      // Launch all ready nodes in parallel
-      const executions = ready.map((nodeId) => executeNode(nodeId));
-      await Promise.allSettled(executions);
+    if (targetNode && targetNode.status === "pending") {
+      console.log(`[executor] ${runId} cascading failure from ${failedNodeId} → ${edge.target_id}`);
+      updateNodeStatus(db, runId, edge.target_id, "failed");
+      // Recursively cascade
+      cascadeFailure(db, runId, edge.target_id);
     }
+  }
+}
 
-    // Determine final state
-    if (failed.size > 0 && completed.size === 0) {
+// ---------------------------------------------------------------------------
+// checkRunCompletion — determine if run is done
+// ---------------------------------------------------------------------------
+
+/**
+ * After a node status change, check if the entire run is complete.
+ *
+ * - If all nodes completed → run completed
+ * - If some failed and no more can run → run failed
+ * - If newly ready nodes exist → spawn agents for them
+ */
+async function checkRunCompletion(
+  db: any,
+  runId: string,
+  state: OrchestratorRunState,
+  spawnAgentFn: SpawnAgentFn,
+): Promise<void> {
+  const allNodes = db
+    .query("SELECT node_id, status FROM nodes_current WHERE run_id = ?")
+    .all(runId) as Array<{ node_id: string; status: string }>;
+
+  const pending = allNodes.filter((n) => n.status === "pending");
+  const active = allNodes.filter((n) => n.status === "active");
+  const completed = allNodes.filter((n) => n.status === "completed");
+  const failed = allNodes.filter((n) => n.status === "failed");
+
+  // All nodes are in a terminal state (completed or failed)?
+  if (pending.length === 0 && active.length === 0) {
+    if (failed.length > 0 && completed.length === 0) {
+      console.log(`[executor] ${runId} all nodes finished — ${failed.length} failed, 0 completed → FAILED`);
       state.phase = "failed";
-      state.error = state.error || "All tasks failed";
+      state.error = "All tasks failed";
       updateRunStatus(db, runId, "failed");
-    } else if (completed.size + failed.size >= totalNodes) {
-      if (failed.size > 0) {
-        // Partial success — some completed, some failed
-        console.log(`[executor] ${runId} finished: ${completed.size} completed, ${failed.size} failed`);
+    } else {
+      if (failed.length > 0) {
+        console.log(`[executor] ${runId} finished: ${completed.length} completed, ${failed.length} failed`);
       }
       state.phase = "completed";
       updateRunStatus(db, runId, "completed");
@@ -361,370 +488,51 @@ export async function executeOrchestration(
         console.warn("[executor] workgraph onRunCompleted error:", err)
       );
 
-      // Generate final result
-      const outputMsgs = db
+      // Generate final result from scratchpad entries of completed nodes
+      const outputEntries = db
         .query(
-          "SELECT content, team_id FROM messages_current WHERE run_id = ? AND message_type = 'agent_output' ORDER BY created_at ASC"
+          "SELECT sp.content, sp.node_id FROM scratchpad_entries sp INNER JOIN nodes_current n ON sp.node_id = n.node_id AND n.run_id = sp.run_id WHERE sp.run_id = ? AND n.status = 'completed' ORDER BY sp.created_at ASC",
         )
-        .all(runId) as Array<{ content: string; team_id: string }>;
+        .all(runId) as Array<{ content: string; node_id: string }>;
 
-      const resultParts = outputMsgs.map((m) => m.content);
-      const resultSummary =
+      const resultParts = outputEntries.map((e) => e.content);
+      state.result =
         resultParts.length > 0
           ? resultParts.join("\n\n---\n\n")
           : "All tasks completed successfully.";
-
-      state.result = resultSummary;
-
-      const resultMsgId = `msg_${ulid()}`;
-      db.run(
-        "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [resultMsgId, runId, "system", "orchestrator", resultSummary, "final_result", new Date().toISOString()]
-      );
-    } else {
-      // Deadlock path
-      state.phase = "failed";
-      updateRunStatus(db, runId, "failed");
-    }
-  } catch (err) {
-    state.error = (err as Error).message;
-    state.phase = "failed";
-    updateRunStatus(db, runId, "failed");
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Backward-compatible startOrchestration (plan + execute in one call)
-// ---------------------------------------------------------------------------
-
-/**
- * Start a full orchestration loop for a goal.
- *
- * Phase 1: PLANNING — spawn planner agent, wait for JSON output
- * Phase 2: BUILDING_GRAPH — parse plan, create DB entities
- * Phase 3: EXECUTING — cascading async: find ready nodes → launch → await → cascade
- * Phase 4: COMPLETED or FAILED
- */
-export async function startOrchestration(
-  db: any,
-  runId: string,
-  goal: string,
-  spawnAgentFn: SpawnAgentFn,
-  getAgentFn: GetAgentFn,
-  waitForAgentFn: (agentId: string) => Promise<AgentRecord>,
-  workItemId?: string
-): Promise<OrchestratorRunState> {
-  try {
-    // Plan
-    const state = await planOrchestration(
-      db,
-      runId,
-      goal,
-      spawnAgentFn,
-      waitForAgentFn,
-      workItemId,
-    );
-    orchestrations.set(runId, state);
-
-    // Execute using subprocess backend (backward compat with agent.ts)
-    const backend = new SubprocessBackend(spawnAgentFn, waitForAgentFn);
-    await executeOrchestration(db, state, backend);
-
-    return state;
-  } catch (err) {
-    // Create/update state for error case
-    let state = orchestrations.get(runId);
-    if (!state) {
-      state = {
-        run_id: runId,
-        phase: "failed",
-        planner_agent_id: null,
-        plan: null,
-        task_node_map: new Map(),
-        team_id_map: new Map(),
-        node_agents: new Map(),
-        interval: null,
-        error: (err as Error).message,
-        created_at: new Date().toISOString(),
-        result: null,
-        work_item_id: workItemId,
-        node_work_items: new Map(),
-      };
-      orchestrations.set(runId, state);
-    }
-    state.error = (err as Error).message;
-    state.phase = "failed";
-    updateRunStatus(db, runId, "failed");
-    return state;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Legacy executionTick — kept for backward compatibility with existing tests
-// ---------------------------------------------------------------------------
-
-/** Default agent stale timeout: 5 minutes (should match agent.ts timeout) */
-const AGENT_STALE_MS = parseInt(process.env.AGENT_TIMEOUT_MS || "", 10) || 5 * 60 * 1000;
-
-/**
- * One tick of the execution loop.
- * 1. Reconcile agent statuses → update node statuses
- * 2. Check for completion or deadlock
- * 3. Spawn agents for newly-ready nodes
- *
- * @deprecated Use executeOrchestration() with a backend instead.
- * Kept for backward compatibility with tests.
- */
-export async function executionTick(
-  db: any,
-  state: OrchestratorRunState,
-  spawnAgentFn: SpawnAgentFn,
-  getAgentFn: GetAgentFn
-): Promise<void> {
-  if (state.phase !== "executing") return;
-
-  const runId = state.run_id;
-
-  // 1. Reconcile: check agent statuses and update corresponding nodes
-  for (const [nodeId, history] of state.node_agents) {
-    const agentId = history.current_agent_id;
-    if (!agentId) continue;
-
-    const agent = getAgentFn(agentId);
-    if (!agent) continue;
-
-    if (agent.status === "completed") {
-      const node = db
-        .query("SELECT status, team_id FROM nodes_current WHERE node_id = ?")
-        .get(nodeId) as { status: string; team_id: string } | null;
-      if (node && node.status === "active") {
-        console.log(`[orchestrator] ${runId} node ${nodeId} completed (agent ${agentId})`);
-
-        // Store agent output as a message
-        const agentOutput = agent.output_chunks?.join("") || "";
-        if (agentOutput.trim()) {
-          const msgId = `msg_${ulid()}`;
-          db.run(
-            "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at, node_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [msgId, runId, node.team_id, agentId, agentOutput, "agent_output", new Date().toISOString(), nodeId]
-          );
-        }
-
-        updateNodeStatus(db, runId, nodeId, "completed");
-        onNodeCompleted(runId);
-
-        history.current_agent_id = null;
-        const lastEntry = history.history[history.history.length - 1];
-        if (lastEntry) {
-          lastEntry.status = "completed";
-          lastEntry.finished_at = new Date().toISOString();
-        }
-      }
-    } else if (agent.status === "failed") {
-      const node = db
-        .query("SELECT status, retry_count, team_id FROM nodes_current WHERE node_id = ?")
-        .get(nodeId) as { status: string; retry_count: number; team_id: string } | null;
-      if (node && node.status === "active") {
-        const stderr = (agent as any).stderr_chunks?.join("") || "";
-        const agentOutput = agent.output_chunks?.join("") || "";
-        console.error(`[orchestrator] ${runId} node ${nodeId} agent failed (exit ${agent.exit_code}, retry ${node.retry_count}/${MAX_RETRIES})`);
-        if (stderr) console.error(`[orchestrator] ${runId} node ${nodeId} stderr: ${stderr.slice(0, 500)}`);
-
-        // Store agent error output as a message
-        const errorContent = stderr || agentOutput || `Agent failed with exit code ${agent.exit_code}`;
-        if (errorContent.trim()) {
-          const msgId = `msg_${ulid()}`;
-          db.run(
-            "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at, node_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [msgId, runId, node.team_id, agentId, errorContent, "agent_error", new Date().toISOString(), nodeId]
-          );
-        }
-
-        history.current_agent_id = null;
-        const lastEntry = history.history[history.history.length - 1];
-        if (lastEntry) {
-          lastEntry.status = "failed";
-          lastEntry.finished_at = new Date().toISOString();
-        }
-
-        if (node.retry_count < MAX_RETRIES) {
-          console.log(`[orchestrator] ${runId} node ${nodeId} retrying (attempt ${node.retry_count + 1})`);
-          db.run(
-            "UPDATE nodes_current SET status = 'pending', retry_count = retry_count + 1 WHERE node_id = ?",
-            [nodeId]
-          );
-        } else {
-          console.error(`[orchestrator] ${runId} node ${nodeId} max retries exhausted, marking failed`);
-          updateNodeStatus(db, runId, nodeId, "failed");
-        }
-      }
-    }
-  }
-
-  // 1b. Check for stale agents
-  const now = Date.now();
-  for (const [nodeId, history] of state.node_agents) {
-    if (!history.current_agent_id) continue;
-    const lastEntry = history.history[history.history.length - 1];
-    if (lastEntry && lastEntry.status === "running") {
-      const elapsed = now - new Date(lastEntry.started_at).getTime();
-      if (elapsed > AGENT_STALE_MS + 30_000) {
-        console.error(`[orchestrator] ${runId} agent ${history.current_agent_id} for node ${nodeId} is stale (${Math.round(elapsed / 1000)}s) — marking failed`);
-        const node = db
-          .query("SELECT status, retry_count, team_id FROM nodes_current WHERE node_id = ?")
-          .get(nodeId) as { status: string; retry_count: number; team_id: string } | null;
-        if (node && node.status === "active") {
-          const errorMsg = `Agent timed out after ${Math.round(elapsed / 1000)} seconds`;
-          const msgId = `msg_${ulid()}`;
-          db.run(
-            "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at, node_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [msgId, runId, node.team_id, history.current_agent_id, errorMsg, "agent_error", new Date().toISOString(), nodeId]
-          );
-
-          history.current_agent_id = null;
-          lastEntry.status = "failed";
-          lastEntry.finished_at = new Date().toISOString();
-
-          if (node.retry_count < MAX_RETRIES) {
-            db.run(
-              "UPDATE nodes_current SET status = 'pending', retry_count = retry_count + 1 WHERE node_id = ?",
-              [nodeId]
-            );
-          } else {
-            updateNodeStatus(db, runId, nodeId, "failed");
-          }
-        }
-      }
-    }
-  }
-
-  // 2. Check completion/deadlock
-  const allNodes = db
-    .query("SELECT node_id, status FROM nodes_current WHERE run_id = ?")
-    .all(runId) as Array<{ node_id: string; status: string }>;
-
-  const pending = allNodes.filter((n) => n.status === "pending");
-  const active = allNodes.filter((n) => n.status === "active");
-  const completedNodes = allNodes.filter((n) => n.status === "completed");
-  const failedNodes = allNodes.filter((n) => n.status === "failed");
-
-  // All done?
-  if (pending.length === 0 && active.length === 0) {
-    if (state.interval) {
-      clearInterval(state.interval);
-      state.interval = null;
-    }
-
-    if (failedNodes.length > 0 && completedNodes.length === 0) {
-      console.log(`[orchestrator] ${runId} all nodes finished — ${failedNodes.length} failed, 0 completed → FAILED`);
-      state.phase = "failed";
-      updateRunStatus(db, runId, "failed");
-    } else {
-      console.log(`[orchestrator] ${runId} all nodes finished — ${completedNodes.length} completed, ${failedNodes.length} failed → COMPLETED`);
-      state.phase = "completed";
-      updateRunStatus(db, runId, "completed");
-      onRunCompleted(runId).catch((err) =>
-        console.warn("[orchestrator] workgraph onRunCompleted error:", err)
-      );
-
-      // Generate final result
-      const outputMsgs = db
-        .query(
-          "SELECT content, team_id FROM messages_current WHERE run_id = ? AND message_type = 'agent_output' ORDER BY created_at ASC"
-        )
-        .all(runId) as Array<{ content: string; team_id: string }>;
-
-      const resultParts = outputMsgs.map((m) => m.content);
-      const resultSummary =
-        resultParts.length > 0
-          ? resultParts.join("\n\n---\n\n")
-          : "All tasks completed successfully.";
-
-      state.result = resultSummary;
-
-      const resultMsgId = `msg_${ulid()}`;
-      db.run(
-        "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [resultMsgId, runId, "system", "orchestrator", resultSummary, "final_result", new Date().toISOString()]
-      );
     }
     return;
   }
 
-  // 3. Find ready nodes and spawn agents
-  const edgesAll = db
-    .query("SELECT * FROM dependency_edges_current WHERE run_id = ?")
-    .all(runId) as Array<{ source_id: string; target_id: string }>;
+  // Check for newly ready nodes
+  const readyNodeIds = findReadyNodes(db, runId);
 
-  const nodeStatusMap = new Map<string, string>();
-  for (const n of allNodes) {
-    nodeStatusMap.set(n.node_id, n.status);
-  }
-
-  const dependenciesOf = new Map<string, string[]>();
-  for (const edge of edgesAll) {
-    const deps = dependenciesOf.get(edge.target_id) || [];
-    deps.push(edge.source_id);
-    dependenciesOf.set(edge.target_id, deps);
-  }
-
-  for (const node of pending) {
-    // Skip if we already have an active agent for this node
-    const existingHistory = state.node_agents.get(node.node_id);
-    if (existingHistory?.current_agent_id != null) continue;
-
-    const deps = dependenciesOf.get(node.node_id) || [];
-    const allDepsCompleted = deps.every(
-      (depId) => nodeStatusMap.get(depId) === "completed"
-    );
-
-    if (allDepsCompleted) {
-      let prompt = `Execute task for node ${node.node_id}`;
-
-      const metaMsg = db
-        .query(
-          "SELECT content FROM messages_current WHERE run_id = ? AND message_type = 'node_metadata' AND node_id = ?"
-        )
-        .get(runId, node.node_id) as { content: string } | null;
-
-      if (metaMsg) {
-        prompt = metaMsg.content;
-      } else if (state.plan) {
-        for (const task of state.plan.tasks) {
-          if (state.task_node_map.get(task.id) === node.node_id) {
-            prompt = task.prompt;
-            break;
-          }
-        }
-      }
-
-      updateNodeStatus(db, runId, node.node_id, "active");
-      console.log(`[orchestrator] ${runId} spawning agent for node ${node.node_id} (prompt: "${prompt.slice(0, 80)}...")`);
-
-      try {
-        const agent = await spawnAgentFn(prompt, runId, node.node_id);
-
-        const history: NodeAgentHistory = existingHistory || { current_agent_id: null, history: [] };
-        history.current_agent_id = agent.id;
-        history.history.push({
-          agent_id: agent.id,
-          status: "running",
-          started_at: new Date().toISOString(),
-          finished_at: null,
-        });
-        state.node_agents.set(node.node_id, history);
-
-        console.log(`[orchestrator] ${runId} agent ${agent.id} spawned for node ${node.node_id}`);
-      } catch (err) {
-        console.error(`[orchestrator] ${runId} failed to spawn agent for node ${node.node_id}:`, err);
-        updateNodeStatus(db, runId, node.node_id, "pending");
-      }
+  if (readyNodeIds.length > 0) {
+    console.log(`[executor] ${runId} found ${readyNodeIds.length} newly ready nodes`);
+    for (const nodeId of readyNodeIds) {
+      await spawnTaskAgent(db, state, nodeId, spawnAgentFn);
     }
+    return;
+  }
+
+  // No ready nodes, but some are still active — just wait
+  if (active.length > 0) {
+    return;
+  }
+
+  // No ready, no active, but pending exist → deadlock
+  if (pending.length > 0) {
+    console.error(
+      `[executor] ${runId} deadlock: ${pending.length} pending, ${failed.length} failed, ${completed.length} completed — no nodes can proceed`,
+    );
+    state.phase = "failed";
+    state.error = "Deadlock: remaining nodes have unsatisfied dependencies";
+    updateRunStatus(db, runId, "failed");
   }
 }
 
 // ---------------------------------------------------------------------------
-// Cancel
+// cancelOrchestration
 // ---------------------------------------------------------------------------
 
 /**
@@ -733,13 +541,8 @@ export async function executionTick(
 export function cancelOrchestration(
   state: OrchestratorRunState,
   db: any,
-  killAgentFn: (agentId: string) => void
+  killAgentFn: (agentId: string) => void,
 ): void {
-  if (state.interval) {
-    clearInterval(state.interval);
-    state.interval = null;
-  }
-
   // Kill all active worker agents
   for (const [_nodeId, history] of state.node_agents) {
     if (history.current_agent_id) {
@@ -757,6 +560,35 @@ export function cancelOrchestration(
 }
 
 // ---------------------------------------------------------------------------
+// Legacy exports — kept for backward compatibility
+// ---------------------------------------------------------------------------
+
+/**
+ * @deprecated Use the MCP-driven flow (startOrchestration + onPlanningComplete + onNodeStatusUpdate).
+ * Kept as a no-op for backward compat with imports.
+ */
+export async function executeOrchestration(
+  _db: any,
+  _state: OrchestratorRunState,
+  _backend: any,
+  _parentSessionID?: string,
+): Promise<void> {
+  console.warn("[executor] executeOrchestration() is deprecated in MCP-driven mode — use onPlanningComplete/onNodeStatusUpdate");
+}
+
+/**
+ * @deprecated Use the MCP-driven flow. Kept for backward compat with imports.
+ */
+export async function executionTick(
+  _db: any,
+  _state: OrchestratorRunState,
+  _spawnAgentFn: SpawnAgentFn,
+  _getAgentFn: GetAgentFn,
+): Promise<void> {
+  console.warn("[executor] executionTick() is deprecated in MCP-driven mode — use onNodeStatusUpdate");
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -768,7 +600,7 @@ function updateNodeStatus(
   db: any,
   runId: string,
   nodeId: string,
-  status: string
+  status: string,
 ): void {
   db.run("UPDATE nodes_current SET status = ? WHERE node_id = ?", [status, nodeId]);
 

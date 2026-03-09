@@ -40,8 +40,7 @@ interface AcpMessage {
 
 /** Map our run status to ACP run status */
 function toAcpStatus(status: string, phase?: string): string {
-  if (phase === "planning" || phase === "building_graph") return "in-progress";
-  if (phase === "planned") return "in-progress";
+  if (phase === "planning") return "in-progress";
   if (phase === "executing") return "in-progress";
   if (phase === "cancelled") return "cancelled";
   switch (status) {
@@ -256,10 +255,10 @@ export function acpRouter(db: any) {
     const orch = getOrchestration(runId);
     const acpStatus = toAcpStatus(run.status, orch?.phase);
 
-    // Gather messages for this run
-    const dbMessages = db
+    // Gather scratchpad entries as messages for this run
+    const scratchpadEntries = db
       .query(
-        "SELECT * FROM messages_current WHERE run_id = ? AND message_type != 'node_metadata' ORDER BY created_at ASC"
+        "SELECT * FROM scratchpad_entries WHERE run_id = ? ORDER BY created_at ASC"
       )
       .all(runId) as any[];
 
@@ -270,23 +269,10 @@ export function acpRouter(db: any) {
       },
     ];
 
-    for (const msg of dbMessages) {
-      acpMessages.push({
-        role: msg.sender_id === "user" ? "user" : "agent",
-        parts: [{ content_type: "text/plain", content: msg.content }],
-      });
-    }
-
-    // If orchestration has a plan summary, include it
-    if (orch?.plan?.summary) {
+    for (const entry of scratchpadEntries) {
       acpMessages.push({
         role: "agent",
-        parts: [
-          {
-            content_type: "text/plain",
-            content: `Plan: ${orch.plan.summary}`,
-          },
-        ],
+        parts: [{ content_type: "text/plain", content: entry.content }],
       });
     }
 

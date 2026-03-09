@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
-import { computeHash, verifyChain } from "../../src/services/hash-chain";
-import { verify, rebuild, replay, reconcile } from "../../src/cli/repair";
-import { rootReducer, initialRootState, type RootState } from "../../src/reducers/index";
+import type { EventEnvelope } from "../../src/orchestrator/events/schema";
+import { computeHash, verifyChain } from "../../src/orchestrator/core/services/hash-chain";
+import { verify, rebuild, replay, reconcile } from "../../src/orchestrator/core/cli/repair";
+import { rootReducer, initialRootState, type RootState } from "../../src/orchestrator/core/reducers/index";
 
 describe("Repair & Recovery Integration", () => {
   let counter: number;
@@ -42,42 +42,28 @@ describe("Repair & Recovery Integration", () => {
         payload_json: JSON.stringify({ goal: "Build auth system" }),
       }),
       makeEvent({
-        type: "team_created",
-        payload_json: JSON.stringify({ team_id: "team_fe", name: "Frontend" }),
-      }),
-      makeEvent({
-        type: "team_member_added",
-        payload_json: JSON.stringify({ team_id: "team_fe", agent_id: "agent_ui" }),
+        type: "node_created",
+        payload_json: JSON.stringify({ node_id: "node_1", kind: "research", role: "developer" }),
       }),
       makeEvent({
         type: "node_created",
-        payload_json: JSON.stringify({ node_id: "node_1", kind: "lead_task", team_id: "team_fe" }),
+        payload_json: JSON.stringify({ node_id: "node_2", kind: "code_gen", role: "developer" }),
       }),
       makeEvent({
         type: "edge_added",
-        payload_json: JSON.stringify({ id: "edge_1", source_id: "node_1", target_id: "node_2", type: "hard" }),
+        payload_json: JSON.stringify({ id: "edge_1", source_id: "node_1", target_id: "node_2", type: "depends_on" }),
       }),
       makeEvent({
-        type: "message_posted",
-        payload_json: JSON.stringify({
-          id: "msg_1",
-          team_id: "team_fe",
-          sender_id: "agent_ui",
-          content: "Started work",
-          message_type: "propose",
-        }),
+        type: "node_status_changed",
+        payload_json: JSON.stringify({ node_id: "node_1", status: "active" }),
       }),
       makeEvent({
         type: "artifact_created",
         payload_json: JSON.stringify({ id: "art_1", node_id: "node_1", content: "code", version: 1 }),
       }),
       makeEvent({
-        type: "handoff_requested",
-        payload_json: JSON.stringify({ id: "h_1", from_team_id: "team_fe", to_team_id: "team_be" }),
-      }),
-      makeEvent({
-        type: "decision_proposed",
-        payload_json: JSON.stringify({ id: "d_1", proposal: "Use JWT" }),
+        type: "node_status_changed",
+        payload_json: JSON.stringify({ node_id: "node_1", status: "completed" }),
       }),
       makeEvent({
         type: "run_planned",
@@ -102,7 +88,7 @@ describe("Repair & Recovery Integration", () => {
     expect(result.action).toBe("verify");
     expect(result.success).toBe(true);
     expect(result.details).toBe("Chain integrity verified");
-    expect(result.eventsProcessed).toBe(10);
+    expect(result.eventsProcessed).toBe(8);
   });
 
   it("should detect corruption using repair verify()", async () => {
@@ -123,26 +109,22 @@ describe("Repair & Recovery Integration", () => {
 
     expect(result.action).toBe("rebuild");
     expect(result.success).toBe(true);
-    expect(result.eventsProcessed).toBe(10);
-    expect(result.details).toBe("Rebuilt state from 10 events");
+    expect(result.eventsProcessed).toBe(8);
+    expect(result.details).toBe("Rebuilt state from 8 events");
 
     // Verify rebuilt state
     expect(state.run.runs["run_1"]).toBeDefined();
     expect(state.run.runs["run_1"].goal).toBe("Build auth system");
-    expect(state.run.runs["run_1"].status).toBe("planned");
-
-    expect(state.team.teams["team_fe"]).toBeDefined();
-    expect(state.team.teams["team_fe"].members).toContain("agent_ui");
 
     expect(state.node.nodes["node_1"]).toBeDefined();
-    expect(state.node.nodes["node_1"].kind).toBe("lead_task");
+    expect(state.node.nodes["node_1"].kind).toBe("research");
+    expect(state.node.nodes["node_1"].role).toBe("developer");
+
+    expect(state.node.nodes["node_2"]).toBeDefined();
+    expect(state.node.nodes["node_2"].kind).toBe("code_gen");
 
     expect(state.edge.edges).toHaveLength(1);
-    expect(state.message.messages).toHaveLength(1);
     expect(state.artifact.artifacts["art_1"]).toBeDefined();
-    expect(state.handoff.handoffs["h_1"]).toBeDefined();
-    expect(state.decision.decisions["d_1"]).toBeDefined();
-    expect(state.planning.plans["run_1"]).toBeDefined();
   });
 
   it("should rebuild state consistently after corruption detection", async () => {
@@ -182,7 +164,7 @@ describe("Repair & Recovery Integration", () => {
     expect(result.action).toBe("replay");
     expect(result.success).toBe(true);
     expect(result.details).toBe("Replay matches target state");
-    expect(result.eventsProcessed).toBe(10);
+    expect(result.eventsProcessed).toBe(8);
   });
 
   it("should detect divergence in replay when target state is wrong", async () => {
@@ -203,9 +185,9 @@ describe("Repair & Recovery Integration", () => {
   it("should reconcile local and remote event sets", async () => {
     const events = await buildChainedEvents();
 
-    // Local has first 7 events
-    const localEvents = events.slice(0, 7);
-    // Remote has all 10
+    // Local has first 5 events
+    const localEvents = events.slice(0, 5);
+    // Remote has all 8
     const remoteEvents = events;
 
     const result = await reconcile(localEvents, remoteEvents);

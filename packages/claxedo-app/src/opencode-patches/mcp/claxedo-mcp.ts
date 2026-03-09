@@ -1810,6 +1810,16 @@ server.registerTool(
 )
 
 // ---------------------------------------------------------------------------
+// WorkGraph tools (orchestration DAG: plan, execute, scratchpad, artifacts)
+// ---------------------------------------------------------------------------
+
+import { registerWorkGraphTools } from "../../../../workgraph/src/mcp/register"
+
+const WORKGRAPH_ORIGIN = process.env.WORKGRAPH_API_URL || "http://localhost:4100"
+
+registerWorkGraphTools(server as any, httpRequest, { origin: WORKGRAPH_ORIGIN })
+
+// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 

@@ -2,420 +2,477 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createApp, initializeDb } from "../src/app";
 import type { Hono } from "hono";
-import { buildPlannerPrompt, parsePlannerOutput } from "../src/orchestrator/planner";
-import { buildGraphFromPlan } from "../src/orchestrator/graph-builder";
-import { executionTick } from "../src/orchestrator/executor";
-import type { OrchestratorRunState, NodeAgentHistory, DecompositionPlan } from "../src/orchestrator/types";
+import { buildPlannerPrompt } from "../src/orchestrator/planner";
+import {
+  startOrchestration,
+  onPlanningComplete,
+  onNodeStatusUpdate,
+  findReadyNodes,
+  getOrchestration,
+} from "../src/orchestrator/executor";
+import { handleToolCall, type McpToolContext } from "../src/mcp/tools";
+import type { OrchestratorRunState, NodeAgentHistory } from "../src/orchestrator/types";
 
-// ── Planner Tests ──
+// ── Planner Prompt Tests ──
 
 describe("buildPlannerPrompt", () => {
   it("should include the goal in the prompt", () => {
     const prompt = buildPlannerPrompt("Build a REST API");
     expect(prompt).toContain("Build a REST API");
-    expect(prompt).toContain("JSON");
-    expect(prompt).toContain("teams");
-    expect(prompt).toContain("tasks");
+    expect(prompt).toContain("create_node");
+    expect(prompt).toContain("role");
     expect(prompt).toContain("depends_on");
   });
 });
 
-describe("parsePlannerOutput", () => {
-  it("should parse valid JSON output", () => {
-    const json = JSON.stringify({
-      teams: [{ id: "t1", name: "Backend" }],
-      tasks: [
-        { id: "task1", title: "Setup", kind: "code_gen", team: "t1", prompt: "Setup project", depends_on: [] },
-        { id: "task2", title: "API", kind: "code_gen", team: "t1", prompt: "Build API", depends_on: ["task1"] },
-      ],
-      summary: "Two-step plan",
-    });
+// ── findReadyNodes Tests ──
 
-    // Wrap in stream-json result format
-    const output = JSON.stringify({ type: "result", result: json });
-    const plan = parsePlannerOutput(output);
-
-    expect(plan.teams).toHaveLength(1);
-    expect(plan.teams[0].name).toBe("Backend");
-    expect(plan.tasks).toHaveLength(2);
-    expect(plan.tasks[1].depends_on).toEqual(["task1"]);
-    expect(plan.summary).toBe("Two-step plan");
-  });
-
-  it("should handle fenced code blocks", () => {
-    const json = JSON.stringify({
-      teams: [{ id: "t1", name: "Team" }],
-      tasks: [{ id: "task1", title: "Do thing", kind: "research", team: "t1", prompt: "Research", depends_on: [] }],
-      summary: "Simple",
-    });
-
-    const output = "```json\n" + json + "\n```";
-    const plan = parsePlannerOutput(output);
-    expect(plan.tasks).toHaveLength(1);
-  });
-
-  it("should detect cycles", () => {
-    const json = JSON.stringify({
-      teams: [{ id: "t1", name: "Team" }],
-      tasks: [
-        { id: "task1", title: "A", kind: "code_gen", team: "t1", prompt: "A", depends_on: ["task2"] },
-        { id: "task2", title: "B", kind: "code_gen", team: "t1", prompt: "B", depends_on: ["task1"] },
-      ],
-      summary: "Cyclic",
-    });
-
-    expect(() => parsePlannerOutput(json)).toThrow("Cycle detected");
-  });
-
-  it("should throw on empty output", () => {
-    expect(() => parsePlannerOutput("")).toThrow("no output");
-  });
-
-  it("should throw on invalid JSON", () => {
-    expect(() => parsePlannerOutput("not json at all")).toThrow();
-  });
-
-  it("should throw on missing teams/tasks", () => {
-    const output = JSON.stringify({ foo: "bar" });
-    expect(() => parsePlannerOutput(output)).toThrow("missing");
-  });
-});
-
-// ── Graph Builder Tests ──
-
-describe("buildGraphFromPlan", () => {
+describe("findReadyNodes", () => {
   let db: InstanceType<typeof Database>;
   let runId: string;
 
   beforeEach(async () => {
     db = new Database(":memory:");
     initializeDb(db);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS scratchpad_entries (
+        id TEXT PRIMARY KEY, run_id TEXT NOT NULL, node_id TEXT NOT NULL,
+        content TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, size_bytes INTEGER NOT NULL
+      );
+    `);
     const app = createApp(db);
-
     const res = await app.request("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal: "Graph builder test" }),
+      body: JSON.stringify({ goal: "Ready nodes test" }),
     });
     runId = (await res.json()).run_id;
   });
 
-  it("should create teams, nodes, edges, and messages from plan", () => {
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Alpha" }],
-      tasks: [
-        { id: "task1", title: "Research", kind: "research", team: "t1", prompt: "Do research", depends_on: [] },
-        { id: "task2", title: "Code", kind: "code_gen", team: "t1", prompt: "Write code", depends_on: ["task1"] },
-      ],
-      summary: "Research then code",
-    };
+  it("should return nodes with no dependencies", () => {
+    db.run("INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n1", runId, "developer", "code_gen", "Task 1", "pending", 0]);
+    db.run("INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n2", runId, "developer", "code_gen", "Task 2", "pending", 0]);
 
-    const result = buildGraphFromPlan(db, runId, plan);
-
-    // Teams created
-    const teams = db.query("SELECT * FROM teams_current WHERE run_id = ?").all(runId) as any[];
-    expect(teams).toHaveLength(1);
-    expect(teams[0].name).toBe("Alpha");
-    expect(result.teamIdMap.get("t1")).toBe(teams[0].team_id);
-
-    // Nodes created
-    const nodes = db.query("SELECT * FROM nodes_current WHERE run_id = ?").all(runId) as any[];
-    expect(nodes).toHaveLength(2);
-    expect(nodes[0].status).toBe("pending");
-    expect(nodes[0].retry_count).toBe(0);
-
-    // Edges created
-    const edges = db.query("SELECT * FROM dependency_edges_current WHERE run_id = ?").all(runId) as any[];
-    expect(edges).toHaveLength(1);
-    expect(edges[0].type).toBe("depends_on");
-
-    // Verify edge direction: task1 → task2 (task2 depends on task1)
-    const task1NodeId = result.taskNodeMap.get("task1")!;
-    const task2NodeId = result.taskNodeMap.get("task2")!;
-    expect(edges[0].source_id).toBe(task1NodeId);
-    expect(edges[0].target_id).toBe(task2NodeId);
-
-    // Messages (node_metadata) created
-    const messages = db.query("SELECT * FROM messages_current WHERE run_id = ? AND message_type = 'node_metadata'").all(runId) as any[];
-    expect(messages).toHaveLength(2);
+    const ready = findReadyNodes(db, runId);
+    expect(ready).toContain("n1");
+    expect(ready).toContain("n2");
   });
 
-  it("should throw if task references unknown team", () => {
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Only Team" }],
-      tasks: [
-        { id: "task1", title: "Bad ref", kind: "code_gen", team: "t_nonexistent", prompt: "Fail", depends_on: [] },
-      ],
-      summary: "Should fail",
-    };
+  it("should not return nodes with unmet dependencies", () => {
+    db.run("INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n1", runId, "developer", "code_gen", "Task 1", "pending", 0]);
+    db.run("INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n2", runId, "developer", "code_gen", "Task 2", "pending", 0]);
+    db.run("INSERT INTO dependency_edges_current (id, run_id, source_id, target_id, type) VALUES (?, ?, ?, ?, ?)",
+      ["e1", runId, "n1", "n2", "depends_on"]);
 
-    expect(() => buildGraphFromPlan(db, runId, plan)).toThrow("unknown team");
+    const ready = findReadyNodes(db, runId);
+    expect(ready).toContain("n1");
+    expect(ready).not.toContain("n2");
   });
 
-  it("should handle multiple teams", () => {
-    const plan: DecompositionPlan = {
-      teams: [
-        { id: "t1", name: "Frontend" },
-        { id: "t2", name: "Backend" },
-      ],
-      tasks: [
-        { id: "task1", title: "UI", kind: "code_gen", team: "t1", prompt: "Build UI", depends_on: [] },
-        { id: "task2", title: "API", kind: "code_gen", team: "t2", prompt: "Build API", depends_on: [] },
-        { id: "task3", title: "Integrate", kind: "review", team: "t1", prompt: "Integrate", depends_on: ["task1", "task2"] },
-      ],
-      summary: "Parallel teams",
-    };
+  it("should return nodes after dependencies complete", () => {
+    db.run("INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n1", runId, "developer", "code_gen", "Task 1", "completed", 0]);
+    db.run("INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n2", runId, "developer", "code_gen", "Task 2", "pending", 0]);
+    db.run("INSERT INTO dependency_edges_current (id, run_id, source_id, target_id, type) VALUES (?, ?, ?, ?, ?)",
+      ["e1", runId, "n1", "n2", "depends_on"]);
 
-    const result = buildGraphFromPlan(db, runId, plan);
-    expect(result.teamIdMap.size).toBe(2);
-    expect(result.taskNodeMap.size).toBe(3);
-
-    const edges = db.query("SELECT * FROM dependency_edges_current WHERE run_id = ?").all(runId) as any[];
-    expect(edges).toHaveLength(2);
+    const ready = findReadyNodes(db, runId);
+    expect(ready).toContain("n2");
   });
 
-  it("should emit events for all created entities", () => {
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Solo" }],
-      tasks: [
-        { id: "task1", title: "Only task", kind: "research", team: "t1", prompt: "Research stuff", depends_on: [] },
-      ],
-      summary: "One task",
-    };
+  it("should cascade failure from failed dependencies", () => {
+    db.run("INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n1", runId, "developer", "code_gen", "Task 1", "failed", 0]);
+    db.run("INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n2", runId, "developer", "code_gen", "Task 2", "pending", 0]);
+    db.run("INSERT INTO dependency_edges_current (id, run_id, source_id, target_id, type) VALUES (?, ?, ?, ?, ?)",
+      ["e1", runId, "n1", "n2", "depends_on"]);
 
-    buildGraphFromPlan(db, runId, plan);
+    const ready = findReadyNodes(db, runId);
+    expect(ready).not.toContain("n2");
 
-    // Events: run_created (from beforeEach) + team_created + node_created + message_posted
-    const events = db.query("SELECT type FROM events WHERE run_id = ?").all(runId) as any[];
-    const types = events.map((e: any) => e.type);
-    expect(types).toContain("team_created");
-    expect(types).toContain("node_created");
-    expect(types).toContain("message_posted");
+    // n2 should now be marked failed
+    const node = db.query("SELECT status FROM nodes_current WHERE node_id = 'n2'").get() as any;
+    expect(node.status).toBe("failed");
+  });
+
+  it("should not return active or completed nodes", () => {
+    db.run("INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n1", runId, "developer", "code_gen", "Task 1", "active", 0]);
+    db.run("INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n2", runId, "developer", "code_gen", "Task 2", "completed", 0]);
+
+    const ready = findReadyNodes(db, runId);
+    expect(ready).toHaveLength(0);
   });
 });
 
-// ── Execution Tick Tests ──
+// ── onPlanningComplete Tests ──
 
-describe("executionTick", () => {
+describe("onPlanningComplete", () => {
   let db: InstanceType<typeof Database>;
   let runId: string;
 
   beforeEach(async () => {
     db = new Database(":memory:");
     initializeDb(db);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS scratchpad_entries (
+        id TEXT PRIMARY KEY, run_id TEXT NOT NULL, node_id TEXT NOT NULL,
+        content TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, size_bytes INTEGER NOT NULL
+      );
+    `);
     const app = createApp(db);
-
     const res = await app.request("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal: "Executor test" }),
+      body: JSON.stringify({ goal: "Planning complete test" }),
     });
     runId = (await res.json()).run_id;
   });
 
-  function makeState(overrides?: Partial<OrchestratorRunState>): OrchestratorRunState {
-    return {
-      run_id: runId,
-      phase: "executing",
-      planner_agent_id: null,
-      plan: null,
-      task_node_map: new Map(),
-      team_id_map: new Map(),
-      node_agents: new Map(),
-      interval: null,
-      error: null,
-      created_at: new Date().toISOString(),
-      result: null,
-      node_work_items: new Map(),
-      ...overrides,
-    };
-  }
-
-  function makeNodeAgentHistory(agentId: string): NodeAgentHistory {
-    return {
-      current_agent_id: agentId,
-      history: [{
-        agent_id: agentId,
-        status: "running",
-        started_at: new Date().toISOString(),
-        finished_at: null,
-      }],
-    };
-  }
-
-  it("should spawn agents for ready nodes", async () => {
-    // Create team and nodes directly
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "pending", 0]);
-
-    const spawnedAgents: any[] = [];
+  it("should spawn agents for ready nodes after planning", async () => {
+    // First, start orchestration to register state
+    const spawnedAgents: Array<{ prompt: string; nodeId: string }> = [];
     const mockSpawn = async (prompt: string, rId: string, nId: string) => {
-      const agent = { id: `agent_${spawnedAgents.length + 1}`, status: "running", prompt, run_id: rId, node_id: nId };
-      spawnedAgents.push(agent);
-      return agent as any;
-    };
-    const mockGetAgent = (id: string) => spawnedAgents.find((a) => a.id === id);
-
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Test" }],
-      tasks: [{ id: "task1", title: "Task 1", kind: "code_gen", team: "t1", prompt: "Do code", depends_on: [] }],
-      summary: "",
+      spawnedAgents.push({ prompt, nodeId: nId });
+      return { id: `agent_${spawnedAgents.length}`, status: "running" } as any;
     };
 
-    const state = makeState({
-      plan,
-      task_node_map: new Map([["task1", "node_1"]]),
+    await startOrchestration(db, runId, "test", mockSpawn, () => undefined, async () => ({} as any));
+
+    // Build graph via MCP tools
+    const ctx: McpToolContext = { db, runId };
+    const n1 = await handleToolCall(ctx, "create_node", {
+      title: "Task 1", kind: "code_gen", role: "developer", prompt: "Do task 1",
+    });
+    const n2 = await handleToolCall(ctx, "create_node", {
+      title: "Task 2", kind: "code_gen", role: "developer", prompt: "Do task 2",
+      depends_on: [n1.node_id],
     });
 
-    await executionTick(db, state, mockSpawn, mockGetAgent);
+    // Reset spawn tracking (startOrchestration already spawned the planner)
+    spawnedAgents.length = 0;
 
-    // Node should be active now
-    const node = db.query("SELECT status FROM nodes_current WHERE node_id = 'node_1'").get() as any;
-    expect(node.status).toBe("active");
+    // Trigger planning complete
+    await onPlanningComplete(db, runId, "Test plan", mockSpawn);
 
-    // Agent should have been spawned
+    const state = getOrchestration(runId)!;
+    expect(state.phase).toBe("executing");
+
+    // Only n1 should be spawned (n2 depends on n1)
     expect(spawnedAgents).toHaveLength(1);
-    const history = state.node_agents.get("node_1");
-    expect(history?.current_agent_id).toBe("agent_1");
-    expect(history?.history).toHaveLength(1);
-    expect(history?.history[0].status).toBe("running");
+    expect(spawnedAgents[0].nodeId).toBe(n1.node_id);
   });
 
-  it("should not spawn for nodes with unmet dependencies", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "pending", 0]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_2", runId, "team_1", "review", "pending", 0]);
-    db.run("INSERT INTO dependency_edges_current (id, run_id, source_id, target_id, type) VALUES (?, ?, ?, ?, ?)", ["edge_1", runId, "node_1", "node_2", "depends_on"]);
+  it("should complete immediately if no nodes exist", async () => {
+    const mockSpawn = async () => ({ id: "agent_1", status: "running" } as any);
+    await startOrchestration(db, runId, "empty", mockSpawn, () => undefined, async () => ({} as any));
 
-    const spawnedAgents: any[] = [];
+    await onPlanningComplete(db, runId, "Empty plan", mockSpawn);
+
+    const state = getOrchestration(runId)!;
+    expect(state.phase).toBe("completed");
+  });
+});
+
+// ── onNodeStatusUpdate Tests ──
+
+describe("onNodeStatusUpdate", () => {
+  let db: InstanceType<typeof Database>;
+  let runId: string;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    initializeDb(db);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS scratchpad_entries (
+        id TEXT PRIMARY KEY, run_id TEXT NOT NULL, node_id TEXT NOT NULL,
+        content TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, size_bytes INTEGER NOT NULL
+      );
+    `);
+    const app = createApp(db);
+    const res = await app.request("/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goal: "Node status test" }),
+    });
+    runId = (await res.json()).run_id;
+  });
+
+  it("should cascade to downstream nodes when a node completes", async () => {
+    const spawnedAgents: Array<{ nodeId: string }> = [];
     const mockSpawn = async (prompt: string, rId: string, nId: string) => {
-      const agent = { id: `agent_${spawnedAgents.length + 1}`, status: "running" };
-      spawnedAgents.push(agent);
-      return agent as any;
-    };
-    const mockGetAgent = (id: string) => spawnedAgents.find((a) => a.id === id);
-
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Test" }],
-      tasks: [
-        { id: "task1", title: "A", kind: "code_gen", team: "t1", prompt: "Do A", depends_on: [] },
-        { id: "task2", title: "B", kind: "review", team: "t1", prompt: "Do B", depends_on: ["task1"] },
-      ],
-      summary: "",
+      spawnedAgents.push({ nodeId: nId });
+      return { id: `agent_${spawnedAgents.length}`, status: "running" } as any;
     };
 
-    const state = makeState({
-      plan,
-      task_node_map: new Map([["task1", "node_1"], ["task2", "node_2"]]),
+    await startOrchestration(db, runId, "test", mockSpawn, () => undefined, async () => ({} as any));
+
+    // Build graph: n1 -> n2
+    const ctx: McpToolContext = { db, runId };
+    const n1 = await handleToolCall(ctx, "create_node", {
+      title: "First", kind: "code_gen", role: "developer", prompt: "First task",
+    });
+    const n2 = await handleToolCall(ctx, "create_node", {
+      title: "Second", kind: "code_gen", role: "developer", prompt: "Second task",
+      depends_on: [n1.node_id],
     });
 
-    await executionTick(db, state, mockSpawn, mockGetAgent);
+    // Start execution
+    spawnedAgents.length = 0;
+    await onPlanningComplete(db, runId, "Cascade test", mockSpawn);
 
-    // Only node_1 should be active (node_2 has unmet dep)
     expect(spawnedAgents).toHaveLength(1);
-    const node1 = db.query("SELECT status FROM nodes_current WHERE node_id = 'node_1'").get() as any;
-    const node2 = db.query("SELECT status FROM nodes_current WHERE node_id = 'node_2'").get() as any;
-    expect(node1.status).toBe("active");
-    expect(node2.status).toBe("pending");
+    expect(spawnedAgents[0].nodeId).toBe(n1.node_id);
+
+    // Mark n1 as active in state so onNodeStatusUpdate can find it
+    const state = getOrchestration(runId)!;
+    state.node_agents.set(n1.node_id, {
+      current_agent_id: "agent_1",
+      history: [{ agent_id: "agent_1", status: "running", started_at: new Date().toISOString(), finished_at: null }],
+    });
+
+    // Complete n1 — should cascade and spawn n2
+    spawnedAgents.length = 0;
+    await onNodeStatusUpdate(db, runId, n1.node_id, "completed", mockSpawn);
+
+    expect(spawnedAgents).toHaveLength(1);
+    expect(spawnedAgents[0].nodeId).toBe(n2.node_id);
   });
 
-  it("should mark run completed when all nodes are done", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "completed", 0]);
+  it("should mark run completed when all nodes finish", async () => {
+    const mockSpawn = async (prompt: string, rId: string, nId: string) =>
+      ({ id: `agent_${nId}`, status: "running" } as any);
 
-    const state = makeState();
-    await executionTick(db, state, async () => ({} as any), () => undefined);
+    await startOrchestration(db, runId, "test", mockSpawn, () => undefined, async () => ({} as any));
+
+    // Create single node
+    const ctx: McpToolContext = { db, runId };
+    const n1 = await handleToolCall(ctx, "create_node", {
+      title: "Only task", kind: "code_gen", role: "developer", prompt: "Do it",
+    });
+
+    await onPlanningComplete(db, runId, "One task", mockSpawn);
+
+    const state = getOrchestration(runId)!;
+    state.node_agents.set(n1.node_id, {
+      current_agent_id: "agent_1",
+      history: [{ agent_id: "agent_1", status: "running", started_at: new Date().toISOString(), finished_at: null }],
+    });
+
+    await onNodeStatusUpdate(db, runId, n1.node_id, "completed", mockSpawn);
 
     expect(state.phase).toBe("completed");
     const run = db.query("SELECT status FROM runs_current WHERE run_id = ?").get(runId) as any;
     expect(run.status).toBe("completed");
   });
 
-  it("should reconcile completed agents to completed nodes", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "active", 0]);
-
-    const mockAgent = { id: "agent_1", status: "completed" as const, exit_code: 0, output_chunks: ["Task done successfully"] };
-    const state = makeState({
-      node_agents: new Map([["node_1", makeNodeAgentHistory("agent_1")]]),
-    });
-
-    await executionTick(db, state, async () => ({} as any), () => mockAgent as any);
-
-    const node = db.query("SELECT status FROM nodes_current WHERE node_id = 'node_1'").get() as any;
-    expect(node.status).toBe("completed");
-
-    // Agent history should be updated (Gap 4)
-    const history = state.node_agents.get("node_1");
-    expect(history?.current_agent_id).toBeNull();
-    expect(history?.history[0].status).toBe("completed");
-    expect(history?.history[0].finished_at).not.toBeNull();
-  });
-
   it("should retry failed nodes up to MAX_RETRIES", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "active", 0]);
+    const spawnedAgents: string[] = [];
+    const mockSpawn = async (prompt: string, rId: string, nId: string) => {
+      spawnedAgents.push(nId);
+      return { id: `agent_${spawnedAgents.length}`, status: "running" } as any;
+    };
 
-    const mockAgent = { id: "agent_1", status: "failed" as const, exit_code: 1, output_chunks: ["error output"] };
-    const spawnedAgents: any[] = [];
-    const state = makeState({
-      node_agents: new Map([["node_1", makeNodeAgentHistory("agent_1")]]),
+    await startOrchestration(db, runId, "test", mockSpawn, () => undefined, async () => ({} as any));
+
+    const ctx: McpToolContext = { db, runId };
+    const n1 = await handleToolCall(ctx, "create_node", {
+      title: "Flaky task", kind: "code_gen", role: "developer", prompt: "May fail",
     });
 
-    // After reconciliation, the tick will also try to spawn for ready nodes.
-    // The spawn step will re-activate the retried node, so we verify retry_count was incremented.
-    await executionTick(
-      db,
-      state,
-      async (prompt, rId, nId) => {
-        const agent = { id: `agent_new_${spawnedAgents.length}`, status: "running" };
-        spawnedAgents.push(agent);
-        return agent as any;
-      },
-      (id) => {
-        if (id === "agent_1") return mockAgent as any;
-        return spawnedAgents.find((a) => a.id === id);
-      }
-    );
+    await onPlanningComplete(db, runId, "Retry test", mockSpawn);
 
-    // retry_count should have been incremented to 1 (may be re-activated by spawn step)
-    const node = db.query("SELECT status, retry_count FROM nodes_current WHERE node_id = 'node_1'").get() as any;
-    expect(node.retry_count).toBe(1);
-    // A new agent should have been spawned for the retry
-    expect(spawnedAgents.length).toBe(1);
-    // Agent history should track the failed attempt (Gap 4)
-    const history = state.node_agents.get("node_1");
-    expect(history?.history.length).toBeGreaterThanOrEqual(1);
-    expect(history?.history[0].status).toBe("failed");
+    const state = getOrchestration(runId)!;
+    state.node_agents.set(n1.node_id, {
+      current_agent_id: "agent_1",
+      history: [{ agent_id: "agent_1", status: "running", started_at: new Date().toISOString(), finished_at: null }],
+    });
+
+    // First failure — should retry
+    spawnedAgents.length = 0;
+    await onNodeStatusUpdate(db, runId, n1.node_id, "failed", mockSpawn, "Transient error");
+
+    const retryCount = (db.query("SELECT retry_count FROM nodes_current WHERE node_id = ?").get(n1.node_id) as any).retry_count;
+    expect(retryCount).toBe(1);
+    expect(spawnedAgents).toHaveLength(1); // retried
   });
 
-  it("should mark node as failed after max retries", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "active", 2]);
+  it("should mark node failed after max retries exhausted", async () => {
+    const mockSpawn = async (prompt: string, rId: string, nId: string) =>
+      ({ id: `agent_${nId}`, status: "running" } as any);
 
-    const mockAgent = { id: "agent_1", status: "failed" as const, exit_code: 1, output_chunks: [] };
-    const state = makeState({
-      node_agents: new Map([["node_1", makeNodeAgentHistory("agent_1")]]),
+    await startOrchestration(db, runId, "test", mockSpawn, () => undefined, async () => ({} as any));
+
+    const ctx: McpToolContext = { db, runId };
+    const n1 = await handleToolCall(ctx, "create_node", {
+      title: "Doomed task", kind: "code_gen", role: "developer", prompt: "Will fail",
     });
 
-    await executionTick(db, state, async () => ({} as any), () => mockAgent as any);
+    // Set retry_count to max (2) — next failure should be final
+    db.run("UPDATE nodes_current SET retry_count = 2, status = 'active' WHERE node_id = ?", [n1.node_id]);
 
-    const node = db.query("SELECT status FROM nodes_current WHERE node_id = 'node_1'").get() as any;
+    await onPlanningComplete(db, runId, "Max retry test", mockSpawn);
+
+    const state = getOrchestration(runId)!;
+    state.node_agents.set(n1.node_id, {
+      current_agent_id: "agent_1",
+      history: [{ agent_id: "agent_1", status: "running", started_at: new Date().toISOString(), finished_at: null }],
+    });
+
+    await onNodeStatusUpdate(db, runId, n1.node_id, "failed", mockSpawn, "Final failure");
+
+    const node = db.query("SELECT status FROM nodes_current WHERE node_id = ?").get(n1.node_id) as any;
     expect(node.status).toBe("failed");
   });
 
-  it("should skip tick if phase is not executing", async () => {
-    const state = makeState({ phase: "completed" });
+  it("should aggregate result from scratchpad entries on completion", async () => {
+    const mockSpawn = async (prompt: string, rId: string, nId: string) =>
+      ({ id: `agent_${nId}`, status: "running" } as any);
 
-    const spawnCalled = { value: false };
-    await executionTick(
-      db,
-      state,
-      async () => { spawnCalled.value = true; return {} as any; },
-      () => undefined
+    await startOrchestration(db, runId, "test", mockSpawn, () => undefined, async () => ({} as any));
+
+    const ctx: McpToolContext = { db, runId };
+    const n1 = await handleToolCall(ctx, "create_node", {
+      title: "Only task", kind: "code_gen", role: "developer", prompt: "Do it",
+    });
+
+    // Add scratchpad result
+    db.run(
+      "INSERT INTO scratchpad_entries (id, run_id, node_id, content, created_at, expires_at, size_bytes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["sp_result", runId, n1.node_id, "Built the API successfully", new Date().toISOString(), new Date(Date.now() + 86400000).toISOString(), 30]
     );
 
-    expect(spawnCalled.value).toBe(false);
+    await onPlanningComplete(db, runId, "Result test", mockSpawn);
+
+    const state = getOrchestration(runId)!;
+    state.node_agents.set(n1.node_id, {
+      current_agent_id: "agent_1",
+      history: [{ agent_id: "agent_1", status: "running", started_at: new Date().toISOString(), finished_at: null }],
+    });
+
+    await onNodeStatusUpdate(db, runId, n1.node_id, "completed", mockSpawn);
+
+    expect(state.phase).toBe("completed");
+    expect(state.result).toContain("Built the API successfully");
+  });
+});
+
+// ── MCP update_status / write_scratchpad / read_scratchpads Tests ──
+
+describe("MCP task agent tools", () => {
+  let db: InstanceType<typeof Database>;
+  let runId: string;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    initializeDb(db);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS scratchpad_entries (
+        id TEXT PRIMARY KEY, run_id TEXT NOT NULL, node_id TEXT NOT NULL,
+        content TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, size_bytes INTEGER NOT NULL
+      );
+    `);
+    const app = createApp(db);
+    const res = await app.request("/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goal: "Task agent tools test" }),
+    });
+    runId = (await res.json()).run_id;
+  });
+
+  it("should write and read scratchpad entries", async () => {
+    // Create a node first
+    const ctx: McpToolContext = { db, runId };
+    const node = await handleToolCall(ctx, "create_node", {
+      title: "Task", kind: "code_gen", role: "developer", prompt: "Do task",
+    });
+
+    const nodeCtx: McpToolContext = { db, runId, nodeId: node.node_id };
+
+    // Write scratchpad
+    const writeResult = await handleToolCall(nodeCtx, "write_scratchpad", {
+      content: "Found 3 relevant APIs",
+    });
+    expect(writeResult).toHaveProperty("scratchpad_id");
+
+    // Read scratchpad
+    const readResult = await handleToolCall(nodeCtx, "read_scratchpads", {});
+    // Should include original prompt + new entry
+    expect(readResult.entries.length).toBeGreaterThanOrEqual(2);
+    expect(readResult.entries.some((e: any) => e.content === "Found 3 relevant APIs")).toBe(true);
+  });
+
+  it("should read upstream scratchpads for downstream nodes", async () => {
+    const ctx: McpToolContext = { db, runId };
+
+    const n1 = await handleToolCall(ctx, "create_node", {
+      title: "Upstream", kind: "research", role: "developer", prompt: "Research",
+    });
+    const n2 = await handleToolCall(ctx, "create_node", {
+      title: "Downstream", kind: "code_gen", role: "developer", prompt: "Build",
+      depends_on: [n1.node_id],
+    });
+
+    // Write extra entry to upstream node
+    await handleToolCall({ db, runId, nodeId: n1.node_id }, "write_scratchpad", {
+      content: "Upstream findings",
+    });
+
+    // Mark upstream as completed
+    db.run("UPDATE nodes_current SET status = 'completed' WHERE node_id = ?", [n1.node_id]);
+
+    // Read from downstream context — should see upstream entries
+    const readResult = await handleToolCall({ db, runId, nodeId: n2.node_id }, "read_scratchpads", {});
+
+    const contents = readResult.entries.map((e: any) => e.content);
+    expect(contents).toContain("Upstream findings");
+  });
+
+  it("should update node status via update_status tool", async () => {
+    let completedNodeId: string | null = null;
+    const ctx: McpToolContext = {
+      db,
+      runId,
+      onNodeCompleted: (rId, nId) => { completedNodeId = nId; },
+    };
+
+    const node = await handleToolCall(ctx, "create_node", {
+      title: "Task", kind: "code_gen", role: "developer", prompt: "Do task",
+    });
+
+    const result = await handleToolCall(ctx, "update_status", {
+      node_id: node.node_id,
+      status: "completed",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(completedNodeId).toBe(node.node_id);
+
+    const dbNode = db.query("SELECT status FROM nodes_current WHERE node_id = ?").get(node.node_id) as any;
+    expect(dbNode.status).toBe("completed");
+  });
+
+  it("should get run status via get_run_status tool", async () => {
+    const ctx: McpToolContext = { db, runId };
+
+    await handleToolCall(ctx, "create_node", {
+      title: "A", kind: "code_gen", role: "developer", prompt: "A",
+    });
+    await handleToolCall(ctx, "create_node", {
+      title: "B", kind: "code_gen", role: "developer", prompt: "B",
+    });
+
+    const status = await handleToolCall(ctx, "get_run_status", {});
+    expect(status.total_nodes).toBe(2);
+    expect(status.pending).toBe(2);
   });
 });
 
@@ -626,6 +683,12 @@ describe("GET /acp/agents/:agent_id/runs/:run_id", () => {
   beforeEach(() => {
     db = new Database(":memory:");
     initializeDb(db);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS scratchpad_entries (
+        id TEXT PRIMARY KEY, run_id TEXT NOT NULL, node_id TEXT NOT NULL,
+        content TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, size_bytes INTEGER NOT NULL
+      );
+    `);
     app = createApp(db);
   });
 
@@ -667,11 +730,16 @@ describe("nodes_current title column", () => {
   beforeEach(() => {
     db = new Database(":memory:");
     initializeDb(db);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS scratchpad_entries (
+        id TEXT PRIMARY KEY, run_id TEXT NOT NULL, node_id TEXT NOT NULL,
+        content TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, size_bytes INTEGER NOT NULL
+      );
+    `);
     app = createApp(db);
   });
 
   it("should store title when creating a node via API", async () => {
-    // Create a run first
     const runRes = await app.request("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -679,600 +747,32 @@ describe("nodes_current title column", () => {
     });
     const run = await runRes.json();
 
-    // Create a team
-    const teamRes = await app.request(`/runs/${run.run_id}/teams`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Test Team" }),
-    });
-    const team = await teamRes.json();
-
-    // Create a node with title
     const nodeRes = await app.request(`/runs/${run.run_id}/nodes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "code_gen", team_id: team.team_id, title: "Setup DB Schema" }),
+      body: JSON.stringify({ kind: "code_gen", role: "developer", title: "Setup DB Schema" }),
     });
 
     expect(nodeRes.status).toBe(201);
     const node = await nodeRes.json();
     expect(node.title).toBe("Setup DB Schema");
 
-    // Verify in DB
     const dbNode = db.query("SELECT title FROM nodes_current WHERE node_id = ?").get(node.node_id) as any;
     expect(dbNode.title).toBe("Setup DB Schema");
   });
 
-  it("should store title via graph builder", () => {
-    const plan = {
-      teams: [{ id: "t1", name: "Backend" }],
-      tasks: [
-        { id: "task1", title: "Build API", kind: "code_gen", team: "t1", prompt: "Build it", depends_on: [] },
-      ],
-      summary: "Test plan",
-    };
-
-    // Create run first
+  it("should store title via MCP create_node tool", async () => {
     db.run("INSERT INTO runs_current (run_id, goal, status) VALUES (?, ?, ?)", ["run_test", "test", "active"]);
 
-    const { taskNodeMap } = buildGraphFromPlan(db, "run_test", plan);
-    const nodeId = taskNodeMap.get("task1")!;
-    const node = db.query("SELECT title FROM nodes_current WHERE node_id = ?").get(nodeId) as any;
+    const ctx: McpToolContext = { db, runId: "run_test" };
+    const result = await handleToolCall(ctx, "create_node", {
+      title: "Build API",
+      kind: "code_gen",
+      role: "developer",
+      prompt: "Build it",
+    });
+
+    const node = db.query("SELECT title FROM nodes_current WHERE node_id = ?").get(result.node_id) as any;
     expect(node.title).toBe("Build API");
-  });
-});
-
-// ── Gap 1: Planner output message tests ──
-
-describe("planner output message (Gap 1)", () => {
-  let db: InstanceType<typeof Database>;
-
-  beforeEach(() => {
-    db = new Database(":memory:");
-    initializeDb(db);
-  });
-
-  it("should store node_id in messages via graph builder", () => {
-    db.run("INSERT INTO runs_current (run_id, goal, status) VALUES (?, ?, ?)", ["run_1", "test", "active"]);
-
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Team" }],
-      tasks: [{ id: "task1", title: "Do thing", kind: "code_gen", team: "t1", prompt: "Build it", depends_on: [] }],
-      summary: "Plan",
-    };
-
-    const { taskNodeMap } = buildGraphFromPlan(db, "run_1", plan);
-    const nodeId = taskNodeMap.get("task1")!;
-
-    const msg = db.query(
-      "SELECT node_id FROM messages_current WHERE run_id = ? AND message_type = 'node_metadata'"
-    ).get("run_1") as any;
-
-    expect(msg.node_id).toBe(nodeId);
-  });
-});
-
-// ── Gap 2: Agent output capture tests ──
-
-describe("agent output capture (Gap 2)", () => {
-  let db: InstanceType<typeof Database>;
-  let runId: string;
-
-  beforeEach(async () => {
-    db = new Database(":memory:");
-    initializeDb(db);
-    const app = createApp(db);
-    const res = await app.request("/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal: "Output capture test" }),
-    });
-    runId = (await res.json()).run_id;
-  });
-
-  function makeState(overrides?: Partial<OrchestratorRunState>): OrchestratorRunState {
-    return {
-      run_id: runId,
-      phase: "executing",
-      planner_agent_id: null,
-      plan: null,
-      task_node_map: new Map(),
-      team_id_map: new Map(),
-      node_agents: new Map(),
-      interval: null,
-      error: null,
-      created_at: new Date().toISOString(),
-      result: null,
-      node_work_items: new Map(),
-      ...overrides,
-    };
-  }
-
-  it("should store agent output as message when agent completes", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "active", 0]);
-
-    const mockAgent = {
-      id: "agent_1",
-      status: "completed" as const,
-      exit_code: 0,
-      output_chunks: ["Here is the ", "generated code:\n```\nconsole.log('hello');\n```"],
-    };
-
-    const history: NodeAgentHistory = {
-      current_agent_id: "agent_1",
-      history: [{ agent_id: "agent_1", status: "running", started_at: new Date().toISOString(), finished_at: null }],
-    };
-
-    const state = makeState({
-      node_agents: new Map([["node_1", history]]),
-    });
-
-    await executionTick(db, state, async () => ({} as any), () => mockAgent as any);
-
-    // Should have stored an agent_output message
-    const msgs = db.query(
-      "SELECT * FROM messages_current WHERE run_id = ? AND message_type = 'agent_output'"
-    ).all(runId) as any[];
-    expect(msgs).toHaveLength(1);
-    expect(msgs[0].sender_id).toBe("agent_1");
-    expect(msgs[0].content).toContain("generated code");
-    expect(msgs[0].node_id).toBe("node_1");
-    expect(msgs[0].team_id).toBe("team_1");
-  });
-
-  it("should store agent error as message when agent fails", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "active", 2]);
-
-    const mockAgent = {
-      id: "agent_1",
-      status: "failed" as const,
-      exit_code: 1,
-      output_chunks: [],
-      stderr_chunks: ["Error: something went wrong"],
-    };
-
-    const history: NodeAgentHistory = {
-      current_agent_id: "agent_1",
-      history: [{ agent_id: "agent_1", status: "running", started_at: new Date().toISOString(), finished_at: null }],
-    };
-
-    const state = makeState({
-      node_agents: new Map([["node_1", history]]),
-    });
-
-    await executionTick(db, state, async () => ({} as any), () => mockAgent as any);
-
-    // Should have stored an agent_error message
-    const msgs = db.query(
-      "SELECT * FROM messages_current WHERE run_id = ? AND message_type = 'agent_error'"
-    ).all(runId) as any[];
-    expect(msgs).toHaveLength(1);
-    expect(msgs[0].content).toContain("something went wrong");
-    expect(msgs[0].node_id).toBe("node_1");
-  });
-
-  it("should not store empty agent output", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "active", 0]);
-
-    const mockAgent = {
-      id: "agent_1",
-      status: "completed" as const,
-      exit_code: 0,
-      output_chunks: ["", "  "],
-    };
-
-    const history: NodeAgentHistory = {
-      current_agent_id: "agent_1",
-      history: [{ agent_id: "agent_1", status: "running", started_at: new Date().toISOString(), finished_at: null }],
-    };
-
-    const state = makeState({
-      node_agents: new Map([["node_1", history]]),
-    });
-
-    await executionTick(db, state, async () => ({} as any), () => mockAgent as any);
-
-    const msgs = db.query(
-      "SELECT * FROM messages_current WHERE run_id = ? AND message_type = 'agent_output'"
-    ).all(runId) as any[];
-    expect(msgs).toHaveLength(0);
-  });
-});
-
-// ── Gap 3: Final result tests ──
-
-describe("final result aggregation (Gap 3)", () => {
-  let db: InstanceType<typeof Database>;
-  let runId: string;
-
-  beforeEach(async () => {
-    db = new Database(":memory:");
-    initializeDb(db);
-    const app = createApp(db);
-    const res = await app.request("/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal: "Final result test" }),
-    });
-    runId = (await res.json()).run_id;
-  });
-
-  function makeState(overrides?: Partial<OrchestratorRunState>): OrchestratorRunState {
-    return {
-      run_id: runId,
-      phase: "executing",
-      planner_agent_id: null,
-      plan: null,
-      task_node_map: new Map(),
-      team_id_map: new Map(),
-      node_agents: new Map(),
-      interval: null,
-      error: null,
-      created_at: new Date().toISOString(),
-      result: null,
-      node_work_items: new Map(),
-      ...overrides,
-    };
-  }
-
-  it("should generate final result when all nodes complete", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "completed", 0]);
-
-    // Pre-insert an agent_output message to be aggregated
-    db.run(
-      "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at, node_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      ["msg_1", runId, "team_1", "agent_1", "Built the API successfully", "agent_output", new Date().toISOString(), "node_1"]
-    );
-
-    const state = makeState();
-    await executionTick(db, state, async () => ({} as any), () => undefined);
-
-    expect(state.phase).toBe("completed");
-    expect(state.result).not.toBeNull();
-    expect(state.result).toContain("Built the API successfully");
-
-    // Should have stored a final_result message
-    const resultMsgs = db.query(
-      "SELECT * FROM messages_current WHERE run_id = ? AND message_type = 'final_result'"
-    ).all(runId) as any[];
-    expect(resultMsgs).toHaveLength(1);
-    expect(resultMsgs[0].sender_id).toBe("orchestrator");
-    expect(resultMsgs[0].team_id).toBe("system");
-    expect(resultMsgs[0].content).toContain("Built the API successfully");
-  });
-
-  it("should use default message when no agent outputs exist", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "completed", 0]);
-
-    const state = makeState();
-    await executionTick(db, state, async () => ({} as any), () => undefined);
-
-    expect(state.result).toBe("All tasks completed successfully.");
-  });
-
-  it("should aggregate multiple agent outputs with separators", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "completed", 0]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_2", runId, "team_1", "review", "completed", 0]);
-
-    // Pre-insert agent_output messages
-    db.run(
-      "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at, node_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      ["msg_1", runId, "team_1", "agent_1", "Output from task 1", "agent_output", "2024-01-01T00:00:01Z", "node_1"]
-    );
-    db.run(
-      "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at, node_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      ["msg_2", runId, "team_1", "agent_2", "Output from task 2", "agent_output", "2024-01-01T00:00:02Z", "node_2"]
-    );
-
-    const state = makeState();
-    await executionTick(db, state, async () => ({} as any), () => undefined);
-
-    expect(state.result).toContain("Output from task 1");
-    expect(state.result).toContain("---");
-    expect(state.result).toContain("Output from task 2");
-  });
-
-  it("should not generate final result on failure", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "failed", 0]);
-
-    const state = makeState();
-    await executionTick(db, state, async () => ({} as any), () => undefined);
-
-    expect(state.phase).toBe("failed");
-    expect(state.result).toBeNull();
-
-    const resultMsgs = db.query(
-      "SELECT * FROM messages_current WHERE run_id = ? AND message_type = 'final_result'"
-    ).all(runId) as any[];
-    expect(resultMsgs).toHaveLength(0);
-  });
-});
-
-// ── Gap 4: Multi-agent history tests ──
-
-describe("multi-agent per node (Gap 4)", () => {
-  let db: InstanceType<typeof Database>;
-  let runId: string;
-
-  beforeEach(async () => {
-    db = new Database(":memory:");
-    initializeDb(db);
-    const app = createApp(db);
-    const res = await app.request("/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal: "Multi-agent test" }),
-    });
-    runId = (await res.json()).run_id;
-  });
-
-  function makeState(overrides?: Partial<OrchestratorRunState>): OrchestratorRunState {
-    return {
-      run_id: runId,
-      phase: "executing",
-      planner_agent_id: null,
-      plan: null,
-      task_node_map: new Map(),
-      team_id_map: new Map(),
-      node_agents: new Map(),
-      interval: null,
-      error: null,
-      created_at: new Date().toISOString(),
-      result: null,
-      node_work_items: new Map(),
-      ...overrides,
-    };
-  }
-
-  it("should track multiple agents across retries", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "active", 0]);
-
-    // First agent fails
-    const failedAgent = { id: "agent_1", status: "failed" as const, exit_code: 1, output_chunks: ["fail output"], stderr_chunks: ["error"] };
-    const history: NodeAgentHistory = {
-      current_agent_id: "agent_1",
-      history: [{ agent_id: "agent_1", status: "running", started_at: new Date().toISOString(), finished_at: null }],
-    };
-
-    const spawnedAgents: any[] = [];
-    const state = makeState({
-      node_agents: new Map([["node_1", history]]),
-    });
-
-    // Tick 1: agent_1 fails, node retried, agent_2 spawned
-    await executionTick(
-      db,
-      state,
-      async (prompt, rId, nId) => {
-        const agent = { id: `agent_${spawnedAgents.length + 2}`, status: "running" };
-        spawnedAgents.push(agent);
-        return agent as any;
-      },
-      (id) => {
-        if (id === "agent_1") return failedAgent as any;
-        return spawnedAgents.find((a) => a.id === id);
-      }
-    );
-
-    // History should have 2 entries: agent_1 (failed) + agent_2 (running)
-    const nodeHistory = state.node_agents.get("node_1");
-    expect(nodeHistory?.history).toHaveLength(2);
-    expect(nodeHistory?.history[0].agent_id).toBe("agent_1");
-    expect(nodeHistory?.history[0].status).toBe("failed");
-    expect(nodeHistory?.history[0].finished_at).not.toBeNull();
-    expect(nodeHistory?.history[1].agent_id).toBe("agent_2");
-    expect(nodeHistory?.history[1].status).toBe("running");
-    expect(nodeHistory?.current_agent_id).toBe("agent_2");
-  });
-
-  it("should not spawn duplicate agent when current is active", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "pending", 0]);
-
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Test" }],
-      tasks: [{ id: "task1", title: "Task 1", kind: "code_gen", team: "t1", prompt: "Do code", depends_on: [] }],
-      summary: "",
-    };
-
-    // Pre-set an active agent for the node
-    const history: NodeAgentHistory = {
-      current_agent_id: "agent_existing",
-      history: [{ agent_id: "agent_existing", status: "running", started_at: new Date().toISOString(), finished_at: null }],
-    };
-
-    const spawnedAgents: any[] = [];
-    const state = makeState({
-      plan,
-      task_node_map: new Map([["task1", "node_1"]]),
-      node_agents: new Map([["node_1", history]]),
-    });
-
-    await executionTick(
-      db,
-      state,
-      async () => { spawnedAgents.push({}); return {} as any; },
-      () => ({ id: "agent_existing", status: "running" } as any)
-    );
-
-    // No new agent should be spawned
-    expect(spawnedAgents).toHaveLength(0);
-  });
-});
-
-// ── Stale agent timeout tests ──
-
-describe("stale agent detection", () => {
-  let db: InstanceType<typeof Database>;
-  let runId: string;
-
-  beforeEach(async () => {
-    db = new Database(":memory:");
-    initializeDb(db);
-    const app = createApp(db);
-    const res = await app.request("/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal: "Stale agent test" }),
-    });
-    runId = (await res.json()).run_id;
-  });
-
-  function makeState(overrides?: Partial<OrchestratorRunState>): OrchestratorRunState {
-    return {
-      run_id: runId,
-      phase: "executing",
-      planner_agent_id: null,
-      plan: null,
-      task_node_map: new Map(),
-      team_id_map: new Map(),
-      node_agents: new Map(),
-      interval: null,
-      error: null,
-      created_at: new Date().toISOString(),
-      result: null,
-      node_work_items: new Map(),
-      ...overrides,
-    };
-  }
-
-  it("should force-fail stale agents that exceed timeout + grace period", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "active", 2]);
-
-    // Agent that started long ago (10 minutes ago, well past the 5min + 30s threshold)
-    const longAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const history: NodeAgentHistory = {
-      current_agent_id: "agent_stale",
-      history: [{ agent_id: "agent_stale", status: "running", started_at: longAgo, finished_at: null }],
-    };
-
-    const state = makeState({
-      node_agents: new Map([["node_1", history]]),
-    });
-
-    // The getAgentFn returns the agent as still "running" (it's stuck)
-    const mockAgent = { id: "agent_stale", status: "running" as const, exit_code: null, output_chunks: [] };
-
-    await executionTick(db, state, async () => ({} as any), () => mockAgent as any);
-
-    // Node should be marked failed (max retries exhausted at 2)
-    const node = db.query("SELECT status FROM nodes_current WHERE node_id = 'node_1'").get() as any;
-    expect(node.status).toBe("failed");
-
-    // Agent history should be updated
-    expect(history.current_agent_id).toBeNull();
-    expect(history.history[0].status).toBe("failed");
-    expect(history.history[0].finished_at).not.toBeNull();
-
-    // Should have stored an agent_error message about timeout
-    const msgs = db.query(
-      "SELECT * FROM messages_current WHERE run_id = ? AND message_type = 'agent_error'"
-    ).all(runId) as any[];
-    expect(msgs).toHaveLength(1);
-    expect(msgs[0].content).toContain("timed out");
-  });
-
-  it("should retry stale agent if retries remain", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "active", 0]);
-
-    const longAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const history: NodeAgentHistory = {
-      current_agent_id: "agent_stale",
-      history: [{ agent_id: "agent_stale", status: "running", started_at: longAgo, finished_at: null }],
-    };
-
-    const spawnedAgents: any[] = [];
-    const state = makeState({
-      node_agents: new Map([["node_1", history]]),
-    });
-
-    const mockAgent = { id: "agent_stale", status: "running" as const, exit_code: null, output_chunks: [] };
-
-    await executionTick(
-      db,
-      state,
-      async (prompt, rId, nId) => {
-        const agent = { id: `agent_new_${spawnedAgents.length}`, status: "running" };
-        spawnedAgents.push(agent);
-        return agent as any;
-      },
-      (id) => {
-        if (id === "agent_stale") return mockAgent as any;
-        return spawnedAgents.find((a) => a.id === id);
-      }
-    );
-
-    // Node should be reset to pending then re-activated by spawn
-    const node = db.query("SELECT retry_count FROM nodes_current WHERE node_id = 'node_1'").get() as any;
-    expect(node.retry_count).toBe(1);
-    // New agent should have been spawned
-    expect(spawnedAgents.length).toBe(1);
-  });
-
-  it("should not flag non-stale agents", async () => {
-    db.run("INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)", ["team_1", runId, "Test", "active"]);
-    db.run("INSERT INTO nodes_current (node_id, run_id, team_id, kind, status, retry_count) VALUES (?, ?, ?, ?, ?, ?)", ["node_1", runId, "team_1", "code_gen", "active", 0]);
-
-    // Agent that just started (10 seconds ago)
-    const recentStart = new Date(Date.now() - 10_000).toISOString();
-    const history: NodeAgentHistory = {
-      current_agent_id: "agent_fresh",
-      history: [{ agent_id: "agent_fresh", status: "running", started_at: recentStart, finished_at: null }],
-    };
-
-    const state = makeState({
-      node_agents: new Map([["node_1", history]]),
-    });
-
-    const mockAgent = { id: "agent_fresh", status: "running" as const, exit_code: null, output_chunks: [] };
-
-    await executionTick(db, state, async () => ({} as any), () => mockAgent as any);
-
-    // Agent should still be running — not flagged as stale
-    expect(history.current_agent_id).toBe("agent_fresh");
-    expect(history.history[0].status).toBe("running");
-
-    // Node should still be active
-    const node = db.query("SELECT status FROM nodes_current WHERE node_id = 'node_1'").get() as any;
-    expect(node.status).toBe("active");
-  });
-});
-
-// ── Schema: node_id column tests ──
-
-describe("messages_current node_id column", () => {
-  let db: InstanceType<typeof Database>;
-
-  beforeEach(() => {
-    db = new Database(":memory:");
-    initializeDb(db);
-  });
-
-  it("should support null node_id", () => {
-    db.run(
-      "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ["msg_1", "run_1", "team_1", "user", "hello", "chat", new Date().toISOString()]
-    );
-    const msg = db.query("SELECT node_id FROM messages_current WHERE id = 'msg_1'").get() as any;
-    expect(msg.node_id).toBeNull();
-  });
-
-  it("should store node_id when provided", () => {
-    db.run(
-      "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at, node_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      ["msg_1", "run_1", "team_1", "agent_1", "output", "agent_output", new Date().toISOString(), "node_1"]
-    );
-    const msg = db.query("SELECT node_id FROM messages_current WHERE id = 'msg_1'").get() as any;
-    expect(msg.node_id).toBe("node_1");
   });
 });

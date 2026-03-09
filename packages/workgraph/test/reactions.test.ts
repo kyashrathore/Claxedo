@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { ReactionEngine, type ReactionRule } from "../src/services/reactions";
+import { ReactionEngine, type ReactionRule } from "../src/orchestrator/core/services/reactions";
 
 describe("ReactionEngine", () => {
   it("should add and retrieve rules", () => {

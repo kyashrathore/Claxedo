@@ -12,6 +12,7 @@ import { repairRouter } from "./routes/repair";
 import { agentRouter } from "./routes/agent";
 import { dashboardRouter } from "./routes/dashboard";
 import { orchestrateRouter } from "./routes/orchestrate";
+import { mcpRouter } from "./routes/mcp";
 import { acpRouter } from "./routes/acp";
 import { workRouter } from "./routes/work";
 import { initWorkGraph } from "./orchestrator/workgraph-bridge";
@@ -50,36 +51,14 @@ export function initializeDb(db: any) {
   `);
 
   db.run(`
-    CREATE TABLE IF NOT EXISTS teams_current (
-      team_id TEXT PRIMARY KEY,
-      run_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      status TEXT NOT NULL
-    );
-  `);
-
-  db.run(`
     CREATE TABLE IF NOT EXISTS nodes_current (
       node_id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
-      team_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'developer',
       kind TEXT NOT NULL,
       title TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL,
       retry_count INTEGER NOT NULL
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS messages_current (
-      id TEXT PRIMARY KEY,
-      run_id TEXT NOT NULL,
-      team_id TEXT NOT NULL,
-      sender_id TEXT NOT NULL,
-      content TEXT NOT NULL,
-      message_type TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      node_id TEXT DEFAULT NULL
     );
   `);
 
@@ -177,59 +156,6 @@ export function createApp(db?: any) {
     return c.json(row);
   });
 
-  // --- POST /runs/:run_id/teams ---
-  app.post(
-    "/runs/:run_id/teams",
-    zValidator(
-      "json",
-      z.object({
-        name: z.string().min(1),
-      })
-    ),
-    async (c) => {
-      const runId = c.req.param("run_id");
-      const { name } = c.req.valid("json");
-
-      const teamId = `team_${ulid()}`;
-      const eventId = `evt_${ulid()}`;
-      const seq = getNextSeq(db, runId);
-
-      const event: EventEnvelope = {
-        id: eventId,
-        run_id: runId,
-        stream_id: runId,
-        stream_seq: seq,
-        logical_ts: seq,
-        schema_version: 1,
-        type: "team_created",
-        payload_json: JSON.stringify({ team_id: teamId, name }),
-        actor_type: "system",
-        actor_id: "api",
-        op_id: `op_${eventId}`,
-        prev_hash: "00000000",
-        hash: generateHash(),
-        created_at: new Date().toISOString(),
-      };
-
-      insertEvent(db, event);
-
-      db.run(
-        "INSERT INTO teams_current (team_id, run_id, name, status) VALUES (?, ?, ?, ?)",
-        [teamId, runId, name, "active"]
-      );
-
-      return c.json(
-        {
-          team_id: teamId,
-          run_id: runId,
-          name,
-          status: "active",
-        },
-        201
-      );
-    }
-  );
-
   // --- POST /runs/:run_id/nodes ---
   app.post(
     "/runs/:run_id/nodes",
@@ -237,13 +163,13 @@ export function createApp(db?: any) {
       "json",
       z.object({
         kind: z.string().min(1),
-        team_id: z.string().min(1),
+        role: z.string().min(1).default("developer"),
         title: z.string().optional(),
       })
     ),
     async (c) => {
       const runId = c.req.param("run_id");
-      const { kind, team_id, title } = c.req.valid("json");
+      const { kind, role, title } = c.req.valid("json");
 
       const nodeId = `node_${ulid()}`;
       const eventId = `evt_${ulid()}`;
@@ -260,7 +186,7 @@ export function createApp(db?: any) {
         payload_json: JSON.stringify({
           node_id: nodeId,
           kind,
-          team_id,
+          role,
         }),
         actor_type: "system",
         actor_id: "api",
@@ -273,86 +199,19 @@ export function createApp(db?: any) {
       insertEvent(db, event);
 
       db.run(
-        "INSERT INTO nodes_current (node_id, run_id, team_id, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [nodeId, runId, team_id, kind, title || "", "pending", 0]
+        "INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [nodeId, runId, role, kind, title || "", "pending", 0]
       );
 
       return c.json(
         {
           node_id: nodeId,
           run_id: runId,
-          team_id,
+          role,
           kind,
           title: title || "",
           status: "pending",
           retry_count: 0,
-        },
-        201
-      );
-    }
-  );
-
-  // --- POST /runs/:run_id/messages ---
-  app.post(
-    "/runs/:run_id/messages",
-    zValidator(
-      "json",
-      z.object({
-        team_id: z.string().min(1),
-        sender_id: z.string().min(1),
-        content: z.string().min(1),
-        message_type: z.string().min(1),
-      })
-    ),
-    async (c) => {
-      const runId = c.req.param("run_id");
-      const { team_id, sender_id, content, message_type } =
-        c.req.valid("json");
-
-      const msgId = `msg_${ulid()}`;
-      const eventId = `evt_${ulid()}`;
-      const seq = getNextSeq(db, runId);
-      const createdAt = new Date().toISOString();
-
-      const event: EventEnvelope = {
-        id: eventId,
-        run_id: runId,
-        stream_id: runId,
-        stream_seq: seq,
-        logical_ts: seq,
-        schema_version: 1,
-        type: "message_posted",
-        payload_json: JSON.stringify({
-          id: msgId,
-          team_id,
-          sender_id,
-          content,
-          message_type,
-        }),
-        actor_type: "agent",
-        actor_id: sender_id,
-        op_id: `op_${eventId}`,
-        prev_hash: "00000000",
-        hash: generateHash(),
-        created_at: createdAt,
-      };
-
-      insertEvent(db, event);
-
-      db.run(
-        "INSERT INTO messages_current (id, run_id, team_id, sender_id, content, message_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [msgId, runId, team_id, sender_id, content, message_type, createdAt]
-      );
-
-      return c.json(
-        {
-          id: msgId,
-          run_id: runId,
-          team_id,
-          sender_id,
-          content,
-          message_type,
-          created_at: createdAt,
         },
         201
       );
@@ -428,29 +287,11 @@ export function createApp(db?: any) {
     return c.json(rows);
   });
 
-  // --- GET /runs/:run_id/teams ---
-  app.get("/runs/:run_id/teams", async (c) => {
-    const runId = c.req.param("run_id");
-    const rows = db
-      .query("SELECT * FROM teams_current WHERE run_id = ?")
-      .all(runId);
-    return c.json(rows);
-  });
-
   // --- GET /runs/:run_id/nodes ---
   app.get("/runs/:run_id/nodes", async (c) => {
     const runId = c.req.param("run_id");
     const rows = db
       .query("SELECT * FROM nodes_current WHERE run_id = ?")
-      .all(runId);
-    return c.json(rows);
-  });
-
-  // --- GET /runs/:run_id/messages ---
-  app.get("/runs/:run_id/messages", async (c) => {
-    const runId = c.req.param("run_id");
-    const rows = db
-      .query("SELECT * FROM messages_current WHERE run_id = ? ORDER BY created_at ASC")
       .all(runId);
     return c.json(rows);
   });
@@ -523,7 +364,7 @@ export function createApp(db?: any) {
       .all(runId) as Array<{
       node_id: string;
       run_id: string;
-      team_id: string;
+      role: string;
       kind: string;
       status: string;
       retry_count: number;
@@ -585,6 +426,7 @@ export function createApp(db?: any) {
   app.route("/", repairRouter(db));
   app.route("/", agentRouter());
   app.route("/", orchestrateRouter(db));
+  app.route("/", mcpRouter(db));
   app.route("/", acpRouter(db));
   app.route("/", workRouter());
   app.route("/", dashboardRouter()); // last so "/" doesn't shadow API routes

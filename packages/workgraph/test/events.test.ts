@@ -34,11 +34,11 @@ describe("GET /runs/:run_id/events", () => {
   });
 
   it("should support since_seq filter", async () => {
-    // Create additional events by adding a team
-    await app.request(`/runs/${runId}/teams`, {
+    // Create additional events by adding a node
+    await app.request(`/runs/${runId}/nodes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Team A" }),
+      body: JSON.stringify({ kind: "code_gen", role: "developer" }),
     });
 
     // Get all events
@@ -52,7 +52,7 @@ describe("GET /runs/:run_id/events", () => {
     );
     const filteredEvents = await filteredRes.json();
     expect(filteredEvents.length).toBe(1);
-    expect(filteredEvents[0].type).toBe("team_created");
+    expect(filteredEvents[0].type).toBe("node_created");
     expect(filteredEvents[0].stream_seq).toBeGreaterThan(1);
   });
 

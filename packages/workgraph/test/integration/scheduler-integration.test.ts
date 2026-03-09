@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { getReadyNodes, LeaseManager, type TeamPolicy } from "../../src/scheduler";
-import { GraphEngine, type Node, type Edge, GateTracker } from "@opencode-ai/orchestrator-graph";
+import { getReadyNodes, LeaseManager, type TeamPolicy } from "../../src/orchestrator/core/scheduler";
+import { GraphEngine, type Node, type Edge } from "../../src/orchestrator/graph/graph";
+import { GateTracker } from "../../src/orchestrator/graph/gates";
 
 describe("Scheduler Integration", () => {
   let gateTracker: GateTracker;

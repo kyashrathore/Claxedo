@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test"
-import { reduce, emptyState, replayEvents } from "../src/reducer"
-import type { WorkEvent, WorkItem, WorkGraphState } from "../src/types"
+import { reduce, emptyState, replayEvents } from "../src/model/reducer"
+import type { WorkEvent, WorkItem, WorkGraphState } from "../src/model/types"
 
 function makeEvent(seq: number, type: string, payload: any, actor = "system"): WorkEvent {
   return {

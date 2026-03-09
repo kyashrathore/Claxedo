@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
-import { runReducer, type RunState } from "../src/reducers/run";
+import type { EventEnvelope } from "../src/orchestrator/events/schema";
+import { runReducer, type RunState } from "../src/orchestrator/core/reducers/run";
 
 describe("runReducer", () => {
   it("should initialize a new run state on run_created event", () => {

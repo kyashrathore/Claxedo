@@ -119,65 +119,10 @@ describe("GET /runs/:run_id", () => {
   });
 });
 
-describe("POST /runs/:run_id/teams", () => {
-  let db: InstanceType<typeof Database>;
-  let app: Hono;
-  let runId: string;
-
-  beforeEach(async () => {
-    db = new Database(":memory:");
-    initializeDb(db);
-    app = createApp(db);
-
-    const res = await app.request("/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal: "Team test" }),
-    });
-    const body = await res.json();
-    runId = body.run_id;
-  });
-
-  it("should create a team and return 201", async () => {
-    const res = await app.request(`/runs/${runId}/teams`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Frontend Team" }),
-    });
-
-    expect(res.status).toBe(201);
-    const body = await res.json();
-
-    expect(body).toHaveProperty("team_id");
-    expect(body.run_id).toBe(runId);
-    expect(body.name).toBe("Frontend Team");
-    expect(body.status).toBe("active");
-  });
-
-  it("should insert team_created event", async () => {
-    const res = await app.request(`/runs/${runId}/teams`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Backend Team" }),
-    });
-    const body = await res.json();
-
-    const events = db
-      .query("SELECT * FROM events WHERE run_id = ? AND type = 'team_created'")
-      .all(runId) as any[];
-
-    expect(events.length).toBe(1);
-    const payload = JSON.parse(events[0].payload_json);
-    expect(payload.team_id).toBe(body.team_id);
-    expect(payload.name).toBe("Backend Team");
-  });
-});
-
 describe("POST /runs/:run_id/nodes", () => {
   let db: InstanceType<typeof Database>;
   let app: Hono;
   let runId: string;
-  let teamId: string;
 
   beforeEach(async () => {
     db = new Database(":memory:");
@@ -190,20 +135,13 @@ describe("POST /runs/:run_id/nodes", () => {
       body: JSON.stringify({ goal: "Node test" }),
     });
     runId = (await runRes.json()).run_id;
-
-    const teamRes = await app.request(`/runs/${runId}/teams`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Test Team" }),
-    });
-    teamId = (await teamRes.json()).team_id;
   });
 
   it("should create a node and return 201", async () => {
     const res = await app.request(`/runs/${runId}/nodes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "code_gen", team_id: teamId }),
+      body: JSON.stringify({ kind: "code_gen", role: "developer" }),
     });
 
     expect(res.status).toBe(201);
@@ -211,7 +149,7 @@ describe("POST /runs/:run_id/nodes", () => {
 
     expect(body).toHaveProperty("node_id");
     expect(body.run_id).toBe(runId);
-    expect(body.team_id).toBe(teamId);
+    expect(body.role).toBe("developer");
     expect(body.kind).toBe("code_gen");
     expect(body.status).toBe("pending");
     expect(body.retry_count).toBe(0);
@@ -221,7 +159,7 @@ describe("POST /runs/:run_id/nodes", () => {
     await app.request(`/runs/${runId}/nodes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "review", team_id: teamId }),
+      body: JSON.stringify({ kind: "review", role: "developer" }),
     });
 
     const events = db
@@ -231,81 +169,6 @@ describe("POST /runs/:run_id/nodes", () => {
     expect(events.length).toBe(1);
     const payload = JSON.parse(events[0].payload_json);
     expect(payload.kind).toBe("review");
-  });
-});
-
-describe("POST /runs/:run_id/messages", () => {
-  let db: InstanceType<typeof Database>;
-  let app: Hono;
-  let runId: string;
-  let teamId: string;
-
-  beforeEach(async () => {
-    db = new Database(":memory:");
-    initializeDb(db);
-    app = createApp(db);
-
-    const runRes = await app.request("/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal: "Message test" }),
-    });
-    runId = (await runRes.json()).run_id;
-
-    const teamRes = await app.request(`/runs/${runId}/teams`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Msg Team" }),
-    });
-    teamId = (await teamRes.json()).team_id;
-  });
-
-  it("should create a message and return 201", async () => {
-    const res = await app.request(`/runs/${runId}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        team_id: teamId,
-        sender_id: "agent_1",
-        content: "Hello world",
-        message_type: "ask",
-      }),
-    });
-
-    expect(res.status).toBe(201);
-    const body = await res.json();
-
-    expect(body).toHaveProperty("id");
-    expect(body.run_id).toBe(runId);
-    expect(body.team_id).toBe(teamId);
-    expect(body.sender_id).toBe("agent_1");
-    expect(body.content).toBe("Hello world");
-    expect(body.message_type).toBe("ask");
-    expect(body).toHaveProperty("created_at");
-  });
-
-  it("should insert message_posted event", async () => {
-    await app.request(`/runs/${runId}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        team_id: teamId,
-        sender_id: "agent_2",
-        content: "Response here",
-        message_type: "answer",
-      }),
-    });
-
-    const events = db
-      .query(
-        "SELECT * FROM events WHERE run_id = ? AND type = 'message_posted'"
-      )
-      .all(runId) as any[];
-
-    expect(events.length).toBe(1);
-    const payload = JSON.parse(events[0].payload_json);
-    expect(payload.content).toBe("Response here");
-    expect(payload.message_type).toBe("answer");
   });
 });
 
@@ -374,7 +237,6 @@ describe("GET /runs/:run_id/ready", () => {
   let db: InstanceType<typeof Database>;
   let app: Hono;
   let runId: string;
-  let teamId: string;
 
   beforeEach(async () => {
     db = new Database(":memory:");
@@ -387,20 +249,13 @@ describe("GET /runs/:run_id/ready", () => {
       body: JSON.stringify({ goal: "Ready test" }),
     });
     runId = (await runRes.json()).run_id;
-
-    const teamRes = await app.request(`/runs/${runId}/teams`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Ready Team" }),
-    });
-    teamId = (await teamRes.json()).team_id;
   });
 
   it("should return nodes with no dependencies as ready", async () => {
     const nodeRes = await app.request(`/runs/${runId}/nodes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "research", team_id: teamId }),
+      body: JSON.stringify({ kind: "research", role: "developer" }),
     });
     const node = await nodeRes.json();
 
@@ -416,14 +271,14 @@ describe("GET /runs/:run_id/ready", () => {
     const nodeARes = await app.request(`/runs/${runId}/nodes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "code_gen", team_id: teamId }),
+      body: JSON.stringify({ kind: "code_gen", role: "developer" }),
     });
     const nodeA = await nodeARes.json();
 
     const nodeBRes = await app.request(`/runs/${runId}/nodes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "review", team_id: teamId }),
+      body: JSON.stringify({ kind: "review", role: "developer" }),
     });
     const nodeB = await nodeBRes.json();
 

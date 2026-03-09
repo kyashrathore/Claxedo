@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
-import { syncReducer, type SyncReducerState } from "../src/reducers/sync-reducer";
+import type { EventEnvelope } from "../src/orchestrator/events/schema";
+import { syncReducer, type SyncReducerState } from "../src/orchestrator/core/reducers/sync-reducer";
 
 function makeEvent(overrides: Partial<EventEnvelope> = {}): EventEnvelope {
   return {

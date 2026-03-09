@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { PlanningService } from "../src/services/planning";
+import { PlanningService } from "../src/orchestrator/core/services/planning";
 
 describe("PlanningService", () => {
   let planning: PlanningService;

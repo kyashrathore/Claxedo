@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite"
-import { GraphEngine } from "@opencode-ai/orchestrator-graph"
-import type { ConnectorInterface, NormalizedIssue } from "@opencode-ai/orchestrator-events"
+import { GraphEngine } from "../orchestrator/graph/graph"
+import type { ConnectorInterface, NormalizedIssue } from "../orchestrator/events/connector"
 import type { WorkItem, WorkEdge, WorkEvent, WorkEventType, WorkGraphState, ScratchpadEntry, ScratchpadPriority } from "./types"
 import {
   initDb,

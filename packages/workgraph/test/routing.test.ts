@@ -5,7 +5,7 @@ import {
   routeWithFallback,
   type CapabilityDescription,
   type RouteConfig,
-} from "../src/routing";
+} from "../src/orchestrator/core/routing";
 
 describe("Routing Scorer", () => {
   const capabilities: CapabilityDescription[] = [

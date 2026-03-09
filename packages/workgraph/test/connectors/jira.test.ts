@@ -1,5 +1,5 @@
 import { describe, it, expect, mock } from "bun:test";
-import { JiraConnector } from "../src/jira";
+import { JiraConnector } from "../../src/connectors/jira/jira";
 
 describe("JiraConnector", () => {
   function createMockClient() {

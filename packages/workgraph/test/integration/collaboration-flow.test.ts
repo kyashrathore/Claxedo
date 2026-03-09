@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { CollaborationService, type MessageType, type HandoffStatus } from "../../src/services/collaboration";
-import { LeadLoop } from "../../src/services/lead-loop";
+import { CollaborationService, type MessageType, type HandoffStatus } from "../../src/orchestrator/core/services/collaboration";
+import { LeadLoop } from "../../src/orchestrator/core/services/lead-loop";
 
 describe("Collaboration Flow Integration", () => {
   let collaboration: CollaborationService;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
-import { type RunState } from "../src/reducers/run";
-import { getReadyNodes, LeaseManager } from "../src/scheduler";
-import { GraphEngine } from "@opencode-ai/orchestrator-graph";
+import { type RunState } from "../src/orchestrator/core/reducers/run";
+import { getReadyNodes, LeaseManager } from "../src/orchestrator/core/scheduler";
+import { GraphEngine } from "../src/orchestrator/graph/graph";
 
 // Mock minimal nodes and graph to test scheduling logic
 describe("Scheduler Engine", () => {

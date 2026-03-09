@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { GitHubConnector, type NormalizedIssue } from "../../src/github";
+import { GitHubConnector, type NormalizedIssue } from "../../../src/connectors/github/github";
 
 describe("GitHub Connector Round-Trip Integration", () => {
   let getMock: ReturnType<typeof mock>;

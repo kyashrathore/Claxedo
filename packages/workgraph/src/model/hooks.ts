@@ -1,4 +1,4 @@
-import type { ConnectorInterface } from "@opencode-ai/orchestrator-events"
+import type { ConnectorInterface } from "../orchestrator/events/connector"
 import type { WorkItem } from "./types"
 
 export interface HookAction {

@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test"
-import { onComplete } from "../src/hooks"
-import type { WorkItem } from "../src/types"
-import type { ConnectorInterface } from "@opencode-ai/orchestrator-events"
+import { onComplete } from "../src/model/hooks"
+import type { WorkItem } from "../src/model/types"
+import type { ConnectorInterface } from "../src/orchestrator/events/connector"
 
 function makeItem(overrides?: Partial<WorkItem>): WorkItem {
   return {

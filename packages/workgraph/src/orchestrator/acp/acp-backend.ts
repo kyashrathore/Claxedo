@@ -13,7 +13,7 @@ import { ClientSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
 import type { SessionNotification } from "@agentclientprotocol/sdk";
 
 import type { ExecutionBackend, TaskHandle } from "../backends";
-import type { DecomposedTask } from "../types";
+import type { TaskInfo } from "../types";
 import { createChildSession, setNodeSession } from "../session-bridge";
 import { AcpEventTranslator } from "./acp-event-translator";
 import type {
@@ -141,7 +141,7 @@ export class AcpBackend implements ExecutionBackend {
   constructor(private registry: AcpRegistryConfig) {}
 
   async launch(
-    task: DecomposedTask,
+    task: TaskInfo,
     runId: string,
     nodeId: string,
     parentSessionID?: string,

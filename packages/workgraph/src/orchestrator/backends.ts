@@ -5,7 +5,7 @@
  * with the same code path regardless of backend.
  */
 
-import type { DecomposedTask } from "./types";
+import type { TaskInfo } from "./types";
 import type { AgentRecord } from "../routes/agent";
 import {
   createChildSession,
@@ -31,7 +31,7 @@ export interface TaskHandle {
 export interface ExecutionBackend {
   /** Launch a task and return a handle */
   launch(
-    task: DecomposedTask,
+    task: TaskInfo,
     runId: string,
     nodeId: string,
     parentSessionID?: string,
@@ -44,7 +44,7 @@ export interface ExecutionBackend {
 
 export class SessionBackend implements ExecutionBackend {
   async launch(
-    task: DecomposedTask,
+    task: TaskInfo,
     runId: string,
     nodeId: string,
     parentSessionID?: string,
@@ -116,7 +116,7 @@ export class SubprocessBackend implements ExecutionBackend {
   ) {}
 
   async launch(
-    task: DecomposedTask,
+    task: TaskInfo,
     runId: string,
     nodeId: string,
   ): Promise<TaskHandle> {

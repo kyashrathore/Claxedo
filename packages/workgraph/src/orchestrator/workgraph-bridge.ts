@@ -1,4 +1,5 @@
-import { WorkGraph, type WorkItem } from "@opencode-ai/workgraph"
+import { WorkGraph } from "../model/workgraph"
+import type { WorkItem } from "../model/types"
 
 let wg: WorkGraph | null = null
 const runToItem = new Map<string, string>()

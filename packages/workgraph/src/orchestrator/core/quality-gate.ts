@@ -1,4 +1,10 @@
-import type { EvidenceLink } from "./capabilities";
+export interface EvidenceLink {
+  type: "source_code" | "document" | "decision" | "artifact" | "external";
+  url?: string;
+  description: string;
+  nodeId?: string;
+  artifactId?: string;
+}
 
 export interface QualityRubric {
   requireEvidence: boolean;

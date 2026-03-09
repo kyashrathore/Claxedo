@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { SyncEngine } from "../src/sync";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
+import { SyncEngine } from "../src/orchestrator/sync/sync";
+import type { EventEnvelope } from "../src/orchestrator/events/schema";
 
 function createMockEvent(overrides: Partial<EventEnvelope> = {}): EventEnvelope {
   return {

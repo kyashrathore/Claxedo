@@ -1,14 +1,15 @@
 export type {
-  DecomposedTask,
-  DecompositionPlan,
   RunPhase,
   OrchestratorRunState,
+  TaskInfo,
 } from "./types";
 
-export { buildPlannerPrompt, parsePlannerOutput, planOrchestration } from "./planner";
-export { buildGraphFromPlan } from "./graph-builder";
+export { buildPlannerPrompt } from "./planner";
 export {
   startOrchestration,
+  onPlanningComplete,
+  onNodeStatusUpdate,
+  findReadyNodes,
   executeOrchestration,
   executionTick,
   cancelOrchestration,

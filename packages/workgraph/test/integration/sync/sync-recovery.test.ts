@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { SyncEngine } from "../../src/sync";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
+import { SyncEngine } from "../../../src/orchestrator/sync/sync";
+import type { EventEnvelope } from "../../../src/orchestrator/events/schema";
 
 describe("Sync Recovery Integration", () => {
   let engine: SyncEngine;

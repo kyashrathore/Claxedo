@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
-import { rootReducer, initialRootState, type RootState } from "../src/reducers/index";
+import type { EventEnvelope } from "../src/orchestrator/events/schema";
+import { rootReducer, initialRootState, type RootState } from "../src/orchestrator/core/reducers/index";
 
 function makeEvent(overrides: Partial<EventEnvelope> = {}): EventEnvelope {
   return {
@@ -33,9 +33,10 @@ describe("rootReducer", () => {
     expect(result.run.runs["run_1"].goal).toBe("Build auth");
     expect(result.run.runs["run_1"].status).toBe("active");
     // Other sub-states should remain unchanged (reference equality)
-    expect(result.team).toBe(initialRootState.team);
     expect(result.node).toBe(initialRootState.node);
     expect(result.edge).toBe(initialRootState.edge);
+    expect(result.artifact).toBe(initialRootState.artifact);
+    expect(result.sync).toBe(initialRootState.sync);
   });
 
   it("should dispatch events to multiple relevant sub-reducers", () => {
@@ -45,20 +46,11 @@ describe("rootReducer", () => {
       payload_json: JSON.stringify({ goal: "Build UI" }),
     }));
 
-    // Then create a team
-    state = rootReducer(state, makeEvent({
-      id: "evt_2",
-      type: "team_created",
-      payload_json: JSON.stringify({ team_id: "team_1", name: "Frontend" }),
-    }));
-    expect(state.team.teams["team_1"]).toBeDefined();
-    expect(state.team.teams["team_1"].name).toBe("Frontend");
-
     // Then create a node
     state = rootReducer(state, makeEvent({
       id: "evt_3",
       type: "node_created",
-      payload_json: JSON.stringify({ node_id: "node_1", kind: "task", team_id: "team_1" }),
+      payload_json: JSON.stringify({ node_id: "node_1", kind: "task", role: "developer" }),
     }));
     expect(state.node.nodes["node_1"]).toBeDefined();
     expect(state.node.nodes["node_1"].status).toBe("pending");
@@ -67,20 +59,15 @@ describe("rootReducer", () => {
     expect(state.run.runs["run_1"].goal).toBe("Build UI");
   });
 
-  it("should handle a full event sequence across all reducers", () => {
+  it("should handle a full event sequence across all remaining reducers", () => {
     let state = rootReducer(initialRootState, makeEvent({
       type: "run_created",
       payload_json: JSON.stringify({ goal: "Full integration" }),
     }));
 
     state = rootReducer(state, makeEvent({
-      id: "evt_2", type: "team_created",
-      payload_json: JSON.stringify({ team_id: "team_1", name: "Alpha" }),
-    }));
-
-    state = rootReducer(state, makeEvent({
       id: "evt_3", type: "node_created",
-      payload_json: JSON.stringify({ node_id: "node_1", kind: "task", team_id: "team_1" }),
+      payload_json: JSON.stringify({ node_id: "node_1", kind: "task", role: "developer" }),
     }));
 
     state = rootReducer(state, makeEvent({
@@ -89,22 +76,16 @@ describe("rootReducer", () => {
     }));
 
     state = rootReducer(state, makeEvent({
-      id: "evt_5", type: "message_posted",
-      payload_json: JSON.stringify({ id: "msg_1", team_id: "team_1", sender_id: "agent_1", content: "Started", message_type: "chat" }),
-    }));
-
-    state = rootReducer(state, makeEvent({
-      id: "evt_6", type: "decision_proposed",
-      payload_json: JSON.stringify({ id: "dec_1", proposal: "Use Bun" }),
+      id: "evt_5", type: "artifact_created",
+      payload_json: JSON.stringify({ id: "art_1", node_id: "node_1", content: "output", version: 1 }),
     }));
 
     // Verify all sub-states updated
     expect(state.run.runs["run_1"].status).toBe("active");
-    expect(state.team.teams["team_1"].name).toBe("Alpha");
     expect(state.node.nodes["node_1"].kind).toBe("task");
     expect(state.edge.edges.length).toBe(1);
-    expect(state.message.messages.length).toBe(1);
-    expect(state.decision.decisions["dec_1"].status).toBe("proposed");
+    expect(state.artifact.artifacts["art_1"]).toBeDefined();
+    expect(state.artifact.artifacts["art_1"].content).toBe("output");
   });
 
   it("should return same reference for completely unhandled event types", () => {

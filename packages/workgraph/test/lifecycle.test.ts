@@ -92,7 +92,6 @@ describe("GET /runs/:run_id/health", () => {
   let db: InstanceType<typeof Database>;
   let app: Hono;
   let runId: string;
-  let teamId: string;
 
   beforeEach(async () => {
     db = new Database(":memory:");
@@ -105,13 +104,6 @@ describe("GET /runs/:run_id/health", () => {
       body: JSON.stringify({ goal: "Health test" }),
     });
     runId = (await runRes.json()).run_id;
-
-    const teamRes = await app.request(`/runs/${runId}/teams`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Health Team" }),
-    });
-    teamId = (await teamRes.json()).team_id;
   });
 
   it("should return healthy when no nodes exist", async () => {
@@ -129,7 +121,7 @@ describe("GET /runs/:run_id/health", () => {
     await app.request(`/runs/${runId}/nodes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "code_gen", team_id: teamId }),
+      body: JSON.stringify({ kind: "code_gen", role: "developer" }),
     });
 
     const res = await app.request(`/runs/${runId}/health`);

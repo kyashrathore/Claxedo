@@ -11,7 +11,7 @@ import type {
   OrchestratorNodeUI,
   OrchestratorEdgeUI,
 } from "./types-ui";
-import type { OrchestratorRunState, DecomposedTask } from "./types";
+import type { OrchestratorRunState, TaskInfo } from "./types";
 
 // ---------------------------------------------------------------------------
 // Session tracking — maps node_id → OpenCode session ID
@@ -50,7 +50,7 @@ export function clearRunSessions(runId: string): void {
 interface DbNode {
   node_id: string;
   run_id: string;
-  team_id: string;
+  role: string;
   kind: string;
   title: string;
   status: string;
@@ -114,16 +114,8 @@ export function buildMetadata(
       uiStatus = "running";
     }
 
-    // Lookup agent name from the plan
-    let agent = "build";
-    if (state.plan) {
-      for (const task of state.plan.tasks) {
-        if (state.task_node_map.get(task.id) === n.node_id) {
-          agent = task.team;
-          break;
-        }
-      }
-    }
+    // Use the node's role as the agent label
+    const agent = n.role || "developer";
 
     return {
       id: n.node_id,
@@ -150,7 +142,7 @@ export function buildMetadata(
   if (failed) parts.push(`${failed} failed`);
 
   return {
-    goal: state.plan?.summary ?? "",
+    goal: (db.query("SELECT goal FROM runs_current WHERE run_id = ?").get(runId) as { goal: string } | null)?.goal ?? "",
     phase: state.phase as OrchestratorMetadata["phase"],
     nodes,
     edges,
@@ -179,7 +171,7 @@ export function buildMetadata(
  */
 export async function createChildSession(
   parentSessionID: string,
-  task: DecomposedTask,
+  task: TaskInfo,
   nodeId: string,
   runId: string,
 ): Promise<string | undefined> {

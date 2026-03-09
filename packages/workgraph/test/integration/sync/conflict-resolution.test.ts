@@ -5,7 +5,7 @@ import {
   reconcile,
   type Conflict,
   type ConflictStrategy,
-} from "../../src/conflict";
+} from "../../../src/orchestrator/sync/conflict";
 
 describe("Conflict Resolution Integration", () => {
   function makeLocalEvent(seq: number, created_at: string) {

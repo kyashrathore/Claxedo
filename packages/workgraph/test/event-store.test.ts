@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import type { EventEnvelope } from "@opencode-ai/orchestrator-events";
-import { appendEvent, getEvents, replayEvents } from "../src/services/event-store";
-import { runReducer, type RunState } from "../src/reducers/run";
+import type { EventEnvelope } from "../src/orchestrator/events/schema";
+import { appendEvent, getEvents, replayEvents } from "../src/orchestrator/core/services/event-store";
+import { runReducer, type RunState } from "../src/orchestrator/core/reducers/run";
 
 describe("event-store", () => {
   let db: ReturnType<typeof drizzle>;

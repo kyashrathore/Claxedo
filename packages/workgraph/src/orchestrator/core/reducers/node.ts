@@ -1,7 +1,7 @@
 import type { EventEnvelope } from "../../events";
 
 export interface NodeState {
-  nodes: Record<string, { kind: string; status: string; team_id: string; retry_count: number }>;
+  nodes: Record<string, { kind: string; status: string; role: string; retry_count: number }>;
 }
 
 export const nodeReducer = (state: NodeState, event: EventEnvelope): NodeState => {
@@ -16,7 +16,7 @@ export const nodeReducer = (state: NodeState, event: EventEnvelope): NodeState =
             [payload.node_id]: {
               kind: payload.kind,
               status: "pending",
-              team_id: payload.team_id,
+              role: payload.role || "developer",
               retry_count: 0,
             }
           }

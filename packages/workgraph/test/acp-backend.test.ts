@@ -10,7 +10,7 @@ function makeTask(overrides?: Partial<DecomposedTask>): DecomposedTask {
     id: "task1",
     title: "Test Task",
     kind: "research",
-    team: "t1",
+    role: "developer",
     prompt: "Do research",
     depends_on: [],
     ...overrides,

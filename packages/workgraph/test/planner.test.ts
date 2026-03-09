@@ -1,246 +1,314 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createApp, initializeDb } from "../src/app";
-import { planOrchestration } from "../src/orchestrator/planner";
-import { getWorkGraph, resetWorkGraph } from "../src/orchestrator/workgraph-bridge";
-import type { OrchestratorRunState, DecompositionPlan } from "../src/orchestrator/types";
+import { buildPlannerPrompt } from "../src/orchestrator/planner";
+import { handleToolCall, type McpToolContext } from "../src/mcp/tools";
 
-// Mock planner agent that returns a pre-defined plan
-function makeMockPlannerAgent(plan: DecompositionPlan) {
-  const planJson = JSON.stringify(plan);
-  // Wrap in stream-json result format (like the real planner output)
-  const streamOutput = JSON.stringify({ type: "result", result: planJson });
+// ---------------------------------------------------------------------------
+// buildPlannerPrompt
+// ---------------------------------------------------------------------------
 
-  return {
-    id: "agent_planner_mock",
-    status: "completed" as const,
-    exit_code: 0,
-    output_chunks: [streamOutput],
-    stderr_chunks: [],
-    created_at: new Date().toISOString(),
-    finished_at: new Date().toISOString(),
-    run_id: null,
-    node_id: null,
-    prompt: "",
-    cwd: "",
-    process: null,
-    listeners: [],
-    timeout_handle: null,
-  };
-}
+describe("buildPlannerPrompt", () => {
+  it("should include the goal in the prompt", () => {
+    const prompt = buildPlannerPrompt("Build a REST API");
+    expect(prompt).toContain("Build a REST API");
+  });
 
-describe("planOrchestration", () => {
+  it("should reference MCP tool names", () => {
+    const prompt = buildPlannerPrompt("anything");
+    expect(prompt).toContain("create_node");
+    expect(prompt).toContain("validate_graph");
+    expect(prompt).toContain("finish_planning");
+  });
+
+  it("should mention roles", () => {
+    const prompt = buildPlannerPrompt("anything");
+    expect(prompt).toContain("role");
+    expect(prompt).toContain("depends_on");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MCP Tools — planning flow (create_node, add_edge, validate_graph, finish_planning)
+// ---------------------------------------------------------------------------
+
+describe("MCP planning tools", () => {
   let db: InstanceType<typeof Database>;
   let runId: string;
 
   beforeEach(async () => {
     db = new Database(":memory:");
     initializeDb(db);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS scratchpad_entries (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL
+      );
+    `);
     const app = createApp(db);
 
     const res = await app.request("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ goal: "Plan test" }),
+      body: JSON.stringify({ goal: "MCP tool test" }),
     });
     runId = (await res.json()).run_id;
-
-    resetWorkGraph();
   });
 
-  it("should return state with phase='planned' after planning", async () => {
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Backend" }],
-      tasks: [
-        { id: "task1", title: "Research", kind: "research", team: "t1", prompt: "Research APIs", depends_on: [] },
-        { id: "task2", title: "Build", kind: "code_gen", team: "t1", prompt: "Build API", depends_on: ["task1"] },
-      ],
-      summary: "Two-step plan",
-    };
+  function makeCtx(overrides?: Partial<McpToolContext>): McpToolContext {
+    return { db, runId, ...overrides };
+  }
 
-    const mockAgent = makeMockPlannerAgent(plan);
-    const spawnedAgents: any[] = [];
+  it("should create a node via create_node tool", async () => {
+    const result = await handleToolCall(makeCtx(), "create_node", {
+      title: "Setup DB",
+      kind: "code_gen",
+      role: "developer",
+      prompt: "Create the database schema",
+    });
 
-    const state = await planOrchestration(
-      db,
-      runId,
-      "Build an API",
-      async (prompt, rId, nId) => {
-        spawnedAgents.push(mockAgent);
-        return mockAgent as any;
+    expect(result).toHaveProperty("node_id");
+    expect(result.node_id).toMatch(/^node_/);
+
+    // Verify in DB
+    const node = db.query("SELECT * FROM nodes_current WHERE node_id = ?").get(result.node_id) as any;
+    expect(node).not.toBeNull();
+    expect(node.title).toBe("Setup DB");
+    expect(node.kind).toBe("code_gen");
+    expect(node.role).toBe("developer");
+    expect(node.status).toBe("pending");
+    expect(node.retry_count).toBe(0);
+  });
+
+  it("should store prompt as scratchpad entry", async () => {
+    const result = await handleToolCall(makeCtx(), "create_node", {
+      title: "Research",
+      kind: "research",
+      role: "architect",
+      prompt: "Research best practices",
+    });
+
+    const sp = db.query(
+      "SELECT * FROM scratchpad_entries WHERE run_id = ? AND node_id = ?"
+    ).get(runId, result.node_id) as any;
+
+    expect(sp).not.toBeNull();
+    expect(sp.content).toBe("Research best practices");
+  });
+
+  it("should create dependency edges via depends_on", async () => {
+    const node1 = await handleToolCall(makeCtx(), "create_node", {
+      title: "First",
+      kind: "research",
+      role: "developer",
+      prompt: "Do first",
+    });
+    const node2 = await handleToolCall(makeCtx(), "create_node", {
+      title: "Second",
+      kind: "code_gen",
+      role: "developer",
+      prompt: "Do second",
+      depends_on: [node1.node_id],
+    });
+
+    const edges = db.query(
+      "SELECT * FROM dependency_edges_current WHERE run_id = ?"
+    ).all(runId) as any[];
+
+    expect(edges).toHaveLength(1);
+    expect(edges[0].source_id).toBe(node1.node_id);
+    expect(edges[0].target_id).toBe(node2.node_id);
+  });
+
+  it("should reject depends_on with non-existent node", async () => {
+    const result = await handleToolCall(makeCtx(), "create_node", {
+      title: "Bad dep",
+      kind: "code_gen",
+      role: "developer",
+      prompt: "Will fail",
+      depends_on: ["node_nonexistent"],
+    });
+
+    expect(result).toHaveProperty("error");
+    expect(result.error).toContain("not found");
+  });
+
+  it("should add edges via add_edge tool", async () => {
+    const node1 = await handleToolCall(makeCtx(), "create_node", {
+      title: "A", kind: "code_gen", role: "developer", prompt: "A",
+    });
+    const node2 = await handleToolCall(makeCtx(), "create_node", {
+      title: "B", kind: "code_gen", role: "developer", prompt: "B",
+    });
+
+    const result = await handleToolCall(makeCtx(), "add_edge", {
+      source_id: node1.node_id,
+      target_id: node2.node_id,
+    });
+
+    expect(result).toHaveProperty("edge_id");
+
+    const edges = db.query(
+      "SELECT * FROM dependency_edges_current WHERE run_id = ?"
+    ).all(runId) as any[];
+    expect(edges).toHaveLength(1);
+  });
+
+  it("should detect cycles in add_edge", async () => {
+    const node1 = await handleToolCall(makeCtx(), "create_node", {
+      title: "A", kind: "code_gen", role: "developer", prompt: "A",
+    });
+    const node2 = await handleToolCall(makeCtx(), "create_node", {
+      title: "B", kind: "code_gen", role: "developer", prompt: "B",
+    });
+
+    await handleToolCall(makeCtx(), "add_edge", {
+      source_id: node1.node_id,
+      target_id: node2.node_id,
+    });
+
+    // Reverse edge should create a cycle
+    const result = await handleToolCall(makeCtx(), "add_edge", {
+      source_id: node2.node_id,
+      target_id: node1.node_id,
+    });
+
+    expect(result).toHaveProperty("error");
+    expect(result.error).toContain("cycle");
+  });
+
+  it("should remove edges via remove_edge tool", async () => {
+    const node1 = await handleToolCall(makeCtx(), "create_node", {
+      title: "A", kind: "code_gen", role: "developer", prompt: "A",
+    });
+    const node2 = await handleToolCall(makeCtx(), "create_node", {
+      title: "B", kind: "code_gen", role: "developer", prompt: "B",
+    });
+
+    await handleToolCall(makeCtx(), "add_edge", {
+      source_id: node1.node_id,
+      target_id: node2.node_id,
+    });
+
+    const result = await handleToolCall(makeCtx(), "remove_edge", {
+      source_id: node1.node_id,
+      target_id: node2.node_id,
+    });
+
+    expect(result).toEqual({ ok: true });
+
+    const edges = db.query(
+      "SELECT * FROM dependency_edges_current WHERE run_id = ?"
+    ).all(runId) as any[];
+    expect(edges).toHaveLength(0);
+  });
+
+  it("should validate a valid graph", async () => {
+    const node1 = await handleToolCall(makeCtx(), "create_node", {
+      title: "A", kind: "code_gen", role: "developer", prompt: "A",
+    });
+    const node2 = await handleToolCall(makeCtx(), "create_node", {
+      title: "B", kind: "code_gen", role: "developer", prompt: "B",
+      depends_on: [node1.node_id],
+    });
+
+    const result = await handleToolCall(makeCtx(), "validate_graph", {});
+    expect(result.valid).toBe(true);
+    expect(result.issues).toHaveLength(0);
+  });
+
+  it("should detect cycles in validate_graph", async () => {
+    // Manually create a cycle by inserting directly into DB
+    db.run(
+      "INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n1", runId, "developer", "code_gen", "A", "pending", 0]
+    );
+    db.run(
+      "INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["n2", runId, "developer", "code_gen", "B", "pending", 0]
+    );
+    db.run(
+      "INSERT INTO dependency_edges_current (id, run_id, source_id, target_id, type) VALUES (?, ?, ?, ?, ?)",
+      ["e1", runId, "n1", "n2", "depends_on"]
+    );
+    db.run(
+      "INSERT INTO dependency_edges_current (id, run_id, source_id, target_id, type) VALUES (?, ?, ?, ?, ?)",
+      ["e2", runId, "n2", "n1", "depends_on"]
+    );
+
+    const result = await handleToolCall(makeCtx(), "validate_graph", {});
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((i: string) => i.includes("cycle"))).toBe(true);
+  });
+
+  it("should trigger onPlanningComplete callback via finish_planning", async () => {
+    let calledWith: { runId: string; summary: string } | null = null;
+
+    const ctx = makeCtx({
+      onPlanningComplete: (rId, summary) => {
+        calledWith = { runId: rId, summary };
       },
-      async (agentId) => mockAgent as any,
-    );
+    });
 
-    expect(state.phase).toBe("planned");
-    expect(state.plan).not.toBeNull();
-    expect(state.plan!.tasks).toHaveLength(2);
-    expect(state.plan!.teams).toHaveLength(1);
-    expect(state.task_node_map.size).toBe(2);
-    expect(state.team_id_map.size).toBe(1);
+    const result = await handleToolCall(ctx, "finish_planning", {
+      summary: "Two-step plan: research then build",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(calledWith).not.toBeNull();
+    expect(calledWith!.runId).toBe(runId);
+    expect(calledWith!.summary).toBe("Two-step plan: research then build");
   });
 
-  it("should create WorkGraph items for each task", async () => {
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Solo" }],
-      tasks: [
-        { id: "task1", title: "First", kind: "research", team: "t1", prompt: "Do first", depends_on: [] },
-        { id: "task2", title: "Second", kind: "code_gen", team: "t1", prompt: "Do second", depends_on: ["task1"] },
-      ],
-      summary: "Sequential",
-    };
+  it("should emit events for created nodes and edges", async () => {
+    await handleToolCall(makeCtx(), "create_node", {
+      title: "Only task",
+      kind: "research",
+      role: "developer",
+      prompt: "Research stuff",
+    });
 
-    const mockAgent = makeMockPlannerAgent(plan);
-
-    const state = await planOrchestration(
-      db,
-      runId,
-      "Sequential tasks",
-      async () => mockAgent as any,
-      async () => mockAgent as any,
-    );
-
-    // Check WorkGraph items were created
-    expect(state.node_work_items.size).toBe(2);
-
-    const wg = getWorkGraph();
-    for (const [nodeId, itemId] of state.node_work_items) {
-      const item = wg.get(itemId);
-      expect(item).toBeDefined();
-      expect(item!.status).toBe("open");
-      expect(item!.context).toContain(`run:${runId}`);
-      expect(item!.context).toContain(`node:${nodeId}`);
-    }
+    const events = db.query("SELECT type FROM events WHERE run_id = ?").all(runId) as any[];
+    const types = events.map((e: any) => e.type);
+    expect(types).toContain("node_created");
   });
 
-  it("should create WorkGraph dependencies between items", async () => {
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Solo" }],
-      tasks: [
-        { id: "task1", title: "First", kind: "research", team: "t1", prompt: "Do first", depends_on: [] },
-        { id: "task2", title: "Second", kind: "code_gen", team: "t1", prompt: "Do second", depends_on: ["task1"] },
-      ],
-      summary: "Sequential",
-    };
+  it("should build a full graph via MCP tools (integration)", async () => {
+    const ctx = makeCtx();
 
-    const mockAgent = makeMockPlannerAgent(plan);
+    // Create nodes
+    const research = await handleToolCall(ctx, "create_node", {
+      title: "Research APIs", kind: "research", role: "architect", prompt: "Research available APIs",
+    });
+    const build = await handleToolCall(ctx, "create_node", {
+      title: "Build API", kind: "code_gen", role: "developer", prompt: "Build the REST API",
+      depends_on: [research.node_id],
+    });
+    const review = await handleToolCall(ctx, "create_node", {
+      title: "Review", kind: "review", role: "code_reviewer", prompt: "Review the code",
+      depends_on: [build.node_id],
+    });
 
-    const state = await planOrchestration(
-      db,
-      runId,
-      "Sequential tasks",
-      async () => mockAgent as any,
-      async () => mockAgent as any,
-    );
+    // Validate
+    const validation = await handleToolCall(ctx, "validate_graph", {});
+    expect(validation.valid).toBe(true);
 
-    const wg = getWorkGraph();
-    const node1Id = state.task_node_map.get("task1")!;
-    const node2Id = state.task_node_map.get("task2")!;
-    const item1Id = state.node_work_items.get(node1Id)!;
-    const item2Id = state.node_work_items.get(node2Id)!;
-
-    // task2 item should be blocked by task1 item
-    const blockers = wg.getBlockedBy(item2Id);
-    expect(blockers.map((b) => b.id)).toContain(item1Id);
-  });
-
-  it("should build DB graph (teams, nodes, edges, messages)", async () => {
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Alpha" }],
-      tasks: [
-        { id: "task1", title: "A", kind: "research", team: "t1", prompt: "Do A", depends_on: [] },
-        { id: "task2", title: "B", kind: "code_gen", team: "t1", prompt: "Do B", depends_on: ["task1"] },
-      ],
-      summary: "A then B",
-    };
-
-    const mockAgent = makeMockPlannerAgent(plan);
-
-    await planOrchestration(
-      db,
-      runId,
-      "A then B",
-      async () => mockAgent as any,
-      async () => mockAgent as any,
-    );
-
-    // DB teams
-    const teams = db.query("SELECT * FROM teams_current WHERE run_id = ?").all(runId) as any[];
-    expect(teams).toHaveLength(1);
-
-    // DB nodes
+    // Check DB
     const nodes = db.query("SELECT * FROM nodes_current WHERE run_id = ?").all(runId) as any[];
-    expect(nodes).toHaveLength(2);
+    expect(nodes).toHaveLength(3);
     expect(nodes.every((n: any) => n.status === "pending")).toBe(true);
 
-    // DB edges
     const edges = db.query("SELECT * FROM dependency_edges_current WHERE run_id = ?").all(runId) as any[];
-    expect(edges).toHaveLength(1);
+    expect(edges).toHaveLength(2);
 
-    // Messages (planner_output + node_metadata)
-    const plannerMsgs = db.query(
-      "SELECT * FROM messages_current WHERE run_id = ? AND message_type = 'planner_output'"
-    ).all(runId) as any[];
-    expect(plannerMsgs).toHaveLength(1);
-
-    const metaMsgs = db.query(
-      "SELECT * FROM messages_current WHERE run_id = ? AND message_type = 'node_metadata'"
-    ).all(runId) as any[];
-    expect(metaMsgs).toHaveLength(2);
-  });
-
-  it("should throw if planner agent fails", async () => {
-    const failedAgent = {
-      id: "agent_failed",
-      status: "failed" as const,
-      exit_code: 1,
-      output_chunks: [],
-      stderr_chunks: ["Claude error"],
-      created_at: new Date().toISOString(),
-      finished_at: new Date().toISOString(),
-      run_id: null,
-      node_id: null,
-      prompt: "",
-      cwd: "",
-      process: null,
-      listeners: [],
-      timeout_handle: null,
-    };
-
-    await expect(
-      planOrchestration(
-        db,
-        runId,
-        "Will fail",
-        async () => failedAgent as any,
-        async () => failedAgent as any,
-      )
-    ).rejects.toThrow("Planner agent failed");
-  });
-
-  it("should link to WorkGraph item when work_item_id provided", async () => {
-    const wg = getWorkGraph();
-    const item = wg.create({ title: "Parent item" });
-
-    const plan: DecompositionPlan = {
-      teams: [{ id: "t1", name: "Solo" }],
-      tasks: [
-        { id: "task1", title: "Only task", kind: "research", team: "t1", prompt: "Do thing", depends_on: [] },
-      ],
-      summary: "One task",
-    };
-
-    const mockAgent = makeMockPlannerAgent(plan);
-
-    const state = await planOrchestration(
-      db,
-      runId,
-      "One task",
-      async () => mockAgent as any,
-      async () => mockAgent as any,
-      item.id,
-    );
-
-    expect(state.work_item_id).toBe(item.id);
+    // Get graph via MCP tool
+    const graph = await handleToolCall(ctx, "get_graph", {});
+    expect(graph.nodes).toHaveLength(3);
+    expect(graph.edges).toHaveLength(2);
   });
 });

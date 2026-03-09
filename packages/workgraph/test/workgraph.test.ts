@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
-import { WorkGraph } from "../src/workgraph"
-import type { ConnectorInterface, NormalizedIssue } from "@opencode-ai/orchestrator-events"
+import { WorkGraph } from "../src/model/workgraph"
+import type { ConnectorInterface, NormalizedIssue } from "../src/orchestrator/events/connector"
 
 function createGraph() {
   return new WorkGraph(":memory:")

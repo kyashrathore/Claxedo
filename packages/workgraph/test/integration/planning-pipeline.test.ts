@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { PlanningService, type ScopedQuestion } from "../../src/services/planning";
-import { resolveRoute, previewRoutes, routeWithFallback, type CapabilityDescription } from "../../src/routing";
+import { PlanningService, type ScopedQuestion } from "../../src/orchestrator/core/services/planning";
+import { resolveRoute, previewRoutes, routeWithFallback, type CapabilityDescription } from "../../src/orchestrator/core/routing";
 
 describe("Planning Pipeline Integration", () => {
   let planningService: PlanningService;

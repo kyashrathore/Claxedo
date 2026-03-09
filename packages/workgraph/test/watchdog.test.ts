@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { Watchdog } from "../src/services/watchdog";
+import { Watchdog } from "../src/orchestrator/core/services/watchdog";
 
 describe("Watchdog", () => {
   it("should use default config when none provided", () => {

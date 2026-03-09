@@ -203,11 +203,6 @@ export function getDashboardHtml(): string {
   .dag-arrowhead { fill: var(--sd5); }
   .dag-arrowhead.completed { fill: rgba(55,219,46,0.4); }
 
-  /* --- Team message threads --- */
-  .team-thread { margin-bottom: 16px; }
-  .team-thread-header { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--sda5); margin-bottom: 8px; }
-  .team-thread-header .team-name { font-size: var(--fs-base); font-weight: var(--fw-semi); color: var(--cobalt-11); }
-  .team-thread-header .team-badge { font-size: var(--fs-xs); }
   .msg-list { display: flex; flex-direction: column; gap: 6px; max-height: 400px; overflow-y: auto; padding: 4px 0; }
   .msg-bubble { display: flex; gap: 8px; padding: 6px 0; }
   .msg-avatar {
@@ -999,16 +994,14 @@ async function selectRun(runId) {
 }
 
 async function renderRunDetail(runId) {
-  const [run, teams, nodes, messages, edges, events] = await Promise.all([
+  const [run, nodes, edges, events] = await Promise.all([
     api('/runs/' + runId),
-    api('/runs/' + runId + '/teams'),
     api('/runs/' + runId + '/nodes'),
-    api('/runs/' + runId + '/messages'),
     api('/runs/' + runId + '/edges'),
     api('/runs/' + runId + '/events'),
   ]);
 
-  currentRunData = { run, teams, nodes, messages, edges, events };
+  currentRunData = { run, nodes, edges, events };
 
   let orch = null;
   try {
@@ -1033,14 +1026,13 @@ async function renderRunDetail(runId) {
     </div>\` : ''}
   \` : '';
 
-  // Result panel (Gap 3): shown when run is completed
-  const finalResultMsg = messages.find(m => m.message_type === 'final_result');
-  const resultPanelHtml = (run.status === 'completed' && (orch?.result || finalResultMsg)) ? \`
+  // Result panel: shown when run is completed
+  const resultPanelHtml = (run.status === 'completed' && orch?.result) ? \`
     <div class="panel" style="border-color:rgba(51,255,34,0.25);">
       <h2 style="color:#37db2e;">Result</h2>
       <div class="agent-output" style="max-height:600px;">
         <div class="ao-block ao-result success"><span class="result-icon">&#9989;</span><span>Run Completed</span></div>
-        <div class="ao-block"><div class="ao-text">\${renderMarkdown((finalResultMsg?.content || orch?.result || '').slice(0, 10000))}</div></div>
+        <div class="ao-block"><div class="ao-text">\${renderMarkdown((orch?.result || '').slice(0, 10000))}</div></div>
       </div>
     </div>
   \` : '';
@@ -1056,9 +1048,7 @@ async function renderRunDetail(runId) {
         <div class="k">Status</div><div class="v"><span class="badge \${run.status}">\${run.status}</span></div>
       </div>
       <div class="toolbar">
-        <button onclick="showAddTeam('\${runId}')">+ Team</button>
         <button onclick="showAddNode('\${runId}')">+ Node</button>
-        <button onclick="showAddMessage('\${runId}')">+ Message</button>
         <button onclick="showAddEdge('\${runId}')">+ Edge</button>
       </div>
       <div id="inlineForm"></div>
@@ -1070,22 +1060,10 @@ async function renderRunDetail(runId) {
         <button class="active" onclick="showGraphTab('canvas')">Canvas</button>
         <button onclick="showGraphTab('table')">Table</button>
       </div>
-      <div id="graphCanvas">\${renderCanvas(nodes, edges, teams)}</div>
+      <div id="graphCanvas">\${renderCanvas(nodes, edges)}</div>
       <div id="graphTable" style="display:none;">
         \${renderNodesTable(nodes, runId)}
       </div>
-    </div>
-
-    <div class="panel">
-      <h2>Teams (\${teams.length})</h2>
-      \${teams.length ? \`<table><tr><th>ID</th><th>Name</th><th>Status</th></tr>
-        \${teams.map(t => \`<tr><td>\${t.team_id}</td><td>\${esc(t.name)}</td><td><span class="badge \${t.status}">\${t.status}</span></td></tr>\`).join('')}
-      </table>\` : '<div class="empty">No teams</div>'}
-    </div>
-
-    <div class="panel">
-      <h2>Messages (\${messages.filter(m => m.message_type !== 'node_metadata').length})</h2>
-      \${renderMessageThreads(messages, teams)}
     </div>
 
     <div class="panel">
@@ -1112,9 +1090,9 @@ function showGraphTab(tab) {
 
 function renderNodesTable(nodes, runId) {
   if (!nodes.length) return '<div class="empty">No nodes</div>';
-  return \`<table><tr><th>ID</th><th>Title</th><th>Kind</th><th>Team</th><th>Status</th><th>Actions</th></tr>
+  return \`<table><tr><th>ID</th><th>Title</th><th>Kind</th><th>Role</th><th>Status</th><th>Actions</th></tr>
     \${nodes.map(n => \`<tr>
-      <td>\${n.node_id}</td><td>\${esc(n.title || '')}</td><td>\${esc(n.kind)}</td><td>\${n.team_id}</td>
+      <td>\${n.node_id}</td><td>\${esc(n.title || '')}</td><td>\${esc(n.kind)}</td><td>\${esc(n.role || 'developer')}</td>
       <td><span class="badge \${n.status}">\${n.status}</span></td>
       <td>
         \${n.status === 'pending' ? \`<button onclick="updateNode('\${runId}','\${n.node_id}','active')">Activate</button>\` : ''}
@@ -1128,7 +1106,7 @@ function renderNodesTable(nodes, runId) {
 // ── SVG Canvas DAG (unchanged) ──
 // ═══════════════════════════════════════
 
-function renderCanvas(nodes, edges, teams) {
+function renderCanvas(nodes, edges) {
   if (!nodes.length) return '<div class="empty">No nodes to display</div>';
   const nodeMap = {};
   nodes.forEach(n => { nodeMap[n.node_id] = n; });
@@ -1138,9 +1116,14 @@ function renderCanvas(nodes, edges, teams) {
     if (inEdges[e.target_id]) inEdges[e.target_id].push(e.source_id);
     if (outEdges[e.source_id]) outEdges[e.source_id].push(e.target_id);
   });
-  const teamColors = {};
-  const palette = ['#89b5ff','#dca2e0','#37db2e','#fdd63c','#ff917b','#93e9f6','#edb2f1','#aff7a8'];
-  teams.forEach((t, i) => { teamColors[t.team_id] = palette[i % palette.length]; });
+  const roleColors = {
+    'architect': '#89b5ff',
+    'developer': '#37db2e',
+    'code_reviewer': '#dca2e0',
+    'qa': '#fdd63c',
+    'pm': '#ff917b',
+    'designer': '#93e9f6'
+  };
   const layers = {}, visited = new Set();
   function assignLayer(nodeId) {
     if (visited.has(nodeId)) return layers[nodeId] || 0;
@@ -1174,14 +1157,16 @@ function renderCanvas(nodes, edges, teams) {
   nodes.forEach(n => {
     const p = positions[n.node_id]; if (!p) return;
     const fill = sf[n.status]||sf.pending, stroke = ss[n.status]||ss.pending, stc = sc[n.status]||sc.pending;
-    const tc = teamColors[n.team_id]||'#716c6b';
+    const tc = roleColors[n.role||'developer']||'#716c6b';
     const title = (n.title||n.kind||n.node_id).slice(0,22), kind = n.kind.slice(0,20);
     svg += \`<g class="dag-node" onclick="showNodeDetail(event, '\${n.node_id}')"><rect x="\${p.x}" y="\${p.y}" width="\${nodeW}" height="\${nodeH}" fill="\${fill}" stroke="\${stroke}" /><line x1="\${p.x}" y1="\${p.y}" x2="\${p.x}" y2="\${p.y + nodeH}" stroke="\${tc}" stroke-width="3" /><text x="\${p.x + 10}" y="\${p.y + 18}" class="node-title" style="font-family:Inter,sans-serif">\${escSvg(title)}</text><text x="\${p.x + 10}" y="\${p.y + 32}" class="node-kind" style="font-family:Inter,sans-serif">\${escSvg(kind)}</text><text x="\${p.x + 10}" y="\${p.y + 46}" class="node-status" fill="\${stc}" style="font-family:Inter,sans-serif">\${n.status}\${n.retry_count > 0 ? ' (retry ' + n.retry_count + ')' : ''}</text></g>\`;
   });
   svg += '</svg></div>';
-  if (teams.length > 0) {
+  // Collect unique roles from nodes
+  const usedRoles = [...new Set(nodes.map(n => n.role || 'developer'))];
+  if (usedRoles.length > 0) {
     svg += '<div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;font-size:11px;">';
-    teams.forEach(t => { const c = teamColors[t.team_id]||'#716c6b'; svg += \`<span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:\${c};display:inline-block;"></span>\${esc(t.name)}</span>\`; });
+    usedRoles.forEach(role => { const c = roleColors[role]||'#716c6b'; svg += \`<span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:\${c};display:inline-block;"></span>\${esc(role)}</span>\`; });
     svg += '</div>';
   }
   return svg;
@@ -1199,28 +1184,6 @@ function showNodeDetail(event, nodeId) {
   if (!node) return;
   const inE = currentRunData.edges.filter(e => e.target_id === nodeId);
   const outE = currentRunData.edges.filter(e => e.source_id === nodeId);
-  const team = currentRunData.teams.find(t => t.team_id === node.team_id);
-
-  // Find agent output/error messages for this node (Gap 2/4)
-  const nodeMessages = currentRunData.messages.filter(m => m.node_id === nodeId && (m.message_type === 'agent_output' || m.message_type === 'agent_error'));
-  let agentHistoryHtml = '';
-  if (nodeMessages.length > 0) {
-    agentHistoryHtml = '<h4 style="color:#716c6b;font-size:11px;text-transform:uppercase;margin-top:10px;">Agent History</h4>';
-    nodeMessages.forEach(function(m, i) {
-      const isError = m.message_type === 'agent_error';
-      const time = m.created_at ? new Date(m.created_at).toLocaleTimeString() : '';
-      const statusBadge = isError ? '<span class="badge failed">failed</span>' : '<span class="badge completed">completed</span>';
-      agentHistoryHtml += '<div style="font-size:11px;padding:4px 0;border-bottom:1px solid rgba(245,232,232,0.15);">'
-        + '<div style="display:flex;align-items:center;gap:6px;">'
-        + '<span style="color:#716c6b;">#' + (i+1) + '</span>'
-        + '<span style="color:#b7b1b1;">' + esc(m.sender_id.slice(-8)) + '</span>'
-        + statusBadge
-        + '<span style="color:#645f5f;margin-left:auto;">' + time + '</span>'
-        + '</div>'
-        + '<div style="color:#716c6b;margin-top:2px;max-height:60px;overflow:hidden;text-overflow:ellipsis;">' + esc(m.content.slice(0, 200)) + '</div>'
-        + '</div>';
-    });
-  }
 
   const popup = document.getElementById('nodeDetailPopup');
   const content = document.getElementById('nodeDetailContent');
@@ -1230,12 +1193,11 @@ function showNodeDetail(event, nodeId) {
       <div class="k">Node ID</div><div class="v" style="font-size:10px;">\${node.node_id}</div>
       <div class="k">Kind</div><div class="v">\${esc(node.kind)}</div>
       <div class="k">Status</div><div class="v"><span class="badge \${node.status}">\${node.status}</span></div>
-      <div class="k">Team</div><div class="v">\${esc(team ? team.name : node.team_id)}</div>
+      <div class="k">Role</div><div class="v">\${esc(node.role || 'developer')}</div>
       <div class="k">Retries</div><div class="v">\${node.retry_count}</div>
     </div>
     \${inE.length ? '<div style="font-size:11px;color:#716c6b;margin-top:6px;">Depends on: ' + inE.map(e => '<span class="badge pending" style="margin-right:4px;">' + e.source_id.slice(-8) + '</span>').join('') + '</div>' : ''}
     \${outE.length ? '<div style="font-size:11px;color:#716c6b;margin-top:4px;">Blocks: ' + outE.map(e => '<span class="badge pending" style="margin-right:4px;">' + e.target_id.slice(-8) + '</span>').join('') + '</div>' : ''}
-    \${agentHistoryHtml}
     \${selectedRun ? \`<div style="margin-top:10px;display:flex;gap:6px;">
       \${node.status === 'pending' ? '<button onclick="updateNode(\\'' + selectedRun + '\\',\\'' + nodeId + '\\',\\'active\\');closeNodeDetail()">Activate</button>' : ''}
       \${node.status === 'active' ? '<button onclick="updateNode(\\'' + selectedRun + '\\',\\'' + nodeId + '\\',\\'completed\\');closeNodeDetail()">Complete</button>' : ''}
@@ -1253,142 +1215,13 @@ document.addEventListener('click', (e) => {
 });
 
 // ═══════════════════════════════════════
-// ── Per-team message threads ──
-// ═══════════════════════════════════════
-
-function renderMessageThreads(messages, teams) {
-  const visible = messages.filter(m => m.message_type !== 'node_metadata');
-  if (!visible.length) return '<div class="empty">No messages</div>';
-  const teamMap = {}; teams.forEach(t => { teamMap[t.team_id] = t; });
-  const byTeam = {}; visible.forEach(m => { if (!byTeam[m.team_id]) byTeam[m.team_id] = []; byTeam[m.team_id].push(m); });
-
-  // Render system thread first (planner_output, final_result)
-  const teamOrder = Object.keys(byTeam);
-  if (teamOrder.includes('system')) {
-    teamOrder.splice(teamOrder.indexOf('system'), 1);
-    teamOrder.unshift('system');
-  }
-
-  let html = '';
-  for (const teamId of teamOrder) {
-    const team = teamMap[teamId], teamName = team ? team.name : (teamId === 'system' ? 'System' : teamId), msgs = byTeam[teamId];
-    html += '<div class="team-thread"><div class="team-thread-header"><span class="team-name"># ' + esc(teamName) + '</span><span class="badge ' + (team?.status||'active') + ' team-badge">' + msgs.length + ' messages</span></div><div class="msg-list">';
-    msgs.forEach(m => {
-      const ac = m.sender_id === 'orchestrator' ? 'orchestrator' : m.sender_id === 'user' ? 'user' : 'agent';
-      const ini = m.sender_id.slice(0, 2);
-      const time = m.created_at ? new Date(m.created_at).toLocaleTimeString() : '';
-      const tag = m.message_type !== 'chat' ? '<span class="msg-type-tag">' + esc(m.message_type) + '</span>' : '';
-
-      if (m.message_type === 'planner_output') {
-        // Render as structured tool call card (Gap 1)
-        html += renderPlannerOutputCard(m);
-      } else if (m.message_type === 'agent_output') {
-        // Render using AgentOutputRenderer pattern (Gap 2)
-        html += renderAgentOutputCard(m);
-      } else if (m.message_type === 'agent_error') {
-        // Render as error card (Gap 2)
-        html += renderAgentErrorCard(m);
-      } else if (m.message_type === 'final_result') {
-        // Render as final result card (Gap 3)
-        html += renderFinalResultCard(m);
-      } else {
-        html += '<div class="msg-bubble"><div class="msg-avatar ' + ac + '">' + esc(ini) + '</div><div class="msg-body"><div class="msg-sender">' + esc(m.sender_id) + tag + '<span class="msg-time">' + time + '</span></div><div class="msg-content">' + esc(m.content) + '</div></div></div>';
-      }
-    });
-    html += '</div></div>';
-  }
-  return html;
-}
-
-function renderPlannerOutputCard(m) {
-  let plan;
-  try { plan = JSON.parse(m.content); } catch { return '<div class="msg-bubble"><div class="msg-content">' + esc(m.content) + '</div></div>'; }
-  const time = m.created_at ? new Date(m.created_at).toLocaleTimeString() : '';
-  let html = '<div class="msg-bubble"><div class="msg-avatar orchestrator" style="background:rgba(236,112,251,0.14);color:#dca2e0;">P</div><div class="msg-body">';
-  html += '<div class="msg-sender">planner<span class="msg-type-tag">planner_output</span><span class="msg-time">' + time + '</span></div>';
-  html += '<div class="ao-tool" style="margin-top:4px;">';
-  html += '<div class="ao-tool-header" onclick="toggleToolBody(this)">';
-  html += '<div class="ao-tool-icon other" style="background:rgba(236,112,251,0.14);color:#dca2e0;">P</div>';
-  html += '<span class="ao-tool-name">Task Decomposition</span>';
-  html += '<span class="ao-tool-file">' + (plan.tasks ? plan.tasks.length + ' tasks, ' + (plan.teams ? plan.teams.length : 0) + ' teams' : '') + '</span>';
-  html += '<span class="ao-tool-status done">&#10003; done</span>';
-  html += '</div>';
-  html += '<div class="ao-tool-body">';
-  if (plan.summary) html += '<div style="margin-bottom:8px;color:#716c6b;font-size:11px;">' + esc(plan.summary) + '</div>';
-  if (plan.teams && plan.teams.length) {
-    html += '<div style="margin-bottom:6px;font-size:11px;"><strong style="color:#f1ecec;">Teams:</strong> ' + plan.teams.map(function(t) { return '<span class="badge active" style="margin-right:4px;">' + esc(t.name || t.id) + '</span>'; }).join('') + '</div>';
-  }
-  if (plan.tasks && plan.tasks.length) {
-    html += '<div style="font-size:11px;">';
-    plan.tasks.forEach(function(task) {
-      const depStr = task.depends_on && task.depends_on.length ? ' &larr; ' + task.depends_on.join(', ') : '';
-      html += '<div class="ao-plan-item" style="padding:3px 0;">';
-      html += '<div class="ao-plan-check pending"></div>';
-      html += '<div><span style="color:#f1ecec;font-weight:600;">' + esc(task.title || task.id) + '</span>';
-      html += ' <span style="color:#716c6b;">(' + esc(task.kind) + ')</span>';
-      html += ' <span style="color:#89b5ff;font-size:10px;">[' + esc(task.team) + ']</span>';
-      if (depStr) html += ' <span style="color:#fdd63c;font-size:10px;">' + depStr + '</span>';
-      html += '</div></div>';
-    });
-    html += '</div>';
-  }
-  html += '</div></div></div></div>';
-  return html;
-}
-
-function renderAgentOutputCard(m) {
-  const time = m.created_at ? new Date(m.created_at).toLocaleTimeString() : '';
-  const nodeTag = m.node_id ? '<span class="msg-type-tag">' + esc(m.node_id.slice(-8)) + '</span>' : '';
-  let html = '<div class="msg-bubble"><div class="msg-avatar agent">AG</div><div class="msg-body">';
-  html += '<div class="msg-sender">' + esc(m.sender_id) + '<span class="msg-type-tag">agent_output</span>' + nodeTag + '<span class="msg-time">' + time + '</span></div>';
-  // Use a container div that will render via AgentOutputRenderer if needed
-  const renderId = 'ao_' + (m.id || Date.now());
-  html += '<div class="agent-output" id="' + renderId + '" style="max-height:400px;">';
-  // Pre-render as text; the renderer will be initialized after mount
-  html += '<div class="ao-block"><div class="ao-text">' + renderMarkdown(m.content.slice(0, 5000)) + '</div></div>';
-  html += '</div></div></div>';
-  return html;
-}
-
-function renderAgentErrorCard(m) {
-  const time = m.created_at ? new Date(m.created_at).toLocaleTimeString() : '';
-  const nodeTag = m.node_id ? '<span class="msg-type-tag">' + esc(m.node_id.slice(-8)) + '</span>' : '';
-  let html = '<div class="msg-bubble"><div class="msg-avatar agent" style="background:rgba(251,34,0,0.18);color:#ff917b;">!</div><div class="msg-body">';
-  html += '<div class="msg-sender">' + esc(m.sender_id) + '<span class="msg-type-tag" style="background:rgba(251,34,0,0.18);color:#ff917b;">agent_error</span>' + nodeTag + '<span class="msg-time">' + time + '</span></div>';
-  html += '<div class="output-box" style="border-color:rgba(252,83,58,0.4);max-height:200px;">' + esc(m.content.slice(0, 3000)) + '</div>';
-  html += '</div></div>';
-  return html;
-}
-
-function renderFinalResultCard(m) {
-  const time = m.created_at ? new Date(m.created_at).toLocaleTimeString() : '';
-  let html = '<div class="msg-bubble"><div class="msg-avatar orchestrator" style="background:rgba(51,255,34,0.12);color:#37db2e;">&#10003;</div><div class="msg-body">';
-  html += '<div class="msg-sender">orchestrator<span class="msg-type-tag" style="background:rgba(51,255,34,0.12);color:#37db2e;">final_result</span><span class="msg-time">' + time + '</span></div>';
-  html += '<div class="agent-output" style="max-height:600px;">';
-  html += '<div class="ao-block ao-result success"><span class="result-icon">&#9989;</span><span>Run Completed</span></div>';
-  html += '<div class="ao-block"><div class="ao-text">' + renderMarkdown(m.content.slice(0, 10000)) + '</div></div>';
-  html += '</div></div></div>';
-  return html;
-}
-
-// ═══════════════════════════════════════
 // ── Inline forms ──
 // ═══════════════════════════════════════
 
-function showAddTeam(runId) {
-  document.getElementById('inlineForm').innerHTML = \`<div style="display:flex;gap:6px;align-items:center;margin-top:8px;"><input id="fTeamName" placeholder="Team name"><button class="primary" onclick="addTeam('\${runId}')">Create Team</button><button onclick="document.getElementById('inlineForm').innerHTML=''">Cancel</button></div>\`;
-}
-async function addTeam(runId) { const n = document.getElementById('fTeamName').value.trim(); if (!n) return; await api('/runs/'+runId+'/teams', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})}); await renderRunDetail(runId); }
-
 function showAddNode(runId) {
-  document.getElementById('inlineForm').innerHTML = \`<div style="display:flex;gap:6px;align-items:center;margin-top:8px;"><input id="fNodeTitle" placeholder="Title"><input id="fNodeKind" placeholder="Kind"><input id="fNodeTeam" placeholder="Team ID"><button class="primary" onclick="addNode('\${runId}')">Create Node</button><button onclick="document.getElementById('inlineForm').innerHTML=''">Cancel</button></div>\`;
+  document.getElementById('inlineForm').innerHTML = \`<div style="display:flex;gap:6px;align-items:center;margin-top:8px;"><input id="fNodeTitle" placeholder="Title"><input id="fNodeKind" placeholder="Kind"><select id="fNodeRole"><option value="developer">developer</option><option value="architect">architect</option><option value="code_reviewer">code_reviewer</option><option value="qa">qa</option><option value="pm">pm</option><option value="designer">designer</option></select><button class="primary" onclick="addNode('\${runId}')">Create Node</button><button onclick="document.getElementById('inlineForm').innerHTML=''">Cancel</button></div>\`;
 }
-async function addNode(runId) { const t = document.getElementById('fNodeTitle').value.trim(), k = document.getElementById('fNodeKind').value.trim(), tid = document.getElementById('fNodeTeam').value.trim(); if (!k||!tid) return; await api('/runs/'+runId+'/nodes', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:k,team_id:tid,title:t})}); await renderRunDetail(runId); }
-
-function showAddMessage(runId) {
-  document.getElementById('inlineForm').innerHTML = \`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;"><input id="fMsgTeam" placeholder="Team ID"><input id="fMsgSender" placeholder="Sender ID"><input id="fMsgType" placeholder="Type" value="chat"><input id="fMsgContent" placeholder="Content" style="flex:1;min-width:150px;"><button class="primary" onclick="addMessage('\${runId}')">Send</button><button onclick="document.getElementById('inlineForm').innerHTML=''">Cancel</button></div>\`;
-}
-async function addMessage(runId) { const tid=document.getElementById('fMsgTeam').value.trim(),sid=document.getElementById('fMsgSender').value.trim(),mt=document.getElementById('fMsgType').value.trim(),c=document.getElementById('fMsgContent').value.trim(); if(!tid||!sid||!c||!mt) return; await api('/runs/'+runId+'/messages', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({team_id:tid,sender_id:sid,content:c,message_type:mt})}); await renderRunDetail(runId); }
+async function addNode(runId) { const t = document.getElementById('fNodeTitle').value.trim(), k = document.getElementById('fNodeKind').value.trim(), r = document.getElementById('fNodeRole').value; if (!k) return; await api('/runs/'+runId+'/nodes', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:k,role:r,title:t})}); await renderRunDetail(runId); }
 
 function showAddEdge(runId) {
   document.getElementById('inlineForm').innerHTML = \`<div style="display:flex;gap:6px;align-items:center;margin-top:8px;"><input id="fEdgeSrc" placeholder="Source node ID"><input id="fEdgeTgt" placeholder="Target node ID"><input id="fEdgeType" placeholder="Type" value="depends_on"><button class="primary" onclick="addEdge('\${runId}')">Add Edge</button><button onclick="document.getElementById('inlineForm').innerHTML=''">Cancel</button></div>\`;

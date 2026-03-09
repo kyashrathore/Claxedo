@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { EventEnvelopeSchema } from "../src/schema";
+import { EventEnvelopeSchema } from "../src/orchestrator/events/schema";
 
 describe("EventEnvelopeSchema", () => {
   it("should validate a correct event envelope", () => {

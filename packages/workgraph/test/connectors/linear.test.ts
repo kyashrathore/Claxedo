@@ -1,5 +1,5 @@
 import { describe, it, expect, mock } from "bun:test";
-import { LinearConnector } from "../src/linear";
+import { LinearConnector } from "../../src/connectors/linear/linear";
 
 describe("LinearConnector", () => {
   function createMockClient() {

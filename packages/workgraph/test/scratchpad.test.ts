@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { ScratchpadService } from "../src/services/scratchpad";
+import { ScratchpadService } from "../src/orchestrator/core/services/scratchpad";
 
 describe("ScratchpadService", () => {
   let scratchpad: ScratchpadService;

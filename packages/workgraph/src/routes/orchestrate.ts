@@ -6,14 +6,12 @@ import type { EventEnvelope } from "../orchestrator/events";
 import { generateHash, insertEvent, getNextSeq } from "../db/helpers";
 import {
   startOrchestration,
-  executeOrchestration,
+  onPlanningComplete,
   cancelOrchestration,
   getOrchestration,
   getAllOrchestrations,
   getRunMetadata,
 } from "../orchestrator/executor";
-import { planOrchestration } from "../orchestrator/planner";
-import { SubprocessBackend, createBackend } from "../orchestrator/backends";
 import { getAgentRecord, waitForAgentCompletion } from "./agent";
 
 /**
@@ -89,6 +87,32 @@ function createRunInDb(db: any, runId: string, goal: string): void {
   ]);
 }
 
+/**
+ * Read the current graph state (nodes + edges) from the DB for a run.
+ */
+function getGraphFromDb(db: any, runId: string) {
+  const nodes = db
+    .query("SELECT node_id, role, kind, title, status FROM nodes_current WHERE run_id = ?")
+    .all(runId) as Array<{
+      node_id: string;
+      role: string;
+      kind: string;
+      title: string;
+      status: string;
+    }>;
+
+  const edges = db
+    .query("SELECT id, source_id, target_id, type FROM dependency_edges_current WHERE run_id = ?")
+    .all(runId) as Array<{
+      id: string;
+      source_id: string;
+      target_id: string;
+      type: string;
+    }>;
+
+  return { nodes, edges };
+}
+
 export function orchestrateRouter(db: any) {
   const router = new Hono();
 
@@ -136,7 +160,7 @@ export function orchestrateRouter(db: any) {
     }
   );
 
-  // --- POST /orchestrate/plan --- (planning only, no execution)
+  // --- POST /orchestrate/plan --- (planning only: planner builds graph via MCP tools, no execution)
   router.post(
     "/orchestrate/plan",
     zValidator(
@@ -154,34 +178,50 @@ export function orchestrateRouter(db: any) {
       createRunInDb(db, runId, goal);
 
       try {
-        const state = await planOrchestration(
+        // Start orchestration but don't execute — the planner agent builds
+        // the graph via MCP tools. We await planning completion, then return
+        // the graph as the "plan".
+        const statePromise = startOrchestration(
           db,
           runId,
           goal,
           spawnAgentViaRoute,
+          (agentId) => getAgentRecord(agentId)!,
           waitForAgentCompletion,
           work_item_id,
         );
+
+        // Wait for planning to complete (startOrchestration runs plan + execute,
+        // but we return graph state once nodes exist). For plan-only, we await
+        // the full orchestration — if only planning is desired, the caller can
+        // use the /execute endpoint separately.
+        const state = await statePromise;
+
+        // Read the graph that the planner agent built
+        const graph = getGraphFromDb(db, runId);
 
         return c.json(
           {
             run_id: runId,
             goal,
-            status: "planned",
-            phase: "planned",
-            plan: state.plan
-              ? {
-                  teams: state.plan.teams,
-                  tasks: state.plan.tasks.map((t) => ({
-                    id: t.id,
-                    title: t.title,
-                    kind: t.kind,
-                    depends_on: t.depends_on,
-                  })),
-                  summary: state.plan.summary,
-                }
-              : null,
-            node_count: state.task_node_map.size,
+            status: state.phase,
+            phase: state.phase,
+            graph: {
+              nodes: graph.nodes.map((n) => ({
+                node_id: n.node_id,
+                title: n.title,
+                kind: n.kind,
+                role: n.role,
+                status: n.status,
+              })),
+              edges: graph.edges.map((e) => ({
+                id: e.id,
+                source_id: e.source_id,
+                target_id: e.target_id,
+                type: e.type,
+              })),
+            },
+            node_count: graph.nodes.length,
           },
           201
         );
@@ -217,21 +257,22 @@ export function orchestrateRouter(db: any) {
         return c.json({ error: "Orchestration not found" }, 404);
       }
 
-      if (orch.phase !== "planned") {
+      if (orch.phase === "executing") {
         return c.json(
-          { error: `Cannot execute: run is in phase '${orch.phase}', expected 'planned'` },
+          { error: `Run is already executing` },
           400
         );
       }
 
-      // Create backend and start execution asynchronously
-      const backend = createBackend(
-        spawnAgentViaRoute,
-        waitForAgentCompletion,
-        killAgent,
-      );
+      if (orch.phase === "completed" || orch.phase === "failed" || orch.phase === "cancelled") {
+        return c.json(
+          { error: `Cannot execute: run is in phase '${orch.phase}'` },
+          400
+        );
+      }
 
-      const execution = executeOrchestration(db, orch, backend, parentSessionID);
+      // Trigger execution cascade via onPlanningComplete (MCP-driven model)
+      const execution = onPlanningComplete(db, runId, "Manual execution trigger", spawnAgentViaRoute);
       execution.catch((err) => {
         console.error(`[orchestrate] Execute error for run ${runId}:`, err);
       });
@@ -268,7 +309,6 @@ export function orchestrateRouter(db: any) {
       planner_agent_id: orch.planner_agent_id,
       error: orch.error,
       created_at: orch.created_at,
-      plan_summary: orch.plan?.summary || null,
       result: orch.result || null,
       node_count: nodes.length,
       nodes_by_status: {

@@ -4,20 +4,14 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import {
   events,
   runs_current,
-  teams_current,
-  team_members_current,
   nodes_current,
   dependency_edges_current,
-  messages_current,
-  handoffs_current,
-  artifacts_current,
-  decisions_current,
   sync_outbox,
   sync_state,
   conflicts,
   snapshots,
   scratchpad_entries,
-} from "../src/db/schema";
+} from "../src/orchestrator/core/db/schema";
 import { eq } from "drizzle-orm";
 
 describe("Database Projections", () => {
@@ -28,7 +22,7 @@ describe("Database Projections", () => {
     // Setup in-memory sqlite for fast testing
     sqlite = new Database(":memory:");
     db = drizzle(sqlite);
-    
+
     // Create tables
     sqlite.run(`
       CREATE TABLE events (
@@ -58,28 +52,10 @@ describe("Database Projections", () => {
     `);
 
     sqlite.run(`
-      CREATE TABLE teams_current (
-        team_id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        status TEXT NOT NULL
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE team_members_current (
-        id TEXT PRIMARY KEY,
-        team_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        role TEXT NOT NULL
-      );
-    `);
-
-    sqlite.run(`
       CREATE TABLE nodes_current (
         node_id TEXT PRIMARY KEY,
         run_id TEXT NOT NULL,
-        team_id TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'developer',
         kind TEXT NOT NULL,
         status TEXT NOT NULL,
         retry_count INTEGER NOT NULL
@@ -93,51 +69,6 @@ describe("Database Projections", () => {
         source_id TEXT NOT NULL,
         target_id TEXT NOT NULL,
         type TEXT NOT NULL
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE messages_current (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        team_id TEXT NOT NULL,
-        sender_id TEXT NOT NULL,
-        content TEXT NOT NULL,
-        message_type TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE handoffs_current (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        from_team_id TEXT NOT NULL,
-        to_team_id TEXT NOT NULL,
-        status TEXT NOT NULL,
-        payload TEXT NOT NULL
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE artifacts_current (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        node_id TEXT NOT NULL,
-        content TEXT NOT NULL,
-        version INTEGER NOT NULL,
-        provenance TEXT NOT NULL
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE decisions_current (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        proposal TEXT NOT NULL,
-        status TEXT NOT NULL,
-        challenger_id TEXT,
-        evidence TEXT
       );
     `);
 
@@ -214,7 +145,7 @@ describe("Database Projections", () => {
     };
 
     await db.insert(events).values(mockEvent);
-    
+
     const result = await db.select().from(events).where(eq(events.id, "evt_db_1"));
     expect(result.length).toBe(1);
     expect(result[0].id).toBe("evt_db_1");
@@ -233,35 +164,11 @@ describe("Database Projections", () => {
     expect(result[0].goal).toBe("Test projections");
   });
 
-  it("should insert and retrieve teams_current", async () => {
-    await db.insert(teams_current).values({
-      team_id: "team_1",
-      run_id: "run_1",
-      name: "Frontend",
-      status: "active",
-    });
-    const result = await db.select().from(teams_current).where(eq(teams_current.team_id, "team_1"));
-    expect(result.length).toBe(1);
-    expect(result[0].name).toBe("Frontend");
-  });
-
-  it("should insert and retrieve team_members_current", async () => {
-    await db.insert(team_members_current).values({
-      id: "tm_1",
-      team_id: "team_1",
-      agent_id: "agent_1",
-      role: "developer",
-    });
-    const result = await db.select().from(team_members_current).where(eq(team_members_current.id, "tm_1"));
-    expect(result.length).toBe(1);
-    expect(result[0].agent_id).toBe("agent_1");
-  });
-
   it("should insert and retrieve nodes_current", async () => {
     await db.insert(nodes_current).values({
       node_id: "node_1",
       run_id: "run_1",
-      team_id: "team_1",
+      role: "developer",
       kind: "task",
       status: "pending",
       retry_count: 0,
@@ -269,6 +176,7 @@ describe("Database Projections", () => {
     const result = await db.select().from(nodes_current).where(eq(nodes_current.node_id, "node_1"));
     expect(result.length).toBe(1);
     expect(result[0].kind).toBe("task");
+    expect(result[0].role).toBe("developer");
     expect(result[0].retry_count).toBe(0);
   });
 
@@ -283,64 +191,6 @@ describe("Database Projections", () => {
     const result = await db.select().from(dependency_edges_current).where(eq(dependency_edges_current.id, "edge_1"));
     expect(result.length).toBe(1);
     expect(result[0].source_id).toBe("node_1");
-  });
-
-  it("should insert and retrieve messages_current", async () => {
-    await db.insert(messages_current).values({
-      id: "msg_1",
-      run_id: "run_1",
-      team_id: "team_1",
-      sender_id: "agent_1",
-      content: "Hello",
-      message_type: "chat",
-      created_at: new Date().toISOString(),
-    });
-    const result = await db.select().from(messages_current).where(eq(messages_current.id, "msg_1"));
-    expect(result.length).toBe(1);
-    expect(result[0].content).toBe("Hello");
-  });
-
-  it("should insert and retrieve handoffs_current", async () => {
-    await db.insert(handoffs_current).values({
-      id: "ho_1",
-      run_id: "run_1",
-      from_team_id: "team_1",
-      to_team_id: "team_2",
-      status: "pending",
-      payload: JSON.stringify({ task: "build UI" }),
-    });
-    const result = await db.select().from(handoffs_current).where(eq(handoffs_current.id, "ho_1"));
-    expect(result.length).toBe(1);
-    expect(result[0].from_team_id).toBe("team_1");
-  });
-
-  it("should insert and retrieve artifacts_current", async () => {
-    await db.insert(artifacts_current).values({
-      id: "art_1",
-      run_id: "run_1",
-      node_id: "node_1",
-      content: "artifact content",
-      version: 1,
-      provenance: "agent_1",
-    });
-    const result = await db.select().from(artifacts_current).where(eq(artifacts_current.id, "art_1"));
-    expect(result.length).toBe(1);
-    expect(result[0].version).toBe(1);
-  });
-
-  it("should insert and retrieve decisions_current with nullable fields", async () => {
-    await db.insert(decisions_current).values({
-      id: "dec_1",
-      run_id: "run_1",
-      proposal: "Use React",
-      status: "proposed",
-      challenger_id: null,
-      evidence: null,
-    });
-    const result = await db.select().from(decisions_current).where(eq(decisions_current.id, "dec_1"));
-    expect(result.length).toBe(1);
-    expect(result[0].proposal).toBe("Use React");
-    expect(result[0].challenger_id).toBeNull();
   });
 
   it("should insert and retrieve sync_outbox", async () => {

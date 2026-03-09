@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { detectConflict, resolveConflict, reconcile, type Conflict } from "../src/conflict";
+import { detectConflict, resolveConflict, reconcile, type Conflict } from "../src/orchestrator/sync/conflict";
 
 describe("Conflict Detection", () => {
   it("should detect a conflict when same run_id, stream_id, stream_seq but different ids", () => {
