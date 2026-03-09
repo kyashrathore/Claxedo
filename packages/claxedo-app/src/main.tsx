@@ -11,6 +11,7 @@ import { AppBaseProviders, AppInterface } from "@/app"
 import { PlatformProvider, type Platform } from "@opencode-ai/claxedo-app"
 import { initClaxedo, getDefaultConfig } from "./index"
 import { getAuthToken } from "./utils/auth-client"
+import { initPostHog, capture as phCapture } from "./opencode-patches/observability/posthog"
 import { isDemoMode, isEmbedMode } from "./utils/api"
 import { ConfigProvider } from "./context/config"
 import { Persist, resetDemoPersisted, setPersisted } from "./overrides/utils/persist"
@@ -18,6 +19,12 @@ import { Persist, resetDemoPersisted, setPersisted } from "./overrides/utils/per
 // Initialize cloud extensions before rendering
 const config = getDefaultConfig()
 initClaxedo(config)
+
+// Initialize PostHog analytics (no-ops if VITE_POSTHOG_KEY not set)
+if (!isDemoMode()) {
+  initPostHog()
+  phCapture("app_launched", { platform: "web", version: "cloud" })
+}
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {

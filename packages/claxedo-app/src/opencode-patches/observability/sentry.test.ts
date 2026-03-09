@@ -78,8 +78,8 @@ describe("sentry module", () => {
       expect(calls.init[0].dsn).toBe(expected)
     })
 
-    it("disables tracing (tracesSampleRate = 0)", () => {
-      expect(calls.init[0].tracesSampleRate).toBe(0)
+    it("enables tracing at 10% sample rate", () => {
+      expect(calls.init[0].tracesSampleRate).toBe(0.1)
     })
 
     it("captures all errors (sampleRate = 1.0)", () => {

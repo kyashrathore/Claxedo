@@ -1,5 +1,5 @@
 import { getExtensions } from "@opencode-ai/app-shared"
-import { DialogSettings } from "@opencode-ai/claxedo-app"
+import { DialogSettings } from "@/components/dialog-settings"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { getFilename } from "@opencode-ai/util/path"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -15,6 +15,7 @@ import { getAuthToken } from "../../utils/auth-client"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import type { ActionProps, Nav } from "./shared"
 import { findProjectForWorkspace, message } from "./shared"
+import { capture as phCapture } from "../../opencode-patches/observability/posthog"
 
 export function createProjectActions(props: ActionProps, nav: Nav) {
   const handleProjectSelect = (_project: ProjectItem) => {
@@ -286,6 +287,7 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
   }
 
   const handleDeleteWorkspace = (workspace: WorkspaceItem) => {
+    phCapture("workspace_delete_initiated", { is_cloud: workspace.isCloud, is_main: workspace.isMain })
     props.dialog.show(() => (
       <DialogDeleteWorkspace
         directory={workspace.directory}
@@ -312,6 +314,7 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
   }
 
   const handleRemoveProject = (project: ProjectItem) => {
+    phCapture("project_removed")
     const current = props.activeProjectId()
     props.layout.projects.close(project.worktree)
     if (current === project.worktree) {

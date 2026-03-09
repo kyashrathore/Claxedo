@@ -21,6 +21,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { useSDK } from "@/context/sdk"
 import { usePlatform } from "@/context/platform"
 import type { Process } from "../../opencode-patches/process/process"
+import { capture as phCapture } from "../../opencode-patches/observability/posthog"
 
 type ProcessConfig = Process.ProcessConfig
 
@@ -162,6 +163,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
           const err = await res.json().catch(() => ({}))
           throw new Error((err as any).error || "Failed to update process")
         }
+        phCapture("process_updated", { has_port: store.usePort, restart_policy: store.restartPolicy })
         showToast({ title: "Process updated", variant: "success", duration: 3000 })
       } else {
         // POST /process
@@ -174,6 +176,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
           const err = await res.json().catch(() => ({}))
           throw new Error((err as any).error || "Failed to create process")
         }
+        phCapture("process_created", { has_port: store.usePort, auto_start: store.autoStart, restart_policy: store.restartPolicy })
         showToast({ title: "Process created", variant: "success", duration: 3000 })
         // Notify parent to open the pane, then refresh to pick up the new config.
         // The SSE process.config.changed event also syncs configs, but calling
@@ -209,6 +212,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
         const err = await res.json().catch(() => ({}))
         throw new Error((err as any).error || "Failed to delete process")
       }
+      phCapture("process_deleted")
       showToast({ title: "Process removed", variant: "success", duration: 3000 })
       props.onDone?.()
       dialog.close()

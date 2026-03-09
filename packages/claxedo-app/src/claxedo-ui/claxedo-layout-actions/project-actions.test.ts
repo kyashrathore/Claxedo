@@ -11,7 +11,7 @@ beforeAll(async () => {
     getExtensions: () => ({ app: {} }),
   }))
 
-  mock.module("@opencode-ai/claxedo-app", () => ({
+  mock.module("@/components/dialog-settings", () => ({
     DialogSettings: () => null,
   }))
 
