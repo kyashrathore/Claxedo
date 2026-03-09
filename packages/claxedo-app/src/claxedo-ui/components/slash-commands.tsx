@@ -9,6 +9,7 @@ import { Extension, type Editor, type Range } from "@tiptap/core"
 import Suggestion, { type SuggestionOptions, type SuggestionProps, type SuggestionKeyDownProps } from "@tiptap/suggestion"
 import { createSignal, createEffect, For, Show } from "solid-js"
 import { render as solidRender } from "solid-js/web"
+import { capture as phCapture } from "../../opencode-patches/observability/posthog"
 
 // ── Command items ──────────────────────────────────────────────────────
 
@@ -594,6 +595,7 @@ export const SlashCommands = Extension.create({
         },
         render: createSuggestionRenderer,
         command: ({ editor, range, props }: { editor: Editor; range: Range; props: { item: SlashCommandItem } }) => {
+          phCapture("page_slash_command_used", { command_id: props.item.id, command_title: props.item.title })
           props.item.command({ editor, range })
         },
       } satisfies Partial<SuggestionOptions<SlashCommandItem>>,

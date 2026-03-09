@@ -816,7 +816,7 @@ describe("terminal pane isolation", () => {
     }
   })
 
-  test("closing a terminal tab clears pane and owner state", () => {
+  test("closing a terminal tab clears pane and owner state", async () => {
     const { api, dispose } = createTestLayout()
     try {
       const tabId = api.topTabs.addTerminal("/ws", "pty-1", "Terminal 1")
@@ -833,19 +833,22 @@ describe("terminal pane isolation", () => {
 
       api.topTabs.close(tabId)
 
-      // Terminal tab close immediately drops pane state in multiPane,
-      // and clears ownership/agent bookkeeping.
+      // Ownership/lifecycle bookkeeping is cleared synchronously.
+      expect(api.terminal.owner("pty-1")).toBeUndefined()
+      expect(api.terminal.lifecycle("pty-1")).toBe("closing")
+
+      // Multi-pane state (pane, focus, zoom) is cleaned up via queueMicrotask
+      // to avoid tearing down a still-rendered pane subtree from the close hook.
+      await new Promise<void>((resolve) => queueMicrotask(resolve))
       expect(api.terminal.pane(tabId)).toBeUndefined()
       expect(api.terminal.focus(tabId)).toBeUndefined()
       expect(api.terminal.zoom(tabId)).toBeUndefined()
-      expect(api.terminal.owner("pty-1")).toBeUndefined()
-      expect(api.terminal.lifecycle("pty-1")).toBe("closing")
     } finally {
       dispose()
     }
   })
 
-  test("closing terminal tab clears agent state even when owner link is missing", () => {
+  test("closing terminal tab clears agent state even when owner link is missing", async () => {
     const { api, dispose } = createTestLayout()
     try {
       const tabId = api.topTabs.addTerminal("/ws", "pty-1", "Terminal 1")
@@ -861,10 +864,13 @@ describe("terminal pane isolation", () => {
 
       api.topTabs.close(tabId)
 
-      // Pane is removed on close; agent state/lifecycle still clear correctly.
-      expect(api.terminal.pane(tabId)).toBeUndefined()
+      // Agent state/lifecycle are cleared synchronously.
       expect(api.terminal.agentStatus("pty-1")).toBe("idle")
       expect(api.terminal.lifecycle("pty-1")).toBe("closing")
+
+      // Multi-pane state (including pane) is cleaned up via queueMicrotask.
+      await new Promise<void>((resolve) => queueMicrotask(resolve))
+      expect(api.terminal.pane(tabId)).toBeUndefined()
     } finally {
       dispose()
     }

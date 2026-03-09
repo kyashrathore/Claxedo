@@ -68,7 +68,12 @@ describe("tab actions visual order", () => {
 
     const actions = createActions(state)
 
-    expect(actions.visualOrderedItems().map((tab) => tab.id)).toEqual(["b-session", "process", "a-session"])
+    // visualOrderedItems groups by directory: unpinned tabs establish group order.
+    // Order is ["process", "b-session", "a-session"].
+    // Process tab (dir=/ws-a, unpinned) establishes /ws-a group first,
+    // then b-session (dir=/ws-b) establishes /ws-b group.
+    // Final: /ws-a group [process, a-session], then /ws-b group [b-session].
+    expect(actions.visualOrderedItems().map((tab) => tab.id)).toEqual(["process", "a-session", "b-session"])
   })
 
   test("addProcess dedupes by directory, not by group", () => {

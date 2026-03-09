@@ -229,6 +229,12 @@ function createMockClaxedoLayout() {
         }
       },
     }),
+    findTabGroup: (_tabId: string): string | undefined => {
+      for (const g of groups) {
+        if (g.tabs.some((t) => t.id === _tabId)) return g.id
+      }
+      return undefined
+    },
     select: {
       visibleGroups: () => groups,
       multiPaneLeafView: () => [],

@@ -1,8 +1,10 @@
 import type { ActionProps } from "./shared"
 import { base64Encode } from "@opencode-ai/util/encode"
+import { capture as phCapture } from "../../opencode-patches/observability/posthog"
 
 export function createPageActions(props: ActionProps) {
   const handleNewPage = (groupId?: string) => {
+    phCapture("page_created")
     const targetGroupId = groupId ?? props.claxedo.split.focusedId()
     if (targetGroupId) props.claxedo.dispatch({ type: "SplitFocusRequested", groupId: targetGroupId })
 
