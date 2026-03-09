@@ -9,6 +9,7 @@ import { REVIEW_MODE_LABEL } from "../context/claxedo-layout/review-intent"
 import type { ReviewMode } from "../context/claxedo-layout/types"
 import type { ActionProps, Nav } from "./shared"
 import { findProjectForWorkspace, message } from "./shared"
+import { capture as phCapture } from "../../opencode-patches/observability/posthog"
 
 export function createSessionActions(props: ActionProps, nav: Nav) {
   const handleSessionSelect = (workspaceDir: string, sessionId: string) => {
@@ -128,6 +129,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
         session={session}
         onDelete={async (s) => {
           try {
+            phCapture("session_deleted")
             await props.globalSDK.client.session.delete({ directory: s.directory, sessionID: s.id })
             setStore(
               produce((draft: { session?: Session[] }) => {
@@ -161,6 +163,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     if (!session) return
 
     try {
+      phCapture("session_archived")
       await props.globalSDK.client.session.update({
         directory: session.directory,
         sessionID: session.id,

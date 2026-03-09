@@ -10,7 +10,7 @@ export function initSentry(): void {
     dsn: SENTRY_DSN,
     environment: process.env.SENTRY_ENVIRONMENT || "production",
     release: process.env.SENTRY_RELEASE || undefined,
-    tracesSampleRate: 0,
+    tracesSampleRate: 0.1,
     sampleRate: 1.0,
     serverName: process.env.SENTRY_SERVER_NAME || undefined,
     ignoreErrors: [

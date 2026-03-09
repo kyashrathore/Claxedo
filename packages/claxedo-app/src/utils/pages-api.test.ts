@@ -28,6 +28,19 @@ mock.module("./api", () => ({
     } as Response
   },
   getDefaultBaseUrl: () => "http://test.local",
+  // Include all api.ts exports so the mock doesn't strip them for other test
+  // files that import from the same resolved module (e.g. persist.test.ts).
+  isDemoMode: () => {
+    if (typeof window === "undefined") return false
+    const p = window.location.pathname
+    return p === "/demo" || p.startsWith("/demo/")
+  },
+  isDemoPath: (path: string) => path === "/demo" || path.startsWith("/demo/"),
+  isEmbedMode: () => {
+    if (typeof window === "undefined") return false
+    return new URLSearchParams(window.location.search).has("embed")
+  },
+  api: {},
 }))
 
 // Import AFTER mock registration — no dynamic import, no cache busting

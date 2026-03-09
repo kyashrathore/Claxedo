@@ -20,6 +20,7 @@ import { ClaxedoSplash } from "@claxedo/claxedo-ui/components/claxedo-logo"
 import { createSignal, Show, Accessor, JSX, createResource, onMount, onCleanup } from "solid-js"
 
 import { initClaxedo, getDefaultConfig, ConfigProvider, getAuthToken } from "@claxedo/index"
+import { initPostHog, capture as phCapture } from "../opencode-patches/observability/posthog"
 
 import { UPDATER_ENABLED } from "./updater"
 import { createMenu } from "./menu"
@@ -113,6 +114,10 @@ window.addEventListener(
 // Initialize Claxedo
 const config = getDefaultConfig()
 await initClaxedo(config)
+
+// Initialize PostHog analytics (no-ops if VITE_POSTHOG_KEY not set)
+initPostHog()
+phCapture("app_launched", { platform: "desktop", version: pkg.version, os: ostype() })
 
 // Floating UI can call getComputedStyle with non-elements (e.g., null refs, virtual elements).
 // This happens on all platforms (WebView2 on Windows, WKWebView on macOS), not just Windows.

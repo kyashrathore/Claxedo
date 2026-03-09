@@ -152,10 +152,6 @@ beforeAll(async () => {
     },
   }))
 
-  mock.module("../../../claxedo-ui/context/claxedo-layout/pane-intent", () => ({
-    paneMentionSystem: () => undefined,
-  }))
-
   const mod = await import("./submit")
   createPromptSubmit = mod.createPromptSubmit
 })

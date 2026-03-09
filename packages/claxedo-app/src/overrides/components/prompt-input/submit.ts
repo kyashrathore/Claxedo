@@ -18,6 +18,7 @@ import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "@/components/prompt-input/build-request-parts"
 import { setCursorPosition } from "@/components/prompt-input/editor-dom"
 import { isDemoMode } from "@claxedo/utils/api"
+import { capture as phCapture } from "../../../opencode-patches/observability/posthog"
 import { useSessionParams } from "../../../claxedo-ui/context/session-params"
 import { useClaxedoLayout } from "../../../claxedo-ui/context/claxedo-layout"
 import { paneMentionSystem } from "../../../claxedo-ui/context/claxedo-layout/pane-intent"
@@ -102,6 +103,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const sessionID = input.sessionID?.()
     if (!sessionID) return Promise.resolve()
 
+    phCapture("prompt_aborted")
     globalSync.todo.set(sessionID, [])
     const [, setStore] = globalSync.child(sdk.directory)
     setStore("todo", sessionID, [])
@@ -254,6 +256,23 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       providerID: currentModel.provider.id,
     }
     const agent = input.agent?.() || currentAgent.name
+
+    const groups = claxedoLayout?.split.groups() ?? []
+    const totalTabs = groups.reduce((sum, g) => sum + (claxedoLayout?.groupTabs(g.id).items().length ?? 0), 0)
+    phCapture("prompt_sent", {
+      mode,
+      agent,
+      model_id: model.modelID,
+      provider_id: model.providerID,
+      is_new_session: isNewSession,
+      has_images: images.length > 0,
+      image_count: images.length,
+      comment_count: input.commentCount(),
+      context_item_count: prompt.context.items().length,
+      active_panes: groups.length,
+      active_tabs: totalTabs,
+      split_active: (claxedoLayout?.split.active() ?? false),
+    })
     const variant = local.model.variant.current()
 
     const clearInput = () => {

@@ -11,6 +11,7 @@ import { useSettings, monoFontFamily } from "@/context/settings"
 import { playSound, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "@/components/link"
 import { getExtensions } from "@opencode-ai/app-shared"
+import { capture as phCapture } from "../../opencode-patches/observability/posthog"
 
 let demoSoundState = {
   cleanup: undefined as (() => void) | undefined,
@@ -50,6 +51,7 @@ export const SettingsGeneral: Component = () => {
   const check = () => {
     if (!platform.checkUpdate) return
     setStore("checking", true)
+    phCapture("update_checked")
 
     void platform
       .checkUpdate()
@@ -70,6 +72,7 @@ export const SettingsGeneral: Component = () => {
                 {
                   label: language.t("toast.update.action.installRestart"),
                   onClick: async () => {
+                    phCapture("update_installed", { version: result.version })
                     await platform.update!()
                     await platform.restart!()
                   },
@@ -160,7 +163,11 @@ export const SettingsGeneral: Component = () => {
                 current={languageOptions().find((o) => o.value === language.locale())}
                 value={(o) => o.value}
                 label={(o) => o.label}
-                onSelect={(option) => option && language.setLocale(option.value)}
+                onSelect={(option) => {
+                  if (!option) return
+                  phCapture("setting_changed", { setting: "language", value: option.value })
+                  language.setLocale(option.value)
+                }}
                 variant="secondary"
                 size="small"
                 triggerVariant="settings"
@@ -177,7 +184,11 @@ export const SettingsGeneral: Component = () => {
                 current={colorSchemeOptions().find((o) => o.value === theme.colorScheme())}
                 value={(o) => o.value}
                 label={(o) => o.label}
-                onSelect={(option) => option && theme.setColorScheme(option.value)}
+                onSelect={(option) => {
+                  if (!option) return
+                  phCapture("setting_changed", { setting: "color_scheme", value: option.value })
+                  theme.setColorScheme(option.value)
+                }}
                 onHighlight={(option) => {
                   if (!option) return
                   theme.previewColorScheme(option.value)
@@ -206,6 +217,7 @@ export const SettingsGeneral: Component = () => {
                 label={(o) => o.name}
                 onSelect={(option) => {
                   if (!option) return
+                  phCapture("setting_changed", { setting: "theme", value: option.id })
                   theme.setTheme(option.id)
                 }}
                 onHighlight={(option) => {
@@ -229,7 +241,11 @@ export const SettingsGeneral: Component = () => {
                 current={fontOptionsList.find((o) => o.value === settings.appearance.font())}
                 value={(o) => o.value}
                 label={(o) => language.t(o.label)}
-                onSelect={(option) => option && settings.appearance.setFont(option.value)}
+                onSelect={(option) => {
+                  if (!option) return
+                  phCapture("setting_changed", { setting: "font", value: option.value })
+                  settings.appearance.setFont(option.value)
+                }}
                 variant="secondary"
                 size="small"
                 triggerVariant="settings"
@@ -257,7 +273,10 @@ export const SettingsGeneral: Component = () => {
               <div data-action="settings-notifications-agent">
                 <Switch
                   checked={settings.notifications.agent()}
-                  onChange={(checked) => settings.notifications.setAgent(checked)}
+                  onChange={(checked) => {
+                    phCapture("setting_changed", { setting: "notification_agent", value: checked })
+                    settings.notifications.setAgent(checked)
+                  }}
                 />
               </div>
             </SettingsRow>
@@ -269,7 +288,10 @@ export const SettingsGeneral: Component = () => {
               <div data-action="settings-notifications-permissions">
                 <Switch
                   checked={settings.notifications.permissions()}
-                  onChange={(checked) => settings.notifications.setPermissions(checked)}
+                  onChange={(checked) => {
+                    phCapture("setting_changed", { setting: "notification_permissions", value: checked })
+                    settings.notifications.setPermissions(checked)
+                  }}
                 />
               </div>
             </SettingsRow>
@@ -281,7 +303,10 @@ export const SettingsGeneral: Component = () => {
               <div data-action="settings-notifications-errors">
                 <Switch
                   checked={settings.notifications.errors()}
-                  onChange={(checked) => settings.notifications.setErrors(checked)}
+                  onChange={(checked) => {
+                    phCapture("setting_changed", { setting: "notification_errors", value: checked })
+                    settings.notifications.setErrors(checked)
+                  }}
                 />
               </div>
             </SettingsRow>
@@ -309,6 +334,7 @@ export const SettingsGeneral: Component = () => {
                 }}
                 onSelect={(option) => {
                   if (!option) return
+                  phCapture("setting_changed", { setting: "sound_agent", value: option.id })
                   settings.sounds.setAgent(option.id)
                   playDemoSound(option.src)
                 }}
@@ -334,6 +360,7 @@ export const SettingsGeneral: Component = () => {
                 }}
                 onSelect={(option) => {
                   if (!option) return
+                  phCapture("setting_changed", { setting: "sound_permissions", value: option.id })
                   settings.sounds.setPermissions(option.id)
                   playDemoSound(option.src)
                 }}
@@ -359,6 +386,7 @@ export const SettingsGeneral: Component = () => {
                 }}
                 onSelect={(option) => {
                   if (!option) return
+                  phCapture("setting_changed", { setting: "sound_errors", value: option.id })
                   settings.sounds.setErrors(option.id)
                   playDemoSound(option.src)
                 }}

@@ -10,7 +10,7 @@
  */
 
 import "./claxedo-layout.css"
-import { createSignal, createMemo, createEffect, on, Show, type ParentProps } from "solid-js"
+import { createSignal, createMemo, createEffect, on, onCleanup, Show, type ParentProps } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
 import type { Session } from "@opencode-ai/sdk/v2"
 import {
@@ -33,6 +33,7 @@ import { useClaxedoLayout, ClaxedoLayoutProvider } from "./context/claxedo-layou
 import { useCommand } from "@/context/command"
 import { useConfigOptional } from "../context/config"
 import { createDebugLogger } from "../overrides/utils/debug"
+import { capture as phCapture } from "../opencode-patches/observability/posthog"
 import { createClaxedoLayoutActions } from "./claxedo-layout-actions"
 import { createRouteIntentAdapter } from "./context/claxedo-layout/route-intent"
 import { buildTabContextSnapshot, createTabContextSyncAdapter } from "./context/claxedo-layout/tab-context-sync"
@@ -176,10 +177,41 @@ function ClaxedoLayoutContent(props: ParentProps) {
   const flowDebug = createDebugLogger("terminal.flow", "terminal:flow", {
     legacyKey: "opencode.debug.terminal",
   })
-  const flowLog = (...args: unknown[]) => flowDebug.log(...args)
+  const flowLog = (...args: unknown[]) => {
+    flowDebug.log(...args)
+    if (typeof args[0] === "string") {
+      const eventName = args[0].replace(/\s+/g, "_")
+      const props = args[1] && typeof args[1] === "object" ? (args[1] as Record<string, unknown>) : undefined
+      phCapture(eventName, props)
+    }
+  }
   const syncDebug = createDebugLogger("layout.tab-sync", "layout:tab-sync", {
     legacyKey: "opencode.debug.terminal",
   })
+
+  // Capture app state snapshot shortly after layout mount
+  const snapshotTimer = setTimeout(() => {
+    const groups = claxedo.split.groups()
+    const tabTypes: Record<string, number> = {}
+    let totalTabs = 0
+    for (const g of groups) {
+      for (const tab of claxedo.groupTabs(g.id).items()) {
+        tabTypes[tab.type] = (tabTypes[tab.type] ?? 0) + 1
+        totalTabs++
+      }
+    }
+    phCapture("app_state_snapshot", {
+      project_count: layout.projects.list().length,
+      active_groups: groups.length,
+      active_tabs: totalTabs,
+      split_active: claxedo.split.active(),
+      tab_types: tabTypes,
+      platform: platform.platform,
+      os: platform.os,
+      version: platform.version,
+    })
+  }, 3000)
+  onCleanup(() => clearTimeout(snapshotTimer))
 
   // Register process pane command
   command.register(() => [
@@ -188,7 +220,10 @@ function ClaxedoLayoutContent(props: ParentProps) {
       title: "Toggle Process Pane",
       category: "View",
       keybind: "mod+shift+;",
-      onSelect: () => claxedo.processPane.requestToggle(),
+      onSelect: () => {
+        phCapture("process_pane_toggled")
+        claxedo.processPane.requestToggle()
+      },
     },
   ])
 
