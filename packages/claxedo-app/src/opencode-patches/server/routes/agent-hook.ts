@@ -14,10 +14,8 @@ import { Pty } from "@/pty"
 import { Log } from "@/util/log"
 import { lazy } from "@/util/lazy"
 import { setupAgentHooks, getTerminalEnvVars, isSetupComplete, listWrapperAgents } from "@/agent-hooks"
-import { Database } from "bun:sqlite"
-import { homedir } from "node:os"
-import path from "node:path"
-import { mkdirSync } from "node:fs"
+import { ClaxedoDB } from "@/storage/claxedo-db"
+import { migrateTabContext } from "@/storage/claxedo-migrate-legacy"
 import z from "zod"
 
 const log = Log.create({ service: "agent-hook" })
@@ -140,54 +138,10 @@ const TAB_CONTEXT_TTL_MS = positive(process.env.CLAXEDO_TAB_CONTEXT_TTL_MS, 30 *
 const TAB_CONTEXT_MAX = positive(process.env.CLAXEDO_TAB_CONTEXT_MAX, 600)
 const TERMINAL_SESSION_TTL_MS = positive(process.env.CLAXEDO_TERMINAL_SESSION_TTL_MS, TAB_CONTEXT_TTL_MS)
 
-const dataDir = process.env.CLAXEDO_DATA_DIR || path.join(homedir(), ".claxedo")
-
-const tabContextDB = lazy(() => {
-  mkdirSync(dataDir, { recursive: true })
-  const db = new Database(path.join(dataDir, "tab-context.db"))
-  db.exec("PRAGMA journal_mode=WAL")
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS tab_context (
-      tab_id TEXT PRIMARY KEY,
-      payload TEXT NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_tab_context_updated ON tab_context(updated_at DESC);
-    CREATE TABLE IF NOT EXISTS tab_context_terminal (
-      terminal_id TEXT PRIMARY KEY,
-      tab_id TEXT NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_tab_context_terminal_tab ON tab_context_terminal(tab_id);
-    CREATE TABLE IF NOT EXISTS terminal_session (
-      terminal_id TEXT PRIMARY KEY,
-      tab_id TEXT,
-      workspace_id TEXT,
-      provider TEXT,
-      session_id TEXT,
-      transcript_path TEXT,
-      ref_name TEXT,
-      prompt TEXT,
-      last_assistant_message TEXT,
-      event_type TEXT,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_terminal_session_tab ON terminal_session(tab_id);
-    CREATE INDEX IF NOT EXISTS idx_terminal_session_updated ON terminal_session(updated_at DESC);
-  `)
-  const sessionColumns = db.query("PRAGMA table_info(terminal_session)").all() as Array<{ name?: unknown }>
-  const sessionColumnSet = new Set(sessionColumns.map((column) => clean(column.name)))
-  if (!sessionColumnSet.has("prompt")) {
-    db.exec("ALTER TABLE terminal_session ADD COLUMN prompt TEXT")
-  }
-  if (!sessionColumnSet.has("ref_name")) {
-    db.exec("ALTER TABLE terminal_session ADD COLUMN ref_name TEXT")
-  }
-  if (!sessionColumnSet.has("last_assistant_message")) {
-    db.exec("ALTER TABLE terminal_session ADD COLUMN last_assistant_message TEXT")
-  }
-  return db
-})
+function db() {
+  migrateTabContext() // runs once, idempotent
+  return ClaxedoDB.raw()
+}
 
 const tabContexts = new Map<string, TabContextPayload & { updatedAt: number }>()
 const terminalToTab = new Map<string, string>()
@@ -216,13 +170,13 @@ const pruneTabContexts = () => {
 
 const prunePersistentTabContexts = (now = Date.now()) => {
   const cutoff = now - TAB_CONTEXT_TTL_MS
-  const db = tabContextDB()
-  db.query("DELETE FROM tab_context WHERE updated_at < ?").run(cutoff)
-  db.query("DELETE FROM tab_context_terminal WHERE updated_at < ?").run(cutoff)
-  db.query(
-    "DELETE FROM tab_context WHERE tab_id IN (SELECT tab_id FROM tab_context ORDER BY updated_at DESC LIMIT -1 OFFSET ?)",
+  const raw = db()
+  raw.query("DELETE FROM claxedo_tab_context WHERE updated_at < ?").run(cutoff)
+  raw.query("DELETE FROM claxedo_tab_context_terminal WHERE updated_at < ?").run(cutoff)
+  raw.query(
+    "DELETE FROM claxedo_tab_context WHERE tab_id IN (SELECT tab_id FROM claxedo_tab_context ORDER BY updated_at DESC LIMIT -1 OFFSET ?)",
   ).run(TAB_CONTEXT_MAX)
-  db.query("DELETE FROM tab_context_terminal WHERE tab_id NOT IN (SELECT tab_id FROM tab_context)").run()
+  raw.query("DELETE FROM claxedo_tab_context_terminal WHERE tab_id NOT IN (SELECT tab_id FROM claxedo_tab_context)").run()
 }
 
 const terminalIdsForContext = (context: TabContextPayload) => {
@@ -252,21 +206,21 @@ const parseContextPayload = (payload: string) => {
 }
 
 const persistContext = (context: TabContextPayload & { updatedAt: number }) => {
-  const db = tabContextDB()
-  db.query(
-    "INSERT INTO tab_context (tab_id, payload, updated_at) VALUES (?, ?, ?) ON CONFLICT(tab_id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
+  const raw = db()
+  raw.query(
+    "INSERT INTO claxedo_tab_context (tab_id, payload, updated_at) VALUES (?, ?, ?) ON CONFLICT(tab_id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
   ).run(context.tabId, JSON.stringify(context), context.updatedAt)
-  db.query("DELETE FROM tab_context_terminal WHERE tab_id = ?").run(context.tabId)
+  raw.query("DELETE FROM claxedo_tab_context_terminal WHERE tab_id = ?").run(context.tabId)
   for (const terminalId of terminalIdsForContext(context)) {
-    db.query(
-      "INSERT INTO tab_context_terminal (terminal_id, tab_id, updated_at) VALUES (?, ?, ?) ON CONFLICT(terminal_id) DO UPDATE SET tab_id=excluded.tab_id, updated_at=excluded.updated_at",
+    raw.query(
+      "INSERT INTO claxedo_tab_context_terminal (terminal_id, tab_id, updated_at) VALUES (?, ?, ?) ON CONFLICT(terminal_id) DO UPDATE SET tab_id=excluded.tab_id, updated_at=excluded.updated_at",
     ).run(terminalId, context.tabId, context.updatedAt)
   }
   prunePersistentTabContexts(context.updatedAt)
 }
 
 const loadContextByTab = (tabId: string) => {
-  const row = tabContextDB().query("SELECT payload FROM tab_context WHERE tab_id = ?").get(tabId) as
+  const row = db().query("SELECT payload FROM claxedo_tab_context WHERE tab_id = ?").get(tabId) as
     | { payload?: string }
     | undefined
   const payload = clean(row?.payload)
@@ -275,9 +229,9 @@ const loadContextByTab = (tabId: string) => {
 }
 
 const loadContextByTerminal = (terminalId: string) => {
-  const row = tabContextDB()
+  const row = db()
     .query(
-      "SELECT t.payload FROM tab_context_terminal m JOIN tab_context t ON t.tab_id = m.tab_id WHERE m.terminal_id = ? LIMIT 1",
+      "SELECT t.payload FROM claxedo_tab_context_terminal m JOIN claxedo_tab_context t ON t.tab_id = m.tab_id WHERE m.terminal_id = ? LIMIT 1",
     )
     .get(terminalId) as { payload?: string } | undefined
   const payload = clean(row?.payload)
@@ -494,7 +448,7 @@ const pruneTerminalSessions = () => {
 
 const prunePersistentTerminalSessions = (now = Date.now()) => {
   const cutoff = now - TERMINAL_SESSION_TTL_MS
-  tabContextDB().query("DELETE FROM terminal_session WHERE updated_at < ?").run(cutoff)
+  db().query("DELETE FROM claxedo_terminal_session WHERE updated_at < ?").run(cutoff)
 }
 
 const rememberTerminalSession = (session: TerminalSessionPayload) => {
@@ -502,9 +456,9 @@ const rememberTerminalSession = (session: TerminalSessionPayload) => {
 }
 
 const persistTerminalSession = (session: TerminalSessionPayload) => {
-  tabContextDB()
+  db()
     .query(`
-      INSERT INTO terminal_session
+      INSERT INTO claxedo_terminal_session
         (terminal_id, tab_id, workspace_id, provider, session_id,
          transcript_path, ref_name, prompt, last_assistant_message,
          event_type, updated_at)
@@ -538,9 +492,9 @@ const persistTerminalSession = (session: TerminalSessionPayload) => {
 }
 
 const loadTerminalSession = (terminalId: string) => {
-  const row = tabContextDB()
+  const row = db()
     .query(
-      "SELECT terminal_id, tab_id, workspace_id, provider, session_id, transcript_path, ref_name, prompt, last_assistant_message, event_type, updated_at FROM terminal_session WHERE terminal_id = ? LIMIT 1",
+      "SELECT terminal_id, tab_id, workspace_id, provider, session_id, transcript_path, ref_name, prompt, last_assistant_message, event_type, updated_at FROM claxedo_terminal_session WHERE terminal_id = ? LIMIT 1",
     )
     .get(terminalId) as
     | {

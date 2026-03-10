@@ -222,8 +222,8 @@ export function PageArenaDock(props: PageArenaDockProps) {
     sendAbort = new AbortController()
     try {
       const page_context = await pagesApi
-        .exportMarkdownRaw(props.pageId)
-        .then((value) => value.trim())
+        .get(props.pageId)
+        .then((page) => (page.content || "").trim())
         .then((value) => (value.length <= pageContextMax ? value : `${value.slice(0, pageContextMax - 1)}…`))
         .catch(() => "")
       const res = await pagesApi.arenaMessage(

@@ -1,12 +1,12 @@
 import { Hono } from "hono"
 import { lazy } from "@/util/lazy"
-import { Database } from "bun:sqlite"
-import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
+import { readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { Instance } from "@/project/instance"
-import { PageArenaRoutes } from "./pages-arena"
+import { PageArenaRoutes, clean, id } from "./pages-arena"
+import { ClaxedoDB, eq, and, desc, inArray } from "@/storage/claxedo-db"
+import { ClaxedoPageTable, ClaxedoPageStatusTable } from "@/storage/claxedo/schema"
+import { migratePages } from "@/storage/claxedo-migrate-legacy"
 
 type Page = {
   id: string
@@ -14,6 +14,8 @@ type Page = {
   content: string
   status: string
   session_id: string | null
+  file_path: string | null
+  directory: string | null
   created_at: string
   updated_at: string
 }
@@ -25,23 +27,7 @@ type PageStatusDef = {
   position: number
   transitions: string
 }
-type MarkdownMeta = {
-  page_id?: string
-  updated_at?: string
-  doc_hash?: string
-  md_export_hash?: string
-  md_export_base_doc_hash?: string
-  derived_markdown?: boolean
-}
 
-/** Resolve a writable base directory for pages data. Falls back to $HOME when Instance.directory is "/" (desktop sidecar with no workspace). */
-function pagesBaseDir() {
-  const dir = Instance.directory
-  return dir && dir !== "/" ? dir : homedir()
-}
-
-const pageMirrorRoot = process.env.PAGES_FILE_ROOT || ".claxedo/pages"
-const pageMdAutoImport = clean(process.env.PAGES_MD_AUTO_IMPORT || "1") !== "0"
 const DEFAULT_STATUSES: Array<{ id: string; name: string; color: string; position: number; transitions: string[] }> = [
   { id: "draft", name: "Draft", color: "#6b7280", position: 0, transitions: ["in_review", "in_progress"] },
   { id: "in_review", name: "In Review", color: "#f59e0b", position: 1, transitions: ["in_progress", "draft"] },
@@ -49,97 +35,150 @@ const DEFAULT_STATUSES: Array<{ id: string; name: string; color: string; positio
   { id: "done", name: "Done", color: "#22c55e", position: 3, transitions: ["archived", "in_progress"] },
   { id: "archived", name: "Archived", color: "#9ca3af", position: 4, transitions: ["draft"] },
 ]
-const db = lazy(() => {
-  // Use Instance.directory so the pages DB lives inside the workspace (persistent)
-  // instead of process.cwd() which may be an ephemeral temp directory.
-  const dataDir = process.env.CLAXEDO_DATA_DIR || path.join(pagesBaseDir(), ".claxedo")
-  mkdirSync(dataDir, { recursive: true })
-  const database = new Database(path.join(dataDir, "pages.db"))
-  database.exec("PRAGMA journal_mode=WAL")
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS pages (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL DEFAULT 'Untitled',
-      content TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `)
 
-  // Migration: add status column to existing pages table
-  const columns = database.query("PRAGMA table_info(pages)").all() as Array<{ name: string }>
-  if (!columns.some((col) => col.name === "status")) {
-    database.exec("ALTER TABLE pages ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'")
-  }
-
-  // Migration: add session_id column to existing pages table
-  if (!columns.some((col) => col.name === "session_id")) {
-    database.exec("ALTER TABLE pages ADD COLUMN session_id TEXT DEFAULT NULL")
-  }
-
-  // Status definitions table
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS page_statuses (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      color TEXT NOT NULL DEFAULT '#6b7280',
-      position INTEGER NOT NULL DEFAULT 0,
-      transitions TEXT NOT NULL DEFAULT '[]'
-    )
-  `)
-
-  // Seed defaults if empty
-  const count = database.query("SELECT COUNT(*) as c FROM page_statuses").get() as { c: number }
-  if (count.c === 0) {
-    const insert = database.prepare("INSERT INTO page_statuses (id, name, color, position, transitions) VALUES (?, ?, ?, ?, ?)")
-    for (const s of DEFAULT_STATUSES) {
-      insert.run(s.id, s.name, s.color, s.position, JSON.stringify(s.transitions))
-    }
-  }
-
-  return database
-})
-
-function clean(value: unknown) {
-  if (typeof value !== "string") return ""
-  return value.trim()
+function projectId() {
+  return Instance.project.id
 }
 
+const seededProjects = new Set<string>()
+
+function ensureProject() {
+  const pid = projectId()
+  migratePages(pid)
+  seedDefaultStatuses(pid)
+}
+
+function seedDefaultStatuses(pid: string) {
+  if (seededProjects.has(pid)) return
+
+  const count = ClaxedoDB.use((db) =>
+    db
+      .select({ id: ClaxedoPageStatusTable.id })
+      .from(ClaxedoPageStatusTable)
+      .where(eq(ClaxedoPageStatusTable.project_id, pid))
+      .limit(1)
+      .all(),
+  )
+  if (count.length > 0) {
+    seededProjects.add(pid)
+    return
+  }
+
+  ClaxedoDB.use((db) => {
+    for (const s of DEFAULT_STATUSES) {
+      db.insert(ClaxedoPageStatusTable)
+        .values({
+          id: s.id,
+          project_id: pid,
+          name: s.name,
+          color: s.color,
+          position: s.position,
+          transitions: JSON.stringify(s.transitions),
+        })
+        .run()
+    }
+  })
+  seededProjects.add(pid)
+}
+
+// ── File-backed page helpers ──
+
+/** Resolve the absolute path for a file-backed page. */
+function resolveFilePath(page: { file_path: string | null; directory: string | null }): string | null {
+  if (!page.file_path) return null
+  if (path.isAbsolute(page.file_path)) return page.file_path
+  if (!page.directory) return null
+  return path.resolve(page.directory, page.file_path)
+}
+
+/** Read markdown from a file-backed page and convert to doc JSON. */
+function readFileContent(page: { file_path: string | null; directory: string | null }): string {
+  const fullPath = resolveFilePath(page)
+  if (!fullPath) return ""
+  try {
+    const markdown = readFileSync(fullPath, "utf-8")
+    const doc = markdownToDoc(markdown)
+    return JSON.stringify(doc)
+  } catch {
+    return ""
+  }
+}
+
+/** Write doc JSON content back to the backing markdown file. */
+function writeFileContent(page: { file_path: string | null; directory: string | null }, content: string) {
+  const fullPath = resolveFilePath(page)
+  if (!fullPath) return
+  const { markdown } = markdownFromContent(content)
+  writeFileSync(fullPath, markdown + "\n")
+}
+
+// ── CRUD ──
+
 function listPages(): Page[] {
-  return db().query("SELECT id, title, content, status, session_id, created_at, updated_at FROM pages ORDER BY updated_at DESC").all() as Page[]
+  ensureProject()
+  return ClaxedoDB.use((db) =>
+    db
+      .select()
+      .from(ClaxedoPageTable)
+      .where(eq(ClaxedoPageTable.project_id, projectId()))
+      .orderBy(desc(ClaxedoPageTable.updated_at))
+      .all(),
+  )
 }
 
 function getPage(id: string): Page | undefined {
-  return db().query("SELECT id, title, content, status, session_id, created_at, updated_at FROM pages WHERE id = ?").get(id) as Page | undefined
+  ensureProject()
+  const row = ClaxedoDB.use((db) =>
+    db
+      .select()
+      .from(ClaxedoPageTable)
+      .where(and(eq(ClaxedoPageTable.id, id), eq(ClaxedoPageTable.project_id, projectId())))
+      .get(),
+  )
+  if (!row) return undefined
+  // For file-backed pages, read content from the file
+  if (row.file_path) {
+    return { ...row, content: readFileContent(row) }
+  }
+  return row
 }
 
-function createPage(title?: string, content?: string, status?: string): Page {
-  const page: Page = {
-    id: generateId(),
+function createPage(title?: string, opts?: { content?: string; status?: string; file_path?: string; directory?: string }): Page {
+  ensureProject()
+  const page: Page & { project_id: string } = {
+    id: id("page"),
+    project_id: projectId(),
     title: clean(title) || "Untitled",
-    content: typeof content === "string" ? content : "",
-    status: clean(status) || "draft",
+    content: opts?.file_path ? "" : (opts?.content ?? ""),
+    status: clean(opts?.status) || "draft",
     session_id: null,
+    file_path: opts?.file_path || null,
+    directory: opts?.directory || null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
-  db().query("INSERT INTO pages (id, title, content, status, session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
-    page.id,
-    page.title,
-    page.content,
-    page.status,
-    page.session_id,
-    page.created_at,
-    page.updated_at,
-  )
+  ClaxedoDB.use((db) => db.insert(ClaxedoPageTable).values(page).run())
+  // For file-backed pages, return with file content
+  if (page.file_path) {
+    return { ...page, content: readFileContent(page) }
+  }
   return page
 }
 
 function listStatuses(): PageStatusDef[] {
-  return db().query("SELECT id, name, color, position, transitions FROM page_statuses ORDER BY position ASC").all() as PageStatusDef[]
+  ensureProject()
+  return ClaxedoDB.use((db) =>
+    db
+      .select()
+      .from(ClaxedoPageStatusTable)
+      .where(eq(ClaxedoPageStatusTable.project_id, projectId()))
+      .orderBy(ClaxedoPageStatusTable.position)
+      .all(),
+  )
 }
 
 function saveStatuses(statuses: Array<{ id: string; name: string; color: string; position: number; transitions: string[] }>): PageStatusDef[] {
+  ensureProject()
   const ids = statuses.map((s) => s.id)
   if (new Set(ids).size !== ids.length) throw new Error("Duplicate status IDs")
   for (const s of statuses) {
@@ -148,21 +187,41 @@ function saveStatuses(statuses: Array<{ id: string; name: string; color: string;
     }
   }
 
-  const database = db()
-  // Find removed statuses and reassign their pages to first status
+  const pid = projectId()
+
   const existing = listStatuses()
   const removedIds = existing.map((s) => s.id).filter((id) => !ids.includes(id))
   const fallbackStatus = statuses.length > 0 ? statuses.reduce((a, b) => (a.position < b.position ? a : b)).id : "draft"
-  if (removedIds.length) {
-    const placeholders = removedIds.map(() => "?").join(",")
-    database.query(`UPDATE pages SET status = ? WHERE status IN (${placeholders})`).run(fallbackStatus, ...removedIds)
-  }
 
-  database.exec("DELETE FROM page_statuses")
-  const insert = database.prepare("INSERT INTO page_statuses (id, name, color, position, transitions) VALUES (?, ?, ?, ?, ?)")
-  for (const s of statuses) {
-    insert.run(s.id, s.name, s.color, s.position, JSON.stringify(s.transitions))
-  }
+  ClaxedoDB.transaction((db) => {
+    if (removedIds.length) {
+      db.update(ClaxedoPageTable)
+        .set({ status: fallbackStatus, updated_at: new Date().toISOString() })
+        .where(
+          and(
+            eq(ClaxedoPageTable.project_id, pid),
+            inArray(ClaxedoPageTable.status, removedIds),
+          ),
+        )
+        .run()
+    }
+
+    db.delete(ClaxedoPageStatusTable).where(eq(ClaxedoPageStatusTable.project_id, pid)).run()
+
+    for (const s of statuses) {
+      db.insert(ClaxedoPageStatusTable)
+        .values({
+          id: s.id,
+          project_id: pid,
+          name: s.name,
+          color: s.color,
+          position: s.position,
+          transitions: JSON.stringify(s.transitions),
+        })
+        .run()
+    }
+  })
+
   return listStatuses()
 }
 
@@ -182,42 +241,85 @@ function transitionPageStatus(pageId: string, targetStatus: string): { page?: Pa
     }
   }
 
-  db().query("UPDATE pages SET status = ?, updated_at = ? WHERE id = ?").run(targetStatus, new Date().toISOString(), pageId)
-  return { page: getPage(pageId) }
+  const now = new Date().toISOString()
+  ClaxedoDB.use((db) =>
+    db
+      .update(ClaxedoPageTable)
+      .set({ status: targetStatus, updated_at: now })
+      .where(and(eq(ClaxedoPageTable.id, pageId), eq(ClaxedoPageTable.project_id, projectId())))
+      .run(),
+  )
+  return { page: { ...page, status: targetStatus, updated_at: now } }
+}
+
+function getPageRow(id: string) {
+  ensureProject()
+  return ClaxedoDB.use((db) =>
+    db
+      .select()
+      .from(ClaxedoPageTable)
+      .where(and(eq(ClaxedoPageTable.id, id), eq(ClaxedoPageTable.project_id, projectId())))
+      .get(),
+  )
 }
 
 function updatePage(id: string, patch: { title?: string; content?: string }): Page | undefined {
-  const existing = getPage(id)
-  if (!existing) return undefined
-  const next: Page = {
-    ...existing,
-    title: patch.title !== undefined ? patch.title : existing.title,
-    content: patch.content !== undefined ? patch.content : existing.content,
-    updated_at: new Date().toISOString(),
+  // Use raw DB row to avoid unnecessary file I/O from getPage()
+  const row = getPageRow(id)
+  if (!row) return undefined
+
+  const now = new Date().toISOString()
+
+  if (row.file_path) {
+    // File-backed: write content to file, only store metadata in DB
+    if (patch.content !== undefined) {
+      writeFileContent(row, patch.content)
+    }
+    const dbPatch: Record<string, string> = { updated_at: now }
+    if (patch.title !== undefined) dbPatch.title = patch.title
+    ClaxedoDB.use((db) =>
+      db
+        .update(ClaxedoPageTable)
+        .set(dbPatch)
+        .where(and(eq(ClaxedoPageTable.id, id), eq(ClaxedoPageTable.project_id, projectId())))
+        .run(),
+    )
+    return {
+      ...row,
+      title: patch.title !== undefined ? patch.title : row.title,
+      content: patch.content !== undefined ? patch.content : readFileContent(row),
+      updated_at: now,
+    }
   }
-  db().query("UPDATE pages SET title = ?, content = ?, updated_at = ? WHERE id = ?").run(
-    next.title,
-    next.content,
-    next.updated_at,
-    id,
+
+  // DB-backed: store everything in DB
+  const next: Page = {
+    ...row,
+    title: patch.title !== undefined ? patch.title : row.title,
+    content: patch.content !== undefined ? patch.content : row.content,
+    updated_at: now,
+  }
+  ClaxedoDB.use((db) =>
+    db
+      .update(ClaxedoPageTable)
+      .set({ title: next.title, content: next.content, updated_at: next.updated_at })
+      .where(and(eq(ClaxedoPageTable.id, id), eq(ClaxedoPageTable.project_id, projectId())))
+      .run(),
   )
   return next
 }
 
 function deletePage(id: string): boolean {
-  const result = db().query("DELETE FROM pages WHERE id = ?").run(id)
+  const result = ClaxedoDB.use((db) =>
+    db
+      .delete(ClaxedoPageTable)
+      .where(and(eq(ClaxedoPageTable.id, id), eq(ClaxedoPageTable.project_id, projectId())))
+      .run(),
+  )
   return result.changes > 0
 }
 
-function sha256(value: string) {
-  return createHash("sha256").update(value).digest("hex")
-}
-
-function mirrorDir() {
-  const root = path.isAbsolute(pageMirrorRoot) ? pageMirrorRoot : path.join(pagesBaseDir(), pageMirrorRoot)
-  mkdirSync(root, { recursive: true })
-  return root
-}
+// ── Markdown ↔ Doc conversion ──
 
 function parseContent(content: string) {
   const value = content.trim()
@@ -343,110 +445,6 @@ function markdownFromContent(content: string) {
     markdown: lines.join("\n\n").trimEnd(),
     derived: true,
   }
-}
-
-function mirrorPaths(id: string) {
-  const root = mirrorDir()
-  return {
-    json: path.join(root, `${id}.page.json`),
-    markdown: path.join(root, `${id}.md`),
-    meta: path.join(root, `${id}.md.meta.json`),
-  }
-}
-
-function buildMirror(page: Page) {
-  const parsed = parseContent(page.content)
-  const exported = markdownFromContent(page.content)
-  const json = {
-    version: 1,
-    id: page.id,
-    title: page.title,
-    created_at: page.created_at,
-    updated_at: page.updated_at,
-    content: page.content,
-    doc: parsed && typeof parsed === "object" ? parsed : undefined,
-  }
-  const docHash = sha256(page.content)
-  const provenance = `<!-- claxedo: page_id=${page.id} updated_at=${page.updated_at} doc_hash=${docHash} derived_markdown=${exported.derived ? "1" : "0"} -->`
-  const markdownBody = exported.markdown || ""
-  const markdown = markdownBody ? `${provenance}\n\n${markdownBody}\n` : `${provenance}\n`
-  const mdHash = sha256(markdown)
-  const meta = {
-    page_id: page.id,
-    updated_at: page.updated_at,
-    doc_hash: docHash,
-    md_export_hash: mdHash,
-    md_export_base_doc_hash: docHash,
-    derived_markdown: exported.derived,
-  }
-  return { json, markdown, meta }
-}
-
-function writeMirror(page: Page) {
-  const paths = mirrorPaths(page.id)
-  const next = buildMirror(page)
-  writeFileSync(paths.json, JSON.stringify(next.json, null, 2))
-  writeFileSync(paths.markdown, next.markdown)
-  writeFileSync(paths.meta, JSON.stringify(next.meta, null, 2))
-}
-
-function removeMirror(id: string) {
-  const paths = mirrorPaths(id)
-  rmSync(paths.json, { force: true })
-  rmSync(paths.markdown, { force: true })
-  rmSync(paths.meta, { force: true })
-}
-
-function stripProvenance(markdown: string) {
-  return markdown.replace(/^<!--\s*claxedo:[^\n]*-->\s*\n?/i, "")
-}
-
-function parseProvenance(markdown: string): MarkdownMeta {
-  const match = /^\s*<!--\s*claxedo:\s*([^\n>]*)-->/i.exec(markdown)
-  if (!match?.[1]) return {}
-  const values = match[1].trim().split(/\s+/)
-  const meta: MarkdownMeta = {}
-  values.forEach((entry) => {
-    const idx = entry.indexOf("=")
-    if (idx < 1) return
-    const key = entry.slice(0, idx).toLowerCase()
-    const value = entry.slice(idx + 1)
-    if (!value) return
-    if (key === "page_id") meta.page_id = value
-    if (key === "updated_at") meta.updated_at = value
-    if (key === "doc_hash") meta.doc_hash = value
-    if (key === "md_export_hash") meta.md_export_hash = value
-    if (key === "md_export_base_doc_hash") meta.md_export_base_doc_hash = value
-    if (key === "derived_markdown") meta.derived_markdown = value === "1" || value.toLowerCase() === "true"
-  })
-  return meta
-}
-
-function asMeta(value: unknown): MarkdownMeta {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
-  return value as MarkdownMeta
-}
-
-function readMirrorState(id: string) {
-  const paths = mirrorPaths(id)
-  if (!existsSync(paths.markdown)) return null
-  const markdown = readFileSync(paths.markdown, "utf-8")
-  const fileMeta = existsSync(paths.meta)
-    ? asMeta(
-        (() => {
-          try {
-            return JSON.parse(readFileSync(paths.meta, "utf-8"))
-          } catch {
-            return {}
-          }
-        })(),
-      )
-    : {}
-  const meta = {
-    ...parseProvenance(markdown),
-    ...fileMeta,
-  }
-  return { paths, markdown, meta }
 }
 
 function sameMarks(a: Array<Record<string, unknown>> | undefined, b: Array<Record<string, unknown>> | undefined) {
@@ -595,7 +593,7 @@ function isBlockStart(line: string, next: string | undefined) {
 }
 
 function markdownToDoc(markdown: string) {
-  const source = stripProvenance(markdown).replace(/\r\n?/g, "\n")
+  const source = markdown.replace(/^<!--\s*claxedo:[^\n]*-->\s*\n?/i, "").replace(/\r\n?/g, "\n")
   const lines = source.split("\n")
   const content: Array<Record<string, unknown>> = []
   let i = 0
@@ -730,77 +728,7 @@ function markdownToDoc(markdown: string) {
   return { type: "doc", content }
 }
 
-function nodeText(node: unknown): string {
-  if (!node || typeof node !== "object") return ""
-  const value = node as { text?: unknown; content?: unknown }
-  if (typeof value.text === "string") return value.text
-  if (!Array.isArray(value.content)) return ""
-  return value.content.map((item) => nodeText(item)).join("")
-}
-
-function importTitle(doc: unknown) {
-  if (!doc || typeof doc !== "object") return ""
-  const content = (doc as { content?: unknown }).content
-  if (!Array.isArray(content)) return ""
-  const headings = content
-    .filter((item) => !!item && typeof item === "object" && (item as { type?: unknown }).type === "heading")
-    .map((item) => item as { attrs?: { level?: unknown } })
-  if (!headings.length) return ""
-  const pick = headings.find((item) => Number(item.attrs?.level) === 1) || headings[0]
-  return clean(nodeText(pick).replace(/\s+/g, " "))
-}
-
-type MarkdownSync = {
-  page: Page
-  imported: boolean
-  conflict: boolean
-  base_hash?: string
-  current_hash?: string
-}
-
-function importMarkdown(page: Page, markdown: string) {
-  const doc = markdownToDoc(markdown)
-  const next = JSON.stringify(doc)
-  const current = clean(page.title).toLowerCase()
-  const title = (current === "" || current === "untitled") ? importTitle(doc) : ""
-  const patch = {
-    content: next,
-    ...(title ? { title } : {}),
-  }
-  if (next === page.content && (!title || title === page.title)) {
-    writeMirror(page)
-    return { page, imported: false }
-  }
-  const updated = updatePage(page.id, patch) || page
-  writeMirror(updated)
-  return { page: updated, imported: updated.content !== page.content || updated.title !== page.title }
-}
-
-function syncFromMirror(page: Page, force = false): MarkdownSync {
-  const state = readMirrorState(page.id)
-  if (!state) return { page, imported: false, conflict: false }
-  const mdHash = sha256(state.markdown)
-  const currentExport = buildMirror(page)
-  if (clean(state.meta.md_export_hash) === mdHash) return { page, imported: false, conflict: false }
-  if (sha256(currentExport.markdown) === mdHash) return { page, imported: false, conflict: false }
-  const currentHash = sha256(page.content)
-  const baseHash = clean(state.meta.md_export_base_doc_hash || state.meta.doc_hash)
-  if (!force && baseHash && baseHash !== currentHash) {
-    return {
-      page,
-      imported: false,
-      conflict: true,
-      base_hash: baseHash,
-      current_hash: currentHash,
-    }
-  }
-  const result = importMarkdown(page, state.markdown)
-  return { page: result.page, imported: result.imported, conflict: false }
-}
-
-function generateId() {
-  return `page_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-}
+// ── Routes ──
 
 export const PagesRoutes = lazy(() =>
   new Hono()
@@ -824,99 +752,53 @@ export const PagesRoutes = lazy(() =>
         return c.json({ error: err instanceof Error ? err.message : "Invalid statuses" }, 422)
       }
     })
+    .get("/by-file", (c) => {
+      const filePath = clean(c.req.query("file_path"))
+      const directory = clean(c.req.query("directory"))
+      if (!filePath || !directory) return c.json(null)
+      ensureProject()
+      const row = ClaxedoDB.use((db) =>
+        db
+          .select()
+          .from(ClaxedoPageTable)
+          .where(
+            and(
+              eq(ClaxedoPageTable.project_id, projectId()),
+              eq(ClaxedoPageTable.file_path, filePath),
+              eq(ClaxedoPageTable.directory, directory),
+            ),
+          )
+          .get(),
+      )
+      if (!row) return c.json(null)
+      if (row.file_path) return c.json({ ...row, content: readFileContent(row) })
+      return c.json(row)
+    })
     .get("/", (c) => {
-      const pages = listPages()
-      pages.forEach((page) => {
-        const paths = mirrorPaths(page.id)
-        if (!existsSync(paths.json) || !existsSync(paths.markdown) || !existsSync(paths.meta)) writeMirror(page)
-      })
-      return c.json(pages)
+      return c.json(listPages())
     })
     .post("/", async (c) => {
-      const body = await c.req.json<{ title?: string; content?: string; status?: string }>().catch(() => ({}))
-      const page = createPage(body.title, body.content, body.status)
-      writeMirror(page)
+      const body = await c.req.json<{ title?: string; content?: string; status?: string; file_path?: string; directory?: string }>().catch(() => ({}))
+      const page = createPage(body.title, {
+        content: body.content,
+        status: body.status,
+        file_path: body.file_path,
+        directory: body.directory,
+      })
       return c.json(page, 201)
-    })
-    .get("/:id/export/markdown", (c) => {
-      const page = getPage(c.req.param("id"))
-      if (!page) return c.json({ error: "Not found" }, 404)
-      const mirror = buildMirror(page)
-      if (clean(c.req.query("raw")) === "1") {
-        c.header("Content-Type", "text/markdown; charset=utf-8")
-        return c.body(mirror.markdown)
-      }
-      return c.json({
-        id: page.id,
-        title: page.title,
-        markdown: mirror.markdown,
-        meta: mirror.meta,
-      })
-    })
-    .post("/:id/import/markdown", async (c) => {
-      const body = await c.req.json<{ markdown?: string; force?: boolean }>().catch(() => ({}))
-      const page = getPage(c.req.param("id"))
-      if (!page) return c.json({ error: "Not found" }, 404)
-      const markdown = typeof body.markdown === "string" ? body.markdown : ""
-      if (!markdown.trim()) return c.json({ error: "markdown is required" }, 400)
-      const force = Boolean(body.force)
-      const meta = parseProvenance(markdown)
-      const baseHash = clean(meta.md_export_base_doc_hash || meta.doc_hash)
-      const currentHash = sha256(page.content)
-      if (!force && baseHash && baseHash !== currentHash) {
-        return c.json(
-          {
-            error: "Markdown import conflict",
-            conflict: true,
-            base_hash: baseHash,
-            current_hash: currentHash,
-          },
-          409,
-        )
-      }
-      const result = importMarkdown(page, markdown)
-      return c.json({
-        page: result.page,
-        imported: result.imported,
-        conflict: false,
-      })
-    })
-    .post("/:id/sync/markdown", async (c) => {
-      const body = await c.req.json<{ force?: boolean }>().catch(() => ({}))
-      const page = getPage(c.req.param("id"))
-      if (!page) return c.json({ error: "Not found" }, 404)
-      const state = readMirrorState(page.id)
-      if (!state) {
-        writeMirror(page)
-        return c.json({
-          page,
-          imported: false,
-          conflict: false,
-          initialized: true,
-        })
-      }
-      const result = syncFromMirror(page, Boolean(body.force))
-      if (result.conflict) return c.json(result, 409)
-      return c.json(result)
-    })
-    .post("/:id/writeback", async (c) => {
-      const body = await c.req.json<{ filePath?: string; directory?: string }>().catch(() => ({}))
-      const page = getPage(c.req.param("id"))
-      if (!page) return c.json({ error: "Not found" }, 404)
-      const filePath = clean(body.filePath)
-      const directory = clean(body.directory)
-      if (!filePath || !directory) return c.json({ error: "filePath and directory are required" }, 400)
-      const { markdown } = markdownFromContent(page.content)
-      const fullPath = path.isAbsolute(filePath) ? filePath : path.resolve(directory, filePath)
-      await Bun.write(fullPath, markdown + "\n")
-      return c.json({ ok: true })
     })
     .patch("/:id/session", async (c) => {
       const body = await c.req.json<{ session_id?: string | null }>().catch(() => ({}))
       const page = getPage(c.req.param("id"))
       if (!page) return c.json({ error: "Not found" }, 404)
       const sessionId = body.session_id !== undefined ? (body.session_id || null) : null
-      db().query("UPDATE pages SET session_id = ? WHERE id = ?").run(sessionId, page.id)
+      ClaxedoDB.use((db) =>
+        db
+          .update(ClaxedoPageTable)
+          .set({ session_id: sessionId })
+          .where(and(eq(ClaxedoPageTable.id, page.id), eq(ClaxedoPageTable.project_id, projectId())))
+          .run(),
+      )
       return c.json(getPage(c.req.param("id")))
     })
     .post("/:id/status", async (c) => {
@@ -929,33 +811,19 @@ export const PagesRoutes = lazy(() =>
     })
     .route("/:id/arena", PageArenaRoutes())
     .get("/:id", (c) => {
-      const existing = getPage(c.req.param("id"))
-      if (!existing) return c.json({ error: "Not found" }, 404)
-      if (!pageMdAutoImport) {
-        const paths = mirrorPaths(existing.id)
-        if (!existsSync(paths.json) || !existsSync(paths.markdown) || !existsSync(paths.meta)) writeMirror(existing)
-        return c.json(existing)
-      }
-      const synced = syncFromMirror(existing)
-      if (!synced.conflict) return c.json(synced.page)
-      // Conflict means the .md file was edited externally. Since every editor
-      // save calls writeMirror() (which updates the export hash), a hash
-      // mismatch on GET means the .md file is newer. Force-import it rather
-      // than returning stale content with headers nobody acts on.
-      const forced = syncFromMirror(existing, true)
-      return c.json(forced.page)
+      const page = getPage(c.req.param("id"))
+      if (!page) return c.json({ error: "Not found" }, 404)
+      return c.json(page)
     })
     .patch("/:id", async (c) => {
       const body = await c.req.json<{ title?: string; content?: string }>().catch(() => ({}))
       const page = updatePage(c.req.param("id"), body)
       if (!page) return c.json({ error: "Not found" }, 404)
-      writeMirror(page)
       return c.json(page)
     })
     .delete("/:id", (c) => {
       const removed = deletePage(c.req.param("id"))
       if (!removed) return c.json({ error: "Not found" }, 404)
-      removeMirror(c.req.param("id"))
       return c.json({ ok: true })
     }),
 )

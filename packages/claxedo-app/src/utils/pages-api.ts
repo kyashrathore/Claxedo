@@ -11,6 +11,8 @@ export type Page = {
   content: string
   status: string
   session_id: string | null
+  file_path: string | null
+  directory: string | null
   created_at: string
   updated_at: string
 }
@@ -21,29 +23,6 @@ export type PageStatus = {
   color: string
   position: number
   transitions: string[]
-}
-
-export type PageMarkdownExport = {
-  id: string
-  title: string
-  markdown: string
-  meta: {
-    page_id: string
-    updated_at: string
-    doc_hash: string
-    md_export_hash: string
-    md_export_base_doc_hash: string
-    derived_markdown: boolean
-  }
-}
-
-export type PageMarkdownSync = {
-  page: Page
-  imported: boolean
-  conflict: boolean
-  base_hash?: string
-  current_hash?: string
-  initialized?: boolean
 }
 
 export type ArenaControlSignal = "continue" | "done" | "question"
@@ -175,10 +154,15 @@ export const pagesApi = {
     return request<Page>(`${base()}/${id}`)
   },
 
-  create(title?: string): Promise<Page> {
+  findByFile(file_path: string, directory: string): Promise<Page | null> {
+    const params = new URLSearchParams({ file_path, directory })
+    return request<Page | null>(`${base()}/by-file?${params}`)
+  },
+
+  create(title?: string, file_path?: string, directory?: string): Promise<Page> {
     return request<Page>(base(), {
       method: "POST",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, file_path, directory }),
     })
   },
 
@@ -220,36 +204,6 @@ export const pagesApi = {
     })
   },
 
-  exportMarkdown(id: string): Promise<PageMarkdownExport> {
-    return request<PageMarkdownExport>(`${base()}/${id}/export/markdown`)
-  },
-
-  async exportMarkdownRaw(id: string): Promise<string> {
-    const res = await authFetch(`${base()}/${id}/export/markdown?raw=1`, {
-      headers: { Accept: "text/markdown" },
-    })
-    if (res.ok && looksLikeHtmlResponse(res)) throw new Error(htmlApiError())
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(text || `Request failed: ${res.status}`)
-    }
-    return res.text()
-  },
-
-  importMarkdown(id: string, markdown: string, force = false): Promise<PageMarkdownSync> {
-    return request<PageMarkdownSync>(`${base()}/${id}/import/markdown`, {
-      method: "POST",
-      body: JSON.stringify({ markdown, force }),
-    })
-  },
-
-  syncMarkdown(id: string, force = false): Promise<PageMarkdownSync> {
-    return request<PageMarkdownSync>(`${base()}/${id}/sync/markdown`, {
-      method: "POST",
-      body: JSON.stringify({ force }),
-    })
-  },
-
   arenaStart(id: string, input: ArenaStartRequest): Promise<ArenaState> {
     return request<ArenaState>(`${base()}/${id}/arena/start`, {
       method: "POST",
@@ -277,13 +231,6 @@ export const pagesApi = {
     return request<{ ok: boolean; state: ArenaState }>(`${base()}/${id}/arena/control`, {
       method: "POST",
       body: JSON.stringify(input),
-    })
-  },
-
-  writeback(id: string, filePath: string, directory: string): Promise<{ ok: boolean }> {
-    return request<{ ok: boolean }>(`${base()}/${id}/writeback`, {
-      method: "POST",
-      body: JSON.stringify({ filePath, directory }),
     })
   },
 
