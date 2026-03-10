@@ -40,6 +40,8 @@ export type PreviewLoaderDeps = {
   debug: DebugLogger
 }
 
+const fetchedSessions = new Set<string>()
+
 export function createPreviewLoader(deps: PreviewLoaderDeps) {
   const inflight = new Set<string>()
   const fail = new Map<string, number>()
@@ -123,10 +125,17 @@ export function createPreviewLoader(deps: PreviewLoaderDeps) {
       }
       return
     }
+    const fetchedKey = `${directory}:${sessionId}`
+    if (fetchedSessions.has(fetchedKey)) {
+      if (deps.debug.enabled(2)) {
+        deps.debug.verbose("summary prefetch skipped", { reason: "session-already-fetched", directory, sessionId })
+      }
+      return
+    }
     const [store, setStore] = deps.globalSyncChild(directory, { bootstrap: false })
     const existing = store.message[sessionId]
     if (existing !== undefined) {
-      const hasMissingParts = existing.some((message: any) => (store.part[message.id] ?? []).length === 0)
+      const hasMissingParts = existing.some((message: any) => store.part[message.id] === undefined)
       if (!hasMissingParts) {
         if (deps.debug.enabled(2)) {
           deps.debug.verbose("summary prefetch skipped", {
@@ -145,6 +154,7 @@ export function createPreviewLoader(deps: PreviewLoaderDeps) {
     }
 
     inflight.add(key)
+    fetchedSessions.add(fetchedKey)
     void deps
       .fetchSessionMessages({ directory, sessionID: sessionId, limit: 8 })
       .then((result) => {
@@ -181,6 +191,7 @@ export function createPreviewLoader(deps: PreviewLoaderDeps) {
         }
       })
       .catch((error) => {
+        fetchedSessions.delete(fetchedKey)
         fail.set(key, Date.now() + failMs)
         deps.debug.log("summary prefetch failed", { directory, sessionId, error: errorText(error) })
       })
