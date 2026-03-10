@@ -39,6 +39,7 @@ import { createRouteIntentAdapter } from "./context/claxedo-layout/route-intent"
 import { buildTabContextSnapshot, createTabContextSyncAdapter } from "./context/claxedo-layout/tab-context-sync"
 
 import { useAgentHooks } from "../agent-hooks/listener"
+import { createBatchAutoTabListener } from "./context/batch-autotab"
 import { isDemoMode } from "../utils/api"
 import { DemoTourController } from "../demo/tour-controller"
 
@@ -83,6 +84,19 @@ function ClaxedoStateBridge(props: ParentProps) {
 
   // Set up agent lifecycle listeners for tab status indicators
   useAgentHooks()
+
+  // Auto-add tabs for sessions/ptys created in sandbox directories (batch_issues)
+  createEffect(() => {
+    const unsub = createBatchAutoTabListener({
+      listen: globalSDK.event.listen as any,
+      topTabs: claxedo.topTabs,
+      projects: () => {
+        const list = globalSync.data.project ?? []
+        return list.map((p: any) => ({ worktree: p.worktree, sandboxes: p.sandboxes }))
+      },
+    })
+    onCleanup(unsub)
+  })
 
   const workspaceId = createMemo(() => decodeDir(params.dir))
   const tabId = createMemo(() => params.tabId)
