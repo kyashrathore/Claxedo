@@ -1,7 +1,7 @@
 import type { FileDiff, Session } from "@opencode-ai/sdk/v2"
 import type { ReviewMode } from "./types"
 
-export type ReviewPopoverMode = "session-turn" | "session" | "staged" | "committed" | "uncommitted" | "to-from"
+export type ReviewPopoverMode = "session-turn" | "session" | "staged" | "uncommitted" | "to-from"
 
 export type ReviewModeStats = {
   additions: number
@@ -37,7 +37,6 @@ export const REVIEW_POPOVER_MODES = [
   "session-turn",
   "session",
   "staged",
-  "committed",
   "uncommitted",
   "to-from",
 ] as const satisfies readonly ReviewPopoverMode[]
@@ -46,7 +45,6 @@ export const REVIEW_MODE_LABEL: Record<ReviewMode, string> = {
   "session-turn": "Session turn",
   session: "Session",
   staged: "Staged",
-  committed: "Committed",
   uncommitted: "Uncommitted",
   "vs-base": "vs base (legacy)",
   "to-from": "to / from",
@@ -249,7 +247,6 @@ export function createReviewIntentAdapter(input: {
     modes: ReviewPopoverMode[]
     directory: string | undefined
     sessionID: string | undefined
-    committed: string | undefined
     from: string
     to: string
     context: ReviewContext | undefined
@@ -348,19 +345,6 @@ export function createReviewIntentAdapter(input: {
 
       if (mode === "uncommitted") {
         run(mode, "uncommitted")
-        continue
-      }
-
-      if (mode === "committed") {
-        if (!args.committed) {
-          args.patch(mode, {
-            loading: false,
-            ready: false,
-            error: "Select a base target",
-          })
-          continue
-        }
-        run(mode, "to-from", args.committed, "HEAD")
         continue
       }
 

@@ -55,9 +55,9 @@ export function FileTreeSidebar(props: {
       setReviewDiffs([])
       return
     }
-    const mapped = mode === "committed" ? "to-from" : mode
-    const fromRef = mode === "committed" ? tab.reviewFromRef : tab.reviewFromRef
-    const toRef = mode === "committed" ? tab.reviewToRef || "HEAD" : tab.reviewToRef
+    const mapped = mode
+    const fromRef = tab.reviewFromRef
+    const toRef = tab.reviewToRef
     if (mapped === "to-from" && (!fromRef || !toRef)) {
       setReviewLoading(false)
       setReviewDiffs([])

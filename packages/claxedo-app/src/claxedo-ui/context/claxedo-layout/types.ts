@@ -1,4 +1,4 @@
-export type ReviewMode = "session-turn" | "session" | "staged" | "committed" | "uncommitted" | "vs-base" | "to-from"
+export type ReviewMode = "session-turn" | "session" | "staged" | "uncommitted" | "vs-base" | "to-from"
 
 export type TabType = "session" | "terminal" | "review" | "review-workspace" | "file" | "context" | "page" | "multi-pane" | "process" | "filetree"
 

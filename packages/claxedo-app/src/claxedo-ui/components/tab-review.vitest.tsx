@@ -128,11 +128,11 @@ beforeEach(() => {
 })
 
 describe("TabReview", () => {
-  test("maps committed mode to to-from when requesting diffs", async () => {
+  test("to-from mode passes fromRef and toRef to diff request", async () => {
     render(() => (
       <TabReview
         sessionId="ses_1"
-        mode="committed"
+        mode="to-from"
         fromRef="dev"
         toRef="HEAD"
       />

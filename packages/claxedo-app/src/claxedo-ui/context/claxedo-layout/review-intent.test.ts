@@ -61,7 +61,7 @@ describe("review intent adapter", () => {
 
     const out = await adapter.loadBaseTargets({
       directory: "/ws",
-      mode: "committed",
+      mode: "to-from",
       reviewWorktree: "/ws",
       context: { directory: "/ws", groupId: "g1" },
       activeWorkspaceId: "/ws",
@@ -85,10 +85,9 @@ describe("review intent adapter", () => {
     })
 
     adapter.refreshDiffModeStats({
-      modes: ["committed", "to-from"],
+      modes: ["to-from"],
       directory: undefined,
       sessionID: undefined,
-      committed: undefined,
       from: "",
       to: "",
       context: undefined,
@@ -98,7 +97,6 @@ describe("review intent adapter", () => {
     })
 
     expect(calls).toEqual([
-      { mode: "committed", error: "Select a base target" },
       { mode: "to-from", error: "Enter from and to refs" },
     ])
   })
@@ -122,7 +120,6 @@ describe("review intent adapter", () => {
       modes: ["staged"],
       directory: "/ws",
       sessionID: "s1",
-      committed: undefined,
       from: "",
       to: "",
       context: { directory: "/ws", groupId: "g1", sessionID: "s1" },

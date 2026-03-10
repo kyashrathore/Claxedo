@@ -146,6 +146,81 @@ export const SessionRoutes = lazy(() =>
       },
     )
     .get(
+      "/vcs-diff",
+      describeRoute({
+        summary: "Get VCS diff",
+        description: "Get git-based diffs (staged, uncommitted, to-from) without requiring a session.",
+        operationId: "session.vcsDiff",
+        responses: {
+          200: {
+            description: "Successfully retrieved VCS diff",
+            content: {
+              "application/json": {
+                schema: resolver(Snapshot.FileDiff.array()),
+              },
+            },
+          },
+        },
+      }),
+      validator(
+        "query",
+        z
+          .object({
+            mode: Vcs.DiffMode,
+            fromRef: z.string().optional(),
+            toRef: z.string().optional(),
+          })
+          .superRefine((query, ctx) => {
+            if (query.mode !== "to-from") return
+            if (query.fromRef && query.toRef) return
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "fromRef and toRef are required when mode is to-from",
+              path: ["fromRef"],
+            })
+          }),
+      ),
+      async (c) => {
+        const query = c.req.valid("query")
+        log.info("vcs-diff request", {
+          mode: query.mode,
+          fromRef: query.fromRef,
+          toRef: query.toRef,
+          instanceWorktree: Instance.worktree,
+        })
+        let result: Snapshot.FileDiff[]
+        if (query.mode === "staged") result = await Vcs.diffStaged()
+        else if (query.mode === "uncommitted") result = await Vcs.diffUncommitted()
+        else if (query.mode === "vs-base") result = await Vcs.diffVsBase(query.fromRef)
+        else if (query.mode === "to-from") result = await Vcs.diffRange(query.fromRef!, query.toRef!)
+        else result = []
+        log.info("vcs-diff success", { mode: query.mode, files: result.length })
+        return c.json(result)
+      },
+    )
+    .get(
+      "/vcs-refs",
+      describeRoute({
+        summary: "List git refs",
+        description: "List branches, tags, and recent commits for the ref picker.",
+        operationId: "session.vcsRefs",
+        responses: {
+          200: {
+            description: "Successfully retrieved refs",
+            content: {
+              "application/json": {
+                schema: resolver(Vcs.RefList),
+              },
+            },
+          },
+        },
+      }),
+      async (c) => {
+        const refs = await Vcs.listRefs()
+        return c.json(refs)
+      },
+    )
+    .get(
       "/:sessionID",
       describeRoute({
         summary: "Get session",
@@ -480,7 +555,7 @@ export const SessionRoutes = lazy(() =>
       "/:sessionID/diff",
       describeRoute({
         summary: "Get message diff",
-        description: "Get session diffs or git-based diffs for review modes.",
+        description: "Get the file changes (diff) that resulted from a specific user message in the session.",
         operationId: "session.diff",
         responses: {
           200: {
@@ -501,69 +576,17 @@ export const SessionRoutes = lazy(() =>
       ),
       validator(
         "query",
-        z
-          .object({
-            messageID: SessionSummary.diff.schema.shape.messageID,
-            mode: SessionSummary.diff.schema.shape.mode,
-            fromRef: SessionSummary.diff.schema.shape.fromRef,
-            toRef: SessionSummary.diff.schema.shape.toRef,
-          })
-          .superRefine((query, ctx) => {
-            if (query.mode !== "to-from") return
-            if (query.fromRef && query.toRef) return
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: "fromRef and toRef are required when mode is to-from",
-              path: ["fromRef"],
-            })
-          }),
+        z.object({
+          messageID: SessionSummary.diff.schema.shape.messageID,
+        }),
       ),
       async (c) => {
         const query = c.req.valid("query")
         const params = c.req.valid("param")
-        const shouldLog = !!query.mode
-        if (shouldLog) {
-          log.info("session diff request", {
-            sessionID: params.sessionID,
-            mode: query.mode,
-            fromRef: query.fromRef,
-            toRef: query.toRef,
-            queryDirectory: c.req.query("directory"),
-            instanceDirectory: Instance.directory,
-            instanceWorktree: Instance.worktree,
-          })
-        }
         const result = await SessionSummary.diff({
           sessionID: params.sessionID,
           messageID: query.messageID,
-          mode: query.mode,
-          fromRef: query.fromRef,
-          toRef: query.toRef,
-        }).catch((error) => {
-          if (shouldLog) {
-            log.error("session diff failed", {
-              sessionID: params.sessionID,
-              mode: query.mode,
-              fromRef: query.fromRef,
-              toRef: query.toRef,
-              queryDirectory: c.req.query("directory"),
-              instanceDirectory: Instance.directory,
-              instanceWorktree: Instance.worktree,
-              error,
-            })
-          }
-          throw error
         })
-        if (shouldLog) {
-          log.info("session diff success", {
-            sessionID: params.sessionID,
-            mode: query.mode,
-            files: result.length,
-            queryDirectory: c.req.query("directory"),
-            instanceDirectory: Instance.directory,
-            instanceWorktree: Instance.worktree,
-          })
-        }
         return c.json(result)
       },
     )

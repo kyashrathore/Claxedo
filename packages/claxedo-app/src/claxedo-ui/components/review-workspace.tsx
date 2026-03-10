@@ -64,6 +64,128 @@ import {
 import { SessionParamsProvider } from "../context/session-params"
 import { createDebugLogger } from "../../overrides/utils/debug"
 
+type VcsRefs = { branches: string[]; tags: string[]; recent: { hash: string; subject: string }[] }
+
+function RefPickerField(props: {
+  label: string
+  value: string
+  onInput: (value: string) => void
+  onSelect: (value: string) => void
+  placeholder: string
+  refs: VcsRefs
+}) {
+  const [open, setOpen] = createSignal(false)
+  const [filter, setFilter] = createSignal("")
+
+  const filtered = createMemo(() => {
+    const q = filter().toLowerCase()
+    const branches = props.refs.branches.filter((b) => !q || b.toLowerCase().includes(q))
+    const tags = props.refs.tags.filter((t) => !q || t.toLowerCase().includes(q))
+    const recent = props.refs.recent.filter(
+      (c) => !q || c.hash.toLowerCase().includes(q) || c.subject.toLowerCase().includes(q),
+    )
+    return { branches, tags, recent }
+  })
+
+  const hasResults = createMemo(() => {
+    const f = filtered()
+    return f.branches.length > 0 || f.tags.length > 0 || f.recent.length > 0
+  })
+
+  const select = (value: string) => {
+    props.onSelect(value)
+    setOpen(false)
+    setFilter("")
+  }
+
+  return (
+    <div class="flex flex-col gap-1">
+      <div class="text-12-medium text-text-weak">{props.label}</div>
+      <div class="relative">
+        <input
+          class="h-8 w-full rounded-md border border-border-weak-base bg-background-base pl-2 pr-7 text-13-regular"
+          value={props.value}
+          onInput={(e) => {
+            props.onInput(e.currentTarget.value)
+            setFilter(e.currentTarget.value)
+            setOpen(true)
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder={props.placeholder}
+        />
+        <button
+          type="button"
+          class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-text-weak hover:text-text-base"
+          tabIndex={-1}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => { setFilter(""); setOpen(!open()) }}
+        >
+          <svg class="w-3 h-3" viewBox="0 0 12 12">
+            <path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <Show when={open() && hasResults()}>
+          <div class="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-md border border-border-weak-base bg-background-base shadow-lg">
+            <Show when={filtered().branches.length > 0}>
+              <div class="px-2 pt-1.5 pb-0.5 text-11-medium text-text-weak uppercase tracking-wider">Branches</div>
+              <For each={filtered().branches.slice(0, 15)}>
+                {(branch) => (
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-2 px-2 py-1 text-12-regular text-text-base hover:bg-surface-base-hover truncate"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => select(branch)}
+                  >
+                    <svg class="w-3 h-3 shrink-0 text-text-weak" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.5 2.5 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Z" />
+                    </svg>
+                    <span class="truncate">{branch}</span>
+                  </button>
+                )}
+              </For>
+            </Show>
+            <Show when={filtered().tags.length > 0}>
+              <div class="px-2 pt-1.5 pb-0.5 text-11-medium text-text-weak uppercase tracking-wider">Tags</div>
+              <For each={filtered().tags.slice(0, 10)}>
+                {(tag) => (
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-2 px-2 py-1 text-12-regular text-text-base hover:bg-surface-base-hover truncate"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => select(tag)}
+                  >
+                    <svg class="w-3 h-3 shrink-0 text-text-weak" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.75 1.75 0 0 1 1 7.775ZM6 5a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z" />
+                    </svg>
+                    <span class="truncate">{tag}</span>
+                  </button>
+                )}
+              </For>
+            </Show>
+            <Show when={filtered().recent.length > 0}>
+              <div class="px-2 pt-1.5 pb-0.5 text-11-medium text-text-weak uppercase tracking-wider">Commits</div>
+              <For each={filtered().recent}>
+                {(commit) => (
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-2 px-2 py-1 text-12-regular text-text-base hover:bg-surface-base-hover"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => select(commit.hash)}
+                  >
+                    <span class="shrink-0 font-mono text-11-regular text-text-weak">{commit.hash}</span>
+                    <span class="truncate">{commit.subject}</span>
+                  </button>
+                )}
+              </For>
+            </Show>
+          </div>
+        </Show>
+      </div>
+    </div>
+  )
+}
+
 export type ReviewWorkspaceProps = {
   sessionId: string
   directory: string
@@ -103,6 +225,39 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
 
   // Session modes are only available when we have a real session
   const hasSession = createMemo(() => !!props.sessionId && props.sessionId !== "new")
+
+  // VCS diffs go through /session/vcs-diff (no session needed)
+  const fetchVcsDiff = async (mode: string, fromRef?: string, toRef?: string) => {
+    const query: Record<string, string> = { mode }
+    if (fromRef) query.fromRef = fromRef
+    if (toRef) query.toRef = toRef
+    const res = await (sdk.client as any).client.get({
+      url: "/session/vcs-diff",
+      query,
+    })
+    return (res.data ?? []) as FileDiff[]
+  }
+
+  // Real git refs for the to/from picker
+  const [vcsRefs, setVcsRefs] = createSignal<VcsRefs>({ branches: [], tags: [], recent: [] })
+  createEffect(() => {
+    if (!props.directory) return
+    void (sdk.client as any).client.get({ url: "/session/vcs-refs" })
+      .then((res: any) => {
+        const data = res.data as VcsRefs | undefined
+        if (data) setVcsRefs(data)
+      })
+      .catch(() => {})
+    // Also fetch default base ref
+    void sdk.client.session.diffTargets({ directory: props.directory })
+      .then((res) => {
+        if (res.data?.defaultRef && activeFromRef() === "HEAD~1") {
+          setActiveFromRef(res.data.defaultRef)
+        }
+      })
+      .catch(() => {})
+  })
+
   const visibleModes = createMemo<ReviewPopoverMode[]>(() => {
     if (hasSession()) return [...REVIEW_POPOVER_MODES]
     return REVIEW_POPOVER_MODES.filter((m) => m !== "session-turn" && m !== "session")
@@ -166,18 +321,31 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   // Fetch remote-mode stats when popover is open
   createEffect(() => {
     if (!modeSelectorOpen()) return
-    const id = props.sessionId
-    if (!id || id === "new") return
-    reviewIntent.refreshDiffModeStats({
-      modes: visibleModes().filter((m) => m !== "session" && m !== "session-turn"),
-      directory: props.directory,
-      sessionID: id,
-      committed: activeFromRef().trim() || undefined,
-      from: activeFromRef().trim(),
-      to: activeToRef().trim(),
-      context: undefined,
-      patch: patchModeStats,
-    })
+    const vcsModes = visibleModes().filter((m) => m !== "session" && m !== "session-turn")
+    for (const mode of vcsModes) {
+      if (mode === "to-from" && (!activeFromRef().trim() || !activeToRef().trim())) {
+        patchModeStats(mode, { loading: false, ready: false, error: "Enter from and to refs" })
+        continue
+      }
+      const sdkMode = mode
+      const fromRef = mode === "to-from" ? activeFromRef().trim() : undefined
+      const toRef = mode === "to-from" ? activeToRef().trim() : undefined
+      patchModeStats(mode, { loading: true, ready: false, error: undefined })
+      void fetchVcsDiff(sdkMode, fromRef, toRef)
+        .then((diffs) => {
+          patchModeStats(mode, {
+            additions: diffs.reduce((sum, d) => sum + (d.additions ?? 0), 0),
+            deletions: diffs.reduce((sum, d) => sum + (d.deletions ?? 0), 0),
+            files: diffs.length,
+            loading: false,
+            ready: true,
+            error: undefined,
+          })
+        })
+        .catch((error) => {
+          patchModeStats(mode, { loading: false, ready: false, error: String(error) })
+        })
+    }
   })
 
   const getModeStats = (mode: ReviewPopoverMode) => modeStatsMap()[mode]
@@ -314,27 +482,19 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     void sync.session.diff(id)
   })
 
-  // Fetch remote diffs for non-session modes
+  // Fetch VCS diffs for non-session modes (no session required)
   createEffect(() => {
-    const id = props.sessionId
-    if (!id || id === "new") return
     const currentMode = activeMode()
     if (currentMode === "session" || currentMode === "session-turn") return
-    const mode = currentMode === "committed" ? ("to-from" as const) : currentMode
+    const mode = currentMode
 
     const from = activeFromRef().trim() || undefined
     const to = activeToRef().trim() || undefined
 
     setStore("loading", true)
-    void sdk.client.session
-      .diff({
-        sessionID: id,
-        mode,
-        fromRef: from,
-        toRef: to,
-      })
-      .then((result) => {
-        setStore("remoteDiffs", result.data ?? [])
+    void fetchVcsDiff(mode, from, to)
+      .then((diffs) => {
+        setStore("remoteDiffs", diffs)
       })
       .catch(() => {
         setStore("remoteDiffs", [])
@@ -605,38 +765,24 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                       </div>
                     </Show>
 
-                    <Show when={activeMode() === "committed"}>
-                      <div class="flex flex-col gap-1">
-                        <div class="text-12-medium text-text-weak">Base ref</div>
-                        <input
-                          class="h-8 rounded-md border border-border-weak-base bg-background-base px-2 text-13-regular"
-                          value={activeFromRef()}
-                          onInput={(e) => setActiveFromRef(e.currentTarget.value)}
-                          placeholder="main"
-                        />
-                      </div>
-                    </Show>
-
                     <Show when={activeMode() === "to-from"}>
                       <div class="grid grid-cols-2 gap-2">
-                        <div class="flex flex-col gap-1">
-                          <div class="text-12-medium text-text-weak">From</div>
-                          <input
-                            class="h-8 rounded-md border border-border-weak-base bg-background-base px-2 text-13-regular"
-                            value={activeFromRef()}
-                            onInput={(e) => setActiveFromRef(e.currentTarget.value)}
-                            placeholder="HEAD~1"
-                          />
-                        </div>
-                        <div class="flex flex-col gap-1">
-                          <div class="text-12-medium text-text-weak">To</div>
-                          <input
-                            class="h-8 rounded-md border border-border-weak-base bg-background-base px-2 text-13-regular"
-                            value={activeToRef()}
-                            onInput={(e) => setActiveToRef(e.currentTarget.value)}
-                            placeholder="HEAD"
-                          />
-                        </div>
+                        <RefPickerField
+                          label="From"
+                          value={activeFromRef()}
+                          onInput={setActiveFromRef}
+                          onSelect={setActiveFromRef}
+                          placeholder="HEAD~1"
+                          refs={vcsRefs()}
+                        />
+                        <RefPickerField
+                          label="To"
+                          value={activeToRef()}
+                          onInput={setActiveToRef}
+                          onSelect={setActiveToRef}
+                          placeholder="HEAD"
+                          refs={vcsRefs()}
+                        />
                       </div>
                     </Show>
 

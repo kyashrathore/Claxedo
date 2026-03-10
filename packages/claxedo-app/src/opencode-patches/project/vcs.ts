@@ -385,4 +385,34 @@ export namespace Vcs {
     }
     return out
   }
+
+  export const RefList = z.object({
+    branches: z.array(z.string()),
+    tags: z.array(z.string()),
+    recent: z.array(z.object({ hash: z.string(), subject: z.string() })),
+  }).meta({ ref: "VcsRefList" })
+  export type RefList = z.infer<typeof RefList>
+
+  export async function listRefs(): Promise<RefList> {
+    const branchFmt = "%(refname:short)"
+    const logFmt = "%h %s"
+    const [branchRaw, tagRaw, logRaw] = await Promise.all([
+      $`git branch -a --format=${branchFmt}`.quiet().nothrow().cwd(Instance.worktree).text(),
+      $`git tag --list --sort=-creatordate`.quiet().nothrow().cwd(Instance.worktree).text(),
+      $`git log --all --oneline -n 20 --format=${logFmt}`.quiet().nothrow().cwd(Instance.worktree).text(),
+    ])
+
+    const branches = branchRaw.split("\n").map((b) => b.trim()).filter(Boolean)
+    const tags = tagRaw.split("\n").map((t) => t.trim()).filter(Boolean).slice(0, 30)
+    const recent = logRaw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const space = line.indexOf(" ")
+        return { hash: line.slice(0, space), subject: line.slice(space + 1) }
+      })
+
+    return { branches, tags, recent }
+  }
 }

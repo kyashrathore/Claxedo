@@ -68,7 +68,7 @@ export function TabReview(props: TabReviewProps) {
     const id = props.sessionId
     if (!id || id === "new") return
     if (props.mode === "session" || props.mode === "session-turn") return
-    const mode = props.mode === "committed" ? "to-from" : props.mode
+    const mode = props.mode
 
     debug.log("fetch start", {
       sessionId: id,
