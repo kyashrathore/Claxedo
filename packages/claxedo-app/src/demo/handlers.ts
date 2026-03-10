@@ -221,10 +221,6 @@ function pageFor(state: State, id: string) {
   return state.pages.find((item) => item.id === id)
 }
 
-function markdown(page: DemoPage) {
-  return `# ${page.title}\n\nPage content exported as markdown.`
-}
-
 function heartbeat(data: Record<string, unknown>) {
   return new ReadableStream({
     start(ctrl) {
@@ -699,49 +695,6 @@ export async function createHandlers() {
       const index = state.pages.findIndex((item) => item.id === params.id)
       if (index < 0) return HttpResponse.json({ error: "Not found" }, { status: 404 })
       state.pages.splice(index, 1)
-      return HttpResponse.json({ ok: true })
-    }),
-    http.get(`${DEMO_BASE}/api/pages/:id/export/markdown`, ({ params, request }) => {
-      const page = pageFor(state, params.id as string)
-      if (!page) return HttpResponse.json({ error: "Not found" }, { status: 404 })
-      const text = markdown(page)
-      const url = new URL(request.url)
-      if (url.searchParams.get("raw") === "1") {
-        return new HttpResponse(text, {
-          headers: { "Content-Type": "text/markdown; charset=utf-8" },
-        })
-      }
-      const hash = `demo_hash_${page.id}`
-      return HttpResponse.json({
-        id: page.id,
-        title: page.title,
-        markdown: text,
-        meta: {
-          page_id: page.id,
-          updated_at: page.updated_at,
-          doc_hash: hash,
-          md_export_hash: `demo_md_hash_${page.id}`,
-          md_export_base_doc_hash: hash,
-          derived_markdown: true,
-        },
-      })
-    }),
-    http.post(`${DEMO_BASE}/api/pages/:id/import/markdown`, async ({ params, request }) => {
-      const page = pageFor(state, params.id as string)
-      if (!page) return HttpResponse.json({ error: "Not found" }, { status: 404 })
-      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
-      if (!body.markdown) return HttpResponse.json({ error: "markdown is required" }, { status: 400 })
-      page.updated_at = new Date().toISOString()
-      return HttpResponse.json({ page, imported: true, conflict: false })
-    }),
-    http.post(`${DEMO_BASE}/api/pages/:id/sync/markdown`, ({ params }) => {
-      const page = pageFor(state, params.id as string)
-      if (!page) return HttpResponse.json({ error: "Not found" }, { status: 404 })
-      return HttpResponse.json({ page, imported: false, conflict: false, initialized: true })
-    }),
-    http.post(`${DEMO_BASE}/api/pages/:id/writeback`, ({ params }) => {
-      const page = pageFor(state, params.id as string)
-      if (!page) return HttpResponse.json({ error: "Not found" }, { status: 404 })
       return HttpResponse.json({ ok: true })
     }),
     http.get(`${DEMO_BASE}/api/pages/:id/arena/state`, () => {

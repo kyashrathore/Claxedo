@@ -21,7 +21,6 @@ const h = vi.hoisted(() => {
       get: vi.fn(),
       update: vi.fn(),
       ai: vi.fn(),
-      importMarkdown: vi.fn(),
     },
     setSelection: (_from: number, _to: number) => {},
     emitEditor: (_event: string, _payload?: unknown) => {},
@@ -184,23 +183,9 @@ beforeEach(() => {
   })
   h.api.update.mockResolvedValue({ id: "p-1", title: "Page", content: "{}" })
   h.api.ai.mockResolvedValue({ text: "Updated text from AI." })
-  h.api.importMarkdown.mockResolvedValue({
-    page: { id: "p-1", title: "Page", content: "{}" },
-    imported: true,
-    conflict: false,
-  })
 })
 
 describe("TabPage integration", () => {
-  test("shows empty-page import markdown button", async () => {
-    render(() => <TabPage pageId="p-1" />)
-    await waitFor(() => expect(h.api.get).toHaveBeenCalledWith("p-1"))
-    expect(screen.getByRole("button", { name: "Import Markdown" })).toBeInTheDocument()
-    expect(screen.getAllByRole("button", { name: "Import Markdown" })).toHaveLength(1)
-    expect(screen.queryByRole("button", { name: "Sync Markdown" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Export Markdown" })).not.toBeInTheDocument()
-  })
-
   test("selection -> toolbar -> ai menu (anchored) -> preview", async () => {
     vi.useFakeTimers()
     const { container } = render(() => <TabPage pageId="p-1" />)
@@ -284,29 +269,4 @@ describe("TabPage integration", () => {
     await vi.runAllTimersAsync()
   })
 
-  test("imports markdown with force=true on first link import", async () => {
-    const original = document.createElement.bind(document)
-    const file = {
-      name: "doc.md",
-      text: async () => "# Imported",
-    }
-    const create = vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
-      const node = original(tagName)
-      if (tagName.toLowerCase() !== "input") return node
-      const input = node as HTMLInputElement
-      Object.defineProperty(input, "files", {
-        configurable: true,
-        get: () => [file],
-      })
-      input.click = () => {
-        input.onchange?.(new Event("change"))
-      }
-      return input
-    })
-    render(() => <TabPage pageId="p-1" />)
-    await waitFor(() => expect(h.api.get).toHaveBeenCalledWith("p-1"))
-    fireEvent.click(screen.getByRole("button", { name: "Import Markdown" }))
-    await waitFor(() => expect(h.api.importMarkdown).toHaveBeenCalledWith("p-1", "# Imported", true))
-    create.mockRestore()
-  })
 })

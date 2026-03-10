@@ -1540,12 +1540,7 @@ function PageEditor(props: {
           props.onSavingChange(true)
           pagesApi
             .update(props.pageId, { content: next })
-            .then(() => {
-              setSavedContent(next)
-              if (props.filePath && props.directory && props.directory !== "__pages__") {
-                pagesApi.writeback(props.pageId, props.filePath, props.directory).catch(() => {})
-              }
-            })
+            .then(() => setSavedContent(next))
             .catch((e) => console.error("Failed to save page:", e))
             .finally(() => props.onSavingChange(false))
         }, 1500)
@@ -1609,36 +1604,6 @@ function PageEditor(props: {
     e.commands.setContent(content, { emitUpdate: false })
     setTick((x) => x + 1)
     scheduleToolbar(60)
-  }
-
-  const [mdBusy, setMdBusy] = createSignal(false)
-
-  const importMarkdown = () => {
-    if (mdBusy()) return
-    const input = document.createElement("input")
-    input.type = "file"
-    input.accept = ".md,text/markdown,text/plain"
-    input.onchange = async () => {
-      const file = input.files?.[0]
-      if (!file) return
-      const text = file.text ? await file.text() : ""
-      if (!text.trim()) {
-        setAiError("Selected markdown file is empty.")
-        return
-      }
-      if (!pageEmpty() && !window.confirm("Importing markdown will replace current page content. Continue?")) return
-      setMdBusy(true)
-      setAiError(undefined)
-      try {
-        const result = await pagesApi.importMarkdown(props.pageId, text, true)
-        applyPage(result.page)
-      } catch (error) {
-        setAiError(errText(error))
-      } finally {
-        setMdBusy(false)
-      }
-    }
-    input.click()
   }
 
   onCleanup(() => {
@@ -1737,18 +1702,6 @@ function PageEditor(props: {
           </div>
         </div>
 
-        <div class="notion-page-actions">
-          <Show when={pageEmpty()}>
-            <button
-              type="button"
-              class="notion-page-action-btn notion-page-action-btn-primary"
-              disabled={mdBusy()}
-              onClick={importMarkdown}
-            >
-              {mdBusy() ? "Importing..." : "Import Markdown"}
-            </button>
-          </Show>
-        </div>
         {/* Ghost title */}
         <input
           type="text"

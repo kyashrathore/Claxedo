@@ -95,65 +95,6 @@ describe("pagesApi", () => {
     expect(calls[0].init?.method).toBe("DELETE")
   })
 
-  test("exportMarkdown(id) calls GET /:id/export/markdown", async () => {
-    okJson = {
-      id: "p1",
-      title: "Page",
-      markdown: "# Page",
-      meta: {
-        page_id: "p1",
-        updated_at: "2026-01-01T00:00:00.000Z",
-        doc_hash: "doc-hash",
-        md_export_hash: "md-hash",
-        md_export_base_doc_hash: "doc-hash",
-        derived_markdown: true,
-      },
-    }
-    await pagesApi.exportMarkdown("p1")
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/export/markdown")
-    expect(calls[0].init?.method).toBeUndefined()
-  })
-
-  test("exportMarkdownRaw(id) calls GET /:id/export/markdown?raw=1", async () => {
-    await pagesApi.exportMarkdownRaw("p1")
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/export/markdown?raw=1")
-    expect(calls[0].init?.method).toBeUndefined()
-    const headers = calls[0].init?.headers as Record<string, string> | undefined
-    expect(headers?.Accept).toBe("text/markdown")
-  })
-
-  test("importMarkdown(id, markdown, force) calls POST /:id/import/markdown", async () => {
-    await pagesApi.importMarkdown("p1", "# hi", true)
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/import/markdown")
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify({ markdown: "# hi", force: true }))
-  })
-
-  test("importMarkdown(id, markdown) defaults force=false", async () => {
-    await pagesApi.importMarkdown("p1", "# hi")
-    expect(calls).toHaveLength(1)
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify({ markdown: "# hi", force: false }))
-  })
-
-  test("syncMarkdown(id, force) calls POST /:id/sync/markdown", async () => {
-    await pagesApi.syncMarkdown("p1", true)
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/sync/markdown")
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify({ force: true }))
-  })
-
-  test("syncMarkdown(id) defaults force=false", async () => {
-    await pagesApi.syncMarkdown("p1")
-    expect(calls).toHaveLength(1)
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify({ force: false }))
-  })
-
   test("arenaStart(id, input) calls POST /:id/arena/start", async () => {
     const input = {
       directory: "/repo",
@@ -208,15 +149,12 @@ describe("pagesApi", () => {
     await pagesApi.create("t")
     await pagesApi.update("x", { title: "t" })
     await pagesApi.delete("x")
-    await pagesApi.exportMarkdown("x")
-    await pagesApi.importMarkdown("x", "hello")
-    await pagesApi.syncMarkdown("x")
     await pagesApi.arenaStart("x", { config: { agents: [{ name: "a", role: "r", duty: "d", model: "p/m" }] } })
     await pagesApi.arenaState("x")
     await pagesApi.arenaMessage("x", { text: "hello" })
     await pagesApi.arenaControl("x", { action: "pause" })
 
-    expect(calls).toHaveLength(12)
+    expect(calls).toHaveLength(9)
     for (const call of calls) {
       const headers = call.init?.headers as Record<string, string> | undefined
       expect(headers).toBeDefined()
@@ -252,31 +190,4 @@ describe("error handling", () => {
     )
   })
 
-  test("exportMarkdownRaw returns markdown text body", async () => {
-    okContentType = "text/markdown"
-    okText = "# hello\n"
-    await expect(pagesApi.exportMarkdownRaw("p1")).resolves.toBe("# hello\n")
-  })
-
-  test("importMarkdown preserves conflict payload on 409", async () => {
-    shouldFail = true
-    failText = JSON.stringify({
-      error: "Markdown import conflict",
-      conflict: true,
-      base_hash: "a",
-      current_hash: "b",
-    })
-    await expect(pagesApi.importMarkdown("p1", "# hi")).rejects.toThrow(failText)
-  })
-
-  test("syncMarkdown preserves conflict payload on 409", async () => {
-    shouldFail = true
-    failText = JSON.stringify({
-      error: "Markdown import conflict",
-      conflict: true,
-      base_hash: "a",
-      current_hash: "b",
-    })
-    await expect(pagesApi.syncMarkdown("p1")).rejects.toThrow(failText)
-  })
 })
