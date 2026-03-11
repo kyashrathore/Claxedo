@@ -15,8 +15,13 @@
     "noEmit": true,
     "emitDeclarationOnly": false,
     "outDir": "node_modules/.ts-dist",
-    "types": ["vite/client", "node", "electron"]
+    "types": ["vite/client", "node", "electron"],
+    "paths": {
+      "#terminal-backend": ["../claxedo-app/src/overrides/terminal/backend/xterm"],
+      "@claxedo/*": ["../claxedo-app/src/*"],
+      "@/*": ["../claxedo-app/src/overrides/*", "../app/src/*"]
+    }
   },
-  "references": [{ "path": "../claxedo-app" }, { "path": "../app" }],
+  "references": [{ "path": "../app" }],
   "include": ["src", "package.json"]
 }

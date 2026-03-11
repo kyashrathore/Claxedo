@@ -4,11 +4,12 @@ import {
   AppBaseProviders,
   AppInterface,
   handleNotificationClick,
-  type Platform,
+  type Platform as AppPlatform,
   PlatformProvider,
   ServerConnection,
   useCommand,
 } from "@opencode-ai/app"
+import { ConfigProvider, getAuthToken, getDefaultConfig, initClaxedo } from "@opencode-ai/claxedo-app"
 import { ClaxedoSplash } from "@claxedo/claxedo-ui/components/claxedo-logo"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { type Accessor, createResource, createSignal, type JSX, createEffect, onCleanup, onMount, Show } from "solid-js"
@@ -16,7 +17,6 @@ import { render } from "solid-js/web"
 import { MemoryRouter } from "@solidjs/router"
 
 import { useTheme } from "@opencode-ai/ui/theme"
-import { initClaxedo, getDefaultConfig, ConfigProvider, getAuthToken } from "@claxedo/index"
 import { initPostHog, capture as phCapture } from "@claxedo/opencode-patches/observability/posthog"
 
 import pkg from "../../package.json"
@@ -25,6 +25,10 @@ import { UPDATER_ENABLED } from "./updater"
 import { webviewZoom } from "./webview-zoom"
 import "./styles.css"
 import type { ServerReadyData } from "../preload/types"
+
+type Platform = AppPlatform & {
+  getAuthToken?(): Promise<string | null>
+}
 
 
 const root = document.getElementById("root")

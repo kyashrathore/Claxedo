@@ -24,4 +24,8 @@ export const dict = {
   "desktop.cli.installed.message": "CLI installed to {{path}}\n\nRestart your terminal to use the 'opencode' command.",
   "desktop.cli.failed.title": "Installation Failed",
   "desktop.cli.failed.message": "Failed to install CLI: {{error}}",
+
+  "desktop.error.serverStartFailed.title": "Claxedo failed to start",
+  "desktop.error.serverStartFailed.description":
+    "The local Claxedo server could not be started. Restart the app, or check your network settings (VPN/proxy) and try again.",
 }
