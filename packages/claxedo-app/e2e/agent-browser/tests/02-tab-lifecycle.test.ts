@@ -2,15 +2,16 @@
  * 02 — Tab Lifecycle
  *
  * Proves: Create adds exactly 1 tab. Close removes exactly 1 and activates
- * adjacent. Reopen (Cmd+Shift+T) restores. Process tab survives closing
- * everything.
+ * adjacent. Reopen (Cmd+Shift+T) restores. Processes can be opened as a
+ * normal closable tab from the workspace toolbar.
  *
  * Catches:
  * - Duplicate tab creation (cross-group leak)
  * - `activeId` not updating after creation
  * - `close()` selecting wrong next tab
  * - `reopenLast()` failing to pop from `closedTabs[]`
- * - Process tab `closable: false` not honored
+ * - Processes action failing to create a tab
+ * - Process tab close path leaving tab state wedged
  */
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import {
@@ -71,25 +72,27 @@ describe("02 — tab lifecycle", () => {
     expect(countAfter).toBe(countBefore + 1)
   }, 15_000)
 
-  test("process tab survives closing all closable tabs", async () => {
-    setTestContext("process tab survives")
+  test("processes button opens a closable tab", async () => {
+    setTestContext("processes button opens tab")
+    const before = await countTabs()
+    await click("button[aria-label='Processes']")
+    await settle(1500)
 
-    // Close all closable tabs one by one
-    for (let i = 0; i < 10; i++) {
-      const hasClosable = await isVisible(
-        "button[aria-label='Close tab'][data-active-close]",
-      )
-      if (!hasClosable) break
-      await click("button[aria-label='Close tab'][data-active-close]")
-      await settle(1000)
-    }
-
+    const opened = await countTabs()
     const snap = await snapshot()
-    const remaining = await countTabs()
-    await screenshot("process-tab-survives")
+    await screenshot("process-tab-opened")
 
-    // Process tab (pinned, not closable) must remain
-    expect(remaining).toBeGreaterThanOrEqual(1)
-    expect(snap).toContain("Processes")
+    expect(opened).toBe(before + 1)
+    expect(
+      snap.includes("Add process") ||
+        snap.includes("Process not running") ||
+        snap.includes("No processes configured"),
+    ).toBe(true)
+
+    await click("button[aria-label='Close tab'][data-active-close]")
+    await settle(1000)
+    await screenshot("process-tab-closed")
+
+    expect(await countTabs()).toBe(before)
   }, 30_000)
 })

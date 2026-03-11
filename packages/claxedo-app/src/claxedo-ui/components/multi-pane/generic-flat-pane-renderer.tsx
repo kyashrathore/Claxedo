@@ -159,6 +159,7 @@ export function GenericFlatPaneRenderer(props: { tabId: string; groupId: string 
               if (!parentRect) return
               const start = handle.dir === "v" ? event.clientX : event.clientY
               const initSize = handle.position
+              document.documentElement.dataset.terminalResizeSuspended = "1"
 
               const move = (e: PointerEvent) => {
                 const delta = (handle.dir === "v" ? e.clientX : e.clientY) - start
@@ -173,6 +174,8 @@ export function GenericFlatPaneRenderer(props: { tabId: string; groupId: string 
               }
 
               const up = () => {
+                delete document.documentElement.dataset.terminalResizeSuspended
+                window.dispatchEvent(new Event("opencode:terminal-fit"))
                 window.removeEventListener("pointermove", move)
                 window.removeEventListener("pointerup", up)
               }

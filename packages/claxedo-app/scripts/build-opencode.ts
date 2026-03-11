@@ -99,12 +99,14 @@ async function applyPatches(): Promise<string[]> {
 }
 
 /**
- * Restore patched files: git checkout for modified files, rm for new files
+ * Restore patched files: git checkout for modified files, rm for new files.
+ * Also removes empty directories left behind after deleting new files.
  */
 async function restoreFiles(patchedFiles: string[]) {
   if (patchedFiles.length === 0) return
 
   log("Restoring original files...")
+  const dirsToCheck = new Set<string>()
   for (const relPath of patchedFiles) {
     const fullPath = path.join("src", relPath)
     // Check if the file is tracked by git (exists in HEAD)
@@ -120,6 +122,27 @@ async function restoreFiles(patchedFiles: string[]) {
       debug(`  Removing new file: ${fullPath}`)
       const absPath = path.join(OPENCODE_DIR, fullPath)
       await fs.promises.rm(absPath, { force: true })
+      // Track parent directories for cleanup
+      let dir = path.dirname(absPath)
+      const srcRoot = path.join(OPENCODE_DIR, "src")
+      while (dir.length > srcRoot.length) {
+        dirsToCheck.add(dir)
+        dir = path.dirname(dir)
+      }
+    }
+  }
+
+  // Remove empty directories (deepest first)
+  const sortedDirs = [...dirsToCheck].sort((a, b) => b.length - a.length)
+  for (const dir of sortedDirs) {
+    try {
+      const entries = await fs.promises.readdir(dir)
+      if (entries.length === 0) {
+        debug(`  Removing empty dir: ${dir}`)
+        await fs.promises.rmdir(dir)
+      }
+    } catch {
+      // Directory may already be removed
     }
   }
 }

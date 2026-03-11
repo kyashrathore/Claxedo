@@ -59,6 +59,14 @@ const WRAPPER_NAME = /^[a-z0-9][a-z0-9._-]{0,31}$/
 const GEMINI_SETTINGS_PATH = path.join(os.homedir(), ".gemini", "settings.json")
 const CURSOR_HOOKS_PATH = path.join(os.homedir(), ".cursor", "hooks.json")
 const MASTRA_HOOKS_PATH = path.join(os.homedir(), ".mastracode", "hooks.json")
+const CURSOR_MCP_PATH = path.join(os.homedir(), ".cursor", "mcp.json")
+const MCP_AGENTS_CONFIG = "mcp-agents.json"
+
+// Agents that support MCP server injection
+export const MCP_CAPABLE_AGENTS = ["opencode", "claude", "gemini", "cursor"] as const
+export type McpCapableAgent = (typeof MCP_CAPABLE_AGENTS)[number]
+export const MANAGED_MCP_SERVERS = ["claxedo-mcp"] as const
+export type ManagedMcpServer = (typeof MANAGED_MCP_SERVERS)[number]
 
 const shellQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
 
@@ -99,6 +107,15 @@ const asRecord = (value: unknown) => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {}
   return value as Record<string, unknown>
 }
+
+type McpConfig = {
+  command: string
+  args: string[]
+  env: Record<string, string>
+}
+
+export const isManagedMcpServer = (value: string): value is ManagedMcpServer =>
+  MANAGED_MCP_SERVERS.includes(value as ManagedMcpServer)
 
 const readJSON = async (filePath: string) => {
   try {
@@ -180,6 +197,43 @@ const upsertMastraHooks = async (notifyPath: string, force: boolean) => {
   ensure("PostToolUse")
 
   await writeIfChanged(MASTRA_HOOKS_PATH, JSON.stringify(root, null, 2) + "\n", 0o644, force)
+}
+
+const applyMcp = (root: Record<string, unknown>, mcp: Record<string, McpConfig>) => {
+  const mcpServers = asRecord(root.mcpServers)
+  for (const server of MANAGED_MCP_SERVERS) {
+    delete mcpServers[server]
+  }
+  for (const [server, cfg] of Object.entries(mcp)) {
+    mcpServers[server] = cfg
+  }
+
+  if (Object.keys(mcpServers).length > 0) {
+    root.mcpServers = mcpServers
+    return
+  }
+
+  delete root.mcpServers
+}
+
+/**
+ * Add/remove managed MCP servers from Gemini's settings.json mcpServers
+ */
+const upsertGeminiMcp = async (mcp: Record<string, McpConfig>, force: boolean) => {
+  await fs.promises.mkdir(path.dirname(GEMINI_SETTINGS_PATH), { recursive: true, mode: 0o755 })
+  const root = asRecord(await readJSON(GEMINI_SETTINGS_PATH))
+  applyMcp(root, mcp)
+  await writeIfChanged(GEMINI_SETTINGS_PATH, JSON.stringify(root, null, 2) + "\n", 0o644, force)
+}
+
+/**
+ * Add/remove managed MCP servers from Cursor's mcp.json
+ */
+const upsertCursorMcp = async (mcp: Record<string, McpConfig>, force: boolean) => {
+  await fs.promises.mkdir(path.dirname(CURSOR_MCP_PATH), { recursive: true, mode: 0o755 })
+  const root = asRecord(await readJSON(CURSOR_MCP_PATH))
+  applyMcp(root, mcp)
+  await writeIfChanged(CURSOR_MCP_PATH, JSON.stringify(root, null, 2) + "\n", 0o644, force)
 }
 
 /**
@@ -421,10 +475,10 @@ exec "$REAL_CLAUDE" --settings "${settingsPath}" "$@"
 }
 
 /**
- * Generate Claude settings JSON with hooks
+ * Generate Claude settings JSON with hooks and optionally managed MCP servers
  */
-function generateClaudeSettings(notifyPath: string): string {
-  const settings = {
+function generateClaudeSettings(notifyPath: string, mcp: Record<string, McpConfig>): string {
+  const settings: Record<string, unknown> = {
     hooks: {
       UserPromptSubmit: [{ hooks: [{ type: "command", command: notifyPath }] }],
       PostToolUse: [{ hooks: [{ type: "command", command: notifyPath }] }],
@@ -432,6 +486,9 @@ function generateClaudeSettings(notifyPath: string): string {
       PostToolUseFailure: [{ hooks: [{ type: "command", command: notifyPath }] }],
       PermissionRequest: [{ matcher: "*", hooks: [{ type: "command", command: notifyPath }] }],
     },
+  }
+  if (Object.keys(mcp).length > 0) {
+    settings.mcpServers = mcp
   }
   return JSON.stringify(settings, null, 2)
 }
@@ -1031,13 +1088,47 @@ _claxedo_debug "PATH updated"
 /**
  * Resolve the claxedo-mcp command.
  *
- * Checks two locations in order:
- * 1. Sibling of process.execPath — works in Tauri sidecar mode (claxedo-mcp compiled alongside opencode-cli)
- * 2. Source file via import.meta.url — works in dev mode (bun runs the .ts directly)
+ * Checks four locations in order:
+ * 1. JS bundle sibling of process.execPath — runs via opencode-cli with BUN_BE_BUN=1
+ * 2. Tauri resource paths — packaged desktop builds place sidecars under resources/sidecars
+ * 3. Compiled binary sibling (legacy, backward compat)
+ * 4. Source file via import.meta.url — works in dev mode (bun runs the .ts directly)
  */
 function resolveClaxedoMcpCommand(): string[] {
-  // 1. Compiled binary adjacent to the running process (Tauri sidecar mode)
   const execDir = path.dirname(process.execPath)
+  const probe = (file: string) => {
+    try {
+      if (fs.existsSync(file)) {
+        log.info("Resolved claxedo-mcp JS bundle", { path: file })
+        return [process.execPath, file]
+      }
+    } catch {}
+  }
+
+  // 1. JS bundle adjacent to the running process (uses opencode-cli as runtime)
+  const local = probe(path.join(execDir, "claxedo-mcp.js"))
+  if (local) return local
+
+  // 2. Packaged Tauri resources preserve the sidecars/ prefix under the resource dir
+  const tauri = [
+    path.join(execDir, "sidecars", "claxedo-mcp.js"),
+    path.resolve(execDir, "..", "Resources", "sidecars", "claxedo-mcp.js"),
+  ]
+  for (const file of tauri) {
+    const hit = probe(file)
+    if (hit) return hit
+  }
+
+  try {
+    const libDir = path.resolve(execDir, "..", "lib")
+    for (const entry of fs.readdirSync(libDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const hit = probe(path.join(libDir, entry.name, "sidecars", "claxedo-mcp.js"))
+      if (hit) return hit
+    }
+  } catch {}
+
+  // 3. Compiled binary (legacy/backward compat)
   try {
     const entries = fs.readdirSync(execDir)
     for (const entry of entries) {
@@ -1052,7 +1143,7 @@ function resolveClaxedoMcpCommand(): string[] {
     }
   } catch {}
 
-  // 2. Source file via import.meta.url (development mode)
+  // 4. Source file via import.meta.url (development mode)
   try {
     const sourcePath = new URL("../mcp/claxedo-mcp.ts", import.meta.url).pathname
     if (fs.existsSync(sourcePath)) {
@@ -1062,6 +1153,41 @@ function resolveClaxedoMcpCommand(): string[] {
 
   log.warn("Could not resolve claxedo-mcp binary or source file")
   return []
+}
+
+/**
+ * Build claxedo-mcp config in stdio MCP format (command/args/env)
+ * Used by Claude, Gemini, Cursor etc.
+ */
+function getClaxedoMcpStdioConfig(port: number): { command: string; args: string[]; env: Record<string, string> } | null {
+  const command = resolveClaxedoMcpCommand()
+  if (!command.length) return null
+  const needsBunBeBun = command.length > 1 && command[1].endsWith(".js")
+  return {
+    command: command[0],
+    args: command.slice(1),
+    env: {
+      OPENCODE_API_URL: `http://localhost:${port}`,
+      ...(needsBunBeBun ? { BUN_BE_BUN: "1" } : {}),
+    },
+  }
+}
+
+function getManagedMcpConfig(server: ManagedMcpServer, port: number): McpConfig | null {
+  switch (server) {
+    case "claxedo-mcp":
+      return getClaxedoMcpStdioConfig(port)
+  }
+}
+
+function buildManagedMcp(port: number, state: McpAgentsState, agent: McpCapableAgent): Record<string, McpConfig> {
+  const result: Record<string, McpConfig> = {}
+  for (const server of MANAGED_MCP_SERVERS) {
+    if (state.servers[server][agent] === false) continue
+    const cfg = getManagedMcpConfig(server, port)
+    if (cfg) result[server] = cfg
+  }
+  return result
 }
 
 /**
@@ -1089,24 +1215,19 @@ Call it without arguments to use \`CLAXEDO_TAB_ID\` / \`CLAXEDO_TERMINAL_ID\`, o
 /**
  * Generate the opencode.jsonc MCP config
  */
-function generateOpencodeJsonc(port: number): string {
-  const command = resolveClaxedoMcpCommand()
-  if (!command.length) {
-    log.warn("Skipping claxedo-mcp in opencode.jsonc — binary not found")
-    return JSON.stringify({}, null, 2) + "\n"
-  }
-  const config = {
-    mcp: {
-      "claxedo-mcp": {
+function generateOpencodeJsonc(mcp: Record<string, McpConfig>): string {
+  const config = Object.fromEntries(
+    Object.entries(mcp).map(([server, cfg]) => [
+      server,
+      {
         type: "local",
-        command,
-        environment: {
-          OPENCODE_API_URL: `http://localhost:${port}`,
-        },
+        command: [cfg.command, ...cfg.args],
+        environment: cfg.env,
       },
-    },
-  }
-  return JSON.stringify(config, null, 2) + "\n"
+    ]),
+  )
+  if (!Object.keys(config).length) return JSON.stringify({}, null, 2) + "\n"
+  return JSON.stringify({ mcp: config }, null, 2) + "\n"
 }
 
 /**
@@ -1193,9 +1314,17 @@ export async function setupAgentHooks(options: SetupOptions = {}): Promise<void>
   await writeIfChanged(cursorHookPath, generateCursorHook(notifyPath), 0o755, force)
   await writeIfChanged(copilotHookPath, generateCopilotHook(notifyPath), 0o755, force)
 
-  // Create Claude wrapper and settings
+  // Load MCP agent config (all enabled by default)
+  const mcpConfig = await loadMcpAgentConfig()
+
+  // Create Claude wrapper and settings (with managed MCP servers if enabled)
   await writeIfChanged(path.join(BIN_DIR, "claude"), generateClaudeWrapper(), 0o755, force)
-  await writeIfChanged(path.join(HOOKS_DIR, CLAUDE_SETTINGS), generateClaudeSettings(notifyPath), 0o644, force)
+  await writeIfChanged(
+    path.join(HOOKS_DIR, CLAUDE_SETTINGS),
+    generateClaudeSettings(notifyPath, buildManagedMcp(port, mcpConfig, "claude")),
+    0o644,
+    force,
+  )
 
   // Create Codex wrapper
   await writeIfChanged(
@@ -1232,6 +1361,14 @@ export async function setupAgentHooks(options: SetupOptions = {}): Promise<void>
     log.warn("Failed to configure Mastra hooks", { error })
   })
 
+  // Inject managed MCP servers into agent MCP configs (on by default)
+  await upsertGeminiMcp(buildManagedMcp(port, mcpConfig, "gemini"), force).catch((error) => {
+    log.warn("Failed to configure Gemini MCP", { error })
+  })
+  await upsertCursorMcp(buildManagedMcp(port, mcpConfig, "cursor"), force).catch((error) => {
+    log.warn("Failed to configure Cursor MCP", { error })
+  })
+
   const existingCustom = await loadCustomWrappers()
   const incoming = normalizeWrappers(wrappers ?? [])
   const custom =
@@ -1250,7 +1387,15 @@ export async function setupAgentHooks(options: SetupOptions = {}): Promise<void>
 
   // Create doc agent config and MCP config
   await writeIfChanged(path.join(OPENCODE_AGENT_DIR, DOC_AGENT_MD), generateDocAgentMd(), 0o644, force)
-  await writeIfChanged(path.join(OPENCODE_CONFIG_DIR, OPENCODE_JSONC), generateOpencodeJsonc(port), 0o644, force)
+  await writeIfChanged(
+    path.join(OPENCODE_CONFIG_DIR, OPENCODE_JSONC),
+    generateOpencodeJsonc(buildManagedMcp(port, mcpConfig, "opencode")),
+    0o644,
+    force,
+  )
+
+  // Persist MCP config with current port (for toggle API)
+  await saveMcpAgentConfig({ port, servers: mcpConfig.servers })
 
   // Create shell integration
   await writeIfChanged(path.join(SHELL_DIR, ".zshrc"), generateZshrc(), 0o644, force)
@@ -1268,6 +1413,99 @@ export async function listWrapperAgents() {
     defaults,
     custom,
     all,
+  }
+}
+
+// ── MCP per-agent config ────────────────────────────────────────────────────
+
+export interface McpAgentsState {
+  port: number
+  servers: Record<ManagedMcpServer, Record<string, boolean>>
+}
+
+const mcpAgentConfigPath = () => path.join(CLAXEDO_DIR, MCP_AGENTS_CONFIG)
+
+type McpAgentsFile = Partial<McpAgentsState> & {
+  agents?: Record<string, boolean>
+}
+
+const loadMcpAgents = (value?: unknown, base?: Record<string, boolean>) => {
+  const root = asRecord(value)
+  const agents: Record<string, boolean> = {}
+  for (const agent of MCP_CAPABLE_AGENTS) {
+    const next = root[agent]
+    agents[agent] = typeof next === "boolean" ? next : base?.[agent] ?? true
+  }
+  return agents
+}
+
+const defaultMcpServers = (value?: McpAgentsFile) => {
+  const root = asRecord(value?.servers)
+  const legacy = loadMcpAgents(value?.agents)
+  const servers = {} as Record<ManagedMcpServer, Record<string, boolean>>
+  for (const server of MANAGED_MCP_SERVERS) {
+    servers[server] = loadMcpAgents(root[server], server === "claxedo-mcp" ? legacy : undefined)
+  }
+  return servers
+}
+
+export async function loadMcpAgentConfig(): Promise<McpAgentsState> {
+  try {
+    const raw = await fs.promises.readFile(mcpAgentConfigPath(), "utf-8")
+    const data = JSON.parse(raw) as McpAgentsFile
+    return { port: data.port ?? 7860, servers: defaultMcpServers(data) }
+  } catch {
+    return { port: 7860, servers: defaultMcpServers() }
+  }
+}
+
+async function saveMcpAgentConfig(state: McpAgentsState): Promise<void> {
+  await fs.promises.mkdir(CLAXEDO_DIR, { recursive: true, mode: 0o755 })
+  await writeIfChanged(mcpAgentConfigPath(), JSON.stringify(state, null, 2) + "\n", 0o644, true)
+}
+
+/**
+ * Toggle a managed MCP server for a specific agent and re-generate its config
+ */
+export async function toggleAgentMcp(server: string, agent: string, enabled: boolean): Promise<void> {
+  if (!isManagedMcpServer(server)) {
+    throw new Error(`Unknown managed MCP server: ${server}`)
+  }
+  const state = await loadMcpAgentConfig()
+  state.servers[server][agent] = enabled
+  await saveMcpAgentConfig(state)
+
+  const { port } = state
+  const force = true
+  const mcp = buildManagedMcp(port, state, agent as McpCapableAgent)
+
+  switch (agent) {
+    case "claude": {
+      const notifyPath = path.join(HOOKS_DIR, NOTIFY_SCRIPT)
+      await writeIfChanged(
+        path.join(HOOKS_DIR, CLAUDE_SETTINGS),
+        generateClaudeSettings(notifyPath, mcp),
+        0o644,
+        force,
+      )
+      break
+    }
+    case "gemini":
+      await upsertGeminiMcp(mcp, force)
+      break
+    case "cursor":
+      await upsertCursorMcp(mcp, force)
+      break
+    case "opencode":
+      await writeIfChanged(
+        path.join(OPENCODE_CONFIG_DIR, OPENCODE_JSONC),
+        generateOpencodeJsonc(mcp),
+        0o644,
+        force,
+      )
+      break
+    default:
+      log.warn("Unknown MCP-capable agent", { agent })
   }
 }
 

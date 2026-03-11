@@ -11,6 +11,7 @@ import z from "zod"
 import { lazy } from "@/util/lazy"
 import { errors } from "@/server/error"
 import { Pty } from "@/pty"
+import { MCP } from "@/mcp"
 import { Process } from "./process"
 import * as ProcessManager from "./index"
 import { collectDiagnostics, terminateDiagnostic } from "./diagnostics"
@@ -49,7 +50,7 @@ export const ProcessRoutes = lazy(() =>
         summary: "Add process config",
         description:
           "Add a new process configuration. An ID is auto-generated if not provided. " +
-          "The config is persisted to .opencode/processes.jsonc.",
+          "The config is persisted to the project root .opencode/processes.jsonc.",
         operationId: "process.add",
         responses: {
           201: {
@@ -353,7 +354,8 @@ export const ProcessRoutes = lazy(() =>
           directory: c.req.query("directory") || c.req.header("x-opencode-directory") || process.cwd(),
           configs: ProcessManager.configs(),
           processes: ProcessManager.list(),
-          ptys: Pty.list(),
+          ptys: Pty.listDetailed(),
+          mcp: await MCP.pids(),
         })
         return c.json(snapshot)
       },
@@ -388,7 +390,18 @@ export const ProcessRoutes = lazy(() =>
           await Pty.remove(body.pty_id)
           return c.json(true)
         }
-        await terminateDiagnostic(body)
+        await terminateDiagnostic(
+          body,
+          body.group_key
+            ? await collectDiagnostics({
+                directory: c.req.query("directory") || c.req.header("x-opencode-directory") || process.cwd(),
+                configs: ProcessManager.configs(),
+                processes: ProcessManager.list(),
+                ptys: Pty.listDetailed(),
+                mcp: await MCP.pids(),
+              })
+            : undefined,
+        )
         return c.json(true)
       },
     )

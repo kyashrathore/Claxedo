@@ -1,7 +1,7 @@
 import "@/index.css"
 import "@claxedo/claxedo-ui/styles.css"
-import { ErrorBoundary, Show, lazy, type ParentProps, type ParentComponent, Suspense, For, type JSX } from "solid-js"
-import { Router, Route, Navigate } from "@solidjs/router"
+import { ErrorBoundary, Show, lazy, type ParentProps, type ParentComponent, Suspense, For, type JSX, type Component } from "solid-js"
+import { type BaseRouterProps, Router, Route, Navigate } from "@solidjs/router"
 import { MetaProvider } from "@solidjs/meta"
 import { Font } from "@opencode-ai/ui/font"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
@@ -203,20 +203,28 @@ function AuthenticatedLayout(
   )
 }
 
-export function AppInterface(props: { defaultServer?: ServerConnection.Key; servers?: Array<ServerConnection.Any> }) {
+export function AppInterface(props: {
+  children?: JSX.Element
+  defaultServer?: ServerConnection.Key
+  servers?: Array<ServerConnection.Any>
+  router?: Component<BaseRouterProps>
+}) {
   const ext = getExtensions()
   const routes = ext.app.routes ?? []
   const base = isDemoMode() ? "/demo" : undefined
+  const RouterComponent = props.router ?? Router
 
   return wrapProviders(
     ext.app.providers,
-    <Router base={base}>
+    <RouterComponent base={base}>
       {/* Extension routes (e.g. /login from cloud package) */}
       <For each={routes}>{(route) => <Route path={route.path} component={route.component} />}</For>
 
       <Route
         path="/"
-        component={(p) => <AuthenticatedLayout {...p} defaultServer={props.defaultServer} servers={props.servers} />}
+        component={(p) => (
+          <AuthenticatedLayout {...p} defaultServer={props.defaultServer} servers={props.servers} />
+        )}
       >
         <Route
           path="/"
@@ -259,6 +267,6 @@ export function AppInterface(props: { defaultServer?: ServerConnection.Key; serv
           <Route path="/page/:pageId" component={() => <div class="hidden" />} />
         </Route>
       </Route>
-    </Router>,
+    </RouterComponent>,
   )
 }

@@ -45,6 +45,7 @@ import { oscProcessExit } from "./osc-process-exit"
 // CLAXEDO PATCH: Environment sanitization and CWD resolution
 import { buildSafeEnv, getLocale } from "./env"
 import { resolveCwd } from "./resolve-cwd"
+import { disposeMode } from "./dispose-mode"
 // CLAXEDO PATCH: Write queue (extracted for testability)
 import {
   type QueuedOperation,
@@ -101,6 +102,12 @@ export namespace Pty {
   const DEBUG_RESIZE = process.env.OPENCODE_DEBUG_PTY_RESIZE === "1"
   // CLAXEDO PATCH: Debug flag for agent hooks integration
   const CLAXEDO_DEBUG = process.env.CLAXEDO_DEBUG === "1"
+  // CLAXEDO PATCH: Orphan timeout — kill PTY if no client reconnects within this window
+  const ORPHAN_TIMEOUT_MS = (() => {
+    const raw = Number(process.env.OPENCODE_PTY_ORPHAN_TIMEOUT_MS)
+    if (!Number.isFinite(raw) || raw <= 0) return 60_000 // 1 minute default
+    return Math.floor(raw)
+  })()
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
   const sample = (value: string) =>
@@ -155,14 +162,19 @@ export namespace Pty {
   // CLAXEDO PATCH: Kill process group for clean cleanup
   async function killProcessTree(pid: number) {
     if (!Number.isFinite(pid) || pid <= 0) return
-    if (process.platform !== "win32") {
+    for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+      if (process.platform !== "win32") {
+        try {
+          process.kill(-pid, signal)
+        } catch {}
+      }
       try {
-        process.kill(-pid, "SIGTERM")
+        process.kill(pid, signal)
       } catch {}
+      if (signal === "SIGTERM") {
+        await new Promise((r) => setTimeout(r, 500))
+      }
     }
-    try {
-      process.kill(pid, "SIGTERM")
-    } catch {}
   }
 
   const pty = lazy(async () => {
@@ -191,6 +203,8 @@ export namespace Pty {
     title: z.string().optional(),
     env: z.record(z.string(), z.string()).optional(),
     previousPtyId: z.string().optional(),
+    // CLAXEDO PATCH: Managed PTYs (owned by process manager) skip orphan cleanup
+    managed: z.boolean().optional(),
   })
 
   export type CreateInput = z.infer<typeof CreateInput>
@@ -253,11 +267,21 @@ export namespace Pty {
     // CLAXEDO PATCH: Captured Instance.directory for use in async callbacks
     // (onExit, onData, onClose fire outside AsyncLocalStorage context)
     directory: string
+    // CLAXEDO PATCH: Managed flag — managed process PTYs skip orphan cleanup
+    managed: boolean
+    // CLAXEDO PATCH: Orphan cleanup timer — fires when no clients reconnect
+    orphanTimer: ReturnType<typeof setTimeout> | undefined
   }
 
   // CLAXEDO PATCH: Centralized session cleanup with guards
   async function cleanupSession(id: string, session: ActiveSession, reason: "exit" | "remove") {
     if (session.removed) return
+
+    // CLAXEDO PATCH: Clear orphan timer if pending
+    if (session.orphanTimer) {
+      clearTimeout(session.orphanTimer)
+      session.orphanTimer = undefined
+    }
 
     // CLAXEDO PATCH: If session exited, keep it briefly so clients can read the final buffer/error
     if (reason === "exit") {
@@ -310,7 +334,7 @@ export namespace Pty {
     () => new Map<string, ActiveSession>(),
     async (sessions) => {
       for (const [id, session] of sessions.entries()) {
-        await cleanupSession(id, session, "exit")
+        await cleanupSession(id, session, disposeMode(session))
       }
       sessions.clear()
     },
@@ -318,6 +342,19 @@ export namespace Pty {
 
   export function list() {
     return Array.from(state().values()).map((s) => s.info)
+  }
+
+  /** List all sessions with connection stats (subscriber count, ready flag). */
+  export function listDetailed() {
+    return Array.from(state().values()).map((s) => ({
+      ...s.info,
+      subscribers: s.subscribers.size,
+      ready: s.ready,
+      exited: s.exited,
+      removed: s.removed,
+      managed: s.managed,
+      orphanTimerActive: !!s.orphanTimer,
+    }))
   }
 
   export function get(id: string) {
@@ -513,6 +550,8 @@ export namespace Pty {
       createdAt: performance.now(),
       firstByteAt: undefined,
       directory: instanceDir,
+      managed: !!input.managed,
+      orphanTimer: undefined,
     }
     state().set(id, session)
     ptyProcess.onData((data) => {
@@ -652,6 +691,13 @@ export namespace Pty {
     }
     session.subscribers.add(ws)
 
+    // CLAXEDO PATCH: Cancel orphan timer — a client reconnected
+    if (session.orphanTimer) {
+      clearTimeout(session.orphanTimer)
+      session.orphanTimer = undefined
+      log.info("orphan timer cancelled — client reconnected", { id })
+    }
+
     // Upstream: cursor-based delta replay from in-memory buffer
     const start = session.bufferCursor
     const end = session.cursor
@@ -723,9 +769,22 @@ export namespace Pty {
         session.subscribers.delete(ws)
         // CLAXEDO PATCH: Re-establish context — onClose fires outside AsyncLocalStorage
         void Instance.provide({ directory: session.directory, fn: () => Bus.publish(Event.Stream, { id, kind: "disconnect" }) })
-        // CLAXEDO PATCH: Reset ready flag when all clients disconnect
+        // CLAXEDO PATCH: Reset ready flag and start orphan timer when all clients disconnect
         if (session.subscribers.size === 0) {
           session.ready = false
+          // Start orphan timer for non-managed PTYs
+          if (!session.managed && !session.exited && !session.removed && !session.orphanTimer) {
+            log.info("orphan timer started", { id, timeoutMs: ORPHAN_TIMEOUT_MS })
+            session.orphanTimer = setTimeout(() => {
+              // Re-fetch from state to avoid holding stale session reference
+              const current = state().get(id)
+              if (!current) return // Already cleaned up
+              current.orphanTimer = undefined
+              if (current.subscribers.size > 0 || current.exited || current.removed) return
+              log.info("orphan timer fired — removing abandoned PTY", { id })
+              void Instance.provide({ directory: current.directory, fn: () => remove(id) })
+            }, ORPHAN_TIMEOUT_MS)
+          }
         }
       },
     }

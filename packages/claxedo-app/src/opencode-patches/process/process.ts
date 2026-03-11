@@ -66,7 +66,7 @@ export namespace Process {
       port: z.object({
         name: z.string().regex(/^[a-z0-9._-]+$/),
         inject: z.string(),
-        /** Preferred port number — try this port first before picking a random one. */
+        /** Preferred port number — try this workspace's target port before scanning upward. */
         preferred: z.number().int().positive().optional(),
         /**
          * What to do when the preferred port is already in use.
@@ -142,6 +142,17 @@ export namespace Process {
   export const DiagnosticStatus = z.enum(["active", "stale", "suspect"])
   export type DiagnosticStatus = z.infer<typeof DiagnosticStatus>
 
+  export const DiagnosticOwnerKind = z.enum([
+    "tab",
+    "managed_process",
+    "mcp_server",
+    "server",
+    "app",
+    "leaked_server",
+    "external",
+  ])
+  export type DiagnosticOwnerKind = z.infer<typeof DiagnosticOwnerKind>
+
   export const DiagnosticOsProcess = z
     .object({
       pid: z.number().int(),
@@ -161,14 +172,68 @@ export namespace Process {
       workspace_id: z.string().optional(),
       agent: z.string().optional(),
       port: z.number().int().optional(),
+      mcp_name: z.string().optional(),
       tracked_pty_id: z.string().optional(),
       tracked_process_id: z.string().optional(),
       status: DiagnosticStatus,
       reasons: z.array(z.string()),
+      owner_key: z.string().optional(),
+      owner_kind: DiagnosticOwnerKind.optional(),
+      depth: z.number().int().min(0).default(0),
+      current: z.boolean().default(false),
+      leaked: z.boolean().default(false),
+      hidden_by_default: z.boolean().default(false),
     })
     .meta({ ref: "DiagnosticOsProcess" })
 
   export type DiagnosticOsProcess = z.infer<typeof DiagnosticOsProcess>
+
+  export const DiagnosticGroupTarget = z
+    .object({
+      group_key: z.string(),
+      pid: z.number().int().positive().optional(),
+      scope: z.enum(["pid", "group"]).default("pid"),
+    })
+    .meta({ ref: "DiagnosticGroupTarget" })
+
+  export type DiagnosticGroupTarget = z.infer<typeof DiagnosticGroupTarget>
+
+  export const DiagnosticGroup = z
+    .object({
+      key: z.string(),
+      kind: DiagnosticOwnerKind,
+      title: z.string(),
+      status: DiagnosticStatus,
+      cpu_percent: z.number(),
+      rss_kb: z.number().int(),
+      ports: z.array(z.number().int()),
+      pid: z.number().int().optional(),
+      terminal_id: z.string().optional(),
+      process_id: z.string().optional(),
+      tab_id: z.string().optional(),
+      current: z.boolean(),
+      leaked: z.boolean(),
+      hidden_children: z.number().int().min(0),
+      problem_children: z.number().int().min(0),
+      children: z.array(DiagnosticOsProcess),
+      target: DiagnosticGroupTarget.optional(),
+    })
+    .meta({ ref: "DiagnosticGroup" })
+
+  export type DiagnosticGroup = z.infer<typeof DiagnosticGroup>
+
+  export const DiagnosticSummaryBucket = z
+    .object({
+      groups: z.number().int().min(0),
+      rows: z.number().int().min(0),
+      cpu_percent: z.number(),
+      rss_kb: z.number().int(),
+      hidden_children: z.number().int().min(0).default(0),
+      problem_children: z.number().int().min(0).default(0),
+    })
+    .meta({ ref: "DiagnosticSummaryBucket" })
+
+  export type DiagnosticSummaryBucket = z.infer<typeof DiagnosticSummaryBucket>
 
   export const DiagnosticSnapshot = z
     .object({
@@ -192,9 +257,19 @@ export namespace Process {
           cwd: z.string(),
           status: z.enum(["running", "exited"]),
           pid: z.number().int(),
+          subscribers: z.number().int().optional(),
+          managed: z.boolean().optional(),
+          orphanTimerActive: z.boolean().optional(),
         }),
       ),
       os: z.array(DiagnosticOsProcess),
+      owners: z.array(DiagnosticGroup),
+      leaks: z.array(DiagnosticGroup),
+      summary: z.object({
+        current: DiagnosticSummaryBucket,
+        leaked: DiagnosticSummaryBucket,
+        external: DiagnosticSummaryBucket,
+      }),
       generated_at: z.number().int(),
     })
     .meta({ ref: "DiagnosticSnapshot" })
@@ -206,10 +281,11 @@ export namespace Process {
       pid: z.number().int().positive().optional(),
       pty_id: z.string().optional(),
       process_id: z.string().optional(),
+      group_key: z.string().optional(),
       signal: z.enum(["SIGTERM", "SIGKILL"]).optional(),
       scope: z.enum(["pid", "group"]).optional(),
     })
-    .refine((value) => [value.pid, value.pty_id, value.process_id].filter(Boolean).length === 1, {
+    .refine((value) => [value.pid, value.pty_id, value.process_id, value.group_key].filter(Boolean).length === 1, {
       message: "Provide exactly one of pid, pty_id, process_id",
     })
 

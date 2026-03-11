@@ -619,6 +619,19 @@ export async function createHandlers() {
     http.post(`${DEMO_BASE}/hook/agent-lifecycle`, () => {
       return HttpResponse.json({ success: true })
     }),
+    http.get(`${DEMO_BASE}/hook/mcp-agents`, () => {
+      return HttpResponse.json({
+        servers: {
+          "claxedo-mcp": { opencode: true, claude: true, gemini: true, cursor: true },
+        },
+        managed: ["claxedo-mcp"],
+        capable: ["opencode", "claude", "gemini", "cursor"],
+      })
+    }),
+    http.post(`${DEMO_BASE}/hook/mcp-agents`, async ({ request }) => {
+      const body = (await request.json()) as { server: string; agent: string; enabled: boolean }
+      return HttpResponse.json({ success: true, server: body.server, agent: body.agent, enabled: body.enabled })
+    }),
     http.get(`${DEMO_BASE}/mcp`, () => {
       return HttpResponse.json(state.mcp)
     }),

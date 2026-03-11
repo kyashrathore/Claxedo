@@ -20,6 +20,7 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url))
 const CLAXEDO_APP_DIR = path.resolve(SCRIPT_DIR, "..")
 const OPENCODE_DIR = path.resolve(CLAXEDO_APP_DIR, "../opencode")
 const PATCHES_DIR = path.resolve(CLAXEDO_APP_DIR, "src/opencode-patches")
+const ROOT_DIR = path.resolve(CLAXEDO_APP_DIR, "../..")
 
 // Parse command line args
 const args = process.argv.slice(2)
@@ -90,6 +91,14 @@ async function applyPatches(targetDir: string) {
   }
 
   await overlayDir(PATCHES_DIR, path.join(targetDir, "src"))
+}
+
+async function link(src: string, dest: string) {
+  const real = await fs.promises.realpath(src).catch(() => src)
+  if (fs.existsSync(dest)) {
+    await fs.promises.rm(dest, { recursive: true, force: true })
+  }
+  await fs.promises.symlink(real, dest)
 }
 
 /**
@@ -166,6 +175,7 @@ async function main() {
     const sourceNodeModules = path.join(OPENCODE_DIR, "node_modules")
     const targetNodeModules = path.join(tempDir, "node_modules")
     const claxedaNodeModules = path.join(CLAXEDO_APP_DIR, "node_modules")
+    const rootStore = path.join(ROOT_DIR, "node_modules", ".bun")
 
     if (!fs.existsSync(sourceNodeModules)) {
       log("Installing dependencies...")
@@ -173,6 +183,9 @@ async function main() {
     } else {
       log("Merging node_modules (opencode + claxedo-app)...")
       await fs.promises.mkdir(targetNodeModules, { recursive: true })
+      if (fs.existsSync(rootStore)) {
+        await link(rootStore, path.join(targetNodeModules, ".bun"))
+      }
 
       // Link all entries from both sources; claxedo-app layered second wins ties.
       for (const srcDir of [sourceNodeModules, claxedaNodeModules]) {
@@ -187,12 +200,10 @@ async function main() {
             const scopeEntries = await fs.promises.readdir(src, { withFileTypes: true })
             for (const sub of scopeEntries) {
               const subDest = path.join(dest, sub.name)
-              if (fs.existsSync(subDest)) await fs.promises.rm(subDest, { recursive: true })
-              await fs.promises.symlink(path.join(src, sub.name), subDest)
+              await link(path.join(src, sub.name), subDest)
             }
           } else {
-            if (fs.existsSync(dest)) await fs.promises.rm(dest, { recursive: true })
-            await fs.promises.symlink(src, dest)
+            await link(src, dest)
           }
         }
       }

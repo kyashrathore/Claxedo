@@ -95,28 +95,28 @@ describe("agent-browser smoke tests", () => {
     )
   }, 20_000)
 
-  test("process pane toggle via keyboard", async () => {
-    setTestContext("process pane toggle via keyboard")
-    // Toggle process pane with Cmd+Shift+;
-    await press("Meta+Shift+;")
+  test("processes button opens process tab", async () => {
+    setTestContext("processes button opens process tab")
+    await click("button[aria-label='Processes']")
     await settle(1500)
     await screenshot("process-pane-open")
 
     const snapWithPane = await snapshot()
     const hasProcessContent =
-      snapWithPane.includes("process") ||
-      snapWithPane.includes("Process") ||
-      snapWithPane.includes("No processes")
+      snapWithPane.includes("Add process") ||
+      snapWithPane.includes("Process not running") ||
+      snapWithPane.includes("No processes configured")
 
     console.log(
-      "[smoke] Process pane toggled. Has process content:",
+      "[smoke] Process tab opened. Has process content:",
       hasProcessContent,
     )
 
-    // Switch away from process pane (Meta+Shift+; navigates back, doesn't close it)
-    await press("Meta+Shift+;")
+    await click("button[aria-label='Close tab'][data-active-close]")
     await settle(1000)
     await screenshot("switched-from-processes")
+
+    expect(hasProcessContent).toBe(true)
   }, 15_000)
 
   test("split workspace toggle via keyboard", async () => {

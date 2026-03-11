@@ -9,7 +9,7 @@
  * - Keyboard navigation
  */
 
-import { For, Show, createMemo, createSignal, createEffect, on, onCleanup } from "solid-js"
+import { For, Show, createMemo, createSignal, createEffect, on, onCleanup, untrack } from "solid-js"
 import { Portal } from "solid-js/web"
 import { SortableProvider, createSortable, createDroppable } from "@thisbeyond/solid-dnd"
 import { useClaxedoLayout, type PaneContent, type TabItem, type TabType } from "../context/claxedo-layout"
@@ -318,6 +318,7 @@ function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
           }}
           onClick={() => props.onProcesses?.()}
           aria-label="Processes"
+          data-component="process-toggle"
         >
           <span class="text-[12px] font-medium leading-none">Processes</span>
           <Show when={dotState() === "crashed"}>
@@ -713,6 +714,7 @@ export function TopTabBar(props: TopTabBarProps) {
     })
 
   createEffect(() => {
+    // Collect session/terminal refs reactively (tracks visibleTabs + multiPaneLeafView)
     const sessions = new Set<string>()
     const terminals = new Map<string, string>()
 
@@ -737,16 +739,22 @@ export function TopTabBar(props: TopTabBarProps) {
       })
     })
 
-    sessions.forEach((entry) => {
-      const index = entry.lastIndexOf(":")
-      if (index <= 0 || index >= entry.length - 1) return
-      const directory = entry.slice(0, index)
-      const sessionId = entry.slice(index + 1)
-      ensureSessionMessages(directory, sessionId)
-    })
+    // Untrack the data-fetching phase: ensureSessionMessages reads store.part
+    // (reactive) to check for missing parts, and then writes store.part when
+    // the fetch resolves. Without untrack, the write re-triggers this effect,
+    // creating a feedback loop of ~18 redundant GET /session/{id}/message calls.
+    untrack(() => {
+      sessions.forEach((entry) => {
+        const index = entry.lastIndexOf(":")
+        if (index <= 0 || index >= entry.length - 1) return
+        const directory = entry.slice(0, index)
+        const sessionId = entry.slice(index + 1)
+        ensureSessionMessages(directory, sessionId)
+      })
 
-    terminals.forEach((directory, terminalId) => {
-      ensureTerminalSession(terminalId, directory)
+      terminals.forEach((directory, terminalId) => {
+        ensureTerminalSession(terminalId, directory)
+      })
     })
 
     if (tabbarDebug.enabled(2)) {

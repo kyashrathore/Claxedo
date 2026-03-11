@@ -18,6 +18,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 import { Process } from "../process/process"
 import { createProcessClient } from "../process/client"
+import { handleProcess } from "./process-handler"
 
 // ---------------------------------------------------------------------------
 // Shared HTTP helpers
@@ -357,7 +358,7 @@ server.registerTool(
   "council",
   {
     description:
-      "Run page-scoped multi-agent analysis (Council) and return a synthesized result. " +
+      "[Council] Run page-scoped multi-agent analysis and return a synthesized result. " +
       "Use this for debates, reviews, and non-overlapping multi-model analysis.",
     inputSchema: {
       prompt: z.string().min(1).describe("User objective for the multi-agent run."),
@@ -534,96 +535,24 @@ server.registerTool(
 )
 
 // ---------------------------------------------------------------------------
-// Process management tools
+// Process management (consolidated)
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  "list_processes",
+  "process",
   {
     description:
-      "List all configured processes and their runtime state (status, exit code, restart count). " +
-      "Use this to see what dev servers, watchers, or other long-running processes are defined and whether they are running.",
+      "[Process] Manage dev servers, watchers, and long-running processes. " +
+      "Actions: list, start, stop, restart, add, update, remove, start_all, stop_all. " +
+      "Use action='list' to see configured processes and their state. " +
+      "Use action='add' with name+command to create a new config, then action='start' with id to run it.",
     inputSchema: {
-      directory: z.string().optional().describe("Project directory. Uses default if omitted."),
-    },
-  },
-  async (args) => {
-    const data = await proc(args.directory).list()
-    if (!data.configs.length) {
-      return { content: [{ type: "text" as const, text: "No processes configured." }] }
-    }
-    const lines = data.configs.map((config) => {
-      const proc = data.processes.find((p) => p.configId === config.id)
-      return formatProcess(config, proc)
-    })
-    return { content: [{ type: "text" as const, text: lines.join("\n\n") }] }
-  },
-)
-
-server.registerTool(
-  "start_process",
-  {
-    description:
-      "Start a process by its config ID. Creates a PTY and begins execution. " +
-      "If already running, returns the current state.",
-    inputSchema: {
-      id: z.string().describe("Process config ID (e.g. proc_...)."),
-      directory: z.string().optional().describe("Project directory."),
-    },
-  },
-  async (args) => {
-    const out = await proc(args.directory).start(args.id, { interactive: false })
-    const result = launch(args.id, out, "started", "start")
-    return {
-      content: [{ type: "text" as const, text: result.text }],
-      ...(result.isError ? { isError: true } : {}),
-    }
-  },
-)
-
-server.registerTool(
-  "stop_process",
-  {
-    description: "Stop a running process by its config ID. Sends SIGTERM first, then SIGKILL after timeout.",
-    inputSchema: {
-      id: z.string().describe("Process config ID."),
-      directory: z.string().optional().describe("Project directory."),
-    },
-  },
-  async (args) => {
-    await proc(args.directory).stop(args.id)
-    return { content: [{ type: "text" as const, text: `Process ${args.id} stopped.` }] }
-  },
-)
-
-server.registerTool(
-  "restart_process",
-  {
-    description: "Stop and restart a process by its config ID. Resets the restart counter.",
-    inputSchema: {
-      id: z.string().describe("Process config ID."),
-      directory: z.string().optional().describe("Project directory."),
-    },
-  },
-  async (args) => {
-    const out = await proc(args.directory).restart(args.id)
-    const result = launch(args.id, out, "restarted", "restart")
-    return {
-      content: [{ type: "text" as const, text: result.text }],
-      ...(result.isError ? { isError: true } : {}),
-    }
-  },
-)
-
-server.registerTool(
-  "add_process",
-  {
-    description:
-      "Add a new process configuration. Persists to .opencode/processes.jsonc. " +
-      "The process is created in idle state — call start_process to run it.",
-    inputSchema: {
-      name: z.string().describe("Human-readable process name (e.g. 'dev-server', 'tailwind')."),
-      command: z.string().describe("Command to run (e.g. 'npm run dev', 'bun run start')."),
+      action: z
+        .enum(["list", "start", "stop", "restart", "add", "update", "remove", "start_all", "stop_all"])
+        .describe("Operation to perform."),
+      id: z.string().optional().describe("Process config ID (e.g. proc_...). Required for start/stop/restart/update/remove."),
+      name: z.string().optional().describe("Human-readable process name. Required for add."),
+      command: z.string().optional().describe("Command to run (e.g. 'npm run dev'). Required for add."),
       args: z.array(z.string()).optional().describe("Command arguments."),
       cwd: z.string().optional().describe("Working directory (relative to project root)."),
       env: z.record(z.string(), z.string()).optional().describe("Extra environment variables."),
@@ -634,91 +563,7 @@ server.registerTool(
     },
   },
   async (args) => {
-    const { directory, ...body } = args
-    const config = await httpRequest<ProcessConfig>(
-      "/process",
-      { method: "POST", body: JSON.stringify(body) },
-      "json",
-      directory,
-    )
-    return {
-      content: [{ type: "text" as const, text: `Process config created: ${config.name} (${config.id})` }],
-    }
-  },
-)
-
-server.registerTool(
-  "update_process",
-  {
-    description:
-      "Update an existing process configuration. If the process is running, it will be restarted with the new config.",
-    inputSchema: {
-      id: z.string().describe("Process config ID to update."),
-      name: z.string().optional().describe("New name."),
-      command: z.string().optional().describe("New command."),
-      args: z.array(z.string()).optional().describe("New arguments."),
-      cwd: z.string().optional().describe("New working directory."),
-      env: z.record(z.string(), z.string()).optional().describe("New environment variables."),
-      autoStart: z.boolean().optional().describe("Auto-start flag."),
-      restartPolicy: z.enum(["never", "on-failure", "always"]).optional().describe("Restart policy."),
-      maxRestarts: z.number().int().min(0).optional().describe("Max restart attempts."),
-      directory: z.string().optional().describe("Project directory."),
-    },
-  },
-  async (args) => {
-    const { id, directory, ...body } = args
-    const config = await httpRequest<ProcessConfig>(
-      `/process/${encodeURIComponent(id)}`,
-      { method: "PUT", body: JSON.stringify(body) },
-      "json",
-      directory,
-    )
-    return {
-      content: [{ type: "text" as const, text: `Process config updated: ${config.name} (${config.id})` }],
-    }
-  },
-)
-
-server.registerTool(
-  "remove_process",
-  {
-    description: "Remove a process configuration. Stops the process if running. Persists to .opencode/processes.jsonc.",
-    inputSchema: {
-      id: z.string().describe("Process config ID to remove."),
-      directory: z.string().optional().describe("Project directory."),
-    },
-  },
-  async (args) => {
-    await httpRequest<boolean>(`/process/${encodeURIComponent(args.id)}`, { method: "DELETE" }, "json", args.directory)
-    return { content: [{ type: "text" as const, text: `Process config ${args.id} removed.` }] }
-  },
-)
-
-server.registerTool(
-  "start_all_processes",
-  {
-    description: "Start all processes that have autoStart=true and are not already running.",
-    inputSchema: {
-      directory: z.string().optional().describe("Project directory."),
-    },
-  },
-  async (args) => {
-    await proc(args.directory).startAll()
-    return { content: [{ type: "text" as const, text: "All autoStart processes started." }] }
-  },
-)
-
-server.registerTool(
-  "stop_all_processes",
-  {
-    description: "Stop all currently running processes.",
-    inputSchema: {
-      directory: z.string().optional().describe("Project directory."),
-    },
-  },
-  async (args) => {
-    await proc(args.directory).stopAll()
-    return { content: [{ type: "text" as const, text: "All processes stopped." }] }
+    return handleProcess(args, httpRequest, proc, DEFAULT_DIR)
   },
 )
 
@@ -765,7 +610,7 @@ server.registerTool(
       ),
       on_conflict: z.enum(["pick-new", "kill-existing"]).optional().describe(
         "What to do when the preferred port is occupied. " +
-        "'pick-new' (default): pick a random free port. " +
+        "'pick-new' (default): scan upward to the next free port for this workspace. " +
         "'kill-existing': kill the process on that port and take it.",
       ),
       auto_start: z.boolean().optional().describe("Automatically start when the project opens. Default: false."),
@@ -1054,7 +899,7 @@ server.registerTool(
   "get_logs",
   {
     description:
-      "Get terminal output (logs) from a managed process or any PTY session (terminal tab/pane). " +
+      "[Logs] Get terminal output (logs) from a managed process or any PTY session (terminal tab/pane). " +
       "Accepts a process config ID, process name, PTY ID, or terminal ID. " +
       "Returns the captured output from the disk-backed history (up to 16 MiB). " +
       "Use `lines` to get only the last N lines of output.",
@@ -1062,7 +907,7 @@ server.registerTool(
       process_id: z
         .string()
         .optional()
-        .describe("Process config ID (e.g. proc_...). Use list_processes to find available IDs."),
+        .describe("Process config ID (e.g. proc_...). Use process(action='list') to find available IDs."),
       name: z
         .string()
         .optional()
@@ -1097,7 +942,7 @@ server.registerTool(
     if (!query) {
       // No identifier provided — try to list what's available
       const data = await proc(directory).list().catch(
-        () => ({ configs: [], processes: [] }) as ProcessListResponse,
+        () => ({ configs: [], processes: [] } as { configs: any[]; processes: any[] }),
       )
       const ptys = await httpRequest<PtyInfo[]>("/pty", { method: "GET" }, "json", directory).catch(
         () => [] as PtyInfo[],
@@ -1144,7 +989,7 @@ server.registerTool(
   "get_current_session",
   {
     description:
-      "Resolve the currently tracked agent session for a terminal. " +
+      "[Context] Resolve the currently tracked agent session for a terminal. " +
       "This uses lifecycle hook metadata (provider/session id), not PTY log scraping.",
     inputSchema: {
       terminal_id: z.string().optional().describe("Target terminal id. Defaults to CLAXEDO_TERMINAL_ID env."),
@@ -1231,7 +1076,7 @@ server.registerTool(
   "session_messages",
   {
     description:
-      "Get structured messages for an agent session. " +
+      "[Context] Get structured messages for an agent session. " +
       "Resolves current session by terminal first, then fetches `/session/:id/message` when available.",
     inputSchema: {
       session_id: z
@@ -1408,7 +1253,7 @@ server.registerTool(
   "summarize_logs",
   {
     description:
-      "Summarize terminal output (logs) into a short title and 2-5 sentence summary using an LLM. " +
+      "[Logs] Summarize terminal output (logs) into a short title and 2-5 sentence summary using an LLM. " +
       "Pass raw log text directly via `text`, or use identifiers (process_id, name, pty_id, terminal_id) " +
       "to fetch logs first. Returns a structured title + summary.",
     inputSchema: {
@@ -1595,7 +1440,7 @@ server.registerTool(
   "tab_context",
   {
     description:
-      "Resolve the latest Claxedo tab snapshot and named pane metadata. " +
+      "[Context] Resolve the latest Claxedo tab snapshot and named pane metadata. " +
       "Use this in terminal agents to fetch current tab state and extract pane context by name.",
     inputSchema: {
       tab_id: z.string().optional().describe("Target tab id. Defaults to CLAXEDO_TAB_ID env."),
@@ -1696,7 +1541,7 @@ server.registerTool(
   "agent_hooks_status",
   {
     description:
-      "Get Claxedo agent hook readiness and active wrapper binaries. " +
+      "[Admin] Get Claxedo agent hook readiness and active wrapper binaries. " +
       "Use this to debug why CLI agent lifecycle status might be missing in panes.",
     inputSchema: {
       directory: z.string().optional().describe("Project directory."),
@@ -1721,7 +1566,7 @@ server.registerTool(
   "configure_agent_wrappers",
   {
     description:
-      "Configure extra generic CLI wrappers for lifecycle tracking (for example aider, goose, pi), then re-run setup. " +
+      "[Admin] Configure extra generic CLI wrappers for lifecycle tracking (for example aider, goose, pi), then re-run setup. " +
       "Wrapper names are sanitized and restricted to safe binary-like identifiers.",
     inputSchema: {
       wrappers: z
@@ -1773,7 +1618,7 @@ server.registerTool(
   "update_page_markdown",
   {
     description:
-      "Update a page's content by importing markdown. This converts the markdown to the editor's " +
+      "[Pages] Update a page's content by importing markdown. This converts the markdown to the editor's " +
       "internal format and triggers a re-render. Use this instead of writing to the .md mirror file directly — " +
       "direct file edits cause sync conflicts and won't re-render until manually synced.",
     inputSchema: {
@@ -1806,6 +1651,55 @@ server.registerTool(
         },
       ],
     }
+  },
+)
+
+// ---------------------------------------------------------------------------
+// Batch Issues — parallel worktree agent spawning
+// ---------------------------------------------------------------------------
+
+import { handleBatchIssues } from "./batch-issues"
+
+server.registerTool(
+  "batch_issues",
+  {
+    description:
+      "[Batch] Spawn parallel worktree agents for multiple issues. " +
+      "Creates a git worktree for each issue and starts an agent (opencode session or CLI agent in PTY). " +
+      "Use this when a user wants to work on multiple issues simultaneously.",
+    inputSchema: {
+      issues: z
+        .array(
+          z.object({
+            title: z.string().min(1).describe("Short title for the issue / worktree branch name."),
+            prompt: z.string().min(1).describe("Full prompt text to send to the agent."),
+          }),
+        )
+        .min(1)
+        .max(10)
+        .describe("List of issues to process (max 10)."),
+      agent: z
+        .enum(["opencode", "claude", "codex", "aider"])
+        .default("opencode")
+        .describe("Agent type. 'opencode' uses built-in session, others spawn a CLI agent in a PTY."),
+      model: z
+        .string()
+        .optional()
+        .describe("Optional model override (e.g. 'anthropic/claude-sonnet-4'). Only used for opencode agent."),
+      directory: z.string().optional().describe("Project directory. Defaults to OPENCODE_API_DIR."),
+    },
+  },
+  async (args) => {
+    return handleBatchIssues(
+      {
+        issues: args.issues,
+        agent: args.agent,
+        model: args.model,
+        directory: args.directory,
+      },
+      httpRequest,
+      sleep,
+    )
   },
 )
 

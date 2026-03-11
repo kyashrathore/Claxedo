@@ -434,7 +434,7 @@ export function createMultiPaneState(input: {
         (layout.focus && layout.contents[layout.focus]?.type === "review-workspace" ? layout.focus : undefined) ??
         Object.entries(layout.contents).find(([, c]) => c.type === "review-workspace")?.[0]
       const reviewEdges = reviewLeafId ? leafEdges(layout.pane, reviewLeafId) : undefined
-      const openRight = !!reviewEdges?.right && !reviewEdges.left
+      const openRight = !reviewEdges || (!!reviewEdges.right && !reviewEdges.left)
       const idx = activeLayoutIndex(tabId)
       if (idx === -1) return
       const newLeafId = generateId("leaf")

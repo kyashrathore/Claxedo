@@ -11,7 +11,8 @@ import { fn } from "@opencode-ai/util/fn"
 import { BusEvent } from "@/bus/bus-event"
 import { iife } from "@/util/iife"
 import { GlobalBus } from "@/bus/global"
-import { existsSync } from "fs"
+import { existsSync, readdirSync } from "fs"
+import { Global } from "../global"
 import { git } from "../util/git"
 import { Glob } from "../util/glob"
 import { which } from "../util/which"
@@ -250,6 +251,21 @@ export namespace Project {
     if (data.sandbox !== result.worktree && !result.sandboxes.includes(data.sandbox))
       result.sandboxes.push(data.sandbox)
     result.sandboxes = result.sandboxes.filter((x) => existsSync(x))
+    // Discover sandboxes from filesystem when database has none
+    // (handles channel-scoped DB mismatch where worktree dirs exist but DB is empty)
+    if (result.sandboxes.length === 0 && result.id !== "global" && result.vcs === "git") {
+      const worktreeRoot = path.join(Global.Path.data, "worktree", result.id)
+      if (existsSync(worktreeRoot)) {
+        try {
+          const entries = readdirSync(worktreeRoot, { withFileTypes: true })
+          for (const entry of entries) {
+            if (entry.isDirectory()) {
+              result.sandboxes.push(path.join(worktreeRoot, entry.name))
+            }
+          }
+        } catch {}
+      }
+    }
     const insert = {
       id: result.id,
       worktree: result.worktree,
@@ -418,6 +434,20 @@ export namespace Project {
     for (const dir of data.sandboxes) {
       const s = Filesystem.stat(dir)
       if (s?.isDirectory()) valid.push(dir)
+    }
+    // Fallback: discover from filesystem when DB has no sandboxes
+    if (valid.length === 0 && id !== "global") {
+      const worktreeRoot = path.join(Global.Path.data, "worktree", id)
+      if (existsSync(worktreeRoot)) {
+        try {
+          const entries = readdirSync(worktreeRoot, { withFileTypes: true })
+          for (const entry of entries) {
+            if (entry.isDirectory()) {
+              valid.push(path.join(worktreeRoot, entry.name))
+            }
+          }
+        } catch {}
+      }
     }
     return valid
   }

@@ -28,6 +28,7 @@ import {
 const log = Log.create({ service: "claxedo-migrate" })
 
 const migratedPages = new Set<string>()
+const failedPages = new Set<string>()
 let migratedTabContext = false
 
 export function pagesBaseDir() {
@@ -50,7 +51,7 @@ function legacyTabContextDbPath(): string {
  * Should be called within an Instance context so project_id is available.
  */
 export function migratePages(projectId: string) {
-  if (migratedPages.has(projectId)) return
+  if (migratedPages.has(projectId) || failedPages.has(projectId)) return
 
   const legacyPath = legacyPagesDbPath()
   if (!existsSync(legacyPath)) {
@@ -245,6 +246,7 @@ export function migratePages(projectId: string) {
       projectId,
       error: err instanceof Error ? err.message : String(err),
     })
+    failedPages.add(projectId)
   }
 }
 

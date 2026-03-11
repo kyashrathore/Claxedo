@@ -219,7 +219,12 @@ export function TabReview(props: TabReviewProps) {
   }
 
   return (
-    <div class={`relative flex size-full min-h-0 overflow-hidden bg-background-base ${props.class ?? ""}`}>
+    <div
+      data-testid="review-pane-root"
+      data-review-mode={props.mode}
+      data-review-surface="tab-review"
+      class={`relative flex size-full min-h-0 overflow-hidden bg-background-base ${props.class ?? ""}`}
+    >
       <div class="relative flex-1 min-w-0 flex flex-col h-full">
         <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-border-weak-base bg-background-stronger flex-shrink-0">
           <div class="flex items-center gap-3 min-w-0">
@@ -293,7 +298,10 @@ export function TabReview(props: TabReviewProps) {
             </Match>
 
             <Match when={true}>
-              <div class="flex flex-col items-center justify-center h-full min-h-[300px] px-6 pt-8 pb-30 text-center gap-6">
+              <div
+                data-testid="review-pane-empty"
+                class="flex flex-col items-center justify-center h-full min-h-[300px] px-6 pt-8 pb-30 text-center gap-6"
+              >
                 <Mark class="w-14 opacity-10" />
                 <div class="text-13-regular text-text-weak max-w-56">No changes for this review mode</div>
               </div>

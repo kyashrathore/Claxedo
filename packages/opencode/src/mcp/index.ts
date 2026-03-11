@@ -555,6 +555,14 @@ export namespace MCP {
     return state().then((state) => state.clients)
   }
 
+  export async function pids() {
+    return Object.entries(await clients()).flatMap(([name, client]) => {
+      const pid = (client.transport as { pid?: unknown }).pid
+      if (typeof pid !== "number" || pid <= 0) return []
+      return [{ name, pid }]
+    })
+  }
+
   export async function connect(name: string) {
     const cfg = await Config.get()
     const config = cfg.mcp ?? {}

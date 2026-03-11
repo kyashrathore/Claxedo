@@ -621,6 +621,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
 
   return (
     <div
+      data-testid="review-pane-root"
+      data-review-mode={activeMode()}
+      data-review-surface="review-workspace"
       class={`relative flex size-full min-h-0 overflow-hidden bg-background-base ${props.class ?? ""}`}
     >
       {/* Review tabs panel — id="review-panel" activates pill-style tab CSS from tabs.css */}
@@ -841,7 +844,10 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 </Match>
                 <Match when={true}>
                   <div class="relative flex-1 min-h-0 overflow-hidden">
-                    <div class="h-full px-6 pb-42 flex flex-col items-center justify-center text-center gap-6">
+                    <div
+                      data-testid="review-pane-empty"
+                      class="h-full px-6 pb-42 flex flex-col items-center justify-center text-center gap-6"
+                    >
                       <Mark class="w-14 opacity-10" />
                       <div class="text-14-regular text-text-weak max-w-56">
                         No changes for this review mode

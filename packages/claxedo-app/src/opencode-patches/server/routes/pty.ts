@@ -64,7 +64,9 @@ export const PtyRoutes = lazy(() =>
       }),
       validator("json", Pty.CreateInput),
       async (c) => {
-        const info = await Pty.create(c.req.valid("json"))
+        // Strip `managed` — only the process manager (internal caller) may set it
+        const { managed: _, ...input } = c.req.valid("json")
+        const info = await Pty.create(input)
         return c.json(info)
       },
     )

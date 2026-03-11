@@ -16,6 +16,7 @@ import { lazy } from "@/util/lazy"
 import path from "path"
 import { readFileSync, readdirSync, existsSync } from "fs"
 import * as schema from "./claxedo/schema"
+import { repair } from "./claxedo-repair"
 
 declare const CLAXEDO_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
 
@@ -92,6 +93,13 @@ export namespace ClaxedoDB {
         mode: typeof CLAXEDO_MIGRATIONS !== "undefined" ? "bundled" : "dev",
       })
       migrate(db, entries)
+    }
+
+    const fixed = repair(sqlite)
+    if (fixed.length > 0) {
+      log.warn("repaired claxedo schema", {
+        fixed,
+      })
     }
 
     return db

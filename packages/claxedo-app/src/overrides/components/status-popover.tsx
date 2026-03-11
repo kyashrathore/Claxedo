@@ -149,7 +149,22 @@ export function StatusPopover(props: StatusPopoverProps) {
 
   const lspItems = createMemo(() => syncStore()?.lsp ?? [])
   const lspCount = createMemo(() => lspItems().length)
-  const plugins = createMemo(() => syncStore()?.config.plugin ?? [])
+  const pluginName = (plugin: string) => {
+    if (plugin.startsWith("file://")) {
+      try {
+        const name = new URL(plugin).pathname.split("/").filter(Boolean).at(-1)
+        if (name) return decodeURIComponent(name).replace(/\.[^.]+$/, "")
+      } catch {}
+    }
+    const lastAt = plugin.lastIndexOf("@")
+    return lastAt > 0 ? plugin.substring(0, lastAt) : plugin
+  }
+  const plugins = createMemo(() =>
+    (syncStore()?.config.plugin ?? []).map((plugin) => ({
+      id: plugin,
+      name: pluginName(plugin),
+    })),
+  )
   const pluginCount = createMemo(() => plugins().length)
 
   const overallHealthy = createMemo(() => {
@@ -442,7 +457,7 @@ export function StatusPopover(props: StatusPopoverProps) {
                       {(plugin) => (
                         <div class="flex items-center gap-2 w-full px-2 py-1">
                           <div class="size-1.5 rounded-full shrink-0 bg-icon-success-base" />
-                          <span class="text-14-regular text-text-base truncate">{plugin}</span>
+                          <span class="text-14-regular text-text-base truncate">{plugin.name}</span>
                         </div>
                       )}
                     </For>

@@ -1,15 +1,13 @@
 /**
  * 04 — Process Pane
  *
- * Proves: Cmd+Shift+; activates process tab and renders process pane component.
- * Second toggle returns to previous tab. Cmd+1 also activates process tab
- * (index 0).
+ * Proves: the Processes toolbar action opens the process tab, the active
+ * process-tab controls appear, and the tab can be closed and reopened.
  *
  * Catches:
- * - `requestToggle()` not toggling
- * - Process pane component not mounting
- * - "Return to previous tab" broken
- * - Tab index off-by-one for pinned tabs
+ * - Process tab not opening from the workspace toolbar
+ * - Process-tab controls not appearing when active
+ * - Process tab close path leaving the UI wedged
  */
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import {
@@ -19,7 +17,7 @@ import {
   snapshot,
   settle,
 } from "./_helpers"
-import { press, isVisible } from "../ab"
+import { click, isVisible } from "../ab"
 
 const { before, after } = suiteLifecycle("04-process-pane")
 
@@ -27,42 +25,46 @@ describe("04 — process pane", () => {
   beforeAll(before, 30_000)
   afterAll(after)
 
-  test("process pane not visible initially", async () => {
-    setTestContext("process pane not visible initially")
-    const visible = await isVisible('[data-component="process-pane"]')
+  test("process controls are hidden initially", async () => {
+    setTestContext("process controls hidden initially")
+    const visible = await isVisible("button[aria-label='Add process']")
     await screenshot("process-pane-initial")
     expect(visible).toBe(false)
   }, 10_000)
 
-  test("Cmd+Shift+; shows process pane", async () => {
-    setTestContext("toggle shows process pane")
-    await press("Meta+Shift+;")
+  test("Processes button opens process tab", async () => {
+    setTestContext("processes button opens tab")
+    await click("button[aria-label='Processes']")
     await settle(1500)
 
-    const visible = await isVisible('[data-component="process-pane"]')
+    const visible = await isVisible("button[aria-label='Add process']")
     const snap = await snapshot()
     await screenshot("process-pane-shown")
 
     expect(visible).toBe(true)
-    expect(snap).toContain("Processes")
+    expect(
+      snap.includes("Process not running") ||
+        snap.includes("No processes configured") ||
+        snap.includes("Start process"),
+    ).toBe(true)
   }, 10_000)
 
-  test("Cmd+Shift+; hides process pane (returns to previous tab)", async () => {
-    setTestContext("toggle hides process pane")
-    await press("Meta+Shift+;")
+  test("closing the active process tab hides process controls", async () => {
+    setTestContext("closing process tab hides controls")
+    await click("button[aria-label='Close tab'][data-active-close]")
     await settle(1500)
 
-    const visible = await isVisible('[data-component="process-pane"]')
+    const visible = await isVisible("button[aria-label='Add process']")
     await screenshot("process-pane-hidden")
     expect(visible).toBe(false)
   }, 10_000)
 
-  test("Cmd+1 activates process tab (index 0)", async () => {
-    setTestContext("Cmd+1 activates process tab")
-    await press("Meta+1")
+  test("Processes button reopens the process tab", async () => {
+    setTestContext("processes button reopens tab")
+    await click("button[aria-label='Processes']")
     await settle(1500)
 
-    const visible = await isVisible('[data-component="process-pane"]')
+    const visible = await isVisible("button[aria-label='Add process']")
     await screenshot("process-pane-via-cmd1")
     expect(visible).toBe(true)
   }, 10_000)

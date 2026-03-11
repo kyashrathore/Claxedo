@@ -2,8 +2,9 @@
  * Process Manager (Claxedo)
  *
  * Manages long-running user-defined processes (dev servers, watchers, etc.)
- * backed by PTY sessions. Processes are declared in `.opencode/processes.jsonc`
- * and support auto-start, restart policies, and graceful shutdown.
+ * backed by PTY sessions. Processes are declared in the project root
+ * `.opencode/processes.jsonc` and support auto-start, restart policies,
+ * deterministic workspace ports, and graceful shutdown.
  */
 
 import { Bus } from "@/bus"
@@ -13,11 +14,13 @@ import { Log } from "@/util/log"
 import { parse as parseJsonc } from "jsonc-parser"
 import path from "path"
 import fs from "fs/promises"
-import { watch, type FSWatcher } from "node:fs"
+import { realpathSync, watch, type FSWatcher } from "node:fs"
 import z from "zod"
 import { buildSafeEnv } from "../pty/env"
+import { collectDiagnostics } from "./diagnostics"
+import * as Lease from "./lease"
 import { Process } from "./process"
-import { findFreePort, findPidOnPort, tryPort } from "./portpick"
+import { findFreePort, findNextPort, findPidOnPort, tryPort } from "./portpick"
 
 // -- Global port registry (cross-workspace, outside Instance.state scope) -----
 // Maps assigned port → workspace info so port conflict detection can tell the
@@ -26,6 +29,8 @@ import { findFreePort, findPidOnPort, tryPort } from "./portpick"
 interface PortRegistryEntry {
   processName: string
   processId: string
+  directory: string
+  workspace: string
 }
 
 const globalPortRegistry = new Map<number, PortRegistryEntry>()
@@ -36,6 +41,98 @@ function registerPort(port: number, entry: PortRegistryEntry): void {
 
 function unregisterPort(port: number): void {
   globalPortRegistry.delete(port)
+}
+
+function real(dir: string) {
+  try {
+    return path.resolve(realpathSync.native?.(dir) ?? realpathSync(dir))
+  } catch {
+    return path.resolve(dir)
+  }
+}
+
+function root() {
+  if (Instance.project.id === "global" || Instance.project.worktree === "/") {
+    return real(Instance.directory)
+  }
+  return real(Instance.project.worktree)
+}
+
+function workspace() {
+  return real(Instance.directory)
+}
+
+function title() {
+  if (workspace() === root()) return "main"
+  return path.basename(workspace()) || workspace()
+}
+
+function offset() {
+  if (workspace() === root()) return 0
+  const dirs = new Set<string>([workspace()])
+  for (const dir of Instance.project.sandboxes) {
+    dirs.add(real(dir))
+  }
+  dirs.delete(root())
+  const list = Array.from(dirs).sort((a, b) => a.localeCompare(b))
+  const idx = list.indexOf(workspace())
+  return idx === -1 ? 1 : idx + 1
+}
+
+function key(processId: string) {
+  return {
+    project_id: Instance.project.id,
+    workspace: workspace(),
+    process_id: processId,
+  }
+}
+
+function cfgPath() {
+  return path.join(root(), CONFIG_FILE)
+}
+
+function schemaPath() {
+  return path.join(root(), SCHEMA_FILE)
+}
+
+function idle(configId: string): Process.ManagedProcess {
+  return {
+    configId,
+    ptyId: undefined,
+    status: "idle",
+    restartCount: 0,
+    exitCode: undefined,
+    startedAt: undefined,
+    exitedAt: undefined,
+    assignedPort: undefined,
+  }
+}
+
+async function mirror(configs: Process.ProcessConfig[]) {
+  const s = state()
+  const keep = new Set(configs.map((config) => config.id))
+  for (const config of configs) {
+    if (!s.processes.has(config.id)) {
+      s.processes.set(config.id, idle(config.id))
+    }
+  }
+  for (const id of Array.from(s.processes.keys())) {
+    if (!keep.has(id)) s.processes.delete(id)
+  }
+  await Lease.prune({
+    project_id: Instance.project.id,
+    workspace: workspace(),
+    process_ids: keep,
+  })
+}
+
+function samePort(
+  a: Process.ProcessConfig["port"] | undefined,
+  b: Process.ProcessConfig["port"] | undefined,
+) {
+  if (!a && !b) return true
+  if (!a || !b) return false
+  return a.name === b.name && a.inject === b.inject && a.preferred === b.preferred && a.onConflict === b.onConflict
 }
 
 /**
@@ -75,6 +172,7 @@ async function getPortOccupier(port: number): Promise<Process.PortConflictInfo> 
   if (registered) {
     info.processName = registered.processName
     info.processId = registered.processId
+    info.directory = registered.directory
   }
 
   const pid = await findPidOnPort(port)
@@ -88,7 +186,7 @@ async function getPortOccupier(port: number): Promise<Process.PortConflictInfo> 
   } catch {}
 
   // Detect workspace from the process's worktree
-  info.directory = await detectWorktreeForPid(pid)
+  info.directory = info.directory ?? await detectWorktreeForPid(pid)
 
   // If registry didn't match, check current workspace's managed processes
   if (!info.processName) {
@@ -121,13 +219,25 @@ async function killAndReclaimPort(port: number): Promise<boolean> {
 
   log.warn("portpick: killing existing process on preferred port", { port, pid })
   try {
-    process.kill(pid, "SIGTERM")
+    if (process.platform !== "win32") {
+      try {
+        process.kill(-pid, "SIGTERM")
+      } catch {}
+    }
+    try {
+      process.kill(pid, "SIGTERM")
+    } catch {}
     await new Promise((r) => setTimeout(r, 1000))
     if (await tryPort(port)) {
       log.info("portpick: reclaimed preferred port after kill", { port })
       return true
     }
     // SIGKILL as fallback
+    if (process.platform !== "win32") {
+      try {
+        process.kill(-pid, "SIGKILL")
+      } catch {}
+    }
     try { process.kill(pid, "SIGKILL") } catch {}
     await new Promise((r) => setTimeout(r, 500))
     if (await tryPort(port)) return true
@@ -156,10 +266,21 @@ async function resolvePort(
   const preferred = config.port.preferred
   if (preferred === undefined) return await findFreePort()
 
-  // Try the preferred port
-  if (await tryPort(preferred)) {
-    log.info("portpick: using preferred port", { name: config.port.name, port: preferred })
-    return preferred
+  const hit = await Lease.read(key(config.id))
+  const start =
+    hit && hit.port_name === config.port.name && hit.preferred === preferred
+      ? hit.port
+      : preferred + offset()
+
+  // Try the workspace-targeted port first
+  if (await tryPort(start)) {
+    log.info("portpick: using preferred port", {
+      name: config.port.name,
+      port: start,
+      preferred,
+      workspace: title(),
+    })
+    return start
   }
 
   // Port is occupied — determine strategy
@@ -169,23 +290,23 @@ async function resolvePort(
     // No strategy set — return conflict info for interactive resolution
     log.info("portpick: preferred port occupied, prompting user", {
       name: config.port.name,
-      preferred,
+      preferred: start,
     })
-    return await getPortOccupier(preferred)
+    return await getPortOccupier(start)
   }
 
   if (strategy === "kill-existing") {
-    const reclaimed = await killAndReclaimPort(preferred)
-    if (reclaimed) return preferred
+    const reclaimed = await killAndReclaimPort(start)
+    if (reclaimed) return start
     // Fall through to pick-new if kill failed
   } else {
     log.info("portpick: preferred port occupied, picking new", {
       name: config.port.name,
-      preferred,
+      preferred: start,
     })
   }
 
-  return await findFreePort()
+  return await findNextPort(start + 1)
 }
 
 function resolvePortTemplates(
@@ -234,7 +355,6 @@ const SCHEMA_FILE = ".opencode/processes.schema.json"
  * Uses Zod v4's built-in `z.toJSONSchema()`.
  */
 async function writeSchema(): Promise<void> {
-  const schemaPath = path.join(Instance.directory, SCHEMA_FILE)
   try {
     const raw = z.toJSONSchema(Process.ProcessConfigFile)
     // Clean up: remove runtime-generated default for `id` since each process
@@ -249,8 +369,8 @@ async function writeSchema(): Promise<void> {
         return !items.properties[field]?.default && items.properties[field]?.default !== false
       })
     }
-    await fs.mkdir(path.dirname(schemaPath), { recursive: true })
-    await fs.writeFile(schemaPath, JSON.stringify(raw, null, 2) + "\n", "utf-8")
+    await fs.mkdir(path.dirname(schemaPath()), { recursive: true })
+    await fs.writeFile(schemaPath(), JSON.stringify(raw, null, 2) + "\n", "utf-8")
   } catch (err) {
     log.warn("failed to write process schema", { err: String(err) })
   }
@@ -273,34 +393,30 @@ const state = Instance.state<State>(
     dispose: undefined,
   }),
   async (s) => {
-    s.dispose?.()
     if (s.debounceTimer) clearTimeout(s.debounceTimer)
     try {
       s.watcher?.close()
     } catch {}
-    // Stop all managed processes
-    for (const [configId, proc] of s.processes) {
-      if (proc.ptyId && (proc.status === "running" || proc.status === "starting")) {
-        try {
-          await Pty.remove(proc.ptyId)
-        } catch {}
-      }
+    const ids = Array.from(s.configs.keys())
+    for (const configId of ids.toReversed()) {
+      const proc = s.processes.get(configId)
+      if (!proc || !proc.ptyId) continue
+      if (!["running", "starting", "restarting", "stopping"].includes(proc.status)) continue
+      await stop(configId).catch(() => undefined)
     }
+    await reconcileRuntime(ids).catch(() => undefined)
+    s.dispose?.()
     s.processes.clear()
     s.configs.clear()
   },
 )
 
-function configPath(): string {
-  return path.join(Instance.directory, CONFIG_FILE)
-}
-
 /**
- * Load process configs from `.opencode/processes.jsonc`.
+ * Load process configs from the project root `.opencode/processes.jsonc`.
  * Returns the parsed configs or an empty array on error.
  */
 export async function loadConfig(): Promise<Process.ProcessConfig[]> {
-  const filePath = configPath()
+  const filePath = cfgPath()
   try {
     const content = await fs.readFile(filePath, "utf-8")
     const raw = parseJsonc(content)
@@ -310,6 +426,7 @@ export async function loadConfig(): Promise<Process.ProcessConfig[]> {
     for (const config of parsed.processes) {
       s.configs.set(config.id, config)
     }
+    await mirror(parsed.processes)
     log.info("loaded process configs", { count: parsed.processes.length })
     // Write schema file alongside config for editor autocompletion
     void writeSchema()
@@ -317,6 +434,14 @@ export async function loadConfig(): Promise<Process.ProcessConfig[]> {
   } catch (err: any) {
     if (err?.code === "ENOENT") {
       log.info("no process config file found", { path: filePath })
+      const s = state()
+      s.configs.clear()
+      s.processes.clear()
+      await Lease.prune({
+        project_id: Instance.project.id,
+        workspace: workspace(),
+        process_ids: new Set(),
+      })
       return []
     }
     log.error("failed to load process config", { path: filePath, err: String(err) })
@@ -329,7 +454,7 @@ export async function loadConfig(): Promise<Process.ProcessConfig[]> {
  * Write process configs to `.opencode/processes.jsonc`.
  */
 export async function saveConfig(configs: Process.ProcessConfig[]): Promise<void> {
-  const filePath = configPath()
+  const filePath = cfgPath()
   const dir = path.dirname(filePath)
   await fs.mkdir(dir, { recursive: true })
 
@@ -346,13 +471,14 @@ export async function saveConfig(configs: Process.ProcessConfig[]): Promise<void
   for (const config of configs) {
     s.configs.set(config.id, config)
   }
+  await mirror(configs)
 
   Bus.publish(Process.Event.ConfigChanged, { configs })
   log.info("saved process configs", { count: configs.length })
 }
 
 /**
- * Watch `.opencode/processes.jsonc` for changes.
+ * Watch the project root `.opencode/processes.jsonc` for changes.
  * Watches the `.opencode` directory (not the file directly) to handle
  * file creation, modification, and deletion. Debounces 100ms.
  */
@@ -367,8 +493,8 @@ export function watchConfig(): void {
     s.watcher = undefined
   }
 
-  const dirPath = path.dirname(configPath())
-  const filename = path.basename(configPath())
+  const dirPath = path.dirname(cfgPath())
+  const filename = path.basename(cfgPath())
 
   try {
     const watcher = watch(dirPath, (eventType, changedFile) => {
@@ -387,7 +513,7 @@ export function watchConfig(): void {
     })
 
     s.watcher = watcher
-    log.info("watching config file", { path: configPath() })
+    log.info("watching config file", { path: cfgPath() })
   } catch (err: any) {
     if (err?.code === "ENOENT") {
       // Directory doesn't exist yet, that's fine — no configs to watch
@@ -404,7 +530,7 @@ export function watchConfig(): void {
  */
 async function reconcileFromDisk(): Promise<void> {
   const s = state()
-  const filePath = configPath()
+  const filePath = cfgPath()
 
   let newConfigs: Process.ProcessConfig[]
 
@@ -429,6 +555,12 @@ async function reconcileFromDisk(): Promise<void> {
       log.info("config file deleted, stopping all processes")
       await stopAll()
       s.configs.clear()
+      s.processes.clear()
+      await Lease.prune({
+        project_id: Instance.project.id,
+        workspace: workspace(),
+        process_ids: new Set(),
+      })
       Bus.publish(Process.Event.ConfigChanged, { configs: [] })
       return
     }
@@ -448,6 +580,7 @@ async function reconcileFromDisk(): Promise<void> {
       if (proc && (proc.status === "running" || proc.status === "starting" || proc.status === "restarting")) {
         await stop(id)
       }
+      await Lease.drop(key(id))
       s.configs.delete(id)
       s.processes.delete(id)
       log.info("config removed", { id })
@@ -458,15 +591,7 @@ async function reconcileFromDisk(): Promise<void> {
   for (const [id, config] of newById) {
     if (!oldIds.has(id)) {
       s.configs.set(id, config)
-      s.processes.set(id, {
-        configId: id,
-        ptyId: undefined,
-        status: "idle",
-        restartCount: 0,
-        exitCode: undefined,
-        startedAt: undefined,
-        exitedAt: undefined,
-      })
+      s.processes.set(id, idle(id))
       log.info("config added", { id, name: config.name })
     }
   }
@@ -476,6 +601,9 @@ async function reconcileFromDisk(): Promise<void> {
     if (oldIds.has(id)) {
       const oldConfig = s.configs.get(id)!
       if (configChanged(oldConfig, newConfig)) {
+        if (!samePort(oldConfig.port, newConfig.port)) {
+          await Lease.drop(key(id))
+        }
         s.configs.set(id, newConfig)
         const proc = s.processes.get(id)
         if (proc && (proc.status === "running" || proc.status === "starting" || proc.status === "restarting")) {
@@ -491,6 +619,7 @@ async function reconcileFromDisk(): Promise<void> {
     }
   }
 
+  await mirror(newConfigs)
   Bus.publish(Process.Event.ConfigChanged, { configs: newConfigs })
   log.info("config reconciled from disk", { count: newConfigs.length })
 }
@@ -508,9 +637,7 @@ function configChanged(a: Process.ProcessConfig, b: Process.ProcessConfig): bool
   if (JSON.stringify(a.dependsOn) !== JSON.stringify(b.dependsOn)) return true
   const ap = a.port
   const bp = b.port
-  if (!ap && !bp) return false
-  if (!ap || !bp) return true
-  return ap.name !== bp.name || ap.inject !== bp.inject || ap.preferred !== bp.preferred || ap.onConflict !== bp.onConflict
+  return !samePort(ap, bp)
 }
 
 /**
@@ -622,6 +749,114 @@ function fail(error: string, process?: Process.ManagedProcess): Process.LaunchRe
   }
 }
 
+async function gone(ptyId: string, ms: number) {
+  if (!Pty.get(ptyId)) return true
+  return await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      unsub()
+      resolve(!Pty.get(ptyId))
+    }, ms)
+    const unsub = Bus.subscribe(Pty.Event.Exited, (event) => {
+      if (event.properties.id !== ptyId) return
+      clearTimeout(timer)
+      unsub()
+      resolve(true)
+    })
+  })
+}
+
+async function reap(rows: Process.DiagnosticOsProcess[]) {
+  if (rows.length === 0) return
+  const groups = [...new Set(rows.flatMap((row) => (row.pgid > 0 ? [row.pgid] : [])))]
+  const ids = [...new Set(rows.map((row) => row.pid).filter((pid) => Number.isFinite(pid) && pid > 0))]
+  if (process.platform !== "win32") {
+    for (const pgid of groups) {
+      try {
+        process.kill(-pgid, "SIGKILL")
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException | undefined)?.code !== "ESRCH") throw err
+      }
+    }
+  }
+  for (const id of ids) {
+    try {
+      process.kill(id, "SIGKILL")
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException | undefined)?.code !== "ESRCH") throw err
+    }
+  }
+}
+
+function scrub(configId: string, nextStatus?: Process.Status) {
+  const s = state()
+  const prev = s.processes.get(configId)
+  if (!prev) return
+
+  if (prev.assignedPort !== undefined) {
+    unregisterPort(prev.assignedPort)
+  }
+
+  const status = nextStatus ?? (prev.status === "crashed" ? "crashed" : "stopped")
+  const next: Process.ManagedProcess = {
+    ...prev,
+    status,
+    ptyId: undefined,
+    assignedPort: undefined,
+    exitedAt: prev.exitedAt ?? Date.now(),
+  }
+  s.processes.set(configId, next)
+
+  if (status === "stopped" && prev.status !== "stopped") {
+    Bus.publish(Process.Event.Stopped, { configId, exitCode: next.exitCode ?? 0 })
+  }
+  if (prev.status !== status || prev.ptyId !== next.ptyId || prev.assignedPort !== next.assignedPort) {
+    Bus.publish(Process.Event.Status, { configId, status })
+  }
+}
+
+export async function reconcileRuntime(ids?: string[]): Promise<void> {
+  const s = state()
+  const pick = ids ?? Array.from(s.configs.keys())
+  if (pick.length === 0) return
+
+  const snap = await collectDiagnostics({
+    directory: workspace(),
+    configs: configs(),
+    processes: list(),
+    ptys: Pty.listDetailed(),
+  }).catch(() => undefined)
+
+  if (snap) {
+    const rows = snap.os.filter((row) => {
+      return row.process_id !== undefined && pick.includes(row.process_id) && row.workspace_id === workspace()
+    })
+    const stale = rows.filter((row) => {
+      const proc = s.processes.get(row.process_id!)
+      if (!proc?.ptyId) return true
+      const info = Pty.get(proc.ptyId)
+      if (!info) return true
+      return !["running", "starting", "restarting"].includes(proc.status)
+    })
+    if (stale.length > 0) {
+      await reap(stale)
+      await new Promise((r) => setTimeout(r, 250))
+    }
+  }
+
+  for (const configId of pick) {
+    const proc = s.processes.get(configId)
+    if (!proc) continue
+    const info = proc.ptyId ? Pty.get(proc.ptyId) : undefined
+    if (!info && ["running", "starting", "restarting", "stopping"].includes(proc.status)) {
+      scrub(configId, "stopped")
+      continue
+    }
+    if (!info && proc.assignedPort !== undefined) {
+      scrub(configId, proc.status)
+    }
+  }
+}
+
 /**
  * Start a process by config ID.
  * Auto-starts any dependencies (explicit `dependsOn` or inferred from `{{port:name}}` templates).
@@ -708,6 +943,7 @@ export async function start(
     OPENCODE_TERMINAL: "1",
     OPENCODE_PROCESS: config.name,
     OPENCODE_PROCESS_ID: configId,
+    CLAXEDO_WORKSPACE_ID: workspace(),
   }
 
   const proc: Process.ManagedProcess = {
@@ -731,6 +967,7 @@ export async function start(
 
     // Inject port via flag or env var
     if (config.port && assignedPort !== undefined) {
+      env.CLAXEDO_PORT = String(assignedPort)
       if (isFlag(config.port.inject)) {
         fullCommand = `${fullCommand} ${config.port.inject} ${assignedPort}`
       } else {
@@ -744,6 +981,7 @@ export async function start(
       cwd,
       title: config.name,
       env,
+      managed: true,
     })
 
     proc.ptyId = info.id
@@ -762,6 +1000,16 @@ export async function start(
       registerPort(assignedPort, {
         processName: config.name,
         processId: configId,
+        directory: workspace(),
+        workspace: title(),
+      })
+    }
+    if (config.port?.preferred !== undefined && assignedPort !== undefined) {
+      await Lease.write({
+        ...key(config.id),
+        port_name: config.port.name,
+        preferred: config.port.preferred,
+        port: assignedPort,
       })
     }
 
@@ -775,6 +1023,7 @@ export async function start(
     }
   } catch (err) {
     proc.status = "crashed"
+    proc.assignedPort = undefined
     proc.exitedAt = Date.now()
     s.processes.set(configId, proc)
     Bus.publish(Process.Event.Status, { configId, status: "crashed" })
@@ -785,13 +1034,18 @@ export async function start(
 
 /**
  * Stop a process by config ID or pty ID.
- * Sends Ctrl-C first, then SIGTERM after 2s, then SIGKILL after 5s.
+ * Sends Ctrl-C first, then escalates to PTY removal and process-group SIGKILL.
  */
 export async function stop(configIdOrPtyId: string, signal?: string): Promise<void> {
   const s = state()
   const { configId, proc } = resolveProcess(configIdOrPtyId)
-  if (!proc || !proc.ptyId) {
+  if (!proc) {
     log.info("no running process to stop", { id: configIdOrPtyId })
+    return
+  }
+  if (!proc.ptyId) {
+    scrub(configId, proc.status === "crashed" ? "crashed" : "stopped")
+    await reconcileRuntime([configId])
     return
   }
 
@@ -812,58 +1066,48 @@ export async function stop(configIdOrPtyId: string, signal?: string): Promise<vo
   const ptyId = proc.ptyId
 
   // Send Ctrl-C first
-  try {
-    Pty.write(ptyId, "\x03")
-  } catch {}
+  if (!signal || signal === "SIGTERM") {
+    try {
+      Pty.write(ptyId, "\x03")
+    } catch {}
+  }
 
-  // Wait 2s, then SIGTERM
-  await new Promise<void>((resolve) => {
-    const checkStopped = () => {
-      const current = s.processes.get(configId)
-      return !current || current.status === "stopped" || current.status === "crashed"
-    }
-
-    if (checkStopped()) return resolve()
-
-    const timer2s = setTimeout(async () => {
-      if (checkStopped()) return resolve()
+  let done = await gone(ptyId, signal ? 250 : 2000)
+  if (!done) {
+    const info = Pty.get(ptyId)
+    if (signal === "SIGKILL" && info) {
+      if (process.platform !== "win32") {
+        try {
+          process.kill(-info.pid, "SIGKILL")
+        } catch {}
+      }
+      try {
+        process.kill(info.pid, "SIGKILL")
+      } catch {}
+    } else {
       try {
         await Pty.remove(ptyId)
       } catch {}
-
-      // Wait another 3s for SIGKILL fallback
-      const timer5s = setTimeout(async () => {
-        if (checkStopped()) return resolve()
-        // Force kill if still alive
-        const info = Pty.get(ptyId)
-        if (info && info.status === "running") {
-          try {
-            process.kill(info.pid, "SIGKILL")
-          } catch {}
-        }
-        resolve()
-      }, 3000)
-
-      // If it exits before the 3s, resolve early
-      const unsub = Bus.subscribe(Pty.Event.Exited, (event) => {
-        if (event.properties.id === ptyId) {
-          clearTimeout(timer5s)
-          unsub()
-          resolve()
-        }
-      })
-    }, 2000)
-
-    // If it exits before the 2s, resolve early
-    const unsub = Bus.subscribe(Pty.Event.Exited, (event) => {
-      if (event.properties.id === ptyId) {
-        clearTimeout(timer2s)
-        unsub()
-        resolve()
+    }
+    done = await gone(ptyId, 2000)
+  }
+  if (!done) {
+    const info = Pty.get(ptyId)
+    if (info) {
+      if (process.platform !== "win32") {
+        try {
+          process.kill(-info.pid, "SIGKILL")
+        } catch {}
       }
-    })
-  })
+      try {
+        process.kill(info.pid, "SIGKILL")
+      } catch {}
+    }
+    await gone(ptyId, 1000)
+  }
 
+  scrub(configId, "stopped")
+  await reconcileRuntime([configId])
   log.info("process stopped", { configId, ptyId })
 }
 
@@ -936,6 +1180,7 @@ function topologicalSort(configIds: string[]): string[] {
  */
 export async function startAll(): Promise<void> {
   const s = state()
+  await reconcileRuntime()
   const autoStartIds = Array.from(s.configs.entries())
     .filter(([, config]) => config.autoStart)
     .map(([id]) => id)
@@ -979,6 +1224,7 @@ export async function stopAll(): Promise<void> {
       await stop(configId)
     }
   }
+  await reconcileRuntime(configIds)
   log.info("all processes stopped")
 }
 
@@ -1040,9 +1286,17 @@ function applyRestartPolicy(
   Bus.publish(Process.Event.Status, { configId, status: "restarting" })
 
   log.info("scheduling restart", { configId, attempt: proc.restartCount, delay })
-  setTimeout(() => {
+  setTimeout(async () => {
     const current = s.processes.get(configId)
     if (current?.status !== "restarting") return
+    if (current.ptyId) {
+      const ptyId = current.ptyId
+      current.ptyId = undefined
+      s.processes.set(configId, current)
+      try {
+        await Pty.remove(ptyId)
+      } catch {}
+    }
     // Auto-restart is non-interactive — default to pick-new
     start(configId, { portConflict: "pick-new" })
   }, delay)
@@ -1084,9 +1338,11 @@ export function initExitHandler(): () => void {
       // Clear ptyId — user-initiated stop destroys the PTY, so GET /process/
       // returns clean state (no stale ptyId for the frontend to render).
       proc.ptyId = undefined
+      proc.assignedPort = undefined
       s.processes.set(configId, proc)
       Bus.publish(Process.Event.Stopped, { configId, exitCode })
       Bus.publish(Process.Event.Status, { configId, status: "stopped" })
+      void reconcileRuntime([configId])
       return
     }
 
@@ -1094,10 +1350,12 @@ export function initExitHandler(): () => void {
     // This only fires when the PTY/shell itself dies.
     proc.status = "crashed"
     proc.ptyId = undefined
+    proc.assignedPort = undefined
     s.processes.set(configId, proc)
     // ptyId is undefined here (PTY is dead) — client will show "Crashed" without terminal
     Bus.publish(Process.Event.Crashed, { configId, exitCode, restartCount: proc.restartCount })
     Bus.publish(Process.Event.Status, { configId, status: "crashed" })
+    void reconcileRuntime([configId])
 
     if (!config) return
     applyRestartPolicy(configId, proc, config, exitCode)
@@ -1138,10 +1396,12 @@ export function initExitHandler(): () => void {
     proc.exitCode = exitCode
     proc.exitedAt = Date.now()
     proc.status = "crashed"
+    proc.assignedPort = undefined
     s.processes.set(configId, proc)
     Bus.publish(Process.Event.Crashed, { configId, exitCode, restartCount: proc.restartCount, commandExit: true, ptyId: proc.ptyId })
     Bus.publish(Process.Event.Status, { configId, status: "crashed" })
     log.info("inner command exited", { configId, ptyId, exitCode })
+    void reconcileRuntime([configId])
 
     if (!config) return
     applyRestartPolicy(configId, proc, config, exitCode)
@@ -1171,15 +1431,7 @@ export async function addConfig(
   s.configs.set(config.id, config)
   // Create an idle ManagedProcess entry so GET /process/ returns it
   // immediately (consistent with reconcileFromDisk behaviour).
-  s.processes.set(config.id, {
-    configId: config.id,
-    ptyId: undefined,
-    status: "idle",
-    restartCount: 0,
-    exitCode: undefined,
-    startedAt: undefined,
-    exitedAt: undefined,
-  })
+  s.processes.set(config.id, idle(config.id))
   await saveConfig(Array.from(s.configs.values()))
   return config
 }
@@ -1196,6 +1448,9 @@ export async function updateConfig(
   const existing = s.configs.get(id)
   if (!existing) throw new Error(`Process config not found: ${id}`)
   const updated = Process.ProcessConfig.parse({ ...existing, ...updates, id })
+  if (!samePort(existing.port, updated.port)) {
+    await Lease.drop(key(id))
+  }
   s.configs.set(id, updated)
   await saveConfig(Array.from(s.configs.values()))
 
@@ -1218,6 +1473,8 @@ export async function removeConfig(id: string): Promise<void> {
   if (proc && (proc.status === "running" || proc.status === "starting" || proc.status === "restarting")) {
     await stop(id)
   }
+  await Lease.drop(key(id))
+  await reconcileRuntime([id])
   s.configs.delete(id)
   s.processes.delete(id)
   await saveConfig(Array.from(s.configs.values()))
@@ -1266,7 +1523,7 @@ export function portMap(): Record<string, number> {
   for (const [configId, config] of s.configs) {
     if (!config.port?.name) continue
     const proc = s.processes.get(configId)
-    if (proc?.assignedPort) {
+    if (proc?.assignedPort !== undefined) {
       map[config.port.name] = proc.assignedPort
     }
   }

@@ -33,7 +33,8 @@
     ],
     "active": true,
     "targets": ["deb", "rpm", "dmg", "nsis", "app"],
-    "externalBin": ["sidecars/opencode-cli", "sidecars/claxedo-mcp"],
+    "externalBin": ["sidecars/opencode-cli"],
+    "resources": ["sidecars/claxedo-mcp.js"],
     "linux": {
       "rpm": {
         "compression": {

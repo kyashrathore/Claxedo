@@ -16,6 +16,15 @@ export function findFreePort(): Promise<number> {
   })
 }
 
+export async function findNextPort(start: number): Promise<number> {
+  let port = Math.max(1, Math.floor(start))
+  while (port <= 65535) {
+    if (await tryPort(port)) return port
+    port += 1
+  }
+  return await findFreePort()
+}
+
 /**
  * Find the PID of a process listening on a given port (macOS/Linux).
  * Returns undefined if not found.

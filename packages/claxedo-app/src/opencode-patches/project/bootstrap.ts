@@ -49,6 +49,7 @@ export async function InstanceBootstrap() {
     await ProcessManager.loadConfig()
     ProcessManager.watchConfig()
     ProcessManager.initExitHandler()
+    await ProcessManager.reconcileRuntime()
     await ProcessManager.startAll()
   } catch (err) {
     Log.Default.warn("process manager init failed (non-fatal)", { err: String(err) })

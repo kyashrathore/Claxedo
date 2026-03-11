@@ -559,10 +559,11 @@ export function setupDropHandler(
     // strategy applies, let the event bubble to the document-level
     // handler (prompt-input attachments) instead of swallowing it.
     const isTauri = !!(window as any).__TAURI__ && !!dt.files?.length
+    const isElectron = !!(window as any).api && !!dt.files?.length
     const uriList = dt.getData("text/uri-list")
     const hasUris = !!uriList && parseFileUris(uriList).length > 0
 
-    if (!isTauri && !hasUris) return
+    if (!isTauri && !isElectron && !hasUris) return
 
     // We can handle this drop — prevent the global handler from also acting.
     event.stopPropagation()
@@ -586,7 +587,16 @@ export function setupDropHandler(
       }
     }
 
-    // Strategy 2: text/uri-list fallback (Finder/Explorer provide file:// URIs)
+    // Strategy 2: Electron — use preload's webUtils.getPathForFile()
+    if (isElectron && paths.length === 0) {
+      const api = (window as any).api
+      if (typeof api?.getDroppedFilePaths === "function") {
+        const resolved = api.getDroppedFilePaths(Array.from(dt.files)) as string[]
+        paths.push(...resolved)
+      }
+    }
+
+    // Strategy 3: text/uri-list fallback (Finder/Explorer provide file:// URIs)
     if (paths.length === 0 && uriList) {
       paths.push(...parseFileUris(uriList))
     }

@@ -32,7 +32,7 @@ describe("03 — split workspace", () => {
     await screenshot("single-panel")
 
     expect(await getCount("[data-workspace-bar]")).toBe(1)
-    expect(await getCount('[data-component="process-pane"]')).toBe(0) // process pane not active
+    expect(await isVisible("button[aria-label='Add process']")).toBe(false)
   }, 10_000)
 
   test("split creates two panels", async () => {

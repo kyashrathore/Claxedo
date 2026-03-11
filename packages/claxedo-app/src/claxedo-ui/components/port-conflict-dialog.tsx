@@ -4,7 +4,7 @@
  * Shown when a process has a preferred port that is already occupied.
  * Displays info about the occupier and lets the user choose:
  * - "Kill & take port" — kill the occupying process and use the preferred port
- * - "Pick new port" — let the system assign a random free port
+ * - "Pick new port" — scan upward to the next free port for this workspace
  */
 
 import { Show } from "solid-js"

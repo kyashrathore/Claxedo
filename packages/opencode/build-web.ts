@@ -11,6 +11,7 @@ const result = await Bun.build({
   define: {
     OPENCODE_VERSION: "'0.0.1-claxedo-web'",
     OPENCODE_MIGRATIONS: "[]",
+    CLAXEDO_MIGRATIONS: "undefined",
     OTUI_TREE_SITTER_WORKER_PATH: "''",
     OPENCODE_WORKER_PATH: "''",
     OPENCODE_CHANNEL: "'dev'",

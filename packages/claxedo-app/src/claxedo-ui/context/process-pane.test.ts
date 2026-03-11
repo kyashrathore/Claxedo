@@ -15,6 +15,24 @@
 import { beforeAll, beforeEach, describe, expect, test, mock } from "bun:test"
 import { createRoot } from "solid-js"
 
+const react = globalThis as typeof globalThis & {
+  React?: {
+    createElement: (type: unknown, props: Record<string, unknown> | null, ...children: unknown[]) => unknown
+  }
+}
+
+react.React = {
+  createElement(type: unknown, props: Record<string, unknown> | null, ...children: unknown[]) {
+    if (typeof type === "function") {
+      return type({
+        ...(props ?? {}),
+        ...(children.length > 0 ? { children: children.length === 1 ? children[0] : children } : {}),
+      })
+    }
+    return { type, props, children }
+  },
+}
+
 // ── Mock infrastructure ────────────────────────────────────────────────
 
 type Listener = (event: any) => void
@@ -51,6 +69,13 @@ const fetchState = {
 
 const dialogState = {
   shows: 0,
+  conflict: undefined as
+    | {
+        configId: string
+        onResolve: (strategy: "pick-new" | "kill-existing") => void
+        onCancel: () => void
+      }
+    | undefined,
 }
 
 async function mockFetchFn(url: string, opts?: RequestInit): Promise<Response> {
@@ -335,11 +360,19 @@ beforeAll(async () => {
 
   mock.module("@opencode-ai/ui/context/dialog", () => ({
     useDialog: () => ({
-      show: () => {
+      show: (render: () => any) => {
         dialogState.shows++
+        render()
       },
       close: () => {},
     }),
+  }))
+
+  mock.module("../components/port-conflict-dialog", () => ({
+    PortConflictDialog: (props: any) => {
+      dialogState.conflict = props
+      return null
+    },
   }))
 
   mock.module("../components/add-process-dialog", () => ({
@@ -357,6 +390,7 @@ beforeEach(() => {
   mockTerminalCtx = createMockTerminalCtx()
   removedStalePtyIds.length = 0
   dialogState.shows = 0
+  dialogState.conflict = undefined
   fetchState.responses = { "GET": () => ({ configs: [], processes: [] }) }
   fetchState.calls = []
   // Reset visibilityState to prevent cross-test contamination
@@ -866,6 +900,111 @@ describe("lifecycle actions", () => {
       await tick()
       await api.start("proc_abc123")
       expect(dialogState.shows).toBe(1)
+      expect(dialogState.conflict?.configId).toBe("proc_abc123")
+    } finally {
+      dispose()
+    }
+  })
+
+  test("Pick new port reissues start with portConflict pick-new", async () => {
+    let starts = 0
+    fetchState.responses = {
+      "GET": () => ({
+        configs: [SAMPLE_CONFIG],
+        processes: [{ configId: "proc_abc123", status: "idle", restartCount: 0 }],
+      }),
+      "POST /process/proc_abc123/start": () => {
+        starts += 1
+        if (starts === 1) {
+          return {
+            __status: 409,
+            __body: {
+              kind: "port_conflict",
+              conflict: {
+                type: "port-conflict",
+                port: 4096,
+                processId: "proc_busy",
+                processName: "busy-server",
+              },
+            },
+          }
+        }
+        return {
+          kind: "started",
+          process: {
+            configId: "proc_abc123",
+            ptyId: "pty_new",
+            status: "running",
+            restartCount: 0,
+          },
+        }
+      },
+    }
+
+    const { api, dispose } = createTestProcessPane()
+    try {
+      await tick()
+      await api.start("proc_abc123")
+      expect(dialogState.conflict).toBeDefined()
+
+      dialogState.conflict?.onResolve("pick-new")
+      await tick()
+
+      const calls = fetchState.calls.filter((item) => item.url.includes("/process/proc_abc123/start"))
+      expect(calls).toHaveLength(2)
+      expect(calls[1]?.body).toEqual({ portConflict: "pick-new" })
+    } finally {
+      dispose()
+    }
+  })
+
+  test("Kill & take port reissues start with portConflict kill-existing", async () => {
+    let starts = 0
+    fetchState.responses = {
+      "GET": () => ({
+        configs: [SAMPLE_CONFIG],
+        processes: [{ configId: "proc_abc123", status: "idle", restartCount: 0 }],
+      }),
+      "POST /process/proc_abc123/start": () => {
+        starts += 1
+        if (starts === 1) {
+          return {
+            __status: 409,
+            __body: {
+              kind: "port_conflict",
+              conflict: {
+                type: "port-conflict",
+                port: 4096,
+                processId: "proc_busy",
+                processName: "busy-server",
+              },
+            },
+          }
+        }
+        return {
+          kind: "started",
+          process: {
+            configId: "proc_abc123",
+            ptyId: "pty_new",
+            status: "running",
+            restartCount: 0,
+          },
+        }
+      },
+    }
+
+    const { api, dispose } = createTestProcessPane()
+    try {
+      await tick()
+      await api.start("proc_abc123")
+      expect(dialogState.conflict).toBeDefined()
+
+      dialogState.conflict?.onResolve("kill-existing")
+      await tick()
+
+      const calls = fetchState.calls.filter((item) => item.url.includes("/process/proc_abc123/start"))
+      expect(calls).toHaveLength(2)
+      expect(calls[1]?.body).toEqual({ portConflict: "kill-existing" })
     } finally {
       dispose()
     }

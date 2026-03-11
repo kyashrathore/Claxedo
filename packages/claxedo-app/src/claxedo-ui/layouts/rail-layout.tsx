@@ -158,8 +158,9 @@ export type RailLayoutProps = ParentProps<{
   topBarRight?: () => JSX.Element
 }>
 
-// Check if running in Tauri desktop environment
-const isTauri = () => typeof window !== "undefined" && !!(window as any).__TAURI__
+// Check if running in a desktop environment (Tauri or Electron)
+const isDesktopApp = () =>
+  typeof window !== "undefined" && (!!(window as any).__TAURI__ || !!(window as any).api)
 
 type GroupPanelProps = {
   groupId: string
@@ -462,6 +463,7 @@ function SplitResizeHandle(props: { index: number }) {
     el.setPointerCapture(e.pointerId)
     document.body.style.userSelect = "none"
     document.body.style.cursor = isH() ? "col-resize" : "row-resize"
+    document.documentElement.dataset.terminalResizeSuspended = "1"
 
     const onMove = (me: PointerEvent) => {
       const pos = isH() ? me.clientX : me.clientY
@@ -478,6 +480,8 @@ function SplitResizeHandle(props: { index: number }) {
     const onUp = () => {
       document.body.style.userSelect = ""
       document.body.style.cursor = ""
+      delete document.documentElement.dataset.terminalResizeSuspended
+      window.dispatchEvent(new Event("opencode:terminal-fit"))
       el.removeEventListener("pointermove", onMove)
       el.removeEventListener("pointerup", onUp)
     }
@@ -889,7 +893,7 @@ function RailLayoutBody(props: RailLayoutProps) {
   return (
     <div class="flex flex-col w-full h-full bg-background-base overflow-hidden" data-claxedo>
       {/* Desktop window chrome spacer - for macOS traffic lights / Windows title bar */}
-      <Show when={!props.titlebar && isTauri()}>
+      <Show when={!props.titlebar && isDesktopApp()}>
         <div class="h-10 shrink-0 bg-background-base" data-tauri-drag-region />
       </Show>
 

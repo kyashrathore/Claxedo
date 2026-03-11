@@ -1,42 +1,79 @@
-import { describe, expect, test } from "vitest"
-import { parseElapsed, parseDiagnosticPs, parseListeningPorts } from "./diagnostics"
+import { afterEach, describe, expect, test, vi } from "vitest"
+import { Process } from "./process"
+import {
+  buildDiagnosticSnapshot,
+  groupDiagnostics,
+  parseDiagnosticPs,
+  parseElapsed,
+  parseListeningPorts,
+  terminateDiagnostic,
+} from "./diagnostics"
+
+const pty = (id: string, pid: number, title = id) => ({
+  id,
+  title,
+  command: "/bin/zsh",
+  args: ["-l"],
+  cwd: "/tmp/ws",
+  status: "running" as const,
+  pid,
+  subscribers: 1,
+})
+
+const cfg = (id: string, name = id) =>
+  Process.ProcessConfig.parse({
+    id,
+    name,
+    command: "bun",
+    args: ["run", "dev"],
+  })
+
+const proc = (configId: string, ptyId?: string) =>
+  Process.ManagedProcess.parse({
+    configId,
+    ptyId,
+    status: "running",
+    restartCount: 0,
+  })
+
+function grouped(input: {
+  lines: string[]
+  ptys?: Array<ReturnType<typeof pty>>
+  configs?: Array<Process.ProcessConfig>
+  processes?: Array<Process.ManagedProcess>
+  listening?: number[]
+  serverPid?: number
+  mcp?: Array<{ name: string; pid: number }>
+}) {
+  const ptys = input.ptys ?? []
+  const configs = input.configs ?? []
+  const processes = input.processes ?? []
+  const rows = parseDiagnosticPs(input.lines.join("\n"), {
+    directory: "/tmp/ws",
+    ptys,
+    processes,
+    listening: new Set(input.listening ?? []),
+    serverPid: input.serverPid,
+    mcp: input.mcp,
+  })
+
+  return groupDiagnostics({
+    directory: "/tmp/ws",
+    ptys,
+    configs,
+    processes,
+    os: rows,
+    server: {
+      pid: input.serverPid ?? 99999,
+      rss_kb: 100,
+      heap_used_kb: 50,
+      heap_total_kb: 90,
+      uptime_s: 600,
+    },
+  })
+}
 
 describe("process diagnostics parsing", () => {
-  test("marks dead claxedo ports as stale", () => {
-    const rows = parseDiagnosticPs(
-      [
-        "34672 32404 32404 SN 0.1 120000 02-07:01:54 node /tmp/app CLAXEDO_TERMINAL_ID=pty_dead CLAXEDO_PORT=65122 OPENCODE_TERMINAL=1",
-        "5142 1 5142 S 0.0 42000 17-17:33:14 bun run dev OPENCODE_PROCESS=bun OPENCODE_PROCESS_ID=proc_ok OPENCODE_TERMINAL=1 CLAXEDO_PORT=4096",
-      ].join("\n"),
-      {
-        ptys: [],
-        processes: [],
-        listening: new Set([4096]),
-      },
-    )
-
-    expect(rows).toHaveLength(2)
-    expect(rows[0]?.status).toBe("stale")
-    expect(rows[0]?.reasons).toContain("dead-port")
-    expect(rows[0]?.reasons).toContain("missing-pty")
-    expect(rows[1]?.status).toBe("suspect")
-    expect(rows[1]?.reasons).toContain("long-running")
-  })
-
-  test("marks bad process states as suspect", () => {
-    const rows = parseDiagnosticPs(
-      "1 0 1 Z 12.0 1000 00:10 foo OPENCODE_PROCESS_ID=proc_1 OPENCODE_TERMINAL=1",
-      {
-        ptys: [],
-        processes: [],
-        listening: new Set(),
-      },
-    )
-
-    expect(rows[0]?.status).toBe("suspect")
-    expect(rows[0]?.reasons).toContain("bad-state")
-  })
-
   test("parses listening ports from lsof output", () => {
     const ports = parseListeningPorts(
       [
@@ -49,6 +86,14 @@ describe("process diagnostics parsing", () => {
     expect([...ports]).toEqual([4096, 65122])
   })
 
+  test("parseElapsed handles all ps etime formats", () => {
+    expect(parseElapsed("00:30")).toBe(30)
+    expect(parseElapsed("14:09")).toBe(849)
+    expect(parseElapsed("02:30:00")).toBe(9000)
+    expect(parseElapsed("7-00:00:00")).toBe(604800)
+    expect(parseElapsed("17-15:01:52")).toBe(1_522_912)
+  })
+
   test("ignores rows without OpenCode or Claxedo linkage", () => {
     const rows = parseDiagnosticPs(
       [
@@ -56,6 +101,7 @@ describe("process diagnostics parsing", () => {
         "101 1 101 S 0.1 2000 00:11 bun run dev OPENCODE_PROCESS_ID=proc_1 OPENCODE_TERMINAL=1",
       ].join("\n"),
       {
+        directory: "/tmp/ws",
         ptys: [],
         processes: [],
         listening: new Set(),
@@ -66,81 +112,312 @@ describe("process diagnostics parsing", () => {
     expect(rows[0]?.pid).toBe(101)
   })
 
-  test("parseElapsed handles all ps etime formats", () => {
-    expect(parseElapsed("00:30")).toBe(30)
-    expect(parseElapsed("14:09")).toBe(849)
-    expect(parseElapsed("02:30:00")).toBe(9000)
-    expect(parseElapsed("7-00:00:00")).toBe(604800)
-    expect(parseElapsed("17-15:01:52")).toBe(1_522_912)
-  })
-
-  test("detects desktop app processes by binary path", () => {
+  test("ignores dev launchers whose repo path happens to contain opencode", () => {
     const rows = parseDiagnosticPs(
-      [
-        "66701 1 66701 S 0.5 80000 01:30:00 /Applications/Claxedo Dev.app/Contents/MacOS/OpenCode",
-        "66702 1 66702 S 0.3 70000 00:50:00 /Applications/Claxedo.app/Contents/MacOS/OpenCode",
-        "77001 1 77001 S 0.2 60000 00:45:00 /Applications/OpenCode.app/Contents/MacOS/OpenCode",
-        "77002 1 77002 S 0.2 60000 00:45:00 /Applications/OpenCode Dev.app/Contents/MacOS/OpenCode",
-        "88001 1 88001 S 0.1 50000 00:10:00 /Applications/OpenCode Beta.app/Contents/MacOS/OpenCode",
-        "88002 1 88002 S 0.1 50000 00:10:00 /Applications/Claxedo.app/Contents/MacOS/Claxedo",
-        "88003 1 88003 S 0.1 50000 00:10:00 /Applications/Claxedo Dev.app/Contents/MacOS/Claxedo",
-      ].join("\n"),
-      { ptys: [], processes: [], listening: new Set() },
-    )
-
-    expect(rows).toHaveLength(7)
-    expect(rows.every((row) => row.kind === "desktop")).toBe(true)
-  })
-
-  test("terminals from another server instance are not flagged as missing-pty", () => {
-    // Terminal has CLAXEDO_TERMINAL_ID and CLAXEDO_PORT=63928 (still listening),
-    // but its terminal ID is NOT in our PTY list — it belongs to another server.
-    const rows = parseDiagnosticPs(
-      "75691 67501 75691 Ss 0.0 5000 00:44 /bin/zsh CLAXEDO_TERMINAL_ID=pty_other CLAXEDO_PORT=63928 OPENCODE_TERMINAL=1",
+      "102 1 102 S 0.1 2000 00:11 bun run dev --cwd /Users/yashvardhansingh/test/opencode/packages/claxedo-app",
       {
+        directory: "/tmp/ws",
         ptys: [],
         processes: [],
-        listening: new Set([63928]),
+        listening: new Set(),
+      },
+    )
+
+    expect(rows).toHaveLength(0)
+  })
+
+  test("classifies a current tab tree as one owner with grouped descendants", () => {
+    const result = grouped({
+      lines: [
+        "100 1 100 Ss 0.1 10000 00:10 /bin/zsh CLAXEDO_TERMINAL_ID=pty_tab CLAXEDO_TAB_ID=tab_1 OPENCODE_TERMINAL=1",
+        "101 100 100 S 0.2 8000 00:08 /usr/bin/gitstatusd CLAXEDO_TERMINAL_ID=pty_tab CLAXEDO_TAB_ID=tab_1 OPENCODE_TERMINAL=1",
+        "102 100 100 S 0.3 7000 00:07 /usr/bin/esbuild CLAXEDO_TERMINAL_ID=pty_tab CLAXEDO_TAB_ID=tab_1 OPENCODE_TERMINAL=1",
+      ],
+      ptys: [pty("pty_tab", 100, "Agent 1")],
+      serverPid: 99999,
+    })
+
+    expect(result.owners).toHaveLength(1)
+    expect(result.owners[0]?.kind).toBe("tab")
+    expect(result.owners[0]?.children).toHaveLength(3)
+    expect(result.owners[0]?.hidden_children).toBe(2)
+    expect(result.owners[0]?.children.filter((row) => row.depth === 0)).toHaveLength(1)
+  })
+
+  test("classifies a managed process with PTY as one managed owner", () => {
+    const result = grouped({
+      lines: [
+        "200 1 200 S 0.4 20000 00:20 bun run dev OPENCODE_PROCESS=web OPENCODE_PROCESS_ID=proc_web CLAXEDO_TERMINAL_ID=pty_proc OPENCODE_TERMINAL=1",
+        "201 200 200 S 0.3 5000 00:19 node worker OPENCODE_PROCESS=web OPENCODE_PROCESS_ID=proc_web CLAXEDO_TERMINAL_ID=pty_proc OPENCODE_TERMINAL=1",
+      ],
+      ptys: [pty("pty_proc", 200, "web")],
+      configs: [cfg("proc_web", "web")],
+      processes: [proc("proc_web", "pty_proc")],
+      serverPid: 99999,
+    })
+
+    expect(result.owners).toHaveLength(1)
+    expect(result.owners[0]?.kind).toBe("managed_process")
+    expect(result.owners[0]?.process_id).toBe("proc_web")
+    expect(result.owners[0]?.children).toHaveLength(2)
+  })
+
+  test("classifies current server and current app as dedicated owners", () => {
+    const result = grouped({
+      lines: [
+        "400 1 400 S 1.2 64000 00:12 bun /tmp/opencode/dist-serve/serve-entry.js",
+        "500 1 500 S 0.8 96000 00:20 /Applications/Claxedo.app/Contents/MacOS/OpenCode",
+      ],
+      serverPid: 400,
+    })
+
+    expect(result.owners.map((item) => item.kind)).toEqual(["server", "app"])
+  })
+
+  test("classifies current MCP transports as first-class current owners", () => {
+    const result = grouped({
+      lines: [
+        "400 1 400 S 1.2 64000 00:12 bun /tmp/opencode/dist-serve/serve-entry.js",
+        "401 400 400 S 0.5 12000 00:11 opencode /tmp/claxedo-mcp.js",
+        "402 401 400 S 0.2 8000 00:10 /usr/bin/python3 worker.py",
+      ],
+      serverPid: 400,
+      mcp: [{ name: "claxedo-mcp", pid: 401 }],
+    })
+
+    expect(result.leaks).toHaveLength(0)
+    expect(result.owners.map((item) => item.kind)).toEqual(["mcp_server", "server"])
+    expect(result.owners[0]?.title).toBe("claxedo-mcp")
+    expect(result.owners[0]?.children).toHaveLength(2)
+    expect(result.owners[0]?.children.every((item) => item.owner_kind === "mcp_server")).toBe(true)
+  })
+
+  test("classifies an old detached server as a leaked group", () => {
+    const result = grouped({
+      lines: [
+        "700 1 700 S 0.4 50000 00:55 bun /tmp/opencode/dist-serve/serve-entry.js CLAXEDO_PORT=5400",
+        "701 700 700 S 0.1 8000 00:54 /bin/zsh CLAXEDO_TERMINAL_ID=pty_old CLAXEDO_PORT=5400 OPENCODE_TERMINAL=1",
+      ],
+      listening: [],
+      serverPid: 99999,
+    })
+
+    expect(result.leaks).toHaveLength(1)
+    expect(result.leaks[0]?.kind).toBe("leaked_server")
+    expect(result.leaks[0]?.children).toHaveLength(2)
+    expect(result.leaks[0]?.target?.scope).toBe("pid")
+    expect(result.summary.leaked.groups).toBe(1)
+  })
+
+  test("classifies another alive server as external instead of leaked", () => {
+    const result = grouped({
+      lines: [
+        "800 1 800 S 0.4 50000 00:55 /bin/zsh CLAXEDO_TERMINAL_ID=pty_other CLAXEDO_PORT=63928 OPENCODE_TERMINAL=1",
+      ],
+      listening: [63928],
+      serverPid: 99999,
+    })
+
+    expect(result.leaks).toHaveLength(0)
+    expect(result.summary.external.groups).toBe(1)
+    expect(result.os[0]?.owner_kind).toBe("external")
+  })
+
+  test("keeps problematic descendants visible inside their owner", () => {
+    const result = grouped({
+      lines: [
+        "900 1 900 Ss 0.1 10000 00:10 /bin/zsh CLAXEDO_TERMINAL_ID=pty_tab CLAXEDO_TAB_ID=tab_1 OPENCODE_TERMINAL=1",
+        "901 900 900 Z 0.2 8000 00:08 /usr/bin/gitstatusd CLAXEDO_TERMINAL_ID=pty_tab CLAXEDO_TAB_ID=tab_1 OPENCODE_TERMINAL=1",
+      ],
+      ptys: [pty("pty_tab", 900, "Agent 1")],
+      serverPid: 99999,
+    })
+
+    expect(result.owners[0]?.problem_children).toBe(1)
+    expect(result.owners[0]?.children[1]?.hidden_by_default).toBe(false)
+  })
+
+  test("buildDiagnosticSnapshot returns grouped owners, leaks, summary, and legacy os", () => {
+    const rows = parseDiagnosticPs(
+      "100 1 100 Ss 0.1 10000 00:10 /bin/zsh CLAXEDO_TERMINAL_ID=pty_tab CLAXEDO_TAB_ID=tab_1 OPENCODE_TERMINAL=1",
+      {
+        directory: "/tmp/ws",
+        ptys: [pty("pty_tab", 100, "Agent 1")],
+        processes: [],
+        listening: new Set(),
         serverPid: 99999,
       },
     )
 
-    expect(rows).toHaveLength(1)
-    expect(rows[0]?.status).toBe("active")
-    expect(rows[0]?.reasons).not.toContain("missing-pty")
+    const snapshot = buildDiagnosticSnapshot({
+      directory: "/tmp/ws",
+      listening: new Set(),
+      server: {
+        pid: 99999,
+        rss_kb: 10,
+        heap_used_kb: 5,
+        heap_total_kb: 8,
+        uptime_s: 120,
+      },
+      ptys: [pty("pty_tab", 100, "Agent 1")],
+      configs: [],
+      processes: [],
+      os: rows,
+    })
+
+    expect(snapshot.owners).toHaveLength(1)
+    expect(snapshot.leaks).toHaveLength(0)
+    expect(snapshot.summary.current.groups).toBe(1)
+    expect(snapshot.os).toHaveLength(1)
   })
 
-  test("terminals from our own server are flagged as missing-pty when untracked", () => {
-    // Same scenario but CLAXEDO_PORT is dead (not listening) — the server that
-    // owned this terminal is gone, so it's genuinely stale.
-    const rows = parseDiagnosticPs(
-      "75691 67501 75691 Ss 0.0 5000 00:44 /bin/zsh CLAXEDO_TERMINAL_ID=pty_orphan CLAXEDO_PORT=55555 OPENCODE_TERMINAL=1",
+  test("treats a sibling workspace process as external even with the same process id", () => {
+    const result = grouped({
+      lines: [
+        "300 1 300 S 0.4 20000 00:20 bun run dev OPENCODE_PROCESS=web OPENCODE_PROCESS_ID=proc_web CLAXEDO_TERMINAL_ID=pty_other CLAXEDO_WORKSPACE_ID=/tmp/ws-other OPENCODE_TERMINAL=1",
+      ],
+      ptys: [pty("pty_proc", 200, "web")],
+      configs: [cfg("proc_web", "web")],
+      processes: [proc("proc_web", "pty_proc")],
+      listening: [4100],
+      serverPid: 99999,
+    })
+
+    expect(result.owners).toHaveLength(0)
+    expect(result.leaks).toHaveLength(0)
+    expect(result.summary.external.groups).toBe(1)
+    expect(result.os[0]?.owner_kind).toBe("external")
+  })
+})
+
+describe("diagnostic termination", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test("terminates a leaked group member-by-member by default", async () => {
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true)
+    const ok = await terminateDiagnostic(
+      { group_key: "leak:5400" },
       {
-        ptys: [],
-        processes: [],
-        listening: new Set([63928]),
-        serverPid: 99999,
+        owners: [],
+        leaks: [
+          Process.DiagnosticGroup.parse({
+            key: "leak:5400",
+            kind: "leaked_server",
+            title: "Leaked server on :5400",
+            status: "stale",
+            cpu_percent: 1,
+            rss_kb: 10,
+            ports: [5400],
+            pid: 700,
+            current: false,
+            leaked: true,
+            hidden_children: 0,
+            problem_children: 0,
+            children: [
+              Process.DiagnosticOsProcess.parse({
+                pid: 700,
+                ppid: 1,
+                pgid: 700,
+                state: "S",
+                cpu_percent: 1,
+                rss_kb: 10,
+                elapsed: "00:10",
+                kind: "terminal",
+                command: "bun serve",
+                command_short: "bun serve",
+                status: "stale",
+                reasons: ["dead-port"],
+                owner_key: "leak:5400",
+                owner_kind: "leaked_server",
+                leaked: true,
+              }),
+            ],
+            target: {
+              group_key: "leak:5400",
+              pid: 700,
+              scope: "pid",
+            },
+          }),
+        ],
       },
     )
 
-    expect(rows).toHaveLength(1)
-    expect(rows[0]?.status).toBe("stale")
-    expect(rows[0]?.reasons).toContain("missing-pty")
-    expect(rows[0]?.reasons).toContain("dead-port")
+    expect(ok).toBe(true)
+    expect(kill).toHaveBeenCalledWith(700, "SIGTERM")
+    expect(kill).not.toHaveBeenCalledWith(-700, "SIGTERM")
   })
 
-  test("processes running 7+ days are suspect with long-running reason", () => {
-    const rows = parseDiagnosticPs(
-      [
-        "200 1 200 S 0.0 5000 6-23:59:59 bun run dev OPENCODE_PROCESS_ID=proc_6d OPENCODE_TERMINAL=1",
-        "201 1 201 S 0.0 5000 7-00:00:00 bun run dev OPENCODE_PROCESS_ID=proc_7d OPENCODE_TERMINAL=1",
-      ].join("\n"),
-      { ptys: [], processes: [], listening: new Set() },
+  test("ignores group scope for grouped cleanup and only kills listed members", async () => {
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true)
+    const ok = await terminateDiagnostic(
+      { group_key: "leak:5400", scope: "group" },
+      {
+        owners: [],
+        leaks: [
+          Process.DiagnosticGroup.parse({
+            key: "leak:5400",
+            kind: "leaked_server",
+            title: "Leaked server on :5400",
+            status: "stale",
+            cpu_percent: 1,
+            rss_kb: 10,
+            ports: [5400],
+            pid: 700,
+            current: false,
+            leaked: true,
+            hidden_children: 0,
+            problem_children: 0,
+            children: [
+              Process.DiagnosticOsProcess.parse({
+                pid: 700,
+                ppid: 1,
+                pgid: 700,
+                state: "S",
+                cpu_percent: 1,
+                rss_kb: 10,
+                elapsed: "00:10",
+                kind: "terminal",
+                command: "bun serve",
+                command_short: "bun serve",
+                status: "stale",
+                reasons: ["dead-port"],
+                owner_key: "leak:5400",
+                owner_kind: "leaked_server",
+                leaked: true,
+              }),
+              Process.DiagnosticOsProcess.parse({
+                pid: 701,
+                ppid: 700,
+                pgid: 700,
+                state: "S",
+                cpu_percent: 1,
+                rss_kb: 10,
+                elapsed: "00:10",
+                kind: "terminal",
+                command: "/bin/zsh",
+                command_short: "/bin/zsh",
+                status: "active",
+                reasons: [],
+                owner_key: "leak:5400",
+                owner_kind: "leaked_server",
+                leaked: true,
+              }),
+            ],
+            target: {
+              group_key: "leak:5400",
+              pid: 700,
+              scope: "pid",
+            },
+          }),
+        ],
+      },
     )
 
-    expect(rows[0]?.status).toBe("active")
-    expect(rows[0]?.reasons).not.toContain("long-running")
-    expect(rows[1]?.status).toBe("suspect")
-    expect(rows[1]?.reasons).toContain("long-running")
+    expect(ok).toBe(true)
+    expect(kill).toHaveBeenCalledWith(700, "SIGTERM")
+    expect(kill).toHaveBeenCalledWith(701, "SIGTERM")
+    expect(kill).not.toHaveBeenCalledWith(-700, "SIGTERM")
   })
 })

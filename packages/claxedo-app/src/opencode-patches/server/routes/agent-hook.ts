@@ -13,7 +13,17 @@ import { GlobalBus } from "@/bus/global"
 import { Pty } from "@/pty"
 import { Log } from "@/util/log"
 import { lazy } from "@/util/lazy"
-import { setupAgentHooks, getTerminalEnvVars, isSetupComplete, listWrapperAgents } from "@/agent-hooks"
+import {
+  setupAgentHooks,
+  getTerminalEnvVars,
+  isSetupComplete,
+  listWrapperAgents,
+  loadMcpAgentConfig,
+  toggleAgentMcp,
+  MCP_CAPABLE_AGENTS,
+  MANAGED_MCP_SERVERS,
+  isManagedMcpServer,
+} from "@/agent-hooks"
 import { ClaxedoDB } from "@/storage/claxedo-db"
 import { migrateTabContext } from "@/storage/claxedo-migrate-legacy"
 import z from "zod"
@@ -1291,6 +1301,100 @@ export const AgentHookRoutes = lazy(() => {
             shell: query.shell,
           })
           return c.json(env)
+        },
+      )
+      // Get MCP per-agent toggle state
+      .get(
+        "/mcp-agents",
+        describeRoute({
+          summary: "Get MCP per-agent status",
+          description: "Returns which agents have each managed MCP server enabled/disabled",
+          operationId: "agentHook.mcpAgents",
+          responses: {
+            200: {
+              description: "MCP agent status",
+              content: {
+                "application/json": {
+                  schema: resolver(
+                    z.object({
+                      servers: z.record(z.string(), z.record(z.string(), z.boolean())),
+                      managed: z.array(z.string()),
+                      capable: z.array(z.string()),
+                    }),
+                  ),
+                },
+              },
+            },
+          },
+        }),
+        async (c) => {
+          const config = await loadMcpAgentConfig()
+          return c.json({
+            servers: config.servers,
+            managed: [...MANAGED_MCP_SERVERS],
+            capable: [...MCP_CAPABLE_AGENTS],
+          })
+        },
+      )
+      // Toggle MCP for a specific agent
+      .post(
+        "/mcp-agents",
+        describeRoute({
+          summary: "Toggle MCP for an agent",
+          description: "Enable or disable a managed MCP server for a specific CLI agent",
+          operationId: "agentHook.toggleMcpAgent",
+          responses: {
+            200: {
+              description: "Toggle successful",
+              content: {
+                "application/json": {
+                  schema: resolver(
+                    z.object({
+                      success: z.boolean(),
+                      server: z.string(),
+                      agent: z.string(),
+                      enabled: z.boolean(),
+                    }),
+                  ),
+                },
+              },
+            },
+            400: {
+              description: "Invalid agent",
+              content: {
+                "application/json": {
+                  schema: resolver(z.object({ success: z.boolean(), error: z.string() })),
+                },
+              },
+            },
+          },
+        }),
+        validator(
+          "json",
+          z.object({
+            server: z.string().describe("Managed MCP server name"),
+            agent: z.string().describe("Agent name (e.g. claude, gemini, cursor, opencode)"),
+            enabled: z.boolean().describe("Enable or disable this MCP server for the agent"),
+          }),
+        ),
+        async (c) => {
+          const { server, agent, enabled } = c.req.valid("json")
+          if (!isManagedMcpServer(server)) {
+            return c.json({ success: false, error: `MCP server '${server}' is not managed here` }, 400)
+          }
+          if (!MCP_CAPABLE_AGENTS.includes(agent as any)) {
+            return c.json({ success: false, error: `Agent '${agent}' does not support MCP` }, 400)
+          }
+          try {
+            await toggleAgentMcp(server, agent, enabled)
+            return c.json({ success: true, server, agent, enabled })
+          } catch (error) {
+            log.error("Failed to toggle MCP for agent", { server, agent, enabled, error })
+            return c.json(
+              { success: false, error: error instanceof Error ? error.message : "Unknown error" },
+              500,
+            )
+          }
         },
       )
   )

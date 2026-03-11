@@ -5,7 +5,7 @@
  * compact pane header with split/create actions.
  */
 
-import { For, Show, Switch, Match, Suspense, lazy, createMemo, createEffect, createSignal, on, onCleanup, onMount, type Accessor } from "solid-js"
+import { For, Show, Switch, Match, Suspense, lazy, createMemo, createEffect, createSignal, on, onCleanup, onMount, untrack, type Accessor } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -268,7 +268,10 @@ function ProcessPlaceholder(props: { directory: string }) {
   const hasConfigs = createMemo(() => pp.configs().length > 0)
 
   return (
-    <div class="flex flex-col items-center justify-center h-full text-text-weak gap-3">
+    <div
+      data-testid="process-empty-state"
+      class="flex flex-col items-center justify-center h-full text-text-weak gap-3"
+    >
       <Show
         when={loaded() && !hasConfigs()}
         fallback={
@@ -327,7 +330,11 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
         directory: content.directory,
       })
     }
-    ensureTerminalSession(content.terminalId, content.directory)
+    // Untrack to prevent reactive loop: ensureTerminalSession → ensureSessionMessages
+    // reads store.part, then writes store.part on fetch resolve, re-triggering this effect.
+    const terminalId = content.terminalId
+    const directory = content.directory
+    untrack(() => ensureTerminalSession(terminalId, directory))
   })
 
   const sessionTitle = createMemo(() => {

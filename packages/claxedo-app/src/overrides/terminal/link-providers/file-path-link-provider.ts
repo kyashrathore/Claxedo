@@ -225,6 +225,12 @@ export class FilePathLinkProvider implements ILinkProvider {
 		if (pathText.startsWith("node:")) {
 			return true;
 		}
+
+		// Git hash ranges like "9ebf9967e..a514ef81e" from diff index headers
+		if (/^[0-9a-f]+\.\.[0-9a-f]+$/i.test(pathText)) {
+			return true;
+		}
+
 		return this.ignored.test(pathText);
 	}
 

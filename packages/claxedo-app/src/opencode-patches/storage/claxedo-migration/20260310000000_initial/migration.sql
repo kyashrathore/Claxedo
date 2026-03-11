@@ -11,8 +11,11 @@ CREATE TABLE `claxedo_page` (
   `created_at` text NOT NULL,
   `updated_at` text NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `claxedo_page_project_idx` ON `claxedo_page` (`project_id`);
+--> statement-breakpoint
 CREATE INDEX `claxedo_page_updated_idx` ON `claxedo_page` (`project_id`, `updated_at`);
+--> statement-breakpoint
 
 -- Page statuses
 CREATE TABLE `claxedo_page_status` (
@@ -24,7 +27,9 @@ CREATE TABLE `claxedo_page_status` (
   `transitions` text NOT NULL DEFAULT '[]',
   PRIMARY KEY(`project_id`, `id`)
 );
+--> statement-breakpoint
 CREATE INDEX `claxedo_page_status_project_idx` ON `claxedo_page_status` (`project_id`);
+--> statement-breakpoint
 
 -- Arena
 CREATE TABLE `claxedo_page_arena` (
@@ -42,7 +47,9 @@ CREATE TABLE `claxedo_page_arena` (
   `created_at` integer NOT NULL,
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `claxedo_page_arena_page_idx` ON `claxedo_page_arena` (`page_id`, `updated_at`);
+--> statement-breakpoint
 
 CREATE TABLE `claxedo_page_arena_agent` (
   `id` text PRIMARY KEY NOT NULL,
@@ -61,8 +68,11 @@ CREATE TABLE `claxedo_page_arena_agent` (
   `created_at` integer NOT NULL,
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX `claxedo_page_arena_agent_unique` ON `claxedo_page_arena_agent` (`arena_id`, `agent_key`);
+--> statement-breakpoint
 CREATE INDEX `claxedo_page_arena_agent_arena_idx` ON `claxedo_page_arena_agent` (`arena_id`, `created_at`);
+--> statement-breakpoint
 
 CREATE TABLE `claxedo_page_arena_wave` (
   `id` text PRIMARY KEY NOT NULL,
@@ -75,7 +85,9 @@ CREATE TABLE `claxedo_page_arena_wave` (
   `finished_at` integer NOT NULL DEFAULT 0,
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `claxedo_page_arena_wave_arena_idx` ON `claxedo_page_arena_wave` (`arena_id`, `started_at`);
+--> statement-breakpoint
 
 CREATE TABLE `claxedo_page_arena_message` (
   `id` text PRIMARY KEY NOT NULL,
@@ -90,7 +102,9 @@ CREATE TABLE `claxedo_page_arena_message` (
   `metadata_json` text NOT NULL DEFAULT '{}',
   `created_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `claxedo_page_arena_message_arena_idx` ON `claxedo_page_arena_message` (`arena_id`, `created_at`);
+--> statement-breakpoint
 
 CREATE TABLE `claxedo_page_arena_delivery` (
   `id` text PRIMARY KEY NOT NULL,
@@ -105,8 +119,11 @@ CREATE TABLE `claxedo_page_arena_delivery` (
   `created_at` integer NOT NULL,
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX `claxedo_page_arena_delivery_unique` ON `claxedo_page_arena_delivery` (`arena_id`, `wave_id`, `message_id`, `target_agent_key`);
+--> statement-breakpoint
 CREATE INDEX `claxedo_page_arena_delivery_arena_idx` ON `claxedo_page_arena_delivery` (`arena_id`, `created_at`);
+--> statement-breakpoint
 
 -- Tab context
 CREATE TABLE `claxedo_tab_context` (
@@ -114,14 +131,18 @@ CREATE TABLE `claxedo_tab_context` (
   `payload` text NOT NULL,
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `claxedo_tab_context_updated_idx` ON `claxedo_tab_context` (`updated_at`);
+--> statement-breakpoint
 
 CREATE TABLE `claxedo_tab_context_terminal` (
   `terminal_id` text PRIMARY KEY NOT NULL,
   `tab_id` text NOT NULL,
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `claxedo_tab_context_terminal_tab_idx` ON `claxedo_tab_context_terminal` (`tab_id`);
+--> statement-breakpoint
 
 CREATE TABLE `claxedo_terminal_session` (
   `terminal_id` text PRIMARY KEY NOT NULL,
@@ -136,5 +157,7 @@ CREATE TABLE `claxedo_terminal_session` (
   `event_type` text,
   `updated_at` integer NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX `claxedo_terminal_session_tab_idx` ON `claxedo_terminal_session` (`tab_id`);
+--> statement-breakpoint
 CREATE INDEX `claxedo_terminal_session_updated_idx` ON `claxedo_terminal_session` (`updated_at`);

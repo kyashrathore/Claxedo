@@ -1,13 +1,13 @@
 /**
  * Process Management E2E Tests
  *
- * Tests the process pane UI:
- * 1. Toggle process pane via keyboard shortcut
- * 2. See empty state
+ * Tests the current process-tab UI:
+ * 1. Open the tab from the Processes toolbar action
+ * 2. See empty state / process controls
  * 3. Open "Add Process" dialog, fill form, submit
- * 4. See process appear in pane
+ * 4. See process appear in the tab
  * 5. Start the process
- * 6. Close pane and reopen — verify state persists
+ * 6. Close the tab and reopen — verify state persists
  *
  * Uses Playwright route interception to mock HTTP APIs
  * so the test runs without a live backend.
@@ -17,8 +17,8 @@ import { test, expect, type Page, type Route } from "@playwright/test"
 
 // ── Constants ───────────────────────────────────────────────────────────
 
-const PANE_SELECTOR = '[data-component="process-pane"]'
-const modKey = process.platform === "darwin" ? "Meta" : "Control"
+const PROCESS_BUTTON = 'button[aria-label="Processes"]'
+const ACTIVE_CLOSE = 'button[aria-label="Close tab"][data-active-close]'
 
 /** Fake workspace directory for testing */
 const TEST_DIR = "/tmp/e2e-process-test"
@@ -76,42 +76,23 @@ async function waitForAppReady(page: Page) {
   await page.waitForTimeout(500)
 }
 
-/** Toggle process pane — uses keyboard shortcut mod+shift+; */
-async function toggleProcessPane(page: Page) {
-  // Click the page body to ensure focus, then try keyboard shortcut
-  await page.locator("body").click({ position: { x: 400, y: 300 } })
-  await page.waitForTimeout(100)
+async function showProcessTab(page: Page) {
+  const add = page.getByRole("button", { name: "Add process" })
+  if (await add.isVisible().catch(() => false)) return
 
-  // Use keyboard.down/up to send the combo (mod+shift+;)
-  if (modKey === "Meta") {
-    await page.keyboard.down("Meta")
+  const tab = page.locator("[data-tab-id]").filter({ hasText: "Processes" }).first()
+  if (await tab.count()) {
+    await tab.click()
   } else {
-    await page.keyboard.down("Control")
-  }
-  await page.keyboard.down("Shift")
-  await page.keyboard.press(";")
-  await page.keyboard.up("Shift")
-  if (modKey === "Meta") {
-    await page.keyboard.up("Meta")
-  } else {
-    await page.keyboard.up("Control")
+    await page.locator(PROCESS_BUTTON).click()
   }
 
-  // Give the framework a moment to react
-  await page.waitForTimeout(200)
+  await expect(add).toBeVisible({ timeout: 10_000 })
 }
 
-/** Wait for the process pane to become visible */
-async function waitForPaneVisible(page: Page) {
-  const pane = page.locator(PANE_SELECTOR)
-  await expect(pane).toBeVisible({ timeout: 10_000 })
-  return pane
-}
-
-/** Wait for the process pane to be hidden */
-async function waitForPaneHidden(page: Page) {
-  const pane = page.locator(PANE_SELECTOR)
-  await expect(pane).toBeHidden({ timeout: 5000 })
+async function showSessionTab(page: Page) {
+  await page.locator("[data-tab-id]").filter({ hasText: "New Session" }).first().click()
+  await expect(page.getByRole("button", { name: "Add process" })).toBeHidden({ timeout: 10_000 })
 }
 
 // ── Mock data ───────────────────────────────────────────────────────────
@@ -224,8 +205,8 @@ async function setupAPIMocks(page: Page) {
     })
   })
 
-  // GET/POST /process/
-  await page.route("**/process/", async (route: Route) => {
+  // GET/POST /process
+  await page.route(/\/process\/?(?:\?.*)?$/, async (route: Route) => {
     if (!isAPICall(route)) { await route.continue(); return }
     if (route.request().method() === "GET") {
       await route.fulfill({
@@ -384,26 +365,18 @@ test.describe("Process Management", () => {
   })
 
   test("toggle pane shows empty state and hides on re-toggle", async ({ page }) => {
-    // Pane should be hidden initially
-    await waitForPaneHidden(page)
+    await expect(page.getByRole("button", { name: "Add process" })).toBeHidden()
 
-    // Toggle open — should see empty state
-    await toggleProcessPane(page)
-    const pane = await waitForPaneVisible(page)
-    await expect(pane.getByText("No processes configured")).toBeVisible()
-    await expect(pane.getByRole("button", { name: "Add Process", exact: true })).toBeVisible()
+    await showProcessTab(page)
+    await expect(page.getByText("No processes configured")).toBeVisible()
+    await expect(page.getByRole("button", { name: "Add process" })).toBeVisible()
 
-    // Toggle closed
-    await toggleProcessPane(page)
-    await waitForPaneHidden(page)
+    await showSessionTab(page)
   })
 
   test("add process via dialog", async ({ page }) => {
-    await toggleProcessPane(page)
-    const pane = await waitForPaneVisible(page)
-
-    // Click "Add Process" in empty state
-    await pane.getByRole("button", { name: "Add Process", exact: true }).click()
+    await showProcessTab(page)
+    await page.getByRole("button", { name: "Add process" }).click()
 
     // Dialog should appear
     const dialog = page.getByRole("dialog")
@@ -411,11 +384,10 @@ test.describe("Process Management", () => {
     await expect(dialog.getByText("Add Process")).toBeVisible()
 
     // Fill in name
-    const nameInput = dialog.locator('input[type="text"]').first()
-    await nameInput.fill("Dev Server")
+    const nameInput = dialog.getByTestId("process-name-input")
+    await nameInput.fill("dev-server")
 
-    // Fill in command
-    const commandInput = dialog.locator('input[type="text"]').nth(1)
+    const commandInput = dialog.getByTestId("process-command-input")
     await commandInput.fill("echo hello")
 
     // Submit
@@ -446,11 +418,8 @@ test.describe("Process Management", () => {
     await page.reload()
     await waitForAppReady(page)
 
-    await toggleProcessPane(page)
-    const pane = await waitForPaneVisible(page)
-
-    // Click header "+" (aria-label="Add process")
-    await pane.getByRole("button", { name: "Add process" }).click()
+    await showProcessTab(page)
+    await page.getByRole("button", { name: "Add process" }).click()
 
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
@@ -461,9 +430,8 @@ test.describe("Process Management", () => {
   })
 
   test("dialog form validation — submit disabled without required fields", async ({ page }) => {
-    await toggleProcessPane(page)
-    const pane = await waitForPaneVisible(page)
-    await pane.getByRole("button", { name: "Add Process", exact: true }).click()
+    await showProcessTab(page)
+    await page.getByRole("button", { name: "Add process" }).click()
 
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
@@ -472,12 +440,12 @@ test.describe("Process Management", () => {
     await expect(addButton).toBeDisabled()
 
     // Fill just name — still disabled
-    const nameInput = dialog.locator('input[type="text"]').first()
-    await nameInput.fill("Test")
+    const nameInput = dialog.getByTestId("process-name-input")
+    await nameInput.fill("test")
     await expect(addButton).toBeDisabled()
 
     // Fill command — enabled
-    const commandInput = dialog.locator('input[type="text"]').nth(1)
+    const commandInput = dialog.getByTestId("process-command-input")
     await commandInput.fill("echo test")
     await expect(addButton).toBeEnabled()
 
@@ -487,9 +455,8 @@ test.describe("Process Management", () => {
   })
 
   test("dialog env variables — add and remove", async ({ page }) => {
-    await toggleProcessPane(page)
-    const pane = await waitForPaneVisible(page)
-    await pane.getByRole("button", { name: "Add Process", exact: true }).click()
+    await showProcessTab(page)
+    await page.getByRole("button", { name: "Add process" }).click()
 
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
@@ -512,12 +479,9 @@ test.describe("Process Management", () => {
     await expect(dialog.locator('input[placeholder="KEY"]')).toHaveCount(1)
   })
 
-  test("minimize pane button", async ({ page }) => {
-    await toggleProcessPane(page)
-    const pane = await waitForPaneVisible(page)
-
-    await pane.getByRole("button", { name: "Minimize process pane" }).click()
-    await waitForPaneHidden(page)
+  test("switching back to the session hides process actions", async ({ page }) => {
+    await showProcessTab(page)
+    await showSessionTab(page)
   })
 
   test("start and stop all buttons visible when configs exist", async ({ page }) => {
@@ -537,55 +501,44 @@ test.describe("Process Management", () => {
     await page.reload()
     await waitForAppReady(page)
 
-    await toggleProcessPane(page)
-    const pane = await waitForPaneVisible(page)
-
-    await expect(pane.getByText("Start All")).toBeVisible()
-    await expect(pane.getByText("Stop All")).toBeVisible()
+    await showProcessTab(page)
+    await expect(page.getByRole("button", { name: "Start All" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Stop All" })).toBeVisible()
   })
 
   test("full happy flow: create, start, close, reopen", async ({ page }) => {
-    // 1. Toggle pane open
-    await toggleProcessPane(page)
-    let pane = await waitForPaneVisible(page)
+    await showProcessTab(page)
+    await expect(page.getByTestId("process-empty-state")).toBeVisible({ timeout: 10_000 })
 
-    // 2. Verify empty state
-    await expect(pane.getByText("No processes configured")).toBeVisible()
-
-    // 3. Create a process via dialog
-    await pane.getByRole("button", { name: "Add Process", exact: true }).click()
+    await page.getByRole("button", { name: "Add process" }).click()
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
 
-    await dialog.locator('input[type="text"]').first().fill("Dev Server")
-    await dialog.locator('input[type="text"]').nth(1).fill("echo 'hello world'")
+    await dialog.getByTestId("process-name-input").fill("dev-server")
+    await dialog.getByTestId("process-command-input").fill("echo 'hello world'")
     await dialog.getByRole("button", { name: "Add", exact: true }).click()
 
     await expect(dialog).toBeHidden({ timeout: 5000 })
     await expect(page.getByText("Process created")).toBeVisible({ timeout: 3000 })
 
-    // 4. Process appears in pane (refresh fetches updated mock data)
-    await expect(pane.getByText("Dev Server")).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('[data-testid="process-pane-panel"][data-process-name="dev-server"]')).toBeVisible({ timeout: 5_000 })
 
-    // 5. Start the process
-    const startButton = pane.getByRole("button", { name: "Start process", exact: true })
+    const startButton = page.getByRole("button", { name: "Start process", exact: true }).first()
     await expect(startButton).toBeVisible()
     await startButton.click()
+    await expect(page.getByRole("button", { name: "Stop process" }).first()).toBeVisible({ timeout: 5000 })
 
-    // 6. Close pane
-    await toggleProcessPane(page)
-    await waitForPaneHidden(page)
+    await page.locator(ACTIVE_CLOSE).click()
+    await expect(page.getByRole("button", { name: "Add process" })).toBeHidden({ timeout: 10_000 })
 
-    // 7. Reopen — config still there
-    await toggleProcessPane(page)
-    pane = await waitForPaneVisible(page)
-    await expect(pane.getByText("Dev Server")).toBeVisible({ timeout: 5000 })
+    await showProcessTab(page)
+    await expect(page.locator('[data-testid="process-pane-panel"][data-process-name="dev-server"]')).toBeVisible({ timeout: 5_000 })
   })
 
   test("edit process dialog shows pre-filled values", async ({ page }) => {
     mockConfigs.push({
       id: "cfg-edit",
-      name: "Build Watcher",
+      name: "build-watcher",
       command: "npm run watch",
       args: [],
       cwd: "./packages/app",
@@ -599,17 +552,15 @@ test.describe("Process Management", () => {
     await page.reload()
     await waitForAppReady(page)
 
-    await toggleProcessPane(page)
-    const pane = await waitForPaneVisible(page)
-
-    await pane.getByRole("button", { name: "Edit process" }).click()
+    await showProcessTab(page)
+    await page.getByRole("button", { name: "Edit process" }).first().click()
 
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText("Edit Process")).toBeVisible()
 
-    await expect(dialog.locator('input[type="text"]').first()).toHaveValue("Build Watcher")
-    await expect(dialog.locator('input[type="text"]').nth(1)).toHaveValue("npm run watch")
+    await expect(dialog.getByTestId("process-name-input")).toHaveValue("build-watcher")
+    await expect(dialog.getByTestId("process-command-input")).toHaveValue("npm run watch")
     await expect(dialog.getByRole("button", { name: "Save" })).toBeVisible()
     await expect(dialog.getByRole("button", { name: "Delete" })).toBeVisible()
 
@@ -620,7 +571,7 @@ test.describe("Process Management", () => {
   test("delete process with confirmation", async ({ page }) => {
     mockConfigs.push({
       id: "cfg-del",
-      name: "To Delete",
+      name: "to-delete",
       command: "echo delete-me",
       args: [],
       cwd: "",
@@ -634,10 +585,8 @@ test.describe("Process Management", () => {
     await page.reload()
     await waitForAppReady(page)
 
-    await toggleProcessPane(page)
-    const pane = await waitForPaneVisible(page)
-
-    await pane.getByRole("button", { name: "Edit process" }).click()
+    await showProcessTab(page)
+    await page.getByRole("button", { name: "Edit process" }).first().click()
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
 
@@ -652,17 +601,17 @@ test.describe("Process Management", () => {
     // Delete → Confirm
     await dialog.getByRole("button", { name: "Delete" }).click()
     await expect(dialog.getByText("Delete this process?")).toBeVisible()
-    await dialog.getByRole("button", { name: "Confirm" }).click()
+    await dialog.getByTestId("process-confirm-delete").click()
 
     await expect(dialog).toBeHidden({ timeout: 5000 })
     await expect(page.getByText("Process removed")).toBeVisible({ timeout: 3000 })
   })
 
-  test("scroll navigation buttons work with multiple configs", async ({ page }) => {
+  test("multiple configs render multiple process panes", async ({ page }) => {
     mockConfigs.push(
       {
         id: "cfg-s1",
-        name: "Server 1",
+        name: "server-1",
         command: "echo s1",
         args: [],
         cwd: "",
@@ -674,7 +623,7 @@ test.describe("Process Management", () => {
       },
       {
         id: "cfg-s2",
-        name: "Server 2",
+        name: "server-2",
         command: "echo s2",
         args: [],
         cwd: "",
@@ -689,21 +638,10 @@ test.describe("Process Management", () => {
     await page.reload()
     await waitForAppReady(page)
 
-    await toggleProcessPane(page)
-    const pane = await waitForPaneVisible(page)
+    await showProcessTab(page)
 
-    await expect(pane.getByText("Server 1")).toBeVisible({ timeout: 5000 })
-    await expect(pane.getByText("Server 2")).toBeVisible({ timeout: 5000 })
-
-    const scrollLeft = pane.getByRole("button", { name: "Scroll left" })
-    const scrollRight = pane.getByRole("button", { name: "Scroll right" })
-    await expect(scrollLeft).toBeVisible()
-    await expect(scrollRight).toBeVisible()
-
-    // At index 0 — left disabled
-    await expect(scrollLeft).toBeDisabled()
-
-    await scrollRight.click()
-    await expect(scrollLeft).toBeEnabled()
+    await expect(page.locator('[data-testid="process-pane-panel"][data-process-name="server-1"]')).toBeVisible({ timeout: 5_000 })
+    await expect(page.locator('[data-testid="process-pane-panel"][data-process-name="server-2"]')).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByRole("button", { name: "Edit process" })).toHaveCount(2)
   })
 })

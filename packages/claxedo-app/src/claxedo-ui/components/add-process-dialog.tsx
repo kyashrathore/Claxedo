@@ -123,7 +123,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
       restartPolicy: store.restartPolicy,
       maxRestarts: store.maxRestarts,
       ...(dependsOnList.length > 0 ? { dependsOn: dependsOnList } : {}),
-      port: store.usePort ? {
+      port: hasPort() ? {
         name: effectivePortName(),
         inject: store.portInject.trim() || "PORT",
         ...(preferredPort && !isNaN(preferredPort) ? { preferred: preferredPort } : {}),
@@ -138,10 +138,13 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
   const effectivePortName = () =>
     store.portName.trim() || derivedPortName()
 
+  const hasPort = () =>
+    store.usePort || store.portPreferred.trim().length > 0
+
   const canSubmit = () =>
     store.name.trim().length > 0 &&
     store.command.trim().length > 0 &&
-    (!store.usePort || effectivePortName().length > 0) &&
+    (!hasPort() || effectivePortName().length > 0) &&
     !store.saving
 
   const handleSubmit = async (e: SubmitEvent) => {
@@ -258,10 +261,12 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
         {/* Name */}
         <TextField
           autofocus
+          name="process-name"
           type="text"
           label="Name"
           description="Lowercase, hyphens, dots, underscores only (e.g. my-server)"
           placeholder="dev-server"
+          data-testid="process-name-input"
           value={store.name}
           onChange={(v) => setStore("name", v.toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/-+/g, "-"))}
           spellcheck={false}
@@ -271,9 +276,11 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
 
         {/* Command */}
         <TextField
+          name="process-command"
           type="text"
           label="Command"
           placeholder="npm run dev"
+          data-testid="process-command-input"
           value={store.command}
           onChange={(v) => setStore("command", v)}
           spellcheck={false}
@@ -283,10 +290,12 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
 
         {/* Working directory */}
         <TextField
+          name="process-cwd"
           type="text"
           label="Working directory"
           description="Relative to workspace root (optional)"
           placeholder="./packages/server"
+          data-testid="process-cwd-input"
           value={store.cwd}
           onChange={(v) => setStore("cwd", v)}
           spellcheck={false}
@@ -349,13 +358,67 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
           class="font-mono text-xs"
         />
 
-        {/* Port assignment (portpick) */}
+        {/* Preferred port */}
         <div class="flex flex-col gap-2">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <TextField
+              type="text"
+              label="Preferred port"
+              description="Base port for this process. Other workspaces scan upward from here."
+              placeholder="3000"
+              value={store.portPreferred}
+              onChange={(v) => setStore("portPreferred", v)}
+              spellcheck={false}
+              class="font-mono text-xs"
+            />
+            <div class="flex flex-col gap-1">
+              <label class="text-12-medium text-text-weak">If occupied</label>
+              <p class="text-[11px] text-text-weaker">Use only when a preferred port is set.</p>
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  disabled={!store.portPreferred.trim()}
+                  class="flex-1 px-3 py-1.5 rounded-md text-12-regular border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  classList={{
+                    "border-accent bg-accent/10 text-text-strong": !store.portOnConflict,
+                    "border-border text-text-weak hover:border-border-strong": !!store.portOnConflict,
+                  }}
+                  onClick={() => setStore("portOnConflict", undefined)}
+                >
+                  Ask me
+                </button>
+                <button
+                  type="button"
+                  disabled={!store.portPreferred.trim()}
+                  class="flex-1 px-3 py-1.5 rounded-md text-12-regular border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  classList={{
+                    "border-accent bg-accent/10 text-text-strong": store.portOnConflict === "pick-new",
+                    "border-border text-text-weak hover:border-border-strong": store.portOnConflict !== "pick-new",
+                  }}
+                  onClick={() => setStore("portOnConflict", "pick-new")}
+                >
+                  Pick new
+                </button>
+                <button
+                  type="button"
+                  disabled={!store.portPreferred.trim()}
+                  class="flex-1 px-3 py-1.5 rounded-md text-12-regular border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  classList={{
+                    "border-accent bg-accent/10 text-text-strong": store.portOnConflict === "kill-existing",
+                    "border-border text-text-weak hover:border-border-strong": store.portOnConflict !== "kill-existing",
+                  }}
+                  onClick={() => setStore("portOnConflict", "kill-existing")}
+                >
+                  Kill existing
+                </button>
+              </div>
+            </div>
+          </div>
           <Switch
             checked={store.usePort}
             onChange={(v) => setStore("usePort", v)}
           >
-            Assign port
+            Advanced port settings
           </Switch>
           <Show when={store.usePort}>
             <TextField
@@ -382,55 +445,6 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
               spellcheck={false}
               class="font-mono text-xs"
             />
-            <TextField
-              type="text"
-              label="Preferred port"
-              description="Try this port first. If occupied, the conflict strategy below applies."
-              placeholder="3000"
-              value={store.portPreferred}
-              onChange={(v) => setStore("portPreferred", v)}
-              spellcheck={false}
-              class="font-mono text-xs"
-            />
-            <div class="flex flex-col gap-1">
-              <label class="text-12-medium text-text-weak">If port is occupied</label>
-              <p class="text-[11px] text-text-weaker">Auto-resolve strategy. Leave on "Ask me" to be prompted each time.</p>
-              <div class="flex gap-2">
-                <button
-                  type="button"
-                  class="flex-1 px-3 py-1.5 rounded-md text-12-regular border transition-colors"
-                  classList={{
-                    "border-accent bg-accent/10 text-text-strong": !store.portOnConflict,
-                    "border-border text-text-weak hover:border-border-strong": !!store.portOnConflict,
-                  }}
-                  onClick={() => setStore("portOnConflict", undefined as any)}
-                >
-                  Ask me
-                </button>
-                <button
-                  type="button"
-                  class="flex-1 px-3 py-1.5 rounded-md text-12-regular border transition-colors"
-                  classList={{
-                    "border-accent bg-accent/10 text-text-strong": store.portOnConflict === "pick-new",
-                    "border-border text-text-weak hover:border-border-strong": store.portOnConflict !== "pick-new",
-                  }}
-                  onClick={() => setStore("portOnConflict", "pick-new")}
-                >
-                  Pick new
-                </button>
-                <button
-                  type="button"
-                  class="flex-1 px-3 py-1.5 rounded-md text-12-regular border transition-colors"
-                  classList={{
-                    "border-accent bg-accent/10 text-text-strong": store.portOnConflict === "kill-existing",
-                    "border-border text-text-weak hover:border-border-strong": store.portOnConflict !== "kill-existing",
-                  }}
-                  onClick={() => setStore("portOnConflict", "kill-existing")}
-                >
-                  Kill existing
-                </button>
-              </div>
-            </div>
           </Show>
         </div>
 
@@ -459,6 +473,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
                   size="large"
                   onClick={handleDelete}
                   disabled={store.deleting}
+                  data-testid="process-confirm-delete"
                   class="!bg-red-600 hover:!bg-red-700"
                 >
                   {store.deleting ? "Deleting..." : "Confirm Delete"}

@@ -217,6 +217,37 @@ describe("setupDropHandler", () => {
     expect(written).toContain("/tmp/test.txt")
   })
 
+  test("Electron drop uses getDroppedFilePaths and writes escaped path", async () => {
+    const onWrite = vi.fn()
+    const container = fakeContainer()
+    const prev = (window as any).api
+
+    ;(window as any).api = {
+      getDroppedFilePaths: (files: File[]) =>
+        files.map(() => "/Users/me/dropped.txt"),
+    }
+
+    try {
+      setupDropHandler({} as never, container.el, { onWrite })
+
+      const dt = {
+        files: [new File(["content"], "dropped.txt")],
+        getData: () => "",
+      }
+      const e = dropEvent(dt as unknown as DataTransfer)
+      container.dispatch("drop", e.event)
+
+      await new Promise((r) => setTimeout(r, 10))
+
+      expect(e.prevented()).toBe(true)
+      expect(e.stopped()).toBe(true)
+      expect(onWrite).toHaveBeenCalledTimes(1)
+      expect(onWrite.mock.calls[0][0]).toContain("/Users/me/dropped.txt")
+    } finally {
+      ;(window as any).api = prev
+    }
+  })
+
   test("empty dataTransfer does not stopPropagation", async () => {
     const onWrite = vi.fn()
     const container = fakeContainer()

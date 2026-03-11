@@ -106,7 +106,13 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
   })
 
   return (
-    <div class="flex flex-col h-full min-w-0 overflow-hidden bg-background-base relative">
+    <div
+      class="flex flex-col h-full min-w-0 overflow-hidden bg-background-base relative"
+      data-component="process-pane-panel"
+      data-process-id={props.config.id}
+      data-process-name={props.config.name}
+      data-testid="process-pane-panel"
+    >
       {/* Title bar */}
       <div class="shrink-0 h-8 flex items-center gap-2 px-2 border-b border-border-weaker-base/50 bg-background-stronger/80 backdrop-blur select-none">
         {/* Color indicator + name */}
@@ -141,6 +147,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                 variant="ghost"
                 onClick={props.onStart}
                 aria-label="Start process"
+                data-process-action="start"
               />
             </Tooltip>
           </Show>
@@ -151,6 +158,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                 variant="ghost"
                 onClick={props.onStop}
                 aria-label="Stop process"
+                data-process-action="stop"
               />
             </Tooltip>
           </Show>
@@ -161,6 +169,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                 variant="ghost"
                 onClick={props.onRestart}
                 aria-label="Restart process"
+                data-process-action="restart"
               />
             </Tooltip>
           </Show>
@@ -203,6 +212,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                     type="button"
                     class="px-3 py-1.5 rounded text-[12px] font-medium bg-surface-base-hover hover:bg-surface-base-active text-text-base transition-colors"
                     onClick={props.onStart}
+                    data-process-action="start-fallback"
                   >
                     Start
                   </button>

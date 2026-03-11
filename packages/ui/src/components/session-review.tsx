@@ -127,6 +127,18 @@ function diffId(file: string): string | undefined {
   return `session-review-diff-${sum}`
 }
 
+function diffTestId(file: string): string | undefined {
+  const id = diffId(file)
+  if (!id) return
+  return `${id}-item`
+}
+
+function diffTriggerTestId(file: string): string | undefined {
+  const id = diffId(file)
+  if (!id) return
+  return `${id}-trigger`
+}
+
 type SessionReviewSelection = {
   file: string
   range: SelectedLineRange
@@ -230,7 +242,12 @@ export const SessionReview = (props: SessionReviewProps) => {
   })
 
   return (
-    <div data-component="session-review" class={props.class} classList={props.classList}>
+    <div
+      data-component="session-review"
+      data-testid="session-review-root"
+      class={props.class}
+      classList={props.classList}
+    >
       <div data-slot="session-review-header" class={props.classes?.header}>
         <div data-slot="session-review-title">
           {props.title === undefined ? i18n.t("ui.sessionReview.title") : props.title}
@@ -393,11 +410,13 @@ export const SessionReview = (props: SessionReviewProps) => {
                         value={file}
                         id={diffId(file)}
                         data-file={file}
+                        data-review-file={file}
                         data-slot="session-review-accordion-item"
+                        data-testid={diffTestId(file)}
                         data-selected={props.focusedFile === file ? "" : undefined}
                       >
                         <StickyAccordionHeader>
-                          <Accordion.Trigger>
+                          <Accordion.Trigger data-testid={diffTriggerTestId(file)}>
                             <div data-slot="session-review-trigger-content">
                               <div data-slot="session-review-file-info">
                                 <FileIcon node={{ path: file, type: "file" }} />

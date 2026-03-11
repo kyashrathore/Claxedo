@@ -37,6 +37,7 @@ import { capture as phCapture } from "../opencode-patches/observability/posthog"
 import { createClaxedoLayoutActions } from "./claxedo-layout-actions"
 import { createRouteIntentAdapter } from "./context/claxedo-layout/route-intent"
 import { buildTabContextSnapshot, createTabContextSyncAdapter } from "./context/claxedo-layout/tab-context-sync"
+import { createDynamicTitleSync } from "./context/claxedo-layout/dynamic-title-sync"
 
 import { useAgentHooks } from "../agent-hooks/listener"
 import { createBatchAutoTabListener } from "./context/batch-autotab"
@@ -170,6 +171,9 @@ function ClaxedoStateBridge(props: ParentProps) {
       },
     ),
   )
+
+  // Sync tab titles reactively from pane contents + session data
+  createDynamicTitleSync({ claxedo, globalSync })
 
   return <>{props.children}</>
 }

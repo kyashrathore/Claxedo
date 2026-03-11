@@ -16,6 +16,7 @@ import { SettingsKeybinds } from "@/components/settings-keybinds"
 import { SettingsProviders } from "@/components/settings-providers"
 import { SettingsModels } from "@/components/settings-models"
 import { SettingsTerminals } from "../../components/settings-terminals"
+import { SettingsMcpAgents } from "../../components/settings-mcp-agents"
 
 export const DialogSettings: Component = () => {
   const language = useLanguage()
@@ -81,6 +82,10 @@ export const DialogSettings: Component = () => {
                       <Icon name="models" />
                       {language.t("settings.models.title")}
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="mcp">
+                      <Icon name="server" />
+                      MCP
+                    </Tabs.Trigger>
                   </div>
                 </div>
               </div>
@@ -110,6 +115,9 @@ export const DialogSettings: Component = () => {
         </Tabs.Content>
         <Tabs.Content value="models" class="no-scrollbar">
           <SettingsModels />
+        </Tabs.Content>
+        <Tabs.Content value="mcp" class="no-scrollbar">
+          <SettingsMcpAgents />
         </Tabs.Content>
       </Tabs>
     </Dialog>
