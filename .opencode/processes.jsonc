@@ -1,4 +1,5 @@
 {
+  "$schema": "./processes.schema.json",
   "processes": [
     {
       "id": "proc_019ccbf08315ku2i7cnn3l",
@@ -6,6 +7,9 @@
       "command": "bun run opencode:dev",
       "args": [],
       "cwd": "./packages/claxedo-app",
+      "env": {
+        "OPENCODE_SERVER_PASSWORD": ""
+      },
       "autoStart": false,
       "restartPolicy": "never",
       "maxRestarts": 3,
