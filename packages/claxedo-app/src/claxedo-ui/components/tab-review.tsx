@@ -11,7 +11,7 @@ import {
   type SessionReviewLineComment,
 } from "@opencode-ai/ui/session-review"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Mark } from "@opencode-ai/ui/logo"
+import { ClaxedoLogo as Mark } from "@claxedo/claxedo-ui/components/claxedo-logo"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import type { FileDiff, FileContent, UserMessage } from "@opencode-ai/sdk/v2"

@@ -87,10 +87,6 @@ vi.mock("@opencode-ai/ui/icon-button", () => ({
   IconButton: (props: any) => <button onClick={props.onClick}>{props.icon}</button>,
 }))
 
-vi.mock("@opencode-ai/ui/logo", () => ({
-  Mark: () => <div data-testid="mark" />,
-}))
-
 vi.mock("@opencode-ai/ui/diff-changes", () => ({
   DiffChanges: () => <div data-testid="diff-changes" />,
 }))

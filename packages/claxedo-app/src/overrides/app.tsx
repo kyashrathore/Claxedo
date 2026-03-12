@@ -6,7 +6,6 @@ import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { File } from "@opencode-ai/ui/file"
 import { Font } from "@opencode-ai/ui/font"
-import { Splash } from "@opencode-ai/ui/logo"
 import { ThemeProvider } from "@opencode-ai/ui/theme"
 import { MetaProvider } from "@solidjs/meta"
 import { type BaseRouterProps, Router, Route, Navigate } from "@solidjs/router"
@@ -44,6 +43,7 @@ import { getExtensions } from "@opencode-ai/app-shared"
 import { isDemoMode } from "@claxedo/utils/api"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { useCheckServerHealth } from "@/utils/server-health"
+import { ClaxedoSplash } from "@claxedo/claxedo-ui/components/claxedo-logo"
 
 const Home = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
@@ -181,7 +181,7 @@ function ConnectionGate(props: ParentProps) {
       when={mode() === "blocking" ? !startup.loading : startup.state !== "pending"}
       fallback={
         <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-          <Splash class="w-16 h-20 opacity-50 animate-pulse" />
+          <ClaxedoSplash class="w-16 h-20 opacity-50 animate-pulse" />
         </div>
       }
     >
@@ -216,7 +216,7 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
   return (
     <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base gap-6 p-6">
       <div class="flex flex-col items-center max-w-md text-center">
-        <Splash class="w-12 h-15 mb-4" />
+        <ClaxedoSplash class="w-12 h-15 mb-4" />
         <p class="text-14-regular text-text-base">
           Could not reach <span class="text-text-strong font-medium">{server.name || server.key}</span>
         </p>
