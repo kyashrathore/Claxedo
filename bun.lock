@@ -152,6 +152,7 @@
         "ai": "catalog:",
         "ai-sdk-provider-claude-code": "ai-sdk-v5",
         "ai-sdk-provider-codex-cli": "ai-sdk-v5",
+        "effect": "catalog:",
         "ghostty-web": "0.4.0",
         "luxon": "catalog:",
         "mermaid": "catalog:",

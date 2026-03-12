@@ -21,6 +21,7 @@ import { GlobalBus } from "@/bus/global"
 import { createOpencodeClient, type Event } from "@opencode-ai/sdk/v2"
 import type { BunWebSocketData } from "hono/bun"
 import { Flag } from "@/flag/flag"
+import { setTimeout as sleep } from "node:timers/promises"
 // CLAXEDO PATCH: Sentry error tracking
 import { initSentry, captureException, shutdownSentry } from "@/observability/sentry"
 
@@ -63,7 +64,7 @@ const eventStream = {
   abort: undefined as AbortController | undefined,
 }
 
-const startEventStream = (directory: string) => {
+const startEventStream = (input: { directory: string; workspaceID?: string }) => {
   if (eventStream.abort) eventStream.abort.abort()
   const abort = new AbortController()
   eventStream.abort = abort
@@ -73,12 +74,13 @@ const startEventStream = (directory: string) => {
     const request = new Request(input, init)
     const auth = getAuthorizationHeader()
     if (auth) request.headers.set("Authorization", auth)
-    return Server.App().fetch(request)
+    return Server.Default().fetch(request)
   }) as typeof globalThis.fetch
 
   const sdk = createOpencodeClient({
     baseUrl: "http://opencode.internal",
-    directory,
+    directory: input.directory,
+    experimental_workspaceID: input.workspaceID,
     fetch: fetchFn,
     signal,
   })
@@ -95,7 +97,7 @@ const startEventStream = (directory: string) => {
       ).catch(() => undefined)
 
       if (!events) {
-        await Bun.sleep(250)
+        await sleep(250)
         continue
       }
 
@@ -104,7 +106,7 @@ const startEventStream = (directory: string) => {
       }
 
       if (!signal.aborted) {
-        await Bun.sleep(250)
+        await sleep(250)
       }
     }
   })().catch((error) => {
@@ -114,7 +116,7 @@ const startEventStream = (directory: string) => {
   })
 }
 
-startEventStream(process.cwd())
+startEventStream({ directory: process.cwd() })
 
 export const rpc = {
   async fetch(input: { url: string; method: string; headers: Record<string, string>; body?: string }) {
@@ -128,7 +130,7 @@ export const rpc = {
       headers,
       body: input.body,
     })
-    const response = await Server.App().fetch(request)
+    const response = await Server.Default().fetch(request)
     const body = await response.text()
     return {
       status: response.status,
@@ -153,6 +155,9 @@ export const rpc = {
   async reload() {
     Config.global.reset()
     await Instance.disposeAll()
+  },
+  async setWorkspace(input: { workspaceID?: string }) {
+    startEventStream({ directory: process.cwd(), workspaceID: input.workspaceID })
   },
   async shutdown() {
     Log.Default.info("worker shutting down")

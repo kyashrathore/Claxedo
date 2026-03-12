@@ -3,7 +3,7 @@ import type { QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
 import { Button } from "@opencode-ai/ui/button"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { ToolCall } from "@opencode-ai/ui/basic-tool"
+import { BasicTool } from "@opencode-ai/ui/basic-tool"
 import { PromptInput } from "@/components/prompt-input"
 import { SessionQuestionDock as QuestionDock } from "@/pages/session/composer/session-question-dock"
 import { todoState } from "@/pages/session/composer/session-composer-helpers"
@@ -188,8 +188,7 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
       <Show when={props.permissionRequest()} keyed>
         {(perm) => (
           <div data-component="tool-part-wrapper" data-permission="true" class="mb-3">
-            <ToolCall
-              variant="panel"
+            <BasicTool
               icon="checklist"
               locked
               defaultOpen
@@ -213,7 +212,7 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
                   {props.t("settings.permissions.tool.doom_loop.description")}
                 </div>
               </Show>
-            </ToolCall>
+            </BasicTool>
             <div data-component="permission-prompt">
               <div data-slot="permission-actions">
                 <Button
