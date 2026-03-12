@@ -15,6 +15,50 @@ Each entry should include:
 
 ---
 
+## 2026-03-12
+
+**Status:** 🟡 Partial
+
+- **Branch:** `sync/2026-03-12`
+- **Upstream Commit:** `upstream/dev@d8fbe0af0`
+- **Commits Rebased:** 37 (fork commits replayed onto upstream)
+- **Conflicts:** 7 rebase stops with manual resolution
+  - `bun.lock`: Accepted upstream during rebase; regenerated after rebase via `bun install --ignore-scripts`
+  - `packages/app/src/pages/session/composer/session-composer-state.ts`: Manual merge — kept Claxedo embedded-session support and accepted upstream todo clear/close behavior
+  - `packages/app/src/pages/session/composer/session-composer-state.test.ts`: Manual merge — added coverage for the new session-resolution helper
+  - `packages/app/src/pages/session/message-timeline.tsx`: Manual merge — kept split-pane session props/navigation and accepted upstream session-title/actions/comment-guard changes
+  - `packages/app/src/pages/session/terminal-panel.tsx`: Manual merge — kept Claxedo terminal integration and accepted upstream terminal focus/jank fixes
+  - `packages/opencode/src/server/server.ts`: Accepted upstream `createApp` refactor, then restored `export const App = Default` compat alias for Claxedo patches
+  - `packages/ui/src/theme/themes/aura.json`: Kept ours (intentional Claxedo theme palette)
+  - `packages/desktop/src-tauri/src/lib.rs`: Manual merge — retained Claxedo-specific Tauri commands/modules while keeping upstream command registration changes
+- **Post-Rebase Drift Fixes:**
+  - `packages/claxedo-app/src/overrides/context/platform.tsx`, `packages/claxedo-app/src/desktop/index.tsx`, `packages/claxedo-desktop-electron/src/preload/index.ts`, `packages/claxedo-desktop-electron/src/preload/types.ts`, `packages/claxedo-desktop-electron/src/renderer/index.tsx`: Ported the upstream default-server API rename to `getDefaultServer`/`setDefaultServer`
+  - `packages/claxedo-app/src/overrides/components/status-popover.tsx`: Ported `useCheckServerHealth()` and default-server key resolution
+  - `packages/claxedo-app/src/overrides/context/terminal.tsx`: Ported the upstream terminal persisted-state migration for `titleNumber`
+  - `packages/claxedo-app/src/overrides/utils/persist.ts`: Ported Windows-safe workspace storage-name sanitization and applied it to the Claxedo server-scoped storage variant
+- **Remaining Override Follow-Up:**
+  - `packages/claxedo-app/src/overrides/pages/session.tsx` still needs the upstream carryover from `packages/app/src/pages/session.tsx`: history-window rewrite, `reviewSnap`, cursor-based active-message tracking, terminal-first autofocus, and newer revert/fork/restore flows
+  - `packages/claxedo-app/src/overrides/app.tsx` still needs upstream `ConnectionGate` startup-health fallback/retry UX
+  - Terminal focus/jank fixes should also be audited in `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-terminal.tsx`, `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-terminal-logic.ts`, and `packages/claxedo-app/src/overrides/components/terminal.tsx`
+- **New Modifications Discovered:**
+  - `packages/desktop/src-tauri/src/lib.rs`: add to registry (`Merge carefully`)
+  - `packages/app/src/pages/session/composer/session-composer-state.ts`: add to registry (`Merge carefully`)
+  - `packages/opencode/src/server/server.ts`: add to registry (`Merge carefully`)
+  - `packages/ui/src/theme/themes/aura.json`: add to registry (`Keep ours`)
+- **Validation:**
+  - `bun install`: ⚠️ lockfile regeneration ran, but the repo `prepare`/husky step was SIGKILLed after install
+  - `bun install --ignore-scripts`: ✅ Pass
+  - `bun run --cwd packages/claxedo-app typecheck`: ⚠️ SIGKILL in this environment before semantic errors were printed
+  - `bunx tsc -b` in `packages/claxedo-app`: ⚠️ SIGKILL in this environment
+  - `bun run --cwd packages/claxedo-app build`: ⚠️ SIGKILL in this environment
+- **Follow-up Actions:**
+  - [ ] Commit the regenerated `bun.lock` plus the post-rebase drift fixes
+  - [ ] Move `dev` to `sync/2026-03-12` (`git checkout dev && git reset --hard sync/2026-03-12`)
+  - [ ] Force-push `origin/dev` once the lockfile/docs drift commit is in place
+  - [ ] Port the remaining session-page and connection-gate override carryovers documented in `packages/claxedo-app/.dev-docs/CLAXEDO_UPSTREAM_SYNC.md`
+- **Notes:**
+  - Rebase completed successfully despite `.husky/_/post-rewrite` being SIGKILLed at the end of `git rebase --continue`
+
 ## 2026-03-08
 
 **Status:** 🟢 Success

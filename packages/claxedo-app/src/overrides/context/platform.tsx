@@ -1,5 +1,6 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { AsyncStorage, SyncStorage } from "@solid-primitives/storage"
+import { ServerConnection } from "./server"
 
 export type Platform = {
   /** Platform discriminator */
@@ -51,10 +52,10 @@ export type Platform = {
   fetch?: typeof fetch
 
   /** Get the configured default server URL (platform-specific) */
-  getDefaultServerUrl?(): Promise<string | null> | string | null
+  getDefaultServer?(): Promise<ServerConnection.Key | null> | ServerConnection.Key | null
 
   /** Set the default server URL to use on app startup (platform-specific) */
-  setDefaultServerUrl?(url: string | null): Promise<void> | void
+  setDefaultServer?(url: ServerConnection.Key | null): Promise<void> | void
 
   /** Parse markdown to HTML using native parser (desktop only, returns unprocessed code blocks) */
   parseMarkdown?(markdown: string): Promise<string>

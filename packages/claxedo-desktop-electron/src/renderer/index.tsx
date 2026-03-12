@@ -325,12 +325,13 @@ const createPlatform = (password: () => string | null): Platform => {
       await window.api.setWslConfig({ enabled })
     },
 
-    getDefaultServerUrl: async () => {
-      return window.api.getDefaultServerUrl().catch(() => null)
+    getDefaultServer: async () => {
+      const next = await window.api.getDefaultServer().catch(() => null)
+      return next ? ServerConnection.Key.make(next) : null
     },
 
-    setDefaultServerUrl: async (url: string | null) => {
-      await window.api.setDefaultServerUrl(url)
+    setDefaultServer: async (url) => {
+      await window.api.setDefaultServer(url)
     },
 
     getDisplayBackend: async () => {

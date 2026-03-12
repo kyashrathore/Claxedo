@@ -15,8 +15,8 @@ export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
   awaitInitialization: (onStep: (step: InitStep) => void) => Promise<ServerReadyData>
-  getDefaultServerUrl: () => Promise<string | null>
-  setDefaultServerUrl: (url: string | null) => Promise<void>
+  getDefaultServer: () => Promise<string | null>
+  setDefaultServer: (url: string | null) => Promise<void>
   getWslConfig: () => Promise<WslConfig>
   setWslConfig: (config: WslConfig) => Promise<void>
   getDisplayBackend: () => Promise<LinuxDisplayBackend | null>

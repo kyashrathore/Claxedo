@@ -11,8 +11,8 @@ const api: ElectronAPI = {
       ipcRenderer.removeListener("init-step", handler)
     })
   },
-  getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),
-  setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
+  getDefaultServer: () => ipcRenderer.invoke("get-default-server-url"),
+  setDefaultServer: (url) => ipcRenderer.invoke("set-default-server-url", url),
   getWslConfig: () => ipcRenderer.invoke("get-wsl-config"),
   setWslConfig: (config) => ipcRenderer.invoke("set-wsl-config", config),
   getDisplayBackend: () => ipcRenderer.invoke("get-display-backend"),

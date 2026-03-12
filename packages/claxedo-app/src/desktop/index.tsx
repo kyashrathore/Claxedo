@@ -424,12 +424,12 @@ const createPlatform = (password: Accessor<string | null>): Platform => ({
     }
   },
 
-  getDefaultServerUrl: async () => {
+  getDefaultServer: async () => {
     const result = await invoke<string | null>("get_default_server_url").catch(() => null)
-    return result
+    return result ? ServerConnection.Key.make(result) : null
   },
 
-  setDefaultServerUrl: async (url: string | null) => {
+  setDefaultServer: async (url: ServerConnection.Key | null) => {
     await invoke("set_default_server_url", { url })
   },
 
