@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { computeTabTitle, findPrimarySession, type ComputeTitleInput } from "./dynamic-title-sync"
+import { createStore } from "solid-js/store"
+import {
+  computeTabTitle,
+  findPrimarySession,
+  listDynamicTitleUpdates,
+  type ComputeTitleInput,
+  type DynamicTitleSyncDeps,
+} from "./dynamic-title-sync"
 import type { PaneContent, TabItem } from "./types"
 
 // ---------------------------------------------------------------------------
@@ -306,5 +313,54 @@ describe("findPrimarySession", () => {
       makeContent({ type: "session", directory: "/workspace", sessionId: "s2" }),
     ])
     expect(result).toEqual({ sessionId: "s2", directory: "/workspace" })
+  })
+})
+
+describe("listDynamicTitleUpdates", () => {
+  test("uses renamed session title without needing tab mutations", () => {
+    const [state, setState] = createStore({
+      session: [{ id: "s1", directory: "/workspace", title: "First title" }],
+      message: {},
+      part: {},
+    })
+    const [tabs] = createStore<TabItem[]>([
+      {
+        id: "tab-1",
+        type: "session",
+        directory: "/workspace",
+        title: "Session",
+        sessionId: "s1",
+        closable: true,
+      },
+    ])
+
+    const deps: DynamicTitleSyncDeps = {
+      claxedo: {
+        split: {
+          groups: () => [{ id: "group-1" }] as any,
+        },
+        groupTabs: () => ({
+          items: () => tabs,
+          updateTitle: () => {},
+        }),
+        multiPane: {
+          leafIds: () => ["leaf-1"],
+          getContent: () => ({
+            type: "session",
+            directory: "/workspace",
+            sessionId: "s1",
+          }),
+        },
+      },
+      globalSync: {
+        child: () => [state as any],
+      },
+    }
+
+    expect(listDynamicTitleUpdates(deps)).toEqual([{ groupId: "group-1", tabId: "tab-1", title: "First title" }])
+
+    setState("session", 0, "title", "Renamed session")
+
+    expect(listDynamicTitleUpdates(deps)).toEqual([{ groupId: "group-1", tabId: "tab-1", title: "Renamed session" }])
   })
 })

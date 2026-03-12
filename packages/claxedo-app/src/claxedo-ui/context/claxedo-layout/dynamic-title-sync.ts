@@ -7,7 +7,7 @@
  * preview is used instead.
  */
 
-import { createEffect, on, untrack } from "solid-js"
+import { batch, createEffect, untrack } from "solid-js"
 import type { Session } from "@opencode-ai/sdk/v2"
 import type { PaneContent, TabItem, GroupState } from "./types"
 import { isDefaultSessionTitle } from "./route-intent"
@@ -196,72 +196,78 @@ export type DynamicTitleSyncDeps = {
   }
 }
 
+export type DynamicTitleUpdate = {
+  groupId: string
+  tabId: string
+  title: string
+}
+
+export function listDynamicTitleUpdates(deps: DynamicTitleSyncDeps): DynamicTitleUpdate[] {
+  const { claxedo, globalSync } = deps
+  const next: DynamicTitleUpdate[] = []
+
+  for (const group of claxedo.split.groups()) {
+    for (const tab of claxedo.groupTabs(group.id).items()) {
+      const ids = claxedo.multiPane.leafIds(tab.id)
+      if (ids.length === 0) continue
+
+      const panes: PaneContent[] = []
+      for (const id of ids) {
+        const pane = claxedo.multiPane.getContent(tab.id, id)
+        if (pane) panes.push(pane)
+      }
+      if (panes.length === 0) continue
+
+      const info = findPrimarySession(panes)
+
+      let title: string | undefined
+      let preview: string | undefined
+      let fallback = false
+
+      if (info) {
+        const [store] = globalSync.child(info.directory, { bootstrap: false })
+        const session = store.session.find((s: Session) => s.id === info.sessionId && s.directory === info.directory)
+        title = session?.title
+        fallback = !title || isDefaultSessionTitle(title)
+        preview = sessionPaneSummary(store, info.sessionId).title || undefined
+      }
+
+      const computed = computeTabTitle({
+        tab,
+        paneContents: panes,
+        sessionTitle: title,
+        firstMessagePreview: preview,
+        isDefaultTitle: fallback,
+      })
+      if (!computed) continue
+
+      next.push({
+        groupId: group.id,
+        tabId: tab.id,
+        title: computed,
+      })
+    }
+  }
+
+  return next
+}
+
 /**
  * Create a reactive effect that syncs tab titles from pane contents.
  * Call once inside a SolidJS owner (e.g. inside ClaxedoStateBridge).
  */
 export function createDynamicTitleSync(deps: DynamicTitleSyncDeps) {
-  const { claxedo, globalSync } = deps
+  createEffect(() => {
+    const next = listDynamicTitleUpdates(deps)
 
-  createEffect(
-    on(
-      // Track groups and their tab items — re-run when tabs change
-      () => {
-        const groups = claxedo.split.groups()
-        return groups.map((g) => ({
-          id: g.id,
-          tabs: claxedo.groupTabs(g.id).items(),
-        }))
-      },
-      (groupSnapshots) => {
-        for (const { id: groupId, tabs } of groupSnapshots) {
-          for (const tab of tabs) {
-            // Get pane contents for this tab
-            const leafIds = untrack(() => claxedo.multiPane.leafIds(tab.id))
-            if (leafIds.length === 0) continue
+    if (next.length === 0) return
 
-            const paneContents: PaneContent[] = []
-            for (const leafId of leafIds) {
-              const content = untrack(() => claxedo.multiPane.getContent(tab.id, leafId))
-              if (content) paneContents.push(content)
-            }
-            if (paneContents.length === 0) continue
-
-            // Find the primary session for this tab
-            const sessionInfo = findPrimarySession(paneContents)
-
-            let sessionTitle: string | undefined
-            let firstMessagePreview: string | undefined
-            let isDefault = false
-
-            if (sessionInfo) {
-              // Read session title from sync store (reactive — this tracks)
-              const [store] = globalSync.child(sessionInfo.directory, { bootstrap: false })
-              const session = store.session.find(
-                (s: Session) => s.id === sessionInfo.sessionId && s.directory === sessionInfo.directory,
-              )
-              sessionTitle = session?.title
-              isDefault = !sessionTitle || isDefaultSessionTitle(sessionTitle)
-
-              // Get first-message preview
-              const preview = sessionPaneSummary(store, sessionInfo.sessionId)
-              firstMessagePreview = preview.title || undefined
-            }
-
-            const computed = computeTabTitle({
-              tab,
-              paneContents,
-              sessionTitle,
-              firstMessagePreview,
-              isDefaultTitle: isDefault,
-            })
-
-            if (computed !== undefined) {
-              untrack(() => claxedo.groupTabs(groupId).updateTitle(tab.id, computed))
-            }
-          }
+    untrack(() =>
+      batch(() => {
+        for (const item of next) {
+          claxedo.groupTabs(item.groupId).updateTitle(item.tabId, item.title)
         }
-      },
-    ),
-  )
+      }),
+    )
+  })
 }
