@@ -159,6 +159,7 @@ export function PaneTerminal(props: PaneTerminalProps) {
         <div class="flex-1 min-h-0 h-full w-full overflow-hidden">
           <Terminal
             pty={p()}
+            autoFocus={false}
             onConnectError={handleConnectError}
             onAgentInterrupt={() => {
               const id = realPtyId()

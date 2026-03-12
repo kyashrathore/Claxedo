@@ -58,6 +58,7 @@ export function TabReview(props: TabReviewProps) {
     const id = props.sessionId
     if (!id || id === "new" || server.healthy() !== true) return
     void sync.session.sync(id)
+    void sync.session.todo(id)
     if (props.mode !== "session") return
     if (sync.data.session_diff[id] !== undefined) return
     if (sync.status === "loading") return
@@ -124,6 +125,9 @@ export function TabReview(props: TabReviewProps) {
   const questionRequest = createMemo(() => sync.data.question[props.sessionId]?.[0])
   const permissionRequest = createMemo(() => sync.data.permission[props.sessionId]?.[0])
   const blocked = createMemo(() => !!questionRequest() || !!permissionRequest())
+  const idle = { type: "idle" as const }
+  const status = createMemo(() => sync.data.session_status[props.sessionId] ?? idle)
+  const live = createMemo(() => status().type !== "idle" || blocked())
 
   const turnDiffs = createMemo(() => lastUserMessage()?.summary?.diffs ?? [])
 
@@ -319,6 +323,8 @@ export function TabReview(props: TabReviewProps) {
             permissionRequest={permissionRequest}
             blocked={blocked()}
             todos={todos()}
+            live={live()}
+            onTodosClear={() => sync.set("todo", props.sessionId, [])}
             promptReady={prompt.ready()}
             handoffPrompt={undefined}
             responding={responding()}

@@ -33,7 +33,7 @@ vi.mock("@opencode-ai/ui/tooltip", () => ({
 }))
 
 vi.mock("@opencode-ai/ui/basic-tool", () => ({
-  BasicTool: (props: any) => (
+  ToolCall: (props: any) => (
     <div data-testid="basic-tool">{props.children}</div>
   ),
 }))

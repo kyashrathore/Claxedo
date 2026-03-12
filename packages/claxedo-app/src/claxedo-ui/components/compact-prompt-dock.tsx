@@ -6,6 +6,7 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ToolCall } from "@opencode-ai/ui/basic-tool"
 import { PromptInput } from "@/components/prompt-input"
 import { SessionQuestionDock as QuestionDock } from "@/pages/session/composer/session-question-dock"
+import { todoState } from "@/pages/session/composer/session-composer-helpers"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 
 interface CompactPromptDockProps {
@@ -19,6 +20,8 @@ interface CompactPromptDockProps {
   permissionRequest: () => { patterns: string[]; permission: string } | undefined
   blocked: boolean
   todos?: Todo[]
+  live?: boolean
+  onTodosClear?: () => void
   promptReady: boolean
   handoffPrompt?: string
   responding: boolean
@@ -37,10 +40,11 @@ interface CompactPromptDockProps {
 
 export function CompactPromptDock(props: CompactPromptDockProps) {
   const todos = () => props.todos ?? []
+  const live = () => props.live ?? true
   const dockMode = () => props.dockMode ?? "floating"
   const side = () => dockMode() === "side"
   const [expanded, setExpanded] = createSignal(false)
-  const [todoDock, setTodoDock] = createSignal(todos().length > 0)
+  const [todoDock, setTodoDock] = createSignal(todos().length > 0 && live())
   const [todoClosing, setTodoClosing] = createSignal(false)
   const [todoOpening, setTodoOpening] = createSignal(false)
   let todoTimer: number | undefined
@@ -62,12 +66,18 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
 
   createEffect(
     on(
-      () => [todos().length, todoDone()] as const,
-      ([count, complete], prev) => {
+      () => [todos().length, todoDone(), live()] as const,
+      ([count, complete, active]) => {
         if (todoRaf) cancelAnimationFrame(todoRaf)
         todoRaf = undefined
 
-        if (count === 0) {
+        const next = todoState({
+          count,
+          done: complete,
+          live: active,
+        })
+
+        if (next === "hide") {
           if (todoTimer) window.clearTimeout(todoTimer)
           todoTimer = undefined
           setTodoDock(false)
@@ -76,7 +86,17 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
           return
         }
 
-        if (!complete) {
+        if (next === "clear") {
+          if (todoTimer) window.clearTimeout(todoTimer)
+          todoTimer = undefined
+          setTodoDock(false)
+          setTodoClosing(false)
+          setTodoOpening(false)
+          props.onTodosClear?.()
+          return
+        }
+
+        if (next === "open") {
           if (todoTimer) window.clearTimeout(todoTimer)
           todoTimer = undefined
           const wasHidden = !todoDock() || todoClosing()
@@ -94,15 +114,10 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
           return
         }
 
-        if (prev && prev[1]) {
-          if (todoClosing() && !todoTimer) scheduleTodoClose()
-          return
-        }
-
         setTodoDock(true)
         setTodoOpening(false)
         setTodoClosing(true)
-        scheduleTodoClose()
+        if (!todoTimer) scheduleTodoClose()
       },
     ),
   )

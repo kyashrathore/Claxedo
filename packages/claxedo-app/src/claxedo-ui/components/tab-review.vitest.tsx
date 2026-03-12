@@ -13,6 +13,7 @@ const syncState = {
   data: {
     message: {} as Record<string, any[]>,
     session_diff: {} as Record<string, any[]>,
+    session_status: {} as Record<string, any>,
     todo: {} as Record<string, any[]>,
     question: {} as Record<string, any[]>,
     permission: {} as Record<string, any[]>,
@@ -21,8 +22,10 @@ const syncState = {
 
 const syncApi = {
   ...syncState,
+  set: vi.fn(),
   session: {
     sync: vi.fn(),
+    todo: vi.fn(),
     diff: vi.fn(),
     get: vi.fn(() => ({ title: "Review Session" })),
   },
@@ -40,6 +43,9 @@ vi.mock("@opencode-ai/claxedo-app", () => ({
     clear: vi.fn(),
     focus: commentsFocus,
     setFocus: commentsSetFocus,
+  }),
+  useServer: () => ({
+    healthy: () => true,
   }),
 }))
 
@@ -119,10 +125,13 @@ beforeEach(() => {
   syncApi.status = "ready"
   syncApi.data.message = {}
   syncApi.data.session_diff = {}
+  syncApi.data.session_status = {}
   syncApi.data.todo = {}
   syncApi.data.question = {}
   syncApi.data.permission = {}
+  syncApi.set.mockReset()
   syncApi.session.sync.mockReset()
+  syncApi.session.todo.mockReset()
   syncApi.session.diff.mockReset()
   syncApi.session.get.mockClear()
 })

@@ -1,23 +1,38 @@
 import "@/index.css"
 import "@claxedo/claxedo-ui/styles.css"
-import { ErrorBoundary, Show, lazy, type ParentProps, type ParentComponent, Suspense, For, type JSX, type Component } from "solid-js"
-import { type BaseRouterProps, Router, Route, Navigate } from "@solidjs/router"
-import { MetaProvider } from "@solidjs/meta"
-import { Font } from "@opencode-ai/ui/font"
-import { MarkedProvider } from "@opencode-ai/ui/context/marked"
-import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { I18nProvider } from "@opencode-ai/ui/context"
+import { DialogProvider } from "@opencode-ai/ui/context/dialog"
+import { FileComponentProvider } from "@opencode-ai/ui/context/file"
+import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { File } from "@opencode-ai/ui/file"
+import { Font } from "@opencode-ai/ui/font"
+import { Splash } from "@opencode-ai/ui/logo"
 import { ThemeProvider } from "@opencode-ai/ui/theme"
+import { MetaProvider } from "@solidjs/meta"
+import { type BaseRouterProps, Router, Route, Navigate } from "@solidjs/router"
+import { type Duration, Effect } from "effect"
+import {
+  type Component,
+  createResource,
+  createSignal,
+  ErrorBoundary,
+  For,
+  type JSX,
+  lazy,
+  onCleanup,
+  type ParentComponent,
+  type ParentProps,
+  Show,
+  Suspense,
+} from "solid-js"
 import { GlobalSyncProvider } from "@/context/global-sync"
 import { PermissionProvider } from "@/context/permission"
 import { LayoutProvider } from "@/context/layout"
 import { GlobalSDKProvider } from "@/context/global-sdk"
-import { normalizeServerUrl, ServerConnection, ServerProvider, useServer } from "@/context/server"
+import { normalizeServerUrl, ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
 import { SettingsProvider } from "@/context/settings"
 import { NotificationProvider } from "@/context/notification"
 import { ModelsProvider } from "@/context/models"
-import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { CommandProvider } from "@/context/command"
 import { LanguageProvider, useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -27,6 +42,8 @@ import DirectoryLayout from "@/pages/directory-layout"
 import { ErrorPage } from "@/pages/error"
 import { getExtensions } from "@opencode-ai/app-shared"
 import { isDemoMode } from "@claxedo/utils/api"
+import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+import { useCheckServerHealth } from "@/utils/server-health"
 
 const Home = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
@@ -78,13 +95,6 @@ function MarkedProviderWithNativeParser(props: ParentProps) {
   )
 }
 
-import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-// import { PersistQueryClientProvider } from "@tanstack/solid-query-persist-client"
-// import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister"
-// import { SolidQueryDevtools } from "@tanstack/solid-query-devtools"
-
-// ... (existing imports)
-
 const day = 1000 * 60 * 60 * 24
 const week = day * 7
 
@@ -103,6 +113,11 @@ const queryClient = new QueryClient({
 //   key: "OPENCODE_QUERY_CACHE", // Explicit key for easier debugging
 //   throttleTime: 250,
 // })
+
+const effectMinDuration =
+  (duration: Duration.Input) =>
+  <A, E, R>(e: Effect.Effect<A, E, R>) =>
+    Effect.all([e, Effect.sleep(duration)], { concurrency: "unbounded" }).pipe(Effect.map((v) => v[0]))
 
 export function AppBaseProviders(props: ParentProps) {
   return (
@@ -135,6 +150,100 @@ function ServerKey(props: ParentProps) {
     <Show when={platform.platform === "web" || server.key} keyed>
       {props.children}
     </Show>
+  )
+}
+
+function ConnectionGate(props: ParentProps) {
+  const server = useServer()
+  const checkServerHealth = useCheckServerHealth()
+  const [mode, setMode] = createSignal<"blocking" | "background">("blocking")
+
+  const [startup, actions] = createResource(() =>
+    Effect.gen(function* () {
+      if (!server.current) return true
+      const { http, type } = server.current
+
+      while (true) {
+        const res = yield* Effect.promise(() => checkServerHealth(http))
+        if (res.healthy) return true
+        if (mode() === "background" || type === "http") return false
+      }
+    }).pipe(
+      effectMinDuration(mode() === "blocking" ? "1.2 seconds" : 0),
+      Effect.timeoutOrElse({ duration: "10 seconds", onTimeout: () => Effect.succeed(false) }),
+      Effect.ensuring(Effect.sync(() => setMode("background"))),
+      Effect.runPromise,
+    ),
+  )
+
+  return (
+    <Show
+      when={mode() === "blocking" ? !startup.loading : startup.state !== "pending"}
+      fallback={
+        <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
+          <Splash class="w-16 h-20 opacity-50 animate-pulse" />
+        </div>
+      }
+    >
+      <Show
+        when={startup()}
+        fallback={
+          <ConnectionError
+            onRetry={() => {
+              if (mode() === "background") actions.refetch()
+            }}
+            onServerSelected={(key) => {
+              setMode("blocking")
+              server.setActive(key)
+              actions.refetch()
+            }}
+          />
+        }
+      >
+        {props.children}
+      </Show>
+    </Show>
+  )
+}
+
+function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key: ServerConnection.Key) => void }) {
+  const server = useServer()
+  const others = () => server.list.filter((item) => ServerConnection.key(item) !== server.key)
+
+  const timer = setInterval(() => props.onRetry?.(), 1000)
+  onCleanup(() => clearInterval(timer))
+
+  return (
+    <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base gap-6 p-6">
+      <div class="flex flex-col items-center max-w-md text-center">
+        <Splash class="w-12 h-15 mb-4" />
+        <p class="text-14-regular text-text-base">
+          Could not reach <span class="text-text-strong font-medium">{server.name || server.key}</span>
+        </p>
+        <p class="mt-1 text-12-regular text-text-weak">Retrying automatically...</p>
+      </div>
+      <Show when={others().length > 0}>
+        <div class="flex flex-col gap-2 w-full max-w-sm">
+          <span class="text-12-regular text-text-base text-center">Other servers</span>
+          <div class="flex flex-col gap-1 bg-surface-base rounded-lg p-2">
+            <For each={others()}>
+              {(conn) => {
+                const key = ServerConnection.key(conn)
+                return (
+                  <button
+                    type="button"
+                    class="flex items-center gap-3 w-full px-3 py-2 rounded-md hover:bg-surface-raised-base-hover transition-colors text-left"
+                    onClick={() => props.onServerSelected?.(key)}
+                  >
+                    <span class="text-14-regular text-text-strong truncate">{serverName(conn)}</span>
+                  </button>
+                )
+              }}
+            </For>
+          </div>
+        </div>
+      </Show>
+    </div>
   )
 }
 
@@ -177,25 +286,27 @@ function AuthenticatedLayout(
         ext.app.authenticatedProviders,
         <AuthGuard>
           <ServerKey>
-            <GlobalSDKProvider>
-              <GlobalSyncProvider>
-                <SettingsProvider>
-                  <PermissionProvider>
-                    <LayoutProvider>
-                      <NotificationProvider>
-                        <ModelsProvider>
-                          <CommandProvider>
-                            <HighlightsProvider>
-                              <Layout>{props.children}</Layout>
-                            </HighlightsProvider>
-                          </CommandProvider>
-                        </ModelsProvider>
-                      </NotificationProvider>
-                    </LayoutProvider>
-                  </PermissionProvider>
-                </SettingsProvider>
-              </GlobalSyncProvider>
-            </GlobalSDKProvider>
+            <ConnectionGate>
+              <GlobalSDKProvider>
+                <GlobalSyncProvider>
+                  <SettingsProvider>
+                    <PermissionProvider>
+                      <LayoutProvider>
+                        <NotificationProvider>
+                          <ModelsProvider>
+                            <CommandProvider>
+                              <HighlightsProvider>
+                                <Layout>{props.children}</Layout>
+                              </HighlightsProvider>
+                            </CommandProvider>
+                          </ModelsProvider>
+                        </NotificationProvider>
+                      </LayoutProvider>
+                    </PermissionProvider>
+                  </SettingsProvider>
+                </GlobalSyncProvider>
+              </GlobalSDKProvider>
+            </ConnectionGate>
           </ServerKey>
         </AuthGuard>,
       )}

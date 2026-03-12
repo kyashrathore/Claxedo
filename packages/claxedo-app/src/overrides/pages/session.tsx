@@ -1,4 +1,4 @@
-import { For, onCleanup, onMount, Show, Match, Switch, createMemo, createEffect, createComputed, on, untrack } from "solid-js"
+import { For, onCleanup, onMount, Show, Match, Switch, createMemo, createEffect, createComputed, on } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/context/local"
@@ -37,11 +37,11 @@ import { SessionHeader, SessionContextTab, SortableTab, FileVisual, NewSessionVi
 const navMark = (..._args: unknown[]) => {}
 const navParams = (..._args: unknown[]) => {}
 import { same } from "@/utils/same"
+import { extractPromptFromParts } from "@/utils/prompt"
 import { syncSessionModel, resetSessionModel } from "@/pages/session/session-model-helpers"
 import { createSessionHistoryWindow, emptyUserMessages } from "@/pages/session/history-window"
 import { setSessionHandoff, setTerminalHandoff } from "@/pages/session/handoff"
 import { createOpenReviewFile, focusTerminalById } from "@/pages/session/helpers"
-import { createScrollSpy } from "@/pages/session/scroll-spy"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
 import {
@@ -288,6 +288,7 @@ export default function Page() {
   const [ui, setUi] = createStore({
     responding: false,
     pendingMessage: undefined as string | undefined,
+    restoring: undefined as string | undefined,
     scrollGesture: 0,
     autoCreated: false,
     scroll: {
@@ -792,12 +793,22 @@ export default function Page() {
     return "main"
   })
 
+  let inputRef!: HTMLDivElement
+  let promptDock: HTMLDivElement | undefined
+  let dockHeight = 0
+  let scroller: HTMLDivElement | undefined
+  let content: HTMLDivElement | undefined
+  let scrollMark = 0
+  let messageMark = 0
+
   const activeMessage = createMemo(() => {
-    if (!store.messageId) return lastUserMessage()
-    const found = visibleUserMessages()?.find((m) => m.id === store.messageId)
+    const id = store.messageId && messageMark === scrollMark ? store.messageId : cursor()
+    if (!id) return lastUserMessage()
+    const found = visibleUserMessages()?.find((m) => m.id === id)
     return found ?? lastUserMessage()
   })
   const setActiveMessage = (message: UserMessage | undefined) => {
+    messageMark = scrollMark
     setStore("messageId", message?.id)
   }
 
@@ -805,7 +816,7 @@ export default function Page() {
     const msgs = visibleUserMessages()
     if (msgs.length === 0) return
 
-    const current = store.messageId
+    const current = store.messageId && messageMark === scrollMark ? store.messageId : cursor()
     const base = current ? msgs.findIndex((m) => m.id === current) : msgs.length
     const currentIndex = base === -1 ? msgs.length : base
     const targetIndex = currentIndex + offset
@@ -855,11 +866,6 @@ export default function Page() {
   })
 
   const idle = { type: "idle" as const }
-  let inputRef!: HTMLDivElement
-  let promptDock: HTMLDivElement | undefined
-  let dockHeight = 0
-  let scroller: HTMLDivElement | undefined
-  let content: HTMLDivElement | undefined
 
   const scrollGestureWindowMs = 250
 
@@ -917,6 +923,7 @@ export default function Page() {
         }
         debug.log("sync start", { directory: sdk.directory, id })
         void sync.session.sync(id)
+        void sync.session.todo(id)
       },
     ),
   )
@@ -985,6 +992,8 @@ export default function Page() {
         setStore("expanded", {})
         setStore("changes", "session")
         setUi("autoCreated", false)
+        setUi("pendingMessage", undefined)
+        setUi("restoring", undefined)
       },
       { defer: true },
     ),
@@ -1107,8 +1116,10 @@ export default function Page() {
       return
     }
 
-    // Don't autofocus chat if desktop terminal panel is open
-    if (isDesktop() && view().terminal.opened()) return
+    if (view().terminal.opened()) {
+      const id = terminal.active()
+      if (id && focusTerminalById(id)) return
+    }
 
     // Only treat explicit scroll keys as potential "user scroll" gestures.
     if (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End") {
@@ -1516,17 +1527,11 @@ export default function Page() {
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
   let historyFillFrame: number | undefined
-  const scrollSpy = createScrollSpy({
-    onActive: (id) => {
-      if (id === store.messageId) return
-      setStore("messageId", id)
-    },
-  })
 
   const updateScrollState = (el: HTMLDivElement) => {
     const max = el.scrollHeight - el.clientHeight
     const overflow = max > 1
-    const bottom = !overflow || Math.abs(el.scrollTop) <= 2 || !autoScroll.userScrolled()
+    const bottom = !overflow || el.scrollTop >= max - 2
 
     if (ui.scroll.overflow === overflow && ui.scroll.bottom === bottom) return
     setUi("scroll", { overflow, bottom })
@@ -1549,7 +1554,7 @@ export default function Page() {
 
   const resumeScroll = () => {
     setStore("messageId", undefined)
-    autoScroll.smoothScrollToBottom()
+    autoScroll.forceScrollToBottom()
     clearMessageHash()
 
     const el = scroller
@@ -1569,25 +1574,48 @@ export default function Page() {
     ),
   )
 
-  createEffect(
-    on(
-      sessionKey,
-      () => {
-        scrollSpy.clear()
-      },
-      { defer: true },
-    ),
-  )
-
   const anchor = (id: string) => `message-${id}`
+  function cursor() {
+    const root = scroller
+    if (!root) return store.messageId
+
+    const box = root.getBoundingClientRect()
+    const line = box.top + 100
+    const list = [...root.querySelectorAll<HTMLElement>("[data-message-id]")]
+      .map((el) => {
+        const id = el.dataset.messageId
+        if (!id) return
+
+        const rect = el.getBoundingClientRect()
+        return { id, top: rect.top, bottom: rect.bottom }
+      })
+      .filter((item): item is { id: string; top: number; bottom: number } => !!item)
+
+    const shown = list.filter((item) => item.bottom > box.top && item.top < box.bottom)
+    const hit = shown.find((item) => item.top <= line && item.bottom >= line)
+    if (hit) return hit.id
+
+    const near = [...shown].sort((a, b) => {
+      const da = Math.abs(a.top - line)
+      const db = Math.abs(b.top - line)
+      if (da !== db) return da - db
+      return a.top - b.top
+    })[0]
+    if (near) return near.id
+
+    return list.filter((item) => item.top <= line).at(-1)?.id ?? list[0]?.id ?? store.messageId
+  }
 
   const setScrollRef = (el: HTMLDivElement | undefined) => {
     scroller = el
     autoScroll.scrollRef(el)
-    scrollSpy.setContainer(el)
     if (!el) return
     scheduleScrollState(el)
     scheduleHistoryFill()
+  }
+
+  const markUserScroll = () => {
+    scrollMark += 1
   }
 
   createResizeObserver(
@@ -1595,7 +1623,6 @@ export default function Page() {
     () => {
       const el = scroller
       if (el) scheduleScrollState(el)
-      scrollSpy.markDirty()
       scheduleHistoryFill()
     },
   )
@@ -1658,17 +1685,122 @@ export default function Page() {
 
       const el = scroller
       const delta = next - dockHeight
-      const stick = el ? Math.abs(el.scrollTop) < 10 + Math.max(0, delta) : false
+      const stick = el
+        ? !autoScroll.userScrolled() || el.scrollHeight - el.clientHeight - el.scrollTop < 10 + Math.max(0, delta)
+        : false
 
       dockHeight = next
 
-      if (stick) autoScroll.smoothScrollToBottom()
+      if (stick) autoScroll.forceScrollToBottom()
 
       if (el) scheduleScrollState(el)
-      scrollSpy.markDirty()
       scheduleHistoryFill()
     },
   )
+
+  const draft = (id: string) =>
+    extractPromptFromParts(sync.data.part[id] ?? [], {
+      directory: sdk.directory,
+      attachmentName: language.t("common.attachment"),
+    })
+
+  const line = (id: string) => {
+    const text = draft(id)
+      .map((part) => (part.type === "image" ? `[image:${part.filename}]` : part.content))
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim()
+    if (text) return text
+    return `[${language.t("common.attachment")}]`
+  }
+
+  const fail = (err: unknown) => {
+    showToast({
+      variant: "error",
+      title: language.t("common.requestFailed"),
+      description: errorMessage(err),
+    })
+  }
+
+  const busy = (sessionID: string) => {
+    if (sync.data.session_status[sessionID]?.type !== "idle") return true
+    return (sync.data.message[sessionID] ?? []).some(
+      (item) => item.role === "assistant" && typeof item.time.completed !== "number",
+    )
+  }
+
+  const halt = (sessionID: string) =>
+    busy(sessionID) ? sdk.client.session.abort({ sessionID }).catch(() => {}) : Promise.resolve()
+
+  const fork = (input: { sessionID: string; messageID: string }) => {
+    const value = draft(input.messageID)
+    return sdk.client.session
+      .fork(input)
+      .then((result) => {
+        const next = result.data
+        if (!next) {
+          showToast({
+            variant: "error",
+            title: language.t("common.requestFailed"),
+          })
+          return
+        }
+        navigateSession(next.id)
+        requestAnimationFrame(() => {
+          prompt.set(value)
+        })
+      })
+      .catch(fail)
+  }
+
+  const revert = (input: { sessionID: string; messageID: string }) => {
+    const value = draft(input.messageID)
+    return halt(input.sessionID)
+      .then(() => sdk.client.session.revert(input))
+      .then(() => {
+        prompt.set(value)
+      })
+      .catch(fail)
+  }
+
+  const restore = (id: string) => {
+    const sessionID = params.id
+    if (!sessionID || ui.restoring) return
+
+    const next = userMessages().find((item) => item.id > id)
+    setUi("restoring", id)
+
+    const task = !next
+      ? halt(sessionID)
+          .then(() => sdk.client.session.unrevert({ sessionID }))
+          .then(() => {
+            prompt.reset()
+          })
+      : halt(sessionID)
+          .then(() =>
+            sdk.client.session.revert({
+              sessionID,
+              messageID: next.id,
+            }),
+          )
+          .then(() => {
+            prompt.set(draft(next.id))
+          })
+
+    return task.catch(fail).finally(() => {
+      setUi("restoring", (value) => (value === id ? undefined : value))
+    })
+  }
+
+  const rolled = createMemo(() => {
+    const id = revertMessageID()
+    if (!id) return []
+    return userMessages()
+      .filter((item) => item.id >= id)
+      .map((item) => ({ id: item.id, text: line(item.id) }))
+  })
+
+  const actions = { fork, revert }
 
   const { clearMessageHash, scrollToMessage } = useSessionHashScroll({
     sessionKey,
@@ -1690,7 +1822,6 @@ export default function Page() {
 
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown)
-    onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
   })
 
   const previewPrompt = () =>
@@ -1743,7 +1874,6 @@ export default function Page() {
 
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown)
-    scrollSpy.destroy()
     if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
     if (historyFillFrame !== undefined) cancelAnimationFrame(historyFillFrame)
   })
@@ -1776,6 +1906,7 @@ export default function Page() {
                   <MessageTimeline
                     mobileChanges={false}
                     mobileFallback={<div />}
+                    actions={actions}
                     sessionID={params.id}
                     directory={params.dir}
                     onNavigateToSession={navigateSession}
@@ -1786,8 +1917,7 @@ export default function Page() {
                     onAutoScrollHandleScroll={autoScroll.handleScroll}
                     onMarkScrollGesture={markScrollGesture}
                     hasScrollGesture={hasScrollGesture}
-                    isDesktop={isDesktop()}
-                    onScrollSpyScroll={scrollSpy.onScroll}
+                    onUserScroll={markUserScroll}
                     onTurnBackfillScroll={historyWindow.onScrollerScroll}
                     onAutoScrollInteraction={autoScroll.handleInteraction}
                     centered={centered()}
@@ -1806,8 +1936,6 @@ export default function Page() {
                     }}
                     renderedUserMessages={historyWindow.renderedUserMessages()}
                     anchor={anchor}
-                    onRegisterMessage={scrollSpy.register}
-                    onUnregisterMessage={scrollSpy.unregister}
                   />
                 </Show>
               </Match>
@@ -1853,6 +1981,15 @@ export default function Page() {
             onResponseSubmit={() => {
               resumeScroll()
             }}
+            revert={
+              rolled().length > 0
+                ? {
+                    items: rolled(),
+                    restoring: ui.restoring,
+                    onRestore: restore,
+                  }
+                : undefined
+            }
             setPromptDockRef={(el) => (promptDock = el)}
           />
         </div>

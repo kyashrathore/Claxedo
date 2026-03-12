@@ -476,6 +476,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     const id = props.sessionId
     if (!id || id === "new" || server.healthy() !== true) return
     void sync.session.sync(id)
+    void sync.session.todo(id)
     if (activeMode() !== "session") return
     if (sync.data.session_diff[id] !== undefined) return
     if (sync.status === "loading") return

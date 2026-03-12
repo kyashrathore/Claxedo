@@ -78,6 +78,16 @@ When rebasing `fork/dev` onto `upstream/dev`, use this table to decide conflict 
   - Ported upstream terminal persisted-state migration to recover missing or duplicate `titleNumber` values from old terminal snapshots.
 - `packages/claxedo-app/src/overrides/utils/persist.ts`
   - Ported the upstream Windows-safe workspace storage-name sanitization, and applied the same fix to our server-scoped storage variant.
+- `packages/claxedo-app/src/overrides/app.tsx`
+  - Ported upstream `ConnectionGate` startup-health checks, retry loop, and alternate-server fallback UI into the Claxedo-authenticated app shell.
+- `packages/claxedo-app/src/overrides/pages/session.tsx`
+  - Ported upstream cursor-based active-message tracking, terminal-first autofocus, `forceScrollToBottom()` semantics, `sync.session.todo()` refresh, and revert/fork/restore flows while preserving split-pane/session-param behavior.
+- `packages/claxedo-app/src/claxedo-ui/components/compact-prompt-dock.tsx`
+  - Ported the upstream todo-dock lifecycle state machine so stale todos clear instead of sticking around in compact/review docks.
+- `packages/claxedo-app/src/claxedo-ui/components/tab-review.tsx`, `packages/claxedo-app/src/claxedo-ui/components/review-workspace.tsx`
+  - Added the matching session todo refresh/clear behavior for standalone review surfaces that do not use the upstream composer path directly.
+- `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-terminal.tsx`, `packages/claxedo-app/src/overrides/components/terminal.tsx`
+  - Applied the terminal carryovers that still mapped cleanly in Claxedo: disable pane-level auto-focus stealing and accept palette-only theme variants.
 
 ### Direct Upstream Files We Merged This Sync
 
@@ -97,22 +107,18 @@ When rebasing `fork/dev` onto `upstream/dev`, use this table to decide conflict 
 ### Remaining Override Follow-Up
 
 - `packages/claxedo-app/src/overrides/pages/session.tsx`
-  - Still needs the upstream session-page carryover from `packages/app/src/pages/session.tsx`: removal of `createScrollSpy`, the inline history-window rewrite, `reviewSnap`, terminal-first autofocus, revert/fork/restore helpers, and the newer `MessageTimeline` action wiring.
-- `packages/claxedo-app/src/overrides/pages/session.tsx`
-  - Replace the old `autoScroll.smoothScrollToBottom()` + `scrollSpy.markDirty()` flow with upstream `forceScrollToBottom()`/cursor-based active-message tracking, otherwise we stay exposed to the same scroll jitter and title/active-message drift bugs.
-- `packages/claxedo-app/src/overrides/pages/session.tsx`
   - Review-pane empty/loading logic still follows the older switch tree; upstream simplified it and added the Git-init empty-state CTA in the shared `reviewEmpty()` path.
-- `packages/claxedo-app/src/overrides/app.tsx`
-  - Still missing upstream `ConnectionGate` startup-health check, retry loop, and alternate-server fallback screen.
+- `packages/claxedo-app/src/claxedo-ui/components/tab-review.tsx`, `packages/claxedo-app/src/claxedo-ui/components/review-workspace.tsx`
+  - Session-message action parity is still partial outside the main timeline path; if we need full parity, audit how fork/revert/restore and rename/archive/delete should surface in these standalone review panes.
 
 ### Non-1:1 Areas To Audit
 
 - Terminal bugfixes from `packages/app/src/pages/session/terminal-panel.tsx` and `packages/app/src/components/terminal.tsx` are not 1:1 with our split-pane implementation.
-  - Audit `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-terminal.tsx`, `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-terminal-logic.ts`, and `packages/claxedo-app/src/overrides/components/terminal.tsx` for the same focus, reconnect, and scroll-jank classes of bugs.
+  - `pane-terminal.tsx` and `overrides/components/terminal.tsx` have the carryovers that mapped directly; keep `pane-terminal-logic.ts` on the watch list if pane-specific timing bugs recur.
 - Review/session actions from `packages/app/src/pages/session.tsx` and `packages/app/src/pages/session/message-timeline.tsx` are partly rehomed in Claxedo.
-  - Audit `packages/claxedo-app/src/overrides/pages/session/use-session-commands.tsx`, `packages/claxedo-app/src/claxedo-ui/components/tab-review.tsx`, and `packages/claxedo-app/src/claxedo-ui/components/review-workspace.tsx` for parity with restore-to-message, fork, revert, and rename/archive/delete UX.
+  - The main session page now has the upstream restore-to-message / fork / revert flow; `tab-review.tsx` and `review-workspace.tsx` still need a deliberate product decision if they should expose the same message/session management actions.
 - Todo-dock lifecycle fixes from `packages/app/src/pages/session/composer/session-composer-state.ts` may surface outside the upstream composer path in Claxedo.
-  - If stale todo UI reappears, inspect `packages/claxedo-app/src/claxedo-ui/components/compact-prompt-dock.tsx` and any other session-embedded dock code before assuming the bug is limited to the upstream composer files.
+  - `compact-prompt-dock.tsx` now mirrors the upstream lifecycle; if stale todo UI reappears, inspect any other custom dock surface before assuming the bug is back in the shared composer files.
 
 ## Notes
 

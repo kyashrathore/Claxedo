@@ -36,10 +36,14 @@ Each entry should include:
   - `packages/claxedo-app/src/overrides/components/status-popover.tsx`: Ported `useCheckServerHealth()` and default-server key resolution
   - `packages/claxedo-app/src/overrides/context/terminal.tsx`: Ported the upstream terminal persisted-state migration for `titleNumber`
   - `packages/claxedo-app/src/overrides/utils/persist.ts`: Ported Windows-safe workspace storage-name sanitization and applied it to the Claxedo server-scoped storage variant
+  - `packages/claxedo-app/src/overrides/app.tsx`: Ported upstream `ConnectionGate` startup health check, retry loop, and alternate-server fallback screen into the Claxedo-authenticated shell
+  - `packages/claxedo-app/src/overrides/pages/session.tsx`: Ported cursor-based active-message tracking, terminal-first autofocus, `forceScrollToBottom()` semantics, `sync.session.todo()`, and revert/fork/restore wiring while preserving split-pane/session-param behavior
+  - `packages/claxedo-app/src/claxedo-ui/components/compact-prompt-dock.tsx`, `packages/claxedo-app/src/claxedo-ui/components/tab-review.tsx`, `packages/claxedo-app/src/claxedo-ui/components/review-workspace.tsx`: Ported upstream todo-dock lifecycle behavior so stale session todos clear instead of lingering in review surfaces
+  - `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-terminal.tsx`, `packages/claxedo-app/src/overrides/components/terminal.tsx`: Applied the matching terminal carryovers that were still relevant in Claxedo (disable pane-level auto-focus stealing; accept palette-only theme variants)
 - **Remaining Override Follow-Up:**
-  - `packages/claxedo-app/src/overrides/pages/session.tsx` still needs the upstream carryover from `packages/app/src/pages/session.tsx`: history-window rewrite, `reviewSnap`, cursor-based active-message tracking, terminal-first autofocus, and newer revert/fork/restore flows
-  - `packages/claxedo-app/src/overrides/app.tsx` still needs upstream `ConnectionGate` startup-health fallback/retry UX
-  - Terminal focus/jank fixes should also be audited in `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-terminal.tsx`, `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-terminal-logic.ts`, and `packages/claxedo-app/src/overrides/components/terminal.tsx`
+  - `packages/claxedo-app/src/overrides/pages/session.tsx`: upstream `reviewEmpty()` / Git-init empty-state CTA is still not mirrored 1:1 in the Claxedo review panel
+  - `packages/claxedo-app/src/claxedo-ui/components/tab-review.tsx` and `packages/claxedo-app/src/claxedo-ui/components/review-workspace.tsx`: session-message action parity (fork/revert/restore/rename/archive/delete) is still only partially mapped into the standalone review surfaces
+  - `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-terminal-logic.ts`: no direct upstream delta was needed in this sweep, but it remains an audit point if pane-specific terminal timing bugs recur
 - **New Modifications Discovered:**
   - `packages/desktop/src-tauri/src/lib.rs`: add to registry (`Merge carefully`)
   - `packages/app/src/pages/session/composer/session-composer-state.ts`: add to registry (`Merge carefully`)
@@ -51,6 +55,7 @@ Each entry should include:
   - `bun run --cwd packages/claxedo-app typecheck`: ⚠️ SIGKILL in this environment before semantic errors were printed
   - `bunx tsc -b` in `packages/claxedo-app`: ⚠️ SIGKILL in this environment
   - `bun run --cwd packages/claxedo-app build`: ⚠️ SIGKILL in this environment
+  - `bunx vitest run --config vitest.config.ts src/claxedo-ui/components/compact-prompt-dock.vitest.tsx src/claxedo-ui/components/tab-review.vitest.tsx` in `packages/claxedo-app`: ✅ Pass
 - **Follow-up Actions:**
   - [ ] Commit the regenerated `bun.lock` plus the post-rebase drift fixes
   - [ ] Move `dev` to `sync/2026-03-12` (`git checkout dev && git reset --hard sync/2026-03-12`)
