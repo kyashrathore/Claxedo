@@ -265,7 +265,7 @@ export function createDynamicTitleSync(deps: DynamicTitleSyncDeps) {
     untrack(() =>
       batch(() => {
         for (const item of next) {
-          claxedo.groupTabs(item.groupId).updateTitle(item.tabId, item.title)
+          deps.claxedo.groupTabs(item.groupId).updateTitle(item.tabId, item.title)
         }
       }),
     )
