@@ -290,11 +290,11 @@ export function TerminalPanel() {
               <div class="flex-1 min-h-0 relative">
                 <Show when={terminal.active()} keyed>
                   {(id) => (
-                    <Show when={byId().get(id)} keyed>
+                    <Show when={byId().get(id)}>
                       {(pty) => (
                         <div id={`terminal-wrapper-${id}`} class="absolute inset-0">
                           <Terminal
-                            pty={pty}
+                            pty={pty()}
                             autoFocus={open()}
                             onConnect={() => terminal.trim(id)}
                             onCleanup={terminal.update}

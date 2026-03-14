@@ -75,6 +75,7 @@ export type RailSidebarProps = {
   onArchiveSession?: (session: SessionItem) => void
   onSettings?: () => void
   onHelp?: () => void
+  onOpenWorkGraph?: () => void
   homedir?: string
   children?: JSX.Element
 }
@@ -466,6 +467,17 @@ export function RailSidebar(props: RailSidebarProps) {
         <div class="flex flex-col gap-1 py-2">
           {/* Collapsed footer - hidden on mobile */}
           <div class={`${expanded() ? "hidden" : "flex"} flex-col gap-1 max-md:hidden`}>
+            <Tooltip placement="right" value="WorkGraph">
+              <div class="flex items-center justify-center">
+                <IconButton
+                  icon="dot-grid"
+                  variant="ghost"
+                  size="large"
+                  onClick={() => props.onOpenWorkGraph?.()}
+                  aria-label="WorkGraph"
+                />
+              </div>
+            </Tooltip>
             <Tooltip placement="right" value="Diagnostics">
               <div class="flex items-center justify-center">
                 <IconButton
@@ -510,6 +522,14 @@ export function RailSidebar(props: RailSidebarProps) {
           </div>
           {/* Expanded footer - always shown on mobile */}
           <div class={`${expanded() ? "flex" : "hidden"} flex-col gap-1 max-md:flex`}>
+            <button
+              type="button"
+              class="w-full flex items-center gap-2 px-3 py-2 text-left rounded-md mx-2 text-text-weak hover:bg-surface-base-hover hover:text-text-base transition-colors"
+              onClick={() => props.onOpenWorkGraph?.()}
+            >
+              <Icon name="dot-grid" size="normal" />
+              <span class="text-sm truncate">WorkGraph</span>
+            </button>
             <button
               type="button"
               class="w-full flex items-center gap-2 px-3 py-2 text-left rounded-md mx-2 text-text-weak hover:bg-surface-base-hover hover:text-text-base transition-colors"

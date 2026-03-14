@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import { isDemoMode, isDemoPath, isEmbedMode } from "./api"
+import { fixDir, isDemoMode, isDemoPath, isEmbedMode } from "./api"
 
 describe("demo routing", () => {
   beforeEach(() => {
@@ -27,5 +27,19 @@ describe("demo routing", () => {
   test("keeps embed detection query-based", () => {
     window.location.href = "http://localhost/demo/?embed=1"
     expect(isEmbedMode()).toBe(true)
+  })
+})
+
+describe("fixDir", () => {
+  test("preserves absolute paths", () => {
+    expect(fixDir("/Users/yash/project")).toBe("/Users/yash/project")
+  })
+
+  test("restores a leading slash for workspace paths", () => {
+    expect(fixDir("Users/yash/project")).toBe("/Users/yash/project")
+  })
+
+  test("recovers embedded absolute paths from temp prefixes", () => {
+    expect(fixDir("tmp/dev/Users/yash/project")).toBe("/Users/yash/project")
   })
 })
