@@ -1,5 +1,6 @@
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
+import type { OutputFormat } from "@opencode-ai/sdk/v2/client"
 import { createEffect, on, Component, Show, onCleanup, Switch, Match, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createFocusSignal } from "@solid-primitives/active-element"
@@ -70,6 +71,8 @@ interface PromptInputProps {
   system?: string
   /** Override agent name for this input. */
   agent?: string
+  /** Structured output format for embedded flows. */
+  format?: OutputFormat
 }
 
 const EXAMPLES = [
@@ -1015,6 +1018,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     navigateOnCreate: () => props.navigateOnCreate ?? true,
     system: () => props.system,
     agent: () => props.agent,
+    format: () => props.format,
   })
 
   const handleKeyDown = (event: KeyboardEvent) => {

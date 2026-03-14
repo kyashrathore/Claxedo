@@ -12,6 +12,11 @@ const copy = (tab: TabItem): TabItem => ({
   badge: tab.badge ? { ...tab.badge } : undefined,
 })
 
+const prefix = (tab: Omit<TabItem, "id">) => {
+  if (tab.type === "page" && tab.pageId === "__workgraph__") return "wkg"
+  return tab.type
+}
+
 export function createTabActions(
   getItems: () => TabItem[],
   getActiveId: () => string | null,
@@ -62,7 +67,7 @@ export function createTabActions(
     },
 
     add(tab: Omit<TabItem, "id">) {
-      const id = `${tab.type}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      const id = `${prefix(tab)}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
       const newTab: TabItem = { ...tab, id }
 
       debug.log("add tab", {

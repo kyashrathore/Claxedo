@@ -155,57 +155,56 @@ export function PaneTerminal(props: PaneTerminalProps) {
         </div>
       }
     >
-      {(p) => (
-        <div class="flex-1 min-h-0 h-full w-full overflow-hidden">
-          <Terminal
-            pty={p()}
-            autoFocus={false}
-            onConnectError={handleConnectError}
-            onAgentInterrupt={() => {
-              const id = realPtyId()
-              if (!id) return
-              if (!claxedo.terminal.isTracked(id)) return
-              if (claxedo.terminal.agentStatus(id) === "idle") return
+      <div class="flex-1 min-h-0 h-full w-full overflow-hidden">
+        <Terminal
+          pty={pty()!}
+          autoFocus={false}
+          onConnectError={handleConnectError}
+          onAgentInterrupt={() => {
+            const id = realPtyId()
+            if (!id) return
+            if (!claxedo.terminal.isTracked(id)) return
+            if (claxedo.terminal.agentStatus(id) === "idle") return
 
-              batch(() => {
-                claxedo.terminal.setAgentStatus(id, "idle")
-                const aggregated = claxedo.terminal.getTabAgentStatus(props.tabId)
-                claxedo.patchTab(props.tabId, {
-                  loading: aggregated.loading,
-                  done: aggregated.done,
-                  attention: aggregated.attention ? undefined : false,
-                })
+            batch(() => {
+              claxedo.terminal.setAgentStatus(id, "idle")
+              const aggregated = claxedo.terminal.getTabAgentStatus(props.tabId)
+              claxedo.patchTab(props.tabId, {
+                loading: aggregated.loading,
+                done: aggregated.done,
+                attention: aggregated.attention ? undefined : false,
               })
-            }}
-            onSplitVertical={() => {
-              claxedo.dispatch({
-                type: "PaneSplitRequested",
-                tabId: props.tabId,
-                leafId: props.leafId,
-                dir: "v",
-              })
-              requestTerminalFitOnPaneChange()
-            }}
-            onSplitHorizontal={() => {
-              claxedo.dispatch({
-                type: "PaneSplitRequested",
-                tabId: props.tabId,
-                leafId: props.leafId,
-                dir: "h",
-              })
-              requestTerminalFitOnPaneChange()
-            }}
-            onFileLinkOpen={(filePath) => {
-              const dir = props.directory
-              if (!dir) return
-              if (filePath.startsWith("/") && !filePath.startsWith(dir + "/") && filePath !== dir) return
+            })
+          }}
+          onSplitVertical={() => {
+            claxedo.dispatch({
+              type: "PaneSplitRequested",
+              tabId: props.tabId,
+              leafId: props.leafId,
+              dir: "v",
+            })
+            requestTerminalFitOnPaneChange()
+          }}
+          onSplitHorizontal={() => {
+            claxedo.dispatch({
+              type: "PaneSplitRequested",
+              tabId: props.tabId,
+              leafId: props.leafId,
+              dir: "h",
+            })
+            requestTerminalFitOnPaneChange()
+          }}
+          onFileLinkOpen={(filePath) => {
+            const dir = props.directory
+            if (!dir) return
+            if (!filePath.startsWith("/") || filePath.startsWith(dir + "/") || filePath === dir) {
               const title = filePath.split("/").at(-1) ?? filePath
               const tabId = tabs().addFile(dir, filePath, title)
               if (tabId) tabs().setActive(tabId)
-            }}
-          />
-        </div>
-      )}
+            }
+          }}
+        />
+      </div>
     </Show>
   )
 }

@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from "solid-js"
 import type { QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
+import type { OutputFormat } from "@opencode-ai/sdk/v2/client"
 import { Button } from "@opencode-ai/ui/button"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -36,6 +37,9 @@ interface CompactPromptDockProps {
   sessionDirectory?: string
   navigateOnCreate?: boolean
   dockMode?: "floating" | "side"
+  system?: string
+  agent?: string
+  format?: OutputFormat
 }
 
 export function CompactPromptDock(props: CompactPromptDockProps) {
@@ -278,6 +282,11 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
               newSessionWorktree={props.newSessionWorktree}
               onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
               onSubmit={props.onSubmit}
+              sessionID={props.sessionID}
+              navigateOnCreate={props.navigateOnCreate}
+              system={props.system}
+              agent={props.agent}
+              format={props.format}
             />
           </div>
         </Show>
