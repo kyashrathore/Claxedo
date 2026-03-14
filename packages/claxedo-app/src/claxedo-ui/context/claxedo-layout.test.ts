@@ -1721,6 +1721,19 @@ describe("page tab integration", () => {
     }
   })
 
+  test("workgraph page tab uses a wkg route id", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { tabs1 } = splitInto2(api)
+      const id = tabs1.addPage("__workgraph__", "WorkGraph", "/ws")
+
+      expect(id).toMatch(/^wkg-/)
+      expect(tabs1.items().find((t: any) => t.id === id)?.pageId).toBe("__workgraph__")
+    } finally {
+      dispose()
+    }
+  })
+
   test("topTabs.addPage delegates to focused group", () => {
     const { api, dispose } = createTestLayout()
     try {

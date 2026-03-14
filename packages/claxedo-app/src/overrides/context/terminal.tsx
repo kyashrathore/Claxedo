@@ -229,6 +229,9 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
     const index = store.all.findIndex((x) => x.id === info.id)
     tlog("event pty.updated", { dir, id: info.id, index, title: info.title, cwd: info.cwd })
     if (index === -1) return
+    const cur = store.all[index]
+    if (info.title === undefined && info.cwd === undefined) return
+    if ((info.title ?? cur.title) === cur.title && (info.cwd ?? cur.cwd) === cur.cwd) return
     setStore("all", index, (existing) => ({
       ...existing,
       title: info.title ?? existing.title,

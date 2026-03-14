@@ -1,4 +1,4 @@
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { Message, OutputFormat } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { useNavigate } from "@solidjs/router"
@@ -54,6 +54,8 @@ type PromptSubmitInput = {
   system?: Accessor<string | undefined>
   /** Override the agent name (e.g. force "doc" agent in page dock). */
   agent?: Accessor<string | undefined>
+  /** Structured output format for embedded flows. */
+  format?: Accessor<OutputFormat | undefined>
 }
 
 type CommentItem = {
@@ -520,6 +522,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           parts: requestParts,
           variant,
           ...(system ? { system } : {}),
+          ...(input.format?.() ? { format: input.format?.() } : {}),
         })
         if (response.error) throw response.error
         const reply = response.data
@@ -544,6 +547,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         parts: requestParts,
         variant,
         ...(system ? { system } : {}),
+        ...(input.format?.() ? { format: input.format?.() } : {}),
       })
     }
 
