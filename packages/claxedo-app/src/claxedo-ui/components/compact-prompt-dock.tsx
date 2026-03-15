@@ -33,6 +33,7 @@ interface CompactPromptDockProps {
   onSubmit: () => void
   setPromptDockRef: (el: HTMLDivElement) => void
   messages?: JSX.Element
+  interactiveSlot?: JSX.Element
   sessionID?: string
   sessionDirectory?: string
   navigateOnCreate?: boolean
@@ -258,6 +259,9 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
             </div>
           }
         >
+          <Show when={props.interactiveSlot}>
+            {props.interactiveSlot}
+          </Show>
           <Show when={todoDock()}>
             <div
               classList={{

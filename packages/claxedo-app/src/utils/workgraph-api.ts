@@ -440,6 +440,10 @@ export const workgraphApi = {
     return request<WorkgraphDetail>(`${base()}/graph/items/${id}`).then(detail)
   },
 
+  deleteItem(id: string) {
+    return request<{ deleted: boolean }>(`${base()}/graph/items/${id}`, { method: "DELETE" })
+  },
+
   slices(repo_ref?: string) {
     const params = new URLSearchParams()
     if (repo_ref) params.set("repo_ref", repo_ref)
