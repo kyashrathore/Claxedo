@@ -1,8 +1,100 @@
 import { ulid } from "ulid";
 import type { EventEnvelope } from "./events";
-import type { OrchestratorRunState, NodeAgentHistory, RunPhase } from "./types";
+import type { OrchestratorRunState, NodeAgentHistory, RunPhase, ParallelismTracker } from "./types";
 import { generateHash, insertEvent, getNextSeq } from "../db/helpers";
 import type { OrchestratorMetadata } from "./types-ui";
+
+// ---------------------------------------------------------------------------
+// RunMetrics — computed at run completion, stored in runs_current.metrics_json
+// ---------------------------------------------------------------------------
+
+export interface RunMetrics {
+  wall_time_ms: number;
+  task_count: number;
+  completed_count: number;
+  failed_count: number;
+  max_parallelism: number;
+  avg_parallelism: number;
+  total_tokens_used: number | null;
+  estimated_cost_usd: number | null;
+}
+
+/**
+ * Compute and store RunMetrics for a completed/failed run.
+ * Called once execution reaches a terminal phase.
+ */
+function finalizeMetrics(db: any, runId: string, state: OrchestratorRunState): RunMetrics {
+  const allNodes = db
+    .query("SELECT status FROM nodes_current WHERE run_id = ?")
+    .all(runId) as Array<{ status: string }>;
+
+  const completed_count = allNodes.filter((n) => n.status === "completed").length;
+  const failed_count = allNodes.filter((n) => n.status === "failed").length;
+
+  const p = state.parallelism;
+  let wall_time_ms = 0;
+  let max_parallelism = 1;
+  let avg_parallelism = 1;
+
+  if (p) {
+    const now = Date.now();
+    wall_time_ms = now - p.start_ms;
+    max_parallelism = p.max;
+    // Flush remaining integral for any still-active nodes
+    const dt = now - p.last_sample_ms;
+    const finalIntegral = p.integral + p.current * dt;
+    avg_parallelism = wall_time_ms > 0 ? finalIntegral / wall_time_ms : 1;
+  } else {
+    // Fallback: wall time from created_at
+    wall_time_ms = Date.now() - new Date(state.created_at).getTime();
+  }
+
+  const metrics: RunMetrics = {
+    wall_time_ms: Math.round(wall_time_ms),
+    task_count: allNodes.length,
+    completed_count,
+    failed_count,
+    max_parallelism,
+    avg_parallelism: Math.round(avg_parallelism * 100) / 100,
+    total_tokens_used: null,
+    estimated_cost_usd: null,
+  };
+
+  db.run("UPDATE runs_current SET metrics_json = ? WHERE run_id = ?", [
+    JSON.stringify(metrics),
+    runId,
+  ]);
+
+  return metrics;
+}
+
+/**
+ * Sample the parallelism tracker: flush the integral for elapsed time,
+ * apply the count delta, and update the timestamp.
+ */
+function sampleParallelism(p: ParallelismTracker, delta: number): void {
+  const now = Date.now();
+  const dt = now - p.last_sample_ms;
+  p.integral += p.current * dt;
+  p.last_sample_ms = now;
+  p.current = Math.max(0, p.current + delta);
+  if (p.current > p.max) p.max = p.current;
+}
+
+/**
+ * Get RunMetrics for a completed run from the DB.
+ */
+export function getRunMetrics(db: any, runId: string): RunMetrics | null {
+  const row = db
+    .query("SELECT metrics_json FROM runs_current WHERE run_id = ?")
+    .get(runId) as { metrics_json: string | null } | null;
+  if (!row || !row.metrics_json) return null;
+  try {
+    return JSON.parse(row.metrics_json) as RunMetrics;
+  } catch {
+    return null;
+  }
+}
 import {
   onNodeCompleted as wgOnNodeCompleted,
   onRunCompleted,
@@ -538,6 +630,9 @@ async function beginExecution(
 
   state.phase = "executing";
   state.result = null;
+  // Initialize parallelism tracker for metrics
+  const now = Date.now();
+  state.parallelism = { start_ms: now, current: 0, max: 0, integral: 0, last_sample_ms: now };
   updateRunStatus(db, runId, "executing");
   updateSource(db, runSource(db, runId), "executing", { error: null, lastRunId: runId });
   emitRunEvent(db, runId, "execution_started", { summary });
@@ -653,6 +748,8 @@ export async function onNodeStatusUpdate(
     }
     history.current_agent_id = null;
   }
+
+  if (state.parallelism) sampleParallelism(state.parallelism, -1);
 
   if (status === "completed") {
     console.log(`[executor] ${runId} node ${nodeId} completed`);
@@ -900,6 +997,7 @@ ${nodePrompt}`;
   // Mark node as active before spawning
   updateNodeStatus(db, runId, nodeId, "active");
   markNodeActive(state.node_work_items, nodeId);
+  if (state.parallelism) sampleParallelism(state.parallelism, +1);
 
   try {
     console.log(`[executor] ${runId} spawning task agent for node ${nodeId} (${role}): "${title}"`);
@@ -1027,6 +1125,7 @@ async function checkRunCompletion(
       console.log(`[executor] ${runId} all nodes finished — ${failed.length} failed, 0 completed → FAILED`);
       state.phase = "failed";
       state.error = "All tasks failed";
+      finalizeMetrics(db, runId, state);
       updateRunStatus(db, runId, "failed");
       updateSource(db, runSource(db, runId), "failed", { error: state.error, lastRunId: runId });
     } else {
@@ -1034,6 +1133,7 @@ async function checkRunCompletion(
         console.log(`[executor] ${runId} finished: ${completed.length} completed, ${failed.length} failed, ${cancelled.length} cancelled`);
       }
       state.phase = "completed";
+      finalizeMetrics(db, runId, state);
       updateRunStatus(db, runId, "completed");
       const sourceId = runSource(db, runId);
       updateSource(db, sourceId, sourceStatus(sourceId, "completed"), {

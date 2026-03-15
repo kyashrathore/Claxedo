@@ -57,6 +57,22 @@ export interface NodeAgentHistory {
 }
 
 /**
+ * In-memory parallelism tracker for computing run metrics.
+ */
+export interface ParallelismTracker {
+  /** Timestamp (ms) when execution phase started */
+  start_ms: number;
+  /** Currently active node count */
+  current: number;
+  /** Peak concurrent node count seen during execution */
+  max: number;
+  /** Weighted integral: sum of (count * duration_ms) for computing avg */
+  integral: number;
+  /** Timestamp of the last sample (for integral computation) */
+  last_sample_ms: number;
+}
+
+/**
  * In-memory state for an active orchestration run.
  */
 export interface OrchestratorRunState {
@@ -74,4 +90,6 @@ export interface OrchestratorRunState {
   work_item_id?: string;
   /** Maps node_id -> WorkGraph item ID for per-node items created during planning */
   node_work_items: Map<string, string>;
+  /** Parallelism tracking for metrics; initialized when execution starts */
+  parallelism?: ParallelismTracker;
 }

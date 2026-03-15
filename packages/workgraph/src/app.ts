@@ -19,6 +19,7 @@ import { generateHash, insertEvent, getNextSeq } from "./db/helpers";
 import type { ExecutionAdapter } from "./execution";
 import type { ProviderAuthResolver, ProviderFactory } from "./providers";
 import type { RepoBindingResolver } from "./repo";
+import { getRunMetrics } from "./orchestrator/executor";
 
 /**
  * Initialize all tables needed by the API server.
@@ -64,6 +65,7 @@ export function initializeDb(db: any) {
   // Trigger FK — null for manually-created runs, set for trigger-spawned runs
   ensureColumn(db, "runs_current", "trigger_id", "ALTER TABLE runs_current ADD COLUMN trigger_id TEXT");
   ensureColumn(db, "runs_current", "trigger_run_index", "ALTER TABLE runs_current ADD COLUMN trigger_run_index INTEGER");
+  ensureColumn(db, "runs_current", "metrics_json", "ALTER TABLE runs_current ADD COLUMN metrics_json TEXT");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS run_sources_current (
@@ -491,6 +493,25 @@ export function createApp(
       | null;
 
     return c.json(row ?? null);
+  });
+
+  // --- GET /runs/:run_id/metrics ---
+  app.get("/runs/:run_id/metrics", async (c) => {
+    const runId = c.req.param("run_id");
+    const run = db
+      .query("SELECT run_id, status FROM runs_current WHERE run_id = ?")
+      .get(runId) as { run_id: string; status: string } | null;
+
+    if (!run) {
+      return c.json({ error: "Run not found" }, 404);
+    }
+
+    const metrics = getRunMetrics(db, runId);
+    if (!metrics) {
+      return c.json({ error: "Metrics not yet available for this run" }, 404);
+    }
+
+    return c.json(metrics);
   });
 
   // --- GET /runs/:run_id/nodes ---
