@@ -21,6 +21,20 @@ export function isEmbedMode() {
   return new URLSearchParams(window.location.search).has("embed")
 }
 
+export function fixDir(input: string | undefined) {
+  const txt = input?.trim()
+  if (!txt) return
+  if (txt.startsWith("/")) return txt
+  const hit = ["/Users/", "/private/", "/Volumes/", "/home/"]
+    .map((item) => txt.indexOf(item))
+    .filter((item) => item >= 0)
+    .sort((a, b) => a - b)[0]
+
+  if (hit !== undefined) return txt.slice(hit)
+  if (/^(Users|private|Volumes|home)\//.test(txt)) return `/${txt}`
+  return txt
+}
+
 function normalized(url: string | undefined): string | undefined {
   const trimmed = url?.trim()
   if (!trimmed) return
@@ -66,7 +80,7 @@ export async function authFetch(
   // On desktop, fall back to Basic auth with the sidecar password
   const serverPassword = (window as any).__OPENCODE__?.serverPassword as string | undefined
 
-  const activeDirectory = (window as any).__OPENCODE__?.activeDirectory as string | undefined
+  const activeDirectory = fixDir((window as any).__OPENCODE__?.activeDirectory as string | undefined)
 
   const setAuth = (headers: Headers) => {
     if (token) {

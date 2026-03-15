@@ -106,6 +106,11 @@ export type RailLayoutProps = ParentProps<{
   onHelp?: () => void
 
   /**
+   * Callback to open WorkGraph
+   */
+  onOpenWorkGraph?: () => void
+
+  /**
    * Callback to create a new session (with workspace directory)
    */
   onNewSession?: (workspaceDir: string, groupId?: string) => void
@@ -969,6 +974,10 @@ function RailLayoutBody(props: RailLayoutProps) {
               }}
               onHelp={() => {
                 props.onHelp?.()
+                closeMobileSidebar()
+              }}
+              onOpenWorkGraph={() => {
+                props.onOpenWorkGraph?.()
                 closeMobileSidebar()
               }}
             />

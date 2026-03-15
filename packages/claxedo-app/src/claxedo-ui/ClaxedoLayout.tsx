@@ -489,6 +489,19 @@ function ClaxedoLayoutContent(props: ParentProps) {
     ),
   )
 
+  const handleOpenWorkGraph = () => {
+    const targetGroupId = claxedo.split.focusedId()
+    if (targetGroupId) claxedo.dispatch({ type: "SplitFocusRequested", groupId: targetGroupId })
+    const tabs = targetGroupId ? claxedo.groupTabs(targetGroupId) : claxedo.topTabs
+    // Reuse existing WorkGraph tab if open
+    const existing = tabs.items().find((t) => t.type === "page" && (t as any).pageId === "__workgraph__")
+    if (existing) {
+      tabs.setActive(existing.id)
+      return
+    }
+    tabs.addPage("__workgraph__", "WorkGraph")
+  }
+
   const {
     handleProjectSelect,
     handleWorkspaceSelect,
@@ -579,6 +592,7 @@ function ClaxedoLayoutContent(props: ParentProps) {
         onNewWorkspace={handleNewWorkspace}
         onSettings={handleSettings}
         onHelp={handleHelp}
+        onOpenWorkGraph={handleOpenWorkGraph}
         onNewSession={handleNewSession}
         onNewTerminal={handleNewTerminal}
         onNewPage={handleNewPage}
