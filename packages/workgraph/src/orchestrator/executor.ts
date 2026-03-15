@@ -1049,7 +1049,8 @@ ${nodePrompt}`;
     console.log(`[executor] ${runId} agent ${agent.id} spawned for node ${nodeId}`);
   } catch (err) {
     console.error(`[executor] ${runId} failed to spawn agent for node ${nodeId}:`, err);
-    // Revert to pending so it can be retried on next cascade
+    // Revert parallelism and status — spawn never completed
+    if (state.parallelism) sampleParallelism(state.parallelism, -1);
     updateNodeStatus(db, runId, nodeId, "pending");
   }
 }
@@ -1206,6 +1207,10 @@ export function cancelOrchestration(
   db: any,
   killAgentFn: (agentId: string) => void,
 ): void {
+  if (state.phase === "cancelled" || state.phase === "completed" || state.phase === "failed") {
+    console.warn(`[executor] cancelOrchestration: run ${state.run_id} already in terminal phase '${state.phase}'`);
+    return;
+  }
   // Kill all active worker agents
   for (const [_nodeId, history] of state.node_agents) {
     if (history.current_agent_id) {

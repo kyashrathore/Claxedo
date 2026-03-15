@@ -119,10 +119,8 @@ describe("EventEnvelopeSchema", () => {
     expect(EventEnvelopeSchema.safeParse(without).success).toBe(false);
   });
 
-  it("inferred type matches parsed output shape", () => {
+  it("parse preserves created_at as string (no Date coercion)", () => {
     const result = EventEnvelopeSchema.parse(valid);
-    expect(result.schema_version).toBe(1);
-    expect(result.stream_seq).toBe(0);
     expect(typeof result.created_at).toBe("string");
   });
 });

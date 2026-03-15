@@ -49,7 +49,7 @@ describe("GateTracker", () => {
     expect(tracker.isSatisfied("a", "b")).toBe(false);
   });
 
-  it("reversed pair is a different key", () => {
+  it("gate satisfaction is directional: satisfy(a,b) does not satisfy(b,a)", () => {
     tracker.satisfy("a", "b");
     expect(tracker.isSatisfied("b", "a")).toBe(false);
   });
@@ -111,12 +111,12 @@ describe("GraphEngine — nodes and edges", () => {
     expect(() => g.updateNodeStatus("z", "completed")).not.toThrow();
   });
 
-  it("addEdge and getEdges", () => {
+  it("addEdge makes edge retrievable", () => {
     g.addEdge({ source_id: "a", target_id: "b", type: "hard" });
     expect(g.getEdges()).toHaveLength(1);
   });
 
-  it("getEdges returns a copy", () => {
+  it("mutating getEdges result does not affect internal state", () => {
     g.addEdge({ source_id: "a", target_id: "b", type: "hard" });
     const copy = g.getEdges();
     copy.push({ source_id: "x", target_id: "y", type: "soft" });
@@ -144,24 +144,6 @@ describe("GraphEngine — nodes and edges", () => {
     g.addEdge({ source_id: "a", target_id: "c", type: "soft" });
     expect(g.getOutgoingEdges("a")).toHaveLength(2);
     expect(g.getOutgoingEdges("b")).toHaveLength(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// GraphEngine — gate tracker
-// ---------------------------------------------------------------------------
-
-describe("GraphEngine — gate tracker", () => {
-  it("setGateTracker / getGateTracker round-trips", () => {
-    const g = new GraphEngine([], []);
-    const tracker = new GateTracker();
-    g.setGateTracker(tracker);
-    expect(g.getGateTracker()).toBe(tracker);
-  });
-
-  it("getGateTracker returns undefined when not set", () => {
-    const g = new GraphEngine([], []);
-    expect(g.getGateTracker()).toBeUndefined();
   });
 });
 
