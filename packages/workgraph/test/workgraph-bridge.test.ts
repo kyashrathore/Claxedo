@@ -13,7 +13,7 @@ import {
   onRunCompleted,
   onRunFailed,
   getReadyWork,
-} from "../src/orchestrator/workgraph-bridge"
+} from "../src/workgraph-bridge"
 
 describe("workgraph-bridge", () => {
   beforeEach(() => {

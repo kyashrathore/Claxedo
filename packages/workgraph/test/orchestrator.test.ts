@@ -13,7 +13,7 @@ import {
 } from "../src/orchestrator/executor";
 import { handleToolCall, type McpToolContext } from "../src/mcp/tools";
 import type { OrchestratorRunState, NodeAgentHistory } from "../src/orchestrator/types";
-import { getWorkGraph, resetWorkGraph } from "../src/orchestrator/workgraph-bridge";
+import { getWorkGraph, resetWorkGraph, createWorkGraphHooks } from "../src/workgraph-bridge";
 
 function live(id: string | number, dir = String(id)) {
   return {
@@ -208,7 +208,6 @@ describe("onPlanningComplete", () => {
       runId,
       "plan only",
       mockSpawn,
-      undefined,
       { auto_execute: false },
     );
 
@@ -514,12 +513,16 @@ describe("source-backed execution", () => {
     const b = wg.create({ sourceId, title: "Task B" });
     wg.addDep(a.id, b.id);
 
+    // Persist the node→item mapping as snapshot() would in production
+    db.run("INSERT INTO run_node_items_current (run_id, node_id, work_item_id) VALUES (?, ?, ?)",
+      [runId, "node_ready", a.id]);
+
     await startExecution(
       db,
       runId,
       "Execute ready work",
       async () => live(1, "node_ready"),
-      new Map([["node_ready", a.id]]),
+      { hooks: createWorkGraphHooks(db) },
     );
 
     const state = getOrchestration(runId)!;

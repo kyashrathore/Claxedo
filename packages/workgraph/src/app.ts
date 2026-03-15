@@ -4,17 +4,13 @@ import { z } from "zod";
 import { ulid } from "ulid";
 import type { EventEnvelope } from "./orchestrator/events";
 import { eventsRouter } from "./routes/events";
-import { scratchpadRouter } from "./routes/scratchpad";
-import { planningRouter } from "./routes/planning";
-import { lifecycleRouter } from "./routes/lifecycle";
-import { hydrationRouter } from "./routes/hydration";
-import { repairRouter } from "./routes/repair";
 import { mcpRouter } from "./routes/mcp";
 import { workRouter } from "./routes/work";
 import { graphRouter } from "./routes/graph";
+import { traceRouter } from "./routes/trace";
 import { triggersRouter } from "./routes/triggers";
 import { initTriggersTable } from "./triggers/store";
-import { initWorkGraph } from "./orchestrator/workgraph-bridge";
+import { initWorkGraph, reconcileOnStartup } from "./workgraph-bridge";
 import { generateHash, insertEvent, getNextSeq } from "./db/helpers";
 import type { ExecutionAdapter } from "./execution";
 import type { ProviderAuthResolver, ProviderFactory } from "./providers";
@@ -169,6 +165,21 @@ export function initializeDb(db: any) {
   `);
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS trace_events (
+      id          TEXT PRIMARY KEY,
+      event_type  TEXT NOT NULL,
+      timestamp   TEXT NOT NULL,
+      run_id      TEXT NOT NULL,
+      node_id     TEXT,
+      payload_json TEXT NOT NULL DEFAULT '{}'
+    );
+  `);
+
+  db.run(`
+    CREATE INDEX IF NOT EXISTS trace_events_run_id ON trace_events (run_id);
+  `);
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS run_blockers_current (
       run_id TEXT NOT NULL,
       work_item_id TEXT NOT NULL,
@@ -245,8 +256,11 @@ export function createApp(
     initializeDb(db);
   }
 
-  // Initialize WorkGraph singleton
+  // Initialize WorkGraph singleton and reconcile state after any crash
   initWorkGraph(db.filename);
+  reconcileOnStartup(db).catch((err) => {
+    console.error("[workgraph] reconcileOnStartup failed:", err)
+  });
 
   const app = new Hono();
 
@@ -646,14 +660,10 @@ export function createApp(
 
   // Mount sub-routers
   app.route("/", eventsRouter(db));
-  app.route("/", scratchpadRouter());
-  app.route("/", planningRouter());
-  app.route("/", lifecycleRouter(db));
-  app.route("/", hydrationRouter(db));
-  app.route("/", repairRouter(db));
   app.route("/", graphRouter(db, opts?.execution, opts?.providers, opts?.auth, opts?.repos));
   app.route("/", mcpRouter(db, opts?.execution));
   app.route("/", workRouter());
+  app.route("/", traceRouter(db));
 
   return app;
 }

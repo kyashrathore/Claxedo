@@ -73,6 +73,31 @@ export interface ParallelismTracker {
 }
 
 /**
+ * Lifecycle hooks injected into the orchestrator by external integrations.
+ * The orchestrator calls these at well-defined points; it never imports the
+ * integration layer directly.
+ */
+export interface OrchestratorHooks {
+  /** Called after planning completes. Bridge can read the plan from DB and build its own mappings. */
+  onPlanSynced?(db: any, runId: string, sourceId: string): void;
+  /** Called just before a task agent is spawned for a node. */
+  onNodeActive?(runId: string, nodeId: string): void;
+  /** Called when a node finishes successfully. */
+  onNodeCompleted?(runId: string, nodeId: string): Promise<void>;
+  /** Called when a node exhausts all retries and is marked failed. */
+  onNodeFailed?(runId: string, nodeId: string): void;
+  /** Called when the entire run reaches a terminal completed state. */
+  onRunCompleted?(runId: string): Promise<void>;
+  /** Called when the run is cancelled. */
+  onRunCancelled?(runId: string): void;
+  /**
+   * Called to determine whether a source still has incomplete work items.
+   * Return true if work remains (run should be marked "planned" not "completed").
+   */
+  sourceHasWork?(sourceId: string): boolean;
+}
+
+/**
  * In-memory state for an active orchestration run.
  */
 export interface OrchestratorRunState {
@@ -86,10 +111,8 @@ export interface OrchestratorRunState {
   created_at: string;
   /** Aggregated final result when run completes */
   result: string | null;
-  /** Optional WorkGraph item linked to this run */
-  work_item_id?: string;
-  /** Maps node_id -> WorkGraph item ID for per-node items created during planning */
-  node_work_items: Map<string, string>;
+  /** Lifecycle hooks registered by the caller (e.g. workgraph-bridge). */
+  hooks?: OrchestratorHooks;
   /** Parallelism tracking for metrics; initialized when execution starts */
   parallelism?: ParallelismTracker;
 }

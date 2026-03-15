@@ -4,7 +4,7 @@ import { generateHash, getNextSeq, insertEvent } from "../src/db/helpers"
 import { createApp, initializeDb } from "../src/app"
 import type { WorkGraph } from "../src/model/workgraph"
 import { onNodeStatusUpdate, onSessionStopped } from "../src/orchestrator/executor"
-import { getWorkGraph, resetWorkGraph } from "../src/orchestrator/workgraph-bridge"
+import { getWorkGraph, resetWorkGraph } from "../src/workgraph-bridge"
 import { ulid } from "ulid"
 
 const repo = {

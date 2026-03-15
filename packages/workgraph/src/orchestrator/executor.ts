@@ -1,8 +1,9 @@
 import { ulid } from "ulid";
 import type { EventEnvelope } from "./events";
-import type { OrchestratorRunState, NodeAgentHistory, RunPhase, ParallelismTracker } from "./types";
+import type { OrchestratorRunState, OrchestratorHooks, NodeAgentHistory, RunPhase, ParallelismTracker } from "./types";
 import { generateHash, insertEvent, getNextSeq } from "../db/helpers";
 import type { OrchestratorMetadata } from "./types-ui";
+import { createTraceEvent, appendTraceEvent } from "./trace";
 
 // ---------------------------------------------------------------------------
 // RunMetrics — computed at run completion, stored in runs_current.metrics_json
@@ -95,17 +96,6 @@ export function getRunMetrics(db: any, runId: string): RunMetrics | null {
     return null;
   }
 }
-import {
-  onNodeCompleted as wgOnNodeCompleted,
-  onRunCompleted,
-  unlinkRun,
-  linkRun,
-  syncSourcePlan,
-  markNodeActive,
-  markNodeDone,
-  markNodeOpen,
-  getWorkGraph,
-} from "./workgraph-bridge";
 
 const MAX_RETRIES = 2;
 const tool = {
@@ -417,13 +407,10 @@ function updateSource(
   db.run(`UPDATE sources_current SET ${sets.join(", ")} WHERE source_id = ?`, vals)
 }
 
-function sourceStatus(sourceId: string | null, status: "completed" | "failed") {
-  if (!sourceId) return status
-  if (status === "failed") return status
-  const left = getWorkGraph()
-    .getBySource(sourceId)
-    .some((item) => item.status !== "done")
-  return left ? "planned" : "completed"
+function sourceStatus(sourceId: string | null, status: "completed" | "failed", hooks?: OrchestratorHooks) {
+  if (!sourceId || status === "failed") return status
+  if (hooks?.sourceHasWork) return hooks.sourceHasWork(sourceId) ? "planned" : "completed"
+  return status
 }
 
 function attemptCreate(
@@ -513,9 +500,9 @@ export async function startOrchestration(
   runId: string,
   goal: string,
   spawnAgentFn: SpawnAgentFn,
-  workItemId?: string,
   opts?: {
     auto_execute?: boolean;
+    hooks?: OrchestratorHooks;
   },
 ): Promise<OrchestratorRunState> {
   const state: OrchestratorRunState = {
@@ -527,18 +514,13 @@ export async function startOrchestration(
     error: null,
     created_at: new Date().toISOString(),
     result: null,
-    work_item_id: workItemId,
-    node_work_items: new Map(),
+    hooks: opts?.hooks,
   };
 
   orchestrations.set(runId, state);
   updateRunStatus(db, runId, "planning");
   emitRunEvent(db, runId, "planning_started", { auto_execute: state.auto_execute });
-
-  // Link run to WorkGraph item if provided
-  if (workItemId) {
-    linkRun(runId, workItemId);
-  }
+  traceEvent(db, { event_type: "run_created", run_id: runId, payload: { goal, auto_execute: state.auto_execute } });
 
   // Spawn the planner agent (fire and forget)
   try {
@@ -557,6 +539,7 @@ export async function startOrchestration(
       ],
     )
     console.log(`[executor] ${runId} planner agent spawned: ${plannerAgent.id}`);
+    traceEvent(db, { event_type: "planning_start", run_id: runId, payload: { planner_agent_id: plannerAgent.id } });
   } catch (err) {
     failPlanning(db, runId, `Failed to spawn planner agent: ${(err as Error).message}`)
     console.error(`[executor] ${runId} failed to spawn planner:`, err);
@@ -593,13 +576,15 @@ export async function onPlanningComplete(
     return;
   }
 
+  traceEvent(db, { event_type: "planning_end", run_id: runId, payload: { summary } });
+
   if (!state.auto_execute) {
     state.phase = "planned";
     state.result = summary;
     updateRunStatus(db, runId, "planned");
     const sourceId = runSource(db, runId)
     if (sourceId) {
-      state.node_work_items = syncSourcePlan(db, runId, sourceId)
+      state.hooks?.onPlanSynced?.(db, runId, sourceId)
       updateSource(db, sourceId, "planned", { error: null, planRunId: runId })
     }
     return;
@@ -648,7 +633,7 @@ async function beginExecution(
     state.phase = "completed";
     state.result = summary;
     updateRunStatus(db, runId, "completed");
-    onRunCompleted(runId).catch((err) =>
+    state.hooks?.onRunCompleted?.(runId).catch((err) =>
       console.warn("[executor] workgraph onRunCompleted error:", err)
     );
     return;
@@ -686,7 +671,7 @@ export async function startExecution(
   runId: string,
   goal: string,
   spawnAgentFn: SpawnAgentFn,
-  map?: Map<string, string>,
+  opts?: { hooks?: OrchestratorHooks },
 ): Promise<OrchestratorRunState> {
   const state: OrchestratorRunState = {
     run_id: runId,
@@ -697,10 +682,11 @@ export async function startExecution(
     error: null,
     created_at: new Date().toISOString(),
     result: null,
-    node_work_items: map ?? new Map(),
+    hooks: opts?.hooks,
   }
 
   orchestrations.set(runId, state)
+  traceEvent(db, { event_type: "run_created", run_id: runId, payload: { goal } })
   await beginExecution(db, state, goal, spawnAgentFn)
   return state
 }
@@ -755,9 +741,9 @@ export async function onNodeStatusUpdate(
     console.log(`[executor] ${runId} node ${nodeId} completed`);
     attemptFinish(db, runId, nodeId, "completed");
     updateNodeStatus(db, runId, nodeId, "completed");
-    wgOnNodeCompleted(runId);
-    markNodeDone(state.node_work_items, nodeId).catch((err) =>
-      console.warn("[executor] workgraph markNodeDone error:", err),
+    traceEvent(db, { event_type: "node_completed", run_id: runId, node_id: nodeId, payload: {} });
+    state.hooks?.onNodeCompleted?.(runId, nodeId).catch((err) =>
+      console.warn("[executor] workgraph onNodeCompleted error:", err),
     );
   } else {
     // Failed — check retry count
@@ -778,6 +764,7 @@ export async function onNodeStatusUpdate(
         [nodeId],
       );
       console.log(`[executor] ${runId} node ${nodeId} retrying (attempt ${retryCount + 1})`);
+      traceEvent(db, { event_type: "node_retried", run_id: runId, node_id: nodeId, payload: { attempt: retryCount + 1, error: errorMessage ?? null } });
       await spawnTaskAgent(db, state, nodeId, spawnAgentFn);
       return;
     }
@@ -786,7 +773,8 @@ export async function onNodeStatusUpdate(
     console.error(`[executor] ${runId} node ${nodeId} max retries exhausted — marking failed`);
     attemptFinish(db, runId, nodeId, "failed");
     updateNodeStatus(db, runId, nodeId, "failed");
-    markNodeOpen(state.node_work_items, nodeId);
+    traceEvent(db, { event_type: "node_failed", run_id: runId, node_id: nodeId, payload: { retries: retryCount, error: errorMessage ?? null } });
+    state.hooks?.onNodeFailed?.(runId, nodeId);
 
     // Cascade failure to dependent nodes
     cascadeFailure(db, runId, nodeId);
@@ -840,10 +828,12 @@ export async function reconcileExecution(
   db: any,
   runId: string,
   spawnAgentFn: SpawnAgentFn,
+  hooks?: OrchestratorHooks,
 ): Promise<void> {
   const state = ensureState(db, runId)
   if (!state) return
   if (state.phase === "cancelled" || state.phase === "completed" || state.phase === "failed") return
+  if (hooks && !state.hooks) state.hooks = hooks
   state.phase = "executing"
   await checkRunCompletion(db, runId, state, spawnAgentFn)
 }
@@ -996,7 +986,7 @@ ${nodePrompt}`;
 
   // Mark node as active before spawning
   updateNodeStatus(db, runId, nodeId, "active");
-  markNodeActive(state.node_work_items, nodeId);
+  state.hooks?.onNodeActive?.(runId, nodeId);
   if (state.parallelism) sampleParallelism(state.parallelism, +1);
 
   try {
@@ -1055,6 +1045,7 @@ ${nodePrompt}`;
     });
     state.node_agents.set(nodeId, history);
 
+    traceEvent(db, { event_type: "node_started", run_id: runId, node_id: nodeId, payload: { agent_id: agent.id, role, kind, title } });
     console.log(`[executor] ${runId} agent ${agent.id} spawned for node ${nodeId}`);
   } catch (err) {
     console.error(`[executor] ${runId} failed to spawn agent for node ${nodeId}:`, err);
@@ -1127,6 +1118,7 @@ async function checkRunCompletion(
       state.error = "All tasks failed";
       finalizeMetrics(db, runId, state);
       updateRunStatus(db, runId, "failed");
+      traceEvent(db, { event_type: "run_failed", run_id: runId, payload: { failed_count: failed.length, error: state.error } });
       updateSource(db, runSource(db, runId), "failed", { error: state.error, lastRunId: runId });
     } else {
       if (failed.length > 0) {
@@ -1135,12 +1127,13 @@ async function checkRunCompletion(
       state.phase = "completed";
       finalizeMetrics(db, runId, state);
       updateRunStatus(db, runId, "completed");
+      traceEvent(db, { event_type: "run_completed", run_id: runId, payload: { completed_count: completed.length, failed_count: failed.length } });
       const sourceId = runSource(db, runId);
-      updateSource(db, sourceId, sourceStatus(sourceId, "completed"), {
+      updateSource(db, sourceId, sourceStatus(sourceId, "completed", state.hooks), {
         error: null,
         lastRunId: runId,
       });
-      onRunCompleted(runId).catch((err) =>
+      state.hooks?.onRunCompleted?.(runId).catch((err) =>
         console.warn("[executor] workgraph onRunCompleted error:", err)
       );
 
@@ -1224,10 +1217,10 @@ export function cancelOrchestration(
     }
   }
 
-  unlinkRun(state.run_id);
   state.phase = "cancelled";
   updateRunStatus(db, state.run_id, "cancelled");
   emitRunEvent(db, state.run_id, "run_cancelled", {});
+  state.hooks?.onRunCancelled?.(state.run_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -1263,6 +1256,17 @@ function emitRunEvent(
     created_at: new Date().toISOString(),
   };
   insertEvent(db, event);
+}
+
+function traceEvent(
+  db: any,
+  input: Parameters<typeof createTraceEvent>[0],
+): void {
+  try {
+    appendTraceEvent(db, createTraceEvent(input))
+  } catch {
+    // trace is best-effort; never crash the executor
+  }
 }
 
 function updateNodeStatus(
@@ -1302,10 +1306,6 @@ function ensureState(db: any, runId: string) {
     .query("SELECT status, created_at FROM runs_current WHERE run_id = ?")
     .get(runId) as { status: RunPhase; created_at: string | null } | null
   if (!row) return
-  const map = new Map(
-    (db.query("SELECT node_id, work_item_id FROM run_node_items_current WHERE run_id = ?").all(runId) as Array<{ node_id: string; work_item_id: string }>)
-      .map((item) => [item.node_id, item.work_item_id] as const),
-  )
   const state: OrchestratorRunState = {
     run_id: runId,
     phase: row.status,
@@ -1315,7 +1315,6 @@ function ensureState(db: any, runId: string) {
     error: null,
     created_at: row.created_at ?? new Date().toISOString(),
     result: null,
-    node_work_items: map,
   }
   orchestrations.set(runId, state)
   return state

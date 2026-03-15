@@ -5,7 +5,7 @@ import { ulid } from "ulid"
 import type { WorkItem } from "../model/types"
 import { cancelNodeExecution, reconcileExecution, startExecution, startOrchestration } from "../orchestrator/executor"
 import type { ProviderName, ProviderPreview, ProviderQueryMode } from "../orchestrator/events/connector"
-import { getWorkGraph } from "../orchestrator/workgraph-bridge"
+import { getWorkGraph, createWorkGraphHooks } from "../workgraph-bridge"
 import { createRunInDb } from "../db/run"
 import { dir } from "../dir"
 import type { ExecutionAdapter } from "../execution"
@@ -798,7 +798,7 @@ export function graphRouter(
     }
     const next = wg.archive(id, reason)
     for (const runId of runs) {
-      await reconcileExecution(db, runId, launch(c, execution))
+      await reconcileExecution(db, runId, launch(c, execution), createWorkGraphHooks(db))
     }
     return c.json({ item: row(db, next) })
   }
@@ -1135,7 +1135,7 @@ export function graphRouter(
     }
     const next = wg.get(id)
     for (const runId of runs) {
-      await reconcileExecution(db, runId, launch(c, execution))
+      await reconcileExecution(db, runId, launch(c, execution), createWorkGraphHooks(db))
     }
     return c.json({ item: next ? row(db, next) : null })
   })
@@ -1236,8 +1236,7 @@ export function graphRouter(
       runId,
       slice.goal,
       spin,
-      undefined,
-      { auto_execute: false },
+      { auto_execute: false, hooks: createWorkGraphHooks(db) },
     ).catch((err) => {
       console.error(`[graph] plan error for ${slice.slice_id}:`, err)
     })
@@ -1351,7 +1350,7 @@ export function graphRouter(
         })
       }
       const spin = launch(c, execution, execDir)
-      startExecution(db, runId, goal, spin, map).catch((err) => {
+      startExecution(db, runId, goal, spin, { hooks: createWorkGraphHooks(db) }).catch((err) => {
         console.error(`[graph] execute error for ${runId}:`, err)
       })
       return c.json({

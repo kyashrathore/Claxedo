@@ -42,6 +42,8 @@ export interface Script {
   tokens?: number;
   /** Delay before completing, in ms. Default 0 */
   delayMs?: number;
+  /** If true, this script is removed after the first time it matches */
+  once?: boolean;
   /**
    * For planner scripts: nodes to create via create_node, plus an optional
    * depends_on chain between them (in listed order).
@@ -116,14 +118,16 @@ export class MockAgent {
       const agentId = nextAgentId();
       const agentDir = meta?.directory ?? `/tmp/mock/${agentId}`;
 
-      // Find matching script (first match wins)
-      const script = self.scripts.find((s) =>
+      // Find matching script (first match wins); remove it if once: true
+      const idx = self.scripts.findIndex((s) =>
         matchesScript(s, nodeId, {
           kind: meta?.kind,
           role: meta?.role,
           title: meta?.title,
         }),
       );
+      const script = idx >= 0 ? self.scripts[idx] : undefined;
+      if (script?.once) self.scripts.splice(idx, 1);
 
       // Schedule async execution (fire and forget, just like real agents)
       const delay = script?.delayMs ?? 0;

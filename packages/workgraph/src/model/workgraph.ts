@@ -26,6 +26,11 @@ import {
   getScratchpad as dbGetScratchpad,
   getSyncProjection,
   upsertSyncProjection,
+  insertRunLink,
+  deleteRunLink,
+  getRunLinkByRunId,
+  getRunLinkByItemId,
+  getAllRunLinks,
 } from "./db"
 import { replayEvents } from "./reducer"
 import { inferRepo } from "../repo"
@@ -598,6 +603,26 @@ export class WorkGraph {
 
   getPendingReview(): ScratchpadEntry[] {
     return getScratchpadsNeedingReview(this.db)
+  }
+
+  linkRun(runId: string, itemId: string): void {
+    insertRunLink(this.db, runId, itemId)
+  }
+
+  unlinkRun(runId: string): void {
+    deleteRunLink(this.db, runId)
+  }
+
+  getLinkedItemId(runId: string): string | undefined {
+    return getRunLinkByRunId(this.db, runId)
+  }
+
+  getLinkedRunId(itemId: string): string | undefined {
+    return getRunLinkByItemId(this.db, itemId)
+  }
+
+  getAllRunLinks(): Array<{ runId: string; itemId: string }> {
+    return getAllRunLinks(this.db)
   }
 
   close(): void {

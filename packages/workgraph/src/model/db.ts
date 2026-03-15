@@ -113,6 +113,13 @@ function boot(path?: string): Database {
     )
   `)
 
+    db.exec(`
+    CREATE TABLE IF NOT EXISTS wg_run_links (
+      run_id  TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL
+    )
+  `)
+
     return db
   } catch (err) {
     try { db.close() } catch {}
@@ -307,6 +314,31 @@ export function getAllScratchpads(db: Database): ScratchpadEntry[] {
 export function getScratchpad(db: Database, id: string): ScratchpadEntry | undefined {
   const row = db.prepare(`SELECT * FROM wg_scratchpads WHERE id = ?`).get(id) as any
   return row ? rowToScratchpad(row) : undefined
+}
+
+// --- Run links CRUD ---
+
+export function insertRunLink(db: Database, runId: string, itemId: string): void {
+  db.prepare(`INSERT OR REPLACE INTO wg_run_links (run_id, item_id) VALUES (?, ?)`).run(runId, itemId)
+}
+
+export function deleteRunLink(db: Database, runId: string): void {
+  db.prepare(`DELETE FROM wg_run_links WHERE run_id = ?`).run(runId)
+}
+
+export function getRunLinkByRunId(db: Database, runId: string): string | undefined {
+  const row = db.prepare(`SELECT item_id FROM wg_run_links WHERE run_id = ?`).get(runId) as { item_id: string } | undefined
+  return row?.item_id
+}
+
+export function getRunLinkByItemId(db: Database, itemId: string): string | undefined {
+  const row = db.prepare(`SELECT run_id FROM wg_run_links WHERE item_id = ?`).get(itemId) as { run_id: string } | undefined
+  return row?.run_id
+}
+
+export function getAllRunLinks(db: Database): Array<{ runId: string; itemId: string }> {
+  const rows = db.prepare(`SELECT run_id, item_id FROM wg_run_links`).all() as Array<{ run_id: string; item_id: string }>
+  return rows.map((r) => ({ runId: r.run_id, itemId: r.item_id }))
 }
 
 // --- Row mappers ---

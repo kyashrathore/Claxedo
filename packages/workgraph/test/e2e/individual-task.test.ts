@@ -156,33 +156,6 @@ describe("individual-task: sequential chain", () => {
 });
 
 // ---------------------------------------------------------------------------
-// startExecution: node work item mapping
-// ---------------------------------------------------------------------------
-
-describe("individual-task: node_work_items mapping", () => {
-  let db: any;
-
-  beforeEach(() => {
-    db = makeDb();
-  });
-
-  it("respects provided node_work_items map", async () => {
-    const { runId, nodeIds } = makeRunWithNodes(db, "mapped", [
-      { title: "Mapped task", kind: "research", role: "developer" },
-    ]);
-
-    const itemMap = new Map([[nodeIds[0], "work_item_abc"]]);
-    const agent = new MockAgent(db);
-    agent.addScript({ match: {}, status: "completed" });
-
-    const state = await startExecution(db, runId, "mapped", agent.spawnFn(), itemMap);
-    expect(state.node_work_items.get(nodeIds[0])).toBe("work_item_abc");
-
-    await waitForPhase(db, runId, "completed");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // startExecution: parallel nodes
 // ---------------------------------------------------------------------------
 

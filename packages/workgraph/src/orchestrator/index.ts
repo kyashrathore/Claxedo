@@ -1,6 +1,7 @@
 export type {
   RunPhase,
   OrchestratorRunState,
+  OrchestratorHooks,
   TaskInfo,
 } from "./types";
 

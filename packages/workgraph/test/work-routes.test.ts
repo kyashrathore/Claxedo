@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test"
 import { Database } from "bun:sqlite"
 import { createApp, initializeDb } from "../src/app"
-import { resetWorkGraph } from "../src/orchestrator/workgraph-bridge"
+import { resetWorkGraph } from "../src/workgraph-bridge"
 import type { Hono } from "hono"
 
 function json(body: any) {

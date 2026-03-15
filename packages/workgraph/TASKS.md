@@ -1,6 +1,6 @@
 # WorkGraph: Pending Work
 
-Status snapshot as of 2026-03-10. 645 tests pass across 56 files.
+Status snapshot as of 2026-03-15. 707 tests pass across 61 files.
 
 ---
 
@@ -19,23 +19,13 @@ The following tasks from the original list have been completed:
 - **TASK-09** — Removed team_id, replaced DecomposedTask with TaskInfo, added role field
 - **TASK-10** — Deleted capability packs (execution, research, ux) and tests
 - **TASK-11** — Deleted renderers (html-brief, markdown) and tests
+- **TASK-12** — GitHub and Linear connectors wired into `providers.ts` + `graph.ts`. Jira connector deleted (not in `ProviderName` type, no auth mechanism defined).
 - **TASK-13** — Removed artifacts_current from schema
 - **TASK-16** — Created .dev-docs/@tests.md
 
 ---
 
 ## Remaining Work
-
-### TASK-12: Wire connectors into app or delete them
-
-**Status:** Connectors exist with passing tests but are not wired into the app.
-**Current state:** `src/connectors/github/`, `src/connectors/jira/`, `src/connectors/linear/` exist with working test suites. Hydration routes in `src/routes/hydration.ts` exist but don't instantiate connectors.
-
-**Decision needed:**
-- **(A) Keep and wire:** Register connectors in a service so hydration routes use them.
-- **(B) Delete:** Remove connector directories + tests. Hydration routes become stubs.
-
----
 
 ### TASK-14: Implement upstream scratchpad injection in executor
 

@@ -1,10 +1,9 @@
-import { WorkGraph } from "../model/workgraph"
-import type { WorkItem } from "../model/types"
+import { WorkGraph } from "./model/workgraph"
+import type { WorkItem } from "./model/types"
+import type { OrchestratorHooks } from "./orchestrator/types"
 
 let wg: WorkGraph | null = null
 let file: string | undefined
-const runToItem = new Map<string, string>()
-const itemToRun = new Map<string, string>()
 
 /**
  * Initialize the singleton WorkGraph instance.
@@ -15,8 +14,6 @@ export function initWorkGraph(dbPath?: string): WorkGraph {
   if (wg && file === next) return wg
   if (wg) {
     try { wg.close() } catch {}
-    runToItem.clear()
-    itemToRun.clear()
   }
   wg = new WorkGraph(next)
   file = next
@@ -44,12 +41,10 @@ export function resetWorkGraph(): void {
   }
   wg = null
   file = undefined
-  runToItem.clear()
-  itemToRun.clear()
 }
 
 /**
- * Link an orchestration run to a WorkItem.
+ * Link an orchestration run to a WorkItem (persisted in WorkGraph DB).
  */
 export function linkRun(runId: string, itemId: string): void {
   const g = getWorkGraph()
@@ -58,26 +53,21 @@ export function linkRun(runId: string, itemId: string): void {
     console.warn(`[workgraph-bridge] linkRun: item ${itemId} not found, skipping`)
     return
   }
-  runToItem.set(runId, itemId)
-  itemToRun.set(itemId, runId)
+  g.linkRun(runId, itemId)
 }
 
 /**
  * Unlink an orchestration run from its WorkItem.
  */
 export function unlinkRun(runId: string): void {
-  const itemId = runToItem.get(runId)
-  if (itemId) {
-    itemToRun.delete(itemId)
-  }
-  runToItem.delete(runId)
+  getWorkGraph().unlinkRun(runId)
 }
 
 /**
  * Get the WorkItem linked to a run, if any.
  */
 export function getItemForRun(runId: string): WorkItem | undefined {
-  const itemId = runToItem.get(runId)
+  const itemId = getWorkGraph().getLinkedItemId(runId)
   if (!itemId) return undefined
   return getWorkGraph().get(itemId)
 }
@@ -87,13 +77,11 @@ export function getItemForRun(runId: string): WorkItem | undefined {
  * Transitions the linked item from open → in_progress.
  */
 export function onNodeCompleted(runId: string): void {
-  const itemId = runToItem.get(runId)
-  if (!itemId) return
-
   const g = getWorkGraph()
+  const itemId = g.getLinkedItemId(runId)
+  if (!itemId) return
   const item = g.get(itemId)
   if (!item) return
-
   if (item.status === "open") {
     g.update(itemId, { status: "in_progress" })
   }
@@ -104,17 +92,13 @@ export function onNodeCompleted(runId: string): void {
  * Marks the linked item as done (which may unblock downstream items).
  */
 export async function onRunCompleted(runId: string): Promise<void> {
-  const itemId = runToItem.get(runId)
-  if (!itemId) return
-
   const g = getWorkGraph()
+  const itemId = g.getLinkedItemId(runId)
+  if (!itemId) return
   const item = g.get(itemId)
   if (!item) return
-
-  // complete() sets status to "done" and handles downstream notifications
   await g.complete(itemId)
-  // Clean up the link
-  unlinkRun(runId)
+  g.unlinkRun(runId)
 }
 
 /**
@@ -125,7 +109,12 @@ export function onRunFailed(_runId: string): void {
   // intentional no-op — item stays open/in_progress for retry
 }
 
-export function syncSourcePlan(db: any, runId: string, sourceId: string): Map<string, string> {
+/**
+ * Sync WorkGraph items from a source plan.
+ * Also writes the nodeId→itemId mapping into run_node_items_current
+ * in the orchestrator DB so it survives process crashes.
+ */
+export function syncSourcePlan(db: any, runId: string, sourceId: string): void {
   const g = getWorkGraph()
   g.removeBySource(sourceId)
   const src = db
@@ -172,6 +161,11 @@ export function syncSourcePlan(db: any, runId: string, sourceId: string): Map<st
       context: `source:${sourceId} node:${node.node_id}`,
     })
     map.set(node.node_id, item.id)
+    // Persist the nodeId→itemId mapping in the orchestrator DB
+    db.run(
+      "INSERT OR IGNORE INTO run_node_items_current (run_id, node_id, work_item_id) VALUES (?, ?, ?)",
+      [runId, node.node_id, item.id],
+    )
   }
 
   const edges = db
@@ -196,96 +190,6 @@ export function syncSourcePlan(db: any, runId: string, sourceId: string): Map<st
   for (const id of missions) {
     g.ensureSynthesis(id)
   }
-  for (const id of missions) {
-    g.ensureSynthesis(id)
-  }
-
-  return map
-}
-
-export function markNodeActive(map: Map<string, string>, nodeId: string): void {
-  const itemId = map.get(nodeId)
-  if (!itemId) return
-  const g = getWorkGraph()
-  const item = g.get(itemId)
-  if (!item) return
-  if (item.status === "done") return
-  g.update(itemId, { status: "in_progress" })
-}
-
-export async function markNodeDone(map: Map<string, string>, nodeId: string): Promise<void> {
-  const itemId = map.get(nodeId)
-  if (!itemId) return
-  const g = getWorkGraph()
-  const item = g.get(itemId)
-  if (!item) return
-  await g.complete(itemId)
-}
-
-export function markNodeOpen(map: Map<string, string>, nodeId: string): void {
-  const itemId = map.get(nodeId)
-  if (!itemId) return
-  const g = getWorkGraph()
-  const item = g.get(itemId)
-  if (!item) return
-  if (item.status === "done") return
-  g.update(itemId, { status: "open" })
-}
-
-/**
- * Create WorkGraph items from a decomposition plan and wire up dependencies.
- * Returns a Map of node_id → WorkGraph item ID.
- *
- * @param plan - The decomposed plan with tasks and dependencies
- * @param taskNodeMap - Maps planner task id → DB node_id
- * @param runId - The orchestration run ID (stored in item context)
- */
-export function createItemsFromPlan(
-  plan: { tasks: Array<{ id: string; title: string; prompt: string; kind: string; depends_on: string[] }> },
-  taskNodeMap: Map<string, string>,
-  runId: string,
-): Map<string, string> {
-  const g = getWorkGraph()
-  const nodeToWorkItem = new Map<string, string>()
-
-  // Create WorkGraph items for each task
-  for (const task of plan.tasks) {
-    const nodeId = taskNodeMap.get(task.id)
-    if (!nodeId) continue
-
-    const item = g.create({
-      title: task.title,
-      description: task.prompt,
-      nodeType: "task",
-      labels: [task.kind],
-      context: `run:${runId} node:${nodeId}`,
-    })
-
-    nodeToWorkItem.set(nodeId, item.id)
-  }
-
-  // Add WorkGraph dependencies between items
-  for (const task of plan.tasks) {
-    const targetNodeId = taskNodeMap.get(task.id)
-    if (!targetNodeId) continue
-    const blockedItemId = nodeToWorkItem.get(targetNodeId)
-    if (!blockedItemId) continue
-
-    for (const depTaskId of task.depends_on) {
-      const sourceNodeId = taskNodeMap.get(depTaskId)
-      if (!sourceNodeId) continue
-      const blockingItemId = nodeToWorkItem.get(sourceNodeId)
-      if (!blockingItemId) continue
-
-      try {
-        g.addDep(blockingItemId, blockedItemId)
-      } catch {
-        // skip if cycle or items don't exist
-      }
-    }
-  }
-
-  return nodeToWorkItem
 }
 
 /**
@@ -294,5 +198,111 @@ export function createItemsFromPlan(
 export function getReadyWork(): WorkItem[] {
   const g = getWorkGraph()
   const unblocked = g.getUnblocked()
-  return unblocked.filter((item) => !itemToRun.has(item.id))
+  return unblocked.filter((item) => !g.getLinkedRunId(item.id))
+}
+
+/**
+ * Resolve the WorkGraph item ID for a given orchestrator nodeId.
+ * Queries run_node_items_current in the orchestrator DB.
+ */
+function resolveNodeItemId(orchDb: any, runId: string, nodeId: string): string | undefined {
+  const row = orchDb
+    .query("SELECT work_item_id FROM run_node_items_current WHERE run_id = ? AND node_id = ?")
+    .get(runId, nodeId) as { work_item_id: string } | undefined
+  return row?.work_item_id
+}
+
+/**
+ * Create an OrchestratorHooks implementation that keeps WorkGraph in sync
+ * with orchestration lifecycle events. Stateless: all lookups go to the DB.
+ *
+ * @param orchDb - The orchestrator SQLite database instance.
+ */
+export function createWorkGraphHooks(orchDb: any): OrchestratorHooks {
+  return {
+    onPlanSynced(db, runId, sourceId) {
+      syncSourcePlan(db, runId, sourceId)
+    },
+
+    onNodeActive(runId, nodeId) {
+      const itemId = resolveNodeItemId(orchDb, runId, nodeId)
+      if (!itemId) return
+      const g = getWorkGraph()
+      const item = g.get(itemId)
+      if (!item || item.status === "done") return
+      g.update(itemId, { status: "in_progress" })
+    },
+
+    async onNodeCompleted(runId, nodeId) {
+      onNodeCompleted(runId)
+      const itemId = resolveNodeItemId(orchDb, runId, nodeId)
+      if (!itemId) return
+      const g = getWorkGraph()
+      const item = g.get(itemId)
+      if (item) await g.complete(itemId)
+    },
+
+    onNodeFailed(runId, nodeId) {
+      const itemId = resolveNodeItemId(orchDb, runId, nodeId)
+      if (!itemId) return
+      const g = getWorkGraph()
+      const item = g.get(itemId)
+      if (!item || item.status === "done") return
+      g.update(itemId, { status: "open" })
+    },
+
+    async onRunCompleted(runId) {
+      await onRunCompleted(runId)
+    },
+
+    onRunCancelled(runId) {
+      unlinkRun(runId)
+    },
+
+    sourceHasWork(sourceId) {
+      return getWorkGraph().getBySource(sourceId).some((item) => item.status !== "done")
+    },
+  }
+}
+
+/**
+ * After a crash, reconcile WorkGraph item statuses against the orchestrator DB.
+ * Call once at startup before serving any requests.
+ *
+ * - Completed/failed/cancelled runs → mark linked WorkGraph items done or reset to open
+ * - Items stuck in_progress with no active run link → reset to open
+ */
+export async function reconcileOnStartup(orchDb: any): Promise<void> {
+  const g = getWorkGraph()
+  const links = g.getAllRunLinks()
+
+  for (const { runId, itemId } of links) {
+    const run = orchDb
+      .query("SELECT status FROM runs_current WHERE run_id = ?")
+      .get(runId) as { status: string } | undefined
+
+    if (!run) {
+      g.unlinkRun(runId)
+      continue
+    }
+
+    if (run.status === "completed") {
+      const item = g.get(itemId)
+      if (item && item.status !== "done") await g.complete(itemId)
+      g.unlinkRun(runId)
+    } else if (run.status === "failed" || run.status === "cancelled") {
+      const item = g.get(itemId)
+      if (item && item.status === "in_progress") g.update(itemId, { status: "open" })
+      g.unlinkRun(runId)
+    }
+    // Non-terminal runs (planning/executing/planned/blocked): leave the link in place
+  }
+
+  // Reset any item stuck in_progress with no active run link
+  for (const item of g.getAll()) {
+    if (item.status !== "in_progress") continue
+    if (!g.getLinkedRunId(item.id)) {
+      g.update(item.id, { status: "open" })
+    }
+  }
 }

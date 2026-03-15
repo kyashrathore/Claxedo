@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
-import { getWorkGraph, getReadyWork } from "../orchestrator/workgraph-bridge"
+import { getWorkGraph, getReadyWork } from "../workgraph-bridge"
 
 /**
  * Creates a Hono sub-router for WorkGraph CRUD + query endpoints.

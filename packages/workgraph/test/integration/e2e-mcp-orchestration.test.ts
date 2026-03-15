@@ -50,7 +50,8 @@ import {
   resetWorkGraph,
   linkRun,
   getItemForRun,
-} from "../../src/orchestrator/workgraph-bridge";
+  createWorkGraphHooks,
+} from "../../src/workgraph-bridge";
 import type { OrchestratorRunState } from "../../src/orchestrator/types";
 
 // ---------------------------------------------------------------------------
@@ -865,11 +866,12 @@ describe("E2E MCP Orchestration", () => {
       const parentItem = wg.create({ title: "Build feature X" });
       expect(parentItem.status).toBe("open");
 
-      // Start orchestration with work_item_id
+      // Link run to work item and start orchestration with hooks
+      linkRun(runId, parentItem.id);
       await startOrchestration(
         db, runId, "Build feature X",
         spawnFn,
-        parentItem.id,
+        { hooks: createWorkGraphHooks(db) },
       );
 
       // Verify link
@@ -901,10 +903,11 @@ describe("E2E MCP Orchestration", () => {
       const wg = getWorkGraph();
       const parentItem = wg.create({ title: "Risky feature" });
 
+      linkRun(runId, parentItem.id);
       await startOrchestration(
         db, runId, "Risky feature",
         spawnFn,
-        parentItem.id,
+        { hooks: createWorkGraphHooks(db) },
       );
 
       const nodes = await buildGraph(db, runId, [
