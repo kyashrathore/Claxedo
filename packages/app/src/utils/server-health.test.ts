@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { checkServerHealth } from "./server-health"
 
+const server = { url: "http://localhost:4096" }
+
 describe("checkServerHealth", () => {
   test("returns healthy response with version", async () => {
     const fetch = (async () =>
@@ -9,7 +11,7 @@ describe("checkServerHealth", () => {
         headers: { "content-type": "application/json" },
       })) as unknown as typeof globalThis.fetch
 
-    const result = await checkServerHealth("http://localhost:4096", fetch)
+    const result = await checkServerHealth(server, fetch)
 
     expect(result).toEqual({ healthy: true, version: "1.2.3" })
   })
@@ -19,7 +21,7 @@ describe("checkServerHealth", () => {
       throw new Error("network")
     }) as unknown as typeof globalThis.fetch
 
-    const result = await checkServerHealth("http://localhost:4096", fetch)
+    const result = await checkServerHealth(server, fetch)
 
     expect(result).toEqual({ healthy: false })
   })
@@ -35,7 +37,7 @@ describe("checkServerHealth", () => {
     }) as unknown as typeof globalThis.fetch
 
     const abort = new AbortController()
-    await checkServerHealth("http://localhost:4096", fetch, { signal: abort.signal })
+    await checkServerHealth(server, fetch, { signal: abort.signal })
 
     expect(signal).toBe(abort.signal)
   })

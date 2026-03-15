@@ -253,7 +253,7 @@ export function DialogWorkspaceList() {
             ? `Delete ${workspace.id}? Press ${keybind.print("session_delete")} again`
             : workspace.id,
         value: workspace.id,
-        category: workspace.type,
+        category: workspace.config.type,
         description: workspace.branch ? `Branch ${workspace.branch}` : undefined,
         footer:
           count === undefined

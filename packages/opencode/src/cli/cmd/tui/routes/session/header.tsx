@@ -76,7 +76,7 @@ export function Header() {
     if (!id) return "Workspace local"
     const info = sync.workspace.get(id)
     if (!info) return `Workspace ${id}`
-    return `Workspace ${id} (${info.type})`
+    return `Workspace ${id} (${info.config.type})`
   })
 
   const { theme } = useTheme()
