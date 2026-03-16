@@ -97,17 +97,17 @@ class SqliteConnectionStore implements IConnectionStore {
         "UPDATE provider_connections_current SET name = ?, token = ?, status = ?, error = ?, updated_at = ? WHERE connection_id = ?",
         [conn.name, conn.token, conn.status, conn.error, conn.updated_at, conn.connection_id],
       )
-      // Remove other connections for the same provider (one-per-provider enforcement)
-      this.db.run(
-        "DELETE FROM provider_connections_current WHERE provider = ? AND connection_id != ?",
-        [conn.provider, conn.connection_id],
-      )
     } else {
       this.db.run(
         "INSERT INTO provider_connections_current (connection_id, provider, name, token, status, error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [conn.connection_id, conn.provider, conn.name, conn.token, conn.status, conn.error, conn.created_at, conn.updated_at],
       )
     }
+    // Enforce one-per-provider: remove any other connections for the same provider
+    this.db.run(
+      "DELETE FROM provider_connections_current WHERE provider = ? AND connection_id != ?",
+      [conn.provider, conn.connection_id],
+    )
     return this.get(conn.connection_id)!
   }
 

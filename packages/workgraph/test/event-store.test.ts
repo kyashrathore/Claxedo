@@ -144,4 +144,23 @@ describe("IEventStore (openSqliteEventStore)", () => {
     const s2 = await store.replayEvents("run_1", runReducer, initial);
     expect(JSON.stringify(s1)).toBe(JSON.stringify(s2));
   });
+
+  it("getAllEvents returns all events across all runs ordered by stream_seq", async () => {
+    await store.append(partial({ id: "a1", run_id: "run_A", stream_id: "run_A", op_id: "opA1" }));
+    await store.append(partial({ id: "b1", run_id: "run_B", stream_id: "run_B", op_id: "opB1" }));
+    await store.append(partial({ id: "a2", run_id: "run_A", stream_id: "run_A", op_id: "opA2" }));
+
+    const all = await store.getAllEvents();
+    expect(all.length).toBe(3);
+    // Results are ordered by global stream_seq (insertion order)
+    const ids = all.map((e) => e.id);
+    expect(ids).toContain("a1");
+    expect(ids).toContain("b1");
+    expect(ids).toContain("a2");
+  });
+
+  it("getAllEvents returns empty array when no events exist", async () => {
+    const all = await store.getAllEvents();
+    expect(all).toEqual([]);
+  });
 });

@@ -12,224 +12,17 @@ import { mcpRouter } from "./routes/mcp";
 import { workRouter } from "./routes/work";
 import { graphRouter } from "./routes/graph";
 import { triggersRouter } from "./routes/triggers";
-import { initTriggersTable } from "./triggers/store";
 import { initWorkGraph } from "./orchestrator/workgraph-bridge";
 import type { ExecutionAdapter } from "./execution";
 import type { ProviderAuthResolver, ProviderFactory } from "./providers";
 import type { RepoBindingResolver } from "./repo";
-import { getRunMetrics } from "./orchestrator/executor";
 import { openSqliteEventStore } from "./orchestrator/core/services/event-store-sqlite";
 import { openSqliteSliceStore } from "./sdk/slices";
 import { openSqliteConnectionStore } from "./sdk/connections";
+import { openSqliteRunStore } from "./sdk/runs";
+import { initializeDb } from "./db/schema";
 
-// ---------------------------------------------------------------------------
-// Schema initialization
-// ---------------------------------------------------------------------------
-
-/**
- * Initialize all tables needed by the API server.
- */
-export function initializeDb(db: any) {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS events (
-      id TEXT PRIMARY KEY,
-      run_id TEXT NOT NULL,
-      stream_id TEXT NOT NULL,
-      stream_seq INTEGER NOT NULL,
-      logical_ts INTEGER NOT NULL,
-      schema_version INTEGER NOT NULL,
-      type TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      actor_type TEXT NOT NULL,
-      actor_id TEXT NOT NULL,
-      op_id TEXT NOT NULL UNIQUE,
-      prev_hash TEXT NOT NULL,
-      hash TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS runs_current (
-      run_id TEXT PRIMARY KEY,
-      goal TEXT NOT NULL,
-      status TEXT NOT NULL,
-      source_id TEXT,
-      runtime_type TEXT NOT NULL DEFAULT 'task',
-      runtime_type_reason TEXT,
-      created_at TEXT,
-      updated_at TEXT
-    );
-  `);
-  ensureColumn(db, "runs_current", "source_id", "ALTER TABLE runs_current ADD COLUMN source_id TEXT");
-  ensureColumn(db, "runs_current", "runtime_type", "ALTER TABLE runs_current ADD COLUMN runtime_type TEXT NOT NULL DEFAULT 'task'");
-  ensureColumn(db, "runs_current", "runtime_type_reason", "ALTER TABLE runs_current ADD COLUMN runtime_type_reason TEXT");
-  ensureColumn(db, "runs_current", "created_at", "ALTER TABLE runs_current ADD COLUMN created_at TEXT");
-  ensureColumn(db, "runs_current", "updated_at", "ALTER TABLE runs_current ADD COLUMN updated_at TEXT");
-  ensureColumn(db, "runs_current", "trigger_id", "ALTER TABLE runs_current ADD COLUMN trigger_id TEXT");
-  ensureColumn(db, "runs_current", "trigger_run_index", "ALTER TABLE runs_current ADD COLUMN trigger_run_index INTEGER");
-  ensureColumn(db, "runs_current", "metrics_json", "ALTER TABLE runs_current ADD COLUMN metrics_json TEXT");
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS run_sources_current (
-      run_id TEXT PRIMARY KEY,
-      kind TEXT NOT NULL,
-      title TEXT NOT NULL,
-      content TEXT NOT NULL,
-      source_path TEXT,
-      created_at TEXT NOT NULL
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS sources_current (
-      source_id TEXT PRIMARY KEY,
-      goal TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      title TEXT NOT NULL,
-      content TEXT NOT NULL,
-      source_path TEXT,
-      status TEXT NOT NULL,
-      plan_run_id TEXT,
-      last_run_id TEXT,
-      error TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-  `);
-  ensureColumn(db, "sources_current", "source_path", "ALTER TABLE sources_current ADD COLUMN source_path TEXT");
-  ensureColumn(db, "sources_current", "plan_run_id", "ALTER TABLE sources_current ADD COLUMN plan_run_id TEXT");
-  ensureColumn(db, "sources_current", "last_run_id", "ALTER TABLE sources_current ADD COLUMN last_run_id TEXT");
-  ensureColumn(db, "sources_current", "error", "ALTER TABLE sources_current ADD COLUMN error TEXT");
-  ensureColumn(db, "sources_current", "provider", "ALTER TABLE sources_current ADD COLUMN provider TEXT");
-  ensureColumn(db, "sources_current", "provider_connection_id", "ALTER TABLE sources_current ADD COLUMN provider_connection_id TEXT");
-  ensureColumn(db, "sources_current", "import_mode", "ALTER TABLE sources_current ADD COLUMN import_mode TEXT");
-  ensureColumn(db, "sources_current", "import_query", "ALTER TABLE sources_current ADD COLUMN import_query TEXT");
-  ensureColumn(db, "sources_current", "mission_item_id", "ALTER TABLE sources_current ADD COLUMN mission_item_id TEXT");
-  ensureColumn(db, "sources_current", "repo_ref", "ALTER TABLE sources_current ADD COLUMN repo_ref TEXT");
-  ensureColumn(db, "sources_current", "repo_label", "ALTER TABLE sources_current ADD COLUMN repo_label TEXT");
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS nodes_current (
-      node_id TEXT PRIMARY KEY,
-      run_id TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'developer',
-      kind TEXT NOT NULL,
-      title TEXT NOT NULL DEFAULT '',
-      node_type TEXT NOT NULL DEFAULT 'task',
-      parent_node_id TEXT,
-      status TEXT NOT NULL,
-      retry_count INTEGER NOT NULL,
-      runtime_type TEXT NOT NULL DEFAULT 'task',
-      runtime_type_reason TEXT
-    );
-  `);
-  ensureColumn(db, "nodes_current", "node_type", "ALTER TABLE nodes_current ADD COLUMN node_type TEXT NOT NULL DEFAULT 'task'");
-  ensureColumn(db, "nodes_current", "parent_node_id", "ALTER TABLE nodes_current ADD COLUMN parent_node_id TEXT");
-  ensureColumn(db, "nodes_current", "runtime_type", "ALTER TABLE nodes_current ADD COLUMN runtime_type TEXT NOT NULL DEFAULT 'task'");
-  ensureColumn(db, "nodes_current", "runtime_type_reason", "ALTER TABLE nodes_current ADD COLUMN runtime_type_reason TEXT");
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS dependency_edges_current (
-      id TEXT PRIMARY KEY,
-      run_id TEXT NOT NULL,
-      source_id TEXT NOT NULL,
-      target_id TEXT NOT NULL,
-      type TEXT NOT NULL
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS scratchpad_entries (
-      id TEXT PRIMARY KEY,
-      run_id TEXT NOT NULL,
-      node_id TEXT NOT NULL,
-      content TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      size_bytes INTEGER NOT NULL
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS run_exec_current (
-      run_id TEXT PRIMARY KEY,
-      runtime_type TEXT NOT NULL,
-      session_id TEXT,
-      pty_id TEXT,
-      directory TEXT,
-      updated_at TEXT NOT NULL
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS run_node_items_current (
-      run_id TEXT NOT NULL,
-      node_id TEXT NOT NULL,
-      work_item_id TEXT NOT NULL,
-      PRIMARY KEY (run_id, node_id, work_item_id)
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS run_blockers_current (
-      run_id TEXT NOT NULL,
-      work_item_id TEXT NOT NULL,
-      target_node_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      PRIMARY KEY (run_id, work_item_id, target_node_id)
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS attempts_current (
-      attempt_id TEXT PRIMARY KEY,
-      run_id TEXT NOT NULL,
-      node_id TEXT NOT NULL,
-      status TEXT NOT NULL,
-      runtime_type TEXT NOT NULL,
-      directory TEXT,
-      worktree_path TEXT,
-      session_id TEXT,
-      pty_id TEXT,
-      started_at TEXT NOT NULL,
-      finished_at TEXT,
-      last_heartbeat_at TEXT NOT NULL
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS provider_connections_current (
-      connection_id TEXT PRIMARY KEY,
-      provider TEXT NOT NULL,
-      name TEXT NOT NULL,
-      token TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'unknown',
-      error TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-  `);
-
-  initTriggersTable(db);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS trace_events (
-      id TEXT PRIMARY KEY,
-      event_type TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      run_id TEXT NOT NULL,
-      node_id TEXT,
-      payload_json TEXT NOT NULL
-    );
-  `);
-}
-
-function ensureColumn(db: any, table: string, col: string, sql: string) {
-  const rows = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
-  if (rows.some((row) => row.name === col)) return
-  db.run(sql)
-}
+export { initializeDb } from "./db/schema";
 
 // ---------------------------------------------------------------------------
 // App factory
@@ -251,6 +44,7 @@ export function createApp(
   initWorkGraph(db.filename);
 
   const eventStore = openSqliteEventStore(db);
+  const runStore = openSqliteRunStore(db);
   const sliceStore = openSqliteSliceStore(db);
   const connStore = openSqliteConnectionStore(db);
   const healthStore = openSqliteRunHealthStore(db);
@@ -274,17 +68,34 @@ export function createApp(
       op_id: `op_${eventId}`,
       created_at: new Date().toISOString(),
     });
-    const now = new Date().toISOString();
-    db.run("INSERT INTO runs_current (run_id, goal, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [runId, goal, "active", now, now]);
-    return c.json({ run_id: runId, goal, status: "active" }, 201);
+    const run = runStore.createRun(runId, goal);
+    return c.json({ run_id: run.run_id, goal: run.goal, status: run.status }, 201);
   });
 
+  // --- GET /runs ---
+  app.get("/runs", (c) => c.json(runStore.listRuns()));
+
   // --- GET /runs/:run_id ---
-  app.get("/runs/:run_id", async (c) => {
+  app.get("/runs/:run_id", (c) => {
+    const run = runStore.getRun(c.req.param("run_id"));
+    if (!run) return c.json({ error: "Run not found" }, 404);
+    return c.json(run);
+  });
+
+  // --- GET /runs/:run_id/source ---
+  app.get("/runs/:run_id/source", (c) => {
     const runId = c.req.param("run_id");
-    const row = db.query("SELECT * FROM runs_current WHERE run_id = ?").get(runId) as any;
-    if (!row) return c.json({ error: "Run not found" }, 404);
-    return c.json(row);
+    if (!runStore.getRun(runId)) return c.json({ error: "Run not found" }, 404);
+    return c.json(runStore.getRunSource(runId));
+  });
+
+  // --- GET /runs/:run_id/metrics ---
+  app.get("/runs/:run_id/metrics", (c) => {
+    const runId = c.req.param("run_id");
+    if (!runStore.getRun(runId)) return c.json({ error: "Run not found" }, 404);
+    const metrics = runStore.getRunMetrics(runId);
+    if (!metrics) return c.json({ error: "Metrics not yet available for this run" }, 404);
+    return c.json(metrics);
   });
 
   // --- POST /runs/:run_id/nodes ---
@@ -308,8 +119,38 @@ export function createApp(
         op_id: `op_${eventId}`,
         created_at: new Date().toISOString(),
       });
-      db.run("INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)", [nodeId, runId, role, kind, title || "", "pending", 0]);
-      return c.json({ node_id: nodeId, run_id: runId, role, kind, title: title || "", status: "pending", retry_count: 0 }, 201);
+      const node = runStore.createNode(runId, nodeId, role, kind, title ?? "");
+      return c.json(node, 201);
+    },
+  );
+
+  // --- GET /runs/:run_id/nodes ---
+  app.get("/runs/:run_id/nodes", (c) => c.json(runStore.listNodes(c.req.param("run_id"))));
+
+  // --- PATCH /runs/:run_id/nodes/:node_id ---
+  app.patch(
+    "/runs/:run_id/nodes/:node_id",
+    zValidator("json", z.object({ status: z.string().min(1) })),
+    async (c) => {
+      const runId = c.req.param("run_id");
+      const nodeId = c.req.param("node_id");
+      const { status } = c.req.valid("json");
+      const node = runStore.updateNodeStatus(runId, nodeId, status);
+      if (!node) return c.json({ error: "Node not found" }, 404);
+      const eventId = `evt_${ulid()}`;
+      await eventStore.append({
+        id: eventId,
+        run_id: runId,
+        stream_id: runId,
+        schema_version: 1,
+        type: "node_status_changed",
+        payload_json: JSON.stringify({ node_id: nodeId, status }),
+        actor_type: "user",
+        actor_id: "api",
+        op_id: `op_${eventId}`,
+        created_at: new Date().toISOString(),
+      });
+      return c.json(node);
     },
   );
 
@@ -334,100 +175,16 @@ export function createApp(
         op_id: `op_${eventId}`,
         created_at: new Date().toISOString(),
       });
-      db.run("INSERT INTO dependency_edges_current (id, run_id, source_id, target_id, type) VALUES (?, ?, ?, ?, ?)", [edgeId, runId, source_id, target_id, type]);
-      return c.json({ id: edgeId, run_id: runId, source_id, target_id, type }, 201);
+      const edge = runStore.createEdge(runId, edgeId, source_id, target_id, type);
+      return c.json(edge, 201);
     },
   );
-
-  // --- GET /runs ---
-  app.get("/runs", async (c) => {
-    const rows = db.query(
-      `SELECT r.run_id, r.goal, r.status, r.created_at, r.updated_at,
-              s.kind AS source_kind, s.title AS source_title, LENGTH(s.content) AS source_size,
-              x.runtime_type, x.session_id, x.pty_id, x.directory
-       FROM runs_current r
-       LEFT JOIN run_sources_current s ON s.run_id = r.run_id
-       LEFT JOIN run_exec_current x ON x.run_id = r.run_id
-       ORDER BY r.rowid DESC`,
-    ).all();
-    return c.json(rows);
-  });
-
-  // --- GET /runs/:run_id/source ---
-  app.get("/runs/:run_id/source", async (c) => {
-    const runId = c.req.param("run_id");
-    const run = db.query("SELECT run_id FROM runs_current WHERE run_id = ?").get(runId) as any;
-    if (!run) return c.json({ error: "Run not found" }, 404);
-    const row = db.query("SELECT * FROM run_sources_current WHERE run_id = ?").get(runId) as any;
-    return c.json(row ?? null);
-  });
-
-  // --- GET /runs/:run_id/metrics ---
-  app.get("/runs/:run_id/metrics", async (c) => {
-    const runId = c.req.param("run_id");
-    const run = db.query("SELECT run_id FROM runs_current WHERE run_id = ?").get(runId) as any;
-    if (!run) return c.json({ error: "Run not found" }, 404);
-    const metrics = getRunMetrics(db, runId);
-    if (!metrics) return c.json({ error: "Metrics not yet available for this run" }, 404);
-    return c.json(metrics);
-  });
-
-  // --- GET /runs/:run_id/nodes ---
-  app.get("/runs/:run_id/nodes", async (c) => {
-    return c.json(db.query("SELECT * FROM nodes_current WHERE run_id = ?").all(c.req.param("run_id")));
-  });
 
   // --- GET /runs/:run_id/edges ---
-  app.get("/runs/:run_id/edges", async (c) => {
-    return c.json(db.query("SELECT * FROM dependency_edges_current WHERE run_id = ?").all(c.req.param("run_id")));
-  });
-
-  // --- PATCH /runs/:run_id/nodes/:node_id ---
-  app.patch(
-    "/runs/:run_id/nodes/:node_id",
-    zValidator("json", z.object({ status: z.string().min(1) })),
-    async (c) => {
-      const runId = c.req.param("run_id");
-      const nodeId = c.req.param("node_id");
-      const { status } = c.req.valid("json");
-      const existing = db.query("SELECT * FROM nodes_current WHERE node_id = ? AND run_id = ?").get(nodeId, runId) as any;
-      if (!existing) return c.json({ error: "Node not found" }, 404);
-      db.run("UPDATE nodes_current SET status = ? WHERE node_id = ?", [status, nodeId]);
-      const eventId = `evt_${ulid()}`;
-      await eventStore.append({
-        id: eventId,
-        run_id: runId,
-        stream_id: runId,
-        schema_version: 1,
-        type: "node_status_changed",
-        payload_json: JSON.stringify({ node_id: nodeId, status, previous_status: existing.status }),
-        actor_type: "user",
-        actor_id: "api",
-        op_id: `op_${eventId}`,
-        created_at: new Date().toISOString(),
-      });
-      return c.json({ ...existing, status });
-    },
-  );
+  app.get("/runs/:run_id/edges", (c) => c.json(runStore.listEdges(c.req.param("run_id"))));
 
   // --- GET /runs/:run_id/ready ---
-  app.get("/runs/:run_id/ready", async (c) => {
-    const runId = c.req.param("run_id");
-    const nodes = db.query("SELECT node_id FROM nodes_current WHERE run_id = ? AND status = 'pending'").all(runId) as Array<{ node_id: string }>;
-    const edges = db.query("SELECT source_id, target_id FROM dependency_edges_current WHERE run_id = ?").all(runId) as Array<{ source_id: string; target_id: string }>;
-    const statuses = db.query("SELECT node_id, status FROM nodes_current WHERE run_id = ?").all(runId) as Array<{ node_id: string; status: string }>;
-    const nodeStatusMap = new Map(statuses.map((n) => [n.node_id, n.status]));
-    const dependenciesOf = new Map<string, string[]>();
-    for (const edge of edges) {
-      const deps = dependenciesOf.get(edge.target_id) ?? [];
-      deps.push(edge.source_id);
-      dependenciesOf.set(edge.target_id, deps);
-    }
-    const ready = nodes
-      .filter((node) => (dependenciesOf.get(node.node_id) ?? []).every((depId) => nodeStatusMap.get(depId) === "completed"))
-      .map((node) => node.node_id);
-    return c.json({ ready });
-  });
+  app.get("/runs/:run_id/ready", (c) => c.json({ ready: runStore.getReadyNodes(c.req.param("run_id")) }));
 
   // Mount sub-routers
   app.route("/", eventsRouter(eventStore));
