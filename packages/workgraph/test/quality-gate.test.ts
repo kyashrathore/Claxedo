@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { checkQuality, defaultRubric, type QualityRubric } from "../src/orchestrator/core/quality-gate";
-import type { EvidenceLink } from "../src/orchestrator/core/capabilities";
+import type { EvidenceLink } from "../src/orchestrator/core/quality-gate";
 
 describe("Quality Gate", () => {
   it("should pass when all nodes have results and decisions have evidence", () => {
