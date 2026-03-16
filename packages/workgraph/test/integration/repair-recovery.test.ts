@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import type { EventEnvelope } from "../../src/orchestrator/events/schema";
-import { computeHash, verifyChain } from "../../src/orchestrator/core/services/hash-chain";
-import { verify, rebuild, replay, reconcile } from "../../src/orchestrator/core/cli/repair";
+import { computeHash, verifyChain } from "../../src/orchestrator/core/services/hash-chain-node";
+import { verify, rebuild, replay, reconcile } from "../../src/orchestrator/core/services/repair";
 import { rootReducer, initialRootState, type RootState } from "../../src/orchestrator/core/reducers/index";
 
 describe("Repair & Recovery Integration", () => {

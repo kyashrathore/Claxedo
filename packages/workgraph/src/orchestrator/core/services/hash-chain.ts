@@ -1,18 +1,15 @@
 import type { EventEnvelope } from "../../events";
 
-export async function computeHash(event: EventEnvelope, prevHash: string): Promise<string> {
-  const input = `${prevHash}${event.type}${event.payload_json}${event.run_id}${event.stream_seq}`;
-  const hash = new Bun.CryptoHasher("sha256").update(input).digest("hex");
-  return hash;
-}
-
-export async function verifyChain(events: EventEnvelope[]): Promise<{ valid: boolean; brokenAt?: number }> {
-  for (let i = 0; i < events.length; i++) {
-    const prevHash = i === 0 ? "00000000" : events[i - 1].hash;
-    const computed = await computeHash(events[i], prevHash);
-    if (computed !== events[i].hash) {
-      return { valid: false, brokenAt: i };
-    }
-  }
-  return { valid: true };
+/**
+ * Adapter-agnostic interface for hash-chain operations.
+ *
+ * To swap the hashing backend, implement this interface and pass the new
+ * implementation wherever IHashChain is required. The current implementation
+ * is NodeHashChain in hash-chain-node.ts.
+ */
+export interface IHashChain {
+  /** Compute a deterministic SHA-256 hash for one event, chaining from prevHash. */
+  computeHash(event: EventEnvelope, prevHash: string): Promise<string>;
+  /** Verify the integrity of an ordered event chain. */
+  verifyChain(events: EventEnvelope[]): Promise<{ valid: boolean; brokenAt?: number }>;
 }
