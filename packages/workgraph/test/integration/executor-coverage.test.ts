@@ -5,12 +5,6 @@
 import { describe, it, expect, mock } from "bun:test";
 import { FakeDb, makeSpawn, nextRunId } from "../helpers/fake-db";
 
-mock.module("../../src/db/helpers", () => ({
-  generateHash: () => "deadbeef00000000",
-  insertEvent: () => {},
-  getNextSeq: () => 0,
-}));
-
 const {
   getRunMetrics,
   getAllOrchestrations,
@@ -29,23 +23,19 @@ const {
 // ---------------------------------------------------------------------------
 
 describe("getRunMetrics", () => {
-  it("returns null when the run row does not exist", () => {
-    const db = new FakeDb();
-    db.query = (_sql: string) => ({ get: () => null, all: () => [] });
+  it("returns null when no metrics are stored", () => {
+    const db = new FakeDb(); // metricsJson defaults to null
     expect(getRunMetrics(db, "no_such_run")).toBeNull();
   });
 
   it("returns null when metrics_json is null", () => {
-    const db = new FakeDb(); // FakeDb returns { metrics_json: null } for runs_current
+    const db = new FakeDb(); // metricsJson defaults to null
     expect(getRunMetrics(db, "run_1")).toBeNull();
   });
 
   it("returns null when metrics_json is malformed JSON", () => {
     const db = new FakeDb();
-    db.query = (_sql: string) => ({
-      get: () => ({ metrics_json: "{ bad json }" }),
-      all: () => [],
-    });
+    db.metricsJson = "{ bad json }";
     expect(getRunMetrics(db, "run_1")).toBeNull();
   });
 
@@ -61,10 +51,7 @@ describe("getRunMetrics", () => {
       estimated_cost_usd: null,
     };
     const db = new FakeDb();
-    db.query = (_sql: string) => ({
-      get: () => ({ metrics_json: JSON.stringify(metrics) }),
-      all: () => [],
-    });
+    db.metricsJson = JSON.stringify(metrics);
     expect(getRunMetrics(db, "run_1")).toEqual(metrics);
   });
 });
@@ -76,7 +63,7 @@ describe("getRunMetrics", () => {
 describe("getAllOrchestrations", () => {
   it("includes a freshly started run", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "active");
+    const db = new FakeDb(runId).addNode("a", "active");
     await startExecution(db, runId, "goal", makeSpawn());
     const all = getAllOrchestrations();
     expect(all.some((s) => s.run_id === runId)).toBe(true);
@@ -95,23 +82,15 @@ describe("getRunMetadata", () => {
 
   it("returns metadata shape for a known run", async () => {
     const runId = nextRunId();
-    const db = new FakeDb()
+    const db = new FakeDb(runId)
       .addNode("n1", "active", { title: "Task one", kind: "code_gen", role: "developer" })
       .addNode("n2", "completed", { title: "Task two", kind: "research", role: "developer" });
     db.addEdge("n2", "n1");
     await startExecution(db, runId, "my goal", makeSpawn());
 
-    const origQuery = db.query.bind(db);
-    db.query = (sql: string) => {
-      if (sql.includes("SELECT goal")) {
-        return { get: () => ({ goal: "my goal" }), all: () => [] };
-      }
-      return origQuery(sql);
-    };
-
     const meta = getRunMetadata(db, runId);
     expect(meta).toBeDefined();
-    expect(meta!.goal).toBe("my goal");
+    expect(meta!.goal).toBe("test goal");
     expect(meta!.nodes).toBeArray();
     expect(meta!.edges).toBeArray();
     expect(typeof meta!.startTime).toBe("number");
@@ -126,20 +105,11 @@ describe("getRunMetadata", () => {
       { node_id: "pending_node",   status: "pending",   kind: "research", role: "developer", title: "pending_node",   session_id: null },
       { node_id: "blocked_node",   status: "blocked",   kind: "research", role: "developer", title: "blocked_node",   session_id: null },
     ];
-    const db = new FakeDb();
+    const db = new FakeDb(runId);
     for (const n of nodeData) db.addNode(n.node_id, n.status);
     await startExecution(db, runId, "goal", makeSpawn());
 
-    const origQuery = db.query.bind(db);
-    db.query = (sql: string) => {
-      if (sql.includes("FROM nodes_current n")) {
-        return { get: () => null, all: () => nodeData };
-      }
-      if (sql.includes("SELECT goal FROM runs_current")) {
-        return { get: () => ({ goal: "goal" }), all: () => [] };
-      }
-      return origQuery(sql);
-    };
+    db.customRunNodes = nodeData;
 
     const meta = getRunMetadata(db, runId);
     expect(meta).toBeDefined();
@@ -153,9 +123,9 @@ describe("getRunMetadata", () => {
 
   it("endTime is set for completed runs", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "pending");
+    const db = new FakeDb(runId).addNode("a", "pending");
     await startExecution(db, runId, "goal", makeSpawn());
-    db.nodes.get("a")!.status = "active";
+    db.setNodeStatus("a", "active");
     await onNodeStatusUpdate(db, runId, "a", "completed", makeSpawn());
 
     const meta = getRunMetadata(db, runId);
@@ -171,16 +141,9 @@ describe("getRunMetadata", () => {
 describe("onSessionStopped", () => {
   it("returns false when no matching attempt row exists", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("n1", "active");
+    const db = new FakeDb(runId).addNode("n1", "active");
     await startExecution(db, runId, "goal", makeSpawn());
-
-    const origQuery = db.query.bind(db);
-    db.query = (sql: string) => {
-      if (sql.includes("attempts_current") && sql.includes("session_id")) {
-        return { get: () => null, all: () => [] };
-      }
-      return origQuery(sql);
-    };
+    // openAttemptId defaults to null — simulates no matching attempt
 
     const result = await onSessionStopped(db, runId, "n1", "sess_x", makeSpawn(), "crashed");
     expect(result).toBe(false);
@@ -188,16 +151,10 @@ describe("onSessionStopped", () => {
 
   it("returns true and triggers retry for matched session", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("n1", "active");
+    const db = new FakeDb(runId).addNode("n1", "active");
     await startExecution(db, runId, "goal", makeSpawn());
 
-    const origQuery = db.query.bind(db);
-    db.query = (sql: string) => {
-      if (sql.includes("attempts_current") && sql.includes("session_id")) {
-        return { get: () => ({ attempt_id: "att_session_01" }), all: () => [] };
-      }
-      return origQuery(sql);
-    };
+    db.openAttemptId = "att_session_01";
 
     const result = await onSessionStopped(db, runId, "n1", "sess_active", makeSpawn(), "agent died");
     expect(result).toBe(true);
@@ -214,7 +171,7 @@ describe("onSessionStopped", () => {
 describe("cancelNodeExecution", () => {
   it("marks the node as cancelled in the DB", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("n1", "active");
+    const db = new FakeDb(runId).addNode("n1", "active");
     await startExecution(db, runId, "goal", makeSpawn());
 
     cancelNodeExecution(db, runId, "n1");
@@ -228,7 +185,7 @@ describe("cancelNodeExecution", () => {
 
   it("clears the current_agent_id in node history", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("n1", "pending");
+    const db = new FakeDb(runId).addNode("n1", "pending");
     const state = await startExecution(db, runId, "goal", makeSpawn());
 
     expect(state.node_agents.get("n1")).toBeDefined();
@@ -244,7 +201,7 @@ describe("cancelNodeExecution", () => {
 describe("reconcileExecution", () => {
   it("is a no-op for cancelled runs", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "active");
+    const db = new FakeDb(runId).addNode("a", "active");
     const state = await startExecution(db, runId, "goal", makeSpawn());
     cancelOrchestration(state, db, () => {});
     expect(state.phase).toBe("cancelled");
@@ -255,9 +212,9 @@ describe("reconcileExecution", () => {
 
   it("is a no-op for completed runs", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "pending");
+    const db = new FakeDb(runId).addNode("a", "pending");
     const state = await startExecution(db, runId, "goal", makeSpawn());
-    db.nodes.get("a")!.status = "active";
+    db.setNodeStatus("a", "active");
     await onNodeStatusUpdate(db, runId, "a", "completed", makeSpawn());
     expect(state.phase).toBe("completed");
 
@@ -267,10 +224,10 @@ describe("reconcileExecution", () => {
 
   it("is a no-op for failed runs", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "active", { retry_count: 2 });
+    const db = new FakeDb(runId).addNode("a", "active", { retry_count: 2 });
     const state = await startExecution(db, runId, "goal", makeSpawn());
-    db.nodes.get("a")!.status = "active";
-    db.nodes.get("a")!.retry_count = 2;
+    db.setNodeStatus("a", "active");
+    db.setNodeRetryCount("a", 2);
     await onNodeStatusUpdate(db, runId, "a", "failed", makeSpawn());
     expect(state.phase).toBe("failed");
 
@@ -280,7 +237,7 @@ describe("reconcileExecution", () => {
 
   it("re-enters executing phase and spawns ready nodes", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "active");
+    const db = new FakeDb(runId).addNode("a", "active");
     const state = await startExecution(db, runId, "goal", makeSpawn());
     expect(state.phase).toBe("executing");
 
@@ -297,7 +254,7 @@ describe("reconcileExecution", () => {
 
   it("hooks provided to reconcile are applied and fire on run completion", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "pending");
+    const db = new FakeDb(runId).addNode("a", "pending");
     const state = await startExecution(db, runId, "goal", makeSpawn());
     state.hooks = undefined;
 
@@ -306,7 +263,7 @@ describe("reconcileExecution", () => {
     await reconcileExecution(db, runId, makeSpawn(), { onRunCompleted });
 
     // Now complete the node — hook must fire because reconcile attached it
-    db.nodes.get("a")!.status = "active";
+    db.setNodeStatus("a", "active");
     await onNodeStatusUpdate(db, runId, "a", "completed", makeSpawn());
     expect(onRunCompleted).toHaveBeenCalledWith(runId);
   });

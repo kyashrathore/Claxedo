@@ -1,12 +1,6 @@
 import { describe, it, expect, mock } from "bun:test";
 import { FakeDb, makeSpawn, nextRunId } from "../helpers/fake-db";
 
-mock.module("../../src/db/helpers", () => ({
-  generateHash: () => "deadbeef00000000",
-  insertEvent: () => {},
-  getNextSeq: () => 0,
-}));
-
 const {
   startExecution,
   onNodeStatusUpdate,
@@ -17,7 +11,7 @@ const {
 describe("Scheduler Wiring", () => {
   it("respects maxActivePerRun: only dispatches up to the policy cap", async () => {
     const runId = nextRunId();
-    const db = new FakeDb()
+    const db = new FakeDb(runId)
       .addNode("n1", "pending")
       .addNode("n2", "pending")
       .addNode("n3", "pending")
@@ -32,7 +26,7 @@ describe("Scheduler Wiring", () => {
 
   it("respects maxActivePerTeam: caps per-team dispatches", async () => {
     const runId = nextRunId();
-    const db = new FakeDb()
+    const db = new FakeDb(runId)
       .addNode("n1", "pending", { role: "team_alpha" })
       .addNode("n2", "pending", { role: "team_alpha" })
       .addNode("n3", "pending", { role: "team_alpha" })
@@ -46,7 +40,7 @@ describe("Scheduler Wiring", () => {
 
   it("active node is not re-dispatched when execution is reconciled", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("n1", "pending");
+    const db = new FakeDb(runId).addNode("n1", "pending");
     const spawn1 = makeSpawn();
     await startExecution(db, runId, "goal", spawn1);
     expect(spawn1.callCount).toBe(1);
@@ -59,9 +53,9 @@ describe("Scheduler Wiring", () => {
 
   it("completed node is not re-spawned on subsequent reconcile", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("n1", "pending");
+    const db = new FakeDb(runId).addNode("n1", "pending");
     await startExecution(db, runId, "goal", makeSpawn());
-    db.nodes.get("n1")!.status = "active";
+    db.setNodeStatus("n1", "active");
     await onNodeStatusUpdate(db, runId, "n1", "completed", makeSpawn());
 
     // Run completed — reconcile is a no-op, n1 not re-spawned
@@ -72,10 +66,10 @@ describe("Scheduler Wiring", () => {
 
   it("permanently failed node is not re-spawned", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("n1", "pending", { retry_count: 2 });
+    const db = new FakeDb(runId).addNode("n1", "pending", { retry_count: 2 });
     await startExecution(db, runId, "goal", makeSpawn());
-    db.nodes.get("n1")!.status = "active";
-    db.nodes.get("n1")!.retry_count = 2;
+    db.setNodeStatus("n1", "active");
+    db.setNodeRetryCount("n1", 2);
     await onNodeStatusUpdate(db, runId, "n1", "failed", makeSpawn());
 
     // Run is failed — reconcile is a no-op
@@ -87,7 +81,7 @@ describe("Scheduler Wiring", () => {
 
   it("dispatches downstream node after upstream completes", async () => {
     const runId = nextRunId();
-    const db = new FakeDb()
+    const db = new FakeDb(runId)
       .addNode("a", "pending")
       .addNode("b", "pending")
       .addEdge("a", "b");

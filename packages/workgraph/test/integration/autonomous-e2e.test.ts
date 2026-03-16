@@ -1,12 +1,6 @@
 import { describe, it, expect, mock } from "bun:test";
 import { FakeDb, makeSpawn, nextRunId } from "../helpers/fake-db";
 
-mock.module("../../src/db/helpers", () => ({
-  generateHash: () => "deadbeef00000000",
-  insertEvent: () => {},
-  getNextSeq: () => 0,
-}));
-
 const {
   startExecution,
   onNodeStatusUpdate,
@@ -18,7 +12,7 @@ describe("Autonomous E2E Pipeline", () => {
   it("diamond graph: all nodes complete through cascade", async () => {
     const runId = nextRunId();
     // Diamond: root → left, root → right, left → sink, right → sink
-    const db = new FakeDb()
+    const db = new FakeDb(runId)
       .addNode("root", "pending")
       .addNode("left", "pending")
       .addNode("right", "pending")
@@ -58,7 +52,7 @@ describe("Autonomous E2E Pipeline", () => {
 
   it("scheduler obeys team policy mid-run: caps same-team dispatch", async () => {
     const runId = nextRunId();
-    const db = new FakeDb()
+    const db = new FakeDb(runId)
       .addNode("n1", "pending", { role: "team_x" })
       .addNode("n2", "pending", { role: "team_x" })
       .addNode("n3", "pending", { role: "team_x" })
@@ -71,7 +65,7 @@ describe("Autonomous E2E Pipeline", () => {
 
     // 1 from team_x + 1 from team_y = 2 total
     expect(spawn.callCount).toBe(2);
-    const roles = spawn.calls.map((c) => db.nodes.get(c.nodeId)?.role);
+    const roles = spawn.calls.map((c) => db.getNodeRole(c.nodeId));
     expect(roles.filter((r) => r === "team_x").length).toBe(1);
     expect(roles.filter((r) => r === "team_y").length).toBe(1);
   });
@@ -80,8 +74,8 @@ describe("Autonomous E2E Pipeline", () => {
     const runId1 = nextRunId();
     const runId2 = nextRunId();
 
-    const db1 = new FakeDb().addNode("a", "pending").addNode("b", "pending").addEdge("a", "b");
-    const db2 = new FakeDb().addNode("a", "pending").addNode("b", "pending").addEdge("a", "b");
+    const db1 = new FakeDb(runId1).addNode("a", "pending").addNode("b", "pending").addEdge("a", "b");
+    const db2 = new FakeDb(runId2).addNode("a", "pending").addNode("b", "pending").addEdge("a", "b");
 
     await startExecution(db1, runId1, "goal", makeSpawn());
     await startExecution(db2, runId2, "goal", makeSpawn());
@@ -96,7 +90,7 @@ describe("Autonomous E2E Pipeline", () => {
 
   it("active node is not re-dispatched when execution is reconciled", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("n1", "pending");
+    const db = new FakeDb(runId).addNode("n1", "pending");
     const spawn = makeSpawn();
     await startExecution(db, runId, "goal", spawn);
     expect(spawn.callCount).toBe(1);

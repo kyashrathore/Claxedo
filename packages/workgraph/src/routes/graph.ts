@@ -13,6 +13,7 @@ import { backfillRepos, buckets, inferRepo, resolveRepoDir, type RepoBindingReso
 import type { SourceKind } from "../model/types"
 import type { ISliceStore } from "../sdk/slices"
 import type { IConnectionStore } from "../sdk/connections"
+import type { IExecutionStore } from "../sdk/execution-store"
 import {
   itemRow,
   applyItemFilters,
@@ -147,6 +148,7 @@ function launch(c: any, execution?: ExecutionAdapter, base?: string | null) {
 
 export function graphRouter(
   db: any,
+  executionStore: IExecutionStore,
   sliceStore: ISliceStore,
   connStore: IConnectionStore,
   execution?: ExecutionAdapter,
@@ -179,12 +181,12 @@ export function graphRouter(
     const rows = liveExecutions(db, id)
     const runs = new Set<string>()
     for (const row of rows) {
-      cancelNodeExecution(db, row.run_id, row.node_id, "archived")
+      cancelNodeExecution(executionStore, row.run_id, row.node_id, "archived")
       runs.add(row.run_id)
       await execution?.cleanup?.({ run_id: row.run_id, node_id: row.node_id, session_id: row.session_id, pty_id: row.pty_id, directory: row.directory, worktree_path: row.worktree_path, mode: "archive" })
     }
     const next = wg.archive(id, reason)
-    for (const runId of runs) await reconcileExecution(db, runId, launch(c, execution))
+    for (const runId of runs) await reconcileExecution(executionStore, runId, launch(c, execution))
     return c.json({ item: itemRow(db, next, sliceStore) })
   }
 
@@ -435,14 +437,14 @@ export function graphRouter(
     const rows = liveExecutions(db, id)
     const runs = new Set<string>()
     for (const row of rows) {
-      cancelNodeExecution(db, row.run_id, row.node_id, "deleted")
+      cancelNodeExecution(executionStore, row.run_id, row.node_id, "deleted")
       runs.add(row.run_id)
       await execution?.cleanup?.({ run_id: row.run_id, node_id: row.node_id, session_id: row.session_id, pty_id: row.pty_id, directory: row.directory, worktree_path: row.worktree_path, mode: "delete" })
     }
     wg.remove(id)
     if (reason) wg.update(id, { deletedReason: reason })
     const next = wg.get(id)
-    for (const runId of runs) await reconcileExecution(db, runId, launch(c, execution))
+    for (const runId of runs) await reconcileExecution(executionStore, runId, launch(c, execution))
     return c.json({ item: next ? itemRow(db, next, sliceStore) : null })
   })
 
@@ -521,7 +523,7 @@ export function graphRouter(
       createRunInDb(db, runId, slice.goal, "active", { kind: slice.kind as SourceKind, title: slice.title, content: slice.content, source_path: slice.source_path ?? undefined }, slice.slice_id)
       sliceStore.update(slice.slice_id, { status: "planning", plan_run_id: runId, error: null })
       const spin = launch(c, execution, body.directory ?? current(c) ?? process.cwd())
-      startOrchestration(db, runId, slice.goal, spin, { auto_execute: false }).catch((err) => {
+      startOrchestration(executionStore, runId, slice.goal, spin, { auto_execute: false }).catch((err) => {
         console.error(`[graph] plan error for ${slice.slice_id}:`, err)
       })
       return c.json(sliceStore.get(slice.slice_id), 202)
@@ -599,7 +601,7 @@ export function graphRouter(
       writeBlockers(db, runId, blocked, nodeItemMap)
       if (slice) sliceStore.update(slice.slice_id, { status: "executing", last_run_id: runId, error: null })
       const spin = launch(c, execution, execDir)
-      startExecution(db, runId, goal, spin, { node_work_items: nodeItemMap }).catch((err) => {
+      startExecution(executionStore, runId, goal, spin, { node_work_items: nodeItemMap }).catch((err) => {
         console.error(`[graph] execute error for ${runId}:`, err)
       })
       return c.json({ created: true, run_id: runId, ready_ids: ready.map((item) => item.id), blocked, skipped }, 202)

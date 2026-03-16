@@ -3,6 +3,7 @@ import { handleToolCall, getToolDefinitions, type McpToolContext } from "../mcp/
 import { onPlanningComplete, onNodeStatusUpdate } from "../orchestrator/executor";
 import { dir } from "../dir";
 import type { ExecutionAdapter } from "../execution";
+import type { IExecutionStore } from "../sdk/execution-store";
 
 /**
  * HTTP route that exposes MCP tool calls over HTTP.
@@ -42,7 +43,7 @@ function launch(c: any, execution?: ExecutionAdapter) {
     });
 }
 
-export function mcpRouter(db: any, execution?: ExecutionAdapter) {
+export function mcpRouter(db: any, executionStore: IExecutionStore, execution?: ExecutionAdapter) {
   const router = new Hono();
 
   // --- GET /mcp/tools/list ---
@@ -70,10 +71,10 @@ export function mcpRouter(db: any, execution?: ExecutionAdapter) {
         runId: run_id,
         nodeId: node_id,
         onPlanningComplete: (rId: string, summary: string) => {
-          onPlanningComplete(db, rId, summary, call);
+          onPlanningComplete(executionStore, rId, summary, call);
         },
         onNodeCompleted: (rId: string, nId: string) => {
-          onNodeStatusUpdate(db, rId, nId, "completed", call);
+          onNodeStatusUpdate(executionStore, rId, nId, "completed", call);
         },
       };
 

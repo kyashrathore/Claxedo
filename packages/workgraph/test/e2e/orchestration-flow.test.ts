@@ -3,22 +3,15 @@
  *
  * Each test exercises a complete orchestration scenario from planning-complete
  * through to a terminal run phase (completed / failed). Uses the same FakeDb
- * and makeSpawn helpers as the integration suite; no real SQLite or agents.
+ * and makeSpawn helpers as the integration suite; no real agents.
  *
  * Boundaries mocked:
- *   db           → FakeDb
+ *   db           → FakeDb (real in-memory SQLite)
  *   spawnAgentFn → makeSpawn
- *   ../db/helpers→ mocked module (absent on this branch)
  */
 
 import { describe, it, expect, mock } from "bun:test";
 import { FakeDb, makeSpawn, nextRunId } from "../helpers/fake-db";
-
-mock.module("../../src/db/helpers", () => ({
-  generateHash: () => "deadbeef00000000",
-  insertEvent: () => {},
-  getNextSeq: () => 0,
-}));
 
 const { startExecution, onNodeStatusUpdate, getOrchestration } = await import(
   "../../src/orchestrator/executor"
@@ -31,7 +24,7 @@ const { startExecution, onNodeStatusUpdate, getOrchestration } = await import(
 describe("E2E: single node run", () => {
   it("planning complete with one node → node executes → run completes", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "pending");
+    const db = new FakeDb(runId).addNode("a", "pending");
     const spawn = makeSpawn();
     await startExecution(db, runId, "do something", spawn);
     // startExecution finds 'a' ready and spawns it
@@ -46,7 +39,7 @@ describe("E2E: single node run", () => {
 describe("E2E: linear chain A → B", () => {
   it("A completes → B becomes ready → B completes → run completes", async () => {
     const runId = nextRunId();
-    const db = new FakeDb()
+    const db = new FakeDb(runId)
       .addNode("a", "pending")
       .addNode("b", "pending")
       .addEdge("a", "b");
@@ -68,7 +61,7 @@ describe("E2E: linear chain A → B", () => {
 describe("E2E: parallel nodes A and B (no dependencies)", () => {
   it("both nodes spawned immediately, run completes after both finish", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "pending").addNode("b", "pending");
+    const db = new FakeDb(runId).addNode("a", "pending").addNode("b", "pending");
     const spawn = makeSpawn();
     await startExecution(db, runId, "parallel", spawn);
     // Both ready at the start
@@ -87,7 +80,7 @@ describe("E2E: parallel nodes A and B (no dependencies)", () => {
 describe("E2E: diamond topology A → {B, C} → D", () => {
   it("D only spawns after both B and C complete", async () => {
     const runId = nextRunId();
-    const db = new FakeDb()
+    const db = new FakeDb(runId)
       .addNode("a", "pending")
       .addNode("b", "pending")
       .addNode("c", "pending")
@@ -122,17 +115,17 @@ describe("E2E: diamond topology A → {B, C} → D", () => {
 describe("E2E: node fails then succeeds on retry", () => {
   it("first failure triggers a retry spawn; success on retry completes the run", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "pending");
+    const db = new FakeDb(runId).addNode("a", "pending");
     const spawn = makeSpawn();
     await startExecution(db, runId, "retry-run", spawn);
-    db.nodes.get("a")!.status = "active"; // reset to active after startExecution
-    db.nodes.get("a")!.retry_count = 0;
+    db.setNodeStatus("a", "active"); // reset to active after startExecution
+    db.setNodeRetryCount("a", 0);
     // First failure — should retry
     await onNodeStatusUpdate(db, runId, "a", "failed", spawn);
     expect(db.retryCount("a")).toBe(1);
     expect(spawn.callCount).toBeGreaterThan(1); // retry spawn
     // Simulate the retry completing
-    db.nodes.get("a")!.status = "active";
+    db.setNodeStatus("a", "active");
     await onNodeStatusUpdate(db, runId, "a", "completed", spawn);
     expect(getOrchestration(runId)?.phase).toBe("completed");
   });
@@ -141,16 +134,16 @@ describe("E2E: node fails then succeeds on retry", () => {
 describe("E2E: node exhausts all retries", () => {
   it("run transitions to failed after all retry attempts fail", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "pending");
+    const db = new FakeDb(runId).addNode("a", "pending");
     const spawn = makeSpawn();
     await startExecution(db, runId, "exhaust-retries", spawn);
-    db.nodes.get("a")!.status = "active";
-    db.nodes.get("a")!.retry_count = 0;
+    db.setNodeStatus("a", "active");
+    db.setNodeRetryCount("a", 0);
     // Fail and retry until exhausted (MAX_RETRIES = 2)
     await onNodeStatusUpdate(db, runId, "a", "failed", spawn); // retry_count → 1
-    db.nodes.get("a")!.status = "active";
+    db.setNodeStatus("a", "active");
     await onNodeStatusUpdate(db, runId, "a", "failed", spawn); // retry_count → 2
-    db.nodes.get("a")!.status = "active";
+    db.setNodeStatus("a", "active");
     await onNodeStatusUpdate(db, runId, "a", "failed", spawn); // exhausted
     expect(db.nodeStatus("a")).toBe("failed");
     expect(getOrchestration(runId)?.phase).toBe("failed");
@@ -160,14 +153,14 @@ describe("E2E: node exhausts all retries", () => {
 describe("E2E: failure cascades to dependent nodes", () => {
   it("when A fails, B (dependent on A) is also failed and run terminates", async () => {
     const runId = nextRunId();
-    const db = new FakeDb()
+    const db = new FakeDb(runId)
       .addNode("a", "pending")
       .addNode("b", "pending")
       .addEdge("a", "b");
     const spawn = makeSpawn();
     await startExecution(db, runId, "cascade-fail", spawn);
-    db.nodes.get("a")!.status = "active";
-    db.nodes.get("a")!.retry_count = 2; // force exhaustion on first failure
+    db.setNodeStatus("a", "active");
+    db.setNodeRetryCount("a", 2); // force exhaustion on first failure
     await onNodeStatusUpdate(db, runId, "a", "failed", spawn);
     // B should be cascade-failed
     expect(db.nodeStatus("b")).toBe("failed");
@@ -178,14 +171,14 @@ describe("E2E: failure cascades to dependent nodes", () => {
 describe("E2E: lifecycle hooks fire at correct milestones", () => {
   it("onNodeCompleted and onRunCompleted fire in order on happy path", async () => {
     const runId = nextRunId();
-    const db = new FakeDb().addNode("a", "pending");
+    const db = new FakeDb(runId).addNode("a", "pending");
     const events: string[] = [];
     const hooks = {
       onNodeCompleted: mock(async () => { events.push("nodeCompleted"); }),
       onRunCompleted: mock(async () => { events.push("runCompleted"); }),
     };
     await startExecution(db, runId, "hooks-test", makeSpawn(), { hooks });
-    db.nodes.get("a")!.status = "active";
+    db.setNodeStatus("a", "active");
     await onNodeStatusUpdate(db, runId, "a", "completed", makeSpawn());
     expect(events).toEqual(["nodeCompleted", "runCompleted"]);
   });

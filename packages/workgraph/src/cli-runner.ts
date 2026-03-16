@@ -15,6 +15,8 @@ import {
   type RunMetrics,
   type SpawnAgentFn,
 } from "./orchestrator/executor";
+import { openSqliteEventStore } from "./orchestrator/core/services/event-store-sqlite";
+import { openSqliteExecutionStore, type IExecutionStore } from "./sdk/execution-store";
 import type { NodeSummary } from "./cli-metrics";
 
 export interface RunOptions {
@@ -39,7 +41,7 @@ const MAX_WAIT_MS = 5 * 60 * 1000; // 5 minutes
 /**
  * Create a dry-run SpawnAgentFn that auto-completes nodes without AI.
  */
-function makeDryRunSpawnFn(db: any): SpawnAgentFn {
+function makeDryRunSpawnFn(db: any, executionStore: IExecutionStore): SpawnAgentFn {
   const { onNodeStatusUpdate, onPlanningComplete } = require("./orchestrator/executor");
   const { handleToolCall } = require("./mcp/tools");
   let seq = 0;
@@ -59,14 +61,14 @@ function makeDryRunSpawnFn(db: any): SpawnAgentFn {
           role: "developer",
           prompt: `[dry-run] ${prompt.slice(0, 200)}`,
         });
-        await onPlanningComplete(db, runId, "[dry-run] Plan complete", fn);
+        await onPlanningComplete(executionStore, runId, "[dry-run] Plan complete", fn);
       } else {
         // Task: write scratchpad and complete
         const ctx = { db, runId, nodeId };
         await handleToolCall(ctx, "write_scratchpad", {
           content: `[dry-run] Completed ${nodeId}`,
         });
-        await onNodeStatusUpdate(db, runId, nodeId, "completed", fn);
+        await onNodeStatusUpdate(executionStore, runId, nodeId, "completed", fn);
       }
     }, 0);
 
@@ -93,6 +95,8 @@ function getCurrentNodes(db: any, runId: string): NodeSummary[] {
 export async function runCLI(opts: RunOptions): Promise<RunResult> {
   const db = new Database(":memory:");
   initializeDb(db);
+  const eventStore = openSqliteEventStore(db);
+  const executionStore = openSqliteExecutionStore(db, eventStore);
 
   // Create run
   const app = createApp(db);
@@ -110,11 +114,11 @@ export async function runCLI(opts: RunOptions): Promise<RunResult> {
 
   // Build spawn function
   const spawnFn: SpawnAgentFn = opts.dryRun
-    ? makeDryRunSpawnFn(db)
+    ? makeDryRunSpawnFn(db, executionStore)
     : (() => { throw new Error("Real agent spawning not implemented in CLI yet. Use --dry-run for testing."); })();
 
   // Start orchestration (fire and forget)
-  await startOrchestration(db, runId, opts.goal, spawnFn);
+  await startOrchestration(executionStore, runId, opts.goal, spawnFn);
 
   // Poll for completion
   const startMs = Date.now();
@@ -140,7 +144,7 @@ export async function runCLI(opts: RunOptions): Promise<RunResult> {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
 
-  const metrics = getRunMetrics(db, runId);
+  const metrics = getRunMetrics(executionStore, runId);
   const nodes = getCurrentNodes(db, runId);
 
   return { runId, phase, metrics, nodes };

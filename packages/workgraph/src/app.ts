@@ -20,6 +20,7 @@ import { openSqliteEventStore } from "./orchestrator/core/services/event-store-s
 import { openSqliteSliceStore } from "./sdk/slices";
 import { openSqliteConnectionStore } from "./sdk/connections";
 import { openSqliteRunStore } from "./sdk/runs";
+import { openSqliteExecutionStore } from "./sdk/execution-store";
 import { initializeDb } from "./db/schema";
 
 export { initializeDb } from "./db/schema";
@@ -48,6 +49,7 @@ export function createApp(
   const sliceStore = openSqliteSliceStore(db);
   const connStore = openSqliteConnectionStore(db);
   const healthStore = openSqliteRunHealthStore(db);
+  const executionStore = openSqliteExecutionStore(db, eventStore);
 
   const app = new Hono();
 
@@ -193,8 +195,8 @@ export function createApp(
   app.route("/", lifecycleRouter(healthStore));
   app.route("/", hydrationRouter(eventStore));
   app.route("/", repairRouter(eventStore));
-  app.route("/", graphRouter(db, sliceStore, connStore, opts?.execution, opts?.providers, opts?.auth, opts?.repos));
-  app.route("/", mcpRouter(db, opts?.execution));
+  app.route("/", graphRouter(db, executionStore, sliceStore, connStore, opts?.execution, opts?.providers, opts?.auth, opts?.repos));
+  app.route("/", mcpRouter(db, executionStore, opts?.execution));
   app.route("/", workRouter());
   app.route("/", triggersRouter(db));
 
