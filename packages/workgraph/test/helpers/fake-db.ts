@@ -1,9 +1,32 @@
 /**
- * FakeDb — minimal in-memory SQLite-shaped stub for executor integration tests.
+ * FakeDb — real in-memory SQLite wrapper for executor integration tests.
  *
- * Mocks only the DB boundary (the `db: any` parameter that executor functions
- * receive). All executor logic runs unmodified; only IO is stubbed.
+ * Uses a real bun:sqlite Database (":memory:") with the real IExecutionStore
+ * implementation so executor logic runs against actual SQL queries.
+ *
+ * Test-level overrides:
+ *   db.metricsJson    — if non-null, overrides getRunMetrics() return value
+ *   db.openAttemptId  — if non-null, overrides findOpenAttemptId() return value
+ *   db.customRunNodes — if set, overrides queryRunNodes() return value
  */
+
+import { Database } from "bun:sqlite";
+import { initializeDb } from "../../src/db/schema";
+import { openSqliteEventStore } from "../../src/orchestrator/core/services/event-store-sqlite";
+import { openSqliteExecutionStore } from "../../src/sdk/execution-store";
+import type {
+  IExecutionStore,
+  RunSnapshot,
+  NodeSnapshot,
+  EdgeSnapshot,
+  PlannerSourceRow,
+  AttemptInput,
+  RunExecMeta,
+  RunNodeRow,
+  RunMetrics,
+} from "../../src/sdk/execution-store";
+import type { OrchestratorRunState } from "../../src/orchestrator/types";
+import type { TraceEventInput } from "../../src/orchestrator/trace/trace-store";
 
 export type DbNode = {
   node_id: string;
@@ -15,116 +38,253 @@ export type DbNode = {
   retry_count: number;
 };
 
-export class FakeDb {
-  readonly nodes = new Map<string, DbNode>();
-  readonly edges: Array<{ source_id: string; target_id: string }> = [];
-  runStatus = "executing";
+export class FakeDb implements IExecutionStore {
+  readonly runId: string;
 
-  addNode(node_id: string, status: string, opts: Partial<DbNode> = {}): this {
-    this.nodes.set(node_id, {
+  // Test-level override props
+  metricsJson: string | null = null;
+  openAttemptId: string | null = null;
+  customRunNodes: any[] | null = null;
+
+  private readonly _sqlite: Database;
+  private readonly _store: IExecutionStore;
+
+  /** Exposes the underlying SQLite instance for helpers that need raw db.run() / db.query(). */
+  get sqlite(): Database { return this._sqlite; }
+
+  constructor(runId = "run_x") {
+    this.runId = runId;
+    this._sqlite = new Database(":memory:");
+    initializeDb(this._sqlite);
+    const eventStore = openSqliteEventStore(this._sqlite);
+    this._store = openSqliteExecutionStore(this._sqlite, eventStore);
+
+    // Pre-insert a run row so getRun() and getRunGoal() work
+    this._sqlite.run(
+      `INSERT OR IGNORE INTO runs_current (run_id, goal, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [runId, "test goal", "pending", new Date().toISOString(), new Date().toISOString()],
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Test convenience helpers
+  // -------------------------------------------------------------------------
+
+  addNode(nodeId: string, status: string, opts: Partial<DbNode> = {}): this {
+    const node: DbNode = {
       node_type: "task",
       role: "developer",
-      // "research" is a shared kind — no isolated worktree required
       kind: "research",
-      title: node_id,
+      title: nodeId,
       retry_count: 0,
       ...opts,
-      node_id,
+      node_id: nodeId,
       status,
-    });
-    return this;
-  }
-
-  addEdge(source_id: string, target_id: string): this {
-    this.edges.push({ source_id, target_id });
-    return this;
-  }
-
-  nodeStatus(node_id: string): string | undefined {
-    return this.nodes.get(node_id)?.status;
-  }
-
-  retryCount(node_id: string): number {
-    return this.nodes.get(node_id)?.retry_count ?? 0;
-  }
-
-  query(sql: string) {
-    const self = this;
-    return {
-      all(...args: any[]): any[] {
-        // All nodes for a run (various column projections)
-        if (sql.includes("FROM nodes_current WHERE run_id")) {
-          return [...self.nodes.values()];
-        }
-        // All edges for a run
-        if (sql.includes("FROM dependency_edges_current") && !sql.includes("AND source_id")) {
-          return self.edges;
-        }
-        // Outgoing edges from a specific source node
-        if (sql.includes("FROM dependency_edges_current") && sql.includes("AND source_id")) {
-          const sourceId = args[args.length - 1];
-          return self.edges
-            .filter((e) => e.source_id === sourceId)
-            .map((e) => ({ target_id: e.target_id }));
-        }
-        // Scratchpad entries (for run result assembly and prompt lookup)
-        if (sql.includes("scratchpad_entries")) return [];
-        // Blockers check
-        if (sql.includes("run_blockers_current")) return [];
-        return [];
-      },
-
-      get(...args: any[]): any {
-        // Single node by node_id
-        if (sql.includes("FROM nodes_current WHERE node_id")) {
-          const nodeId = args[args.length - 1];
-          return self.nodes.get(nodeId) ?? null;
-        }
-        // Any run metadata query
-        if (sql.includes("FROM runs_current")) {
-          return {
-            source_id: null,
-            status: self.runStatus,
-            created_at: new Date().toISOString(),
-            goal: "test goal",
-            metrics_json: null,
-          };
-        }
-        // Run sources (planner prompt context)
-        if (sql.includes("run_sources_current")) return null;
-        // Run exec (directory for task agent)
-        if (sql.includes("run_exec_current")) return null;
-        // Attempt lookup (attemptFinish)
-        if (sql.includes("attempts_current")) return { attempt_id: "att_01" };
-        // Event sequence (getNextSeq from db/helpers)
-        if (sql.includes("events_current")) return { seq: 0, next_seq: 0, stream_seq: -1 };
-        return null;
-      },
     };
+    this._sqlite.run(
+      `INSERT OR IGNORE INTO nodes_current
+         (node_id, run_id, role, kind, title, node_type, status, retry_count, runtime_type, runtime_type_reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        node.node_id,
+        this.runId,
+        node.role,
+        node.kind,
+        node.title,
+        node.node_type,
+        node.status,
+        node.retry_count,
+        "task",
+        null,
+      ],
+    );
+    return this;
   }
 
-  run(sql: string, params: any[]): void {
-    // Node status update
-    if (sql.includes("UPDATE nodes_current SET status = ?")) {
-      const [status, nodeId] = params;
-      const node = this.nodes.get(nodeId);
-      if (node) node.status = status;
-      return;
+  addEdge(source: string, target: string): this {
+    this._sqlite.run(
+      `INSERT OR IGNORE INTO dependency_edges_current (id, run_id, source_id, target_id, type)
+       VALUES (?, ?, ?, ?, ?)`,
+      [`edge_${source}_${target}`, this.runId, source, target, "hard"],
+    );
+    return this;
+  }
+
+  nodeStatus(nodeId: string): string | undefined {
+    const row = this._sqlite
+      .query("SELECT status FROM nodes_current WHERE node_id = ?")
+      .get(nodeId) as { status: string } | null;
+    return row?.status;
+  }
+
+  retryCount(nodeId: string): number {
+    const row = this._sqlite
+      .query("SELECT retry_count FROM nodes_current WHERE node_id = ?")
+      .get(nodeId) as { retry_count: number } | null;
+    return row?.retry_count ?? 0;
+  }
+
+  setNodeStatus(nodeId: string, status: string): void {
+    this._sqlite.run("UPDATE nodes_current SET status = ? WHERE node_id = ?", [status, nodeId]);
+  }
+
+  setNodeRetryCount(nodeId: string, count: number): void {
+    this._sqlite.run("UPDATE nodes_current SET retry_count = ? WHERE node_id = ?", [count, nodeId]);
+  }
+
+  getNodeRole(nodeId: string): string | undefined {
+    const row = this._sqlite
+      .query("SELECT role FROM nodes_current WHERE node_id = ?")
+      .get(nodeId) as { role: string } | null;
+    return row?.role;
+  }
+
+  // -------------------------------------------------------------------------
+  // IExecutionStore — Run state
+  // -------------------------------------------------------------------------
+
+  getRun(runId: string): RunSnapshot | null {
+    return this._store.getRun(runId);
+  }
+
+  updateRunStatus(runId: string, status: string): void {
+    this._store.updateRunStatus(runId, status);
+  }
+
+  upsertRunExec(runId: string, meta: RunExecMeta): void {
+    this._store.upsertRunExec(runId, meta);
+  }
+
+  getRunDirectory(runId: string): string | null {
+    return this._store.getRunDirectory(runId);
+  }
+
+  // -------------------------------------------------------------------------
+  // IExecutionStore — Source
+  // -------------------------------------------------------------------------
+
+  getRunSourceId(runId: string): string | null {
+    return this._store.getRunSourceId(runId);
+  }
+
+  getRunSource(runId: string): PlannerSourceRow | null {
+    return this._store.getRunSource(runId);
+  }
+
+  updateSource(
+    sourceId: string | null,
+    status: string,
+    extra?: { error?: string | null; planRunId?: string | null; lastRunId?: string | null },
+  ): void {
+    this._store.updateSource(sourceId, status, extra);
+  }
+
+  // -------------------------------------------------------------------------
+  // IExecutionStore — Nodes
+  // -------------------------------------------------------------------------
+
+  getNode(nodeId: string): NodeSnapshot | null {
+    return this._store.getNode(nodeId);
+  }
+
+  getNodesForRun(runId: string): NodeSnapshot[] {
+    return this._store.getNodesForRun(runId);
+  }
+
+  getEdgesForRun(runId: string): EdgeSnapshot[] {
+    return this._store.getEdgesForRun(runId);
+  }
+
+  updateNodeStatus(runId: string, nodeId: string, status: string): void {
+    this._store.updateNodeStatus(runId, nodeId, status);
+  }
+
+  incrementNodeRetry(nodeId: string): void {
+    this._store.incrementNodeRetry(nodeId);
+  }
+
+  getDependentsOf(runId: string, nodeId: string): Array<{ target_id: string; status: string }> {
+    return this._store.getDependentsOf(runId, nodeId);
+  }
+
+  getScratchpad(runId: string, nodeId: string): string | null {
+    return this._store.getScratchpad(runId, nodeId);
+  }
+
+  // -------------------------------------------------------------------------
+  // IExecutionStore — Attempts
+  // -------------------------------------------------------------------------
+
+  createAttempt(input: AttemptInput): void {
+    this._store.createAttempt(input);
+  }
+
+  finishAttempt(runId: string, nodeId: string, status: string): void {
+    this._store.finishAttempt(runId, nodeId, status);
+  }
+
+  findOpenAttemptId(runId: string, nodeId: string, sessionId: string): string | null {
+    // If a test has set openAttemptId override, return that
+    if (this.openAttemptId !== null) return this.openAttemptId;
+    return this._store.findOpenAttemptId(runId, nodeId, sessionId);
+  }
+
+  // -------------------------------------------------------------------------
+  // IExecutionStore — Blockers
+  // -------------------------------------------------------------------------
+
+  hasBlockers(runId: string): boolean {
+    return this._store.hasBlockers(runId);
+  }
+
+  // -------------------------------------------------------------------------
+  // IExecutionStore — Metrics
+  // -------------------------------------------------------------------------
+
+  finalizeMetrics(runId: string, state: OrchestratorRunState): RunMetrics {
+    return this._store.finalizeMetrics(runId, state);
+  }
+
+  getRunMetrics(runId: string): RunMetrics | null {
+    // If test has set metricsJson override, use that
+    if (this.metricsJson !== null) {
+      try { return JSON.parse(this.metricsJson) as RunMetrics; } catch { return null; }
     }
-    // Retry count increment
-    if (sql.includes("retry_count = retry_count + 1")) {
-      const [nodeId] = params;
-      const node = this.nodes.get(nodeId);
-      if (node) node.retry_count++;
-      return;
-    }
-    // Run status update
-    if (sql.includes("UPDATE runs_current SET status")) {
-      const [status] = params;
-      this.runStatus = status;
-      return;
-    }
-    // All other SQL (events, attempts, exec tracking, trace, metrics) silently succeeds
+    return this._store.getRunMetrics(runId);
+  }
+
+  // -------------------------------------------------------------------------
+  // IExecutionStore — Metadata query
+  // -------------------------------------------------------------------------
+
+  queryRunNodes(runId: string): RunNodeRow[] {
+    if (this.customRunNodes) return this.customRunNodes;
+    return this._store.queryRunNodes(runId);
+  }
+
+  getRunGoal(runId: string): string {
+    return this._store.getRunGoal(runId);
+  }
+
+  // -------------------------------------------------------------------------
+  // IExecutionStore — Event emission
+  // -------------------------------------------------------------------------
+
+  emitRunEvent(runId: string, type: string, payload: Record<string, unknown>): void {
+    this._store.emitRunEvent(runId, type, payload);
+  }
+
+  emitNodeEvent(runId: string, nodeId: string, status: string): void {
+    this._store.emitNodeEvent(runId, nodeId, status);
+  }
+
+  // -------------------------------------------------------------------------
+  // IExecutionStore — Trace
+  // -------------------------------------------------------------------------
+
+  traceEvent(input: TraceEventInput): void {
+    this._store.traceEvent(input);
   }
 }
 

@@ -20,4 +20,6 @@ export interface IEventStore {
     reducer: (state: S, event: EventEnvelope) => S,
     initial: S,
   ): Promise<S>;
+  /** Return all events across all runs, ordered by stream_seq. Used for repair/rebuild. */
+  getAllEvents(): Promise<EventEnvelope[]>;
 }

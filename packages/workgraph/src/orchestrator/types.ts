@@ -121,4 +121,6 @@ export interface OrchestratorRunState {
   leaseManager: LeaseManager;
   /** Parallelism caps for this run */
   teamPolicy: TeamPolicy;
+  /** Optional map of node_id → WorkGraph work_item_id for item lifecycle tracking */
+  node_work_items?: Map<string, string>;
 }

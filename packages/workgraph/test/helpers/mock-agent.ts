@@ -6,18 +6,22 @@
  * executor through to completion without needing real AI agents.
  *
  * Usage:
- *   const agent = new MockAgent(db);
+ *   const db = new FakeDb(runId);
+ *   const agent = new MockAgent(db.sqlite, db, eventStore);
  *   agent.addScript({ match: { kind: "code_gen" }, tools: [...], status: "completed" });
  *   const spawnFn = agent.spawnFn();
  *   await startOrchestration(db, runId, "goal", spawnFn);
  */
 
 import { handleToolCall } from "../../src/mcp/tools";
+import { openSqlitePlannerStore } from "../../src/sdk/planner";
 import {
   onNodeStatusUpdate,
   onPlanningComplete,
   type SpawnAgentFn,
 } from "../../src/orchestrator/executor";
+import type { IExecutionStore } from "../../src/sdk/execution-store";
+import type { IEventStore } from "../../src/orchestrator/core/services/event-store";
 
 export interface ScriptTool {
   name: string;
@@ -81,12 +85,21 @@ function matchesScript(
 }
 
 export class MockAgent {
-  private db: any;
+  private sqliteDb: any;
+  private executionStore: IExecutionStore;
+  private eventStore: IEventStore;
   private scripts: Script[] = [];
   private _spawnFn: SpawnAgentFn | null = null;
 
-  constructor(db: any, scripts?: Script[]) {
-    this.db = db;
+  /**
+   * @param sqliteDb  Raw bun:sqlite Database (for planner SQL operations)
+   * @param executionStore  IExecutionStore (for orchestrator callbacks)
+   * @param eventStore  IEventStore (for event emission in planner tools)
+   */
+  constructor(sqliteDb: any, executionStore: IExecutionStore, eventStore: IEventStore, scripts?: Script[]) {
+    this.sqliteDb = sqliteDb;
+    this.executionStore = executionStore;
+    this.eventStore = eventStore;
     if (scripts) this.scripts = scripts;
   }
 
@@ -158,7 +171,8 @@ export class MockAgent {
     script: Script | undefined,
     spawnFn: SpawnAgentFn,
   ): Promise<void> {
-    const db = this.db;
+    const db = this.sqliteDb;
+    const eventStore = this.eventStore;
 
     // Planner node (nodeId === "")
     if (nodeId === "") {
@@ -167,7 +181,7 @@ export class MockAgent {
     }
 
     // Task node
-    const ctx = { db, runId, nodeId };
+    const ctx = { plannerStore: openSqlitePlannerStore(db), eventStore, runId, nodeId };
 
     // Fire any configured tool calls
     if (script?.tools) {
@@ -186,7 +200,7 @@ export class MockAgent {
     }
 
     const status = script?.status ?? "completed";
-    await onNodeStatusUpdate(db, runId, nodeId, status, spawnFn);
+    await onNodeStatusUpdate(this.executionStore, runId, nodeId, status, spawnFn);
   }
 
   private async _executePlannerScript(
@@ -194,16 +208,14 @@ export class MockAgent {
     script: Script | undefined,
     spawnFn: SpawnAgentFn,
   ): Promise<void> {
-    const db = this.db;
-    const ctx = { db, runId };
+    const db = this.sqliteDb;
+    const eventStore = this.eventStore;
+    const ctx = { plannerStore: openSqlitePlannerStore(db), eventStore, runId };
 
     if (script?.planNodes && script.planNodes.length > 0) {
       // Create the specified nodes
       const nodeIds: string[] = [];
       for (const nodeSpec of script.planNodes) {
-        const deps = nodeSpec.depends_on ?? (nodeIds.length > 0 && script.planNodes.indexOf(nodeSpec) > 0
-          ? [] // explicit deps only, no auto-chaining unless specified
-          : []);
         const result = await handleToolCall(ctx, "create_node", {
           title: nodeSpec.title,
           kind: nodeSpec.kind,
@@ -213,16 +225,16 @@ export class MockAgent {
         });
         nodeIds.push(result.node_id);
       }
-      await onPlanningComplete(db, runId, "MockAgent plan complete", spawnFn);
+      await onPlanningComplete(this.executionStore, runId, "MockAgent plan complete", spawnFn);
     } else if (script?.tools) {
       // Fire arbitrary tools (e.g. create_node calls)
       for (const tool of script.tools) {
         await handleToolCall(ctx, tool.name, tool.args);
       }
-      await onPlanningComplete(db, runId, "MockAgent plan complete", spawnFn);
+      await onPlanningComplete(this.executionStore, runId, "MockAgent plan complete", spawnFn);
     } else {
       // Default: no nodes, complete immediately
-      await onPlanningComplete(db, runId, "MockAgent: no nodes", spawnFn);
+      await onPlanningComplete(this.executionStore, runId, "MockAgent: no nodes", spawnFn);
     }
   }
 }
@@ -232,10 +244,12 @@ export class MockAgent {
  * and uses the provided planNodes for the planning phase.
  */
 export function createSimpleMockAgent(
-  db: any,
+  sqliteDb: any,
+  executionStore: IExecutionStore,
+  eventStore: IEventStore,
   planNodes: Script["planNodes"] = [],
 ): MockAgent {
-  const agent = new MockAgent(db);
+  const agent = new MockAgent(sqliteDb, executionStore, eventStore);
   // Planner script
   agent.addScript({
     match: { planner: true },
