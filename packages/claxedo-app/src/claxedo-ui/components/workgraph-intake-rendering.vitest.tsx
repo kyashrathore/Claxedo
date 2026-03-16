@@ -144,7 +144,7 @@ function toPreviewItems(items: AiSpecItem[]): WorkgraphPreview[] {
 
 // Simulate latestAssistantText() logic
 function getLatestAssistantText(store: typeof MOCK_STORE, sessionId: string): string {
-  const msgs = store.message[sessionId] ?? []
+  const msgs = (store.message as Record<string, typeof MOCK_STORE["message"][typeof SESSION_ID]>)[sessionId] ?? []
   const msg = msgs.findLast(
     (m) => m.role === "assistant" && typeof (m as any).time?.completed === "number",
   )
