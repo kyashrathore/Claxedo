@@ -33,6 +33,7 @@ import { Auth } from "@/auth"
 import { Flag } from "@/flag/flag"
 import { Command } from "@/command"
 import { Global } from "@/global"
+import { Project } from "@/project/project"
 import { ProjectRoutes } from "@/server/routes/project"
 import { SessionRoutes } from "@/server/routes/session"
 import { PtyRoutes } from "@/server/routes/pty"
@@ -60,12 +61,59 @@ import { AgentHookRoutes } from "@/server/routes/agent-hook"
 import { captureException, shutdownSentry } from "@/observability/sentry"
 // CLAXEDO PATCH: Process management routes
 import { ProcessRoutes } from "../process/routes"
+import { Database } from "bun:sqlite"
+import path from "node:path"
+import { createApp as createWorkGraphApp, initializeDb as initWorkGraphDb, resolveRepoDir } from "@opencode-ai/workgraph"
+import { createWorkGraphExecution } from "./workgraph-execution"
 
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
 globalThis.AI_SDK_LOG_WARNINGS = false
 
 export namespace Server {
   const log = Log.create({ service: "server" })
+  const db = new Database(path.join(Global.Path.data, "workgraph.db"))
+  initWorkGraphDb(db)
+  const auth = async (provider: "github" | "linear") => {
+    const row = await Auth.get(provider).catch(() => undefined)
+    if (row?.type === "api" && row.key.trim()) {
+      return {
+        source: "shared_auth" as const,
+        token: row.key.trim(),
+        name: `${provider} auth`,
+      }
+    }
+    if (row?.type === "oauth" && row.access.trim()) {
+      return {
+        source: "shared_auth" as const,
+        token: row.access.trim(),
+        name: `${provider} auth`,
+      }
+    }
+    if (provider !== "github") return null
+    const res = await Bun.$`gh auth token`.quiet().nothrow()
+    const token = res.text().trim()
+    if (!token) return null
+    return {
+      source: "github_cli" as const,
+      token,
+      name: "GitHub CLI",
+    }
+  }
+  const workgraph = createWorkGraphApp(db, {
+    execution: createWorkGraphExecution(db),
+    auth,
+    repos: async () =>
+      (
+        await Promise.all(
+          (await Project.list()).map((item) =>
+            resolveRepoDir(item.worktree, {
+              project_id: item.id,
+              project_name: item.name ?? null,
+            }),
+          ),
+        )
+      ).filter((item): item is Exclude<typeof item, null> => !!item),
+  })
 
   let _url: URL | undefined
   let _corsWhitelist: string[] = []
@@ -235,14 +283,23 @@ export namespace Server {
           } catch {
             // fallback to original value
           }
+          directory = directory.trim()
+          if (!path.isAbsolute(directory) && /^[A-Za-z]:[\\/]/.test(directory) === false) {
+            const hit = ["/Users/", "/private/", "/Volumes/", "/home/"]
+              .map((item) => directory.indexOf(item))
+              .filter((item) => item >= 0)
+              .sort((a, b) => a - b)[0]
+            if (hit !== undefined) directory = directory.slice(hit)
+            else if (/^(Users|private|Volumes|home)\//.test(directory)) directory = `/${directory}`
+          }
           // DEBUG: Log directory resolution for every request
           const method = c.req.method
-          const path = c.req.path
+          const pathname = c.req.path
           const isWsUpgrade = c.req.header("upgrade") === "websocket"
-          if (path.includes("/pty") || path.includes("/session")) {
+          if (pathname.includes("/pty") || pathname.includes("/session")) {
             log.info("middleware: Instance.provide", {
               method,
-              path,
+              path: pathname,
               directory,
               isWsUpgrade,
               queryDir: c.req.query("directory") || "(none)",
@@ -280,6 +337,7 @@ export namespace Server {
         .route("/question", QuestionRoutes())
         .route("/provider", ProviderRoutes())
         .route("/api/pages", PagesRoutes())
+        .route("/api/workgraph", workgraph)
         .route("/", FileRoutes())
         .route("/mcp", McpRoutes())
         .route("/tui", TuiRoutes())

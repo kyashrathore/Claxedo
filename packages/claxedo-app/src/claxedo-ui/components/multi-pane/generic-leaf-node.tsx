@@ -26,6 +26,7 @@ import { TabReview } from "../tab-review"
 import { ReviewWorkspace } from "../review-workspace"
 import { TabFile } from "../tab-file"
 import { TabPage } from "../tab-page"
+import { TabWorkgraph } from "../tab-workgraph"
 import { PageIndex } from "../page-index"
 import { TabContext } from "../tab-context"
 import { PaneTerminal } from "./pane-terminal"
@@ -397,6 +398,7 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
     if (content.type === "file") return content.filePath?.split("/").at(-1) ?? "File"
     if (content.type === "review") return "Review"
     if (content.type === "review-workspace") return "Review Workspace"
+    if (content.type === "page" && content.pageId === "__workgraph__") return "WorkGraph"
     if (content.type === "page" && content.pageId === "__index__") return "Pages"
     if (content.type === "page") return "Page"
     if (content.type === "context") return "Context"
@@ -898,7 +900,21 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
                 />
               </Match>
 
-              <Match when={content().type === "page" && content().pageId && content().pageId !== "__index__"}>
+              <Match when={content().type === "page" && content().pageId === "__workgraph__"}>
+                <TabWorkgraph
+                  onBackToIndex={() => {
+                    setPaneContent({
+                      type: "page",
+                      directory: content().directory,
+                      sessionId: content().sessionId,
+                      pageId: "__index__",
+                      title: "Pages",
+                    })
+                  }}
+                />
+              </Match>
+
+              <Match when={content().type === "page" && content().pageId && content().pageId !== "__index__" && content().pageId !== "__workgraph__"}>
                 {(() => {
                   const backToIndex = () => {
                     setPaneContent({

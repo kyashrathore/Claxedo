@@ -15,6 +15,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
+import { registerWorkGraphTools } from "@opencode-ai/workgraph"
 import { z } from "zod"
 import { Process } from "../process/process"
 import { createProcessClient } from "../process/client"
@@ -348,6 +349,12 @@ const launch = (id: string, out: LaunchResult, ok: string, fail: string) => {
 const server = new McpServer({
   name: "claxedo-mcp",
   version: "1.0.0",
+})
+
+registerWorkGraphTools(server, httpRequest, {
+  origin: `${ORIGIN}/api/workgraph`,
+  directory: DEFAULT_DIR,
+  mode: "both",
 })
 
 // ---------------------------------------------------------------------------
