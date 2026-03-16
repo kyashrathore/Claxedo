@@ -78,7 +78,12 @@ export function createApp(
   });
 
   // --- GET /runs ---
-  app.get("/runs", (c) => c.json(runStore.listRuns()));
+  app.get("/runs", (c) => {
+    const limit  = Number(c.req.query("limit")  ?? "0") || undefined;
+    const cursor = Number(c.req.query("cursor") ?? "0") || undefined;
+    if (limit) return c.json(runStore.listRuns({ limit, cursor }));
+    return c.json(runStore.listRuns());
+  });
 
   // --- GET /runs/:run_id ---
   app.get("/runs/:run_id", (c) => {

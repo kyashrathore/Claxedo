@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { initializeDb } from "../../src/db/schema";
-import { openSqliteRunStore, type IRunStore } from "../../src/sdk/runs";
+import { openSqliteRunStore, type IRunStore, type RunPage } from "../../src/sdk/runs";
 
 function makeStore(): { db: Database; store: IRunStore } {
   const db = new Database(":memory:");
@@ -252,5 +252,215 @@ describe("IRunStore: getReadyNodes", () => {
     const ready = store.getReadyNodes("run_comp");
     expect(ready).toContain("n2");
     expect(ready).not.toContain("n1"); // n1 is completed, not pending
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listRuns pagination
+// ---------------------------------------------------------------------------
+
+describe("IRunStore: listRuns pagination", () => {
+  it("returns all runs without opts (backward compat)", () => {
+    const { store } = makeStore();
+    store.createRun("run_p1", "a");
+    store.createRun("run_p2", "b");
+    const runs = store.listRuns();
+    expect(runs).toHaveLength(2);
+    expect(Array.isArray(runs)).toBe(true);
+  });
+
+  it("returns first page with limit=1 and next_cursor set", () => {
+    const { store } = makeStore();
+    store.createRun("run_pg_a", "a");
+    store.createRun("run_pg_b", "b");
+    store.createRun("run_pg_c", "c");
+    const page = store.listRuns({ limit: 1 }) as RunPage;
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].run_id).toBe("run_pg_c"); // newest first
+    expect(typeof page.next_cursor).toBe("number");
+  });
+
+  it("next_cursor advances through pages", () => {
+    const { store } = makeStore();
+    store.createRun("run_pag_1", "one");
+    store.createRun("run_pag_2", "two");
+    store.createRun("run_pag_3", "three");
+
+    const page1 = store.listRuns({ limit: 1 }) as RunPage;
+    expect(page1.items[0].run_id).toBe("run_pag_3");
+    expect(page1.next_cursor).not.toBeNull();
+
+    const page2 = store.listRuns({ limit: 1, cursor: page1.next_cursor! }) as RunPage;
+    expect(page2.items[0].run_id).toBe("run_pag_2");
+    expect(page2.next_cursor).not.toBeNull();
+
+    const page3 = store.listRuns({ limit: 1, cursor: page2.next_cursor! }) as RunPage;
+    expect(page3.items[0].run_id).toBe("run_pag_1");
+    expect(page3.next_cursor).toBeNull(); // last page
+  });
+
+  it("next_cursor is null when all items fit in one page", () => {
+    const { store } = makeStore();
+    store.createRun("run_one", "only");
+    const page = store.listRuns({ limit: 10 }) as RunPage;
+    expect(page.items).toHaveLength(1);
+    expect(page.next_cursor).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getDescendants
+// ---------------------------------------------------------------------------
+
+describe("IRunStore: getDescendants", () => {
+  it("returns empty nodes for a leaf node", () => {
+    const { store } = makeStore();
+    store.createRun("run_d", "d");
+    store.createNode("run_d", "n_leaf", "dev", "task", "Leaf");
+    const result = store.getDescendants("n_leaf");
+    expect(result.nodes).toHaveLength(0);
+    expect(result.frontier).toHaveLength(0);
+  });
+
+  it("returns children of a linear chain", () => {
+    const { store } = makeStore();
+    store.createRun("run_chain", "chain");
+    store.createNode("run_chain", "n_root", "dev", "task", "Root");
+    store.createNode("run_chain", "n_mid",  "dev", "task", "Mid");
+    store.createNode("run_chain", "n_end",  "dev", "task", "End");
+    store.createEdge("run_chain", "e1", "n_root", "n_mid",  "depends_on");
+    store.createEdge("run_chain", "e2", "n_mid",  "n_end",  "depends_on");
+
+    const result = store.getDescendants("n_root");
+    const ids = result.nodes.map((n) => n.node_id);
+    expect(ids).toContain("n_mid");
+    expect(ids).toContain("n_end");
+    expect(result.nodes.find((n) => n.node_id === "n_mid")?.depth).toBe(1);
+    expect(result.nodes.find((n) => n.node_id === "n_end")?.depth).toBe(2);
+  });
+
+  it("handles diamond pattern (shared dependency)", () => {
+    const { store } = makeStore();
+    store.createRun("run_diamond", "diamond");
+    store.createNode("run_diamond", "n_top", "dev", "task", "Top");
+    store.createNode("run_diamond", "n_l",   "dev", "task", "Left");
+    store.createNode("run_diamond", "n_r",   "dev", "task", "Right");
+    store.createNode("run_diamond", "n_bot", "dev", "task", "Bottom");
+    store.createEdge("run_diamond", "e1", "n_top", "n_l",   "depends_on");
+    store.createEdge("run_diamond", "e2", "n_top", "n_r",   "depends_on");
+    store.createEdge("run_diamond", "e3", "n_l",   "n_bot", "depends_on");
+    store.createEdge("run_diamond", "e4", "n_r",   "n_bot", "depends_on");
+
+    const result = store.getDescendants("n_top");
+    const ids = result.nodes.map((n) => n.node_id);
+    expect(ids).toContain("n_l");
+    expect(ids).toContain("n_r");
+    expect(ids).toContain("n_bot");
+  });
+
+  it("respects maxDepth and reports frontier", () => {
+    const { store } = makeStore();
+    store.createRun("run_depth", "depth");
+    store.createNode("run_depth", "n_a", "dev", "task", "A");
+    store.createNode("run_depth", "n_b", "dev", "task", "B");
+    store.createNode("run_depth", "n_c", "dev", "task", "C");
+    store.createEdge("run_depth", "e1", "n_a", "n_b", "depends_on");
+    store.createEdge("run_depth", "e2", "n_b", "n_c", "depends_on");
+
+    const result = store.getDescendants("n_a", 1);
+    const ids = result.nodes.map((n) => n.node_id);
+    expect(ids).toContain("n_b");
+    expect(ids).not.toContain("n_c"); // beyond maxDepth
+    expect(result.frontier).toContain("n_b"); // n_b has children at depth 1
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getActiveDescendants
+// ---------------------------------------------------------------------------
+
+describe("IRunStore: getActiveDescendants", () => {
+  it("excludes completed nodes and prunes their subtrees", () => {
+    const { store } = makeStore();
+    store.createRun("run_act", "act");
+    store.createNode("run_act", "n_root",  "dev", "task", "Root");
+    store.createNode("run_act", "n_done",  "dev", "task", "Done");
+    store.createNode("run_act", "n_child", "dev", "task", "ChildOfDone");
+    store.createNode("run_act", "n_pend",  "dev", "task", "Pending");
+    store.createEdge("run_act", "e1", "n_root", "n_done",  "depends_on");
+    store.createEdge("run_act", "e2", "n_done", "n_child", "depends_on");
+    store.createEdge("run_act", "e3", "n_root", "n_pend",  "depends_on");
+
+    store.updateNodeStatus("run_act", "n_done", "completed");
+
+    const result = store.getActiveDescendants("n_root");
+    const ids = result.nodes.map((n) => n.node_id);
+    expect(ids).not.toContain("n_done");  // completed — excluded
+    expect(ids).not.toContain("n_child"); // pruned (parent was completed)
+    expect(ids).toContain("n_pend");      // still active
+  });
+
+  it("active sibling of a completed node is still returned", () => {
+    const { store } = makeStore();
+    store.createRun("run_sib", "sib");
+    store.createNode("run_sib", "n_p",  "dev", "task", "Parent");
+    store.createNode("run_sib", "n_d",  "dev", "task", "Done");
+    store.createNode("run_sib", "n_a",  "dev", "task", "Active");
+    store.createEdge("run_sib", "e1", "n_p", "n_d", "depends_on");
+    store.createEdge("run_sib", "e2", "n_p", "n_a", "depends_on");
+
+    store.updateNodeStatus("run_sib", "n_d", "completed");
+
+    const result = store.getActiveDescendants("n_p");
+    const ids = result.nodes.map((n) => n.node_id);
+    expect(ids).not.toContain("n_d");
+    expect(ids).toContain("n_a");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getAncestors
+// ---------------------------------------------------------------------------
+
+describe("IRunStore: getAncestors", () => {
+  it("returns empty for a root node with no parents", () => {
+    const { store } = makeStore();
+    store.createRun("run_anc", "anc");
+    store.createNode("run_anc", "n_root", "dev", "task", "Root");
+    const result = store.getAncestors("n_root");
+    expect(result.nodes).toHaveLength(0);
+  });
+
+  it("walks edges in reverse to find ancestors", () => {
+    const { store } = makeStore();
+    store.createRun("run_rev", "rev");
+    store.createNode("run_rev", "n_a", "dev", "task", "A");
+    store.createNode("run_rev", "n_b", "dev", "task", "B");
+    store.createNode("run_rev", "n_c", "dev", "task", "C");
+    // A → B → C (A is ancestor of C)
+    store.createEdge("run_rev", "e1", "n_a", "n_b", "depends_on");
+    store.createEdge("run_rev", "e2", "n_b", "n_c", "depends_on");
+
+    const result = store.getAncestors("n_c");
+    const ids = result.nodes.map((n) => n.node_id);
+    expect(ids).toContain("n_b"); // depth 1
+    expect(ids).toContain("n_a"); // depth 2
+    expect(result.nodes.find((n) => n.node_id === "n_b")?.depth).toBe(1);
+    expect(result.nodes.find((n) => n.node_id === "n_a")?.depth).toBe(2);
+  });
+
+  it("respects maxDepth", () => {
+    const { store } = makeStore();
+    store.createRun("run_anc_depth", "ad");
+    store.createNode("run_anc_depth", "n_1", "dev", "task", "1");
+    store.createNode("run_anc_depth", "n_2", "dev", "task", "2");
+    store.createNode("run_anc_depth", "n_3", "dev", "task", "3");
+    store.createEdge("run_anc_depth", "e1", "n_1", "n_2", "depends_on");
+    store.createEdge("run_anc_depth", "e2", "n_2", "n_3", "depends_on");
+
+    const result = store.getAncestors("n_3", 1);
+    const ids = result.nodes.map((n) => n.node_id);
+    expect(ids).toContain("n_2");
+    expect(ids).not.toContain("n_1"); // beyond maxDepth
   });
 });

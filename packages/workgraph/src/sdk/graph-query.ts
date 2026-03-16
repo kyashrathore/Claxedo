@@ -105,27 +105,27 @@ export function runsForItem(db: Database, itemId: string) {
         r.created_at,
         r.updated_at,
         n.node_id,
-        COALESCE(
-          (SELECT a.runtime_type FROM attempts_current a WHERE a.run_id = n.run_id AND a.node_id = n.node_id ORDER BY a.started_at DESC LIMIT 1),
-          x.runtime_type,
-          'workspace'
-        ) AS runtime_type,
-        (SELECT a.attempt_id FROM attempts_current a WHERE a.run_id = n.run_id AND a.node_id = n.node_id ORDER BY a.started_at DESC LIMIT 1) AS attempt_id,
-        (SELECT a.status FROM attempts_current a WHERE a.run_id = n.run_id AND a.node_id = n.node_id ORDER BY a.started_at DESC LIMIT 1) AS attempt_status,
-        (SELECT a.session_id FROM attempts_current a WHERE a.run_id = n.run_id AND a.node_id = n.node_id ORDER BY a.started_at DESC LIMIT 1) AS session_id,
-        (SELECT a.pty_id FROM attempts_current a WHERE a.run_id = n.run_id AND a.node_id = n.node_id ORDER BY a.started_at DESC LIMIT 1) AS pty_id,
-        (SELECT a.directory FROM attempts_current a WHERE a.run_id = n.run_id AND a.node_id = n.node_id ORDER BY a.started_at DESC LIMIT 1) AS directory,
-        (SELECT a.worktree_path FROM attempts_current a WHERE a.run_id = n.run_id AND a.node_id = n.node_id ORDER BY a.started_at DESC LIMIT 1) AS worktree_path
+        COALESCE(a.runtime_type, x.runtime_type, 'workspace') AS runtime_type,
+        a.attempt_id,
+        a.status AS attempt_status,
+        a.session_id,
+        a.pty_id,
+        a.directory,
+        a.worktree_path
       FROM run_node_items_current n
       INNER JOIN runs_current r ON r.run_id = n.run_id
       LEFT JOIN run_exec_current x ON x.run_id = r.run_id
+      LEFT JOIN (
+        SELECT run_id, node_id, attempt_id, runtime_type, status,
+               session_id, pty_id, directory, worktree_path, started_at
+        FROM attempts_current a1
+        WHERE started_at = (
+          SELECT MAX(started_at) FROM attempts_current a2
+          WHERE a2.run_id = a1.run_id AND a2.node_id = a1.node_id
+        )
+      ) a ON a.run_id = n.run_id AND a.node_id = n.node_id
       WHERE n.work_item_id = ?
-      ORDER BY COALESCE(
-        (SELECT a.started_at FROM attempts_current a WHERE a.run_id = n.run_id AND a.node_id = n.node_id ORDER BY a.started_at DESC LIMIT 1),
-        r.updated_at,
-        r.created_at,
-        ''
-      ) DESC`,
+      ORDER BY COALESCE(a.started_at, r.updated_at, r.created_at, '') DESC`,
   ).all(itemId) as any[]).map((r) => ({
     run_id: r.run_id,
     goal: r.goal,
