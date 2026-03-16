@@ -13,13 +13,6 @@
 import { describe, it, expect, mock } from "bun:test";
 import { FakeDb, makeSpawn, makeFailingSpawn, nextRunId } from "../helpers/fake-db";
 
-// Stub db/helpers before executor is imported (file absent on this branch).
-mock.module("../../src/db/helpers", () => ({
-  generateHash: () => "deadbeef00000000",
-  insertEvent: () => {},
-  getNextSeq: () => 0,
-}));
-
 const {
   findReadyNodes,
   onNodeStatusUpdate,
