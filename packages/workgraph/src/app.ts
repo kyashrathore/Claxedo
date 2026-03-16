@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { ulid } from "ulid";
-import type { EventEnvelope } from "./orchestrator/events";
 import { eventsRouter } from "./routes/events";
 import { scratchpadRouter } from "./routes/scratchpad";
 import { planningRouter } from "./routes/planning";
@@ -15,11 +14,11 @@ import { graphRouter } from "./routes/graph";
 import { triggersRouter } from "./routes/triggers";
 import { initTriggersTable } from "./triggers/store";
 import { initWorkGraph } from "./orchestrator/workgraph-bridge";
-import { generateHash, insertEvent, getNextSeq } from "./db/helpers";
+import { openSqliteEventStore, type IEventStore } from "./orchestrator/core/services/event-store";
 import type { ExecutionAdapter } from "./execution";
 import type { ProviderAuthResolver, ProviderFactory } from "./providers";
 import type { RepoBindingResolver } from "./repo";
-import { getRunMetrics } from "./orchestrator/executor";
+import { getRunMetrics, setEventStore } from "./orchestrator/executor";
 
 /**
  * Initialize all tables needed by the API server.
@@ -245,6 +244,9 @@ export function createApp(
     initializeDb(db);
   }
 
+  const eventStore: IEventStore = openSqliteEventStore(db);
+  setEventStore(eventStore);
+
   // Initialize WorkGraph singleton
   initWorkGraph(db.filename);
 
@@ -264,26 +266,19 @@ export function createApp(
 
       const runId = `run_${ulid()}`;
       const eventId = `evt_${ulid()}`;
-      const seq = getNextSeq(db, runId);
 
-      const event: EventEnvelope = {
+      await eventStore.append({
         id: eventId,
         run_id: runId,
         stream_id: runId,
-        stream_seq: seq,
-        logical_ts: seq,
         schema_version: 1,
         type: "run_created",
         payload_json: JSON.stringify({ goal, status: "active" }),
         actor_type: "user",
         actor_id: "api",
         op_id: `op_${eventId}`,
-        prev_hash: "00000000",
-        hash: generateHash(),
         created_at: new Date().toISOString(),
-      };
-
-      insertEvent(db, event);
+      });
 
       const now = new Date().toISOString();
       db.run("INSERT INTO runs_current (run_id, goal, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
@@ -336,14 +331,11 @@ export function createApp(
 
       const nodeId = `node_${ulid()}`;
       const eventId = `evt_${ulid()}`;
-      const seq = getNextSeq(db, runId);
 
-      const event: EventEnvelope = {
+      await eventStore.append({
         id: eventId,
         run_id: runId,
         stream_id: runId,
-        stream_seq: seq,
-        logical_ts: seq,
         schema_version: 1,
         type: "node_created",
         payload_json: JSON.stringify({
@@ -354,12 +346,8 @@ export function createApp(
         actor_type: "system",
         actor_id: "api",
         op_id: `op_${eventId}`,
-        prev_hash: "00000000",
-        hash: generateHash(),
         created_at: new Date().toISOString(),
-      };
-
-      insertEvent(db, event);
+      });
 
       db.run(
         "INSERT INTO nodes_current (node_id, run_id, role, kind, title, status, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -398,14 +386,11 @@ export function createApp(
 
       const edgeId = `edge_${ulid()}`;
       const eventId = `evt_${ulid()}`;
-      const seq = getNextSeq(db, runId);
 
-      const event: EventEnvelope = {
+      await eventStore.append({
         id: eventId,
         run_id: runId,
         stream_id: runId,
-        stream_seq: seq,
-        logical_ts: seq,
         schema_version: 1,
         type: "edge_added",
         payload_json: JSON.stringify({
@@ -417,12 +402,8 @@ export function createApp(
         actor_type: "system",
         actor_id: "api",
         op_id: `op_${eventId}`,
-        prev_hash: "00000000",
-        hash: generateHash(),
         created_at: new Date().toISOString(),
-      };
-
-      insertEvent(db, event);
+      });
 
       db.run(
         "INSERT INTO dependency_edges_current (id, run_id, source_id, target_id, type) VALUES (?, ?, ?, ?, ?)",
@@ -558,24 +539,18 @@ export function createApp(
 
       // Emit event
       const eventId = `evt_${ulid()}`;
-      const seq = getNextSeq(db, runId);
-      const event: EventEnvelope = {
+      await eventStore.append({
         id: eventId,
         run_id: runId,
         stream_id: runId,
-        stream_seq: seq,
-        logical_ts: seq,
         schema_version: 1,
         type: "node_status_changed",
         payload_json: JSON.stringify({ node_id: nodeId, status, previous_status: existing.status }),
         actor_type: "user",
         actor_id: "api",
         op_id: `op_${eventId}`,
-        prev_hash: "00000000",
-        hash: generateHash(),
         created_at: new Date().toISOString(),
-      };
-      insertEvent(db, event);
+      });
 
       return c.json({ ...existing, status });
     }
@@ -651,8 +626,8 @@ export function createApp(
   app.route("/", lifecycleRouter(db));
   app.route("/", hydrationRouter(db));
   app.route("/", repairRouter(db));
-  app.route("/", graphRouter(db, opts?.execution, opts?.providers, opts?.auth, opts?.repos));
-  app.route("/", mcpRouter(db, opts?.execution));
+  app.route("/", graphRouter(db, eventStore, opts?.execution, opts?.providers, opts?.auth, opts?.repos));
+  app.route("/", mcpRouter(db, eventStore, opts?.execution));
   app.route("/", workRouter());
 
   return app;

@@ -1,6 +1,5 @@
 import { ulid } from "ulid";
-import type { EventEnvelope } from "../orchestrator/events";
-import { insertEvent, generateHash, getNextSeq } from "../db/helpers";
+import type { IEventStore } from "../orchestrator/core/services/event-store";
 import { getSource } from "../db/source";
 import type { RuntimeType } from "../orchestrator/types";
 
@@ -10,6 +9,7 @@ import type { RuntimeType } from "../orchestrator/types";
 
 export interface McpToolContext {
   db: any; // bun:sqlite db instance
+  eventStore?: IEventStore;
   runId: string;
   nodeId?: string; // set for task agents, undefined for planner
   onNodeCompleted?: (runId: string, nodeId: string) => void;
@@ -44,34 +44,28 @@ export function inferRuntimeType(kind: string): RuntimeType {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function emitEvent(
-  db: any,
+async function emitEvent(
+  eventStore: IEventStore | undefined,
   runId: string,
   type: string,
   payload: Record<string, any>,
   actorType = "agent",
   actorId = "mcp"
-): EventEnvelope {
+): Promise<void> {
+  if (!eventStore) return;
   const eventId = `evt_${ulid()}`;
-  const seq = getNextSeq(db, runId);
-  const event: EventEnvelope = {
+  await eventStore.append({
     id: eventId,
     run_id: runId,
     stream_id: runId,
-    stream_seq: seq,
-    logical_ts: seq,
     schema_version: 1,
     type,
     payload_json: JSON.stringify(payload),
     actor_type: actorType,
     actor_id: actorId,
     op_id: `op_${eventId}`,
-    prev_hash: "00000000",
-    hash: generateHash(),
     created_at: new Date().toISOString(),
-  };
-  insertEvent(db, event);
-  return event;
+  });
 }
 
 function nodeExists(db: any, runId: string, nodeId: string): boolean {
@@ -379,7 +373,7 @@ async function createNode(
   );
 
   // Emit node_created event
-  emitEvent(db, runId, "node_created", {
+  await emitEvent(ctx.eventStore, runId, "node_created", {
     node_id: nodeId,
     kind,
     role,
@@ -398,7 +392,7 @@ async function createNode(
         "INSERT INTO dependency_edges_current (id, run_id, source_id, target_id, type) VALUES (?, ?, ?, ?, ?)",
         [edgeId, runId, sourceId, nodeId, "depends_on"]
       );
-      emitEvent(db, runId, "edge_added", {
+      await emitEvent(ctx.eventStore, runId, "edge_added", {
         id: edgeId,
         source_id: sourceId,
         target_id: nodeId,
@@ -438,7 +432,7 @@ async function addEdge(
     [edgeId, runId, source_id, target_id, edgeType]
   );
 
-  emitEvent(db, runId, "edge_added", {
+  await emitEvent(ctx.eventStore, runId, "edge_added", {
     id: edgeId,
     source_id,
     target_id,
@@ -460,7 +454,7 @@ async function removeEdge(
     [runId, source_id, target_id]
   );
 
-  emitEvent(db, runId, "edge_removed", {
+  await emitEvent(ctx.eventStore, runId, "edge_removed", {
     source_id,
     target_id,
   });
@@ -577,7 +571,7 @@ async function finishPlanning(
   const { summary } = args;
 
   // Emit run_planned event
-  emitEvent(db, runId, "run_planned", { summary });
+  await emitEvent(ctx.eventStore, runId, "run_planned", { summary });
 
   // Trigger the executor
   if (ctx.onPlanningComplete) {
@@ -622,7 +616,7 @@ async function updateStatus(
     ]);
   }
 
-  emitEvent(db, runId, "node_status_changed", {
+  await emitEvent(ctx.eventStore, runId, "node_status_changed", {
     node_id,
     status,
     previous_status: previousStatus,
@@ -656,7 +650,7 @@ async function writeScratchpad(
     [spId, runId, targetNodeId, args.content, now, expiresAt, sizeBytes]
   );
 
-  emitEvent(db, runId, "scratchpad_written", {
+  await emitEvent(ctx.eventStore, runId, "scratchpad_written", {
     scratchpad_id: spId,
     node_id: targetNodeId,
     priority: args.priority || "fyi",
@@ -740,7 +734,7 @@ async function createArtifact(
 
   const artifactId = `artifact_${ulid()}`;
 
-  emitEvent(db, runId, "artifact_created", {
+  await emitEvent(ctx.eventStore, runId, "artifact_created", {
     artifact_id: artifactId,
     node_id: targetNodeId,
     type: args.type,

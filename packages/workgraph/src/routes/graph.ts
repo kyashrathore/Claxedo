@@ -7,6 +7,7 @@ import { cancelNodeExecution, reconcileExecution, startExecution, startOrchestra
 import type { ProviderName, ProviderPreview, ProviderQueryMode } from "../orchestrator/events/connector"
 import { getWorkGraph } from "../orchestrator/workgraph-bridge"
 import { createRunInDb } from "../db/run"
+import type { IEventStore } from "../orchestrator/core/services/event-store"
 import { dir } from "../dir"
 import type { ExecutionAdapter } from "../execution"
 import { adapter, preview, validate, type ProviderAuthResolver, type ProviderConnection, type ProviderFactory } from "../providers"
@@ -750,6 +751,7 @@ function live(db: any, itemId: string) {
 
 export function graphRouter(
   db: any,
+  eventStore: IEventStore,
   execution?: ExecutionAdapter,
   providers?: ProviderFactory,
   auth?: ProviderAuthResolver,
@@ -1212,8 +1214,9 @@ export function graphRouter(
       return c.json({ error: `Slice is already ${slice.status}` }, 400)
     }
     const runId = `run_${ulid()}`
-    createRunInDb(
+    await createRunInDb(
       db,
+      eventStore,
       runId,
       slice.goal,
       "active",
@@ -1322,8 +1325,9 @@ export function graphRouter(
       const slice = body.slice_id ? slicePick(db, body.slice_id) : null
       const goal = body.goal?.trim() || mission?.title || slice?.goal || `Execute ${work.length} work item${work.length === 1 ? "" : "s"}`
       const runId = `run_${ulid()}`
-      createRunInDb(
+      await createRunInDb(
         db,
+        eventStore,
         runId,
         goal,
         "active",

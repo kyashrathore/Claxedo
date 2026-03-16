@@ -9,6 +9,7 @@ import {
   deleteTrigger,
 } from "../triggers/store";
 import { fireTrigger } from "../triggers/scheduler";
+import type { IEventStore } from "../orchestrator/core/services/event-store";
 
 const CreateSchema = z.object({
   title: z.string().min(1),
@@ -30,7 +31,7 @@ const UpdateSchema = z.object({
   payload: z.record(z.unknown()).optional(),
 });
 
-export function triggersRouter(db: any) {
+export function triggersRouter(db: any, eventStore: IEventStore) {
   const router = new Hono();
 
   // GET /triggers — list all triggers
@@ -77,10 +78,10 @@ export function triggersRouter(db: any) {
   });
 
   // POST /triggers/:id/fire — manually fire a trigger (also used by Inngest cron callback)
-  router.post("/triggers/:id/fire", (c) => {
+  router.post("/triggers/:id/fire", async (c) => {
     const id = c.req.param("id");
     try {
-      const results = fireTrigger(db, id);
+      const results = await fireTrigger(db, eventStore, id);
       return c.json({ fired: true, runs: results }, 201);
     } catch (err: any) {
       const status = err.message.includes("not found") ? 404 : 400;

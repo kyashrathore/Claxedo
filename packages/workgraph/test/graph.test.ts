@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { Database } from "bun:sqlite"
-import { generateHash, getNextSeq, insertEvent } from "../src/db/helpers"
+import { openSqliteEventStore } from "../src/orchestrator/core/services/event-store"
 import { createApp, initializeDb } from "../src/app"
 import type { WorkGraph } from "../src/model/workgraph"
 import { onNodeStatusUpdate, onSessionStopped } from "../src/orchestrator/executor"
@@ -474,15 +474,13 @@ describe("Graph routes", () => {
       .query("SELECT node_id FROM run_node_items_current WHERE run_id = ? AND work_item_id = ?")
       .get(body.run_id, b.id) as { node_id: string }
 
-    const write = (nodeId: string, content: string) => {
+    const eventStore = openSqliteEventStore(db)
+    const write = async (nodeId: string, content: string) => {
       const id = `evt_${ulid()}`
-      const seq = getNextSeq(db, body.run_id)
-      insertEvent(db, {
+      await eventStore.append({
         id,
         run_id: body.run_id,
         stream_id: body.run_id,
-        stream_seq: seq,
-        logical_ts: seq,
         schema_version: 1,
         type: "artifact_created",
         payload_json: JSON.stringify({
@@ -494,14 +492,12 @@ describe("Graph routes", () => {
         actor_type: "agent",
         actor_id: "test",
         op_id: `op_${id}`,
-        prev_hash: "00000000",
-        hash: generateHash(),
         created_at: new Date().toISOString(),
       })
     }
 
-    write(aNode.node_id, "# Plan A")
-    write(bNode.node_id, "# Plan B")
+    await write(aNode.node_id, "# Plan A")
+    await write(bNode.node_id, "# Plan B")
 
     const detail = await app.request(`/graph/items/${a.id}`)
     expect(detail.status).toBe(200)

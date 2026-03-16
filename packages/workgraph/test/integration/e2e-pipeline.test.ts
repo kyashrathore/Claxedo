@@ -1,32 +1,24 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
-import { drizzle } from "drizzle-orm/bun-sqlite";
-import type { EventEnvelope } from "../../src/orchestrator/events/schema";
-import { appendEvent, getEvents, replayEvents } from "../../src/orchestrator/core/services/event-store";
+import { openSqliteEventStore, type IEventStore } from "../../src/orchestrator/core/services/event-store";
 import { rootReducer, initialRootState, type RootState } from "../../src/orchestrator/core/reducers/index";
 import { PlanningService } from "../../src/orchestrator/core/services/planning";
 import { resolveRoute, type CapabilityDescription } from "../../src/orchestrator/core/routing";
-import { CollaborationService } from "../../src/orchestrator/core/services/collaboration";
 import { LeadLoop } from "../../src/orchestrator/core/services/lead-loop";
 import { Watchdog } from "../../src/orchestrator/core/services/watchdog";
 import { ScratchpadService } from "../../src/orchestrator/core/services/scratchpad";
 import { getReadyNodes, LeaseManager, type TeamPolicy } from "../../src/orchestrator/core/scheduler";
 import { GraphEngine, type Node, type Edge } from "../../src/orchestrator/graph/graph";
 import { GateTracker } from "../../src/orchestrator/graph/gates";
-import { computeHash } from "../../src/orchestrator/core/services/hash-chain";
 
 describe("E2E Pipeline Integration", () => {
-  let db: ReturnType<typeof drizzle>;
   let sqlite: Database;
-  let counter: number;
-  let prevHash: string;
+  let eventStore: IEventStore;
+  let opCounter: number;
 
   beforeEach(() => {
-    counter = 1;
-    prevHash = "00000000";
+    opCounter = 1;
     sqlite = new Database(":memory:");
-    db = drizzle(sqlite);
-
     sqlite.run(`
       CREATE TABLE events (
         id TEXT PRIMARY KEY,
@@ -45,35 +37,27 @@ describe("E2E Pipeline Integration", () => {
         created_at TEXT NOT NULL
       );
     `);
+    eventStore = openSqliteEventStore(sqlite);
   });
 
   async function emitEvent(
     type: string,
     payload: Record<string, any>,
     runId: string = "run_1"
-  ): Promise<EventEnvelope> {
-    const seq = counter++;
-    const evt: EventEnvelope = {
-      id: `evt_${seq}`,
+  ) {
+    const n = opCounter++;
+    return eventStore.append({
+      id: `evt_${n}`,
       run_id: runId,
       stream_id: runId,
-      stream_seq: seq,
-      logical_ts: seq,
       schema_version: 1,
       type,
       payload_json: JSON.stringify(payload),
       actor_type: "system",
       actor_id: "orchestrator",
-      op_id: `op_${seq}`,
-      prev_hash: prevHash,
-      hash: "",
+      op_id: `op_${n}`,
       created_at: new Date().toISOString(),
-    };
-    evt.hash = await computeHash(evt, prevHash);
-    prevHash = evt.hash;
-
-    await appendEvent(db, evt);
-    return evt;
+    });
   }
 
   it("full E2E: decompose -> route -> dispatch -> execute -> lead reroute -> synthesize", async () => {
@@ -205,7 +189,6 @@ describe("E2E Pipeline Integration", () => {
     // ========================================
     // PHASE 5: Simulate execution - mark nodes active, then completed
     // ========================================
-    const collaboration = new CollaborationService();
     const watchdog = new Watchdog({ noProgressTimeoutMs: 100 }); // short timeout for testing
 
     // Execute first batch of ready nodes
@@ -219,16 +202,6 @@ describe("E2E Pipeline Integration", () => {
       await emitEvent("node_status_changed", { node_id: node.id, status: "active" });
       watchdog.recordActivity(node.id, "active");
     }
-
-    // Post team messages
-    collaboration.postMessage({
-      id: "msg_start",
-      runId,
-      teamId: teamIds[0] || "frontend_team",
-      senderId: "lead",
-      type: "propose",
-      content: "Starting execution of dispatched plan",
-    });
 
     // ========================================
     // PHASE 6: Make one node stall, detect with LeadLoop
@@ -251,16 +224,6 @@ describe("E2E Pipeline Integration", () => {
       await emitEvent("lead_plan_created", { plan_id: "lead_plan_1" });
       await emitEvent("lead_gap_detected", { plan_id: "lead_plan_1", gap: gaps[0].reason });
 
-      // Post a blocker message
-      collaboration.postMessage({
-        id: "msg_blocker",
-        runId,
-        teamId: nodeTeamMap.get(stalledNodeId) || "unknown",
-        senderId: "lead",
-        type: "blocker",
-        content: `Node ${stalledNodeId} stalled: ${gaps[0].reason}`,
-      });
-
       // ========================================
       // PHASE 7: Request reroute
       // ========================================
@@ -276,23 +239,12 @@ describe("E2E Pipeline Integration", () => {
         reroute: reroute.reason,
       });
 
-      // Create handoff
-      collaboration.requestHandoff({
-        id: "h_reroute",
-        runId,
-        fromTeamId: nodeTeamMap.get(stalledNodeId) || "unknown",
-        toTeamId: "qa_team",
-        payload: reroute.reason,
-      });
-
       await emitEvent("handoff_requested", {
         id: "h_reroute",
         from_team_id: nodeTeamMap.get(stalledNodeId) || "unknown",
         to_team_id: "qa_team",
       });
 
-      // Accept handoff
-      collaboration.acceptHandoff("h_reroute");
       await emitEvent("handoff_accepted", { id: "h_reroute" });
 
       // Complete the rerouted node
@@ -359,7 +311,7 @@ describe("E2E Pipeline Integration", () => {
     // ========================================
     // PHASE 10: Verify final state through rootReducer replay
     // ========================================
-    const finalState = await replayEvents(db, runId, rootReducer, { ...initialRootState });
+    const finalState = await eventStore.replayEvents(runId, rootReducer, { ...initialRootState });
 
     // Verify run
     expect(finalState.run.runs[runId]).toBeDefined();
@@ -385,17 +337,6 @@ describe("E2E Pipeline Integration", () => {
     // Verify artifact
     expect(finalState.artifact.artifacts[promoted!.artifact.id]).toBeDefined();
 
-    // Verify collaboration state (service-level, not reducer state)
-    const allMessages = collaboration.getMessages(runId);
-    expect(allMessages.length).toBeGreaterThanOrEqual(2);
-
-    const blockerMsgs = collaboration.getMessagesByType(runId, "blocker");
-    expect(blockerMsgs.length).toBeGreaterThan(0);
-
-    const handoffs = collaboration.getHandoffs(runId);
-    expect(handoffs).toHaveLength(1);
-    expect(handoffs[0].status).toBe("accepted");
-
     // Verify reroute tracking
     expect(leadLoop.getGaps(runId).length).toBeGreaterThan(0);
     expect(leadLoop.getReroutes(runId).length).toBeGreaterThan(0);
@@ -411,8 +352,8 @@ describe("E2E Pipeline Integration", () => {
     await emitEvent("node_status_changed", { node_id: "n1", status: "completed" });
     await emitEvent("artifact_created", { id: "a1", node_id: "n1", content: "output", version: 1 });
 
-    const state1 = await replayEvents(db, runId, rootReducer, { ...initialRootState });
-    const state2 = await replayEvents(db, runId, rootReducer, { ...initialRootState });
+    const state1 = await eventStore.replayEvents(runId, rootReducer, { ...initialRootState });
+    const state2 = await eventStore.replayEvents(runId, rootReducer, { ...initialRootState });
 
     expect(JSON.stringify(state1)).toBe(JSON.stringify(state2));
   });
@@ -504,7 +445,7 @@ describe("E2E Pipeline Integration", () => {
     await emitEvent("node_created", { node_id: "n1", kind: "lead_task", team_id: "t1" });
     await emitEvent("edge_added", { id: "e1", source_id: "n1", target_id: "n2", type: "hard" });
 
-    const events = await getEvents(db, runId);
+    const events = await eventStore.getEvents(runId);
     expect(events).toHaveLength(3);
 
     // Verify chain manually

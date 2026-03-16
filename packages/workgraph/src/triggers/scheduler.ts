@@ -1,5 +1,5 @@
 import { ulid } from "ulid";
-import { generateHash, insertEvent, getNextSeq } from "../db/helpers";
+import type { IEventStore } from "../orchestrator/core/services/event-store";
 import { getTrigger, getDueTriggers, recordTriggerFired } from "./store";
 import type { RecurringTrigger } from "./types";
 
@@ -21,7 +21,7 @@ export interface FireTriggerResult {
  *
  * Returns the list of run records created (usually length 1 for 'single' mode).
  */
-export function fireTrigger(db: any, triggerId: string): FireTriggerResult[] {
+export async function fireTrigger(db: any, eventStore: IEventStore, triggerId: string): Promise<FireTriggerResult[]> {
   const trigger = getTrigger(db, triggerId);
   if (!trigger) throw new Error(`Trigger '${triggerId}' not found`);
   if (!trigger.enabled) throw new Error(`Trigger '${triggerId}' is disabled`);
@@ -32,18 +32,15 @@ export function fireTrigger(db: any, triggerId: string): FireTriggerResult[] {
   for (const item of items) {
     const run_id = `run_${ulid()}`;
     const eventId = `evt_${ulid()}`;
-    const seq = getNextSeq(db, run_id);
     const now = new Date().toISOString();
 
     const goal = buildGoal(trigger, item.index);
 
     // Write run_created event
-    const event = {
+    await eventStore.append({
       id: eventId,
       run_id,
       stream_id: run_id,
-      stream_seq: seq,
-      logical_ts: seq,
       schema_version: 1,
       type: "run_created",
       payload_json: JSON.stringify({
@@ -52,14 +49,11 @@ export function fireTrigger(db: any, triggerId: string): FireTriggerResult[] {
         trigger_id: triggerId,
         trigger_run_index: item.index,
       }),
-      actor_type: "trigger" as const,
+      actor_type: "trigger",
       actor_id: triggerId,
       op_id: `op_${eventId}`,
-      prev_hash: "00000000",
-      hash: generateHash(),
       created_at: now,
-    };
-    insertEvent(db, event);
+    });
 
     // Write to runs_current, including trigger FK columns
     db.run(
@@ -110,11 +104,13 @@ export interface TriggerSchedulerOptions {
  */
 export class TriggerScheduler {
   private db: any;
+  private eventStore: IEventStore;
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
   private pollIntervalMs: number;
 
-  constructor(db: any, opts: TriggerSchedulerOptions = {}) {
+  constructor(db: any, eventStore: IEventStore, opts: TriggerSchedulerOptions = {}) {
     this.db = db;
+    this.eventStore = eventStore;
     this.pollIntervalMs = opts.pollIntervalMs ?? 60_000;
   }
 
@@ -133,12 +129,12 @@ export class TriggerScheduler {
   }
 
   /** Manually trigger a single poll cycle (useful in tests). */
-  tick(): FireTriggerResult[][] {
+  async tick(): Promise<FireTriggerResult[][]> {
     const due = getDueTriggers(this.db);
     const allResults: FireTriggerResult[][] = [];
     for (const trigger of due) {
       try {
-        const results = fireTrigger(this.db, trigger.id);
+        const results = await fireTrigger(this.db, this.eventStore, trigger.id);
         allResults.push(results);
       } catch (err) {
         console.error(`[TriggerScheduler] Failed to fire trigger ${trigger.id}:`, err);

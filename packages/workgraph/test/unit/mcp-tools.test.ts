@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { initializeDb } from "../../src/app";
 import { handleToolCall, getToolDefinitions, inferRuntimeType, type McpToolContext } from "../../src/mcp/tools";
+import { openSqliteEventStore } from "../../src/orchestrator/core/services/event-store";
 
 function makeDb() {
   const db = new Database(":memory:");
@@ -14,7 +15,7 @@ function makeDb() {
 }
 
 function ctx(db: any, extra: Partial<McpToolContext> = {}): McpToolContext {
-  return { db, runId: "run_test", ...extra };
+  return { db, runId: "run_test", eventStore: openSqliteEventStore(db), ...extra };
 }
 
 // ---------------------------------------------------------------------------
@@ -230,6 +231,7 @@ describe("finish_planning", () => {
     const context: McpToolContext = {
       db,
       runId: "run_test",
+      eventStore: openSqliteEventStore(db),
       onPlanningComplete: () => { planningCompleteCalled = true; },
     };
     await handleToolCall(context, "finish_planning", { summary: "Plan done" });
