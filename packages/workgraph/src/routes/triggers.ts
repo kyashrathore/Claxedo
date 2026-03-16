@@ -1,14 +1,10 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import {
-  createTrigger,
-  getTrigger,
-  listTriggers,
-  updateTrigger,
-  deleteTrigger,
-  listRunsByTrigger,
-} from "../triggers/store";
+import type { ITriggerStore } from "../triggers/trigger-store";
+import type { IRunStore } from "../sdk/runs";
+import type { IEventStore } from "../orchestrator/core/services/event-store";
+import type { IExecutionStore } from "../sdk/execution-store";
 import { fireTrigger } from "../triggers/scheduler";
 
 const CreateSchema = z.object({
@@ -31,25 +27,30 @@ const UpdateSchema = z.object({
   payload: z.record(z.unknown()).optional(),
 });
 
-export function triggersRouter(db: any) {
+export function triggersRouter(
+  triggerStore: ITriggerStore,
+  runStore: IRunStore,
+  eventStore: IEventStore,
+  executionStore: IExecutionStore,
+) {
   const router = new Hono();
 
   // GET /triggers — list all triggers
   router.get("/triggers", (c) => {
-    return c.json(listTriggers(db));
+    return c.json(triggerStore.list());
   });
 
   // POST /triggers — create a trigger
   router.post("/triggers", zValidator("json", CreateSchema), (c) => {
     const input = c.req.valid("json");
-    const trigger = createTrigger(db, input);
+    const trigger = triggerStore.create(input);
     return c.json(trigger, 201);
   });
 
   // GET /triggers/:id — get a single trigger
   router.get("/triggers/:id", (c) => {
     const id = c.req.param("id");
-    const trigger = getTrigger(db, id);
+    const trigger = triggerStore.get(id);
     if (!trigger) return c.json({ error: "Trigger not found" }, 404);
     return c.json(trigger);
   });
@@ -59,7 +60,7 @@ export function triggersRouter(db: any) {
     const id = c.req.param("id");
     const input = c.req.valid("json");
     try {
-      const trigger = updateTrigger(db, id, input);
+      const trigger = triggerStore.update(id, input);
       return c.json(trigger);
     } catch (err: any) {
       return c.json({ error: err.message }, 404);
@@ -70,7 +71,7 @@ export function triggersRouter(db: any) {
   router.delete("/triggers/:id", (c) => {
     const id = c.req.param("id");
     try {
-      deleteTrigger(db, id);
+      triggerStore.delete(id);
       return c.json({ deleted: true });
     } catch (err: any) {
       return c.json({ error: err.message }, 404);
@@ -78,10 +79,10 @@ export function triggersRouter(db: any) {
   });
 
   // POST /triggers/:id/fire — manually fire a trigger (also used by Inngest cron callback)
-  router.post("/triggers/:id/fire", (c) => {
+  router.post("/triggers/:id/fire", async (c) => {
     const id = c.req.param("id");
     try {
-      const results = fireTrigger(db, id);
+      const results = await fireTrigger(triggerStore, runStore, eventStore, executionStore, id);
       return c.json({ fired: true, runs: results }, 201);
     } catch (err: any) {
       const status = err.message.includes("not found") ? 404 : 400;
@@ -92,9 +93,9 @@ export function triggersRouter(db: any) {
   // GET /triggers/:id/runs — list runs spawned by this trigger
   router.get("/triggers/:id/runs", (c) => {
     const id = c.req.param("id");
-    const trigger = getTrigger(db, id);
+    const trigger = triggerStore.get(id);
     if (!trigger) return c.json({ error: "Trigger not found" }, 404);
-    return c.json(listRunsByTrigger(db, id));
+    return c.json(triggerStore.listRunsByTrigger(id));
   });
 
   return router;

@@ -49,6 +49,9 @@ export class FakeDb implements IExecutionStore {
   private readonly _sqlite: Database;
   private readonly _store: IExecutionStore;
 
+  /** Exposes the underlying SQLite instance for helpers that need raw db.run() / db.query(). */
+  get sqlite(): Database { return this._sqlite; }
+
   constructor(runId = "run_x") {
     this.runId = runId;
     this._sqlite = new Database(":memory:");

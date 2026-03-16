@@ -5,6 +5,7 @@
  *   ISliceStore  →  SqliteSliceStore  →  openSqliteSliceStore(db)
  */
 
+import type { Database } from "bun:sqlite";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -88,7 +89,7 @@ function parseJson(value: string | null | undefined): any | null {
   try { return JSON.parse(value) } catch { return null }
 }
 
-function toSliceRow(db: any, raw: any): SliceRow {
+function toSliceRow(db: Database, raw: any): SliceRow {
   const traceRunId = resolveRunId(raw)
   const exec = traceRunId
     ? (db.query("SELECT runtime_type, session_id, pty_id, directory FROM run_exec_current WHERE run_id = ?").get(traceRunId) as any)
@@ -123,7 +124,7 @@ function toSliceRow(db: any, raw: any): SliceRow {
 }
 
 class SqliteSliceStore implements ISliceStore {
-  constructor(private db: any) {}
+  constructor(private db: Database) {}
 
   get(sliceId: string): SliceRow | null {
     const raw = this.db.query("SELECT * FROM sources_current WHERE source_id = ?").get(sliceId) as any
@@ -190,6 +191,6 @@ class SqliteSliceStore implements ISliceStore {
 // ---------------------------------------------------------------------------
 
 /** Create an ISliceStore backed by the given bun:sqlite Database instance. */
-export function openSqliteSliceStore(db: any): ISliceStore {
+export function openSqliteSliceStore(db: Database): ISliceStore {
   return new SqliteSliceStore(db)
 }

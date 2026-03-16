@@ -1,11 +1,14 @@
 import * as planner from "../sdk/planner";
+import type { IPlannerStore } from "../sdk/planner";
+import type { IEventStore } from "../orchestrator/core/services/event-store";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface McpToolContext {
-  db: any; // bun:sqlite db instance
+  plannerStore: IPlannerStore;
+  eventStore: IEventStore;
   runId: string;
   nodeId?: string; // set for task agents, undefined for planner
   onNodeCompleted?: (runId: string, nodeId: string) => void;
@@ -61,11 +64,13 @@ export function getToolDefinitions(): McpToolDefinition[] {
           node_type: {
             type: "string",
             enum: ["task", "mission", "synthesis"],
-            description: "Hierarchy role for the node. Use 'mission' for aggregate-only groupings and 'synthesis' for consolidation nodes.",
+            description:
+              "Hierarchy role for the node. Use 'mission' for aggregate-only groupings and 'synthesis' for consolidation nodes.",
           },
           parent_node_id: {
             type: "string",
-            description: "Optional parent node_id for hierarchy. This does not create an execution dependency by itself.",
+            description:
+              "Optional parent node_id for hierarchy. This does not create an execution dependency by itself.",
           },
         },
         required: ["title", "kind", "role", "prompt"],
@@ -111,8 +116,7 @@ export function getToolDefinitions(): McpToolDefinition[] {
     },
     {
       name: "finish_planning",
-      description:
-        "Signal that planning is complete and the graph is ready for execution.",
+      description: "Signal that planning is complete and the graph is ready for execution.",
       inputSchema: {
         type: "object",
         properties: {
@@ -142,8 +146,7 @@ export function getToolDefinitions(): McpToolDefinition[] {
     },
     {
       name: "write_scratchpad",
-      description:
-        "Write a scratchpad entry for a node. Used to pass context between nodes.",
+      description: "Write a scratchpad entry for a node. Used to pass context between nodes.",
       inputSchema: {
         type: "object",
         properties: {
@@ -202,8 +205,7 @@ export function getToolDefinitions(): McpToolDefinition[] {
     },
     {
       name: "get_run_status",
-      description:
-        "Get the current run status including node counts by status.",
+      description: "Get the current run status including node counts by status.",
       inputSchema: {
         type: "object",
         properties: {},
@@ -228,36 +230,54 @@ export function getToolDefinitions(): McpToolDefinition[] {
 export async function handleToolCall(
   ctx: McpToolContext,
   toolName: string,
-  args: Record<string, any>
+  args: Record<string, any>,
 ): Promise<any> {
-  const { db, runId, nodeId, onPlanningComplete, onNodeCompleted } = ctx;
+  const { plannerStore, eventStore, runId, nodeId, onPlanningComplete, onNodeCompleted } = ctx;
 
   try {
     switch (toolName) {
       case "create_node":
-        return planner.createNode(db, runId, args as Parameters<typeof planner.createNode>[2]);
+        return planner.createNode(plannerStore, eventStore, runId, args as Parameters<typeof planner.createNode>[3]);
       case "add_edge":
-        return planner.addEdge(db, runId, args as Parameters<typeof planner.addEdge>[2]);
+        return planner.addEdge(plannerStore, eventStore, runId, args as Parameters<typeof planner.addEdge>[3]);
       case "remove_edge":
-        return planner.removeEdge(db, runId, args as Parameters<typeof planner.removeEdge>[2]);
+        return planner.removeEdge(plannerStore, eventStore, runId, args as Parameters<typeof planner.removeEdge>[3]);
       case "validate_graph":
-        return planner.validateGraph(db, runId);
+        return planner.validateGraph(plannerStore, runId);
       case "finish_planning":
-        return planner.finishPlanning(db, runId, args.summary, onPlanningComplete);
+        return planner.finishPlanning(plannerStore, eventStore, runId, args.summary, onPlanningComplete);
       case "update_status":
-        return planner.updateStatus(db, runId, args as Parameters<typeof planner.updateStatus>[2], onNodeCompleted);
+        return planner.updateStatus(
+          plannerStore,
+          eventStore,
+          runId,
+          args as Parameters<typeof planner.updateStatus>[3],
+          onNodeCompleted,
+        );
       case "write_scratchpad":
-        return planner.writeScratchpad(db, runId, nodeId, args as Parameters<typeof planner.writeScratchpad>[3]);
+        return planner.writeScratchpad(
+          plannerStore,
+          eventStore,
+          runId,
+          nodeId,
+          args as Parameters<typeof planner.writeScratchpad>[4],
+        );
       case "read_scratchpads":
-        return planner.readScratchpads(db, runId, nodeId, args as Parameters<typeof planner.readScratchpads>[3]);
+        return planner.readScratchpads(plannerStore, runId, nodeId, args as Parameters<typeof planner.readScratchpads>[3]);
       case "create_artifact":
-        return planner.createArtifact(db, runId, nodeId, args as Parameters<typeof planner.createArtifact>[3]);
+        return planner.createArtifact(
+          plannerStore,
+          eventStore,
+          runId,
+          nodeId,
+          args as Parameters<typeof planner.createArtifact>[4],
+        );
       case "get_graph":
-        return planner.getGraph(db, runId);
+        return planner.getGraph(plannerStore, runId);
       case "get_run_status":
-        return planner.getRunStatus(db, runId);
+        return planner.getRunStatus(plannerStore, runId);
       case "get_run_source":
-        return planner.getRunSource(db, runId);
+        return planner.getRunSource(plannerStore, runId);
       default:
         return { error: `Unknown tool: ${toolName}` };
     }

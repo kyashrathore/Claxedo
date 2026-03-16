@@ -8,6 +8,7 @@
  * is what public API endpoints return.
  */
 
+import type { Database } from "bun:sqlite";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -68,7 +69,7 @@ function toFull(row: any): ConnectionFull {
 }
 
 class SqliteConnectionStore implements IConnectionStore {
-  constructor(private db: any) {}
+  constructor(private db: Database) {}
 
   get(connectionId: string): ConnectionFull | null {
     const row = this.db
@@ -128,6 +129,6 @@ class SqliteConnectionStore implements IConnectionStore {
 // ---------------------------------------------------------------------------
 
 /** Create an IConnectionStore backed by the given bun:sqlite Database instance. */
-export function openSqliteConnectionStore(db: any): IConnectionStore {
+export function openSqliteConnectionStore(db: Database): IConnectionStore {
   return new SqliteConnectionStore(db)
 }

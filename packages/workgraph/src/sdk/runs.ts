@@ -5,7 +5,8 @@
  *   IRunStore  →  SqliteRunStore  →  openSqliteRunStore(db)
  */
 
-import { getRunMetrics } from "../orchestrator/executor";
+import type { Database } from "bun:sqlite";
+import type { RunSourceInput } from "../model/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,14 +52,33 @@ export interface EdgeRow {
 export interface IRunStore {
   /** Insert a new run. Returns the created row. */
   createRun(runId: string, goal: string): RunRow;
+  /**
+   * Insert a new run with optional source attachment and sourceId FK.
+   * Equivalent to the old createRunInDb helper.
+   */
+  createRunWithMeta(
+    runId: string,
+    goal: string,
+    status: string,
+    source?: RunSourceInput,
+    sourceId?: string,
+  ): RunRow;
+  /** Insert a run spawned by a recurring trigger (includes trigger FK columns). */
+  createTriggerRun(
+    runId: string,
+    goal: string,
+    runtimeType: string,
+    triggerId: string,
+    triggerRunIndex: number,
+  ): void;
+  /** Attach (or replace) a source document for a run. */
+  attachRunSource(runId: string, source: RunSourceInput): void;
   /** Get a single run by ID. Returns null if not found. */
   getRun(runId: string): RunRow | null;
   /** List all runs with joined source and exec metadata, newest first. */
   listRuns(): RunRow[];
   /** Get the source document attached to a run. */
   getRunSource(runId: string): Record<string, unknown> | null;
-  /** Get execution metrics for a run. Returns null if not yet recorded. */
-  getRunMetrics(runId: string): Record<string, unknown> | null;
   /** Insert a new node. Returns the created row. */
   createNode(runId: string, nodeId: string, role: string, kind: string, title: string): NodeRow;
   /** List nodes for a run. */
@@ -78,7 +98,7 @@ export interface IRunStore {
 // ---------------------------------------------------------------------------
 
 class SqliteRunStore implements IRunStore {
-  constructor(private db: any) {}
+  constructor(private db: Database) {}
 
   createRun(runId: string, goal: string): RunRow {
     const now = new Date().toISOString();
@@ -87,6 +107,45 @@ class SqliteRunStore implements IRunStore {
       [runId, goal, "active", now, now],
     );
     return this.getRun(runId)!;
+  }
+
+  createRunWithMeta(
+    runId: string,
+    goal: string,
+    status: string,
+    source?: RunSourceInput,
+    sourceId?: string,
+  ): RunRow {
+    const now = new Date().toISOString();
+    this.db.run(
+      "INSERT INTO runs_current (run_id, goal, status, source_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [runId, goal, status, sourceId ?? null, now, now],
+    );
+    if (source) this.attachRunSource(runId, source);
+    return this.getRun(runId)!;
+  }
+
+  createTriggerRun(
+    runId: string,
+    goal: string,
+    runtimeType: string,
+    triggerId: string,
+    triggerRunIndex: number,
+  ): void {
+    const now = new Date().toISOString();
+    this.db.run(
+      `INSERT INTO runs_current (run_id, goal, status, runtime_type, trigger_id, trigger_run_index, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [runId, goal, "active", runtimeType, triggerId, triggerRunIndex, now, now],
+    );
+  }
+
+  attachRunSource(runId: string, source: RunSourceInput): void {
+    const now = new Date().toISOString();
+    this.db.run(
+      "INSERT OR REPLACE INTO run_sources_current (run_id, kind, title, content, source_path, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [runId, source.kind, source.title, source.content, source.source_path ?? null, now],
+    );
   }
 
   getRun(runId: string): RunRow | null {
@@ -135,10 +194,6 @@ class SqliteRunStore implements IRunStore {
 
   getRunSource(runId: string): Record<string, unknown> | null {
     return this.db.query("SELECT * FROM run_sources_current WHERE run_id = ?").get(runId) as any ?? null;
-  }
-
-  getRunMetrics(runId: string): Record<string, unknown> | null {
-    return getRunMetrics(this.db, runId) as any ?? null;
   }
 
   createNode(runId: string, nodeId: string, role: string, kind: string, title: string): NodeRow {
@@ -203,6 +258,6 @@ class SqliteRunStore implements IRunStore {
 // ---------------------------------------------------------------------------
 
 /** Create an IRunStore backed by the given bun:sqlite Database instance. */
-export function openSqliteRunStore(db: any): IRunStore {
+export function openSqliteRunStore(db: Database): IRunStore {
   return new SqliteRunStore(db);
 }

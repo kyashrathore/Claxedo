@@ -1,3 +1,4 @@
+import type { Database } from "bun:sqlite";
 import { ulid } from "ulid";
 import { computeNextRun } from "./cron";
 import type { RecurringTrigger, CreateTriggerInput, UpdateTriggerInput } from "./types";
@@ -11,7 +12,7 @@ import type { RecurringTrigger, CreateTriggerInput, UpdateTriggerInput } from ".
  * Triggers are mutable config records — NOT event-sourced.
  * Runs spawned by a trigger link back via `runs_current.trigger_id`.
  */
-export function initTriggersTable(db: any): void {
+export function initTriggersTable(db: Database): void {
   db.run(`
     CREATE TABLE IF NOT EXISTS triggers (
       id TEXT PRIMARY KEY,
@@ -34,7 +35,7 @@ export function initTriggersTable(db: any): void {
 // CRUD
 // ---------------------------------------------------------------------------
 
-export function createTrigger(db: any, input: CreateTriggerInput): RecurringTrigger {
+export function createTrigger(db: Database, input: CreateTriggerInput): RecurringTrigger {
   const now = new Date().toISOString();
   const id = `trig_${ulid()}`;
   const enabled = input.enabled !== false; // default true
@@ -61,18 +62,18 @@ export function createTrigger(db: any, input: CreateTriggerInput): RecurringTrig
   return getTrigger(db, id)!;
 }
 
-export function getTrigger(db: any, id: string): RecurringTrigger | undefined {
+export function getTrigger(db: Database, id: string): RecurringTrigger | undefined {
   const row = db.query("SELECT * FROM triggers WHERE id = ?").get(id) as any;
   return row ? rowToTrigger(row) : undefined;
 }
 
-export function listTriggers(db: any): RecurringTrigger[] {
+export function listTriggers(db: Database): RecurringTrigger[] {
   const rows = db.query("SELECT * FROM triggers ORDER BY created_at ASC").all() as any[];
   return rows.map(rowToTrigger);
 }
 
 export function updateTrigger(
-  db: any,
+  db: Database,
   id: string,
   input: UpdateTriggerInput,
 ): RecurringTrigger {
@@ -108,14 +109,14 @@ export function updateTrigger(
   return getTrigger(db, id)!;
 }
 
-export function deleteTrigger(db: any, id: string): void {
+export function deleteTrigger(db: Database, id: string): void {
   const existing = getTrigger(db, id);
   if (!existing) throw new Error(`Trigger '${id}' not found`);
   db.run("DELETE FROM triggers WHERE id = ?", [id]);
 }
 
 /** Called after a trigger fires to update last/next timestamps. */
-export function recordTriggerFired(db: any, id: string): void {
+export function recordTriggerFired(db: Database, id: string): void {
   const existing = getTrigger(db, id);
   if (!existing) return;
 
@@ -129,14 +130,14 @@ export function recordTriggerFired(db: any, id: string): void {
 }
 
 /** Returns all runs spawned by a given trigger, newest first. */
-export function listRunsByTrigger(db: any, triggerId: string): any[] {
+export function listRunsByTrigger(db: Database, triggerId: string): any[] {
   return db
     .query("SELECT * FROM runs_current WHERE trigger_id = ? ORDER BY rowid DESC")
     .all(triggerId) as any[];
 }
 
 /** Returns all enabled triggers whose next_run_at <= now. */
-export function getDueTriggers(db: any, now: Date = new Date()): RecurringTrigger[] {
+export function getDueTriggers(db: Database, now: Date = new Date()): RecurringTrigger[] {
   const rows = db
     .query(
       "SELECT * FROM triggers WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?",

@@ -6,6 +6,7 @@
  * executor.ts receives an IExecutionStore instead of a raw db handle.
  */
 
+import type { Database } from "bun:sqlite";
 import { ulid } from "ulid";
 import { createTraceEvent, appendTraceEvent } from "../orchestrator/trace";
 import type { IEventStore } from "../orchestrator/core/services/event-store";
@@ -131,7 +132,7 @@ export interface IExecutionStore {
 
 class SqliteExecutionStore implements IExecutionStore {
   constructor(
-    private db: any,
+    private db: Database,
     private eventStore: IEventStore,
   ) {}
 
@@ -439,6 +440,6 @@ class SqliteExecutionStore implements IExecutionStore {
 // ---------------------------------------------------------------------------
 
 /** Create an IExecutionStore backed by the given bun:sqlite Database and event store. */
-export function openSqliteExecutionStore(db: any, eventStore: IEventStore): IExecutionStore {
+export function openSqliteExecutionStore(db: Database, eventStore: IEventStore): IExecutionStore {
   return new SqliteExecutionStore(db, eventStore);
 }

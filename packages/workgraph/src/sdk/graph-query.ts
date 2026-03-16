@@ -6,6 +6,7 @@
  * Route handlers call these instead of writing raw SQL inline.
  */
 
+import type { Database } from "bun:sqlite";
 import { ulid } from "ulid"
 import type { WorkItem } from "../model/types"
 import { getWorkGraph } from "../orchestrator/workgraph-bridge"
@@ -48,7 +49,7 @@ function toAttemptRow(raw: any): AttemptRow {
 }
 
 /** Latest attempt for a work item (prefers active/running). */
-export function attemptForItem(db: any, itemId: string): AttemptRow | null {
+export function attemptForItem(db: Database, itemId: string): AttemptRow | null {
   const raw = db.query(
     `SELECT a.*
      FROM attempts_current a
@@ -61,7 +62,7 @@ export function attemptForItem(db: any, itemId: string): AttemptRow | null {
 }
 
 /** All attempts for a work item, newest first. */
-export function attemptsForItem(db: any, itemId: string): AttemptRow[] {
+export function attemptsForItem(db: Database, itemId: string): AttemptRow[] {
   return (db.query(
     `SELECT a.*
      FROM attempts_current a
@@ -72,7 +73,7 @@ export function attemptsForItem(db: any, itemId: string): AttemptRow[] {
 }
 
 /** All ongoing (unfinished) executions for a work item. */
-export function liveExecutions(db: any, itemId: string) {
+export function liveExecutions(db: Database, itemId: string) {
   return db.query(
     `SELECT a.run_id, a.node_id, a.session_id, a.pty_id, a.directory, a.worktree_path
      FROM attempts_current a
@@ -94,7 +95,7 @@ export function liveExecutions(db: any, itemId: string) {
 // ---------------------------------------------------------------------------
 
 /** All runs that include a work item, with latest attempt metadata. */
-export function runsForItem(db: any, itemId: string) {
+export function runsForItem(db: Database, itemId: string) {
   return (db.query(
     `SELECT DISTINCT
         r.run_id,
@@ -144,7 +145,7 @@ export function runsForItem(db: any, itemId: string) {
 }
 
 /** Set of work_item_ids that have at least one run in "executing" status. */
-export function activeRunItemIds(db: any): Set<string> {
+export function activeRunItemIds(db: Database): Set<string> {
   return new Set(
     (db.query(
       `SELECT DISTINCT n.work_item_id
@@ -157,7 +158,7 @@ export function activeRunItemIds(db: any): Set<string> {
 
 /** Upsert run_exec_current with execution metadata. */
 export function touchRun(
-  db: any,
+  db: Database,
   runId: string,
   meta: { runtime_type?: string; session_id?: string | null; pty_id?: string | null; directory?: string | null },
 ): void {
@@ -181,7 +182,7 @@ export function touchRun(
 // ---------------------------------------------------------------------------
 
 /** All events for runs that include a work item, filtered to relevant node events. */
-export function eventsForItem(db: any, itemId: string) {
+export function eventsForItem(db: Database, itemId: string) {
   const runs = runsForItem(db, itemId)
   if (!runs.length) return []
   const nodesByRun = new Map<string, Set<string>>()
@@ -208,7 +209,7 @@ export function eventsForItem(db: any, itemId: string) {
 }
 
 /** Artifacts emitted by a work item's execution runs. */
-export function artifactsForItem(db: any, itemId: string) {
+export function artifactsForItem(db: Database, itemId: string) {
   return eventsForItem(db, itemId)
     .filter((event) => event.type === "artifact_created")
     .flatMap((event) => {
@@ -230,7 +231,7 @@ export function artifactsForItem(db: any, itemId: string) {
 }
 
 /** Artifacts from a work item and all its descendants (deduped). */
-export function descendantArtifacts(db: any, itemId: string) {
+export function descendantArtifacts(db: Database, itemId: string) {
   const ids = getWorkGraph().getDescendants(itemId).map((item) => item.id)
   const seen = new Set<string>()
   return ids
@@ -265,7 +266,7 @@ function nodeRole(labels: string[]): string {
 }
 
 /** Build the full item API response object. */
-export function itemRow(db: any, item: WorkItem, sliceStore: ISliceStore) {
+export function itemRow(db: Database, item: WorkItem, sliceStore: ISliceStore) {
   const wg = getWorkGraph()
   const blocked = wg.getBlockedBy(item.id)
   const blocking = wg.getBlocking(item.id)
@@ -318,7 +319,7 @@ export type ItemRowResult = ReturnType<typeof itemRow>
 /** Filter and map a list of work items for API responses. */
 export function applyItemFilters(
   items: WorkItem[],
-  db: any,
+  db: Database,
   sliceStore: ISliceStore,
   query: {
     status?: string | null
@@ -380,13 +381,13 @@ export function descendantScratchpads(itemId: string) {
 }
 
 /** Synthesis child item view (if exists). */
-export function synthesisItem(db: any, itemId: string, sliceStore: ISliceStore): ItemRowResult | null {
+export function synthesisItem(db: Database, itemId: string, sliceStore: ISliceStore): ItemRowResult | null {
   const item = getWorkGraph().getChildren(itemId).find((child) => child.nodeType === "synthesis")
   return item ? itemRow(db, item, sliceStore) : null
 }
 
 /** Latest artifact from the synthesis child node. */
-export function synthesisArtifact(db: any, itemId: string) {
+export function synthesisArtifact(db: Database, itemId: string) {
   const item = getWorkGraph().getChildren(itemId).find((child) => child.nodeType === "synthesis")
   if (!item) return null
   return artifactsForItem(db, item.id).at(-1) ?? null
@@ -424,7 +425,7 @@ export interface FocusResult {
  * Compute ready/blocked/busy partitions for a mission's subtree.
  * Returns `ready` (can start now), `blocked` (external blockers), `hold` (set of item ids blocked internally).
  */
-export function focusSubtree(wg: ReturnType<typeof getWorkGraph>, db: any, rootId: string): FocusResult {
+export function focusSubtree(wg: ReturnType<typeof getWorkGraph>, db: Database, rootId: string): FocusResult {
   const items = subtreeItems(wg, rootId)
   const ids = new Set(items.map((item) => item.id))
   const busy = activeRunItemIds(db)
@@ -465,7 +466,7 @@ export function focusSubtree(wg: ReturnType<typeof getWorkGraph>, db: any, rootI
  * Returns a nodeId → workItemId map.
  */
 export function createSnapshot(
-  db: any,
+  db: Database,
   runId: string,
   items: WorkItem[],
   hold = new Set<string>(),
@@ -524,7 +525,7 @@ export function createSnapshot(
  * Replaces any existing blockers for the run.
  */
 export function writeBlockers(
-  db: any,
+  db: Database,
   runId: string,
   blocked: Array<{ item_id: string; title: string; blocked_item_ids: string[] }>,
   nodeItemMap: Map<string, string>,

@@ -1,9 +1,12 @@
 import { Hono } from "hono";
 import { handleToolCall, getToolDefinitions, type McpToolContext } from "../mcp/tools";
 import { onPlanningComplete, onNodeStatusUpdate } from "../orchestrator/executor";
+import { openSqlitePlannerStore } from "../sdk/planner";
 import { dir } from "../dir";
+import type { Database } from "bun:sqlite";
 import type { ExecutionAdapter } from "../execution";
 import type { IExecutionStore } from "../sdk/execution-store";
+import type { IEventStore } from "../orchestrator/core/services/event-store";
 
 /**
  * HTTP route that exposes MCP tool calls over HTTP.
@@ -43,7 +46,8 @@ function launch(c: any, execution?: ExecutionAdapter) {
     });
 }
 
-export function mcpRouter(db: any, executionStore: IExecutionStore, execution?: ExecutionAdapter) {
+export function mcpRouter(db: Database, executionStore: IExecutionStore, eventStore: IEventStore, execution?: ExecutionAdapter) {
+  const plannerStore = openSqlitePlannerStore(db);
   const router = new Hono();
 
   // --- GET /mcp/tools/list ---
@@ -67,7 +71,8 @@ export function mcpRouter(db: any, executionStore: IExecutionStore, execution?: 
       }
 
       const ctx: McpToolContext = {
-        db,
+        plannerStore,
+        eventStore,
         runId: run_id,
         nodeId: node_id,
         onPlanningComplete: (rId: string, summary: string) => {

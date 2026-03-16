@@ -2,10 +2,12 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { ulid } from "ulid";
+import { Database } from "bun:sqlite";
 import { eventsRouter } from "./routes/events";
 import { scratchpadRouter } from "./routes/scratchpad";
 import { planningRouter } from "./routes/planning";
-import { lifecycleRouter, openSqliteRunHealthStore } from "./routes/lifecycle";
+import { lifecycleRouter } from "./routes/lifecycle";
+import { openSqliteRunHealthStore } from "./sdk/health-store";
 import { hydrationRouter } from "./routes/hydration";
 import { repairRouter } from "./routes/repair";
 import { mcpRouter } from "./routes/mcp";
@@ -21,6 +23,7 @@ import { openSqliteSliceStore } from "./sdk/slices";
 import { openSqliteConnectionStore } from "./sdk/connections";
 import { openSqliteRunStore } from "./sdk/runs";
 import { openSqliteExecutionStore } from "./sdk/execution-store";
+import { openSqliteTriggerStore } from "./triggers/trigger-store";
 import { initializeDb } from "./db/schema";
 
 export { initializeDb } from "./db/schema";
@@ -33,11 +36,10 @@ export { initializeDb } from "./db/schema";
  * Create a Hono app wired to the given SQLite database.
  */
 export function createApp(
-  db?: any,
+  db?: Database,
   opts?: { execution?: ExecutionAdapter; providers?: ProviderFactory; auth?: ProviderAuthResolver; repos?: RepoBindingResolver },
 ) {
   if (!db) {
-    const { Database } = require("bun:sqlite");
     db = new Database(":memory:");
     initializeDb(db);
   }
@@ -50,6 +52,7 @@ export function createApp(
   const connStore = openSqliteConnectionStore(db);
   const healthStore = openSqliteRunHealthStore(db);
   const executionStore = openSqliteExecutionStore(db, eventStore);
+  const triggerStore = openSqliteTriggerStore(db);
 
   const app = new Hono();
 
@@ -95,7 +98,7 @@ export function createApp(
   app.get("/runs/:run_id/metrics", (c) => {
     const runId = c.req.param("run_id");
     if (!runStore.getRun(runId)) return c.json({ error: "Run not found" }, 404);
-    const metrics = runStore.getRunMetrics(runId);
+    const metrics = executionStore.getRunMetrics(runId);
     if (!metrics) return c.json({ error: "Metrics not yet available for this run" }, 404);
     return c.json(metrics);
   });
@@ -195,10 +198,10 @@ export function createApp(
   app.route("/", lifecycleRouter(healthStore));
   app.route("/", hydrationRouter(eventStore));
   app.route("/", repairRouter(eventStore));
-  app.route("/", graphRouter(db, executionStore, sliceStore, connStore, opts?.execution, opts?.providers, opts?.auth, opts?.repos));
-  app.route("/", mcpRouter(db, executionStore, opts?.execution));
+  app.route("/", graphRouter(db, executionStore, runStore, eventStore, sliceStore, connStore, opts?.execution, opts?.providers, opts?.auth, opts?.repos));
+  app.route("/", mcpRouter(db, executionStore, eventStore, opts?.execution));
   app.route("/", workRouter());
-  app.route("/", triggersRouter(db));
+  app.route("/", triggersRouter(triggerStore, runStore, eventStore, executionStore));
 
   return app;
 }

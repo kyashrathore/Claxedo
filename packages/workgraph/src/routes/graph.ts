@@ -2,18 +2,22 @@ import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { ulid } from "ulid"
+import type { Database } from "bun:sqlite"
 import { cancelNodeExecution, reconcileExecution, startExecution, startOrchestration } from "../orchestrator/executor"
 import type { ProviderName, ProviderPreview } from "../orchestrator/events/connector"
 import { getWorkGraph } from "../orchestrator/workgraph-bridge"
-import { createRunInDb } from "../db/run"
 import { dir } from "../dir"
 import type { ExecutionAdapter } from "../execution"
 import { adapter, preview, validate, type ProviderAuthResolver, type ProviderConnection, type ProviderFactory } from "../providers"
-import { backfillRepos, buckets, inferRepo, resolveRepoDir, type RepoBindingResolver } from "../repo"
-import type { SourceKind } from "../model/types"
+import { buckets, inferRepo, resolveRepoDir, type RepoBindingResolver } from "../repo"
+import type { SourceKind, RunSourceInput } from "../model/types"
+import { createRepoSync } from "../sdk/repo-sync"
+import { archiveWorkItem } from "../sdk/archive-service"
 import type { ISliceStore } from "../sdk/slices"
 import type { IConnectionStore } from "../sdk/connections"
 import type { IExecutionStore } from "../sdk/execution-store"
+import type { IRunStore } from "../sdk/runs"
+import type { IEventStore } from "../orchestrator/core/services/event-store"
 import {
   itemRow,
   applyItemFilters,
@@ -147,8 +151,10 @@ function launch(c: any, execution?: ExecutionAdapter, base?: string | null) {
 // ---------------------------------------------------------------------------
 
 export function graphRouter(
-  db: any,
+  db: Database,
   executionStore: IExecutionStore,
+  runStore: IRunStore,
+  eventStore: IEventStore,
   sliceStore: ISliceStore,
   connStore: IConnectionStore,
   execution?: ExecutionAdapter,
@@ -158,36 +164,46 @@ export function graphRouter(
 ) {
   const router = new Hono()
 
-  // Memoized repo sync (caches result for 10s)
-  let tick = 0
-  let memo: Promise<Awaited<ReturnType<RepoBindingResolver>>> | null = null
-  const syncRepos = async (force = false) => {
-    if (!repos) { await backfillRepos(db, []); return [] }
-    const now = Date.now()
-    if (!force && memo && now - tick < 10_000) return memo
-    tick = now
-    memo = repos().then(async (list) => { await backfillRepos(db, list); return list })
-    return memo
+  // Helper: emit run_created event + insert run row + optionally attach source.
+  // Replaces the old createRunInDb helper that used the broken hash chain.
+  async function initRun(
+    runId: string,
+    goal: string,
+    status = "active",
+    source?: RunSourceInput,
+    sourceId?: string,
+  ) {
+    const eventId = `evt_${ulid()}`
+    await eventStore.append({
+      id: eventId,
+      run_id: runId,
+      stream_id: runId,
+      schema_version: 1,
+      type: "run_created",
+      payload_json: JSON.stringify({ goal, status }),
+      actor_type: "user",
+      actor_id: "api",
+      op_id: `op_${eventId}`,
+      created_at: new Date().toISOString(),
+    })
+    runStore.createRunWithMeta(runId, goal, status, source, sourceId)
   }
 
-  // Shared archive logic used by GET and POST /graph/items/:id/archive
-  const archiveItem = async (c: any) => {
-    const wg = getWorkGraph()
-    const id = c.req.param("id")
-    const item = wg.get(id)
-    if (!item) return c.json({ error: "Work item not found" }, 404)
-    if (item.deletedAt) return c.json({ error: "Deleted work item cannot be archived" }, 400)
-    const reason = c.req.query("reason") || undefined
-    const rows = liveExecutions(db, id)
-    const runs = new Set<string>()
-    for (const row of rows) {
-      cancelNodeExecution(executionStore, row.run_id, row.node_id, "archived")
-      runs.add(row.run_id)
-      await execution?.cleanup?.({ run_id: row.run_id, node_id: row.node_id, session_id: row.session_id, pty_id: row.pty_id, directory: row.directory, worktree_path: row.worktree_path, mode: "archive" })
-    }
-    const next = wg.archive(id, reason)
-    for (const runId of runs) await reconcileExecution(executionStore, runId, launch(c, execution))
-    return c.json({ item: itemRow(db, next, sliceStore) })
+  const syncRepos = createRepoSync(db, repos)
+
+  // Shared archive handler used by GET and POST /graph/items/:id/archive
+  const archiveHandler = async (c: any) => {
+    const result = await archiveWorkItem(
+      db,
+      c.req.param("id"),
+      c.req.query("reason") || undefined,
+      executionStore,
+      sliceStore,
+      launch(c, execution),
+      execution,
+    )
+    if ("error" in result) return c.json({ error: result.error }, result.status)
+    return c.json(result)
   }
 
   // ---------------------------------------------------------------------------
@@ -420,8 +436,8 @@ export function graphRouter(
     })
   })
 
-  router.get("/graph/items/:id/archive", archiveItem)
-  router.post("/graph/items/:id/archive", archiveItem)
+  router.get("/graph/items/:id/archive", archiveHandler)
+  router.post("/graph/items/:id/archive", archiveHandler)
 
   router.delete("/graph/items/:id", async (c) => {
     const wg = getWorkGraph()
@@ -461,7 +477,7 @@ export function graphRouter(
     const slice = sliceStore.get(c.req.param("slice_id"))
     if (!slice) return c.json({ error: "Slice not found" }, 404)
     if (!slice.trace_run_id) return c.json([])
-    const rows = db.query("SELECT * FROM events WHERE run_id = ? ORDER BY stream_seq ASC").all(slice.trace_run_id)
+    const rows = await eventStore.getEvents(slice.trace_run_id)
     return c.json(rows)
   })
 
@@ -520,7 +536,7 @@ export function graphRouter(
       if (!slice) return c.json({ error: "Slice not found" }, 404)
       if (slice.status === "planning" || slice.status === "executing") return c.json({ error: `Slice is already ${slice.status}` }, 400)
       const runId = `run_${ulid()}`
-      createRunInDb(db, runId, slice.goal, "active", { kind: slice.kind as SourceKind, title: slice.title, content: slice.content, source_path: slice.source_path ?? undefined }, slice.slice_id)
+      await initRun(runId, slice.goal, "active", { kind: slice.kind as SourceKind, title: slice.title, content: slice.content, source_path: slice.source_path ?? undefined }, slice.slice_id)
       sliceStore.update(slice.slice_id, { status: "planning", plan_run_id: runId, error: null })
       const spin = launch(c, execution, body.directory ?? current(c) ?? process.cwd())
       startOrchestration(executionStore, runId, slice.goal, spin, { auto_execute: false }).catch((err) => {
@@ -595,7 +611,7 @@ export function graphRouter(
       const slice = body.slice_id ? sliceStore.get(body.slice_id) : null
       const goal = body.goal?.trim() || mission?.title || slice?.goal || `Execute ${work.length} work item${work.length === 1 ? "" : "s"}`
       const runId = `run_${ulid()}`
-      createRunInDb(db, runId, goal, "active", slice ? { kind: slice.kind as SourceKind, title: slice.title, content: slice.content, source_path: slice.source_path ?? undefined } : undefined, slice?.slice_id)
+      await initRun(runId, goal, "active", slice ? { kind: slice.kind as SourceKind, title: slice.title, content: slice.content, source_path: slice.source_path ?? undefined } : undefined, slice?.slice_id)
       touchRun(db, runId, { runtime_type: "workspace", directory: execDir })
       const nodeItemMap = createSnapshot(db, runId, work, tree?.hold)
       writeBlockers(db, runId, blocked, nodeItemMap)
