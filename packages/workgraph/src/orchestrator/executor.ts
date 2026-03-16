@@ -4,6 +4,8 @@ import type { OrchestratorRunState, OrchestratorHooks, NodeAgentHistory, RunPhas
 import { generateHash, insertEvent, getNextSeq } from "../db/helpers";
 import type { OrchestratorMetadata } from "./types-ui";
 import { createTraceEvent, appendTraceEvent } from "./trace";
+import { LeaseManager, type TeamPolicy, getReadyNodes } from "./core/scheduler";
+import { GraphEngine, type Node as GraphNode } from "./graph";
 
 // ---------------------------------------------------------------------------
 // RunMetrics — computed at run completion, stored in runs_current.metrics_json
@@ -503,6 +505,7 @@ export async function startOrchestration(
   opts?: {
     auto_execute?: boolean;
     hooks?: OrchestratorHooks;
+    teamPolicy?: TeamPolicy;
   },
 ): Promise<OrchestratorRunState> {
   const state: OrchestratorRunState = {
@@ -515,6 +518,8 @@ export async function startOrchestration(
     created_at: new Date().toISOString(),
     result: null,
     hooks: opts?.hooks,
+    leaseManager: new LeaseManager(),
+    teamPolicy: opts?.teamPolicy ?? { maxActivePerRun: 12, maxActivePerTeam: 4 },
   };
 
   orchestrations.set(runId, state);
@@ -640,7 +645,7 @@ async function beginExecution(
   }
 
   // Find ready nodes and spawn task agents
-  const readyNodeIds = findReadyNodes(db, runId);
+  const readyNodeIds = findScheduledReadyNodes(db, runId, state);
   console.log(`[executor] ${runId} found ${readyNodeIds.length} ready nodes after planning`);
 
   for (const nodeId of readyNodeIds) {
@@ -671,7 +676,7 @@ export async function startExecution(
   runId: string,
   goal: string,
   spawnAgentFn: SpawnAgentFn,
-  opts?: { hooks?: OrchestratorHooks },
+  opts?: { hooks?: OrchestratorHooks; teamPolicy?: TeamPolicy },
 ): Promise<OrchestratorRunState> {
   const state: OrchestratorRunState = {
     run_id: runId,
@@ -683,6 +688,8 @@ export async function startExecution(
     created_at: new Date().toISOString(),
     result: null,
     hooks: opts?.hooks,
+    leaseManager: new LeaseManager(),
+    teamPolicy: opts?.teamPolicy ?? { maxActivePerRun: 12, maxActivePerTeam: 4 },
   }
 
   orchestrations.set(runId, state)
@@ -741,6 +748,7 @@ export async function onNodeStatusUpdate(
     console.log(`[executor] ${runId} node ${nodeId} completed`);
     attemptFinish(db, runId, nodeId, "completed");
     updateNodeStatus(db, runId, nodeId, "completed");
+    state.leaseManager.releaseLease(nodeId);
     traceEvent(db, { event_type: "node_completed", run_id: runId, node_id: nodeId, payload: {} });
     state.hooks?.onNodeCompleted?.(runId, nodeId).catch((err) =>
       console.warn("[executor] workgraph onNodeCompleted error:", err),
@@ -765,6 +773,7 @@ export async function onNodeStatusUpdate(
       );
       console.log(`[executor] ${runId} node ${nodeId} retrying (attempt ${retryCount + 1})`);
       traceEvent(db, { event_type: "node_retried", run_id: runId, node_id: nodeId, payload: { attempt: retryCount + 1, error: errorMessage ?? null } });
+      state.leaseManager.releaseLease(nodeId);
       await spawnTaskAgent(db, state, nodeId, spawnAgentFn);
       return;
     }
@@ -773,6 +782,7 @@ export async function onNodeStatusUpdate(
     console.error(`[executor] ${runId} node ${nodeId} max retries exhausted — marking failed`);
     attemptFinish(db, runId, nodeId, "failed");
     updateNodeStatus(db, runId, nodeId, "failed");
+    state.leaseManager.releaseLease(nodeId);
     traceEvent(db, { event_type: "node_failed", run_id: runId, node_id: nodeId, payload: { retries: retryCount, error: errorMessage ?? null } });
     state.hooks?.onNodeFailed?.(runId, nodeId);
 
@@ -841,6 +851,110 @@ export async function reconcileExecution(
 // ---------------------------------------------------------------------------
 // findReadyNodes — query DB for pending nodes with all deps satisfied
 // ---------------------------------------------------------------------------
+
+function dbStatusToNodeStatus(s: string): GraphNode["status"] {
+  if (
+    s === "active" ||
+    s === "completed" ||
+    s === "failed" ||
+    s === "retryable"
+  )
+    return s;
+  return "pending";
+}
+
+/**
+ * Same cascade-failure logic as findReadyNodes, but uses GraphEngine +
+ * LeaseManager + TeamPolicy from state to enforce parallelism caps.
+ */
+function findScheduledReadyNodes(
+  db: any,
+  runId: string,
+  state: OrchestratorRunState,
+): string[] {
+  const allNodes = db
+    .query(
+      "SELECT node_id, status, node_type, role FROM nodes_current WHERE run_id = ?",
+    )
+    .all(runId) as Array<{
+    node_id: string;
+    status: string;
+    node_type: string;
+    role: string;
+  }>;
+
+  const edges = db
+    .query(
+      "SELECT source_id, target_id FROM dependency_edges_current WHERE run_id = ?",
+    )
+    .all(runId) as Array<{ source_id: string; target_id: string }>;
+
+  const statusMap = new Map<string, string>();
+  for (const node of allNodes) statusMap.set(node.node_id, node.status);
+
+  const dependenciesOf = new Map<string, string[]>();
+  for (const edge of edges) {
+    const deps = dependenciesOf.get(edge.target_id) ?? [];
+    deps.push(edge.source_id);
+    dependenciesOf.set(edge.target_id, deps);
+  }
+
+  // Cascade failure + mission completion (mirrors findReadyNodes side-effects)
+  for (const node of allNodes) {
+    if (node.node_type === "mission") {
+      if (node.status === "pending") {
+        updateNodeStatus(db, runId, node.node_id, "completed");
+        statusMap.set(node.node_id, "completed");
+      }
+      continue;
+    }
+    if (node.status !== "pending") continue;
+    const deps = dependenciesOf.get(node.node_id) ?? [];
+    const anyDepFailed = deps.some((d) => statusMap.get(d) === "failed");
+    if (anyDepFailed) {
+      updateNodeStatus(db, runId, node.node_id, "failed");
+      statusMap.set(node.node_id, "failed");
+      continue;
+    }
+    const anyDepStopped = deps.some((d) => {
+      const s = statusMap.get(d);
+      return s === "cancelled" || s === "blocked";
+    });
+    if (anyDepStopped) {
+      updateNodeStatus(db, runId, node.node_id, "blocked");
+      statusMap.set(node.node_id, "blocked");
+    }
+  }
+
+  // Build GraphEngine nodes (excluding missions)
+  const graphNodes: GraphNode[] = allNodes
+    .filter((n) => n.node_type !== "mission")
+    .map((n) => ({
+      id: n.node_id,
+      status: dbStatusToNodeStatus(statusMap.get(n.node_id) ?? n.status),
+    }));
+
+  const graphEdges = edges.map((e) => ({
+    source_id: e.source_id,
+    target_id: e.target_id,
+    type: "hard" as const,
+  }));
+
+  const graph = new GraphEngine(graphNodes, graphEdges);
+
+  const nodeTeamMap = new Map<string, string>();
+  for (const node of allNodes) {
+    if (node.role) nodeTeamMap.set(node.node_id, node.role);
+  }
+
+  const ready = getReadyNodes(graphNodes, graph, {
+    leaseManager: state.leaseManager,
+    teamPolicy: state.teamPolicy,
+    nodeTeamMap,
+  });
+
+  return ready.map((n) => n.id);
+}
 
 /**
  * Find nodes that are ready to execute: pending status with all hard
@@ -939,8 +1053,14 @@ async function spawnTaskAgent(
     .get(nodeId) as { node_id: string; role: string; kind: string; title: string; node_type: string } | null;
 
   if (dbNode?.node_type === "mission") {
-    updateNodeStatus(db, runId, nodeId, "completed")
-    return
+    updateNodeStatus(db, runId, nodeId, "completed");
+    return;
+  }
+
+  // Acquire dispatch lease — prevents duplicate spawning if called concurrently
+  if (!state.leaseManager.acquireLease(nodeId)) {
+    console.log(`[executor] ${runId} node ${nodeId} already leased — skipping duplicate spawn`);
+    return;
   }
 
   const role = dbNode?.role || "developer";
@@ -1155,7 +1275,7 @@ async function checkRunCompletion(
   }
 
   // Check for newly ready nodes
-  const readyNodeIds = findReadyNodes(db, runId);
+  const readyNodeIds = findScheduledReadyNodes(db, runId, state);
 
   if (readyNodeIds.length > 0) {
     console.log(`[executor] ${runId} found ${readyNodeIds.length} newly ready nodes`);
@@ -1320,6 +1440,8 @@ function ensureState(db: any, runId: string) {
     error: null,
     created_at: row.created_at ?? new Date().toISOString(),
     result: null,
+    leaseManager: new LeaseManager(),
+    teamPolicy: { maxActivePerRun: 12, maxActivePerTeam: 4 },
   }
   orchestrations.set(runId, state)
   return state

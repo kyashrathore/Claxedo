@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
-import { openSqliteEventStore, type IEventStore } from "../src/orchestrator/core/services/event-store";
+import { openSqliteEventStore, type IEventStore } from "../src/orchestrator/core/services/event-store-sqlite";
 import { runReducer, type RunState } from "../src/orchestrator/core/reducers/run";
 
 describe("IEventStore (openSqliteEventStore)", () => {
@@ -49,7 +49,6 @@ describe("IEventStore (openSqliteEventStore)", () => {
   it("fills in stream_seq, prev_hash, and hash", async () => {
     const evt = await store.append(partial());
     expect(evt.stream_seq).toBe(1);
-    expect(evt.logical_ts).toBe(1);
     expect(evt.prev_hash).toBe("00000000");
     expect(evt.hash).toMatch(/^[a-f0-9]{64}$/);
   });

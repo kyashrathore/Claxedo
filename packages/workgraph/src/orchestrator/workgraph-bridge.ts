@@ -1,5 +1,6 @@
 import { WorkGraph } from "../model/workgraph"
 import type { WorkItem } from "../model/types"
+import type { BridgeDb } from "./bridge-db"
 
 let wg: WorkGraph | null = null
 let file: string | undefined
@@ -125,12 +126,10 @@ export function onRunFailed(_runId: string): void {
   // intentional no-op — item stays open/in_progress for retry
 }
 
-export function syncSourcePlan(db: any, runId: string, sourceId: string): Map<string, string> {
+export function syncSourcePlan(db: BridgeDb, runId: string, sourceId: string): Map<string, string> {
   const g = getWorkGraph()
   g.removeBySource(sourceId)
-  const src = db
-    .query("SELECT goal, title, content, kind, repo_ref, repo_label FROM sources_current WHERE source_id = ?")
-    .get(sourceId) as { goal: string; title: string; content: string; kind: string; repo_ref: string | null; repo_label: string | null } | null
+  const src = db.getSource(sourceId)
   const root = g.create({
     sourceId,
     repoRef: src?.repo_ref ?? null,
@@ -142,18 +141,10 @@ export function syncSourcePlan(db: any, runId: string, sourceId: string): Map<st
     context: `source:${sourceId} mission:root`,
   })
 
-  const nodes = db
-    .query("SELECT node_id, kind, title, node_type, parent_node_id FROM nodes_current WHERE run_id = ? ORDER BY rowid ASC")
-    .all(runId) as Array<{ node_id: string; kind: string; title: string; node_type: string | null; parent_node_id: string | null }>
+  const nodes = db.getNodes(runId)
 
   const prompts = new Map(
-    (
-      db
-        .query(
-          "SELECT node_id, content FROM scratchpad_entries WHERE run_id = ? ORDER BY created_at ASC",
-        )
-        .all(runId) as Array<{ node_id: string; content: string }>
-    ).map((row) => [row.node_id, row.content]),
+    db.getNodePrompts(runId).map((row) => [row.node_id, row.content]),
   )
 
   const map = new Map<string, string>()
@@ -174,9 +165,7 @@ export function syncSourcePlan(db: any, runId: string, sourceId: string): Map<st
     map.set(node.node_id, item.id)
   }
 
-  const edges = db
-    .query("SELECT source_id, target_id FROM dependency_edges_current WHERE run_id = ?")
-    .all(runId) as Array<{ source_id: string; target_id: string }>
+  const edges = db.getEdges(runId)
 
   for (const edge of edges) {
     const source = map.get(edge.source_id)

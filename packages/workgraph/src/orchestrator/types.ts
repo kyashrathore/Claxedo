@@ -1,3 +1,5 @@
+import type { LeaseManager, TeamPolicy } from "./core/scheduler";
+
 /**
  * Which execution environment a run or node targets.
  * - workspace: code work backed by a repo/workdir; needs terminal + git + filesystem
@@ -115,4 +117,8 @@ export interface OrchestratorRunState {
   hooks?: OrchestratorHooks;
   /** Parallelism tracking for metrics; initialized when execution starts */
   parallelism?: ParallelismTracker;
+  /** Manages dispatch leases to prevent duplicate node spawning */
+  leaseManager: LeaseManager;
+  /** Parallelism caps for this run */
+  teamPolicy: TeamPolicy;
 }

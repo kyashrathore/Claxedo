@@ -12,21 +12,19 @@ export interface NormalizedIssue {
 
 export type ProviderName = "github" | "linear"
 
-export type ProviderQueryMode =
-  | "single_item"
-  | "assigned_to_me"
-  | "updated_since"
-  | "project_or_team"
-
 export interface ProviderPreview extends NormalizedIssue {
   provider: ProviderName
   provider_meta: Record<string, any>
 }
 
-export interface ConnectorInterface {
+/**
+ * Q is the union of query strings the connector implementation supports.
+ * Each connector defines its own query type based on the provider's actual API.
+ */
+export interface ConnectorInterface<Q extends string = string> {
   provider: string;
   validate?(): Promise<{ label?: string }>;
-  queryIssues?(mode: ProviderQueryMode, params: Record<string, any>): Promise<ProviderPreview[]>;
+  queryIssues?(query: Q, params: Record<string, any>): Promise<ProviderPreview[]>;
   hydrateIssue(params: Record<string, any>): Promise<NormalizedIssue>;
   updateIssue(params: Record<string, any>, updates: { title?: string; status?: string; description?: string }): Promise<void>;
   addComment(params: Record<string, any>, comment: string): Promise<void>;
