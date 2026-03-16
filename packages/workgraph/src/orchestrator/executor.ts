@@ -6,6 +6,7 @@ import type { OrchestratorMetadata } from "./types-ui";
 import { createTraceEvent, appendTraceEvent } from "./trace";
 import { LeaseManager, type TeamPolicy, getReadyNodes } from "./core/scheduler";
 import { GraphEngine, type Node as GraphNode } from "./graph";
+import { linkRun, markNodeDone, getWorkGraph, onRunCompleted as bridgeOnRunCompleted } from "./workgraph-bridge";
 
 // ---------------------------------------------------------------------------
 // RunMetrics — computed at run completion, stored in runs_current.metrics_json
@@ -506,6 +507,8 @@ export async function startOrchestration(
     auto_execute?: boolean;
     hooks?: OrchestratorHooks;
     teamPolicy?: TeamPolicy;
+    /** Link this run to an existing WorkGraph item by ID */
+    work_item_id?: string;
   },
 ): Promise<OrchestratorRunState> {
   const state: OrchestratorRunState = {
@@ -517,10 +520,17 @@ export async function startOrchestration(
     error: null,
     created_at: new Date().toISOString(),
     result: null,
-    hooks: opts?.hooks,
     leaseManager: new LeaseManager(),
     teamPolicy: opts?.teamPolicy ?? { maxActivePerRun: 12, maxActivePerTeam: 4 },
+    hooks: opts?.work_item_id
+      ? {
+          ...opts?.hooks,
+          onRunCompleted: opts?.hooks?.onRunCompleted ?? bridgeOnRunCompleted,
+        }
+      : opts?.hooks,
   };
+
+  if (opts?.work_item_id) linkRun(runId, opts.work_item_id);
 
   orchestrations.set(runId, state);
   updateRunStatus(db, runId, "planning");
@@ -676,7 +686,7 @@ export async function startExecution(
   runId: string,
   goal: string,
   spawnAgentFn: SpawnAgentFn,
-  opts?: { hooks?: OrchestratorHooks; teamPolicy?: TeamPolicy },
+  opts?: { hooks?: OrchestratorHooks; teamPolicy?: TeamPolicy; node_work_items?: Map<string, string> },
 ): Promise<OrchestratorRunState> {
   const state: OrchestratorRunState = {
     run_id: runId,
@@ -687,9 +697,19 @@ export async function startExecution(
     error: null,
     created_at: new Date().toISOString(),
     result: null,
-    hooks: opts?.hooks,
     leaseManager: new LeaseManager(),
     teamPolicy: opts?.teamPolicy ?? { maxActivePerRun: 12, maxActivePerTeam: 4 },
+    node_work_items: opts?.node_work_items,
+    hooks: opts?.node_work_items
+      ? {
+          ...opts?.hooks,
+          sourceHasWork: opts?.hooks?.sourceHasWork ?? ((sourceId: string) => {
+            const wg = getWorkGraph();
+            const items = wg.getBySource(sourceId);
+            return items.some((item) => item.status !== "done");
+          }),
+        }
+      : opts?.hooks,
   }
 
   orchestrations.set(runId, state)
@@ -750,6 +770,11 @@ export async function onNodeStatusUpdate(
     updateNodeStatus(db, runId, nodeId, "completed");
     state.leaseManager.releaseLease(nodeId);
     traceEvent(db, { event_type: "node_completed", run_id: runId, node_id: nodeId, payload: {} });
+    if (state.node_work_items) {
+      markNodeDone(state.node_work_items, nodeId).catch((err) =>
+        console.warn("[executor] markNodeDone error:", err),
+      );
+    }
     state.hooks?.onNodeCompleted?.(runId, nodeId).catch((err) =>
       console.warn("[executor] workgraph onNodeCompleted error:", err),
     );
@@ -860,6 +885,9 @@ function dbStatusToNodeStatus(s: string): GraphNode["status"] {
     s === "retryable"
   )
     return s;
+  // "blocked" nodes are waiting on external dependencies — treat as "active"
+  // so GraphEngine neither schedules them nor cascades completion to dependents
+  if (s === "blocked") return "active";
   return "pending";
 }
 

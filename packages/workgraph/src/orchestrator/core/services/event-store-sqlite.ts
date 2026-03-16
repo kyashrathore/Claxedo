@@ -118,6 +118,13 @@ class SqliteEventStore implements IEventStore {
     const evts = await this.getEvents(runId);
     return evts.reduce((state, event) => reducer(state, event), initial);
   }
+
+  async getAllEvents(): Promise<EventEnvelope[]> {
+    return this.db
+      .select()
+      .from(events)
+      .orderBy(events.stream_seq) as Promise<EventEnvelope[]>;
+  }
 }
 
 // ---------------------------------------------------------------------------
