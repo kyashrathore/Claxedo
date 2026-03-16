@@ -208,7 +208,6 @@ describe("onPlanningComplete", () => {
       runId,
       "plan only",
       mockSpawn,
-      undefined,
       { auto_execute: false },
     );
 
@@ -519,7 +518,7 @@ describe("source-backed execution", () => {
       runId,
       "Execute ready work",
       async () => live(1, "node_ready"),
-      new Map([["node_ready", a.id]]),
+      { node_work_items: new Map([["node_ready", a.id]]) },
     );
 
     const state = getOrchestration(runId)!;

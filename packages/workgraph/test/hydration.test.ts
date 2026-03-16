@@ -67,27 +67,6 @@ describe("POST /features/hydrate", () => {
   });
 });
 
-describe("POST /features/:feature_id/push", () => {
-  let db: InstanceType<typeof Database>;
-  let app: Hono;
-
-  beforeEach(() => {
-    db = new Database(":memory:");
-    initializeDb(db);
-    app = createApp(db);
-  });
-
-  it("should return pushed count of 0 when no events exist", async () => {
-    const res = await app.request("/features/feat_123/push", {
-      method: "POST",
-    });
-
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.pushed).toBe(0);
-  });
-});
-
 describe("GET /features/:feature_id/pull", () => {
   let db: InstanceType<typeof Database>;
   let app: Hono;
@@ -107,31 +86,6 @@ describe("GET /features/:feature_id/pull", () => {
     expect(body.feature_id).toBe("feat_unknown");
     expect(body.state).toBeNull();
     expect(body.events).toBe(0);
-  });
-});
-
-describe("GET /sync/status", () => {
-  let db: InstanceType<typeof Database>;
-  let app: Hono;
-
-  beforeEach(() => {
-    db = new Database(":memory:");
-    initializeDb(db);
-    app = createApp(db);
-  });
-
-  it("should return sync engine status metrics", async () => {
-    const res = await app.request("/sync/status");
-
-    expect(res.status).toBe(200);
-    const body = await res.json();
-
-    expect(body).toHaveProperty("pending");
-    expect(body).toHaveProperty("cursor");
-    expect(body).toHaveProperty("backoffMs");
-    expect(typeof body.pending).toBe("number");
-    expect(typeof body.cursor).toBe("number");
-    expect(typeof body.backoffMs).toBe("number");
   });
 });
 

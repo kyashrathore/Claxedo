@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { verifyChain } from "../orchestrator/core/services/hash-chain";
+import { verifyChain } from "../orchestrator/core/services/hash-chain-node";
 import {
   verify,
   rebuild,

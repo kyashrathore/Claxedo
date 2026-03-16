@@ -5,12 +5,6 @@
 import { describe, it, expect, mock } from "bun:test";
 import { FakeDb, makeSpawn, nextRunId } from "../helpers/fake-db";
 
-mock.module("../../src/db/helpers", () => ({
-  generateHash: () => "deadbeef00000000",
-  insertEvent: () => {},
-  getNextSeq: () => 0,
-}));
-
 const {
   getRunMetrics,
   getAllOrchestrations,

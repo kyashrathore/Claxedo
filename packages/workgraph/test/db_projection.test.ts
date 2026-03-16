@@ -47,7 +47,11 @@ describe("Database Projections", () => {
       CREATE TABLE runs_current (
         run_id TEXT PRIMARY KEY,
         goal TEXT NOT NULL,
-        status TEXT NOT NULL
+        status TEXT NOT NULL,
+        source_id TEXT,
+        metrics_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       );
     `);
 
@@ -57,6 +61,8 @@ describe("Database Projections", () => {
         run_id TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'developer',
         kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        node_type TEXT NOT NULL DEFAULT 'task',
         status TEXT NOT NULL,
         retry_count INTEGER NOT NULL
       );
@@ -156,7 +162,9 @@ describe("Database Projections", () => {
     await db.insert(runs_current).values({
       run_id: "run_db_1",
       goal: "Test projections",
-      status: "active"
+      status: "active",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     });
 
     const result = await db.select().from(runs_current).where(eq(runs_current.run_id, "run_db_1"));
@@ -170,6 +178,8 @@ describe("Database Projections", () => {
       run_id: "run_1",
       role: "developer",
       kind: "task",
+      title: "Test node",
+      node_type: "task",
       status: "pending",
       retry_count: 0,
     });

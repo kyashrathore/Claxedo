@@ -175,7 +175,7 @@ describe("individual-task: node_work_items mapping", () => {
     const agent = new MockAgent(db);
     agent.addScript({ match: {}, status: "completed" });
 
-    const state = await startExecution(db, runId, "mapped", agent.spawnFn(), itemMap);
+    const state = await startExecution(db, runId, "mapped", agent.spawnFn(), { node_work_items: itemMap });
     expect(state.node_work_items.get(nodeIds[0])).toBe("work_item_abc");
 
     await waitForPhase(db, runId, "completed");

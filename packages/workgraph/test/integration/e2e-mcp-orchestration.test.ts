@@ -107,7 +107,9 @@ async function registerRun(
   runId: string,
   spawnFn: any,
 ): Promise<OrchestratorRunState> {
-  return startOrchestration(db, runId, "test", spawnFn);
+  return startOrchestration(db, runId, "test", spawnFn, {
+    teamPolicy: { maxActivePerRun: 20, maxActivePerTeam: 20 },
+  });
 }
 
 /** Simulate planner building a graph via MCP tools. Returns node ID map. */
@@ -869,7 +871,7 @@ describe("E2E MCP Orchestration", () => {
       await startOrchestration(
         db, runId, "Build feature X",
         spawnFn,
-        parentItem.id,
+        { work_item_id: parentItem.id },
       );
 
       // Verify link
@@ -904,7 +906,7 @@ describe("E2E MCP Orchestration", () => {
       await startOrchestration(
         db, runId, "Risky feature",
         spawnFn,
-        parentItem.id,
+        { work_item_id: parentItem.id },
       );
 
       const nodes = await buildGraph(db, runId, [
