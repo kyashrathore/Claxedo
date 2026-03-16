@@ -213,4 +213,18 @@ export function initializeDb(db: any) {
       payload_json TEXT NOT NULL
     );
   `);
+
+  // ---------------------------------------------------------------------------
+  // Performance indexes
+  // ---------------------------------------------------------------------------
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_nodes_run_id     ON nodes_current(run_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_nodes_run_status ON nodes_current(run_id, status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_edges_run_id     ON dependency_edges_current(run_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_edges_source_id  ON dependency_edges_current(source_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_edges_target_id  ON dependency_edges_current(target_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_attempts_run_node ON attempts_current(run_id, node_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_run_node_items_item ON run_node_items_current(work_item_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_events_run_seq   ON events(run_id, stream_seq)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_nodes_active ON nodes_current(run_id) WHERE status NOT IN ('completed', 'cancelled', 'failed')`);
 }

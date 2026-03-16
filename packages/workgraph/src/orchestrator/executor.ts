@@ -584,8 +584,9 @@ function findScheduledReadyNodes(
   store: IExecutionStore,
   runId: string,
   state: OrchestratorRunState,
+  cachedNodes?: ReturnType<IExecutionStore["getNodesForRun"]>,
 ): string[] {
-  const allNodes = store.getNodesForRun(runId);
+  const allNodes = cachedNodes ?? store.getNodesForRun(runId);
   const edges = store.getEdgesForRun(runId);
 
   const statusMap = new Map<string, string>();
@@ -921,7 +922,7 @@ async function checkRunCompletion(
   }
 
   // Check for newly ready nodes
-  const readyNodeIds = findScheduledReadyNodes(store, runId, state);
+  const readyNodeIds = findScheduledReadyNodes(store, runId, state, allNodes);
 
   if (readyNodeIds.length > 0) {
     console.log(`[executor] ${runId} found ${readyNodeIds.length} newly ready nodes`);

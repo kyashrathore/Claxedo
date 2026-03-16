@@ -45,6 +45,28 @@ export interface EdgeRow {
   type: string;
 }
 
+/** Paginated result returned by `listRuns({ limit, cursor? })`. */
+export interface RunPage {
+  items: RunRow[];
+  /** rowid of last item; null means this is the last page. */
+  next_cursor: number | null;
+}
+
+/** A node returned by a graph traversal query. */
+export interface TraversalNode {
+  node_id: string;
+  depth: number;
+  status: string;
+  title: string;
+}
+
+/** Result of a graph traversal. */
+export interface TraversalResult {
+  nodes: TraversalNode[];
+  /** node_ids at maxDepth that have unloaded children; empty when maxDepth was not hit. */
+  frontier: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Interface
 // ---------------------------------------------------------------------------
@@ -77,6 +99,8 @@ export interface IRunStore {
   getRun(runId: string): RunRow | null;
   /** List all runs with joined source and exec metadata, newest first. */
   listRuns(): RunRow[];
+  /** List runs with cursor-based pagination. */
+  listRuns(opts: { limit: number; cursor?: number }): RunPage;
   /** Get the source document attached to a run. */
   getRunSource(runId: string): Record<string, unknown> | null;
   /** Insert a new node. Returns the created row. */
@@ -91,6 +115,12 @@ export interface IRunStore {
   listEdges(runId: string): EdgeRow[];
   /** Return node_ids whose dependencies are all completed. */
   getReadyNodes(runId: string): string[];
+  /** Return all descendants of a node up to maxDepth (including completed). */
+  getDescendants(nodeId: string, maxDepth?: number): TraversalResult;
+  /** Return active (non-terminal) descendants, pruning completed subtrees. */
+  getActiveDescendants(nodeId: string, maxDepth?: number): TraversalResult;
+  /** Return ancestors of a node up to maxDepth (walk edges in reverse). */
+  getAncestors(nodeId: string, maxDepth?: number): TraversalResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,16 +197,27 @@ class SqliteRunStore implements IRunStore {
     };
   }
 
-  listRuns(): RunRow[] {
-    return (this.db.query(
+  listRuns(): RunRow[];
+  listRuns(opts: { limit: number; cursor?: number }): RunPage;
+  listRuns(opts?: { limit?: number; cursor?: number }): RunRow[] | RunPage {
+    const limit  = opts?.limit  ?? null;
+    const cursor = opts?.cursor ?? null;
+
+    const whereClause = cursor ? "WHERE r.rowid < ?" : "";
+    const limitClause = limit  ? `LIMIT ${limit + 1}` : "";
+    const params: any[] = cursor ? [cursor] : [];
+
+    const rows = (this.db.query(
       `SELECT r.run_id, r.goal, r.status, r.created_at, r.updated_at,
               s.kind AS source_kind, s.title AS source_title, LENGTH(s.content) AS source_size,
               x.runtime_type, x.session_id, x.pty_id, x.directory
        FROM runs_current r
        LEFT JOIN run_sources_current s ON s.run_id = r.run_id
-       LEFT JOIN run_exec_current x ON x.run_id = r.run_id
-       ORDER BY r.rowid DESC`,
-    ).all() as any[]).map((row) => ({
+       LEFT JOIN run_exec_current    x ON x.run_id = r.run_id
+       ${whereClause}
+       ORDER BY r.rowid DESC
+       ${limitClause}`,
+    ).all(...params) as any[]).map((row) => ({
       run_id: row.run_id,
       goal: row.goal,
       status: row.status,
@@ -190,6 +231,17 @@ class SqliteRunStore implements IRunStore {
       created_at: row.created_at ?? null,
       updated_at: row.updated_at ?? null,
     }));
+
+    if (!limit) return rows;   // backward-compat: no opts → return plain array
+
+    const hasMore = rows.length > limit;
+    const items   = hasMore ? rows.slice(0, limit) : rows;
+    const lastRowid = items.length > 0
+      ? (this.db.query("SELECT rowid FROM runs_current WHERE run_id = ?")
+           .get(items[items.length - 1].run_id) as any)?.rowid ?? null
+      : null;
+
+    return { items, next_cursor: hasMore ? lastRowid : null };
   }
 
   getRunSource(runId: string): Record<string, unknown> | null {
@@ -228,28 +280,100 @@ class SqliteRunStore implements IRunStore {
   }
 
   getReadyNodes(runId: string): string[] {
-    const nodes = this.db.query(
-      "SELECT node_id FROM nodes_current WHERE run_id = ? AND status = 'pending'",
+    const rows = this.db.query(
+      `SELECT n.node_id
+       FROM nodes_current n
+       WHERE n.run_id = ?
+         AND n.status = 'pending'
+         AND NOT EXISTS (
+           SELECT 1
+           FROM dependency_edges_current e
+           JOIN nodes_current dep ON dep.node_id = e.source_id
+           WHERE e.target_id = n.node_id
+             AND dep.status != 'completed'
+         )`,
     ).all(runId) as Array<{ node_id: string }>;
-    const edges = this.db.query(
-      "SELECT source_id, target_id FROM dependency_edges_current WHERE run_id = ?",
-    ).all(runId) as Array<{ source_id: string; target_id: string }>;
-    const statuses = this.db.query(
-      "SELECT node_id, status FROM nodes_current WHERE run_id = ?",
-    ).all(runId) as Array<{ node_id: string; status: string }>;
+    return rows.map((r) => r.node_id);
+  }
 
-    const nodeStatusMap = new Map(statuses.map((n) => [n.node_id, n.status]));
-    const dependenciesOf = new Map<string, string[]>();
-    for (const edge of edges) {
-      const deps = dependenciesOf.get(edge.target_id) ?? [];
-      deps.push(edge.source_id);
-      dependenciesOf.set(edge.target_id, deps);
-    }
-    return nodes
-      .filter((node) =>
-        (dependenciesOf.get(node.node_id) ?? []).every((depId) => nodeStatusMap.get(depId) === "completed"),
-      )
-      .map((node) => node.node_id);
+  getDescendants(nodeId: string, maxDepth = 5): TraversalResult {
+    const rows = this.db.query(
+      `WITH RECURSIVE descendants(node_id, depth) AS (
+         SELECT ?, 0
+         UNION ALL
+         SELECT e.target_id, d.depth + 1
+         FROM dependency_edges_current e
+         JOIN descendants d ON e.source_id = d.node_id
+         WHERE d.depth < ?
+       )
+       SELECT n.node_id, d.depth, n.status, n.title,
+              EXISTS (
+                SELECT 1 FROM dependency_edges_current e2
+                WHERE e2.source_id = n.node_id
+              ) AS has_children
+       FROM descendants d
+       JOIN nodes_current n ON n.node_id = d.node_id
+       WHERE d.depth > 0
+       ORDER BY d.depth, n.rowid`,
+    ).all(nodeId, maxDepth) as Array<TraversalNode & { has_children: number }>;
+
+    const nodes = rows.map(({ has_children: _hc, ...n }) => n);
+    const frontier = rows
+      .filter((r) => r.depth === maxDepth && r.has_children)
+      .map((r) => r.node_id);
+
+    return { nodes, frontier };
+  }
+
+  getActiveDescendants(nodeId: string, maxDepth = 5): TraversalResult {
+    const rows = this.db.query(
+      `WITH RECURSIVE descendants(node_id, depth) AS (
+         SELECT ?, 0
+         UNION ALL
+         SELECT e.target_id, d.depth + 1
+         FROM dependency_edges_current e
+         JOIN descendants d ON e.source_id = d.node_id
+         JOIN nodes_current nc ON nc.node_id = e.target_id
+           AND nc.status NOT IN ('completed', 'cancelled', 'failed')
+         WHERE d.depth < ?
+       )
+       SELECT n.node_id, d.depth, n.status, n.title,
+              EXISTS (
+                SELECT 1 FROM dependency_edges_current e2
+                WHERE e2.source_id = n.node_id
+              ) AS has_children
+       FROM descendants d
+       JOIN nodes_current n ON n.node_id = d.node_id
+       WHERE d.depth > 0
+       ORDER BY d.depth, n.rowid`,
+    ).all(nodeId, maxDepth) as Array<TraversalNode & { has_children: number }>;
+
+    const nodes = rows.map(({ has_children: _hc, ...n }) => n);
+    const frontier = rows
+      .filter((r) => r.depth === maxDepth && r.has_children)
+      .map((r) => r.node_id);
+
+    return { nodes, frontier };
+  }
+
+  getAncestors(nodeId: string, maxDepth = 5): TraversalResult {
+    const rows = this.db.query(
+      `WITH RECURSIVE ancestors(node_id, depth) AS (
+         SELECT ?, 0
+         UNION ALL
+         SELECT e.source_id, a.depth + 1
+         FROM dependency_edges_current e
+         JOIN ancestors a ON e.target_id = a.node_id
+         WHERE a.depth < ?
+       )
+       SELECT n.node_id, a.depth, n.status, n.title
+       FROM ancestors a
+       JOIN nodes_current n ON n.node_id = a.node_id
+       WHERE a.depth > 0
+       ORDER BY a.depth, n.rowid`,
+    ).all(nodeId, maxDepth) as Array<TraversalNode>;
+
+    return { nodes: rows, frontier: [] };
   }
 }
 
