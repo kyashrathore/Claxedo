@@ -11,5 +11,5 @@ export * from "./services/lead-loop";
 export * from "./services/hydration";
 export * from "./services/reactions";
 export * from "./services/watchdog";
-export * from "./cli/repair";
+export * from "./services/repair";
 export * from "./quality-gate";
