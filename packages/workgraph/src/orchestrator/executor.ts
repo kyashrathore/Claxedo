@@ -1,19 +1,8 @@
 import { ulid } from "ulid";
 import type { EventEnvelope } from "./events";
 import type { OrchestratorRunState, OrchestratorHooks, NodeAgentHistory, RunPhase, ParallelismTracker } from "./types";
-import type { IEventStore } from "./core/services/event-store";
+import { generateHash, insertEvent, getNextSeq } from "../db/helpers";
 import type { OrchestratorMetadata } from "./types-ui";
-
-// ---------------------------------------------------------------------------
-// Module-level event store — set once by createApp() via setEventStore()
-// ---------------------------------------------------------------------------
-
-let _eventStore: IEventStore | null = null;
-
-/** Configure the module-level event store. Call once from createApp(). */
-export function setEventStore(store: IEventStore): void {
-  _eventStore = store;
-}
 import { createTraceEvent, appendTraceEvent } from "./trace";
 
 // ---------------------------------------------------------------------------
@@ -316,7 +305,7 @@ function failPlanning(db: any, runId: string, message: string) {
   state.phase = "failed"
   state.error = message
   updateRunStatus(db, runId, "failed")
-  void emitRunEvent(runId, "planning_failed", { error: message }).catch(console.error)
+  emitRunEvent(db, runId, "planning_failed", { error: message })
   updateSource(db, runSource(db, runId), "failed", { error: message, planRunId: runId })
   return true
 }
@@ -530,7 +519,7 @@ export async function startOrchestration(
 
   orchestrations.set(runId, state);
   updateRunStatus(db, runId, "planning");
-  await emitRunEvent(runId, "planning_started", { auto_execute: state.auto_execute });
+  emitRunEvent(db, runId, "planning_started", { auto_execute: state.auto_execute });
   traceEvent(db, { event_type: "run_created", run_id: runId, payload: { goal, auto_execute: state.auto_execute } });
 
   // Spawn the planner agent (fire and forget)
@@ -631,7 +620,7 @@ async function beginExecution(
   state.parallelism = { start_ms: now, current: 0, max: 0, integral: 0, last_sample_ms: now };
   updateRunStatus(db, runId, "executing");
   updateSource(db, runSource(db, runId), "executing", { error: null, lastRunId: runId });
-  void emitRunEvent(runId, "execution_started", { summary }).catch(console.error);
+  emitRunEvent(db, runId, "execution_started", { summary });
   console.log(`[executor] ${runId} planning complete, transitioning to executing. Summary: "${summary.slice(0, 120)}"`);
 
   // Check if there are any nodes at all
@@ -666,7 +655,7 @@ async function beginExecution(
         console.log(`[executor] ${runId} blocked after planning: waiting on outside work`);
         state.phase = "blocked";
         updateRunStatus(db, runId, "blocked");
-        await emitRunEvent(runId, "run_blocked", { reason: "outside_blockers" });
+        emitRunEvent(db, runId, "run_blocked", { reason: "outside_blockers" });
         return;
       }
       console.error(`[executor] ${runId} deadlock after planning: no ready or active nodes`);
@@ -751,7 +740,7 @@ export async function onNodeStatusUpdate(
   if (status === "completed") {
     console.log(`[executor] ${runId} node ${nodeId} completed`);
     attemptFinish(db, runId, nodeId, "completed");
-    void updateNodeStatus(db, runId, nodeId, "completed").catch(console.error);
+    updateNodeStatus(db, runId, nodeId, "completed");
     traceEvent(db, { event_type: "node_completed", run_id: runId, node_id: nodeId, payload: {} });
     state.hooks?.onNodeCompleted?.(runId, nodeId).catch((err) =>
       console.warn("[executor] workgraph onNodeCompleted error:", err),
@@ -783,7 +772,7 @@ export async function onNodeStatusUpdate(
     // All retries exhausted — mark failed
     console.error(`[executor] ${runId} node ${nodeId} max retries exhausted — marking failed`);
     attemptFinish(db, runId, nodeId, "failed");
-    await updateNodeStatus(db, runId, nodeId, "failed");
+    updateNodeStatus(db, runId, nodeId, "failed");
     traceEvent(db, { event_type: "node_failed", run_id: runId, node_id: nodeId, payload: { retries: retryCount, error: errorMessage ?? null } });
     state.hooks?.onNodeFailed?.(runId, nodeId);
 
@@ -831,8 +820,8 @@ export function cancelNodeExecution(
     history.current_agent_id = null
   }
   attemptFinish(db, runId, nodeId, "cancelled")
-  void updateNodeStatus(db, runId, nodeId, "cancelled").catch(console.error)
-  void emitRunEvent(runId, "node_cancelled", { node_id: nodeId, reason }).catch(console.error)
+  updateNodeStatus(db, runId, nodeId, "cancelled")
+  emitRunEvent(db, runId, "node_cancelled", { node_id: nodeId, reason })
 }
 
 export async function reconcileExecution(
@@ -886,7 +875,7 @@ export function findReadyNodes(db: any, runId: string): string[] {
   for (const node of allNodes) {
     if (node.node_type === "mission") {
       if (node.status === "pending") {
-        void updateNodeStatus(db, runId, node.node_id, "completed").catch(console.error)
+        updateNodeStatus(db, runId, node.node_id, "completed")
         statusMap.set(node.node_id, "completed")
       }
       continue
@@ -898,7 +887,7 @@ export function findReadyNodes(db: any, runId: string): string[] {
     // If any dependency failed, this node is blocked forever → cascade failure
     const anyDepFailed = deps.some((depId) => statusMap.get(depId) === "failed");
     if (anyDepFailed) {
-      void updateNodeStatus(db, runId, node.node_id, "failed").catch(console.error);
+      updateNodeStatus(db, runId, node.node_id, "failed");
       statusMap.set(node.node_id, "failed");
       continue;
     }
@@ -908,7 +897,7 @@ export function findReadyNodes(db: any, runId: string): string[] {
       return status === "cancelled" || status === "blocked"
     })
     if (anyDepStopped) {
-      void updateNodeStatus(db, runId, node.node_id, "blocked").catch(console.error);
+      updateNodeStatus(db, runId, node.node_id, "blocked");
       statusMap.set(node.node_id, "blocked");
       continue;
     }
@@ -950,7 +939,7 @@ async function spawnTaskAgent(
     .get(nodeId) as { node_id: string; role: string; kind: string; title: string; node_type: string } | null;
 
   if (dbNode?.node_type === "mission") {
-    await updateNodeStatus(db, runId, nodeId, "completed")
+    updateNodeStatus(db, runId, nodeId, "completed")
     return
   }
 
@@ -995,8 +984,8 @@ Task: ${title}
 
 ${nodePrompt}`;
 
-  // Mark node as active before spawning (fire-and-forget event emission to avoid blocking spawnAgentFn)
-  void updateNodeStatus(db, runId, nodeId, "active").catch(console.error);
+  // Mark node as active before spawning
+  updateNodeStatus(db, runId, nodeId, "active");
   state.hooks?.onNodeActive?.(runId, nodeId);
   if (state.parallelism) sampleParallelism(state.parallelism, +1);
 
@@ -1062,7 +1051,7 @@ ${nodePrompt}`;
     console.error(`[executor] ${runId} failed to spawn agent for node ${nodeId}:`, err);
     // Revert parallelism and status — spawn never completed
     if (state.parallelism) sampleParallelism(state.parallelism, -1);
-    await updateNodeStatus(db, runId, nodeId, "pending");
+    updateNodeStatus(db, runId, nodeId, "pending");
   }
 }
 
@@ -1087,7 +1076,7 @@ function cascadeFailure(db: any, runId: string, failedNodeId: string): void {
 
     if (targetNode && targetNode.status === "pending") {
       console.log(`[executor] ${runId} cascading failure from ${failedNodeId} → ${edge.target_id}`);
-      void updateNodeStatus(db, runId, edge.target_id, "failed").catch(console.error);
+      updateNodeStatus(db, runId, edge.target_id, "failed");
       // Recursively cascade
       cascadeFailure(db, runId, edge.target_id);
     }
@@ -1187,7 +1176,7 @@ async function checkRunCompletion(
     );
     state.phase = "blocked";
     updateRunStatus(db, runId, "blocked");
-    await emitRunEvent(runId, "run_blocked", {
+    emitRunEvent(db, runId, "run_blocked", {
       blocked: blocked.length,
       pending: pending.length,
     });
@@ -1235,7 +1224,7 @@ export function cancelOrchestration(
 
   state.phase = "cancelled";
   updateRunStatus(db, state.run_id, "cancelled");
-  void emitRunEvent(state.run_id, "run_cancelled", {}).catch(console.error);
+  emitRunEvent(db, state.run_id, "run_cancelled", {});
   state.hooks?.onRunCancelled?.(state.run_id);
 }
 
@@ -1247,25 +1236,31 @@ function updateRunStatus(db: any, runId: string, status: string): void {
   db.run("UPDATE runs_current SET status = ?, updated_at = ? WHERE run_id = ?", [status, new Date().toISOString(), runId]);
 }
 
-async function emitRunEvent(
+function emitRunEvent(
+  db: any,
   runId: string,
   type: string,
   payload: Record<string, unknown>,
-): Promise<void> {
-  if (!_eventStore) return;
+): void {
   const eventId = `evt_${ulid()}`;
-  await _eventStore.append({
+  const seq = getNextSeq(db, runId);
+  const event: EventEnvelope = {
     id: eventId,
     run_id: runId,
     stream_id: runId,
+    stream_seq: seq,
+    logical_ts: seq,
     schema_version: 1,
     type,
     payload_json: JSON.stringify(payload),
     actor_type: "system",
     actor_id: "orchestrator",
     op_id: `op_${eventId}`,
+    prev_hash: "00000000",
+    hash: generateHash(),
     created_at: new Date().toISOString(),
-  });
+  };
+  insertEvent(db, event);
 }
 
 function traceEvent(
@@ -1279,28 +1274,34 @@ function traceEvent(
   }
 }
 
-async function updateNodeStatus(
+function updateNodeStatus(
   db: any,
   runId: string,
   nodeId: string,
   status: string,
-): Promise<void> {
+): void {
   db.run("UPDATE nodes_current SET status = ? WHERE node_id = ?", [status, nodeId]);
 
-  if (!_eventStore) return;
+  // Emit event
   const eventId = `evt_${ulid()}`;
-  await _eventStore.append({
+  const seq = getNextSeq(db, runId);
+  const event: EventEnvelope = {
     id: eventId,
     run_id: runId,
     stream_id: runId,
+    stream_seq: seq,
+    logical_ts: seq,
     schema_version: 1,
     type: "node_status_changed",
     payload_json: JSON.stringify({ node_id: nodeId, status }),
     actor_type: "system",
     actor_id: "orchestrator",
     op_id: `op_${eventId}`,
+    prev_hash: "00000000",
+    hash: generateHash(),
     created_at: new Date().toISOString(),
-  });
+  };
+  insertEvent(db, event);
 }
 
 function ensureState(db: any, runId: string) {

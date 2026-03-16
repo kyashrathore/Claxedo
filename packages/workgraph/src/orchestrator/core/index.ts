@@ -6,6 +6,7 @@ export * from "./services/hash-chain";
 export * from "./services/event-store";
 export * from "./services/scratchpad";
 export * from "./services/planning";
+export * from "./services/collaboration";
 export * from "./services/lead-loop";
 export * from "./services/hydration";
 export * from "./services/reactions";
