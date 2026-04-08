@@ -1,3 +1,9 @@
+/* Pane floating controls — 10px icons to fit within 12px top strip */
+.pane-ctrl-icon [data-component="icon"] {
+  width: 10px !important;
+  height: 10px !important;
+}
+
 /* Hide all scrollbars by default */
 ::-webkit-scrollbar {
   display: none !important;
@@ -6,5 +12,59 @@
 /* Firefox scrollbar hiding */
 * {
   scrollbar-width: none !important;
+}
+
+/* Restore thin scrollbar for scrollable pane containers */
+[data-scrollable-pane] {
+  scrollbar-width: thin !important;
+}
+[data-scrollable-pane]::-webkit-scrollbar {
+  display: block !important;
+  height: 6px;
+}
+[data-scrollable-pane]::-webkit-scrollbar-thumb {
+  background: var(--border-weak-base, rgba(0, 0, 0, 0.15));
+  border-radius: 3px;
+}
+[data-scrollable-pane]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/*
+ * Restore wider centered max-width for session composer and timeline.
+ * Upstream narrowed from 800px/1000px to 500px/700px (commit 66d0beba6)
+ * which is too narrow for Claxedo split panels.
+ */
+@media (min-width: 768px) {
+  .md\:max-w-\[500px\].md\:mx-auto {
+    max-width: 50rem; /* 800px */
+  }
+}
+@media (min-width: 1536px) {
+  .md\:mx-auto.\32xl\:max-w-\[700px\],
+  .\32xl\:max-w-\[700px\] {
+    max-width: 1000px;
+  }
+}
+
+/* Appearance settings: pointer cursors */
+html.use-pointer-cursors button,
+html.use-pointer-cursors a,
+html.use-pointer-cursors [role="button"],
+html.use-pointer-cursors [data-slot="tabs-trigger"],
+html.use-pointer-cursors [data-slot="switch-control"],
+html.use-pointer-cursors [data-component="select"] [data-slot="trigger"],
+html.use-pointer-cursors input[type="checkbox"],
+html.use-pointer-cursors input[type="radio"],
+html.use-pointer-cursors label[for] {
+  cursor: pointer !important;
+}
+
+/* Appearance settings: translucent sidebar */
+html.translucent-sidebar [data-component="rail-sidebar"],
+html.translucent-sidebar [data-slot="tabs-list"] {
+  background: color-mix(in srgb, var(--background-stronger) 75%, transparent) !important;
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
 }
 

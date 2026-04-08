@@ -86,4 +86,36 @@ describe("query suppression", () => {
     const out = suppress.scan("a\u001b[?62;4;22cb")
     expect(out).toBe("ab")
   })
+
+  // -------------------------------------------------------------------------
+  // OSC (ESC ]) — pass-through with atomic buffering
+  // Unlike DCS, OSC sequences are not suppressed; they pass through intact.
+  // -------------------------------------------------------------------------
+
+  test("osc_bel_terminated_passes_through", () => {
+    const suppress = createQuerySuppressor()
+    expect(suppress.scan("a\u001b]10;?\u0007b")).toBe("a\u001b]10;?\u0007b")
+  })
+
+  test("osc_st_terminated_passes_through", () => {
+    const suppress = createQuerySuppressor()
+    expect(suppress.scan("a\u001b]10;rgb:d4d4\u001b\\b")).toBe("a\u001b]10;rgb:d4d4\u001b\\b")
+  })
+
+  test("osc_split_before_bel_is_output_atomically_on_next_chunk", () => {
+    const suppress = createQuerySuppressor()
+    const first = suppress.scan("x\u001b]10;?")   // no terminator yet
+    const second = suppress.scan("\u0007y")         // BEL arrives
+    expect(first).toBe("x")
+    expect(second).toBe("\u001b]10;?\u0007y")
+  })
+
+  test("osc_split_inside_st_terminator_is_output_atomically_on_next_chunk", () => {
+    const suppress = createQuerySuppressor()
+    // ESC arrives at end of first chunk; the \ arrives in the next
+    const first = suppress.scan("x\u001b]10;rgb:d4d4\u001b")
+    const second = suppress.scan("\\y")
+    expect(first).toBe("x")
+    expect(second).toBe("\u001b]10;rgb:d4d4\u001b\\y")
+  })
 })

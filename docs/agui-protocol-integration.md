@@ -1,5 +1,11 @@
 # AG-UI Protocol Integration
 
+> Status (2026-03-20): archived proposal.
+>
+> This plan targeted the removed top-level `claxedo/` server tree and none of the `hook/agui` routes or `src/agui/*` files described below exist in the current repo.
+>
+> Keep it only as brainstorming history. Do not implement it verbatim against the current `packages/claxedo-server` / `packages/workspace-runtime` layout.
+
 Integrate the AG-UI protocol into Claxedo so external agents (LangGraph, CrewAI, etc.) and terminal agents can control the UI and access backend services through a unified `POST /tool-call` endpoint. Two execution paths: backend tools proxy to OpenCode APIs server-side; frontend tools broadcast via SSE to the browser.
 
 ## Phase 1: Server Foundation

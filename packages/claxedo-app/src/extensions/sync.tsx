@@ -35,11 +35,7 @@ export function syncExtensions(_config: ClaxedoConfig): SyncExtensions {
      * @param newUrl - The new server URL being connected to
      * @param oldUrl - The previous server URL (empty string if first connection)
      */
-    onServerChange: (newUrl: string, oldUrl: string): void => {
-      if (import.meta.env.DEV) {
-        console.log(`[claxedo] Server changed: ${oldUrl || "(none)"} -> ${newUrl}`)
-      }
-
+    onServerChange: (_newUrl: string, _oldUrl: string): void => {
       // Clean up any cloud-specific state here.
       // Examples:
       // - Abort pending fetch requests

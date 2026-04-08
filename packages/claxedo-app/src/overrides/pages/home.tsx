@@ -31,7 +31,10 @@ export default function Home() {
       .slice(0, 5)
   })
 
-  function openProject(directory: string) {
+  async function openProject(directory: string) {
+    if (server.isLocal()) {
+      await sync.project.ensure(directory)
+    }
     layout.projects.open(directory)
     server.projects.touch(directory)
     navigate(`/${base64Encode(directory)}`)
@@ -40,13 +43,13 @@ export default function Home() {
   async function chooseProject() {
     const ext = getExtensions()
 
-    function resolve(result: string | string[] | null) {
+    async function resolve(result: string | string[] | null) {
       if (Array.isArray(result)) {
         for (const directory of result) {
-          openProject(directory)
+          await openProject(directory)
         }
       } else if (result) {
-        openProject(result)
+        await openProject(result)
       }
     }
 
@@ -55,7 +58,7 @@ export default function Home() {
       const WebProjectDialog = ext.app.webProjectDialog
       dialog.show(
         () => <WebProjectDialog onSelect={resolve} />,
-        () => resolve(null)
+        () => void resolve(null)
       )
       return
     }
@@ -69,7 +72,7 @@ export default function Home() {
     } else {
       dialog.show(
         () => <DialogSelectDirectory multiple={true} onSelect={resolve} />,
-        () => resolve(null),
+        () => void resolve(null),
       )
     }
   }

@@ -1,4 +1,6 @@
-import type { PaneContent, PaneDir, TabItem } from "./types"
+import type { PaneContent, PaneDir, TabItem, TabScope } from "./types"
+
+type NewTab = Omit<TabItem, "id" | "scope"> & { scope?: TabScope }
 
 export type LayoutCommand =
   | {
@@ -25,7 +27,7 @@ export type LayoutCommand =
   | { type: "TabPatchRequested"; groupId: string; tabId: string; patch: Partial<TabItem> }
   | { type: "TabTitleUpdateRequested"; groupId: string; tabId: string; title: string }
   | { type: "TabBadgeUpdateRequested"; groupId: string; tabId: string; badge: TabItem["badge"] }
-  | { type: "TabAddRequested"; groupId: string; tab: Omit<TabItem, "id"> }
+  | { type: "TabAddRequested"; groupId: string; tab: NewTab }
   | {
       type: "SessionTabAddRequested"
       groupId: string
@@ -46,9 +48,22 @@ export type LayoutCommand =
       reviewFromRef?: string
       reviewToRef?: string
     }
+  | {
+      type: "ReviewWorkspaceTabAddRequested"
+      groupId: string
+      directory: string
+      sessionId: string
+      title: string
+      badge?: TabItem["badge"]
+      reviewMode?: TabItem["reviewMode"]
+      reviewFromRef?: string
+      reviewToRef?: string
+    }
   | { type: "ContextTabAddRequested"; groupId: string; directory: string; sessionId: string; title: string }
   | { type: "FileTabAddRequested"; groupId: string; directory: string; filePath: string; title: string }
-  | { type: "PageTabAddRequested"; groupId: string; pageId: string; title: string; directory?: string }
+  | { type: "PagesIndexTabAddRequested"; groupId: string; directory?: string }
+  | { type: "PageTabAddRequested"; groupId: string; pageId: string; title: string; directory?: string; filePath?: string }
+  | { type: "WorkgraphTabAddRequested"; groupId: string; directory?: string }
   | { type: "TabMoveAcrossGroupsRequested"; tabId: string; fromGroupId: string; toGroupId: string | "new" }
   | { type: "GroupWorktreeDefaultSetRequested"; groupId: string; directory: string | null }
   | { type: "GroupWorktreePinnedSetRequested"; groupId: string; directory: string | null }
@@ -58,10 +73,13 @@ export type LayoutCommand =
   | { type: "PaneFocusRequested"; tabId: string; leafId: string }
   | { type: "PaneZoomRequested"; tabId: string; leafId: string }
   | { type: "PaneContentSetRequested"; tabId: string; leafId: string; content: PaneContent }
+  | { type: "PaneFloatRequested"; tabId: string; leafId: string }
+  | { type: "PaneUnfloatRequested"; tabId: string }
   | { type: "ProcessPaneToggleRequested"; directory?: string }
   | { type: "ProcessPaneOpenRequested"; directory?: string }
   | { type: "ProcessPaneTargetSetRequested"; directory: string | null }
   | { type: "ProcessPaneCrashFlagSetRequested"; value: boolean }
+  | { type: "FileTreePaneToggleRequested"; tabId: string; directory: string }
 
 export type LayoutDispatch = (command: LayoutCommand) => string | undefined | void
 
@@ -74,7 +92,7 @@ type SplitBridge = {
 }
 
 type GroupTabBridge = {
-  add: (tab: Omit<TabItem, "id">) => string | undefined
+  add: (tab: NewTab) => string | undefined
   addSession: (directory: string, sessionId: string, title: string, badge?: TabItem["badge"]) => string | undefined
   addTerminal: (directory: string, terminalId: string, title: string) => string | undefined
   addReview: (
@@ -86,9 +104,20 @@ type GroupTabBridge = {
     reviewFromRef?: string,
     reviewToRef?: string,
   ) => string | undefined
+  addReviewWorkspace: (
+    directory: string,
+    sessionId: string,
+    title: string,
+    badge?: TabItem["badge"],
+    reviewMode?: TabItem["reviewMode"],
+    reviewFromRef?: string,
+    reviewToRef?: string,
+  ) => string | undefined
   addContext: (directory: string, sessionId: string, title: string) => string | undefined
   addFile: (directory: string, filePath: string, title: string) => string | undefined
-  addPage: (pageId: string, title: string, directory?: string) => string | undefined
+  addPagesIndex: (directory?: string) => string | undefined
+  addPage: (pageId: string, title: string, directory?: string, filePath?: string) => string | undefined
+  addWorkgraph: (directory?: string) => string | undefined
   patch: (id: string, patch: Partial<TabItem>) => void
   updateTitle: (id: string, title: string) => void
   updateBadge: (id: string, badge: TabItem["badge"]) => void
@@ -114,6 +143,9 @@ type MultiPaneBridge = {
   focus: (tabId: string, leafId: string) => void
   zoom: (tabId: string, leafId: string) => void
   setContent: (tabId: string, leafId: string, content: PaneContent) => void
+  float: (tabId: string, leafId: string) => void
+  unfloat: (tabId: string) => void
+  toggleFileTree: (tabId: string, directory: string) => void
 }
 
 type ProcessPaneBridge = {
@@ -225,7 +257,19 @@ export function createLayoutDispatcher(input: {
     }
 
     if (command.type === "ReviewTabAddRequested") {
-      return groupTabs(command.groupId).addReview(
+      return groupTabs(command.groupId).addReviewWorkspace(
+        command.directory,
+        command.sessionId,
+        command.title,
+        command.badge,
+        command.reviewMode,
+        command.reviewFromRef,
+        command.reviewToRef,
+      )
+    }
+
+    if (command.type === "ReviewWorkspaceTabAddRequested") {
+      return groupTabs(command.groupId).addReviewWorkspace(
         command.directory,
         command.sessionId,
         command.title,
@@ -244,8 +288,16 @@ export function createLayoutDispatcher(input: {
       return groupTabs(command.groupId).addFile(command.directory, command.filePath, command.title)
     }
 
+    if (command.type === "PagesIndexTabAddRequested") {
+      return groupTabs(command.groupId).addPagesIndex(command.directory)
+    }
+
     if (command.type === "PageTabAddRequested") {
-      return groupTabs(command.groupId).addPage(command.pageId, command.title, command.directory)
+      return groupTabs(command.groupId).addPage(command.pageId, command.title, command.directory, command.filePath)
+    }
+
+    if (command.type === "WorkgraphTabAddRequested") {
+      return groupTabs(command.groupId).addWorkgraph(command.directory)
     }
 
     if (command.type === "TabMoveAcrossGroupsRequested") {
@@ -292,6 +344,16 @@ export function createLayoutDispatcher(input: {
       return
     }
 
+    if (command.type === "PaneFloatRequested") {
+      multiPane.float(command.tabId, command.leafId)
+      return
+    }
+
+    if (command.type === "PaneUnfloatRequested") {
+      multiPane.unfloat(command.tabId)
+      return
+    }
+
     if (command.type === "ProcessPaneToggleRequested") {
       processPane.requestToggle(command.directory)
       return
@@ -309,6 +371,11 @@ export function createLayoutDispatcher(input: {
 
     if (command.type === "ProcessPaneCrashFlagSetRequested") {
       processPane.setCrashedWhileClosed(command.value)
+      return
+    }
+
+    if (command.type === "FileTreePaneToggleRequested") {
+      multiPane.toggleFileTree(command.tabId, command.directory)
       return
     }
 

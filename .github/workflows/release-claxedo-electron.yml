@@ -1,0 +1,398 @@
+name: Release Claxedo Electron
+
+on:
+  push:
+    tags:
+      - "claxedo-electron-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g., 1.2.3)"
+        required: false
+        type: string
+      platforms:
+        description: "Platforms to build"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - macos
+          - windows
+          - linux
+
+env:
+  CLAXEDO_CHANNEL: prod
+
+jobs:
+  # Determine version from tag or input
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/claxedo-electron-v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/claxedo-electron-v}"
+          else
+            VERSION=$(jq -r .version packages/claxedo-desktop-electron/package.json)
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=claxedo-electron-v$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+  # Build patched CLI for all platforms (with Claxedo agent hooks)
+  build-cli:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build patched CLI
+        run: bun run --cwd packages/claxedo-app opencode:build
+        env:
+          OPENCODE_VERSION: ${{ needs.prepare.outputs.version }}
+
+      - name: Upload CLI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-cli
+          path: packages/claxedo-app/dist-opencode
+          retention-days: 7
+
+  # Bundle claxedo-mcp as JS (platform-independent, single runner)
+  build-mcp:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Bundle claxedo-mcp
+        run: |
+          MCP_SOURCE="packages/claxedo-app/src/opencode-patches/mcp/claxedo-mcp.ts"
+          bun build "$MCP_SOURCE" --outfile claxedo-mcp.js --target=bun --minify
+
+      - name: Upload claxedo-mcp artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claxedo-mcp-bundle
+          path: claxedo-mcp.js
+          retention-days: 7
+
+  # Build Electron app for all platforms
+  build-electron:
+    needs: [prepare, build-cli, build-mcp]
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            host: macos-latest
+            target: aarch64-apple-darwin
+            arch: arm64
+            cli_binary: opencode-darwin-arm64
+            electron_arch: arm64
+          - platform: macos
+            host: macos-latest
+            target: x86_64-apple-darwin
+            arch: x64
+            cli_binary: opencode-darwin-x64-baseline
+            electron_arch: x64
+          - platform: windows
+            host: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x64
+            cli_binary: opencode-windows-x64-baseline
+            electron_arch: x64
+          - platform: linux
+            host: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+            cli_binary: opencode-linux-x64-baseline
+            electron_arch: x64
+          - platform: linux
+            host: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            cli_binary: opencode-linux-arm64
+            electron_arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnotify-dev \
+            libxtst-dev \
+            libnss3-dev \
+            libgdk-pixbuf2.0-dev \
+            libgtk-3-dev \
+            libxss-dev
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: opencode-cli
+          path: cli-dist
+
+      - name: Download claxedo-mcp artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: claxedo-mcp-bundle
+          path: mcp-dist
+
+      - name: Setup sidecar binaries
+        working-directory: packages/claxedo-desktop-electron
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p resources
+
+          # Copy CLI sidecar
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp ../../cli-dist/${{ matrix.cli_binary }}/bin/opencode.exe resources/opencode-cli.exe
+          else
+            cp ../../cli-dist/${{ matrix.cli_binary }}/bin/opencode resources/opencode-cli
+            chmod +x resources/opencode-cli
+          fi
+
+          # Copy claxedo-mcp JS bundle
+          cp ../../mcp-dist/claxedo-mcp.js resources/claxedo-mcp.js
+
+          ls -la resources/
+
+      - name: Copy icons
+        working-directory: packages/claxedo-desktop-electron
+        run: bun ./scripts/copy-icons.ts prod
+
+      - name: Update version
+        working-directory: packages/claxedo-desktop-electron
+        shell: bash
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          jq --arg v "$VERSION" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
+          echo "Updated package.json version to $VERSION"
+
+      - name: Build Electron app
+        working-directory: packages/claxedo-desktop-electron
+        run: bun run build
+        env:
+          CLAXEDO_CHANNEL: prod
+
+      - name: Import Apple certificate
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          echo "$APPLE_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/certificate.p12
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          security import $RUNNER_TEMP/certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          security list-keychain -d user -s $KEYCHAIN_PATH login.keychain-db
+
+          rm $RUNNER_TEMP/certificate.p12
+
+      - name: Package Electron app (macOS)
+        if: runner.os == 'macOS'
+        working-directory: packages/claxedo-desktop-electron
+        timeout-minutes: 30
+        env:
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CLAXEDO_CHANNEL: prod
+        run: bun run package:mac -- --${{ matrix.electron_arch }}
+
+      - name: Package Electron app (Windows)
+        if: runner.os == 'Windows'
+        working-directory: packages/claxedo-desktop-electron
+        env:
+          CLAXEDO_CHANNEL: prod
+        run: bun run package:win
+
+      - name: Package Electron app (Linux)
+        if: runner.os == 'Linux'
+        working-directory: packages/claxedo-desktop-electron
+        env:
+          CLAXEDO_CHANNEL: prod
+        run: bun run package:linux -- --${{ matrix.electron_arch }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: claxedo-electron-${{ matrix.target }}-${{ needs.prepare.outputs.version }}
+          path: |
+            packages/claxedo-desktop-electron/dist/*.dmg
+            packages/claxedo-desktop-electron/dist/*.zip
+            packages/claxedo-desktop-electron/dist/*.exe
+            packages/claxedo-desktop-electron/dist/*.AppImage
+            packages/claxedo-desktop-electron/dist/*.deb
+            packages/claxedo-desktop-electron/dist/*.rpm
+            packages/claxedo-desktop-electron/dist/*.yml
+            packages/claxedo-desktop-electron/dist/*.yaml
+            packages/claxedo-desktop-electron/dist/*.blockmap
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Cleanup keychain
+        if: runner.os == 'macOS' && always()
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain $KEYCHAIN_PATH || true
+          fi
+
+  # Create GitHub Release
+  create-release:
+    needs: [prepare, build-electron]
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f | head -100
+
+      - name: Collect release assets
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          mkdir -p release
+
+          # macOS
+          cp artifacts/claxedo-electron-aarch64-apple-darwin-${VERSION}/*.dmg release/ 2>/dev/null || true
+          cp artifacts/claxedo-electron-aarch64-apple-darwin-${VERSION}/*.zip release/ 2>/dev/null || true
+          cp artifacts/claxedo-electron-x86_64-apple-darwin-${VERSION}/*.dmg release/ 2>/dev/null || true
+          cp artifacts/claxedo-electron-x86_64-apple-darwin-${VERSION}/*.zip release/ 2>/dev/null || true
+
+          # Windows
+          cp artifacts/claxedo-electron-x86_64-pc-windows-msvc-${VERSION}/*.exe release/ 2>/dev/null || true
+
+          # Linux
+          cp artifacts/claxedo-electron-x86_64-unknown-linux-gnu-${VERSION}/*.AppImage release/ 2>/dev/null || true
+          cp artifacts/claxedo-electron-x86_64-unknown-linux-gnu-${VERSION}/*.deb release/ 2>/dev/null || true
+          cp artifacts/claxedo-electron-x86_64-unknown-linux-gnu-${VERSION}/*.rpm release/ 2>/dev/null || true
+          cp artifacts/claxedo-electron-aarch64-unknown-linux-gnu-${VERSION}/*.AppImage release/ 2>/dev/null || true
+          cp artifacts/claxedo-electron-aarch64-unknown-linux-gnu-${VERSION}/*.deb release/ 2>/dev/null || true
+          cp artifacts/claxedo-electron-aarch64-unknown-linux-gnu-${VERSION}/*.rpm release/ 2>/dev/null || true
+
+          echo "Release artifacts:"
+          ls -la release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: Claxedo Electron v${{ needs.prepare.outputs.version }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Finalize latest-*.yml for auto-updater
+  finalize-latest-yml:
+    needs: [prepare, build-electron, create-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare latest-yml directories
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          mkdir -p latest-yml
+
+          # Copy per-platform yml files into expected directory structure
+          for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            ARTIFACT_DIR="artifacts/claxedo-electron-${target}-${VERSION}"
+            if [ -d "$ARTIFACT_DIR" ]; then
+              mkdir -p "latest-yml/latest-yml-${target}"
+              cp "$ARTIFACT_DIR"/*.yml "latest-yml/latest-yml-${target}/" 2>/dev/null || true
+              cp "$ARTIFACT_DIR"/*.yaml "latest-yml/latest-yml-${target}/" 2>/dev/null || true
+            fi
+          done
+
+          echo "Latest yml structure:"
+          find latest-yml -type f
+
+      - name: Finalize and upload latest yml files
+        working-directory: packages/claxedo-desktop-electron
+        run: bun ./scripts/finalize-latest-yml.ts
+        env:
+          LATEST_YML_DIR: ${{ github.workspace }}/latest-yml
+          GH_REPO: ${{ github.repository }}
+          OPENCODE_VERSION: ${{ needs.prepare.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

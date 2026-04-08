@@ -6,9 +6,7 @@
  * - Protected route guards
  * - Cloud-specific routes (login, etc.)
  * - Cloud-specific i18n strings
- * - Web project dialog for creating cloud projects
  * - Account settings section with logout
- * - Cloud workspace creation
  */
 
 import { lazy, Show, Suspense, type ParentComponent, type ParentProps } from "solid-js"
@@ -16,48 +14,10 @@ import type { AppExtensions } from "@opencode-ai/app-shared"
 import type { ClaxedoConfig } from "../index"
 import { cloudStrings } from "../i18n/cloud-strings"
 import { initializeClerk, useAuth } from "../utils/auth-client"
-import { api, getDefaultBaseUrl } from "../utils/api"
-import { DialogCreateCloudProject } from "../components/dialog-create-cloud-project"
 import { AccountSettingsSection } from "../components/settings-account-section"
 
 import { createCloudAutoSwitchProvider } from "../components/cloud-auto-switch"
 import { ClaxedoLayout } from "../claxedo-ui/ClaxedoLayout"
-
-/**
- * Resolve workspace info from a directory path.
- */
-async function resolveWorkspace(
-  baseUrl: string,
-  directory: string,
-): Promise<{ workspaceId: string; projectId?: string } | null> {
-  try {
-    return await api.get(`${baseUrl}/api/workspace/resolve?directory=${encodeURIComponent(directory)}`)
-  } catch {
-    return null
-  }
-}
-
-/**
- * Create a new cloud workspace (sandbox) for an existing project.
- */
-async function createCloudWorkspace(baseUrl: string, projectDirectory: string): Promise<string | undefined> {
-  // First resolve the current workspace to get project info
-  const current = await resolveWorkspace(baseUrl, projectDirectory)
-  if (!current) {
-    throw new Error("Could not resolve current workspace")
-  }
-
-  // Generate a unique workspace name
-  const workspaceName = `workspace-${Date.now()}`
-
-  // Create a new workspace in the same project
-  const data = await api.post(`${baseUrl}/api/workspace/create`, {
-    projectId: current.projectId,
-    workspaceName,
-  })
-
-  return data.directory as string | undefined
-}
 
 // Lazy load the login page for code splitting
 const LoginPage = lazy(() => import("../pages/login"))
@@ -125,38 +85,11 @@ function createRequireAuth(_config: ClaxedoConfig): ParentComponent {
 const Loading = () => <div class="size-full" />
 
 /**
- * Create workspace handler with configurable priority:
- * 1. Direct Daytona API (no-auth mode with own key)
- * 2. Via claxedo server (auth mode)
- * 3. Return undefined -> upstream uses local directory
- */
-function createWorkspaceHandler(config: ClaxedoConfig) {
-  return async (projectDirectory: string): Promise<string | undefined> => {
-    // Priority 1: Direct Daytona API (no-auth mode with own key)
-    if (config.daytonaApiKey && !config.authEnabled) {
-      // TODO: Implement direct Daytona sandbox creation
-      // return createDaytonaSandbox(config.daytonaApiKey, projectDirectory)
-      console.warn("[claxedo] Direct Daytona sandbox creation not yet implemented")
-    }
-
-    // Priority 2: Via claxedo server (auth mode)
-    if (config.authEnabled && config.gatewayUrl) {
-      const baseUrl = getDefaultBaseUrl()
-      return createCloudWorkspace(baseUrl, projectDirectory)
-    }
-
-    // Priority 3: Return undefined -> upstream uses local directory
-    return undefined
-  }
-}
-
-/**
  * Create app extensions for Claxedo.
  *
  * Extensions are conditionally registered based on feature flags:
  * - authEnabled: Clerk auth + claxedo server (providers, authGuard, routes, onInit)
- * - sandboxEnabled: Cloud sandbox workspace creation (webProjectDialog, createWorkspace)
- * - daytonaApiKey: Direct Daytona API key for no-auth sandbox mode
+ * - sandboxEnabled: Cloud workspace creation (Compute tab in settings)
  *
  * @param config - Claxedo configuration
  * @returns AppExtensions object to register with the extension system
@@ -218,13 +151,8 @@ export function appExtensions(config: ClaxedoConfig): AppExtensions {
     extensions.serverSelectorMode = "full"
   }
 
-  // ─────────────────────────────────────────────
-  // SANDBOX FEATURES (cloud workspace creation)
-  // ─────────────────────────────────────────────
-  if (config.sandboxEnabled) {
-    extensions.webProjectDialog = DialogCreateCloudProject
-    extensions.createWorkspace = createWorkspaceHandler(config)
-  }
+  // Sandbox settings ("Compute" tab) are rendered directly by dialog-settings.tsx
+  // when sandboxEnabled is true — no settingsSections registration needed.
 
   return extensions
 }

@@ -24,9 +24,13 @@ const unsafeCSS = `
   --diffs-bg-separator: var(--diffs-bg-separator-override, light-dark( color-mix(in lab, var(--diffs-bg) 96%, var(--diffs-mixer)), color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-mixer))));
   --diffs-fg: light-dark(var(--diffs-light), var(--diffs-dark));
   --diffs-fg-number: var(--diffs-fg-number-override, light-dark(color-mix(in lab, var(--diffs-fg) 65%, var(--diffs-bg)), color-mix(in lab, var(--diffs-fg) 65%, var(--diffs-bg))));
-  --diffs-deletion-base: var(--syntax-diff-delete);
-  --diffs-addition-base: var(--syntax-diff-add);
-  --diffs-modified-base: var(--syntax-diff-unknown);
+  --diffs-deletion-base: var(--diffs-deletion-color-override, var(--syntax-diff-delete));
+  --diffs-addition-base: var(--diffs-addition-color-override, var(--syntax-diff-add));
+  --diffs-modified-base: var(--diffs-modified-color-override, var(--syntax-diff-unknown));
+  --diffs-deletion-text: var(--diffs-deletion-text-override, var(--diffs-deletion-base));
+  --diffs-addition-text: var(--diffs-addition-text-override, var(--diffs-addition-base));
+  --diffs-deletion-text-strong: var(--diffs-deletion-text-strong-override, var(--diffs-deletion-text));
+  --diffs-addition-text-strong: var(--diffs-addition-text-strong-override, var(--diffs-addition-text));
   --diffs-bg-deletion: var(--diffs-bg-deletion-override, light-dark( color-mix(in lab, var(--diffs-bg) 98%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 92%, var(--diffs-deletion-base))));
   --diffs-bg-deletion-number: var(--diffs-bg-deletion-number-override, light-dark( color-mix(in lab, var(--diffs-bg) 91%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-deletion-base))));
   --diffs-bg-deletion-hover: var(--diffs-bg-deletion-hover-override, light-dark( color-mix(in lab, var(--diffs-bg) 80%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 75%, var(--diffs-deletion-base))));
@@ -123,11 +127,64 @@ const unsafeCSS = `
   color: var(--diffs-selection-number-fg);
 }
 
-/* The deletion word-diff emphasis is stronger than additions; soften it while selected so the selection highlight reads consistently. */
+[data-diff] [data-line][data-line-type='change-addition'] span,
+[data-file] [data-line][data-line-type='change-addition'] span {
+  color: var(--diffs-addition-text) !important;
+}
+
+[data-diff] [data-line][data-line-type='change-deletion'] span,
+[data-file] [data-line][data-line-type='change-deletion'] span {
+  color: var(--diffs-deletion-text) !important;
+}
+
+[data-diff] [data-line][data-line-type='change-addition'] [data-diff-span],
+[data-diff] [data-line][data-line-type='change-addition'] [data-diff-span] span,
+[data-file] [data-line][data-line-type='change-addition'] [data-diff-span],
+[data-file] [data-line][data-line-type='change-addition'] [data-diff-span] span {
+  color: var(--diffs-addition-text-strong) !important;
+}
+
+[data-diff] [data-line][data-line-type='change-deletion'] [data-diff-span],
+[data-diff] [data-line][data-line-type='change-deletion'] [data-diff-span] span,
+[data-file] [data-line][data-line-type='change-deletion'] [data-diff-span],
+[data-file] [data-line][data-line-type='change-deletion'] [data-diff-span] span {
+  color: var(--diffs-deletion-text-strong) !important;
+}
+
+/* Soften deletion word-diff emphasis while selected so the selection highlight reads consistently. */
 [data-diff] [data-line][data-line-type='change-deletion'][data-selected-line] {
   --diffs-bg-deletion-emphasis: light-dark(
-    rgb(from var(--diffs-deletion-base) r g b / 0.07),
+    rgb(from var(--diffs-deletion-base) r g b / 0.08),
     rgb(from var(--diffs-deletion-base) r g b / 0.1)
+  );
+}
+
+[data-gutter-buffer='buffer'] {
+  background-size: 8px 8px;
+  background-position: 0 0;
+  background-origin: border-box;
+  background-color: var(--diffs-bg);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent calc(3px * 1.414),
+    rgb(from var(--diffs-bg-buffer) r g b / 0.8) calc(3px * 1.414),
+    rgb(from var(--diffs-bg-buffer) r g b / 0.8) calc(4px * 1.414)
+  );
+}
+
+[data-content-buffer] {
+  grid-column: 1;
+  background-size: 8px 8px;
+  background-position: 5px 0;
+  background-origin: border-box;
+  background-color: var(--diffs-bg);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent calc(3px * 1.414),
+    var(--diffs-bg-buffer) calc(3px * 1.414),
+    var(--diffs-bg-buffer) calc(4px * 1.414)
   );
 }
 
@@ -159,12 +216,15 @@ ${lineCommentStyles}
 
 `
 
-export function createDefaultOptions<T>(style: FileDiffOptions<T>["diffStyle"]) {
+export function createDefaultOptions<T>(
+  style: FileDiffOptions<T>["diffStyle"],
+  overflow: NonNullable<FileDiffOptions<T>["overflow"]> = "wrap",
+) {
   return {
     theme: "OpenCode",
     themeType: "system",
     disableLineNumbers: false,
-    overflow: "wrap",
+    overflow,
     diffStyle: style ?? "unified",
     diffIndicators: "bars",
     lineHoverHighlight: "both",

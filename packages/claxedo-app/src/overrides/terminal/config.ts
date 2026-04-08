@@ -13,17 +13,20 @@ const TERMINAL_FONT_FAMILY = [
   "monospace",
 ].join(", ")
 
-export const TERMINAL_OPTIONS: ITerminalOptions = {
-  cursorBlink: false,
+// Cast allows xterm proposed/undocumented options (e.g. scrollbar) without TS errors
+export const TERMINAL_OPTIONS = {
+  cursorBlink: true,
   fontSize: 14,
   fontFamily: TERMINAL_FONT_FAMILY,
   allowProposedApi: true,
-  scrollback: 10000,
-  macOptionIsMeta: true,
+  scrollback: 5000,
+  macOptionIsMeta: false,
   cursorStyle: "bar",
   cursorInactiveStyle: "outline",
   fastScrollSensitivity: 5,
-}
+  screenReaderMode: false,
+  scrollbar: { showScrollbar: false },
+} as ITerminalOptions
 
 export const RESIZE_DEBOUNCE_MS = 150
 export const FIRST_RENDER_RESTORE_FALLBACK_MS = 250

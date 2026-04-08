@@ -1,6 +1,6 @@
-import { base64Encode } from "@opencode-ai/util/encode"
-
 import type { TabItem } from "../context/claxedo-layout"
+import { itemRoute } from "../context/claxedo-layout/tab-route"
+import { realDirectory } from "../context/claxedo-layout/types"
 import type { ActionProps, Nav } from "./shared"
 
 export function createTabActions(props: ActionProps, nav: Nav) {
@@ -10,7 +10,7 @@ export function createTabActions(props: ActionProps, nav: Nav) {
       tabType: tab.type,
       tabDir: tab.directory,
       tabSessionId:
-        tab.type === "session" || tab.type === "review" || tab.type === "context" ? tab.sessionId : undefined,
+        tab.type === "session" || tab.type === "review" || tab.type === "review-workspace" || tab.type === "context" ? tab.sessionId : undefined,
       tabPageId: tab.type === "page" ? tab.pageId : undefined,
       tabTerminalId: tab.type === "terminal" ? tab.terminalId : undefined,
       routeDir: props.activeWorkspaceId(),
@@ -22,17 +22,15 @@ export function createTabActions(props: ActionProps, nav: Nav) {
 
     const workspaceDir =
       tab.type === "page"
-        ? tab.directory && tab.directory !== "__pages__"
-          ? tab.directory
-          : props.activeWorkspaceId()
+        ? realDirectory(tab.directory) ?? props.activeWorkspaceId()
         : tab.directory
     if (!workspaceDir) return
 
-    nav(`/${base64Encode(workspaceDir)}/tab/${tab.id}`, "tab-select", {
+    nav(itemRoute(workspaceDir, tab), "tab-select", {
       tabId: tab.id,
       tabType: tab.type,
       workspaceDir,
-      sessionId: tab.type === "session" || tab.type === "review" || tab.type === "context" ? tab.sessionId : undefined,
+      sessionId: tab.type === "session" || tab.type === "review" || tab.type === "review-workspace" || tab.type === "context" ? tab.sessionId : undefined,
       pageId: tab.type === "page" ? tab.pageId : undefined,
       terminalId: tab.type === "terminal" ? tab.terminalId : undefined,
     })

@@ -91,8 +91,6 @@ async function writeIfChanged(
 export async function setupAgentHooks(options: SetupOptions = {}): Promise<void> {
   const { port = DEFAULT_HOOK_PORT, force = false } = options
 
-  console.log("[agent-hooks] Setting up agent hooks...")
-
   // Create directory structure
   await fs.promises.mkdir(BIN_DIR, { recursive: true, mode: 0o755 })
   await fs.promises.mkdir(HOOKS_DIR, { recursive: true, mode: 0o755 })
@@ -156,10 +154,6 @@ export async function setupAgentHooks(options: SetupOptions = {}): Promise<void>
     force
   )
 
-  console.log("[agent-hooks] Setup complete")
-  console.log(`[agent-hooks]   Wrappers: ${BIN_DIR}`)
-  console.log(`[agent-hooks]   Hooks: ${HOOKS_DIR}`)
-  console.log(`[agent-hooks]   Shell: ${SHELL_DIR}`)
 }
 
 /**
@@ -215,11 +209,8 @@ export function isSetupComplete(): boolean {
  * Clean up agent hooks (remove all created files)
  */
 export async function cleanupAgentHooks(): Promise<void> {
-  console.log("[agent-hooks] Cleaning up...")
-
   try {
     await fs.promises.rm(CLAXEDO_DIR, { recursive: true, force: true })
-    console.log("[agent-hooks] Cleanup complete")
   } catch (error) {
     console.error("[agent-hooks] Cleanup failed:", error)
     throw error

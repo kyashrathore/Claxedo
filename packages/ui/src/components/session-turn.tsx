@@ -90,6 +90,10 @@ function list<T>(value: T[] | undefined | null, fallback: T[]) {
   return fallback
 }
 
+function activeStatus(status: SessionStatus) {
+  return status.type === "busy" || status.type === "retry"
+}
+
 const hidden = new Set(["todowrite"])
 
 function partState(part: PartType, showReasoningSummaries: boolean) {
@@ -320,7 +324,7 @@ export function SessionTurn(
     if (typeof props.active === "boolean" && !props.active) return idle
     return data.store.session_status[props.sessionID] ?? idle
   })
-  const working = createMemo(() => status().type !== "idle" && active())
+  const working = createMemo(() => activeStatus(status()) && active())
   const showReasoningSummaries = createMemo(() => props.showReasoningSummaries ?? true)
 
   const assistantCopyPartID = createMemo(() => {
@@ -363,7 +367,7 @@ export function SessionTurn(
   const reasoningHeading = createMemo(() => assistantDerived().reason)
   const showThinking = createMemo(() => {
     if (!working() || !!error()) return false
-    if (status().type === "retry") return false
+    if (status().type !== "busy") return false
     if (showReasoningSummaries()) return assistantVisible() === 0
     return true
   })

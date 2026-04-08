@@ -8,52 +8,64 @@
  * Lives inside DirectoryScope, outside GroupContentRenderer.
  */
 
-import { batch, createEffect, createRenderEffect, createSignal, on, onCleanup } from "solid-js"
+import { batch, createEffect, createRenderEffect, createSignal, on, onCleanup, onMount } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useSDK } from "@/context/sdk"
-import { useGlobalSDK } from "@/context/global-sdk"
 import { usePlatform } from "@/context/platform"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Persist, persisted } from "@/utils/persist"
 import { useOptionalTerminal } from "@/context/terminal"
-import type { Process } from "../../opencode-patches/process/process"
+import type { Process } from "@claxedo/process/process"
+import { createProcessClient } from "@claxedo/process/client"
+import { getClaxedoServerUrl } from "../../utils/api"
+import { useClaxedoEventsOptional } from "../../providers/claxedo-events"
 import { useClaxedoLayout } from "./claxedo-layout"
 import { createProcessOwnership, createTerminalTabOps } from "../stores/process-ownership"
+import { AddProcessDialog } from "../components/add-process-dialog"
+import { createDebugLogger } from "../../overrides/utils/debug"
 
 // ── Types ──────────────────────────────────────────────────────────────
 
 type ProcessConfig = Process.ProcessConfig
 type ManagedProcess = Process.ManagedProcess
 type ProcessStatus = Process.Status
+type LaunchResult = Process.LaunchResult
 
 type ProcessPaneStore = {
   configs: ProcessConfig[]
   processes: Record<string, ManagedProcess>
   paneHeight: number
-  paneWidths: number[]
-  scrollIndex: number
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
 const DEFAULT_PANE_HEIGHT = 300
 const MIN_PANE_HEIGHT = 100
-
-function processUrl(baseUrl: string, path: string): string {
-  return `${baseUrl}/process${path}`
-}
+const FETCH_TIMEOUT = 5_000
+const POST_TIMEOUT = 10_000
 
 // ── Context ────────────────────────────────────────────────────────────
 
 export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimpleContext({
   name: "ProcessPane",
   gate: false,
-  init: () => {
+  init: (props: { tabId?: string }) => {
     const sdk = useSDK()
-    const globalSDK = useGlobalSDK()
     const platform = usePlatform()
+    const claxedoServerUrl = getClaxedoServerUrl()
+    const claxedoEvents = useClaxedoEventsOptional()
     const claxedo = useClaxedoLayout()
+    const debug = createDebugLogger("layout.process", "layout:process", {
+      legacyKey: "opencode.debug.terminal",
+    })
+    const inst = Math.random().toString(36).slice(2, 7)
+    const seed = {
+      tabId: props?.tabId ?? null,
+      dir: sdk.directory,
+    }
     const terminalCtx = useOptionalTerminal()
+    const [loaded, setLoaded] = createSignal(false)
 
     // Create ownership + tab-ops adapters.  These delegate to the current
     // ClaxedoLayout terminal state.  When the global terminal store (T2) lands,
@@ -61,40 +73,131 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     const ownership = createProcessOwnership(claxedo as any)
     const tabOps = createTerminalTabOps(claxedo as any)
 
-    const fetchFn = platform.fetch ?? globalThis.fetch
+    const dialog = useDialog()
 
-    const headers = () => ({
-      "Content-Type": "application/json",
-      "x-opencode-directory": sdk.directory,
-    })
-
-    // Persisted UI state (height, widths, scroll — NOT visibility)
+    // Persisted UI state (height — NOT visibility)
     const [store, setStore, , ready] = persisted(
       Persist.workspace(sdk.directory, "process-pane"),
       createStore<ProcessPaneStore>({
         configs: [],
         processes: {},
         paneHeight: DEFAULT_PANE_HEIGHT,
-        paneWidths: [],
-        scrollIndex: 0,
       }),
     )
+    const sig = () =>
+      Object.values(store.processes)
+        .map((proc) => `${proc.configId}:${proc.status}:${proc.ptyId ?? "-"}`)
+        .sort()
+        .join("|")
+    const snap = () => {
+      const tabId = props?.tabId ?? null
+      const groupId = tabId ? (claxedo.findTabGroup(tabId) ?? null) : null
+      const group = groupId ? claxedo.groupTabs(groupId) : undefined
+      const tab = tabId ? group?.items().find((item) => item.id === tabId) : undefined
+      return {
+        inst,
+        seedTabId: seed.tabId,
+        seedDir: seed.dir,
+        dir: sdk.directory,
+        tabId,
+        groupId,
+        hasTab: !!tab,
+        tabType: tab?.type ?? null,
+        activeId: group?.activeId() ?? null,
+        ready: ready(),
+        loaded: loaded(),
+        configs: store.configs.length,
+        procSig: sig(),
+        leaves: tabId
+          ? claxedo.select.multiPaneLeafView(tabId).map((leaf) => ({
+              id: leaf.id,
+              type: leaf.content?.type ?? null,
+              processId: leaf.content?.type === "process" ? (leaf.content.processId ?? null) : null,
+            }))
+          : [],
+      }
+    }
 
-    // Pane visibility is NOT persisted — always starts closed on reload
-    const [isOpen, setIsOpen] = createSignal(false)
+    onMount(() => {
+      debug.verbose("provider mount", snap())
+    })
+    createEffect(
+      on(
+        () => [sdk.directory, props?.tabId ?? "", claxedo.findTabGroup(props?.tabId ?? "") ?? null] as const,
+        ([dir, tabId, groupId], prev) => {
+          debug.verbose("provider anchor", {
+            inst,
+            prev: prev
+              ? {
+                  dir: prev[0] || null,
+                  tabId: prev[1] || null,
+                  groupId: prev[2],
+                }
+              : null,
+            next: {
+              dir: dir || null,
+              tabId: tabId || null,
+              groupId,
+            },
+          })
+        },
+        { defer: true },
+      ),
+    )
+
+    // Process tab visibility: the process tab is "open" when it's the active tab.
+    // We no longer need a signal — the tab active state handles it.
+
+    const states = () => {
+      const list: Array<ProcessStatus | undefined> = []
+      for (const id in store.processes) {
+        list.push(store.processes[id]?.status)
+      }
+      return list
+    }
+
+    const anyRunning = () => {
+      return states().some((status) => status === "running" || status === "starting" || status === "restarting")
+    }
+
+    const sync = () => {
+      claxedo.processPane.setRunning(sdk.directory, anyRunning())
+    }
+
+    const native = platform.fetch ?? globalThis.fetch
+
+    async function fetch(input: RequestInfo | URL, init?: RequestInit) {
+      const ms = (init?.method ?? "GET") === "GET" ? FETCH_TIMEOUT : POST_TIMEOUT
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), ms)
+      try {
+        const signal = init?.signal ? AbortSignal.any([ctrl.signal, init.signal]) : ctrl.signal
+        return await native(input, {
+          ...init,
+          signal,
+        })
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+
+    const client = createProcessClient({
+      baseUrl: claxedoServerUrl,
+      directory: sdk.directory,
+      fetch,
+    })
 
     // ── HTTP helpers ─────────────────────────────────────────────────
 
     async function fetchProcesses(): Promise<boolean> {
       try {
-        const res = await fetchFn(processUrl(sdk.url, ""), {
-          headers: headers(),
+        debug.verbose("fetch start", {
+          dir: sdk.directory,
+          tabId: props?.tabId,
+          persistedReady: ready(),
+          loaded: loaded(),
         })
-        if (!res.ok) return false
-        const data = (await res.json()) as {
-          configs: ProcessConfig[]
-          processes: ManagedProcess[]
-        }
+        const data = await client.list()
 
         // Build the set of current process PTY IDs from server data.
         const currentPtyIds = new Set<string>()
@@ -137,10 +240,8 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
               ownership.ownProcess(configId, ptyId)
             }
           }
-
-          // Sync paneWidths to match config count
-          syncPaneWidths(data.configs.length)
         })
+        sync()
 
         // After owning all CURRENT process PTYs, clean up stale ones.
         // On reload, the persisted terminalOwner map has OLD ptyIds from
@@ -149,44 +250,119 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
         lastFetchedPtyIds = currentPtyIds
         cleanupStaleProcessTabs(currentPtyIds)
 
+        debug.log("fetch ok", {
+          dir: sdk.directory,
+          tabId: props?.tabId,
+          configs: data.configs.length,
+          processes: data.processes.length,
+        })
         return true
       } catch (e) {
+        debug.log("fetch error", {
+          dir: sdk.directory,
+          tabId: props?.tabId,
+          error: e instanceof Error ? e.message : String(e),
+        })
         console.error("[process-pane] Failed to fetch processes", e)
         return false
       }
     }
 
-    /** POST an action and return the parsed JSON body (or undefined on error). */
-    const POST_TIMEOUT = 10_000
-    async function postAction<T = unknown>(path: string): Promise<T | undefined> {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), POST_TIMEOUT)
+    async function run<T>(label: string, task: () => Promise<T>) {
       try {
-        const res = await fetchFn(processUrl(sdk.url, path), {
-          method: "POST",
-          headers: headers(),
-          signal: controller.signal,
-        })
-        if (!res.ok) return undefined
-        return (await res.json().catch(() => undefined)) as T | undefined
+        return await task()
       } catch (e) {
-        console.error(`[process-pane] POST ${path} failed`, e)
+        console.error(`[process-pane] ${label} failed`, e)
         return undefined
-      } finally {
-        clearTimeout(timeout)
       }
     }
 
     /** Update a single process entry in the store from a server response. */
     function applyProcess(proc: ManagedProcess | undefined) {
       if (!proc) return
-      setStore("processes", proc.configId, proc)
+      setStore("processes", proc.configId, {
+        ...proc,
+        conflict: undefined,
+      })
       // Mark the PTY as process-owned so the terminal detection effect
       // skips it (existing `owner` check) and the close effect won't kill it.
       if (proc.ptyId) {
         ownership.ownProcess(proc.configId, proc.ptyId)
         tabOps.removeAutoCreatedTab(proc.ptyId)
       }
+      sync()
+    }
+
+    function restore(configId: string, proc?: ManagedProcess, status?: ProcessStatus) {
+      if (proc) {
+      setStore("processes", configId, {
+          ...proc,
+          status: status ?? proc.status,
+          conflict: undefined,
+        })
+        sync()
+        return
+      }
+      setStore("processes", configId, {
+        configId,
+        status: status ?? ("idle" as ProcessStatus),
+        restartCount: 0,
+        ptyId: undefined,
+        exitCode: undefined,
+        exitedAt: undefined,
+        startedAt: undefined,
+        assignedPort: undefined,
+        conflict: undefined,
+      })
+      sync()
+    }
+
+    function clash(configId: string, conflict: Process.PortConflictInfo, proc?: ManagedProcess) {
+      setStore("processes", configId, {
+        ...(proc ?? { configId, restartCount: 0 }),
+        configId,
+        status: "crashed" as ProcessStatus,
+        ptyId: undefined,
+        exitCode: undefined,
+        exitedAt: Date.now(),
+        startedAt: proc?.startedAt,
+        assignedPort: undefined,
+        conflict,
+      })
+      sync()
+      if (!claxedo.processPane.isActive()) {
+        claxedo.processPane.requestOpen()
+      }
+    }
+
+    function read(
+      configId: string,
+      out: LaunchResult,
+      proc?: ManagedProcess,
+      status?: ProcessStatus,
+      prompt = true,
+    ) {
+      if (out.kind === "started" || out.kind === "already_running") {
+        applyProcess(out.process)
+        return out.process
+      }
+      if (out.kind === "port_conflict") {
+        if (prompt) {
+          clash(configId, out.conflict, proc)
+          return
+        }
+        restore(configId, proc, status)
+        return
+      }
+      if (out.kind === "failed") {
+        if (out.process) {
+          applyProcess(out.process)
+          return out.process
+        }
+        restore(configId, proc, status)
+        return
+      }
+      restore(configId, proc, status)
     }
 
     /**
@@ -225,170 +401,142 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     let lastFetchedPtyIds = new Set<string>()
 
     // ── SSE event subscription ───────────────────────────────────────
+    // Process events now come from claxedo-server via claxedoBus (flat structure).
+    // Subscribe via ClaxedoEventsProvider; fall back silently if unavailable.
 
-    createRenderEffect(() => {
-      const dir = sdk.directory
-      if (!dir) return
+    if (claxedoEvents) {
+      const unsubStarted = claxedoEvents.on("process.started", (event) => {
+        const { configId, ptyId } = event
+        // Own the PTY before updating the store — the detection
+        // effect's existing `owner` check will skip it.
+        if (ptyId) {
+          ownership.ownProcess(configId, ptyId)
+          tabOps.removeAutoCreatedTab(ptyId)
+        }
+        setStore("processes", configId, {
+          configId,
+          ptyId,
+          status: "running" as ProcessStatus,
+          restartCount: store.processes[configId]?.restartCount ?? 0,
+          startedAt: Date.now(),
+          exitedAt: undefined,
+          exitCode: undefined,
+        })
+        // If openInTab was called before the process was running,
+        // open the terminal tab now that we have a ptyId.
+        if (pendingTabOpens.has(configId) && ptyId) {
+          pendingTabOpens.delete(configId)
+          openTerminalTab(configId, ptyId)
+        }
+        sync()
+      })
+      onCleanup(unsubStarted)
 
-      const unsub = globalSDK.event.on(dir, (event: any) => {
-        const type = event.type as string
-        const props = event.properties as Record<string, any> | undefined
-        if (!props) return
+      const unsubStopped = claxedoEvents.on("process.stopped", (event) => {
+        const { configId, exitCode } = event
+        const existing = store.processes[configId]
+        if (existing) {
+          setStore("processes", configId, {
+            ...existing,
+            status: "stopped" as ProcessStatus,
+            ptyId: undefined,
+            exitCode,
+            exitedAt: Date.now(),
+          })
+        }
+        sync()
+      })
+      onCleanup(unsubStopped)
 
-        switch (type) {
-          case "process.started": {
-            const configId = props.configId as string
-            const ptyId = props.ptyId as string
-            // Own the PTY before updating the store — the detection
-            // effect's existing `owner` check will skip it.
-            if (ptyId) {
-              ownership.ownProcess(configId, ptyId)
-              tabOps.removeAutoCreatedTab(ptyId)
-            }
-            setStore("processes", configId, {
-              configId,
-              ptyId,
-              status: "running" as ProcessStatus,
-              restartCount: store.processes[configId]?.restartCount ?? 0,
-              startedAt: Date.now(),
-              exitedAt: undefined,
-              exitCode: undefined,
-            })
-            // If openInTab was called before the process was running,
-            // open the terminal tab now that we have a ptyId.
-            if (pendingTabOpens.has(configId) && ptyId) {
-              pendingTabOpens.delete(configId)
-              openTerminalTab(configId, ptyId)
-            }
-            break
-          }
+      const unsubCrashed = claxedoEvents.on("process.crashed", (event) => {
+        // Fires when the PTY itself dies OR when the inner command exits
+        // inside the interactive shell (detected via OSC process-exit marker).
+        // Preserve existing ptyId via spread, and also accept ptyId from the
+        // event itself (command-exit crashes include it) so even if the client
+        // store was cleared (e.g. during mount), the ptyId is recovered.
+        const { configId, exitCode, restartCount, ptyId: eventPtyId } = event
+        const existing = store.processes[configId]
+        const ptyId = existing?.ptyId ?? eventPtyId
+        if (ptyId) {
+          ownership.ownProcess(configId, ptyId)
+        }
+        setStore("processes", configId, {
+          ...(existing ?? { configId }),
+          status: "crashed" as ProcessStatus,
+          ptyId,
+          exitCode,
+          restartCount,
+          exitedAt: Date.now(),
+        })
+        // Alert workspace dot indicator when process tab is not active
+        if (!claxedo.processPane.isActive()) {
+          claxedo.processPane.setCrashedWhileClosed(true)
+        }
+        sync()
+        void fetchProcesses()
+      })
+      onCleanup(unsubCrashed)
 
-          case "process.stopped": {
-            const configId = props.configId as string
-            const exitCode = props.exitCode as number
-            const existing = store.processes[configId]
-            if (existing) {
-              setStore("processes", configId, {
-                ...existing,
-                status: "stopped" as ProcessStatus,
-                ptyId: undefined,
-                exitCode,
-                exitedAt: Date.now(),
-              })
-            }
-            break
-          }
-
-          case "process.crashed": {
-            // Fires when the PTY itself dies OR when the inner command exits
-            // inside the interactive shell (detected via OSC process-exit marker).
-            // Preserve existing ptyId via spread, and also accept ptyId from the
-            // event itself (command-exit crashes include it) so even if the client
-            // store was cleared (e.g. during mount), the ptyId is recovered.
-            const configId = props.configId as string
-            const exitCode = props.exitCode as number
-            const restartCount = props.restartCount as number
-            const eventPtyId = props.ptyId as string | undefined
-            const existing = store.processes[configId]
-            const ptyId = existing?.ptyId ?? eventPtyId
-            if (ptyId) {
-              ownership.ownProcess(configId, ptyId)
-            }
-            setStore("processes", configId, {
-              ...(existing ?? { configId }),
-              status: "crashed" as ProcessStatus,
-              ptyId,
-              exitCode,
-              restartCount,
-              exitedAt: Date.now(),
-            })
-            // Alert workspace dot indicator when pane is closed
-            if (!isOpen()) {
-              claxedo.processPane.setCrashedWhileClosed(true)
-            }
-            break
-          }
-
-          case "process.status": {
-            const configId = props.configId as string
-            const status = props.status as ProcessStatus
-            const existing = store.processes[configId]
-            // Guard: reject stale "stopping" events for processes already
-            // in a terminal state. Once confirmed stopped/crashed (via
-            // belt-and-suspenders or process.stopped/crashed SSE), only
-            // "starting" (explicit user action) should transition out.
-            if (
-              existing &&
-              status === "stopping" &&
-              (existing.status === "stopped" || existing.status === "crashed")
-            ) {
-              break
-            }
-            if (existing) {
-              setStore("processes", configId, {
-                ...existing,
-                status,
-              })
-            } else {
-              setStore("processes", configId, {
-                configId,
-                status,
-                restartCount: 0,
-              })
-            }
-            break
-          }
-
-          case "process.config.changed": {
-            const configs = props.configs as ProcessConfig[]
-            const configIds = new Set(configs.map((c) => c.id))
-            batch(() => {
-              setStore("configs", reconcile(configs, { key: "id" }))
-              syncPaneWidths(configs.length)
-              // Reconcile process entries: keep existing for known configs,
-              // create idle entries for new configs, drop removed ones.
-              const next: Record<string, ManagedProcess> = {}
-              for (const id of configIds) {
-                if (store.processes[id]) {
-                  next[id] = store.processes[id]!
-                } else {
-                  next[id] = {
-                    configId: id,
-                    status: "idle" as ProcessStatus,
-                    restartCount: 0,
-                  }
-                }
-              }
-              setStore("processes", reconcile(next))
-            })
-            break
-          }
+      const unsubStatus = claxedoEvents.on("process.status", (event) => {
+        const { configId, status } = event
+        const existing = store.processes[configId]
+        // Guard: reject stale "stopping" events for processes already
+        // in a terminal state. Once confirmed stopped/crashed (via
+        // belt-and-suspenders or process.stopped/crashed SSE), only
+        // "starting" (explicit user action) should transition out.
+        if (
+          existing &&
+          status === "stopping" &&
+          (existing.status === "stopped" || existing.status === "crashed")
+        ) {
+          return
+        }
+        if (existing) {
+          setStore("processes", configId, {
+            ...existing,
+            status: status as ProcessStatus,
+          })
+        } else {
+          setStore("processes", configId, {
+            configId,
+            status: status as ProcessStatus,
+            restartCount: 0,
+          })
+        }
+        sync()
+        // Port-conflict crashes only emit process.status (not process.crashed).
+        // Re-fetch to pick up the full state including the conflict field so
+        // the inline overlay can render.
+        if (status === "crashed") {
+          void fetchProcesses()
         }
       })
+      onCleanup(unsubStatus)
 
-      onCleanup(unsub)
-    })
-
-    // ── Pane width management ────────────────────────────────────────
-
-    const DEFAULT_PANEL_WIDTH = 400
-    const MIN_PANEL_WIDTH = 200
-
-    function syncPaneWidths(count: number) {
-      if (count === 0) {
-        setStore("paneWidths", [])
-        return
-      }
-      const current = store.paneWidths
-      // Migrate from old fractional widths (0-1) to pixel widths
-      const needsMigration = current.length > 0 && current.some((w) => w < 10)
-      if (current.length === count && !needsMigration) return
-      const next = Array.from({ length: count }, (_, i) =>
-        !needsMigration && i < current.length && current[i] >= MIN_PANEL_WIDTH
-          ? current[i]
-          : DEFAULT_PANEL_WIDTH,
-      )
-      setStore("paneWidths", next)
+      const unsubConfigChanged = claxedoEvents.on("process.config.changed", (event) => {
+        const configs = event.configs as ProcessConfig[]
+        const configIds = new Set(configs.map((c) => c.id))
+        batch(() => {
+          setStore("configs", reconcile(configs, { key: "id" }))
+          // Reconcile process entries: keep existing for known configs,
+          // create idle entries for new configs, drop removed ones.
+          const next: Record<string, ManagedProcess> = {}
+          for (const id of configIds) {
+            if (store.processes[id]) {
+              next[id] = store.processes[id]!
+            } else {
+              next[id] = {
+                configId: id,
+                status: "idle" as ProcessStatus,
+                restartCount: 0,
+              }
+            }
+          }
+          setStore("processes", reconcile(next))
+        })
+        sync()
+      })
+      onCleanup(unsubConfigChanged)
     }
 
     // ── Tab integration ──────────────────────────────────────────────
@@ -410,28 +558,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
       if (tabId) tabOps.setActiveTab(tabId)
     }
 
-    // ── Pane visibility (per-workspace, persisted) ──────────────────
-
-    // Watch global toggle requests (keyboard shortcut, top-tab-bar same-workspace click)
-    createRenderEffect(
-      on(
-        () => claxedo.processPane.toggleVersion(),
-        () => {
-          const next = !isOpen()
-          setIsOpen(next)
-          if (next) claxedo.processPane.setCrashedWhileClosed(false)
-        },
-        { defer: true },
-      ),
-    )
-
     // ── Initial fetch ────────────────────────────────────────────────
-
-    // Reset stale runtime state from localStorage — the server is the
-    // source of truth. After system sleep the persisted processes may
-    // be stuck in "stopping"/"running" with dead ptyIds, causing
-    // hasStopping() to disable Start All permanently if the fetch fails.
-    setStore("processes", {})
 
     // The terminal detection counter starts at 1 (set in terminal.ts) to
     // block tab creation until this provider resolves. We keep that initial
@@ -441,24 +568,29 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     // Retry on init: gateway may still be waking up after system sleep.
     // 3 attempts with exponential backoff (1s, 2s, 4s).
     void (async () => {
+      let ok = false
       try {
         for (let attempt = 0; attempt < 3; attempt++) {
-          if (await fetchProcesses()) return
+          ok = await fetchProcesses()
+          if (ok) return
           await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)))
         }
       } finally {
+        setLoaded(true)
+        debug.log("boot settled", {
+          dir: sdk.directory,
+          tabId: props?.tabId,
+          ok,
+          configs: store.configs.length,
+          processes: Object.keys(store.processes).length,
+          persistedReady: ready(),
+        })
         ownership.resolveInitialProcessPty()
       }
     })()
 
-    // Consume pending-open request (from top-tab-bar workspace-switch click)
-    if (claxedo.processPane.consumePendingOpen()) {
-      setIsOpen(true)
-      claxedo.processPane.setCrashedWhileClosed(false)
-    }
-
     // ── Deferred stale tab cleanup ────────────────────────────────────
-    // On desktop (Tauri), the ClaxedoLayout store uses async persistence.
+    // On desktop, the ClaxedoLayout store uses async persistence.
     // The terminalOwner map and groups (with tabs) may hydrate AFTER
     // fetchProcesses has already run. This deferred effect catches that:
     // when the ClaxedoLayout store becomes ready, re-run the stale cleanup
@@ -477,7 +609,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
     // ── Wake detection ──────────────────────────────────────────────
 
     // Detect system sleep via setInterval time-gap (works in both web
-    // and Tauri). Add visibilitychange as fast-path for browser tab switching.
+    // and desktop shells). Add visibilitychange as fast-path for browser tab switching.
     let lastTick = Date.now()
     const TICK_INTERVAL = 10_000 // check every 10s
     const SLEEP_THRESHOLD = 30_000 // >30s gap = sleep detected
@@ -503,64 +635,227 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
       document.removeEventListener("visibilitychange", onVisibilityChange)
     })
 
+    // ── Dynamic leaf sync ─────────────────────────────────────────────
+    // Watch configs and sync multi-pane leaves to match.
+    // Each process config gets its own leaf in the process tab's multi-pane tree.
+
+    const findProcessTabId = (): string | undefined => {
+      const tabId = props?.tabId
+      if (!tabId) return undefined
+      const groupId = claxedo.findTabGroup(tabId)
+      if (!groupId) return undefined
+      const tab = claxedo.groupTabs(groupId).items().find((item) => item.id === tabId)
+      if (!tab || tab.type !== "process") return undefined
+      return tabId
+    }
+
+    createEffect(
+      on(
+        () => {
+          const tabId = findProcessTabId()
+          const configSig = store.configs.map((c) => `${c.id}:${c.name}`).join("|")
+          const leafSig = tabId
+            ? claxedo.select.multiPaneLeafView(tabId).map((leaf) => {
+                const content = leaf.content
+                if (!content || content.type !== "process") return `${leaf.id}:`
+                return `${leaf.id}:${content.processId ?? ""}:${content.title ?? ""}:${content.directory ?? ""}`
+              }).join("|")
+            : ""
+          return [tabId, sdk.directory, configSig, leafSig, loaded()] as const
+        },
+        ([tabId, dir, _configSig, _leafSig, isLoaded]) => {
+          if (!tabId) return
+          if (!isLoaded && store.configs.length === 0) return
+
+          const configEntries = store.configs.map((c) => ({ id: c.id, name: c.name }))
+          const leaves = claxedo.select.multiPaneLeafView(tabId)
+
+          debug.verbose("leaf sync", {
+            tabId,
+            dir,
+            loaded: isLoaded,
+            configs: configEntries.map((c) => c.id),
+            leaves: leaves.map((leaf) => ({
+              id: leaf.id,
+              type: leaf.content?.type,
+              processId: leaf.content?.type === "process" ? leaf.content.processId ?? null : null,
+            })),
+          })
+
+          // Build maps: processId → leafId, leafId → processId
+          const processIdToLeaf = new Map<string, string>()
+          const leafToProcessId = new Map<string, string>()
+          let placeholderLeafId: string | undefined
+
+          for (const leaf of leaves) {
+            const content = leaf.content
+            if (!content || content.type !== "process") continue
+            if (content.processId) {
+              processIdToLeaf.set(content.processId, leaf.id)
+              leafToProcessId.set(leaf.id, content.processId)
+              continue
+            }
+            placeholderLeafId = leaf.id
+          }
+
+          const configIds = new Set(configEntries.map((c) => c.id))
+
+          batch(() => {
+            // Handle first load: replace placeholder with first config
+            if (placeholderLeafId && configEntries.length > 0) {
+              const first = configEntries[0]
+              claxedo.multiPane.setContent(tabId, placeholderLeafId, {
+                type: "process",
+                directory: dir,
+                processId: first.id,
+                title: first.name,
+              })
+              debug.log("leaf placeholder promoted", {
+                tabId,
+                dir,
+                leafId: placeholderLeafId,
+                processId: first.id,
+              })
+              processIdToLeaf.set(first.id, placeholderLeafId)
+              leafToProcessId.set(placeholderLeafId, first.id)
+              placeholderLeafId = undefined
+            }
+
+            // Add new configs
+            let anchor =
+              configEntries
+                .flatMap((config) => {
+                  const leafId = processIdToLeaf.get(config.id)
+                  return leafId ? [leafId] : []
+                })
+                .at(-1) ??
+              placeholderLeafId
+            for (const config of configEntries) {
+              const leafId = processIdToLeaf.get(config.id)
+              if (leafId) {
+                anchor = leafId
+                continue
+              }
+              if (!anchor) {
+                claxedo.multiPane.initTabWithContent(tabId, {
+                  type: "process",
+                  directory: dir,
+                  processId: config.id,
+                  title: config.name,
+                })
+                debug.log("leaf sync reinit", {
+                  tabId,
+                  dir,
+                  processId: config.id,
+                })
+                return
+              }
+              const newLeafId = claxedo.multiPane.splitLeaf(tabId, "v", anchor, {
+                type: "process",
+                directory: dir,
+                processId: config.id,
+                title: config.name,
+              })
+              if (!newLeafId) continue
+              debug.log("leaf added", {
+                tabId,
+                dir,
+                leafId: newLeafId,
+                processId: config.id,
+              })
+              processIdToLeaf.set(config.id, newLeafId)
+              anchor = newLeafId
+            }
+
+            // Remove leaves for deleted configs
+            for (const [leafId, processId] of leafToProcessId) {
+              if (configIds.has(processId)) continue
+              claxedo.multiPane.closeLeaf(tabId, leafId)
+              debug.log("leaf removed", {
+                tabId,
+                dir,
+                leafId,
+                processId,
+              })
+            }
+
+            // Update titles for existing leaves
+            for (const config of configEntries) {
+              const leafId = processIdToLeaf.get(config.id)
+              if (!leafId) continue
+              const leaf = leaves.find((l) => l.id === leafId)
+              if (!leaf?.content || leaf.content.title === config.name) continue
+              claxedo.multiPane.setContent(tabId, leafId, {
+                ...leaf.content,
+                title: config.name,
+              })
+            }
+          })
+        },
+        { defer: true },
+      ),
+    )
+
     // ── Exported API ─────────────────────────────────────────────────
 
-    return {
+    const api = {
       ready: () => ready(),
+      loaded,
+
+      // Convenience wrappers — delegates to claxedo layout's tab-based process pane state
+      isOpen: () => claxedo.processPane.isActive(),
+      toggle: () => {
+        claxedo.processPane.requestToggle()
+        // Clear the crash indicator when the pane opens
+        if (claxedo.processPane.isActive()) {
+          claxedo.processPane.setCrashedWhileClosed(false)
+        }
+      },
 
       // Config accessors
       configs: () => store.configs,
 
-      // Pane visibility — per-workspace, NOT persisted (starts closed on reload)
-      isOpen,
-      toggle() {
-        const next = !isOpen()
-        setIsOpen(next)
-        if (next) claxedo.processPane.setCrashedWhileClosed(false)
-      },
-
-      // Pane sizing
+      // Pane sizing (no longer drives height — tab fills available space)
       paneHeight: () => Math.max(store.paneHeight, MIN_PANE_HEIGHT),
       setPaneHeight(height: number) {
         setStore("paneHeight", Math.max(height, MIN_PANE_HEIGHT))
       },
 
-      paneWidths: () => store.paneWidths,
-      setPaneWidth(index: number, width: number) {
-        if (index < 0 || index >= store.paneWidths.length) return
-        setStore("paneWidths", index, width)
-      },
-
-      // Scroll position for horizontal navigation
-      scrollIndex: () => store.scrollIndex,
-      scrollLeft() {
-        setStore("scrollIndex", (i) => Math.max(0, i - 1))
-      },
-      scrollRight() {
-        setStore("scrollIndex", (i) => Math.min(store.configs.length - 1, i + 1))
-      },
-
       // Derived state
       hasRunning: () => {
-        return Object.values(store.processes).some(
-          (p) => p && (p.status === "running" || p.status === "starting" || p.status === "restarting"),
-        )
+        return anyRunning()
       },
 
       hasStopping: () => {
-        return Object.values(store.processes).some((p) => p && p.status === "stopping")
+        return states().some((status) => status === "stopping")
       },
 
       hasCrashed: () => {
-        return Object.values(store.processes).some((p) => p && p.status === "crashed")
+        return states().some((status) => status === "crashed")
       },
 
       processForConfig(configId: string): ManagedProcess | undefined {
         return store.processes[configId]
       },
 
+      dismissConflict(configId: string) {
+        const proc = store.processes[configId]
+        if (!proc?.conflict) return
+        setStore("processes", configId, {
+          ...proc,
+          conflict: undefined,
+        })
+        sync()
+      },
+
+      resolveConflict(configId: string, strategy: Process.PortConflictStrategy) {
+        const proc = store.processes[configId]
+        if (!proc?.conflict) return
+        void api.start(configId, strategy)
+      },
+
       // Lifecycle actions — read HTTP responses so we don't depend solely on SSE
-      async start(configId: string) {
+      async start(configId: string, portConflict?: Process.PortConflictStrategy) {
         // Optimistic: mark as starting
         const existing = store.processes[configId]
         setStore("processes", configId, {
@@ -570,17 +865,24 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
           exitCode: undefined,
           exitedAt: undefined,
         })
+        sync()
         // Tell the terminal system a process PTY is coming — prevents the
         // detection effect from creating a tab for the pty.created SSE that
         // arrives before process.started registers ownership.
         ownership.expectProcessPty()
         try {
-          const proc = await postAction<ManagedProcess>(`/${configId}/start`)
-          applyProcess(proc)
-          // Auto-open the pane so the user sees the terminal
-          if (proc?.ptyId && !isOpen()) {
-            setIsOpen(true)
-            claxedo.processPane.setCrashedWhileClosed(false)
+          const out = await run(
+            `start ${configId}`,
+            () =>
+              client.start(
+                configId,
+                portConflict ? { portConflict } : { interactive: true },
+              ),
+          )
+          const proc = out ? read(configId, out, existing) : restore(configId, existing)
+          // Auto-activate the process tab so the user sees the terminal
+          if (proc?.ptyId && !claxedo.processPane.isActive()) {
+            claxedo.processPane.requestOpen()
           }
         } finally {
           ownership.resolveProcessPty()
@@ -597,8 +899,9 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             status: "stopping" as ProcessStatus,
             ptyId: undefined,
           })
+          sync()
         }
-        await postAction(`/${configId}/stop`)
+        await run(`stop ${configId}`, () => client.stop(configId))
         // Belt-and-suspenders: the server's stop() waits for the PTY to exit,
         // so by the time the HTTP response arrives the process is definitely
         // stopped. Force the status in case the SSE event was missed.
@@ -608,6 +911,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             ...current,
             status: "stopped" as ProcessStatus,
           })
+          sync()
         }
       },
 
@@ -634,23 +938,35 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
               exitCode: undefined,
               exitedAt: undefined,
             })
-            const proc = await postAction<ManagedProcess>(`/${configId}/start`)
-            applyProcess(proc)
-            if (proc?.ptyId && !isOpen()) {
-              setIsOpen(true)
+            sync()
+            const out = await run(`restart ${configId}`, () => client.start(configId, { interactive: true }))
+            const proc = out ? read(configId, out, existing) : restore(configId, existing)
+            if (proc?.ptyId && !claxedo.processPane.isActive()) {
+              claxedo.processPane.requestOpen()
             }
             return
           }
 
           // Running process: mark as restarting and clear ptyId so the Terminal
           // unmounts — when the new PTY arrives, it'll remount fresh.
+          const prev = existing
+            ? {
+                ...existing,
+                ptyId: undefined,
+              }
+            : undefined
           setStore("processes", configId, {
             ...existing,
             status: "restarting" as ProcessStatus,
             ptyId: undefined,
           })
-          const proc = await postAction<ManagedProcess>(`/${configId}/restart`)
-          applyProcess(proc)
+          sync()
+          const out = await run(`restart ${configId}`, () => client.restart(configId))
+          if (out) {
+            read(configId, out, prev, "stopped" as ProcessStatus, false)
+          } else {
+            restore(configId, prev, "stopped" as ProcessStatus)
+          }
         } finally {
           ownership.resolveProcessPty()
         }
@@ -658,13 +974,16 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
 
       async startAll() {
         // Start every config (not just autoStart — that's for server bootstrap)
+        // Use interactive: true so port conflicts prompt the user instead of
+        // silently picking a new port.
         ownership.expectProcessPty()
         try {
           for (const config of store.configs) {
             const existing = store.processes[config.id]
             if (existing && (existing.status === "running" || existing.status === "starting")) continue
-            const proc = await postAction<ManagedProcess>(`/${config.id}/start`)
-            applyProcess(proc)
+            const out = await run(`start ${config.id}`, () => client.start(config.id, { interactive: true }))
+            if (out) read(config.id, out, existing)
+            else restore(config.id, existing)
           }
         } finally {
           ownership.resolveProcessPty()
@@ -688,6 +1007,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             }
           }
         })
+        sync()
 
         // Stop each running process individually with optimistic updates,
         // rather than a single /stop-all call that blocks sequentially.
@@ -708,8 +1028,9 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             }
           }
         })
+        sync()
         // Fire individual stop calls concurrently
-        await Promise.all(toStop.map((config) => postAction(`/${config.id}/stop`)))
+        await Promise.all(toStop.map((config) => run(`stop ${config.id}`, () => client.stop(config.id))))
         // Belt-and-suspenders: force any still-stopping processes to stopped.
         batch(() => {
           for (const config of toStop) {
@@ -722,6 +1043,7 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
             }
           }
         })
+        sync()
       },
 
       // Tab integration
@@ -734,15 +1056,16 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
         }
         // Start the process, read response to get ptyId, then open tab
         ownership.expectProcessPty()
+        pendingTabOpens.add(configId)
         void (async () => {
           try {
-            const started = await postAction<ManagedProcess>(`/${configId}/start`)
-            applyProcess(started)
+            const out = await run(`open ${configId}`, () => client.start(configId, { interactive: true }))
+            const started = out ? read(configId, out, store.processes[configId]) : undefined
             if (started?.ptyId) {
+              pendingTabOpens.delete(configId)
               openTerminalTab(configId, started.ptyId)
-            } else {
-              // Fall back to SSE-based pending open
-              pendingTabOpens.add(configId)
+            } else if (!out || (out.kind !== "started" && out.kind !== "already_running")) {
+              pendingTabOpens.delete(configId)
             }
           } finally {
             ownership.resolveProcessPty()
@@ -753,5 +1076,54 @@ export const { use: useProcessPane, provider: ProcessPaneProvider } = createSimp
       // Refresh from server
       refresh: fetchProcesses,
     }
+
+    // ── Action bridge ────────────────────────────────────────────────
+    // Consume pending actions from the tab bar buttons.
+    createEffect(
+      on(
+        () => claxedo.processPane.pendingAction(),
+        (action) => {
+          if (!action) return
+          claxedo.processPane.clearPendingAction()
+
+          switch (action) {
+            case "startAll":
+              void api.startAll()
+              break
+            case "stopAll":
+              void api.stopAll()
+              break
+            case "add":
+              dialog.show(() => (
+                <AddProcessDialog
+                  directory={sdk.directory}
+                  onDone={() => fetchProcesses()}
+                />
+              ))
+              break
+          }
+        },
+      ),
+    )
+
+    createEffect(
+      on(
+        () => [props?.tabId ?? "", loaded(), ready(), store.configs.length, sig()] as const,
+        () => {
+          debug.verbose("provider state", snap())
+        },
+        { defer: true },
+      ),
+    )
+
+    onCleanup(() => {
+      debug.log("provider cleanup", snap())
+      queueMicrotask(() => {
+        claxedo.processPane.setRunning(sdk.directory, false)
+        debug.verbose("provider cleanup settled", snap())
+      })
+    })
+
+    return api
   },
 })

@@ -54,14 +54,15 @@ export function TabContentArea(props: TabContentAreaProps) {
       <Show
         when={activeTab()}
         fallback={
-          <Show when={props.renderEmpty}>
+          <Show when={props.renderEmpty} keyed>
             {(render) => (
               <div class="absolute inset-0 flex flex-col items-center justify-center p-8 text-center text-text-weak">
-                {render()()}
+                {render()}
               </div>
             )}
           </Show>
         }
+        keyed
       >
         {(tab) => (
           <Switch
@@ -69,24 +70,24 @@ export function TabContentArea(props: TabContentAreaProps) {
               <div class="absolute inset-0 flex items-center justify-center text-text-weak">Unknown tab type</div>
             }
           >
-            <Match when={tab().type === "session" && tab().id}>
-              <div id={getTabHostId(tab().id)} data-claxedo-group-id={props.groupId} class="absolute inset-0 overflow-hidden" />
+            <Match when={tab.type === "session" && tab.id}>
+              <div id={getTabHostId(tab.id)} data-claxedo-group-id={props.groupId} class="absolute inset-0 overflow-hidden" />
             </Match>
 
-            <Match when={tab().type === "terminal" && tab().id}>
-              <div id={getTabHostId(tab().id)} data-claxedo-group-id={props.groupId} class="absolute inset-0 overflow-hidden" />
+            <Match when={tab.type === "terminal" && tab.id}>
+              <div id={getTabHostId(tab.id)} data-claxedo-group-id={props.groupId} class="absolute inset-0 overflow-hidden" />
             </Match>
 
-            <Match when={tab().type === "review" && tab().id}>
-              <div id={getTabHostId(tab().id)} data-claxedo-group-id={props.groupId} class="absolute inset-0 overflow-hidden" />
+            <Match when={tab.type === "review" && tab.id}>
+              <div id={getTabHostId(tab.id)} data-claxedo-group-id={props.groupId} class="absolute inset-0 overflow-hidden" />
             </Match>
 
-            <Match when={tab().type === "file" && tab().id}>
-              <div id={getTabHostId(tab().id)} data-claxedo-group-id={props.groupId} class="absolute inset-0 overflow-hidden" />
+            <Match when={tab.type === "file" && tab.id}>
+              <div id={getTabHostId(tab.id)} data-claxedo-group-id={props.groupId} class="absolute inset-0 overflow-hidden" />
             </Match>
 
-            <Match when={tab().type === "context" && tab().id}>
-              <div id={getTabHostId(tab().id)} data-claxedo-group-id={props.groupId} class="absolute inset-0 overflow-hidden" />
+            <Match when={tab.type === "context" && tab.id}>
+              <div id={getTabHostId(tab.id)} data-claxedo-group-id={props.groupId} class="absolute inset-0 overflow-hidden" />
             </Match>
           </Switch>
         )}

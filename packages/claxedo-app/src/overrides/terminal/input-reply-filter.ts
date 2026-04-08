@@ -1,15 +1,28 @@
 const modeReportPattern = /^\x1b\[[\?0-9;]*\$y$/
 const daReplyPattern = /^\x1b\[(?:\?|>)[0-9;]+c$/
 const dcsReportPattern = /^\x1bP[01][+$]r[\s\S]*(?:\x1b\\|\x07)$/
+// OSC 10/11/12 = fg/bg/cursor color reports that xterm.js emits via onData()
+// in response to queries from the running program. Forwarding them causes the
+// shell to echo the rgb:... parameter text as garbage when timing is off.
+const oscColorReportPattern = /^\x1b\]1[0-2];/
 
 /**
  * Drop synthetic terminal reply frames xterm can emit on onData()
- * (focus reports, mode reports, DA replies, DECRQSS/XTGETTCAP replies).
+ * (focus reports, mode reports, DA replies, DECRQSS/XTGETTCAP replies,
+ * OSC color reports).
  *
  * Important: CPR replies (CSI ... R) are intentionally NOT filtered because
  * tools like Codex depend on them to read cursor position.
+ *
+ * @param opts.allowOscColor - When true, OSC 10/11/12 color reports are
+ *   forwarded to the PTY instead of suppressed. Pass `true` for TUI apps
+ *   (e.g. codex) so they receive terminal color query responses immediately
+ *   rather than timing out after 2s. Default: false (suppress, for shells).
  */
-export function stripTerminalRepliesFromInput(chunk: string): string {
+export function stripTerminalRepliesFromInput(
+  chunk: string,
+  opts?: { allowOscColor?: boolean },
+): string {
   if (!chunk.includes("\x1b")) return chunk
 
   let out = ""
@@ -30,8 +43,9 @@ export function stripTerminalRepliesFromInput(chunk: string): string {
     }
 
     const next = chunk[i + 1]
-    if (next === "P") {
-      // DCS sequence: ESC P ... ST (ESC \\) or BEL
+
+    if (next === "P" || next === "]") {
+      // DCS (ESC P) or OSC (ESC ]) sequence terminated by ST (ESC \\) or BEL
       let j = i + 2
       let term = -1
       while (j < chunk.length) {
@@ -48,19 +62,22 @@ export function stripTerminalRepliesFromInput(chunk: string): string {
       }
 
       if (term === -1) {
-        // Keep incomplete DCS as-is.
+        // Keep incomplete sequence as-is.
         out += chunk.slice(i)
         break
       }
 
       const seq = chunk.slice(i, term + 1)
-      if (!dcsReportPattern.test(seq)) out += seq
+      const suppress =
+        (next === "P" && dcsReportPattern.test(seq)) ||
+        (next === "]" && !opts?.allowOscColor && oscColorReportPattern.test(seq))
+      if (!suppress) out += seq
       i = term + 1
       continue
     }
 
     if (next !== "[") {
-      // Not a CSI/DCS sequence we manage; keep raw ESC.
+      // Not a CSI/DCS/OSC sequence we manage; keep raw ESC.
       out += ch
       i += 1
       continue

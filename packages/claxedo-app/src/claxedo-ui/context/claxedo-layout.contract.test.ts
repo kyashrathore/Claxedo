@@ -72,9 +72,9 @@ describe("claxedo layout API contract", () => {
       expect(typeof api.getActiveWorktreeColor).toBe("function")
 
       expect(api.constants).toEqual({
-        RAIL_COLLAPSED_WIDTH: 56,
+        RAIL_COLLAPSED_WIDTH: 0,
         RAIL_EXPANDED_WIDTH: 260,
-        HOT_ZONE_WIDTH: 12,
+        HOT_ZONE_WIDTH: 20,
       })
     } finally {
       dispose()
@@ -87,33 +87,36 @@ describe("claxedo layout migration regression", () => {
     const { dispose } = createTestLayout()
     try {
       const migrate = getMigrate()
-      const tabs = {
-        items: [
-          {
-            id: "session-1",
-            type: "session",
-            directory: "/ws",
-            title: "Session 1",
-            sessionId: "s1",
-            closable: true,
-          },
-        ],
-        activeId: "session-1",
-        order: ["session-1"],
-        closedTabs: [],
+      const sessionTab = {
+        id: "session-1",
+        type: "session",
+        directory: "/ws",
+        title: "Session 1",
+        sessionId: "s1",
+        closable: true,
       }
 
       const migrated = migrate({
-        tabs,
+        tabs: {
+          items: [sessionTab],
+          activeId: "session-1",
+          order: ["session-1"],
+          closedTabs: [],
+        },
         worktree: { default: "/ws", pinned: null },
       }) as {
-        groups: Array<{ id: string; tabs: unknown; worktree: unknown; layout: unknown }>
+        groups: Array<{ id: string; tabs: TopTabsState; worktree: unknown; layout: unknown }>
         split: { direction: string; sizes: number[]; focusedId: string }
       }
 
       expect(migrated.groups).toHaveLength(1)
       expect(migrated.groups[0].id).toBe("g-initial")
-      expect(migrated.groups[0].tabs).toEqual(tabs)
+      expect(migrated.groups[0].tabs).toEqual({
+        items: [sessionTab],
+        activeId: "session-1",
+        order: ["session-1"],
+        closedTabs: [],
+      })
       expect(migrated.groups[0].worktree).toEqual({ default: "/ws", pinned: null })
       expect(migrated.groups[0].layout).toEqual(defaultGroupLayout())
       expect(migrated.split).toEqual({ direction: "h", sizes: [1], focusedId: "g-initial" })
@@ -138,7 +141,12 @@ describe("claxedo layout migration regression", () => {
 
       expect(migrated.groups).toHaveLength(1)
       expect(migrated.groups[0].id).toBe("g-default")
-      expect(migrated.groups[0].tabs).toEqual(emptyTabs())
+      expect(migrated.groups[0].tabs).toEqual({
+        items: [],
+        activeId: null,
+        order: [],
+        closedTabs: [],
+      })
       expect(migrated.groups[0].worktree).toEqual({ default: null, pinned: null })
       expect(migrated.groups[0].layout).toEqual(defaultGroupLayout())
       expect(migrated.split).toEqual({ direction: "h", sizes: [1], focusedId: "g-default" })
@@ -191,15 +199,14 @@ describe("claxedo layout migration regression", () => {
       }) as {
         groups: Array<{
           id: string
-          layout: {
-            fileTree: { opened: boolean; width: number }
-          }
+          layout: Record<string, unknown>
         }>
       }
 
       expect(migrated.groups).toHaveLength(1)
       expect(migrated.groups[0].id).toBe("g1")
-      expect(migrated.groups[0].layout.fileTree).toEqual({ opened: true, width: 320 })
+      // fileTree is no longer part of per-group layout
+      expect(migrated.groups[0].layout).toEqual({})
     } finally {
       dispose()
     }

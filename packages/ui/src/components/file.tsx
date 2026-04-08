@@ -1021,7 +1021,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
 
   const options = createMemo<FileDiffOptions<T>>(() => {
     const base = {
-      ...createDefaultOptions(props.diffStyle),
+      ...createDefaultOptions(props.diffStyle, "scroll"),
       ...others,
       ...lineCallbacks,
     }

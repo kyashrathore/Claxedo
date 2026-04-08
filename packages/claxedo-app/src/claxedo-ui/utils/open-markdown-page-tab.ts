@@ -2,7 +2,7 @@ import { getFilename } from "@opencode-ai/util/path"
 import { pagesApi } from "../../utils/pages-api"
 
 type Tabs = {
-  addPage: (pageId: string, title: string, directory?: string) => string
+  addPage: (pageId: string, title: string, directory?: string, filePath?: string) => string
   setActive: (tabId: string) => void
 }
 
@@ -13,8 +13,6 @@ type Sdk = {
     }
   }
 }
-
-const storeKey = "claxedo.pages.markdown-links.v1"
 
 function clean(value: unknown) {
   if (typeof value !== "string") return ""
@@ -39,30 +37,6 @@ function normalizePath(path: string) {
   }, [])
   const joined = out.join("/")
   return absolute ? `/${joined}` : joined
-}
-
-function readStore() {
-  if (typeof window === "undefined" || !window.localStorage) return {}
-  const raw = window.localStorage.getItem(storeKey)
-  if (!raw) return {}
-  try {
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== "object") return {}
-    return parsed as Record<string, string>
-  } catch {
-    return {}
-  }
-}
-
-function writeStore(next: Record<string, string>) {
-  if (typeof window === "undefined" || !window.localStorage) return
-  try {
-    window.localStorage.setItem(storeKey, JSON.stringify(next))
-  } catch {}
-}
-
-function storageKey(directory: string, filePath: string) {
-  return `${clean(directory)}::${normalizePath(filePath).toLowerCase()}`
 }
 
 function titleFromPath(filePath: string) {
@@ -101,27 +75,15 @@ export function markdownPathFromHref(raw: string) {
 
 export async function openMarkdownPageTab(input: { directory: string; path: string; sdk: Sdk; tabs: Tabs }) {
   const directory = clean(input.directory)
-  const path = normalizePath(clean(input.path))
-  if (!directory || !path || !isMarkdownPath(path)) return
+  const filePath = normalizePath(clean(input.path))
+  if (!directory || !filePath || !isMarkdownPath(filePath)) return
 
-  const key = storageKey(directory, path)
-  const map = readStore()
-  const linked = clean(map[key])
+  const title = titleFromPath(filePath)
 
-  const content = clean((await input.sdk.client.file.read({ path })).data?.content)
-  const title = titleFromPath(path)
-  const page = linked ? await pagesApi.get(linked).catch(() => pagesApi.create(title)) : await pagesApi.create(title)
+  // Check if a page already exists for this file
+  const existing = await pagesApi.findByFile(filePath, directory)
+  const page = existing || (await pagesApi.create(title, filePath, directory))
 
-  if (content) {
-    await pagesApi.importMarkdown(page.id, content, true).catch(async () => {
-      await pagesApi.update(page.id, { title })
-    })
-  } else {
-    await pagesApi.update(page.id, { title, content: "" }).catch(() => {})
-  }
-
-  map[key] = page.id
-  writeStore(map)
-  const tabId = input.tabs.addPage(page.id, page.title || title, directory)
+  const tabId = input.tabs.addPage(page.id, page.title || title, directory, filePath)
   if (tabId) input.tabs.setActive(tabId)
 }

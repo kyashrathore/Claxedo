@@ -1,57 +1,31 @@
 /**
  * Frontend API client for Pages
  *
- * Pages are served by backend routes at /api/pages.
+ * Pages are served by claxedo-server routes at /pages.
  */
-import { authFetch, getDefaultBaseUrl } from "./api"
+import { authFetch, getClaxedoServerUrl } from "./api"
 
 export type Page = {
   id: string
   title: string
   content: string
+  status: string
+  session_id: string | null
+  file_path: string | null
+  directory: string | null
   created_at: string
   updated_at: string
+  project_id?: string | null
+  project_name?: string | null
+  project_worktree?: string | null
 }
 
-export type PageAiAction = "improve" | "fix" | "shorten" | "lengthen" | "summarize" | "continue" | "custom"
-
-export type PageAiRequest = {
-  action: PageAiAction
-  text?: string
-  context?: string
-  instruction?: string
-  model?: string
-  page_id?: string
-  pageId?: string
-}
-
-export type PageAiResponse = {
-  text: string
-  provider: string
-  model: string
-}
-
-export type PageMarkdownExport = {
+export type PageStatus = {
   id: string
-  title: string
-  markdown: string
-  meta: {
-    page_id: string
-    updated_at: string
-    doc_hash: string
-    md_export_hash: string
-    md_export_base_doc_hash: string
-    derived_markdown: boolean
-  }
-}
-
-export type PageMarkdownSync = {
-  page: Page
-  imported: boolean
-  conflict: boolean
-  base_hash?: string
-  current_hash?: string
-  initialized?: boolean
+  name: string
+  color: string
+  position: number
+  transitions: string[]
 }
 
 export type ArenaControlSignal = "continue" | "done" | "question"
@@ -146,8 +120,30 @@ export type ArenaControlRequest = {
   action: "pause" | "resume" | "stop" | "retry"
 }
 
+export type PageScope = "all" | "project" | "global"
+
+export type PageQuery = {
+  scope?: PageScope
+  directory?: string
+  project_id?: string
+}
+
+export type PageCreateInput = {
+  title?: string
+  content?: string
+  status?: string
+  file_path?: string
+  directory?: string
+  project_id?: string
+}
+
 function base() {
-  return `${getDefaultBaseUrl()}/api/pages`
+  return `${getClaxedoServerUrl()}/pages`
+}
+
+function url(path = "", input?: PageQuery) {
+  const txt = query(input)
+  return `${base()}${path}${txt ? `?${txt}` : ""}`
 }
 
 function looksLikeHtmlResponse(res: Response) {
@@ -156,7 +152,7 @@ function looksLikeHtmlResponse(res: Response) {
 }
 
 function htmlApiError() {
-  return "Pages API resolved to app HTML. Set VITE_OPENCODE_BACKEND_URL=http://localhost:4096."
+  return "Pages API resolved to app HTML. Set VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001."
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -175,68 +171,64 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const pagesApi = {
-  list(): Promise<Page[]> {
-    return request<Page[]>(base())
+  list(input?: PageQuery): Promise<Page[]> {
+    return request<Page[]>(url("", input))
   },
 
-  get(id: string): Promise<Page> {
-    return request<Page>(`${base()}/${id}`)
+  get(id: string, input?: PageQuery): Promise<Page> {
+    return request<Page>(url(`/${id}`, input))
   },
 
-  create(title?: string): Promise<Page> {
+  findByFile(file_path: string, directory: string): Promise<Page | null> {
+    const params = new URLSearchParams({ file_path, directory })
+    return request<Page | null>(`${base()}/by-file?${params}`)
+  },
+
+  create(title?: string | PageCreateInput, file_path?: string, directory?: string): Promise<Page> {
+    const body = typeof title === "object" && title !== null
+      ? title
+      : { title, file_path, directory }
     return request<Page>(base(), {
       method: "POST",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(body),
     })
   },
 
-  update(id: string, patch: Partial<Pick<Page, "title" | "content">>): Promise<Page> {
-    return request<Page>(`${base()}/${id}`, {
+  update(id: string, patch: Partial<Pick<Page, "title" | "content">>, input?: PageQuery): Promise<Page> {
+    return request<Page>(url(`/${id}`, input), {
       method: "PATCH",
       body: JSON.stringify(patch),
     })
   },
 
-  delete(id: string): Promise<{ ok: boolean }> {
-    return request<{ ok: boolean }>(`${base()}/${id}`, {
+  delete(id: string, input?: PageQuery): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(url(`/${id}`, input), {
       method: "DELETE",
     })
   },
 
-  ai(input: PageAiRequest): Promise<PageAiResponse> {
-    return request<PageAiResponse>(`${base()}/ai`, {
-      method: "POST",
-      body: JSON.stringify(input),
+  listStatuses(input?: PageQuery): Promise<PageStatus[]> {
+    return request<PageStatus[]>(url("/statuses", input))
+  },
+
+  saveStatuses(statuses: PageStatus[], input?: PageQuery): Promise<PageStatus[]> {
+    return request<PageStatus[]>(url("/statuses", input), {
+      method: "PUT",
+      body: JSON.stringify(statuses),
     })
   },
 
-  exportMarkdown(id: string): Promise<PageMarkdownExport> {
-    return request<PageMarkdownExport>(`${base()}/${id}/export/markdown`)
-  },
-
-  async exportMarkdownRaw(id: string): Promise<string> {
-    const res = await authFetch(`${base()}/${id}/export/markdown?raw=1`, {
-      headers: { Accept: "text/markdown" },
-    })
-    if (res.ok && looksLikeHtmlResponse(res)) throw new Error(htmlApiError())
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(text || `Request failed: ${res.status}`)
-    }
-    return res.text()
-  },
-
-  importMarkdown(id: string, markdown: string, force = false): Promise<PageMarkdownSync> {
-    return request<PageMarkdownSync>(`${base()}/${id}/import/markdown`, {
-      method: "POST",
-      body: JSON.stringify({ markdown, force }),
+  updateSessionId(pageId: string, sessionId: string | null, input?: PageQuery): Promise<Page> {
+    return request<Page>(url(`/${pageId}/session`, input), {
+      method: "PATCH",
+      body: JSON.stringify({ session_id: sessionId }),
     })
   },
 
-  syncMarkdown(id: string, force = false): Promise<PageMarkdownSync> {
-    return request<PageMarkdownSync>(`${base()}/${id}/sync/markdown`, {
+  transitionStatus(pageId: string, status: string, input?: PageQuery): Promise<Page> {
+    return request<Page>(url(`/${pageId}/status`, input), {
       method: "POST",
-      body: JSON.stringify({ force }),
+      body: JSON.stringify({ status }),
     })
   },
 
@@ -280,4 +272,14 @@ export const pagesApi = {
 function cleanDir(value: unknown) {
   if (typeof value !== "string") return ""
   return value.trim()
+}
+
+function query(input?: PageQuery) {
+  if (!input) return ""
+  const params = new URLSearchParams()
+  if (input.scope) params.set("scope", input.scope)
+  if (input.project_id) params.set("project_id", input.project_id)
+  const dir = cleanDir(input.directory)
+  if (dir) params.set("directory", dir)
+  return params.toString()
 }

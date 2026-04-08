@@ -11,7 +11,6 @@
  */
 
 import { type ParentProps, type ParentComponent, type JSX } from "solid-js"
-import { SDKProvider } from "@/context/sdk"
 import { SyncProvider, useSync } from "@/context/sync"
 import { LocalProvider } from "@/context/local"
 import { TerminalProvider } from "@/context/terminal"
@@ -22,6 +21,9 @@ import { DataProvider } from "@opencode-ai/ui/context"
 import { iife } from "@opencode-ai/util/iife"
 import { getExtensions } from "@opencode-ai/app-shared"
 import { base64Encode } from "@opencode-ai/util/encode"
+import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
+import { createDebugLogger } from "../../overrides/utils/debug"
+import { useSessionParams } from "../context/session-params"
 
 // Helper: wrap children with a list of providers
 function wrapProviders(providers: ParentComponent[] | undefined, children: JSX.Element): JSX.Element {
@@ -34,13 +36,37 @@ export function DirectoryScope(props: ParentProps<{
   onSessionHref?: (sessionID: string) => string
   onSyncSession?: (sessionID: string) => void | Promise<void>
 }>) {
+  const debug = createDebugLogger("directory.scope", "directory:scope", {
+    defaultLevel: 0,
+  })
+  debug.log("render", {
+    directory: props.directory,
+    hasNavigate: !!props.onNavigateToSession,
+    hasHref: !!props.onSessionHref,
+    hasSync: !!props.onSyncSession,
+  })
+  let sessionParams: ReturnType<typeof useSessionParams> | undefined
+  try {
+    sessionParams = useSessionParams()
+  } catch {
+    /* not in split mode */
+  }
   return (
-    <SDKProvider directory={() => props.directory}>
+    <WorkspaceSDKProvider directory={() => props.directory}>
       <SyncProvider>
         {iife(() => {
           const sync = useSync()
+          debug.log("providers ready", {
+            directory: props.directory,
+            sessionId: sessionParams?.sessionId?.(),
+            groupId: sessionParams?.groupId?.(),
+          })
 
           const navigateToSession = (sessionID: string) => {
+            debug.log("navigate session", {
+              directory: props.directory,
+              sessionID,
+            })
             if (props.onNavigateToSession) {
               props.onNavigateToSession(sessionID)
             }
@@ -69,7 +95,7 @@ export function DirectoryScope(props: ParentProps<{
                 <FileProvider>
                   <PromptProvider>
                     <CommentsProvider>
-                      <LocalProvider>
+                      <LocalProvider sessionId={sessionParams?.sessionId}>
                         {wrapProviders(ext.app.directoryProviders, props.children)}
                       </LocalProvider>
                     </CommentsProvider>
@@ -80,6 +106,6 @@ export function DirectoryScope(props: ParentProps<{
           )
         })}
       </SyncProvider>
-    </SDKProvider>
+    </WorkspaceSDKProvider>
   )
 }

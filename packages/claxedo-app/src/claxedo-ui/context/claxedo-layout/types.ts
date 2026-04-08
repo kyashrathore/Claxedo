@@ -1,11 +1,26 @@
-export type ReviewMode = "session-turn" | "session" | "staged" | "committed" | "uncommitted" | "vs-base" | "to-from"
+export type ReviewMode = "session-turn" | "session" | "staged" | "uncommitted" | "vs-base" | "to-from"
 
-export type TabType = "session" | "terminal" | "review" | "file" | "context" | "page" | "multi-pane"
+export type TabType =
+  | "session"
+  | "terminal"
+  | "review"
+  | "review-workspace"
+  | "file"
+  | "context"
+  | "pages-index"
+  | "page"
+  | "workgraph"
+  | "multi-pane"
+  | "process"
+  | "filetree"
+
+export type TabScope = "directory" | "global"
 
 export type TabItem = {
   id: string
   type: TabType
-  directory: string
+  scope?: TabScope
+  directory?: string
   title: string
   sessionId?: string
   terminalId?: string
@@ -25,6 +40,10 @@ export type TabItem = {
   loading?: boolean
   attention?: boolean
   done?: boolean
+  /** When true, panes scroll horizontally instead of being squeezed to fit */
+  scrollable?: boolean
+  /** Minimum pane width in px when scrollable is true (default: 400) */
+  minPaneWidth?: number
 }
 
 export type RailState = {
@@ -56,13 +75,9 @@ export type TerminalAgentStatus = "idle" | "working" | "permission"
 
 export type TerminalLifecycleState = "creating" | "attaching" | "attached" | "closing" | "closed"
 
-export type GroupLayoutState = {
-  fileTree: { opened: boolean; width: number }
-}
+export type GroupLayoutState = Record<string, never>
 
-export const defaultGroupLayout = (): GroupLayoutState => ({
-  fileTree: { opened: true, width: 344 },
-})
+export const defaultGroupLayout = (): GroupLayoutState => ({})
 
 export type GroupState = {
   id: string
@@ -87,31 +102,58 @@ export type ProcessPaneState = {
   targetDirectory: string | null
   /** Set to true when a process crashes while the pane is closed — cleared when the pane opens */
   crashedWhileClosed: boolean
+  /** Action requested from tab bar buttons, consumed by ProcessPaneProvider */
+  pendingAction: "startAll" | "stopAll" | "add" | null
 }
 
-export type PaneContent = {
-  type: TabType
-  directory: string
+type PaneIntent = {
+  name?: string
+  role?: string
+  refs?: string[]
+  defaults?: {
+    agent?: string
+    system?: string
+    prompt?: string
+  }
+  meta?: Record<string, string>
+}
+
+type BasePaneContent = {
   title?: string
   command?: string
   sessionId?: string
   terminalId?: string
   filePath?: string
   pageId?: string
+  processId?: string
   reviewMode?: ReviewMode
   reviewFromRef?: string
   reviewToRef?: string
-  intent?: {
-    name?: string
-    role?: string
-    refs?: string[]
-    defaults?: {
-      agent?: string
-      system?: string
-    }
-    meta?: Record<string, string>
-  }
+  intent?: PaneIntent
 }
+
+export type PagePaneContent = BasePaneContent & {
+  type: "page"
+  pageId: string
+  directory?: string
+}
+
+export type PagesIndexPaneContent = BasePaneContent & {
+  type: "pages-index"
+  directory?: string
+}
+
+export type WorkgraphPaneContent = BasePaneContent & {
+  type: "workgraph"
+  directory?: string
+}
+
+export type ScopedPaneContent = BasePaneContent & {
+  type: Exclude<TabType, "page" | "pages-index" | "workgraph" | "multi-pane">
+  directory: string
+}
+
+export type PaneContent = PagePaneContent | PagesIndexPaneContent | WorkgraphPaneContent | ScopedPaneContent
 
 export type PaneLayout = {
   id: string
@@ -121,6 +163,8 @@ export type PaneLayout = {
   contents: Record<string, PaneContent>
   focus?: string
   zoom?: string
+  /** LeafId of a session pane rendered as a floating CompactPromptDock overlay */
+  floating?: string
 }
 
 export type MultiPaneTabState = {
@@ -152,3 +196,39 @@ export const createEmptyTabsState = (): TopTabsState => ({
   order: [],
   closedTabs: [],
 })
+
+export const GLOBAL_TAB_TYPES: ReadonlySet<TabType> = new Set<TabType>(["page", "pages-index", "workgraph"])
+
+export function isGlobalTab(tab: Pick<TabItem, "type" | "scope" | "directory">) {
+  return GLOBAL_TAB_TYPES.has(tab.type) && tab.scope === "global" && !tab.directory
+}
+
+export function isGlobalPane(content: Pick<PaneContent, "type" | "directory">) {
+  return GLOBAL_TAB_TYPES.has(content.type) && !content.directory
+}
+
+export function realDirectory(dir?: string | null) {
+  if (!dir || dir === "__process__") return
+  return dir
+}
+
+export function tabScopeDir(tab: Pick<TabItem, "type" | "scope" | "directory">, dir?: string | null) {
+  if (isGlobalTab(tab)) return
+  if (tab.type === "review" || tab.type === "review-workspace" || tab.type === "context" || tab.type === "file") {
+    return realDirectory(dir) ?? realDirectory(tab.directory)
+  }
+  return realDirectory(tab.directory)
+}
+
+/** Create a process tab item for a group. */
+export function makeProcessTab(groupId: string, directory: string): TabItem {
+  return {
+    id: `process-tab-${groupId}`,
+    type: "process",
+    scope: "directory",
+    directory,
+    title: "Processes",
+    closable: false,
+    pinned: true,
+  }
+}

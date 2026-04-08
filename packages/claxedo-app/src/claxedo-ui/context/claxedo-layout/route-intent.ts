@@ -1,7 +1,9 @@
-import { base64Encode } from "@opencode-ai/util/encode"
 import type { Session } from "@opencode-ai/sdk/v2"
+import type { Accessor } from "solid-js"
 import type { LayoutCommand } from "./commands"
+import { sessionRoute, tabRoute } from "./tab-route"
 import type { TabItem } from "./types"
+import { realDirectory } from "./types"
 
 type Badge = {
   additions: number
@@ -25,11 +27,31 @@ type GroupTabs = {
 }
 
 type TopTabs = {
+  add?: (tab: Omit<TabItem, "id">) => string | undefined
   addSession: (directory: string, sessionId: string, title: string, badge?: Badge) => string | undefined
   addTerminal: (directory: string, terminalId: string, title: string) => string | undefined
-  addPage: (pageId: string, title: string, directory?: string) => string | undefined
+  addPagesIndex: (directory?: string) => string | undefined
+  addPage: (pageId: string, title: string, directory?: string, filePath?: string) => string | undefined
+  addWorkgraph: (directory?: string) => string | undefined
   addFile: (directory: string, filePath: string, title: string) => string | undefined
-  addReview: (directory: string, sessionId: string, title: string) => string | undefined
+  addReview: (
+    directory: string,
+    sessionId: string,
+    title: string,
+    badge?: Badge,
+    reviewMode?: TabItem["reviewMode"],
+    reviewFromRef?: string,
+    reviewToRef?: string,
+  ) => string | undefined
+  addReviewWorkspace: (
+    directory: string,
+    sessionId: string,
+    title: string,
+    badge?: Badge,
+    reviewMode?: TabItem["reviewMode"],
+    reviewFromRef?: string,
+    reviewToRef?: string,
+  ) => string | undefined
   addContext: (directory: string, sessionId: string, title: string) => string | undefined
   setActive: (tabId: string) => void
   activeId: () => string | null
@@ -62,9 +84,8 @@ type SdkApi = {
   }
 }
 
-function tabPath(directory: string, tabId: string) {
-  return `/${base64Encode(directory)}/tab/${tabId}`
-}
+export const ROUTE_INTENT_INDEX = "__index__"
+export const ROUTE_INTENT_WORKGRAPH = "__workgraph__"
 
 function origin(url: string) {
   try {
@@ -95,6 +116,7 @@ export function createRouteIntentAdapter(input: {
   claxedo: LayoutApi
   globalSync: SyncApi
   globalSDK: SdkApi
+  workgraphEnabled?: Accessor<boolean>
   navigate: (path: string, options?: { replace?: boolean }) => void
   fetch?: typeof fetch
   log?: (event: string, payload?: Record<string, unknown>) => void
@@ -103,9 +125,9 @@ export function createRouteIntentAdapter(input: {
   const attempted = new Set<string>()
   const request = input.fetch ?? fetch
   const log = input.log ?? (() => undefined)
+  const workgraph = () => input.workgraphEnabled?.() ?? false
 
-  const redirect = (directory: string, tabId: string) =>
-    queueMicrotask(() => input.navigate(tabPath(directory, tabId), { replace: true }))
+  const redirect = (path: string) => queueMicrotask(() => input.navigate(path, { replace: true }))
 
   const activate = (tabId: string) => {
     const groupId = input.claxedo.findTabGroup(tabId)
@@ -116,8 +138,9 @@ export function createRouteIntentAdapter(input: {
     const tabs = input.claxedo.groupTabs(groupId)
     if (tabs.activeId() !== tabId) tabs.setActive(tabId)
     const tab = tabs.items().find((item) => item.id === tabId)
-    if (tab?.directory && tab.directory !== "__pages__") {
-      input.claxedo.dispatch({ type: "GroupWorktreeDefaultSetRequested", groupId, directory: tab.directory })
+    const dir = realDirectory(tab?.directory)
+    if (dir) {
+      input.claxedo.dispatch({ type: "GroupWorktreeDefaultSetRequested", groupId, directory: dir })
     }
     return true
   }
@@ -128,14 +151,16 @@ export function createRouteIntentAdapter(input: {
       const created = input.claxedo.topTabs.addSession(workspace, "new", "New Session")
       if (!created) return
       input.claxedo.topTabs.setActive(created)
-      redirect(workspace, created)
+      redirect(sessionRoute(workspace))
       return
     }
 
-    const directory = asText(context.directory) ?? workspace
-    if (!directory) return
-    if (directory !== workspace) {
-      redirect(directory, tabId)
+    const scope = asText(context.scope) as TabItem["scope"] | undefined
+    const global = scope === "global"
+    const directory = global ? undefined : (asText(context.directory) ?? workspace)
+    if (!global && !directory) return
+    if (directory && directory !== workspace) {
+      redirect(tabRoute(directory, tabId))
       return
     }
 
@@ -143,47 +168,95 @@ export function createRouteIntentAdapter(input: {
 
     const title = asText(context.title) ?? "Recovered Tab"
     const type = asText(context.tabType) ?? ""
+    const reviewMode = asText(context.reviewMode) as TabItem["reviewMode"] | undefined
+    const reviewFromRef = asText(context.reviewFromRef)
+    const reviewToRef = asText(context.reviewToRef)
+    const pageId = asText(context.pageId)
     const recovered = (() => {
+      if (type === "pages-index") {
+        return global ? input.claxedo.topTabs.addPagesIndex() : input.claxedo.topTabs.addPagesIndex(directory)
+      }
+      if (type === "workgraph") {
+        if (!workgraph()) {
+          redirect(sessionRoute(workspace))
+          return
+        }
+        return global ? input.claxedo.topTabs.addWorkgraph() : input.claxedo.topTabs.addWorkgraph(directory)
+      }
       if (type === "page") {
-        const pageId = asText(context.pageId)
         if (!pageId) return
-        return input.claxedo.topTabs.addPage(pageId, title, directory)
+        return global ? input.claxedo.topTabs.addPage(pageId, title) : input.claxedo.topTabs.addPage(pageId, title, directory)
+      }
+      if (pageId === ROUTE_INTENT_INDEX) {
+        return global ? input.claxedo.topTabs.addPagesIndex() : input.claxedo.topTabs.addPagesIndex(directory)
+      }
+      if (pageId === ROUTE_INTENT_WORKGRAPH) {
+        if (!workgraph()) {
+          redirect(sessionRoute(workspace))
+          return
+        }
+        return global ? input.claxedo.topTabs.addWorkgraph() : input.claxedo.topTabs.addWorkgraph(directory)
       }
       if (type === "terminal") {
         const terminalId = asText(context.terminalId)
         if (!terminalId) return
-        return input.claxedo.topTabs.addTerminal(directory, terminalId, title || "Terminal")
+        return input.claxedo.topTabs.addTerminal(directory!, terminalId, title || "Terminal")
       }
       if (type === "file") {
         const filePath = asText(context.filePath)
         if (!filePath) return
-        return input.claxedo.topTabs.addFile(directory, filePath, title || "File")
+        return input.claxedo.topTabs.addFile(directory!, filePath, title || "File")
       }
       if (type === "review") {
         const sessionId = asText(context.sessionId)
         if (!sessionId) return
-        return input.claxedo.topTabs.addReview(directory, sessionId, title || "Session")
+        return input.claxedo.topTabs.addReviewWorkspace(
+          directory!,
+          sessionId,
+          title || "Session",
+          undefined,
+          reviewMode,
+          reviewFromRef,
+          reviewToRef,
+        )
+      }
+      if (type === "review-workspace") {
+        const sessionId = asText(context.sessionId)
+        if (!sessionId) return
+        return input.claxedo.topTabs.addReviewWorkspace(
+          directory!,
+          sessionId,
+          title || "Session",
+          undefined,
+          reviewMode,
+          reviewFromRef,
+          reviewToRef,
+        )
       }
       if (type === "context") {
         const sessionId = asText(context.sessionId)
         if (!sessionId) return
-        return input.claxedo.topTabs.addContext(directory, sessionId, title || "Context")
+        return input.claxedo.topTabs.addContext(directory!, sessionId, title || "Context")
       }
-      return input.claxedo.topTabs.addSession(directory, asText(context.sessionId) ?? "new", title || "Session")
+      return input.claxedo.topTabs.addSession(directory!, asText(context.sessionId) ?? "new", title || "Session")
     })()
 
     if (!recovered) {
-      const created = input.claxedo.topTabs.addSession(directory, "new", "New Session")
+      const created = input.claxedo.topTabs.addSession(directory!, "new", "New Session")
       if (!created) return
       input.claxedo.topTabs.setActive(created)
-      redirect(directory, created)
+      redirect(sessionRoute(directory ?? workspace))
       return
     }
 
     if (input.claxedo.topTabs.activeId() !== recovered) {
       input.claxedo.topTabs.setActive(recovered)
     }
-    redirect(directory, recovered)
+    if (type === "session" || (!type && !pageId)) {
+      redirect(sessionRoute(directory ?? workspace, asText(context.sessionId)))
+      return
+    }
+    redirect(tabRoute(directory ?? workspace, recovered))
   }
 
   const hydrate = (workspace: string, tabId: string) => {
@@ -195,7 +268,7 @@ export function createRouteIntentAdapter(input: {
       return
     }
 
-    void request(`${site}/hook/tab-context?tabId=${encodeURIComponent(tabId)}`)
+    void request(`${site}/api/claxedo/hook/tab-context?tabId=${encodeURIComponent(tabId)}`)
       .then((res) => (res.ok ? res.json() : undefined))
       .then((data) => {
         const context = asRecord(data && typeof data === "object" && "context" in data ? data.context : undefined)
@@ -241,38 +314,52 @@ export function createRouteIntentAdapter(input: {
     }
 
     if (intent.pageId) {
-      const existing = input.claxedo.topTabs
-        .orderedItems()
-        .find((tab) => tab.type === "page" && tab.pageId === intent.pageId)
+      if (intent.pageId === ROUTE_INTENT_INDEX) {
+        const existing = input.claxedo.topTabs.orderedItems().find((tab) => tab.type === "pages-index" && !tab.directory)
+        const nextTabId = existing?.id ?? input.claxedo.topTabs.addPagesIndex()
+        if (nextTabId && input.claxedo.topTabs.activeId() !== nextTabId) {
+          input.claxedo.topTabs.setActive(nextTabId)
+        }
+        if (nextTabId) redirect(tabRoute(workspaceId, nextTabId))
+        return
+      }
+      if (intent.pageId === ROUTE_INTENT_WORKGRAPH) {
+        if (!workgraph()) {
+          redirect(sessionRoute(workspaceId))
+          return
+        }
+        const existing = input.claxedo.topTabs.orderedItems().find((tab) => tab.type === "workgraph" && !tab.directory)
+        const nextTabId = existing?.id ?? input.claxedo.topTabs.addWorkgraph()
+        if (nextTabId && input.claxedo.topTabs.activeId() !== nextTabId) {
+          input.claxedo.topTabs.setActive(nextTabId)
+        }
+        if (nextTabId) redirect(tabRoute(workspaceId, nextTabId))
+        return
+      }
+
+      const existing = input.claxedo.topTabs.orderedItems().find((tab) => tab.type === "page" && tab.pageId === intent.pageId)
       if (existing?.id && existing.sessionId) {
         input.claxedo.topTabs.patch(existing.id, { sessionId: undefined })
       }
-      const nextTabId = existing?.id ?? input.claxedo.topTabs.addPage(intent.pageId, "Untitled", workspaceId)
+      const nextTabId =
+        existing?.id ?? input.claxedo.topTabs.addPage(intent.pageId, "Untitled", workspaceId)
       if (nextTabId && input.claxedo.topTabs.activeId() !== nextTabId) {
         input.claxedo.topTabs.setActive(nextTabId)
       }
-      if (nextTabId) redirect(workspaceId, nextTabId)
+      if (nextTabId) redirect(tabRoute(workspaceId, nextTabId))
       return
     }
 
     if (!intent.sessionId) {
-      const active = input.claxedo.topTabs.active()
-      if (active?.directory === workspaceId) {
-        redirect(workspaceId, active.id)
-        return
-      }
-
-      const tab = input.claxedo.topTabs.orderedItems().find((item) => item.directory === workspaceId)
+      const tab = input.claxedo.topTabs.findSession(workspaceId, "new")
       if (tab?.id) {
         input.claxedo.topTabs.setActive(tab.id)
-        redirect(workspaceId, tab.id)
         return
       }
 
       const created = input.claxedo.topTabs.addSession(workspaceId, "new", "New Session")
       if (!created) return
       input.claxedo.topTabs.setActive(created)
-      redirect(workspaceId, created)
       return
     }
 
@@ -289,9 +376,12 @@ export function createRouteIntentAdapter(input: {
 
     const active = input.claxedo.topTabs.active()
     const keepActive =
-      !!active && (active.type === "review" || active.type === "context") && active.directory === workspaceId
+      !!active && (active.type === "review" || active.type === "review-workspace" || active.type === "context") && active.directory === workspaceId
     const nextTitle =
-      isDefaultSessionTitle(intent.sessionTitle) && desired ? desired : intent.sessionTitle || "New Session"
+      desired ||
+      intent.sessionTitle ||
+      existingTitle ||
+      "Session"
     const nextTabId = input.claxedo.topTabs.addSession(workspaceId, intent.sessionId, nextTitle, intent.sessionBadge)
 
     log("route intent decision", {
@@ -304,18 +394,11 @@ export function createRouteIntentAdapter(input: {
       activeType: active?.type,
       activeSession: active?.sessionId,
     })
-
     if (keepActive && active && input.claxedo.topTabs.activeId() !== active.id) {
       input.claxedo.topTabs.setActive(active.id)
     }
     if (!keepActive && nextTabId && input.claxedo.topTabs.activeId() !== nextTabId) {
       input.claxedo.topTabs.setActive(nextTabId)
-    }
-    if (nextTabId) redirect(workspaceId, nextTabId)
-
-    if (intent.sessionId !== "new") {
-      const tab = input.claxedo.topTabs.findSession(workspaceId, "new")
-      if (tab) input.claxedo.topTabs.close(tab.id)
     }
   }
 

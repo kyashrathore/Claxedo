@@ -19,6 +19,7 @@ import { useServer } from "@/context/server"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
+import { useGlobalSync } from "@/context/global-sync"
 import { focusTerminalById } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
@@ -138,15 +139,28 @@ export function SessionHeader() {
   const settings = useSettings()
   const sync = useSync()
   const terminal = useTerminal()
+  const globalSync = useGlobalSync()
   const { params, view } = useSessionLayout()
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
+  const globalRoot = createMemo(() => {
+    const dir = globalSync.data.path.config
+    return dir ? `${dir}/global-sessions` : ""
+  })
+  const globalSession = createMemo(() => {
+    const dir = projectDirectory()
+    const root = globalRoot()
+    if (!dir || !root || !dir.startsWith(root)) return false
+    return true
+  })
   const project = createMemo(() => {
+    if (globalSession()) return
     const directory = projectDirectory()
     if (!directory) return
     return layout.projects.list().find((p) => p.worktree === directory || p.sandboxes?.includes(directory))
   })
   const name = createMemo(() => {
+    if (globalSession()) return "Global Chat"
     const current = project()
     if (current) return current.name || getFilename(current.worktree)
     return getFilename(projectDirectory())
@@ -312,7 +326,7 @@ export function SessionHeader() {
         {(mount) => (
           <Portal mount={mount()}>
             <div class="flex items-center gap-2">
-              <Show when={projectDirectory()}>
+              <Show when={projectDirectory() && !globalSession()}>
                 <div class="hidden xl:flex items-center">
                   <Show
                     when={canOpen()}

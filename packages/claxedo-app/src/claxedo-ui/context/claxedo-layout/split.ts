@@ -1,6 +1,7 @@
 import { batch, type Accessor } from "solid-js"
 import type { SetStoreFunction } from "solid-js/store"
 import { getTabHooks as getTabHooksFromRegistry, type TabLifecycleHooks } from "./tab-type-registry"
+import { capture as phCapture } from "../../../analytics/posthog"
 import {
   createEmptyTabsState,
   defaultGroupLayout,
@@ -77,15 +78,18 @@ export function createSplitActions(input: {
     toggle() {
       if (store.groups.length > 1) {
         const nextHidden = !store.split.hidden
+        phCapture("split_toggled", { action: nextHidden ? "hidden" : "shown", group_count: store.groups.length })
         setStore("split", "hidden", nextHidden)
         return
       }
+      phCapture("split_toggled", { action: "created", group_count: 2 })
 
       const newId = `g-${Date.now()}`
+      const dir = defaultForNewGroup()
       const newGroup: GroupState = {
         id: newId,
-        tabs: createEmptyTabsState(),
-        worktree: { default: defaultForNewGroup(), pinned: null },
+        tabs: { items: [], activeId: null, order: [], closedTabs: [] },
+        worktree: { default: dir, pinned: null },
         layout: defaultGroupLayout(),
       }
       batch(() => {
@@ -96,6 +100,7 @@ export function createSplitActions(input: {
 
     closeGroup(groupId: string) {
       if (store.groups.length <= 1) return
+      phCapture("split_group_closed", { remaining_groups: store.groups.length - 1 })
       const idx = store.groups.findIndex((g) => g.id === groupId)
       if (idx === -1) return
       const target = store.groups[idx]
@@ -157,7 +162,7 @@ export function createSplitActions(input: {
           const newGroup: GroupState = {
             id: newId,
             tabs: { items: [tab], activeId: tab.id, order: [tab.id], closedTabs: [] },
-            worktree: { default: tab.directory, pinned: null },
+            worktree: { default: tab.directory ?? null, pinned: null },
             layout: defaultGroupLayout(),
           }
           setStore("groups", [...store.groups, newGroup])

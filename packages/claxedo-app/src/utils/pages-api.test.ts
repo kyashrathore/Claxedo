@@ -27,7 +27,33 @@ mock.module("./api", () => ({
       headers: { get: () => okContentType },
     } as Response
   },
+  getClaxedoServerUrl: () => "http://test.local",
   getDefaultBaseUrl: () => "http://test.local",
+  // Include all api.ts exports so the mock doesn't strip them for other test
+  // files that import from the same resolved module (e.g. persist.test.ts).
+  isDemoMode: () => {
+    if (typeof window === "undefined") return false
+    const p = window.location.pathname
+    return p === "/demo" || p.startsWith("/demo/")
+  },
+  isDemoPath: (path: string) => path === "/demo" || path.startsWith("/demo/"),
+  isEmbedMode: () => {
+    if (typeof window === "undefined") return false
+    return new URLSearchParams(window.location.search).has("embed")
+  },
+  fixDir: (input: string | undefined) => {
+    const txt = input?.trim()
+    if (!txt) return undefined
+    if (txt.startsWith("/")) return txt
+    const hit = ["/Users/", "/private/", "/Volumes/", "/home/"]
+      .map((item) => txt.indexOf(item))
+      .filter((item) => item >= 0)
+      .sort((a, b) => a - b)[0]
+    if (hit !== undefined) return txt.slice(hit)
+    if (/^(Users|private|Volumes|home)\//.test(txt)) return `/${txt}`
+    return txt
+  },
+  api: {},
 }))
 
 // Import AFTER mock registration — no dynamic import, no cache busting
@@ -43,111 +69,70 @@ beforeEach(() => {
 })
 
 describe("pagesApi", () => {
-  test("list() calls GET http://test.local/api/pages", async () => {
+  test("list() calls GET http://test.local/pages", async () => {
     await pagesApi.list()
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages")
+    expect(calls[0].url).toBe("http://test.local/pages")
     // No method means GET (fetch default)
     expect(calls[0].init?.method).toBeUndefined()
   })
 
-  test("get(id) calls GET http://test.local/api/pages/my-id", async () => {
+  test("get(id) calls GET http://test.local/pages/my-id", async () => {
     await pagesApi.get("my-id")
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/my-id")
+    expect(calls[0].url).toBe("http://test.local/pages/my-id")
     expect(calls[0].init?.method).toBeUndefined()
+  })
+
+  test("list(input) appends scope query params", async () => {
+    await pagesApi.list({ scope: "project", directory: "/repo", project_id: "proj_1" })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe("http://test.local/pages?scope=project&project_id=proj_1&directory=%2Frepo")
   })
 
   test("create(title) calls POST with { title } body", async () => {
     await pagesApi.create("My Page")
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages")
+    expect(calls[0].url).toBe("http://test.local/pages")
     expect(calls[0].init?.method).toBe("POST")
     expect(calls[0].init?.body).toBe(JSON.stringify({ title: "My Page" }))
+  })
+
+  test("create(input) sends project-aware body", async () => {
+    await pagesApi.create({ title: "My Page", project_id: "proj_1", directory: "/repo" })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].init?.body).toBe(JSON.stringify({ title: "My Page", project_id: "proj_1", directory: "/repo" }))
   })
 
   test("update(id, patch) calls PATCH with patch body", async () => {
     const patch = { title: "Updated", content: "New content" }
     await pagesApi.update("pg-1", patch)
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/pg-1")
+    expect(calls[0].url).toBe("http://test.local/pages/pg-1")
     expect(calls[0].init?.method).toBe("PATCH")
     expect(calls[0].init?.body).toBe(JSON.stringify(patch))
   })
 
-  test("delete(id) calls DELETE http://test.local/api/pages/my-id", async () => {
+  test("delete(id) calls DELETE http://test.local/pages/my-id", async () => {
     await pagesApi.delete("my-id")
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/my-id")
+    expect(calls[0].url).toBe("http://test.local/pages/my-id")
     expect(calls[0].init?.method).toBe("DELETE")
   })
 
-  test("ai(input) calls POST /api/pages/ai", async () => {
-    const input = { action: "improve" as const, text: "hello" }
-    await pagesApi.ai(input)
+  test("listStatuses(input) appends scope query params", async () => {
+    await pagesApi.listStatuses({ scope: "project", project_id: "proj_1", directory: "/repo" })
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/ai")
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify(input))
+    expect(calls[0].url).toBe("http://test.local/pages/statuses?scope=project&project_id=proj_1&directory=%2Frepo")
   })
 
-  test("exportMarkdown(id) calls GET /:id/export/markdown", async () => {
-    okJson = {
-      id: "p1",
-      title: "Page",
-      markdown: "# Page",
-      meta: {
-        page_id: "p1",
-        updated_at: "2026-01-01T00:00:00.000Z",
-        doc_hash: "doc-hash",
-        md_export_hash: "md-hash",
-        md_export_base_doc_hash: "doc-hash",
-        derived_markdown: true,
-      },
-    }
-    await pagesApi.exportMarkdown("p1")
+  test("saveStatuses(input) appends scope query params", async () => {
+    const rows = [{ id: "draft", name: "Draft", color: "#000", position: 0, transitions: [] }]
+    await pagesApi.saveStatuses(rows, { scope: "global" })
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/export/markdown")
-    expect(calls[0].init?.method).toBeUndefined()
-  })
-
-  test("exportMarkdownRaw(id) calls GET /:id/export/markdown?raw=1", async () => {
-    await pagesApi.exportMarkdownRaw("p1")
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/export/markdown?raw=1")
-    expect(calls[0].init?.method).toBeUndefined()
-    const headers = calls[0].init?.headers as Record<string, string> | undefined
-    expect(headers?.Accept).toBe("text/markdown")
-  })
-
-  test("importMarkdown(id, markdown, force) calls POST /:id/import/markdown", async () => {
-    await pagesApi.importMarkdown("p1", "# hi", true)
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/import/markdown")
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify({ markdown: "# hi", force: true }))
-  })
-
-  test("importMarkdown(id, markdown) defaults force=false", async () => {
-    await pagesApi.importMarkdown("p1", "# hi")
-    expect(calls).toHaveLength(1)
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify({ markdown: "# hi", force: false }))
-  })
-
-  test("syncMarkdown(id, force) calls POST /:id/sync/markdown", async () => {
-    await pagesApi.syncMarkdown("p1", true)
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/sync/markdown")
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify({ force: true }))
-  })
-
-  test("syncMarkdown(id) defaults force=false", async () => {
-    await pagesApi.syncMarkdown("p1")
-    expect(calls).toHaveLength(1)
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify({ force: false }))
+    expect(calls[0].url).toBe("http://test.local/pages/statuses?scope=global")
+    expect(calls[0].init?.method).toBe("PUT")
+    expect(calls[0].init?.body).toBe(JSON.stringify(rows))
   })
 
   test("arenaStart(id, input) calls POST /:id/arena/start", async () => {
@@ -161,7 +146,7 @@ describe("pagesApi", () => {
     }
     await pagesApi.arenaStart("p1", input)
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/arena/start")
+    expect(calls[0].url).toBe("http://test.local/pages/p1/arena/start")
     expect(calls[0].init?.method).toBe("POST")
     expect(calls[0].init?.body).toBe(JSON.stringify(input))
   })
@@ -169,7 +154,7 @@ describe("pagesApi", () => {
   test("arenaState(id) calls GET /:id/arena/state", async () => {
     await pagesApi.arenaState("p1")
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/arena/state")
+    expect(calls[0].url).toBe("http://test.local/pages/p1/arena/state")
     expect(calls[0].init?.method).toBeUndefined()
   })
 
@@ -177,7 +162,7 @@ describe("pagesApi", () => {
     const input = { text: "hello", targets: ["builder"] }
     await pagesApi.arenaMessage("p1", input)
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/arena/message")
+    expect(calls[0].url).toBe("http://test.local/pages/p1/arena/message")
     expect(calls[0].init?.method).toBe("POST")
     expect(calls[0].init?.body).toBe(JSON.stringify(input))
   })
@@ -186,15 +171,15 @@ describe("pagesApi", () => {
     const input = { action: "pause" as const }
     await pagesApi.arenaControl("p1", input)
     expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/api/pages/p1/arena/control")
+    expect(calls[0].url).toBe("http://test.local/pages/p1/arena/control")
     expect(calls[0].init?.method).toBe("POST")
     expect(calls[0].init?.body).toBe(JSON.stringify(input))
   })
 
   test("arenaEventsUrl(id, directory?) builds expected SSE URL", () => {
-    expect(pagesApi.arenaEventsUrl("p1")).toBe("http://test.local/api/pages/p1/arena/events")
+    expect(pagesApi.arenaEventsUrl("p1")).toBe("http://test.local/pages/p1/arena/events")
     expect(pagesApi.arenaEventsUrl("p1", "/tmp/repo a")).toBe(
-      "http://test.local/api/pages/p1/arena/events?directory=%2Ftmp%2Frepo%20a",
+      "http://test.local/pages/p1/arena/events?directory=%2Ftmp%2Frepo%20a",
     )
   })
 
@@ -204,16 +189,12 @@ describe("pagesApi", () => {
     await pagesApi.create("t")
     await pagesApi.update("x", { title: "t" })
     await pagesApi.delete("x")
-    await pagesApi.ai({ action: "fix" })
-    await pagesApi.exportMarkdown("x")
-    await pagesApi.importMarkdown("x", "hello")
-    await pagesApi.syncMarkdown("x")
     await pagesApi.arenaStart("x", { config: { agents: [{ name: "a", role: "r", duty: "d", model: "p/m" }] } })
     await pagesApi.arenaState("x")
     await pagesApi.arenaMessage("x", { text: "hello" })
     await pagesApi.arenaControl("x", { action: "pause" })
 
-    expect(calls).toHaveLength(13)
+    expect(calls).toHaveLength(9)
     for (const call of calls) {
       const headers = call.init?.headers as Record<string, string> | undefined
       expect(headers).toBeDefined()
@@ -245,35 +226,8 @@ describe("error handling", () => {
   test("throws clear error when API responds with app HTML", async () => {
     okContentType = "text/html"
     await expect(pagesApi.list()).rejects.toThrow(
-      "Pages API resolved to app HTML. Set VITE_OPENCODE_BACKEND_URL=http://localhost:4096.",
+      "Pages API resolved to app HTML. Set VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001.",
     )
   })
 
-  test("exportMarkdownRaw returns markdown text body", async () => {
-    okContentType = "text/markdown"
-    okText = "# hello\n"
-    await expect(pagesApi.exportMarkdownRaw("p1")).resolves.toBe("# hello\n")
-  })
-
-  test("importMarkdown preserves conflict payload on 409", async () => {
-    shouldFail = true
-    failText = JSON.stringify({
-      error: "Markdown import conflict",
-      conflict: true,
-      base_hash: "a",
-      current_hash: "b",
-    })
-    await expect(pagesApi.importMarkdown("p1", "# hi")).rejects.toThrow(failText)
-  })
-
-  test("syncMarkdown preserves conflict payload on 409", async () => {
-    shouldFail = true
-    failText = JSON.stringify({
-      error: "Markdown import conflict",
-      conflict: true,
-      base_hash: "a",
-      current_hash: "b",
-    })
-    await expect(pagesApi.syncMarkdown("p1")).rejects.toThrow(failText)
-  })
 })

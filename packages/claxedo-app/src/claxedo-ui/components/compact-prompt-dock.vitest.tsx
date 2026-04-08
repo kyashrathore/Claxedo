@@ -82,15 +82,27 @@ function defaults(overrides: Partial<Parameters<typeof CompactPromptDock>[0]> = 
 
 describe("header", () => {
   test("renders provided title in header", () => {
-    const { container } = render(() => <CompactPromptDock {...defaults({ title: "My Session" })} />)
+    const { container } = render(() => <CompactPromptDock {...defaults({ title: "My Session", hasMessages: true })} />)
     const header = container.querySelector(".text-12-regular.text-text-weak")!
     expect(header.textContent).toBe("My Session")
   })
 
   test("renders fallback translation when title is undefined", () => {
-    const { container } = render(() => <CompactPromptDock {...defaults()} />)
+    const { container } = render(() => <CompactPromptDock {...defaults({ hasMessages: true })} />)
     const header = container.querySelector(".text-12-regular.text-text-weak")!
     expect(header.textContent).toBe("session.title")
+  })
+
+  test("header hidden when hasMessages is false", () => {
+    const { container } = render(() => <CompactPromptDock {...defaults({ hasMessages: false })} />)
+    const header = container.querySelector(".text-12-regular.text-text-weak")
+    expect(header).toBeNull()
+  })
+
+  test("header hidden when hasMessages is undefined", () => {
+    const { container } = render(() => <CompactPromptDock {...defaults()} />)
+    const header = container.querySelector(".text-12-regular.text-text-weak")
+    expect(header).toBeNull()
   })
 })
 
@@ -102,7 +114,7 @@ describe("expand button", () => {
   test("clicking expand shows messages panel when messages provided", async () => {
     const { container } = render(() => (
       <CompactPromptDock
-        {...defaults({ messages: <div data-testid="messages-content">hello</div> })}
+        {...defaults({ hasMessages: true, messages: <div data-testid="messages-content">hello</div> })}
       />
     ))
 
@@ -122,7 +134,7 @@ describe("expand button", () => {
   test("clicking expand again hides messages panel", async () => {
     const { container } = render(() => (
       <CompactPromptDock
-        {...defaults({ messages: <div data-testid="messages-content">hello</div> })}
+        {...defaults({ hasMessages: true, messages: <div data-testid="messages-content">hello</div> })}
       />
     ))
 
@@ -140,7 +152,7 @@ describe("expand button", () => {
   })
 
   test("messages panel stays hidden when expanded but no messages prop", async () => {
-    const { container } = render(() => <CompactPromptDock {...defaults()} />)
+    const { container } = render(() => <CompactPromptDock {...defaults({ hasMessages: true })} />)
 
     // Expand
     fireEvent.click(container.querySelector("[data-icon='expand']") as HTMLButtonElement)
@@ -160,7 +172,7 @@ describe("expand button", () => {
 describe("sidebar toggle button", () => {
   test("onToggle called when sidebar toggle button clicked", () => {
     const onToggle = vi.fn()
-    const { container } = render(() => <CompactPromptDock {...defaults({ onToggle })} />)
+    const { container } = render(() => <CompactPromptDock {...defaults({ onToggle, hasMessages: true })} />)
 
     const toggleBtn = container.querySelector("[data-icon='layout-right']") as HTMLButtonElement
     expect(toggleBtn).not.toBeNull()
@@ -178,6 +190,7 @@ describe("auto-scroll", () => {
     const { container } = render(() => (
       <CompactPromptDock
         {...defaults({
+          hasMessages: true,
           messages: (
             <div style="height: 500px">
               <div>line 1</div>

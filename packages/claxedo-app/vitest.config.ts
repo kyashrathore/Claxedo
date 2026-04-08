@@ -26,6 +26,9 @@ function overrides() {
 }
 
 export default defineConfig({
+  define: {
+    __DEMO_ENABLED__: "false",
+  },
   plugins: [solid()],
   resolve: {
     conditions: ["development", "browser"],

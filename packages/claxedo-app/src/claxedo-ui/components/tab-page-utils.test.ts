@@ -20,10 +20,15 @@ import {
   canRunAiMenuItem,
   actionNeedsSelection,
   calcAnchoredPopover,
+  buildPageAiSetup,
+  buildPageAiMessage,
+  extractTextFromParts,
+  PAGE_AI_SYSTEM,
   DIFF_DELETE_MARKS,
   DIFF_INSERT_MARKS,
   CONVERT_MENU_ITEMS,
   AI_MENU_ITEMS,
+  type PageAiAction,
 } from "./tab-page-utils"
 import type { OverlayState, DiffPart, InlineNode } from "./tab-page-utils"
 
@@ -604,5 +609,161 @@ describe("handleScopedSelectAll", () => {
   test("falls back to full doc when cursor is outside all nodes", () => {
     const state = mockState(100, 100, 100, [{ nodeSize: 20 }])
     expect(handleScopedSelectAll(cmdA, state)).toEqual({ from: 1, to: 100 })
+  })
+})
+
+// ── PAGE_AI_SYSTEM ─────────────────────────────────────────────────────
+
+describe("PAGE_AI_SYSTEM", () => {
+  test("is a non-empty string", () => {
+    expect(typeof PAGE_AI_SYSTEM).toBe("string")
+    expect(PAGE_AI_SYSTEM.length).toBeGreaterThan(0)
+  })
+})
+
+// ── buildPageAiSetup ───────────────────────────────────────────────────
+
+describe("buildPageAiSetup", () => {
+  test("includes page title when provided", () => {
+    const result = buildPageAiSetup({ pageTitle: "My Notes" })
+    expect(result).toContain("Page: My Notes")
+  })
+
+  test("includes file path when provided", () => {
+    const result = buildPageAiSetup({ filePath: "docs/readme.md" })
+    expect(result).toContain("File: docs/readme.md")
+  })
+
+  test("works with no meta", () => {
+    const result = buildPageAiSetup()
+    expect(result).toContain("rich text editor")
+    expect(result).not.toContain("Page:")
+    expect(result).not.toContain("File:")
+  })
+
+  test("describes the action/context protocol", () => {
+    const result = buildPageAiSetup()
+    expect(result).toContain('action:"action_name"')
+    expect(result).toContain('context:"selected text or document excerpt"')
+  })
+
+  test("explains direct chat fallback", () => {
+    const result = buildPageAiSetup()
+    expect(result).toContain("respond conversationally")
+  })
+
+  test("lists all available actions", () => {
+    const result = buildPageAiSetup()
+    for (const action of ["improve", "fix", "shorten", "lengthen", "summarize", "continue", "custom"]) {
+      expect(result).toContain(`- ${action}:`)
+    }
+  })
+
+  test("includes output format rule", () => {
+    const result = buildPageAiSetup()
+    expect(result).toContain("Return only raw text")
+  })
+})
+
+// ── buildPageAiMessage ─────────────────────────────────────────────────
+
+describe("buildPageAiMessage", () => {
+  test("includes action and context", () => {
+    const result = buildPageAiMessage("improve", "selected text here")
+    expect(result).toContain('action:"improve"')
+    expect(result).toContain('context:"selected text here"')
+  })
+
+  test("works with empty context", () => {
+    const result = buildPageAiMessage("continue", "")
+    expect(result).toContain('action:"continue"')
+    expect(result).toContain('context:""')
+  })
+
+  test("custom includes instruction field", () => {
+    const result = buildPageAiMessage("custom", "some text", "make it formal")
+    expect(result).toContain('action:"custom"')
+    expect(result).toContain('instruction:"make it formal"')
+    expect(result).toContain('context:"some text"')
+  })
+
+  test("non-custom omits instruction field", () => {
+    const result = buildPageAiMessage("fix", "text", "ignored")
+    expect(result).not.toContain("instruction:")
+  })
+
+  test("all actions produce valid format", () => {
+    const actions: PageAiAction[] = ["improve", "fix", "shorten", "lengthen", "summarize", "continue", "custom"]
+    for (const action of actions) {
+      const result = buildPageAiMessage(action, "ctx", "instr")
+      expect(result).toContain(`action:"${action}"`)
+      expect(result).toContain('context:"ctx"')
+    }
+  })
+})
+
+// ── extractTextFromParts ───────────────────────────────────────────────
+
+describe("extractTextFromParts", () => {
+  test("extracts text from text parts", () => {
+    const parts = [
+      { type: "text", text: "hello " },
+      { type: "text", text: "world" },
+    ]
+    expect(extractTextFromParts(parts)).toBe("hello world")
+  })
+
+  test("skips ignored text parts", () => {
+    const parts = [
+      { type: "text", text: "visible", ignored: false },
+      { type: "text", text: "hidden", ignored: true },
+    ]
+    expect(extractTextFromParts(parts)).toBe("visible")
+  })
+
+  test("falls back to completed tool output", () => {
+    const parts = [
+      { type: "tool", state: { status: "completed", output: "tool result" } },
+    ]
+    expect(extractTextFromParts(parts)).toBe("tool result")
+  })
+
+  test("extracts text property from tool output object", () => {
+    const parts = [
+      { type: "tool", state: { status: "completed", output: { text: "nested" } } },
+    ]
+    expect(extractTextFromParts(parts)).toBe("nested")
+  })
+
+  test("skips non-completed tool parts", () => {
+    const parts = [
+      { type: "tool", state: { status: "running", output: "in progress" } },
+    ]
+    expect(extractTextFromParts(parts)).toBe("")
+  })
+
+  test("falls back to reasoning parts when no text or tool output", () => {
+    const parts = [
+      { type: "reasoning", text: "thinking about it" },
+    ]
+    expect(extractTextFromParts(parts)).toBe("thinking about it")
+  })
+
+  test("prefers text parts over tool and reasoning", () => {
+    const parts = [
+      { type: "text", text: "primary" },
+      { type: "tool", state: { status: "completed", output: "secondary" } },
+      { type: "reasoning", text: "tertiary" },
+    ]
+    expect(extractTextFromParts(parts)).toBe("primary")
+  })
+
+  test("returns empty string for empty array", () => {
+    expect(extractTextFromParts([])).toBe("")
+  })
+
+  test("trims whitespace from result", () => {
+    const parts = [{ type: "text", text: "  padded  " }]
+    expect(extractTextFromParts(parts)).toBe("padded")
   })
 })

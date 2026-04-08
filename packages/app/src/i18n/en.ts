@@ -928,6 +928,7 @@ export const dict = {
   "session.delete.button": "Delete session",
 
   "workspace.new": "New workspace",
+  "workspace.workgraph": "WorkGraph",
   "workspace.creating": "Creating workspace...",
   "workspace.type.local": "local",
   "workspace.type.sandbox": "sandbox",

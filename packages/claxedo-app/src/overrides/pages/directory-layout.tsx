@@ -1,6 +1,5 @@
 import { createEffect, createMemo, Show, type JSX, type ParentComponent, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
-import { SDKProvider } from "@/context/sdk"
 import { SyncProvider, useSync } from "@/context/sync"
 import { LocalProvider } from "@/context/local"
 import { useServer } from "@/context/server"
@@ -15,6 +14,7 @@ import { decode64 } from "@/utils/base64"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { getExtensions } from "@opencode-ai/app-shared"
+import { WorkspaceSDKProvider } from "../../claxedo-ui/components/workspace-sdk-provider"
 
 // Helper: wrap children with a list of providers
 function wrapProviders(providers: ParentComponent[] | undefined, children: JSX.Element): JSX.Element {
@@ -41,25 +41,6 @@ export default function Layout(props: ParentProps) {
       description: language.t("directory.error.invalidUrl"),
     })
     navigate("/")
-  })
-
-  // Track active directory globally so authFetch can include it as x-opencode-directory
-  createEffect(() => {
-    const dir = directory()
-    if (!dir) return
-    window.__OPENCODE__ ??= {}
-    window.__OPENCODE__.activeDirectory = dir
-  })
-
-  // Restore remembered server URL for this workspace
-  createEffect(() => {
-    const remembered = server.forWorkspace(directory())
-    if (remembered && remembered !== server.url) {
-      // Only auto-switch when we're still pointed at localhost
-      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(server.url)) {
-        server.add(remembered)
-      }
-    }
   })
 
   // Use extension to resolve cloud session URLs
@@ -93,7 +74,7 @@ export default function Layout(props: ParentProps) {
 
   return (
     <Show when={directory()}>
-      <SDKProvider directory={directory}>
+      <WorkspaceSDKProvider directory={directory}>
         <SyncProvider>
           {iife(() => {
             const sync = useSync()
@@ -134,7 +115,7 @@ export default function Layout(props: ParentProps) {
             )
           })}
         </SyncProvider>
-      </SDKProvider>
+      </WorkspaceSDKProvider>
     </Show>
   )
 }

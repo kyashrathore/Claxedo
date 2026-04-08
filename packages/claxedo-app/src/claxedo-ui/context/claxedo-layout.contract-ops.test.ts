@@ -90,8 +90,8 @@ describe("patchTab", () => {
       // patchTab targets by ID across all groups
       api.patchTab(id2, { title: "Patched" })
 
-      expect(tabs1.items()[0].title).toBe("S1")
-      expect(tabs2.items()[0].title).toBe("Patched")
+      expect(tabs1.items().find((t: any) => t.sessionId === "s1")?.title).toBe("S1")
+      expect(tabs2.items().find((t: any) => t.sessionId === "s2")?.title).toBe("Patched")
     } finally {
       dispose()
     }
@@ -181,15 +181,149 @@ describe("selector and command surface", () => {
       api.dispatch({ type: "ProcessPaneTargetSetRequested", directory: "/ws-main" })
       expect(api.processPane.targetDirectory()).toBe("/ws-main")
 
-      const beforeToggle = api.processPane.toggleVersion()
+      // No process tab exists yet — isActive starts false.
+      expect(api.processPane.isActive()).toBe(false)
+
+      // Explicitly add a process tab (no longer auto-inserted).
+      // addProcess sets it active immediately.
+      api.groupTabs(g1).addProcess("/ws-main")
+      expect(api.processPane.isActive()).toBe(true)
+
+      // Toggling a different workspace target does not fabricate or retarget a process tab.
       api.dispatch({ type: "ProcessPaneToggleRequested", directory: "/ws-alt" })
       expect(api.processPane.targetDirectory()).toBe("/ws-alt")
-      expect(api.processPane.toggleVersion()).toBe(beforeToggle + 1)
+      expect(api.processPane.isActive()).toBe(true)
+      expect(api.groupTabs(g1).items().find((tab: any) => tab.type === "process")?.directory).toBe("/ws-main")
 
       api.dispatch({ type: "ProcessPaneCrashFlagSetRequested", value: true })
       expect(api.processPane.crashedWhileClosed()).toBe(true)
       api.dispatch({ type: "ProcessPaneCrashFlagSetRequested", value: false })
       expect(api.processPane.crashedWhileClosed()).toBe(false)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("process tab stays anchored when the group default workspace changes", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { g1 } = splitInto2(api)
+      const tabs = api.groupTabs(g1)
+      const wt = api.groupWorktree(g1)
+
+      wt.setDefault("/ws-main")
+      const processId = tabs.addProcess("/ws-main")
+      const initial = tabs.items().find((tab: any) => tab.id === processId)
+      expect(initial?.directory).toBe("/ws-main")
+
+      wt.setDefault("/ws-alt")
+
+      const process = tabs.items().find((tab: any) => tab.id === processId)
+      expect(process?.directory).toBe("/ws-main")
+      expect(process?.pinned).toBeFalsy()
+    } finally {
+      dispose()
+    }
+  })
+
+  test("process tabs are tracked per workspace directory", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { g1 } = splitInto2(api)
+      const tabs = api.groupTabs(g1)
+
+      const main = tabs.addProcess("/ws-main")
+      const feature = tabs.addProcess("/ws-feature")
+
+      expect(main).not.toBe(feature)
+      expect(tabs.items().filter((tab: any) => tab.type === "process").map((tab: any) => tab.directory)).toEqual([
+        "/ws-main",
+        "/ws-feature",
+      ])
+
+      api.dispatch({ type: "ProcessPaneOpenRequested", directory: "/ws-main" })
+      expect(tabs.activeId()).toBe(main)
+      expect(api.processPane.isActive("/ws-main")).toBe(true)
+      expect(api.processPane.isActive("/ws-feature")).toBe(false)
+
+      api.dispatch({ type: "ProcessPaneOpenRequested", directory: "/ws-feature" })
+      expect(tabs.activeId()).toBe(feature)
+      expect(api.processPane.isActive("/ws-main")).toBe(false)
+      expect(api.processPane.isActive("/ws-feature")).toBe(true)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("legacy process tab resolves to the requested workspace before opening", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { g1 } = splitInto2(api)
+      const tabs = api.groupTabs(g1)
+
+      const sid = tabs.addSession("/ws-main", "s-main", "Main")
+      const id = tabs.add({
+        type: "process",
+        directory: "__process__",
+        title: "Processes",
+        closable: false,
+        pinned: true,
+      })
+      tabs.setActive(sid)
+      api.dispatch({ type: "ProcessPaneOpenRequested", directory: "/ws-main" })
+
+      const tab = tabs.items().find((item: any) => item.id === id)
+      expect(tab?.directory).toBe("/ws-main")
+      expect(tabs.activeId()).toBe(id)
+      expect(api.groupWorktree(g1).default()).toBe("/ws-main")
+      expect(api.processPane.isActive("/ws-main")).toBe(true)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("process sentinel does not become the group default", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { g1 } = splitInto2(api)
+      const tabs = api.groupTabs(g1)
+
+      tabs.add({
+        type: "process",
+        directory: "__process__",
+        title: "Processes",
+        closable: false,
+        pinned: true,
+      })
+
+      expect(api.groupWorktree(g1).default()).toBeNull()
+
+      tabs.addSession("/ws-main", "new", "New Session")
+      expect(api.groupWorktree(g1).default()).toBe("/ws-main")
+    } finally {
+      dispose()
+    }
+  })
+
+  test("closing the last real tab does not replace the group default with a process sentinel", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { g1 } = splitInto2(api)
+      const tabs = api.groupTabs(g1)
+
+      const sid = tabs.addSession("/ws-main", "s-main", "Main")
+      const pid = tabs.add({
+        type: "process",
+        directory: "__process__",
+        title: "Processes",
+        closable: false,
+        pinned: true,
+      })
+
+      tabs.setActive(pid)
+      tabs.close(sid)
+
+      expect(api.groupWorktree(g1).default()).toBe("/ws-main")
     } finally {
       dispose()
     }
@@ -682,7 +816,7 @@ describe("terminal pane isolation", () => {
     }
   })
 
-  test("closing a terminal tab clears pane and owner state", () => {
+  test("closing a terminal tab clears pane and owner state", async () => {
     const { api, dispose } = createTestLayout()
     try {
       const tabId = api.topTabs.addTerminal("/ws", "pty-1", "Terminal 1")
@@ -699,19 +833,22 @@ describe("terminal pane isolation", () => {
 
       api.topTabs.close(tabId)
 
-      // Terminal tab close immediately drops pane state in multiPane,
-      // and clears ownership/agent bookkeeping.
+      // Ownership/lifecycle bookkeeping is cleared synchronously.
+      expect(api.terminal.owner("pty-1")).toBeUndefined()
+      expect(api.terminal.lifecycle("pty-1")).toBe("closing")
+
+      // Multi-pane state (pane, focus, zoom) is cleaned up on the next tick
+      // to avoid tearing down a still-rendered pane subtree from the close hook.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
       expect(api.terminal.pane(tabId)).toBeUndefined()
       expect(api.terminal.focus(tabId)).toBeUndefined()
       expect(api.terminal.zoom(tabId)).toBeUndefined()
-      expect(api.terminal.owner("pty-1")).toBeUndefined()
-      expect(api.terminal.lifecycle("pty-1")).toBe("closing")
     } finally {
       dispose()
     }
   })
 
-  test("closing terminal tab clears agent state even when owner link is missing", () => {
+  test("closing terminal tab clears agent state even when owner link is missing", async () => {
     const { api, dispose } = createTestLayout()
     try {
       const tabId = api.topTabs.addTerminal("/ws", "pty-1", "Terminal 1")
@@ -727,10 +864,13 @@ describe("terminal pane isolation", () => {
 
       api.topTabs.close(tabId)
 
-      // Pane is removed on close; agent state/lifecycle still clear correctly.
-      expect(api.terminal.pane(tabId)).toBeUndefined()
+      // Agent state/lifecycle are cleared synchronously.
       expect(api.terminal.agentStatus("pty-1")).toBe("idle")
       expect(api.terminal.lifecycle("pty-1")).toBe("closing")
+
+      // Multi-pane state (including pane) is cleaned up on the next tick.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      expect(api.terminal.pane(tabId)).toBeUndefined()
     } finally {
       dispose()
     }
@@ -908,10 +1048,11 @@ describe("closeGroup deduplicates tabs on merge", () => {
       // Close group 2 → merge into group 1
       api.split.closeGroup(g2)
 
-      // Should have exactly 1 session tab (deduped), not 2
+      // Should have 1 session tab (deduped), not 2 sessions
       const remaining = api.groupTabs(api.split.groups()[0].id)
-      expect(remaining.items()).toHaveLength(1)
-      expect(remaining.items()[0].sessionId).toBe("shared-session")
+      const sessionTabs = remaining.items().filter((t: any) => t.type === "session")
+      expect(sessionTabs).toHaveLength(1)
+      expect(sessionTabs[0].sessionId).toBe("shared-session")
     } finally {
       dispose()
     }
@@ -929,7 +1070,9 @@ describe("closeGroup deduplicates tabs on merge", () => {
       api.split.closeGroup(g2)
 
       const remaining = api.groupTabs(api.split.groups()[0].id)
-      expect(remaining.items()).toHaveLength(2)
+      // 2 session tabs (distinct directories, not deduped)
+      const sessionTabs = remaining.items().filter((t: any) => t.type === "session")
+      expect(sessionTabs).toHaveLength(2)
     } finally {
       dispose()
     }

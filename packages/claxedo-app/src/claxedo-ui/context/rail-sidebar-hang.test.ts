@@ -93,6 +93,9 @@ function createTestLayout() {
     dispose = d
     return initLayout()
   })
+  // Tests exercise floating hover behavior — start unpinned and collapsed
+  api.rail.unpin()
+  api.rail.collapse()
   return { api, dispose }
 }
 
@@ -130,6 +133,7 @@ const TIMER_WAIT = 150
 const RAIL_RECT_COLLAPSED = { top: 28, right: 56, bottom: 800 }
 const RAIL_RECT_EXPANDED = { top: 28, right: 260, bottom: 800 }
 const MID_Y = 400 // Y coordinate safely within rail vertical bounds
+const HOT_ZONE_Y = 50 // Y coordinate within hot zone (top-left corner, <= 80px)
 
 // ---------------------------------------------------------------------------
 // Baseline: normal expand/collapse flow
@@ -473,7 +477,7 @@ describe("rail sidebar: trackPosition handles hot zone and floating collapse", (
       expect(api.rail.collapsed()).toBe(true)
 
       // Mouse at X=5, rail collapsed (right edge irrelevant, but pass collapsed width)
-      api.rail.trackPosition(5, MID_Y, RAIL_RECT_COLLAPSED)
+      api.rail.trackPosition(5, HOT_ZONE_Y, RAIL_RECT_COLLAPSED)
       await sleep(TIMER_WAIT)
 
       expect(api.rail.collapsed()).toBe(false)
@@ -600,7 +604,7 @@ describe("rail sidebar: trackPosition handles hot zone and floating collapse", (
     const { api, dispose } = createTestLayout()
     try {
       // 1. Mouse in hot zone (collapsed) → expand
-      api.rail.trackPosition(5, MID_Y, RAIL_RECT_COLLAPSED)
+      api.rail.trackPosition(5, HOT_ZONE_Y, RAIL_RECT_COLLAPSED)
       await sleep(TIMER_WAIT)
       expect(api.rail.collapsed()).toBe(false)
 
@@ -627,7 +631,7 @@ describe("rail sidebar: trackPosition handles hot zone and floating collapse", (
     const { api, dispose } = createTestLayout()
     try {
       // First cycle
-      api.rail.trackPosition(5, MID_Y, RAIL_RECT_COLLAPSED)
+      api.rail.trackPosition(5, HOT_ZONE_Y, RAIL_RECT_COLLAPSED)
       await sleep(TIMER_WAIT)
       expect(api.rail.collapsed()).toBe(false)
 
@@ -639,7 +643,7 @@ describe("rail sidebar: trackPosition handles hot zone and floating collapse", (
       await sleep(50)
 
       // Second cycle — should work identically
-      api.rail.trackPosition(5, MID_Y, RAIL_RECT_COLLAPSED)
+      api.rail.trackPosition(5, HOT_ZONE_Y, RAIL_RECT_COLLAPSED)
       await sleep(TIMER_WAIT)
       expect(api.rail.collapsed()).toBe(false)
 
@@ -782,7 +786,7 @@ describe("rail sidebar: trackPosition handles vertical exit (Y-axis)", () => {
     const { api, dispose } = createTestLayout()
     try {
       // Expand via hot zone
-      api.rail.trackPosition(5, MID_Y, RAIL_RECT_COLLAPSED)
+      api.rail.trackPosition(5, HOT_ZONE_Y, RAIL_RECT_COLLAPSED)
       await sleep(TIMER_WAIT)
       expect(api.rail.collapsed()).toBe(false)
 
@@ -792,7 +796,7 @@ describe("rail sidebar: trackPosition handles vertical exit (Y-axis)", () => {
       expect(api.rail.collapsed()).toBe(true)
 
       // Mouse comes back to hot zone
-      api.rail.trackPosition(5, MID_Y, RAIL_RECT_COLLAPSED)
+      api.rail.trackPosition(5, HOT_ZONE_Y, RAIL_RECT_COLLAPSED)
       await sleep(TIMER_WAIT)
       expect(api.rail.collapsed()).toBe(false)
     } finally {

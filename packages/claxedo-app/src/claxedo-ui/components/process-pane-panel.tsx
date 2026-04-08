@@ -5,8 +5,7 @@
  * Shows a title bar with process name, status dot, and controls,
  * plus a terminal area connected to the process's PTY via WebSocket.
  *
- * IMPORTANT: Never unmount terminal instances — use CSS hidden class
- * for visibility toggling to avoid expensive remounts.
+ * Process terminals stay dormant while their tab is in the background.
  */
 
 import { Show, createMemo } from "solid-js"
@@ -15,22 +14,21 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import type { LocalPTY } from "@/context/terminal"
-import type { Process } from "../../opencode-patches/process/process"
+import type { Process } from "@claxedo/process/process"
 
 type ProcessStatus = Process.Status
 
 export type ProcessPanePanelProps = {
   config: Process.ProcessConfig
+  active?: boolean
   process: Process.ManagedProcess | undefined
-  /** Whether this panel is the last one (no right-edge drag handle) */
-  isLast: boolean
   onStart: () => void
   onStop: () => void
   onRestart: () => void
+  onResolveConflict?: (strategy: "kill-existing" | "pick-new") => void
+  onDismissConflict?: () => void
   /** Open the edit dialog for this process config */
   onEdit?: () => void
-  /** Right-edge resize handle callback */
-  onResizeStart?: (event: PointerEvent) => void
 }
 
 const STATUS_COLORS: Record<ProcessStatus, string> = {
@@ -88,15 +86,17 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
   const status = createMemo((): ProcessStatus => props.process?.status ?? "idle")
   const ptyId = createMemo(() => props.process?.ptyId)
   const hasTerminal = createMemo(() => !!ptyId())
+  const live = createMemo(() => props.active ?? true)
   const isActive = createMemo(() => ["running", "starting", "restarting", "stopping"].includes(status()))
   const canStop = createMemo(() => hasTerminal() || isActive())
   const canStart = createMemo(() => !hasTerminal() && !isActive())
-  const portlessUrl = createMemo(() => {
-    if (!props.config.portless?.hostname) return undefined
-    const h = props.config.portless.hostname.trim().toLowerCase()
-    if (!h) return undefined
-    return `http://${h.endsWith(".localhost") ? h : h + ".localhost"}:1355`
+  const portUrl = createMemo(() => {
+    const port = props.process?.assignedPort
+    if (!port) return undefined
+    return `http://localhost:${port}`
   })
+  const conflict = createMemo(() => props.process?.conflict)
+  const hit = createMemo(() => conflict())
 
   // Construct a LocalPTY object from the managed process data.
   // The Terminal component uses this to connect via WebSocket.
@@ -109,9 +109,20 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
       titleNumber: 0,
     }
   })
+  const visiblePty = createMemo(() => {
+    const next = pty()
+    if (!live()) return undefined
+    return next
+  })
 
   return (
-    <div class="flex flex-col h-full min-w-0 overflow-hidden bg-background-base relative">
+    <div
+      class="flex flex-col h-full min-w-0 overflow-hidden bg-background-base relative"
+      data-component="process-pane-panel"
+      data-process-id={props.config.id}
+      data-process-name={props.config.name}
+      data-testid="process-pane-panel"
+    >
       {/* Title bar */}
       <div class="shrink-0 h-8 flex items-center gap-2 px-2 border-b border-border-weaker-base/50 bg-background-stronger/80 backdrop-blur select-none">
         {/* Color indicator + name */}
@@ -124,15 +135,15 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
         <StatusDot status={status()} />
         <span class="text-[12px] font-medium text-text-weak whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0 flex items-center gap-1.5">
           {props.config.name}
-          <Show when={portlessUrl() && isActive()}>
+          <Show when={portUrl() && isActive()}>
             <a
-              href={portlessUrl()!}
+              href={portUrl()!}
               target="_blank"
               rel="noopener noreferrer"
               class="text-[11px] text-accent hover:underline font-normal truncate"
               onClick={(e) => e.stopPropagation()}
             >
-              {portlessUrl()}
+              {portUrl()}
             </a>
           </Show>
         </span>
@@ -146,6 +157,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                 variant="ghost"
                 onClick={props.onStart}
                 aria-label="Start process"
+                data-process-action="start"
               />
             </Tooltip>
           </Show>
@@ -156,6 +168,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                 variant="ghost"
                 onClick={props.onStop}
                 aria-label="Stop process"
+                data-process-action="stop"
               />
             </Tooltip>
           </Show>
@@ -166,6 +179,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                 variant="ghost"
                 onClick={props.onRestart}
                 aria-label="Restart process"
+                data-process-action="restart"
               />
             </Tooltip>
           </Show>
@@ -185,7 +199,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
       {/* Terminal area */}
       <div class="flex-1 min-h-0 relative">
         <Show
-          when={pty()}
+          when={visiblePty()}
           fallback={
             <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-text-weak bg-background-base cursor-default">
               <Show
@@ -193,21 +207,24 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                 fallback={
                   <>
                     <span class="text-[18px] animate-pulse tracking-widest">...</span>
-                    <span class="text-[12px]">{STATUS_LABELS[status()]}</span>
+                    <span class="text-[12px]">{live() ? STATUS_LABELS[status()] : "Inactive"}</span>
                   </>
                 }
               >
                 <Icon name="console" size="medium" />
                 <span class="text-[12px]">
-                  {status() === "crashed"
+                  {!live()
+                    ? "Process hidden while tab is inactive"
+                    : status() === "crashed"
                     ? `Crashed (exit ${props.process?.exitCode ?? "?"})`
                     : "Process not running"}
                 </span>
-                <Show when={canStart()}>
+                <Show when={canStart() && live()}>
                   <button
                     type="button"
                     class="px-3 py-1.5 rounded text-[12px] font-medium bg-surface-base-hover hover:bg-surface-base-active text-text-base transition-colors"
                     onClick={props.onStart}
+                    data-process-action="start-fallback"
                   >
                     Start
                   </button>
@@ -216,19 +233,31 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
             </div>
           }
         >
-          {(p) => (
-            <Terminal pty={p()} />
-          )}
+          <Terminal pty={visiblePty()!} />
+        </Show>
+        <Show when={hit()}>
+          <div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-text-weak bg-background-base cursor-default">
+            <span class="text-[12px]">
+              Port <span class="font-mono font-medium text-text-base">{hit()!.port}</span> is in use
+            </span>
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded text-[12px] font-medium bg-surface-base-hover hover:bg-surface-base-active text-text-base transition-colors cursor-pointer"
+              onClick={() => props.onResolveConflict?.("pick-new")}
+            >
+              Use another port
+            </button>
+            <button
+              type="button"
+              class="text-[11px] text-text-weakest hover:text-text-weak transition-colors cursor-pointer"
+              onClick={() => props.onResolveConflict?.("kill-existing")}
+            >
+              Kill process &amp; reclaim
+            </button>
+          </div>
         </Show>
       </div>
 
-      {/* Right-edge drag handle */}
-      <Show when={props.onResizeStart}>
-        <div
-          class="absolute top-0 right-0 w-[4px] h-full cursor-col-resize z-10 hover:bg-blue-500/30 transition-colors"
-          onPointerDown={(e) => props.onResizeStart?.(e)}
-        />
-      </Show>
     </div>
   )
 }

@@ -3,8 +3,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 
 let activeTab: any
 const addFile = vi.fn()
+const addReviewWorkspace = vi.fn()
 const patchTab = vi.fn()
 const diff = vi.fn()
+const sendFocusFile = vi.fn()
+const toggleReviewWorkspace = vi.fn()
+const hasReviewWorkspace = vi.fn()
+const activeLayout = vi.fn()
 let syncStore: any
 const treeCalls: any[] = []
 
@@ -13,8 +18,14 @@ vi.mock("../context/claxedo-layout", () => ({
     groupTabs: () => ({
       active: () => activeTab,
       addFile,
+      addReviewWorkspace,
     }),
     patchTab,
+    multiPane: {
+      toggleReviewWorkspace,
+      hasReviewWorkspace,
+      activeLayout,
+    },
   }),
 }))
 
@@ -29,6 +40,10 @@ vi.mock("@opencode-ai/claxedo-app", () => ({
   useGlobalSync: () => ({
     child: () => [syncStore],
   }),
+}))
+
+vi.mock("../context/pane-bus", () => ({
+  sendFocusFile,
 }))
 
 vi.mock("./directory-scope", () => ({
@@ -66,16 +81,26 @@ beforeEach(() => {
   syncStore = { message: {} }
   treeCalls.length = 0
   addFile.mockReset()
+  addReviewWorkspace.mockReset()
+  addReviewWorkspace.mockReturnValue("review-workspace-created")
   patchTab.mockReset()
   diff.mockReset()
+  sendFocusFile.mockReset()
+  sendFocusFile.mockReturnValue(0)
+  toggleReviewWorkspace.mockReset()
+  hasReviewWorkspace.mockReset()
+  hasReviewWorkspace.mockReturnValue(false)
+  activeLayout.mockReset()
+  activeLayout.mockReturnValue(undefined)
 })
 
 describe("FileTreeSidebar", () => {
-  test("opens file tab in normal mode", () => {
+  test("opens a review workspace in normal mode", async () => {
     activeTab = {
       id: "session-1",
       type: "session",
       directory: "/ws",
+      sessionId: "ses_0",
     }
 
     render(() => (
@@ -93,12 +118,16 @@ describe("FileTreeSidebar", () => {
 
     fireEvent.click(screen.getByTestId("file-src/app.ts"))
 
-    expect(addFile).toHaveBeenCalledWith("/ws", "src/app.ts", "app.ts")
+    expect(toggleReviewWorkspace).toHaveBeenCalledWith("session-1", "/ws", "ses_0", "session")
+    await waitFor(() => {
+      expect(sendFocusFile).toHaveBeenCalledWith("session-1", "src/app.ts")
+    })
     expect(patchTab).not.toHaveBeenCalled()
+    expect(addReviewWorkspace).not.toHaveBeenCalled()
     expect(screen.getByText("Files")).toBeInTheDocument()
   })
 
-  test("review mode shows changed files and focuses diff instead of opening tab", async () => {
+  test("legacy review mode opens a review workspace instead of patching the old review tab", async () => {
     activeTab = {
       id: "review-1",
       type: "review",
@@ -149,14 +178,12 @@ describe("FileTreeSidebar", () => {
 
     fireEvent.click(screen.getByTestId("file-src/changed.ts"))
 
-    expect(patchTab).toHaveBeenCalledWith(
-      "review-1",
-      expect.objectContaining({
-        reviewFocusPath: "src/changed.ts",
-        reviewFocusVersion: 5,
-      }),
-    )
+    expect(toggleReviewWorkspace).toHaveBeenCalledWith("review-1", "/ws", "ses_1", "session")
+    await waitFor(() => {
+      expect(sendFocusFile).toHaveBeenCalledWith("review-1", "src/changed.ts")
+    })
     expect(addFile).not.toHaveBeenCalled()
+    expect(patchTab).not.toHaveBeenCalled()
     expect(screen.getByText("Changed files")).toBeInTheDocument()
   })
 
@@ -209,5 +236,58 @@ describe("FileTreeSidebar", () => {
 
     expect(diff).not.toHaveBeenCalled()
     expect(screen.getByText("Changed files")).toBeInTheDocument()
+  })
+
+  test("review-workspace mode keeps file opens inside the active review tab", () => {
+    activeTab = {
+      id: "review-workspace-1",
+      type: "review-workspace",
+      directory: "/ws",
+      sessionId: "ses_3",
+    }
+    sendFocusFile.mockReturnValue(1)
+
+    render(() => (
+      <FileTreeSidebar
+        groupId="g-default"
+        directory="/ws"
+        opened
+        width={320}
+        mobile={false}
+        onResize={() => {}}
+        onCollapse={() => {}}
+        onCloseMobile={() => {}}
+      />
+    ))
+
+    fireEvent.click(screen.getByTestId("file-src/app.ts"))
+
+    expect(sendFocusFile).toHaveBeenCalledWith("review-workspace-1", "src/app.ts")
+    expect(toggleReviewWorkspace).not.toHaveBeenCalled()
+    expect(addFile).not.toHaveBeenCalled()
+    expect(patchTab).not.toHaveBeenCalled()
+  })
+
+  test("creates a review workspace tab when no tab is active", async () => {
+    render(() => (
+      <FileTreeSidebar
+        groupId="g-default"
+        directory="/ws"
+        opened
+        width={320}
+        mobile={false}
+        onResize={() => {}}
+        onCollapse={() => {}}
+        onCloseMobile={() => {}}
+      />
+    ))
+
+    fireEvent.click(screen.getByTestId("file-src/app.ts"))
+
+    expect(addReviewWorkspace).toHaveBeenCalledWith("/ws", "new", "Review", undefined, "uncommitted")
+    await waitFor(() => {
+      expect(sendFocusFile).toHaveBeenCalledWith("review-workspace-created", "src/app.ts")
+    })
+    expect(toggleReviewWorkspace).not.toHaveBeenCalled()
   })
 })

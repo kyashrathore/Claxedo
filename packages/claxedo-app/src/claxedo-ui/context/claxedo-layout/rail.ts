@@ -2,9 +2,11 @@ import { batch, createMemo, onCleanup, type Accessor } from "solid-js"
 import type { SetStoreFunction } from "solid-js/store"
 import type { ClaxedoLayoutStore } from "./types"
 
-export const RAIL_COLLAPSED_WIDTH = 56
+export const RAIL_COLLAPSED_WIDTH = 0
 export const RAIL_EXPANDED_WIDTH = 260
-export const HOT_ZONE_WIDTH = 12
+export const HOT_ZONE_WIDTH = 20
+/** Hot zone limited to top-left corner near the sidebar toggle button */
+const HOT_ZONE_HEIGHT = 80
 
 const EXPAND_DELAY_MS = 100
 const COLLAPSE_DELAY_MS = 100
@@ -155,7 +157,8 @@ export function createRailState(input: { store: ClaxedoLayoutStore; setStore: Se
       if (store.rail.pinned) return
 
       if (store.rail.collapsed) {
-        if (clientX <= HOT_ZONE_WIDTH) {
+        // Only trigger in top-left corner — near where the sidebar toggle button lives
+        if (clientX <= HOT_ZONE_WIDTH && clientY <= HOT_ZONE_HEIGHT) {
           rail.handleHotZoneEnter()
         }
         return

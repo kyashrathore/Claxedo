@@ -1,15 +1,19 @@
-import { batch, createMemo, type Accessor } from "solid-js"
+import { batch, createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
 import type { SetStoreFunction } from "solid-js/store"
 import { createLayoutDispatcher } from "./commands"
 import { createGroupAccessors } from "./groups"
-import { createMultiPaneState } from "./multi-pane"
+import { createMultiPaneState, processSessionLayout, reviewSessionLayout } from "./multi-pane"
 import { HOT_ZONE_WIDTH, RAIL_COLLAPSED_WIDTH, RAIL_EXPANDED_WIDTH, createRailState } from "./rail"
 import { createLayoutSelectors } from "./selectors"
 import { createSplitActions } from "./split"
 import { createTabTypeRegistry } from "./tab-type-registry"
 import { createTerminalState } from "./terminal"
 import { createWorkspaceRecency } from "./workspace-recency"
-import type { ClaxedoLayoutStore, TabItem } from "./types"
+import { isGlobalTab, realDirectory, type ClaxedoLayoutStore, type TabItem, type TabScope } from "./types"
+import { createDebugLogger } from "../../../overrides/utils/debug"
+import { clearOpenSessions, setOpenSessions } from "../../../overrides/context/global-sync/open-sessions"
+
+const _suppressedAutoTab = new Set<string>()
 
 const WORKTREE_COLORS = [
   "#3b82f6", // blue
@@ -29,7 +33,28 @@ export function createClaxedoLayoutFacade(input: {
   setStore: SetStoreFunction<ClaxedoLayoutStore>
   ready: Accessor<boolean>
 }) {
+  type NewTab = Omit<TabItem, "id" | "scope"> & { scope?: TabScope }
   const { store, setStore, ready } = input
+  const debug = createDebugLogger("layout.process", "layout:process", {
+    legacyKey: "opencode.debug.terminal",
+  })
+  const real = realDirectory
+  const snap = (groupId: string) => {
+    const group = store.groups.find((g) => g.id === groupId)
+    if (!group) return { found: false }
+    return {
+      found: true,
+      activeId: group.tabs.activeId,
+      defaultDir: group.worktree.default,
+      pinnedDir: group.worktree.pinned,
+      tabs: group.tabs.items.map((tab) => ({
+        id: tab.id,
+        type: tab.type,
+        dir: tab.directory,
+        active: tab.id === group.tabs.activeId,
+      })),
+    }
+  }
 
   const focusedGroup = () => {
     const id = store.split.focusedId
@@ -61,6 +86,18 @@ export function createClaxedoLayoutFacade(input: {
     findTabGroup,
     multiPane: multiPaneState,
   })
+  // Closing a tab removes it from the tab list in the same transaction.
+  // Deferring multi-pane cleanup avoids tearing down a still-rendered pane
+  // subtree from the close hook itself, which can wedge the UI on process tabs.
+  const clearLater = (tabId: string) => {
+    setTimeout(() => {
+      // Guard: only clear if the tab was actually removed from items.
+      // If setGroupItems silently failed (idx === -1), the tab is still live
+      // and clearing its multi-pane state would cause content to vanish.
+      if (findTabGroup(tabId)) return
+      multiPaneState.clearTab(tabId)
+    }, 0)
+  }
 
   const tabTypes = createTabTypeRegistry()
 
@@ -68,21 +105,21 @@ export function createClaxedoLayoutFacade(input: {
     onAdd: (tab) =>
       multiPaneState.initTabWithContent(tab.id, {
         type: "terminal",
-        directory: tab.directory,
+        directory: tab.directory!,
         terminalId: tab.terminalId,
         title: tab.title,
       }),
     onClose: (tabId) => {
       terminalState.clearTerminalTabState(tabId)
-      multiPaneState.clearTab(tabId)
+      clearLater(tabId)
     },
     onReopen: (tab, helper) => {
       const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-      const reopened = helper.addTerminal(tab.directory, pendingId, tab.title || "Terminal")
+      const reopened = helper.addTerminal(tab.directory!, pendingId, tab.title || "Terminal")
       if (!reopened) return false
       terminalState.terminal.queueCreateForTab(
         reopened,
-        tab.directory,
+        tab.directory!,
         undefined,
         tab.title,
         helper.groupId,
@@ -99,7 +136,7 @@ export function createClaxedoLayoutFacade(input: {
   })
 
   tabTypes.register("multi-pane", {
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onAdd: (tab) => multiPaneState.initTab(tab.id, tab.directory),
   })
 
@@ -107,11 +144,11 @@ export function createClaxedoLayoutFacade(input: {
     onAdd: (tab) =>
       multiPaneState.initTabWithContent(tab.id, {
         type: "session",
-        directory: tab.directory,
+        directory: tab.directory!,
         sessionId: tab.sessionId,
         title: tab.title,
       }),
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
     mergeDedupeKey: (tab) => (tab.sessionId ? `session:${tab.sessionId}:${tab.directory}` : undefined),
   })
@@ -120,14 +157,14 @@ export function createClaxedoLayoutFacade(input: {
     onAdd: (tab) =>
       multiPaneState.initTabWithContent(tab.id, {
         type: "review",
-        directory: tab.directory,
+        directory: tab.directory!,
         sessionId: tab.sessionId,
         title: tab.title,
         reviewMode: tab.reviewMode,
         reviewFromRef: tab.reviewFromRef,
         reviewToRef: tab.reviewToRef,
       }),
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
     mergeDedupeKey: (tab) =>
       tab.sessionId
@@ -142,15 +179,43 @@ export function createClaxedoLayoutFacade(input: {
         : undefined,
   })
 
+  tabTypes.register("review-workspace", {
+    onAdd: (tab) =>
+      multiPaneState.initTab(
+        tab.id,
+        tab.directory!,
+        reviewSessionLayout({
+          directory: tab.directory!,
+          sessionId: tab.sessionId ?? "new",
+          reviewMode: tab.reviewMode,
+          reviewFromRef: tab.reviewFromRef,
+          reviewToRef: tab.reviewToRef,
+        }),
+      ),
+    onClose: (tabId) => clearLater(tabId),
+    onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
+    mergeDedupeKey: (tab) =>
+      tab.sessionId
+        ? [
+            "review-workspace",
+            tab.sessionId,
+            tab.directory,
+            tab.reviewMode ?? "session",
+            tab.reviewFromRef ?? "",
+            tab.reviewToRef ?? "",
+          ].join(":")
+        : undefined,
+  })
+
   tabTypes.register("context", {
     onAdd: (tab) =>
       multiPaneState.initTabWithContent(tab.id, {
         type: "context",
-        directory: tab.directory,
+        directory: tab.directory!,
         sessionId: tab.sessionId,
         title: tab.title,
       }),
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
     mergeDedupeKey: (tab) => (tab.sessionId ? `context:${tab.sessionId}:${tab.directory}` : undefined),
   })
@@ -159,33 +224,69 @@ export function createClaxedoLayoutFacade(input: {
     onAdd: (tab) =>
       multiPaneState.initTabWithContent(tab.id, {
         type: "file",
-        directory: tab.directory,
+        directory: tab.directory!,
         filePath: tab.filePath,
         title: tab.title,
       }),
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
   })
 
   tabTypes.register("page", {
     onAdd: (tab) => {
-      if (tab.pageId && tab.directory && tab.directory !== "__pages__") {
+      if (tab.pageId && !isGlobalTab(tab) && tab.directory) {
         multiPaneState.initPageSessionTab(tab.id, {
           directory: tab.directory,
           pageId: tab.pageId,
+          filePath: tab.filePath,
           title: tab.title,
         })
         return
       }
       multiPaneState.initTabWithContent(tab.id, {
         type: "page",
-        directory: tab.directory,
-        pageId: tab.pageId,
+        ...(tab.directory ? { directory: tab.directory } : {}),
+        pageId: tab.pageId!,
+        filePath: tab.filePath,
         title: tab.title,
       })
     },
-    onClose: (tabId) => multiPaneState.clearTab(tabId),
+    onClose: (tabId) => clearLater(tabId),
     onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
+  })
+
+  tabTypes.register("pages-index", {
+    onAdd: (tab) =>
+      multiPaneState.initTabWithContent(tab.id, {
+        type: "pages-index",
+        ...(tab.directory ? { directory: tab.directory } : {}),
+        title: tab.title,
+      }),
+    onClose: (tabId) => clearLater(tabId),
+    onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
+  })
+
+  tabTypes.register("workgraph", {
+    onAdd: (tab) =>
+      multiPaneState.initTabWithContent(tab.id, {
+        type: "workgraph",
+        ...(tab.directory ? { directory: tab.directory } : {}),
+        title: tab.title,
+      }),
+    onClose: (tabId) => clearLater(tabId),
+    onMergeDrop: (tabId) => multiPaneState.clearTab(tabId),
+  })
+
+  tabTypes.register("process", {
+    onAdd: (tab) =>
+      multiPaneState.initTab(
+        tab.id,
+        tab.directory!,
+        processSessionLayout({ directory: tab.directory! }),
+      ),
+    onClose: (tabId) => clearLater(tabId),
+    excludeFromMerge: true,
+    mergeDedupeKey: (tab) => `process:${tab.directory}`,
   })
 
   const {
@@ -201,12 +302,36 @@ export function createClaxedoLayoutFacade(input: {
     getTabHooks: tabTypes.get,
   })
 
+  createEffect(() => {
+    setOpenSessions(
+      store.groups.flatMap((group) =>
+        group.tabs.items.flatMap((tab) => {
+          const dir = realDirectory(tab.directory)
+          if (!dir || !tab.sessionId || tab.sessionId === "new") return []
+          if (
+            tab.type !== "session" &&
+            tab.type !== "review" &&
+            tab.type !== "review-workspace" &&
+            tab.type !== "context"
+          ) {
+            return []
+          }
+          return [{ directory: dir, sessionId: tab.sessionId }]
+        }),
+      ),
+    )
+  })
+
+  onCleanup(() => clearOpenSessions())
+
   const defaultForNewGroup = () => {
     const primary = store.groups[0]
     if (!primary) return null
-    if (primary.worktree.default) return primary.worktree.default
+    if (real(primary.worktree.default)) return primary.worktree.default
     if (!primary.tabs.activeId) return null
     const active = primary.tabs.items.find((t) => t.id === primary.tabs.activeId)
+    // Skip process tab — it uses a synthetic "__process__" directory
+    if (active?.type === "process") return null
     return active?.directory ?? null
   }
 
@@ -223,39 +348,337 @@ export function createClaxedoLayoutFacade(input: {
     setStore,
   })
 
+  const resolve = (groupId: string, dir?: string) => {
+    const group = store.groups.find((g) => g.id === groupId)
+    if (!group) return
+    const out =
+      real(dir) ??
+      real(group.worktree.pinned) ??
+      real(group.worktree.default) ??
+      real(group.tabs.items.find((tab) => tab.id === group.tabs.activeId && tab.type !== "process")?.directory) ??
+      real(group.tabs.items.find((tab) => tab.type !== "process")?.directory)
+    debug.verbose("resolve", {
+      groupId,
+      in: dir ?? null,
+      out: out ?? null,
+      ...snap(groupId),
+    })
+    return out
+  }
+
+  const repair = (groupId: string, dir?: string) => {
+    const next = resolve(groupId, dir)
+    if (!next) {
+      debug.log("repair skipped", {
+        groupId,
+        in: dir ?? null,
+        reason: "no-directory",
+        ...snap(groupId),
+      })
+      return
+    }
+    const gi = store.groups.findIndex((g) => g.id === groupId)
+    if (gi === -1) return
+
+    const exact = store.groups[gi].tabs.items.find((tab) => tab.type === "process" && tab.directory === next)
+    if (exact) {
+      if (!real(store.groups[gi].worktree.default)) {
+        setStore("groups", gi, "worktree", "default", next)
+      }
+      debug.verbose("repair exact", {
+        groupId,
+        dir: next,
+        tabId: exact.id,
+      })
+      return exact
+    }
+
+    const tab = store.groups[gi].tabs.items.find((item) => item.type === "process" && !real(item.directory))
+    if (!tab) {
+      debug.log("repair skipped", {
+        groupId,
+        dir: next,
+        reason: "no-stale-process-tab",
+        ...snap(groupId),
+      })
+      return
+    }
+
+    batch(() => {
+      if (!real(store.groups[gi].worktree.default)) {
+        setStore("groups", gi, "worktree", "default", next)
+      }
+      setStore("groups", gi, "tabs", "items", (items) =>
+        items.map((item) => (item.id === tab.id ? { ...item, directory: next } : item)),
+      )
+    })
+
+    if (multiPaneState.getState(tab.id)) {
+      for (const leafId of multiPaneState.leafIds(tab.id)) {
+        const content = multiPaneState.getContent(tab.id, leafId)
+        if (!content || content.type !== "process" || content.directory === next) continue
+        multiPaneState.setContent(tab.id, leafId, {
+          ...content,
+          directory: next,
+        })
+      }
+    }
+
+    debug.log("repair applied", {
+      groupId,
+      from: tab.directory,
+      to: next,
+      tabId: tab.id,
+      ...snap(groupId),
+    })
+    return { ...tab, directory: next }
+  }
+
+  // ── Ensure existing process tabs have multi-pane state ─────────────
+  // Process tabs are only created via the "Processes" menu option.
+  // This effect ensures persisted process tabs get their multi-pane state
+  // initialized on reload (the onAdd hook doesn't fire for persisted tabs).
+  createEffect(
+    on(
+      () =>
+        store.groups.map((group) => ({
+          id: group.id,
+          defaultDirectory: group.worktree.default,
+          pinnedDirectory: group.worktree.pinned,
+          fallbackDirectory: group.tabs.items.find((tab) => tab.type !== "process")?.directory ?? null,
+          processTabs: group.tabs.items
+            .filter((tab) => tab.type === "process")
+            .map((tab) => ({ id: tab.id, directory: tab.directory })),
+        })),
+      (groups) => {
+        for (const group of groups) {
+          const gi = store.groups.findIndex((g) => g.id === group.id)
+          if (gi === -1) continue
+          for (const processTab of group.processTabs) {
+            const dir = real(processTab.directory) ?? resolve(group.id)
+            if (!dir) continue
+
+            batch(() => {
+              if (!real(store.groups[gi].worktree.default)) {
+                setStore("groups", gi, "worktree", "default", dir)
+              }
+            })
+
+            if (processTab.directory !== dir) {
+              setStore("groups", gi, "tabs", "items", (items) =>
+                items.map((tab) => (tab.id === processTab.id ? { ...tab, directory: dir } : tab)),
+              )
+            }
+
+            if (!multiPaneState.getState(processTab.id)) {
+              multiPaneState.initTab(
+                processTab.id,
+                dir,
+                processSessionLayout({ directory: dir }),
+              )
+              continue
+            }
+
+            for (const leafId of multiPaneState.leafIds(processTab.id)) {
+              const content = multiPaneState.getContent(processTab.id, leafId)
+              if (!content || content.type !== "process") continue
+              if (content.directory === dir) continue
+              multiPaneState.setContent(processTab.id, leafId, {
+                ...content,
+                directory: dir,
+              })
+            }
+          }
+        }
+      },
+    ),
+  )
+
   const enabled = createMemo(() => store.enabled)
   const setEnabled = (value: boolean) => setStore("enabled", value)
 
+  /** Find the process tab in the focused group. */
+  const findProcessTab = (directory?: string, groupId?: string) => {
+    const gid = groupId ?? store.split.focusedId ?? store.groups[0]?.id
+    if (!gid) return undefined
+    const group = store.groups.find((g) => g.id === gid)
+    if (!group) return undefined
+    const dir = resolve(gid, directory)
+    if (!directory && !dir) {
+      const tab = group.tabs.items.find((t) => t.type === "process" && !!real(t.directory))
+      debug.log("find process tab", {
+        gid,
+        in: null,
+        dir: null,
+        tabId: tab?.id,
+        reason: tab ? "real-process-fallback" : "no-real-process-tab",
+        ...snap(gid),
+      })
+      return tab
+    }
+    if (!dir) return undefined
+    const exact = group.tabs.items.find((t) => t.type === "process" && t.directory === dir)
+    if (exact) {
+      debug.verbose("find process tab", {
+        gid,
+        in: directory ?? null,
+        dir,
+        tabId: exact.id,
+        reason: "exact",
+      })
+      return exact
+    }
+    const tab = repair(gid, dir)
+    debug.log("find process tab", {
+      gid,
+      in: directory ?? null,
+      dir,
+      tabId: tab?.id,
+      reason: tab ? "repaired" : "missing",
+      ...snap(gid),
+    })
+    return tab
+  }
+
+  /** Check if the process tab for a directory is currently active in the focused group. */
+  const isProcessTabActive = (directory?: string, groupId?: string) => {
+    const gid = groupId ?? store.split.focusedId ?? store.groups[0]?.id
+    if (!gid) return false
+    const group = store.groups.find((g) => g.id === gid)
+    if (!group) return false
+    const processTab = findProcessTab(directory, gid)
+    return !!processTab && group.tabs.activeId === processTab.id
+  }
+
+  // Transient signal — not persisted, set by ProcessPaneProvider effect
+  const [processesRunning, setProcessesRunning] = createSignal<Record<string, boolean>>({})
+
+  const running = (directory?: string | null) => {
+    const dir = real(directory)
+    if (!dir) return false
+    return !!processesRunning()[dir]
+  }
+
+  function setRunning(directory: string | null | undefined, value: boolean) {
+    const dir = real(directory)
+    if (!dir) return
+    setProcessesRunning((all) => {
+      if (value) {
+        if (all[dir]) return all
+        return { ...all, [dir]: true }
+      }
+      if (!all[dir]) return all
+      const next = { ...all }
+      delete next[dir]
+      return next
+    })
+  }
+
   const processPaneState = {
-    /** Monotonically increasing counter — watch with `on(..., { defer: true })` to react to toggle requests. */
-    toggleVersion: () => store.processPane.toggleVersion,
     /** Optional process pane target directory requested by top-bar workspace indicators. */
     targetDirectory: () => store.processPane.targetDirectory,
-    /** Fire a toggle request (from keyboard shortcut or other global UI). */
+    /** Fire a toggle request: if process tab is active, switch back; otherwise activate it. */
     requestToggle(directory?: string) {
-      setStore("processPane", "targetDirectory", directory ?? null)
-      setStore("processPane", "toggleVersion", (v) => (v ?? 0) + 1)
+      const gid = store.split.focusedId ?? store.groups[0]?.id
+      const dir = gid ? resolve(gid, directory) : real(directory)
+      setStore("processPane", "targetDirectory", dir ?? null)
+      debug.log("request toggle", {
+        gid: gid ?? null,
+        in: directory ?? null,
+        dir: dir ?? null,
+        target: store.processPane.targetDirectory ?? null,
+      })
+      if (!gid) return
+      const gi = store.groups.findIndex((g) => g.id === gid)
+      if (gi === -1) return
+      const group = store.groups[gi]
+      const processTab = directory ? (dir ? findProcessTab(dir, gid) : undefined) : findProcessTab(undefined, gid)
+      if (!processTab) {
+        debug.log("request toggle blocked", {
+          gid,
+          in: directory ?? null,
+          dir: dir ?? null,
+          reason: "no-process-tab",
+          ...snap(gid),
+        })
+        return
+      }
+
+      if (group.tabs.activeId === processTab.id) {
+        // Toggle off: switch to the most recent non-process tab
+        const order = group.tabs.order.length ? group.tabs.order : group.tabs.items.map((t) => t.id)
+        const prev = order.filter((id) => id !== processTab.id)
+        const fallback = prev[prev.length - 1] ?? null
+        setStore("groups", gi, "tabs", "activeId", fallback)
+      } else {
+        // Toggle on: activate the process tab
+        setStore("groups", gi, "tabs", "activeId", processTab.id)
+        setStore("processPane", "crashedWhileClosed", false)
+      }
     },
-    /** Request the pane to open on next ProcessPaneProvider mount (workspace switch). */
+    /** Request the process tab to be activated (no toggle-back). */
     requestOpen(directory?: string) {
-      setStore("processPane", "targetDirectory", directory ?? null)
-      setStore("processPane", "pendingOpen", true)
+      const gid = store.split.focusedId ?? store.groups[0]?.id
+      const dir = gid ? resolve(gid, directory) : real(directory)
+      setStore("processPane", "targetDirectory", dir ?? null)
+      debug.log("request open", {
+        gid: gid ?? null,
+        in: directory ?? null,
+        dir: dir ?? null,
+        target: store.processPane.targetDirectory ?? null,
+      })
+      if (!gid) return
+      const gi = store.groups.findIndex((g) => g.id === gid)
+      if (gi === -1) return
+      const processTab = directory ? (dir ? findProcessTab(dir, gid) : undefined) : findProcessTab(undefined, gid)
+      if (!processTab) {
+        debug.log("request open blocked", {
+          gid,
+          in: directory ?? null,
+          dir: dir ?? null,
+          reason: "no-process-tab",
+          ...snap(gid),
+        })
+        return
+      }
+      setStore("groups", gi, "tabs", "activeId", processTab.id)
+      setStore("processPane", "crashedWhileClosed", false)
     },
     /** Set/clear the current process pane target directory without opening/toggling. */
     setTargetDirectory(directory: string | null) {
-      setStore("processPane", "targetDirectory", directory)
+      setStore("processPane", "targetDirectory", real(directory) ?? null)
     },
-    /** Consume the pendingOpen flag (called by ProcessPaneProvider on mount). */
-    consumePendingOpen(): boolean {
-      const pending = store.processPane.pendingOpen
-      if (pending) setStore("processPane", "pendingOpen", false)
-      return pending
-    },
-    /** True when a process crashed while the pane was closed — drives workspace dot alert ring. */
+    /** True when a process crashed while the process tab is not active — drives workspace dot alert ring. */
     crashedWhileClosed: () => store.processPane.crashedWhileClosed,
     /** Set the crashedWhileClosed flag (called by ProcessPaneProvider on crash SSE). */
     setCrashedWhileClosed(value: boolean) {
       setStore("processPane", "crashedWhileClosed", value)
+    },
+    /** True when any configured process is running/starting/restarting in the given workspace. */
+    running,
+    /** Set by ProcessPaneProvider to sync hasRunning() into the facade for one workspace. */
+    setRunning,
+    /** Check if the process tab is the active tab in the focused group. */
+    isActive: isProcessTabActive,
+    /** Find the process tab in the focused group. */
+    findProcessTab,
+    /** Request Start All action (consumed by ProcessPaneProvider). */
+    requestStartAll() {
+      setStore("processPane", "pendingAction", "startAll")
+    },
+    /** Request Stop All action (consumed by ProcessPaneProvider). */
+    requestStopAll() {
+      setStore("processPane", "pendingAction", "stopAll")
+    },
+    /** Request Add Process action (consumed by ProcessPaneProvider). */
+    requestAddProcess() {
+      setStore("processPane", "pendingAction", "add")
+    },
+    /** Read the pending action. */
+    pendingAction: () => store.processPane.pendingAction,
+    /** Clear the pending action after consumption. */
+    clearPendingAction() {
+      setStore("processPane", "pendingAction", null)
     },
   }
 
@@ -281,7 +704,7 @@ export function createClaxedoLayoutFacade(input: {
     const tabs = groupTabsState(groupId)
     return {
       ...tabs,
-      add(tab: Omit<TabItem, "id">) {
+      add(tab: NewTab) {
         return asTabId(dispatch({ type: "TabAddRequested", groupId, tab }))
       },
       addSession(directory: string, sessionId: string, title: string, badge?: TabItem["badge"]) {
@@ -313,14 +736,43 @@ export function createClaxedoLayoutFacade(input: {
           }),
         )
       },
+      addReviewWorkspace(
+        directory: string,
+        sessionId: string,
+        title: string,
+        badge?: TabItem["badge"],
+        reviewMode?: TabItem["reviewMode"],
+        reviewFromRef?: string,
+        reviewToRef?: string,
+      ) {
+        return asTabId(
+          dispatch({
+            type: "ReviewWorkspaceTabAddRequested",
+            groupId,
+            directory,
+            sessionId,
+            title,
+            badge,
+            reviewMode,
+            reviewFromRef,
+            reviewToRef,
+          }),
+        )
+      },
       addContext(directory: string, sessionId: string, title: string) {
         return asTabId(dispatch({ type: "ContextTabAddRequested", groupId, directory, sessionId, title }))
       },
       addFile(directory: string, filePath: string, title: string) {
         return asTabId(dispatch({ type: "FileTabAddRequested", groupId, directory, filePath, title }))
       },
-      addPage(pageId: string, title: string, directory?: string) {
-        return asTabId(dispatch({ type: "PageTabAddRequested", groupId, pageId, title, directory }))
+      addPagesIndex(directory?: string) {
+        return asTabId(dispatch({ type: "PagesIndexTabAddRequested", groupId, directory }))
+      },
+      addPage(pageId: string, title: string, directory?: string, filePath?: string) {
+        return asTabId(dispatch({ type: "PageTabAddRequested", groupId, pageId, title, directory, filePath }))
+      },
+      addWorkgraph(directory?: string) {
+        return asTabId(dispatch({ type: "WorkgraphTabAddRequested", groupId, directory }))
       },
       patch(tabId: string, patch: Partial<TabItem>) {
         dispatch({ type: "TabPatchRequested", groupId, tabId, patch })
@@ -373,7 +825,7 @@ export function createClaxedoLayoutFacade(input: {
 
   const topTabs = {
     ...topTabsState,
-    add(tab: Omit<TabItem, "id">) {
+    add(tab: NewTab) {
       const groupId = activeGroupId()
       if (!groupId) return ""
       return asTabId(dispatch({ type: "TabAddRequested", groupId, tab }))
@@ -413,6 +865,31 @@ export function createClaxedoLayoutFacade(input: {
         }),
       )
     },
+    addReviewWorkspace(
+      directory: string,
+      sessionId: string,
+      title: string,
+      badge?: TabItem["badge"],
+      reviewMode?: TabItem["reviewMode"],
+      reviewFromRef?: string,
+      reviewToRef?: string,
+    ) {
+      const groupId = activeGroupId()
+      if (!groupId) return ""
+      return asTabId(
+        dispatch({
+          type: "ReviewWorkspaceTabAddRequested",
+          groupId,
+          directory,
+          sessionId,
+          title,
+          badge,
+          reviewMode,
+          reviewFromRef,
+          reviewToRef,
+        }),
+      )
+    },
     addContext(directory: string, sessionId: string, title: string) {
       const groupId = activeGroupId()
       if (!groupId) return ""
@@ -423,10 +900,20 @@ export function createClaxedoLayoutFacade(input: {
       if (!groupId) return ""
       return asTabId(dispatch({ type: "FileTabAddRequested", groupId, directory, filePath, title }))
     },
-    addPage(pageId: string, title: string, directory?: string) {
+    addPagesIndex(directory?: string) {
       const groupId = activeGroupId()
       if (!groupId) return ""
-      return asTabId(dispatch({ type: "PageTabAddRequested", groupId, pageId, title, directory }))
+      return asTabId(dispatch({ type: "PagesIndexTabAddRequested", groupId, directory }))
+    },
+    addPage(pageId: string, title: string, directory?: string, filePath?: string) {
+      const groupId = activeGroupId()
+      if (!groupId) return ""
+      return asTabId(dispatch({ type: "PageTabAddRequested", groupId, pageId, title, directory, filePath }))
+    },
+    addWorkgraph(directory?: string) {
+      const groupId = activeGroupId()
+      if (!groupId) return ""
+      return asTabId(dispatch({ type: "WorkgraphTabAddRequested", groupId, directory }))
     },
     patch(tabId: string, patch: Partial<TabItem>) {
       const groupId = activeGroupId()
@@ -513,6 +1000,19 @@ export function createClaxedoLayoutFacade(input: {
     setCrashedWhileClosed(value: boolean) {
       dispatch({ type: "ProcessPaneCrashFlagSetRequested", value })
     },
+    requestStartAll() {
+      processPaneState.requestStartAll()
+    },
+    requestStopAll() {
+      processPaneState.requestStopAll()
+    },
+    requestAddProcess() {
+      processPaneState.requestAddProcess()
+    },
+    pendingAction: processPaneState.pendingAction,
+    clearPendingAction() {
+      processPaneState.clearPendingAction()
+    },
   }
 
   const split = {
@@ -558,6 +1058,29 @@ export function createClaxedoLayoutFacade(input: {
     },
     setContent(tabId: string, leafId: string, content: Parameters<typeof multiPaneState.setContent>[2]) {
       dispatch({ type: "PaneContentSetRequested", tabId, leafId, content })
+    },
+    float(tabId: string, leafId: string) {
+      dispatch({ type: "PaneFloatRequested", tabId, leafId })
+    },
+    unfloat(tabId: string) {
+      dispatch({ type: "PaneUnfloatRequested", tabId })
+    },
+    toggleFileTree(tabId: string, directory: string) {
+      dispatch({ type: "FileTreePaneToggleRequested", tabId, directory })
+    },
+    hasFileTree(tabId: string) {
+      return multiPaneState.hasFileTree(tabId)
+    },
+    toggleReviewWorkspace(
+      tabId: string,
+      directory: string,
+      sessionId?: string,
+      reviewMode?: import("./types").ReviewMode,
+    ) {
+      multiPaneState.toggleReviewWorkspace(tabId, directory, sessionId, reviewMode)
+    },
+    hasReviewWorkspace(tabId: string) {
+      return multiPaneState.hasReviewWorkspace(tabId)
     },
   }
 
@@ -618,6 +1141,7 @@ export function createClaxedoLayoutFacade(input: {
 
       const byDirectory = new Map<string, TabItem[]>()
       for (const tab of group.tabs.items) {
+        if (!tab.directory) continue
         const existing = byDirectory.get(tab.directory) || []
         existing.push(tab)
         byDirectory.set(tab.directory, existing)
@@ -696,6 +1220,10 @@ export function createClaxedoLayoutFacade(input: {
     },
 
     processPane,
+
+    suppressAutoTab(dir: string) { _suppressedAutoTab.add(dir) },
+    allowAutoTab(dir: string) { _suppressedAutoTab.delete(dir) },
+    isAutoTabSuppressed(dir: string) { return _suppressedAutoTab.has(dir) },
 
     constants: {
       RAIL_COLLAPSED_WIDTH,

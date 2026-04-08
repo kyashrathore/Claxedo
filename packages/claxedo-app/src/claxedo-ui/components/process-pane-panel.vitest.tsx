@@ -60,10 +60,11 @@ function defaults(overrides: Partial<ProcessPanePanelProps> = {}): ProcessPanePa
   return {
     config: BASE_CONFIG,
     process: undefined,
-    isLast: true,
     onStart: vi.fn(),
     onStop: vi.fn(),
     onRestart: vi.fn(),
+    onResolveConflict: vi.fn(),
+    onDismissConflict: vi.fn(),
     ...overrides,
   }
 }
@@ -86,6 +87,20 @@ describe("ProcessPanePanel UI rendering", () => {
     expect(container.querySelector("[aria-label='Stop process']")).not.toBeNull()
     expect(container.querySelector("[aria-label='Restart process']")).not.toBeNull()
     expect(container.querySelector("[aria-label='Start process']")).toBeNull()
+  })
+
+  test("does not mount terminal while tab is inactive", () => {
+    const { container } = render(() => (
+      <ProcessPanePanel
+        {...defaults({
+          active: false,
+          process: { configId: "proc_1", ptyId: "pty_1", status: "running", restartCount: 0 },
+        })}
+      />
+    ))
+
+    expect(container.querySelector("[data-testid='process-terminal']")).toBeNull()
+    expect(container.textContent).toContain("Inactive")
   })
 
   test("hides terminal and shows placeholder when ptyId is undefined", () => {
@@ -269,5 +284,58 @@ describe("ProcessPanePanel UI rendering", () => {
     expect(container.querySelector("[aria-label='Stop process']")).not.toBeNull()
     expect(container.querySelector("[aria-label='Restart process']")).not.toBeNull()
     expect(container.querySelector("[aria-label='Start process']")).toBeNull()
+  })
+
+  test("shows inline port conflict overlay with port number and actions", () => {
+    const { container } = render(() => (
+      <ProcessPanePanel
+        {...defaults({
+          process: {
+            configId: "proc_1",
+            status: "crashed",
+            restartCount: 0,
+            conflict: {
+              type: "port-conflict",
+              port: 3001,
+              processName: "claxedo-server",
+              directory: "/ws/other",
+              pid: 1234,
+            },
+          },
+        })}
+      />
+    ))
+
+    expect(container.textContent).toContain("3001")
+    expect(container.textContent).toContain("is in use")
+    expect(container.textContent).toContain("Use another port")
+    expect(container.textContent).toContain("Kill process")
+  })
+
+  test("port conflict overlay actions call the provided handlers", () => {
+    const onResolveConflict = vi.fn()
+    const onDismissConflict = vi.fn()
+    const { container } = render(() => (
+      <ProcessPanePanel
+        {...defaults({
+          process: {
+            configId: "proc_1",
+            status: "crashed",
+            restartCount: 0,
+            conflict: {
+              type: "port-conflict",
+              port: 3001,
+            },
+          },
+          onResolveConflict,
+          onDismissConflict,
+        })}
+      />
+    ))
+
+    fireEvent.click(Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Use another port"))!)
+    expect(onResolveConflict).toHaveBeenCalledWith("pick-new")
+    fireEvent.click(Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Kill process"))!)
+    expect(onResolveConflict).toHaveBeenCalledWith("kill-existing")
   })
 })

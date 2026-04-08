@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { cursorPlan, filterModeSequences, isLikelyTui, restoreSize } from "./terminal-tui"
+import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize } from "./terminal-tui"
 
 describe("terminal TUI helpers", () => {
   test("isLikelyTui: matches title", () => {
@@ -88,5 +88,18 @@ describe("terminal TUI helpers", () => {
     expect(size.cols).toBe(57)
     expect(size.rows).toBe(44)
   })
-})
 
+  test("initialDelay: gives TUIs more time to settle", () => {
+    expect(initialDelay({ likelyTui: true })).toEqual({
+      settleMs: 180,
+      fallbackMs: 1200,
+    })
+  })
+
+  test("initialDelay: keeps shells snappy", () => {
+    expect(initialDelay({ likelyTui: false })).toEqual({
+      settleMs: 100,
+      fallbackMs: 500,
+    })
+  })
+})

@@ -34,8 +34,14 @@ export interface ClaxedoConfig {
   authEnabled?: boolean
   /** Allow cloud sandbox workspace creation (default: false) */
   sandboxEnabled?: boolean
+  /** Show Global Chat sections in the rail (default: false) */
+  globalChatEnabled?: boolean
+  /** Enable WorkGraph tabs and routes (default: false) */
+  workgraphEnabled?: boolean
   /** Direct Daytona API key for no-auth sandbox mode */
   daytonaApiKey?: string
+  /** URL for the standalone claxedo-server (PTY, events, agent hooks) */
+  claxedoServerUrl?: string
 }
 
 /**
@@ -45,6 +51,8 @@ export interface ClaxedoConfig {
  * Extensions are conditionally registered based on feature flags:
  * - authEnabled: Clerk auth + claxedo server
  * - sandboxEnabled: Cloud sandbox workspace creation
+ * - globalChatEnabled: Global Chat rail sections
+ * - workgraphEnabled: WorkGraph tabs and routes
  * - daytonaApiKey: Direct Daytona API key for no-auth sandbox mode
  *
  * @example
@@ -55,6 +63,8 @@ export interface ClaxedoConfig {
  *   gatewayUrl: "http://127.0.0.1:3000",
  *   authEnabled: true,
  *   sandboxEnabled: true,
+ *   globalChatEnabled: true,
+ *   workgraphEnabled: true,
  * })
  *
  * render(() => <App />, document.getElementById("root")!)
@@ -93,7 +103,10 @@ export function getDefaultConfig(): ClaxedoConfig {
     // Feature flags - all default to false for standalone mode
     authEnabled: import.meta.env.VITE_AUTH_ENABLED === "true",
     sandboxEnabled: import.meta.env.VITE_SANDBOX_ENABLED === "true",
+    globalChatEnabled: import.meta.env.VITE_GLOBAL_CHAT_ENABLED === "true",
+    workgraphEnabled: import.meta.env.VITE_WORKGRAPH_ENABLED === "true",
     daytonaApiKey: import.meta.env.VITE_DAYTONA_API_KEY as string | undefined,
+    claxedoServerUrl: (import.meta.env.VITE_CLAXEDO_SERVER_URL as string | undefined) ?? "http://127.0.0.1:3001",
   }
 }
 
@@ -149,6 +162,7 @@ export {
 } from "@/context/global-sdk"
 export { useLayout, LayoutProvider, LayoutContext, getAvatarColors, type LocalProject } from "@/context/layout"
 export { useServer, ServerProvider } from "@/context/server"
+export { ServerConnection, normalizeServerUrl, serverName } from "@/context/server"
 export { usePlatform, PlatformProvider, type Platform } from "@/context/platform"
 export { useTerminal, TerminalProvider, type LocalPTY } from "@/context/terminal"
 export { useSettings, SettingsProvider } from "@/context/settings"
@@ -165,3 +179,5 @@ export { PromptInput } from "@/components/prompt-input"
 export { Terminal } from "@/components/terminal"
 export { Titlebar } from "@/components/titlebar"
 export { DialogSettings } from "@/components/dialog-settings"
+export { AppBaseProviders, AppInterface } from "./overrides/app"
+export { handleNotificationClick } from "@opencode-ai/app"

@@ -1,7 +1,7 @@
 import type { TerminalBackend } from "../terminal/backend/types"
 import { createBackend } from "#terminal-backend"
 import { retry } from "../terminal/retry"
-import { ComponentProps, createEffect, createSignal, onCleanup, onMount, splitProps } from "solid-js"
+import { ComponentProps, createEffect, createMemo, onCleanup, onMount, splitProps } from "solid-js"
 import { useSDK } from "@/context/sdk"
 import { monoFontFamily, useSettings } from "@/context/settings"
 import { LocalPTY } from "@/context/terminal"
@@ -9,7 +9,7 @@ import { usePlatform } from "@/context/platform"
 import { resolveThemeVariant, useTheme, withAlpha, type HexColor } from "@opencode-ai/ui/theme"
 import { useLanguage } from "@/context/language"
 import { showToast } from "@opencode-ai/ui/toast"
-import { markInitialCommandRan, shouldRunInitialCommand } from "./terminal-recovery"
+import { claimInitialCommand, markInitialCommandRan, releaseInitialCommandClaim } from "./terminal-recovery"
 import { preparePersistBuffer, prepareRestoreBuffer } from "./terminal-buffer"
 import { hostStable, shouldRecoverDesync, shouldSendResize, sizeSane } from "./terminal-geometry"
 import {
@@ -24,18 +24,21 @@ import {
   reconnectFailedMessage,
 } from "./terminal-connection"
 import { createTerminalRuntimeQueue } from "./terminal-runtime-queue"
-import { cursorPlan, filterModeSequences, isLikelyTui, restoreSize } from "./terminal-tui"
+import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize } from "./terminal-tui"
 import { stripTerminalRepliesFromInput } from "../terminal/input-reply-filter"
+import { getCapabilityResponses } from "../terminal/capability-responder"
 import { createDebugLogger } from "../utils/debug"
+import { getClaxedoServerUrl } from "../../utils/api"
 
 export interface TerminalProps extends ComponentProps<"div"> {
   pty: LocalPTY
   autoFocus?: boolean
   onSubmit?: () => void
-  onCleanup?: (pty: LocalPTY) => void
+  onCleanup?: (pty: Partial<LocalPTY> & { id: string }) => void
   onUpdate?: (pty: Partial<LocalPTY> & { id: string }) => void
   onConnect?: () => void
   onConnectError?: (error: unknown) => void
+  onAgentInterrupt?: () => void
   onSplitVertical?: () => void
   onSplitHorizontal?: () => void
   onFileLinkOpen?: (path: string, line?: number, col?: number) => void
@@ -81,6 +84,8 @@ let mountCounter = 0
 
 export const Terminal = (props: TerminalProps) => {
   const sdk = useSDK()
+  // CLAXEDO: PTYs live on claxedo-server — route WebSocket and size sync there
+  const claxedoServerUrl = getClaxedoServerUrl()
   const settings = useSettings()
   const theme = useTheme()
   const language = useLanguage()
@@ -219,7 +224,7 @@ export const Terminal = (props: TerminalProps) => {
     const currentTheme = theme.themes()[theme.themeId()]
     if (!currentTheme) return fallback
     const variant = mode === "dark" ? currentTheme.dark : currentTheme.light
-    if (!variant?.seeds) return fallback
+    if (!variant?.seeds && !variant?.palette) return fallback
     const resolved = resolveThemeVariant(variant, mode === "dark")
     const text = resolved["text-stronger"] ?? fallback.foreground
     const background = resolved["background-stronger"] ?? fallback.background
@@ -234,19 +239,19 @@ export const Terminal = (props: TerminalProps) => {
     }
   }
 
-  const [terminalColors, setTerminalColors] = createSignal<TerminalColors>(getTerminalColors())
+  const terminalColors = createMemo(getTerminalColors)
 
   // Update theme when it changes
   createEffect(() => {
-    const colors = getTerminalColors()
-    setTerminalColors(colors)
+    const colors = terminalColors()
     backend?.setTheme(colors)
   })
 
-  // Update font when settings change
+  // Update font when settings change and refit so ghostty re-measures cell widths
   createEffect(() => {
     const font = monoFontFamily(settings.appearance.font())
     backend?.setFontFamily(font)
+    backend?.fit()
   })
 
   const focusTerminal = () => {
@@ -317,6 +322,10 @@ export const Terminal = (props: TerminalProps) => {
       const b = await createBackend(container, {
         theme: terminalColors(),
         fontFamily: monoFontFamily(settings.appearance.font()),
+        image:
+          /\b(?:claude|codex)\b/i.test(local.pty.initialCommand ?? "") || /\b(?:claude|codex)\b/i.test(local.pty.title)
+            ? "paste"
+            : "path",
         onSplitVertical: props.onSplitVertical,
         onSplitHorizontal: props.onSplitHorizontal,
         onUrlClick: (_event: MouseEvent, url: string) => {
@@ -338,6 +347,15 @@ export const Terminal = (props: TerminalProps) => {
 
       backend = b
       cleanups.push(() => b.dispose())
+
+      // Refit after all fonts load — ghostty-web measures cell widths on open;
+      // if the custom mono font isn't ready yet it uses fallback metrics and
+      // gets permanently wrong character spacing. This mirrors upstream's fix.
+      if (typeof document !== "undefined" && document.fonts) {
+        document.fonts.ready.then(() => {
+          if (!disposed) backend?.fit()
+        })
+      }
 
       // Auto-focus: the createEffect-based auto-focus cannot track `backend`
       // because it's a plain variable (not a signal), so it returns early and
@@ -492,6 +510,15 @@ export const Terminal = (props: TerminalProps) => {
       const hasPersistedBuffer = snapshotHasBuffer
       const useLiveTailCursor = plan.useLiveTailCursor
       const cursorStart = plan.cursorStart
+      const launch = initialDelay({ likelyTui })
+      const initialCmd = local.pty.initialCommand ?? ""
+      const initialReady = claimInitialCommand(local.pty)
+      let initialSent = false
+      let gated = likelyTui && initialReady
+      let gate: WebSocket | undefined
+      let owner: WebSocket | undefined
+      let settleTimer: ReturnType<typeof setTimeout> | undefined
+      let fallbackTimer: ReturnType<typeof setTimeout> | undefined
 
       // --- Reconnect state ---
       // Mutable reference so all handlers (onData, publishResize) always use
@@ -502,11 +529,24 @@ export const Terminal = (props: TerminalProps) => {
       let reconnecting = false
       let firstConnect = true
       const once = { value: false }
+      let replayReady = false
 
       cleanups.push(() => {
+        if (initialReady && !initialSent) {
+          releaseInitialCommandClaim(local.pty.id)
+        }
+        gate = undefined
         if (reconnectTimer) {
           clearTimeout(reconnectTimer)
           reconnectTimer = undefined
+        }
+        if (settleTimer) {
+          clearTimeout(settleTimer)
+          settleTimer = undefined
+        }
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer)
+          fallbackTimer = undefined
         }
         const sock = socketRef.current
         if (sock && (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING)) {
@@ -514,11 +554,97 @@ export const Terminal = (props: TerminalProps) => {
         }
       })
 
+      const clearInitialTimers = (ws?: WebSocket) => {
+        if (ws && owner !== ws) return
+        if (settleTimer) {
+          clearTimeout(settleTimer)
+          settleTimer = undefined
+        }
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer)
+          fallbackTimer = undefined
+        }
+        owner = undefined
+      }
+
+      const releaseGate = (ws: WebSocket, reason: string) => {
+        if (!gated || gate !== ws) return
+        if (socketRef.current !== ws || ws.readyState !== WebSocket.OPEN) {
+          trace("initial gate waiting", {
+            reason,
+            socketReadyState: ws.readyState,
+            current: socketRef.current === ws,
+          })
+          return
+        }
+        gated = false
+        gate = undefined
+        trace("initial gate released", { reason })
+        if (!initialSent) queueInitial(ws, reason)
+      }
+
+      const sendInitial = (ws: WebSocket, reason: string) => {
+        if (!initialReady || initialSent || !initialCmd) return
+        if (socketRef.current !== ws || ws.readyState !== WebSocket.OPEN) {
+          trace("initial command waiting", {
+            reason,
+            socketReadyState: ws.readyState,
+            current: socketRef.current === ws,
+          })
+          return
+        }
+        clearInitialTimers()
+        initialSent = true
+        stats.initialSent += 1
+        markInitialCommandRan(local.pty.id)
+        trace("initial command sent", {
+          reason,
+          len: initialCmd.length,
+          initialSent: stats.initialSent,
+          sample: oneLine(initialCmd),
+        })
+        ws.send(initialCmd + "\n")
+        props.onUpdate?.({ id: local.pty.id, initialCommand: undefined })
+      }
+
+      const armInitial = (ws: WebSocket, reason: string) => {
+        if (!initialReady || initialSent || !initialCmd) return
+        owner = ws
+        if (settleTimer) clearTimeout(settleTimer)
+        settleTimer = setTimeout(() => {
+          settleTimer = undefined
+          sendInitial(ws, reason)
+        }, launch.settleMs)
+      }
+
+      const queueInitial = (ws: WebSocket, reason: string) => {
+        if (!initialReady || initialSent || !initialCmd) return
+        if (owner && owner !== ws) {
+          clearInitialTimers(owner)
+        }
+        owner = ws
+        if (!fallbackTimer) {
+          fallbackTimer = setTimeout(() => {
+            fallbackTimer = undefined
+            sendInitial(ws, "fallback")
+          }, launch.fallbackMs)
+        }
+        armInitial(ws, reason)
+      }
+
       // Wire I/O: user input → server
       cleanups.push(
         b.onData((data: string) => {
+          // Ctrl+C ("\x03") or bare Escape ("\x1b", length 1 — excludes escape sequences like "\x1b[A")
+          if (data === "\x03" || data === "\x1b") props.onAgentInterrupt?.()
+
           stats.inputEvents += 1
           stats.inputBytes += data.length
+          // Shell protection: capability replies are already handled from PTY
+          // output in handleMessage() via getCapabilityResponses(). If xterm
+          // also surfaces OSC 10/11 replies on onData(), forwarding them here
+          // makes them look like typed input and pollutes the shell prompt with
+          // `rgb:...` fragments during Codex startup.
           const filtered = stripTerminalRepliesFromInput(data)
           const sock = socketRef.current
           if (isVerbose() && (stats.inputEvents <= 5 || stats.inputEvents % 20 === 0)) {
@@ -598,11 +724,11 @@ export const Terminal = (props: TerminalProps) => {
         }
         lastPublishedSize = size
         trace("resize publish", snapshot)
-        sdk.client.pty
-          .update({
-            ptyID: local.pty.id,
-            size,
-          })
+        fetch(`${claxedoServerUrl}/api/claxedo/pty/${local.pty.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ size }),
+        })
           .then(() => {
             stats.resizePublishAck += 1
             traceVerbose("resize ack", { ...snapshot, resizePublishAck: stats.resizePublishAck })
@@ -951,30 +1077,16 @@ export const Terminal = (props: TerminalProps) => {
         // Build URL with live cursor on reconnect, or planned cursor on first connect.
         const cursorParamValue = firstConnect ? plan.cursorParam : cursor
         firstConnect = false
-        const cursorParam = `&cursor=${cursorParamValue}`
+        // CLAXEDO: PTYs live on claxedo-server; no directory param or auth needed
+        const cursorParam = `?cursor=${cursorParamValue}`
 
-        let urlString =
-          sdk.url + `/pty/${local.pty.id}/connect?directory=${encodeURIComponent(sdk.directory)}${cursorParam}`
-        if (platform.getAuthToken) {
-          try {
-            const token = await platform.getAuthToken()
-            if (token) {
-              urlString += `&token=${token}`
-            }
-          } catch (err) {
-            console.error("Failed to get auth token for terminal:", err)
-          }
-        }
+        const urlString = claxedoServerUrl + `/api/claxedo/pty/${local.pty.id}/connect${cursorParam}`
 
         const url = new URL(urlString)
         if (url.protocol === "http:") url.protocol = "ws:"
         if (url.protocol === "https:") url.protocol = "wss:"
         if (url.protocol !== "ws:" && url.protocol !== "wss:") {
           url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-        }
-        if (window.__OPENCODE__?.serverPassword) {
-          url.username = "opencode"
-          url.password = window.__OPENCODE__.serverPassword
         }
 
         // Close previous socket if still lingering
@@ -987,6 +1099,7 @@ export const Terminal = (props: TerminalProps) => {
         ws.binaryType = "arraybuffer"
         socketRef.current = ws
         once.value = false
+        replayReady = false
 
         timing.socketConnectAt = performance.now()
         trace("socket connecting", {
@@ -1050,11 +1163,20 @@ export const Terminal = (props: TerminalProps) => {
           try {
             b.fit()
           } catch {}
-          const shouldForceSigwinch = likelyTui || wasReconnect
+          // Only force SIGWINCH double-toggle for TUI apps (likelyTui).
+          // Plain shells (zsh/bash) only need a single resize via scheduleOpenResize —
+          // the double-toggle causes ZSH to redraw mid-query, emitting CPR / OSC color
+          // responses that arrive back as echoed garbage in the prompt.
+          // Note: wasReconnect used to implicitly be false here because trim() caused a
+          // remount (resetting reconnecting=false). Now that trim() no longer remounts,
+          // we must explicitly exclude plain terminals from the forced SIGWINCH path.
+          const shouldForceSigwinch = likelyTui
           if (!shouldForceSigwinch) {
             holdResizeUntil = Date.now() + OPEN_RESIZE_SETTLE_MS
             scheduleOpenResize("socket-open")
+            releaseGate(ws, "socket-open")
           } else {
+            gate = gated ? ws : undefined
             holdResizeUntil = 0
             if (openResizeSettleTimer) {
               clearTimeout(openResizeSettleTimer)
@@ -1081,61 +1203,51 @@ export const Terminal = (props: TerminalProps) => {
                 wasReconnect,
               })
             }
-            sdk.client.pty
-              .update({
-                ptyID: local.pty.id,
-                size: first,
-              })
+            fetch(`${claxedoServerUrl}/api/claxedo/pty/${local.pty.id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ size: first }),
+            })
               .then(() => {
                 traceVerbose("sigwinch ack", { size: first, step: 1 })
-                return sdk.client.pty.update({
-                  ptyID: local.pty.id,
-                  size: second,
+                return fetch(`${claxedoServerUrl}/api/claxedo/pty/${local.pty.id}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ size: second }),
                 })
               })
               .then(() => {
                 traceVerbose("sigwinch ack", { size: second, step: 2 })
+                releaseGate(ws, "sigwinch")
               })
               .catch((error) => {
                 trace("socket open sigwinch failed", { first, second, error: error instanceof Error ? error.message : String(error) })
+                releaseGate(ws, "sigwinch-failed")
               })
           }
 
           // Execute initial command only once per PTY, including across reloads.
-          // Never re-execute on reconnect.
+          // Wait for shell output to settle instead of firing blindly after a
+          // fixed delay. This avoids racing shell startup on fresh PTYs.
           if (!wasReconnect) {
-            const runInitial = shouldRunInitialCommand(local.pty)
-            if (runInitial) stats.initialCheckTrue += 1
+            if (initialReady) stats.initialCheckTrue += 1
             else stats.initialCheckFalse += 1
             trace("initial command decision", {
-              runInitial,
+              runInitial: initialReady,
               hasInitialCommand: !!local.pty.initialCommand,
               initialLen: local.pty.initialCommand?.length,
             })
-            if (runInitial) {
-              markInitialCommandRan(local.pty.id)
-              const initialCmd = local.pty.initialCommand ?? ""
-              // Small delay to ensure terminal is ready
-              setTimeout(() => {
-                if (ws.readyState === WebSocket.OPEN) {
-                  stats.initialSent += 1
-                  trace("initial command sent", {
-                    len: initialCmd.length,
-                    initialSent: stats.initialSent,
-                    sample: oneLine(initialCmd),
-                  })
-                  ws.send(initialCmd + "\n")
-                  props.onUpdate?.({ id: local.pty.id, initialCommand: undefined })
-                  return
-                }
-                trace("initial command skipped", { reason: "socket-not-open", socketReadyState: ws.readyState })
-              }, 100)
-              return
-            }
+          }
+          if (!gated && !initialSent) {
+            queueInitial(ws, wasReconnect ? "reconnect-open" : "socket-open")
           }
         }
         ws.addEventListener("open", handleOpen)
         socketCleanups.push(() => ws.removeEventListener("open", handleOpen))
+        socketCleanups.push(() => {
+          if (gate === ws) gate = undefined
+        })
+        socketCleanups.push(() => clearInitialTimers(ws))
 
         // --- handleMessage ---
         const handleMessage = (event: MessageEvent) => {
@@ -1157,8 +1269,9 @@ export const Terminal = (props: TerminalProps) => {
               const next = meta?.cursor
               if (typeof next === "number" && Number.isSafeInteger(next) && next >= 0) {
                 stats.metaCursor += 1
+                replayReady = true
                 if (isVerbose() && (stats.metaCursor <= 5 || stats.metaCursor % 20 === 0)) {
-                  traceVerbose("cursor meta", { before: cursor, next, count: stats.metaCursor })
+                  traceVerbose("cursor meta", { before: cursor, next, count: stats.metaCursor, replayReady })
                 }
                 cursor = next
                 return
@@ -1176,6 +1289,9 @@ export const Terminal = (props: TerminalProps) => {
           if (!data) {
             stats.emptyFrames += 1
             return
+          }
+          if (!gated && !initialSent) {
+            queueInitial(ws, "output-settled")
           }
           const dataBytes = encoder.encode(data).byteLength
           stats.textFrames += 1
@@ -1202,12 +1318,37 @@ export const Terminal = (props: TerminalProps) => {
               sample: oneLine(data),
             })
           }
+          // Respond to terminal capability queries immediately, before any queuing.
+          // TUI apps (e.g. codex) query the terminal at startup and time out
+          // after ~2s per query group if no responses arrive. We respond here
+          // unconditionally so the PTY gets the answers now regardless of
+          // whether buffer restoration is in progress. Messages still queue
+          // for rendering as normal.
+          const capabilityResponses = getCapabilityResponses(data)
+          if (capabilityResponses.length > 0 && replayReady) {
+            const responseSock = socketRef.current
+            if (responseSock && responseSock.readyState === WebSocket.OPEN) {
+              for (const r of capabilityResponses) {
+                responseSock.send(r)
+              }
+              trace("capability fast response", { ptyId: local.pty.id, restored: isBufferRestored, count: capabilityResponses.length })
+            }
+          } else if (capabilityResponses.length > 0) {
+            trace("capability response skipped during replay", {
+              ptyId: local.pty.id,
+              restored: isBufferRestored,
+              replayReady,
+              count: capabilityResponses.length,
+              sample: oneLine(data),
+            })
+          }
+          const next = data
           // Queue messages if buffer restoration is still in progress
           if (!isBufferRestored) {
-            queue.push(data)
+            queue.push(next)
             return
           }
-          b.write(data)
+          b.write(next)
         }
         ws.addEventListener("message", handleMessage)
         socketCleanups.push(() => ws.removeEventListener("message", handleMessage))

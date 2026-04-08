@@ -1,0 +1,27 @@
+{
+  "name": "@opencode-ai/workgraph",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "dev": "bun run src/server.ts",
+    "test": "bun test --conditions=browser"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "catalog:",
+    "@octokit/rest": "catalog:",
+    "better-sqlite3": "^12.0.0",
+    "drizzle-orm": "0.45.1",
+    "hono": "catalog:",
+    "ulid": "3.0.2",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

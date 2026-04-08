@@ -6,72 +6,7 @@
  */
 import { describe, expect, test, beforeEach, mock } from "bun:test"
 import { createRoot } from "solid-js"
-
-// ---------------------------------------------------------------------------
-// Mock infrastructure (same as terminal-zombie.test.ts)
-// ---------------------------------------------------------------------------
-
-type Listener = (event: any) => void
-
-function createMockSDK() {
-  const listeners = new Map<string, Set<Listener>>()
-  const serverPtys = new Map<string, { id: string; title: string; cwd: string }>()
-  let nextId = 1
-  const createCalls: any[] = []
-
-  return {
-    url: "http://localhost:7860",
-    directory: "/workspace",
-    event: {
-      on(type: string, fn: Listener) {
-        if (!listeners.has(type)) listeners.set(type, new Set())
-        listeners.get(type)!.add(fn)
-        return () => listeners.get(type)?.delete(fn)
-      },
-    },
-    client: {
-      pty: {
-        async create(input: { title?: string; env?: Record<string, string>; previousPtyId?: string }) {
-          createCalls.push(input)
-          const id = `pty-${nextId++}`
-          const info = { id, title: input.title ?? `Terminal ${id}`, cwd: "/workspace" }
-          serverPtys.set(id, info)
-          emit("pty.created", { info })
-          return { data: info }
-        },
-        async remove(input: { ptyID: string }) {
-          const existed = serverPtys.delete(input.ptyID)
-          if (existed) emit("pty.deleted", { id: input.ptyID })
-        },
-        async update(_input: any) {},
-        async list() {
-          return { data: Array.from(serverPtys.values()) }
-        },
-      },
-    },
-    _emit: emit,
-    _serverPtys: serverPtys,
-    _listeners: listeners,
-    _createCalls: createCalls,
-  }
-
-  function emit(type: string, properties: any) {
-    const fns = listeners.get(type)
-    if (!fns) return
-    for (const fn of fns) fn({ type, properties })
-  }
-}
-
-function createMockStorage() {
-  const data = new Map<string, string>()
-  return {
-    data,
-    getItem(key: string) { return data.get(key) ?? null },
-    setItem(key: string, value: string) { data.set(key, value) },
-    removeItem(key: string) { data.delete(key) },
-    clear() { data.clear() },
-  }
-}
+import { createMockSDK, createMockStorage, installFetchMock } from "./terminal-test-helpers"
 
 // ---------------------------------------------------------------------------
 // Register mocks
@@ -153,12 +88,17 @@ function tick() {
   return new Promise<void>((r) => setTimeout(r, 0))
 }
 
-function createSession(sdk: ReturnType<typeof createMockSDK>) {
+function createSession(
+  sdk: ReturnType<typeof createMockSDK>,
+  input?: {
+    dir?: string
+  },
+) {
   let session: ReturnType<typeof createTerminalSession>
   let dispose: () => void
   createRoot((d) => {
     dispose = d
-    session = createTerminalSession(sdk as any, "/workspace")
+    session = createTerminalSession(sdk as any, input?.dir ?? "/workspace")
   })
   return { session: session!, dispose: dispose! }
 }
@@ -174,6 +114,7 @@ describe("terminal clone recovery on app restart", () => {
 
   test("clone() returns the new PTY ID", async () => {
     const sdk = createMockSDK()
+    const restoreFetch = installFetchMock(sdk)
     const { session, dispose } = createSession(sdk)
 
     session.new()
@@ -192,10 +133,12 @@ describe("terminal clone recovery on app restart", () => {
     expect(session.all()[0].id).toBe(newId)
 
     dispose()
+    restoreFetch()
   })
 
   test("clone() preserves buffer and cursor from old entry", async () => {
     const sdk = createMockSDK()
+    const restoreFetch = installFetchMock(sdk)
     const { session, dispose } = createSession(sdk)
 
     session.new()
@@ -216,10 +159,12 @@ describe("terminal clone recovery on app restart", () => {
     expect(entry.cursor).toBe(5)
 
     dispose()
+    restoreFetch()
   })
 
   test("clone() passes previousPtyId to server create call", async () => {
     const sdk = createMockSDK()
+    const restoreFetch = installFetchMock(sdk)
     const { session, dispose } = createSession(sdk)
 
     session.new()
@@ -233,13 +178,150 @@ describe("terminal clone recovery on app restart", () => {
 
     const cloneCall = sdk._createCalls[callsBefore]
     expect(cloneCall).toBeDefined()
+    expect(cloneCall.cwd).toBe("/workspace")
     expect(cloneCall.env?.previousPtyId).toBe(oldId)
+    expect(cloneCall.env?.CLAXEDO_PORT).toBe("3001")
+    expect(cloneCall.env?.CLAXEDO_WORKSPACE_ID).toBe("/workspace")
 
     dispose()
+    restoreFetch()
+  })
+
+  test("clone() preserves the PTY cwd instead of falling back to sdk.directory", async () => {
+    const sdk = createMockSDK()
+    sdk.directory = "/workspace/fallback"
+    const restoreFetch = installFetchMock(sdk)
+    const { session, dispose } = createSession(sdk, { dir: "/workspace-id" })
+
+    session.new()
+    await tick()
+
+    const oldId = session.all()[0].id
+    session.update({ id: oldId, cwd: "/workspace/project-a" })
+    await tick()
+
+    const callsBefore = sdk._createCalls.length
+
+    await session.clone(oldId)
+    await tick()
+
+    const cloneCall = sdk._createCalls[callsBefore]
+    expect(cloneCall).toBeDefined()
+    expect(cloneCall.cwd).toBe("/workspace/project-a")
+    expect(cloneCall.env?.CLAXEDO_WORKSPACE_ID).toBe("/workspace-id")
+
+    dispose()
+    restoreFetch()
+  })
+
+  test("ensure() lets a missing restored PTY recover through clone()", async () => {
+    const sdk = createMockSDK()
+    const restoreFetch = installFetchMock(sdk)
+    const { session, dispose } = createSession(sdk, { dir: "/workspace-id" })
+
+    session.ensure({
+      id: "pty-stale",
+      title: "Codex 7",
+      cwd: "/workspace/project-a",
+      initialCommand: "codex",
+    })
+    await tick()
+
+    expect(session.all().map((item) => item.id)).toContain("pty-stale")
+
+    const callsBefore = sdk._createCalls.length
+    const newId = await session.clone("pty-stale")
+    await tick()
+
+    expect(newId).toBeDefined()
+    expect(newId).not.toBe("pty-stale")
+    const cloneCall = sdk._createCalls[callsBefore]
+    expect(cloneCall).toBeDefined()
+    expect(cloneCall.cwd).toBe("/workspace/project-a")
+    expect(cloneCall.env?.previousPtyId).toBe("pty-stale")
+    expect(session.all()[0]?.id).toBe(newId)
+
+    dispose()
+    restoreFetch()
+  })
+
+  test("clone() preserves cloud workspace routing when dir differs from cwd", async () => {
+    const sdk = createMockSDK()
+    sdk.directory = "/Users/yash/worktrees/local-mirror"
+    const restoreFetch = installFetchMock(sdk)
+    const { session, dispose } = createSession(sdk, { dir: "ws_cloud_123" })
+
+    session.new()
+    await tick()
+
+    const oldId = session.all()[0].id
+    session.update({ id: oldId, cwd: "/workspaces/cloud/app" })
+    await tick()
+
+    const callsBefore = sdk._createCalls.length
+
+    await session.clone(oldId)
+    await tick()
+
+    const cloneCall = sdk._createCalls[callsBefore]
+    expect(cloneCall).toBeDefined()
+    expect(cloneCall.cwd).toBe("/workspaces/cloud/app")
+    expect(cloneCall.env?.previousPtyId).toBe(oldId)
+    expect(cloneCall.env?.CLAXEDO_WORKSPACE_ID).toBe("ws_cloud_123")
+
+    dispose()
+    restoreFetch()
+  })
+
+  test("clone() keeps persisted cwd after reload before recovery", async () => {
+    const sdk = createMockSDK()
+    sdk.directory = "/workspace/fallback"
+    const restoreFetch = installFetchMock(sdk)
+    const { session, dispose } = createSession(sdk, { dir: "ws_cloud_123" })
+
+    session.new()
+    await tick()
+
+    const oldId = session.all()[0].id
+    session.update({
+      id: oldId,
+      cwd: "/workspaces/cloud/app",
+      modeSequences: "\x1b[?2004h",
+      wasAltScreen: true,
+      wasAtBottom: true,
+      initialCommand: "codex",
+    })
+    await tick()
+
+    dispose()
+
+    const { session: reloaded, dispose: dispose2 } = createSession(sdk, { dir: "ws_cloud_123" })
+    await tick()
+    await tick()
+
+    expect(reloaded.all()[0]?.cwd).toBe("/workspaces/cloud/app")
+    expect(reloaded.all()[0]?.modeSequences).toBe("\x1b[?2004h")
+    expect(reloaded.all()[0]?.wasAltScreen).toBe(true)
+    expect(reloaded.all()[0]?.wasAtBottom).toBe(true)
+    expect(reloaded.all()[0]?.initialCommand).toBe("codex")
+
+    const callsBefore = sdk._createCalls.length
+
+    await reloaded.clone(oldId)
+    await tick()
+
+    const cloneCall = sdk._createCalls[callsBefore]
+    expect(cloneCall).toBeDefined()
+    expect(cloneCall.cwd).toBe("/workspaces/cloud/app")
+    expect(cloneCall.env?.CLAXEDO_WORKSPACE_ID).toBe("ws_cloud_123")
+
+    dispose2()
+    restoreFetch()
   })
 
   test("stale PTY persists in store until onConnectError triggers clone", async () => {
     const sdk = createMockSDK()
+    const restoreFetch = installFetchMock(sdk)
     const { session, dispose } = createSession(sdk)
 
     // Create a terminal
@@ -263,5 +345,6 @@ describe("terminal clone recovery on app restart", () => {
     expect(reloaded.all()[0].id).toBe(oldId)
 
     dispose2()
+    restoreFetch()
   })
 })

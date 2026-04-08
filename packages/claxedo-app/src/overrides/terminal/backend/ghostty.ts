@@ -1,6 +1,6 @@
 import type { Ghostty, Terminal as Term, FitAddon as GhosttyFitAddon } from "ghostty-web"
 import { SerializeAddon } from "@/addons/serialize"
-import { disposeIfDisposable, setOptionIfSupported } from "@/utils/runtime-adapters"
+import { disposeIfDisposable } from "@/utils/runtime-adapters"
 import { createModeScanner } from "../mode-scan"
 import { createQuerySuppressor } from "../query-suppression"
 import { createResizeCoordinator } from "../resize-coordinator"
@@ -657,6 +657,10 @@ export const createBackend: CreateBackendFn = async (
       }
     },
 
+    onTerminalResponse(): Disposable {
+      return { dispose() {} }
+    },
+
     onKey(fn: (e: { key: string }) => void): Disposable {
       keyListeners.push(fn)
       return {
@@ -676,11 +680,11 @@ export const createBackend: CreateBackendFn = async (
     },
 
     setTheme(theme) {
-      setOptionIfSupported(t, "theme", theme)
+      t.options.theme = theme
     },
 
     setFontFamily(font) {
-      setOptionIfSupported(t, "fontFamily", font)
+      t.options.fontFamily = font
     },
 
     setCursorBlink(blink) {
@@ -734,8 +738,8 @@ export const createBackend: CreateBackendFn = async (
       coordinator.flush()
     },
 
-    serialize() {
-      return serializeAddon.serialize()
+    serialize(options?: { scrollback?: number; excludeModes?: boolean; excludeAltBuffer?: boolean }) {
+      return serializeAddon.serialize(options)
     },
 
     rehydrateSequences() {

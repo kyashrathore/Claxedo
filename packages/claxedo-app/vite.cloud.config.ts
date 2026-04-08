@@ -74,6 +74,8 @@ function overrideResolver(): Plugin {
   }
 }
 
+const isDemoBuild = process.env.CLAXEDO_BUILD_TARGET === "demo"
+
 /**
  * Cloud-specific Vite configuration for Claxedo.
  */
@@ -81,20 +83,27 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
   const env = loadEnv(mode, process.cwd(), "VITE_")
   const terminalBackend = env.VITE_TERMINAL_BACKEND || "xterm"
   return {
+    define: {
+      __DEMO_ENABLED__: JSON.stringify(isDemoBuild || mode === "development"),
+    },
     plugins: [overrideResolver(), solidPlugin(), tailwindcss()],
     publicDir: "public",
     server: {
       host: "0.0.0.0",
       allowedHosts: true,
       port: Number(process.env.PORT) || 4444,
+      strictPort: true,
     },
     worker: {
       format: "es",
     },
     build: {
       target: "esnext",
-      outDir: "dist",
+      outDir: isDemoBuild ? "dist-demo" : "dist",
       rollupOptions: {
+        input: isDemoBuild
+          ? { demo: fileURLToPath(new URL("./demo/index.html", import.meta.url)) }
+          : { main: fileURLToPath(new URL("./index.html", import.meta.url)) },
         output: {
           manualChunks: {
             'vendor-solid': ['solid-js', 'solid-js/web', 'solid-js/store'],
@@ -118,6 +127,8 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
         ...(enabled ? overrides() : []),
         // Resolve claxedo-specific paths
         { find: "@claxedo/", replacement: normalizePath(fileURLToPath(new URL("./src/", import.meta.url))) },
+        // Resolve packages only available in upstream's node_modules
+        { find: "@solid-primitives/active-element", replacement: normalizePath(fileURLToPath(new URL("../app/node_modules/@solid-primitives/active-element/dist/index.js", import.meta.url))) },
         // General @/ alias (lowest priority)
         { find: "@/", replacement: normalizePath(fileURLToPath(new URL("../app/src/", import.meta.url))) },
       ],

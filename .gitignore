@@ -34,3 +34,25 @@ logs/
 **/.dev-docs/
 packages/claxedo-app/dev-docs/
 packages/claxedo-app/dist-opencode/
+
+# Auto-generated schema (derived from code, regenerated on boot)
+.opencode/processes.schema.json
+
+# Claxedo runtime data
+.claxedo/
+.opencode/processes.jsonc
+
+# Playwright test artifacts
+packages/claxedo-app/e2e/playwright/report/
+packages/claxedo-app/e2e/playwright/screenshots/
+packages/claxedo-app/e2e/playwright/test-results/
+packages/claxedo-app/e2e/agent-browser/screenshots/
+
+# Electron build outputs
+packages/claxedo-desktop/resources/acp/
+packages/claxedo-desktop/resources/claxedo-server.js
+
+# Build artifacts
+packages/workspace-runtime-bundle.tar.gz
+packages/opencode/src/provider/models-snapshot.ts
+.collaborator

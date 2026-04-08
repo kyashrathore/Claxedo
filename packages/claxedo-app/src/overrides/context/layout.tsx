@@ -9,6 +9,7 @@ import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { same } from "@/utils/same"
 import { createScrollPersistence, type SessionScroll } from "@/context/layout-scroll"
 import { validWorktree } from "@claxedo/utils/worktree"
+import { projectCatalog } from "./layout-projects"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
@@ -80,6 +81,7 @@ export const {
       })()
 
       const fileTree = value.fileTree
+      const review = value.review
       const migratedFileTree = (() => {
         if (!isRecord(fileTree)) return fileTree
         if (fileTree.tab === "changes" || fileTree.tab === "all") return fileTree
@@ -93,11 +95,19 @@ export const {
         }
       })()
 
-      if (migratedSidebar === sidebar && migratedFileTree === fileTree) return value
+      const migratedReview = (() => {
+        if (!isRecord(review)) return review
+        if (typeof review.panelOpened === "boolean") return review
+        const opened = isRecord(fileTree) && typeof fileTree.opened === "boolean" ? fileTree.opened : true
+        return { ...review, panelOpened: opened }
+      })()
+
+      if (migratedSidebar === sidebar && migratedFileTree === fileTree && migratedReview === review) return value
       return {
         ...value,
         sidebar: migratedSidebar,
         fileTree: migratedFileTree,
+        review: migratedReview,
       }
     }
 
@@ -268,12 +278,12 @@ export const {
       return available[Math.floor(Math.random() * available.length)]
     }
 
-    function enrich(project: { worktree: string; expanded: boolean }) {
+    function enrich(project: { worktree: string; expanded: boolean }, meta?: Project) {
       const [childStore] = globalSync.child(project.worktree, { bootstrap: false })
       const projectID = childStore.project
-      const metadata = projectID
+      const metadata = meta ?? (projectID
         ? globalSync.data.project.find((x) => x.id === projectID)
-        : globalSync.data.project.find((x) => x.worktree === project.worktree)
+        : globalSync.data.project.find((x) => x.worktree === project.worktree))
 
       const local = childStore.projectMeta
       const localOverride =
@@ -308,38 +318,15 @@ export const {
       }
     }
 
-    const roots = createMemo(() => {
-      const map = new Map<string, string>()
-      for (const project of globalSync.data.project) {
-        const sandboxes = project.sandboxes ?? []
-        for (const sandbox of sandboxes) {
-          map.set(sandbox, project.worktree)
-        }
-      }
-      return map
-    })
+    const catalog = createMemo(() =>
+      projectCatalog({
+        api: globalSync.data.project,
+        current: server.projects.list(),
+        closed: server.projects.isClosed,
+        valid: validWorktree,
+      }))
 
-    const rootFor = (directory: string) => {
-      const map = roots()
-      if (map.size === 0) return directory
-
-      const visited = new Set<string>()
-      const chain = [directory]
-
-      while (chain.length) {
-        const current = chain[chain.length - 1]
-        if (!current) return directory
-
-        const next = map.get(current)
-        if (!next) return current
-
-        if (visited.has(next)) return directory
-        visited.add(next)
-        chain.push(next)
-      }
-
-      return directory
-    }
+    const rootFor = (directory: string) => catalog().rootFor(directory)
 
     // Effect 1: Sandbox → parent resolution (tracks server.projects.list())
     createEffect(() => {
@@ -385,10 +372,8 @@ export const {
     )
 
     const enriched = createMemo(() => {
-      return server.projects
-        .list()
-        .filter((p) => validWorktree(p.worktree) && rootFor(p.worktree) === p.worktree)
-        .map(enrich)
+      const meta = catalog().meta
+      return catalog().list.map((project) => enrich(project, meta.get(project.worktree)))
     })
     const list = createMemo(() => {
       const projects = enriched()
@@ -455,17 +440,7 @@ export const {
     })
 
     onMount(() => {
-      const roots = server.projects
-        .list()
-        .filter((project) => validWorktree(project.worktree))
-        .map((project) => rootFor(project.worktree))
-        .filter((directory, index, all) => all.indexOf(directory) === index)
-      if (roots.length === 0) return
-
-      const preferred = server.projects.last()
-      const first = preferred && roots.includes(preferred) ? preferred : roots[0]
-      if (first) void globalSync.project.loadSessions(first)
-      // Other workspaces bootstrap on-demand when user navigates to them
+      void globalSync.globalSessions.load()
     })
 
     // Sync API projects to sidebar - ensures projects from server appear in sidebar
@@ -518,6 +493,7 @@ export const {
         open(directory: string) {
           const root = rootFor(directory)
           if (!validWorktree(root)) return
+          if (!catalog().meta.has(root)) return
           globalSync.project.loadSessions(root)
           if (!server.isLocal()) return
           if (server.projects.list().some((x) => x.worktree === root)) return
@@ -526,6 +502,10 @@ export const {
         close(directory: string) {
           if (!server.isLocal()) return
           server.projects.close(directory)
+        },
+        isClosed(directory: string) {
+          if (!server.isLocal()) return false
+          return server.projects.isClosed(directory)
         },
         remove(directory: string) {
           server.projects.remove(directory)

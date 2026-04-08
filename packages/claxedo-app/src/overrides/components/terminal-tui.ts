@@ -79,3 +79,16 @@ export function restoreSize(input: {
   return { cols, rows }
 }
 
+export function initialDelay(input: { likelyTui: boolean }) {
+  if (input.likelyTui) {
+    return {
+      settleMs: 180,
+      fallbackMs: 1200,
+    }
+  }
+
+  return {
+    settleMs: 100,
+    fallbackMs: 500,
+  }
+}

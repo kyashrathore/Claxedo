@@ -7,85 +7,10 @@
  */
 import { describe, expect, test, beforeEach, mock } from "bun:test"
 import { createRoot, createEffect } from "solid-js"
+import { createMockSDK, createMockStorage, installFetchMock } from "./terminal-test-helpers"
 
 const CURRENT_KEY = "workspace:terminal.v2"
 const LEGACY_KEY = "workspace:terminal"
-
-// ---------------------------------------------------------------------------
-// Mock infrastructure
-// ---------------------------------------------------------------------------
-
-type Listener = (event: any) => void
-
-function createMockSDK() {
-  const listeners = new Map<string, Set<Listener>>()
-  const serverPtys = new Map<string, { id: string; title: string; cwd: string }>()
-  let nextId = 1
-
-  return {
-    url: "http://localhost:7860",
-    directory: "/workspace",
-    event: {
-      on(type: string, fn: Listener) {
-        if (!listeners.has(type)) listeners.set(type, new Set())
-        listeners.get(type)!.add(fn)
-        return () => listeners.get(type)?.delete(fn)
-      },
-    },
-    client: {
-      pty: {
-        async create(input: { title?: string; env?: Record<string, string> }) {
-          const id = `pty-${nextId++}`
-          const info = { id, title: input.title ?? `Terminal ${id}`, cwd: "/workspace" }
-          serverPtys.set(id, info)
-          // Emit pty.created SSE event (simulates server broadcast)
-          emit("pty.created", { info })
-          return { data: info }
-        },
-        async remove(input: { ptyID: string }) {
-          const existed = serverPtys.delete(input.ptyID)
-          if (existed) {
-            emit("pty.deleted", { id: input.ptyID })
-          }
-        },
-        async update(_input: any) {},
-        async list() {
-          return { data: Array.from(serverPtys.values()) }
-        },
-      },
-    },
-    // Test helpers
-    _emit: emit,
-    _serverPtys: serverPtys,
-    _listeners: listeners,
-  }
-
-  function emit(type: string, properties: any) {
-    const fns = listeners.get(type)
-    if (!fns) return
-    for (const fn of fns) fn({ type, properties })
-  }
-}
-
-// In-memory storage that survives "reloads" (new createTerminalSession calls)
-function createMockStorage() {
-  const data = new Map<string, string>()
-  return {
-    data,
-    getItem(key: string) {
-      return data.get(key) ?? null
-    },
-    setItem(key: string, value: string) {
-      data.set(key, value)
-    },
-    removeItem(key: string) {
-      data.delete(key)
-    },
-    clear() {
-      data.clear()
-    },
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Register mocks before importing the module under test
@@ -198,6 +123,7 @@ describe("terminal persistence behavior", () => {
   describe("close flow", () => {
     test("closing a terminal before create .then() resolves should not re-add it", async () => {
       const sdk = createMockSDK()
+      const restoreFetch = installFetchMock(sdk)
       const { session, dispose } = createSession(sdk)
 
       // Create a terminal
@@ -222,12 +148,14 @@ describe("terminal persistence behavior", () => {
       expect(session2.all()).toHaveLength(0)
 
       dispose2()
+      restoreFetch()
     })
   })
 
   describe("reload behavior", () => {
     test("store.all should be empty after close() even without close watcher", async () => {
       const sdk = createMockSDK()
+      const restoreFetch = installFetchMock(sdk)
       const { session, dispose } = createSession(sdk)
 
       // Create two terminals (simulates "terminal and terminal inside it")
@@ -254,10 +182,12 @@ describe("terminal persistence behavior", () => {
       }
 
       dispose()
+      restoreFetch()
     })
 
     test("after reload, closed terminals should not reappear in store.all", async () => {
       const sdk = createMockSDK()
+      const restoreFetch = installFetchMock(sdk)
       const { session, dispose } = createSession(sdk)
 
       // Create terminals
@@ -281,6 +211,7 @@ describe("terminal persistence behavior", () => {
       expect(reloaded.all()).toHaveLength(0)
 
       dispose2()
+      restoreFetch()
     })
   })
 
@@ -345,6 +276,7 @@ describe("terminal persistence behavior", () => {
   describe("disconnected exit events", () => {
     test("PTY that exited while frontend was disconnected remains in current persisted store", async () => {
       const sdk = createMockSDK()
+      const restoreFetch = installFetchMock(sdk)
       const { session, dispose } = createSession(sdk)
 
       // Create a terminal
@@ -376,6 +308,7 @@ describe("terminal persistence behavior", () => {
       expect(reloaded.all()[0].id).toBe(ptyId)
 
       dispose2()
+      restoreFetch()
     })
   })
 })

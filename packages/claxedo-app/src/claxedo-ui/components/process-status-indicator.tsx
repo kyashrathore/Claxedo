@@ -19,7 +19,7 @@ import { createStore, produce } from "solid-js/store"
 import { useGlobalSDK } from "@opencode-ai/claxedo-app"
 import { usePlatform } from "@/context/platform"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import type { Process } from "../../opencode-patches/process/process"
+import type { Process } from "@claxedo/process/process"
 
 type ProcessConfig = Process.ProcessConfig
 type ManagedProcess = Process.ManagedProcess

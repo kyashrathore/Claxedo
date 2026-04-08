@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { todoState } from "./session-composer-state"
-import { resolveComposerSessionID } from "./session-composer-scope"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 
 const session = (input: { id: string; parentID?: string }) =>
@@ -125,17 +124,5 @@ describe("todoState", () => {
 
   test("clears completed todos when the session is no longer live", () => {
     expect(todoState({ count: 2, done: true, live: false })).toBe("clear")
-  })
-})
-
-describe("resolveComposerSessionID", () => {
-  test("prefers explicit accessor over route session id", () => {
-    const id = resolveComposerSessionID({ sessionID: () => "pane-session" }, "route-session")
-    expect(id).toBe("pane-session")
-  })
-
-  test("falls back to route session id when accessor missing", () => {
-    const id = resolveComposerSessionID(undefined, "route-session")
-    expect(id).toBe("route-session")
   })
 })

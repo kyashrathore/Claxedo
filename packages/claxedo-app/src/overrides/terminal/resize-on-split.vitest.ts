@@ -121,6 +121,8 @@ function createResizeObserverEmulator(
   xterm: HeadlessXterm,
   container: { clientWidth: number; clientHeight: number; isConnected: boolean },
   coordinator: ReturnType<typeof createResizeCoordinator>,
+  fitAddon?: { fit: ReturnType<typeof vi.fn> },
+  clearAtlas?: ReturnType<typeof vi.fn>,
 ) {
   let lastObservedWidth = 0
   let lastObservedHeight = 0
@@ -147,6 +149,13 @@ function createResizeObserverEmulator(
       const fs = xterm.options.fontSize ?? 14
       xterm.options.fontSize = fs + 0.001
       xterm.options.fontSize = fs
+
+      // Immediate fit+clear+refresh after font-nudge (mirrors production code)
+      if (fitAddon) {
+        try { fitAddon.fit() } catch {}
+        try { clearAtlas?.() } catch {}
+        try { xterm.refresh(0, xterm.rows - 1) } catch {}
+      }
     }
 
     lastObservedWidth = width
@@ -275,13 +284,8 @@ describe("resize-on-split headless emulator", () => {
     // cols SHOULD decrease (600px → 300px means roughly half the columns)
     expect(xterm.cols).toBeLessThan(colsBefore)
 
-    // CRITICAL: Font-nudge SHOULD fire after a significant width change
-    // to force xterm to re-measure cell metrics. Without this, the WebGL
-    // renderer's cached cell dimensions are stale → garbled text.
-    //
-    // This assertion will FAIL with the current code because the font-nudge
-    // only checks for 0→visible transitions (lastObservedWidth === 0),
-    // not for significant width changes.
+    // Font-nudge fires for significant width changes (>20%) via the
+    // significantWidthChange check in the ResizeObserver callback.
     expect(xterm.fontSizeWrites.length).toBeGreaterThanOrEqual(2)
     expect(xterm.fontSizeWrites).toContain(14.001)
     expect(xterm.fontSizeWrites).toContain(14)
@@ -424,6 +428,57 @@ describe("resize-on-split headless emulator", () => {
     // clearTextureAtlas runs as part of refresh
     expect(clearAtlas).toHaveBeenCalled()
 
+    coordinator.dispose()
+  })
+
+  test("split resize — fit runs immediately in ResizeObserver, not just settle", async () => {
+    const xterm = createHeadlessXterm()
+    const container = createContainer(600, 400)
+    const fitAddon = createHeadlessFitAddon(xterm, container)
+    const clearAtlas = vi.fn()
+
+    const coordinator = createResizeCoordinator({
+      fit: () => fitAddon.fit(),
+      measure: () => ({ width: container.clientWidth, height: container.clientHeight }),
+      getCols: () => xterm.cols,
+      getRows: () => xterm.rows,
+      refresh: () => {
+        xterm.refresh(0, xterm.rows - 1)
+        clearAtlas()
+      },
+      notify: vi.fn(),
+      clock: { setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number, clearTimeout },
+      raf: { request: (fn) => setTimeout(fn, 0) as unknown as number, cancel: clearTimeout },
+    })
+
+    const emulator = createResizeObserverEmulator(xterm, container, coordinator, fitAddon, clearAtlas)
+
+    // Initial mount at full width
+    emulator.fireResize()
+    await flushSettle()
+
+    // Clear tracking
+    fitAddon.fit.mockClear()
+    xterm.refresh.mockClear()
+    clearAtlas.mockClear()
+    xterm.fontSizeWrites.length = 0
+
+    // Split: width halves
+    container.clientWidth = 300
+    emulator.fireResize()
+
+    // BEFORE flushSettle — fit should have already been called
+    // by the immediate fit in the ResizeObserver callback
+    expect(fitAddon.fit).toHaveBeenCalled()
+    expect(xterm.refresh).toHaveBeenCalled()
+    expect(clearAtlas).toHaveBeenCalled()
+
+    // Font-nudge also fired
+    expect(xterm.fontSizeWrites.length).toBeGreaterThanOrEqual(2)
+    expect(xterm.fontSizeWrites).toContain(14.001)
+    expect(xterm.fontSizeWrites).toContain(14)
+
+    await flushSettle()
     coordinator.dispose()
   })
 })

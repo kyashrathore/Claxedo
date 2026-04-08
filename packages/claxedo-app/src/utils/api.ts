@@ -1,7 +1,61 @@
 /**
- * Authenticated API client using Clerk tokens
+ * Shared API helpers for web and desktop.
  */
 import { getAuthToken } from "./auth-client";
+
+const cfg = {
+  base: undefined as string | undefined,
+  password: "",
+}
+
+export function configureApiRuntime(input: {
+  baseUrl?: string | null
+  password?: string | null
+}) {
+  if ("baseUrl" in input) {
+    cfg.base = normalized(input.baseUrl ?? undefined)
+  }
+  if ("password" in input) {
+    cfg.password = input.password?.trim() ?? ""
+  }
+}
+
+export function resetApiRuntime() {
+  cfg.base = undefined
+  cfg.password = ""
+}
+
+/**
+ * Returns true when the app is running in demo/preview mode.
+ * Triggered by the `/demo` path prefix in the URL.
+ */
+export function isDemoPath(path: string) {
+  return path === "/demo" || path.startsWith("/demo/")
+}
+
+export function isDemoMode() {
+  if (typeof window === "undefined") return false
+  return isDemoPath(window.location.pathname)
+}
+
+export function isEmbedMode() {
+  if (typeof window === "undefined") return false
+  return new URLSearchParams(window.location.search).has("embed")
+}
+
+export function fixDir(input: string | undefined) {
+  const txt = input?.trim()
+  if (!txt) return
+  if (txt.startsWith("/")) return txt
+  const hit = ["/Users/", "/private/", "/Volumes/", "/home/"]
+    .map((item) => txt.indexOf(item))
+    .filter((item) => item >= 0)
+    .sort((a, b) => a - b)[0]
+
+  if (hit !== undefined) return txt.slice(hit)
+  if (/^(Users|private|Volumes|home)\//.test(txt)) return `/${txt}`
+  return txt
+}
 
 function normalized(url: string | undefined): string | undefined {
   const trimmed = url?.trim()
@@ -10,10 +64,30 @@ function normalized(url: string | undefined): string | undefined {
 }
 
 /**
+ * Get the base URL for claxedo-server API calls (PTY, pages, events, etc.)
+ * In demo mode returns the current origin so MSW service worker intercepts requests.
+ */
+export function getClaxedoServerUrl(): string {
+  if (isDemoMode()) return normalized(window.location.origin) ?? window.location.origin
+  const envUrl = import.meta.env.VITE_CLAXEDO_SERVER_URL as string | undefined
+  if (envUrl?.trim()) return envUrl.trim().replace(/\/+$/, "")
+  // In desktop mode, claxedo-server runs on a dynamic port and the URL is
+  // set via configureApiRuntime() during init. Fall back to it before the
+  // hardcoded default so PTY/events/pages calls reach the right server.
+  if (cfg.base) return cfg.base
+  return "http://127.0.0.1:3001"
+}
+
+/**
  * Get the default base URL for API calls.
  * On desktop, reads the sidecar URL set during init.
  */
 export function getDefaultBaseUrl(): string {
+  // Demo mode: use current origin so MSW service worker intercepts all requests
+  if (isDemoMode()) return window.location.origin
+
+  if (cfg.base) return cfg.base
+
   // Desktop: sidecar URL is set during init
   const serverUrl = (window as any).__OPENCODE__?.serverUrl as string | undefined
   if (serverUrl) return normalized(serverUrl) ?? serverUrl
@@ -33,8 +107,8 @@ export function getDefaultBaseUrl(): string {
 }
 
 /**
- * Make an authenticated fetch request with Clerk JWT token.
- * Supports both (url, options) and (Request) calling conventions.
+ * Make an authenticated fetch request.
+ * Prefers cloud bearer auth and falls back to configured desktop basic auth.
  */
 export async function authFetch(
   input: string | URL | Request,
@@ -42,20 +116,14 @@ export async function authFetch(
 ): Promise<Response> {
   const token = await getAuthToken();
 
-  // On desktop, fall back to Basic auth with the sidecar password
-  const serverPassword = (window as any).__OPENCODE__?.serverPassword as string | undefined
-
-  const activeDirectory = (window as any).__OPENCODE__?.activeDirectory as string | undefined
-
   const setAuth = (headers: Headers) => {
+    if (headers.has("Authorization")) return
     if (token) {
       headers.set("Authorization", `Bearer ${token}`);
-    } else if (serverPassword) {
-      headers.set("Authorization", `Basic ${btoa(`opencode:${serverPassword}`)}`);
+      return
     }
-    if (activeDirectory && !headers.has("x-opencode-directory")) {
-      headers.set("x-opencode-directory", activeDirectory);
-    }
+    if (!cfg.password) return
+    headers.set("Authorization", `Basic ${btoa(`opencode:${cfg.password}`)}`);
   }
 
   // Handle Request object (SDK passes Request objects directly)
@@ -63,7 +131,7 @@ export async function authFetch(
     const existingHeaders = new Headers(input.headers);
     setAuth(existingHeaders);
     // Create a new Request with updated headers
-    return fetch(new Request(input, { headers: existingHeaders }));
+    return fetch(new Request(input, { ...init, headers: existingHeaders }));
   }
 
   // Handle (url, options) style

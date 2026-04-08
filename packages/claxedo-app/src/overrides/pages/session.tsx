@@ -1,10 +1,9 @@
-import { For, onCleanup, onMount, Show, Match, Switch, createMemo, createEffect, on, untrack } from "solid-js"
+import { For, onCleanup, onMount, Show, Match, Switch, createMemo, createEffect, createComputed, on } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/context/local"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore, produce } from "solid-js/store"
-import { SessionContextUsage } from "@/components/session-context-usage"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Select } from "@opencode-ai/ui/select"
@@ -17,7 +16,7 @@ import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { useSync } from "@/context/sync"
 import { useTerminal, type LocalPTY } from "@/context/terminal"
 import { useLayout } from "@/context/layout"
-import { checksum, base64Encode } from "@opencode-ai/util/encode"
+import { checksum, base64Decode, base64Encode } from "@opencode-ai/util/encode"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSelectFile } from "@/components/dialog-select-file"
 import FileTree from "@/components/file-tree"
@@ -29,6 +28,7 @@ import type { State } from "@/context/global-sync/types"
 import { useSDK } from "@/context/sdk"
 import { usePrompt } from "@/context/prompt"
 import { useComments } from "@/context/comments"
+import { useServer } from "@/context/server"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { usePermission } from "@/context/permission"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -37,17 +37,22 @@ import { SessionHeader, SessionContextTab, SortableTab, FileVisual, NewSessionVi
 const navMark = (..._args: unknown[]) => {}
 const navParams = (..._args: unknown[]) => {}
 import { same } from "@/utils/same"
+import { extractPromptFromParts } from "@/utils/prompt"
+// Claxedo's local.tsx doesn't have a `session` property (upstream added per-session
+// model persistence in 4ad8116ce). The syncSessionModel / resetSessionModel helpers
+// are no-ops here — Claxedo does not persist model choice per session.
+const syncSessionModel = (_local: unknown, _msg: unknown) => {}
+const resetSessionModel = (_local: unknown) => {}
+import { createSessionHistoryWindow, emptyUserMessages } from "@/pages/session/history-window"
+import { setSessionHandoff, setTerminalHandoff } from "@/pages/session/handoff"
 import { createOpenReviewFile, focusTerminalById } from "@/pages/session/helpers"
-import { createScrollSpy } from "@/pages/session/scroll-spy"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
 import {
   SessionReviewTab,
-  StickyAddButton,
   type DiffStyle,
   type SessionReviewTabProps,
 } from "@/pages/session/review-tab"
-import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { terminalTabLabel } from "@/pages/session/terminal-label"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
@@ -58,242 +63,9 @@ import { useClaxedoLayout } from "../../claxedo-ui/context/claxedo-layout"
 import { paneDefaults, paneRefSystem } from "../../claxedo-ui/context/claxedo-layout/pane-intent"
 import { useGroupId } from "../../claxedo-ui/context/group-id"
 import { createDebugLogger } from "../utils/debug"
+import { stableSessionInfo, stableSessionMessages } from "./session/view-state"
 
-type HandoffSession = {
-  prompt: string
-  files: Record<string, SelectedLineRange | null>
-}
-
-const HANDOFF_MAX = 40
-
-const handoff = {
-  session: new Map<string, HandoffSession>(),
-  terminal: new Map<string, string[]>(),
-}
-
-const touch = <K, V>(map: Map<K, V>, key: K, value: V) => {
-  map.delete(key)
-  map.set(key, value)
-  while (map.size > HANDOFF_MAX) {
-    const first = map.keys().next().value
-    if (first === undefined) return
-    map.delete(first)
-  }
-}
-
-const setSessionHandoff = (key: string, patch: Partial<HandoffSession>) => {
-  const prev = handoff.session.get(key) ?? { prompt: "", files: {} }
-  touch(handoff.session, key, { ...prev, ...patch })
-}
-
-const emptyUserMessages: UserMessage[] = []
-
-type SessionHistoryWindowInput = {
-  sessionID: () => string | undefined
-  messagesReady: () => boolean
-  visibleUserMessages: () => UserMessage[]
-  historyMore: () => boolean
-  historyLoading: () => boolean
-  loadMore: (sessionID: string) => Promise<void>
-  userScrolled: () => boolean
-  scroller: () => HTMLDivElement | undefined
-}
-
-/**
- * Maintains the rendered history window for a session timeline.
- *
- * It keeps initial paint bounded to recent turns, reveals cached turns in
- * small batches while scrolling upward, and prefetches older history near top.
- */
-function createSessionHistoryWindow(input: SessionHistoryWindowInput) {
-  const turnInit = 10
-  const turnBatch = 8
-  const turnScrollThreshold = 200
-  const turnPrefetchBuffer = 16
-  const prefetchCooldownMs = 400
-  const prefetchNoGrowthLimit = 2
-
-  const [state, setState] = createStore({
-    turnID: undefined as string | undefined,
-    turnStart: 0,
-    prefetchUntil: 0,
-    prefetchNoGrowth: 0,
-  })
-
-  const initialTurnStart = (len: number) => (len > turnInit ? len - turnInit : 0)
-
-  const turnStart = createMemo(() => {
-    const id = input.sessionID()
-    const len = input.visibleUserMessages().length
-    if (!id || len <= 0) return 0
-    if (state.turnID !== id) return initialTurnStart(len)
-    if (state.turnStart <= 0) return 0
-    if (state.turnStart >= len) return initialTurnStart(len)
-    return state.turnStart
-  })
-
-  const setTurnStart = (start: number) => {
-    const id = input.sessionID()
-    const next = start > 0 ? start : 0
-    if (!id) {
-      setState({ turnID: undefined, turnStart: next })
-      return
-    }
-    setState({ turnID: id, turnStart: next })
-  }
-
-  const renderedUserMessages = createMemo(
-    () => {
-      const msgs = input.visibleUserMessages()
-      const start = turnStart()
-      if (start <= 0) return msgs
-      return msgs.slice(start)
-    },
-    emptyUserMessages,
-    {
-      equals: same,
-    },
-  )
-
-  const preserveScroll = (fn: () => void) => {
-    const el = input.scroller()
-    if (!el) {
-      fn()
-      return
-    }
-    const beforeTop = el.scrollTop
-    const beforeHeight = el.scrollHeight
-    fn()
-    requestAnimationFrame(() => {
-      const delta = el.scrollHeight - beforeHeight
-      if (!delta) return
-      el.scrollTop = beforeTop + delta
-    })
-  }
-
-  const backfillTurns = () => {
-    const start = turnStart()
-    if (start <= 0) return
-
-    const next = start - turnBatch
-    const nextStart = next > 0 ? next : 0
-
-    preserveScroll(() => setTurnStart(nextStart))
-  }
-
-  /** Button path: reveal all cached turns, fetch older history, reveal one batch. */
-  const loadAndReveal = async () => {
-    const id = input.sessionID()
-    if (!id) return
-
-    const start = turnStart()
-    const beforeVisible = input.visibleUserMessages().length
-
-    if (start > 0) setTurnStart(0)
-
-    if (!input.historyMore() || input.historyLoading()) return
-
-    await input.loadMore(id)
-    if (input.sessionID() !== id) return
-
-    const afterVisible = input.visibleUserMessages().length
-    const growth = afterVisible - beforeVisible
-    if (state.prefetchNoGrowth) setState("prefetchNoGrowth", 0)
-    if (growth <= 0) return
-    if (turnStart() !== 0) return
-
-    const target = Math.min(afterVisible, Math.max(beforeVisible, renderedUserMessages().length) + turnBatch)
-    const nextStart = Math.max(0, afterVisible - target)
-    preserveScroll(() => setTurnStart(nextStart))
-  }
-
-  /** Scroll/prefetch path: fetch older history from server. */
-  const fetchOlderMessages = async (opts?: { prefetch?: boolean }) => {
-    const id = input.sessionID()
-    if (!id) return
-    if (!input.historyMore() || input.historyLoading()) return
-
-    if (opts?.prefetch) {
-      const now = Date.now()
-      if (state.prefetchUntil > now) return
-      if (state.prefetchNoGrowth >= prefetchNoGrowthLimit) return
-      setState("prefetchUntil", now + prefetchCooldownMs)
-    }
-
-    const start = turnStart()
-    const beforeVisible = input.visibleUserMessages().length
-    const beforeRendered = start <= 0 ? beforeVisible : renderedUserMessages().length
-
-    await input.loadMore(id)
-    if (input.sessionID() !== id) return
-
-    const afterVisible = input.visibleUserMessages().length
-    const growth = afterVisible - beforeVisible
-
-    if (opts?.prefetch) {
-      setState("prefetchNoGrowth", growth > 0 ? 0 : state.prefetchNoGrowth + 1)
-    } else if (growth > 0 && state.prefetchNoGrowth) {
-      setState("prefetchNoGrowth", 0)
-    }
-
-    if (growth <= 0) return
-    if (turnStart() !== start) return
-
-    const reveal = !opts?.prefetch
-    const currentRendered = renderedUserMessages().length
-    const base = Math.max(beforeRendered, currentRendered)
-    const target = reveal ? Math.min(afterVisible, base + turnBatch) : base
-    const nextStart = Math.max(0, afterVisible - target)
-    preserveScroll(() => setTurnStart(nextStart))
-  }
-
-  const onScrollerScroll = () => {
-    if (!input.userScrolled()) return
-    const el = input.scroller()
-    if (!el) return
-    if (el.scrollTop >= turnScrollThreshold) return
-
-    const start = turnStart()
-    if (start > 0) {
-      if (start <= turnPrefetchBuffer) {
-        void fetchOlderMessages({ prefetch: true })
-      }
-      backfillTurns()
-      return
-    }
-
-    void fetchOlderMessages()
-  }
-
-  createEffect(
-    on(
-      input.sessionID,
-      () => {
-        setState({ prefetchUntil: 0, prefetchNoGrowth: 0 })
-      },
-      { defer: true },
-    ),
-  )
-
-  createEffect(
-    on(
-      () => [input.sessionID(), input.messagesReady()] as const,
-      ([id, ready]) => {
-        if (!id || !ready) return
-        setTurnStart(initialTurnStart(input.visibleUserMessages().length))
-      },
-      { defer: true },
-    ),
-  )
-
-  return {
-    turnStart,
-    setTurnStart,
-    renderedUserMessages,
-    loadAndReveal,
-    onScrollerScroll,
-  }
-}
+const trace = (..._args: unknown[]) => undefined
 
 export default function Page() {
   const debug = createDebugLogger("layout.session-page", "layout:session", {
@@ -332,9 +104,23 @@ export default function Page() {
   }
 
   const layout = useLayout()
-  const local = useLocal()
+  let local: ReturnType<typeof useLocal>
+  try {
+    local = useLocal()
+  } catch (err) {
+    if (claxedoLayout) {
+      debug.log("skip session page outside local provider", {
+        hasClaxedoLayout: !!claxedoLayout,
+        hasSessionParams: !!sessionParams,
+        hasGroupId: !!groupId,
+      })
+      return <div />
+    }
+    throw err
+  }
   const file = useFile()
   const sync = useSync()
+  const server = useServer()
   const terminal = useTerminal()
   const dialog = useDialog()
   const fileComponent = useFileComponent()
@@ -368,16 +154,35 @@ export default function Page() {
   const paneIntentDefaults = createMemo(() => paneDefaults(paneLayout(), paneLeafId()))
   const paneIntentSystem = createMemo(() => paneRefSystem(paneLayout(), paneLeafId()))
 
+  // Inject default prompt text from pane intent (e.g. process tab session pane)
+  {
+    let injected = false
+    createEffect(
+      on(
+        () => [paneIntentDefaults()?.prompt, prompt.ready(), prompt.dirty()] as const,
+        ([defaultPrompt, ready, dirty]) => {
+          if (injected || !defaultPrompt || !ready || dirty) return
+          injected = true
+          const text = defaultPrompt
+          prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+        },
+      ),
+    )
+  }
+
   // Derive session ID from context (multi-pane), group fallback, or route params.
   // Use prev-value guard: once we resolve a real session ID, prevent transient
   // reverts to "new" caused by multi-pane state re-initialization / content updates.
   const sessionID = createMemo((prev: string | undefined) => {
     const id = sessionParams?.sessionId() ?? fallbackGroup()?.sessionId ?? routeParams.id
     if (prev && prev !== "new" && (id === "new" || !id)) {
-      debug.log("sessionID prevented revert", {
+      trace("id-source", {
         prev,
-        next: id,
-        source: sessionParams ? "sessionParams" : fallbackGroup() ? "fallbackGroup" : "route",
+        id,
+        routeId: routeParams.id,
+        scopedId: sessionParams?.sessionId(),
+        fallbackId: fallbackGroup()?.sessionId,
+        source: sessionParams?.sessionId() ? "sessionParams" : fallbackGroup()?.sessionId ? "fallbackGroup" : "route",
       })
       return prev
     }
@@ -416,7 +221,7 @@ export default function Page() {
         resolvedSession,
         resolvedDir,
       ]) => {
-        debug.log("resolved params", {
+        trace("resolved-params", {
           routeDir,
           routeId,
           scopedDir,
@@ -445,37 +250,45 @@ export default function Page() {
 
   // Cloud: group-aware navigation helper
   const groupNavigate = (path: string) => {
-    const currentGroupId = sessionParams?.groupId() ?? fallbackGroup()?.groupId
-    const currentDir = sessionParams?.directory() ?? fallbackGroup()?.directory
-    if (currentGroupId && currentDir && claxedoLayout) {
+    const gid = sessionParams?.groupId() ?? fallbackGroup()?.groupId
+    const current = sessionParams?.directory() ?? fallbackGroup()?.directory
+    if (gid && current && claxedoLayout) {
+      const route = path.match(/^\/([^/]+)\/session(?:\/([^/]+))?$/)
+      const dir = route?.[1] ? base64Decode(route[1]) ?? current : current
+      const sid = route?.[2]
+      const groups = claxedoLayout.split.groups()
+      const focused = claxedoLayout.split.focusedId()
+      const matches = groups.filter((group) => claxedoLayout.groupWorktree(group.id).default() === dir)
+      const target = matches.find((group) => group.id === gid)?.id ?? matches.find((group) => group.id === focused)?.id ?? matches[0]?.id ?? gid
       debug.log("groupNavigate tab route", {
-        currentGroupId,
-        currentDir,
+        currentGroupId: gid,
+        currentDir: current,
+        targetDir: dir,
+        targetGroupId: target,
         path,
       })
-      const tabs = claxedoLayout.groupTabs(currentGroupId)
+      const tabs = claxedoLayout.groupTabs(target)
+      claxedoLayout.groupWorktree(target).setDefault(dir)
+      claxedoLayout.dispatch({ type: "SplitFocusRequested", groupId: target })
 
-      const match = path.match(/\/session\/(.+)$/)
-      const newSessionId = match?.[1]
-
-      if (newSessionId) {
-        const tabId = tabs.addSession(currentDir, newSessionId, "Session")
-        debug.verbose("groupNavigate session", { path, newSessionId, tabId })
+      if (sid) {
+        const tabId = tabs.addSession(dir, sid, "Session")
+        debug.verbose("groupNavigate session", { path, newSessionId: sid, tabId, dir, target })
         if (tabId) tabs.setActive(tabId)
-      } else if (path.endsWith("/session")) {
-        const tabId = tabs.addSession(currentDir, "new", "New Session")
-        debug.verbose("groupNavigate new session", { path, tabId })
+      } else if (route) {
+        const tabId = tabs.addSession(dir, "new", "New Session")
+        debug.verbose("groupNavigate new session", { path, tabId, dir, target })
         if (tabId) tabs.setActive(tabId)
+      } else {
+        navigate(path)
       }
     } else {
-      debug.log("groupNavigate route fallback", { path, currentGroupId, currentDir })
+      debug.log("groupNavigate route fallback", { path, currentGroupId: gid, currentDir: current })
       navigate(path)
     }
   }
 
-  const composerState = createSessionComposerState({
-    sessionID: () => params.id,
-  })
+  const composerState = createSessionComposerState()
 
   const navigateSession = (id?: string) => {
     const dir = params.dir
@@ -504,6 +317,7 @@ export default function Page() {
   const [ui, setUi] = createStore({
     responding: false,
     pendingMessage: undefined as string | undefined,
+    restoring: undefined as string | undefined,
     scrollGesture: 0,
     autoCreated: false,
     scroll: {
@@ -616,7 +430,8 @@ export default function Page() {
     })
   }
 
-  const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
+  const infoState = createMemo((prev: ReturnType<typeof stableSessionInfo>) => stableSessionInfo(prev, params.id, params.id ? sync.session.get(params.id) as Session | undefined : undefined))
+  const info = createMemo(() => infoState()?.value)
   const diffs = createMemo(() => (params.id ? (sync.data.session_diff[params.id] ?? []) : []))
   const todos = createMemo(() => (params.id ? (sync.data.todo[params.id] ?? []) : []))
   const reviewCount = createMemo(() => Math.max(info()?.summary?.files ?? 0, diffs().length))
@@ -683,11 +498,14 @@ export default function Page() {
   })
 
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
-  const messages = createMemo(() => (params.id ? (sync.data.message[params.id] ?? []) : []))
+  const messageState = createMemo((prev: ReturnType<typeof stableSessionMessages> | undefined) =>
+    stableSessionMessages(prev as Parameters<typeof stableSessionMessages>[0], params.id, params.id ? sync.data.message[params.id] as Message[] | undefined : undefined),
+  )
+  const messages = createMemo(() => messageState()?.value ?? [])
   const messagesReady = createMemo(() => {
     const id = params.id
     if (!id) return true
-    return sync.data.message[id] !== undefined
+    return messageState()?.value !== undefined
   })
   const historyMore = createMemo(() => {
     const id = params.id
@@ -722,6 +540,50 @@ export default function Page() {
           terminalOpen,
           tabCount,
           activeTab: active,
+        })
+        trace("render-state", {
+          id,
+          dir,
+          ready,
+          messageCount,
+          infoId,
+          terminalOpen,
+          tabCount,
+          activeTab: active,
+        })
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => [params.id, routeParams.id, sessionParams?.sessionId(), fallbackGroup()?.sessionId, info()?.id] as const,
+      ([id, routeId, scopedId, fallbackId, infoId], prev) => {
+        trace("info-state", {
+          prev,
+          next: { id, routeId, scopedId, fallbackId, infoId },
+        })
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => [params.id, sync.data.message[params.id ?? ""], messageState()?.value] as const,
+      ([id, raw, stable], prev) => {
+        trace("message-state", {
+          prev,
+          next: {
+            id,
+            rawDefined: raw !== undefined,
+            rawCount: raw?.length ?? 0,
+            rawIds: raw?.map((item) => item.id) ?? [],
+            stableDefined: stable !== undefined,
+            stableCount: stable?.length ?? 0,
+            stableIds: stable?.map((item) => item.id) ?? [],
+          },
         })
       },
       { defer: true },
@@ -957,10 +819,36 @@ export default function Page() {
       () => lastUserMessage()?.id,
       () => {
         const msg = lastUserMessage()
+        trace("message-focus", {
+          sessionId: params.id,
+          next: msg ? { id: msg.id, role: msg.role } : undefined,
+        })
         if (!msg) return
-        if (msg.agent) local.agent.set(msg.agent)
-        if (msg.model) local.model.set(msg.model)
+        syncSessionModel(local, msg)
       },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => ({ dir: params.dir, id: params.id }),
+      (next, prev) => {
+        trace("session-change", {
+          prev,
+          next,
+        })
+        if (!prev) return
+        if (next.dir === prev.dir && next.id === prev.id) return
+        if (prev.id) {
+          trace("session-evict-request", {
+            prev,
+            next,
+          })
+        }
+        if (prev.id) sync.session.evict(prev.id, prev.dir)
+        if (!next.id) resetSessionModel(local)
+      },
+      { defer: true },
     ),
   )
 
@@ -972,25 +860,60 @@ export default function Page() {
     mobileTab: "session" as "session" | "changes",
     changes: "session" as "session" | "turn",
     newSessionWorktree: "main",
-    promptHeight: 0,
+    deferRender: false,
   })
+
+  createComputed((prev) => {
+    const key = sessionKey()
+    if (key !== prev) {
+      setStore("deferRender", true)
+      requestAnimationFrame(() => {
+        setTimeout(() => setStore("deferRender", false), 0)
+      })
+    }
+    return key
+  }, sessionKey())
 
   const turnDiffs = createMemo(() => lastUserMessage()?.summary?.diffs ?? [])
   const reviewDiffs = createMemo(() => (store.changes === "session" ? diffs() : turnDiffs()))
 
   const newSessionWorktree = createMemo(() => {
     if (store.newSessionWorktree === "create") return "create"
+    if (store.newSessionWorktree !== "main") return store.newSessionWorktree
     const project = sync.project
     if (project && sync.data.path.directory !== project.worktree) return sync.data.path.directory
     return "main"
   })
 
+  let inputRef!: HTMLDivElement
+  let promptDock: HTMLDivElement | undefined
+  let dockHeight = 0
+  let scroller: HTMLDivElement | undefined
+  let content: HTMLDivElement | undefined
+  let scrollMark = 0
+  let messageMark = 0
+
   const activeMessage = createMemo(() => {
-    if (!store.messageId) return lastUserMessage()
-    const found = visibleUserMessages()?.find((m) => m.id === store.messageId)
+    const id = store.messageId && messageMark === scrollMark ? store.messageId : cursor()
+    if (!id) return lastUserMessage()
+    const found = visibleUserMessages()?.find((m) => m.id === id)
     return found ?? lastUserMessage()
   })
+  createEffect(
+    on(
+      () => activeMessage()?.id,
+      (id, prev) => {
+        trace("active-message", {
+          prev,
+          next: id,
+          sessionId: params.id,
+        })
+      },
+      { defer: true },
+    ),
+  )
   const setActiveMessage = (message: UserMessage | undefined) => {
+    messageMark = scrollMark
     setStore("messageId", message?.id)
   }
 
@@ -998,12 +921,13 @@ export default function Page() {
     const msgs = visibleUserMessages()
     if (msgs.length === 0) return
 
-    const current = activeMessage()
-    const currentIndex = current ? msgs.findIndex((m) => m.id === current.id) : -1
-    const targetIndex = currentIndex === -1 ? (offset > 0 ? 0 : msgs.length - 1) : currentIndex + offset
-    if (targetIndex < 0 || targetIndex >= msgs.length) return
+    const current = store.messageId && messageMark === scrollMark ? store.messageId : cursor()
+    const base = current ? msgs.findIndex((m) => m.id === current) : msgs.length
+    const currentIndex = base === -1 ? msgs.length : base
+    const targetIndex = currentIndex + offset
+    if (targetIndex < 0 || targetIndex > msgs.length) return
 
-    if (targetIndex === msgs.length - 1) {
+    if (targetIndex === msgs.length) {
       resumeScroll()
       return
     }
@@ -1047,10 +971,6 @@ export default function Page() {
   })
 
   const idle = { type: "idle" as const }
-  let inputRef!: HTMLDivElement
-  let promptDock: HTMLDivElement | undefined
-  let scroller: HTMLDivElement | undefined
-  let content: HTMLDivElement | undefined
 
   const scrollGestureWindowMs = 250
 
@@ -1069,14 +989,46 @@ export default function Page() {
 
   createEffect(
     on(
-      () => [sdk.directory, params.id] as const,
-      ([, id], prev) => {
-        if (!id || id === "new") return
+      () => [sdk.directory, params.id, server.healthy()] as const,
+      ([, id, healthy], prev) => {
+        if (!id || id === "new") {
+          if (debug.enabled(2)) {
+            debug.verbose("sync skip", {
+              reason: "invalid-session",
+              directory: sdk.directory,
+              id,
+              healthy,
+            })
+          }
+          return
+        }
+        if (healthy !== true) {
+          if (debug.enabled(2)) {
+            debug.verbose("sync skip", {
+              reason: "server-unhealthy",
+              directory: sdk.directory,
+              id,
+              healthy,
+            })
+          }
+          return
+        }
         // Skip sync only when transitioning from "new" → real ID during session
         // creation. The optimistic message is already in the store and SSE will
         // deliver real messages. On page refresh prev is undefined — we must sync.
-        if (prev?.[1] === "new") return
-        sync.session.sync(id)
+        if (prev?.[1] === "new") {
+          if (debug.enabled(2)) {
+            debug.verbose("sync skip", {
+              reason: "from-new",
+              directory: sdk.directory,
+              id,
+            })
+          }
+          return
+        }
+        debug.log("sync start", { directory: sdk.directory, id })
+        void sync.session.sync(id)
+        void sync.session.todo(id)
       },
     ),
   )
@@ -1145,6 +1097,8 @@ export default function Page() {
         setStore("expanded", {})
         setStore("changes", "session")
         setUi("autoCreated", false)
+        setUi("pendingMessage", undefined)
+        setUi("restoring", undefined)
       },
       { defer: true },
     ),
@@ -1166,7 +1120,7 @@ export default function Page() {
       () => [lastUserMessage()?.id, status().type] as const,
       ([id, statusType]) => {
         if (!id) return
-        setStore("expanded", id, statusType !== "idle")
+        setStore("expanded", id, statusType === "busy" || statusType === "retry")
       },
     ),
   )
@@ -1206,11 +1160,58 @@ export default function Page() {
     })
   }
 
+  const updateCommentInContext = (input: {
+    id: string
+    file: string
+    selection: SelectedLineRange
+    comment: string
+    preview?: string
+  }) => {
+    comments.update(input.file, input.id, input.comment)
+    prompt.context.updateComment(input.file, input.id, {
+      comment: input.comment,
+      ...(input.preview ? { preview: input.preview } : {}),
+    })
+  }
+
+  const removeCommentFromContext = (input: { id: string; file: string }) => {
+    comments.remove(input.file, input.id)
+    prompt.context.removeComment(input.file, input.id)
+  }
+
+  const reviewCommentActions = createMemo(() => ({
+    moreLabel: language.t("common.moreOptions"),
+    editLabel: language.t("common.edit"),
+    deleteLabel: language.t("common.delete"),
+    saveLabel: language.t("common.save"),
+  }))
+
+  const isEditableTarget = (target: EventTarget | null | undefined) => {
+    if (!(target instanceof HTMLElement)) return false
+    return /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName) || target.isContentEditable
+  }
+
+  const deepActiveElement = () => {
+    let current: Element | null = document.activeElement
+    while (current instanceof HTMLElement && current.shadowRoot?.activeElement) {
+      current = current.shadowRoot.activeElement
+    }
+    return current instanceof HTMLElement ? current : undefined
+  }
+
   const handleKeyDown = (event: KeyboardEvent) => {
-    const activeElement = document.activeElement as HTMLElement | undefined
+    const path = event.composedPath()
+    const target = path.find((item): item is HTMLElement => item instanceof HTMLElement)
+    const activeElement = deepActiveElement()
+
+    const protectedTarget = path.some(
+      (item) => item instanceof HTMLElement && item.closest("[data-prevent-autofocus]") !== null,
+    )
+    if (protectedTarget || isEditableTarget(target)) return
+
     if (activeElement) {
       const isProtected = activeElement.closest("[data-prevent-autofocus]")
-      const isInput = /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(activeElement.tagName) || activeElement.isContentEditable
+      const isInput = isEditableTarget(activeElement)
       if (isProtected || isInput) return
     }
     if (dialog.active) return
@@ -1220,8 +1221,10 @@ export default function Page() {
       return
     }
 
-    // Don't autofocus chat if terminal panel is open
-    if (view().terminal.opened()) return
+    if (view().terminal.opened()) {
+      const id = terminal.active()
+      if (id && focusTerminalById(id)) return
+    }
 
     // Only treat explicit scroll keys as potential "user scroll" gestures.
     if (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End") {
@@ -1230,7 +1233,7 @@ export default function Page() {
     }
 
     if (event.key.length === 1 && event.key !== "Unidentified" && !(event.ctrlKey || event.metaKey)) {
-      if (blocked()) return
+      if (composerState.blocked()) return
       inputRef?.focus()
     }
   }
@@ -1332,6 +1335,7 @@ export default function Page() {
     showAllFiles,
     tabForPath: file.tab,
     openTab: tabs().open,
+    setActive: tabs().setActive,
     loadFile: file.load,
   })
 
@@ -1366,54 +1370,62 @@ export default function Page() {
     loadingClass: string
     emptyClass: string
   }) => (
-    <Switch>
-      <Match when={store.changes === "turn" && !!params.id}>
-        <SessionReviewTab
-          title={changesTitle()}
-          empty={emptyTurn()}
-          diffs={reviewDiffs}
-          view={view}
-          diffStyle={input.diffStyle}
-          onDiffStyleChange={input.onDiffStyleChange}
-          onScrollRef={(el) => setTree("reviewScroll", el)}
-          focusedFile={tree.activeDiff}
-          onLineComment={(comment) => addCommentToContext({ ...comment, origin: "review" })}
-          comments={comments.all()}
-          focusedComment={comments.focus()}
-          onFocusedCommentChange={comments.setFocus}
-          onViewFile={openReviewFile}
-          classes={input.classes}
-        />
-      </Match>
-      <Match when={hasReview()}>
-        <Show
-          when={diffsReady()}
-          fallback={<div class={input.loadingClass}>{language.t("session.review.loadingChanges")}</div>}
-        >
+    <Show when={!store.deferRender}>
+      <Switch>
+        <Match when={store.changes === "turn" && !!params.id}>
           <SessionReviewTab
             title={changesTitle()}
+            empty={emptyTurn()}
             diffs={reviewDiffs}
-            view={view}
+            view={() => view() as any}
             diffStyle={input.diffStyle}
             onDiffStyleChange={input.onDiffStyleChange}
             onScrollRef={(el) => setTree("reviewScroll", el)}
             focusedFile={tree.activeDiff}
             onLineComment={(comment) => addCommentToContext({ ...comment, origin: "review" })}
+            onLineCommentUpdate={updateCommentInContext}
+            onLineCommentDelete={removeCommentFromContext}
+            lineCommentActions={reviewCommentActions()}
             comments={comments.all()}
             focusedComment={comments.focus()}
             onFocusedCommentChange={comments.setFocus}
             onViewFile={openReviewFile}
             classes={input.classes}
           />
-        </Show>
-      </Match>
-      <Match when={true}>
-        <div class={input.emptyClass}>
-          <Mark class="w-14 opacity-10" />
-          <div class="text-14-regular text-text-weak max-w-56">{language.t("session.review.empty")}</div>
-        </div>
-      </Match>
-    </Switch>
+        </Match>
+        <Match when={hasReview()}>
+          <Show
+            when={diffsReady()}
+            fallback={<div class={input.loadingClass}>{language.t("session.review.loadingChanges")}</div>}
+          >
+            <SessionReviewTab
+              title={changesTitle()}
+              diffs={reviewDiffs}
+              view={() => view() as any}
+              diffStyle={input.diffStyle}
+              onDiffStyleChange={input.onDiffStyleChange}
+              onScrollRef={(el) => setTree("reviewScroll", el)}
+              focusedFile={tree.activeDiff}
+              onLineComment={(comment) => addCommentToContext({ ...comment, origin: "review" })}
+              onLineCommentUpdate={updateCommentInContext}
+              onLineCommentDelete={removeCommentFromContext}
+              lineCommentActions={reviewCommentActions()}
+              comments={comments.all()}
+              focusedComment={comments.focus()}
+              onFocusedCommentChange={comments.setFocus}
+              onViewFile={openReviewFile}
+              classes={input.classes}
+            />
+          </Show>
+        </Match>
+        <Match when={true}>
+          <div class={input.emptyClass}>
+            <Mark class="w-14 opacity-10" />
+            <div class="text-14-regular text-text-weak max-w-56">{language.t("session.review.empty")}</div>
+          </div>
+        </Match>
+      </Switch>
+    </Show>
   )
 
   const reviewPanel = () => (
@@ -1619,12 +1631,7 @@ export default function Page() {
 
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
-  const scrollSpy = createScrollSpy({
-    onActive: (id) => {
-      if (id === store.messageId) return
-      setStore("messageId", id)
-    },
-  })
+  let historyFillFrame: number | undefined
 
   const updateScrollState = (el: HTMLDivElement) => {
     const max = el.scrollHeight - el.clientHeight
@@ -1672,23 +1679,48 @@ export default function Page() {
     ),
   )
 
-  createEffect(
-    on(
-      sessionKey,
-      () => {
-        scrollSpy.clear()
-      },
-      { defer: true },
-    ),
-  )
-
   const anchor = (id: string) => `message-${id}`
+  function cursor() {
+    const root = scroller
+    if (!root) return store.messageId
+
+    const box = root.getBoundingClientRect()
+    const line = box.top + 100
+    const list = [...root.querySelectorAll<HTMLElement>("[data-message-id]")]
+      .map((el) => {
+        const id = el.dataset.messageId
+        if (!id) return
+
+        const rect = el.getBoundingClientRect()
+        return { id, top: rect.top, bottom: rect.bottom }
+      })
+      .filter((item): item is { id: string; top: number; bottom: number } => !!item)
+
+    const shown = list.filter((item) => item.bottom > box.top && item.top < box.bottom)
+    const hit = shown.find((item) => item.top <= line && item.bottom >= line)
+    if (hit) return hit.id
+
+    const near = [...shown].sort((a, b) => {
+      const da = Math.abs(a.top - line)
+      const db = Math.abs(b.top - line)
+      if (da !== db) return da - db
+      return a.top - b.top
+    })[0]
+    if (near) return near.id
+
+    return list.filter((item) => item.top <= line).at(-1)?.id ?? list[0]?.id ?? store.messageId
+  }
 
   const setScrollRef = (el: HTMLDivElement | undefined) => {
     scroller = el
     autoScroll.scrollRef(el)
-    scrollSpy.setContainer(el)
-    if (el) scheduleScrollState(el)
+    if (!el) return
+    scheduleScrollState(el)
+    scheduleHistoryFill()
+  }
+
+  const markUserScroll = () => {
+    scrollMark += 1
   }
 
   createResizeObserver(
@@ -1696,7 +1728,7 @@ export default function Page() {
     () => {
       const el = scroller
       if (el) scheduleScrollState(el)
-      scrollSpy.markDirty()
+      scheduleHistoryFill()
     },
   )
 
@@ -1711,34 +1743,179 @@ export default function Page() {
     scroller: () => scroller,
   })
 
+  const scheduleHistoryFill = () => {
+    if (historyFillFrame !== undefined) return
+
+    historyFillFrame = requestAnimationFrame(() => {
+      historyFillFrame = undefined
+
+      if (!params.id || !messagesReady()) return
+      if (autoScroll.userScrolled() || historyLoading()) return
+
+      const el = scroller
+      if (!el) return
+      if (el.scrollHeight > el.clientHeight + 1) return
+      if (historyWindow.turnStart() <= 0 && !historyMore()) return
+
+      void historyWindow.loadAndReveal()
+    })
+  }
+
+  createEffect(
+    on(
+      () =>
+        [
+          params.id,
+          messagesReady(),
+          historyWindow.turnStart(),
+          historyMore(),
+          historyLoading(),
+          autoScroll.userScrolled(),
+          visibleUserMessages().length,
+        ] as const,
+      ([id, ready, start, more, loading, scrolled]) => {
+        if (!id || !ready || loading || scrolled) return
+        if (start <= 0 && !more) return
+        scheduleHistoryFill()
+      },
+      { defer: true },
+    ),
+  )
+
   createResizeObserver(
     () => promptDock,
     ({ height }) => {
       const next = Math.ceil(height)
-
-      if (next === store.promptHeight) return
+      if (next === dockHeight) return
 
       const el = scroller
-      const stick = el ? el.scrollHeight - el.clientHeight - el.scrollTop < 10 : false
+      const delta = next - dockHeight
+      const stick = el
+        ? !autoScroll.userScrolled() || el.scrollHeight - el.clientHeight - el.scrollTop < 10 + Math.max(0, delta)
+        : false
 
-      setStore("promptHeight", next)
+      dockHeight = next
 
-      if (stick && el) {
-        requestAnimationFrame(() => {
-          el.scrollTo({ top: el.scrollHeight, behavior: "auto" })
-        })
-      }
+      if (stick) autoScroll.forceScrollToBottom()
 
       if (el) scheduleScrollState(el)
-      scrollSpy.markDirty()
+      scheduleHistoryFill()
     },
   )
+
+  const draft = (id: string) =>
+    extractPromptFromParts(sync.data.part[id] ?? [], {
+      directory: sdk.directory,
+      attachmentName: language.t("common.attachment"),
+    })
+
+  const line = (id: string) => {
+    const text = draft(id)
+      .map((part) => (part.type === "image" ? `[image:${part.filename}]` : part.content))
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim()
+    if (text) return text
+    return `[${language.t("common.attachment")}]`
+  }
+
+  const fail = (err: unknown) => {
+    showToast({
+      variant: "error",
+      title: language.t("common.requestFailed"),
+      description: errorMessage(err),
+    })
+  }
+
+  const busy = (sessionID: string) => {
+    const status = sync.data.session_status[sessionID]
+    if (status?.type === "busy" || status?.type === "retry") return true
+    return (sync.data.message[sessionID] ?? []).some(
+      (item) => item.role === "assistant" && typeof item.time.completed !== "number",
+    )
+  }
+
+  const halt = (sessionID: string) =>
+    busy(sessionID) ? sdk.client.session.abort({ sessionID }).catch(() => {}) : Promise.resolve()
+
+  const fork = (input: { sessionID: string; messageID: string }) => {
+    const value = draft(input.messageID)
+    return sdk.client.session
+      .fork(input)
+      .then((result) => {
+        const next = result.data
+        if (!next) {
+          showToast({
+            variant: "error",
+            title: language.t("common.requestFailed"),
+          })
+          return
+        }
+        navigateSession(next.id)
+        requestAnimationFrame(() => {
+          prompt.set(value)
+        })
+      })
+      .catch(fail)
+  }
+
+  const revert = (input: { sessionID: string; messageID: string }) => {
+    const value = draft(input.messageID)
+    return halt(input.sessionID)
+      .then(() => sdk.client.session.revert(input))
+      .then(() => {
+        prompt.set(value)
+      })
+      .catch(fail)
+  }
+
+  const restore = (id: string) => {
+    const sessionID = params.id
+    if (!sessionID || ui.restoring) return
+
+    const next = userMessages().find((item) => item.id > id)
+    setUi("restoring", id)
+
+    const task = !next
+      ? halt(sessionID)
+          .then(() => sdk.client.session.unrevert({ sessionID }))
+          .then(() => {
+            prompt.reset()
+          })
+      : halt(sessionID)
+          .then(() =>
+            sdk.client.session.revert({
+              sessionID,
+              messageID: next.id,
+            }),
+          )
+          .then(() => {
+            prompt.set(draft(next.id))
+          })
+
+    return task.catch(fail).finally(() => {
+      setUi("restoring", (value) => (value === id ? undefined : value))
+    })
+  }
+
+  const rolled = createMemo(() => {
+    const id = revertMessageID()
+    if (!id) return []
+    return userMessages()
+      .filter((item) => item.id >= id)
+      .map((item) => ({ id: item.id, text: line(item.id) }))
+  })
+
+  const actions = { fork, revert }
 
   const { clearMessageHash, scrollToMessage } = useSessionHashScroll({
     sessionKey,
     sessionID: () => params.id,
     messagesReady,
     visibleUserMessages,
+    historyMore,
+    historyLoading,
+    loadMore: (sessionID) => sync.session.history.loadMore(sessionID),
     turnStart: historyWindow.turnStart,
     currentMessageId: () => store.messageId,
     pendingMessage: () => ui.pendingMessage,
@@ -1754,7 +1931,6 @@ export default function Page() {
 
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown)
-    onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
   })
 
   const previewPrompt = () =>
@@ -1778,8 +1954,7 @@ export default function Page() {
     if (!terminal.ready()) return
     language.locale()
 
-    touch(
-      handoff.terminal,
+    setTerminalHandoff(
       params.dir!,
       terminal.all().map((pty) =>
         terminalTabLabel({
@@ -1808,8 +1983,8 @@ export default function Page() {
 
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown)
-    scrollSpy.destroy()
     if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
+    if (historyFillFrame !== undefined) cancelAnimationFrame(historyFillFrame)
   })
 
   return (
@@ -1818,14 +1993,11 @@ export default function Page() {
       <div class="flex-1 min-h-0 flex flex-col">
         <div
           class="@container relative flex-1 flex flex-col min-h-0 h-full bg-background-stronger pt-2 md:pt-3"
-          style={{
-            "--prompt-height": store.promptHeight ? `${store.promptHeight}px` : undefined,
-          }}
         >
           <div class="flex-1 min-h-0 overflow-hidden">
             {(() => {
               createEffect(() => {
-                debug.log("switch eval", {
+                const data = {
                   id: params.id,
                   isNew: params.id === "new",
                   messageCount: messages().length,
@@ -1833,53 +2005,65 @@ export default function Page() {
                   activeMessage: !!activeMessage(),
                   lastUserMessage: !!lastUserMessage(),
                   matchFirst: !!(params.id && params.id !== "new"),
+                }
+                debug.log("switch eval", data)
+                trace("switch-eval", {
+                  ...data,
+                  routeId: routeParams.id,
+                  groupId,
+                  tabId: sessionParams?.tabId?.(),
                 })
               })
               return null
             })()}
             <Switch>
               <Match when={params.id && params.id !== "new"}>
-                <Show when={activeMessage()}>
-                  <MessageTimeline
-                    mobileChanges={false}
-                    mobileFallback={<div />}
-                    sessionID={params.id}
-                    directory={params.dir}
-                    onNavigateToSession={navigateSession}
-                    scroll={ui.scroll}
-                    onResumeScroll={resumeScroll}
-                    setScrollRef={setScrollRef}
-                    onScheduleScrollState={scheduleScrollState}
-                    onAutoScrollHandleScroll={autoScroll.handleScroll}
-                    onMarkScrollGesture={markScrollGesture}
-                    hasScrollGesture={hasScrollGesture}
-                    isDesktop={isDesktop()}
-                    onScrollSpyScroll={scrollSpy.onScroll}
-                    onTurnBackfillScroll={historyWindow.onScrollerScroll}
-                    onAutoScrollInteraction={autoScroll.handleInteraction}
-                    centered={centered()}
-                    setContentRef={(el) => {
-                      content = el
-                      autoScroll.contentRef(el)
+                <Show
+                  when={messagesReady()}
+                  fallback={
+                    <div class="flex h-full items-center justify-center text-text-weak">
+                      <div class="size-6 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />
+                    </div>
+                  }
+                >
+                  <Show when={lastUserMessage()}>
+                    <MessageTimeline
+                      mobileChanges={false}
+                      mobileFallback={<div />}
+                      actions={actions}
+                      scroll={ui.scroll}
+                      onResumeScroll={resumeScroll}
+                      setScrollRef={setScrollRef}
+                      onScheduleScrollState={scheduleScrollState}
+                      onAutoScrollHandleScroll={autoScroll.handleScroll}
+                      onMarkScrollGesture={markScrollGesture}
+                      hasScrollGesture={hasScrollGesture}
+                      onUserScroll={markUserScroll}
+                      onTurnBackfillScroll={historyWindow.onScrollerScroll}
+                      onAutoScrollInteraction={autoScroll.handleInteraction}
+                      centered={centered()}
+                      setContentRef={(el) => {
+                        content = el
+                        autoScroll.contentRef(el)
 
-                      const root = scroller
-                      if (root) scheduleScrollState(root)
-                    }}
-                    turnStart={historyWindow.turnStart()}
-                    historyMore={historyMore()}
-                    historyLoading={historyLoading()}
-                    onLoadEarlier={() => {
-                      void historyWindow.loadAndReveal()
-                    }}
-                    renderedUserMessages={historyWindow.renderedUserMessages()}
-                    anchor={anchor}
-                    onRegisterMessage={scrollSpy.register}
-                    onUnregisterMessage={scrollSpy.unregister}
-                  />
+                        const root = scroller
+                        if (root) scheduleScrollState(root)
+                      }}
+                      turnStart={historyWindow.turnStart()}
+                      historyMore={historyMore()}
+                      historyLoading={historyLoading()}
+                      onLoadEarlier={() => {
+                        void historyWindow.loadAndReveal()
+                      }}
+                      renderedUserMessages={historyWindow.renderedUserMessages()}
+                      anchor={anchor}
+                    />
+                  </Show>
                 </Show>
               </Match>
               <Match when={true}>
                 <NewSessionView
+                  variant={sessionParams ? "compact" : "full"}
                   worktree={newSessionWorktree()}
                   onWorktreeChange={(value) => {
                     if (value === "create") {
@@ -1902,11 +2086,10 @@ export default function Page() {
 
           <SessionComposerRegion
             state={composerState}
-            sessionID={sessionID()}
-            sessionDirectory={params.dir}
-            agent={paneIntentDefaults()?.agent}
-            system={paneIntentSystem()}
+            ready={!store.deferRender && messagesReady()}
             centered={centered()}
+            system={paneIntentSystem()}
+            agent={paneIntentDefaults()?.agent}
             inputRef={(el) => {
               inputRef = el
             }}
@@ -1919,12 +2102,19 @@ export default function Page() {
             onResponseSubmit={() => {
               resumeScroll()
             }}
+            revert={
+              rolled().length > 0
+                ? {
+                    items: rolled(),
+                    restoring: ui.restoring,
+                    onRestore: restore,
+                  }
+                : undefined
+            }
             setPromptDockRef={(el) => (promptDock = el)}
           />
         </div>
       </div>
-
-      <TerminalPanel />
     </div>
   )
 }

@@ -1,0 +1,5 @@
+export { SessionHeader } from "@/components/session/session-header"
+export { SessionContextTab } from "@/components/session/session-context-tab"
+export { SortableTab, FileVisual } from "@/components/session/session-sortable-tab"
+export { SortableTerminalTab } from "@/components/session/session-sortable-terminal-tab"
+export { NewSessionView, type NewSessionVariant } from "@/components/session/session-new-view"

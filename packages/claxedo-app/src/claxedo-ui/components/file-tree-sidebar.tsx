@@ -5,7 +5,7 @@ import { useGlobalSDK, useGlobalSync } from "@opencode-ai/claxedo-app"
 import FileTree from "@/components/file-tree"
 import { DirectoryScope } from "./directory-scope"
 import { useClaxedoLayout } from "../context/claxedo-layout"
-import { isMarkdownPath, openMarkdownPageTab } from "../utils/open-markdown-page-tab"
+import { sendFocusFile } from "../context/pane-bus"
 
 export function FileTreeSidebar(props: {
   groupId: string
@@ -22,8 +22,6 @@ export function FileTreeSidebar(props: {
   const globalSync = useGlobalSync()
   const [reviewLoading, setReviewLoading] = createSignal(false)
   const [reviewDiffs, setReviewDiffs] = createSignal<FileDiff[]>([])
-  const [mdOnly, setMdOnly] = createSignal(false)
-  const [wasPage, setWasPage] = createSignal(false)
   let reviewReq = 0
 
   const active = createMemo(() => claxedo.groupTabs(props.groupId).active())
@@ -58,9 +56,9 @@ export function FileTreeSidebar(props: {
       setReviewDiffs([])
       return
     }
-    const mapped = mode === "committed" ? "to-from" : mode
-    const fromRef = mode === "committed" ? tab.reviewFromRef : tab.reviewFromRef
-    const toRef = mode === "committed" ? tab.reviewToRef || "HEAD" : tab.reviewToRef
+    const mapped = mode
+    const fromRef = tab.reviewFromRef
+    const toRef = tab.reviewToRef
     if (mapped === "to-from" && (!fromRef || !toRef)) {
       setReviewLoading(false)
       setReviewDiffs([])
@@ -72,9 +70,6 @@ export function FileTreeSidebar(props: {
       .diff({
         sessionID: tab.sessionId!,
         directory: tab.directory!,
-        mode: mapped,
-        fromRef,
-        toRef,
       })
       .then((result) => {
         if (req !== reviewReq) return
@@ -125,43 +120,47 @@ export function FileTreeSidebar(props: {
     return out
   })
 
-  createEffect(() => {
-    const page = active()?.type === "page"
-    if (page && !wasPage()) setMdOnly(true)
-    if (!page && wasPage()) setMdOnly(false)
-    setWasPage(page)
-  })
+  const session = () => {
+    const tab = active()
+    if (!tab) return
+    if (tab.sessionId && tab.sessionId !== "new") return tab.sessionId
+    const layout = claxedo.multiPane.activeLayout(tab.id)
+    if (!layout) return
+    return Object.values(layout.contents).find(
+      (item) =>
+        (item.type === "session" || item.type === "review-workspace" || item.type === "context") &&
+        item.sessionId &&
+        item.sessionId !== "new",
+    )?.sessionId
+  }
+
+  const focus = (tabId: string, path: string) => {
+    if (sendFocusFile(tabId, path) > 0) return true
+    setTimeout(() => {
+      sendFocusFile(tabId, path)
+    }, 0)
+    return false
+  }
 
   const openFile = (path: string) => {
-    const review = reviewTab()
-    if (review) {
-      claxedo.patchTab(review.id, {
-        reviewFocusPath: path,
-        reviewFocusVersion: (review.reviewFocusVersion ?? 0) + 1,
-      })
-      if (props.mobile) props.onCloseMobile()
-      return
-    }
     const dir = props.directory
-    if (!dir) return
-    if (isMarkdownPath(path)) {
-      void openMarkdownPageTab({
-        directory: dir,
-        path,
-        sdk: globalSDK,
-        tabs: claxedo.groupTabs(props.groupId),
-      })
+    const tab = active()
+    if (tab) {
+      if (!focus(tab.id, path) && dir && !claxedo.multiPane.hasReviewWorkspace(tab.id)) {
+        const sid = session()
+        claxedo.multiPane.toggleReviewWorkspace(tab.id, dir, sid, sid ? "session" : "uncommitted")
+      }
       if (props.mobile) props.onCloseMobile()
       return
     }
-    const title = path.split("/").at(-1) ?? path
-    claxedo.groupTabs(props.groupId).addFile(dir, path, title)
+    if (!dir) return
+    const id = claxedo.groupTabs(props.groupId).addReviewWorkspace(dir, "new", "Review", undefined, "uncommitted")
+    if (id) focus(id, path)
     if (props.mobile) props.onCloseMobile()
   }
 
   const reviewActive = createMemo(() => !!reviewTab())
   const panelTitle = createMemo(() => (reviewActive() ? "Changed files" : "Files"))
-  const pageActive = createMemo(() => active()?.type === "page")
 
   const TreePanel = () => (
     <div class="h-full flex flex-col overflow-hidden">
@@ -171,37 +170,10 @@ export function FileTreeSidebar(props: {
           <span class="text-11-regular text-text-weak">{diffFiles().length}</span>
         </Show>
       </div>
-      <Show when={pageActive() && !reviewActive()}>
-        <div class="px-3 py-1.5 border-b border-border-weak-base flex items-center gap-2">
-          <Show
-            when={mdOnly()}
-            fallback={
-              <button
-                type="button"
-                class="h-6 px-2 text-11-medium border border-border-weak-base bg-background-stronger text-text-weak hover:text-text-base"
-                onClick={() => setMdOnly(true)}
-              >
-                Markdown files
-              </button>
-            }
-          >
-            <button
-              type="button"
-              class="h-6 px-2 text-11-medium border border-border-weak-base bg-background-stronger text-text-base inline-flex items-center gap-1"
-              onClick={() => setMdOnly(false)}
-              title="Remove markdown filter"
-            >
-              <span>Markdown files</span>
-              <span aria-hidden="true">x</span>
-            </button>
-          </Show>
-        </div>
-      </Show>
       <div class="flex-1 min-h-0 overflow-auto px-3 py-1">
         <Show when={!reviewActive()}>
           <FileTree
             path=""
-            extensions={mdOnly() ? [".md", ".markdown"] : undefined}
             onFileClick={(node) => openFile(node.path)}
           />
         </Show>

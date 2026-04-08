@@ -42,14 +42,18 @@ describe("slashCommandItems data integrity", () => {
   })
 
   test("all groups are from known set", () => {
-    const knownGroups = new Set(["AI", "Basic blocks", "Lists", "Advanced blocks", "Inline styles", "Layout"])
+    const knownGroups = new Set(["AI", "Basic blocks", "Lists", "Advanced blocks", "Inline styles"])
     for (const item of slashCommandItems) {
       expect(knownGroups.has(item.group)).toBe(true)
     }
   })
 
-  test("expected item count matches the actual array length", () => {
-    expect(slashCommandItems.length).toBe(32)
+  test("has at least one item per known group", () => {
+    const knownGroups = new Set(["AI", "Basic blocks", "Lists", "Advanced blocks", "Inline styles"])
+    const groupsWithItems = new Set(slashCommandItems.map((item) => item.group))
+    for (const group of knownGroups) {
+      expect(groupsWithItems.has(group)).toBe(true)
+    }
   })
 })
 
@@ -80,10 +84,11 @@ describe("slash command filtering", () => {
 
   test('query "ai" matches Ask AI plus text via "plain" in its description', () => {
     const results = filterItems("ai")
-    expect(results.length).toBe(2)
+    expect(results.length).toBe(3)
     const ids = results.map((item) => item.id)
     expect(ids).toContain("ai_open")
     expect(ids).toContain("text")
+    expect(ids).toContain("mermaid")
   })
 
   test('query "zzzzz" returns empty array', () => {
@@ -231,26 +236,6 @@ describe("slash command callbacks", () => {
     expect(calls).toContain("run")
   })
 
-  test('"align-left" calls setTextAlign', () => {
-    const { editor, calls } = mockEditor()
-    findItem("align-left").command({ editor, range })
-    expect(calls).toContain("setTextAlign")
-    expect(calls).toContain("run")
-  })
-
-  test('"align-center" calls setTextAlign', () => {
-    const { editor, calls } = mockEditor()
-    findItem("align-center").command({ editor, range })
-    expect(calls).toContain("setTextAlign")
-    expect(calls).toContain("run")
-  })
-
-  test('"align-right" calls setTextAlign', () => {
-    const { editor, calls } = mockEditor()
-    findItem("align-right").command({ editor, range })
-    expect(calls).toContain("setTextAlign")
-    expect(calls).toContain("run")
-  })
 
   test('"table" calls insertTable', () => {
     const { editor, calls } = mockEditor()
@@ -334,26 +319,6 @@ describe("slash command callbacks", () => {
     expect(calls).toContain("run")
   })
 
-  test('"text-red" calls setColor', () => {
-    const { editor, calls } = mockEditor()
-    findItem("text-red").command({ editor, range })
-    expect(calls).toContain("setColor")
-    expect(calls).toContain("run")
-  })
-
-  test('"subscript" calls toggleSubscript', () => {
-    const { editor, calls } = mockEditor()
-    findItem("subscript").command({ editor, range })
-    expect(calls).toContain("toggleSubscript")
-    expect(calls).toContain("run")
-  })
-
-  test('"superscript" calls toggleSuperscript', () => {
-    const { editor, calls } = mockEditor()
-    findItem("superscript").command({ editor, range })
-    expect(calls).toContain("toggleSuperscript")
-    expect(calls).toContain("run")
-  })
 })
 
 // ── Prompt-based command callbacks ─────────────────────────────────────
@@ -420,7 +385,7 @@ describe("SlashCommands extension filter config", () => {
     const ext = SlashCommands.configure({})
     const items = (ext as any).options.suggestion.items
     const all = items({ query: "" })
-    expect(all.length).toBe(32)
+    expect(all.length).toBe(slashCommandItems.length)
   })
 
   test("suggestion items filter returns headings for 'heading' query", () => {

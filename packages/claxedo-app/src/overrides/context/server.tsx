@@ -6,6 +6,8 @@ import { usePlatform } from "@/context/platform"
 import { Persist, persisted } from "@/utils/persist"
 import { validWorktree } from "@claxedo/utils/worktree"
 import { getExtensions } from "@opencode-ai/app-shared"
+import { createDebugLogger } from "../utils/debug"
+import { isDemoMode } from "../../utils/api"
 
 type StoredProject = { worktree: string; expanded: boolean }
 type StoredServer = string | ServerConnection.HttpBase | ServerConnection.Http
@@ -15,6 +17,19 @@ export function normalizeServerUrl(input: string) {
   const trimmed = input.trim()
   if (!trimmed) return
   const withProtocol = /^https?:\/\//.test(trimmed) ? trimmed : `http://${trimmed}`
+  try {
+    const url = new URL(withProtocol)
+    const local = url.hostname === "localhost" || url.hostname === "127.0.0.1"
+    // In demo mode, keep the origin as-is so MSW can intercept all requests
+    if (local && (url.port === "3000" || url.port === "4444") && !isDemoMode()) {
+      const env = import.meta.env.VITE_OPENCODE_BACKEND_URL as string | undefined
+      if (env?.trim()) return env.trim().replace(/\/+$/, "")
+      url.port = "4096"
+      return url.toString().replace(/\/+$/, "")
+    }
+  } catch {
+    return withProtocol.replace(/\/+$/, "")
+  }
   return withProtocol.replace(/\/+$/, "")
 }
 
@@ -86,12 +101,18 @@ function projectsKey(key: ServerConnection.Key) {
   return key
 }
 
-const storedServerUrl = (x: StoredServer) => (typeof x === "string" ? x : "type" in x ? x.http.url : x.url)
+const storedServerUrl = (x: StoredServer) => {
+  const url = typeof x === "string" ? x : "type" in x ? x.http.url : x.url
+  return normalizeServerUrl(url) ?? url
+}
 
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
   name: "Server",
-  init: (props: { defaultServer: ServerConnection.Key; servers?: Array<ServerConnection.Any> }) => {
+  init: (props: { defaultServer: ServerConnection.Key; disableHealthCheck?: boolean; servers?: Array<ServerConnection.Any> }) => {
     const platform = usePlatform()
+    const debug = createDebugLogger("server.health", "server:health", {
+      legacyKey: "opencode.debug.terminal",
+    })
     const [store, setStore, _, ready] = persisted(
       Persist.global("server", ["server.v6", "server.v5", "server.v4", "server.v3"]),
       createStore({
@@ -103,16 +124,23 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }),
     )
 
-    // Merge props.servers (with password) + store.list, deduped by key (props.servers win)
+    // Merge props.servers (with password) + store.list, deduped by key (props.servers win).
+    // Always include the defaultServer so current() never returns undefined on fresh starts.
     const allServers = createMemo((): Array<ServerConnection.Any> => {
       const servers = [
         ...(props.servers ?? []),
         ...store.list.map((value) =>
           typeof value === "string"
-            ? { type: "http" as const, http: { url: value } }
+            ? { type: "http" as const, http: { url: storedServerUrl(value) } }
             : "type" in value
-              ? value
-              : { type: "http" as const, http: value },
+              ? {
+                  ...value,
+                  http: {
+                    ...value.http,
+                    url: storedServerUrl(value),
+                  },
+                }
+              : { type: "http" as const, http: { ...value, url: storedServerUrl(value) } },
         ),
       ]
 
@@ -122,6 +150,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           return [ServerConnection.key(conn), conn]
         }),
       )
+
+      // Ensure the default server is always available as a connection
+      if (!deduped.has(props.defaultServer)) {
+        const url = normalizeServerUrl(props.defaultServer as string)
+        if (url) {
+          deduped.set(props.defaultServer, { type: "http", http: { url } })
+        }
+      }
 
       return [...deduped.values()]
     })
@@ -224,18 +260,35 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       const u = url()
       if (!u) return
 
+      debug.log("watch", { url: u })
       setState("healthy", undefined)
 
       let alive = true
       let busy = false
 
       const run = () => {
-        if (busy) return
+        if (busy) {
+          if (debug.enabled(2)) {
+            debug.verbose("probe skip", { reason: "busy", url: u })
+          }
+          return
+        }
         busy = true
+        const start = Date.now()
+        if (debug.enabled(2)) {
+          debug.verbose("probe start", { url: u })
+        }
         void check(u)
           .then((next) => {
             if (!alive) return
+            const prev = state.healthy
             setState("healthy", next)
+            debug.log("probe result", {
+              url: u,
+              healthy: next,
+              prev,
+              ms: Date.now() - start,
+            })
           })
           .finally(() => {
             busy = false
@@ -248,6 +301,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       onCleanup(() => {
         alive = false
         clearInterval(interval)
+        if (debug.enabled(2)) {
+          debug.verbose("watch cleanup", { url: u })
+        }
       })
     })
 
@@ -278,7 +334,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         return allServers()
       },
       forWorkspace(worktree: string) {
-        return store.workspaceServer[worktree]
+        const hit = store.workspaceServer[worktree]
+        return hit ? normalizeServerUrl(hit) ?? hit : undefined
       },
       rememberWorkspace(worktree: string, url: string) {
         const normalized = normalizeServerUrl(url)

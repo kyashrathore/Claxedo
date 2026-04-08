@@ -38,6 +38,7 @@ export type State = {
   project: string
   projectMeta: ProjectMeta | undefined
   icon: string | undefined
+  provider_ready: boolean
   provider: ProviderListResponse
   config: Config
   path: Path
@@ -58,9 +59,11 @@ export type State = {
   question: {
     [sessionID: string]: QuestionRequest[]
   }
+  mcp_ready: boolean
   mcp: {
     [name: string]: McpStatus
   }
+  lsp_ready: boolean
   lsp: LspStatus[]
   vcs: VcsInfo | undefined
   limit: number
@@ -69,6 +72,15 @@ export type State = {
   }
   part: {
     [messageID: string]: Part[]
+  }
+  session_agent: {
+    [sessionID: string]: string
+  }
+  session_config: {
+    [sessionID: string]: unknown[]
+  }
+  session_usage: {
+    [sessionID: string]: { contextSize: number; contextUsed: number; cost?: { amount: number; currency: string } }
   }
 }
 
@@ -132,13 +144,49 @@ export type RootLoadArgs = {
   directory: string
   limit: number
   list: (query: { directory: string; roots: true; limit?: number }) => Promise<{ data?: Session[] }>
-  onFallback: () => void
 }
 
 export type RootLoadResult = {
   data?: Session[]
   limit: number
   limited: boolean
+}
+
+export type GlobalSessionItem = {
+  id: string
+  title: string
+  directory: string
+  projectID: string
+  parentID?: string
+  rootID?: string
+  tags: string[]
+  attachments: Array<{ kind: string; targetID: string }>
+  environment?: { kind?: string; provider?: string }
+  git?: { repo?: string; branch?: string; remote?: string }
+  archived?: boolean
+  time: { created: number; updated: number }
+}
+
+export type WorkspaceGroup = {
+  directory: string
+  projectID: string
+  sessions: GlobalSessionItem[]
+  hasMore: boolean
+  total: number
+  nextCursor?: number
+}
+
+export type GlobalSessionState = {
+  global: GlobalSessionItem[]
+  globalState: { hasMore: boolean; loading: boolean; cursor?: number }
+  byProject: Record<string, GlobalSessionItem[]>
+  projectState: Record<string, { hasMore: boolean; loading: boolean; cursor?: number }>
+  byWorkspace: Record<string, WorkspaceGroup>
+  workspaceState: Record<string, { hasMore: boolean; loading: boolean; cursor?: number }>
+  workspaceOrder: string[]
+  loading: boolean
+  loaded: boolean
+  initialCursor?: number
 }
 
 export const MAX_DIR_STORES = 30

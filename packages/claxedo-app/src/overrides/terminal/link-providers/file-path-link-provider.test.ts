@@ -205,6 +205,46 @@ describe("FilePathLinkProvider", () => {
 			expect(links.length).toBe(0);
 		});
 
+		it("should skip lines ending with => (arrow functions in diff)", async () => {
+			const terminal = createMockTerminal([
+				{
+					text: "      332 +    return trackedResources().filter((r) =>",
+				},
+			]);
+			const onOpen = mock();
+			const provider = new FilePathLinkProvider(terminal, onOpen);
+
+			const links = await getLinks(provider, 1);
+
+			expect(links.length).toBe(0);
+		});
+
+		it("should skip lines with JSX closing > in diff", async () => {
+			const terminal = createMockTerminal([
+				{
+					text: "      539 -              <Show when={trackedResources().length >",
+				},
+			]);
+			const onOpen = mock();
+			const provider = new FilePathLinkProvider(terminal, onOpen);
+
+			const links = await getLinks(provider, 1);
+
+			expect(links.length).toBe(0);
+		});
+
+		it("should skip git hash ranges like 9ebf9967e..a514ef81e", async () => {
+			const terminal = createMockTerminal([
+				{ text: "9ebf9967e..a514ef81e 100644" },
+			]);
+			const onOpen = mock();
+			const provider = new FilePathLinkProvider(terminal, onOpen);
+
+			const links = await getLinks(provider, 1);
+
+			expect(links.length).toBe(0);
+		});
+
 		it("should skip pure numbers like 123:456", async () => {
 			// VSCode-style suffix parsing can match "word 123:456" as a link with row/col.
 			// This provider now requires a real-looking path to avoid linkifying numbers.

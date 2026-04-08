@@ -41,7 +41,7 @@ import { usePermission } from "@/context/permission"
 import { Binary } from "@opencode-ai/util/binary"
 import type { State } from "@/context/global-sync/types"
 import { retry } from "@opencode-ai/util/retry"
-import { playSound, soundSrc } from "@/utils/sound"
+import { playSoundById } from "@/utils/sound"
 import { createAim } from "@/utils/aim"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 
@@ -52,7 +52,7 @@ import { DialogSelectProvider } from "@/components/dialog-select-provider"
 import { DialogSelectServer } from "@/components/dialog-select-server"
 import { DialogSettings } from "@/components/dialog-settings"
 import { useCommand, type CommandOption } from "@/context/command"
-import { ConstrainDragXAxis } from "@/utils/solid-dnd"
+import { ConstrainDragXAxis, getDraggableId } from "@/utils/solid-dnd"
 // perf module removed upstream; no-op stub
 const navStart = (..._args: unknown[]) => {}
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
@@ -60,13 +60,13 @@ import { DialogEditProject } from "@/components/dialog-edit-project"
 import { Titlebar } from "@/components/titlebar"
 import { useServer } from "@/context/server"
 import { useLanguage, type Locale } from "@/context/language"
+import { createDebugLogger } from "../utils/debug"
 import {
   childMapByParent,
   displayName,
   errorMessage,
-  getDraggableId,
+  effectiveWorkspaceOrder,
   sortedRootSessions,
-  syncWorkspaceOrder,
   workspaceKey,
 } from "@/pages/layout/helpers"
 import { collectOpenProjectDeepLinks, deepLinkEvent, drainPendingDeepLinks } from "@/pages/layout/deep-links"
@@ -77,11 +77,15 @@ import {
   WorkspaceDragOverlay,
   type WorkspaceSidebarContext,
 } from "@/pages/layout/sidebar-workspace"
-import { workspaceOpenState } from "@/pages/layout/sidebar-workspace-helpers"
+const workspaceOpenState = (expanded: Record<string, boolean>, directory: string, local: boolean) =>
+  expanded[directory] ?? local
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "@/pages/layout/sidebar-project"
 import { SidebarContent } from "@/pages/layout/sidebar-shell"
 
 export default function Layout(props: ParentProps) {
+  const debug = createDebugLogger("sync.prefetch", "sync:prefetch", {
+    legacyKey: "opencode.debug.terminal",
+  })
   const [store, setStore, , ready] = persisted(
     Persist.global("layout.page", ["layout.page.v1"]),
     createStore({
@@ -116,7 +120,7 @@ export default function Layout(props: ParentProps) {
   const theme = useTheme()
   const language = useLanguage()
   const initialDirectory = decode64(params.dir)
-  const availableThemeEntries = createMemo(() => Object.entries(theme.themes()))
+  const availableThemeEntries = createMemo(() => theme.ids().map((id) => [id, theme.themes()[id]] as const))
   const colorSchemeOrder: ColorScheme[] = ["system", "light", "dark"]
   const colorSchemeKey: Record<ColorScheme, "theme.scheme.system" | "theme.scheme.light" | "theme.scheme.dark"> = {
     system: "theme.scheme.system",
@@ -127,6 +131,10 @@ export default function Layout(props: ParentProps) {
   const currentDir = createMemo(() => decode64(params.dir) ?? "")
 
   const [creatingWorkspace, setCreatingWorkspace] = createSignal(false)
+
+  onMount(() => {
+    void theme.loadThemes()
+  })
 
   const [state, setState] = createStore({
     autoselect: !initialDirectory,
@@ -208,8 +216,7 @@ export default function Layout(props: ParentProps) {
     if (!pageReady()) return true
     if (!layoutReady()) return true
     const list = layout.projects.list()
-    if (list.length > 0) return true
-    return !!server.projects.last()
+    return list.length > 0
   })
 
   createEffect(() => {
@@ -234,10 +241,9 @@ export default function Layout(props: ParentProps) {
     const nextIndex = currentIndex === -1 ? 0 : (currentIndex + direction + ids.length) % ids.length
     const nextThemeId = ids[nextIndex]
     theme.setTheme(nextThemeId)
-    const nextTheme = theme.themes()[nextThemeId]
     showToast({
       title: language.t("toast.theme.title"),
-      description: nextTheme?.name ?? nextThemeId,
+      description: theme.name(nextThemeId),
     })
   }
 
@@ -370,7 +376,9 @@ export default function Layout(props: ParentProps) {
       alertedAtBySession.set(sessionKey, now)
 
       if (e.details.type === "permission.asked") {
-        playSound(soundSrc(settings.sounds.permissions()))
+        if (settings.sounds.permissionsEnabled()) {
+          void playSoundById(settings.sounds.permissions())
+        }
         if (settings.notifications.permissions()) {
           void platform.notify(title, description, href)
         }
@@ -498,10 +506,7 @@ export default function Layout(props: ParentProps) {
         const last = server.projects.last()
 
         if (value.list.length === 0) {
-          if (!last) return
           setState("autoselect", false)
-          openProject(last, false)
-          navigateToProject(last)
           return
         }
 
@@ -550,7 +555,7 @@ export default function Layout(props: ParentProps) {
     const local = project.worktree
     const dirs = [project.worktree, ...(project.sandboxes ?? [])]
     const existing = store.workspaceOrder[project.worktree]
-    const merged = syncWorkspaceOrder(local, dirs, existing)
+    const merged = effectiveWorkspaceOrder(local, dirs, existing)
     if (!existing) {
       setStore("workspaceOrder", project.worktree, merged)
       return
@@ -561,7 +566,7 @@ export default function Layout(props: ParentProps) {
       return
     }
 
-    if (merged.some((d, i) => d !== existing[i])) {
+    if (merged.some((d: string, i: number) => d !== existing[i])) {
       setStore("workspaceOrder", project.worktree, merged)
     }
   })
@@ -611,8 +616,11 @@ export default function Layout(props: ParentProps) {
   const prefetchChunk = 200
   const prefetchConcurrency = 1
   const prefetchPendingLimit = 6
+  const prefetchFailMs = 10_000
   const prefetchToken = { value: 0 }
   const prefetchQueues = new Map<string, PrefetchQueue>()
+  const prefetchFail = new Map<string, number>()
+  const prefetchKey = (directory: string, sessionID: string) => `${directory}\n${sessionID}`
 
   const PREFETCH_MAX_SESSIONS_PER_DIR = 10
   const prefetchedByDir = new Map<string, Map<string, true>>()
@@ -641,6 +649,13 @@ export default function Layout(props: ParentProps) {
     globalSDK.url
 
     prefetchToken.value += 1
+    if (debug.enabled(2)) {
+      debug.verbose("reset", {
+        dir: params.dir,
+        url: globalSDK.url,
+        token: prefetchToken.value,
+      })
+    }
     for (const q of prefetchQueues.values()) {
       q.pending.length = 0
       q.pendingSet.clear()
@@ -663,10 +678,24 @@ export default function Layout(props: ParentProps) {
 
   async function prefetchMessages(directory: string, sessionID: string, token: number) {
     const [store, setStore] = globalSync.child(directory, { bootstrap: false })
+    const key = prefetchKey(directory, sessionID)
 
+    debug.log("fetch start", { directory, sessionID, token, limit: prefetchChunk })
     return retry(() => globalSDK.client.session.messages({ directory, sessionID, limit: prefetchChunk }))
       .then((messages) => {
-        if (prefetchToken.value !== token) return
+        prefetchFail.delete(key)
+        if (prefetchToken.value !== token) {
+          if (debug.enabled(2)) {
+            debug.verbose("fetch skip", {
+              reason: "stale-token",
+              directory,
+              sessionID,
+              token,
+              current: prefetchToken.value,
+            })
+          }
+          return
+        }
 
         const items = (messages.data ?? []).filter((x) => !!x?.info?.id)
         const next = items
@@ -718,13 +747,38 @@ export default function Layout(props: ParentProps) {
             setStore("part", message.info.id, reconcile(mergedParts, { key: "id" }))
           }
         })
+        debug.log("fetch ok", {
+          directory,
+          sessionID,
+          token,
+          messages: items.length,
+        })
       })
-      .catch(() => undefined)
+      .catch((error) => {
+        prefetchFail.set(key, Date.now() + prefetchFailMs)
+        debug.log("fetch fail", {
+          directory,
+          sessionID,
+          token,
+          wait: prefetchFailMs,
+          error: errorMessage(error, "prefetch failed"),
+        })
+      })
   }
 
   const pumpPrefetch = (directory: string) => {
     const q = queueFor(directory)
-    if (q.running >= prefetchConcurrency) return
+    if (q.running >= prefetchConcurrency) {
+      if (debug.enabled(2)) {
+        debug.verbose("pump skip", {
+          reason: "concurrency",
+          directory,
+          running: q.running,
+          pending: q.pending.length,
+        })
+      }
+      return
+    }
 
     const sessionID = q.pending.shift()
     if (!sessionID) return
@@ -734,29 +788,121 @@ export default function Layout(props: ParentProps) {
     q.running += 1
 
     const token = prefetchToken.value
+    if (debug.enabled(2)) {
+      debug.verbose("pump start", {
+        directory,
+        sessionID,
+        token,
+        running: q.running,
+        pending: q.pending.length,
+      })
+    }
 
     void prefetchMessages(directory, sessionID, token).finally(() => {
       q.running -= 1
       q.inflight.delete(sessionID)
+      if (debug.enabled(2)) {
+        debug.verbose("pump done", {
+          directory,
+          sessionID,
+          running: q.running,
+          pending: q.pending.length,
+        })
+      }
       pumpPrefetch(directory)
     })
   }
 
   const prefetchSession = (session: Session, priority: "high" | "low" = "low") => {
+    if (server.healthy() !== true) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "server-unhealthy",
+          directory: session.directory,
+          sessionID: session.id,
+          priority,
+        })
+      }
+      return
+    }
+
     const directory = session.directory
-    if (!directory) return
+    if (!directory) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "missing-directory",
+          sessionID: session.id,
+          priority,
+        })
+      }
+      return
+    }
+    const wait = Math.max(0, (prefetchFail.get(prefetchKey(directory, session.id)) ?? 0) - Date.now())
+    if (wait > 0) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "cooldown",
+          directory,
+          sessionID: session.id,
+          priority,
+          wait,
+        })
+      }
+      return
+    }
 
     const [store] = globalSync.child(directory, { bootstrap: false })
     const cached = untrack(() => store.message[session.id] !== undefined)
-    if (cached) return
+    if (cached) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "cached",
+          directory,
+          sessionID: session.id,
+          priority,
+        })
+      }
+      return
+    }
 
     const q = queueFor(directory)
-    if (q.inflight.has(session.id)) return
-    if (q.pendingSet.has(session.id)) return
+    if (q.inflight.has(session.id)) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "inflight",
+          directory,
+          sessionID: session.id,
+          priority,
+        })
+      }
+      return
+    }
+    if (q.pendingSet.has(session.id)) {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "pending",
+          directory,
+          sessionID: session.id,
+          priority,
+        })
+      }
+      return
+    }
 
     const lru = lruFor(directory)
     const known = lru.has(session.id)
-    if (!known && lru.size >= PREFETCH_MAX_SESSIONS_PER_DIR && priority !== "high") return
+    if (!known && lru.size >= PREFETCH_MAX_SESSIONS_PER_DIR && priority !== "high") {
+      if (debug.enabled(2)) {
+        debug.verbose("enqueue skip", {
+          reason: "lru-limit",
+          directory,
+          sessionID: session.id,
+          priority,
+          size: lru.size,
+        })
+      }
+      return
+    }
     markPrefetched(directory, session.id)
 
     if (priority === "high") q.pending.unshift(session.id)
@@ -769,6 +915,15 @@ export default function Layout(props: ParentProps) {
       q.pendingSet.delete(dropped)
     }
 
+    if (debug.enabled(2)) {
+      debug.verbose("enqueue", {
+        directory,
+        sessionID: session.id,
+        priority,
+        running: q.running,
+        pending: q.pending.length,
+      })
+    }
     pumpPrefetch(directory)
   }
 
@@ -1113,7 +1268,10 @@ export default function Layout(props: ParentProps) {
     layout.mobileSidebar.hide()
   }
 
-  function openProject(directory: string, navigate = true) {
+  async function openProject(directory: string, navigate = true) {
+    if (server.isLocal()) {
+      await globalSync.project.ensure(directory)
+    }
     layout.projects.open(directory)
     if (navigate) navigateToProject(directory)
   }
@@ -1121,7 +1279,7 @@ export default function Layout(props: ParentProps) {
   const handleDeepLinks = (urls: string[]) => {
     if (!server.isLocal()) return
     for (const directory of collectOpenProjectDeepLinks(urls)) {
-      openProject(directory)
+      void openProject(directory)
     }
   }
 
@@ -1180,14 +1338,14 @@ export default function Layout(props: ParentProps) {
   async function chooseProject() {
     const ext = getExtensions()
 
-    function resolve(result: string | string[] | null) {
+    async function resolve(result: string | string[] | null) {
       if (Array.isArray(result)) {
         for (const directory of result) {
-          openProject(directory, false)
+          await openProject(directory, false)
         }
         navigateToProject(result[0])
       } else if (result) {
-        openProject(result)
+        await openProject(result)
       }
     }
 
@@ -1196,7 +1354,7 @@ export default function Layout(props: ParentProps) {
       const WebProjectDialog = ext.app.webProjectDialog
       dialog.show(
         () => <WebProjectDialog onSelect={resolve} />,
-        () => resolve(null),
+        () => void resolve(null),
       )
       return
     }
@@ -1210,7 +1368,7 @@ export default function Layout(props: ParentProps) {
     } else {
       dialog.show(
         () => <DialogSelectDirectory multiple={true} onSelect={resolve} />,
-        () => resolve(null),
+        () => void resolve(null),
       )
     }
   }
@@ -1520,18 +1678,18 @@ export default function Layout(props: ParentProps) {
     const local = project.worktree
     const dirs = [local, ...(project.sandboxes ?? [])]
     const active = currentProject()
-    const directory = active?.worktree === project.worktree ? currentDir() : undefined
-    const extra = directory && directory !== local && !dirs.includes(directory) ? directory : undefined
+    const directory = workspaceKey(active?.worktree ?? "") === workspaceKey(project.worktree) ? currentDir() : undefined
+    const extra =
+      directory &&
+      workspaceKey(directory) !== workspaceKey(local) &&
+      !dirs.some((item) => workspaceKey(item) === workspaceKey(directory))
+        ? directory
+        : undefined
     const pending = extra ? WorktreeState.get(extra)?.status === "pending" : false
 
-    const existing = store.workspaceOrder[project.worktree]
-    if (!existing) return extra ? [...dirs, extra] : dirs
-
-    const merged = syncWorkspaceOrder(local, dirs, existing)
-    if (pending && extra) return [local, extra, ...merged.filter((directory) => directory !== local)]
-    if (!extra) return merged
-    if (pending) return merged
-    return [...merged, extra]
+    const ordered = effectiveWorkspaceOrder(local, dirs, store.workspaceOrder[project.worktree])
+    if (pending && extra) return [local, extra, ...ordered.filter((item) => item !== local)]
+    return ordered
   }
 
   const sidebarProject = createMemo(() => {
@@ -1555,8 +1713,8 @@ export default function Layout(props: ParentProps) {
     if (!project) return
 
     const ids = workspaceIds(project)
-    const fromIndex = ids.findIndex((dir) => dir === draggable.id.toString())
-    const toIndex = ids.findIndex((dir) => dir === droppable.id.toString())
+    const fromIndex = ids.findIndex((dir: string) => dir === draggable.id.toString())
+    const toIndex = ids.findIndex((dir: string) => dir === droppable.id.toString())
     if (fromIndex === -1 || toIndex === -1) return
     if (fromIndex === toIndex) return
 
@@ -1564,7 +1722,11 @@ export default function Layout(props: ParentProps) {
     const [item] = result.splice(fromIndex, 1)
     if (!item) return
     result.splice(toIndex, 0, item)
-    setStore("workspaceOrder", project.worktree, result)
+    setStore(
+      "workspaceOrder",
+      project.worktree,
+      result.filter((directory) => workspaceKey(directory) !== workspaceKey(project.worktree)),
+    )
   }
 
   function handleWorkspaceDragEnd() {
@@ -1647,6 +1809,7 @@ export default function Layout(props: ParentProps) {
 
   const workspaceSidebarCtx: WorkspaceSidebarContext = {
     currentDir,
+    navList: () => [],
     sidebarExpanded,
     sidebarHovering,
     nav: () => state.nav,
@@ -1676,6 +1839,7 @@ export default function Layout(props: ParentProps) {
 
   const projectSidebarCtx: ProjectSidebarContext = {
     currentDir,
+    currentProject,
     sidebarOpened: () => layout.sidebar.opened(),
     sidebarHovering,
     hoverProject: () => state.hoverProject,
@@ -1683,6 +1847,10 @@ export default function Layout(props: ParentProps) {
     onProjectMouseEnter: (worktree, event) => aim.enter(worktree, event),
     onProjectMouseLeave: (worktree) => aim.leave(worktree),
     onProjectFocus: (worktree) => aim.activate(worktree),
+    onHoverOpenChanged: (worktree, hoverOpen) => {
+      if (!hoverOpen && state.hoverProject && state.hoverProject !== worktree) return
+      setState("hoverProject", hoverOpen ? worktree : undefined)
+    },
     navigateToProject,
     openSidebar: () => layout.sidebar.open(),
     closeProject,
@@ -1792,11 +1960,11 @@ export default function Layout(props: ParentProps) {
                         <DropdownMenu.Item
                           data-action="project-clear-notifications"
                           data-project={base64Encode(p().worktree)}
-                          disabled={workspaces().every((d) => notification.project.unseenCount(d) === 0)}
+                          disabled={workspaces().every((d: string) => notification.project.unseenCount(d) === 0)}
                           onSelect={() =>
                             workspaces()
-                              .filter((d) => notification.project.unseenCount(d) > 0)
-                              .forEach((d) => notification.project.markViewed(d))
+                              .filter((d: string) => notification.project.unseenCount(d) > 0)
+                              .forEach((d: string) => notification.project.markViewed(d))
                           }
                         >
                           <DropdownMenu.ItemLabel>

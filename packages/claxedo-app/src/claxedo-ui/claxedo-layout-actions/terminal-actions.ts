@@ -1,5 +1,6 @@
 import { batch } from "solid-js"
 import type { ActionProps } from "./shared"
+import { recoverMissingWorkspace } from "./workspace-recovery"
 
 export function createTerminalActions(props: ActionProps) {
   const handleNewTerminal = (workspaceDir: string, command?: string, title?: string, groupId?: string) => {
@@ -17,6 +18,27 @@ export function createTerminalActions(props: ActionProps) {
     })
 
     const targetGroupId = groupId ?? props.claxedo.split.focusedId()
+    if (recoverMissingWorkspace(props, workspaceDir, (created, project) => {
+      if (targetGroupId) props.claxedo.dispatch({ type: "SplitFocusRequested", groupId: targetGroupId })
+      const nextTabs = targetGroupId ? props.claxedo.groupTabs(targetGroupId) : props.claxedo.topTabs
+      const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      const tabTitle = title || "Terminal"
+      batch(() => {
+        const tabId = nextTabs.addTerminal(created, pendingId, tabTitle)
+        if (tabId) {
+          props.claxedo.terminal.queueCreateForTab(tabId, created, command, title, targetGroupId)
+        }
+      })
+      props.flowLog("new terminal recovered workspace", {
+        projectId: project.id,
+        workspaceDir,
+        created,
+        command,
+        title,
+        targetGroupId,
+      })
+    })) return
+
     if (targetGroupId) props.claxedo.dispatch({ type: "SplitFocusRequested", groupId: targetGroupId })
     const tabs = targetGroupId ? props.claxedo.groupTabs(targetGroupId) : props.claxedo.topTabs
     const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`

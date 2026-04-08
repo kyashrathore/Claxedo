@@ -170,8 +170,8 @@ bun run dev
 # Production build with overrides enabled
 bun run build
 
-# Desktop dev with overrides
-bun run desktop:dev
+# Electron desktop dev
+bun --cwd ../claxedo-desktop dev
 ```
 
 All scripts automatically set `CLAXEDO_OVERRIDES=1`.

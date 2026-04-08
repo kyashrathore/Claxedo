@@ -2,7 +2,7 @@ import { createEffect, on, type Accessor } from "solid-js"
 import { produce, type SetStoreFunction } from "solid-js/store"
 import { createTabActions } from "./tab-actions"
 import { getTabHooks as getTabHooksFromRegistry, type TabLifecycleHooks } from "./tab-type-registry"
-import { defaultGroupLayout, type ClaxedoLayoutStore } from "./types"
+import { realDirectory, type ClaxedoLayoutStore } from "./types"
 import { createDebugLogger } from "../../../overrides/utils/debug"
 import type { TabItem, TopTabsState, TabType } from "./types"
 
@@ -17,6 +17,7 @@ export function createGroupAccessors(input: {
   const debug = createDebugLogger("terminal.groups", "terminal:groups", {
     legacyKey: "opencode.debug.terminal",
   })
+  const real = realDirectory
 
   const groupTabsCache = new Map<string, ReturnType<typeof createTabActions>>()
 
@@ -25,52 +26,66 @@ export function createGroupAccessors(input: {
     if (cached) return cached
 
     const idx = () => store.groups.findIndex((g) => g.id === groupId)
+    const slim = (tabs: TabItem[]) =>
+      tabs.map((tab) => ({
+        id: tab.id,
+        type: tab.type,
+        dir: tab.directory,
+      }))
     const setGroupItems = (fn: (items: TabItem[]) => TabItem[]) => {
       const i = idx()
-      debug.log("set tabs.items", {
-        groupId,
-        idx: i,
-        hasGroup: i !== -1,
-        groupCount: store.groups.length,
-      })
       if (i === -1) return
       const current = store.groups[i]?.tabs.items ?? []
       const next = fn(current)
+      debug.log("set tabs.items", {
+        groupId,
+        idx: i,
+        hasGroup: true,
+        groupCount: store.groups.length,
+        before: slim(current),
+        after: slim(next),
+        activeId: store.groups[i]?.tabs.activeId ?? null,
+      })
       setStore("groups", i, "tabs", "items", next)
     }
     const setGroupActive = (id: string | null) => {
       const i = idx()
-      debug.verbose("set tabs.activeId", {
+      if (i === -1) return
+      debug.log("set tabs.activeId", {
         groupId,
         idx: i,
-        hasGroup: i !== -1,
+        hasGroup: true,
+        prevActive: store.groups[i]?.tabs.activeId ?? null,
         nextActive: id,
       })
-      if (i === -1) return
       setStore("groups", i, "tabs", "activeId", id)
     }
     const setGroupOrder = (fn: (order: string[]) => string[]) => {
       const i = idx()
-      debug.log("set tabs.order", {
-        groupId,
-        idx: i,
-        hasGroup: i !== -1,
-      })
       if (i === -1) return
       const current = store.groups[i]?.tabs.order ?? []
       const next = fn(current)
+      debug.log("set tabs.order", {
+        groupId,
+        idx: i,
+        hasGroup: true,
+        before: current,
+        after: next,
+      })
       setStore("groups", i, "tabs", "order", next)
     }
     const setGroupClosedTabs = (fn: (tabs: TabItem[]) => TabItem[]) => {
       const i = idx()
-      debug.log("set tabs.closedTabs", {
-        groupId,
-        idx: i,
-        hasGroup: i !== -1,
-      })
       if (i === -1) return
       const current = store.groups[i]?.tabs.closedTabs ?? []
       const next = fn(current)
+      debug.log("set tabs.closedTabs", {
+        groupId,
+        idx: i,
+        hasGroup: true,
+        before: slim(current),
+        after: slim(next),
+      })
       setStore("groups", i, "tabs", "closedTabs", next)
     }
     const produceGroupTabs = (fn: (draft: TopTabsState) => void) => {
@@ -105,16 +120,18 @@ export function createGroupAccessors(input: {
         if (hasOther) return
         // Only switch if there's a next active tab; if no tabs remain, keep current default
         const newActive = remainingItems.find((t) => t.id === newActiveId)
-        if (newActive) setStore("groups", i, "worktree", "default", newActive.directory)
+        const next = real(newActive?.directory) ?? real(remainingItems.find((t) => real(t.directory))?.directory)
+        if (next) setStore("groups", i, "worktree", "default", next)
       },
       (tab) => {
         getTabHooks(tab.type)?.onAdd?.(tab)
 
-        if (!tab.directory) return
+        const dir = real(tab.directory)
+        if (!dir) return
         const i = idx()
         if (i === -1) return
-        if (store.groups[i].worktree.default) return
-        setStore("groups", i, "worktree", "default", tab.directory)
+        if (real(store.groups[i].worktree.default)) return
+        setStore("groups", i, "worktree", "default", dir)
       },
       (tab) => {
         const hooks = getTabHooks(tab.type)
@@ -156,23 +173,7 @@ export function createGroupAccessors(input: {
   }
 
   const groupLayout = (groupId: string) => {
-    const idx = () => store.groups.findIndex((g) => g.id === groupId)
-    const dl = defaultGroupLayout()
     return {
-      fileTree: {
-        opened: (() => store.groups[idx()]?.layout?.fileTree?.opened ?? dl.fileTree.opened) as Accessor<boolean>,
-        width: (() => store.groups[idx()]?.layout?.fileTree?.width ?? dl.fileTree.width) as Accessor<number>,
-        tab: (() => "all") as Accessor<string>,
-        setOpened(v: boolean) {
-          const i = idx()
-          if (i !== -1) setStore("groups", i, "layout", "fileTree", "opened", v)
-        },
-        setWidth(v: number) {
-          const i = idx()
-          if (i !== -1) setStore("groups", i, "layout", "fileTree", "width", v)
-        },
-        setTab(_v: string) {},
-      },
       session: {
         width: (() => 600) as Accessor<number>,
         collapsed: (() => false) as Accessor<boolean>,
@@ -287,18 +288,20 @@ export function createGroupAccessors(input: {
       if (hasOther) return
       // Only switch if there's a next active tab; if no tabs remain, keep current default
       const newActive = remainingItems.find((t) => t.id === newActiveId)
-      if (newActive) setStore("groups", i, "worktree", "default", newActive.directory)
+      const next = real(newActive?.directory) ?? real(remainingItems.find((t) => real(t.directory))?.directory)
+      if (next) setStore("groups", i, "worktree", "default", next)
     },
     (tab) => {
       getTabHooks(tab.type)?.onAdd?.(tab)
 
-      if (!tab.directory) return
+      const dir = real(tab.directory)
+      if (!dir) return
       const g = focusedGroup()
       if (!g) return
       const i = store.groups.findIndex((gr) => gr.id === g.id)
       if (i === -1) return
-      if (store.groups[i].worktree.default) return
-      setStore("groups", i, "worktree", "default", tab.directory)
+      if (real(store.groups[i].worktree.default)) return
+      setStore("groups", i, "worktree", "default", dir)
     },
     (tab) => {
       const hooks = getTabHooks(tab.type)

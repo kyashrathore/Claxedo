@@ -1,348 +1,158 @@
-# Cloud Sandbox vs Local — Claxedo Gateway (No Auth)
+# Cloud Workspace vs Local Workspace Routing
 
-How the Claxedo gateway routes requests in **cloud sandbox** mode (Daytona) vs **local** mode, without Clerk user authentication.
+Status: current as of 2026-03-20.
 
-## Gateway Mode Selection
+This doc describes the live routing split in `packages/claxedo-server`, not the older `SANDBOX_ENABLED` gateway architecture.
 
-A single flag controls the mode — `SANDBOX_ENABLED` in `claxedo/src/server/app.ts`:
+## Core Idea
 
-```mermaid
-flowchart TD
-    Start([Gateway Startup]) --> CheckSandbox{SANDBOX_ENABLED?}
+`claxedo-server` is always the browser-facing entrypoint.
 
-    CheckSandbox -->|true| CloudMode["Cloud Mode
-    DirectoryProxyMiddleware
-    + WorkspaceProxyRoutes"]
+For each request it does one of two things:
 
-    CheckSandbox -->|false| LocalMode["Local Mode
-    LocalProxyMiddleware"]
+- handles the request itself for control-plane and local-workspace behavior
+- proxies the request to a per-workspace `workspace-runtime` when the route is runtime-owned and the resolved workspace is `kind: "cloud"`
 
-    CloudMode --> Routes
-    LocalMode --> Routes
+There is no single global cloud/local flag anymore. The split is per workspace and per route.
 
-    Routes["Shared Route Layers
-    ── member routes (requireAuth)
-    ── admin routes (requireAuth admin)
-    ── proxy routes (requireWorkspaceAccess)
-    ── static files / SPA fallback"]
+## Current Request Flow
 
-    style CloudMode fill:#2d6a4f,color:#fff
-    style LocalMode fill:#1d3557,color:#fff
-    style Routes fill:#333,color:#fff
+```text
+browser
+  -> claxedo-server
+    -> local handlers or opencode compat
+    -> workspaceRuntimeProxy
+      -> workspace-runtime for cloud workspaces
+        -> OpenCodeAdapter or ACPAdapter
 ```
 
-### Gateway Route Stack (`app.ts`)
+## How `claxedo-server` Decides
 
-After the mode-specific proxy, all remaining routes are shared:
+Workspace resolution keys:
 
-```mermaid
-flowchart TD
-    Req([Incoming Request]) --> Global["Global Middleware
-    logger, requestId, CORS,
-    tracing, metrics, sentry"]
+- `x-workspace-id`
+- `x-opencode-directory`
+- `?workspaceId=...`
+- `?workspace=...`
+- `?directory=...`
 
-    Global --> Health["/api/health (no auth)"]
-    Global --> Mode{SANDBOX_ENABLED?}
+`packages/claxedo-server/src/workspace-store.ts` resolves or creates a workspace record. That record decides whether the target is:
 
-    Mode -->|true| Cloud["DirectoryProxyMiddleware
-    WorkspaceProxyRoutes"]
-    Mode -->|false| Local["LocalProxyMiddleware"]
+- `kind: "local"`
+- `kind: "cloud"`
 
-    Cloud --> Member
-    Local --> Member
+## Route Ownership
 
-    Member["Member Routes (requireAuth member)
-    /global, /project, /session,
-    /provider, /api/backend,
-    /api/experimental, /api/workspace/resolve"]
+`packages/claxedo-server/src/proxy.ts` splits incoming paths into two buckets.
 
-    Member --> Admin["Admin Routes (requireAuth admin)
-    /auth, /api/workspace/create,
-    /api/workspace/wake"]
+### Always handled by `claxedo-server`
 
-    Admin --> Proxy["Proxy Routes (requireWorkspaceAccess)
-    WorkspaceProxyRoutes (authed path)"]
+Exact paths:
 
-    Proxy --> Static["Static Files + SPA Fallback"]
+- `/global/event`
+- `/global/health`
+- `/path`
+- `/config`
+- `/global/config`
+- `/agent`
+- `/command`
+- `/api/claxedo/health`
+- `/api/claxedo/track`
+- `/api/claxedo/events`
+- `/api/claxedo/bootstrap`
 
-    style Cloud fill:#2d6a4f,color:#fff
-    style Local fill:#1d3557,color:#fff
-    style Member fill:#264653,color:#fff
-    style Admin fill:#6c584c,color:#fff
-    style Proxy fill:#e76f51,color:#fff
-```
+Path prefixes:
 
-> Note: `WorkspaceProxyRoutes` is mounted **twice** in cloud mode — once without auth (early, for directory-based proxy) and once with `requireWorkspaceAccess()` (for direct `/w/{workspaceId}/*` calls). When `AUTH_ENABLED=false`, both paths use `DEV_IDENTITY`.
+- `/provider`
+- `/project`
+- `/experimental`
+- `/api/claxedo/agent-config`
+- `/api/claxedo/session`
+- `/api/claxedo/hook`
+- `/api/claxedo/pty`
+- `/pages`
+- `/api/workgraph`
 
----
+### Proxied to `workspace-runtime` for cloud workspaces
 
-## Local Mode
+Exact paths:
 
-**No Convex, no Daytona, no workspace resolution.** Straight proxy to a local OpenCode server.
+- `/file`
+- `/api/wr/health`
+- `/api/wr/config`
+- `/api/wr/acp-config-options`
 
-```mermaid
-sequenceDiagram
-    participant B as Browser (:4444)
-    participant G as Gateway (:3000)
-    participant O as Local OpenCode (:4096)
+Path prefixes:
 
-    B->>G: GET /session (plain HTTP, no auth)
-    Note over G: LocalProxyMiddleware
-    Note over G: AUTH_ENABLED=false → DEV_IDENTITY
-    Note over G: No path rewrite
-    G->>O: GET /session
-    O-->>G: Response
-    G-->>B: Proxied response
-```
+- `/api/claxedo/process`
+- `/api/claxedo/diff`
+- `/api/claxedo/tunnel`
+- `/session`
+- `/permission`
+- `/question`
+- `/event`
+- `/find`
 
-```
-ENV:
-  SANDBOX_ENABLED=false
-  AUTH_ENABLED=false
-  OPENCODE_URL=http://127.0.0.1:4096
-```
-
-**Key files:**
-- `claxedo/src/server/proxy/local.ts` — proxy middleware
-
----
-
-## Cloud Sandbox Mode (Daytona Token)
-
-The gateway resolves a directory path to a Daytona sandbox, wakes it if needed, obtains a signed preview URL, and proxies the request.
-
-### Full Request Lifecycle
-
-```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant G as Gateway (:3000)
-    participant C as Convex DB
-    participant D as Daytona API
-    participant S as Sandbox VM (:4096)
+If the resolved workspace is local, those routes stay in-process.
 
-    B->>G: GET /session
-    Note over B,G: Header: x-opencode-directory: /home/daytona/project
+## Local Workspace Flow
 
-    Note over G: AUTH_ENABLED=false → DEV_IDENTITY (skip Clerk)
+Local workspaces are registered in `workspaces.json` with `kind: "local"`.
 
-    G->>C: Query: directories.getByPath("/home/daytona/project")
-    C-->>G: workspaceId: "ws_abc123"
-
-    G->>C: Query: workspaces.getById("ws_abc123")
-    C-->>G: sandboxId: "sb_xyz", status: "stopped"
+For local workspaces:
 
-    rect rgb(60, 60, 60)
-        Note over G,D: Sandbox wake-up (uses DAYTONA_API_KEY)
-        G->>D: daytona.get("claxedo-org1-sess1")
-        D-->>G: Sandbox instance (stopped)
-        G->>D: sandbox.start(timeout: 600s)
-        D-->>G: Started
-        G->>D: ensureOpencodeServer(port: 4096)
-        D-->>G: OpenCode running
-    end
-
-    G->>D: getSignedPreviewUrl(port: 4096, ttl: 86400s)
-    D-->>G: https://sb-xyz.preview.daytona.io:4096?token=eyJ...
-
-    Note over G: Cache result (5s TTL, 15m SWR)
-
-    G->>S: GET /session (via signed URL)
-    S-->>G: Response
-
-    G-->>B: Proxied response
-
-    Note over G,C: Background: sync session metadata to Convex
-```
-
-```
-ENV:
-  SANDBOX_ENABLED=true
-  AUTH_ENABLED=false
-  DAYTONA_API_KEY=dtyk_...    # server-side only, never exposed to browser
-  DAYTONA_API_URL=https://api.daytona.io
-  DAYTONA_TARGET=us
-  CONVEX_URL=https://...convex.cloud
-```
-
-**Key files:**
-- `claxedo/src/server/proxy/directory.ts` — directory header → workspace resolution → proxy
-- `claxedo/src/server/proxy/workspace.ts` — `/w/{workspaceId}/*` route + provider credential interception
-- `claxedo/src/services/sandbox-resolver.ts` — Convex lookups + Daytona wake + caching
-- `claxedo/src/services/sandbox-preview.ts` — signed preview URL generation
-- `claxedo/src/sandboxes/providers/daytona.ts` — Daytona SDK lifecycle (create/start/stop)
-
-### Proxy Routing (Cloud)
-
-Two complementary middlewares handle cloud requests:
-
-```mermaid
-flowchart TD
-    Req([Incoming Request]) --> HasDir{Has x-opencode-directory header?}
-
-    HasDir -->|yes| DirProxy["DirectoryProxyMiddleware
-    (directory.ts)"]
-    DirProxy --> ResolveDir["resolveDirectoryUpstream(dir)
-    → Convex: dir → workspaceId"]
-    ResolveDir --> ResolveWs
-
-    HasDir -->|no| HasWsId{Path starts with /w/:workspaceId?}
-    HasWsId -->|yes| WsProxy["WorkspaceProxyRoutes
-    (workspace.ts)"]
-    WsProxy --> ResolveWs["resolveWorkspaceUpstream(wsId)
-    → Convex + Daytona"]
-
-    HasWsId -->|no| Fallthrough[Next middleware / fallback routes]
-
-    ResolveWs --> Running{Sandbox running?}
-    Running -->|yes| Forward
-    Running -->|no| Wake["ensureRunning()
-    + ensureOpencodeServer()
-    + getSignedPreviewUrl()"]
-    Wake --> Forward["Forward request to
-    signed sandbox URL"]
-
-    Forward --> Intercept{Response interception}
-    Intercept --> SyncSession["POST /session → sync to Convex"]
-    Intercept --> StoreAuth["PUT /auth/:provider → store credential"]
-    Intercept --> AugmentProvider["GET /provider → augment with connected list"]
-    Intercept --> Passthrough["Other → passthrough"]
-
-    style DirProxy fill:#2d6a4f,color:#fff
-    style WsProxy fill:#2d6a4f,color:#fff
-    style Wake fill:#e76f51,color:#fff
-```
-
----
-
-## Auth Layers
-
-"No auth" means **no Clerk/user auth**. The Daytona API key is infrastructure auth that stays server-side.
-
-```mermaid
-flowchart LR
-    subgraph "Layer 1: User Auth (DISABLED)"
-        B[Browser] -->|no JWT needed| G[Gateway]
-    end
-
-    subgraph "Layer 2: Infra Auth (ACTIVE)"
-        G -->|DAYTONA_API_KEY| DA[Daytona API]
-        DA -->|signed preview URL| SB[Sandbox VM]
-    end
-
-    style B fill:#264653,color:#fff
-    style G fill:#e76f51,color:#fff
-    style DA fill:#2a9d8f,color:#fff
-    style SB fill:#2d6a4f,color:#fff
-```
-
-| Layer | Purpose | Status | Mechanism |
-|-------|---------|--------|-----------|
-| **User auth** (Clerk) | Browser → Gateway | **Disabled** (`AUTH_ENABLED=false`) | `DEV_IDENTITY` injected, no JWT required |
-| **Infra auth** (Daytona) | Gateway → Daytona API | **Active** | `DAYTONA_API_KEY` in gateway env |
-| **Sandbox access** | Gateway → Sandbox VM | **Active** | Signed preview URL (24h TTL) |
-
-When `AUTH_ENABLED=false`, the `requireAuth()` and `requireWorkspaceAccess()` middlewares inject a hardcoded `DEV_IDENTITY` (`userId: "dev"`, `organizationId: "dev"`, `role: "admin"`) and skip all JWT/ownership checks.
-
-> **The gateway is the trust boundary.** Whoever can reach the gateway gets sandbox access.
-
----
-
-## Side-by-Side Comparison
-
-```mermaid
-flowchart TB
-    subgraph local["LOCAL MODE"]
-        direction TB
-        LB[Browser] --> LG[Gateway]
-        LG -->|"direct proxy
-        OPENCODE_URL"| LO[Local OpenCode
-        127.0.0.1:4096]
-    end
-
-    subgraph cloud["CLOUD SANDBOX MODE"]
-        direction TB
-        CB[Browser] -->|"x-opencode-directory
-        header"| CG[Gateway]
-        CG --> CC[(Convex DB)]
-        CC --> CG
-        CG -->|"DAYTONA_API_KEY"| CD[Daytona API]
-        CD -->|"signed URL"| CG
-        CG -->|"proxied via
-        signed URL"| CS[Sandbox VM
-        OpenCode :4096]
-    end
-
-    style local fill:#1d3557,color:#fff
-    style cloud fill:#2d6a4f,color:#fff
-```
-
-| Aspect | Local | Cloud Sandbox |
-|--------|-------|---------------|
-| **Trigger** | `SANDBOX_ENABLED=false` | `SANDBOX_ENABLED=true` |
-| **Proxy** | `LocalProxyMiddleware` | `DirectoryProxy` + `WorkspaceProxy` |
-| **Backend** | Local OpenCode `:4096` | Daytona VM with OpenCode `:4096` |
-| **Workspace resolution** | None | Convex DB lookup (directory → workspace → sandbox) |
-| **Daytona** | Not used | API key for lifecycle + signed preview URLs |
-| **Convex** | Not used | Session sync, credential storage, workspace lookup |
-| **Auto-wake** | N/A | Yes — sleeping sandboxes started on demand |
-| **Caching** | None | 5s TTL, 15m stale-while-revalidate |
-| **Signed URL TTL** | N/A | 24h (configurable via `DAYTONA_SIGNED_PREVIEW_TTL_SEC`) |
-
----
-
-## Sandbox Lifecycle (Daytona)
-
-```mermaid
-stateDiagram-v2
-    [*] --> NotFound: First request for workspace
-
-    NotFound --> Creating: daytona.create()
-    Creating --> Started: Container ready
-
-    Started --> Running: ensureOpencodeServer(:4096)
-    Running --> Running: Requests proxied via signed URL
-
-    Running --> Stopped: autoStopInterval (60min idle)
-    Stopped --> Started: ensureRunning() on next request
-
-    Started --> [*]: sandbox.delete()
-
-    note right of Creating
-        Image: node:22 + Bun + opencode-ai
-        Optional: pre-built snapshot
-    end note
-
-    note right of Running
-        Signed preview URL
-        regenerated on wake
-    end note
-```
-
----
-
-## Environment Variables Reference
-
-### Gateway Server (`claxedo/src/config/index.ts`)
-
-| Variable | Default | Cloud | Local |
-|----------|---------|-------|-------|
-| `SANDBOX_ENABLED` | `true` | `true` | `false` |
-| `AUTH_ENABLED` | `true` | `false` | `false` |
-| `OPENCODE_URL` | `http://127.0.0.1:4096` | — | required |
-| `DAYTONA_API_KEY` | — | required | — |
-| `DAYTONA_API_URL` | — | optional | — |
-| `DAYTONA_TARGET` | — | required | — |
-| `DAYTONA_SIGNED_PREVIEW_TTL_SEC` | `86400` | optional | — |
-| `CONVEX_URL` | — | required | — |
-| `CLERK_SECRET_KEY` | — | required (if auth on) | — |
-| `ENCRYPTION_KEY` | `default-key` | optional | — |
-
-### Frontend (`packages/claxedo-app`, Vite `VITE_*`)
-
-| Variable | Default | Cloud | Local |
-|----------|---------|-------|-------|
-| `VITE_SANDBOX_ENABLED` | `false` | `true` | `false` |
-| `VITE_AUTH_ENABLED` | `false` | `false` | `false` |
-| `VITE_OPENCODE_BACKEND_URL` | `window.location.origin` | gateway URL | gateway URL |
-| `VITE_CONVEX_URL` | — | required | — |
+- session routes are handled inside `claxedo-server` via `AgentSessionRoutes`
+- local agent execution comes from the local agent engine
+- OpenCode-compatible config, provider, project, and command routes still live on `claxedo-server`
+- some compat routes proxy to the upstream OpenCode server at `OPENCODE_URL`
+
+## Cloud Workspace Flow
+
+Cloud workspaces are registered in `workspaces.json` with `kind: "cloud"`.
+
+For cloud workspaces:
+
+1. `claxedo-server` resolves the workspace from `workspaceId` or directory
+2. `workspaceRuntimeProxy` asks the workspace supervisor for a runtime
+3. the supervisor ensures that runtime exists and has a URL
+4. `claxedo-server` forwards the original request with:
+   - `x-workspace-id`
+   - `x-opencode-directory`
+5. `workspace-runtime` handles the runtime-owned route
+6. `workspace-runtime` talks to either:
+   - OpenCode through `OpenCodeAdapter`, or
+   - an ACP agent through `ACPAdapter`
+
+Streaming responses such as SSE keep the runtime pinned until the stream closes.
+
+## Relevant Files
+
+- `packages/claxedo-server/src/server.ts`
+- `packages/claxedo-server/src/proxy.ts`
+- `packages/claxedo-server/src/workspace-store.ts`
+- `packages/claxedo-server/src/workspace-supervisor.ts`
+- `packages/workspace-runtime/src/server.ts`
+- `packages/workspace-runtime/src/target.ts`
+
+## Useful Environment Variables
+
+Server:
+
+- `CLAXEDO_SERVER_PORT`
+- `OPENCODE_URL`
+- `CLAXEDO_DATA_DIR`
+
+Workspace runtime:
+
+- `CLAXEDO_WR_PORT`
+- `CLAXEDO_WR_DIRECTORY`
+- `CLAXEDO_WR_WORKSPACE_ID`
+- `CLAXEDO_AGENT_TYPE`
+- `CLAXEDO_ACP_BINARY`
+- `CLAXEDO_ACP_MODEL`
+
+Cloud provider auth:
+
+- `DAYTONA_API_KEY`
+- `MODAL_TOKEN_ID`
+- `MODAL_TOKEN_SECRET`

@@ -1,0 +1,4 @@
+tool demo
+created: 2026-04-02
+purpose: real shell-backed file write fallback
+note: verified and edited twice

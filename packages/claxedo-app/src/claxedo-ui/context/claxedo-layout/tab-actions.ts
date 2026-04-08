@@ -1,5 +1,6 @@
 import { batch, type Accessor } from "solid-js"
-import type { TabItem, TabType, TopTabsState } from "./types"
+import type { TabItem, TabScope, TabType, TopTabsState } from "./types"
+import { GLOBAL_TAB_TYPES, isGlobalTab } from "./types"
 import { createDebugLogger } from "../../../overrides/utils/debug"
 
 const MAX_CLOSED_TABS = 10
@@ -11,6 +12,11 @@ const copy = (tab: TabItem): TabItem => ({
   ...tab,
   badge: tab.badge ? { ...tab.badge } : undefined,
 })
+
+const prefix = (tab: Omit<TabItem, "id" | "scope"> & { scope?: TabScope }) => {
+  if (tab.type === "workgraph") return "wkg"
+  return tab.type
+}
 
 export function createTabActions(
   getItems: () => TabItem[],
@@ -26,6 +32,14 @@ export function createTabActions(
   onAdd?: (tab: TabItem) => void,
   onReopen?: (tab: TabItem) => boolean | void,
 ) {
+  const normalizeScope = (tab: { type: TabType; directory?: string; scope?: TabScope }): TabScope => {
+    if (tab.scope) return tab.scope
+    if (GLOBAL_TAB_TYPES.has(tab.type) && !tab.directory) {
+      return "global"
+    }
+    return "directory"
+  }
+
   const tabActions = {
     items: (() => getItems()) as Accessor<TabItem[]>,
     activeId: (() => getActiveId()) as Accessor<string | null>,
@@ -61,9 +75,9 @@ export function createTabActions(
       )
     },
 
-    add(tab: Omit<TabItem, "id">) {
-      const id = `${tab.type}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-      const newTab: TabItem = { ...tab, id }
+    add(tab: Omit<TabItem, "id" | "scope"> & { scope?: TabScope }) {
+      const id = `${prefix(tab)}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      const newTab: TabItem = { ...tab, id, scope: normalizeScope(tab) }
 
       debug.log("add tab", {
         id,
@@ -72,23 +86,6 @@ export function createTabActions(
         directory: tab.directory,
         existingCount: getItems().length,
       })
-
-      // Diagnostic: detect focus-steal when adding a session tab while terminal is active
-      const currentActive = getActiveId()
-      if (currentActive && tab.type === "session") {
-        const currentTab = getItems().find((t) => t.id === currentActive)
-        if (currentTab?.type === "terminal") {
-          // eslint-disable-next-line no-console
-          console.warn(
-            "[tab-actions] FOCUS STEAL via add(): new session tab while terminal active",
-            {
-              from: { id: currentActive, type: currentTab.type, terminalId: currentTab.terminalId },
-              newTab: { id, type: tab.type, sessionId: (tab as { sessionId?: string }).sessionId },
-            },
-            new Error("stack trace"),
-          )
-        }
-      }
 
       batch(() => {
         setItems((items) => [...(items || []), newTab])
@@ -131,6 +128,7 @@ export function createTabActions(
 
       return tabActions.add({
         type: "session",
+        scope: "directory",
         directory: dir,
         sessionId,
         title,
@@ -152,6 +150,7 @@ export function createTabActions(
 
       return tabActions.add({
         type: "terminal",
+        scope: "directory",
         directory: dir,
         terminalId,
         title,
@@ -172,7 +171,7 @@ export function createTabActions(
 
       const existing = getItems().find(
         (t) =>
-          t.type === "review" &&
+          t.type === "review-workspace" &&
           t.directory === dir &&
           t.sessionId === sessionId &&
           (t.reviewMode ?? "session") === (reviewMode ?? "session") &&
@@ -185,7 +184,47 @@ export function createTabActions(
       }
 
       return tabActions.add({
-        type: "review",
+        type: "review-workspace",
+        scope: "directory",
+        directory: dir,
+        sessionId,
+        title: `Review: ${title}`,
+        badge,
+        reviewMode,
+        reviewFromRef,
+        reviewToRef,
+        closable: true,
+      })
+    },
+
+    addReviewWorkspace(
+      dir: string,
+      sessionId: string,
+      title: string,
+      badge?: TabItem["badge"],
+      reviewMode?: TabItem["reviewMode"],
+      reviewFromRef?: string,
+      reviewToRef?: string,
+    ) {
+      if (!dir) return ""
+
+      const existing = getItems().find(
+        (t) =>
+          t.type === "review-workspace" &&
+          t.directory === dir &&
+          t.sessionId === sessionId &&
+          (t.reviewMode ?? "session") === (reviewMode ?? "session") &&
+          (t.reviewFromRef ?? "") === (reviewFromRef ?? "") &&
+          (t.reviewToRef ?? "") === (reviewToRef ?? ""),
+      )
+      if (existing) {
+        setActiveId(existing.id)
+        return existing.id
+      }
+
+      return tabActions.add({
+        type: "review-workspace",
+        scope: "directory",
         directory: dir,
         sessionId,
         title: `Review: ${title}`,
@@ -208,6 +247,7 @@ export function createTabActions(
 
       return tabActions.add({
         type: "context",
+        scope: "directory",
         directory: dir,
         sessionId,
         title,
@@ -226,6 +266,7 @@ export function createTabActions(
 
       return tabActions.add({
         type: "file",
+        scope: "directory",
         directory: dir,
         filePath,
         title,
@@ -233,7 +274,39 @@ export function createTabActions(
       })
     },
 
-    addPage(pageId: string, title: string, directory?: string) {
+    addProcess(dir: string) {
+      const existing = getItems().find((t) => t.type === "process" && t.directory === dir)
+      if (existing) {
+        setActiveId(existing.id)
+        return existing.id
+      }
+
+      return tabActions.add({
+        type: "process",
+        scope: "directory",
+        directory: dir,
+        title: "Processes",
+        closable: true,
+      })
+    },
+
+    addPagesIndex(directory?: string) {
+      const existing = getItems().find((t) => t.type === "pages-index" && t.directory === directory)
+      if (existing) {
+        setActiveId(existing.id)
+        return existing.id
+      }
+
+      return tabActions.add({
+        type: "pages-index",
+        scope: directory ? "directory" : "global",
+        ...(directory ? { directory } : {}),
+        title: "Pages",
+        closable: true,
+      })
+    },
+
+    addPage(pageId: string, title: string, directory?: string, filePath?: string) {
       const existing = getItems().find((t) => t.type === "page" && t.pageId === pageId)
       if (existing) {
         if (existing.sessionId) {
@@ -242,21 +315,42 @@ export function createTabActions(
         if (directory && existing.directory !== directory) {
           setItems((items) => (items ?? []).map((t) => (t.id === existing.id ? { ...t, directory } : t)))
         }
+        if (filePath && existing.filePath !== filePath) {
+          setItems((items) => (items ?? []).map((t) => (t.id === existing.id ? { ...t, filePath } : t)))
+        }
         setActiveId(existing.id)
         return existing.id
       }
 
       return tabActions.add({
         type: "page",
-        directory: directory || "__pages__",
+        scope: directory ? "directory" : "global",
+        ...(directory ? { directory } : {}),
         pageId,
+        filePath,
         title,
         closable: true,
       })
     },
 
+    addWorkgraph(directory?: string) {
+      const existing = getItems().find((t) => t.type === "workgraph" && t.directory === directory)
+      if (existing) {
+        setActiveId(existing.id)
+        return existing.id
+      }
+
+      return tabActions.add({
+        type: "workgraph",
+        scope: directory ? "directory" : "global",
+        ...(directory ? { directory } : {}),
+        title: "WorkGraph",
+        closable: true,
+      })
+    },
+
     close(tabId: string) {
-      const items = getItems().map(copy)
+      const items = getItems()
       if (!items || !Array.isArray(items)) return
 
       const index = items.findIndex((t) => t.id === tabId)
@@ -289,7 +383,7 @@ export function createTabActions(
       const closedTabs = getClosedTabs().map(copy)
       const orderIndex = base.indexOf(tabId)
       const closed = (() => {
-        const entry = { ...tab, _closedOrderIndex: orderIndex >= 0 ? orderIndex : undefined }
+        const entry = { ...copy(tab), _closedOrderIndex: orderIndex >= 0 ? orderIndex : undefined }
         const list = [entry, ...(closedTabs ?? [])]
         if (list.length <= MAX_CLOSED_TABS) return list
         return list.slice(0, MAX_CLOSED_TABS)
@@ -300,9 +394,19 @@ export function createTabActions(
         if (activeId !== tabId) return activeId ?? null
         if (filteredItems.length === 0) return null
         const pos = base.indexOf(tabId)
-        if (pos === -1) return filteredItems[0]?.id ?? null
-        const next = Math.min(pos, filteredItems.length - 1)
-        return filteredItems[next]?.id ?? null
+        if (pos === -1) {
+          const same = filteredItems.find((item) => item.directory === tab.directory)
+          if (same) return same.id
+          return filteredItems[0]?.id ?? null
+        }
+
+        const byId = new Map(filteredItems.map((item) => [item.id, item] as const))
+        const ranked = [...base.slice(pos + 1), ...base.slice(0, pos).reverse()]
+          .map((id) => byId.get(id))
+          .filter((item): item is TabItem => !!item)
+        const same = ranked.find((item) => item.directory === tab.directory)
+        if (same) return same.id
+        return ranked[0]?.id ?? filteredItems[0]?.id ?? null
       })()
 
       debug.verbose("close apply", {
@@ -313,31 +417,27 @@ export function createTabActions(
         closedTabs: closed.length,
         nextActive: active,
       })
-      // Diagnostic: detect if closing a terminal tab results in a session tab becoming active
-      if (tab.type === "terminal" && active) {
-        const nextActiveTab = filteredItems.find((t) => t.id === active)
-        if (nextActiveTab?.type === "session") {
-          // eslint-disable-next-line no-console
-          console.warn(
-            "[tab-actions] FOCUS STEAL via close(): terminal closed → session activated",
-            {
-              closed: { id: tabId, type: tab.type, terminalId: tab.terminalId },
-              next: { id: active, type: nextActiveTab.type, sessionId: nextActiveTab.sessionId },
-            },
-            new Error("stack trace"),
-          )
+      const apply = (stage: string, fn: () => void) => {
+        try {
+          fn()
+        } catch (error) {
+          debug.log("close stage failed", {
+            trace,
+            tabId,
+            stage,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          })
+          throw error
         }
       }
-      onClose?.(tab, filteredItems, active)
-      debug.verbose("close applied onClose", { trace, tabId })
-      setItems(() => filteredItems)
-      debug.verbose("close applied setItems", { trace, tabId })
-      setOrder(() => order)
-      debug.verbose("close applied setOrder", { trace, tabId })
-      setClosedTabs(() => closed)
-      debug.verbose("close applied setClosedTabs", { trace, tabId })
-      setActiveId(active)
-      debug.verbose("close applied setActiveId", { trace, tabId })
+      batch(() => {
+        apply("onClose", () => onClose?.(tab, filteredItems, active))
+        apply("setItems", () => setItems(() => filteredItems))
+        apply("setOrder", () => setOrder(() => order))
+        apply("setClosedTabs", () => setClosedTabs(() => closed))
+        apply("setActiveId", () => setActiveId(active))
+      })
       debug.log("close end", { trace, tabId })
     },
 
@@ -374,23 +474,6 @@ export function createTabActions(
     },
 
     setActive(tabId: string) {
-      // Diagnostic: detect focus-steal from terminal → session
-      const currentActive = getActiveId()
-      if (currentActive && currentActive !== tabId) {
-        const currentTab = getItems().find((t) => t.id === currentActive)
-        const nextTab = getItems().find((t) => t.id === tabId)
-        if (currentTab?.type === "terminal" && nextTab?.type === "session") {
-          // eslint-disable-next-line no-console
-          console.warn(
-            "[tab-actions] FOCUS STEAL: terminal → session",
-            {
-              from: { id: currentActive, type: currentTab.type, terminalId: currentTab.terminalId },
-              to: { id: tabId, type: nextTab.type, sessionId: nextTab.sessionId },
-            },
-            new Error("stack trace"),
-          )
-        }
-      }
       produceAll((draft) => {
         if (!draft || !draft.items) return
         const exists = draft.items.find((t) => t.id === tabId)
@@ -441,21 +524,55 @@ export function createTabActions(
       return order.map((id) => items.find((t) => t.id === id)).filter((t): t is TabItem => !!t)
     }) as Accessor<TabItem[]>,
 
-    /** Items grouped by directory then flattened — matches the visual tab bar order. */
+    /** Items grouped by directory then flattened — matches the visual tab bar order.
+     *  Unpinned tabs establish group order; pinned tabs are then prepended within their own group. */
     visualOrderedItems: (() => {
-      const ordered = tabActions.orderedItems()
-      const groups = new Map<string, TabItem[]>()
-      for (const tab of ordered) {
-        const existing = groups.get(tab.directory) || []
-        existing.push(tab)
-        groups.set(tab.directory, existing)
+      const items = getItems()
+      const currentOrder = getOrder()
+      const base = currentOrder.length ? currentOrder : items.map((item) => item.id)
+      const seen = new Set(base)
+      const missing = items.filter((item) => !seen.has(item.id)).map((item) => item.id)
+      const order = missing.length ? [...base, ...missing] : base
+      const ordered: TabItem[] = order
+        .map((id) => items.find((t) => t.id === id))
+        .filter((t): t is TabItem => !!t)
+
+      const groups = new Map<string | undefined, { pinned: TabItem[]; unpinned: TabItem[] }>()
+      const groupOrder: Array<string | undefined> = []
+      const ensure = (directory?: string) => {
+        let entry = groups.get(directory)
+        if (entry) return entry
+        entry = { pinned: [], unpinned: [] }
+        groups.set(directory, entry)
+        groupOrder.push(directory)
+        return entry
       }
-      return Array.from(groups.values()).flat()
+
+      for (const tab of ordered) {
+        if (tab.pinned) continue
+        ensure(isGlobalTab(tab) ? undefined : tab.directory).unpinned.push(tab)
+      }
+
+      for (const tab of ordered) {
+        if (!tab.pinned) continue
+        ensure(isGlobalTab(tab) ? undefined : tab.directory).pinned.push(tab)
+      }
+      const globalIndex = groupOrder.indexOf(undefined)
+      if (globalIndex > 0) {
+        const [global] = groupOrder.splice(globalIndex, 1)
+        groupOrder.unshift(global)
+      }
+      return groupOrder.flatMap((directory) => {
+        const group = groups.get(directory)
+        if (!group) return []
+        return [...group.pinned, ...group.unpinned]
+      })
     }) as Accessor<TabItem[]>,
 
     activateByIndex(index: number) {
       const ordered = tabActions.visualOrderedItems()
-      const tab = ordered[index]
+      const unpinned = ordered.filter((t) => !t.pinned)
+      const tab = unpinned[index]
       if (tab) setActiveId(tab.id)
     },
 

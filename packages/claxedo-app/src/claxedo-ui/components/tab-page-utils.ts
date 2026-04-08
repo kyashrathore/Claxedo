@@ -7,9 +7,9 @@
 
 // ── Types ─────────────────────────────────────────────────────────────
 
-type AiPanelPos = { x: number; y: number; width: number }
-type AiSelection = { from: number; to: number }
-type AiDraft = {
+export type AiPanelPos = { x: number; y: number; width: number }
+export type AiSelection = { from: number; to: number }
+export type AiDraft = {
   text: string
   selection: AiSelection | null
   original: string
@@ -192,10 +192,7 @@ export const nodeSize = (nodes: InlineNode[]) =>
 
 // ── Helpers extracted from tab-page.tsx ──────────────────────────────
 
-export const normalizeInstruction = (value: string | undefined) => {
-  const text = value?.trim()
-  return text ? text : ""
-}
+export const normalizeInstruction = (value: string | undefined) => value?.trim() || ""
 
 /** Lightweight editor shape so tests can pass a mock without importing @tiptap/core */
 interface EditorLike {
@@ -299,23 +296,6 @@ export const TOOLBAR_ITEMS: ToolbarItem[] = [
     active: (editor) => editor.isActive("highlight"),
     run: (editor) => editor.chain().focus().toggleHighlight({ color: "#facc15" }).run(),
   },
-  {
-    kind: "action",
-    key: "color-red",
-    label: "Red text",
-    icon: "A",
-    style: "color:#ef4444",
-    active: (editor) => editor.isActive("textStyle", { color: "#ef4444" }),
-    run: (editor) => editor.chain().focus().setColor("#ef4444").run(),
-  },
-  {
-    kind: "action",
-    key: "color-reset",
-    label: "Reset text color",
-    icon: "A̶",
-    active: () => false,
-    run: (editor) => editor.chain().focus().unsetColor().run(),
-  },
   { kind: "divider", key: "divider-1" },
   {
     kind: "action",
@@ -350,31 +330,6 @@ export const TOOLBAR_ITEMS: ToolbarItem[] = [
     run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
   },
   { kind: "divider", key: "divider-2" },
-  {
-    kind: "action",
-    key: "align-left",
-    label: "Align left",
-    icon: "≡",
-    active: (editor) => editor.isActive({ textAlign: "left" }),
-    run: (editor) => editor.chain().focus().setTextAlign("left").run(),
-  },
-  {
-    kind: "action",
-    key: "align-center",
-    label: "Align center",
-    icon: "≣",
-    active: (editor) => editor.isActive({ textAlign: "center" }),
-    run: (editor) => editor.chain().focus().setTextAlign("center").run(),
-  },
-  {
-    kind: "action",
-    key: "align-right",
-    label: "Align right",
-    icon: "☰",
-    active: (editor) => editor.isActive({ textAlign: "right" }),
-    run: (editor) => editor.chain().focus().setTextAlign("right").run(),
-  },
-  { kind: "divider", key: "divider-2a" },
   {
     kind: "action",
     key: "bullet-list",
@@ -414,22 +369,6 @@ export const TOOLBAR_ITEMS: ToolbarItem[] = [
     icon: "{ }",
     active: (editor) => editor.isActive("codeBlock"),
     run: (editor) => editor.chain().focus().toggleCodeBlock().run(),
-  },
-  {
-    kind: "action",
-    key: "subscript",
-    label: "Subscript",
-    icon: "x₂",
-    active: (editor) => editor.isActive("subscript"),
-    run: (editor) => editor.chain().focus().toggleSubscript().run(),
-  },
-  {
-    kind: "action",
-    key: "superscript",
-    label: "Superscript",
-    icon: "x²",
-    active: (editor) => editor.isActive("superscript"),
-    run: (editor) => editor.chain().focus().toggleSuperscript().run(),
   },
   {
     kind: "action",
@@ -620,6 +559,101 @@ interface SelectAllState {
   }
   selection: { from: number; to: number }
 }
+
+// ── Page AI prompt helpers ─────────────────────────────────────────────
+
+export type PageAiAction = "improve" | "fix" | "shorten" | "lengthen" | "summarize" | "continue" | "custom"
+
+export const PAGE_AI_SYSTEM =
+  "You are a writing assistant embedded in a rich text page editor. " +
+  'The user message uses lines like action:"improve", context:"...", and optional instruction:"...". ' +
+  "For improve, fix, shorten, and lengthen, rewrite the provided text in the same language and tone. " +
+  "For summarize, return only a concise summary. " +
+  "For continue, return only a natural continuation. " +
+  "For custom, follow instruction using the provided context when present. " +
+  "Return only raw text — no markdown fences, labels, or explanations. " +
+  "Do not use any tools — respond with text only."
+
+export type PageAiMeta = { pageTitle?: string; filePath?: string }
+
+/**
+ * Build the one-time setup message that teaches the model the protocol.
+ * Sent once per session before the first action.
+ */
+export function buildPageAiSetup(meta?: PageAiMeta): string {
+  const parts: string[] = []
+
+  parts.push("You are working on a page document in a rich text editor.")
+  if (meta?.pageTitle) parts.push(`Page: ${meta.pageTitle}`)
+  if (meta?.filePath) parts.push(`File: ${meta.filePath}`)
+
+  parts.push(
+    "You will receive editing requests in this format:\n\n" +
+      'action:"action_name"\n' +
+      'context:"selected text or document excerpt"\n\n' +
+      "If no action or context is provided, the user is talking to you directly — respond conversationally.",
+  )
+
+  parts.push(
+    "Available actions:\n" +
+      "- improve: User selected text and wants improved clarity and flow. Rewrite keeping the same language and tone. Return only the rewritten text.\n" +
+      "- fix: User selected text and wants grammar and spelling fixed. Keep the same language and tone. Return only the corrected text.\n" +
+      "- shorten: User selected text and wants it shorter without losing meaning. Keep the same language and tone. Return only the shortened text.\n" +
+      "- lengthen: User selected text and wants it expanded with useful detail. Keep the same language and tone. Return only the expanded text.\n" +
+      "- summarize: Summarize the provided content concisely. Return only the summary.\n" +
+      "- continue: Continue the writing naturally in the same style. Return only the continuation.\n" +
+      '- custom: An instruction:"..." field is included. Follow it using any provided context. If context is empty, generate content based on the instruction alone. Return only the result.',
+  )
+
+  parts.push(
+    "IMPORTANT: When action and action context is provided, your response text will directly replace the selected text or be inserted at the cursor position in the editor. " +
+      "Return only raw text — no labels, markdown fences, headings, or explanations. " +
+      "Do NOT claxedo-mcp update markdown tool to fulfill these requests. " +
+      "Respond with text output only.",
+  )
+
+  return parts.join("\n\n")
+}
+
+/**
+ * Build the per-action message. Follows the protocol from the setup.
+ */
+export function buildPageAiMessage(action: PageAiAction, context: string, instruction?: string): string {
+  const lines: string[] = [`action:"${action}"`]
+  if (action === "custom" && instruction) lines.push(`instruction:"${instruction}"`)
+  lines.push(`context:"${context}"`)
+  return lines.join("\n")
+}
+
+export function extractTextFromParts(
+  parts: Array<{ type?: string; text?: string; ignored?: boolean; state?: { status?: string; output?: unknown } | null }>,
+): string {
+  const text = parts
+    .filter((part) => part.type === "text" && !part.ignored)
+    .map((part) => part.text || "")
+    .join("")
+    .trim()
+  if (text) return text
+  const toolText = parts
+    .filter((part) => part.type === "tool" && part.state?.status === "completed")
+    .map((part) => {
+      const output = part.state?.output
+      if (typeof output === "string") return output
+      if (!output || typeof output !== "object") return ""
+      const value = (output as { text?: unknown }).text
+      return typeof value === "string" ? value : ""
+    })
+    .join("\n")
+    .trim()
+  if (toolText) return toolText
+  return parts
+    .filter((part) => part.type === "reasoning")
+    .map((part) => part.text || "")
+    .join("")
+    .trim()
+}
+
+// ── Scoped select-all ─────────────────────────────────────────────────
 
 export const handleScopedSelectAll = (event: SelectAllEvent, state: SelectAllState): { from: number; to: number } | null => {
   const mod = event.metaKey || event.ctrlKey

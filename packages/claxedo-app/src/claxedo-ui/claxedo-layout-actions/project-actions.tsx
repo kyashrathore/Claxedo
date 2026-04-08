@@ -1,19 +1,23 @@
-import { getExtensions } from "@opencode-ai/app-shared"
-import { DialogSettings } from "@opencode-ai/claxedo-app"
+import { DialogSettings } from "@/components/dialog-settings"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { getFilename } from "@opencode-ai/util/path"
 import { showToast } from "@opencode-ai/ui/toast"
 import { validWorktree } from "@claxedo/utils/worktree"
 
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
-import { DialogCreateCloudProject } from "../../components/dialog-create-cloud-project"
+import { DialogCreateCloudWorkspace } from "../../components/dialog-create-cloud-workspace"
 import { DialogNewProject } from "../../components/dialog-new-project"
+import { api, getDefaultBaseUrl } from "../../utils/api"
 import { DialogDeleteWorkspace } from "../components/dialogs"
 import type { ProjectItem, WorkspaceItem } from "../layouts/rail-sidebar"
 import type { WorkspaceBarItem } from "../layouts/top-tab-bar"
 import { getAuthToken } from "../../utils/auth-client"
+import { Worktree as WorktreeState } from "@/utils/worktree"
 import type { ActionProps, Nav } from "./shared"
 import { findProjectForWorkspace, message } from "./shared"
+import { capture as phCapture } from "../../analytics/posthog"
+import { sessionRoute } from "../context/claxedo-layout/tab-route"
+import { createLocalWorkspace } from "./workspace-recovery"
 
 export function createProjectActions(props: ActionProps, nav: Nav) {
   const handleProjectSelect = (_project: ProjectItem) => {
@@ -21,7 +25,7 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
   }
 
   const handleNewProject = () => {
-    const handleProjectSelected = (workspaceDir: string) => {
+    const handleProjectSelected = async (workspaceDir: string) => {
       props.flowLog("new project selected", {
         workspaceDir,
         routeDir: props.activeWorkspaceId(),
@@ -38,6 +42,18 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
         return
       }
 
+      if (props.platform.platform !== "web") {
+        try {
+          await props.globalSync.project.ensure(workspaceDir)
+        } catch {
+          showToast({
+            title: "Not a git repository",
+            description: "Only git repositories can be added as projects",
+            variant: "error",
+          })
+          return
+        }
+      }
       props.layout.projects.open(workspaceDir)
       props.globalSync.child(workspaceDir)
       props.claxedo.worktree.setPinned(null)
@@ -45,56 +61,28 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
       const id = props.claxedo.topTabs.addSession(workspaceDir, "new", "New Session")
       if (id) props.claxedo.topTabs.setActive(id)
       if (id)
-        nav(`/${base64Encode(workspaceDir)}/tab/${id}`, "new-project-selected", {
+        nav(sessionRoute(workspaceDir), "new-project-selected", {
           workspaceDir,
           tabId: id,
         })
       props.dialog.close()
     }
 
-    const showLocalDialog = () => {
-      props.dialog.show(() => (
-        <DialogSelectDirectory
-          onSelect={(dir) => {
-            if (typeof dir === "string") {
-              handleProjectSelected(dir)
-            }
-          }}
-        />
-      ))
-    }
-
-    const showCloudDialog = () => {
-      props.dialog.show(() => (
-        <DialogCreateCloudProject
-          onSelect={(workspaceDir) => {
-            if (typeof workspaceDir === "string") {
-              handleProjectSelected(workspaceDir)
-            }
-          }}
-        />
-      ))
-    }
-
-    if (props.config?.sandboxEnabled) {
-      props.dialog.show(() => (
-        <DialogNewProject
-          onLocal={() => showLocalDialog()}
-          onCloud={() => showCloudDialog()}
-          onClose={() => props.dialog.close()}
-        />
-      ))
-      return
-    }
-
-    showLocalDialog()
+    props.dialog.show(() => (
+      <DialogSelectDirectory
+        onSelect={(dir) => {
+          if (typeof dir === "string") {
+            void handleProjectSelected(dir)
+          }
+        }}
+      />
+    ))
   }
 
   const handleNewWorkspace = async (project: ProjectItem): Promise<WorkspaceBarItem | undefined> => {
-    const ext = getExtensions()
     const worktree = project.worktree
 
-    const onWorktreeCreated = (created: string, name: string) => {
+    const onWorktreeCreated = async (created: string, name: string, wait = false) => {
       props.flowLog("workspace created", {
         projectId: project.id,
         created,
@@ -104,28 +92,53 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
         routeTab: props.params.tabId,
       })
 
-      props.globalSync.child(created)
-      props.claxedo.workspaceRecency.recordAccess(project.id, created)
-      props.claxedo.worktree.setPinned(null)
-      props.claxedo.worktree.setDefault(created)
-
-      const tabId = props.claxedo.topTabs.addSession(created, "new", "New Session")
-      if (tabId) props.claxedo.topTabs.setActive(tabId)
-
-      if (tabId)
-        nav(`/${base64Encode(created)}/tab/${tabId}`, "new-workspace-created", {
-          projectId: project.id,
-          created,
-          tabId,
-        })
-
-      return {
+      const item = {
         id: created,
         directory: created,
         name,
         projectWorktree: worktree,
         canDelete: true,
+      } satisfies WorkspaceBarItem
+
+      if (wait) WorktreeState.pending(created)
+      const [child] = props.globalSync.child(created)
+      props.claxedo.workspaceRecency.recordAccess(project.id, created)
+      props.claxedo.worktree.setPinned(null)
+      props.claxedo.worktree.setDefault(created)
+
+      if (wait) {
+        const result = await WorktreeState.wait(created)
+        if (result.status === "failed") {
+          showToast({
+            title: "Failed to create worktree",
+            description: result.message,
+            variant: "error",
+          })
+          return
+        }
+
+        if (child.status === "loading") {
+          await new Promise<void>((resolve) => {
+            const id = setInterval(() => {
+              if (child.status === "loading") return
+              clearInterval(id)
+              resolve()
+            }, 100)
+          })
+        }
       }
+
+      const tabId = props.claxedo.topTabs.addSession(created, "new", "New Session")
+      if (tabId) props.claxedo.topTabs.setActive(tabId)
+
+      if (tabId)
+        nav(sessionRoute(created), "new-workspace-created", {
+          projectId: project.id,
+          created,
+          tabId,
+        })
+
+      return item
     }
 
     const handleError = (err: unknown) => {
@@ -149,25 +162,124 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
       })
     }
 
-    if (ext.app.createWorkspace) {
+    const createLocalWorktree = async (): Promise<WorkspaceBarItem | undefined> => {
       try {
-        const created = await ext.app.createWorkspace(worktree)
-        if (created) return onWorktreeCreated(created, getFilename(created))
+        const result = await props.globalSDK.client.worktree.create({ directory: worktree, worktreeCreateInput: {} })
+        const created = result.data?.directory
+        const name = result.data?.name
+        if (created) return onWorktreeCreated(created, name ?? getFilename(created), true)
       } catch (err) {
         handleError(err)
       }
-      return
+      return undefined
     }
 
-    try {
-      const result = await props.globalSDK.client.worktree.create({ directory: worktree, worktreeCreateInput: {} })
-      const created = result.data?.directory
-      const name = result.data?.name
-      if (created) return onWorktreeCreated(created, name ?? getFilename(created))
-    } catch (err) {
-      handleError(err)
+    // When sandbox is enabled, let the user choose between local worktree and cloud sandbox
+    if (props.config?.sandboxEnabled) {
+      return new Promise<WorkspaceBarItem | undefined>((resolve) => {
+        props.dialog.show(() => (
+          <DialogNewProject
+            onLocal={async () => {
+              props.dialog.close()
+              resolve(await createLocalWorktree())
+            }}
+            onCloud={() => {
+              props.dialog.show(() => (
+                <DialogCreateCloudWorkspace
+                  projectId={project.id}
+                  onCreated={async (dir) => {
+                    await props.globalSync.bootstrap().catch(() => undefined)
+                    props.dialog.close()
+                    resolve(await onWorktreeCreated(dir, getFilename(dir)))
+                  }}
+                  onClose={() => {
+                    props.dialog.close()
+                    resolve(undefined)
+                  }}
+                />
+              ))
+            }}
+            onClose={() => {
+              props.dialog.close()
+              resolve(undefined)
+            }}
+          />
+        ))
+      })
     }
-    return
+
+    return createLocalWorktree()
+  }
+
+  /** Create a local worktree directly — no dialog */
+  const handleNewLocalWorkspace = async (
+    project: ProjectItem,
+    onProgress?: (step: string, message?: string) => void,
+    workspaceName?: string,
+  ): Promise<WorkspaceBarItem | undefined> => {
+    return createLocalWorkspace(props, project, {
+      onProgress,
+      workspaceName,
+      onReady: (created) => {
+        onProgress?.("redirecting")
+        const tabId = props.claxedo.topTabs.addSession(created, "new", "New Session")
+        if (tabId) props.claxedo.topTabs.setActive(tabId)
+        if (tabId) nav(sessionRoute(created), "new-workspace-created", { projectId: project.id, created, tabId })
+      },
+    })
+  }
+
+  /** Create a cloud sandbox directly — no dialog, calls API inline with progress */
+  const handleNewCloudWorkspace = async (
+    project: ProjectItem,
+    onProgress?: (step: string, message?: string) => void,
+    workspaceName?: string,
+  ): Promise<WorkspaceBarItem | undefined> => {
+    const worktree = project.worktree
+    const baseUrl = getDefaultBaseUrl()
+    try {
+      onProgress?.("acquiring_sandbox")
+      const body: Record<string, string> = { projectId: project.id }
+      if (workspaceName) body.workspaceName = workspaceName
+      const result = await api.post<{ workspaceId: string; directory?: string }>(
+        `${baseUrl}/api/workspace/create`,
+        body,
+      )
+      const dir = result.directory
+      if (!dir) throw new Error("Workspace create did not return a directory")
+
+      // Listen for SSE provision events if available
+      if (props.events) {
+        await new Promise<void>((resolve, reject) => {
+          const unsub = props.events!.on("provision", (ev) => {
+            if (ev.workspaceId !== result.workspaceId) return
+            onProgress?.(ev.step, ev.message)
+            if (ev.step === "ready") { unsub(); resolve() }
+            if (ev.step === "error") { unsub(); reject(new Error(ev.message || "Provisioning failed")) }
+          })
+          // Timeout fallback
+          setTimeout(() => { unsub(); resolve() }, 120_000)
+        })
+      }
+
+      await props.globalSync.bootstrap().catch(() => undefined)
+      onProgress?.("ready")
+      onProgress?.("redirecting")
+      await new Promise(resolve => setTimeout(resolve, 1200))
+      props.flowLog("workspace created", { projectId: project.id, created: dir })
+      const item = { id: dir, directory: dir, name: getFilename(dir), projectWorktree: worktree, canDelete: true } satisfies WorkspaceBarItem
+      props.claxedo.workspaceRecency.recordAccess(project.id, dir)
+      props.claxedo.worktree.setPinned(null)
+      props.claxedo.worktree.setDefault(dir)
+      const tabId = props.claxedo.topTabs.addSession(dir, "new", "New Session")
+      if (tabId) props.claxedo.topTabs.setActive(tabId)
+      if (tabId) nav(sessionRoute(dir), "new-workspace-created", { projectId: project.id, created: dir, tabId })
+      return item
+    } catch (err) {
+      onProgress?.("error", err instanceof Error ? err.message : "Failed to create cloud workspace")
+      showToast({ title: "Failed to create cloud workspace", description: message(err), variant: "error" })
+    }
+    return undefined
   }
 
   const handleSettings = () => {
@@ -223,16 +335,14 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
   }
 
   const removeSandboxFromProject = (projectWorktree: string, dir: string) => {
-    const projectIndex = props.globalSync.data.project.findIndex((p) => p.worktree === projectWorktree)
-    if (projectIndex === -1) return
-    const project = props.globalSync.data.project[projectIndex]
-    if (!project.sandboxes?.includes(dir)) return
-    props.globalSync.set(
-      "project",
-      projectIndex,
-      "sandboxes",
-      project.sandboxes.filter((sandbox) => sandbox !== dir),
-    )
+    const index = props.globalSync.data.project.findIndex((p) => p.worktree === projectWorktree)
+    if (index === -1) return
+    const project = props.globalSync.data.project[index]
+    const sandboxes = project.sandboxes?.filter((item) => item !== dir)
+    if (project.sandboxes && sandboxes && sandboxes.length !== project.sandboxes.length) {
+      props.globalSync.set("project", index, "sandboxes", sandboxes)
+    }
+    return project
   }
 
   const cleanupDeletedWorkspaceSelection = (dir: string, projectWorktree: string) => {
@@ -260,6 +370,7 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
   }
 
   const handleDeleteWorkspace = (workspace: WorkspaceItem) => {
+    phCapture("workspace_delete_initiated", { is_cloud: workspace.isCloud, is_main: workspace.isMain })
     props.dialog.show(() => (
       <DialogDeleteWorkspace
         directory={workspace.directory}
@@ -277,7 +388,8 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
 
           await deleteWorkspaceWorktree(projectWorktree, dir)
           purgeWorkspaceState(dir)
-          removeSandboxFromProject(projectWorktree, dir)
+          const project = removeSandboxFromProject(projectWorktree, dir)
+          props.claxedo.cleanupDeletedWorktree(dir, project?.id)
           cleanupDeletedWorkspaceSelection(dir, projectWorktree)
         }}
         onClose={() => props.dialog.close()}
@@ -286,7 +398,11 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
   }
 
   const handleRemoveProject = (project: ProjectItem) => {
+    phCapture("project_removed")
     const current = props.activeProjectId()
+    for (const dir of [project.worktree, ...(project.sandboxes ?? [])]) {
+      props.claxedo.cleanupDeletedWorktree(dir, project.id)
+    }
     props.layout.projects.close(project.worktree)
     if (current === project.worktree) {
       props.navigate("/")
@@ -297,6 +413,8 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
     handleProjectSelect,
     handleNewProject,
     handleNewWorkspace,
+    handleNewLocalWorkspace,
+    handleNewCloudWorkspace,
     handleSettings,
     handleHelp,
     handleDeleteWorkspace,

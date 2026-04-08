@@ -777,8 +777,14 @@ export function createTerminalState(input: {
       return store.terminalAgentStatus[terminalId] ?? "idle"
     },
 
+    /** Returns true if the terminal has received at least one lifecycle event */
+    isTracked(terminalId: string): boolean {
+      return store.terminalAgentStatus[terminalId] !== undefined
+    },
+
     setAgentStatus(terminalId: string, status: TerminalAgentStatus) {
-      setStore("terminalAgentStatus", terminalId, status === "idle" ? undefined : status)
+      // Store "idle" explicitly so isTracked() can distinguish "never seen" from "tracked and idle"
+      setStore("terminalAgentStatus", terminalId, status)
       if (status !== "idle") {
         setStore("terminalAgentSeen", terminalId, true)
       }
@@ -790,6 +796,10 @@ export function createTerminalState(input: {
 
     clearSeen(terminalId: string) {
       setStore("terminalAgentSeen", terminalId, undefined)
+    },
+
+    seen(terminalId: string): boolean {
+      return !!store.terminalAgentSeen[terminalId]
     },
 
     getTabAgentStatus(tabId: string): { loading: boolean; attention: boolean; done: boolean } {

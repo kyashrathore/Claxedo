@@ -97,7 +97,7 @@ function DiffSSRViewer<T>(props: SSRDiffFileProps<T>) {
     fileDiffInstance = virtualizer
       ? new VirtualizedFileDiff<T>(
           {
-            ...createDefaultOptions(props.diffStyle),
+            ...createDefaultOptions(props.diffStyle, "scroll"),
             ...others,
             ...local.preloadedDiff.options,
           },
@@ -107,7 +107,7 @@ function DiffSSRViewer<T>(props: SSRDiffFileProps<T>) {
         )
       : new FileDiff<T>(
           {
-            ...createDefaultOptions(props.diffStyle),
+            ...createDefaultOptions(props.diffStyle, "scroll"),
             ...others,
             ...local.preloadedDiff.options,
           },

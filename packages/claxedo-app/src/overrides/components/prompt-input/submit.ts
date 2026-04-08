@@ -1,4 +1,4 @@
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { Message, OutputFormat } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { useNavigate } from "@solidjs/router"
@@ -8,16 +8,23 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
-import { type ImageAttachmentPart, type Prompt, usePrompt } from "@/context/prompt"
+import { type ContextItem, type ImageAttachmentPart, type Prompt, usePrompt } from "@/context/prompt"
+import { usePermission } from "@/context/permission"
+import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { Identifier } from "@/utils/id"
+import { formatServerError } from "@/utils/server-errors"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "@/components/prompt-input/build-request-parts"
 import { setCursorPosition } from "@/components/prompt-input/editor-dom"
+import { isDemoMode } from "@claxedo/utils/api"
+import { capture as phCapture } from "../../../analytics/posthog"
 import { useSessionParams } from "../../../claxedo-ui/context/session-params"
 import { useClaxedoLayout } from "../../../claxedo-ui/context/claxedo-layout"
+import { sessionRoute } from "../../../claxedo-ui/context/claxedo-layout/tab-route"
 import { paneMentionSystem } from "../../../claxedo-ui/context/claxedo-layout/pane-intent"
+import { acpScope, useAcpConfig } from "../../../claxedo-ui/context/acp-config"
 
 type PendingPrompt = {
   abort: AbortController
@@ -26,12 +33,23 @@ type PendingPrompt = {
 
 const pending = new Map<string, PendingPrompt>()
 
+export type FollowupDraft = {
+  sessionID: string
+  sessionDirectory: string
+  prompt: Prompt
+  context: (ContextItem & { key: string })[]
+  agent: string
+  model: { providerID: string; modelID: string }
+  variant?: string
+}
+
 type PromptSubmitInput = {
   info: Accessor<{ id: string } | undefined>
   sessionID?: Accessor<string | undefined>
   sessionDirectory?: Accessor<string | undefined>
   imageAttachments: Accessor<ImageAttachmentPart[]>
   commentCount: Accessor<number>
+  autoAccept: Accessor<boolean>
   mode: Accessor<"normal" | "shell">
   working: Accessor<boolean>
   editor: () => HTMLDivElement | undefined
@@ -49,6 +67,9 @@ type PromptSubmitInput = {
   system?: Accessor<string | undefined>
   /** Override the agent name (e.g. force "doc" agent in page dock). */
   agent?: Accessor<string | undefined>
+  /** Structured output format for embedded flows. */
+  format?: Accessor<OutputFormat | undefined>
+  setBooting?: (value?: { runner: string; sessionID?: string }) => void
 }
 
 type CommentItem = {
@@ -66,9 +87,19 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const sync = useSync()
   const globalSync = useGlobalSync()
   const local = useLocal()
+  const permission = usePermission()
   const prompt = usePrompt()
   const layout = useLayout()
   const language = useLanguage()
+  const platform = usePlatform()
+
+  // ACP config for model bridge
+  let acpConfig: ReturnType<typeof useAcpConfig> | undefined
+  try {
+    acpConfig = useAcpConfig()
+  } catch {
+    /* not in claxedo context */
+  }
 
   // Multi-pane: detect context so we can update pane content directly instead of navigating
   let sessionParams: ReturnType<typeof useSessionParams> | undefined
@@ -97,6 +128,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const sessionID = input.sessionID?.()
     if (!sessionID) return Promise.resolve()
 
+    phCapture("prompt_aborted")
     globalSync.todo.set(sessionID, [])
     const [, setStore] = globalSync.child(sdk.directory)
     setStore("todo", sessionID, [])
@@ -135,6 +167,47 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
   }
 
+  const createSession = async (dir: string, scope: string) => {
+    const headers: Record<string, string> = {}
+    if (acpConfig) {
+      headers["x-claxedo-runner"] = acpConfig.runner(scope)
+      const model = acpConfig.selectedModel(scope)
+      if (model) headers["x-claxedo-model"] = model
+    }
+    const client = sdk.createClient({
+      directory: dir,
+      throwOnError: true,
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
+    })
+    const res = await client.session.create({ directory: dir })
+    if (!res.data?.id) throw new Error("Failed to create session")
+    return res.data as { id: string }
+  }
+
+  const saveSessionConfig = async (
+    sessionID: string,
+    dir: string,
+    scope: string,
+    input: {
+      agent?: string
+      model?: { providerID: string; modelID: string }
+      variant?: string
+    },
+  ) => {
+    const body = {
+      runner: { type: acpConfig?.runner(scope) ?? "opencode" },
+      ...(input.agent ? { agent: input.agent } : {}),
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.variant ? { variant: input.variant } : {}),
+    }
+    const configFetch = platform.fetch ?? globalThis.fetch
+    await configFetch(`${sdk.url}/session/${sessionID}/config?directory=${encodeURIComponent(dir)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => {})
+  }
+
   const handleSubmit = async (event: Event) => {
     event.preventDefault()
 
@@ -148,22 +221,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
-    const currentModel = local.model.current()
-    const currentAgent = local.agent.current()
-    if (!currentModel || !currentAgent) {
-      showToast({
-        title: language.t("prompt.toast.modelAgentRequired.title"),
-        description: language.t("prompt.toast.modelAgentRequired.description"),
-      })
-      return
-    }
-
     input.addToHistory(currentPrompt, mode)
     input.resetHistoryNavigation()
 
     const projectDirectory = input.sessionDirectory?.() || sdk.directory
     const explicitSessionID = input.sessionID?.()
+    const promptScope = {
+      dir: base64Encode(projectDirectory),
+      id: explicitSessionID,
+    }
     const isNewSession = !explicitSessionID || explicitSessionID === "new"
+    const shouldAutoAccept = isNewSession && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"
 
     let sessionDirectory = projectDirectory
@@ -208,35 +276,114 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       input.onNewSessionWorktreeReset?.()
     }
 
+    const scope = acpScope({
+      directory: explicitSessionID && explicitSessionID !== "new" ? sessionDirectory : projectDirectory,
+      sessionId: explicitSessionID,
+      tabId: sessionParams?.tabId?.(),
+    })
+    const acp = !!acpConfig?.isAcpMode(scope)
+    const runner = acp ? acpConfig?.displayName(scope) ?? "ACP" : undefined
+    const boot = (sessionID?: string) => {
+      if (!runner) return
+      input.setBooting?.({ runner, sessionID })
+    }
+    const clearBoot = () => input.setBooting?.()
+    const acpModel = acpConfig?.isAcpMode(scope) ? acpConfig.acpModelForSubmit(scope) : undefined
+    const currentModel = acpModel ?? local.model.current()
+    const currentAgent = local.agent.current()
+    const variant = local.model.variant.current()
+    if (!currentModel) {
+      clearBoot()
+      showToast({
+        title: language.t("prompt.toast.modelAgentRequired.title"),
+        description: language.t("prompt.toast.modelAgentRequired.description"),
+      })
+      return
+    }
+    if (!currentAgent && !acpConfig?.isAcpMode(scope)) {
+      clearBoot()
+      showToast({
+        title: language.t("prompt.toast.modelAgentRequired.title"),
+        description: language.t("prompt.toast.modelAgentRequired.description"),
+      })
+      return
+    }
+
     let session = input.info()
-    if (!session && explicitSessionID && !isNewSession) session = { id: explicitSessionID }
-    if (!session && isNewSession) {
+    let replaceSession = isNewSession
+    const previousSessionId = explicitSessionID && !isNewSession ? explicitSessionID : "new"
+
+    if (!session && explicitSessionID && !isNewSession) {
       session = await client.session
-        .create()
+        .get({ sessionID: explicitSessionID })
         .then((x) => x.data ?? undefined)
-        .catch((err) => {
-          showToast({
-            title: language.t("prompt.toast.sessionCreateFailed.title"),
-            description: errorMessage(err),
+        .catch(() => undefined)
+      if (!session) replaceSession = true
+    }
+
+    if (!session && replaceSession) {
+      if (acpConfig?.isAcpMode(scope)) {
+        boot()
+        session = await acpConfig.claimSession(scope, {
+          directory: sessionDirectory,
+          sessionId: explicitSessionID,
+        }).catch(() => undefined)
+        if (session) boot(session.id)
+      }
+      if (!session) {
+        if (acpConfig?.isAcpMode(scope)) {
+          clearBoot()
+          return
+        }
+        session = await createSession(sessionDirectory, scope)
+          .catch((err) => {
+            showToast({
+              title: language.t("prompt.toast.sessionCreateFailed.title"),
+              description: errorMessage(err),
+            })
+            return undefined
           })
-          return undefined
-        })
+      }
+      if (session && acpConfig) {
+        acpConfig.promote(
+          scope,
+          acpScope({
+            directory: sessionDirectory,
+            sessionId: session.id,
+            tabId: sessionParams?.tabId?.(),
+          }),
+        )
+      }
+      if (session && shouldAutoAccept) {
+        permission.enableAutoAccept(session.id, sessionDirectory)
+      }
       if (session && !sessionParams) {
         // Non-multi-pane: navigate to the new session
         if (input.navigateOnCreate?.() ?? true) {
           layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
+          const activeTab = claxedoLayout?.topTabs.active()
+          const draftTab =
+            activeTab?.type === "session" && activeTab.directory === sessionDirectory && activeTab.sessionId === previousSessionId
+              ? activeTab
+              : undefined
+          if (draftTab) {
+            claxedoLayout?.topTabs.patch(draftTab.id, { sessionId: session.id, title: "Session" })
+          }
           const existingTab = claxedoLayout?.topTabs.findSession(sessionDirectory, session.id)
-          const tabId = existingTab?.id ?? claxedoLayout?.topTabs.addSession(sessionDirectory, session.id, "Session")
+          const tabId = draftTab?.id ?? existingTab?.id ?? claxedoLayout?.topTabs.addSession(sessionDirectory, session.id, "Session")
           if (tabId) {
             claxedoLayout?.topTabs.setActive(tabId)
-            navigate(`/${base64Encode(sessionDirectory)}/tab/${tabId}`)
+            navigate(sessionRoute(sessionDirectory, session.id))
           } else {
-            navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
+            navigate(sessionRoute(sessionDirectory, session.id))
           }
         }
       }
     }
-    if (!session) return
+    if (!session) {
+      clearBoot()
+      return
+    }
 
     input.onSubmit?.()
 
@@ -244,17 +391,43 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       modelID: currentModel.id,
       providerID: currentModel.provider.id,
     }
-    const agent = input.agent?.() || currentAgent.name
-    const variant = local.model.variant.current()
+    const agent = input.agent?.() || currentAgent?.name || "build"
+    if (replaceSession) {
+      await saveSessionConfig(session.id, sessionDirectory, acpScope({
+        directory: sessionDirectory,
+        sessionId: session.id,
+        tabId: sessionParams?.tabId?.(),
+      }), {
+        agent,
+        model,
+        variant,
+      })
+    }
 
+    const groups = claxedoLayout?.split.groups() ?? []
+    const totalTabs = groups.reduce((sum, g) => sum + (claxedoLayout?.groupTabs(g.id).items().length ?? 0), 0)
+    phCapture("prompt_sent", {
+      mode,
+      agent,
+      model_id: model.modelID,
+      provider_id: model.providerID,
+      is_new_session: isNewSession,
+      has_images: images.length > 0,
+      image_count: images.length,
+      comment_count: input.commentCount(),
+      context_item_count: prompt.context.items().length,
+      active_panes: groups.length,
+      active_tabs: totalTabs,
+      split_active: (claxedoLayout?.split.active() ?? false),
+    })
     const clearInput = () => {
-      prompt.reset()
+      prompt.reset(promptScope)
       input.setMode("normal")
       input.setPopover(null)
     }
 
     const restoreInput = () => {
-      prompt.set(currentPrompt, input.promptLength(currentPrompt))
+      prompt.set(currentPrompt, input.promptLength(currentPrompt), promptScope)
       input.setMode(mode)
       input.setPopover(null)
       requestAnimationFrame(() => {
@@ -268,6 +441,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     if (mode === "shell") {
       clearInput()
+      const [, setStore] = globalSync.child(sessionDirectory)
+      setStore("session_status", session.id, { type: "busy" })
       client.session
         .shell({
           sessionID: session.id,
@@ -276,6 +451,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           command: text,
         })
         .catch((err) => {
+          setStore("session_status", session.id, { type: "idle" })
+          clearBoot()
           showToast({
             title: language.t("prompt.toast.shellSendFailed.title"),
             description: errorMessage(err),
@@ -291,6 +468,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       const customCommand = sync.data.command.find((c) => c.name === commandName)
       if (customCommand) {
         clearInput()
+        const [, setStore] = globalSync.child(sessionDirectory)
+        setStore("session_status", session.id, { type: "busy" })
         client.session
           .command({
             sessionID: session.id,
@@ -308,9 +487,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             })),
           })
           .catch((err) => {
+            setStore("session_status", session.id, { type: "idle" })
+            clearBoot()
             showToast({
               title: language.t("prompt.toast.commandSendFailed.title"),
-              description: errorMessage(err),
+              description: formatServerError(err, language.t, language.t("common.requestFailed")),
             })
             restoreInput()
           })
@@ -348,13 +529,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       model,
     }
 
-    const addOptimisticMessage = () =>
+    const addOptimisticMessage = () => {
       sync.session.optimistic.add({
         directory: sessionDirectory,
         sessionID: session.id,
         message: optimisticMessage,
         parts: optimisticParts,
       })
+    }
 
     const removeOptimisticMessage = () =>
       sync.session.optimistic.remove({
@@ -381,31 +563,34 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     // batch, so the session page sees the real session ID immediately.
     const paneGroupId = sessionParams?.groupId()
     const myLeafId = sessionParams?.leafId?.()
+    const draftTabId =
+      replaceSession && paneGroupId && claxedoLayout
+        ? (() => {
+            const active = claxedoLayout.groupTabs(paneGroupId).active()
+            if (active?.sessionId !== previousSessionId) return
+            return active.id
+          })()
+        : undefined
     const applyPaneUpdate =
-      isNewSession && paneGroupId && claxedoLayout && myLeafId
+      draftTabId && claxedoLayout && myLeafId
         ? () => {
-            const tabs = claxedoLayout!.groupTabs(paneGroupId!)
-            const active = tabs.active()
-            if (!active) return
-            const mpLayout = claxedoLayout!.multiPane.activeLayout(active.id)
+          const mpLayout = claxedoLayout!.multiPane.activeLayout(draftTabId)
             if (mpLayout) {
               const leafContent = mpLayout.contents[myLeafId!]
-              if (leafContent && leafContent.type === "session" && leafContent.sessionId === "new") {
-                claxedoLayout!.multiPane.setContent(active.id, myLeafId!, { ...leafContent, sessionId: session.id })
+              if (leafContent && leafContent.type === "session" && leafContent.sessionId === previousSessionId) {
+                claxedoLayout!.multiPane.setContent(draftTabId, myLeafId!, { ...leafContent, sessionId: session.id })
               }
             }
           }
         : undefined
 
-    // Capture the active tab ID before the batch so we can patch it in the deferred step.
+    // Capture the draft tab ID before the batch so the handoff still lands even
+    // if focus changes before the deferred patch runs.
     const deferredTabPatch =
-      isNewSession && paneGroupId && claxedoLayout
+      draftTabId && paneGroupId && claxedoLayout
         ? () => {
             const tabs = claxedoLayout!.groupTabs(paneGroupId!)
-            const active = tabs.active()
-            if (active?.sessionId === "new") {
-              tabs.patch(active.id, { sessionId: session.id, title: "Session" })
-            }
+            tabs.patch(draftTabId, { sessionId: session.id, title: "Session" })
           }
         : undefined
 
@@ -429,15 +614,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       const worktree = WorktreeState.get(sessionDirectory)
       if (!worktree || worktree.status !== "pending") return true
 
-      if (sessionDirectory === projectDirectory) {
-        sync.set("session_status", session.id, { type: "busy" })
-      }
+      const [, setStore] = globalSync.child(sessionDirectory)
+      setStore("session_status", session.id, { type: "busy" })
 
       const controller = new AbortController()
       const cleanup = () => {
-        if (sessionDirectory === projectDirectory) {
-          sync.set("session_status", session.id, { type: "idle" })
-        }
+        setStore("session_status", session.id, { type: "idle" })
+        clearBoot()
         removeOptimisticMessage()
         restoreCommentItems(commentItems)
         restoreInput()
@@ -481,8 +664,35 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     const send = async () => {
+      const [, setStore] = globalSync.child(sessionDirectory)
+      setStore("session_status", session.id, { type: "busy" })
       const ok = await waitForWorktree()
       if (!ok) return
+      if (isDemoMode()) {
+        const response = await client.session.prompt({
+          sessionID: session.id,
+          agent,
+          model,
+          messageID,
+          parts: requestParts,
+          variant,
+          ...(system ? { system } : {}),
+          ...(input.format?.() ? { format: input.format?.() } : {}),
+        })
+        if (response.error) throw response.error
+        const reply = response.data
+        if (reply?.info && reply.parts) {
+          sync.session.optimistic.add({
+            directory: sessionDirectory,
+            sessionID: session.id,
+            message: reply.info,
+            parts: reply.parts,
+          })
+        }
+        setStore("session_status", session.id, { type: "idle" })
+        clearBoot()
+        return
+      }
       await client.session.promptAsync({
         sessionID: session.id,
         agent,
@@ -491,14 +701,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         parts: requestParts,
         variant,
         ...(system ? { system } : {}),
+        ...(input.format?.() ? { format: input.format?.() } : {}),
       })
     }
 
     void send().catch((err) => {
       pending.delete(session.id)
-      if (sessionDirectory === projectDirectory) {
-        sync.set("session_status", session.id, { type: "idle" })
-      }
+      const [, setStore] = globalSync.child(sessionDirectory)
+      setStore("session_status", session.id, { type: "idle" })
+      clearBoot()
       showToast({
         title: language.t("prompt.toast.promptSendFailed.title"),
         description: errorMessage(err),

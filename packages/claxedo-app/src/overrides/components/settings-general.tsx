@@ -3,36 +3,48 @@ import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Select } from "@opencode-ai/ui/select"
 import { Switch } from "@opencode-ai/ui/switch"
-import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
-import { useSettings, monoFontFamily } from "@/context/settings"
-import { playSound, SOUND_OPTIONS } from "@/utils/sound"
-import { Link } from "@/components/link"
+import { useSettings } from "@/context/settings"
+import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { getExtensions } from "@opencode-ai/app-shared"
+import { capture as phCapture } from "../../analytics/posthog"
 
 let demoSoundState = {
   cleanup: undefined as (() => void) | undefined,
   timeout: undefined as NodeJS.Timeout | undefined,
+  run: 0,
 }
 
 // To prevent audio from overlapping/playing very quickly when navigating the settings menus,
 // delay the playback by 100ms during quick selection changes and pause existing sounds.
-const playDemoSound = (src: string) => {
+const stopDemoSound = () => {
+  demoSoundState.run += 1
   if (demoSoundState.cleanup) {
     demoSoundState.cleanup()
   }
-
   clearTimeout(demoSoundState.timeout)
+  demoSoundState.cleanup = undefined
+}
 
+const playDemoSound = (id: string | undefined) => {
+  stopDemoSound()
+  if (!id) return
+
+  const run = ++demoSoundState.run
   demoSoundState.timeout = setTimeout(() => {
-    demoSoundState.cleanup = playSound(src)
+    void playSoundById(id).then((cleanup) => {
+      if (demoSoundState.run !== run) {
+        cleanup?.()
+        return
+      }
+      demoSoundState.cleanup = cleanup
+    })
   }, 100)
 }
 
 export const SettingsGeneral: Component = () => {
-  const theme = useTheme()
   const language = useLanguage()
   const platform = usePlatform()
   const settings = useSettings()
@@ -45,6 +57,7 @@ export const SettingsGeneral: Component = () => {
   const check = () => {
     if (!platform.checkUpdate) return
     setStore("checking", true)
+    phCapture("update_checked")
 
     void platform
       .checkUpdate()
@@ -65,6 +78,7 @@ export const SettingsGeneral: Component = () => {
                 {
                   label: language.t("toast.update.action.installRestart"),
                   onClick: async () => {
+                    phCapture("update_installed", { version: result.version })
                     await platform.update!()
                     await platform.restart!()
                   },
@@ -96,38 +110,16 @@ export const SettingsGeneral: Component = () => {
       .finally(() => setStore("checking", false))
   }
 
-  const themeOptions = createMemo(() =>
-    Object.entries(theme.themes()).map(([id, def]) => ({ id, name: def.name ?? id })),
-  )
-
-  const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
-    { value: "system", label: language.t("theme.scheme.system") },
-    { value: "light", label: language.t("theme.scheme.light") },
-    { value: "dark", label: language.t("theme.scheme.dark") },
-  ])
-
   const languageOptions = createMemo(() =>
     language.locales.map((locale) => ({
       value: locale,
       label: language.label(locale),
     })),
   )
-
-  const fontOptions = [
-    { value: "ibm-plex-mono", label: "font.option.ibmPlexMono" },
-    { value: "cascadia-code", label: "font.option.cascadiaCode" },
-    { value: "fira-code", label: "font.option.firaCode" },
-    { value: "hack", label: "font.option.hack" },
-    { value: "inconsolata", label: "font.option.inconsolata" },
-    { value: "intel-one-mono", label: "font.option.intelOneMono" },
-    { value: "iosevka", label: "font.option.iosevka" },
-    { value: "jetbrains-mono", label: "font.option.jetbrainsMono" },
-    { value: "meslo-lgs", label: "font.option.mesloLgs" },
-    { value: "roboto-mono", label: "font.option.robotoMono" },
-    { value: "source-code-pro", label: "font.option.sourceCodePro" },
-    { value: "ubuntu-mono", label: "font.option.ubuntuMono" },
-  ] as const
-  const fontOptionsList = [...fontOptions]
+  const followupOptions = createMemo((): { value: "queue" | "steer"; label: string }[] => [
+    { value: "queue", label: language.t("settings.general.row.followup.option.queue") },
+    { value: "steer", label: language.t("settings.general.row.followup.option.steer") },
+  ])
 
   const soundOptions = [...SOUND_OPTIONS]
 
@@ -140,9 +132,9 @@ export const SettingsGeneral: Component = () => {
       </div>
 
       <div class="flex flex-col gap-8 w-full">
-        {/* Appearance Section */}
+        {/* Language Section */}
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.appearance")}</h3>
+          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.row.language.title")}</h3>
 
           <div class="bg-surface-raised-base px-4 rounded-lg">
             <SettingsRow
@@ -155,87 +147,86 @@ export const SettingsGeneral: Component = () => {
                 current={languageOptions().find((o) => o.value === language.locale())}
                 value={(o) => o.value}
                 label={(o) => o.label}
-                onSelect={(option) => option && language.setLocale(option.value)}
-                variant="secondary"
-                size="small"
-                triggerVariant="settings"
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              title={language.t("settings.general.row.appearance.title")}
-              description={language.t("settings.general.row.appearance.description")}
-            >
-              <Select
-                data-action="settings-color-scheme"
-                options={colorSchemeOptions()}
-                current={colorSchemeOptions().find((o) => o.value === theme.colorScheme())}
-                value={(o) => o.value}
-                label={(o) => o.label}
-                onSelect={(option) => option && theme.setColorScheme(option.value)}
-                onHighlight={(option) => {
-                  if (!option) return
-                  theme.previewColorScheme(option.value)
-                  return () => theme.cancelPreview()
-                }}
-                variant="secondary"
-                size="small"
-                triggerVariant="settings"
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              title={language.t("settings.general.row.theme.title")}
-              description={
-                <>
-                  {language.t("settings.general.row.theme.description")}{" "}
-                  <Link href="https://opencode.ai/docs/themes/">{language.t("common.learnMore")}</Link>
-                </>
-              }
-            >
-              <Select
-                data-action="settings-theme"
-                options={themeOptions()}
-                current={themeOptions().find((o) => o.id === theme.themeId())}
-                value={(o) => o.id}
-                label={(o) => o.name}
                 onSelect={(option) => {
                   if (!option) return
-                  theme.setTheme(option.id)
-                }}
-                onHighlight={(option) => {
-                  if (!option) return
-                  theme.previewTheme(option.id)
-                  return () => theme.cancelPreview()
+                  phCapture("setting_changed", { setting: "language", value: option.value })
+                  language.setLocale(option.value)
                 }}
                 variant="secondary"
                 size="small"
                 triggerVariant="settings"
               />
             </SettingsRow>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <div class="bg-surface-raised-base px-4 rounded-lg">
+            <SettingsRow
+              title={language.t("settings.general.row.reasoningSummaries.title")}
+              description={language.t("settings.general.row.reasoningSummaries.description")}
+            >
+              <div data-action="settings-feed-reasoning-summaries">
+                <Switch
+                  checked={settings.general.showReasoningSummaries()}
+                  onChange={(checked) => {
+                    phCapture("setting_changed", { setting: "show_reasoning_summaries", value: checked })
+                    settings.general.setShowReasoningSummaries(checked)
+                  }}
+                />
+              </div>
+            </SettingsRow>
 
             <SettingsRow
-              title={language.t("settings.general.row.font.title")}
-              description={language.t("settings.general.row.font.description")}
+              title={language.t("settings.general.row.shellToolPartsExpanded.title")}
+              description={language.t("settings.general.row.shellToolPartsExpanded.description")}
+            >
+              <div data-action="settings-feed-shell-tool-parts-expanded">
+                <Switch
+                  checked={settings.general.shellToolPartsExpanded()}
+                  onChange={(checked) => {
+                    phCapture("setting_changed", { setting: "shell_tool_parts_expanded", value: checked })
+                    settings.general.setShellToolPartsExpanded(checked)
+                  }}
+                />
+              </div>
+            </SettingsRow>
+
+            <SettingsRow
+              title={language.t("settings.general.row.editToolPartsExpanded.title")}
+              description={language.t("settings.general.row.editToolPartsExpanded.description")}
+            >
+              <div data-action="settings-feed-edit-tool-parts-expanded">
+                <Switch
+                  checked={settings.general.editToolPartsExpanded()}
+                  onChange={(checked) => {
+                    phCapture("setting_changed", { setting: "edit_tool_parts_expanded", value: checked })
+                    settings.general.setEditToolPartsExpanded(checked)
+                  }}
+                />
+              </div>
+            </SettingsRow>
+
+            <SettingsRow
+              title={language.t("settings.general.row.followup.title")}
+              description={language.t("settings.general.row.followup.description")}
             >
               <Select
-                data-action="settings-font"
-                options={fontOptionsList}
-                current={fontOptionsList.find((o) => o.value === settings.appearance.font())}
+                data-action="settings-followup"
+                options={followupOptions()}
+                current={followupOptions().find((o) => o.value === settings.general.followup())}
                 value={(o) => o.value}
-                label={(o) => language.t(o.label)}
-                onSelect={(option) => option && settings.appearance.setFont(option.value)}
+                label={(o) => o.label}
+                onSelect={(option) => {
+                  if (!option) return
+                  phCapture("setting_changed", { setting: "followup", value: option.value })
+                  settings.general.setFollowup(option.value)
+                }}
                 variant="secondary"
                 size="small"
                 triggerVariant="settings"
-                triggerStyle={{ "font-family": monoFontFamily(settings.appearance.font()), "min-width": "180px" }}
-              >
-                {(option) => (
-                  <span style={{ "font-family": monoFontFamily(option?.value) }}>
-                    {option ? language.t(option.label) : ""}
-                  </span>
-                )}
-              </Select>
+                triggerStyle={{ "min-width": "180px" }}
+              />
             </SettingsRow>
           </div>
         </div>
@@ -252,7 +243,10 @@ export const SettingsGeneral: Component = () => {
               <div data-action="settings-notifications-agent">
                 <Switch
                   checked={settings.notifications.agent()}
-                  onChange={(checked) => settings.notifications.setAgent(checked)}
+                  onChange={(checked) => {
+                    phCapture("setting_changed", { setting: "notification_agent", value: checked })
+                    settings.notifications.setAgent(checked)
+                  }}
                 />
               </div>
             </SettingsRow>
@@ -264,7 +258,10 @@ export const SettingsGeneral: Component = () => {
               <div data-action="settings-notifications-permissions">
                 <Switch
                   checked={settings.notifications.permissions()}
-                  onChange={(checked) => settings.notifications.setPermissions(checked)}
+                  onChange={(checked) => {
+                    phCapture("setting_changed", { setting: "notification_permissions", value: checked })
+                    settings.notifications.setPermissions(checked)
+                  }}
                 />
               </div>
             </SettingsRow>
@@ -276,7 +273,10 @@ export const SettingsGeneral: Component = () => {
               <div data-action="settings-notifications-errors">
                 <Switch
                   checked={settings.notifications.errors()}
-                  onChange={(checked) => settings.notifications.setErrors(checked)}
+                  onChange={(checked) => {
+                    phCapture("setting_changed", { setting: "notification_errors", value: checked })
+                    settings.notifications.setErrors(checked)
+                  }}
                 />
               </div>
             </SettingsRow>
@@ -300,12 +300,13 @@ export const SettingsGeneral: Component = () => {
                 label={(o) => language.t(o.label)}
                 onHighlight={(option) => {
                   if (!option) return
-                  playDemoSound(option.src)
+                  playDemoSound(option.id)
                 }}
                 onSelect={(option) => {
                   if (!option) return
+                  phCapture("setting_changed", { setting: "sound_agent", value: option.id })
                   settings.sounds.setAgent(option.id)
-                  playDemoSound(option.src)
+                  playDemoSound(option.id)
                 }}
                 variant="secondary"
                 size="small"
@@ -325,12 +326,13 @@ export const SettingsGeneral: Component = () => {
                 label={(o) => language.t(o.label)}
                 onHighlight={(option) => {
                   if (!option) return
-                  playDemoSound(option.src)
+                  playDemoSound(option.id)
                 }}
                 onSelect={(option) => {
                   if (!option) return
+                  phCapture("setting_changed", { setting: "sound_permissions", value: option.id })
                   settings.sounds.setPermissions(option.id)
-                  playDemoSound(option.src)
+                  playDemoSound(option.id)
                 }}
                 variant="secondary"
                 size="small"
@@ -350,12 +352,13 @@ export const SettingsGeneral: Component = () => {
                 label={(o) => language.t(o.label)}
                 onHighlight={(option) => {
                   if (!option) return
-                  playDemoSound(option.src)
+                  playDemoSound(option.id)
                 }}
                 onSelect={(option) => {
                   if (!option) return
+                  phCapture("setting_changed", { setting: "sound_errors", value: option.id })
                   settings.sounds.setErrors(option.id)
-                  playDemoSound(option.src)
+                  playDemoSound(option.id)
                 }}
                 variant="secondary"
                 size="small"

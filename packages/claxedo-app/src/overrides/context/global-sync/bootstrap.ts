@@ -15,6 +15,7 @@ import { getFilename } from "@opencode-ai/util/path"
 import { showToast } from "@opencode-ai/ui/toast"
 import { cmp, normalizeProviderList } from "@/context/global-sync/utils"
 import type { State, VcsCache } from "@/context/global-sync/types"
+import { formatServerError } from "@/utils/server-errors"
 
 import type { Todo } from "@opencode-ai/sdk/v2"
 
@@ -29,13 +30,70 @@ type GlobalStore = {
   session_todo: Record<string, Todo[]>
 }
 
+type Boot = {
+  healthy?: boolean
+  version?: string
+  path?: Path
+  project?: Project[]
+  provider?: ProviderListResponse
+  provider_auth?: ProviderAuthResponse
+  config?: Config
+}
+
+async function bootstrapData(baseUrl: string, fetchFn: typeof globalThis.fetch, runnerType?: string) {
+  try {
+    const url = new URL("/api/claxedo/bootstrap", baseUrl)
+    if (runnerType) url.searchParams.set("runner", runnerType)
+    const res = await fetchFn(url, {
+      headers: { Accept: "application/json" },
+    })
+    if (!res.ok) return
+    return await res.json() as Boot
+  } catch {
+    return
+  }
+}
+
+function agentClient(input: {
+  baseUrl?: string
+  fetch?: typeof globalThis.fetch
+  directory: string
+  runnerType?: string
+}) {
+  if (!input.baseUrl || !input.runnerType) return
+  return createOpencodeClient({
+    baseUrl: input.baseUrl,
+    fetch: input.fetch,
+    directory: input.directory,
+    headers: {
+      "x-claxedo-runner": input.runnerType,
+    },
+  })
+}
+
 export async function bootstrapGlobal(input: {
+  baseUrl: string
   globalSDK: ReturnType<typeof createOpencodeClient>
+  fetch: typeof globalThis.fetch
   connectErrorTitle: string
   connectErrorDescription: string
   requestFailedTitle: string
+  translate: (key: string, vars?: Record<string, string | number>) => string
+  formatMoreCount: (count: number) => string
   setGlobalStore: SetStoreFunction<GlobalStore>
+  runnerType?: string
 }) {
+  const boot = await bootstrapData(input.baseUrl, input.fetch, input.runnerType)
+  if (boot?.healthy) {
+    input.setGlobalStore("path", boot.path ?? { state: "", config: "", worktree: "", directory: "", home: "" })
+    input.setGlobalStore("project", boot.project ?? [])
+    input.setGlobalStore("provider", boot.provider ?? { all: [], connected: [], default: {} })
+    input.setGlobalStore("provider_auth", boot.provider_auth ?? {})
+    input.setGlobalStore("config", boot.config ?? {})
+    input.setGlobalStore("ready", true)
+    return
+  }
+
   const health = await input.globalSDK.global
     .health()
     .then((x) => x.data)
@@ -86,8 +144,8 @@ export async function bootstrapGlobal(input: {
   const results = await Promise.allSettled(tasks)
   const errors = results.filter((r): r is PromiseRejectedResult => r.status === "rejected").map((r) => r.reason)
   if (errors.length) {
-    const message = errors[0] instanceof Error ? errors[0].message : String(errors[0])
-    const more = errors.length > 1 ? ` (+${errors.length - 1} more)` : ""
+    const message = formatServerError(errors[0], input.translate)
+    const more = errors.length > 1 ? input.formatMoreCount(errors.length - 1) : ""
     showToast({
       variant: "error",
       title: input.requestFailedTitle,
@@ -114,16 +172,50 @@ export async function bootstrapDirectory(input: {
   setStore: SetStoreFunction<State>
   vcsCache: VcsCache
   loadSessions: (directory: string) => Promise<void> | void
+  translate: (key: string, vars?: Record<string, string | number>) => string
+  fetch?: typeof globalThis.fetch
+  baseUrl?: string
+  runnerType?: string
 }) {
-  input.setStore("status", "loading")
+  // Keep partially-hydrated stores renderable during refreshes.
+  // Dropping back to "loading" causes SyncProvider to unmount the whole
+  // directory subtree, which blanks the active session until bootstrap settles.
+  input.setStore("provider_ready", false)
+  input.setStore("mcp_ready", false)
+  input.setStore("lsp_ready", false)
+
+  const fetchProvider = () => {
+    if (input.baseUrl && input.runnerType) {
+      const url = new URL("/provider", input.baseUrl)
+      url.searchParams.set("runner", input.runnerType)
+      return (input.fetch ?? globalThis.fetch)(url).then((r) => {
+        if (!r.ok) throw new Error(`provider fetch failed: ${r.status}`)
+        return r.json() as Promise<ProviderListResponse>
+      }).then((data) => {
+        input.setStore("provider", normalizeProviderList(data))
+        input.setStore("provider_ready", true)
+      })
+    }
+    return input.sdk.provider.list().then((x) => {
+      input.setStore("provider", normalizeProviderList(x.data!))
+      input.setStore("provider_ready", true)
+    })
+  }
+
+  const fetchAgent = () => {
+    const client = agentClient(input)
+    if (client) {
+      return client.app.agents().then((x) => {
+        input.setStore("agent", Array.isArray(x.data) ? x.data : [])
+      })
+    }
+    return input.sdk.app.agents().then((x) => {
+      input.setStore("agent", Array.isArray(x.data) ? x.data : [])
+    })
+  }
 
   const blockingRequests = {
     project: () => input.sdk.project.current().then((x) => input.setStore("project", x.data!.id)),
-    provider: () =>
-      input.sdk.provider.list().then((x) => {
-        input.setStore("provider", normalizeProviderList(x.data!))
-      }),
-    agent: () => input.sdk.app.agents().then((x) => input.setStore("agent", x.data ?? [])),
     config: () => input.sdk.config.get().then((x) => input.setStore("config", x.data!)),
   }
 
@@ -132,8 +224,8 @@ export async function bootstrapDirectory(input: {
   } catch (err) {
     console.error("Failed to bootstrap instance", err)
     const project = getFilename(input.directory)
-    const message = err instanceof Error ? err.message : String(err)
-    showToast({ title: `Failed to reload ${project}`, description: message })
+    const message = formatServerError(err, input.translate)
+    showToast({ variant: "error", title: `Failed to reload ${project}`, description: message })
     input.setStore("status", "partial")
     return
   }
@@ -141,16 +233,37 @@ export async function bootstrapDirectory(input: {
   if (input.store.status !== "complete") input.setStore("status", "partial")
 
   Promise.all([
+    retry(fetchProvider),
+    retry(fetchAgent),
     input.sdk.path.get().then((x) => input.setStore("path", x.data!)),
     input.sdk.command.list().then((x) => input.setStore("command", x.data ?? [])),
-    input.sdk.session.status().then((x) => input.setStore("session_status", x.data!)),
+    input.sdk.session.status().then((x) => {
+      // Merge rather than replace: keep locally-set "busy" statuses that may
+      // not yet be reflected in the server snapshot (race between send() setting
+      // local status and the server processing the prompt).
+      const server = x.data ?? {}
+      const local = input.store.session_status
+      const merged = { ...server }
+      for (const [id, status] of Object.entries(local)) {
+        if (status?.type === "busy" && (!server[id] || server[id].type === "idle")) {
+          merged[id] = status
+        }
+      }
+      input.setStore("session_status", reconcile(merged))
+    }),
     input.loadSessions(input.directory),
-    input.sdk.mcp.status().then((x) => input.setStore("mcp", x.data!)),
-    input.sdk.lsp.status().then((x) => input.setStore("lsp", x.data!)),
+    input.sdk.mcp.status().then((x) => {
+      input.setStore("mcp", x.data!)
+      input.setStore("mcp_ready", true)
+    }),
+    input.sdk.lsp.status().then((x) => {
+      input.setStore("lsp", x.data!)
+      input.setStore("lsp_ready", true)
+    }),
     input.sdk.vcs.get().then((x) => {
       const next = x.data ?? input.store.vcs
       input.setStore("vcs", next)
-      if (next?.branch) input.vcsCache.setStore("value", next)
+      if (next) input.vcsCache.setStore("value", next)
     }),
     input.sdk.permission.list().then((x) => {
       const grouped = groupBySession(

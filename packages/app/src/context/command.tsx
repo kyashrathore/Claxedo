@@ -362,6 +362,20 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       return map
     })
 
+    const live = {
+      suspended: false,
+      dialog: false,
+      palette: new Set<string>(),
+      map: new Map<string, CommandOption>(),
+    }
+
+    createEffect(() => {
+      live.suspended = suspended()
+      live.dialog = !!dialog.active
+      live.palette = palette()
+      live.map = keymap()
+    })
+
     const optionMap = createMemo(() => {
       const map = new Map<string, CommandOption>()
       for (const option of options()) {
@@ -381,13 +395,13 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (suspended() || dialog.active) return
+      if (live.suspended || live.dialog) return
 
       const sig = signatureFromEvent(event)
       if (isTerminalEvent(event) && isReservedTerminalShortcut(sig)) return
 
-      const isPalette = palette().has(sig)
-      const option = keymap().get(sig)
+      const isPalette = live.palette.has(sig)
+      const option = live.map.get(sig)
       const modified = event.ctrlKey || event.metaKey || event.altKey
       const isTab = event.key === "Tab"
 

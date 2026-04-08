@@ -9,6 +9,8 @@ import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 import { getSessionContextMetrics } from "@/components/session/session-context-metrics"
 import { useClaxedoLayout } from "@claxedo/claxedo-ui/context/claxedo-layout"
+import { useSessionParams } from "@claxedo/claxedo-ui/context/session-params"
+import { sendContextToggle } from "@claxedo/claxedo-ui/context/pane-bus"
 
 interface SessionContextUsageProps {
   variant?: "button" | "indicator"
@@ -17,7 +19,13 @@ interface SessionContextUsageProps {
 
 export function SessionContextUsage(props: SessionContextUsageProps) {
   const sync = useSync()
-  const params = useParams()
+  const routeParams = useParams()
+  let sessionParams: ReturnType<typeof useSessionParams> | undefined
+  try {
+    sessionParams = useSessionParams()
+  } catch {
+    /* not in split mode */
+  }
   let claxedo: ReturnType<typeof useClaxedoLayout> | undefined
   try {
     claxedo = useClaxedoLayout()
@@ -26,35 +34,81 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   }
   const language = useLanguage()
 
+  const sessionId = createMemo((prev: string | undefined) => {
+    const next = sessionParams?.sessionId() ?? routeParams.id
+    if (prev && prev !== "new" && (next === "new" || !next)) return prev
+    return next
+  })
+  const directory = createMemo(() => sessionParams?.directory() ?? (routeParams.dir ? base64Decode(routeParams.dir) : undefined))
+  const groupId = createMemo(() => sessionParams?.groupId() ?? claxedo?.split.focusedId())
+
   const variant = createMemo(() => props.variant ?? "button")
-  const messages = createMemo(() => (params.id ? (sync.data.message[params.id] ?? []) : []))
+  const messages = createMemo(() => {
+    const id = sessionId()
+    return id ? (sync.data.message[id] ?? []) : []
+  })
 
   const usd = createMemo(
     () =>
-      new Intl.NumberFormat(language.locale(), {
+      new Intl.NumberFormat(language.intl(), {
         style: "currency",
         currency: "USD",
       }),
   )
 
   const metrics = createMemo(() => getSessionContextMetrics(messages(), sync.data.provider.all))
-  const context = createMemo(() => metrics().context)
-  const cost = createMemo(() => usd().format(metrics().totalCost))
+  const context = createMemo(() => {
+    const native = metrics().context
+    if (native) return native
+    // Fallback: use ACP session_usage data when native token metrics are absent
+    const id = sessionId()
+    if (!id) return undefined
+    const usage = sync.data.session_usage[id]
+    if (!usage || !usage.contextSize) return undefined
+    return {
+      total: usage.contextUsed,
+      usage: Math.round((usage.contextUsed / usage.contextSize) * 100),
+      limit: usage.contextSize,
+    } as { total: number; usage: number; limit: number }
+  })
+  const cost = createMemo(() => {
+    const native = metrics().totalCost
+    if (native) return usd().format(native)
+    // Fallback: use ACP session_usage cost data
+    const id = sessionId()
+    if (!id) return usd().format(0)
+    const usage = sync.data.session_usage[id]
+    if (!usage?.cost) return usd().format(0)
+    return new Intl.NumberFormat(language.intl(), {
+      style: "currency",
+      currency: usage.cost.currency,
+    }).format(usage.cost.amount)
+  })
 
   const openContext = () => {
     if (!claxedo) return
-    const sessionID = params.id
-    const dir = params.dir ? base64Decode(params.dir) : undefined
-    if (!sessionID || !dir) return
-    const groupId = claxedo.split.focusedId()
-    if (!groupId) return
-    const tabs = claxedo.groupTabs(groupId)
+    const gid = groupId()
+    if (!gid) return
+
+    // Find review-workspace leaf in the active tab of this group and toggle its context tab
+    const activeTab = claxedo.select.groupActiveTab(gid)
+    if (activeTab) {
+      const leaves = claxedo.select.multiPaneLeafView(activeTab.id)
+      const reviewLeaf = leaves.find((l) => l.content?.type === "review-workspace")
+      if (reviewLeaf && sendContextToggle(reviewLeaf.id, sessionId())) return
+    }
+
+    // Fallback: open as a standalone context tab
+    const sid = sessionId()
+    const dir = directory()
+    if (!sid || !dir) return
+    const tabs = claxedo.groupTabs(gid)
     const active = tabs.active()
-    if (active?.type === "context" && active.sessionId === sessionID) {
+    if (active?.type === "context" && active.sessionId === sid) {
       tabs.close(active.id)
       return
     }
-    const id = tabs.addContext(dir, sessionID, language.t("session.tab.context"))
+    const id = tabs.addContext(dir, sid, language.t("session.tab.context"))
     if (id) tabs.setActive(id)
   }
 
@@ -70,7 +124,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
         {(ctx) => (
           <>
             <div class="flex items-center gap-2">
-              <span class="text-text-invert-strong">{ctx().total.toLocaleString(language.locale())}</span>
+              <span class="text-text-invert-strong">{ctx().total.toLocaleString(language.intl())}</span>
               <span class="text-text-invert-base">{language.t("context.usage.tokens")}</span>
             </div>
             <div class="flex items-center gap-2">
@@ -88,7 +142,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   )
 
   return (
-    <Show when={params.id}>
+    <Show when={sessionId()}>
       <Tooltip value={tooltipValue()} placement={props.placement ?? "top"}>
         <Switch>
           <Match when={variant() === "indicator"}>{circle()}</Match>

@@ -1,7 +1,7 @@
 import { Show, Match, Switch, For, createMemo, createEffect, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 
-import { useSync, useFile, useComments } from "@opencode-ai/claxedo-app"
+import { useSync, useFile, useComments, useServer } from "@opencode-ai/claxedo-app"
 import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
@@ -11,7 +11,7 @@ import {
   type SessionReviewLineComment,
 } from "@opencode-ai/ui/session-review"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Mark } from "@opencode-ai/ui/logo"
+import { ClaxedoLogo as Mark } from "@claxedo/claxedo-ui/components/claxedo-logo"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import type { FileDiff, FileContent, UserMessage } from "@opencode-ai/sdk/v2"
@@ -35,6 +35,7 @@ export function TabReview(props: TabReviewProps) {
   const sync = useSync()
   const file = useFile()
   const comments = useComments()
+  const server = useServer()
   const sdk = useSDK()
   const debug = createDebugLogger("layout.review-diff", "layout:review-diff", {
     legacyKey: "opencode.debug.terminal",
@@ -55,8 +56,9 @@ export function TabReview(props: TabReviewProps) {
 
   createEffect(() => {
     const id = props.sessionId
-    if (!id || id === "new") return
+    if (!id || id === "new" || server.healthy() !== true) return
     void sync.session.sync(id)
+    void sync.session.todo(id)
     if (props.mode !== "session") return
     if (sync.data.session_diff[id] !== undefined) return
     if (sync.status === "loading") return
@@ -67,7 +69,7 @@ export function TabReview(props: TabReviewProps) {
     const id = props.sessionId
     if (!id || id === "new") return
     if (props.mode === "session" || props.mode === "session-turn") return
-    const mode = props.mode === "committed" ? "to-from" : props.mode
+    const mode = props.mode
 
     debug.log("fetch start", {
       sessionId: id,
@@ -81,9 +83,6 @@ export function TabReview(props: TabReviewProps) {
     void sdk.client.session
       .diff({
         sessionID: id,
-        mode,
-        fromRef: props.fromRef,
-        toRef: props.toRef,
       })
       .then((result) => {
         const diffs = result.data ?? []
@@ -123,6 +122,9 @@ export function TabReview(props: TabReviewProps) {
   const questionRequest = createMemo(() => sync.data.question[props.sessionId]?.[0])
   const permissionRequest = createMemo(() => sync.data.permission[props.sessionId]?.[0])
   const blocked = createMemo(() => !!questionRequest() || !!permissionRequest())
+  const idle = { type: "idle" as const }
+  const status = createMemo(() => sync.data.session_status[props.sessionId] ?? idle)
+  const live = createMemo(() => status().type === "busy" || status().type === "retry" || blocked())
 
   const turnDiffs = createMemo(() => lastUserMessage()?.summary?.diffs ?? [])
 
@@ -218,7 +220,12 @@ export function TabReview(props: TabReviewProps) {
   }
 
   return (
-    <div class={`relative flex size-full min-h-0 overflow-hidden bg-background-base ${props.class ?? ""}`}>
+    <div
+      data-testid="review-pane-root"
+      data-review-mode={props.mode}
+      data-review-surface="tab-review"
+      class={`relative flex size-full min-h-0 overflow-hidden bg-background-base ${props.class ?? ""}`}
+    >
       <div class="relative flex-1 min-w-0 flex flex-col h-full">
         <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-border-weak-base bg-background-stronger flex-shrink-0">
           <div class="flex items-center gap-3 min-w-0">
@@ -282,9 +289,10 @@ export function TabReview(props: TabReviewProps) {
                   onLineComment={handleLineComment}
                   onViewFile={handleViewFile}
                   focusedFile={store.focusedFile}
+                  title=""
                   classes={{
                     root: "h-full",
-                    header: "px-4",
+                    header: "px-4 !hidden",
                     container: "px-4",
                   }}
                 />
@@ -292,7 +300,10 @@ export function TabReview(props: TabReviewProps) {
             </Match>
 
             <Match when={true}>
-              <div class="flex flex-col items-center justify-center h-full min-h-[300px] px-6 pt-8 pb-30 text-center gap-6">
+              <div
+                data-testid="review-pane-empty"
+                class="flex flex-col items-center justify-center h-full min-h-[300px] px-6 pt-8 pb-30 text-center gap-6"
+              >
                 <Mark class="w-14 opacity-10" />
                 <div class="text-13-regular text-text-weak max-w-56">No changes for this review mode</div>
               </div>
@@ -310,6 +321,8 @@ export function TabReview(props: TabReviewProps) {
             permissionRequest={permissionRequest}
             blocked={blocked()}
             todos={todos()}
+            live={live()}
+            onTodosClear={() => sync.set("todo", props.sessionId, [])}
             promptReady={prompt.ready()}
             handoffPrompt={undefined}
             responding={responding()}
@@ -319,6 +332,7 @@ export function TabReview(props: TabReviewProps) {
             onNewSessionWorktreeReset={() => {}}
             onSubmit={() => comments.clear()}
             setPromptDockRef={() => {}}
+            hasMessages={userMessages().length > 0}
             messages={
               <div class="overflow-y-auto">
                 <For each={userMessages()}>

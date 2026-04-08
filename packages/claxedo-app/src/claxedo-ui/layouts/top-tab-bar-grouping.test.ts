@@ -178,15 +178,15 @@ describe("last tab worktree indicator", () => {
 
       const groupInfo = api.getTabGroupInfo(g1)
 
-      // Should have 2 groups
+      // Should have 2 groups: /project/main and /project/feature
       expect(groupInfo).toHaveLength(2)
 
-      // First group (main) — last tab should have isLastInGroup=true
+      // First group (main) — s1 + s2
       const mainGroup = groupInfo.find((g: any) => g.directory === "/project/main")
       expect(mainGroup).toBeDefined()
       expect(mainGroup.tabs).toHaveLength(2)
-      expect(mainGroup.tabs[0].isLastInGroup).toBe(false)
-      expect(mainGroup.tabs[1].isLastInGroup).toBe(true)
+      expect(mainGroup.tabs[0].isLastInGroup).toBe(false) // s1
+      expect(mainGroup.tabs[1].isLastInGroup).toBe(true)  // s2 (last)
       expect(WORKTREE_COLORS).toContain(mainGroup.color)
 
       // Second group (feature) — single tab is also last
@@ -217,6 +217,7 @@ describe("drag and drop restrictions", () => {
       const id3 = tabs1.addSession("/project", "s3", "Session 3")
 
       // Reorder within group — should work
+      // Move id1 to index 2 (end of all tabs) to place it after id2 and id3.
       tabs1.move(id1, 2)
 
       const ordered = tabs1.orderedItems().map((t: any) => t.id)

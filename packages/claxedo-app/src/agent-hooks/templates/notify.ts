@@ -65,7 +65,7 @@ esac
 # Send to Claxedo server (non-blocking with timeout)
 # Use background process to avoid blocking the agent
 (
-  curl -sG "http://127.0.0.1:\${CLAXEDO_PORT:-${port}}/hook/agent-lifecycle" \\
+  curl -sG "http://127.0.0.1:\${CLAXEDO_PORT:-${port}}/api/claxedo/hook/agent-lifecycle" \\
     --connect-timeout 1 \\
     --max-time 2 \\
     --data-urlencode "tabId=$CLAXEDO_TAB_ID" \\

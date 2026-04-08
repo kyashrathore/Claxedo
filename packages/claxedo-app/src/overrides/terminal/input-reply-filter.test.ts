@@ -29,4 +29,26 @@ describe("input reply filter", () => {
     expect(stripTerminalRepliesFromInput("\u001b[12;")).toBe("\u001b[12;")
     expect(stripTerminalRepliesFromInput("\u001bP1$r")).toBe("\u001bP1$r")
   })
+
+  test("suppresses OSC 10/11 color reports by default (TUI startup delay repro)", () => {
+    // xterm.js emits these in response to \x1b]10;?\a queries from codex.
+    // Without allowOscColor, these are suppressed → codex waits 2s per query → ~2s startup delay.
+    const osc10 = "a\x1b]10;rgb:d9d9/d9d9/d9d9\x07b"
+    const osc11 = "a\x1b]11;rgb:1a1a/1a1a/1a1a\x07b"
+    expect(stripTerminalRepliesFromInput(osc10)).toBe("ab")
+    expect(stripTerminalRepliesFromInput(osc11)).toBe("ab")
+  })
+
+  test("forwards OSC 10/11 color reports when allowOscColor is true", () => {
+    const osc10 = "a\x1b]10;rgb:d9d9/d9d9/d9d9\x07b"
+    const osc11 = "a\x1b]11;rgb:1a1a/1a1a/1a1a\x07b"
+    expect(stripTerminalRepliesFromInput(osc10, { allowOscColor: true })).toBe(osc10)
+    expect(stripTerminalRepliesFromInput(osc11, { allowOscColor: true })).toBe(osc11)
+  })
+
+  test("still suppresses OSC 10/11 when allowOscColor is false (shell protection)", () => {
+    const osc10 = "a\x1b]10;rgb:d9d9/d9d9/d9d9\x07b"
+    expect(stripTerminalRepliesFromInput(osc10, { allowOscColor: false })).toBe("ab")
+    expect(stripTerminalRepliesFromInput(osc10, {})).toBe("ab")
+  })
 })

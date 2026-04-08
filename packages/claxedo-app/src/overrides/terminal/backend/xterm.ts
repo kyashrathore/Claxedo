@@ -63,6 +63,7 @@ export const createBackend: CreateBackendFn = async (
 
   // Data/key listeners managed externally
   let dataListeners: Array<(data: string) => void> = []
+  let terminalResponseListeners: Array<(data: string) => void> = []
   let keyListeners: Array<(e: { key: string }) => void> = []
   let resizeListeners: Array<(size: { cols: number; rows: number }) => void> = []
 
@@ -161,6 +162,7 @@ export const createBackend: CreateBackendFn = async (
   cleanups.push(cleanupCopy)
 
   const cleanupDrop = setupDropHandler(xterm, container, {
+    image: options.image,
     onWrite: handleWrite,
     isBracketedPasteEnabled: () => mode.bracketed(),
   })
@@ -195,6 +197,14 @@ export const createBackend: CreateBackendFn = async (
   )
   cleanups.push(resizeHandlers.cleanup)
 
+  // OSC 10/11 color query detection (foreground/background).
+  // These are matched synchronously in write() before data enters xterm's
+  // async write buffer — registering only via registerOscHandler fires too
+  // late (after setTimeout(0)), causing codex to hit its 2-second timeout.
+  // BEL-terminated (\x07) or ST-terminated (\x1b\) forms are both handled.
+  const osc10QueryRe = /\x1b\]10;\?(?:\x1b\\|\x07)/
+  const osc11QueryRe = /\x1b\]11;\?(?:\x1b\\|\x07)/
+
   // Wire xterm's native onData (user typing) into our data listeners
   const xtermOnData = xterm.onData((data) => {
     for (const fn of dataListeners) fn(data)
@@ -226,6 +236,19 @@ export const createBackend: CreateBackendFn = async (
     write(data: string, callback?: () => void) {
       const filtered = suppress.scan(data)
       mode.scan(filtered)
+
+      // Respond to OSC 10/11 color queries synchronously — before data enters
+      // xterm's async write buffer. xterm.js defers processing via setTimeout(0),
+      // so registerOscHandler fires too late and codex hits its 2-second timeout.
+      if (filtered.includes("\x1b]") && terminalResponseListeners.length > 0) {
+        if (osc10QueryRe.test(filtered)) {
+          for (const fn of terminalResponseListeners) fn("\x1b]10;rgb:d4d4/d4d4/d4d4\x07")
+        }
+        if (osc11QueryRe.test(filtered)) {
+          for (const fn of terminalResponseListeners) fn("\x1b]11;rgb:1c1c/1c1c/1c1c\x07")
+        }
+      }
+
       if (!filtered) {
         callback?.()
         return
@@ -242,6 +265,15 @@ export const createBackend: CreateBackendFn = async (
       return {
         dispose() {
           dataListeners = dataListeners.filter((f) => f !== fn)
+        },
+      }
+    },
+
+    onTerminalResponse(fn: (data: string) => void): Disposable {
+      terminalResponseListeners.push(fn)
+      return {
+        dispose() {
+          terminalResponseListeners = terminalResponseListeners.filter((f) => f !== fn)
         },
       }
     },
@@ -347,6 +379,7 @@ export const createBackend: CreateBackendFn = async (
         } catch {}
       }
       dataListeners = []
+      terminalResponseListeners = []
       keyListeners = []
       resizeListeners = []
     },

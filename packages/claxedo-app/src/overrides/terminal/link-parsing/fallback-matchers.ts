@@ -83,7 +83,8 @@ const fallbackMatchers: RegExp[] = [
 	// PowerShell and cmd prompt (extracts CWD from prompt):
 	// Example: PS C:\Users\foo>
 	// Example: C:\Users\foo>
-	/^(?:PS\s+)?(?<link>(?<path>[^>]+))>/,
+	// Require a drive letter (X:\) or UNC path (\\) to avoid false positives on lines containing =>
+	/^(?:PS\s+)?(?<link>(?<path>(?:[a-zA-Z]:[\\/]|\\\\)[^>]*))>/,
 ];
 
 /**

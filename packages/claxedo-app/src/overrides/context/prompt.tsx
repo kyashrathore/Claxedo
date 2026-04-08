@@ -1,11 +1,12 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo, createRoot, onCleanup } from "solid-js"
+import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { useParams } from "@solidjs/router"
 import type { FileSelection } from "@/context/file"
 import { Persist, persisted } from "@/utils/persist"
-import { checksum } from "@opencode-ai/util/encode"
+import { base64Encode, checksum } from "@opencode-ai/util/encode"
 import { useServer } from "@/context/server"
+import { useSessionParams } from "../../claxedo-ui/context/session-params"
 
 interface PartBase {
   content: string
@@ -61,27 +62,23 @@ function isSelectionEqual(a?: FileSelection, b?: FileSelection) {
   )
 }
 
+function isPartEqual(partA: ContentPart, partB: ContentPart) {
+  switch (partA.type) {
+    case "text":
+      return partB.type === "text" && partA.content === partB.content
+    case "file":
+      return partB.type === "file" && partA.path === partB.path && isSelectionEqual(partA.selection, partB.selection)
+    case "agent":
+      return partB.type === "agent" && partA.name === partB.name
+    case "image":
+      return partB.type === "image" && partA.id === partB.id
+  }
+}
+
 export function isPromptEqual(promptA: Prompt, promptB: Prompt): boolean {
   if (promptA.length !== promptB.length) return false
   for (let i = 0; i < promptA.length; i++) {
-    const partA = promptA[i]
-    const partB = promptB[i]
-    if (partA.type !== partB.type) return false
-    if (partA.type === "text" && partA.content !== (partB as TextPart).content) {
-      return false
-    }
-    if (partA.type === "file") {
-      const fileA = partA as FileAttachmentPart
-      const fileB = partB as FileAttachmentPart
-      if (fileA.path !== fileB.path) return false
-      if (!isSelectionEqual(fileA.selection, fileB.selection)) return false
-    }
-    if (partA.type === "agent" && partA.name !== (partB as AgentPart).name) {
-      return false
-    }
-    if (partA.type === "image" && partA.id !== (partB as ImageAttachmentPart).id) {
-      return false
-    }
+    if (!isPartEqual(promptA[i], promptB[i])) return false
   }
   return true
 }
@@ -114,6 +111,11 @@ type PromptSession = ReturnType<typeof createPromptSession>
 type PromptCacheEntry = {
   value: PromptSession
   dispose: VoidFunction
+}
+
+type Scope = {
+  dir: string
+  id?: string
 }
 
 function createPromptSession(serverUrl: string, dir: string, id: string | undefined) {
@@ -178,7 +180,8 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
         setStore("context", "items", (items) =>
           items.map((item) => {
             if (item.type !== "file" || item.path !== path || item.commentID !== commentID) return item
-            return { ...item, ...next, key: item.key }
+            const value = { ...item, ...next }
+            return { ...value, key: keyForItem(value) }
           }),
         )
       },
@@ -211,6 +214,13 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
   init: () => {
     const params = useParams()
     const server = useServer()
+    let sessionParams: ReturnType<typeof useSessionParams> | undefined
+    try {
+      sessionParams = useSessionParams()
+    } catch {
+      /* not in split mode */
+    }
+    const owner = getOwner()
     const cache = new Map<string, PromptCacheEntry>()
 
     const disposeAll = () => {
@@ -243,17 +253,23 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
         return existing.value
       }
 
-      const entry = createRoot((dispose) => ({
-        value: createPromptSession(server.url, dir, id),
-        dispose,
-      }))
+      const entry = createRoot(
+        (dispose) => ({
+          value: createPromptSession(server.url, dir, id),
+          dispose,
+        }),
+        owner,
+      )
 
       cache.set(key, entry)
       prune()
       return entry.value
     }
 
-    const session = createMemo(() => load(params.dir!, params.id))
+    const session = createMemo(() =>
+      load(sessionParams?.directory ? base64Encode(sessionParams.directory()) : params.dir!, sessionParams?.sessionId?.() ?? params.id),
+    )
+    const pick = (scope?: Scope) => (scope ? load(scope.dir, scope.id) : session())
 
     return {
       ready: () => session().ready(),
@@ -269,8 +285,8 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
           session().context.updateComment(path, commentID, next),
         replaceComments: (items: FileContextItem[]) => session().context.replaceComments(items),
       },
-      set: (prompt: Prompt, cursorPosition?: number) => session().set(prompt, cursorPosition),
-      reset: () => session().reset(),
+      set: (prompt: Prompt, cursorPosition?: number, scope?: Scope) => pick(scope).set(prompt, cursorPosition),
+      reset: (scope?: Scope) => pick(scope).reset(),
     }
   },
 })

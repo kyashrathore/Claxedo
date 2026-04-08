@@ -446,7 +446,9 @@ export default function Page() {
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
-  const messages = createMemo(() => (params.id ? (sync.data.message[params.id] ?? []) : []))
+  const messages = createMemo(() => {
+    return params.id ? (sync.data.message[params.id] ?? []) : []
+  })
   const messagesReady = createMemo(() => {
     const id = params.id
     if (!id) return true
@@ -805,7 +807,7 @@ export default function Page() {
         todoFrame = undefined
         todoTimer = undefined
         if (!id) return
-        if (status === "idle" && !blocked) return
+        if (status !== "busy" && status !== "retry" && !blocked) return
         const cached = untrack(() => sync.data.todo[id] !== undefined || globalSync.data.session_todo[id] !== undefined)
 
         todoFrame = requestAnimationFrame(() => {
@@ -1497,7 +1499,8 @@ export default function Page() {
     })
 
   const busy = (sessionID: string) => {
-    if ((sync.data.session_status[sessionID] ?? { type: "idle" as const }).type !== "idle") return true
+    const status = sync.data.session_status[sessionID]
+    if (status?.type === "busy" || status?.type === "retry") return true
     return (sync.data.message[sessionID] ?? []).some(
       (item) => item.role === "assistant" && typeof item.time.completed !== "number",
     )

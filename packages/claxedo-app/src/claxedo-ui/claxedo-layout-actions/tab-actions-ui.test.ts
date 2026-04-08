@@ -16,6 +16,36 @@ function makeProps(dir?: string) {
 }
 
 describe("createTabActions", () => {
+  test("navigates session tabs using stable session routes", () => {
+    const calls: Array<{ path: string; reason: string; details?: Record<string, unknown> }> = []
+    const nav = (path: string, reason: string, details?: Record<string, unknown>) =>
+      calls.push({ path, reason, details })
+    const actions = createTabActions(makeProps("/workspace/main"), nav)
+
+    actions.handleTabSelect({
+      id: "tab-session-1",
+      type: "session",
+      directory: "/workspace/main",
+      sessionId: "ses-123",
+      title: "Session",
+    } as any)
+
+    expect(calls).toEqual([
+      {
+        path: `/${base64Encode("/workspace/main")}/session/ses-123`,
+        reason: "tab-select",
+        details: {
+          tabId: "tab-session-1",
+          tabType: "session",
+          workspaceDir: "/workspace/main",
+          sessionId: "ses-123",
+          pageId: undefined,
+          terminalId: undefined,
+        },
+      },
+    ])
+  })
+
   test("navigates page tabs using canonical tab route", () => {
     const calls: Array<{ path: string; reason: string; details?: Record<string, unknown> }> = []
     const nav = (path: string, reason: string, details?: Record<string, unknown>) =>
@@ -45,7 +75,7 @@ describe("createTabActions", () => {
     ])
   })
 
-  test("uses active workspace for virtual page tabs", () => {
+  test("uses active workspace for global page tabs", () => {
     const calls: Array<{ path: string; reason: string; details?: Record<string, unknown> }> = []
     const nav = (path: string, reason: string, details?: Record<string, unknown>) =>
       calls.push({ path, reason, details })
@@ -54,7 +84,7 @@ describe("createTabActions", () => {
     actions.handleTabSelect({
       id: "tab-page-1",
       type: "page",
-      directory: "__pages__",
+      scope: "global",
       pageId: "page-123",
     } as any)
 
@@ -83,7 +113,7 @@ describe("createTabActions", () => {
     actions.handleTabSelect({
       id: "tab-page-2",
       type: "page",
-      directory: "__pages__",
+      scope: "global",
       pageId: "page-456",
     } as any)
 

@@ -1,0 +1,3 @@
+This is a temporary file created to demonstrate the Write tool.
+Line 2: will be edited next.
+Line 3: end of file.

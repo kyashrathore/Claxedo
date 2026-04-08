@@ -10,6 +10,7 @@ mock.module("@/context/platform", () => ({
 describe("persisted storage", () => {
   beforeEach(() => {
     localStorage.clear()
+    window.location.href = "http://localhost/"
   })
 
   test("corrupted JSON is treated as missing for structured stores (and removed)", async () => {
@@ -82,5 +83,60 @@ describe("persisted storage", () => {
     expect(raw).not.toBeNull()
     const parsed = JSON.parse(raw!) as { a: number; b: number }
     expect(parsed).toEqual({ a: 9, b: 2 })
+  })
+
+  test("demo mode keeps persisted app state out of localStorage", async () => {
+    window.location.href = "http://localhost/demo/"
+
+    const real = JSON.stringify({
+      list: ["https://real.example"],
+      projects: { live: [{ worktree: "/real", expanded: true }] },
+      lastProject: { live: "/real" },
+      workspaceServer: {},
+    })
+    localStorage.setItem("opencode.global.dat:server", real)
+
+    const { Persist, persisted, resetDemoPersisted, setPersisted } = await import(`./persist?test=${Date.now()}`)
+    resetDemoPersisted()
+    setPersisted(Persist.global("server"), {
+      list: [],
+      projects: {
+        demo: [{ worktree: "/demo", expanded: true }],
+      },
+      lastProject: { demo: "/demo" },
+      workspaceServer: {},
+    })
+
+    createRoot(() => {
+      const store = createStore({
+        list: [] as string[],
+        projects: {} as Record<string, Array<{ worktree: string; expanded: boolean }>>,
+        lastProject: {} as Record<string, string>,
+        workspaceServer: {} as Record<string, string>,
+      })
+      const out = persisted(Persist.global("server"), store as any)
+      expect(out[0].projects).toEqual({
+        demo: [{ worktree: "/demo", expanded: true }],
+      })
+      out[1]("projects", "demo", [{ worktree: "/demo-2", expanded: false }])
+      out[3]()
+    })
+
+    await new Promise<void>((r) => setTimeout(r, 0))
+
+    expect(localStorage.getItem("opencode.global.dat:server")).toBe(real)
+    expect(localStorage.getItem("opencode.demo.global.dat:server")).toBeNull()
+  })
+
+  test("server-scoped persistence treats localhost and 127.0.0.1 as the same server", async () => {
+    const { Persist, rawPersistKey } = await import(`./persist?test=${Date.now()}`)
+
+    const a = rawPersistKey(Persist.serverWorkspace("http://localhost:3001", "/workspace", "terminal.v2"))
+    const b = rawPersistKey(Persist.serverWorkspace("http://127.0.0.1:3001", "/workspace", "terminal.v2"))
+    const c = rawPersistKey(Persist.serverGlobal("http://localhost:3001", "server"))
+    const d = rawPersistKey(Persist.serverGlobal("http://127.0.0.1:3001", "server"))
+
+    expect(a).toBe(b)
+    expect(c).toBe(d)
   })
 })

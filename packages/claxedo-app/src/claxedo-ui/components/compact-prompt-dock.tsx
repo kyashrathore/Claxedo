@@ -1,11 +1,13 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from "solid-js"
 import type { QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
+import type { OutputFormat } from "@opencode-ai/sdk/v2/client"
 import { Button } from "@opencode-ai/ui/button"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { BasicTool } from "@opencode-ai/ui/basic-tool"
 import { PromptInput } from "@/components/prompt-input"
 import { SessionQuestionDock as QuestionDock } from "@/pages/session/composer/session-question-dock"
+import { todoState } from "@/pages/session/composer/session-composer-state"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 
 interface CompactPromptDockProps {
@@ -19,6 +21,8 @@ interface CompactPromptDockProps {
   permissionRequest: () => { patterns: string[]; permission: string } | undefined
   blocked: boolean
   todos?: Todo[]
+  live?: boolean
+  onTodosClear?: () => void
   promptReady: boolean
   handoffPrompt?: string
   responding: boolean
@@ -29,18 +33,30 @@ interface CompactPromptDockProps {
   onSubmit: () => void
   setPromptDockRef: (el: HTMLDivElement) => void
   messages?: JSX.Element
+  interactiveSlot?: JSX.Element
   sessionID?: string
   sessionDirectory?: string
   navigateOnCreate?: boolean
   dockMode?: "floating" | "side"
+  system?: string
+  agent?: string
+  format?: OutputFormat
+  hasMessages?: boolean
+  /** Custom empty state shown when there are no messages. Hidden once messages exist. */
+  emptyState?: JSX.Element
 }
 
 export function CompactPromptDock(props: CompactPromptDockProps) {
   const todos = () => props.todos ?? []
+  const live = () => props.live ?? true
   const dockMode = () => props.dockMode ?? "floating"
   const side = () => dockMode() === "side"
+  const patterns = () => {
+    const perm = props.permissionRequest()
+    return Array.isArray(perm?.patterns) ? perm.patterns : []
+  }
   const [expanded, setExpanded] = createSignal(false)
-  const [todoDock, setTodoDock] = createSignal(todos().length > 0)
+  const [todoDock, setTodoDock] = createSignal(todos().length > 0 && live())
   const [todoClosing, setTodoClosing] = createSignal(false)
   const [todoOpening, setTodoOpening] = createSignal(false)
   let todoTimer: number | undefined
@@ -62,12 +78,18 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
 
   createEffect(
     on(
-      () => [todos().length, todoDone()] as const,
-      ([count, complete], prev) => {
+      () => [todos().length, todoDone(), live()] as const,
+      ([count, complete, active]) => {
         if (todoRaf) cancelAnimationFrame(todoRaf)
         todoRaf = undefined
 
-        if (count === 0) {
+        const next = todoState({
+          count,
+          done: complete,
+          live: active,
+        })
+
+        if (next === "hide") {
           if (todoTimer) window.clearTimeout(todoTimer)
           todoTimer = undefined
           setTodoDock(false)
@@ -76,7 +98,17 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
           return
         }
 
-        if (!complete) {
+        if (next === "clear") {
+          if (todoTimer) window.clearTimeout(todoTimer)
+          todoTimer = undefined
+          setTodoDock(false)
+          setTodoClosing(false)
+          setTodoOpening(false)
+          props.onTodosClear?.()
+          return
+        }
+
+        if (next === "open") {
           if (todoTimer) window.clearTimeout(todoTimer)
           todoTimer = undefined
           const wasHidden = !todoDock() || todoClosing()
@@ -94,15 +126,10 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
           return
         }
 
-        if (prev && prev[1]) {
-          if (todoClosing() && !todoTimer) scheduleTodoClose()
-          return
-        }
-
         setTodoDock(true)
         setTodoOpening(false)
         setTodoClosing(true)
-        scheduleTodoClose()
+        if (!todoTimer) scheduleTodoClose()
       },
     ),
   )
@@ -185,9 +212,9 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
                     : perm.permission,
               }}
             >
-              <Show when={perm.patterns.length > 0}>
+              <Show when={patterns().length > 0}>
                 <div class="flex flex-col gap-1 py-2 px-3 max-h-40 overflow-y-auto no-scrollbar">
-                  <For each={perm.patterns}>
+                  <For each={patterns()}>
                     {(pattern) => <code class="text-12-regular text-text-base break-all">{pattern}</code>}
                   </For>
                 </div>
@@ -239,6 +266,9 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
             </div>
           }
         >
+          <Show when={props.interactiveSlot}>
+            {props.interactiveSlot}
+          </Show>
           <Show when={todoDock()}>
             <div
               classList={{
@@ -251,18 +281,22 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
             >
               <SessionTodoDock
                 todos={todos()}
-                title={props.t("session.todo.title")}
                 collapseLabel={props.t("session.todo.collapse")}
                 expandLabel={props.t("session.todo.expand")}
+                dockProgress={0}
               />
             </div>
           </Show>
-          <div classList={{ "[&_form]:!rounded-t-none": floating && expanded() }}>
+          <div classList={{ "[&_form]:!rounded-t-none": floating && (expanded() || props.hasMessages) }}>
             <PromptInput
               ref={props.inputRef}
               newSessionWorktree={props.newSessionWorktree}
               onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
               onSubmit={props.onSubmit}
+              sessionID={props.sessionID}
+              navigateOnCreate={props.navigateOnCreate}
+              system={props.system}
+              agent={props.agent}
             />
           </div>
         </Show>
@@ -278,7 +312,13 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
             {controls()}
           </div>
         </Show>
-        <Show when={props.messages}>
+        <Show when={props.messages} fallback={
+          <Show when={props.emptyState}>
+            <div class="flex-1 min-h-0 flex items-center justify-center text-center p-6">
+              {props.emptyState}
+            </div>
+          </Show>
+        }>
           <div ref={messagesRef} class="flex-1 min-h-0 overflow-y-auto rounded-[14px] border border-border-base bg-background-base/50">
             {props.messages}
           </div>
@@ -296,26 +336,6 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
 
   return (
     <div class="flex flex-col items-center w-full max-w-3xl">
-      <div class="relative z-10 flex items-center justify-between gap-2 px-3 py-1 mb-[-1px] w-19/20 rounded-t-[14px] bg-background-stronger border border-b-0 border-border-base">
-        <div class="text-12-regular text-text-weak truncate">{props.title || props.t("session.title")}</div>
-        <div class="flex items-center gap-0.5">
-          <div class="mr-1">{controls()}</div>
-          <Tooltip value={expanded() ? props.t("common.collapse") : props.t("common.expand")}>
-            <IconButton
-              variant="ghost"
-              size="small"
-              icon={expanded() ? "collapse" : "expand"}
-              onClick={() => setExpanded(!expanded())}
-            />
-          </Tooltip>
-          <Show when={props.showToggle ?? true}>
-            <Tooltip value={props.t("session.showMessages")}>
-              <IconButton variant="ghost" size="small" icon="layout-right" onClick={() => props.onToggle?.()} />
-            </Tooltip>
-          </Show>
-        </div>
-      </div>
-
       <div
         ref={props.setPromptDockRef}
         classList={{
@@ -324,6 +344,27 @@ export function CompactPromptDock(props: CompactPromptDockProps) {
           "max-h-48": !expanded() && !props.questionRequest() && !props.permissionRequest(),
         }}
       >
+        <Show when={props.hasMessages}>
+          <div class="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border-weak-base">
+            <div class="text-12-regular text-text-weak truncate">{props.title || props.t("session.title")}</div>
+            <div class="flex items-center gap-0.5">
+              <div class="mr-1">{controls()}</div>
+              <Tooltip value={expanded() ? props.t("common.collapse") : props.t("common.expand")}>
+                <IconButton
+                  variant="ghost"
+                  size="small"
+                  icon={expanded() ? "collapse" : "expand"}
+                  onClick={() => setExpanded(!expanded())}
+                />
+              </Tooltip>
+              <Show when={props.showToggle ?? true}>
+                <Tooltip value={props.t("session.showMessages")}>
+                  <IconButton variant="ghost" size="small" icon="layout-right" onClick={() => props.onToggle?.()} />
+                </Tooltip>
+              </Show>
+            </div>
+          </div>
+        </Show>
         <Show when={expanded() && props.messages}>
           <div ref={messagesRef} class="border-b border-border-base bg-background-base/50 overflow-y-auto max-h-[30vh]">
             {props.messages}

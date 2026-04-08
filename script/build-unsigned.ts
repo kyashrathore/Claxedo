@@ -18,26 +18,28 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const root = path.resolve(__dirname, "..")
 const patchesDir = path.join(root, "packages/claxedo-app/src/opencode-patches")
+const extensionsDir = path.join(root, "packages/claxedo-app/src/opencode-extensions")
 const targetDir = path.join(root, "packages/opencode/src")
 
 console.log("🚀 Building unsigned Claxedo desktop app\n")
 
-// Step 1: Apply patches
-console.log("📝 Step 1: Applying Claxedo patches to OpenCode...")
-try {
-  await $`find ${patchesDir} -type f -name "*.ts"`.quiet()
-  const patches = await $`find ${patchesDir} -type f -name "*.ts"`.text()
-
-  for (const patch of patches.trim().split("\n").filter(Boolean)) {
-    const relPath = patch.substring(patchesDir.length + 1)
+async function copyDir(srcDir: string, label: string) {
+  const files = await $`find ${srcDir} -type f \\( -name "*.ts" -o -name "*.txt" -o -name "*.sql" \\)`.text()
+  for (const file of files.trim().split("\n").filter(Boolean)) {
+    const relPath = file.substring(srcDir.length + 1)
     const target = path.join(targetDir, relPath)
-    const targetDirPath = path.join(target, "..")
-
-    await $`mkdir -p ${targetDirPath}`.quiet()
-    await $`cp ${patch} ${target}`.quiet()
-    console.log(`  ✓ Patched: ${relPath}`)
+    await $`mkdir -p ${path.join(target, "..")}`.quiet()
+    await $`cp ${file} ${target}`.quiet()
+    console.log(`  ✓ ${label}: ${relPath}`)
   }
-  console.log("✅ Patches applied\n")
+}
+
+// Step 1: Apply patches and extensions
+console.log("📝 Step 1: Applying Claxedo patches and extensions to OpenCode...")
+try {
+  await copyDir(patchesDir, "patch")
+  await copyDir(extensionsDir, "ext")
+  console.log("✅ Patches and extensions applied\n")
 } catch (error) {
   console.error("❌ Failed to apply patches:", error)
   process.exit(1)

@@ -1,0 +1,43 @@
+{
+  "name": "@opencode-ai/claxedo-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "scripts": {
+    "predev": "node scripts/ensure-native.mjs",
+    "dev": "node --import tsx --watch src/main.ts",
+    "start": "node --import tsx src/main.ts",
+    "test": "node ./node_modules/vitest/vitest.mjs run",
+    "rebuild:native": "npm rebuild better-sqlite3"
+  },
+  "dependencies": {
+    "@computesdk/daytona": "1.7.20",
+    "@daytonaio/sdk": "^0.143.0",
+    "@computesdk/modal": "1.8.35",
+    "@hono/node-server": "^1.13.0",
+    "@hono/node-ws": "^1.1.0",
+    "@modelcontextprotocol/sdk": "1.25.2",
+    "@opencode-ai/agent-core": "workspace:*",
+    "@opencode-ai/workgraph": "workspace:*",
+    "better-sqlite3": "^12.0.0",
+    "computesdk": "2.5.2",
+    "drizzle-orm": "0.45.1",
+    "hono": "catalog:",
+    "jsonc-parser": "3.3.1",
+    "node-pty": "^1.0.0",
+    "posthog-node": "4.18.0",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "^22.0.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "tsx": "^4.0.0",
+    "typescript": "catalog:",
+    "vitest": "^2.1.8"
+  }
+}

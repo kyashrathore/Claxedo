@@ -2,7 +2,7 @@ import { marked } from "marked"
 import markedKatex from "marked-katex-extension"
 import markedShiki from "marked-shiki"
 import katex from "katex"
-import { bundledLanguages, type BundledLanguage } from "shiki"
+import type { BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
 import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } from "@pierre/diffs"
 
@@ -446,11 +446,12 @@ async function highlightCodeBlocks(html: string): Promise<string> {
     }
 
     let language = lang || "text"
-    if (!(language in bundledLanguages)) {
-      language = "text"
-    }
     if (!highlighter.getLoadedLanguages().includes(language)) {
-      await highlighter.loadLanguage(language as BundledLanguage)
+      try {
+        await highlighter.loadLanguage(language as BundledLanguage)
+      } catch {
+        language = "text"
+      }
     }
 
     const highlighted = highlighter.codeToHtml(code, {
@@ -492,14 +493,16 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
         async highlight(code, lang) {
           if (lang === "mermaid") return mermaidPlaceholder(code)
           const highlighter = await getSharedHighlighter({ themes: ["OpenCode"], langs: [] })
-          if (!(lang in bundledLanguages)) {
-            lang = "text"
-          }
-          if (!highlighter.getLoadedLanguages().includes(lang)) {
-            await highlighter.loadLanguage(lang as BundledLanguage)
+          let language = lang || "text"
+          if (!highlighter.getLoadedLanguages().includes(language)) {
+            try {
+              await highlighter.loadLanguage(language as BundledLanguage)
+            } catch {
+              language = "text"
+            }
           }
           return highlighter.codeToHtml(code, {
-            lang: lang || "text",
+            lang: language,
             theme: "OpenCode",
             tabindex: false,
           })

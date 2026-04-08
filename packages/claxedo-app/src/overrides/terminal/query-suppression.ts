@@ -28,10 +28,12 @@ export function createQuerySuppressor(input?: { maxTail?: number }) {
 
         const next = data[i + 1]
         if (next !== "[") {
-          if (next === "P") {
-            // DCS sequence: ESC P ... ST (ESC \) or BEL.
-            // Query replies (DECRQSS/XTGETTCAP) can leak visually as trailing
-            // digits like "1" after split/remount if not filtered.
+          if (next === "P" || next === "]") {
+            // DCS (ESC P) or OSC (ESC ]) sequence terminated by ST (ESC \) or BEL.
+            // DCS query replies are suppressed; OSC sequences are passed through.
+            // Both must be handled atomically so the ST terminator is never split
+            // across carry boundaries — if split, xterm.js never fires its OSC/DCS
+            // handlers until the next chunk arrives (causing the 2-second codex delay).
             let j = i + 2
             let term = -1
             while (j < data.length) {
@@ -51,7 +53,11 @@ export function createQuerySuppressor(input?: { maxTail?: number }) {
               break
             }
             const seq = data.slice(i, term + 1)
-            if (!dcsReportPattern.test(seq)) out += seq
+            if (next === "P" && dcsReportPattern.test(seq)) {
+              // suppress DCS report replies
+            } else {
+              out += seq
+            }
             i = term + 1
             continue
           }

@@ -19,12 +19,11 @@ import { canDisposeDirectory, pickDirectoriesToEvict } from "@/context/global-sy
 
 export function createChildStoreManager(input: {
   owner: Owner
-  markStats: (activeDirectoryStores: number) => void
-  incrementEvictions: () => void
   isBooting: (directory: string) => boolean
   isLoadingSessions: (directory: string) => boolean
   onBootstrap: (directory: string) => void
   onDispose: (directory: string) => void
+  translate: (key: string, vars?: Record<string, string | number>) => string
 }) {
   const children: Record<string, [Store<State>, SetStoreFunction<State>]> = {}
   const vcsCache = new Map<string, VcsCache>()
@@ -106,7 +105,6 @@ export function createChildStoreManager(input: {
     }
     delete children[directory]
     input.onDispose(directory)
-    input.markStats(Object.keys(children).length)
     return true
   }
 
@@ -123,8 +121,7 @@ export function createChildStoreManager(input: {
     })
     if (list.length === 0) return
     for (const directory of list) {
-      if (!disposeDirectory(directory)) continue
-      input.incrementEvictions()
+      disposeDirectory(directory)
     }
   }
 
@@ -137,7 +134,7 @@ export function createChildStoreManager(input: {
           createStore({ value: undefined as VcsInfo | undefined }),
         ),
       )
-      if (!vcs) throw new Error("Failed to create persisted cache")
+      if (!vcs) throw new Error(input.translate("error.childStore.persistedCacheCreateFailed"))
       const vcsStore = vcs[0]
       const vcsReady = vcs[3]
       vcsCache.set(directory, { store: vcsStore, setStore: vcs[1], ready: vcsReady })
@@ -148,7 +145,7 @@ export function createChildStoreManager(input: {
           createStore({ value: undefined as ProjectMeta | undefined }),
         ),
       )
-      if (!meta) throw new Error("Failed to create persisted project metadata")
+      if (!meta) throw new Error(input.translate("error.childStore.persistedProjectMetadataCreateFailed"))
       metaCache.set(directory, { store: meta[0], setStore: meta[1], ready: meta[3] })
 
       const icon = runWithOwner(input.owner, () =>
@@ -157,7 +154,7 @@ export function createChildStoreManager(input: {
           createStore({ value: undefined as string | undefined }),
         ),
       )
-      if (!icon) throw new Error("Failed to create persisted project icon")
+      if (!icon) throw new Error(input.translate("error.childStore.persistedProjectIconCreateFailed"))
       iconCache.set(directory, { store: icon[0], setStore: icon[1], ready: icon[3] })
 
       const session = runWithOwner(input.owner, () =>
@@ -173,7 +170,7 @@ export function createChildStoreManager(input: {
           }),
         ),
       )
-      if (!session) throw new Error("Failed to create persisted session cache")
+      if (!session) throw new Error(input.translate("error.childStore.persistedSessionCacheCreateFailed"))
       sessionCache.set(directory, { store: session[0], setStore: session[1], ready: session[3] })
 
       const init = () =>
@@ -182,6 +179,7 @@ export function createChildStoreManager(input: {
             project: "",
             projectMeta: meta[0].value,
             icon: icon[0].value,
+            provider_ready: false,
             provider: { all: [], connected: [], default: {} },
             config: {},
             path: { state: "", config: "", worktree: "", directory: "", home: "" },
@@ -195,12 +193,17 @@ export function createChildStoreManager(input: {
             todo: {},
             permission: {},
             question: {},
+            mcp_ready: false,
             mcp: {},
+            lsp_ready: false,
             lsp: [],
             vcs: vcsStore.value,
             limit: 5,
             message: {},
             part: {},
+            session_agent: {},
+            session_config: {},
+            session_usage: {},
           })
           children[directory] = child
           disposers.set(directory, dispose)
@@ -227,11 +230,10 @@ export function createChildStoreManager(input: {
         })
 
       runWithOwner(input.owner, init)
-      input.markStats(Object.keys(children).length)
     }
     mark(directory)
     const childStore = children[directory]
-    if (!childStore) throw new Error("Failed to create store")
+    if (!childStore) throw new Error(input.translate("error.childStore.storeCreateFailed"))
     return childStore
   }
 

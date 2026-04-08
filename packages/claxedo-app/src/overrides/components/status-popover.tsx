@@ -15,7 +15,7 @@ import { useLanguage } from "@/context/language"
 import { DialogSelectServer } from "@/components/dialog-select-server"
 import { showToast } from "@opencode-ai/ui/toast"
 import { ServerRow } from "@/components/server/server-row"
-import { checkServerHealth, type ServerHealth } from "@/utils/server-health"
+import { useCheckServerHealth, type ServerHealth } from "@/utils/server-health"
 import { createOpencodeClient, type McpStatus } from "@opencode-ai/sdk/v2/client"
 import { getExtensions } from "@opencode-ai/app-shared"
 
@@ -37,6 +37,7 @@ export function StatusPopover(props: StatusPopoverProps) {
   const language = useLanguage()
   const navigate = useNavigate()
   const ext = getExtensions()
+  const checkServerHealth = useCheckServerHealth()
 
   const directory = createMemo(() => props.directory)
   const isStatusOnly = () => ext.app.serverSelectorMode === "status-only"
@@ -61,7 +62,6 @@ export function StatusPopover(props: StatusPopoverProps) {
     loading: null as string | null,
     defaultServerUrl: undefined as string | undefined,
   })
-  const fetcher = platform.fetch ?? globalThis.fetch
 
   // Convert typed server list to URL strings for our string-based UI
   const serverUrls = createMemo(() => server.list.map((s) => s.http.url))
@@ -97,7 +97,7 @@ export function StatusPopover(props: StatusPopoverProps) {
     const results: Record<string, ServerHealth> = {}
     await Promise.all(
       servers().map(async (url) => {
-        results[url] = await checkServerHealth(url, fetcher)
+        results[url] = await checkServerHealth({ url })
       }),
     )
     setStore("status", reconcile(results))
@@ -149,7 +149,22 @@ export function StatusPopover(props: StatusPopoverProps) {
 
   const lspItems = createMemo(() => syncStore()?.lsp ?? [])
   const lspCount = createMemo(() => lspItems().length)
-  const plugins = createMemo(() => syncStore()?.config.plugin ?? [])
+  const pluginName = (plugin: string) => {
+    if (plugin.startsWith("file://")) {
+      try {
+        const name = new URL(plugin).pathname.split("/").filter(Boolean).at(-1)
+        if (name) return decodeURIComponent(name).replace(/\.[^.]+$/, "")
+      } catch {}
+    }
+    const lastAt = plugin.lastIndexOf("@")
+    return lastAt > 0 ? plugin.substring(0, lastAt) : plugin
+  }
+  const plugins = createMemo(() =>
+    (syncStore()?.config.plugin ?? []).map((plugin) => {
+      const id = typeof plugin === "string" ? plugin : plugin[0]
+      return { id, name: pluginName(id) }
+    }),
+  )
   const pluginCount = createMemo(() => plugins().length)
 
   const overallHealthy = createMemo(() => {
@@ -164,16 +179,26 @@ export function StatusPopover(props: StatusPopoverProps) {
   const serverCount = createMemo(() => sortedServers().length)
 
   const refreshDefaultServerUrl = () => {
-    const result = platform.getDefaultServerUrl?.()
+    const apply = (key?: ServerConnection.Key | null) => {
+      if (!key) {
+        setStore("defaultServerUrl", undefined)
+        return
+      }
+
+      const conn = server.list.find((item) => ServerConnection.key(item) === key)
+      setStore("defaultServerUrl", conn?.http.url ?? normalizeServerUrl(key as string))
+    }
+
+    const result = platform.getDefaultServer?.()
     if (!result) {
-      setStore("defaultServerUrl", undefined)
+      apply()
       return
     }
     if (result instanceof Promise) {
-      result.then((url) => setStore("defaultServerUrl", url ? normalizeServerUrl(url) : undefined))
+      result.then(apply)
       return
     }
-    setStore("defaultServerUrl", normalizeServerUrl(result))
+    apply(result)
   }
 
   createEffect(() => {
@@ -442,7 +467,7 @@ export function StatusPopover(props: StatusPopoverProps) {
                       {(plugin) => (
                         <div class="flex items-center gap-2 w-full px-2 py-1">
                           <div class="size-1.5 rounded-full shrink-0 bg-icon-success-base" />
-                          <span class="text-14-regular text-text-base truncate">{plugin}</span>
+                          <span class="text-14-regular text-text-base truncate">{plugin.name}</span>
                         </div>
                       )}
                     </For>

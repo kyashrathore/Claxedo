@@ -162,8 +162,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     return (
       pending !== undefined ||
       status?.type === "busy" ||
-      status?.type === "retry" ||
-      (status !== undefined && status.type !== "idle")
+      status?.type === "retry"
     )
   })
 

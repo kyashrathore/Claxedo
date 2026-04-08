@@ -1,0 +1,3 @@
+# Override parent bunfig.toml — e2e tests don't need happydom
+[test]
+preload = ["./noop-preload.ts"]

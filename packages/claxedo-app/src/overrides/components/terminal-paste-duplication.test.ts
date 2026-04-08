@@ -197,52 +197,10 @@ describe("paste duplication analysis", () => {
   })
 })
 
-describe("paste duplication: xterm element listener bypass", () => {
-  // This tests the specific scenario where xterm registers paste on both
-  // textarea AND element. stopImmediatePropagation on textarea's capture
-  // phase should prevent both from firing, but if the element listener
-  // fires during capture phase (before textarea), it would cause duplication.
-  //
-  // Key insight: in DOM event flow:
-  //   Capture: window → document → ... → element → textarea
-  //   Bubble:  textarea → element → ... → document → window
-  //
-  // Custom handler on textarea with capture:true fires during capture ON textarea.
-  // stopImmediatePropagation() stops:
-  //   - Other capture listeners on textarea ✓
-  //   - Bubble listeners on textarea ✓
-  //   - Any further propagation ✓
-  //
-  // But xterm's handler on `element` in CAPTURE phase would fire BEFORE
-  // textarea's capture handler (since element is an ancestor).
-  //
-  // However, xterm registers its paste handlers WITHOUT capture:true
-  // (they use addDisposableDomListener which defaults to bubbling).
-  // So element's handler fires during BUBBLE phase, which is AFTER
-  // textarea capture → blocked by stopImmediatePropagation.
-
-  test("stopImmediatePropagation on textarea capture blocks element bubble listener", () => {
-    // This is a DOM behavior assertion — in the real browser:
-    // 1. User pastes
-    // 2. Capture phase: window → ... → element → textarea
-    //    - Our handler fires on textarea (capture:true)
-    //    - stopImmediatePropagation() called
-    // 3. Bubble phase never reached → element handler never fires
-    //
-    // This means only PATH B fires, not PATH A.
-    // The custom paste handler correctly prevents duplication.
-    expect(true).toBe(true) // Documented behavior assertion
-  })
-
-  test("however: if xterm coreService also processes beforeInput, paste could double", () => {
-    // xterm also listens for 'beforeinput' on the textarea for IME/compose handling.
-    // If a paste event somehow triggers a 'beforeinput' event (inputType: 'insertFromPaste'),
-    // and our handler doesn't suppress that, xterm might process the paste text a second time.
-    //
-    // This is browser-dependent. In Chrome, paste fires: beforeinput → input → paste
-    // Our handler prevents the paste event, but beforeinput may have already been dispatched.
-    //
-    // This needs a real DOM test (vitest with jsdom/happy-dom) to verify.
-    expect(true).toBe(true) // Needs DOM environment test
-  })
-})
+// NOTE: xterm element listener bypass analysis (paste duplication prevention)
+//
+// xterm registers paste on both textarea AND element, but WITHOUT capture:true
+// (uses addDisposableDomListener which defaults to bubbling). Our custom handler
+// on textarea with capture:true + stopImmediatePropagation() fires first and
+// blocks the bubble phase, so only PATH B fires. DOM environment tests needed
+// to verify beforeInput interaction with xterm coreService.

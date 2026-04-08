@@ -14,6 +14,7 @@
 import { beforeAll, describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { ensureLayoutMocked, getInitLayout } from "./_test-helper"
+import { base64Decode, base64Encode } from "@opencode-ai/util/encode"
 
 let initLayout: () => any
 
@@ -270,6 +271,35 @@ describe("session creation respects selected worktree", () => {
 // ============================================================================
 
 describe("session creation targets correct group in split view", () => {
+  test("draft workspace switch uses target dir from path, not the current draft dir", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { g1, g2, tabs1, tabs2, wt1, wt2 } = splitInto2(api)
+
+      wt1.setDefault("/ws1")
+      wt2.setDefault("/ws2")
+      api.split.setFocus(g1)
+
+      const path = `/${base64Encode("/ws2")}/session`
+      const route = path.match(/^\/([^/]+)\/session(?:\/([^/]+))?$/)
+      const dir = route?.[1] ? base64Decode(route[1]) : "/ws1"
+      const groups = api.split.groups()
+      const focusedId = api.split.focusedId()
+      const matches = groups.filter((g: any) => api.groupWorktree(g.id).default() === dir)
+      const targetGroupId = matches.find((g: any) => g.id === g1)?.id ?? matches.find((g: any) => g.id === focusedId)?.id ?? matches[0]?.id ?? g1
+      const tabs = api.groupTabs(targetGroupId)
+
+      api.groupWorktree(targetGroupId).setDefault(dir)
+      tabs.addSession(dir, "new", "New Session")
+
+      expect(tabs2.items().some((t: any) => t.sessionId === "new" && t.directory === "/ws2")).toBe(true)
+      expect(tabs1.items().some((t: any) => t.sessionId === "new")).toBe(false)
+      expect(api.groupWorktree(g2).default()).toBe("/ws2")
+    } finally {
+      dispose()
+    }
+  })
+
   test("new session from non-focused group lands in the group with matching worktree", () => {
     const { api, dispose } = createTestLayout()
     try {

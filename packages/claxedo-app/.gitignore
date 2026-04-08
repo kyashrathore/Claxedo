@@ -1,5 +1,6 @@
 # Build output
 dist/
+dist-demo/
 dist-desktop/
 
 # Dependencies (handled by root)
@@ -32,3 +33,7 @@ yarn-error.log*
 # Cache
 .cache/
 .turbo/
+
+# Skills
+skills/
+skills-lock.json

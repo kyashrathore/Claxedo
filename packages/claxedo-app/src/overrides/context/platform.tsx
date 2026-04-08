@@ -1,11 +1,12 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { AsyncStorage, SyncStorage } from "@solid-primitives/storage"
+import { ServerConnection } from "./server"
 
 export type Platform = {
   /** Platform discriminator */
   platform: "web" | "desktop"
 
-  /** Desktop OS (Tauri only) */
+  /** Desktop OS */
   os?: "macos" | "windows" | "linux"
 
   /** App version */
@@ -29,32 +30,32 @@ export type Platform = {
   /** Send a system notification (optional deep link) */
   notify(title: string, description?: string, href?: string): Promise<void>
 
-  /** Open directory picker dialog (native on Tauri, server-backed on web) */
+  /** Open directory picker dialog (native on desktop, server-backed on web) */
   openDirectoryPickerDialog?(opts?: { title?: string; multiple?: boolean }): Promise<string | string[] | null>
 
-  /** Open native file picker dialog (Tauri only) */
+  /** Open native file picker dialog (desktop only) */
   openFilePickerDialog?(opts?: { title?: string; multiple?: boolean }): Promise<string | string[] | null>
 
-  /** Save file picker dialog (Tauri only) */
+  /** Save file picker dialog (desktop only) */
   saveFilePickerDialog?(opts?: { title?: string; defaultPath?: string }): Promise<string | null>
 
   /** Storage mechanism, defaults to localStorage */
   storage?: (name?: string) => SyncStorage | AsyncStorage
 
-  /** Check for updates (Tauri only) */
+  /** Check for updates (desktop only) */
   checkUpdate?(): Promise<{ updateAvailable: boolean; version?: string }>
 
-  /** Install updates (Tauri only) */
+  /** Install updates (desktop only) */
   update?(): Promise<void>
 
   /** Fetch override */
   fetch?: typeof fetch
 
   /** Get the configured default server URL (platform-specific) */
-  getDefaultServerUrl?(): Promise<string | null> | string | null
+  getDefaultServer?(): Promise<ServerConnection.Key | null> | ServerConnection.Key | null
 
   /** Set the default server URL to use on app startup (platform-specific) */
-  setDefaultServerUrl?(url: string | null): Promise<void> | void
+  setDefaultServer?(url: ServerConnection.Key | null): Promise<void> | void
 
   /** Parse markdown to HTML using native parser (desktop only, returns unprocessed code blocks) */
   parseMarkdown?(markdown: string): Promise<string>

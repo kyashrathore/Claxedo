@@ -15,6 +15,24 @@
 import { beforeAll, beforeEach, describe, expect, test, mock } from "bun:test"
 import { createRoot } from "solid-js"
 
+const react = globalThis as typeof globalThis & {
+  React?: {
+    createElement: (type: unknown, props: Record<string, unknown> | null, ...children: unknown[]) => unknown
+  }
+}
+
+react.React = {
+  createElement(type: unknown, props: Record<string, unknown> | null, ...children: unknown[]) {
+    if (typeof type === "function") {
+      return type({
+        ...(props ?? {}),
+        ...(children.length > 0 ? { children: children.length === 1 ? children[0] : children } : {}),
+      })
+    }
+    return { type, props, children }
+  },
+}
+
 // ── Mock infrastructure ────────────────────────────────────────────────
 
 type Listener = (event: any) => void
@@ -49,18 +67,32 @@ const fetchState = {
   calls: [] as FetchCall[],
 }
 
+const dialogState = {
+  shows: 0,
+  conflict: undefined as
+    | {
+        configId: string
+        onResolve: (strategy: "pick-new" | "kill-existing") => void
+        onCancel: () => void
+      }
+    | undefined,
+}
+
 async function mockFetchFn(url: string, opts?: RequestInit): Promise<Response> {
   const method = opts?.method ?? "GET"
   const body = opts?.body ? JSON.parse(opts.body as string) : undefined
   const headers: Record<string, string> = {}
-  if (opts?.headers) {
-    const h = opts.headers as Record<string, string>
-    for (const [k, v] of Object.entries(h)) headers[k] = v
+  for (const [k, v] of new Headers(opts?.headers).entries()) {
+    headers[k] = v
   }
   fetchState.calls.push({ url, method, body, headers })
 
+  const path = new URL(url).pathname
   const key = `${method} ${url}`
-  const handler = Object.entries(fetchState.responses).find(([pattern]) => key.includes(pattern))
+  const route = `${method} ${path}`
+  const handler = Object.entries(fetchState.responses).find(([pattern]) => {
+    return key.includes(pattern) || route.includes(pattern)
+  })
   const data = handler ? handler[1]() : {}
 
   // Support __fail sentinel for retry tests
@@ -84,6 +116,16 @@ async function mockFetchFn(url: string, opts?: RequestInit): Promise<Response> {
       })
     }
     return new Promise<Response>(() => {})
+  }
+
+  if (data && typeof (data as any).__status === "number") {
+    const status = (data as any).__status as number
+    const body = "__body" in (data as any) ? (data as any).__body : data
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+    } as unknown as Response
   }
 
   return {
@@ -119,6 +161,7 @@ function createMockClaxedoLayout() {
   let pendingProcessPtys = 1
 
   let crashedWhileClosed = false
+  const running = new Map<string, boolean>()
 
   // Mutable groups array for testing deferred tab cleanup
   let groups: MockGroup[] = []
@@ -130,23 +173,33 @@ function createMockClaxedoLayout() {
   return {
     ready: () => layoutReady,
     processPane: {
-      isOpen: () => isOpen,
-      toggle() {
+      isActive: () => isOpen,
+      requestToggle() {
         isOpen = !isOpen
       },
-      setOpen(v: boolean) {
-        isOpen = v
+      requestOpen() {
+        isOpen = true
       },
-      toggleVersion: () => toggleVer,
-      consumePendingOpen() {
-        const v = pendingOpen
-        pendingOpen = false
-        return v
-      },
+      targetDirectory: () => null,
+      setTargetDirectory(_dir: string | null) {},
       crashedWhileClosed: () => crashedWhileClosed,
       setCrashedWhileClosed(v: boolean) {
         crashedWhileClosed = v
       },
+      running(dir?: string) {
+        if (!dir) return false
+        return !!running.get(dir)
+      },
+      setRunning(dir: string | null | undefined, value: boolean) {
+        if (!dir) return
+        if (value) {
+          running.set(dir, true)
+          return
+        }
+        running.delete(dir)
+      },
+      pendingAction: () => null,
+      clearPendingAction() {},
     },
     split: {
       focusedId: () => undefined,
@@ -201,11 +254,30 @@ function createMockClaxedoLayout() {
         }
       },
     }),
+    findTabGroup: (_tabId: string): string | undefined => {
+      for (const g of groups) {
+        if (g.tabs.some((t) => t.id === _tabId)) return g.id
+      }
+      return undefined
+    },
+    select: {
+      visibleGroups: () => groups,
+      multiPaneLeafView: () => [],
+    },
+    multiPane: {
+      initTabWithContent: () => {},
+      setContent: () => {},
+      splitLeaf: () => undefined,
+      closeLeaf: () => {},
+      getState: () => undefined,
+      leafIds: () => [],
+    },
     // test helpers
     _addedTerminals: addedTerminals,
     _getActiveTab: () => activeTabId,
     _getIsOpen: () => isOpen,
     _getCrashedWhileClosed: () => crashedWhileClosed,
+    _getRunning: (dir: string) => !!running.get(dir),
     _ownedPtys: ownedPtys,
     _setGroups(g: MockGroup[]) { groups = g },
     _getGroups: () => groups,
@@ -215,10 +287,31 @@ function createMockClaxedoLayout() {
   }
 }
 
+// ── Claxedo events mock ────────────────────────────────────────────────
+
+/** Fake claxedo events emitter with flat event structure (no properties wrapper) */
+function createMockClaxedoEvents() {
+  const handlers = new Map<string, Set<(event: any) => void>>()
+  return {
+    on(type: string, fn: (event: any) => void) {
+      if (!handlers.has(type)) handlers.set(type, new Set())
+      handlers.get(type)!.add(fn)
+      return () => handlers.get(type)?.delete(fn)
+    },
+    emit(event: Record<string, any>) {
+      const fns = handlers.get(event.type)
+      if (!fns) return
+      for (const fn of fns) fn(event)
+    },
+    connected: () => true,
+  }
+}
+
 // ── Capture init function ──────────────────────────────────────────────
 
 let _initProcessPane: ((deps?: any) => any) | undefined
 let mockEmitter: ReturnType<typeof createMockEmitter>
+let mockClaxedoEvents: ReturnType<typeof createMockClaxedoEvents>
 let mockLayout: ReturnType<typeof createMockClaxedoLayout>
 
 const DEFAULT_DIRECTORY = "/test/workspace"
@@ -227,6 +320,7 @@ const SDK_URL = "http://localhost:4096"
 
 beforeAll(async () => {
   mockEmitter = createMockEmitter()
+  mockClaxedoEvents = createMockClaxedoEvents()
   mockLayout = createMockClaxedoLayout()
   fetchState.responses = { "GET": () => ({ configs: [], processes: [] }) }
   fetchState.calls = []
@@ -255,13 +349,23 @@ beforeAll(async () => {
     }),
   }))
 
-  // globalSDK mock reads from the mutable `mockEmitter` reference
+  // globalSDK mock — kept for completeness but no longer used by process-pane
   mock.module("@/context/global-sdk", () => ({
     useGlobalSDK: () => ({
       get event() {
         return mockEmitter
       },
     }),
+  }))
+
+  // Config mock — provides claxedoServerUrl
+  mock.module("../../context/config", () => ({
+    useConfigOptional: () => ({ claxedoServerUrl: "http://127.0.0.1:3001" }),
+  }))
+
+  // Claxedo events mock — process events now come through here (flat structure)
+  mock.module("../../providers/claxedo-events", () => ({
+    useClaxedoEventsOptional: () => mockClaxedoEvents,
   }))
 
   // Platform mock uses the shared fetchState — the reference never changes
@@ -286,6 +390,27 @@ beforeAll(async () => {
     },
   }))
 
+  mock.module("@opencode-ai/ui/context/dialog", () => ({
+    useDialog: () => ({
+      show: (render: () => any) => {
+        dialogState.shows++
+        render()
+      },
+      close: () => {},
+    }),
+  }))
+
+  mock.module("../components/port-conflict-dialog", () => ({
+    PortConflictDialog: (props: any) => {
+      dialogState.conflict = props
+      return null
+    },
+  }))
+
+  mock.module("../components/add-process-dialog", () => ({
+    AddProcessDialog: () => null,
+  }))
+
   await import("./process-pane")
 })
 
@@ -293,9 +418,12 @@ beforeEach(() => {
   // Reset shared state between tests
   currentDirectory = DEFAULT_DIRECTORY
   mockEmitter = createMockEmitter()
+  mockClaxedoEvents = createMockClaxedoEvents()
   mockLayout = createMockClaxedoLayout()
   mockTerminalCtx = createMockTerminalCtx()
   removedStalePtyIds.length = 0
+  dialogState.shows = 0
+  dialogState.conflict = undefined
   fetchState.responses = { "GET": () => ({ configs: [], processes: [] }) }
   fetchState.calls = []
   // Reset visibilityState to prevent cross-test contamination
@@ -326,7 +454,7 @@ function createFailThenSuccessFetch(failCount: number, successData: any) {
   }
 }
 
-function createTestProcessPane(fetchResponses?: Record<string, () => any>) {
+function createTestProcessPane(fetchResponses?: Record<string, () => any>, props?: { tabId?: string }) {
   if (fetchResponses) {
     fetchState.responses = fetchResponses
   }
@@ -334,7 +462,7 @@ function createTestProcessPane(fetchResponses?: Record<string, () => any>) {
   let dispose!: () => void
   const api = createRoot((d) => {
     dispose = d
-    return getInit()()
+    return getInit()(props ?? {})
   })
   return { api, dispose }
 }
@@ -380,8 +508,9 @@ const SAMPLE_CONFIG_2 = {
   maxRestarts: 5,
 }
 
-function emitSSE(type: string, properties: Record<string, any>, directory?: string) {
-  mockEmitter.emit(directory ?? currentDirectory, { type, properties })
+function emitSSE(type: string, properties: Record<string, any>, _directory?: string) {
+  // Process events now come from claxedo-server via claxedo events (flat structure)
+  mockClaxedoEvents.emit({ type, ...properties })
 }
 
 // Wait for async operations (fetch, effects) to flush
@@ -390,6 +519,17 @@ const tick = () => new Promise<void>((r) => setTimeout(r, 50))
 // ── Tests ──────────────────────────────────────────────────────────────
 
 describe("initial state", () => {
+  test("loaded flips true after initial boot fetch settles", async () => {
+    const { api, dispose } = createTestProcessPane()
+    try {
+      expect(api.loaded()).toBe(false)
+      await tick()
+      expect(api.loaded()).toBe(true)
+    } finally {
+      dispose()
+    }
+  })
+
   test("configs returns empty array when server has no configs", async () => {
     const { api, dispose } = createTestProcessPane()
     try {
@@ -398,6 +538,21 @@ describe("initial state", () => {
     } finally {
       dispose()
     }
+  })
+
+  test("syncs running state by directory and clears it on dispose", async () => {
+    const { dispose } = createTestProcessPane({
+      "GET": () => ({
+        configs: [SAMPLE_CONFIG],
+        processes: [{ configId: "proc_abc123", ptyId: "pty_1", status: "running", restartCount: 0 }],
+      }),
+    })
+    await tick()
+    await tick()
+    expect(mockLayout._getRunning(DEFAULT_DIRECTORY)).toBe(true)
+    dispose()
+    await tick()
+    expect(mockLayout._getRunning(DEFAULT_DIRECTORY)).toBe(false)
   })
 
   test("configs populates from server GET /process/ on mount", async () => {
@@ -490,92 +645,6 @@ describe("pane sizing", () => {
     }
   })
 
-  test("paneWidths have default pixel width when configs change count", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG, SAMPLE_CONFIG_2],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      const widths = api.paneWidths()
-      expect(widths).toHaveLength(2)
-      // Default pixel width is 400
-      expect(widths[0]).toBe(400)
-      expect(widths[1]).toBe(400)
-    } finally {
-      dispose()
-    }
-  })
-
-  test("paneWidths returns empty array when no configs", async () => {
-    const { api, dispose } = createTestProcessPane()
-    try {
-      await tick()
-      expect(api.paneWidths()).toEqual([])
-    } finally {
-      dispose()
-    }
-  })
-})
-
-describe("scroll navigation", () => {
-  test("scrollIndex starts at 0", () => {
-    const { api, dispose } = createTestProcessPane()
-    try {
-      expect(api.scrollIndex()).toBe(0)
-    } finally {
-      dispose()
-    }
-  })
-
-  test("scrollLeft does not go below 0", () => {
-    const { api, dispose } = createTestProcessPane()
-    try {
-      api.scrollLeft()
-      expect(api.scrollIndex()).toBe(0)
-    } finally {
-      dispose()
-    }
-  })
-
-  test("scrollRight increments scrollIndex", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG, SAMPLE_CONFIG_2, { ...SAMPLE_CONFIG, id: "proc_third", name: "Worker" }],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      api.scrollRight()
-      expect(api.scrollIndex()).toBe(1)
-      api.scrollRight()
-      expect(api.scrollIndex()).toBe(2)
-    } finally {
-      dispose()
-    }
-  })
-
-  test("scrollRight does not exceed configs length", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      api.scrollRight()
-      api.scrollRight()
-      api.scrollRight()
-      // With 1 config, max index is 0 (length - 1)
-      expect(api.scrollIndex()).toBe(0)
-    } finally {
-      dispose()
-    }
-  })
 })
 
 describe("SSE event processing", () => {
@@ -640,6 +709,45 @@ describe("SSE event processing", () => {
       expect(proc!.status).toBe("crashed")
       expect(proc!.exitCode).toBe(1)
       expect(proc!.restartCount).toBe(2)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("process.crashed reload hydrates conflict details from the server", async () => {
+    let reads = 0
+    const { api, dispose } = createTestProcessPane({
+      "GET": () => {
+        reads += 1
+        if (reads === 1) {
+          return {
+            configs: [SAMPLE_CONFIG],
+            processes: [{ configId: "proc_abc123", ptyId: "pty_1", status: "running", restartCount: 0 }],
+          }
+        }
+        return {
+          configs: [SAMPLE_CONFIG],
+          processes: [{
+            configId: "proc_abc123",
+            status: "crashed",
+            restartCount: 0,
+            exitCode: 1,
+            conflict: {
+              type: "port-conflict",
+              port: 3001,
+            },
+          }],
+        }
+      },
+    })
+    try {
+      await tick()
+
+      emitSSE("process.crashed", { configId: "proc_abc123", exitCode: 1, restartCount: 0 })
+      await tick()
+      await tick()
+
+      expect(api.processForConfig("proc_abc123")?.conflict?.port).toBe(3001)
     } finally {
       dispose()
     }
@@ -840,6 +948,140 @@ describe("lifecycle actions", () => {
     }
   })
 
+  test("start stores port conflict on the process instead of opening a dialog", async () => {
+    fetchState.responses = {
+      "GET": () => ({
+        configs: [SAMPLE_CONFIG],
+        processes: [{ configId: "proc_abc123", status: "idle", restartCount: 0 }],
+      }),
+      "POST /api/claxedo/process/proc_abc123/start": () => ({
+        __status: 409,
+        __body: {
+          kind: "port_conflict",
+          conflict: {
+            type: "port-conflict",
+            port: 4096,
+            processId: "proc_busy",
+            processName: "busy-server",
+          },
+        },
+      }),
+    }
+
+    const { api, dispose } = createTestProcessPane()
+    try {
+      await tick()
+      await api.start("proc_abc123")
+      expect(dialogState.shows).toBe(0)
+      expect(api.processForConfig("proc_abc123")?.status).toBe("crashed")
+      expect(api.processForConfig("proc_abc123")?.conflict?.port).toBe(4096)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("resolveConflict pick-new reissues start with portConflict pick-new", async () => {
+    let starts = 0
+    fetchState.responses = {
+      "GET": () => ({
+        configs: [SAMPLE_CONFIG],
+        processes: [{ configId: "proc_abc123", status: "idle", restartCount: 0 }],
+      }),
+      "POST /api/claxedo/process/proc_abc123/start": () => {
+        starts += 1
+        if (starts === 1) {
+          return {
+            __status: 409,
+            __body: {
+              kind: "port_conflict",
+              conflict: {
+                type: "port-conflict",
+                port: 4096,
+                processId: "proc_busy",
+                processName: "busy-server",
+              },
+            },
+          }
+        }
+        return {
+          kind: "started",
+          process: {
+            configId: "proc_abc123",
+            ptyId: "pty_new",
+            status: "running",
+            restartCount: 0,
+          },
+        }
+      },
+    }
+
+    const { api, dispose } = createTestProcessPane()
+    try {
+      await tick()
+      await api.start("proc_abc123")
+      expect(api.processForConfig("proc_abc123")?.conflict).toBeDefined()
+      api.resolveConflict("proc_abc123", "pick-new")
+      await tick()
+
+      const calls = fetchState.calls.filter((item) => item.url.includes("/process/proc_abc123/start"))
+      expect(calls).toHaveLength(2)
+      expect(calls[1]?.body).toEqual({ portConflict: "pick-new" })
+    } finally {
+      dispose()
+    }
+  })
+
+  test("resolveConflict kill-existing reissues start with portConflict kill-existing", async () => {
+    let starts = 0
+    fetchState.responses = {
+      "GET": () => ({
+        configs: [SAMPLE_CONFIG],
+        processes: [{ configId: "proc_abc123", status: "idle", restartCount: 0 }],
+      }),
+      "POST /api/claxedo/process/proc_abc123/start": () => {
+        starts += 1
+        if (starts === 1) {
+          return {
+            __status: 409,
+            __body: {
+              kind: "port_conflict",
+              conflict: {
+                type: "port-conflict",
+                port: 4096,
+                processId: "proc_busy",
+                processName: "busy-server",
+              },
+            },
+          }
+        }
+        return {
+          kind: "started",
+          process: {
+            configId: "proc_abc123",
+            ptyId: "pty_new",
+            status: "running",
+            restartCount: 0,
+          },
+        }
+      },
+    }
+
+    const { api, dispose } = createTestProcessPane()
+    try {
+      await tick()
+      await api.start("proc_abc123")
+      expect(api.processForConfig("proc_abc123")?.conflict).toBeDefined()
+      api.resolveConflict("proc_abc123", "kill-existing")
+      await tick()
+
+      const calls = fetchState.calls.filter((item) => item.url.includes("/process/proc_abc123/start"))
+      expect(calls).toHaveLength(2)
+      expect(calls[1]?.body).toEqual({ portConflict: "kill-existing" })
+    } finally {
+      dispose()
+    }
+  })
+
   test("stop posts to /process/{configId}/stop", async () => {
     const { api, dispose } = createTestProcessPane()
     try {
@@ -893,6 +1135,49 @@ describe("lifecycle actions", () => {
       expect(startCalls[0].method).toBe("POST")
       expect(startCalls[0].url).toContain("/process/proc_abc123/start")
       expect(startCalls[1].url).toContain("/process/proc_def456/start")
+    } finally {
+      dispose()
+    }
+  })
+
+  test("startAll stores port conflicts on processes (prompts user)", async () => {
+    let startCount = 0
+    const { api, dispose } = createTestProcessPane({
+      "GET": () => ({
+        configs: [SAMPLE_CONFIG, SAMPLE_CONFIG_2],
+        processes: [],
+      }),
+      "POST /api/claxedo/process/proc_abc123/start": () => {
+        startCount++
+        return {
+          __status: 409,
+          __body: {
+            kind: "port_conflict",
+            conflict: {
+              type: "port-conflict",
+              port: 4444,
+              pid: 12345,
+            },
+          },
+        }
+      },
+    })
+    try {
+      await tick()
+      fetchState.calls = []
+      await api.startAll()
+
+      // The conflicting process should be marked as crashed with conflict
+      expect(api.processForConfig("proc_abc123")?.status).toBe("crashed")
+      expect(api.processForConfig("proc_abc123")?.conflict?.port).toBe(4444)
+
+      // The client should NOT have auto-retried with pick-new
+      const startCalls = fetchState.calls.filter((c) =>
+        c.url.includes("/process/proc_abc123/start"),
+      )
+      expect(startCalls).toHaveLength(1)
+      // No portConflict body means interactive: true, not auto-resolved
+      expect(startCalls[0].body).toBeUndefined()
     } finally {
       dispose()
     }
@@ -954,17 +1239,24 @@ describe("tab integration", () => {
     })
     try {
       await tick()
+      fetchState.responses["/start"] = () => ({
+        kind: "started",
+        process: {
+          configId: "proc_abc123",
+          status: "starting",
+          restartCount: 0,
+        },
+      })
 
       // No process running — openInTab should start and defer tab creation
       api.openInTab("proc_abc123")
 
+      await tick()
+
       // A start POST was sent
       const startCall = fetchState.calls.find((c) => c.url.includes("/start"))
       expect(startCall).toBeDefined()
-
-      // Wait for the async openInTab chain to resolve (postAction → applyProcess
-      // → pendingTabOpens.add) before emitting SSE
-      await tick()
+      expect(startCall?.body).toBeUndefined()
 
       // No tab yet (waiting for process.started)
       expect(mockLayout._addedTerminals).toHaveLength(0)
@@ -1009,85 +1301,7 @@ describe("refresh", () => {
   })
 })
 
-describe("pane width sync on config changes", () => {
-  test("paneWidths use default pixel width when config.changed adds a process", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      expect(api.paneWidths()).toHaveLength(1)
-      expect(api.paneWidths()[0]).toBe(400) // DEFAULT_PANEL_WIDTH
-
-      // SSE adds a second config
-      emitSSE("process.config.changed", { configs: [SAMPLE_CONFIG, SAMPLE_CONFIG_2] })
-
-      expect(api.paneWidths()).toHaveLength(2)
-      expect(api.paneWidths()[0]).toBe(400)
-      expect(api.paneWidths()[1]).toBe(400)
-    } finally {
-      dispose()
-    }
-  })
-
-  test("paneWidths reset to empty when all configs removed", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      expect(api.paneWidths()).toHaveLength(1)
-
-      emitSSE("process.config.changed", { configs: [] })
-
-      expect(api.paneWidths()).toEqual([])
-    } finally {
-      dispose()
-    }
-  })
-
-  test("setPaneWidth updates individual panel pixel width", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG, SAMPLE_CONFIG_2],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-
-      api.setPaneWidth(0, 500)
-      expect(api.paneWidths()[0]).toBe(500)
-      // Second width unchanged
-      expect(api.paneWidths()[1]).toBe(400) // DEFAULT_PANEL_WIDTH
-    } finally {
-      dispose()
-    }
-  })
-
-  test("setPaneWidth ignores out-of-range index", async () => {
-    const { api, dispose } = createTestProcessPane({
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG],
-        processes: [],
-      }),
-    })
-    try {
-      await tick()
-      const before = [...api.paneWidths()]
-      api.setPaneWidth(5, 0.3) // index out of range
-      expect(api.paneWidths()).toEqual(before)
-    } finally {
-      dispose()
-    }
-  })
-})
+// pane width sync tests removed — multi-pane system handles layout now
 
 describe("state machine transitions", () => {
   test("stop clears ptyId immediately and transitions to stopped", async () => {
@@ -1213,6 +1427,7 @@ describe("state machine transitions", () => {
       const startCall = fetchState.calls.find((c) => c.url.includes("/start"))
       const restartCall = fetchState.calls.find((c) => c.url.includes("/restart"))
       expect(startCall).toBeDefined()
+      expect(startCall?.body).toBeUndefined()
       expect(restartCall).toBeUndefined()
     } finally {
       dispose()
@@ -1688,22 +1903,9 @@ describe("cross-workspace isolation", () => {
     d2()
   })
 
-  test("SSE events for old directory do not affect new provider mount", async () => {
-    // Mount for directory A with configs
-    currentDirectory = DIR_A
-    fetchState.responses = {
-      "GET": () => ({
-        configs: [SAMPLE_CONFIG],
-        processes: [{ configId: "proc_abc123", ptyId: "pty_1", status: "running", restartCount: 0 }],
-      }),
-    }
-
-    const { api: apiA, dispose: disposeA } = createTestProcessPane()
-    await tick()
-    expect(apiA.configs()).toHaveLength(1)
-    disposeA()
-
-    // Mount for directory B (empty)
+  test("SSE events reach all mounted process-pane instances (global bus)", async () => {
+    // claxedo events are global — no per-directory filtering.
+    // All mounted process-pane instances receive process events from the bus.
     currentDirectory = DIR_B
     fetchState.responses = {
       "GET": () => ({ configs: [], processes: [] }),
@@ -1713,12 +1915,12 @@ describe("cross-workspace isolation", () => {
     await tick()
     expect(apiB.configs()).toHaveLength(0)
 
-    // Emit an SSE event targeted at directory A — must not affect B's provider
+    // Emit a config.changed event — B receives it since events are global
     emitSSE("process.config.changed", {
       configs: [SAMPLE_CONFIG, SAMPLE_CONFIG_2],
-    }, DIR_A)
+    })
 
-    expect(apiB.configs()).toHaveLength(0)
+    expect(apiB.configs()).toHaveLength(2)
     disposeB()
   })
 
@@ -1781,7 +1983,7 @@ describe("stale persisted state cleared on mount", () => {
     }
   })
 
-  test("layout (paneHeight, paneWidths) preserved — only processes cleared", async () => {
+  test("layout (paneHeight) preserved — only processes cleared", async () => {
     const { api, dispose } = createTestProcessPane({
       "GET": () => ({
         configs: [SAMPLE_CONFIG],
@@ -1792,11 +1994,9 @@ describe("stale persisted state cleared on mount", () => {
       await tick()
       // Set custom layout values
       api.setPaneHeight(500)
-      api.setPaneWidth(0, 600)
 
       // Values should survive — only processes are cleared on mount
       expect(api.paneHeight()).toBe(500)
-      expect(api.paneWidths()[0]).toBe(600)
     } finally {
       dispose()
     }

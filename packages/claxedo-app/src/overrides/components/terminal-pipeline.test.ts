@@ -6,6 +6,7 @@ import { preparePersistBuffer, prepareRestoreBuffer } from "./terminal-buffer"
 import { createModeScanner } from "../terminal/mode-scan"
 import { createQuerySuppressor } from "../terminal/query-suppression"
 import { sigwinchToggleSize } from "./terminal-connection"
+import { getCapabilityResponses } from "../terminal/capability-responder"
 
 // ---------------------------------------------------------------------------
 // Integration Test 3: End-to-end pipeline
@@ -171,6 +172,7 @@ function createPipeline(opts: {
 
   // Cursor tracking (matches terminal.tsx handleMessage)
   let cursor = 0
+  let replayReady = false
   const decoder = new TextDecoder()
 
   // Wire WS → queue (matches terminal.tsx handleMessage lines 524-562)
@@ -183,6 +185,7 @@ function createPipeline(opts: {
         const meta = JSON.parse(json) as { cursor?: unknown }
         const next = meta?.cursor
         if (typeof next === "number" && Number.isSafeInteger(next) && next >= 0) {
+          replayReady = true
           cursor = next
         }
       } catch {}
@@ -192,6 +195,12 @@ function createPipeline(opts: {
     const data = typeof eventData === "string" ? eventData : ""
     if (!data) return
     cursor += data.length
+    const responses = getCapabilityResponses(data)
+    if (responses.length > 0 && replayReady) {
+      for (const item of responses) {
+        ws.send(item)
+      }
+    }
     queue.push(data)
   })
 
@@ -203,6 +212,7 @@ function createPipeline(opts: {
     mode,
     restoreComplete,
     get cursor() { return cursor },
+    isReplayReady: () => replayReady,
     isBufferRestored: () => isBufferRestored,
 
     runFrames,
@@ -248,6 +258,27 @@ function createPipeline(opts: {
 // ---------------------------------------------------------------------------
 
 describe("end-to-end pipeline: ws → filter → queue → xterm", () => {
+  test("capability replies stay muted during replay until cursor meta arrives", async () => {
+    const p = createPipeline({})
+    await p.restoreComplete
+
+    p.ws.deliver("\x1b[c")
+    await p.flush()
+
+    expect(p.isReplayReady()).toBe(false)
+    expect(p.ws.sentMessages).toEqual([])
+
+    p.ws.deliverCursor(12)
+    expect(p.isReplayReady()).toBe(true)
+
+    p.ws.deliver("\x1b[c")
+    await p.flush()
+
+    expect(p.ws.sentMessages).toEqual(["\x1b[?64;1;2;4;6;9;15;22;29c"])
+
+    p.cleanup()
+  })
+
   test("basic data flow: ws delivers → queue drains → xterm has content", async () => {
     const p = createPipeline({})
     await p.restoreComplete

@@ -79,8 +79,11 @@ declare global {
     __OPENCODE__?: {
       updaterEnabled?: boolean
       serverPassword?: string
+      serverUrl?: string
+      activeDirectory?: string
       deepLinks?: string[]
       wsl?: boolean
+      debugTerminal?: boolean
       perfEnabled?: boolean
       perfPath?: string | null
       perf?: DesktopPerf
@@ -90,16 +93,6 @@ declare global {
     }
   }
 }
-
-function MarkedProviderWithNativeParser(props: ParentProps) {
-  const platform = usePlatform()
-  return (
-    <MarkedProvider nativeParser={platform.parseMarkdown} mermaidRenderer={platform.renderMermaid}>
-      {props.children}
-    </MarkedProvider>
-  )
-}
-
 
 function QueryProvider(props: ParentProps) {
   const client = new QueryClient()

@@ -17,11 +17,12 @@ export function normalizeAgentList(input: unknown): Agent[] {
 }
 
 export function normalizeProviderList(input: ProviderListResponse): ProviderListResponse {
+  if (!input?.all) return input ?? ({ all: [], connected: [], default: {} } as ProviderListResponse)
   return {
     ...input,
     all: input.all.map((provider) => ({
       ...provider,
-      models: Object.fromEntries(Object.entries(provider.models).filter(([, info]) => info.status !== "deprecated")),
+      models: Object.fromEntries(Object.entries(provider.models ?? {}).filter(([, info]) => info.status !== "deprecated")),
     })),
   }
 }

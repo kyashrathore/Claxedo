@@ -14,14 +14,15 @@ import { createStore, produce } from "solid-js/store"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
 import { TextField } from "@opencode-ai/ui/text-field"
-import { Select } from "@opencode-ai/ui/select"
+import { RadioGroup } from "@opencode-ai/ui/radio-group"
 import { Switch } from "@opencode-ai/ui/switch"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
-import { useSDK } from "@/context/sdk"
 import { usePlatform } from "@/context/platform"
-import type { Process } from "../../opencode-patches/process/process"
+import type { Process } from "@claxedo/process/process"
+import { capture as phCapture } from "../../analytics/posthog"
+import { getClaxedoServerUrl } from "../../utils/api"
 
 type ProcessConfig = Process.ProcessConfig
 
@@ -31,14 +32,13 @@ const RESTART_POLICIES = [
   { value: "always" as const, label: "Always" },
 ]
 
-type EnvEntry = { key: string; value: string }
-
-type PortMode = "env" | "flag"
-
-const PORT_MODES = [
-  { value: "env" as const, label: "Env variable" },
-  { value: "flag" as const, label: "CLI flag" },
+const CONFLICT_OPTIONS = [
+  { value: "ask" as const, label: "Ask me" },
+  { value: "pick-new" as const, label: "Pick new" },
+  { value: "kill-existing" as const, label: "Kill existing" },
 ]
+
+type EnvEntry = { key: string; value: string }
 
 type FormStore = {
   name: string
@@ -48,15 +48,18 @@ type FormStore = {
   autoStart: boolean
   restartPolicy: Process.RestartPolicy
   maxRestarts: number
-  usePortless: boolean
-  hostname: string
-  portMode: PortMode
-  portValue: string
+  dependsOn: string
+  usePort: boolean
+  portName: string
+  portInject: string
+  portPreferred: string
+  portOnConflict: Process.PortConflictStrategy | undefined
   saving: boolean
   deleting: boolean
 }
 
 export type AddProcessDialogProps = {
+  directory: string
   /** If provided, dialog is in edit mode for this config. */
   config?: ProcessConfig
   /** Called after successful create/update/delete so the pane can refresh. */
@@ -67,9 +70,9 @@ export type AddProcessDialogProps = {
 
 export function AddProcessDialog(props: AddProcessDialogProps) {
   const dialog = useDialog()
-  const sdk = useSDK()
   const platform = usePlatform()
   const fetchFn = platform.fetch ?? globalThis.fetch
+  const claxedoServerUrl = getClaxedoServerUrl()
 
   const isEdit = () => !!props.config
 
@@ -86,10 +89,12 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
     autoStart: props.config?.autoStart ?? false,
     restartPolicy: props.config?.restartPolicy ?? "never",
     maxRestarts: props.config?.maxRestarts ?? 3,
-    usePortless: !!props.config?.portless,
-    hostname: props.config?.portless?.hostname ?? "",
-    portMode: props.config?.portless?.portMode ?? "env",
-    portValue: props.config?.portless?.portValue ?? "PORT",
+    dependsOn: props.config?.dependsOn?.join(", ") ?? "",
+    usePort: !!props.config?.port,
+    portName: props.config?.port?.name ?? "",
+    portInject: props.config?.port?.inject ?? "PORT",
+    portPreferred: props.config?.port?.preferred?.toString() ?? "",
+    portOnConflict: props.config?.port?.onConflict,
     saving: false,
     deleting: false,
   })
@@ -98,7 +103,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
 
   const headers = () => ({
     "Content-Type": "application/json",
-    "x-opencode-directory": sdk.directory,
+    "x-opencode-directory": props.directory,
   })
 
   const buildBody = () => {
@@ -108,6 +113,15 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
       if (k) env[k] = entry.value
     }
 
+    const dependsOnList = store.dependsOn
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+
+    const preferredPort = store.portPreferred.trim()
+      ? parseInt(store.portPreferred.trim(), 10)
+      : undefined
+
     return {
       name: store.name.trim(),
       command: store.command.trim(),
@@ -116,24 +130,29 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
       autoStart: store.autoStart,
       restartPolicy: store.restartPolicy,
       maxRestarts: store.maxRestarts,
-      portless: store.usePortless ? {
-        hostname: effectiveHostname(),
-        portMode: store.portMode,
-        portValue: store.portValue.trim() || (store.portMode === "env" ? "PORT" : "--port"),
+      ...(dependsOnList.length > 0 ? { dependsOn: dependsOnList } : {}),
+      port: hasPort() ? {
+        name: effectivePortName(),
+        inject: store.portInject.trim() || "PORT",
+        ...(preferredPort && !isNaN(preferredPort) ? { preferred: preferredPort } : {}),
+        ...(store.portOnConflict ? { onConflict: store.portOnConflict } : {}),
       } : undefined,
     }
   }
 
-  const derivedHostname = () =>
-    store.name.trim().toLowerCase().replace(/[^a-z0-9.-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || ""
+  const derivedPortName = () =>
+    store.name.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || ""
 
-  const effectiveHostname = () =>
-    store.hostname.trim() || derivedHostname()
+  const effectivePortName = () =>
+    store.portName.trim() || derivedPortName()
+
+  const hasPort = () =>
+    store.usePort || store.portPreferred.trim().length > 0
 
   const canSubmit = () =>
     store.name.trim().length > 0 &&
     store.command.trim().length > 0 &&
-    (!store.usePortless || effectiveHostname().length > 0) &&
+    (!hasPort() || effectivePortName().length > 0) &&
     !store.saving
 
   const handleSubmit = async (e: SubmitEvent) => {
@@ -146,7 +165,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
 
       if (isEdit() && props.config) {
         // PUT /process/:id
-        const res = await fetchFn(`${sdk.url}/process/${props.config.id}`, {
+        const res = await fetchFn(`${claxedoServerUrl}/process/${props.config.id}`, {
           method: "PUT",
           headers: headers(),
           body: JSON.stringify(body),
@@ -155,10 +174,11 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
           const err = await res.json().catch(() => ({}))
           throw new Error((err as any).error || "Failed to update process")
         }
+        phCapture("process_updated", { has_port: store.usePort, restart_policy: store.restartPolicy })
         showToast({ title: "Process updated", variant: "success", duration: 3000 })
       } else {
         // POST /process
-        const res = await fetchFn(`${sdk.url}/process`, {
+        const res = await fetchFn(`${claxedoServerUrl}/process`, {
           method: "POST",
           headers: headers(),
           body: JSON.stringify(body),
@@ -167,6 +187,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
           const err = await res.json().catch(() => ({}))
           throw new Error((err as any).error || "Failed to create process")
         }
+        phCapture("process_created", { has_port: store.usePort, auto_start: store.autoStart, restart_policy: store.restartPolicy })
         showToast({ title: "Process created", variant: "success", duration: 3000 })
         // Notify parent to open the pane, then refresh to pick up the new config.
         // The SSE process.config.changed event also syncs configs, but calling
@@ -194,7 +215,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
     if (!props.config) return
     setStore("deleting", true)
     try {
-      const res = await fetchFn(`${sdk.url}/process/${props.config.id}`, {
+      const res = await fetchFn(`${claxedoServerUrl}/process/${props.config.id}`, {
         method: "DELETE",
         headers: headers(),
       })
@@ -202,6 +223,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
         const err = await res.json().catch(() => ({}))
         throw new Error((err as any).error || "Failed to delete process")
       }
+      phCapture("process_deleted")
       showToast({ title: "Process removed", variant: "success", duration: 3000 })
       props.onDone?.()
       dialog.close()
@@ -247,19 +269,26 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
         {/* Name */}
         <TextField
           autofocus
+          name="process-name"
           type="text"
           label="Name"
-          placeholder="Dev server"
+          description="Lowercase, hyphens, dots, underscores only (e.g. my-server)"
+          placeholder="dev-server"
+          data-testid="process-name-input"
           value={store.name}
-          onChange={(v) => setStore("name", v)}
+          onChange={(v) => setStore("name", v.toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/-+/g, "-"))}
+          spellcheck={false}
+          class="font-mono text-xs"
           required
         />
 
         {/* Command */}
         <TextField
+          name="process-command"
           type="text"
           label="Command"
           placeholder="npm run dev"
+          data-testid="process-command-input"
           value={store.command}
           onChange={(v) => setStore("command", v)}
           spellcheck={false}
@@ -269,10 +298,12 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
 
         {/* Working directory */}
         <TextField
+          name="process-cwd"
           type="text"
           label="Working directory"
           description="Relative to workspace root (optional)"
           placeholder="./packages/server"
+          data-testid="process-cwd-input"
           value={store.cwd}
           onChange={(v) => setStore("cwd", v)}
           spellcheck={false}
@@ -323,70 +354,107 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
           </button>
         </div>
 
-        {/* Portless integration (not available on Windows) */}
-        <Show when={platform.os !== "windows"}>
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center gap-2">
-              <Switch
-                checked={store.usePortless}
-                onChange={(v) => setStore("usePortless", v)}
-              >
-                Use Portless
-              </Switch>
-              <a
-                href="https://github.com/vercel-labs/portless"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-[11px] text-accent hover:underline"
-              >
-                What's this?
-              </a>
+        {/* Dependencies */}
+        <TextField
+          type="text"
+          label="Depends on"
+          description="Comma-separated process names. These will auto-start first."
+          placeholder="api-server, database"
+          value={store.dependsOn}
+          onChange={(v) => setStore("dependsOn", v)}
+          spellcheck={false}
+          class="font-mono text-xs"
+        />
+
+        {/* ── Port configuration ── */}
+        <div class="flex flex-col gap-3">
+          <TextField
+            type="text"
+            label="Preferred port"
+            description="Base port for this process. Other workspaces scan upward from here."
+            placeholder="3000"
+            value={store.portPreferred}
+            onChange={(v) => setStore("portPreferred", v)}
+            spellcheck={false}
+            class="font-mono text-xs"
+          />
+
+          <Show when={store.portPreferred.trim()}>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-12-medium text-text-weak">If port is occupied</label>
+              <RadioGroup
+                size="small"
+                fill
+                options={CONFLICT_OPTIONS}
+                current={CONFLICT_OPTIONS.find((o) => o.value === (store.portOnConflict ?? "ask"))}
+                value={(o) => o.value}
+                label={(o) => o.label}
+                onSelect={(o) => setStore("portOnConflict", o?.value === "ask" ? undefined : o?.value as Process.PortConflictStrategy)}
+              />
             </div>
-            <Show when={store.usePortless}>
+          </Show>
+
+          <Switch
+            checked={store.usePort}
+            onChange={(v) => setStore("usePort", v)}
+          >
+            Advanced port settings
+          </Switch>
+          <Show when={store.usePort}>
+            {/* How the port is passed to the process */}
+            <div class="flex flex-col gap-1.5">
               <TextField
                 type="text"
-                label="Hostname"
-                description={`Access at http://${effectiveHostname() || "<hostname>"}.localhost:1355`}
-                placeholder={derivedHostname() || "my-app"}
-                value={store.hostname}
-                onChange={(v) => setStore("hostname", v)}
+                label="Pass port via"
+                description="Env variable or CLI flag to tell your process which port to listen on."
+                placeholder="PORT or --port"
+                value={store.portInject}
+                onChange={(v) => setStore("portInject", v)}
                 spellcheck={false}
                 class="font-mono text-xs"
               />
-              <div class="flex flex-col gap-1.5">
-                <label class="text-12-medium text-text-weak">How does your app accept a port?</label>
-                <div class="flex items-center gap-2">
-                  <Select
-                    options={PORT_MODES}
-                    current={PORT_MODES.find((m) => m.value === store.portMode)}
-                    value={(x) => x.value}
-                    label={(x) => x.label}
-                    onSelect={(x) => {
-                      if (!x) return
-                      setStore("portMode", x.value)
-                      setStore("portValue", x.value === "env" ? "PORT" : "--port")
-                    }}
-                    size="small"
-                    variant="ghost"
-                  />
-                  <input
-                    type="text"
-                    placeholder={store.portMode === "env" ? "PORT" : "--port"}
-                    value={store.portValue}
-                    onInput={(e) => setStore("portValue", e.currentTarget.value)}
-                    class="flex-1 min-w-0 bg-surface-inset border border-border rounded-md px-2 py-1.5 text-12-regular font-mono text-text-strong focus:outline-none focus:ring-1 focus:ring-accent"
-                    spellcheck={false}
-                  />
-                </div>
-                <span class="text-[11px] text-text-weak">
-                  {store.portMode === "env"
-                    ? `Portless sets ${store.portValue.trim() || "PORT"} to the assigned port`
-                    : `Appends ${store.portValue.trim() || "--port"} <port> to your command`}
-                </span>
+              <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface-inset border border-border-weak-base">
+                <Icon name="console" size="small" class="text-text-weaker shrink-0" />
+                <p class="text-[11px] font-mono text-text-weak">
+                  <Show
+                    when={store.portInject.trim().startsWith("-")}
+                    fallback={
+                      <>{store.portInject.trim() || "PORT"}=&lt;port&gt; {store.command.trim() || "your-command"}</>
+                    }
+                  >
+                    {store.command.trim() || "your-command"} {store.portInject.trim()} &lt;port&gt;
+                  </Show>
+                </p>
               </div>
-            </Show>
-          </div>
-        </Show>
+            </div>
+
+            {/* Port name for cross-process references */}
+            <div class="flex flex-col gap-1.5">
+              <TextField
+                type="text"
+                label="Port name"
+                description={`Other processes can use {{port:${effectivePortName() || "name"}}} in their environment variables to resolve this port.`}
+                placeholder={derivedPortName() || "my-app"}
+                value={store.portName}
+                onChange={(v) => setStore("portName", v)}
+                spellcheck={false}
+                class="font-mono text-xs"
+              />
+              <Show when={effectivePortName()}>
+                <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface-inset border border-border-weak-base">
+                  <Icon name="bubble-5" size="small" class="text-text-weaker shrink-0" />
+                  <p class="text-[11px] text-text-weak leading-relaxed">
+                    Other processes can use{" "}
+                    <code class="px-1 py-0.5 rounded bg-surface-base-hover text-text-base font-mono text-[10px]">
+                      {`{{port:${effectivePortName()}}}`}
+                    </code>
+                    {" "}in their env vars to resolve this port number at startup.
+                  </p>
+                </div>
+              </Show>
+            </div>
+          </Show>
+        </div>
 
       </div>
 
@@ -413,6 +481,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
                   size="large"
                   onClick={handleDelete}
                   disabled={store.deleting}
+                  data-testid="process-confirm-delete"
                   class="!bg-red-600 hover:!bg-red-700"
                 >
                   {store.deleting ? "Deleting..." : "Confirm Delete"}

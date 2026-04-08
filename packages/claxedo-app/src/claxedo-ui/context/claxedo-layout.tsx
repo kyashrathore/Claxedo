@@ -12,6 +12,7 @@ import { createClaxedoLayoutFacade } from "./claxedo-layout/facade"
 import { createEmptyTabsState, defaultGroupLayout, type ClaxedoLayoutStore } from "./claxedo-layout/types"
 
 export type {
+  TabScope,
   TabType,
   TabItem,
   RailState,
@@ -54,9 +55,11 @@ function migrate(value: unknown) {
     const flatTabs = layout.tabs
     const flatWorktree = layout.worktree
     if (!flatTabs || typeof flatTabs !== "object") {
+      const resultGroups = [emptyGroup]
+
       return {
         ...layout,
-        groups: [emptyGroup],
+        groups: resultGroups,
         split: { direction: "h", sizes: [1], focusedId: "g-default" },
       }
     }
@@ -66,19 +69,21 @@ function migrate(value: unknown) {
       flatWorktree && typeof flatWorktree === "object"
         ? (flatWorktree as { default?: string | null; pinned?: string | null })
         : {}
+    const resultGroups = [
+      {
+        id,
+        tabs: flatTabs,
+        worktree: {
+          default: worktree.default ?? null,
+          pinned: worktree.pinned ?? null,
+        },
+        layout: defaultGroupLayout(),
+      },
+    ]
+
     return {
       ...layout,
-      groups: [
-        {
-          id,
-          tabs: flatTabs,
-          worktree: {
-            default: worktree.default ?? null,
-            pinned: worktree.pinned ?? null,
-          },
-          layout: defaultGroupLayout(),
-        },
-      ],
+      groups: resultGroups,
       split: { direction: "h", sizes: [1], focusedId: id },
     }
   }
@@ -96,13 +101,6 @@ function migrate(value: unknown) {
       item.worktree && typeof item.worktree === "object"
         ? (item.worktree as { default?: string | null; pinned?: string | null })
         : {}
-    const current = item.layout && typeof item.layout === "object" ? (item.layout as Record<string, unknown>) : {}
-    const defaults = defaultGroupLayout()
-    const currentFileTree =
-      current.fileTree && typeof current.fileTree === "object"
-        ? (current.fileTree as { opened?: boolean; width?: number })
-        : {}
-
     return {
       ...item,
       id: item.id ?? `g-${index + 1}`,
@@ -111,12 +109,7 @@ function migrate(value: unknown) {
         default: worktree.default ?? null,
         pinned: worktree.pinned ?? null,
       },
-      layout: {
-        fileTree: {
-          opened: currentFileTree.opened ?? defaults.fileTree.opened,
-          width: currentFileTree.width ?? defaults.fileTree.width,
-        },
-      },
+      layout: {},
     }
   })
 
@@ -168,7 +161,7 @@ export const { use: useClaxedoLayout, provider: ClaxedoLayoutProvider } = create
         terminalLifecycle: {},
         workspaceRecency: {},
         worktreeColorMap: {},
-        processPane: { toggleVersion: 0, pendingOpen: false, targetDirectory: null, crashedWhileClosed: false },
+        processPane: { toggleVersion: 0, pendingOpen: false, targetDirectory: null, crashedWhileClosed: false, pendingAction: null },
         multiPane: {},
       }),
     )
@@ -177,6 +170,27 @@ export const { use: useClaxedoLayout, provider: ClaxedoLayoutProvider } = create
     // signal for within-session workspace switches, not meant to persist.
     setStore("processPane", "pendingOpen", false)
     if (store.processPane.targetDirectory === undefined) setStore("processPane", "targetDirectory", null)
+
+    // Clear stale pending- terminal IDs that survived a reload.
+    // During terminal creation, tabs temporarily get a "pending-XXXX" terminalId
+    // which is replaced with the real PTY ID after creation. If the page reloads
+    // mid-creation, the pending ID persists in localStorage but the ephemeral
+    // queue data (queueCreateForTab) is lost, causing a permanent spinner.
+    // Remove these tabs before any components mount.
+    for (let gi = 0; gi < store.groups.length; gi++) {
+      const items = store.groups[gi]?.tabs?.items
+      if (!items) continue
+      const stale = items.filter(
+        (t) => t.type === "terminal" && t.terminalId?.startsWith("pending-"),
+      )
+      if (stale.length === 0) continue
+      const staleIds = new Set(stale.map((t) => t.id))
+      setStore("groups", gi, "tabs", "items", (prev) => prev.filter((t) => !staleIds.has(t.id)))
+      setStore("groups", gi, "tabs", "order", (prev) => prev.filter((id) => !staleIds.has(id)))
+      for (const t of stale) {
+        setStore("multiPane", t.id, undefined)
+      }
+    }
 
     return createClaxedoLayoutFacade({
       store,

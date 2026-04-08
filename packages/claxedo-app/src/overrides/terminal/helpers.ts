@@ -64,6 +64,39 @@ export interface CreateTerminalResult {
 // Renderer Loading
 // ============================================================================
 
+// Cache the WebGL support probe so we only create (and lose) one throwaway
+// context for the entire page lifetime instead of one per terminal mount.
+let _webglSupported: boolean | undefined
+
+function isWebGLSupported(): boolean {
+  if (_webglSupported !== undefined) return _webglSupported
+  _webglSupported = false
+  if (typeof document === "undefined") return false
+  const el = document.createElement("canvas")
+  if (typeof el.getContext !== "function") return false
+  try {
+    const gl = el.getContext("webgl2") || el.getContext("webgl")
+    if (gl) {
+      _webglSupported = true
+      // Immediately lose the probe context so it doesn't count against the
+      // browser's active WebGL context limit (~16).
+      const ext = (gl as WebGLRenderingContext).getExtension("WEBGL_lose_context")
+      ext?.loseContext()
+    }
+  } catch {
+    // not supported
+  }
+  return _webglSupported
+}
+
+// Track active WebGL renderer count globally. Chromium allows ~16 contexts per
+// page, but rapid terminal remounts (e.g. SolidJS <Show keyed> store updates)
+// can create new contexts before the async addon import on the old terminal has
+// been cancelled, leading to transient overlap. Cap to a safe ceiling so we
+// never hit the browser limit and trigger "oldest context will be lost" warnings.
+const MAX_WEBGL_RENDERERS = 12
+let _activeWebGLCount = 0
+
 function loadRenderer(xterm: XTerm): TerminalRendererRef["current"] {
   const ref: TerminalRendererRef["current"] = {
     kind: "dom",
@@ -85,21 +118,13 @@ function loadRenderer(xterm: XTerm): TerminalRendererRef["current"] {
   })()
   if (pref === "dom") return ref
 
-  const supported = (() => {
-    if (typeof document === "undefined") return false
-    const el = document.createElement("canvas")
-    if (typeof el.getContext !== "function") return false
-    try {
-      // WebGL renderer can work in environments without WebGL2 (e.g. older
-      // browsers/GPU configs) so accept WebGL1 as "supported" too.
-      return !!(el.getContext("webgl2") || el.getContext("webgl"))
-    } catch {
-      return false
-    }
-  })()
-  if (!supported && pref !== "webgl") return ref
+  if (!isWebGLSupported() && pref !== "webgl") return ref
+
+  // Skip WebGL if we've already hit the safe ceiling
+  if (_activeWebGLCount >= MAX_WEBGL_RENDERERS) return ref
 
   let disposed = false
+  let counted = false
   type RendererAddon = ITerminalAddon & {
     clearTextureAtlas?: () => void
     onContextLoss?: (fn: () => void) => void
@@ -112,6 +137,10 @@ function loadRenderer(xterm: XTerm): TerminalRendererRef["current"] {
       addon?.dispose()
     } catch {}
     addon = null
+    if (counted) {
+      _activeWebGLCount = Math.max(0, _activeWebGLCount - 1)
+      counted = false
+    }
     ref.kind = "dom"
     ref.clearTextureAtlas = undefined
   }
@@ -119,10 +148,15 @@ function loadRenderer(xterm: XTerm): TerminalRendererRef["current"] {
   import("@xterm/addon-webgl")
     .then(({ WebglAddon }) => {
       if (disposed) return
+      // Re-check ceiling after async import — other terminals may have loaded
+      // their WebGL addons while this import was in flight.
+      if (_activeWebGLCount >= MAX_WEBGL_RENDERERS) return
       try {
         addon = new WebglAddon()
         xterm.loadAddon(addon)
         ref.kind = "webgl"
+        _activeWebGLCount++
+        counted = true
         ref.clearTextureAtlas = addon.clearTextureAtlas?.bind(addon)
         addon.onContextLoss?.(() => {
           // Context loss is recoverable by falling back to the default renderer.
@@ -326,6 +360,18 @@ export function setupKeyboardHandler(
       return false
     }
 
+    // Option+Arrow: word navigation (Mac only — altKey = Option)
+    if (isMac && event.altKey && !event.metaKey && !event.ctrlKey) {
+      if (key === "arrowleft") {
+        if (event.type === "keydown" && options.onWrite) options.onWrite("\x1bb")
+        return false
+      }
+      if (key === "arrowright") {
+        if (event.type === "keydown" && options.onWrite) options.onWrite("\x1bf")
+        return false
+      }
+    }
+
     // Cmd/Ctrl+Left: Beginning of line (Ctrl+A)
     if (key === "arrowleft" && actionMod) {
       if (event.type === "keydown" && options.onWrite) {
@@ -393,7 +439,12 @@ export function setupPasteHandler(
 
   const handlePaste = (event: ClipboardEvent) => {
     const text = event.clipboardData?.getData("text/plain")
-    if (!text) return
+    if (!text) {
+      // Non-text clipboard content (e.g. image): forward Ctrl+V so the
+      // application can decide what to do with it (iTerm2/Ghostty behaviour).
+      if (options.onWrite) options.onWrite("\x16")
+      return
+    }
 
     event.preventDefault()
     event.stopImmediatePropagation()
@@ -501,8 +552,13 @@ export function setupCopyHandler(xterm: XTerm): () => void {
       .split("\n")
       .map((line) => line.trimEnd())
       .join("\n")
-    event.preventDefault()
-    event.clipboardData?.setData("text/plain", trimmed)
+    if (event.clipboardData) {
+      event.preventDefault()
+      event.clipboardData.setData("text/plain", trimmed)
+    } else {
+      // Wayland / some Linux environments: clipboardData is null on synthetic events
+      navigator.clipboard?.writeText(trimmed)
+    }
   }
 
   element.addEventListener("copy", handleCopy)
@@ -533,10 +589,23 @@ function parseFileUris(uriList: string): string[] {
     })
 }
 
+function imageFile(file: File) {
+  return file.type.startsWith("image/")
+}
+
+async function writeImage(file: File) {
+  const api = (window as any).api
+  if (typeof api?.writeClipboardImage !== "function") return false
+  const buf = await file.arrayBuffer().catch(() => undefined)
+  if (!buf) return false
+  return api.writeClipboardImage(buf)
+}
+
 export function setupDropHandler(
   xterm: XTerm,
   container: HTMLDivElement,
   options: {
+    image?: "path" | "paste"
     onWrite: (data: string) => void
     isBracketedPasteEnabled?: () => boolean
   },
@@ -553,36 +622,42 @@ export function setupDropHandler(
 
     const dt = event.dataTransfer
     if (!dt) return
+    const files = Array.from(dt.files ?? [])
 
     // Determine synchronously whether we can extract paths, so we can
     // call stopPropagation before the microtask boundary.  If neither
     // strategy applies, let the event bubble to the document-level
     // handler (prompt-input attachments) instead of swallowing it.
-    const isTauri = !!(window as any).__TAURI__ && !!dt.files?.length
+    const isElectron = !!(window as any).api && files.length > 0
     const uriList = dt.getData("text/uri-list")
     const hasUris = !!uriList && parseFileUris(uriList).length > 0
+    const canPaste = isElectron && (options.image ?? "path") === "paste" && files.length > 0 && files.every(imageFile)
 
-    if (!isTauri && !hasUris) return
+    if (!isElectron && !hasUris && !canPaste) return
 
-    // We can handle this drop — prevent the global handler from also acting.
+    // We can handle this drop, so keep the document-level prompt handler from
+    // processing it a second time.
     event.stopPropagation()
+
+    if (canPaste) {
+      let ok = false
+      for (const file of files) {
+        const wrote = await writeImage(file)
+        if (!wrote) continue
+        ok = true
+        options.onWrite("\x16")
+      }
+      if (ok) return
+    }
 
     const paths: string[] = []
 
-    // Strategy 1: Tauri desktop — send file blobs to Rust for temp save
-    if (isTauri) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core")
-        for (const file of Array.from(dt.files)) {
-          const data = new Uint8Array(await file.arrayBuffer())
-          const savedPath = await invoke<string>("save_dropped_file", {
-            name: file.name,
-            data: Array.from(data),
-          })
-          paths.push(savedPath)
-        }
-      } catch {
-        // Fall through to URI fallback
+    // Strategy 1: Electron — use preload's webUtils.getPathForFile()
+    if (isElectron && paths.length === 0) {
+      const api = (window as any).api
+      if (typeof api?.getDroppedFilePaths === "function") {
+        const resolved = api.getDroppedFilePaths(files) as string[]
+        paths.push(...resolved)
       }
     }
 
@@ -778,6 +853,16 @@ export function setupResizeHandlers(
       const fs = xterm.options.fontSize ?? 14
       xterm.options.fontSize = fs + 0.001
       xterm.options.fontSize = fs
+
+      // Immediately fit + clear atlas + refresh so the canvas dimensions
+      // update in the same frame as the font-nudge. Without this, the
+      // coordinator's deferred settle runs 1+ frames later, during which
+      // the WebGL renderer paints with stale canvas resolution → pixelated.
+      if (isRendererReady()) {
+        try { fitAddon.fit() } catch {}
+        try { renderer?.current.clearTextureAtlas?.() } catch {}
+        try { xterm.refresh(0, xterm.rows - 1) } catch {}
+      }
     }
 
     lastObservedWidth = width
@@ -804,6 +889,14 @@ export function setupResizeHandlers(
     coordinator.request("visibility")
   }
   document.addEventListener("visibilitychange", handleVisibilityChange)
+
+  // Window focus: recover rendering after OS window switch (clears WebGL texture atlas
+  // which can become stale after the window was occluded by another app).
+  const handleWindowFocus = () => {
+    flog("window-focus", snapshot())
+    coordinator.request("visibility")
+  }
+  window.addEventListener("focus", handleWindowFocus)
 
   // Initial mount fits (tab/portal mount can report 0px initially)
   requestAnimationFrame(() => coordinator.request("mount"))
@@ -844,6 +937,7 @@ export function setupResizeHandlers(
       window.removeEventListener("resize", handleResize)
       window.removeEventListener("opencode:terminal-fit", handleFit)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
+      window.removeEventListener("focus", handleWindowFocus)
       resizeObserver.disconnect()
       clearTimeout(mountTimer)
       clearTimeout(mountLateTimer)

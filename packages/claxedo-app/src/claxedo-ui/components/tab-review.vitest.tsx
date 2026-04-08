@@ -13,6 +13,7 @@ const syncState = {
   data: {
     message: {} as Record<string, any[]>,
     session_diff: {} as Record<string, any[]>,
+    session_status: {} as Record<string, any>,
     todo: {} as Record<string, any[]>,
     question: {} as Record<string, any[]>,
     permission: {} as Record<string, any[]>,
@@ -21,8 +22,10 @@ const syncState = {
 
 const syncApi = {
   ...syncState,
+  set: vi.fn(),
   session: {
     sync: vi.fn(),
+    todo: vi.fn(),
     diff: vi.fn(),
     get: vi.fn(() => ({ title: "Review Session" })),
   },
@@ -40,6 +43,9 @@ vi.mock("@opencode-ai/claxedo-app", () => ({
     clear: vi.fn(),
     focus: commentsFocus,
     setFocus: commentsSetFocus,
+  }),
+  useServer: () => ({
+    healthy: () => true,
   }),
 }))
 
@@ -81,10 +87,6 @@ vi.mock("@opencode-ai/ui/icon-button", () => ({
   IconButton: (props: any) => <button onClick={props.onClick}>{props.icon}</button>,
 }))
 
-vi.mock("@opencode-ai/ui/logo", () => ({
-  Mark: () => <div data-testid="mark" />,
-}))
-
 vi.mock("@opencode-ai/ui/diff-changes", () => ({
   DiffChanges: () => <div data-testid="diff-changes" />,
 }))
@@ -119,20 +121,23 @@ beforeEach(() => {
   syncApi.status = "ready"
   syncApi.data.message = {}
   syncApi.data.session_diff = {}
+  syncApi.data.session_status = {}
   syncApi.data.todo = {}
   syncApi.data.question = {}
   syncApi.data.permission = {}
+  syncApi.set.mockReset()
   syncApi.session.sync.mockReset()
+  syncApi.session.todo.mockReset()
   syncApi.session.diff.mockReset()
   syncApi.session.get.mockClear()
 })
 
 describe("TabReview", () => {
-  test("maps committed mode to to-from when requesting diffs", async () => {
+  test("to-from mode passes fromRef and toRef to diff request", async () => {
     render(() => (
       <TabReview
         sessionId="ses_1"
-        mode="committed"
+        mode="to-from"
         fromRef="dev"
         toRef="HEAD"
       />
