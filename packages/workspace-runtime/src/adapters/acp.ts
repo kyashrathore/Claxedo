@@ -34,6 +34,7 @@ import {
   type McpServer,
   type StopReason,
   type SessionConfigOption,
+  type Usage,
 } from "@agentclientprotocol/sdk"
 import {
   buildAssistantMessage,
@@ -151,6 +152,18 @@ function errorMessage(err: unknown): string {
     try { return JSON.stringify(err) } catch { /* fall through */ }
   }
   return String(err)
+}
+
+function messageUsage(usage: Usage) {
+  return {
+    input: usage.inputTokens,
+    output: usage.outputTokens,
+    reasoning: usage.thoughtTokens ?? 0,
+    cache: {
+      read: usage.cachedReadTokens ?? 0,
+      write: usage.cachedWriteTokens ?? 0,
+    },
+  }
 }
 
 function missing(err: unknown) {
@@ -548,7 +561,7 @@ class ACPProcess {
     agentSessionId: string,
     input: PromptInput,
     onUpdate: (update: SessionUpdate) => void,
-  ): Promise<{ stopReason: StopReason }> {
+  ): Promise<{ stopReason: StopReason; usage?: Usage | null }> {
     this.resetIdleTimer()
 
     // Serialize: only one prompt runs at a time per ACP process.
@@ -610,7 +623,7 @@ class ACPProcess {
           stopReason: result.stopReason,
           ms: Date.now() - t0,
         })
-        return { stopReason: result.stopReason }
+        return { stopReason: result.stopReason, usage: result.usage }
       } catch (err) {
         // On timeout (or any error), cancel the session so the ACP binary stops working
         // rather than continuing to run orphaned with no listener.
@@ -974,6 +987,7 @@ export class ACPAdapter implements AgentAdapter {
     }
     let agentSessionId = current
     const session = this.store.getSession(id) as { title?: string | null } | null
+    let created = Date.now()
     log.info("sendMessage: found session in store", { id, agentSessionId })
 
     let proc: ACPProcess
@@ -1025,6 +1039,7 @@ export class ACPAdapter implements AgentAdapter {
       agent: input.agent,
       model: input.model,
       directory,
+      created,
     })))
     this.store.startTurn({
       sessionId: id,
@@ -1168,6 +1183,7 @@ export class ACPAdapter implements AgentAdapter {
           }
           if (chunk.type !== "step-start") continue
           assistantMsgId = chunk.newMessageId
+          created = Date.now()
           accumulatedText = ""
           accumulatedThinkingText = ""
           compatCtx.assistantMsgId = assistantMsgId
@@ -1184,6 +1200,7 @@ export class ACPAdapter implements AgentAdapter {
             agent: input.agent,
             model: input.model,
             directory,
+            created,
           }))
           this.store.appendEvent({
             sessionId: id,
@@ -1248,8 +1265,35 @@ export class ACPAdapter implements AgentAdapter {
       const run = async (): Promise<void> => {
         install()
         try {
-          const { stopReason } = await proc.prompt(agentSessionId, input, forward)
-          stop(stopReason)
+          const result = await proc.prompt(agentSessionId, input, forward)
+          if (result.usage && result.usage.totalTokens > 0) {
+            const event = messageUpdated({
+              ...buildAssistantMessage({
+                id: assistantMsgId,
+                sessionID: id,
+                parentID: input.userMessageId ?? id,
+                agent: input.agent,
+                model: input.model,
+                directory,
+                created,
+                completed: Date.now(),
+                variant: input.variant,
+              }),
+              tokens: messageUsage(result.usage),
+            })
+            this.store.appendEvent({
+              sessionId: id,
+              agentSessionId,
+              payload: event,
+              source: {
+                dir: "in",
+                method: "prompt.result",
+                frame: { usage: result.usage },
+              },
+            })
+            push(event)
+          }
+          stop(result.stopReason)
         } catch (err) {
           proc.permissionPushers.delete(agentSessionId)
           if (retried || !missing(err)) throw err
@@ -1307,6 +1351,7 @@ export class ACPAdapter implements AgentAdapter {
         agent: input.agent,
         model: input.model,
         directory,
+        created,
         completed: Date.now(),
         error: {
           name: "UnknownError",

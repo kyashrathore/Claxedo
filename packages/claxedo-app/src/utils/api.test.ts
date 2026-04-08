@@ -12,6 +12,10 @@ mock.module("./auth-client", () => ({
   getAuthToken: async () => token,
 }))
 
+// Use an absolute path with a cache-busting query to bypass any stale
+// mock.module("./api") registered by other test files (pages-api.test.ts,
+// workgraph-api.test.ts).  Bun treats distinct specifiers as distinct
+// module instances, so this always evaluates the real api.ts.
 const {
   authFetch,
   configureApiRuntime,
@@ -21,7 +25,7 @@ const {
   isDemoPath,
   isEmbedMode,
   resetApiRuntime,
-} = await import("./api")
+} = await import(`${import.meta.dir}/api.ts?test`)
 
 beforeEach(() => {
   window.location.href = "http://localhost/"

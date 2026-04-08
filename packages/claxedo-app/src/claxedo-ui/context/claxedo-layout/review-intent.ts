@@ -1,4 +1,4 @@
-import type { FileDiff, Session } from "@opencode-ai/sdk/v2"
+import type { VcsFileDiff, Session } from "@opencode-ai/sdk/v2"
 import type { ReviewMode } from "./types"
 
 export type ReviewPopoverMode = "session-turn" | "session" | "staged" | "uncommitted" | "to-from"
@@ -60,7 +60,7 @@ type SessionClient = {
     mode: "staged" | "uncommitted" | "to-from"
     fromRef?: string
     toRef?: string
-  }) => Promise<{ data?: FileDiff[] }>
+  }) => Promise<{ data?: VcsFileDiff[] }>
 }
 
 function baseStats(): ReviewModeStats {
@@ -73,7 +73,7 @@ function baseStats(): ReviewModeStats {
   }
 }
 
-export function sumChanges(diffs: FileDiff[]) {
+export function sumChanges(diffs: VcsFileDiff[]) {
   return diffs.reduce(
     (acc, diff) => ({
       additions: acc.additions + (diff.additions ?? 0),
@@ -105,7 +105,7 @@ export function createReviewIntentAdapter(input: {
 
   const patchDiff = (
     mode: ReviewPopoverMode,
-    diffs: FileDiff[],
+    diffs: VcsFileDiff[],
     patch: (mode: ReviewPopoverMode, next: Patch) => void,
   ) => {
     patch(mode, {

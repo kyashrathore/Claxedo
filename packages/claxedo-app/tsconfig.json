@@ -17,7 +17,6 @@
     "isolatedModules": true,
     "paths": {
       "#terminal-backend": ["./src/overrides/terminal/backend/xterm"],
-      "@solid-primitives/active-element": ["../app/node_modules/@solid-primitives/active-element/dist/index.d.ts"],
       "@/*": ["./src/overrides/*", "../app/src/*"],
       "@claxedo/*": ["./src/*"]
     }

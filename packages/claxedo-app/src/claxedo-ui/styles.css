@@ -67,4 +67,3 @@ html.translucent-sidebar [data-slot="tabs-list"] {
   backdrop-filter: blur(16px) saturate(1.5);
   -webkit-backdrop-filter: blur(16px) saturate(1.5);
 }
-

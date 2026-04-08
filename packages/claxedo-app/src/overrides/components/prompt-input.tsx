@@ -1102,19 +1102,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (!id) return permission.isAutoAcceptingDirectory(sdk.directory)
     return permission.isAutoAccepting(id, sdk.directory)
   })
-  const acceptLabel = createMemo(() =>
-    language.t(accepting() ? "command.permissions.autoaccept.disable" : "command.permissions.autoaccept.enable"),
-  )
-  const toggleAccept = () => {
-    if (acpPending()) return
-    const id = resolvedSessionId()
-    if (!id) {
-      permission.toggleAutoAcceptDirectory(sdk.directory)
-      return
-    }
-    permission.toggleAutoAccept(id, sdk.directory)
-  }
-
   const { abort, handleSubmit } = createPromptSubmit({
     info,
     sessionID: resolvedSessionId,
@@ -1353,7 +1340,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             if (!(target instanceof HTMLElement)) return
             if (
               target.closest(
-                '[data-action="prompt-attach"], [data-action="prompt-submit"], [data-action="prompt-permissions"]',
+                '[data-action="prompt-attach"], [data-action="prompt-submit"]',
               )
             ) {
               return
@@ -1671,36 +1658,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       }}
                       variant="ghost"
                     />
-                  </TooltipKeybind>
-                  <TooltipKeybind
-                    placement="top"
-                    gutter={8}
-                    title={acceptLabel()}
-                    keybind={command.keybind("permissions.autoaccept")}
-                  >
-                    <Button
-                      data-action="prompt-permissions"
-                      variant="ghost"
-                      onClick={toggleAccept}
-                      classList={{
-                        "h-7 w-7 p-0 shrink-0 flex items-center justify-center": true,
-                        "text-text-base": !accepting() && !acpPending(),
-                        "text-text-weak": acpPending(),
-                        "hover:bg-surface-success-base": accepting() && !acpPending(),
-                      }}
-                      style={{
-                        height: "28px",
-                        opacity: buttonsSpring() * fade(),
-                        transform: `scale(${0.95 + buttonsSpring() * 0.05})`,
-                        filter: `blur(${(1 - buttonsSpring()) * 2}px)`,
-                        "pointer-events": buttonsSpring() > 0.5 ? "auto" : "none",
-                      }}
-                      aria-label={acceptLabel()}
-                      aria-pressed={accepting()}
-                      disabled={acpPending()}
-                    >
-                      <Icon name="shield" size="small" classList={{ "text-icon-success-base": accepting() }} />
-                    </Button>
                   </TooltipKeybind>
                 </Show>
               </div>

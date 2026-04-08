@@ -14,7 +14,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { ClaxedoLogo as Mark } from "@claxedo/claxedo-ui/components/claxedo-logo"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import type { FileDiff, FileContent, UserMessage } from "@opencode-ai/sdk/v2"
+import type { VcsFileDiff, FileContent, UserMessage } from "@opencode-ai/sdk/v2"
 import { SessionTurn } from "@opencode-ai/ui/session-turn"
 import type { ReviewMode } from "../context/claxedo-layout/types"
 import { CompactPromptDock } from "./compact-prompt-dock"
@@ -49,7 +49,7 @@ export function TabReview(props: TabReviewProps) {
     diffStyle: "unified" as "unified" | "split",
     focusedFile: undefined as string | undefined,
     loading: false,
-    remoteDiffs: [] as FileDiff[],
+    remoteDiffs: [] as VcsFileDiff[],
   })
 
   let reviewScrollRef: HTMLDivElement | undefined
@@ -128,7 +128,7 @@ export function TabReview(props: TabReviewProps) {
 
   const turnDiffs = createMemo(() => lastUserMessage()?.summary?.diffs ?? [])
 
-  const diffs = createMemo((): FileDiff[] => {
+  const diffs = createMemo((): VcsFileDiff[] => {
     if (props.mode === "session-turn") return turnDiffs()
     if (props.mode === "session") return sync.data.session_diff[props.sessionId] ?? []
     return store.remoteDiffs

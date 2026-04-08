@@ -19,6 +19,7 @@ import { Markdown } from "@opencode-ai/ui/markdown"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
+import { useProviders } from "@/hooks/use-providers"
 import { getSessionContextMetrics } from "@/components/session/session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "@/components/session/session-context-breakdown"
 import { createSessionContextFormatter } from "@/components/session/session-context-format"
@@ -108,6 +109,7 @@ export function SessionContextTab() {
   const sync = useSync()
   const layout = useLayout()
   const language = useLanguage()
+  const providers = useProviders()
 
   const sessionId = createMemo(() => sessionParams?.sessionId() ?? routeParams.id)
   const directory = createMemo(() => sessionParams?.directory() ?? (routeParams.dir ? base64Decode(routeParams.dir) : undefined))
@@ -157,7 +159,7 @@ export function SessionContextTab() {
       }),
   )
 
-  const metrics = createMemo(() => getSessionContextMetrics(messages(), sync.data.provider.all))
+  const metrics = createMemo(() => getSessionContextMetrics(messages(), providers.all()))
   const ctx = createMemo(() => metrics().context)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 

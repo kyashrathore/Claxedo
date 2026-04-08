@@ -32,6 +32,7 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
 import { messageAgentColor } from "@/utils/agent"
+import { sessionTitle } from "@/utils/session-title"
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import { makeTimer } from "@solid-primitives/timer"
 import { timelineWorking } from "./message-timeline-state"
@@ -344,6 +345,7 @@ export function MessageTimeline(props: {
   })
 
   const titleValue = createMemo(() => info()?.title)
+  const titleLabel = createMemo(() => sessionTitle(titleValue()))
   const shareUrl = createMemo(() => info()?.share?.url)
   const shareEnabled = createMemo(() => sync.data.config.share !== "disabled")
   const parentID = createMemo(() => info()?.parentID)
@@ -503,7 +505,6 @@ export function MessageTimeline(props: {
   const openTitleEditor = () => {
     if (!sessionID() || parentID()) return
     setTitle({ editing: true, draft: titleValue() ?? "" })
->>>>>>> cfe45c3ce (squash: all claxedo fork changes for rebase)
     requestAnimationFrame(() => {
       titleRef?.focus()
       titleRef?.select()

@@ -12,7 +12,7 @@ export function closeTabLogic(
   dialog: ReturnType<typeof useDialog>,
   components: {
     Dialog: Component<{ title: string; description: string; children: JSX.Element }>,
-    Button: Component<{ variant: string; onClick: () => void; children: JSX.Element }>
+    Button: Component<{ variant: "ghost" | "primary" | "secondary"; onClick: () => void; children: JSX.Element }>
   }
 ) {
   const { Dialog, Button } = components

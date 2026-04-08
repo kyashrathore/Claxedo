@@ -21,6 +21,9 @@ export type Platform = {
   /** Restart the app  */
   restart(): Promise<void>
 
+  /** Quit the app */
+  quit?(): Promise<void>
+
   /** Navigate back in history */
   back(): void
 

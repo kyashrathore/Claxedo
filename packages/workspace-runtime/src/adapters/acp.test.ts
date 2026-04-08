@@ -106,6 +106,108 @@ describe("ACPAdapter", () => {
     expect(seen).toContain("session.idle")
   })
 
+  it("applies prompt response usage to the final assistant message before idle", async () => {
+    const item = adapter() as ACPAdapter & {
+      store: {
+        getAgentSessionId: (id: string) => string
+        getSession: (id: string) => { title?: string | null } | null
+        processLostSession: (id: string) => void
+        bindSession: (input: unknown) => void
+        consumeRecoveryError: (id: string) => string | null
+        startTurn: (input: unknown) => void
+        appendEvent: (input: { payload: { type: string } }) => void
+      }
+      getOrSpawnProcess: (id: string, directory: string) => Promise<{
+        proc: {
+          permissionPushers: Map<string, unknown>
+          resumeSession: (id: string, directory: string) => Promise<void>
+          syncSession: (id: string, input: unknown) => Promise<void>
+          prompt: (
+            id: string,
+            input: unknown,
+            onUpdate: (update: unknown) => void,
+          ) => Promise<{
+            stopReason: "end_turn"
+            usage: {
+              inputTokens: number
+              outputTokens: number
+              totalTokens: number
+              thoughtTokens: number
+              cachedReadTokens: number
+              cachedWriteTokens: number
+            }
+          }>
+        }
+        isNew: boolean
+      }>
+    }
+
+    item.store = {
+      getAgentSessionId() {
+        return "acp-1"
+      },
+      getSession() {
+        return { title: "Saved" }
+      },
+      processLostSession() {},
+      bindSession() {},
+      consumeRecoveryError() {
+        return null
+      },
+      startTurn() {},
+      appendEvent() {},
+    }
+
+    item.getOrSpawnProcess = async () => ({
+      isNew: true,
+      proc: {
+        permissionPushers: new Map(),
+        async resumeSession() {},
+        async syncSession() {},
+        async prompt() {
+          return {
+            stopReason: "end_turn",
+            usage: {
+              inputTokens: 10,
+              outputTokens: 20,
+              totalTokens: 40,
+              thoughtTokens: 5,
+              cachedReadTokens: 3,
+              cachedWriteTokens: 2,
+            },
+          }
+        },
+      },
+    })
+
+    const out: Array<{ type: string; properties?: Record<string, unknown> }> = []
+    for await (const event of item._sendMessage("s1", {
+      parts: [{ type: "text", text: "hello" }],
+      userMessageId: "u1",
+      assistantMessageId: "a1",
+      agent: "plan",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+      variant: "fast",
+    }, "/work", Date.now())) {
+      out.push(event as { type: string; properties?: Record<string, unknown> })
+    }
+
+    const msgs = out.filter((event) => event.type === "message.updated")
+    const last = msgs.at(-1)
+    const info = last?.properties?.info as
+      | { id: string; tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } }
+      | undefined
+
+    expect(info?.id).toBe("a1")
+    expect(info?.tokens).toEqual({
+      input: 10,
+      output: 20,
+      reasoning: 5,
+      cache: { read: 3, write: 2 },
+    })
+    expect(out.at(-1)?.type).toBe("session.idle")
+  })
+
   it("caches resolved MCP when config updates only auth", async () => {
     const item = adapter() as ACPAdapter & {
       currentMcp: unknown[]

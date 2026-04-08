@@ -6,7 +6,7 @@ export function timelineWorking(input: {
   status: SessionStatus | undefined
 }) {
   const active = input.status?.type === "busy" || input.status?.type === "retry"
-  if (input.pending) return active || !input.status
+  if (input.pending) return active
   if (input.blocked) return false
   return active
 }

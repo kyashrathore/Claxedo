@@ -7,6 +7,7 @@ import { base64Decode } from "@opencode-ai/util/encode"
 
 import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
+import { useProviders } from "@/hooks/use-providers"
 import { getSessionContextMetrics } from "@/components/session/session-context-metrics"
 import { useClaxedoLayout } from "@claxedo/claxedo-ui/context/claxedo-layout"
 import { useSessionParams } from "@claxedo/claxedo-ui/context/session-params"
@@ -33,6 +34,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     /* not in claxedo mode */
   }
   const language = useLanguage()
+  const providers = useProviders()
 
   const sessionId = createMemo((prev: string | undefined) => {
     const next = sessionParams?.sessionId() ?? routeParams.id
@@ -56,7 +58,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
       }),
   )
 
-  const metrics = createMemo(() => getSessionContextMetrics(messages(), sync.data.provider.all))
+  const metrics = createMemo(() => getSessionContextMetrics(messages(), providers.all()))
   const context = createMemo(() => {
     const native = metrics().context
     if (native) return native

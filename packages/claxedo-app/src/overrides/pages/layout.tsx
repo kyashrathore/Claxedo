@@ -62,7 +62,6 @@ import { useServer } from "@/context/server"
 import { useLanguage, type Locale } from "@/context/language"
 import { createDebugLogger } from "../utils/debug"
 import {
-  childMapByParent,
   displayName,
   errorMessage,
   effectiveWorkspaceOrder,
@@ -1812,9 +1811,6 @@ export default function Layout(props: ParentProps) {
     navList: () => [],
     sidebarExpanded,
     sidebarHovering,
-    nav: () => state.nav,
-    hoverSession: () => state.hoverSession,
-    setHoverSession,
     clearHoverProjectSoon,
     prefetchSession,
     archiveSession,
@@ -1843,7 +1839,6 @@ export default function Layout(props: ParentProps) {
     sidebarOpened: () => layout.sidebar.opened(),
     sidebarHovering,
     hoverProject: () => state.hoverProject,
-    nav: () => state.nav,
     onProjectMouseEnter: (worktree, event) => aim.enter(worktree, event),
     onProjectMouseLeave: (worktree) => aim.leave(worktree),
     onProjectFocus: (worktree) => aim.activate(worktree),
@@ -1861,15 +1856,10 @@ export default function Layout(props: ParentProps) {
     workspaceLabel,
     sessionProps: {
       sidebarExpanded,
-      sidebarHovering,
-      nav: () => state.nav,
-      hoverSession: () => state.hoverSession,
-      setHoverSession,
       clearHoverProjectSoon,
       prefetchSession,
       archiveSession,
     },
-    setHoverSession,
   }
 
   const SidebarPanel = (panelProps: { project: LocalProject | undefined; mobile?: boolean }) => {

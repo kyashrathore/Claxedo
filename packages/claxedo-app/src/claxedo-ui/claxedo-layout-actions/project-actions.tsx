@@ -342,6 +342,11 @@ export function createProjectActions(props: ActionProps, nav: Nav) {
     if (project.sandboxes && sandboxes && sandboxes.length !== project.sandboxes.length) {
       props.globalSync.set("project", index, "sandboxes", sandboxes)
     }
+    const workspaces = (project as Record<string, unknown>).workspaces as Record<string, unknown> | undefined
+    if (workspaces && dir in workspaces) {
+      const { [dir]: _, ...remaining } = workspaces
+      props.globalSync.set("project", index, "workspaces" as any, remaining)
+    }
     return project
   }
 

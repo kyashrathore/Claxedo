@@ -12,14 +12,14 @@ describe("timelineWorking", () => {
     ).toBe(false)
   })
 
-  test("keeps the spinner while pending output has no authoritative session status yet", () => {
+  test("does not show the spinner for stale pending output without an active session status", () => {
     expect(
       timelineWorking({
         pending: true,
         blocked: false,
         status: undefined,
       }),
-    ).toBe(true)
+    ).toBe(false)
   })
 
   test("treats blocked busy sessions as waiting instead of streaming", () => {

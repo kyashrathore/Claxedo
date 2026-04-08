@@ -1,6 +1,6 @@
 import { Show, createEffect, createMemo, createSignal } from "solid-js"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
-import type { FileDiff, UserMessage } from "@opencode-ai/sdk/v2"
+import type { VcsFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
 import { useGlobalSDK, useGlobalSync } from "@opencode-ai/claxedo-app"
 import FileTree from "@/components/file-tree"
 import { DirectoryScope } from "./directory-scope"
@@ -21,7 +21,7 @@ export function FileTreeSidebar(props: {
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
   const [reviewLoading, setReviewLoading] = createSignal(false)
-  const [reviewDiffs, setReviewDiffs] = createSignal<FileDiff[]>([])
+  const [reviewDiffs, setReviewDiffs] = createSignal<VcsFileDiff[]>([])
   let reviewReq = 0
 
   const active = createMemo(() => claxedo.groupTabs(props.groupId).active())
@@ -36,8 +36,8 @@ export function FileTreeSidebar(props: {
 
   const turnDiffs = createMemo(() => {
     const tab = reviewTab()
-    if (!tab) return [] as FileDiff[]
-    if (reviewMode() !== "session-turn") return [] as FileDiff[]
+    if (!tab) return [] as VcsFileDiff[]
+    if (reviewMode() !== "session-turn") return [] as VcsFileDiff[]
     const [store] = globalSync.child(tab.directory!)
     const users = (store.message[tab.sessionId!] ?? []).filter((msg): msg is UserMessage => msg.role === "user")
     return users.at(-1)?.summary?.diffs ?? []
@@ -86,7 +86,7 @@ export function FileTreeSidebar(props: {
   })
 
   const visibleDiffs = createMemo(() => {
-    if (!reviewTab()) return [] as FileDiff[]
+    if (!reviewTab()) return [] as VcsFileDiff[]
     if (reviewMode() === "session-turn") return turnDiffs()
     return reviewDiffs()
   })

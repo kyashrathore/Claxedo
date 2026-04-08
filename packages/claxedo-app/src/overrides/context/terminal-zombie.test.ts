@@ -69,22 +69,32 @@ mock.module("@/utils/persist", () => ({
 
 mock.module("../components/terminal-recovery", () => {
   const executed = new Set<string>()
+  const claimed = new Set<string>()
   const initialCommandKey = (id: string) => `opencode.pty.${id}.initial-command-ran`
   return {
     clearInitialCommandMarker: (id: string) => {
       executed.delete(id)
+      claimed.delete(id)
       if (typeof localStorage !== "undefined") localStorage.removeItem(initialCommandKey(id))
     },
     markInitialCommandRan: (id: string) => {
       executed.add(id)
+      claimed.delete(id)
       if (typeof localStorage !== "undefined") localStorage.setItem(initialCommandKey(id), "1")
     },
     shouldRunInitialCommand: (pty: { id: string; initialCommand?: string }) => {
       if (!pty.initialCommand) return false
       if (executed.has(pty.id)) return false
+      if (claimed.has(pty.id)) return false
       if (typeof localStorage !== "undefined" && localStorage.getItem(initialCommandKey(pty.id))) return false
       return true
     },
+    claimInitialCommand: (pty: { id: string; initialCommand?: string }) => {
+      if (!pty.initialCommand || executed.has(pty.id) || claimed.has(pty.id)) return false
+      claimed.add(pty.id)
+      return true
+    },
+    releaseInitialCommandClaim: (id: string) => { claimed.delete(id) },
     initialCommandKey,
   }
 })

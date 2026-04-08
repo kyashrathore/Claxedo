@@ -40,7 +40,7 @@ import { SessionContextTab } from "@/components/session/session-context-tab"
 import { FileTabContent } from "@/pages/session/file-tabs"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSelectFile } from "@/components/dialog-select-file"
-import type { FileDiff, FileContent, UserMessage } from "@opencode-ai/sdk/v2"
+import type { VcsFileDiff, FileContent, UserMessage } from "@opencode-ai/sdk/v2"
 import type { ContextItem } from "@/context/prompt"
 import type { ReviewMode } from "../context/claxedo-layout/types"
 import type { MultiPaneLeafView } from "../context/claxedo-layout/selectors"
@@ -236,7 +236,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     if (toRef) query.toRef = toRef
     const params = new URLSearchParams(query)
     const res = await fetch(`${claxedoServerUrl}/api/claxedo/diff/vcs?${params}`)
-    return res.ok ? ((await res.json()) as FileDiff[]) : []
+    return res.ok ? ((await res.json()) as VcsFileDiff[]) : []
   }
 
   // Real git refs for the to/from picker
@@ -476,7 +476,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     diffStyle: "unified" as "unified" | "split",
     focusedFile: undefined as string | undefined,
     loading: false,
-    remoteDiffs: [] as FileDiff[],
+    remoteDiffs: [] as VcsFileDiff[],
     activeTab: "review" as string,
     contextOpen: false,
     openFileTabs: [] as string[],
@@ -599,7 +599,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const lastUserMessage = createMemo(() => userMessages().at(-1))
   const turnDiffs = createMemo(() => lastUserMessage()?.summary?.diffs ?? [])
 
-  const diffs = createMemo((): FileDiff[] => {
+  const diffs = createMemo((): VcsFileDiff[] => {
     if (activeMode() === "session-turn") return turnDiffs()
     if (activeMode() === "session")
       return sync.data.session_diff[props.sessionId] ?? []

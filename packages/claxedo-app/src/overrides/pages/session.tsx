@@ -23,7 +23,7 @@ import FileTree from "@/components/file-tree"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useNavigate, useParams } from "@solidjs/router"
-import { UserMessage, type Session, type FileDiff, type Message } from "@opencode-ai/sdk/v2"
+import { UserMessage, type Session, type SnapshotFileDiff, type Message } from "@opencode-ai/sdk/v2"
 import type { State } from "@/context/global-sync/types"
 import { useSDK } from "@/context/sdk"
 import { usePrompt } from "@/context/prompt"
@@ -962,7 +962,7 @@ export default function Page() {
     return out
   })
   const emptyDiffFiles: string[] = []
-  const diffFiles = createMemo(() => diffs().map((d: FileDiff) => d.file), emptyDiffFiles, { equals: same })
+  const diffFiles = createMemo(() => diffs().map((d: SnapshotFileDiff) => d.file), emptyDiffFiles, { equals: same })
   const diffsReady = createMemo(() => {
     const id = params.id
     if (!id) return true

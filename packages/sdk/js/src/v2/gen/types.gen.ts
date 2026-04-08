@@ -3696,6 +3696,15 @@ export type SessionDiffResponses = {
 
 export type SessionDiffResponse = SessionDiffResponses[keyof SessionDiffResponses]
 
+export type SessionDiffTargetsResponses = {
+  /**
+   * Successfully retrieved diff targets
+   */
+  200: Array<SnapshotFileDiff>
+}
+
+export type SessionDiffTargetsResponse = SessionDiffTargetsResponses[keyof SessionDiffTargetsResponses]
+
 export type SessionSummarizeData = {
   body?: {
     providerID: string
