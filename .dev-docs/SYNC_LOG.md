@@ -39,6 +39,47 @@ Each entry should include:
 
 ***
 
+## 2026-04-08
+
+**Status:** ✅ Success
+
+* **Branch:** `sync/2026-04-08`
+* **Previous Upstream Commit:** `00fa68b3a`
+* **Upstream Commit:** `988c9894f`
+* **Mode:** Full rebase
+* **Status:** Success
+
+### Conflicts Resolved (5 files)
+
+| File | Resolution |
+|------|------------|
+| `package.json` | Manual merge — kept our patches + upstream's new `web:dev:local` script |
+| `packages/app/src/pages/session/composer/session-composer-region.tsx` | Merged — kept our child session logic + upstream's new sessionID/agent props |
+| `packages/app/src/pages/session/message-timeline.tsx` | Merged — kept our parentID logic + upstream's titleValue rename |
+| `packages/opencode/src/server/server.ts` | Kept ours — Node.js server rewrite |
+| `packages/sdk/js/src/v2/gen/types.gen.ts` | Accepted upstream |
+
+### Upstream Drift Fixes
+
+| Area | Decision | Notes |
+|------|----------|-------|
+| `FileDiff` → `SnapshotFileDiff`/`VcsFileDiff` | Ported | SDK v2 type rename across all overrides and claxedo-ui |
+| `prompt-input.tsx` auto-accept button | Ported | Removed — upstream moved to settings |
+| `settings-general.tsx` auto-accept toggle | Skipped | Our override already has custom settings sections |
+| `layout.tsx` hoverSession/nav/popover cleanup | Ported | Removed deprecated props from layout override |
+| `session.tsx` ChangeMode simplification | Skipped | Our override has its own review panel system |
+| `session.tsx` isChildSession guards | Skipped | Already implemented in our override |
+| `Platform.quit` | Ported | Added to our platform type override |
+| `submit.ts` model+variant merge | N/A | Our override doesn't have sendFollowupDraft |
+
+### Validation
+
+* `bun install` — ✅ (removed stale ai-sdk patch refs)
+* `bun run --cwd packages/claxedo-app typecheck` — ✅ (only pre-existing upstream UI errors remain)
+* `bun run --cwd packages/claxedo-app test` — 1945/1962 pass, 17 fail (pre-existing failures)
+
+***
+
 ## 2026-04-04
 
 **Status:** ✅ Success
