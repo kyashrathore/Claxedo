@@ -1,4 +1,7 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
+import { defined } from "./fixtures/assert-helpers"
+import { execSync } from "child_process"
+import { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -46,7 +49,7 @@ const upstreamProvider = {
   connected: ["upstream"],
 }
 
-const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-grp-int-"))
+const root = await fs.mkdtemp(path.join(realpathSync(os.tmpdir()), "claxedo-grp-int-"))
 const home = path.join(root, "home")
 const data = path.join(home, ".claxedo")
 
@@ -80,28 +83,54 @@ const [{ syncCloudSession, syncCloudSessions }] = await Promise.all([
 
 let upstreamPort = 0
 let serverPort = 0
-let upstream: ReturnType<typeof Bun.serve>
+let upstream: import("@hono/node-server").ServerType
 let server: ReturnType<typeof serverMod.startServer>
+
+function sh(cmd: string) { execSync(cmd, { stdio: "ignore" }) }
+
+function initGit(directory: string) {
+  sh(`git init -b main ${directory}`)
+  sh(`git -C ${directory} config user.email test@example.com`)
+  sh(`git -C ${directory} config user.name test`)
+  sh(`git -C ${directory} add README.md`)
+  sh(`git -C ${directory} commit -m init`)
+}
 
 async function workspace(label: string, kind: "local" | "cloud" = "local") {
   const directory = path.join(root, "workspaces", `${label}-${randomUUID()}`)
   await fs.mkdir(directory, { recursive: true })
-  return await store.ensureWorkspace({
+  if (kind === "local") {
+    await fs.writeFile(path.join(directory, "README.md"), "# test\n")
+    initGit(directory)
+  }
+  const ws = defined(await store.ensureWorkspace({
     workspaceId: `ws_${randomUUID()}`,
     directory,
     kind,
-  })
+  }))
+  if (kind === "cloud") {
+    supervisor.injectRuntime(ws, `http://127.0.0.1:${upstreamPort}`)
+  }
+  return ws
 }
 
 async function workspaceInProject(label: string, projectId: string, kind: "local" | "cloud" = "local") {
   const directory = path.join(root, "workspaces", `${label}-${randomUUID()}`)
   await fs.mkdir(directory, { recursive: true })
-  return await store.ensureWorkspace({
+  if (kind === "local") {
+    await fs.writeFile(path.join(directory, "README.md"), "# test\n")
+    initGit(directory)
+  }
+  const ws = defined(await store.ensureWorkspace({
     workspaceId: `ws_${randomUUID()}`,
     directory,
     kind,
     project_id: projectId,
-  })
+  }))
+  if (kind === "cloud") {
+    supervisor.injectRuntime(ws, `http://127.0.0.1:${upstreamPort}`)
+  }
+  return ws
 }
 
 function base() {
@@ -216,7 +245,8 @@ describe("session grouping and filtering integration", () => {
     upstreamPort = await port()
     serverPort = await port()
 
-    upstream = Bun.serve({
+    const { serve } = await import("@hono/node-server")
+    upstream = serve({
       port: upstreamPort,
       hostname: "127.0.0.1",
       fetch(req) {
@@ -303,8 +333,8 @@ describe("session grouping and filtering integration", () => {
   afterAll(async () => {
     await local.shutdownLocalAgentEngine()
     await supervisor.shutdownWorkspaceSupervisor()
-    server?.stop()
-    upstream?.stop()
+    server?.close()
+    upstream?.close()
     process.env.HOME = prev.HOME
     process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
     process.env.CLAXEDO_STATE_DIR = prev.CLAXEDO_STATE_DIR
@@ -342,7 +372,7 @@ describe("session grouping and filtering integration", () => {
     const global = await createGlobalSession("Global Chat")
     expect(global.directory).toContain("global-sessions")
 
-    const meta = await fetch(`${base()}/api/claxedo/session/${encodeURIComponent(global.id)}/meta`).then((x) => x.json())
+    const meta = await fetch(`${base()}/api/claxedo/session/${encodeURIComponent(global.id)}/meta`).then((x) => x.json()) as { tags: string[] }
     expect(meta.tags).toEqual(["global", "global:default"])
 
     const flat = await fetchFlat({})

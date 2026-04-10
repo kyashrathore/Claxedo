@@ -4,16 +4,23 @@
  * Tests the full pipeline: create run with source spec, start orchestration,
  * let MockAgent drive planning + execution, verify final state.
  */
-import { describe, it, expect, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
+import { describe, it, expect, beforeEach } from "vitest";
+import Database from "better-sqlite3";
 import { initializeDb } from "../../src/app";
 import { startOrchestration, getOrchestration, getRunMetrics } from "../../src/orchestrator/executor";
 import { MockAgent, createSimpleMockAgent } from "../helpers/mock-agent";
+import { openSqliteExecutionStore } from "../../src/sdk/execution-store";
+import { openSqliteEventStore } from "../../src/orchestrator/core/services/event-store-sqlite";
 
 function makeDb() {
   const db = new Database(":memory:");
   initializeDb(db);
   return db;
+}
+
+function makeStore(db: any) {
+  const eventStore = openSqliteEventStore(db);
+  return openSqliteExecutionStore(db, eventStore);
 }
 
 function makeRun(db: any, goal: string, sourceContent?: string) {
@@ -65,11 +72,11 @@ describe("spec-flow: single task", () => {
 
   it("completes a run with a single task node", async () => {
     const runId = makeRun(db, "implement hello world", "Write a hello world function in TypeScript.");
-    const agent = createSimpleMockAgent(db, [
+    const agent = createSimpleMockAgent(db, makeStore(db), openSqliteEventStore(db), [
       { title: "Write hello world", kind: "code_gen", role: "developer", prompt: "Write it" },
     ]);
 
-    await startOrchestration(db, runId, "implement hello world", agent.spawnFn());
+    await startOrchestration(makeStore(db), runId, "implement hello world", agent.spawnFn());
     await waitForPhase(db, runId, "completed");
 
     const state = getOrchestration(runId)!;
@@ -78,7 +85,7 @@ describe("spec-flow: single task", () => {
     const nodes = db.query("SELECT status FROM nodes_current WHERE run_id = ?").all(runId) as any[];
     expect(nodes.every((n: any) => n.status === "completed")).toBe(true);
 
-    const metrics = getRunMetrics(db, runId);
+    const metrics = getRunMetrics(makeStore(db), runId);
     expect(metrics).not.toBeNull();
     expect(metrics!.completed_count).toBe(1);
     expect(metrics!.failed_count).toBe(0);
@@ -86,7 +93,7 @@ describe("spec-flow: single task", () => {
 
   it("records scratchpad output after completion", async () => {
     const runId = makeRun(db, "research topic");
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({
       match: { planner: true },
       planNodes: [{ title: "Research", kind: "research", role: "developer", prompt: "research" }],
@@ -97,7 +104,7 @@ describe("spec-flow: single task", () => {
       status: "completed",
     });
 
-    await startOrchestration(db, runId, "research topic", agent.spawnFn());
+    await startOrchestration(makeStore(db), runId, "research topic", agent.spawnFn());
     await waitForPhase(db, runId, "completed");
 
     const scratchpads = db.query("SELECT content FROM scratchpad_entries WHERE run_id = ?").all(runId) as any[];
@@ -121,7 +128,7 @@ describe("spec-flow: sequential tasks", () => {
     const completionOrder: string[] = [];
     const runId = makeRun(db, "build auth feature");
 
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({
       match: { planner: true },
       planNodes: [
@@ -142,7 +149,7 @@ describe("spec-flow: sequential tasks", () => {
       status: "completed",
     });
 
-    await startOrchestration(db, runId, "build auth feature", agent.spawnFn());
+    await startOrchestration(makeStore(db), runId, "build auth feature", agent.spawnFn());
     await waitForPhase(db, runId, "completed");
 
     const state = getOrchestration(runId)!;
@@ -168,7 +175,7 @@ describe("spec-flow: parallel tasks", () => {
   it("completes independent parallel nodes", async () => {
     const runId = makeRun(db, "parallel work");
 
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({
       match: { planner: true },
       planNodes: [
@@ -179,10 +186,10 @@ describe("spec-flow: parallel tasks", () => {
     });
     agent.addScript({ match: {}, status: "completed" });
 
-    await startOrchestration(db, runId, "parallel work", agent.spawnFn());
+    await startOrchestration(makeStore(db), runId, "parallel work", agent.spawnFn());
     await waitForPhase(db, runId, "completed");
 
-    const metrics = getRunMetrics(db, runId);
+    const metrics = getRunMetrics(makeStore(db), runId);
     expect(metrics).not.toBeNull();
     expect(metrics!.task_count).toBe(3);
     expect(metrics!.completed_count).toBe(3);
@@ -204,7 +211,7 @@ describe("spec-flow: failures", () => {
   it("marks run as completed (partial) when some tasks fail", async () => {
     const runId = makeRun(db, "mixed outcomes");
 
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({
       match: { planner: true },
       planNodes: [
@@ -217,7 +224,7 @@ describe("spec-flow: failures", () => {
     // Add a catch-all to ensure other nodes complete (if any retry)
     agent.addScript({ match: {}, status: "completed" });
 
-    await startOrchestration(db, runId, "mixed outcomes", agent.spawnFn());
+    await startOrchestration(makeStore(db), runId, "mixed outcomes", agent.spawnFn());
     await waitForPhase(db, runId, "completed", 5000);
 
     // Should be completed (partial) since at least one succeeded
@@ -228,7 +235,7 @@ describe("spec-flow: failures", () => {
   it("marks run as failed when all tasks fail", async () => {
     const runId = makeRun(db, "doom");
 
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({
       match: { planner: true },
       planNodes: [
@@ -238,7 +245,7 @@ describe("spec-flow: failures", () => {
     // Return failed status but also simulate exhausting retries by returning failed each time
     agent.addScript({ match: {}, status: "failed" });
 
-    await startOrchestration(db, runId, "doom", agent.spawnFn());
+    await startOrchestration(makeStore(db), runId, "doom", agent.spawnFn());
     await waitForPhase(db, runId, "failed", 5000);
 
     const state = getOrchestration(runId)!;
@@ -260,10 +267,10 @@ describe("spec-flow: empty plan", () => {
   it("completes immediately when planner creates no nodes", async () => {
     const runId = makeRun(db, "nothing to do");
 
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({ match: { planner: true }, planNodes: [] });
 
-    await startOrchestration(db, runId, "nothing to do", agent.spawnFn());
+    await startOrchestration(makeStore(db), runId, "nothing to do", agent.spawnFn());
     await waitForPhase(db, runId, "completed");
 
     const state = getOrchestration(runId)!;

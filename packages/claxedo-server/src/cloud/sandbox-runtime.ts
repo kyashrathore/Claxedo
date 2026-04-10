@@ -9,11 +9,13 @@ const log = Log.create({ service: "sandbox-runtime" })
 
 const DAYTONA_HEADER = "X-Daytona-Skip-Preview-Warning"
 
-export function emitProvision(workspaceId: string, step: string, extra?: Record<string, unknown>) {
+type ProvisionStep = "acquiring_sandbox" | "cloning" | "uploading_runtime" | "starting_runtime" | "waiting_health" | "ready" | "error"
+
+export function emitProvision(workspaceId: string, step: ProvisionStep, extra?: Record<string, unknown>) {
   claxedoBus.publish({
     type: "provision",
     workspaceId,
-    step: step as any,
+    step,
     ts: Date.now(),
     ...extra,
   })

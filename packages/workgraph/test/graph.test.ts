@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { Database } from "bun:sqlite"
-import { generateHash, getNextSeq, insertEvent } from "../src/db/helpers"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import Database from "better-sqlite3"
 import { createApp, initializeDb } from "../src/app"
+import { ulid as makeId } from "ulid"
 import type { WorkGraph } from "../src/model/workgraph"
 import { onNodeStatusUpdate, onSessionStopped } from "../src/orchestrator/executor"
 import { getWorkGraph, resetWorkGraph } from "../src/orchestrator/workgraph-bridge"
@@ -143,8 +143,8 @@ describe("Graph routes", () => {
     expect(graph.status).toBe(200)
 
     const body = await graph.json()
-    expect(body).toHaveLength(1)
-    expect(body[0]).toEqual(expect.objectContaining({ item_id: a.id }))
+    expect(body.items).toHaveLength(1)
+    expect(body.items[0]).toEqual(expect.objectContaining({ item_id: a.id }))
   })
 
   it("returns mission detail with children and synthesis rollup", async () => {
@@ -474,30 +474,17 @@ describe("Graph routes", () => {
       .query("SELECT node_id FROM run_node_items_current WHERE run_id = ? AND work_item_id = ?")
       .get(body.run_id, b.id) as { node_id: string }
 
+    let seqCounter = 0
     const write = (nodeId: string, content: string) => {
       const id = `evt_${ulid()}`
-      const seq = getNextSeq(db, body.run_id)
-      insertEvent(db, {
-        id,
-        run_id: body.run_id,
-        stream_id: body.run_id,
-        stream_seq: seq,
-        logical_ts: seq,
-        schema_version: 1,
-        type: "artifact_created",
-        payload_json: JSON.stringify({
-          artifact_id: `artifact_${nodeId}`,
-          node_id: nodeId,
-          type: "file",
-          content,
-        }),
-        actor_type: "agent",
-        actor_id: "test",
-        op_id: `op_${id}`,
-        prev_hash: "00000000",
-        hash: generateHash(),
-        created_at: new Date().toISOString(),
-      })
+      seqCounter++
+      const seq = seqCounter
+      db.run(
+        `INSERT INTO events (id, run_id, stream_id, stream_seq, logical_ts, schema_version, type, payload_json, actor_type, actor_id, op_id, prev_hash, hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, body.run_id, body.run_id, seq, seq, 1, "artifact_created",
+         JSON.stringify({ artifact_id: `artifact_${nodeId}`, node_id: nodeId, type: "file", content }),
+         "agent", "test", `op_${id}`, "00000000", makeId(), new Date().toISOString()]
+      )
     }
 
     write(aNode.node_id, "# Plan A")

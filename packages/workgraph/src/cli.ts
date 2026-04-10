@@ -30,21 +30,33 @@ function parseArgs(argv: string[]): {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (!arg) continue
     if (arg === "--help" || arg === "-h") {
       help = true;
-    } else if (arg === "--dry-run") {
+      continue
+    }
+    if (arg === "--dry-run") {
       dryRun = true;
-    } else if (arg === "--dir" && args[i + 1]) {
-      dir = args[++i];
-    } else if (arg === "--runtime" && args[i + 1]) {
-      const val = args[++i];
+      continue
+    }
+    const next = args[i + 1]
+    if (arg === "--dir" && next) {
+      dir = next;
+      i += 1
+      continue
+    }
+    if (arg === "--runtime" && next) {
+      const val = next;
+      i += 1
       if (val === "workspace" || val === "task") {
         runtime = val;
       } else {
         console.error(`[WorkGraph] Unknown runtime: ${val}. Use workspace or task.`);
         process.exit(1);
       }
-    } else if (!arg.startsWith("--")) {
+      continue
+    }
+    if (!arg.startsWith("--")) {
       goal = arg;
     }
   }

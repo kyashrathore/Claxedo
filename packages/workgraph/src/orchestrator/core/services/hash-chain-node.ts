@@ -20,9 +20,12 @@ class NodeHashChain implements IHashChain {
     events: EventEnvelope[],
   ): Promise<{ valid: boolean; brokenAt?: number }> {
     for (let i = 0; i < events.length; i++) {
-      const prevHash = i === 0 ? "00000000" : events[i - 1].hash;
-      const computed = await this.computeHash(events[i], prevHash);
-      if (computed !== events[i].hash) {
+      const event = events[i]
+      if (!event) return { valid: false, brokenAt: i }
+      const prev = i === 0 ? null : events[i - 1]
+      const prevHash = prev?.hash ?? "00000000"
+      const computed = await this.computeHash(event, prevHash);
+      if (computed !== event.hash) {
         return { valid: false, brokenAt: i };
       }
     }

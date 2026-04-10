@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "vitest"
 
 import { getClaxedoMcpStdioConfig, resolveClaxedoMcpCommand } from "./agent-hooks"
 
@@ -14,7 +14,7 @@ afterEach(() => {
 })
 
 function temp() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-agent-hooks-"))
+  const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "claxedo-agent-hooks-"))
   dirs.push(dir)
   return dir
 }

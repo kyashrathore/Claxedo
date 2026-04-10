@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test"
+import { describe, test, expect, beforeEach, afterEach } from "vitest"
 import { WorkGraph } from "../src/model/workgraph"
 import type { ConnectorInterface, NormalizedIssue } from "../src/orchestrator/events/connector"
 

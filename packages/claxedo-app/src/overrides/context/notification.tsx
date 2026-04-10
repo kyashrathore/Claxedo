@@ -3,7 +3,7 @@
  *
  * Removes playSound() calls from session.idle and session.error handlers.
  * Sound notifications are now handled centrally by the agent lifecycle listener
- * (useSessionStatusListener in agent-hooks/listener.ts), which only plays sound
+ * (useSessionStatusListener in claxedo-ui/context/agent-status-listener.ts), which only plays sound
  * when the session tab is not active — matching the behavior of terminal CLI agents.
  *
  * Everything else (notification list, OS notifications, persistence) is preserved.

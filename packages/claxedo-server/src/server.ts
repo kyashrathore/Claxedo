@@ -8,6 +8,16 @@ import Database from "better-sqlite3"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { AgentHookRoutes, ProcessRoutes, PtyRoutes, setupAgentHooks } from "../../workspace-runtime/src"
+import type { Hono as HonoType } from "hono"
+
+/**
+ * Mount a sub-app from workspace-runtime which may resolve a different Hono
+ * version (4.10 vs 4.12).  The types are structurally compatible at runtime;
+ * this helper confines the version-bridge cast to a single site.
+ */
+function mount(parent: HonoType, path: string, sub: { fetch: (...args: never[]) => Response | Promise<Response> }) {
+  parent.route(path, sub as unknown as HonoType)
+}
 
 const execFileAsync = promisify(execFile)
 import { capture, initPostHog, shutdownPostHog } from "./posthog"
@@ -26,12 +36,13 @@ import { createApp as createWorkGraphApp, initializeDb as initWorkGraphDb, resol
 import { createWorkGraphExecution } from "./workgraph-execution"
 import { createOpencodeEvents } from "./opencode-events"
 import { globalBus } from "./bus"
-import { subscribeMessageReplay } from "./cloud/message-replay"
 import { dataDir } from "./paths"
 import { configureWorkspaceSupervisor, shutdownWorkspaceSupervisor } from "./workspace-supervisor"
 import { configureLocalAgentEngine, shutdownLocalAgentEngine } from "./local-agent-engine"
-import { initPool, startPoolMonitor, shutdown as shutdownPool } from "./cloud/sandbox-pool"
+import { initPool, poolEnabled, startPoolMonitor, shutdown as shutdownPool } from "./cloud/sandbox-pool"
 import { configureOpenCodeAuth, opencodeHeaders } from "./opencode-auth"
+import { configureHarnessMode, getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "./architecture"
+import { createSyncDB } from "./sync-db"
 
 const app = new Hono()
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
@@ -62,7 +73,12 @@ app.post("/api/claxedo/track", async (c) => {
   return c.json({ ok: true })
 })
 
-app.get("/api/claxedo/health", (c) => c.json({ ok: true }))
+app.get("/api/claxedo/health", (c) =>
+  c.json({
+    ok: true,
+    harnessMode: getHarnessMode(),
+    workspaceProfile: getWorkspaceProfile(),
+  }))
 
 // Route cloud workspace traffic before route matching so later handlers only see local requests.
 app.use(workspaceRuntimeProxy)
@@ -74,11 +90,11 @@ app.route("/", OpenCodeCompatRoutes())
 app.get("/global/event", globalEventsHandler)
 
 // Local agent routes are handled in-process for local workspaces.
-app.route("/", AgentSessionRoutes())
+mount(app, "/", AgentSessionRoutes())
 
 // Local workspace extras are handled in-process.
-app.route("/api/claxedo/pty", PtyRoutes(upgradeWebSocket))
-app.route("/api/claxedo/process", ProcessRoutes())
+mount(app, "/api/claxedo/pty", PtyRoutes(upgradeWebSocket as unknown as Parameters<typeof PtyRoutes>[0]))
+mount(app, "/api/claxedo/process", ProcessRoutes())
 app.route("/api/claxedo/diff", DiffRoutes())
 app.route("/api/claxedo/tunnel", TunnelRoutes())
 
@@ -94,10 +110,12 @@ app.route("/", SessionMetaRoutes())
 app.route("/api/workspace", WorkspaceRoutes())
 
 // Agent hook routes (tab-context, terminal-session, agent-lifecycle, setup)
-app.route("/api/claxedo/hook", AgentHookRoutes())
+mount(app, "/api/claxedo/hook", AgentHookRoutes())
 
 export function startServer(port = 3001, opencodeUrl = "http://127.0.0.1:4096", opencodePassword?: string | null) {
   process.env.OPENCODE_URL = opencodeUrl
+  configureHarnessMode()
+  const sync = createSyncDB({ mode: getSessionWriteMode })
   initPostHog()
   mirrorProcessEvents()
   configureOpenCodeAuth(opencodePassword)
@@ -111,13 +129,20 @@ export function startServer(port = 3001, opencodeUrl = "http://127.0.0.1:4096", 
   // Persist message events from ALL workspaces (local + cloud) to claxedo DB.
   // Both local (agent-session publishGlobal) and cloud (workspace-supervisor streamGlobal)
   // events converge on globalBus — this is the single point of persistence.
-  subscribeMessageReplay(globalBus)
+  sync.subscribe_message_replay(globalBus)
 
-  // Initialize warm sandbox pool (non-blocking — failures are retried on demand)
-  initPool().catch((err) => {
-    console.error("[claxedo-server] WARN  sandbox pool init failed:", err)
-  })
-  startPoolMonitor()
+  // Initialize warm sandbox pool only when Daytona is configured.
+  poolEnabled()
+    .then((enabled) => {
+      if (!enabled) return
+      initPool().catch((err) => {
+        console.error("[claxedo-server] WARN  sandbox pool init failed:", err)
+      })
+      startPoolMonitor()
+    })
+    .catch((err) => {
+      console.error("[claxedo-server] WARN  sandbox pool enablement check failed:", err)
+    })
 
   // Initialize workgraph DB and mount routes
   const workgraphDb = new Database(path.join(dataDir(), "workgraph.db"))
@@ -162,11 +187,11 @@ export function startServer(port = 3001, opencodeUrl = "http://127.0.0.1:4096", 
         const projects = Array.isArray(data) ? data : [data]
         const results = await Promise.all(
           projects
-            .filter((p: any) => p?.id && p?.worktree)
-            .map((item: any) =>
-              resolveRepoDir(item.worktree, {
-                project_id: item.id,
-                project_name: item.name ?? null,
+            .filter((p: Record<string, unknown>) => p?.id && p?.worktree)
+            .map((item: Record<string, unknown>) =>
+              resolveRepoDir(item.worktree as string, {
+                project_id: item.id as string,
+                project_name: (item.name as string) ?? null,
               }).catch(() => null),
             ),
         )

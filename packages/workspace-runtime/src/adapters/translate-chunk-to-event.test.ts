@@ -48,6 +48,18 @@ describe("session-status", () => {
     const events = translateChunkToEvent(chunk, makeCtx())
     expect(events[0].payload.properties).toMatchObject({ status: { type: "busy" } })
   })
+
+  it("preserves recovering as a local compat status", () => {
+    const chunk: UIMessageChunk = { type: "session-status", status: "recovering" }
+    const events = translateChunkToEvent(chunk, makeCtx())
+    expect(events[0].payload.properties).toMatchObject({
+      status: {
+        type: "recovering",
+        kind: "process_restart",
+        message: "Recovering ACP client...",
+      },
+    })
+  })
 })
 
 // ---------------------------------------------------------------------------

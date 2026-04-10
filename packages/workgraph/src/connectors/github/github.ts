@@ -1,5 +1,5 @@
 import type { Octokit } from "@octokit/rest"
-import type { NormalizedIssue, ProviderPreview, ProviderQueryMode } from "../../orchestrator/events/connector"
+import type { NormalizedIssue, ProviderParams, ProviderPreview, ProviderQueryMode } from "../../orchestrator/events/connector"
 
 export class GitHubConnector {
   private octokit: Octokit
@@ -15,7 +15,15 @@ export class GitHubConnector {
       issue_number: issueNumber,
     })
 
-    const data = response.data as any
+    const data = response.data as typeof response.data & {
+      sub_issues?: unknown
+      subIssues?: unknown
+      children?: unknown
+      tracked_issues?: unknown
+      aggregate_only?: boolean
+      parent?: unknown
+      parent_issue?: unknown
+    }
     const childKeys = refs(data.sub_issues, owner, repo)
       .concat(refs(data.subIssues, owner, repo))
       .concat(refs(data.children, owner, repo))
@@ -60,7 +68,7 @@ export class GitHubConnector {
     return { label: response.data.login }
   }
 
-  async queryIssues(mode: ProviderQueryMode, params: Record<string, any>): Promise<ProviderPreview[]> {
+  async queryIssues(mode: ProviderQueryMode, params: ProviderParams): Promise<ProviderPreview[]> {
     if (mode === "single_item") {
       const owner = text(params.owner)
       const repo = text(params.repo)
@@ -114,16 +122,18 @@ function key(owner: string, repo: string, issue: unknown) {
   return `${owner}/${repo}#${issue}`
 }
 
-function ref(input: any, owner: string, repo: string) {
-  if (!input || typeof input !== "object") return
-  return key(owner, repo, input.number ?? input.issue_number ?? input.id)
+function ref(input: unknown, owner: string, repo: string) {
+  const row = item(input)
+  if (!row) return
+  return key(owner, repo, row.number ?? row.issue_number ?? row.id)
 }
 
-function refs(input: any, owner: string, repo: string) {
-  const list = Array.isArray(input) ? input : Array.isArray(input?.nodes) ? input.nodes : []
+function refs(input: unknown, owner: string, repo: string) {
+  const row = item(input)
+  const list = Array.isArray(input) ? input : Array.isArray(row?.nodes) ? row.nodes : []
   return list
-    .map((item) => ref(item, owner, repo))
-    .filter((item): item is string => !!item)
+    .map((item: unknown) => ref(item, owner, repo))
+    .filter((item: string | undefined): item is string => !!item)
 }
 
 function text(value: unknown) {
@@ -137,7 +147,7 @@ function number(value: unknown) {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
-function githubScope(params: Record<string, any>) {
+function githubScope(params: ProviderParams) {
   const owner = text(params.owner)
   const repo = text(params.repo)
   const org = text(params.org)
@@ -147,13 +157,25 @@ function githubScope(params: Record<string, any>) {
   return []
 }
 
-function meta(input: any) {
-  const repo = input?.repository_url
+function meta(input: unknown) {
+  const row = item(input)
+  const repo = row?.repository_url
   if (typeof repo !== "string") return
   const path = new URL(repo).pathname.split("/").filter(Boolean)
   const owner = path.at(-2)
   const name = path.at(-1)
-  const issueNumber = typeof input?.number === "number" ? input.number : undefined
+  const issueNumber = typeof row?.number === "number" ? row.number : undefined
   if (!owner || !name || !issueNumber) return
   return { owner, repo: name, issueNumber }
+}
+
+function item(value: unknown) {
+  if (!value || typeof value !== "object") return
+  return value as {
+    id?: string | number
+    number?: string | number
+    issue_number?: string | number
+    repository_url?: string
+    nodes?: unknown[]
+  }
 }

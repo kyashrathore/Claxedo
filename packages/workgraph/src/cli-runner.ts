@@ -6,7 +6,7 @@
  * metrics when done.
  */
 
-import Database from "better-sqlite3";
+import BetterSqlite3 from "better-sqlite3";
 
 import { initializeDb, createApp } from "./app";
 import {
@@ -21,7 +21,7 @@ import { openSqliteExecutionStore, type IExecutionStore } from "./sdk/execution-
 import { openSqlitePlannerStore } from "./sdk/planner";
 import type { IEventStore } from "./orchestrator/core/services/event-store";
 import type { NodeSummary } from "./cli-metrics";
-import { sqlite } from "./sqlite";
+import { sqlite, type RawDatabase, type SqliteDb } from "./sqlite";
 
 export interface RunOptions {
   goal: string;
@@ -45,7 +45,7 @@ const MAX_WAIT_MS = 5 * 60 * 1000; // 5 minutes
 /**
  * Create a dry-run SpawnAgentFn that auto-completes nodes without AI.
  */
-function makeDryRunSpawnFn(db: Database, executionStore: IExecutionStore, eventStore: IEventStore): SpawnAgentFn {
+function makeDryRunSpawnFn(db: RawDatabase, executionStore: IExecutionStore, eventStore: IEventStore): SpawnAgentFn {
   const { onNodeStatusUpdate, onPlanningComplete } = require("./orchestrator/executor");
   const { handleToolCall } = require("./mcp/tools");
   const plannerStore = openSqlitePlannerStore(db);
@@ -90,17 +90,17 @@ function makeDryRunSpawnFn(db: Database, executionStore: IExecutionStore, eventS
   return fn;
 }
 
-function getCurrentNodes(db: Database, runId: string): NodeSummary[] {
-  const rows = sqlite(db)
-    .query("SELECT title, status FROM nodes_current WHERE run_id = ? ORDER BY rowid ASC")
+function getCurrentNodes(db: SqliteDb, runId: string): NodeSummary[] {
+  const rows = db.query("SELECT title, status FROM nodes_current WHERE run_id = ? ORDER BY rowid ASC")
     .all(runId) as Array<{ title: string; status: string }>;
-  return rows.map((r) => ({ title: r.title || "(untitled)", status: r.status }));
+  return rows.map((row) => ({ title: row.title || "(untitled)", status: row.status }));
 }
 
 export async function runCLI(opts: RunOptions): Promise<RunResult> {
-  const db = new Database(":memory:");
+  const raw = new BetterSqlite3(":memory:");
+  const db = sqlite(raw);
   initializeDb(db);
-  const eventStore = openSqliteEventStore(db);
+  const eventStore = openSqliteEventStore(raw);
   const executionStore = openSqliteExecutionStore(db, eventStore);
 
   // Create run
@@ -115,11 +115,12 @@ export async function runCLI(opts: RunOptions): Promise<RunResult> {
     throw new Error(`Failed to create run: ${createRes.status}`);
   }
 
-  const { run_id: runId } = await createRes.json();
+  const body = await createRes.json() as { run_id: string };
+  const runId = body.run_id;
 
   // Build spawn function
   const spawnFn: SpawnAgentFn = opts.dryRun
-    ? makeDryRunSpawnFn(db, executionStore, eventStore)
+    ? makeDryRunSpawnFn(raw, executionStore, eventStore)
     : (() => { throw new Error("Real agent spawning not implemented in CLI yet. Use --dry-run for testing."); })();
 
   // Start orchestration (fire and forget)

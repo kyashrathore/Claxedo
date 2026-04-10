@@ -2,7 +2,7 @@
  * Executor contract tests — covers functions not exercised in executor.test.ts.
  */
 
-import { describe, it, expect, mock } from "bun:test";
+import { vi, describe, it, expect } from "vitest";
 import { FakeDb, makeSpawn, nextRunId } from "../helpers/fake-db";
 
 const {
@@ -91,8 +91,8 @@ describe("getRunMetadata", () => {
     const meta = getRunMetadata(db, runId);
     expect(meta).toBeDefined();
     expect(meta!.goal).toBe("test goal");
-    expect(meta!.nodes).toBeArray();
-    expect(meta!.edges).toBeArray();
+    expect(meta!.nodes).toBeInstanceOf(Array);
+    expect(meta!.edges).toBeInstanceOf(Array);
     expect(typeof meta!.startTime).toBe("number");
   });
 
@@ -258,7 +258,7 @@ describe("reconcileExecution", () => {
     const state = await startExecution(db, runId, "goal", makeSpawn());
     state.hooks = undefined;
 
-    const onRunCompleted = mock(async () => {});
+    const onRunCompleted = vi.fn(async () => {});
     // reconcile attaches the hooks; a is active (already spawned at startup)
     await reconcileExecution(db, runId, makeSpawn(), { onRunCompleted });
 

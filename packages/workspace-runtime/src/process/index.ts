@@ -35,6 +35,17 @@ interface PortRegistryEntry {
 
 const globalPortRegistry = new Map<number, PortRegistryEntry>()
 
+function obj(input: unknown): Record<string, unknown> | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return
+  return input as Record<string, unknown>
+}
+
+function code(err: unknown) {
+  if (!err || typeof err !== "object") return
+  const row = err as { code?: unknown }
+  return typeof row.code === "string" ? row.code : undefined
+}
+
 function registerPort(port: number, entry: PortRegistryEntry): void {
   globalPortRegistry.set(port, entry)
 }
@@ -385,13 +396,20 @@ const SCHEMA_FILE = ".opencode/processes.schema.json"
 async function writeSchema(directory: string): Promise<void> {
   try {
     const raw = zodToJsonSchema(Process.ProcessConfigFile)
-    const items = (raw as any)?.properties?.processes?.items
-    if (items?.properties?.id?.default) {
-      delete items.properties.id.default
+    const root = obj(raw)
+    const props = obj(root?.properties)
+    const procs = obj(props?.processes)
+    const items = obj(procs?.items)
+    const itemProps = obj(items?.properties)
+    const id = obj(itemProps?.id)
+    if (id && "default" in id) {
+      delete id.default
     }
-    if (items?.required && items?.properties) {
-      items.required = items.required.filter((field: string) => {
-        return !items.properties[field]?.default && items.properties[field]?.default !== false
+    if (Array.isArray(items?.required) && itemProps) {
+      items.required = items.required.filter((field): field is string => {
+        if (typeof field !== "string") return false
+        const item = obj(itemProps[field])
+        return !("default" in (item ?? {}))
       })
     }
     await fs.mkdir(path.dirname(schemaPath(directory)), { recursive: true })
@@ -419,8 +437,8 @@ export async function loadConfig(directory: string): Promise<Process.ProcessConf
     log.info("loaded process configs", { count: parsed.processes.length })
     void writeSchema(directory)
     return parsed.processes
-  } catch (err: any) {
-    if (err?.code === "ENOENT") {
+  } catch (err) {
+    if (code(err) === "ENOENT") {
       log.info("no process config file found", { path: filePath })
       const s = getState(directory)
       s.configs.clear()
@@ -496,8 +514,8 @@ export function watchConfig(directory: string): void {
 
     s.watcher = watcher
     log.info("watching config file", { path: cfgPath(directory) })
-  } catch (err: any) {
-    if (err?.code === "ENOENT") {
+  } catch (err) {
+    if (code(err) === "ENOENT") {
       log.info("config directory does not exist, skipping watcher", { dir: dirPath })
       return
     }
@@ -528,8 +546,8 @@ async function reconcileFromDisk(directory: string): Promise<void> {
     }
 
     newConfigs = parsed.data.processes
-  } catch (err: any) {
-    if (err?.code === "ENOENT") {
+  } catch (err) {
+    if (code(err) === "ENOENT") {
       log.info("config file deleted, stopping all processes")
       await stopAll(directory)
       s.configs.clear()

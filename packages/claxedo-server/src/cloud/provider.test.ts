@@ -1,4 +1,4 @@
-import { describe, expect, test, afterAll } from "bun:test"
+import { describe, expect, test, afterAll } from "vitest"
 import { sandboxProvider, defaultSandboxProvider, sandboxAuth, listSandboxProviders } from "./provider"
 import type { SandboxConfig } from "./types"
 

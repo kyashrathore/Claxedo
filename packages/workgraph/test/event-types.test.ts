@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { EVENT_TYPES, type EventType } from "../src/orchestrator/events/event-types";
 
 describe("EVENT_TYPES", () => {

@@ -3,6 +3,7 @@ import { defineConfig, devices } from "@playwright/test"
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 4444)
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${port}`
 const reuse = !process.env.CI
+const video = process.env.PLAYWRIGHT_VIDEO === "1" ? "on" : "retain-on-failure"
 
 export default defineConfig({
   testDir: "./e2e/playwright",
@@ -25,7 +26,7 @@ export default defineConfig({
     baseURL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    video,
   },
   projects: [
     {

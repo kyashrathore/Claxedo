@@ -9,7 +9,7 @@
  * across the real executor code paths.
  */
 
-import { describe, it, expect, mock } from "bun:test";
+import { vi, describe, it, expect } from "vitest";
 import { FakeDb, makeSpawn, makeFailingSpawn, nextRunId } from "../helpers/fake-db";
 
 const {
@@ -220,7 +220,7 @@ describe("onNodeStatusUpdate — retry logic", () => {
   it("onNodeFailed hook fires when retries are exhausted", async () => {
     const runId = nextRunId();
     const db = new FakeDb(runId).addNode("a", "active", { retry_count: 2 });
-    const onNodeFailed = mock(() => {});
+    const onNodeFailed = vi.fn(() => {});
     await startExecution(db, runId, "goal", makeSpawn(), { hooks: { onNodeFailed } });
     db.setNodeStatus("a", "active");
     db.setNodeRetryCount("a", 2);
@@ -242,7 +242,7 @@ describe("onNodeStatusUpdate — run completion", () => {
   it("onRunCompleted hook fires when run completes", async () => {
     const runId = nextRunId();
     const db = new FakeDb(runId).addNode("a", "pending");
-    const onRunCompleted = mock(async () => {});
+    const onRunCompleted = vi.fn(async () => {});
     await startExecution(db, runId, "goal", makeSpawn(), { hooks: { onRunCompleted } });
     db.setNodeStatus("a", "active");
     await onNodeStatusUpdate(db, runId, "a", "completed", makeSpawn());
@@ -270,7 +270,7 @@ describe("cancelOrchestration", () => {
     // Node starts active so startExecution doesn't try to spawn it (it's not pending).
     // The run stays in "executing" phase, ready to be cancelled.
     const db = new FakeDb(runId).addNode("a", "active");
-    const onRunCancelled = mock(() => {});
+    const onRunCancelled = vi.fn(() => {});
     const state = await startExecution(db, runId, "goal", makeSpawn(), {
       hooks: { onRunCancelled },
     });
@@ -286,7 +286,7 @@ describe("cancelOrchestration", () => {
     const spawn = makeSpawn();
     const state = await startExecution(db, runId, "goal", spawn);
     // two agents should be tracked in state.node_agents
-    const killFn = mock(() => {});
+    const killFn = vi.fn(() => {});
     cancelOrchestration(state, db, killFn);
     expect(killFn.mock.calls.length).toBe(2);
   });
@@ -301,7 +301,7 @@ describe("cancelOrchestration", () => {
   it("is a no-op when run is already in a terminal phase", async () => {
     const runId = nextRunId();
     const db = new FakeDb(runId).addNode("a", "pending");
-    const onRunCancelled = mock(() => {});
+    const onRunCancelled = vi.fn(() => {});
     const state = await startExecution(db, runId, "goal", makeSpawn(), {
       hooks: { onRunCancelled },
     });

@@ -10,7 +10,6 @@ import type {
   EventQuestionReplied,
   EventSessionError,
   EventSessionIdle,
-  EventSessionStatus,
   EventSessionUpdated,
   EventTodoUpdated,
   Message,
@@ -18,10 +17,10 @@ import type {
   PermissionRequest,
   QuestionRequest,
   Session,
-  SessionStatus,
   Todo,
   UserMessage,
 } from "@opencode-ai/sdk/v2"
+import type { StatusCompat } from "./types/status"
 
 export type DiffPart = {
   id: string
@@ -124,6 +123,14 @@ export type EventSessionUsage = {
     contextSize: number
     contextUsed: number
     cost?: { amount: number; currency: string }
+  }
+}
+
+export type EventSessionStatus = {
+  type: "session.status"
+  properties: {
+    sessionID: string
+    status: StatusCompat
   }
 }
 
@@ -407,7 +414,7 @@ export function sessionTodo(sessionID: string, todos: Array<Todo>): EventSession
   }
 }
 
-export function sessionStatus(sessionID: string, status: SessionStatus): EventSessionStatus {
+export function sessionStatus(sessionID: string, status: StatusCompat): EventSessionStatus {
   return {
     type: "session.status",
     properties: { sessionID, status },

@@ -1,8 +1,11 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
+import { defined } from "./fixtures/assert-helpers"
+import { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import { execSync } from "child_process"
 import { createServer } from "node:net"
 
 async function port() {
@@ -127,7 +130,7 @@ function emit(event: unknown) {
   upstreamSubs.forEach((ctrl) => ctrl.enqueue(chunk))
 }
 
-const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-cp-int-"))
+const root = await fs.mkdtemp(path.join(realpathSync(os.tmpdir()), "claxedo-cp-int-"))
 const home = path.join(root, "home")
 const data = path.join(home, ".claxedo")
 
@@ -195,33 +198,47 @@ const upstreamConfig = {
 
 let upstreamPort = 0
 let serverPort = 0
-let upstream: ReturnType<typeof Bun.serve>
+let upstream: import("@hono/node-server").ServerType
 let server: ReturnType<typeof serverMod.startServer>
 
 async function workspace(label: string, kind: "local" | "cloud" = "local") {
   const directory = path.join(root, "workspaces", `${label}-${randomUUID()}`)
   await fs.mkdir(directory, { recursive: true })
-  return await store.ensureWorkspace({
+  if (kind === "local") {
+    await fs.writeFile(path.join(directory, "README.md"), "# test\n")
+    sh(`git init -b main ${directory}`)
+    sh(`git -C ${directory} config user.email test@example.com`)
+    sh(`git -C ${directory} config user.name test`)
+    sh(`git -C ${directory} add README.md`)
+    sh(`git -C ${directory} commit -m init`)
+  }
+  const ws = defined(await store.ensureWorkspace({
     workspaceId: `ws_${randomUUID()}`,
     directory,
     kind,
-  })
+  }))
+  if (kind === "cloud") {
+    supervisor.injectRuntime(ws, `http://127.0.0.1:${upstreamPort}`)
+  }
+  return ws
 }
+
+function sh(cmd: string) { execSync(cmd, { stdio: "ignore" }) }
 
 async function repo(label: string) {
   const directory = path.join(root, "repos", `${label}-${randomUUID()}`)
   await fs.mkdir(directory, { recursive: true })
   await fs.writeFile(path.join(directory, "README.md"), "# test\n")
-  await Bun.$`git init -b main ${directory}`.quiet()
-  await Bun.$`git -C ${directory} config user.email test@example.com`.quiet()
-  await Bun.$`git -C ${directory} config user.name test`.quiet()
-  await Bun.$`git -C ${directory} remote add origin https://github.com/foo/${label}.git`.quiet()
-  await Bun.$`git -C ${directory} add README.md`.quiet()
-  await Bun.$`git -C ${directory} commit -m init`.quiet()
-  return await store.ensureWorkspace({
+  sh(`git init -b main ${directory}`)
+  sh(`git -C ${directory} config user.email test@example.com`)
+  sh(`git -C ${directory} config user.name test`)
+  sh(`git -C ${directory} remote add origin https://github.com/foo/${label}.git`)
+  sh(`git -C ${directory} add README.md`)
+  sh(`git -C ${directory} commit -m init`)
+  return defined(await store.ensureWorkspace({
     workspaceId: `ws_${randomUUID()}`,
     directory,
-  })
+  }))
 }
 
 function base() {
@@ -237,7 +254,8 @@ describe("control plane integration", () => {
     upstreamPort = await port()
     serverPort = await port()
 
-    upstream = Bun.serve({
+    const { serve } = await import("@hono/node-server")
+    upstream = serve({
       port: upstreamPort,
       hostname: "127.0.0.1",
       fetch(req) {
@@ -331,8 +349,8 @@ describe("control plane integration", () => {
   afterAll(async () => {
     await local.shutdownLocalAgentEngine()
     await supervisor.shutdownWorkspaceSupervisor()
-    server?.stop()
-    upstream?.stop()
+    server?.close()
+    upstream?.close()
     process.env.HOME = prev.HOME
     process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
     process.env.CLAXEDO_STATE_DIR = prev.CLAXEDO_STATE_DIR
@@ -471,11 +489,12 @@ describe("control plane integration", () => {
 
   test("bootstrap returns grouped projects instead of raw workspaces", async () => {
     const root = await workspace("boot-project")
-    const child = path.join(root.directory, "sandbox")
-    await fs.mkdir(child, { recursive: true })
+    // Create a separate git repo for the sandbox so listProjects doesn't
+    // filter it out as a subdirectory of the same repo root.
+    const child = await workspace("boot-sandbox")
     await store.ensureWorkspace({
-      workspaceId: `ws_${randomUUID()}`,
-      directory: child,
+      workspaceId: child.id,
+      directory: child.directory,
       project_id: root.project_id,
       workspace_name: "sandbox",
       kind: "local",
@@ -494,7 +513,7 @@ describe("control plane integration", () => {
     const hit = body.project.find((item) => item.id === root.project_id)
     expect(hit).toBeDefined()
     expect(hit?.worktree).toBe(root.directory)
-    expect(hit?.sandboxes).toContain(child)
+    expect(hit?.sandboxes).toContain(child.directory)
     expect(body.project.filter((item) => item.id === root.project_id)).toHaveLength(1)
   })
 
@@ -677,7 +696,7 @@ describe("control plane integration", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 500))
 
-    const saved = JSON.parse(await Bun.file(cfgFile()).text()) as {
+    const saved = JSON.parse(await fs.readFile(cfgFile(), "utf-8")) as {
       mcp: Record<string, unknown>
       runner: { type: string }
       auth: Record<string, string>

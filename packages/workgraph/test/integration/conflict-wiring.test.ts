@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
+import { describe, it, expect, beforeEach } from "vitest";
+import Database from "better-sqlite3";
 import { openSqliteEventStore, type IEventStore } from "../../src/orchestrator/core/services/event-store-sqlite";
 
 const CREATE_EVENTS_TABLE = `

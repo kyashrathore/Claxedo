@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { GateTracker } from "../src/orchestrator/graph/gates";
 
 describe("GateTracker", () => {

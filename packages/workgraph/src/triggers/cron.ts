@@ -60,7 +60,8 @@ function parseCronNext(expr: string, after: Date): Date {
     return fallback;
   }
 
-  const [minuteExpr, hourExpr, domExpr, monthExpr, dowExpr] = parts;
+  const [minuteExpr, hourExpr, domExpr, monthExpr, dowExpr] =
+    parts as [string, string, string, string, string];
 
   // Advance by 1 minute so we don't fire immediately if now matches
   const candidate = new Date(after.getTime() + 60_000);
@@ -97,7 +98,7 @@ function matchField(expr: string, value: number, _min: number, _max: number): bo
 
   // Range: a-b
   if (expr.includes("-")) {
-    const [lo, hi] = expr.split("-").map(Number);
+    const [lo, hi] = expr.split("-").map(Number) as [number, number];
     return value >= lo && value <= hi;
   }
 

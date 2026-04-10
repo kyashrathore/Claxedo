@@ -170,6 +170,7 @@ export function WorkspaceRoutes() {
         remote_directory,
         status,
       })
+      if (!ws) return c.json({ error: "failed to create workspace" }, 500)
 
       // Start provisioning immediately (fire-and-forget)
       // Frontend subscribes to /api/claxedo/events for provision progress

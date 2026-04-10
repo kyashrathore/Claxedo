@@ -4,7 +4,7 @@
  *  2. Restoring the execute bit makes node-pty spawn work again
  *  3. ensureSpawnHelper() programmatically fixes the permission
  */
-import { describe, test, expect, afterAll } from "vitest"
+import { describe, test, expect, afterAll } from "bun:test"
 import * as fs from "fs"
 import { ensureSpawnHelper, spawnHelperPath } from "./spawn-helper-fix"
 
@@ -18,20 +18,22 @@ afterAll(() => {
   } catch {}
 })
 
+const isLinux = process.platform === "linux"
+
 describe.skipIf(!helper || process.platform === "win32")("spawn-helper permission fix", () => {
-  test("node-pty fails when spawn-helper has no execute bit", async () => {
+  test.skipIf(!isLinux)("node-pty fails when spawn-helper has no execute bit", async () => {
     fs.chmodSync(helper!, 0o644)
     const { spawn } = await import("node-pty")
-    await expect(async () => {
+    expect(() => {
       const pty = spawn("/bin/echo", ["hello"], {
         name: "xterm-256color",
         cwd: "/tmp",
       })
       pty.kill()
-    }).rejects.toThrow(/posix_spawnp/)
+    }).toThrow(/posix_spawnp/)
   })
 
-  test("node-pty succeeds after restoring execute bit", async () => {
+  test.skipIf(!isLinux)("node-pty succeeds after restoring execute bit", async () => {
     fs.chmodSync(helper!, 0o755)
     const { spawn } = await import("node-pty")
     const pty = spawn("/bin/echo", ["hello"], {

@@ -129,6 +129,69 @@ async function globSearch(
   return out
 }
 
+async function git(root: string, args: string[]) {
+  const { stdout } = await execFileAsync("git", ["-c", "core.fsmonitor=false", "-c", "core.quotepath=false", ...args], { cwd: root })
+  return stdout
+}
+
+async function fileStatus(root: string) {
+  try {
+    const diff = await git(root, ["diff", "--numstat", "HEAD"])
+    const changed = diff
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [added, removed, path] = line.split("\t")
+        return {
+          path,
+          added: added === "-" ? 0 : parseInt(added ?? "0", 10),
+          removed: removed === "-" ? 0 : parseInt(removed ?? "0", 10),
+          status: "modified" as const,
+        }
+      })
+
+    const extra = await git(root, ["ls-files", "--others", "--exclude-standard"])
+    const added = await Promise.all(
+      extra
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map(async (item) => {
+          try {
+            const text = await fs.promises.readFile(path.join(root, item), "utf-8")
+            return {
+              path: item,
+              added: text.split("\n").length,
+              removed: 0,
+              status: "added" as const,
+            }
+          } catch {
+            return
+          }
+        }),
+    )
+
+    const removed = await git(root, ["diff", "--name-only", "--diff-filter=D", "HEAD"])
+    return [
+      ...changed,
+      ...added.filter((item): item is Exclude<typeof item, undefined> => !!item),
+      ...removed
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((item) => ({
+          path: item,
+          added: 0,
+          removed: 0,
+          status: "deleted" as const,
+        })),
+    ]
+  } catch {
+    return []
+  }
+}
+
 async function proxyUpstream(c: Ctx, pathname: string) {
   const input = workspaceInput(c)
   const ws = await resolveWorkspace({
@@ -250,6 +313,43 @@ function hasTag(input: unknown, tag: string) {
 
 function num(input: unknown) {
   return typeof input === "number" && Number.isFinite(input) ? input : undefined
+}
+
+type SessionTime = {
+  created: number
+  updated: number
+  archived?: number
+}
+
+type SessionRow = Record<string, unknown> & {
+  id: string
+  title?: string | null
+  time?: SessionTime
+  directory?: string
+  projectID?: string
+}
+
+function sessionRow(
+  input: Record<string, unknown>,
+  extra?: Record<string, unknown>,
+): SessionRow | undefined {
+  const id = txt(input.id)
+  if (!id) return
+  const time = rec(input.time)
+  const created = num(time?.created) ?? num(input.created_at) ?? Date.now()
+  const updated = num(time?.updated) ?? num(input.updated_at) ?? created
+  const archived = num(time?.archived) ?? num(input.archived_at)
+  return {
+    ...input,
+    ...extra,
+    id,
+    ...(input.title === undefined ? {} : { title: txt(input.title) ?? null }),
+    time: {
+      created,
+      updated,
+      ...(archived === undefined ? {} : { archived }),
+    },
+  }
 }
 
 function slug(input: string) {
@@ -642,6 +742,14 @@ export function OpenCodeCompatRoutes() {
         })
       }
     })
+    .get("/file/status", async (c) => {
+      const input = workspaceInput(c)
+      const ws = await resolveWorkspace({
+        workspaceId: input.workspaceId,
+        directory: input.directory,
+      })
+      return c.json(await fileStatus(workspaceRoot(ws, input)))
+    })
     .get("/provider", async (c) => {
       const runnerType = await resolveRunnerType(queryRunnerType(c))
       if (runnerType === "opencode") return proxyUpstream(c, "/provider")
@@ -977,37 +1085,29 @@ export function OpenCodeCompatRoutes() {
         workspaceId: input.workspaceId,
         directory: input.directory,
       })
-      const merged = new Map<string, any>()
+      const merged = new Map<string, SessionRow>()
       const locals = target ? [target] : await listWorkspaces()
       const wsby = new Map(locals.map((ws) => [ws.id, ws]))
       await Promise.allSettled(locals.map(async (ws) => {
         const body = await listLocalSessions(ws).catch(() => [])
         if (!Array.isArray(body)) return
         for (const row of body) {
-          if (!row || typeof row !== "object" || !(row as Record<string, unknown>).id) continue
-          const item = row as Record<string, any>
-          const normalized = item.time
-            ? item
-            : {
-                id: item.id,
-                title: item.title ?? null,
-                time: {
-                  created: item.created_at ?? Date.now(),
-                  updated: item.updated_at ?? item.created_at ?? Date.now(),
-                  ...(typeof item.archived_at === "number" ? { archived: item.archived_at } : {}),
-                },
-                directory: item.directory ?? ws.directory,
-                ...(ws.project_id ? { projectID: ws.project_id } : {}),
-                environment: {
-                  kind: ws.kind,
-                  ...(ws.provider ? { provider: ws.provider } : {}),
-                },
-                git: {
-                  ...(ws.repo_name ? { repo: ws.repo_name } : {}),
-                  ...(ws.git_branch ? { branch: ws.git_branch } : {}),
-                  ...(ws.git_remote ? { remote: ws.git_remote } : {}),
-                },
-              }
+          const item = rec(row)
+          if (!item) continue
+          const normalized = sessionRow(item, {
+            directory: txt(item.directory) ?? ws.directory,
+            ...(ws.project_id ? { projectID: ws.project_id } : {}),
+            environment: {
+              kind: ws.kind,
+              ...(ws.provider ? { provider: ws.provider } : {}),
+            },
+            git: {
+              ...(ws.repo_name ? { repo: ws.repo_name } : {}),
+              ...(ws.git_branch ? { branch: ws.git_branch } : {}),
+              ...(ws.git_remote ? { remote: ws.git_remote } : {}),
+            },
+          })
+          if (!normalized) continue
           const prev = merged.get(normalized.id)
           if (!prev || (normalized.time?.updated ?? 0) > (prev.time?.updated ?? 0)) {
             merged.set(normalized.id, normalized)
@@ -1030,12 +1130,12 @@ export function OpenCodeCompatRoutes() {
         if (!Array.isArray(body)) return
         const ws = wsby.get(item.workspaceId)
         for (const row of body) {
-          if (!row?.id) continue
-          const next = {
-            ...row,
+          const input = rec(row)
+          if (!input) continue
+          const next = sessionRow(input, {
             // Remap remote directory (e.g. /workspace) back to local workspace directory
             ...(ws ? { directory: ws.directory } : {}),
-            ...(ws?.project_id && !row.projectID ? { projectID: ws.project_id } : {}),
+            ...(ws?.project_id ? { projectID: ws.project_id } : {}),
             ...(ws
               ? {
                   environment: {
@@ -1049,7 +1149,8 @@ export function OpenCodeCompatRoutes() {
                   },
                 }
               : {}),
-          }
+          })
+          if (!next) continue
           const prev = merged.get(next.id)
           if (!prev || (next.time?.updated ?? 0) > (prev.time?.updated ?? 0)) {
             merged.set(next.id, next)
@@ -1066,7 +1167,9 @@ export function OpenCodeCompatRoutes() {
           merged.set(row.id, row)
         }
       }
-      const rows = await applySessionMeta([...merged.values()])
+      const rows = (await applySessionMeta([...merged.values()]))
+        .map((item) => sessionRow(item))
+        .filter((item): item is SessionRow => !!item)
       const globals = target ? [] : await taggedSessionMetas([GLOBAL_TAG], { includeHidden: true })
       for (const item of globals) {
         if (!item.directory || merged.has(item.sessionID)) continue
@@ -1179,7 +1282,7 @@ export function OpenCodeCompatRoutes() {
           }
         }
 
-        const byKey = new Map<string, any[]>()
+        const byKey = new Map<string, SessionRow[]>()
         for (const row of filtered) {
           const key = groupKey(row)
           if (!key) continue

@@ -3,7 +3,7 @@ import { createGitHubAdapter } from "./connectors/github/adapter"
 import { GitHubConnector } from "./connectors/github/github"
 import { createLinearAdapter } from "./connectors/linear/adapter"
 import { LinearConnector } from "./connectors/linear/linear"
-import type { ConnectorInterface, ProviderName, ProviderPreview, ProviderQueryMode } from "./orchestrator/events/connector"
+import type { ConnectorInterface, ProviderName, ProviderParams, ProviderQueryMode } from "./orchestrator/events/connector"
 
 export type ProviderConnection = {
   connection_id: string
@@ -50,7 +50,7 @@ export async function validate(row: ProviderConnection, overrides?: ProviderFact
 export async function preview(
   row: ProviderConnection,
   mode: ProviderQueryMode,
-  params: Record<string, any>,
+  params: ProviderParams,
   overrides?: ProviderFactory,
 ) {
   const next = connector(row, overrides)
@@ -66,16 +66,28 @@ class LinearApi {
   }
 
   async getViewer() {
-    const data = await this.request(
+    const data = await this.request<{
+      viewer?: {
+        id?: string
+        name?: string
+        email?: string
+      }
+    }>(
       `query Viewer { viewer { id name email } }`,
     )
-    return data.viewer
+    return data.viewer ?? {}
   }
 
-  async listIssues(input: { mode: ProviderQueryMode; params: Record<string, any> }) {
+  async listIssues(input: { mode: ProviderQueryMode; params: ProviderParams }) {
     const first = limit(input.params.limit)
     if (input.mode === "assigned_to_me") {
-      const data = await this.request(
+      const data = await this.request<{
+        viewer?: {
+          assignedIssues?: {
+            nodes?: Array<{ id: string }>
+          }
+        }
+      }>(
         `query Assigned($first: Int!, $filter: IssueFilter) {
           viewer {
             assignedIssues(first: $first, filter: $filter) {
@@ -90,7 +102,11 @@ class LinearApi {
       )
       return data.viewer?.assignedIssues?.nodes ?? []
     }
-    const data = await this.request(
+    const data = await this.request<{
+      issues?: {
+        nodes?: Array<{ id: string }>
+      }
+    }>(
       `query Issues($first: Int!, $filter: IssueFilter) {
         issues(first: $first, filter: $filter) {
           nodes { id }
@@ -105,7 +121,9 @@ class LinearApi {
   }
 
   async getIssue(issueId: string) {
-    const data = await this.request(
+    const data = await this.request<{
+      issue?: LinearIssue
+    }>(
       `query Issue($id: String!) {
         issue(id: $id) {
           id
@@ -131,10 +149,11 @@ class LinearApi {
       }`,
       { id: issueId },
     )
+    if (!data.issue) throw new Error(`Linear issue '${issueId}' not found`)
     return data.issue
   }
 
-  async updateIssue(issueId: string, input: Record<string, any>) {
+  async updateIssue(issueId: string, input: ProviderParams) {
     const next: Record<string, unknown> = {}
     if (typeof input.title === "string" && input.title.trim()) next.title = input.title
     if (typeof input.description === "string") next.description = input.description
@@ -160,8 +179,15 @@ class LinearApi {
     )
   }
 
-  async createIssue(teamId: string, input: Record<string, any>) {
-    const data = await this.request(
+  async createIssue(teamId: string, input: ProviderParams) {
+    const data = await this.request<{
+      issueCreate?: {
+        issue?: {
+          id: string
+          url: string
+        }
+      }
+    }>(
       `mutation IssueCreate($input: IssueCreateInput!) {
         issueCreate(input: $input) {
           success
@@ -176,20 +202,22 @@ class LinearApi {
         },
       },
     )
-    return data.issueCreate?.issue
+    const issue = data.issueCreate?.issue
+    if (!issue) throw new Error(`Linear issue creation failed for team '${teamId}'`)
+    return issue
   }
 
   private async state(issueId: string, status: string) {
     const issue = await this.getIssue(issueId)
     const list = issue?.team?.states?.nodes ?? []
     const want = pick(status)
-    const exact = list.find((state: any) => typeof state?.type === "string" && state.type.toLowerCase() === want)
+    const exact = list.find((state) => typeof state.type === "string" && state.type.toLowerCase() === want)
     if (exact?.id) return exact.id
-    const name = list.find((state: any) => typeof state?.name === "string" && label(status).includes(state.name.toLowerCase()))
+    const name = list.find((state) => typeof state.name === "string" && label(status).includes(state.name.toLowerCase()))
     return typeof name?.id === "string" ? name.id : undefined
   }
 
-  private async request(query: string, variables: Record<string, unknown> = {}) {
+  private async request<T extends Record<string, unknown>>(query: string, variables: Record<string, unknown> = {}) {
     const res = await fetch("https://api.linear.app/graphql", {
       method: "POST",
       headers: {
@@ -198,8 +226,8 @@ class LinearApi {
       },
       body: JSON.stringify({ query, variables }),
     })
-    const json = await res.json() as { data?: Record<string, any>; errors?: Array<{ message?: string }> }
-    if (res.ok && !json.errors?.length) return json.data ?? {}
+    const json = await res.json() as { data?: T; errors?: Array<{ message?: string }> }
+    if (res.ok && !json.errors?.length) return json.data ?? ({} as T)
     const msg = json.errors?.map((item) => item.message).filter(Boolean).join("; ") || `Linear request failed: ${res.status}`
     throw new Error(msg)
   }
@@ -211,8 +239,8 @@ function limit(value: unknown) {
   return Math.min(50, Math.floor(num))
 }
 
-function filter(mode: ProviderQueryMode, params: Record<string, any>) {
-  const out: Record<string, any> = {}
+function filter(mode: ProviderQueryMode, params: ProviderParams) {
+  const out: Record<string, unknown> = {}
   const teamId = text(params.teamId ?? params.team_id)
   const projectId = text(params.projectId ?? params.project_id)
   const updated = text(params.updated_since)
@@ -236,4 +264,33 @@ function label(status: string) {
 
 function text(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+type LinearNode = {
+  id?: string
+  identifier?: string
+}
+
+type LinearState = {
+  id?: string
+  name?: string
+  type?: string
+}
+
+type LinearIssue = {
+  id: string
+  identifier?: string
+  title: string
+  description?: string | null
+  url: string
+  state?: LinearState | null
+  parent?: LinearNode | null
+  children?: { nodes?: LinearNode[] } | null
+  subIssues?: { nodes?: LinearNode[] } | null
+  issues?: { nodes?: LinearNode[] } | null
+  team?: {
+    states?: {
+      nodes?: LinearState[]
+    }
+  } | null
 }

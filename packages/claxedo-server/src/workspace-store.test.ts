@@ -1,9 +1,13 @@
-import { describe, expect, test, beforeEach, afterAll } from "bun:test"
+import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { defined } from "./fixtures/assert-helpers"
+import { execSync } from "child_process"
+import { realpathSync } from "fs"
 import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 
-const root = path.join(process.cwd(), `.tmp-workspace-store-test-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync(os.tmpdir()), `workspace-store-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
@@ -14,7 +18,7 @@ function file() {
 }
 
 async function saved() {
-  return JSON.parse(await Bun.file(file()).text()) as {
+  return JSON.parse(await fs.readFile(file(), "utf-8")) as {
     version: number
     workspaces: Array<{
       id: string
@@ -38,18 +42,27 @@ async function saved() {
   }
 }
 
-async function repo(name: string) {
+function sh(cmd: string) { execSync(cmd, { stdio: "ignore" }) }
+
+/** Minimal git repo — just enough for ensureWorkspace to accept it */
+async function gitDir(name: string) {
   const dir = path.join(root, "repos", name)
-  const sb = path.join(root, "repos", `${name}-sb`)
   await fs.mkdir(dir, { recursive: true })
   await fs.writeFile(path.join(dir, "README.md"), "# test\n")
-  await Bun.$`git init -b main ${dir}`.quiet()
-  await Bun.$`git -C ${dir} config user.email test@example.com`.quiet()
-  await Bun.$`git -C ${dir} config user.name test`.quiet()
-  await Bun.$`git -C ${dir} remote add origin https://github.com/foo/${name}.git`.quiet()
-  await Bun.$`git -C ${dir} add README.md`.quiet()
-  await Bun.$`git -C ${dir} commit -m init`.quiet()
-  await Bun.$`git -C ${dir} worktree add ${sb}`.quiet()
+  sh(`git init -b main ${dir}`)
+  sh(`git -C ${dir} config user.email test@example.com`)
+  sh(`git -C ${dir} config user.name test`)
+  sh(`git -C ${dir} add README.md`)
+  sh(`git -C ${dir} commit -m init`)
+  return dir
+}
+
+/** Git repo with remote and worktree */
+async function repo(name: string) {
+  const dir = await gitDir(name)
+  const sb = path.join(root, "repos", `${name}-sb`)
+  sh(`git -C ${dir} remote add origin https://github.com/foo/${name}.git`)
+  sh(`git -C ${dir} worktree add ${sb}`)
   return { dir, sb }
 }
 
@@ -66,13 +79,14 @@ describe("workspace store", () => {
   // ── ensureWorkspace ──────────────────────────────────────────────────────
 
   test("preserves provided workspaceId and reuses it for the same directory", async () => {
-    const first = await mod.ensureWorkspace({
+    const dir = await gitDir("demo")
+    const first = defined(await mod.ensureWorkspace({
       workspaceId: "ws_123",
-      directory: "/tmp/demo",
-    })
-    const second = await mod.ensureWorkspace({
-      directory: "/tmp/demo",
-    })
+      directory: dir,
+    }))
+    const second = defined(await mod.ensureWorkspace({
+      directory: dir,
+    }))
 
     expect(first.id).toBe("ws_123")
     expect(second.id).toBe("ws_123")
@@ -85,39 +99,42 @@ describe("workspace store", () => {
   })
 
   test("generates a random id when workspaceId is omitted", async () => {
-    const ws = await mod.ensureWorkspace({ directory: "/tmp/auto-id" })
+    const dir = await gitDir("auto-id")
+    const ws = defined(await mod.ensureWorkspace({ directory: dir }))
     expect(ws.id).toBeTruthy()
     expect(ws.id).not.toBe("")
-    expect(ws.directory).toContain("/tmp/auto-id")
+    expect(ws.directory).toContain("auto-id")
   })
 
   test("defaults project_id to workspace id when not provided", async () => {
-    const ws = await mod.ensureWorkspace({
+    const dir = await gitDir("proj-default")
+    const ws = defined(await mod.ensureWorkspace({
       workspaceId: "ws_proj",
-      directory: "/tmp/proj-default",
-    })
+      directory: dir,
+    }))
     expect(ws.project_id).toBe("ws_proj")
   })
 
   test("uses explicit project_id when provided", async () => {
-    const ws = await mod.ensureWorkspace({
+    const dir = await gitDir("proj-explicit")
+    const ws = defined(await mod.ensureWorkspace({
       workspaceId: "ws_1",
       project_id: "proj_abc",
-      directory: "/tmp/proj-explicit",
-    })
+      directory: dir,
+    }))
     expect(ws.project_id).toBe("proj_abc")
   })
 
   test("reuses project_id across git worktrees from the same repo", async () => {
     const git = await repo("shared")
-    const first = await mod.ensureWorkspace({
+    const first = defined(await mod.ensureWorkspace({
       workspaceId: "ws_main",
       directory: git.dir,
-    })
-    const second = await mod.ensureWorkspace({
+    }))
+    const second = defined(await mod.ensureWorkspace({
       workspaceId: "ws_sb",
       directory: git.sb,
-    })
+    }))
 
     expect(first.project_id).toBeTruthy()
     expect(second.project_id).toBe(first.project_id)
@@ -128,17 +145,18 @@ describe("workspace store", () => {
   })
 
   test("updates metadata on re-ensure without creating duplicates", async () => {
+    const dir = await gitDir("update-meta")
     await mod.ensureWorkspace({
       workspaceId: "ws_up",
-      directory: "/tmp/update-meta",
+      directory: dir,
       kind: "local",
     })
-    const updated = await mod.ensureWorkspace({
-      directory: "/tmp/update-meta",
+    const updated = defined(await mod.ensureWorkspace({
+      directory: dir,
       kind: "cloud",
       provider: "daytona",
       sandbox_id: "sb_123",
-    })
+    }))
 
     expect(updated.id).toBe("ws_up")
     expect(updated.kind).toBe("cloud")
@@ -150,13 +168,14 @@ describe("workspace store", () => {
   })
 
   test("trims whitespace from string fields", async () => {
-    const ws = await mod.ensureWorkspace({
+    const dir = await gitDir("trim-test")
+    const ws = defined(await mod.ensureWorkspace({
       workspaceId: "  ws_trim  ",
       project_name: "  my project  ",
       workspace_name: "  main  ",
-      directory: "/tmp/trim-test",
+      directory: dir,
       repo_url: "  https://github.com/foo/bar  ",
-    })
+    }))
 
     expect(ws.project_name).toBe("my project")
     expect(ws.workspace_name).toBe("main")
@@ -164,16 +183,18 @@ describe("workspace store", () => {
   })
 
   test("defaults kind to 'local' when not specified", async () => {
-    const ws = await mod.ensureWorkspace({
-      directory: "/tmp/default-kind",
-    })
+    const dir = await gitDir("default-kind")
+    const ws = defined(await mod.ensureWorkspace({
+      directory: dir,
+    }))
     expect(ws.kind).toBe("local")
   })
 
   // ── getWorkspace / getWorkspaceByDirectory ────────────────────────────
 
   test("retrieves workspace by id", async () => {
-    await mod.ensureWorkspace({ workspaceId: "ws_get", directory: "/tmp/get-by-id" })
+    const dir = await gitDir("get-by-id")
+    await mod.ensureWorkspace({ workspaceId: "ws_get", directory: dir })
     const ws = await mod.getWorkspace("ws_get")
     expect(ws).toBeDefined()
     expect(ws!.id).toBe("ws_get")
@@ -185,11 +206,12 @@ describe("workspace store", () => {
   })
 
   test("retrieves workspace by directory", async () => {
+    const dir = await gitDir("get-by-dir")
     await mod.ensureWorkspace({
       workspaceId: "ws_dir",
-      directory: "/tmp/get-by-dir",
+      directory: dir,
     })
-    const ws = await mod.getWorkspaceByDirectory("/tmp/get-by-dir")
+    const ws = await mod.getWorkspaceByDirectory(dir)
     expect(ws).toBeDefined()
     expect(ws!.id).toBe("ws_dir")
   })
@@ -197,46 +219,52 @@ describe("workspace store", () => {
   // ── bindWorkspace ────────────────────────────────────────────────────
 
   test("rebinds workspace to a new directory", async () => {
-    await mod.ensureWorkspace({ workspaceId: "ws_bind", directory: "/tmp/old-dir" })
-    const rebound = await mod.bindWorkspace("ws_bind", "/tmp/new-dir")
+    const oldDir = await gitDir("old-dir")
+    const newDir = await gitDir("new-dir")
+    await mod.ensureWorkspace({ workspaceId: "ws_bind", directory: oldDir })
+    const rebound = defined(await mod.bindWorkspace("ws_bind", newDir))
     expect(rebound.id).toBe("ws_bind")
-    expect(rebound.directory).toContain("/tmp/new-dir")
+    expect(rebound.directory).toContain("new-dir")
 
     // old directory no longer resolves to this workspace
-    const old = await mod.getWorkspaceByDirectory("/tmp/old-dir")
+    const old = await mod.getWorkspaceByDirectory(oldDir)
     expect(old).toBeUndefined()
 
     // new directory resolves
-    const fresh = await mod.getWorkspaceByDirectory("/tmp/new-dir")
+    const fresh = await mod.getWorkspaceByDirectory(newDir)
     expect(fresh).toBeDefined()
     expect(fresh!.id).toBe("ws_bind")
   })
 
   test("bind with unknown id creates a new workspace", async () => {
-    const ws = await mod.bindWorkspace("ws_new_bind", "/tmp/new-bind-dir")
+    const dir = await gitDir("new-bind-dir")
+    const ws = defined(await mod.bindWorkspace("ws_new_bind", dir))
     expect(ws.id).toBe("ws_new_bind")
-    expect(ws.directory).toContain("/tmp/new-bind-dir")
+    expect(ws.directory).toContain("new-bind-dir")
   })
 
   test("deletes workspace by directory", async () => {
-    await mod.ensureWorkspace({ workspaceId: "ws_del", directory: "/tmp/delete-me" })
-    expect(await mod.deleteWorkspaceByDirectory("/tmp/delete-me")).toBe(true)
+    const dir = await gitDir("delete-me")
+    await mod.ensureWorkspace({ workspaceId: "ws_del", directory: dir })
+    expect(await mod.deleteWorkspaceByDirectory(dir)).toBe(true)
     expect(await mod.getWorkspace("ws_del")).toBeUndefined()
-    expect(await mod.getWorkspaceByDirectory("/tmp/delete-me")).toBeUndefined()
+    expect(await mod.getWorkspaceByDirectory(dir)).toBeUndefined()
   })
 
   // ── resolveWorkspace ─────────────────────────────────────────────────
 
   test("resolves by workspaceId when it exists", async () => {
-    await mod.ensureWorkspace({ workspaceId: "ws_resolve", directory: "/tmp/resolve-id" })
+    const dir = await gitDir("resolve-id")
+    await mod.ensureWorkspace({ workspaceId: "ws_resolve", directory: dir })
     const ws = await mod.resolveWorkspace({ workspaceId: "ws_resolve" })
     expect(ws).toBeDefined()
     expect(ws!.id).toBe("ws_resolve")
   })
 
   test("resolves by directory without creating", async () => {
-    await mod.ensureWorkspace({ workspaceId: "ws_rdir", directory: "/tmp/resolve-dir" })
-    const ws = await mod.resolveWorkspace({ directory: "/tmp/resolve-dir" })
+    const dir = await gitDir("resolve-dir")
+    await mod.ensureWorkspace({ workspaceId: "ws_rdir", directory: dir })
+    const ws = await mod.resolveWorkspace({ directory: dir })
     expect(ws).toBeDefined()
     expect(ws!.id).toBe("ws_rdir")
   })
@@ -247,14 +275,15 @@ describe("workspace store", () => {
   })
 
   test("creates workspace when create=true and directory is unknown", async () => {
+    const dir = await gitDir("auto-create")
     const ws = await mod.resolveWorkspace({
       workspaceId: "ws_auto_create",
-      directory: "/tmp/auto-create",
+      directory: dir,
       create: true,
     })
     expect(ws).toBeDefined()
     expect(ws!.id).toBe("ws_auto_create")
-    expect(ws!.directory).toContain("/tmp/auto-create")
+    expect(ws!.directory).toContain("auto-create")
   })
 
   test("returns undefined when no id or directory is provided", async () => {
@@ -265,10 +294,12 @@ describe("workspace store", () => {
   // ── listWorkspaces / listProjects ───────────────────────────────────
 
   test("lists workspaces sorted by most recently updated first", async () => {
-    await mod.ensureWorkspace({ workspaceId: "ws_list_1", directory: "/tmp/list-1" })
+    const dir1 = await gitDir("list-1")
+    await mod.ensureWorkspace({ workspaceId: "ws_list_1", directory: dir1 })
     // small delay to ensure different updated_at
     await new Promise((r) => setTimeout(r, 10))
-    await mod.ensureWorkspace({ workspaceId: "ws_list_2", directory: "/tmp/list-2" })
+    const dir2 = await gitDir("list-2")
+    await mod.ensureWorkspace({ workspaceId: "ws_list_2", directory: dir2 })
 
     const list = await mod.listWorkspaces()
     const ids = list.map((w) => w.id)
@@ -278,16 +309,18 @@ describe("workspace store", () => {
   })
 
   test("groups workspaces into projects by project_id", async () => {
+    const dirMain = await gitDir("proj-main")
+    const dirSandbox = await gitDir("proj-sandbox")
     await mod.ensureWorkspace({
       workspaceId: "ws_proj_main",
       project_id: "proj_group",
       project_name: "MyProject",
-      directory: "/tmp/proj-main",
+      directory: dirMain,
     })
     await mod.ensureWorkspace({
       workspaceId: "ws_proj_sb",
       project_id: "proj_group",
-      directory: "/tmp/proj-sandbox",
+      directory: dirSandbox,
     })
 
     const projects = await mod.listProjects()
@@ -295,7 +328,7 @@ describe("workspace store", () => {
     expect(proj).toBeDefined()
     expect(proj!.name).toBe("MyProject")
     // sandbox directories should include the non-main workspace
-    expect(proj!.sandboxes.some((s) => s.includes("/tmp/proj-sandbox"))).toBe(true)
+    expect(proj!.sandboxes.some((s) => s.includes("proj-sandbox"))).toBe(true)
   })
 
   test("marks missing local workspaces unavailable while leaving cloud workspaces available", async () => {
@@ -336,7 +369,8 @@ describe("workspace store", () => {
   // ── Persistence ──────────────────────────────────────────────────────
 
   test("persists version 3 format with sorted workspaces", async () => {
-    await mod.ensureWorkspace({ workspaceId: "ws_v2", directory: "/tmp/v2" })
+    const dir = await gitDir("v2")
+    await mod.ensureWorkspace({ workspaceId: "ws_v2", directory: dir })
     const disk = await saved()
     expect(disk.version).toBe(3)
     expect(disk.workspaces[0].id).toBe("ws_v2")
@@ -345,11 +379,12 @@ describe("workspace store", () => {
   })
 
   test("timestamps are set on creation and updated on re-ensure", async () => {
-    const first = await mod.ensureWorkspace({ workspaceId: "ws_ts", directory: "/tmp/timestamps" })
+    const dir = await gitDir("timestamps")
+    const first = defined(await mod.ensureWorkspace({ workspaceId: "ws_ts", directory: dir }))
     expect(first.created_at).toBeGreaterThan(0)
 
     await new Promise((r) => setTimeout(r, 10))
-    const second = await mod.ensureWorkspace({ directory: "/tmp/timestamps" })
+    const second = defined(await mod.ensureWorkspace({ directory: dir }))
     expect(second.created_at).toBe(first.created_at)
     expect(second.updated_at).toBeGreaterThanOrEqual(first.updated_at)
   })

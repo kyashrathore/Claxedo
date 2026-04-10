@@ -44,7 +44,12 @@ type Lost = {
   message: string
 }
 
-type Control = Bind | Turn | Lost
+type ConfigUpdate = {
+  type: "config.update"
+  patch: SessionConfigPatch
+}
+
+type Control = Bind | Turn | Lost | ConfigUpdate
 
 type Row =
   | {
@@ -559,6 +564,10 @@ export class RuntimeStore {
       })
       return
     }
+    if (control.type === "config.update") {
+      this.applyConfigUpdate(row.sessionId, control.patch)
+      return
+    }
     if (control.type === "process.lost") {
       this.db.prepare(
         "UPDATE pending_permission SET status = 'stale', updated_at = ? WHERE session_id = ? AND status = 'pending'",
@@ -899,6 +908,7 @@ export class RuntimeStore {
           id,
           directory,
           title,
+          agent_session_id,
           created_at,
           updated_at,
           status,
@@ -912,6 +922,7 @@ export class RuntimeStore {
       id: string
       directory: string
       title: string | null
+      agent_session_id: string | null
       created_at: number
       updated_at: number
       status: string | null
@@ -1113,7 +1124,7 @@ export class RuntimeStore {
     }
   }
 
-  updateSessionConfig(id: string, patch: SessionConfigPatch) {
+  private applyConfigUpdate(id: string, patch: SessionConfigPatch) {
     const prev = this.db
       .prepare(`
         SELECT
@@ -1136,7 +1147,7 @@ export class RuntimeStore {
       variant: string | null
       agent: string | null
     } | null
-    if (!prev?.runner_type && !patch.runner?.type) return null
+    if (!prev?.runner_type && !patch.runner?.type) return
     this.db.prepare(`
       UPDATE session
       SET runner_type = ?, runner_binary = ?, runner_model = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, updated_at = ?
@@ -1152,6 +1163,21 @@ export class RuntimeStore {
       Date.now(),
       id,
     )
+  }
+
+  updateSessionConfig(id: string, patch: SessionConfigPatch) {
+    const row: Row = {
+      seq: this.next(id),
+      ts: Date.now(),
+      sessionId: id,
+      kind: "control",
+      control: {
+        type: "config.update",
+        patch,
+      },
+    }
+    this.apply(row)
+    this.write(row)
     return this.getSessionConfig(id)
   }
 }

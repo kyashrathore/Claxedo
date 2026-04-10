@@ -12,7 +12,7 @@
  * function reference captured at init time reads the latest test-supplied
  * responses and records calls for assertion.
  */
-import { beforeAll, beforeEach, describe, expect, test, mock } from "bun:test"
+import { beforeAll, beforeEach, describe, expect, test, mock, spyOn } from "bun:test"
 import { createRoot } from "solid-js"
 
 const react = globalThis as typeof globalThis & {
@@ -415,6 +415,9 @@ beforeAll(async () => {
 })
 
 beforeEach(() => {
+  // Suppress expected console.error noise from tests that intentionally trigger fetch failures
+  spyOn(console, "error").mockImplementation(() => {})
+
   // Reset shared state between tests
   currentDirectory = DEFAULT_DIRECTORY
   mockEmitter = createMockEmitter()

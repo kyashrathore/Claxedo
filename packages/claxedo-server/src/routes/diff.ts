@@ -27,8 +27,9 @@ async function runGit(args: string[], cwd: string): Promise<string> {
   try {
     const { stdout } = await execFileAsync("git", args, { cwd, maxBuffer: 50 * 1024 * 1024 })
     return stdout
-  } catch (err: any) {
-    throw new Error(err.stderr?.trim() || `git ${args[0]} failed`)
+  } catch (err) {
+    const e = err as { stderr?: string }
+    throw new Error(e.stderr?.trim() || `git ${args[0]} failed`)
   }
 }
 

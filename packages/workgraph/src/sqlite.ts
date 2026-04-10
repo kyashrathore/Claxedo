@@ -1,4 +1,6 @@
-import type Database from "better-sqlite3"
+import BetterSqlite3 from "better-sqlite3"
+
+export type RawDatabase = InstanceType<typeof BetterSqlite3>
 
 type Stmt = {
   get: (...params: any[]) => any
@@ -13,10 +15,10 @@ type Compat = {
   transaction?: (fn: (...args: any[]) => any) => (...args: any[]) => any
   close?: () => void
   filename?: string
-  raw?: () => Database | null
+  raw?: () => RawDatabase | null
 }
 
-export type SqliteInput = Database | Compat
+export type SqliteInput = RawDatabase | Compat
 
 export type SqliteDb = {
   run: (sql: string, params?: any[]) => any
@@ -24,7 +26,7 @@ export type SqliteDb = {
   exec: (sql: string) => any
   close: () => void
   filename: string
-  raw: () => Database | null
+  raw: () => RawDatabase | null
 }
 
 type Client = {

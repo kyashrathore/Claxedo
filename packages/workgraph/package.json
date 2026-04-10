@@ -7,7 +7,10 @@
   "types": "./src/index.ts",
   "scripts": {
     "dev": "bun run src/server.ts",
-    "test": "bun test --conditions=browser"
+    "test": "node ./node_modules/vitest/vitest.mjs run",
+    "typecheck": "bun x tsc --noEmit -p tsconfig.src.json",
+    "typecheck:src": "bun x tsc --noEmit -p tsconfig.src.json",
+    "typecheck:test": "bun x tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@hono/zod-validator": "catalog:",
@@ -19,9 +22,8 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@tsconfig/bun": "catalog:",
     "@types/better-sqlite3": "^7.6.0",
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "^2.1.8"
   }
 }

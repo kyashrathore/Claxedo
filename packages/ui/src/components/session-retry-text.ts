@@ -1,4 +1,4 @@
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { SessionStatus } from "@opencode-ai/sdk/v2"
 import type { UiI18n } from "../context/i18n"
 
 export function sessionRetryMessage(status: Extract<SessionStatus, { type: "retry" | "recovering" }>, i18n: UiI18n) {

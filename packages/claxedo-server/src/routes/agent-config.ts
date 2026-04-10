@@ -41,6 +41,9 @@ import {
 } from "../local-agent-engine"
 import { getSessionRunner, normalize, setSessionRunner } from "../session-runner"
 import { resolveWorkspace } from "../workspace-store"
+import { configureHarnessMode, getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../architecture"
+import { hasHarnessHost } from "../harness/host"
+import { listWorkspaceRuntimes, stopRuntime } from "../workspace-supervisor"
 
 type AcpConfigOption = {
   id: string
@@ -107,6 +110,49 @@ async function refreshOptions(ws: NonNullable<Awaited<ReturnType<typeof resolveW
 export const AgentConfigRoutes = lazy(
   () =>
     new Hono()
+      .get("/harness", async (c) =>
+        c.json({
+          mode: getHarnessMode(),
+          profile: getWorkspaceProfile(),
+          write_mode: getSessionWriteMode(),
+          experimental: true,
+        }))
+      .post("/harness", async (c) => {
+        const body = await c.req.json<{ mode?: string }>().catch(() => null)
+        if (body?.mode !== "workspace" && body?.mode !== "central") {
+          return c.json({ error: "mode must be 'workspace' or 'central'" }, 400)
+        }
+        const prev = getHarnessMode()
+        const config = await loadUserConfig()
+        config.harness = {
+          ...(config.harness ?? {}),
+          mode: body.mode,
+        }
+        await saveUserConfig(config)
+        const mode = configureHarnessMode(body.mode)
+
+        // P1 fix: restart running workspace runtimes so they pick up the new
+        // profile (set via CLAXEDO_HARNESS_MODE env at boot).  They will be
+        // lazily restarted with the correct profile on next request.
+        let restarted = 0
+        if (mode !== prev) {
+          const running = listWorkspaceRuntimes()
+          await Promise.allSettled(running.map((rt) => stopRuntime(rt.workspaceId, "harness-mode-change")))
+          restarted = running.length
+        }
+
+        return c.json({
+          ok: true,
+          mode,
+          profile: getWorkspaceProfile(),
+          write_mode: getSessionWriteMode(),
+          experimental: true,
+          ...(restarted > 0 ? { runtimes_restarted: restarted } : {}),
+          ...(mode === "central" && !hasHarnessHost()
+            ? { warning: "No central runner host is configured. Sessions will return a placeholder error until a host is registered via configureHarnessHost()." }
+            : {}),
+        })
+      })
       .get("/runner", async (c) => {
         const directory = c.req.query("directory") || c.req.header("x-opencode-directory")
         const workspaceId = c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id")

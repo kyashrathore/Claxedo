@@ -12,21 +12,27 @@
  *  4. Project kind must reflect the main workspace's kind
  *  5. Sandbox naming must not reduce to a misleading basename
  */
-import { describe, expect, test, beforeEach, afterAll } from "bun:test"
+import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { defined } from "./fixtures/assert-helpers"
+import { execSync } from "child_process"
+import { realpathSync } from "fs"
 import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 
 // Isolated data dir so we don't touch the real ~/.claxedo
-const root = path.join(process.cwd(), `.tmp-ws-integrity-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync(os.tmpdir()), `ws-integrity-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const mod = await import("./workspace-store")
 
 /** Read the persisted workspaces.json from disk */
+function sh(cmd: string) { execSync(cmd, { stdio: "ignore" }) }
+
 async function saved() {
-  return JSON.parse(await Bun.file(path.join(root, "workspaces.json")).text()) as {
+  return JSON.parse(await fs.readFile(path.join(root, "workspaces.json"), "utf-8")) as {
     version: number
     workspaces: Array<{
       id: string
@@ -56,13 +62,13 @@ async function repo(name: string) {
   const sb = path.join(root, "repos", `${name}-sb`)
   await fs.mkdir(dir, { recursive: true })
   await fs.writeFile(path.join(dir, "README.md"), "# test\n")
-  await Bun.$`git init -b main ${dir}`.quiet()
-  await Bun.$`git -C ${dir} config user.email test@example.com`.quiet()
-  await Bun.$`git -C ${dir} config user.name test`.quiet()
-  await Bun.$`git -C ${dir} remote add origin https://github.com/acme/${name}.git`.quiet()
-  await Bun.$`git -C ${dir} add README.md`.quiet()
-  await Bun.$`git -C ${dir} commit -m init`.quiet()
-  await Bun.$`git -C ${dir} worktree add ${sb}`.quiet()
+  sh(`git init -b main ${dir}`)
+  sh(`git -C ${dir} config user.email test@example.com`)
+  sh(`git -C ${dir} config user.name test`)
+  sh(`git -C ${dir} remote add origin https://github.com/acme/${name}.git`)
+  sh(`git -C ${dir} add README.md`)
+  sh(`git -C ${dir} commit -m init`)
+  sh(`git -C ${dir} worktree add ${sb}`)
   return { dir, sb }
 }
 
@@ -224,12 +230,12 @@ describe("workspace store integrity", () => {
 
       // Local checkout created first — it IS the original project.
       // Its id equals its project_id (self-root).
-      const local = await mod.ensureWorkspace({
+      const local = defined(await mod.ensureWorkspace({
         workspaceId: "proj_cool",
         project_id: "proj_cool",
         directory: git.dir,
         kind: "local",
-      })
+      }))
 
       // Cloud sandbox added later with workspace_name="main"
       const cloudDir = path.join(root, "cloud", "workspaces", "proj_cool", "main")
@@ -639,7 +645,7 @@ describe("workspace store integrity", () => {
     test("first workspace for a repo creates a project with unique id", async () => {
       const git = await repo("my-service")
 
-      const ws = await mod.ensureWorkspace({ directory: git.dir })
+      const ws = defined(await mod.ensureWorkspace({ directory: git.dir }))
 
       // A project must exist for this workspace
       const projects = await mod.listProjects()
@@ -671,12 +677,12 @@ describe("workspace store integrity", () => {
     test("project name falls back to directory basename when no git remote", async () => {
       const dir = path.join(root, "repos", "no-remote-proj")
       await fs.mkdir(dir, { recursive: true })
-      await Bun.$`git init -b main ${dir}`.quiet()
-      await Bun.$`git -C ${dir} config user.email test@example.com`.quiet()
-      await Bun.$`git -C ${dir} config user.name test`.quiet()
+      sh(`git init -b main ${dir}`)
+      sh(`git -C ${dir} config user.email test@example.com`)
+      sh(`git -C ${dir} config user.name test`)
       await fs.writeFile(path.join(dir, "README.md"), "# test\n")
-      await Bun.$`git -C ${dir} add README.md`.quiet()
-      await Bun.$`git -C ${dir} commit -m init`.quiet()
+      sh(`git -C ${dir} add README.md`)
+      sh(`git -C ${dir} commit -m init`)
       // No remote added
 
       await mod.ensureWorkspace({ directory: dir })
@@ -725,15 +731,15 @@ describe("workspace store integrity", () => {
       const git = await repo("wt-parent")
 
       // Main checkout
-      const main = await mod.ensureWorkspace({ directory: git.dir })
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
 
       // Git worktree (sandbox) — simulates what POST /experimental/worktree does
-      const wt = await mod.ensureWorkspace({
+      const wt = defined(await mod.ensureWorkspace({
         project_id: main.project_id,
         project_name: main.project_name,
         workspace_name: "feature-branch",
         directory: git.sb,
-      })
+      }))
 
       expect(wt.project_id).toBe(main.project_id)
       expect(wt.id).not.toBe(main.id)
@@ -742,12 +748,12 @@ describe("workspace store integrity", () => {
     test("local worktree has kind=local", async () => {
       const git = await repo("wt-kind")
 
-      const main = await mod.ensureWorkspace({ directory: git.dir })
-      const wt = await mod.ensureWorkspace({
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
+      const wt = defined(await mod.ensureWorkspace({
         project_id: main.project_id,
         workspace_name: "fix-123",
         directory: git.sb,
-      })
+      }))
 
       expect(wt.kind).toBe("local")
     })
@@ -755,7 +761,7 @@ describe("workspace store integrity", () => {
     test("local worktree appears as sandbox under the same project, not as separate project", async () => {
       const git = await repo("wt-grouping")
 
-      const main = await mod.ensureWorkspace({ directory: git.dir })
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
       await mod.ensureWorkspace({
         project_id: main.project_id,
         workspace_name: "feature",
@@ -779,14 +785,14 @@ describe("workspace store integrity", () => {
       const git = await repo("wt-meta")
 
       await mod.ensureWorkspace({ directory: git.dir })
-      const wt = await mod.ensureWorkspace({
-        project_id: (await mod.getWorkspaceByDirectory(git.dir))!.project_id,
+      const wt = defined(await mod.ensureWorkspace({
+        project_id: defined(await mod.getWorkspaceByDirectory(git.dir)).project_id,
         directory: git.sb,
-      })
+      }))
 
       // Both share the same repo_key (git common dir)
-      const main = await mod.getWorkspaceByDirectory(git.dir)
-      expect(wt.repo_key).toBe(main!.repo_key)
+      const main = defined(await mod.getWorkspaceByDirectory(git.dir))
+      expect(wt.repo_key).toBe(main.repo_key)
       expect(wt.git_remote).toBe("https://github.com/acme/wt-meta.git")
     })
 
@@ -796,16 +802,16 @@ describe("workspace store integrity", () => {
       const sb2 = path.join(root, "repos", "multi-wt-sb2")
       await fs.mkdir(dir, { recursive: true })
       await fs.writeFile(path.join(dir, "README.md"), "# test\n")
-      await Bun.$`git init -b main ${dir}`.quiet()
-      await Bun.$`git -C ${dir} config user.email test@example.com`.quiet()
-      await Bun.$`git -C ${dir} config user.name test`.quiet()
-      await Bun.$`git -C ${dir} remote add origin https://github.com/acme/multi-wt.git`.quiet()
-      await Bun.$`git -C ${dir} add README.md`.quiet()
-      await Bun.$`git -C ${dir} commit -m init`.quiet()
-      await Bun.$`git -C ${dir} worktree add ${sb1}`.quiet()
-      await Bun.$`git -C ${dir} worktree add ${sb2}`.quiet()
+      sh(`git init -b main ${dir}`)
+      sh(`git -C ${dir} config user.email test@example.com`)
+      sh(`git -C ${dir} config user.name test`)
+      sh(`git -C ${dir} remote add origin https://github.com/acme/multi-wt.git`)
+      sh(`git -C ${dir} add README.md`)
+      sh(`git -C ${dir} commit -m init`)
+      sh(`git -C ${dir} worktree add ${sb1}`)
+      sh(`git -C ${dir} worktree add ${sb2}`)
 
-      const main = await mod.ensureWorkspace({ directory: dir })
+      const main = defined(await mod.ensureWorkspace({ directory: dir }))
       await mod.ensureWorkspace({
         project_id: main.project_id,
         workspace_name: "wt1",
@@ -838,13 +844,13 @@ describe("workspace store integrity", () => {
       const git = await repo("cloud-grp")
 
       // Create the project via local checkout
-      const main = await mod.ensureWorkspace({ directory: git.dir })
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
       const projectId = main.project_id!
 
       // Create cloud workspace under same project (simulates POST /create with projectId)
       const cloudDir = path.join(root, "cloud", "workspaces", projectId, "main")
       await fs.mkdir(cloudDir, { recursive: true })
-      const cloud = await mod.ensureWorkspace({
+      const cloud = defined(await mod.ensureWorkspace({
         workspaceId: `ws_${Date.now().toString(36)}`,
         project_id: projectId,
         project_name: "cloud-grp",
@@ -853,7 +859,7 @@ describe("workspace store integrity", () => {
         kind: "cloud",
         provider: "daytona",
         remote_directory: "/workspace",
-      })
+      }))
 
       expect(cloud.kind).toBe("cloud")
       expect(cloud.project_id).toBe(projectId)
@@ -867,7 +873,7 @@ describe("workspace store integrity", () => {
     test("cloud workspace appears as sandbox, not as project worktree", async () => {
       const git = await repo("cloud-sandbox")
 
-      const main = await mod.ensureWorkspace({ directory: git.dir })
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
       const projectId = main.project_id!
 
       const cloudDir = path.join(root, "cloud", "workspaces", projectId, "main")
@@ -896,11 +902,11 @@ describe("workspace store integrity", () => {
 
     test("cloud workspace has kind=cloud and provider set", async () => {
       const git = await repo("cloud-kind")
-      const main = await mod.ensureWorkspace({ directory: git.dir })
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
 
       const cloudDir = path.join(root, "cloud", "workspaces", main.project_id!, "dev")
       await fs.mkdir(cloudDir, { recursive: true })
-      const cloud = await mod.ensureWorkspace({
+      const cloud = defined(await mod.ensureWorkspace({
         workspaceId: `ws_${Date.now().toString(36)}`,
         project_id: main.project_id!,
         workspace_name: "dev",
@@ -908,7 +914,7 @@ describe("workspace store integrity", () => {
         kind: "cloud",
         provider: "daytona",
         remote_directory: "/workspace",
-      })
+      }))
 
       expect(cloud.kind).toBe("cloud")
       expect(cloud.provider).toBe("daytona")
@@ -917,7 +923,7 @@ describe("workspace store integrity", () => {
 
     test("cloud workspace remote_directory does not become a separate workspace", async () => {
       const git = await repo("cloud-no-leak")
-      const main = await mod.ensureWorkspace({ directory: git.dir })
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
 
       const cloudDir = path.join(root, "cloud", "workspaces", main.project_id!, "main")
       await fs.mkdir(cloudDir, { recursive: true })
@@ -943,7 +949,7 @@ describe("workspace store integrity", () => {
 
     test("multiple cloud workspaces under one project", async () => {
       const git = await repo("cloud-multi")
-      const main = await mod.ensureWorkspace({ directory: git.dir })
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
       const projectId = main.project_id!
 
       const cloudMain = path.join(root, "cloud", "workspaces", projectId, "main")
@@ -1034,7 +1040,7 @@ describe("workspace store integrity", () => {
       const git = await repo("reopen-proj")
 
       // Create project with main + local worktree + cloud sandbox
-      const main = await mod.ensureWorkspace({ directory: git.dir })
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
       const projectId = main.project_id!
 
       await mod.ensureWorkspace({
@@ -1062,7 +1068,7 @@ describe("workspace store integrity", () => {
 
       // "Close" is frontend-only (localStorage), workspace-store is untouched.
       // Re-ensure the main directory — simulates user re-opening the project.
-      const reopened = await mod.ensureWorkspace({ directory: git.dir })
+      const reopened = defined(await mod.ensureWorkspace({ directory: git.dir }))
 
       // Same workspace, same project_id — no duplicate
       expect(reopened.id).toBe(main.id)
@@ -1078,7 +1084,7 @@ describe("workspace store integrity", () => {
     test("re-ensuring via resolveWorkspace(create=true) deduplicates", async () => {
       const git = await repo("resolve-reopen")
 
-      const main = await mod.ensureWorkspace({ directory: git.dir })
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
       const projectId = main.project_id!
 
       // Add a worktree
@@ -1159,7 +1165,7 @@ describe("workspace store integrity", () => {
 
     test("workspace count does not grow on repeated re-ensures", async () => {
       const git = await repo("no-growth")
-      const main = await mod.ensureWorkspace({ directory: git.dir })
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
       const projectId = main.project_id!
 
       await mod.ensureWorkspace({
@@ -1250,7 +1256,7 @@ describe("workspace store integrity", () => {
       const git = await repo("subdir-test")
 
       // Create the root workspace
-      const main = await mod.ensureWorkspace({ directory: git.dir })
+      const main = defined(await mod.ensureWorkspace({ directory: git.dir }))
       const projectId = main.project_id!
 
       // Simulate opening a session from a subdirectory (e.g. packages/claxedo-server)

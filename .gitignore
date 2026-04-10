@@ -46,7 +46,6 @@ packages/claxedo-app/dist-opencode/
 packages/claxedo-app/e2e/playwright/report/
 packages/claxedo-app/e2e/playwright/screenshots/
 packages/claxedo-app/e2e/playwright/test-results/
-packages/claxedo-app/e2e/agent-browser/screenshots/
 
 # Electron build outputs
 packages/claxedo-desktop/resources/acp/

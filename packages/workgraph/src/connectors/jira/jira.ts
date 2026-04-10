@@ -11,10 +11,10 @@ export interface NormalizedIssue {
 }
 
 interface JiraClient {
-  getIssue(issueKey: string): Promise<any>;
-  updateIssue(issueKey: string, fields: Record<string, any>): Promise<void>;
+  getIssue(issueKey: string): Promise<JiraIssue>;
+  updateIssue(issueKey: string, fields: Record<string, unknown>): Promise<void>;
   addComment(issueKey: string, body: string): Promise<void>;
-  createIssue(projectKey: string, fields: Record<string, any>): Promise<any>;
+  createIssue(projectKey: string, fields: Record<string, unknown>): Promise<{ key: string; self: string }>;
 }
 
 export class JiraConnector {
@@ -25,7 +25,7 @@ export class JiraConnector {
   }
 
   async hydrateIssue(issueKey: string): Promise<NormalizedIssue> {
-    const data = await this.client.getIssue(issueKey) as any;
+    const data = await this.client.getIssue(issueKey);
     const childKeys = refs(data.fields?.subtasks)
       .concat(refs(data.fields?.children))
     return {
@@ -42,7 +42,7 @@ export class JiraConnector {
   }
 
   async updateIssue(issueKey: string, updates: { title?: string; status?: string; description?: string }): Promise<void> {
-    const fields: Record<string, any> = {};
+    const fields: Record<string, unknown> = {};
     if (updates.title) fields.summary = updates.title;
     if (updates.description) fields.description = updates.description;
     if (updates.status) fields.status = updates.status;
@@ -72,15 +72,42 @@ export class JiraConnector {
   }
 }
 
-function ref(input: any) {
-  if (!input || typeof input !== "object") return
-  if (typeof input.key === "string") return input.key
-  if (typeof input.id === "string") return input.id
+function ref(input: unknown) {
+  const row = item(input)
+  if (!row) return
+  if (typeof row.key === "string") return row.key
+  if (typeof row.id === "string") return row.id
 }
 
-function refs(input: any) {
+function refs(input: unknown) {
   if (!Array.isArray(input)) return []
   return input
-    .map((item) => ref(item))
+    .map((row) => ref(row))
     .filter((item): item is string => !!item)
+}
+
+type JiraRef = {
+  id?: string
+  key?: string
+}
+
+type JiraIssue = {
+  key: string
+  self: string
+  fields: {
+    summary: string
+    description?: string | null
+    status: {
+      name: string
+    }
+    parent?: JiraRef | null
+    subtasks?: JiraRef[] | null
+    children?: JiraRef[] | null
+    aggregate_only?: boolean
+  }
+}
+
+function item(value: unknown) {
+  if (!value || typeof value !== "object") return
+  return value as JiraRef
 }

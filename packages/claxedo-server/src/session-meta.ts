@@ -168,6 +168,7 @@ export async function putSessionMeta(
     directory?: string | null
     title?: string | null
     parentID?: string | null
+    archived?: number | null
     tags?: string[]
     attachments?: SessionAttachment[]
   },
@@ -182,7 +183,7 @@ export async function putSessionMeta(
       directory: input.directory ?? input.ws?.directory ?? prev?.directory ?? "",
       title: input.title === undefined ? prev?.title ?? null : input.title,
       parent_session_id: input.parentID === undefined ? prev?.parent_session_id ?? null : input.parentID,
-      archived_at: prev?.archived_at ?? null,
+      archived_at: input.archived === undefined ? prev?.archived_at ?? null : input.archived,
       created_at: prev?.created_at ?? stamp,
       updated_at: stamp,
     }).onConflictDoUpdate({
@@ -193,6 +194,7 @@ export async function putSessionMeta(
         directory: input.directory ?? input.ws?.directory ?? prev?.directory ?? "",
         title: input.title === undefined ? prev?.title ?? null : input.title,
         parent_session_id: input.parentID === undefined ? prev?.parent_session_id ?? null : input.parentID,
+        archived_at: input.archived === undefined ? prev?.archived_at ?? null : input.archived,
         updated_at: stamp,
       },
     }).run()
@@ -311,6 +313,24 @@ export async function taggedSessionMetas(tags: string[], input?: { includeHidden
     .map((sessionID) => meta.get(sessionID))
     .filter((item): item is SessionMeta => !!item)
     .filter((item) => input?.includeHidden || item.tags.includes(GLOBAL_SHOW_TAG))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+export async function listSessionMetas(input?: {
+  workspaceID?: string
+  directory?: string
+  includeArchived?: boolean
+}) {
+  const rows = ClaxedoDB.use((db) => db.select().from(ClaxedoSessionMetaTable).all())
+  const hit = rows
+    .filter((item) => !input?.workspaceID || item.workspace_id === input.workspaceID)
+    .filter((item) => !input?.directory || item.directory === input.directory)
+    .filter((item) => input?.includeArchived || !item.archived_at)
+    .map((item) => item.session_id)
+  const meta = await sessionMetas(hit)
+  return hit
+    .map((item) => meta.get(item))
+    .filter((item): item is SessionMeta => !!item)
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 

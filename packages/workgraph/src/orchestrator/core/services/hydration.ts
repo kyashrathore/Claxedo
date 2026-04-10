@@ -12,7 +12,7 @@ export interface NormalizedIssue {
 
 export interface ConnectorInterface {
   provider: string;
-  hydrateIssue(params: Record<string, any>): Promise<NormalizedIssue>;
+  hydrateIssue(params: Record<string, unknown>): Promise<NormalizedIssue>;
 }
 
 export interface FeatureSlice {
@@ -24,7 +24,7 @@ export interface FeatureSlice {
 export async function hydrateFeatureSlice(
   connector: ConnectorInterface,
   featureId: string,
-  issueParams: Record<string, any>[]
+  issueParams: Record<string, unknown>[]
 ): Promise<FeatureSlice> {
   const issues = await Promise.all(
     issueParams.map(params => connector.hydrateIssue(params))

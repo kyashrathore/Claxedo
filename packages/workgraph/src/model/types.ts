@@ -1,6 +1,7 @@
 export type SourceKind =
   | "spec"
   | "doc"
+  | "markdown"
   | "task"
   | "issue"
   | "template_instance"
@@ -41,7 +42,7 @@ export interface WorkItem {
   labels: string[]
   context?: string
   provider?: string
-  providerMeta?: Record<string, any>
+  providerMeta?: Record<string, unknown>
   providerUrl?: string
   createdAt: string
   updatedAt: string

@@ -1,9 +1,11 @@
+import { realpathSync } from "fs"
 import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { afterAll, beforeEach, describe, expect, test } from "bun:test"
 
-const root = path.join(process.cwd(), `.tmp-mcp-resolver-test-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync(os.tmpdir()), `mcp-resolver-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 

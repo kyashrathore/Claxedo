@@ -5,8 +5,8 @@
  * Uses an in-memory SQLite database to exercise the real SQL.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
+import { describe, it, expect, beforeEach } from "vitest";
+import Database from "better-sqlite3";
 import { openSqliteConnectionStore, type IConnectionStore, type ConnectionFull } from "../../src/sdk/connections";
 
 // ---------------------------------------------------------------------------

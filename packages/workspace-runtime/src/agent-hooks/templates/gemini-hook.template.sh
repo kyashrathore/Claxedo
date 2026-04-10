@@ -6,8 +6,10 @@ INPUT="{}"
 if [ -t 0 ]; then
   : # INPUT already defaulted
 else
-  # read with timeout to avoid blocking
-  IFS= read -r -t 0.1 INPUT 2>/dev/null || true
+  # Use head -1 instead of read -t because macOS /bin/bash 3.2
+  # mishandles fractional timeouts on pipes, returning empty even
+  # when data is available.
+  INPUT=$(head -1 2>/dev/null || true)
   [ -z "$INPUT" ] && INPUT="{}"
 fi
 

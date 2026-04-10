@@ -1,6 +1,7 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { streamSSE } from "hono/streaming"
 import type { AgentAdapter, PromptInput, SessionConfig, SessionConfigPatch } from "../adapters/index"
+import type { ClaxedoEvent } from "../bus"
 import {
   buildAssistantMessage,
   messagePartUpdated,
@@ -14,18 +15,11 @@ import {
 } from "../compat-events"
 
 type SessionBus = {
-  publish: (event: any) => void
-  subscribe: (fn: (event: unknown) => void) => () => void
+  publish: (event: ClaxedoEvent) => void
+  subscribe: (fn: (event: ClaxedoEvent) => void) => () => void
 }
 
-type Ctx = {
-  req: {
-    query: (k: string) => string | undefined
-    header: (k: string) => string | undefined
-    param: (k: string) => string
-    json: () => Promise<unknown>
-  }
-}
+type Ctx = Context
 
 type Opts = {
   resolveAdapter: (
@@ -234,25 +228,25 @@ async function after(input: void | Promise<void> | undefined) {
 
 export function createSessionRoutes(opts: Opts) {
   return new Hono()
-    .get("/session", async (c: any) => {
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .get("/session", async (c) => {
+      const directory = await opts.resolveDirectory(c)
       const roots = c.req.query("roots") === "true" || c.req.query("roots") === "1"
       const sessions = opts.listSessions
-        ? await opts.listSessions(c as Ctx, directory)
-        : await (await opts.resolveAdapter(c as Ctx)).listSessions(directory)
-      await after(opts.afterListSessions?.(c as Ctx, directory, sessions as unknown[]))
+        ? await opts.listSessions(c, directory)
+        : await (await opts.resolveAdapter(c)).listSessions(directory)
+      await after(opts.afterListSessions?.(c, directory, sessions))
       const data = (sessions as unknown[]).map(normalizeSession)
       return c.json(data)
     })
-    .get("/experimental/session", async (c: any) => {
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .get("/experimental/session", async (c) => {
+      const directory = await opts.resolveDirectory(c)
       const limit = Math.min(Number(c.req.query("limit") ?? "100") || 100, 500)
       const roots = c.req.query("roots") === "true" || c.req.query("roots") === "1"
       const archived = c.req.query("archived") === "true" || c.req.query("archived") === "1"
       const sessions = opts.listSessions
-        ? await opts.listSessions(c as Ctx, directory)
-        : await (await opts.resolveAdapter(c as Ctx)).listSessions(directory)
-      await after(opts.afterListSessions?.(c as Ctx, directory, sessions as unknown[]))
+        ? await opts.listSessions(c, directory)
+        : await (await opts.resolveAdapter(c)).listSessions(directory)
+      await after(opts.afterListSessions?.(c, directory, sessions))
       const data = (sessions as unknown[])
           .map(summarizeSession)
           .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
@@ -261,72 +255,72 @@ export function createSessionRoutes(opts: Opts) {
           .slice(0, limit)
       return c.json(data)
     })
-    .get("/session/status", async (c: any) => {
-      const directory = await opts.resolveDirectory(c as Ctx)
-      const adapter = await opts.resolveAdapter(c as Ctx)
-      const status = await opts.getStatus?.(c as Ctx, directory, adapter)
+    .get("/session/status", async (c) => {
+      const directory = await opts.resolveDirectory(c)
+      const adapter = await opts.resolveAdapter(c)
+      const status = await opts.getStatus?.(c, directory, adapter)
       if (status instanceof Response) return status
       return c.json(status ?? {})
     })
-    .post("/session", async (c: any) => {
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .post("/session", async (c) => {
+      const directory = await opts.resolveDirectory(c)
       const body = (await c.req.json().catch(() => ({}))) as { title?: string }
       const session = opts.createSession
-        ? await opts.createSession(c as Ctx, directory, body.title)
-        : await (await opts.resolveAdapter(c as Ctx)).createSession(directory, body.title)
-      await after(opts.afterCreateSession?.(c as Ctx, directory, session))
+        ? await opts.createSession(c, directory, body.title)
+        : await (await opts.resolveAdapter(c)).createSession(directory, body.title)
+      await after(opts.afterCreateSession?.(c, directory, session))
       return c.json(normalizeSession(session), 201)
     })
-    .get("/session/:id", async (c: any) => {
+    .get("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId })
-      const directory = await opts.resolveDirectory(c as Ctx, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId })
+      const directory = await opts.resolveDirectory(c, { sessionId })
       const session = await adapter.getSession(sessionId, directory)
       if (!session) return c.json({ error: "Not found" }, 404)
-      await after(opts.afterGetSession?.(c as Ctx, directory, session))
+      await after(opts.afterGetSession?.(c, directory, session))
       return c.json(normalizeSession(session))
     })
-    .get("/session/:id/config", async (c: any) => {
+    .get("/session/:id/config", async (c) => {
       const sessionId = c.req.param("id")
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId })
-      const directory = await opts.resolveDirectory(c as Ctx, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId })
+      const directory = await opts.resolveDirectory(c, { sessionId })
       const config = opts.getSessionConfig
-        ? await opts.getSessionConfig(c as Ctx, directory, sessionId, adapter)
+        ? await opts.getSessionConfig(c, directory, sessionId, adapter)
         : await adapter.getSessionConfig(sessionId, directory)
       return c.json(config)
     })
-    .patch("/session/:id", async (c: any) => {
+    .patch("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId })
-      const directory = await opts.resolveDirectory(c as Ctx, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId })
+      const directory = await opts.resolveDirectory(c, { sessionId })
       const body = (await c.req.json().catch(() => ({}))) as { title?: string; time?: { archived?: number } }
       const session = await adapter.updateSession(sessionId, body, directory)
       if (!session) return c.json({ error: "Not found" }, 404)
-      await after(opts.afterUpdateSession?.(c as Ctx, directory, session))
+      await after(opts.afterUpdateSession?.(c, directory, session))
       return c.json(normalizeSession(session))
     })
-    .patch("/session/:id/config", async (c: any) => {
+    .patch("/session/:id/config", async (c) => {
       const sessionId = c.req.param("id")
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId })
-      const directory = await opts.resolveDirectory(c as Ctx, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId })
+      const directory = await opts.resolveDirectory(c, { sessionId })
       const body = (await c.req.json().catch(() => ({}))) as SessionConfigPatch
       const config = opts.updateSessionConfig
-        ? await opts.updateSessionConfig(c as Ctx, directory, sessionId, body, adapter)
+        ? await opts.updateSessionConfig(c, directory, sessionId, body, adapter)
         : await adapter.updateSessionConfig(sessionId, body, directory)
       return c.json(config)
     })
-    .delete("/session/:id", async (c: any) => {
+    .delete("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId })
-      const directory = await opts.resolveDirectory(c as Ctx, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId })
+      const directory = await opts.resolveDirectory(c, { sessionId })
       await adapter.deleteSession(sessionId, directory)
-      await after(opts.afterDeleteSession?.(c as Ctx, directory, sessionId))
+      await after(opts.afterDeleteSession?.(c, directory, sessionId))
       return c.json({ ok: true })
     })
-    .post("/session/:id/message", async (c: any) => {
+    .post("/session/:id/message", async (c) => {
       const id = c.req.param("id")
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId: id })
-      const directory = await opts.resolveDirectory(c as Ctx, { sessionId: id })
+      const adapter = await opts.resolveAdapter(c, { sessionId: id })
+      const directory = await opts.resolveDirectory(c, { sessionId: id })
       const input = prompt((await c.req.json().catch(() => ({}))) as PromptBody)
       if (input.userMessageId) {
         for (const part of promptParts(id, input.userMessageId, input.parts)) {
@@ -336,7 +330,7 @@ export function createSessionRoutes(opts: Opts) {
       let assistantId = input.assistantMessageId
       let error: string | undefined
       for await (const event of adapter.sendMessage(id, input, directory)) {
-        opts.sessionBus.publish({ type: "process.status", configId: id, status: "streaming" })
+        opts.sessionBus.publish({ type: "process.status", directory, configId: id, status: "streaming" })
         opts.publishGlobal(withDir(directory, event))
         if (event.type === "message.updated" && event.properties.info.role === "assistant") {
           assistantId = event.properties.info.id
@@ -345,7 +339,7 @@ export function createSessionRoutes(opts: Opts) {
         if (event.type === "session.idle" || event.type === "session.error") break
       }
       const messages = await adapter.getMessages(id, directory)
-      await after(opts.afterMessages?.(c as Ctx, directory, id, messages))
+      await after(opts.afterMessages?.(c, directory, id, messages))
       const final = reply(messages, assistantId)
       if (final) return c.json(final)
       return c.json({
@@ -370,56 +364,56 @@ export function createSessionRoutes(opts: Opts) {
         parts: [],
       })
     })
-    .get("/session/:id/message", async (c: any) => {
+    .get("/session/:id/message", async (c) => {
       const sessionId = c.req.param("id")
-      const directory = await opts.resolveDirectory(c as Ctx, { sessionId })
-      const replay = await opts.getMessages?.(c as Ctx, directory, sessionId)
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const replay = await opts.getMessages?.(c, directory, sessionId)
       if (replay) return c.json(replay)
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId })
       const messages = await adapter.getMessages(sessionId, directory)
-      await after(opts.afterMessages?.(c as Ctx, directory, sessionId, messages))
+      await after(opts.afterMessages?.(c, directory, sessionId, messages))
       return c.json(messages)
     })
-    .get("/session/:id/todo", async (c: any) => {
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId: c.req.param("id") })
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .get("/session/:id/todo", async (c) => {
+      const adapter = await opts.resolveAdapter(c, { sessionId: c.req.param("id") })
+      const directory = await opts.resolveDirectory(c)
       return c.json(await adapter.getTodos(c.req.param("id"), directory))
     })
-    .post("/session/:id/abort", async (c: any) => {
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId: c.req.param("id") })
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .post("/session/:id/abort", async (c) => {
+      const adapter = await opts.resolveAdapter(c, { sessionId: c.req.param("id") })
+      const directory = await opts.resolveDirectory(c)
       await adapter.abort(c.req.param("id"), directory)
       return c.json({ ok: true })
     })
-    .post("/session/:id/revert", async (c: any) => {
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId: c.req.param("id") })
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .post("/session/:id/revert", async (c) => {
+      const adapter = await opts.resolveAdapter(c, { sessionId: c.req.param("id") })
+      const directory = await opts.resolveDirectory(c)
       await adapter.revert(c.req.param("id"), directory)
       return c.json({ ok: true })
     })
-    .post("/session/:id/unrevert", async (c: any) => {
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId: c.req.param("id") })
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .post("/session/:id/unrevert", async (c) => {
+      const adapter = await opts.resolveAdapter(c, { sessionId: c.req.param("id") })
+      const directory = await opts.resolveDirectory(c)
       await adapter.unrevert(c.req.param("id"), directory)
       return c.json({ ok: true })
     })
-    .post("/session/:id/fork", async (c: any) => {
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId: c.req.param("id") })
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .post("/session/:id/fork", async (c) => {
+      const adapter = await opts.resolveAdapter(c, { sessionId: c.req.param("id") })
+      const directory = await opts.resolveDirectory(c)
       const body = (await c.req.json().catch(() => ({}))) as { messageId?: string }
       return c.json(await adapter.forkSession(c.req.param("id"), body.messageId ?? "", directory), 201)
     })
-    .post("/session/:id/command", async (c: any) => {
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId: c.req.param("id") })
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .post("/session/:id/command", async (c) => {
+      const adapter = await opts.resolveAdapter(c, { sessionId: c.req.param("id") })
+      const directory = await opts.resolveDirectory(c)
       const body = (await c.req.json().catch(() => ({}))) as { command?: string }
       await adapter.executeCommand(c.req.param("id"), body.command ?? "", directory)
       return c.json({ ok: true })
     })
-    .post("/session/:id/prompt_async", async (c: any) => {
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId: c.req.param("id") })
+    .post("/session/:id/prompt_async", async (c) => {
+      const adapter = await opts.resolveAdapter(c, { sessionId: c.req.param("id") })
       const id = c.req.param("id")
-      const directory = await opts.resolveDirectory(c as Ctx)
+      const directory = await opts.resolveDirectory(c)
       const input = prompt((await c.req.json().catch(() => ({}))) as PromptBody)
       if (input.userMessageId) {
         for (const part of promptParts(id, input.userMessageId, input.parts)) {
@@ -429,7 +423,7 @@ export function createSessionRoutes(opts: Opts) {
       ;(async () => {
         try {
           for await (const event of adapter.sendMessage(id, input, directory)) {
-            opts.sessionBus.publish({ type: "process.status", configId: id, status: "streaming" })
+            opts.sessionBus.publish({ type: "process.status", directory, configId: id, status: "streaming" })
             opts.publishGlobal(withDir(directory, event))
             if (event.type === "session.idle" || event.type === "session.error") break
           }
@@ -439,31 +433,31 @@ export function createSessionRoutes(opts: Opts) {
       })()
       return c.body(null, 204)
     })
-    .get("/command", async (c: any) => {
-      const adapter = await opts.resolveAdapter(c as Ctx)
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .get("/command", async (c) => {
+      const adapter = await opts.resolveAdapter(c)
+      const directory = await opts.resolveDirectory(c)
       return c.json(await adapter.listCommands(directory))
     })
-    .get("/agent", async (c: any) => {
-      const adapter = await opts.resolveAdapter(c as Ctx)
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .get("/agent", async (c) => {
+      const adapter = await opts.resolveAdapter(c)
+      const directory = await opts.resolveDirectory(c)
       return c.json(await adapter.listAgents(directory))
     })
-    .get("/permission", async (c: any) => {
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .get("/permission", async (c) => {
+      const directory = await opts.resolveDirectory(c)
       const rows = opts.listPermissions
-        ? await opts.listPermissions(c as Ctx, directory)
-        : await (await opts.resolveAdapter(c as Ctx)).listPermissions(directory)
+        ? await opts.listPermissions(c, directory)
+        : await (await opts.resolveAdapter(c)).listPermissions(directory)
       return c.json(rows)
     })
-    .get("/question", async (c: any) => {
-      const directory = await opts.resolveDirectory(c as Ctx)
-      const adapter = await opts.resolveAdapter(c as Ctx)
+    .get("/question", async (c) => {
+      const directory = await opts.resolveDirectory(c)
+      const adapter = await opts.resolveAdapter(c)
       return c.json(await adapter.listQuestions(directory))
     })
-    .post("/session/:sessionId/permissions/:permId", async (c: any) => {
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId: c.req.param("sessionId") })
-      const directory = await opts.resolveDirectory(c as Ctx)
+    .post("/session/:sessionId/permissions/:permId", async (c) => {
+      const adapter = await opts.resolveAdapter(c, { sessionId: c.req.param("sessionId") })
+      const directory = await opts.resolveDirectory(c)
       const body = (await c.req.json().catch(() => ({}))) as { response?: string }
       const r = body.response ?? "deny"
       const decision = r === "once" ? "allow_once" : r === "always" ? "allow_always" : "deny"
@@ -471,10 +465,10 @@ export function createSessionRoutes(opts: Opts) {
       opts.publishGlobal(withDir(directory, permissionReplied(c.req.param("sessionId"), c.req.param("permId"), r === "always" ? "always" : r === "once" ? "once" : "reject")))
       return c.json({ ok: true })
     })
-    .post("/question/:id/reply", async (c: any) => {
+    .post("/question/:id/reply", async (c) => {
       const sessionId = c.req.query("sessionId") ?? ""
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId })
-      const directory = await opts.resolveDirectory(c as Ctx)
+      const adapter = await opts.resolveAdapter(c, { sessionId })
+      const directory = await opts.resolveDirectory(c)
       const body = (await c.req.json().catch(() => ({}))) as { answer?: string; answers?: string[][] }
       const id = c.req.param("id")
       const sid = await questionSession(adapter, id, directory, sessionId)
@@ -482,18 +476,18 @@ export function createSessionRoutes(opts: Opts) {
       opts.publishGlobal(withDir(directory, questionReplied(sid, id, body.answers ?? [[body.answer ?? ""]])))
       return c.json({ ok: true })
     })
-    .post("/question/:id/reject", async (c: any) => {
+    .post("/question/:id/reject", async (c) => {
       const sessionId = c.req.query("sessionId") ?? ""
-      const adapter = await opts.resolveAdapter(c as Ctx, { sessionId })
-      const directory = await opts.resolveDirectory(c as Ctx)
+      const adapter = await opts.resolveAdapter(c, { sessionId })
+      const directory = await opts.resolveDirectory(c)
       const id = c.req.param("id")
       const sid = await questionSession(adapter, id, directory, sessionId)
       await adapter.rejectQuestion(id, directory)
       opts.publishGlobal(withDir(directory, questionRejected(sid, id)))
       return c.json({ ok: true })
     })
-    .get("/event", async (c: any) =>
-      streamSSE(c, async (stream: any) => {
+    .get("/event", async (c) =>
+      streamSSE(c, async (stream) => {
         const unsub = opts.sessionBus.subscribe((event) => {
           void stream.writeSSE({ data: JSON.stringify(event) })
         })

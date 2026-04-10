@@ -43,7 +43,7 @@ import { isGlobalTab, realDirectory } from "./context/claxedo-layout/types"
 import { createDynamicTitleSync } from "./context/claxedo-layout/dynamic-title-sync"
 import { canAutoOpenProject } from "../overrides/context/layout-projects"
 
-import { useAgentHooks } from "../agent-hooks/listener"
+import { useAgentHooks } from "./context/agent-status-listener"
 import { createBatchAutoTabListener } from "./context/batch-autotab"
 import { isDemoMode } from "../utils/api"
 import { lazy } from "solid-js"

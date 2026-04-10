@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test"
+import { describe, test, expect } from "vitest"
 import { reduce, emptyState, replayEvents } from "../src/model/reducer"
 import type { WorkEvent, WorkItem, WorkGraphState } from "../src/model/types"
 

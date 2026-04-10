@@ -5,8 +5,8 @@
  * rather than a hand-rolled stub.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
+import { describe, it, expect, beforeEach } from "vitest";
+import Database from "better-sqlite3";
 import { openSqliteTriggerStore, type ITriggerStore } from "../../src/triggers/trigger-store";
 import { initializeDb } from "../../src/db/schema";
 import { initTriggersTable } from "../../src/triggers/store";

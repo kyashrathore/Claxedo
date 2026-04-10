@@ -165,41 +165,41 @@ function now() {
 
 function arenaForPage(pageID: string) {
   return ClaxedoDB.raw()
-    .query("SELECT * FROM claxedo_page_arena WHERE page_id = ? ORDER BY updated_at DESC LIMIT 1")
+    .prepare("SELECT * FROM claxedo_page_arena WHERE page_id = ? ORDER BY updated_at DESC LIMIT 1")
     .get(pageID) as ArenaRow | undefined
 }
 
 function arenaByID(arenaID: string) {
-  return ClaxedoDB.raw().query("SELECT * FROM claxedo_page_arena WHERE id = ?").get(arenaID) as ArenaRow | undefined
+  return ClaxedoDB.raw().prepare("SELECT * FROM claxedo_page_arena WHERE id = ?").get(arenaID) as ArenaRow | undefined
 }
 
 function agentsForArena(arenaID: string) {
   return ClaxedoDB.raw()
-    .query("SELECT * FROM claxedo_page_arena_agent WHERE arena_id = ? ORDER BY created_at ASC")
+    .prepare("SELECT * FROM claxedo_page_arena_agent WHERE arena_id = ? ORDER BY created_at ASC")
     .all(arenaID) as ArenaAgentRow[]
 }
 
 function wavesForArena(arenaID: string, limit = 8) {
   return ClaxedoDB.raw()
-    .query("SELECT * FROM claxedo_page_arena_wave WHERE arena_id = ? ORDER BY started_at DESC LIMIT ?")
+    .prepare("SELECT * FROM claxedo_page_arena_wave WHERE arena_id = ? ORDER BY started_at DESC LIMIT ?")
     .all(arenaID, limit) as ArenaWaveRow[]
 }
 
 function messagesForArena(arenaID: string, limit = 200) {
   return ClaxedoDB.raw()
-    .query("SELECT * FROM claxedo_page_arena_message WHERE arena_id = ? ORDER BY created_at ASC LIMIT ?")
+    .prepare("SELECT * FROM claxedo_page_arena_message WHERE arena_id = ? ORDER BY created_at ASC LIMIT ?")
     .all(arenaID, limit) as ArenaMessageRow[]
 }
 
 function latestWave(arenaID: string) {
   return ClaxedoDB.raw()
-    .query("SELECT * FROM claxedo_page_arena_wave WHERE arena_id = ? ORDER BY started_at DESC LIMIT 1")
+    .prepare("SELECT * FROM claxedo_page_arena_wave WHERE arena_id = ? ORDER BY started_at DESC LIMIT 1")
     .get(arenaID) as ArenaWaveRow | undefined
 }
 
 function latestUserMessage(arenaID: string) {
   return ClaxedoDB.raw()
-    .query("SELECT * FROM claxedo_page_arena_message WHERE arena_id = ? AND kind = 'user' ORDER BY created_at DESC LIMIT 1")
+    .prepare("SELECT * FROM claxedo_page_arena_message WHERE arena_id = ? AND kind = 'user' ORDER BY created_at DESC LIMIT 1")
     .get(arenaID) as ArenaMessageRow | undefined
 }
 
@@ -566,7 +566,7 @@ function updateArena(arenaID: string, patch: Partial<Omit<ArenaRow, "id" | "page
     updated_at: now(),
   }
   ClaxedoDB.raw()
-    .query(
+    .prepare(
       `UPDATE claxedo_page_arena
         SET directory = ?, parent_session_id = ?, status = ?, config_json = ?, synopsis = ?, active_wave_id = ?,
             current_round = ?, stop_reason = ?, last_error = ?, updated_at = ?
@@ -588,7 +588,7 @@ function updateArena(arenaID: string, patch: Partial<Omit<ArenaRow, "id" | "page
 }
 
 function updateWave(waveID: string, patch: Partial<Omit<ArenaWaveRow, "id" | "arena_id" | "started_at">>) {
-  const wave = ClaxedoDB.raw().query("SELECT * FROM claxedo_page_arena_wave WHERE id = ?").get(waveID) as ArenaWaveRow | undefined
+  const wave = ClaxedoDB.raw().prepare("SELECT * FROM claxedo_page_arena_wave WHERE id = ?").get(waveID) as ArenaWaveRow | undefined
   if (!wave) return
   const next = {
     ...wave,
@@ -596,7 +596,7 @@ function updateWave(waveID: string, patch: Partial<Omit<ArenaWaveRow, "id" | "ar
     updated_at: now(),
   }
   ClaxedoDB.raw()
-    .query(
+    .prepare(
       `UPDATE claxedo_page_arena_wave
         SET status = ?, round_num = ?, target_json = ?, termination = ?, finished_at = ?, updated_at = ?
         WHERE id = ?`,
@@ -605,7 +605,7 @@ function updateWave(waveID: string, patch: Partial<Omit<ArenaWaveRow, "id" | "ar
 }
 
 function updateAgent(agentID: string, patch: Partial<Omit<ArenaAgentRow, "id" | "arena_id" | "agent_key" | "created_at">>) {
-  const row = ClaxedoDB.raw().query("SELECT * FROM claxedo_page_arena_agent WHERE id = ?").get(agentID) as ArenaAgentRow | undefined
+  const row = ClaxedoDB.raw().prepare("SELECT * FROM claxedo_page_arena_agent WHERE id = ?").get(agentID) as ArenaAgentRow | undefined
   if (!row) return
   const next = {
     ...row,
@@ -613,7 +613,7 @@ function updateAgent(agentID: string, patch: Partial<Omit<ArenaAgentRow, "id" | 
     updated_at: now(),
   }
   ClaxedoDB.raw()
-    .query(
+    .prepare(
       `UPDATE claxedo_page_arena_agent
         SET display_name = ?, role = ?, duty = ?, model = ?, style = ?, temperature = ?, session_id = ?,
             status = ?, settled = ?, last_signal = ?, updated_at = ?
@@ -660,7 +660,7 @@ function addMessage(input: {
     created_at: now(),
   }
   ClaxedoDB.raw()
-    .query(
+    .prepare(
       `INSERT INTO claxedo_page_arena_message
         (id, arena_id, wave_id, round_num, kind, source_agent_key, text, raw_text, control_signal, metadata_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -692,7 +692,7 @@ function addDelivery(input: {
 }) {
   const created = now()
   ClaxedoDB.raw()
-    .query(
+    .prepare(
       `INSERT OR IGNORE INTO claxedo_page_arena_delivery
         (id, arena_id, wave_id, message_id, source_agent_key, target_agent_key, status, attempt, error, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -714,7 +714,7 @@ function addDelivery(input: {
 
 function summarize(arenaID: string) {
   const rows = ClaxedoDB.raw()
-    .query(
+    .prepare(
       "SELECT kind, source_agent_key, text FROM claxedo_page_arena_message WHERE arena_id = ? ORDER BY created_at DESC LIMIT 12",
     )
     .all(arenaID) as Array<{ kind: string; source_agent_key: string; text: string }>
@@ -802,7 +802,7 @@ async function runWave(input: {
     const maxRelay = Math.max(200, positive(cfg.max_relay_chars, arenaDefault.max_relay_chars))
     const started = now()
 
-    const wave = ClaxedoDB.raw().query("SELECT * FROM claxedo_page_arena_wave WHERE id = ?").get(input.wave_id) as ArenaWaveRow | undefined
+    const wave = ClaxedoDB.raw().prepare("SELECT * FROM claxedo_page_arena_wave WHERE id = ?").get(input.wave_id) as ArenaWaveRow | undefined
     if (!wave) return
 
     const agents = agentsForArena(input.arena_id)
@@ -832,7 +832,7 @@ async function runWave(input: {
     }
 
     const user = ClaxedoDB.raw()
-      .query("SELECT * FROM claxedo_page_arena_message WHERE wave_id = ? AND kind = 'user' ORDER BY created_at ASC LIMIT 1")
+      .prepare("SELECT * FROM claxedo_page_arena_message WHERE wave_id = ? AND kind = 'user' ORDER BY created_at ASC LIMIT 1")
       .get(input.wave_id) as ArenaMessageRow | undefined
 
     if (!user) {
@@ -1217,7 +1217,7 @@ export const PageArenaRoutes = lazy(() =>
       const arenaID = id("arena")
       const created = now()
       ClaxedoDB.raw()
-        .query(
+        .prepare(
           `INSERT INTO claxedo_page_arena
             (id, page_id, directory, parent_session_id, status, config_json, synopsis, active_wave_id, current_round, stop_reason, last_error, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1238,7 +1238,7 @@ export const PageArenaRoutes = lazy(() =>
         })
         const ts = now()
         ClaxedoDB.raw()
-          .query(
+          .prepare(
             `INSERT INTO claxedo_page_arena_agent
               (id, arena_id, agent_key, display_name, role, duty, model, style, temperature, session_id, status, settled, last_signal, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1309,7 +1309,7 @@ export const PageArenaRoutes = lazy(() =>
       const waveID = id("wave")
       const started = now()
       ClaxedoDB.raw()
-        .query(
+        .prepare(
           `INSERT INTO claxedo_page_arena_wave
             (id, arena_id, status, round_num, target_json, termination, started_at, finished_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1419,7 +1419,7 @@ export const PageArenaRoutes = lazy(() =>
         const waveID = id("wave")
         const started = now()
         ClaxedoDB.raw()
-          .query(
+          .prepare(
             `INSERT INTO claxedo_page_arena_wave
               (id, arena_id, status, round_num, target_json, termination, started_at, finished_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,

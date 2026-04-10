@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, expect, beforeEach } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"

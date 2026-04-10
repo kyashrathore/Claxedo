@@ -4,8 +4,8 @@
  * Each test uses a real in-memory SQLite DB so we exercise actual SQL.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
+import { describe, it, expect, beforeEach } from "vitest";
+import Database from "better-sqlite3";
 import { initializeDb } from "../../src/db/schema";
 import { openSqliteEventStore } from "../../src/orchestrator/core/services/event-store-sqlite";
 import { openSqliteExecutionStore, type IExecutionStore } from "../../src/sdk/execution-store";
@@ -51,7 +51,7 @@ function addEdge(db: Database, runId: string, sourceId: string, targetId: string
 describe("IExecutionStore: getRun", () => {
   it("returns null for unknown runId", () => {
     const { store } = makeStore();
-    expect(store.getRun("run_nope")).toBeNull();
+    expect(store.getRun("run_nope")).toBeFalsy();
   });
 
   it("returns RunSnapshot for known run", () => {
@@ -112,7 +112,7 @@ describe("IExecutionStore: source queries", () => {
 
   it("getRunSource returns null when no source row", () => {
     const { store } = makeStore();
-    expect(store.getRunSource("run_x")).toBeNull();
+    expect(store.getRunSource("run_x")).toBeFalsy();
   });
 
   it("getRunSource returns PlannerSourceRow when source row exists", () => {
@@ -159,7 +159,7 @@ describe("IExecutionStore: updateSource", () => {
 describe("IExecutionStore: node queries", () => {
   it("getNode returns null for unknown nodeId", () => {
     const { store } = makeStore();
-    expect(store.getNode("node_nope")).toBeNull();
+    expect(store.getNode("node_nope")).toBeFalsy();
   });
 
   it("getNode returns NodeSnapshot for known node", () => {

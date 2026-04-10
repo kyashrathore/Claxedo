@@ -54,7 +54,7 @@ export class WorkGraph {
     labels?: string[]
     context?: string
     provider?: string
-    providerMeta?: Record<string, any>
+    providerMeta?: Record<string, unknown>
     providerUrl?: string
   }): WorkItem {
     const now = new Date().toISOString()
@@ -275,14 +275,14 @@ export class WorkGraph {
 
   async hydrateSlice(
     connector: ConnectorInterface,
-    params: Record<string, any>[],
+    params: Record<string, unknown>[],
   ): Promise<WorkItem[]> {
     return this.importSlice(connector, params)
   }
 
   async importSlice(
     connector: ConnectorInterface,
-    params: Record<string, any>[],
+    params: Record<string, unknown>[],
     opts?: {
       sourceId?: string
       parentId?: string | null
@@ -302,11 +302,13 @@ export class WorkGraph {
       const repo = opts?.repoRef
         ? { repoRef: opts.repoRef, repoLabel: opts.repoLabel ?? null }
         : inferRepo(connector.provider, input, issue.provider_url)
+      const repoRef = !repo ? null : "repo_ref" in repo ? repo.repo_ref : repo.repoRef
+      const repoLabel = !repo ? null : "repo_label" in repo ? repo.repo_label : repo.repoLabel
       const item = this.create({
-        sourceId: opts?.sourceId ?? input.source_id,
+        sourceId: opts?.sourceId ?? text(input.source_id),
         parentId: opts?.parentId ?? null,
-        repoRef: repo?.repoRef ?? null,
-        repoLabel: repo?.repoLabel ?? null,
+        repoRef: repoRef ?? null,
+        repoLabel: repoLabel ?? null,
         title: issue.title,
         description: issue.description,
         nodeType: issue.aggregate_only ? "mission" : "task",
@@ -631,7 +633,7 @@ export class WorkGraph {
     }
   }
 
-  private emit(type: WorkEventType, payload: any, actor: string): void {
+  private emit(type: WorkEventType, payload: unknown, actor: string): void {
     this.seq++
     const event: WorkEvent = {
       id: crypto.randomUUID(),
@@ -656,4 +658,8 @@ function stable(value: unknown): string {
       .join(",")}}`
   }
   return JSON.stringify(value)
+}
+
+function text(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : undefined
 }

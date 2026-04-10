@@ -1,24 +1,34 @@
 import type { ConnectorInterface, NormalizedIssue } from "../../orchestrator/events"
 import type { JiraConnector } from "./jira"
 
-export function createJiraAdapter(connector: JiraConnector): ConnectorInterface {
+type JiraParams = {
+  issueKey?: string
+  projectKey?: string
+} & Record<string, unknown>
+
+export function createJiraAdapter(connector: JiraConnector): ConnectorInterface<string, JiraParams> {
   return {
     provider: "jira",
 
-    hydrateIssue(params: Record<string, any>): Promise<NormalizedIssue> {
-      return connector.hydrateIssue(params.issueKey)
+    hydrateIssue(params: JiraParams): Promise<NormalizedIssue> {
+      return connector.hydrateIssue(reqText(params.issueKey, "issueKey"))
     },
 
-    updateIssue(params: Record<string, any>, updates: { title?: string; status?: string; description?: string }): Promise<void> {
-      return connector.updateIssue(params.issueKey, updates)
+    updateIssue(params: JiraParams, updates): Promise<void> {
+      return connector.updateIssue(reqText(params.issueKey, "issueKey"), updates)
     },
 
-    addComment(params: Record<string, any>, comment: string): Promise<void> {
-      return connector.addComment(params.issueKey, comment)
+    addComment(params: JiraParams, comment: string): Promise<void> {
+      return connector.addComment(reqText(params.issueKey, "issueKey"), comment)
     },
 
-    createIssue(params: Record<string, any>, data: { title: string; description: string }): Promise<NormalizedIssue> {
-      return connector.createIssue(params.projectKey, data)
+    createIssue(params: JiraParams, data: { title: string; description: string }): Promise<NormalizedIssue> {
+      return connector.createIssue(reqText(params.projectKey, "projectKey"), data)
     },
   }
+}
+
+function reqText(value: string | undefined, key: string) {
+  if (value) return value
+  throw new Error(`Jira params require ${key}`)
 }

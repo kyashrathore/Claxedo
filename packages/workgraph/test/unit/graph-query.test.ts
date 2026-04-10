@@ -6,8 +6,8 @@
  * writeBlockers, and createSnapshot (with edge injection).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { Database } from "bun:sqlite";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import Database from "better-sqlite3";
 import {
   touchRun,
   activeRunItemIds,

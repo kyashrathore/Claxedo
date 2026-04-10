@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach } from "vitest";
 import { ScratchpadService } from "../src/orchestrator/core/services/scratchpad";
 
 describe("ScratchpadService", () => {

@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, test } from "vitest"
+import { realpathSync } from "fs"
 import fs from "fs/promises"
+import os from "os"
 import path from "path"
+import { randomUUID } from "crypto"
 
-const root = path.join(process.cwd(), ".tmp-session-meta-test")
+const root = path.join(realpathSync(os.tmpdir()), `session-meta-test-${randomUUID().slice(0, 8)}`)
 const prev = {
   CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
   CLAXEDO_STATE_DIR: process.env.CLAXEDO_STATE_DIR,
@@ -19,6 +22,9 @@ const [{ applySessionMeta, deleteSessionMeta, putSessionMeta, sessionMeta, syncS
 afterEach(async () => {
   ClaxedoDB.close()
   await fs.rm(root, { recursive: true, force: true })
+})
+
+afterAll(() => {
   process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
   process.env.CLAXEDO_STATE_DIR = prev.CLAXEDO_STATE_DIR
 })

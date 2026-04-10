@@ -8,6 +8,7 @@ import { Log } from "./log"
 import { findFreePort } from "./process/portpick"
 import { getWorkspace, type Workspace } from "./workspace-store"
 import { WORKSPACE_DIR } from "./cloud/sandbox-image"
+import { getHarnessMode } from "./architecture"
 import * as pool from "./cloud/sandbox-pool"
 import * as sandboxRuntime from "./cloud/sandbox-runtime"
 
@@ -268,6 +269,9 @@ async function startRemoteRuntime(s: State): Promise<State> {
     const { url } = await sandboxRuntime.deployAndStart(sandbox, s.ws.id, {
       directory: s.ws.remote_directory || WORKSPACE_DIR,
       repoUrl: s.ws.repo_url,
+      envVars: {
+        CLAXEDO_HARNESS_MODE: getHarnessMode(),
+      },
     })
     s.url = url
 
@@ -346,6 +350,7 @@ async function startLocalRuntime(s: State): Promise<State> {
       CLAXEDO_WR_PORT: String(s.port),
       CLAXEDO_WR_WORKSPACE_ID: s.ws.id,
       CLAXEDO_WR_DIRECTORY: s.ws.directory,
+      CLAXEDO_HARNESS_MODE: getHarnessMode(),
       OPENCODE_URL: cfg.opencode_url,
     },
     stdio: "pipe",
@@ -588,4 +593,26 @@ export async function stopRuntime(workspaceId: string, reason = "manual") {
 
 export async function shutdownWorkspaceSupervisor() {
   await Promise.allSettled([...runtimes.keys()].map((id) => stopRuntime(id, "shutdown")))
+}
+
+/**
+ * Inject a pre-configured runtime entry for testing.
+ * Lets integration tests simulate a cloud workspace-runtime
+ * without requiring real sandbox infrastructure.
+ */
+export function injectRuntime(ws: Workspace, url: string) {
+  const s: State = {
+    ws,
+    url,
+    port: parseInt(new URL(url).port, 10),
+    status: "ready",
+    started_at: now(),
+    used_at: now(),
+    crashes: 0,
+    retry_at: 0,
+    active: 0,
+    remote: true,
+  }
+  runtimes.set(ws.id, s)
+  return s
 }

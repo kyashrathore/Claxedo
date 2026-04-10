@@ -1,12 +1,12 @@
-import type { NormalizedIssue, ProviderPreview, ProviderQueryMode } from "../../orchestrator/events/connector"
+import type { NormalizedIssue, ProviderParams, ProviderPreview, ProviderQueryMode } from "../../orchestrator/events/connector"
 
 interface LinearClient {
-  getIssue(issueId: string): Promise<any>
-  updateIssue(issueId: string, input: Record<string, any>): Promise<void>
+  getIssue(issueId: string): Promise<LinearIssue>
+  updateIssue(issueId: string, input: ProviderParams): Promise<void>
   createComment(issueId: string, body: string): Promise<void>
-  createIssue(teamId: string, input: Record<string, any>): Promise<any>
-  getViewer?(): Promise<any>
-  listIssues?(input: { mode: ProviderQueryMode; params: Record<string, any> }): Promise<Array<{ id: string }>>
+  createIssue(teamId: string, input: ProviderParams): Promise<{ id: string; url: string }>
+  getViewer?(): Promise<{ email?: string; name?: string; id?: string }>
+  listIssues?(input: { mode: ProviderQueryMode; params: ProviderParams }): Promise<Array<{ id: string }>>
 }
 
 export class LinearConnector {
@@ -17,7 +17,7 @@ export class LinearConnector {
   }
 
   async hydrateIssue(issueId: string): Promise<NormalizedIssue> {
-    const data = await this.client.getIssue(issueId) as any
+    const data = await this.client.getIssue(issueId)
     const childKeys = refs(data.children)
       .concat(refs(data.subIssues))
       .concat(refs(data.issues))
@@ -35,7 +35,7 @@ export class LinearConnector {
   }
 
   async updateIssue(issueId: string, updates: { title?: string; status?: string; description?: string }): Promise<void> {
-    const input: Record<string, any> = {}
+    const input: ProviderParams = {}
     if (updates.title) input.title = updates.title
     if (updates.description) input.description = updates.description
     if (updates.status) input.status = updates.status
@@ -63,7 +63,7 @@ export class LinearConnector {
     return { label: data.email ?? data.name ?? data.id }
   }
 
-  async queryIssues(mode: ProviderQueryMode, params: Record<string, any>): Promise<ProviderPreview[]> {
+  async queryIssues(mode: ProviderQueryMode, params: ProviderParams): Promise<ProviderPreview[]> {
     if (mode === "single_item") {
       const issueId = text(params.issueId ?? params.issue_id)
       if (!issueId) throw new Error("Linear single item queries need issue_id")
@@ -91,19 +91,48 @@ export class LinearConnector {
   }
 }
 
-function ref(input: any) {
-  if (!input || typeof input !== "object") return
-  if (typeof input.identifier === "string") return input.identifier
-  if (typeof input.id === "string") return input.id
+function ref(input: unknown) {
+  const row = item(input)
+  if (!row) return
+  if (typeof row.identifier === "string") return row.identifier
+  if (typeof row.id === "string") return row.id
 }
 
-function refs(input: any) {
-  const list = Array.isArray(input) ? input : Array.isArray(input?.nodes) ? input.nodes : []
+function refs(input: unknown) {
+  const row = item(input)
+  const list = Array.isArray(input) ? input : Array.isArray(row?.nodes) ? row.nodes : []
   return list
-    .map((item) => ref(item))
-    .filter((item): item is string => !!item)
+    .map((item: unknown) => ref(item))
+    .filter((item: string | undefined): item is string => !!item)
 }
 
 function text(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+type LinearRef = {
+  id?: string
+  identifier?: string
+  nodes?: unknown[]
+}
+
+type LinearIssue = {
+  id: string
+  title: string
+  description?: string | null
+  url: string
+  identifier?: string
+  state?: {
+    name?: string | null
+  } | null
+  parent?: LinearRef | null
+  children?: LinearRef | null
+  subIssues?: LinearRef | null
+  issues?: LinearRef | null
+  aggregate_only?: boolean
+}
+
+function item(value: unknown) {
+  if (!value || typeof value !== "object") return
+  return value as LinearRef
 }

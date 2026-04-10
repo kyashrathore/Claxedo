@@ -26,7 +26,7 @@ export function hydrationRouter(eventStore: IEventStore) {
       z.object({
         provider: z.string().min(1),
         feature_id: z.string().min(1),
-        issue_params: z.array(z.record(z.string(), z.any())),
+        issue_params: z.array(z.record(z.string(), z.unknown())),
       })
     ),
     async (c) => {
@@ -34,13 +34,13 @@ export function hydrationRouter(eventStore: IEventStore) {
 
       const connector: ConnectorInterface = {
         provider,
-        async hydrateIssue(params: Record<string, any>) {
+        async hydrateIssue(params: Record<string, unknown>) {
           return {
-            id: params.id ?? `issue_${Date.now()}`,
-            title: params.title ?? "Untitled",
-            description: params.description ?? "",
-            status: params.status ?? "open",
-            provider_url: params.url ?? `https://${provider}.example.com/issues/${params.id ?? "unknown"}`,
+            id: text(params.id) ?? `issue_${Date.now()}`,
+            title: text(params.title) ?? "Untitled",
+            description: text(params.description) ?? "",
+            status: issueStatus(params.status),
+            provider_url: text(params.url) ?? `https://${provider}.example.com/issues/${text(params.id) ?? "unknown"}`,
           };
         },
       };
@@ -70,4 +70,13 @@ export function hydrationRouter(eventStore: IEventStore) {
   });
 
   return router;
+}
+
+function text(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function issueStatus(value: unknown): "open" | "closed" | "in_progress" {
+  if (value === "closed" || value === "in_progress") return value
+  return "open"
 }

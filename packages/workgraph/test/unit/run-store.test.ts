@@ -4,8 +4,8 @@
  * Each test uses a real in-memory SQLite DB so we exercise actual SQL.
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
+import { describe, it, expect, beforeEach } from "vitest";
+import Database from "better-sqlite3";
 import { initializeDb } from "../../src/db/schema";
 import { openSqliteRunStore, type IRunStore, type RunPage } from "../../src/sdk/runs";
 

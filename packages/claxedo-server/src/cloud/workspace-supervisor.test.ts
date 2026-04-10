@@ -12,7 +12,7 @@
  * - Expected wake behavior: sandbox.start() for stopped Daytona sandboxes
  */
 
-import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test"
+import { describe, expect, test, beforeEach, afterEach, vi } from "vitest"
 import type { Sandbox } from "@daytonaio/sdk"
 import { claxedoBus, type ClaxedoEvent } from "../bus"
 
@@ -35,24 +35,24 @@ function createMockSandbox(overrides?: Record<string, any>): Sandbox {
     id: "sb-test-123",
     state: "started",
     process: {
-      executeCommand: mock(() => Promise.resolve(makeExecuteResult("exists"))),
-      createSession: mock(() => Promise.resolve()),
-      executeSessionCommand: mock(() => Promise.resolve()),
-      deleteSession: mock(() => Promise.resolve()),
+      executeCommand: vi.fn(() => Promise.resolve(makeExecuteResult("exists"))),
+      createSession: vi.fn(() => Promise.resolve()),
+      executeSessionCommand: vi.fn(() => Promise.resolve()),
+      deleteSession: vi.fn(() => Promise.resolve()),
     },
     fs: {
-      uploadFile: mock(() => Promise.resolve()),
+      uploadFile: vi.fn(() => Promise.resolve()),
     },
-    getSignedPreviewUrl: mock(() =>
+    getSignedPreviewUrl: vi.fn(() =>
       Promise.resolve({ url: "https://sandbox.example.com" }),
     ),
-    getPreviewLink: mock(() =>
+    getPreviewLink: vi.fn(() =>
       Promise.resolve({ url: "https://sandbox.example.com" }),
     ),
-    refreshActivity: mock(() => Promise.resolve()),
-    start: mock(() => Promise.resolve()),
-    stop: mock(() => Promise.resolve()),
-    setLabels: mock(() => Promise.resolve({})),
+    refreshActivity: vi.fn(() => Promise.resolve()),
+    start: vi.fn(() => Promise.resolve()),
+    stop: vi.fn(() => Promise.resolve()),
+    setLabels: vi.fn(() => Promise.resolve({})),
     ...overrides,
   } as unknown as Sandbox
 }
@@ -61,7 +61,7 @@ function createMockSandbox(overrides?: Record<string, any>): Sandbox {
 
 let activeSandbox = createMockSandbox()
 
-const mockGetWorkspace = mock((id: string) =>
+const mockGetWorkspace = vi.fn((id: string) =>
   Promise.resolve({
     id,
     project_id: "proj-1",
@@ -74,48 +74,49 @@ const mockGetWorkspace = mock((id: string) =>
   }),
 )
 
-const mockAcquire = mock(() => Promise.resolve(activeSandbox))
+const mockAcquire = vi.fn(() => Promise.resolve(activeSandbox))
 
-const mockLoadUserConfig = mock(() =>
+const mockLoadUserConfig = vi.fn(() =>
   Promise.resolve({ mcp: {}, auth: {} }),
 )
 
 // ── Module mocks (must be before import) ─────────────────────────────────
 
-mock.module("../workspace-store", () => ({
-  getWorkspace: (...args: any[]) => mockGetWorkspace(...args),
+vi.doMock("../workspace-store", () => ({
+  getWorkspace: (...args: unknown[]) => (mockGetWorkspace as any)(...args),
 }))
 
-mock.module("./sandbox-pool", () => ({
-  acquire: (...args: any[]) => mockAcquire(...args),
-  release: mock(() => Promise.resolve()),
-  initPool: mock(() => Promise.resolve()),
-  startPoolMonitor: mock(() => {}),
-  shutdown: mock(() => {}),
+vi.doMock("./sandbox-pool", () => ({
+  acquire: (...args: unknown[]) => (mockAcquire as any)(...args),
+  release: vi.fn(() => Promise.resolve()),
+  initPool: vi.fn(() => Promise.resolve()),
+  startPoolMonitor: vi.fn(() => {}),
+  shutdown: vi.fn(() => {}),
 }))
 
-mock.module("../agent-config", () => ({
-  loadUserConfig: (...args: any[]) => mockLoadUserConfig(...args),
-  defaultRunner: mock(() => ({})),
+vi.doMock("../agent-config", () => ({
+  loadUserConfig: (...args: unknown[]) => (mockLoadUserConfig as any)(...args),
+  defaultRunner: vi.fn(() => ({})),
+  getRuntimeConfigSnapshot: vi.fn(() => Promise.resolve({})),
 }))
 
 // Mock fs for runtime bundle reads
-mock.module("fs", () => {
+vi.doMock("fs", () => {
   const actual = require("node:fs")
   return {
     ...actual,
     default: {
       ...actual,
-      readFileSync: mock(() => Buffer.from("// mock runtime")),
-      existsSync: mock(() => true),
+      readFileSync: vi.fn(() => Buffer.from("// mock runtime")),
+      existsSync: vi.fn(() => true),
     },
-    readFileSync: mock(() => Buffer.from("// mock runtime")),
-    existsSync: mock(() => true),
+    readFileSync: vi.fn(() => Buffer.from("// mock runtime")),
+    existsSync: vi.fn(() => true),
   }
 })
 
 // Mock fetch for health checks + config push
-globalThis.fetch = mock((url: string | URL | Request) => {
+globalThis.fetch = vi.fn((url: string | URL | Request) => {
   const u = typeof url === "string" ? url : url instanceof URL ? url.toString() : (url as any).url ?? ""
   if (u.includes("/api/wr/health")) {
     return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }))
@@ -217,7 +218,7 @@ describe("workspace-supervisor", () => {
       await supervisor.ensureWorkspaceRuntime("ws-pool-1")
 
       expect(mockAcquire).toHaveBeenCalled()
-      const call = mockAcquire.mock.calls.find((c) => c[0] === "ws-pool-1")
+      const call = (mockAcquire.mock.calls as any[][]).find((c) => c[0] === "ws-pool-1")
       expect(call).toBeTruthy()
       expect(call![1]).toBe("proj-1")
     })
@@ -241,10 +242,10 @@ describe("workspace-supervisor", () => {
       // Sandbox returns "missing" for both checks
       activeSandbox = createMockSandbox({
         process: {
-          executeCommand: mock(() => Promise.resolve(makeExecuteResult("missing"))),
-          createSession: mock(() => Promise.resolve()),
-          executeSessionCommand: mock(() => Promise.resolve()),
-          deleteSession: mock(() => Promise.resolve()),
+          executeCommand: vi.fn(() => Promise.resolve(makeExecuteResult("missing"))),
+          createSession: vi.fn(() => Promise.resolve()),
+          executeSessionCommand: vi.fn(() => Promise.resolve()),
+          deleteSession: vi.fn(() => Promise.resolve()),
         },
       })
       mockAcquire.mockImplementation(() => Promise.resolve(activeSandbox))
@@ -449,7 +450,7 @@ describe("workspace-supervisor", () => {
       expect(r1.status).toBe("ready")
 
       // pool.acquire called only once for this workspace
-      const acquireCalls = mockAcquire.mock.calls.filter(
+      const acquireCalls = (mockAcquire.mock.calls as any[][]).filter(
         (c) => c[0] === "ws-dedup-1",
       )
       expect(acquireCalls.length).toBe(1)
@@ -662,6 +663,7 @@ describe("workspace-supervisor: expected wake behavior", () => {
         project_id: "proj-1",
         directory: "/workspace",
         kind: "cloud" as const,
+        repo_url: "",
         remote_directory: "/workspace",
         created_at: Date.now(),
         updated_at: Date.now(),

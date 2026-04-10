@@ -5,7 +5,15 @@
  * replaced with HTTP calls to the opencode server. No Instance.provide() calls.
  */
 
+import Database from "better-sqlite3"
 import { onPlannerStopped, onSessionStopped, type ExecutionAdapter } from "@opencode-ai/workgraph"
+
+/**
+ * The workgraph package accepts a raw sqlite db that doubles as an execution
+ * store (duck-typed). We type it as the sqlite instance for our `.prepare()`
+ * calls and cast at the workgraph boundary where it's used as a store.
+ */
+type WorkGraphDb = InstanceType<typeof Database>
 import type { OpencodeEventsHandle, OpencodeEvent } from "./opencode-events"
 import { opencodeHeaders } from "./opencode-auth"
 
@@ -85,16 +93,16 @@ async function createIsolatedWorktree(
   })
 }
 
-function open(db: any, runId: string, nodeId: string, sessionId: string) {
+function open(db: WorkGraphDb, runId: string, nodeId: string, sessionId: string) {
   return db
-    .query(
+    .prepare(
       "SELECT attempt_id FROM attempts_current WHERE run_id = ? AND node_id = ? AND session_id = ? AND finished_at IS NULL ORDER BY started_at DESC LIMIT 1",
     )
     .get(runId, nodeId, sessionId) as { attempt_id: string } | null
 }
 
 export function createWorkGraphExecution(
-  db: any,
+  db: WorkGraphDb,
   opencodeUrl: string,
   opencodeEvents: OpencodeEventsHandle,
 ): ExecutionAdapter {
@@ -161,13 +169,13 @@ export function createWorkGraphExecution(
         if (timer) clearTimeout(timer)
 
         if (!input.node_id) {
-          await onPlannerStopped(db, input.run_id, session.id, message).catch((err) => {
+          await onPlannerStopped(db as never, input.run_id, session.id, message).catch((err) => {
             console.error("[workgraph] failed to settle planner session", err)
           })
           return
         }
         await onSessionStopped(
-          db,
+          db as never,
           input.run_id,
           input.node_id,
           session.id,

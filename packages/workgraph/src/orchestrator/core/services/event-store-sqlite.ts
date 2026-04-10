@@ -2,11 +2,10 @@ import type { EventEnvelope } from "../../events";
 import { events } from "../db/schema";
 import { eq, and, gt, max, desc } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import type Database from "better-sqlite3";
 import type { IEventStore } from "./event-store";
 import type { IHashChain } from "./hash-chain";
 import { openNodeHashChain } from "./hash-chain-node";
-import { client, type SqliteInput } from "../../../sqlite";
+import { client, type RawDatabase, type SqliteInput } from "../../../sqlite";
 
 // To swap SQLite drivers (e.g. bun:sqlite → better-sqlite3), update the two
 // driver imports above and the Db alias. The class below is unchanged.
@@ -61,16 +60,17 @@ class SqliteEventStore implements IEventStore {
       .where(and(eq(events.stream_id, partial.stream_id), eq(events.stream_seq, seq)))
       .limit(1);
 
-    if (conflictCheck.length > 0 && conflictCheck[0].id !== envelope.id) {
-      if (envelope.created_at > conflictCheck[0].created_at) {
+    const conflict = conflictCheck[0]
+    if (conflict && conflict.id !== envelope.id) {
+      if (envelope.created_at > conflict.created_at) {
         // Local event is newer — replace the existing remote row
-        await this.db.delete(events).where(eq(events.id, conflictCheck[0].id));
+        await this.db.delete(events).where(eq(events.id, conflict.id));
       } else {
         // Remote event is newer or equal — skip this insert, return existing
         const existing = await this.db
           .select()
           .from(events)
-          .where(eq(events.id, conflictCheck[0].id))
+          .where(eq(events.id, conflict.id))
           .limit(1);
         return (existing[0] ?? envelope) as EventEnvelope;
       }
@@ -148,5 +148,5 @@ export function openSqliteEventStore(
   sqlite: SqliteInput,
   hasher: IHashChain = openNodeHashChain(),
 ): IEventStore {
-  return new SqliteEventStore(drizzle(client(sqlite) as Database), hasher);
+  return new SqliteEventStore(drizzle(client(sqlite) as unknown as RawDatabase), hasher);
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from "bun:test";
+import { vi, describe, it, expect } from "vitest";
 import { FakeDb, makeSpawn, nextRunId } from "../helpers/fake-db";
 
 const {

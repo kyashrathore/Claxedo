@@ -14,7 +14,7 @@ const CreateSchema = z.object({
   runtime_type_hint: z.enum(["workspace", "task", "service"]).optional(),
   template_id: z.string().optional(),
   fanout_mode: z.enum(["single", "fanout"]).optional(),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
 });
 
 const UpdateSchema = z.object({
@@ -24,7 +24,7 @@ const UpdateSchema = z.object({
   runtime_type_hint: z.enum(["workspace", "task", "service"]).optional(),
   template_id: z.string().optional(),
   fanout_mode: z.enum(["single", "fanout"]).optional(),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
 });
 
 export function triggersRouter(

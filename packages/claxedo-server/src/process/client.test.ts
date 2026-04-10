@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { createProcessClient } from "./client"
 
 describe("process client", () => {
@@ -15,7 +15,7 @@ describe("process client", () => {
     const client = createProcessClient({
       baseUrl: "http://localhost:4096",
       directory: "/tmp/demo",
-      fetch: async (input, init) => {
+      fetch: (async (input: any, init: any) => {
         const headers = new Headers(init?.headers)
         seen = {
           body: init?.body,
@@ -37,7 +37,7 @@ describe("process client", () => {
             headers: { "Content-Type": "application/json" },
           },
         )
-      },
+      }) as typeof fetch,
     })
 
     const result = await client.start("proc_1")
@@ -61,7 +61,7 @@ describe("process client", () => {
     const client = createProcessClient({
       baseUrl: "http://localhost:4096",
       directory: "/tmp/demo",
-      fetch: async (_, init) => {
+      fetch: (async (_: any, init: any) => {
         const headers = new Headers(init?.headers)
         seen = {
           body: init?.body,
@@ -81,7 +81,7 @@ describe("process client", () => {
             headers: { "Content-Type": "application/json" },
           },
         )
-      },
+      }) as typeof fetch,
     })
 
     const result = await client.start("proc_1", { portConflict: "pick-new" })
@@ -96,7 +96,7 @@ describe("process client", () => {
     const client = createProcessClient({
       baseUrl: "http://localhost:4096",
       directory: "/tmp/demo",
-      fetch: async () => {
+      fetch: (async (_input: any, _init: any) => {
         return new Response(
           JSON.stringify({
             kind: "port_conflict",
@@ -112,7 +112,7 @@ describe("process client", () => {
             headers: { "Content-Type": "application/json" },
           },
         )
-      },
+      }) as typeof fetch,
     })
 
     const result = await client.start("proc_1", { interactive: true })
@@ -140,7 +140,7 @@ describe("process client", () => {
       baseUrl: "http://localhost:4096",
       directory: "/tmp/demo",
       workspaceId: "ws_123",
-      fetch: async (input, init) => {
+      fetch: (async (input: any, init: any) => {
         const headers = new Headers(init?.headers)
         seen = {
           workspaceId: headers.get("x-workspace-id"),
@@ -150,7 +150,7 @@ describe("process client", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         })
-      },
+      }) as typeof fetch,
     })
 
     await client.list()

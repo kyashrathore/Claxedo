@@ -1,11 +1,10 @@
 import { HTTPException } from "hono/http-exception"
 import { OpenCodeAdapter } from "../../../workspace-runtime/src"
+import type { ClaxedoEvent as RuntimeClaxedoEvent } from "../../../workspace-runtime/src/bus"
 import type { CompatEnvelope } from "../../../workspace-runtime/src/compat-events"
 import { createSessionRoutes } from "../../../workspace-runtime/src/routes/session-core"
 import { sessionStatusSnapshot } from "../../../workspace-runtime/src/routes/session-status-snapshot"
 import { claxedoBus, globalBus, type ClaxedoEvent } from "../bus"
-import { deleteCloudSession, syncCloudMessages, syncCloudSession, syncCloudSessions } from "../cloud/session-sync"
-import { readSessionMessages } from "../cloud/message-replay"
 import { createGlobalDirectory, globalRoot, globalWorkspace } from "../global-session"
 import {
   createLocalSession,
@@ -18,19 +17,24 @@ import {
   updateLocalSessionConfig,
 } from "../local-agent-engine"
 import {
-  deleteSessionMeta,
   GLOBAL_SHOW_TAG,
   GLOBAL_TAG,
   applySessionMeta,
   sessionMeta,
-  syncSessionMeta,
-  syncSessionMetas,
   taggedSessionMetas,
-  putSessionMeta,
 } from "../session-meta"
 import { opencodeHeaders } from "../opencode-auth"
 import { normalize, type SessionRunner } from "../session-runner"
 import { getWorkspaceByDirectory, resolveWorkspace } from "../workspace-store"
+import { getHarnessMode, getSessionWriteMode } from "../architecture"
+import { createSyncDB } from "../sync-db"
+import { getHarnessHost } from "../harness/host"
+
+const sync = createSyncDB({ mode: getSessionWriteMode })
+
+function central() {
+  return getHarnessMode() === "central"
+}
 
 async function workspace(c: {
   req: {
@@ -151,10 +155,27 @@ function bridgeLifecycleEvent(event: CompatEnvelope) {
   })
 }
 
+function sessionEvent(event: ClaxedoEvent): event is RuntimeClaxedoEvent {
+  return event.type !== "provision" && event.type !== "worktree.ready" && event.type !== "worktree.failed"
+}
+
+const sessionBus = {
+  publish(event: RuntimeClaxedoEvent) {
+    claxedoBus.publish(event)
+  },
+  subscribe(fn: (event: RuntimeClaxedoEvent) => void) {
+    return claxedoBus.subscribe((event) => {
+      if (!sessionEvent(event)) return
+      fn(event)
+    })
+  },
+}
+
 export function AgentSessionRoutes() {
   return createSessionRoutes({
     resolveAdapter: async (c, input) => {
       const ws = await workspaceStrict(c as never, input)
+      if (central()) return getHarnessHost(sync).createAdapter(ws)
       if (input?.sessionId) return getLocalSessionAdapter(ws, input.sessionId)
       const hit = runner(c as never)
       if (hit) return getLocalAgentAdapter(ws, hit)
@@ -164,19 +185,43 @@ export function AgentSessionRoutes() {
     listSessions: async (c) => {
       const ws = await workspace(c as never)
       if (!ws) return globalSessions()
+      if (central()) {
+        return (await getHarnessHost(sync).createAdapter(ws)).listSessions(ws.directory)
+      }
       const rows = await listLocalSessions(ws)
-      return applySessionMeta(
-        rows.filter((item): item is Record<string, unknown> => !!item && typeof item === "object"),
-      )
+      const filtered = rows.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+      // Canonicalize projectID to the resolved workspace's project_id
+      if (ws.project_id) {
+        for (const row of filtered) row.projectID = ws.project_id
+      }
+      return applySessionMeta(filtered)
     },
     createSession: async (c, _directory, title) => {
+      if (central()) {
+        const ws = await workspace(c as never)
+        if (ws) return (await getHarnessHost(sync).createAdapter(ws)).createSession(ws.directory, title)
+        const dir = await createGlobalDirectory()
+        const next = globalWorkspace(dir)
+        const adapter = await getHarnessHost(sync).createAdapter(next)
+        const session = await adapter.createSession(dir, title)
+        await sync.put_session_meta(session.id, {
+          ws: next,
+          directory: dir,
+          title: title ?? null,
+          tags: [GLOBAL_TAG, GLOBAL_SHOW_TAG],
+        })
+        return {
+          ...session,
+          directory: dir,
+        }
+      }
       const ws = await workspace(c as never)
       if (ws) return createLocalSession(ws, runner(c as never) ?? await getLocalSessionRunner(ws), title)
       const dir = await createGlobalDirectory()
       const next = globalWorkspace(dir)
       const session = await createLocalSession(next, runner(c as never) ?? await getLocalSessionRunner(next), title)
-      await syncSessionMeta(undefined, { ...session, directory: dir })
-      await putSessionMeta(session.id, {
+      await sync.sync_session_meta(undefined, { ...session, directory: dir })
+      await sync.put_session_meta(session.id, {
         directory: dir,
         title,
         tags: [GLOBAL_TAG, GLOBAL_SHOW_TAG],
@@ -187,6 +232,7 @@ export function AgentSessionRoutes() {
       }
     },
     getStatus: async (c, directory, adapter) => {
+      if (central()) return sessionStatusSnapshot(await adapter.listSessions(directory))
       if (!(adapter instanceof OpenCodeAdapter)) return sessionStatusSnapshot(await adapter.listSessions(directory))
       const url = await adapter.getServerUrl()
       const ws = await workspace(c as never)
@@ -203,60 +249,72 @@ export function AgentSessionRoutes() {
       })
     },
     getMessages: async (_c, _directory, sessionId) => {
-      const messages = readSessionMessages(sessionId)
+      const messages = sync.read_session_messages(sessionId)
       return messages.length > 0 ? messages : undefined
     },
-    listPermissions: async (c) => listLocalPermissions(await workspaceStrict(c as never)),
+    listPermissions: async (c) => {
+      const ws = await workspaceStrict(c as never)
+      if (central()) return (await getHarnessHost(sync).createAdapter(ws)).listPermissions(ws.directory)
+      return listLocalPermissions(ws)
+    },
     afterListSessions: async (c, _directory, sessions) => {
+      if (central()) return
       const ws = await workspace(c as never)
       if (!ws) return
-      await syncSessionMetas(ws, sessions)
-      await syncCloudSessions(ws, sessions)
+      await sync.sync_session_metas(ws, sessions)
+      await sync.sync_cloud_sessions(ws, sessions)
     },
     afterCreateSession: async (c, _directory, session) => {
+      if (central()) return
       const ws = await workspace(c as never)
       if (!ws || ws.id === "global") return
-      await syncSessionMeta(ws, session)
-      await syncCloudSession(ws, session)
+      await sync.sync_session_meta(ws, session)
+      await sync.sync_cloud_session(ws, session)
     },
     afterGetSession: async (c, _directory, session) => {
+      if (central()) return
       const ws = await workspace(c as never)
       if (!ws || ws.id === "global") {
-        await syncSessionMeta(undefined, session)
+        await sync.sync_session_meta(undefined, session)
         return
       }
-      await syncSessionMeta(ws, session)
-      await syncCloudSession(ws, session)
+      await sync.sync_session_meta(ws, session)
+      await sync.sync_cloud_session(ws, session)
     },
-    getSessionConfig: async (c, _directory, sessionId, _adapter) => {
+    getSessionConfig: async (c, directory, sessionId, adapter) => {
+      if (central()) return adapter.getSessionConfig(sessionId, directory)
       const ws = await workspaceStrict(c as never, { sessionId })
       return getLocalSessionConfig(ws, sessionId)
     },
-    updateSessionConfig: async (c, _directory, sessionId, patch) => {
+    updateSessionConfig: async (c, directory, sessionId, patch, adapter) => {
+      if (central()) return adapter.updateSessionConfig(sessionId, patch, directory)
       const ws = await workspaceStrict(c as never, { sessionId })
       return updateLocalSessionConfig(ws, sessionId, patch)
     },
     afterUpdateSession: async (c, _directory, session) => {
+      if (central()) return
       const ws = await workspace(c as never)
       if (!ws || ws.id === "global") {
-        await syncSessionMeta(undefined, session)
+        await sync.sync_session_meta(undefined, session)
         return
       }
-      await syncSessionMeta(ws, session)
-      await syncCloudSession(ws, session)
+      await sync.sync_session_meta(ws, session)
+      await sync.sync_cloud_session(ws, session)
     },
     afterDeleteSession: async (c, _directory, sessionId) => {
+      if (central()) return
       const ws = await workspace(c as never)
-      await deleteSessionMeta(sessionId)
+      await sync.delete_session_meta(sessionId)
       if (!ws || ws.id === "global") return
-      await deleteCloudSession(ws, sessionId)
+      await sync.delete_cloud_session(ws, sessionId)
     },
     afterMessages: async (c, _directory, sessionId, messages) => {
+      if (central()) return
       const ws = await workspace(c as never)
       if (!ws || ws.id === "global") return
-      await syncCloudMessages(ws, sessionId, messages)
+      await sync.sync_cloud_messages(ws, sessionId, messages)
     },
-    sessionBus: claxedoBus,
+    sessionBus,
     publishGlobal: (event) => {
       globalBus.publish({
         directory: event.directory,

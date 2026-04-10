@@ -1,28 +1,44 @@
 import type { ConnectorInterface, NormalizedIssue } from "../../orchestrator/events"
 import type { GitHubConnector } from "./github"
 
-export function createGitHubAdapter(connector: GitHubConnector): ConnectorInterface {
+type GitHubParams = {
+  owner?: string
+  repo?: string
+  issueNumber?: number
+} & Record<string, unknown>
+
+export function createGitHubAdapter(connector: GitHubConnector): ConnectorInterface<string, GitHubParams> {
   return {
     provider: "github",
 
-    hydrateIssue(params: Record<string, any>): Promise<NormalizedIssue> {
-      return connector.hydrateIssue(params.owner, params.repo, params.issueNumber)
+    hydrateIssue(params: GitHubParams): Promise<NormalizedIssue> {
+      return connector.hydrateIssue(reqText(params.owner, "owner"), reqText(params.repo, "repo"), reqNumber(params.issueNumber, "issueNumber"))
     },
 
-    updateIssue(params: Record<string, any>, updates: { title?: string; status?: string; description?: string }): Promise<void> {
-      return connector.updateIssue(params.owner, params.repo, params.issueNumber, {
+    updateIssue(params: GitHubParams, updates): Promise<void> {
+      return connector.updateIssue(reqText(params.owner, "owner"), reqText(params.repo, "repo"), reqNumber(params.issueNumber, "issueNumber"), {
         title: updates.title,
         state: updates.status === "closed" ? "closed" : updates.status === "open" ? "open" : undefined,
         body: updates.description,
       })
     },
 
-    addComment(params: Record<string, any>, comment: string): Promise<void> {
-      return connector.addComment(params.owner, params.repo, params.issueNumber, comment)
+    addComment(params: GitHubParams, comment: string): Promise<void> {
+      return connector.addComment(reqText(params.owner, "owner"), reqText(params.repo, "repo"), reqNumber(params.issueNumber, "issueNumber"), comment)
     },
 
-    createIssue(params: Record<string, any>, data: { title: string; description: string }): Promise<NormalizedIssue> {
-      return connector.createIssue(params.owner, params.repo, { title: data.title, body: data.description })
+    createIssue(params: GitHubParams, data: { title: string; description: string }): Promise<NormalizedIssue> {
+      return connector.createIssue(reqText(params.owner, "owner"), reqText(params.repo, "repo"), { title: data.title, body: data.description })
     },
   }
+}
+
+function reqText(value: string | undefined, key: string) {
+  if (value) return value
+  throw new Error(`GitHub params require ${key}`)
+}
+
+function reqNumber(value: number | undefined, key: string) {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  throw new Error(`GitHub params require ${key}`)
 }

@@ -1,4 +1,6 @@
-import type Database from "better-sqlite3"
+import Database from "better-sqlite3"
+
+type SqliteInstance = InstanceType<typeof Database>
 
 const sqls = [
   "CREATE TABLE IF NOT EXISTS `claxedo_page` (`id` text PRIMARY KEY NOT NULL, `project_id` text NOT NULL, `title` text NOT NULL DEFAULT 'Untitled', `content` text NOT NULL DEFAULT '', `status` text NOT NULL DEFAULT 'draft', `session_id` text, `file_path` text, `directory` text, `created_at` text NOT NULL, `updated_at` text NOT NULL)",
@@ -40,16 +42,16 @@ const tabs = [
   "claxedo_terminal_session",
 ] as const
 
-function hasTable(db: Database, name: string) {
+function hasTable(db: SqliteInstance, name: string) {
   return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)
 }
 
-function hasColumn(db: Database, table: string, name: string) {
+function hasColumn(db: SqliteInstance, table: string, name: string) {
   const rows = db.prepare(`PRAGMA table_info(\`${table}\`)`).all() as Array<{ name: string }>
   return rows.some((row) => row.name === name)
 }
 
-export function repair(db: Database) {
+export function repair(db: SqliteInstance) {
   const out: string[] = tabs.filter((name) => !hasTable(db, name))
   const file = hasTable(db, "claxedo_page") && !hasColumn(db, "claxedo_page", "file_path")
   const dir = hasTable(db, "claxedo_page") && !hasColumn(db, "claxedo_page", "directory")

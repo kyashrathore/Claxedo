@@ -1,17 +1,18 @@
 import type { Context, Next } from "hono"
 import { ensureWorkspaceRuntime, holdRuntime, markRuntimeUse, releaseRuntime, getSandbox } from "./workspace-supervisor"
 import { resolveWorkspace } from "./workspace-store"
+import { opencodeHeaders } from "./opencode-auth"
+import { getHarnessMode } from "./architecture"
 
 function matches(pathname: string, prefixes: string[]) {
   return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"))
 }
 
-const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/acp-config-options"]
+const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/acp-config-options", "/api/wr/capabilities"]
 
-const WR_PREFIXES = [
+const WR_FULL_PREFIXES = [
   "/api/claxedo/process",
   "/api/claxedo/diff",
-  "/api/claxedo/tunnel",
   "/session",
   "/permission",
   "/question",
@@ -20,12 +21,24 @@ const WR_PREFIXES = [
   "/mcp",
 ]
 
-const WR_PATHS = [
+const WR_MIN_PREFIXES = [
+  "/api/claxedo/process",
+  "/api/claxedo/diff",
+  "/find",
+]
+
+const WR_FULL_PATHS = [
   "/file",
   "/file/content",
   "/file/status",
   "/lsp",
   "/vcs",
+]
+
+const WR_MIN_PATHS = [
+  "/file",
+  "/file/content",
+  "/file/status",
 ]
 
 const CS_PATHS = [
@@ -108,7 +121,7 @@ async function proxy(c: Context, hit: Hit) {
   if (target.searchParams.has("directory")) {
     target.searchParams.set("directory", hit.directory)
   }
-  const headers = new Headers(c.req.raw.headers)
+  const headers = opencodeHeaders(c.req.raw.headers)
   headers.set("x-workspace-id", hit.workspaceId)
   headers.set("x-opencode-directory", hit.directory)
   headers.set("X-Daytona-Skip-Preview-Warning", "true")
@@ -161,12 +174,15 @@ async function proxy(c: Context, hit: Hit) {
 
 export async function workspaceRuntimeProxy(c: Context, next: Next): Promise<Response | void> {
   const pathname = new URL(c.req.url).pathname
+  const mode = getHarnessMode()
+  const paths = mode === "central" ? WR_MIN_PATHS : WR_FULL_PATHS
+  const prefixes = mode === "central" ? WR_MIN_PREFIXES : WR_FULL_PREFIXES
 
   if (CS_PATHS.includes(pathname) || matches(pathname, CS_PREFIXES)) {
     return next()
   }
 
-  if (!WR_INTERNAL.includes(pathname) && !WR_PATHS.includes(pathname) && !matches(pathname, WR_PREFIXES)) {
+  if (!WR_INTERNAL.includes(pathname) && !paths.includes(pathname) && !matches(pathname, prefixes)) {
     return next()
   }
 

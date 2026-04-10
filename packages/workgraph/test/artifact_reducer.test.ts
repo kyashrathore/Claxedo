@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import type { EventEnvelope } from "../src/orchestrator/events/schema";
 import { artifactReducer, type ArtifactState } from "../src/orchestrator/core/reducers/artifact";
 

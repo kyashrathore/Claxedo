@@ -18,7 +18,10 @@
  *  - Global dispose shim returns true
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
+import { defined } from "./fixtures/assert-helpers"
+import { execSync } from "child_process"
+import { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -51,7 +54,7 @@ function json(body: unknown, status = 200) {
 const enc = new TextEncoder()
 const upstreamSubs = new Set<ReadableStreamDefaultController<Uint8Array>>()
 
-const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-ma-int-"))
+const root = await fs.mkdtemp(path.join(realpathSync(os.tmpdir()), "claxedo-ma-int-"))
 const home = path.join(root, "home")
 const data = path.join(home, ".claxedo")
 
@@ -97,16 +100,24 @@ const upstreamConfig = { model: "upstream/up-model", provider: {}, mcp: {} }
 
 let upstreamPort = 0
 let serverPort = 0
-let upstream: ReturnType<typeof Bun.serve>
+let upstream: import("@hono/node-server").ServerType
 let server: ReturnType<typeof serverMod.startServer>
+
+function sh(cmd: string) { execSync(cmd, { stdio: "ignore" }) }
 
 async function workspace(label: string) {
   const directory = path.join(root, "workspaces", `${label}-${randomUUID()}`)
   await fs.mkdir(directory, { recursive: true })
-  return await store.ensureWorkspace({
+  await fs.writeFile(path.join(directory, "README.md"), "# test\n")
+  sh(`git init -b main ${directory}`)
+  sh(`git -C ${directory} config user.email test@example.com`)
+  sh(`git -C ${directory} config user.name test`)
+  sh(`git -C ${directory} add README.md`)
+  sh(`git -C ${directory} commit -m init`)
+  return defined(await store.ensureWorkspace({
     workspaceId: `ws_${randomUUID()}`,
     directory,
-  })
+  }))
 }
 
 function base() {
@@ -118,7 +129,7 @@ function cfgFile() {
 }
 
 async function savedConfig() {
-  return JSON.parse(await Bun.file(cfgFile()).text()) as {
+  return JSON.parse(await fs.readFile(cfgFile(), "utf-8")) as {
     mcp: Record<string, unknown>
     runner?: { type: string; binary?: string; model?: string }
     auth?: Record<string, string>
@@ -131,7 +142,8 @@ describe("multi-agent integration", () => {
     upstreamPort = await port()
     serverPort = await port()
 
-    upstream = Bun.serve({
+    const { serve } = await import("@hono/node-server")
+    upstream = serve({
       port: upstreamPort,
       hostname: "127.0.0.1",
       fetch(req) {
@@ -179,8 +191,8 @@ describe("multi-agent integration", () => {
   afterAll(async () => {
     await local.shutdownLocalAgentEngine()
     await supervisor.shutdownWorkspaceSupervisor()
-    server?.stop()
-    upstream?.stop()
+    server?.close()
+    upstream?.close()
     for (const [k, v] of Object.entries(prev)) {
       if (v !== undefined) (process.env as any)[k] = v
       else delete (process.env as any)[k]
@@ -692,6 +704,12 @@ describe("multi-agent integration", () => {
   test("workspace resolve can create a local workspace by directory", async () => {
     const directory = path.join(root, "workspaces", `resolve-create-${randomUUID()}`)
     await fs.mkdir(directory, { recursive: true })
+    await fs.writeFile(path.join(directory, "README.md"), "# test\n")
+    sh(`git init -b main ${directory}`)
+    sh(`git -C ${directory} config user.email test@example.com`)
+    sh(`git -C ${directory} config user.name test`)
+    sh(`git -C ${directory} add README.md`)
+    sh(`git -C ${directory} commit -m init`)
     const res = await fetch(`${base()}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
     expect(res.status).toBe(200)
     const body = await res.json() as { directory: string; kind: string; workspaceId: string }

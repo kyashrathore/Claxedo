@@ -5,7 +5,8 @@ export function decodeInput(message: unknown, decoder: TextDecoder): string {
       : message
 
   if (typeof data === "string") return data
-  if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) return decoder.decode(data)
+  if (data instanceof ArrayBuffer) return decoder.decode(new Uint8Array(data))
+  if (ArrayBuffer.isView(data)) return decoder.decode(new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
   if (typeof data === "number" || typeof data === "boolean") return String(data)
   return ""
 }

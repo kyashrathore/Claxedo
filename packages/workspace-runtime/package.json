@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "build": "tsx scripts/build.ts",
     "bundle": "tsx scripts/bundle.ts",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test": "bun test --path-ignore-patterns='**/store.test*' && node --import tsx --test src/store.test.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.16.1",
@@ -32,7 +33,6 @@
     "zod-to-json-schema": "^3.24.0"
   },
   "devDependencies": {
-    "@opencode-ai/agent-core": "workspace:*",
     "@opencode-ai/sdk": "workspace:*",
     "@tsconfig/node-lts": "^22.0.0",
     "@types/better-sqlite3": "^7.6.0",

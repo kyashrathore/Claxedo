@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach } from "vitest";
 import { getReadyNodes, LeaseManager, type TeamPolicy } from "../../src/orchestrator/core/scheduler";
 import { GraphEngine, type Node, type Edge } from "../../src/orchestrator/graph/graph";
 import { GateTracker } from "../../src/orchestrator/graph/gates";

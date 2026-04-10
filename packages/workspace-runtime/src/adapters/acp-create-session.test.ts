@@ -18,6 +18,8 @@ function adapter() {
   out.options = { binary: "fake-acp" }
   out.currentModel = ""
   out.dirs = new Set()
+  ;(out as any).sessions = new Map()
+  ;(out as any).busySessions = new Set()
   out.shared = {
     proc: null,
     init: null,
@@ -36,7 +38,7 @@ describe("ACPAdapter.createSession", () => {
     let dead = false
 
     const out = adapter() as ACPAdapter & {
-      getOrSpawnProcess: (directory: string) => Promise<{
+      getOrSpawnProcess: (id: string, directory: string) => Promise<{
         proc: {
           newSession: (directory: string, title?: string) => Promise<string>
           dispose: () => void
@@ -51,7 +53,7 @@ describe("ACPAdapter.createSession", () => {
       },
       updateSessionConfig() {},
     }
-    out.getOrSpawnProcess = async (directory) => {
+    out.getOrSpawnProcess = async (_id, directory) => {
       expect(directory).toBe("/work")
       return {
         isNew: true,
@@ -77,7 +79,7 @@ describe("ACPAdapter.createSession", () => {
     }
   })
 
-  it("reuses one shared process across directories for the same runner signature", async () => {
+  it("spawns a separate process per session", async () => {
     let spawns = 0
     let sessions = 0
     const make = () => {
@@ -91,14 +93,6 @@ describe("ACPAdapter.createSession", () => {
       }
     }
 
-    const shared = {
-      proc: null,
-      init: null,
-      refs: 2,
-      key: "claude",
-      model: "",
-      leases: new Set<ACPAdapter>(),
-    }
     const store = {
       bindSession() {},
       updateSessionConfig() {},
@@ -123,19 +117,16 @@ describe("ACPAdapter.createSession", () => {
       }
       store: { bindSession: (input: unknown) => void; updateSessionConfig: (id: string, cfg: unknown) => void }
     }
-    a.options = { binary: "fake-acp-shared", type: "claude-acp" }
-    b.options = { binary: "fake-acp-shared", type: "claude-acp" }
-    a.shared = shared
-    b.shared = shared
+    a.options = { binary: "fake-acp", type: "claude-acp" }
+    b.options = { binary: "fake-acp", type: "claude-acp" }
     a.store = store
     b.store = store
     a.make = make
     b.make = make
 
-    try {
-      await a.createSession("/work/a")
-      await b.createSession("/work/b")
-      expect(spawns).toBe(1)
-    } finally {}
+    await a.createSession("/work/a")
+    await b.createSession("/work/b")
+    expect(spawns).toBe(2)
+    expect(sessions).toBe(2)
   })
 })

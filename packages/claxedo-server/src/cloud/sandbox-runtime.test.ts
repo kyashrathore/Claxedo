@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, mock, spyOn } from "bun:test"
+import { describe, expect, test, beforeEach, vi } from "vitest"
 import type { Sandbox } from "@daytonaio/sdk"
 import { claxedoBus, type ClaxedoEvent } from "../bus"
 
@@ -21,24 +21,24 @@ function createMockSandbox(overrides?: Partial<Sandbox>): Sandbox {
     id: "sb-test-123",
     state: "started" as any,
     process: {
-      executeCommand: mock(() => Promise.resolve(makeExecuteResult("missing"))),
-      createSession: mock(() => Promise.resolve()),
-      executeSessionCommand: mock(() => Promise.resolve()),
-      deleteSession: mock(() => Promise.resolve()),
+      executeCommand: vi.fn(() => Promise.resolve(makeExecuteResult("missing"))),
+      createSession: vi.fn(() => Promise.resolve()),
+      executeSessionCommand: vi.fn(() => Promise.resolve()),
+      deleteSession: vi.fn(() => Promise.resolve()),
     },
     fs: {
-      uploadFile: mock(() => Promise.resolve()),
+      uploadFile: vi.fn(() => Promise.resolve()),
     },
-    getSignedPreviewUrl: mock(() =>
+    getSignedPreviewUrl: vi.fn(() =>
       Promise.resolve({ url: "https://sandbox.example.com" }),
     ),
-    getPreviewLink: mock(() =>
+    getPreviewLink: vi.fn(() =>
       Promise.resolve({ url: "https://sandbox.example.com" }),
     ),
-    refreshActivity: mock(() => Promise.resolve()),
-    start: mock(() => Promise.resolve()),
-    stop: mock(() => Promise.resolve()),
-    setLabels: mock(() => Promise.resolve({})),
+    refreshActivity: vi.fn(() => Promise.resolve()),
+    start: vi.fn(() => Promise.resolve()),
+    stop: vi.fn(() => Promise.resolve()),
+    setLabels: vi.fn(() => Promise.resolve({})),
     ...overrides,
   } as unknown as Sandbox
 }
@@ -73,11 +73,11 @@ describe("sandbox-runtime", () => {
 
       // Mock fs.readFileSync and fs.existsSync for the runtime bundle
       const fsModule = require("fs")
-      fsModule.readFileSync = mock((_path: string) => FAKE_BUNDLE)
-      fsModule.existsSync = mock((_path: string) => true)
+      fsModule.readFileSync = vi.fn((_path: string) => FAKE_BUNDLE)
+      fsModule.existsSync = vi.fn((_path: string) => true)
 
       // Mock fetch for health checks — succeed immediately
-      globalThis.fetch = mock(() =>
+      globalThis.fetch = vi.fn(() =>
         Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 })),
       ) as any
     })
@@ -340,7 +340,7 @@ describe("sandbox-runtime", () => {
       })
 
       // Make all fetch calls fail (health check)
-      globalThis.fetch = mock(() =>
+      globalThis.fetch = vi.fn(() =>
         Promise.resolve(new Response("error", { status: 500 })),
       ) as any
 

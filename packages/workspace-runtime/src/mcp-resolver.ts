@@ -194,7 +194,7 @@ export const runnerAgent = (type: string): McpCapableAgent | null => {
 export function resolveClaxedoMcpCommand(options: { execPath?: string; devPath?: string } = {}): string[] {
   const execPath = options.execPath ?? process.execPath
   const execDir = path.dirname(execPath)
-  const devPath = options.devPath ?? path.resolve(import.meta.dirname, "../../claxedo-server/src/mcp/claxedo-mcp-dev.ts")
+  const devPath = options.devPath ?? path.resolve(import.meta.dirname, "../../claxedo-server/src/claxedo-mcp/dev.ts")
   const probe = (file: string) => {
     try {
       if (fs.existsSync(file)) {

@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test"
+import { describe, test, expect } from "vitest"
 import { onComplete } from "../src/model/hooks"
 import type { WorkItem } from "../src/model/types"
 import type { ConnectorInterface } from "../src/orchestrator/events/connector"

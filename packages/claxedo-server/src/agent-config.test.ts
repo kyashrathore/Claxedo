@@ -1,9 +1,11 @@
-import { describe, expect, test, beforeEach, afterAll } from "bun:test"
+import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { realpathSync } from "fs"
 import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 
-const root = path.join(process.cwd(), `.tmp-agent-config-test-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync(os.tmpdir()), `agent-config-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
@@ -99,6 +101,7 @@ describe("agent config", () => {
     const config = await mod.loadUserConfig()
     expect(config.mcp).toEqual({})
     expect(config.auth).toEqual({})
+    expect(config.harness).toEqual({})
     expect(config.runner).toBeUndefined()
   })
 
@@ -115,6 +118,7 @@ describe("agent config", () => {
       runner: { type: "claude-acp" as const, model: "claude-opus-4-6" },
       auth: { "claude-acp": "sk-ant-test" },
       sandbox: {},
+      harness: { mode: "central" as const },
     }
     await mod.saveUserConfig(original)
     const loaded = await mod.loadUserConfig()
@@ -122,6 +126,7 @@ describe("agent config", () => {
     expect(loaded.mcp["my-server"]).toEqual(original.mcp["my-server"])
     expect(loaded.runner).toEqual(original.runner)
     expect(loaded.auth).toEqual(original.auth)
+    expect(loaded.harness).toEqual(original.harness)
   })
 
   test("save creates directory if it doesn't exist", async () => {

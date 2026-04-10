@@ -464,19 +464,22 @@ function textMarks(text: string, marks?: Array<{ type?: string }>) {
   }, text)
 }
 
-function inlineFrom(node: any): string {
+/** Loosely-typed TipTap JSON node (recursive, untyped at the editor boundary). */
+type TipTapNode = Record<string, unknown> & { type?: string; content?: TipTapNode[]; text?: string; marks?: Array<{ type: string }>; attrs?: Record<string, unknown> }
+
+function inlineFrom(node: TipTapNode): string {
   if (!node || typeof node !== "object") return ""
   if (typeof node.text === "string") return textMarks(node.text, Array.isArray(node.marks) ? node.marks : [])
   if (!Array.isArray(node.content)) return ""
-  return node.content.map((item: unknown) => inlineFrom(item)).join("")
+  return node.content.map((item) => inlineFrom(item)).join("")
 }
 
-function blockFrom(node: any, depth = 0): string[] {
+function blockFrom(node: TipTapNode, depth = 0): string[] {
   if (!node || typeof node !== "object") return []
   const type = typeof node.type === "string" ? node.type : ""
   if (type === "doc") {
     if (!Array.isArray(node.content)) return []
-    return node.content.flatMap((item: unknown) => blockFrom(item, depth))
+    return node.content.flatMap((item) => blockFrom(item, depth))
   }
   if (type === "heading") {
     const level = Math.max(1, Math.min(6, Number(node?.attrs?.level) || 1))
@@ -495,7 +498,7 @@ function blockFrom(node: any, depth = 0): string[] {
   if (type === "horizontalRule") return ["---"]
   if (type === "bulletList") {
     const items = Array.isArray(node.content) ? node.content : []
-    return items.flatMap((item: any) => {
+    return items.flatMap((item: TipTapNode) => {
       const lines = blockFrom(item, depth + 1)
       if (!lines.length) return [`${"  ".repeat(depth)}- `]
       const [head, ...tail] = lines
@@ -505,7 +508,7 @@ function blockFrom(node: any, depth = 0): string[] {
   if (type === "orderedList") {
     const start = Number(node?.attrs?.start) || 1
     const items = Array.isArray(node.content) ? node.content : []
-    return items.flatMap((item: any, idx: number) => {
+    return items.flatMap((item: TipTapNode, idx: number) => {
       const lines = blockFrom(item, depth + 1)
       const n = start + idx
       if (!lines.length) return [`${"  ".repeat(depth)}${n}. `]
@@ -515,17 +518,17 @@ function blockFrom(node: any, depth = 0): string[] {
   }
   if (type === "taskItem") {
     const checked = Boolean(node?.attrs?.checked)
-    const rows: string[] = Array.isArray(node.content) ? node.content.flatMap((item: unknown) => blockFrom(item, depth + 1)) : []
+    const rows: string[] = Array.isArray(node.content) ? node.content.flatMap((item) => blockFrom(item, depth + 1)) : []
     if (!rows.length) return [`- [${checked ? "x" : " "}] `]
     const [head, ...tail] = rows
     return [`- [${checked ? "x" : " "}] ${head}`, ...tail.map((line: string) => `  ${line}`)]
   }
   if (type === "taskList") {
     const items = Array.isArray(node.content) ? node.content : []
-    return items.flatMap((item: unknown) => blockFrom(item, depth))
+    return items.flatMap((item) => blockFrom(item, depth))
   }
   if (type === "listItem") {
-    const lines = Array.isArray(node.content) ? node.content.flatMap((item: unknown) => blockFrom(item, depth + 1)) : []
+    const lines = Array.isArray(node.content) ? node.content.flatMap((item) => blockFrom(item, depth + 1)) : []
     return lines
   }
   if (type === "image") {
@@ -538,8 +541,8 @@ function blockFrom(node: any, depth = 0): string[] {
   }
   if (type === "table") {
     const rows = Array.isArray(node.content) ? node.content : []
-    const matrix = rows.map((row: any) =>
-      Array.isArray(row?.content) ? row.content.map((cell: any) => inlineFrom(cell).replace(/\s+/g, " ").trim()) : [],
+    const matrix = rows.map((row: TipTapNode) =>
+      Array.isArray(row?.content) ? row.content.map((cell: TipTapNode) => inlineFrom(cell).replace(/\s+/g, " ").trim()) : [],
     )
     const width = matrix.reduce((max: number, row: string[]) => Math.max(max, row.length), 0)
     if (!width) return []
@@ -552,7 +555,7 @@ function blockFrom(node: any, depth = 0): string[] {
     return lines
   }
   if (type === "hardBreak") return ["  "]
-  if (Array.isArray(node.content)) return node.content.flatMap((item: unknown) => blockFrom(item, depth))
+  if (Array.isArray(node.content)) return node.content.flatMap((item) => blockFrom(item, depth))
   return []
 }
 

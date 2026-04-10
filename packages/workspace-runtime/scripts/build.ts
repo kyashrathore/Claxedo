@@ -5,7 +5,7 @@
  *
  * Steps:
  *   1. esbuild: bundle src/index.ts → dist/index.mjs
- *      - Workspace deps (@opencode-ai/agent-core, @opencode-ai/sdk) are bundled in
+ *      - Workspace deps (@opencode-ai/sdk) are bundled in
  *      - Native modules and npm dependencies are externalized
  *   2. tsc: emit declaration files → dist/
  *

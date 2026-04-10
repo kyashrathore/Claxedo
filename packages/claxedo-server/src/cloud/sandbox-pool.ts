@@ -1,7 +1,7 @@
 import { Daytona, Sandbox, SandboxState } from "@daytonaio/sdk"
 import { Log } from "../log"
 import { ensureSnapshot } from "./sandbox-image"
-import { sandboxAuth } from "./provider"
+import { defaultSandboxProvider, sandboxAuth } from "./provider"
 import { loadUserConfig } from "../agent-config"
 
 const log = Log.create({ service: "sandbox-pool" })
@@ -15,6 +15,12 @@ let snapshotName: string | undefined
 let monitor: ReturnType<typeof setInterval> | undefined
 
 const APP_LABEL = "claxedo"
+
+export async function poolEnabled(): Promise<boolean> {
+  const cfg = await loadUserConfig()
+  if (defaultSandboxProvider(cfg.sandbox) !== "daytona") return false
+  return !!sandboxAuth(cfg.sandbox, "daytona")?.api_key
+}
 
 async function getDaytona(): Promise<Daytona> {
   if (client) return client
@@ -143,6 +149,10 @@ async function reconcile(): Promise<void> {
 }
 
 export async function initPool(): Promise<void> {
+  if (!await poolEnabled()) {
+    log.debug("Skipping sandbox pool initialization: Daytona auth not configured")
+    return
+  }
   try {
     const daytona = await getDaytona()
     snapshotName = await ensureSnapshot(daytona)

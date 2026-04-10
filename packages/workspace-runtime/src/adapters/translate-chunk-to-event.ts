@@ -27,6 +27,7 @@ import {
   todoUpdated,
   withDir,
 } from "../compat-events"
+import { recovering } from "../types/status"
 
 export interface ChunkToEventContext {
   sessionId: string
@@ -262,11 +263,7 @@ export function translateChunkToEvent(chunk: UIMessageChunk, ctx: ChunkToEventCo
         return [withDir(ctx.directory, sessionError("session error", ctx.sessionId))]
       }
       if (chunk.status === "recovering") {
-        return [withDir(ctx.directory, sessionStatus(ctx.sessionId, {
-          type: "recovering",
-          kind: "process_restart",
-          message: "Recovering ACP client...",
-        }))]
+        return [withDir(ctx.directory, sessionStatus(ctx.sessionId, recovering()))]
       }
       return [withDir(ctx.directory, sessionStatus(ctx.sessionId, { type: chunk.status }))]
 

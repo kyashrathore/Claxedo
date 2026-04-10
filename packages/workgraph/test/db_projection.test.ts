@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
-import { drizzle } from "drizzle-orm/bun-sqlite";
+import { describe, it, expect, beforeEach } from "vitest";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 import {
   events,
   runs_current,
@@ -13,117 +13,23 @@ import {
   scratchpad_entries,
 } from "../src/orchestrator/core/db/schema";
 import { eq } from "drizzle-orm";
+import { initializeDb } from "../src/app";
 
 describe("Database Projections", () => {
   let db: ReturnType<typeof drizzle>;
   let sqlite: Database;
 
   beforeEach(() => {
-    // Setup in-memory sqlite for fast testing
     sqlite = new Database(":memory:");
+    initializeDb(sqlite);
+
+    // Tables not created by initializeDb but used by this test
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS sync_outbox (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, event_id TEXT NOT NULL, status TEXT NOT NULL, retry_count INTEGER NOT NULL, next_retry_at TEXT)`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS sync_state (id TEXT PRIMARY KEY, provider TEXT NOT NULL, cursor TEXT NOT NULL, last_sync_at TEXT NOT NULL)`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS conflicts (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, event_id TEXT NOT NULL, strategy TEXT NOT NULL, resolution TEXT, resolved_at TEXT)`);
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS snapshots (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, state_json TEXT NOT NULL, event_seq INTEGER NOT NULL, created_at TEXT NOT NULL)`);
+
     db = drizzle(sqlite);
-
-    // Create tables
-    sqlite.run(`
-      CREATE TABLE events (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        stream_id TEXT NOT NULL,
-        stream_seq INTEGER NOT NULL,
-        logical_ts INTEGER NOT NULL,
-        schema_version INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        actor_type TEXT NOT NULL,
-        actor_id TEXT NOT NULL,
-        op_id TEXT NOT NULL UNIQUE,
-        prev_hash TEXT NOT NULL,
-        hash TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE runs_current (
-        run_id TEXT PRIMARY KEY,
-        goal TEXT NOT NULL,
-        status TEXT NOT NULL
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE nodes_current (
-        node_id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        role TEXT NOT NULL DEFAULT 'developer',
-        kind TEXT NOT NULL,
-        status TEXT NOT NULL,
-        retry_count INTEGER NOT NULL
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE dependency_edges_current (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        source_id TEXT NOT NULL,
-        target_id TEXT NOT NULL,
-        type TEXT NOT NULL
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE sync_outbox (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        event_id TEXT NOT NULL,
-        status TEXT NOT NULL,
-        retry_count INTEGER NOT NULL,
-        next_retry_at TEXT
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE sync_state (
-        id TEXT PRIMARY KEY,
-        provider TEXT NOT NULL,
-        cursor TEXT NOT NULL,
-        last_sync_at TEXT NOT NULL
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE conflicts (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        event_id TEXT NOT NULL,
-        strategy TEXT NOT NULL,
-        resolution TEXT,
-        resolved_at TEXT
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE snapshots (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        state_json TEXT NOT NULL,
-        event_seq INTEGER NOT NULL,
-        created_at TEXT NOT NULL
-      );
-    `);
-
-    sqlite.run(`
-      CREATE TABLE scratchpad_entries (
-        id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        node_id TEXT NOT NULL,
-        content TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        expires_at TEXT NOT NULL,
-        size_bytes INTEGER NOT NULL
-      );
-    `);
   });
 
   it("should insert and retrieve an event correctly", async () => {
@@ -170,6 +76,7 @@ describe("Database Projections", () => {
       run_id: "run_1",
       role: "developer",
       kind: "task",
+      title: "Test node",
       status: "pending",
       retry_count: 0,
     });

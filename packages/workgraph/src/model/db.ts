@@ -1,4 +1,4 @@
-import Database from "better-sqlite3"
+import BetterSqlite3 from "better-sqlite3"
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3"
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
 import { eq, gt, asc, and, or, isNull } from "drizzle-orm"
@@ -9,6 +9,7 @@ import type { WorkGraphRepo, SyncProjection } from "./repo"
 // To swap SQLite drivers (e.g. bun:sqlite → better-sqlite3), update the two
 // imports above and this alias. The class below is unchanged.
 type Db = BetterSQLite3Database
+type RawDatabase = InstanceType<typeof BetterSqlite3>
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -83,10 +84,10 @@ const wg_sync_projection = sqliteTable("wg_sync_projection", {
 // ---------------------------------------------------------------------------
 
 class SqliteWorkGraphRepo implements WorkGraphRepo {
-  constructor(private db: Db) {}
+  constructor(private db: Db, private raw: RawDatabase) {}
 
   close(): void {
-    this.db.$client.close()
+    this.raw.close()
   }
 
   // Events
@@ -106,7 +107,14 @@ class SqliteWorkGraphRepo implements WorkGraphRepo {
     const rows = sinceSeq != null
       ? this.db.select().from(wg_events).where(gt(wg_events.seq, sinceSeq)).orderBy(asc(wg_events.seq)).all()
       : this.db.select().from(wg_events).orderBy(asc(wg_events.seq)).all()
-    return rows.map((r) => ({ id: r.id, seq: r.seq, type: r.type, payload: r.payload, actor: r.actor, createdAt: r.created_at }))
+    return rows.map((row) => ({
+      id: row.id,
+      seq: row.seq,
+      type: row.type as WorkEvent["type"],
+      payload: row.payload,
+      actor: row.actor,
+      createdAt: row.created_at,
+    }))
   }
 
   getMaxSeq(): number {
@@ -320,11 +328,13 @@ class SqliteWorkGraphRepo implements WorkGraphRepo {
 export function openSqlite(path?: string): WorkGraphRepo {
   const fresh = !!path && !existsSync(path)
   try {
-    return new SqliteWorkGraphRepo(boot(path))
+    const next = boot(path)
+    return new SqliteWorkGraphRepo(next.db, next.raw)
   } catch (err) {
     if (!path || !fresh || !retry(err)) throw err
     wipe(path)
-    return new SqliteWorkGraphRepo(boot(path))
+    const next = boot(path)
+    return new SqliteWorkGraphRepo(next.db, next.raw)
   }
 }
 
@@ -332,8 +342,8 @@ export function openSqlite(path?: string): WorkGraphRepo {
 // Boot helpers
 // ---------------------------------------------------------------------------
 
-function boot(path?: string): Db {
-  const sqlite = new Database(path ?? ":memory:")
+function boot(path?: string): { db: Db; raw: RawDatabase } {
+  const sqlite = new BetterSqlite3(path ?? ":memory:")
   try {
     sqlite.exec("PRAGMA journal_mode = WAL")
     sqlite.exec("PRAGMA foreign_keys = ON")
@@ -425,7 +435,7 @@ function boot(path?: string): Db {
       )
     `)
 
-    return drizzle(sqlite)
+    return { db: drizzle(sqlite), raw: sqlite }
   } catch (err) {
     try { sqlite.close() } catch {}
     throw err
@@ -443,7 +453,7 @@ function wipe(path: string) {
   try { rmSync(`${path}-wal`, { force: true }) } catch {}
 }
 
-function ensureColumn(db: Database, table: string, col: string, sql: string) {
+function ensureColumn(db: RawDatabase, table: string, col: string, sql: string) {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
   if (rows.some((row) => row.name === col)) return
   db.exec(sql)

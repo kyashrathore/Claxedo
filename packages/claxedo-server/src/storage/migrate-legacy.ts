@@ -30,6 +30,28 @@ const migratedPages = new Set<string>()
 const failedPages = new Set<string>()
 let migratedTabContext = false
 
+function rec(input: unknown) {
+  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
+}
+
+function str(input: unknown) {
+  if (typeof input === "string" && input.length > 0) return input
+  if (typeof input === "number" && Number.isFinite(input)) return String(input)
+  return undefined
+}
+
+function int(input: unknown, alt: number) {
+  return typeof input === "number" && Number.isFinite(input) ? input : alt
+}
+
+function flt(input: unknown, alt: number) {
+  return typeof input === "number" && Number.isFinite(input) ? input : alt
+}
+
+function iso(input: unknown, alt = new Date().toISOString()) {
+  return typeof input === "string" && input.length > 0 ? input : alt
+}
+
 export function pagesBaseDir(directory?: string) {
   const dir = directory
   return dir && dir !== "/" ? dir : homedir()
@@ -76,18 +98,21 @@ export function migratePages(projectId: string, directory?: string) {
     const legacy = new Database(legacyPath, { readonly: true })
 
     ClaxedoDB.transaction((db) => {
-      const pages = legacy.prepare("SELECT * FROM pages").all() as Array<Record<string, any>>
+      const pages = legacy.prepare("SELECT * FROM pages").all() as unknown[]
       for (const page of pages) {
+        const row = rec(page)
+        const id = str(row?.id)
+        if (!row || !id) continue
         db.insert(ClaxedoPageTable)
           .values({
-            id: page.id,
+            id,
             project_id: projectId,
-            title: page.title || "Untitled",
-            content: page.content || "",
-            status: page.status || "draft",
-            session_id: page.session_id || null,
-            created_at: page.created_at || new Date().toISOString(),
-            updated_at: page.updated_at || new Date().toISOString(),
+            title: str(row.title) ?? "Untitled",
+            content: str(row.content) ?? "",
+            status: str(row.status) ?? "draft",
+            session_id: str(row.session_id) ?? null,
+            created_at: iso(row.created_at),
+            updated_at: iso(row.updated_at),
           })
           .onConflictDoNothing()
           .run()
@@ -95,16 +120,20 @@ export function migratePages(projectId: string, directory?: string) {
 
       const hasStatuses = legacy.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='page_statuses'").get()
       if (hasStatuses) {
-        const statuses = legacy.prepare("SELECT * FROM page_statuses").all() as Array<Record<string, any>>
+        const statuses = legacy.prepare("SELECT * FROM page_statuses").all() as unknown[]
         for (const s of statuses) {
+          const row = rec(s)
+          const id = str(row?.id)
+          const name = str(row?.name)
+          if (!row || !id || !name) continue
           db.insert(ClaxedoPageStatusTable)
             .values({
-              id: s.id,
+              id,
               project_id: projectId,
-              name: s.name,
-              color: s.color || "#6b7280",
-              position: s.position ?? 0,
-              transitions: s.transitions || "[]",
+              name,
+              color: str(row.color) ?? "#6b7280",
+              position: int(row.position, 0),
+              transitions: str(row.transitions) ?? "[]",
             })
             .onConflictDoNothing()
             .run()
@@ -113,85 +142,105 @@ export function migratePages(projectId: string, directory?: string) {
 
       const hasArena = legacy.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='page_arena'").get()
       if (hasArena) {
-        const arenas = legacy.prepare("SELECT * FROM page_arena").all() as Array<Record<string, any>>
+        const arenas = legacy.prepare("SELECT * FROM page_arena").all() as unknown[]
         for (const a of arenas) {
+          const row = rec(a)
+          const id = str(row?.id)
+          const page_id = str(row?.page_id)
+          if (!row || !id || !page_id) continue
           db.insert(ClaxedoPageArenaTable)
             .values({
-              id: a.id,
-              page_id: a.page_id,
-              directory: a.directory || "",
-              parent_session_id: a.parent_session_id || "",
-              status: a.status || "idle",
-              config_json: a.config_json || "{}",
-              synopsis: a.synopsis || "",
-              active_wave_id: a.active_wave_id || "",
-              current_round: a.current_round ?? 0,
-              stop_reason: a.stop_reason || "",
-              last_error: a.last_error || "",
-              created_at: a.created_at ?? Date.now(),
-              updated_at: a.updated_at ?? Date.now(),
+              id,
+              page_id,
+              directory: str(row.directory) ?? "",
+              parent_session_id: str(row.parent_session_id) ?? "",
+              status: str(row.status) ?? "idle",
+              config_json: str(row.config_json) ?? "{}",
+              synopsis: str(row.synopsis) ?? "",
+              active_wave_id: str(row.active_wave_id) ?? "",
+              current_round: int(row.current_round, 0),
+              stop_reason: str(row.stop_reason) ?? "",
+              last_error: str(row.last_error) ?? "",
+              created_at: int(row.created_at, Date.now()),
+              updated_at: int(row.updated_at, Date.now()),
             })
             .onConflictDoNothing()
             .run()
         }
 
-        const agents = legacy.prepare("SELECT * FROM page_arena_agent").all() as Array<Record<string, any>>
+        const agents = legacy.prepare("SELECT * FROM page_arena_agent").all() as unknown[]
         for (const a of agents) {
+          const row = rec(a)
+          const id = str(row?.id)
+          const arena_id = str(row?.arena_id)
+          const agent_key = str(row?.agent_key)
+          const display_name = str(row?.display_name)
+          if (!row || !id || !arena_id || !agent_key || !display_name) continue
           db.insert(ClaxedoPageArenaAgentTable)
             .values({
-              id: a.id,
-              arena_id: a.arena_id,
-              agent_key: a.agent_key,
-              display_name: a.display_name,
-              role: a.role || "",
-              duty: a.duty || "",
-              model: a.model || "",
-              style: a.style || "",
-              temperature: a.temperature ?? 0,
-              session_id: a.session_id || "",
-              status: a.status || "idle",
-              settled: a.settled ?? 0,
-              last_signal: a.last_signal || "",
-              created_at: a.created_at ?? Date.now(),
-              updated_at: a.updated_at ?? Date.now(),
+              id,
+              arena_id,
+              agent_key,
+              display_name,
+              role: str(row.role) ?? "",
+              duty: str(row.duty) ?? "",
+              model: str(row.model) ?? "",
+              style: str(row.style) ?? "",
+              temperature: flt(row.temperature, 0),
+              session_id: str(row.session_id) ?? "",
+              status: str(row.status) ?? "idle",
+              settled: int(row.settled, 0),
+              last_signal: str(row.last_signal) ?? "",
+              created_at: int(row.created_at, Date.now()),
+              updated_at: int(row.updated_at, Date.now()),
             })
             .onConflictDoNothing()
             .run()
         }
 
-        const waves = legacy.prepare("SELECT * FROM page_arena_wave").all() as Array<Record<string, any>>
+        const waves = legacy.prepare("SELECT * FROM page_arena_wave").all() as unknown[]
         for (const w of waves) {
+          const row = rec(w)
+          const id = str(row?.id)
+          const arena_id = str(row?.arena_id)
+          if (!row || !id || !arena_id) continue
           db.insert(ClaxedoPageArenaWaveTable)
             .values({
-              id: w.id,
-              arena_id: w.arena_id,
-              status: w.status || "running",
-              round_num: w.round_num ?? 0,
-              target_json: w.target_json || "[]",
-              termination: w.termination || "",
-              started_at: w.started_at ?? Date.now(),
-              finished_at: w.finished_at ?? 0,
-              updated_at: w.updated_at ?? Date.now(),
+              id,
+              arena_id,
+              status: str(row.status) ?? "running",
+              round_num: int(row.round_num, 0),
+              target_json: str(row.target_json) ?? "[]",
+              termination: str(row.termination) ?? "",
+              started_at: int(row.started_at, Date.now()),
+              finished_at: int(row.finished_at, 0),
+              updated_at: int(row.updated_at, Date.now()),
             })
             .onConflictDoNothing()
             .run()
         }
 
-        const messages = legacy.prepare("SELECT * FROM page_arena_message").all() as Array<Record<string, any>>
+        const messages = legacy.prepare("SELECT * FROM page_arena_message").all() as unknown[]
         for (const m of messages) {
+          const row = rec(m)
+          const id = str(row?.id)
+          const arena_id = str(row?.arena_id)
+          const wave_id = str(row?.wave_id)
+          const kind = str(row?.kind)
+          if (!row || !id || !arena_id || !wave_id || !kind) continue
           db.insert(ClaxedoPageArenaMessageTable)
             .values({
-              id: m.id,
-              arena_id: m.arena_id,
-              wave_id: m.wave_id,
-              round_num: m.round_num ?? 0,
-              kind: m.kind,
-              source_agent_key: m.source_agent_key || "",
-              text: m.text || "",
-              raw_text: m.raw_text || "",
-              control_signal: m.control_signal || "continue",
-              metadata_json: m.metadata_json || "{}",
-              created_at: m.created_at ?? Date.now(),
+              id,
+              arena_id,
+              wave_id,
+              round_num: int(row.round_num, 0),
+              kind,
+              source_agent_key: str(row.source_agent_key) ?? "",
+              text: str(row.text) ?? "",
+              raw_text: str(row.raw_text) ?? "",
+              control_signal: str(row.control_signal) ?? "continue",
+              metadata_json: str(row.metadata_json) ?? "{}",
+              created_at: int(row.created_at, Date.now()),
             })
             .onConflictDoNothing()
             .run()
@@ -199,21 +248,29 @@ export function migratePages(projectId: string, directory?: string) {
 
         const hasDelivery = legacy.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='page_arena_delivery'").get()
         if (hasDelivery) {
-          const deliveries = legacy.prepare("SELECT * FROM page_arena_delivery").all() as Array<Record<string, any>>
+          const deliveries = legacy.prepare("SELECT * FROM page_arena_delivery").all() as unknown[]
           for (const d of deliveries) {
+            const row = rec(d)
+            const id = str(row?.id)
+            const arena_id = str(row?.arena_id)
+            const wave_id = str(row?.wave_id)
+            const message_id = str(row?.message_id)
+            const source_agent_key = str(row?.source_agent_key)
+            const target_agent_key = str(row?.target_agent_key)
+            if (!row || !id || !arena_id || !wave_id || !message_id || !source_agent_key || !target_agent_key) continue
             db.insert(ClaxedoPageArenaDeliveryTable)
               .values({
-                id: d.id,
-                arena_id: d.arena_id,
-                wave_id: d.wave_id,
-                message_id: d.message_id,
-                source_agent_key: d.source_agent_key,
-                target_agent_key: d.target_agent_key,
-                status: d.status || "done",
-                attempt: d.attempt ?? 1,
-                error: d.error || "",
-                created_at: d.created_at ?? Date.now(),
-                updated_at: d.updated_at ?? Date.now(),
+                id,
+                arena_id,
+                wave_id,
+                message_id,
+                source_agent_key,
+                target_agent_key,
+                status: str(row.status) ?? "done",
+                attempt: int(row.attempt, 1),
+                error: str(row.error) ?? "",
+                created_at: int(row.created_at, Date.now()),
+                updated_at: int(row.updated_at, Date.now()),
               })
               .onConflictDoNothing()
               .run()
@@ -267,13 +324,17 @@ export function migrateTabContext() {
     const legacy = new Database(legacyPath, { readonly: true })
 
     ClaxedoDB.transaction((db) => {
-      const contexts = legacy.prepare("SELECT * FROM tab_context").all() as Array<Record<string, any>>
+      const contexts = legacy.prepare("SELECT * FROM tab_context").all() as unknown[]
       for (const row of contexts) {
+        const item = rec(row)
+        const tab_id = str(item?.tab_id)
+        const payload = str(item?.payload)
+        if (!item || !tab_id || !payload) continue
         db.insert(ClaxedoTabContextTable)
           .values({
-            tab_id: row.tab_id,
-            payload: row.payload,
-            updated_at: row.updated_at ?? Date.now(),
+            tab_id,
+            payload,
+            updated_at: int(item.updated_at, Date.now()),
           })
           .onConflictDoNothing()
           .run()
@@ -281,13 +342,17 @@ export function migrateTabContext() {
 
       const hasTerminal = legacy.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='tab_context_terminal'").get()
       if (hasTerminal) {
-        const terminals = legacy.prepare("SELECT * FROM tab_context_terminal").all() as Array<Record<string, any>>
+        const terminals = legacy.prepare("SELECT * FROM tab_context_terminal").all() as unknown[]
         for (const row of terminals) {
+          const item = rec(row)
+          const terminal_id = str(item?.terminal_id)
+          const tab_id = str(item?.tab_id)
+          if (!item || !terminal_id || !tab_id) continue
           db.insert(ClaxedoTabContextTerminalTable)
             .values({
-              terminal_id: row.terminal_id,
-              tab_id: row.tab_id,
-              updated_at: row.updated_at ?? Date.now(),
+              terminal_id,
+              tab_id,
+              updated_at: int(item.updated_at, Date.now()),
             })
             .onConflictDoNothing()
             .run()
@@ -296,21 +361,24 @@ export function migrateTabContext() {
 
       const hasSession = legacy.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='terminal_session'").get()
       if (hasSession) {
-        const sessions = legacy.prepare("SELECT * FROM terminal_session").all() as Array<Record<string, any>>
+        const sessions = legacy.prepare("SELECT * FROM terminal_session").all() as unknown[]
         for (const row of sessions) {
+          const item = rec(row)
+          const terminal_id = str(item?.terminal_id)
+          if (!item || !terminal_id) continue
           db.insert(ClaxedoTerminalSessionTable)
             .values({
-              terminal_id: row.terminal_id,
-              tab_id: row.tab_id || null,
-              workspace_id: row.workspace_id || null,
-              provider: row.provider || null,
-              session_id: row.session_id || null,
-              transcript_path: row.transcript_path || null,
-              ref_name: row.ref_name || null,
-              prompt: row.prompt || null,
-              last_assistant_message: row.last_assistant_message || null,
-              event_type: row.event_type || null,
-              updated_at: row.updated_at ?? Date.now(),
+              terminal_id,
+              tab_id: str(item.tab_id) ?? null,
+              workspace_id: str(item.workspace_id) ?? null,
+              provider: str(item.provider) ?? null,
+              session_id: str(item.session_id) ?? null,
+              transcript_path: str(item.transcript_path) ?? null,
+              ref_name: str(item.ref_name) ?? null,
+              prompt: str(item.prompt) ?? null,
+              last_assistant_message: str(item.last_assistant_message) ?? null,
+              event_type: str(item.event_type) ?? null,
+              updated_at: int(item.updated_at, Date.now()),
             })
             .onConflictDoNothing()
             .run()

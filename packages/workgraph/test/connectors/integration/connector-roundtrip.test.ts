@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 import { GitHubConnector, type NormalizedIssue } from "../../../src/connectors/github/github";
 
 describe("GitHub Connector Round-Trip Integration", () => {
@@ -9,7 +9,7 @@ describe("GitHub Connector Round-Trip Integration", () => {
   let connector: GitHubConnector;
 
   beforeEach(() => {
-    getMock = mock(async () => ({
+    getMock = vi.fn(async () => ({
       data: {
         number: 42,
         title: "Original Title",
@@ -19,11 +19,11 @@ describe("GitHub Connector Round-Trip Integration", () => {
       },
     }));
 
-    updateMock = mock(async () => ({}));
+    updateMock = vi.fn(async () => ({}));
 
-    createCommentMock = mock(async () => ({}));
+    createCommentMock = vi.fn(async () => ({}));
 
-    createMock = mock(async () => ({
+    createMock = vi.fn(async () => ({
       data: {
         number: 100,
         title: "New Issue Title",
@@ -66,7 +66,7 @@ describe("GitHub Connector Round-Trip Integration", () => {
     });
 
     it("should map closed state correctly", async () => {
-      getMock = mock(async () => ({
+      getMock = vi.fn(async () => ({
         data: {
           number: 43,
           title: "Closed Issue",
@@ -94,7 +94,7 @@ describe("GitHub Connector Round-Trip Integration", () => {
     });
 
     it("should handle null body as empty string", async () => {
-      getMock = mock(async () => ({
+      getMock = vi.fn(async () => ({
         data: {
           number: 44,
           title: "No Body",
@@ -217,7 +217,7 @@ describe("GitHub Connector Round-Trip Integration", () => {
     });
 
     it("should handle created issue with closed state", async () => {
-      createMock = mock(async () => ({
+      createMock = vi.fn(async () => ({
         data: {
           number: 101,
           title: "Closed On Create",

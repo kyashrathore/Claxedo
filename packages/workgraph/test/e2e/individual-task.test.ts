@@ -3,17 +3,24 @@
  *
  * Tests startExecution directly — skips the planner and runs pre-built graphs.
  */
-import { describe, it, expect, beforeEach } from "bun:test";
-import { Database } from "bun:sqlite";
+import { describe, it, expect, beforeEach } from "vitest";
+import Database from "better-sqlite3";
 import { initializeDb } from "../../src/app";
 import { startExecution, getOrchestration, getRunMetrics } from "../../src/orchestrator/executor";
 import { handleToolCall } from "../../src/mcp/tools";
 import { MockAgent } from "../helpers/mock-agent";
+import { openSqliteExecutionStore } from "../../src/sdk/execution-store";
+import { openSqliteEventStore } from "../../src/orchestrator/core/services/event-store-sqlite";
 
 function makeDb() {
   const db = new Database(":memory:");
   initializeDb(db);
   return db;
+}
+
+function makeStore(db: any) {
+  const eventStore = openSqliteEventStore(db);
+  return openSqliteExecutionStore(db, eventStore);
 }
 
 function makeRunWithNodes(
@@ -92,10 +99,10 @@ describe("individual-task: single node", () => {
       { title: "Do the thing", kind: "research", role: "developer", prompt: "research it" },
     ]);
 
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({ match: {}, status: "completed" });
 
-    await startExecution(db, runId, "single node test", agent.spawnFn());
+    await startExecution(makeStore(db), runId, "single node test", agent.spawnFn());
     await waitForPhase(db, runId, "completed");
 
     const state = getOrchestration(runId)!;
@@ -110,13 +117,13 @@ describe("individual-task: single node", () => {
       { title: "Single task", kind: "research", role: "developer", prompt: "do it" },
     ]);
 
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({ match: {}, status: "completed" });
 
-    await startExecution(db, runId, "metrics test", agent.spawnFn());
+    await startExecution(makeStore(db), runId, "metrics test", agent.spawnFn());
     await waitForPhase(db, runId, "completed");
 
-    const metrics = getRunMetrics(db, runId);
+    const metrics = getRunMetrics(makeStore(db), runId);
     expect(metrics).not.toBeNull();
     expect(metrics!.task_count).toBe(1);
     expect(metrics!.completed_count).toBe(1);
@@ -142,10 +149,10 @@ describe("individual-task: sequential chain", () => {
       { title: "Step 3", kind: "research", role: "developer", depends_on: ["Step 2"] },
     ]);
 
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({ match: {}, status: "completed" });
 
-    await startExecution(db, runId, "chain", agent.spawnFn());
+    await startExecution(makeStore(db), runId, "chain", agent.spawnFn());
     await waitForPhase(db, runId, "completed");
 
     for (const nodeId of nodeIds) {
@@ -172,11 +179,11 @@ describe("individual-task: node_work_items mapping", () => {
     ]);
 
     const itemMap = new Map([[nodeIds[0], "work_item_abc"]]);
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({ match: {}, status: "completed" });
 
-    const state = await startExecution(db, runId, "mapped", agent.spawnFn(), itemMap);
-    expect(state.node_work_items.get(nodeIds[0])).toBe("work_item_abc");
+    const state = await startExecution(makeStore(db), runId, "mapped", agent.spawnFn(), { node_work_items: itemMap });
+    expect(state.node_work_items!.get(nodeIds[0])).toBe("work_item_abc");
 
     await waitForPhase(db, runId, "completed");
   });
@@ -201,10 +208,10 @@ describe("individual-task: parallel nodes", () => {
       { title: "D", kind: "research", role: "developer" },
     ]);
 
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({ match: {}, status: "completed" });
 
-    await startExecution(db, runId, "parallel", agent.spawnFn());
+    await startExecution(makeStore(db), runId, "parallel", agent.spawnFn());
     await waitForPhase(db, runId, "completed");
 
     for (const nodeId of nodeIds) {
@@ -212,7 +219,7 @@ describe("individual-task: parallel nodes", () => {
       expect(node.status).toBe("completed");
     }
 
-    const metrics = getRunMetrics(db, runId);
+    const metrics = getRunMetrics(makeStore(db), runId);
     expect(metrics!.max_parallelism).toBeGreaterThanOrEqual(2);
   });
 });
@@ -233,14 +240,14 @@ describe("individual-task: scratchpad integration", () => {
       { title: "Research", kind: "research", role: "developer", prompt: "find things" },
     ]);
 
-    const agent = new MockAgent(db);
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
     agent.addScript({
       match: {},
       tools: [{ name: "write_scratchpad", args: { content: "Key finding: the answer is 42" } }],
       status: "completed",
     });
 
-    await startExecution(db, runId, "scratchpad test", agent.spawnFn());
+    await startExecution(makeStore(db), runId, "scratchpad test", agent.spawnFn());
     await waitForPhase(db, runId, "completed");
 
     const entries = db.query("SELECT content FROM scratchpad_entries WHERE run_id = ?").all(runId) as any[];
@@ -260,8 +267,8 @@ describe("individual-task: empty run", () => {
     db.run("INSERT INTO runs_current (run_id, goal, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
       [runId, "empty", "active", new Date().toISOString(), new Date().toISOString()]);
 
-    const agent = new MockAgent(db);
-    const state = await startExecution(db, runId, "empty", agent.spawnFn());
+    const agent = new MockAgent(db, makeStore(db), openSqliteEventStore(db));
+    const state = await startExecution(makeStore(db), runId, "empty", agent.spawnFn());
 
     expect(state.phase).toBe("completed");
   });

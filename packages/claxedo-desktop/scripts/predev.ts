@@ -55,7 +55,7 @@ try {
 }
 
 // Bundle claxedo-mcp as Node-compatible JS for local desktop resources
-const mcpSource = path.resolve(CLAXEDO_SERVER_DIR, "src/mcp/claxedo-mcp.ts")
+const mcpSource = path.resolve(CLAXEDO_SERVER_DIR, "src/claxedo-mcp/server.ts")
 const mcpDest = path.resolve(PACKAGE_DIR, "resources/claxedo-mcp.js")
 
 if (fs.existsSync(mcpSource)) {

@@ -10,7 +10,7 @@
  * stub contexts and checking whether it calls next() (CS) or attempts to proxy (WR).
  */
 
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 
 // We test the route classification by examining the prefix/path lists directly.
 // The proxy.ts file uses:
@@ -22,9 +22,9 @@ import { describe, expect, test } from "bun:test"
 // classification logic from the source to assert the contract is correct.
 // If someone moves a path between CS/WR, this test breaks.
 
-const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/acp-config-options"]
+const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/acp-config-options", "/api/wr/capabilities"]
 
-const WR_PREFIXES = [
+const WR_FULL_PREFIXES = [
   "/api/claxedo/process",
   "/api/claxedo/diff",
   "/api/claxedo/tunnel",
@@ -36,7 +36,15 @@ const WR_PREFIXES = [
   "/mcp",
 ]
 
-const WR_PATHS = ["/file", "/lsp", "/vcs"]
+const WR_MIN_PREFIXES = [
+  "/api/claxedo/process",
+  "/api/claxedo/diff",
+  "/api/claxedo/tunnel",
+  "/find",
+]
+
+const WR_FULL_PATHS = ["/file", "/file/content", "/file/status", "/lsp", "/vcs"]
+const WR_MIN_PATHS = ["/file", "/file/content", "/file/status"]
 
 const CS_PATHS = [
   "/global/event",
@@ -67,9 +75,11 @@ function matches(pathname: string, prefixes: string[]) {
   return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"))
 }
 
-function classifyRoute(pathname: string): "cs" | "wr" | "fallthrough" {
+function classifyRoute(pathname: string, mode: "workspace" | "central" = "workspace"): "cs" | "wr" | "fallthrough" {
+  const paths = mode === "central" ? WR_MIN_PATHS : WR_FULL_PATHS
+  const prefixes = mode === "central" ? WR_MIN_PREFIXES : WR_FULL_PREFIXES
   if (CS_PATHS.includes(pathname) || matches(pathname, CS_PREFIXES)) return "cs"
-  if (WR_INTERNAL.includes(pathname) || WR_PATHS.includes(pathname) || matches(pathname, WR_PREFIXES)) return "wr"
+  if (WR_INTERNAL.includes(pathname) || paths.includes(pathname) || matches(pathname, prefixes)) return "wr"
   return "fallthrough"
 }
 
@@ -119,7 +129,8 @@ describe("proxy route classification", () => {
       "/api/workgraph/runs",
     ]
     for (const p of csRoutes) {
-      expect(classifyRoute(p)).toBe("cs")
+      expect(classifyRoute(p, "workspace")).toBe("cs")
+      expect(classifyRoute(p, "central")).toBe("cs")
     }
   })
 
@@ -127,11 +138,12 @@ describe("proxy route classification", () => {
 
   test("workspace-runtime internal routes are proxied", () => {
     for (const p of WR_INTERNAL) {
-      expect(classifyRoute(p)).toBe("wr")
+      expect(classifyRoute(p, "workspace")).toBe("wr")
+      expect(classifyRoute(p, "central")).toBe("wr")
     }
   })
 
-  test("workspace-runtime prefix routes are proxied", () => {
+  test("workspace mode still proxies full workspace routes", () => {
     const wrRoutes = [
       "/session",
       "/session/abc123",
@@ -157,29 +169,46 @@ describe("proxy route classification", () => {
     for (const p of wrRoutes) {
       // strip query string for classification
       const pathname = p.split("?")[0]
-      expect(classifyRoute(pathname)).toBe("wr")
+      expect(classifyRoute(pathname, "workspace")).toBe("wr")
     }
   })
 
-  test("exact WR paths are proxied", () => {
-    expect(classifyRoute("/file")).toBe("wr")
-    expect(classifyRoute("/lsp")).toBe("wr")
-    expect(classifyRoute("/vcs")).toBe("wr")
+  test("central mode only proxies minimal workspace routes", () => {
+    expect(classifyRoute("/api/claxedo/process", "central")).toBe("wr")
+    expect(classifyRoute("/api/claxedo/diff", "central")).toBe("wr")
+    expect(classifyRoute("/api/claxedo/tunnel", "central")).toBe("wr")
+    expect(classifyRoute("/find/file", "central")).toBe("wr")
+    expect(classifyRoute("/file", "central")).toBe("wr")
+    expect(classifyRoute("/file/content", "central")).toBe("wr")
+    expect(classifyRoute("/file/status", "central")).toBe("wr")
+    expect(classifyRoute("/session", "central")).toBe("fallthrough")
+    expect(classifyRoute("/permission", "central")).toBe("fallthrough")
+    expect(classifyRoute("/question", "central")).toBe("fallthrough")
+    expect(classifyRoute("/event", "central")).toBe("fallthrough")
+    expect(classifyRoute("/mcp", "central")).toBe("fallthrough")
+    expect(classifyRoute("/lsp", "central")).toBe("fallthrough")
+    expect(classifyRoute("/vcs", "central")).toBe("fallthrough")
+  })
+
+  test("exact full workspace paths are only proxied in workspace mode", () => {
+    expect(classifyRoute("/file", "workspace")).toBe("wr")
+    expect(classifyRoute("/lsp", "workspace")).toBe("wr")
+    expect(classifyRoute("/vcs", "workspace")).toBe("wr")
   })
 
   // ── No overlap: CS and WR route sets are disjoint ─────────────────
 
   test("no path is classified as both CS and WR", () => {
     const allCsExact = [...CS_PATHS]
-    const allWrExact = [...WR_INTERNAL, ...WR_PATHS]
+    const allWrExact = [...WR_INTERNAL, ...WR_FULL_PATHS]
 
     // Exact paths must not appear in both lists
     const overlap = allCsExact.filter((p) => allWrExact.includes(p))
-    expect(overlap).toEqual([])
+      expect(overlap).toEqual([])
 
-    // No CS prefix should be a prefix of any WR prefix and vice versa
-    for (const cs of CS_PREFIXES) {
-      for (const wr of WR_PREFIXES) {
+      // No CS prefix should be a prefix of any WR prefix and vice versa
+      for (const cs of CS_PREFIXES) {
+      for (const wr of WR_FULL_PREFIXES) {
         expect(wr.startsWith(cs + "/")).toBe(false)
         expect(cs.startsWith(wr + "/")).toBe(false)
         expect(cs).not.toBe(wr)
@@ -196,24 +225,28 @@ describe("proxy route classification", () => {
       "/random/endpoint",
     ]
     for (const p of unknown) {
-      expect(classifyRoute(p)).toBe("fallthrough")
+      expect(classifyRoute(p, "workspace")).toBe("fallthrough")
+      expect(classifyRoute(p, "central")).toBe("fallthrough")
     }
   })
 
   // ── Edge cases ───────────────────────────────────────────────────
 
   test("/event is WR but /global/event is CS", () => {
-    expect(classifyRoute("/event")).toBe("wr")
-    expect(classifyRoute("/global/event")).toBe("cs")
+    expect(classifyRoute("/event", "workspace")).toBe("wr")
+    expect(classifyRoute("/event", "central")).toBe("fallthrough")
+    expect(classifyRoute("/global/event", "workspace")).toBe("cs")
   })
 
   test("/config is CS but /api/wr/config is WR", () => {
-    expect(classifyRoute("/config")).toBe("cs")
-    expect(classifyRoute("/api/wr/config")).toBe("wr")
+    expect(classifyRoute("/config", "workspace")).toBe("cs")
+    expect(classifyRoute("/api/wr/config", "workspace")).toBe("wr")
+    expect(classifyRoute("/api/wr/config", "central")).toBe("wr")
   })
 
   test("agent-config subpath /runner is CS not WR", () => {
     // Important: /api/claxedo/agent-config/runner is config, not a session route
-    expect(classifyRoute("/api/claxedo/agent-config/runner")).toBe("cs")
+    expect(classifyRoute("/api/claxedo/agent-config/runner", "workspace")).toBe("cs")
+    expect(classifyRoute("/api/claxedo/agent-config/runner", "central")).toBe("cs")
   })
 })

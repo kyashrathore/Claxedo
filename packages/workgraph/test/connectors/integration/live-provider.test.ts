@@ -1,5 +1,5 @@
-import { Database } from "bun:sqlite"
-import { beforeEach, describe, expect, test } from "bun:test"
+import Database from "better-sqlite3"
+import { beforeEach, describe, expect, test } from "vitest"
 import { createApp, initializeDb } from "../../../src/app"
 
 describe("live provider smoke", () => {

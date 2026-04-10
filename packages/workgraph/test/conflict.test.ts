@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { detectConflict, resolveConflict, reconcile, type Conflict } from "../src/orchestrator/sync/conflict";
 
 describe("Conflict Detection", () => {

@@ -18,7 +18,7 @@ export const TraceEventSchema = z.object({
   /** Optional: the node associated with this event (for node-scoped events). */
   node_id: z.string().optional(),
   /** Arbitrary structured payload — flexible JSON. Never mutated after append. */
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
 });
 
 export type TraceEvent = z.infer<typeof TraceEventSchema>;

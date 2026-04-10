@@ -6,7 +6,7 @@ Status: planning
 
 Related:
 
-- [ACP → OpenCode Event Mapping](../packages/workspace-runtime/docs/acp-opencode-mapping.md)
+- [ACP → OpenCode Event Mapping](./acp-opencode-mapping.md)
 - [ACP Tool Support Implementation](./acp-tool-support-implementation.md)
 - [ACP Protocol: Slash Commands](https://agentclientprotocol.com/protocol/slash-commands)
 

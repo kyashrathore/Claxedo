@@ -3,9 +3,11 @@ import { ACPAdapter } from "./acp"
 
 function adapter() {
   const out = Object.create(ACPAdapter.prototype) as ACPAdapter & {
-    shared: { proc: { alive: boolean; cachedConfigOptions: unknown[] | null } | null }
+    sessions: Map<string, unknown>
+    probe: { proc: { alive: boolean; cachedConfigOptions: unknown[] | null } | null; directory: string; init: null } | null
   }
-  out.shared = { proc: null }
+  out.sessions = new Map()
+  out.probe = null
   return out
 }
 
@@ -17,10 +19,9 @@ describe("ACPAdapter.probeConfigOptions", () => {
     delete process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS
 
     const out = adapter() as ACPAdapter & {
-      getOrSpawnProcess: (directory: string) => Promise<{ proc: { cachedConfigOptions: unknown[] | null }; isNew: boolean }>
-      dispose: () => void
+      getOrSpawnProbe: (directory: string) => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
     }
-    out.getOrSpawnProcess = async (directory) => {
+    out.getOrSpawnProbe = async (directory) => {
       expect(directory).toBe("/work")
       return new Promise(() => {})
     }
@@ -40,10 +41,9 @@ describe("ACPAdapter.probeConfigOptions", () => {
     process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS = "10"
 
     const out = adapter() as ACPAdapter & {
-      getOrSpawnProcess: (directory: string) => Promise<{ proc: { cachedConfigOptions: unknown[] | null }; isNew: boolean }>
-      dispose: () => void
+      getOrSpawnProbe: (directory: string) => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
     }
-    out.getOrSpawnProcess = async (directory) => {
+    out.getOrSpawnProbe = async (directory) => {
       expect(directory).toBe("/work")
       return new Promise(() => {})
     }
@@ -58,17 +58,19 @@ describe("ACPAdapter.probeConfigOptions", () => {
 
   it("returns cached options from the shared process without booting", async () => {
     const out = adapter() as ACPAdapter & {
-      shared: { proc: { alive: boolean; cachedConfigOptions: unknown[] | null } | null }
-      getOrSpawnProcess: (directory: string) => Promise<unknown>
+      probe: { proc: { alive: boolean; cachedConfigOptions: unknown[] | null } | null; directory: string; init: null }
+      getOrSpawnProbe: (directory: string) => Promise<unknown>
     }
-    out.shared = {
+    out.probe = {
       proc: {
         alive: true,
         cachedConfigOptions: [{ id: "model" }],
       },
-    } as { proc: { alive: boolean; cachedConfigOptions: unknown[] | null } | null }
-    out.getOrSpawnProcess = async () => {
-      throw new Error("getOrSpawnProcess should not be called when cache exists")
+      directory: "/work",
+      init: null,
+    }
+    out.getOrSpawnProbe = async () => {
+      throw new Error("getOrSpawnProbe should not be called when cache exists")
     }
 
     try {

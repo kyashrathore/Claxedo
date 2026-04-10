@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach } from "vitest";
 import { LeadLoop } from "../src/orchestrator/core/services/lead-loop";
 
 describe("LeadLoop", () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { Watchdog } from "../src/orchestrator/core/services/watchdog";
 
 describe("Watchdog", () => {

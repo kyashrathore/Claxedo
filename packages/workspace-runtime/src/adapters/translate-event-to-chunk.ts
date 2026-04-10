@@ -1,4 +1,5 @@
 import type { CompatEvent, CompatPart } from "../compat-events"
+import { chunk } from "../types/status"
 import type { UIMessageChunk } from "./index"
 
 export interface EventToChunkContext {
@@ -23,11 +24,7 @@ function questionOptions(input: Extract<CompatEvent, { type: "question.asked" }>
 export function translateEventToChunk(event: CompatEvent, ctx: EventToChunkContext): UIMessageChunk[] {
   switch (event.type) {
     case "session.status": {
-      const status = event.properties.status.type
-      if (status === "busy" || status === "idle" || status === "recovering") {
-        return [{ type: "session-status", status }]
-      }
-      return [{ type: "session-status", status: "error" }]
+      return [{ type: "session-status", status: chunk(event.properties.status) }]
     }
 
     case "session.idle":

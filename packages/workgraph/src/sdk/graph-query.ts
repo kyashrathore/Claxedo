@@ -231,7 +231,7 @@ export function artifactsForItem(db: SqliteDb, itemId: string) {
 }
 
 /** Artifacts from a work item and all its descendants (deduped). */
-export function descendantArtifacts(db: Database, itemId: string) {
+export function descendantArtifacts(db: SqliteDb, itemId: string) {
   const ids = getWorkGraph().getDescendants(itemId).map((item) => item.id)
   const seen = new Set<string>()
   return ids
@@ -266,11 +266,13 @@ function nodeRole(labels: string[]): string {
 }
 
 /** Build the full item API response object. */
-export function itemRow(db: Database, item: WorkItem, sliceStore: ISliceStore) {
+export function itemRow(db: SqliteDb, item: WorkItem, sliceStore: ISliceStore) {
   const wg = getWorkGraph()
   const blocked = wg.getBlockedBy(item.id)
   const blocking = wg.getBlocking(item.id)
-  const slices = wg.getSlices(item.id).map((sliceId) => sliceStore.get(sliceId)).filter(Boolean)
+  const slices = wg.getSlices(item.id)
+    .map((sliceId) => sliceStore.get(sliceId))
+    .filter((slice): slice is NonNullable<typeof slice> => !!slice)
   const runs = runsForItem(db, item.id)
   const last = attemptForItem(db, item.id)
   const live = runs.find((run) => run.attempt_status === "running" || run.attempt_status === "starting") ?? null
@@ -301,7 +303,7 @@ export function itemRow(db: Database, item: WorkItem, sliceStore: ISliceStore) {
     ready,
     blockers: blocked.length,
     dependents: blocking.length,
-    slices: slices.map((s) => ({ slice_id: s!.slice_id, title: s!.title, kind: s!.kind, status: s!.status })),
+    slices: slices.map((slice) => ({ slice_id: slice.slice_id, title: slice.title, kind: slice.kind, status: slice.status })),
     active_run_id: live?.run_id ?? null,
     latest_run_id: runs[0]?.run_id ?? null,
     runtime_type: live?.runtime_type ?? last?.runtime_type ?? null,
@@ -319,7 +321,7 @@ export type ItemRowResult = ReturnType<typeof itemRow>
 /** Filter and map a list of work items for API responses. */
 export function applyItemFilters(
   items: WorkItem[],
-  db: Database,
+  db: SqliteDb,
   sliceStore: ISliceStore,
   query: {
     status?: string | null
@@ -381,13 +383,13 @@ export function descendantScratchpads(itemId: string) {
 }
 
 /** Synthesis child item view (if exists). */
-export function synthesisItem(db: Database, itemId: string, sliceStore: ISliceStore): ItemRowResult | null {
+export function synthesisItem(db: SqliteDb, itemId: string, sliceStore: ISliceStore): ItemRowResult | null {
   const item = getWorkGraph().getChildren(itemId).find((child) => child.nodeType === "synthesis")
   return item ? itemRow(db, item, sliceStore) : null
 }
 
 /** Latest artifact from the synthesis child node. */
-export function synthesisArtifact(db: Database, itemId: string) {
+export function synthesisArtifact(db: SqliteDb, itemId: string) {
   const item = getWorkGraph().getChildren(itemId).find((child) => child.nodeType === "synthesis")
   if (!item) return null
   return artifactsForItem(db, item.id).at(-1) ?? null
@@ -425,7 +427,7 @@ export interface FocusResult {
  * Compute ready/blocked/busy partitions for a mission's subtree.
  * Returns `ready` (can start now), `blocked` (external blockers), `hold` (set of item ids blocked internally).
  */
-export function focusSubtree(wg: ReturnType<typeof getWorkGraph>, db: Database, rootId: string): FocusResult {
+export function focusSubtree(wg: ReturnType<typeof getWorkGraph>, db: SqliteDb, rootId: string): FocusResult {
   const items = subtreeItems(wg, rootId)
   const ids = new Set(items.map((item) => item.id))
   const busy = activeRunItemIds(db)
@@ -466,7 +468,7 @@ export function focusSubtree(wg: ReturnType<typeof getWorkGraph>, db: Database, 
  * Returns a nodeId → workItemId map.
  */
 export function createSnapshot(
-  db: Database,
+  db: SqliteDb,
   runId: string,
   items: WorkItem[],
   hold = new Set<string>(),
@@ -525,7 +527,7 @@ export function createSnapshot(
  * Replaces any existing blockers for the run.
  */
 export function writeBlockers(
-  db: Database,
+  db: SqliteDb,
   runId: string,
   blocked: Array<{ item_id: string; title: string; blocked_item_ids: string[] }>,
   nodeItemMap: Map<string, string>,

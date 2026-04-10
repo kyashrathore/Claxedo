@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import type { ContentfulStatusCode } from "hono/utils/http-status"
 import type { WSContext, UpgradeWebSocket } from "hono/ws"
 import { ensureWorkspaceRuntime, findPtyWorkspace, forgetPty, listWorkspaceRuntimes, rememberPty } from "../workspace-supervisor"
 import { resolveWorkspace } from "../workspace-store"
@@ -43,15 +44,12 @@ type Socket = {
 
 function isSocket(value: unknown): value is Socket {
   if (!value || typeof value !== "object") return false
-  if (!("readyState" in value)) return false
-  if (!("send" in value) || typeof (value as { send?: unknown }).send !== "function") return false
-  if (!("close" in value) || typeof (value as { close?: unknown }).close !== "function") return false
-  return typeof (value as { readyState?: unknown }).readyState === "number"
+  const obj = value as Record<string, unknown>
+  return typeof obj.readyState === "number" && typeof obj.send === "function" && typeof obj.close === "function"
 }
 
-function payload(data: unknown) {
+function payload(data: unknown): string | ArrayBuffer | Uint8Array | undefined {
   if (typeof data === "string" || data instanceof ArrayBuffer || data instanceof Uint8Array) return data
-  if (data instanceof Blob) return data
 }
 
 export function PtyProxyRoutes(upgradeWebSocket: UpgradeWebSocket) {
@@ -109,7 +107,7 @@ export function PtyProxyRoutes(upgradeWebSocket: UpgradeWebSocket) {
       })
       const json = await res.json().catch(() => null) as { id?: string } | null
       if (json?.id) rememberPty(json.id, ws.id)
-      return c.json(json, res.status)
+      return c.json(json, res.status as ContentfulStatusCode)
     })
     .get("/:ptyID", async (c) => {
       const hit = await locate(c.req.param("ptyID"))
@@ -158,7 +156,7 @@ export function PtyProxyRoutes(upgradeWebSocket: UpgradeWebSocket) {
             upstream.binaryType = "arraybuffer"
             upstream.onmessage = (event) => {
               const next = payload(event.data)
-              if (next !== undefined) socket.send(next as any)
+              if (next !== undefined) socket.send(next)
             }
             upstream.onclose = (event) => {
               socket.close(event.code, event.reason)
@@ -169,7 +167,7 @@ export function PtyProxyRoutes(upgradeWebSocket: UpgradeWebSocket) {
           },
           onMessage(event: { data: unknown }) {
             const next = payload(event.data)
-            if (next !== undefined) upstream?.send(next as any)
+            if (next !== undefined) upstream?.send(next)
           },
           onClose() {
             upstream?.close()

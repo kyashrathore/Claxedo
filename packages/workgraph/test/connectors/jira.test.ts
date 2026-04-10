@@ -1,10 +1,10 @@
-import { describe, it, expect, mock } from "bun:test";
+import { vi, describe, it, expect } from "vitest";
 import { JiraConnector } from "../../src/connectors/jira/jira";
 
 describe("JiraConnector", () => {
   function createMockClient() {
     return {
-      getIssue: mock(async (issueKey: string) => ({
+      getIssue: vi.fn(async (issueKey: string) => ({
         key: issueKey,
         self: `https://jira.example.com/rest/api/2/issue/${issueKey}`,
         fields: {
@@ -13,9 +13,9 @@ describe("JiraConnector", () => {
           status: { name: "Open" },
         },
       })),
-      updateIssue: mock(async () => {}),
-      addComment: mock(async () => {}),
-      createIssue: mock(async (_projectKey: string, fields: Record<string, any>) => ({
+      updateIssue: vi.fn(async () => {}),
+      addComment: vi.fn(async () => {}),
+      createIssue: vi.fn(async (_projectKey: string, fields: Record<string, any>) => ({
         key: "PROJ-100",
         self: "https://jira.example.com/rest/api/2/issue/PROJ-100",
         fields: {
@@ -81,7 +81,7 @@ describe("JiraConnector", () => {
 
   it("should map 'Done' status to closed", async () => {
     const client = createMockClient();
-    client.getIssue = mock(async () => ({
+    client.getIssue = vi.fn(async () => ({
       key: "PROJ-1",
       self: "https://jira.example.com/rest/api/2/issue/PROJ-1",
       fields: { summary: "Done Issue", description: "", status: { name: "Done" } },
@@ -93,7 +93,7 @@ describe("JiraConnector", () => {
 
   it("should map 'Resolved' status to closed", async () => {
     const client = createMockClient();
-    client.getIssue = mock(async () => ({
+    client.getIssue = vi.fn(async () => ({
       key: "PROJ-2",
       self: "https://jira.example.com/rest/api/2/issue/PROJ-2",
       fields: { summary: "Resolved Issue", description: "", status: { name: "Resolved" } },
@@ -105,7 +105,7 @@ describe("JiraConnector", () => {
 
   it("should map 'In Progress' status to in_progress", async () => {
     const client = createMockClient();
-    client.getIssue = mock(async () => ({
+    client.getIssue = vi.fn(async () => ({
       key: "PROJ-3",
       self: "https://jira.example.com/rest/api/2/issue/PROJ-3",
       fields: { summary: "WIP Issue", description: "", status: { name: "In Progress" } },
@@ -117,7 +117,7 @@ describe("JiraConnector", () => {
 
   it("should map 'In Review' status to in_progress", async () => {
     const client = createMockClient();
-    client.getIssue = mock(async () => ({
+    client.getIssue = vi.fn(async () => ({
       key: "PROJ-4",
       self: "https://jira.example.com/rest/api/2/issue/PROJ-4",
       fields: { summary: "Review Issue", description: "", status: { name: "In Review" } },
@@ -129,7 +129,7 @@ describe("JiraConnector", () => {
 
   it("should map unknown status to open", async () => {
     const client = createMockClient();
-    client.getIssue = mock(async () => ({
+    client.getIssue = vi.fn(async () => ({
       key: "PROJ-5",
       self: "https://jira.example.com/rest/api/2/issue/PROJ-5",
       fields: { summary: "Custom Issue", description: "", status: { name: "Custom Status" } },

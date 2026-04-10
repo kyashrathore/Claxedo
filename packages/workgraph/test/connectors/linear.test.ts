@@ -1,27 +1,27 @@
-import { describe, it, expect, mock } from "bun:test";
+import { vi, describe, it, expect } from "vitest";
 import { LinearConnector } from "../../src/connectors/linear/linear";
 
 describe("LinearConnector", () => {
   function createMockClient() {
     return {
-      getIssue: mock(async (issueId: string) => ({
+      getIssue: vi.fn(async (issueId: string) => ({
         id: issueId,
         title: "Test Linear Issue",
         description: "A linear issue description",
         state: { name: "Todo" },
         url: `https://linear.app/team/issue/${issueId}`,
       })),
-      updateIssue: mock(async () => {}),
-      createComment: mock(async () => {}),
-      createIssue: mock(async (_teamId: string, input: Record<string, any>) => ({
+      updateIssue: vi.fn(async () => {}),
+      createComment: vi.fn(async () => {}),
+      createIssue: vi.fn(async (_teamId: string, input: Record<string, any>) => ({
         id: "issue-new-123",
         title: input.title,
         description: input.description,
         state: { name: "Todo" },
         url: "https://linear.app/team/issue/issue-new-123",
       })),
-      getViewer: mock(async () => ({ id: "viewer-1", email: "linear@example.com" })),
-      listIssues: mock(async () => [{ id: "issue-42" }]),
+      getViewer: vi.fn(async () => ({ id: "viewer-1", email: "linear@example.com" })),
+      listIssues: vi.fn(async () => [{ id: "issue-42" }]),
     };
   }
 
@@ -79,7 +79,7 @@ describe("LinearConnector", () => {
 
   it("should map 'Done' status to closed", async () => {
     const client = createMockClient();
-    client.getIssue = mock(async () => ({
+    client.getIssue = vi.fn(async () => ({
       id: "issue-1",
       title: "Done Issue",
       description: "",
@@ -93,7 +93,7 @@ describe("LinearConnector", () => {
 
   it("should map 'Canceled' status to closed", async () => {
     const client = createMockClient();
-    client.getIssue = mock(async () => ({
+    client.getIssue = vi.fn(async () => ({
       id: "issue-2",
       title: "Canceled Issue",
       description: "",
@@ -107,7 +107,7 @@ describe("LinearConnector", () => {
 
   it("should map 'Cancelled' status to closed", async () => {
     const client = createMockClient();
-    client.getIssue = mock(async () => ({
+    client.getIssue = vi.fn(async () => ({
       id: "issue-3",
       title: "Cancelled Issue",
       description: "",
@@ -121,7 +121,7 @@ describe("LinearConnector", () => {
 
   it("should map 'In Progress' status to in_progress", async () => {
     const client = createMockClient();
-    client.getIssue = mock(async () => ({
+    client.getIssue = vi.fn(async () => ({
       id: "issue-4",
       title: "WIP Issue",
       description: "",
@@ -135,7 +135,7 @@ describe("LinearConnector", () => {
 
   it("should map 'Started' status to in_progress", async () => {
     const client = createMockClient();
-    client.getIssue = mock(async () => ({
+    client.getIssue = vi.fn(async () => ({
       id: "issue-5",
       title: "Started Issue",
       description: "",
@@ -149,7 +149,7 @@ describe("LinearConnector", () => {
 
   it("should handle missing state gracefully", async () => {
     const client = createMockClient();
-    client.getIssue = mock(async () => ({
+    client.getIssue = vi.fn(async () => ({
       id: "issue-6",
       title: "No State Issue",
       description: "",

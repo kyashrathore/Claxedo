@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { createServer, type Server } from "node:net"
 import { findNextPort, tryPort } from "./portpick"
 

@@ -57,6 +57,7 @@ import { translateAgentEventToCompat } from "./translate-agent-event-to-compat"
 import { listCommands } from "../agent-config"
 import { Log } from "../log"
 import { ACP_RECOVER } from "./acp-recovery"
+import { recovering } from "../types/status"
 import { toAcpMcpServers, type ResolvedMcpServer } from "../mcp-resolver"
 
 const log = Log.create({ service: "acp-adapter" })
@@ -152,6 +153,14 @@ function errorMessage(err: unknown): string {
     try { return JSON.stringify(err) } catch { /* fall through */ }
   }
   return String(err)
+}
+
+function chunkDelta(input: unknown) {
+  if (!input || typeof input !== "object") return
+  const row = input as { sessionUpdate?: unknown; delta?: unknown }
+  if (row.sessionUpdate !== "agent_message_chunk") return
+  if (typeof row.delta !== "string") return
+  return row.delta
 }
 
 function messageUsage(usage: Usage) {
@@ -1012,11 +1021,7 @@ export class ACPAdapter implements AgentAdapter {
     const recover = this.store.consumeRecoveryError(id)
     const start: CompatEvent[] = []
     if (recover) {
-      start.push(sessionStatus(id, {
-        type: "recovering",
-        kind: "process_restart",
-        message: recover,
-      }))
+      start.push(sessionStatus(id, recovering(recover)))
     } else {
       start.push(sessionStatus(id, { type: "busy" }))
     }
@@ -1458,9 +1463,8 @@ export class ACPAdapter implements AgentAdapter {
 
     try {
       await proc.prompt(titleAcpSessionId, titleInput, (update) => {
-        if (update?.sessionUpdate === "agent_message_chunk" && typeof (update as any).delta === "string") {
-          responseText += (update as any).delta
-        }
+        const delta = chunkDelta(update)
+        if (delta) responseText += delta
       })
     } catch (err) {
       log.warn("generateAITitle: prompt failed", { err })

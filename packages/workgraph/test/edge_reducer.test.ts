@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import type { EventEnvelope } from "../src/orchestrator/events/schema";
 import { edgeReducer, type EdgeState } from "../src/orchestrator/core/reducers/edge";
 

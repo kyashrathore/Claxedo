@@ -53,7 +53,7 @@ describe("generatePassthroughWrapper", () => {
     expect(script).toContain('export CLAXEDO_AGENT="gemini"')
   })
 
-  for (const agent of ["droid", "amp", "mastracode", "cursor-agent"]) {
+  for (const agent of ["droid", "mastracode", "cursor-agent"]) {
     it(`creates passthrough for ${agent}`, () => {
       const script = generatePassthroughWrapper(agent)
       expect(script).toContain(`find_real_binary "${agent}"`)
@@ -113,9 +113,9 @@ describe("generateCodexWrapper", () => {
 
 describe("generateOpenCodeWrapper", () => {
   it("injects OPENCODE_CONFIG_DIR", () => {
-    const script = generateOpenCodeWrapper()
+    const script = generateOpenCodeWrapper("/tmp/opencode-config")
 
-    expect(script).toContain("OPENCODE_CONFIG_DIR=")
+    expect(script).toContain('OPENCODE_CONFIG_DIR="/tmp/opencode-config"')
     expect(script).toContain('exec "$REAL_BIN" "$@"')
     expect(script).toContain('find_real_binary "opencode"')
   })
@@ -130,6 +130,15 @@ describe("generateGenericWrapper", () => {
     expect(script).toContain('hook_event_name":"Error"')
     expect(script).toContain('"$REAL_BIN" "$@"')
     expect(script).toContain("CLAXEDO_TAB_ID")
+  })
+
+  it("keeps amp on the generic lifecycle wrapper path", () => {
+    const script = generateGenericWrapper("amp", "/tmp/hooks/notify.sh")
+
+    expect(script).toContain('find_real_binary "amp"')
+    expect(script).toContain('hook_event_name":"Busy"')
+    expect(script).toContain('hook_event_name":"Idle"')
+    expect(script).toContain('hook_event_name":"Error"')
   })
 })
 

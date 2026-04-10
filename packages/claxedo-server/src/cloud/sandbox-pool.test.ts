@@ -1,11 +1,11 @@
 /**
  * Tests for sandbox-pool: acquire, release, initPool, startPoolMonitor, shutdown.
  *
- * Uses mock.module to replace external dependencies (@daytonaio/sdk, agent-config,
+ * Uses vi.doMock to replace external dependencies (@daytonaio/sdk, agent-config,
  * sandbox-image, provider) so the REAL pool logic is exercised.
  */
 
-import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test"
+import { describe, expect, test, beforeEach, afterEach, vi } from "vitest"
 
 // ── Mock state ────────────────────────────────────────────────────────────
 
@@ -14,12 +14,12 @@ function makeSandbox(id: string, state: string, labels: Record<string, string> =
     id,
     state,
     labels: { ...labels },
-    setLabels: mock((newLabels: Record<string, string>) => {
+    setLabels: vi.fn((newLabels: Record<string, string>) => {
       Object.assign(labels, newLabels)
       return Promise.resolve(labels)
     }),
-    start: mock(() => Promise.resolve()),
-    stop: mock(() => Promise.resolve()),
+    start: vi.fn(() => Promise.resolve()),
+    stop: vi.fn(() => Promise.resolve()),
   }
 }
 
@@ -27,24 +27,26 @@ let warmSandboxes: ReturnType<typeof makeSandbox>[] = []
 let createdSandboxes: ReturnType<typeof makeSandbox>[] = []
 let deletedIds: string[] = []
 let createCount = 0
+let provider = "daytona"
+let auth: { api_key: string } | undefined = { api_key: "test-key" }
 
 const mockDaytona = {
-  create: mock((opts: any) => {
+  create: vi.fn((opts: any) => {
     const sb = makeSandbox(`sb-new-${createCount++}`, "started", opts.labels ?? {})
     createdSandboxes.push(sb)
     return Promise.resolve(sb)
   }),
-  list: mock((_labels: Record<string, string>) => {
+  list: vi.fn((_labels: Record<string, string>) => {
     return Promise.resolve({
       items: [...warmSandboxes],
     })
   }),
-  get: mock((id: string) => {
+  get: vi.fn((id: string) => {
     const sb = [...warmSandboxes, ...createdSandboxes].find((s) => s.id === id)
     if (!sb) throw new Error(`sandbox not found: ${id}`)
     return Promise.resolve(sb)
   }),
-  delete: mock((sb: any) => {
+  delete: vi.fn((sb: any) => {
     deletedIds.push(sb.id)
     return Promise.resolve()
   }),
@@ -52,7 +54,7 @@ const mockDaytona = {
 
 // ── Module mocks (before import) ──────────────────────────────────────────
 
-mock.module("@daytonaio/sdk", () => ({
+vi.doMock("@daytonaio/sdk", () => ({
   Daytona: class {
     constructor() {
       return mockDaytona
@@ -61,23 +63,24 @@ mock.module("@daytonaio/sdk", () => ({
   SandboxState: { STARTED: "started", STOPPED: "stopped", ERROR: "error" },
 }))
 
-mock.module("../agent-config", () => ({
-  loadUserConfig: mock(() =>
+vi.doMock("../agent-config", () => ({
+  loadUserConfig: vi.fn(() =>
     Promise.resolve({
       sandbox: { auth: { daytona: { api_key: "test-key" } } },
     }),
   ),
 }))
 
-mock.module("./sandbox-image", () => ({
-  ensureSnapshot: mock(() => Promise.resolve("test-snapshot")),
+vi.doMock("./sandbox-image", () => ({
+  ensureSnapshot: vi.fn(() => Promise.resolve("test-snapshot")),
 }))
 
-mock.module("./provider", () => ({
-  sandboxAuth: mock((_cfg: any, _provider: string) => ({ api_key: "test-key" })),
+vi.doMock("./provider", () => ({
+  defaultSandboxProvider: vi.fn(() => provider),
+  sandboxAuth: vi.fn((_cfg: any, _provider: string) => auth),
 }))
 
-mock.module("../log", () => ({
+vi.doMock("../log", () => ({
   Log: {
     create: () => ({
       info: () => {},
@@ -100,6 +103,8 @@ describe("sandbox-pool", () => {
     createdSandboxes = []
     deletedIds = []
     createCount = 0
+    provider = "daytona"
+    auth = { api_key: "test-key" }
     ;(mockDaytona.create as any).mockClear()
     ;(mockDaytona.list as any).mockClear()
     ;(mockDaytona.delete as any).mockClear()
@@ -208,6 +213,22 @@ describe("sandbox-pool", () => {
 
       // Should have created sandboxes to reach POOL_TARGET (3)
       expect(mockDaytona.create).toHaveBeenCalled()
+    })
+
+    test("no-ops when Daytona auth is missing", async () => {
+      auth = undefined
+
+      await pool.initPool()
+
+      expect(mockDaytona.create).not.toHaveBeenCalled()
+    })
+
+    test("no-ops when default provider is not Daytona", async () => {
+      provider = "modal"
+
+      await pool.initPool()
+
+      expect(mockDaytona.create).not.toHaveBeenCalled()
     })
   })
 

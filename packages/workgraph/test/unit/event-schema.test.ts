@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { EventEnvelopeSchema } from "../../src/orchestrator/events/schema";
 import { EVENT_TYPES } from "../../src/orchestrator/events/event-types";
 

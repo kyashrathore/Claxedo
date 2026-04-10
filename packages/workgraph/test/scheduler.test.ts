@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { type RunState } from "../src/orchestrator/core/reducers/run";
 import { getReadyNodes, LeaseManager } from "../src/orchestrator/core/scheduler";
 import { GraphEngine } from "../src/orchestrator/graph/graph";

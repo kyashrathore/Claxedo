@@ -4,7 +4,8 @@
     "outDir": "./dist",
     "noUncheckedIndexedAccess": false,
     "module": "ESNext",
-    "moduleResolution": "bundler"
+    "moduleResolution": "bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
   "include": ["src"]
 }

@@ -8,13 +8,16 @@
  * Bug: frontend WorktreeState.wait() never resolves because
  * the worktree.ready event never reaches the browser.
  */
-import { describe, expect, test, beforeEach, afterAll } from "bun:test"
+import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { execSync } from "child_process"
+import { realpathSync } from "fs"
 import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { claxedoBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "./bus"
 
-const root = path.join(process.cwd(), `.tmp-wt-events-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync(os.tmpdir()), `wt-events-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
@@ -30,15 +33,17 @@ const app = new Hono()
 app.route("/", OpenCodeCompatRoutes())
 app.get("/global/event", globalEventsHandler)
 
+function sh(cmd: string) { execSync(cmd, { stdio: "ignore" }) }
+
 async function createGitRepo(name: string) {
   const dir = path.join(root, "repos", name)
   await fs.mkdir(dir, { recursive: true })
   await fs.writeFile(path.join(dir, "README.md"), `# ${name}\n`)
-  await Bun.$`git init -b main ${dir}`.quiet()
-  await Bun.$`git -C ${dir} config user.email test@example.com`.quiet()
-  await Bun.$`git -C ${dir} config user.name test`.quiet()
-  await Bun.$`git -C ${dir} add README.md`.quiet()
-  await Bun.$`git -C ${dir} commit -m "init"`.quiet()
+  sh(`git init -b main ${dir}`)
+  sh(`git -C ${dir} config user.email test@example.com`)
+  sh(`git -C ${dir} config user.name test`)
+  sh(`git -C ${dir} add README.md`)
+  sh(`git -C ${dir} commit -m "init"`)
   return dir
 }
 

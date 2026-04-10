@@ -337,11 +337,23 @@ export async function localAgentStatus(ws: Workspace, sessionId?: string) {
   await getLocalAgentAdapter(ws, runner).catch((err) => err)
   const hit = states.get(id)
   const live = hit?.snapshot.runner ?? snapshot.runner
+
+  // For ACP runners, verify the binary exists — spawn failures are async
+  // so state.error may not be set yet.
+  let error = hit?.error
+  if (!error && live.type !== "opencode" && live.binary) {
+    try {
+      await fs.promises.access(live.binary, fs.constants.X_OK)
+    } catch {
+      error = `ACP binary not found or not executable: ${live.binary}`
+    }
+  }
+
   return {
     configured: snapshot.runner,
     active: live,
-    ready: !hit?.error,
-    error: hit?.error,
+    ready: !error,
+    error,
   }
 }
 

@@ -10,7 +10,7 @@
  *   db.customRunNodes — if set, overrides queryRunNodes() return value
  */
 
-import { Database } from "bun:sqlite";
+import Database from "better-sqlite3";
 import { initializeDb } from "../../src/db/schema";
 import { openSqliteEventStore } from "../../src/orchestrator/core/services/event-store-sqlite";
 import { openSqliteExecutionStore } from "../../src/sdk/execution-store";

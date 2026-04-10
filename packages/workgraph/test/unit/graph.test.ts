@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach } from "vitest";
 import { GraphEngine } from "../../src/orchestrator/graph/graph";
 import { GateTracker } from "../../src/orchestrator/graph/gates";
 

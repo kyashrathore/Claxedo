@@ -2,7 +2,7 @@
  * Unit tests for src/dir.ts — path extraction utility.
  */
 
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { dir } from "../../src/dir";
 
 describe("dir — empty / nullish input", () => {

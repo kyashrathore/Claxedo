@@ -14,6 +14,8 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { defined } from "./fixtures/assert-helpers"
+import { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -89,7 +91,7 @@ async function sse(url: string, match: (event: any) => boolean, ms = 8_000) {
 const upstreamSessions = new Map<string, { id: string; title: string | null; created_at: number; updated_at: number }>()
 const upstreamMessages = new Map<string, unknown[]>()
 
-const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-lifecycle-"))
+const root = await fs.mkdtemp(path.join(realpathSync(os.tmpdir()), "claxedo-lifecycle-"))
 const home = path.join(root, "home")
 const data = path.join(home, ".claxedo")
 
@@ -308,10 +310,10 @@ async function workspace(label: string) {
   await fs.mkdir(directory, { recursive: true })
   execFileSync("git", ["init", directory])
   execFileSync("git", ["-C", directory, "commit", "--allow-empty", "-m", "init"])
-  return await store.ensureWorkspace({
+  return defined(await store.ensureWorkspace({
     workspaceId: `ws_${randomUUID()}`,
     directory,
-  })
+  }))
 }
 
 function base() {

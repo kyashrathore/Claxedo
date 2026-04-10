@@ -17,4 +17,21 @@ describe("translateEventToChunk", () => {
       }, { partKinds: {} }),
     ).toEqual([{ type: "session-status", status: "recovering" }])
   })
+
+  test("maps retry session status to UI error", () => {
+    expect(
+      translateEventToChunk({
+        type: "session.status",
+        properties: {
+          sessionID: "s1",
+          status: {
+            type: "retry",
+            attempt: 2,
+            message: "rate limited",
+            next: 123,
+          },
+        },
+      }, { partKinds: {} }),
+    ).toEqual([{ type: "session-status", status: "error" }])
+  })
 })

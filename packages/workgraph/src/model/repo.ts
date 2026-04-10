@@ -3,7 +3,7 @@ import type { WorkItem, WorkEdge, WorkEvent, ScratchpadEntry } from "./types"
 export interface SyncProjection {
   bindingKey: string
   provider: string
-  providerMeta: Record<string, any>
+  providerMeta: Record<string, unknown>
   lastStatus?: string
   blockedHash?: string
   archiveHash?: string

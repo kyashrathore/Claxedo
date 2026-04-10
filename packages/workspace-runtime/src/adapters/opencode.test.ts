@@ -149,6 +149,7 @@ describe("opencode adapter", () => {
 
       expect((await busy).value?.type).toBe("session.status")
       expect((await iter.next()).value?.type).toBe("session.idle")
+      expect((await iter.next()).value?.type).toBe("message.completed")
       expect((await iter.next()).done).toBe(true)
     } finally {
       globalThis.fetch = prev

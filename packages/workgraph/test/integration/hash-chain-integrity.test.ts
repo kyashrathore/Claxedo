@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import type { EventEnvelope } from "../../src/orchestrator/events/schema";
 import { computeHash, verifyChain } from "../../src/orchestrator/core/services/hash-chain-node";
 

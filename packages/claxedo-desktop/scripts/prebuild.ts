@@ -99,7 +99,7 @@ async function buildSidecar() {
 // ── claxedo-mcp ──
 
 async function bundleMcp() {
-  const src = path.resolve(CLAXEDO_SERVER_DIR, "src/mcp/claxedo-mcp.ts")
+  const src = path.resolve(CLAXEDO_SERVER_DIR, "src/claxedo-mcp/server.ts")
   const dest = path.resolve(RESOURCES_DIR, "claxedo-mcp.js")
 
   if (!fs.existsSync(src)) {

@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from "bun:test";
+import { vi, describe, it, expect } from "vitest";
 import { GitHubConnector } from "../../src/connectors/github/github";
 
 describe("GitHubConnector", () => {
@@ -7,7 +7,7 @@ describe("GitHubConnector", () => {
     const mockOctokit = {
       rest: {
         issues: {
-          get: mock(async () => ({
+          get: vi.fn(async () => ({
             data: {
               number: 42,
               title: "Test Issue",
@@ -16,9 +16,9 @@ describe("GitHubConnector", () => {
               html_url: "https://github.com/anomalyco/opencode/issues/42"
             }
           })),
-          update: mock(async () => ({})),
-          createComment: mock(async () => ({})),
-          create: mock(async () => ({
+          update: vi.fn(async () => ({})),
+          createComment: vi.fn(async () => ({})),
+          create: vi.fn(async () => ({
             data: {
               number: 99,
               title: "New Issue",
@@ -42,14 +42,14 @@ describe("GitHubConnector", () => {
   });
 
   it("should update an issue", async () => {
-    const updateMock = mock(async () => ({}));
+    const updateMock = vi.fn(async () => ({}));
     const mockOctokit = {
       rest: {
         issues: {
-          get: mock(async () => ({})),
+          get: vi.fn(async () => ({})),
           update: updateMock,
-          createComment: mock(async () => ({})),
-          create: mock(async () => ({}))
+          createComment: vi.fn(async () => ({})),
+          create: vi.fn(async () => ({}))
         }
       }
     };
@@ -68,14 +68,14 @@ describe("GitHubConnector", () => {
   });
 
   it("should add a comment to an issue", async () => {
-    const createCommentMock = mock(async () => ({}));
+    const createCommentMock = vi.fn(async () => ({}));
     const mockOctokit = {
       rest: {
         issues: {
-          get: mock(async () => ({})),
-          update: mock(async () => ({})),
+          get: vi.fn(async () => ({})),
+          update: vi.fn(async () => ({})),
           createComment: createCommentMock,
-          create: mock(async () => ({}))
+          create: vi.fn(async () => ({}))
         }
       }
     };
@@ -93,7 +93,7 @@ describe("GitHubConnector", () => {
   });
 
   it("should create a new issue", async () => {
-    const createMock = mock(async () => ({
+    const createMock = vi.fn(async () => ({
       data: {
         number: 99,
         title: "New Issue",
@@ -105,9 +105,9 @@ describe("GitHubConnector", () => {
     const mockOctokit = {
       rest: {
         issues: {
-          get: mock(async () => ({})),
-          update: mock(async () => ({})),
-          createComment: mock(async () => ({})),
+          get: vi.fn(async () => ({})),
+          update: vi.fn(async () => ({})),
+          createComment: vi.fn(async () => ({})),
           create: createMock
         }
       }
@@ -135,10 +135,10 @@ describe("GitHubConnector", () => {
     const mockOctokit = {
       rest: {
         issues: {
-          get: mock(async () => ({})),
-          update: mock(async () => ({})),
-          createComment: mock(async () => ({})),
-          create: mock(async () => ({
+          get: vi.fn(async () => ({})),
+          update: vi.fn(async () => ({})),
+          createComment: vi.fn(async () => ({})),
+          create: vi.fn(async () => ({
             data: {
               number: 100,
               title: "Closed Issue",
@@ -160,16 +160,16 @@ describe("GitHubConnector", () => {
     const mockOctokit = {
       rest: {
         users: {
-          getAuthenticated: mock(async () => ({ data: { login: "octocat" } })),
+          getAuthenticated: vi.fn(async () => ({ data: { login: "octocat" } })),
         },
         issues: {
-          get: mock(async () => ({})),
-          update: mock(async () => ({})),
-          createComment: mock(async () => ({})),
-          create: mock(async () => ({})),
+          get: vi.fn(async () => ({})),
+          update: vi.fn(async () => ({})),
+          createComment: vi.fn(async () => ({})),
+          create: vi.fn(async () => ({})),
         },
         search: {
-          issuesAndPullRequests: mock(async () => ({ data: { items: [] } })),
+          issuesAndPullRequests: vi.fn(async () => ({ data: { items: [] } })),
         },
       },
     };
@@ -179,7 +179,7 @@ describe("GitHubConnector", () => {
   });
 
   it("should preview repo-scoped issues", async () => {
-    const search = mock(async () => ({
+    const search = vi.fn(async () => ({
       data: {
         items: [{
           number: 42,
@@ -187,7 +187,7 @@ describe("GitHubConnector", () => {
         }],
       },
     }));
-    const get = mock(async () => ({
+    const get = vi.fn(async () => ({
       data: {
         number: 42,
         title: "Preview me",
@@ -199,13 +199,13 @@ describe("GitHubConnector", () => {
     const mockOctokit = {
       rest: {
         users: {
-          getAuthenticated: mock(async () => ({ data: { login: "octocat" } })),
+          getAuthenticated: vi.fn(async () => ({ data: { login: "octocat" } })),
         },
         issues: {
           get,
-          update: mock(async () => ({})),
-          createComment: mock(async () => ({})),
-          create: mock(async () => ({})),
+          update: vi.fn(async () => ({})),
+          createComment: vi.fn(async () => ({})),
+          create: vi.fn(async () => ({})),
         },
         search: {
           issuesAndPullRequests: search,

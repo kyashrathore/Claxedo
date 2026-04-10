@@ -236,9 +236,10 @@ class SqliteRunStore implements IRunStore {
 
     const hasMore = rows.length > limit;
     const items   = hasMore ? rows.slice(0, limit) : rows;
+    const last = items.at(-1)
     const lastRowid = items.length > 0
       ? (this.db.query("SELECT rowid FROM runs_current WHERE run_id = ?")
-           .get(items[items.length - 1].run_id) as any)?.rowid ?? null
+           .get(last?.run_id) as any)?.rowid ?? null
       : null;
 
     return { items, next_cursor: hasMore ? lastRowid : null };

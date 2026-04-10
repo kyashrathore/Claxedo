@@ -1,5 +1,4 @@
 import { DialogSettings } from "@/components/dialog-settings"
-import { base64Encode } from "@opencode-ai/util/encode"
 import { getFilename } from "@opencode-ai/util/path"
 import { showToast } from "@opencode-ai/ui/toast"
 import { validWorktree } from "@claxedo/utils/worktree"

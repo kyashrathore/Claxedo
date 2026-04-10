@@ -1,5 +1,6 @@
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import type { CompatEvent } from "../compat-events"
+import type { StatusChunk } from "../types/status"
 
 export type AgentEvent =
   | { type: "text-delta"; delta: string }
@@ -13,7 +14,7 @@ export type AgentEvent =
   | { type: "permission-request"; requestId: string; tool: string; paths: string[] }
   | { type: "question"; requestId: string; questions: Array<{ text: string; options?: string[] }> }
   | { type: "todo-update"; todos: Array<{ id: string; description: string; status: string; priority?: string }> }
-  | { type: "session-status"; status: "busy" | "idle" | "error" | "recovering" }
+  | { type: "session-status"; status: StatusChunk }
   | { type: "subagent-spawned"; childSessionId: string }
   | { type: "finish"; sessionId: string }
   | { type: "error"; error: string }

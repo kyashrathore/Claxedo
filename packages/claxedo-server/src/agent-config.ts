@@ -55,6 +55,9 @@ export interface UserAgentConfig {
   runner?: { type: "claude-acp" | "codex-acp" | "cursor-acp" | "opencode"; binary?: string; model?: string }
   auth?: Record<string, string>  // providerID → API key, e.g. "claude-acp" → "sk-ant-..."
   sandbox?: SandboxConfig
+  harness?: {
+    mode?: "workspace" | "central"
+  }
 }
 
 export interface RuntimeConfigSnapshot {
@@ -99,9 +102,15 @@ export async function loadUserConfig(): Promise<UserAgentConfig> {
   try {
     const raw = await fs.promises.readFile(USER_CONFIG_FILE, "utf-8")
     const data = JSON.parse(raw) as Partial<UserAgentConfig>
-    return { mcp: data.mcp ?? {}, runner: data.runner, auth: data.auth ?? {}, sandbox: data.sandbox ?? {} }
+    return {
+      mcp: data.mcp ?? {},
+      runner: data.runner,
+      auth: data.auth ?? {},
+      sandbox: data.sandbox ?? {},
+      harness: data.harness ?? {},
+    }
   } catch {
-    return { mcp: {}, auth: {}, sandbox: {} }
+    return { mcp: {}, auth: {}, sandbox: {}, harness: {} }
   }
 }
 

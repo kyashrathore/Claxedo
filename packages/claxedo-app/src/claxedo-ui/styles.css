@@ -4,6 +4,11 @@
   height: 10px !important;
 }
 
+/* Claxedo keeps the session spinner but hides the upstream header whip bar. */
+[data-component="session-progress"] {
+  display: none !important;
+}
+
 /* Hide all scrollbars by default */
 ::-webkit-scrollbar {
   display: none !important;

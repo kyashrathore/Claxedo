@@ -10,7 +10,7 @@
  *   spawnAgentFn → makeSpawn
  */
 
-import { describe, it, expect, mock } from "bun:test";
+import { vi, describe, it, expect } from "vitest";
 import { FakeDb, makeSpawn, nextRunId } from "../helpers/fake-db";
 
 const { startExecution, onNodeStatusUpdate, getOrchestration } = await import(
@@ -174,8 +174,8 @@ describe("E2E: lifecycle hooks fire at correct milestones", () => {
     const db = new FakeDb(runId).addNode("a", "pending");
     const events: string[] = [];
     const hooks = {
-      onNodeCompleted: mock(async () => { events.push("nodeCompleted"); }),
-      onRunCompleted: mock(async () => { events.push("runCompleted"); }),
+      onNodeCompleted: vi.fn(async () => { events.push("nodeCompleted"); }),
+      onRunCompleted: vi.fn(async () => { events.push("runCompleted"); }),
     };
     await startExecution(db, runId, "hooks-test", makeSpawn(), { hooks });
     db.setNodeStatus("a", "active");

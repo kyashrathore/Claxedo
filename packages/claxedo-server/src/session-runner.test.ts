@@ -1,9 +1,11 @@
-import { describe, expect, test, beforeEach, afterAll } from "bun:test"
+import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { realpathSync } from "fs"
 import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 
-const root = path.join(process.cwd(), `.tmp-session-runner-test-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync(os.tmpdir()), `session-runner-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
@@ -14,10 +16,10 @@ function file() {
 }
 
 async function saved() {
-  return JSON.parse(await Bun.file(file()).text()) as Array<{
+  return JSON.parse(await fs.readFile(file(), "utf-8")) as Array<{
     workspaceId: string
     sessionId: string
-    runner: { type: string; binary?: string; model?: string }
+    config: { runner: { type: string; binary?: string }; model?: string }
     updatedAt: number
   }>
 }
@@ -129,7 +131,7 @@ describe("session runner", () => {
     expect(disk.length).toBeGreaterThanOrEqual(1)
     const entry = disk.find((r) => r.workspaceId === "ws_disk" && r.sessionId === "ses_disk")
     expect(entry).toBeDefined()
-    expect(entry!.runner.type).toBe("claude-acp")
+    expect(entry!.config.runner.type).toBe("claude-acp")
     expect(typeof entry!.updatedAt).toBe("number")
     expect(entry!.updatedAt).toBeGreaterThan(0)
   })

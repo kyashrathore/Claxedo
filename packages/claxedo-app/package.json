@@ -28,13 +28,10 @@
     "test:ui": "vitest run --config vitest.config.ts",
     "test:ui:watch": "vitest --config vitest.config.ts",
     "test:e2e": "npx playwright test --config playwright.config.ts",
-    "test:stagehand:red": "node ./e2e/stagehand/terminal-reactivation.red.mjs",
-    "test:stagehand:red:visual-broken": "STAGEHAND_SPLIT_CLOSE_FLOW=1 node ./e2e/stagehand/terminal-reactivation.red.mjs",
-    "test:agent-browser": "bun run e2e/agent-browser/run.ts"
+    "test:e2e:video": "PLAYWRIGHT_VIDEO=1 npx playwright test --config playwright.config.ts"
   },
   "license": "MIT",
   "devDependencies": {
-    "@browserbasehq/stagehand": "^3.0.0",
     "@happy-dom/global-registrator": "20.0.11",
     "@playwright/test": "^1.57.0",
     "@solidjs/testing-library": "^0.8.10",
@@ -48,10 +45,8 @@
     "@types/shell-quote": "^1.7.5",
     "@typescript/native-preview": "catalog:",
     "@xterm/headless": "^6.0.0",
-    "agent-browser": "0.15.1",
     "jsdom": "^26.1.0",
     "playwright-core": "^1.57.0",
-    "sharp": "0.34.5",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plugin-solid": "catalog:",

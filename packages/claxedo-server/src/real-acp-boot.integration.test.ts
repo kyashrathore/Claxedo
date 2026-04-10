@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { defined } from "./fixtures/assert-helpers"
+import { realpathSync } from "fs"
 import fs from "fs/promises"
 import { existsSync } from "fs"
 import os from "os"
@@ -26,7 +28,7 @@ async function freePort() {
   })
 }
 
-const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-real-acp-"))
+const root = await fs.mkdtemp(path.join(realpathSync(os.tmpdir()), "claxedo-real-acp-"))
 const home = path.join(root, "home")
 const data = path.join(home, ".claxedo")
 
@@ -89,10 +91,10 @@ async function workspace(label: string) {
   await fs.mkdir(directory, { recursive: true })
   execFileSync("git", ["init", directory])
   execFileSync("git", ["-C", directory, "commit", "--allow-empty", "-m", "init"])
-  return await store.ensureWorkspace({
+  return defined(await store.ensureWorkspace({
     workspaceId: `ws_${randomUUID()}`,
     directory,
-  })
+  }))
 }
 
 function base() {
@@ -132,7 +134,7 @@ describe.skipIf(!existsSync(realBinary))("real claude ACP boot", () => {
       if (v !== undefined) (process.env as Record<string, string | undefined>)[k] = v
       else delete process.env[k]
     }
-    await fs.rm(root, { recursive: true, force: true })
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 })
   })
 
   it("returns instead of hanging when session boot stalls", async () => {

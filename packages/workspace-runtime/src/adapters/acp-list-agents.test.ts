@@ -9,16 +9,21 @@ function adapter(input?: {
     shared: { proc: { alive: boolean; getAgents: () => unknown[] } | null }
     probeConfigOptions: (directory: string) => Promise<unknown[]>
   }
+  ;(out as any).sessions = new Map()
   out.shared = { proc: null }
   out.probeConfigOptions = async (directory) => {
     expect(directory).toBe("/work")
     return input?.cfg ?? []
   }
   if (input?.list) {
-    out.shared.proc = {
-      alive: true,
-      getAgents: () => input.list ?? [],
-    }
+    ;(out as any).sessions.set("live", {
+      directory: "/work",
+      proc: {
+        alive: true,
+        getAgents: () => input.list ?? [],
+      },
+      init: null,
+    })
   }
   return out
 }

@@ -142,6 +142,6 @@ export namespace ClaxedoDB {
 
   export function transaction<T>(callback: (db: Client) => T): T {
     const db = Drizzle()
-    return (db.transaction as any)((tx: Client) => callback(tx))
+    return db.transaction((tx) => callback(tx as unknown as Client))
   }
 }

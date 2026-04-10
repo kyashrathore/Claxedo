@@ -1,24 +1,34 @@
 import type { ConnectorInterface, NormalizedIssue } from "../../orchestrator/events"
 import type { LinearConnector } from "./linear"
 
-export function createLinearAdapter(connector: LinearConnector): ConnectorInterface {
+type LinearParams = {
+  issueId?: string
+  teamId?: string
+} & Record<string, unknown>
+
+export function createLinearAdapter(connector: LinearConnector): ConnectorInterface<string, LinearParams> {
   return {
     provider: "linear",
 
-    hydrateIssue(params: Record<string, any>): Promise<NormalizedIssue> {
-      return connector.hydrateIssue(params.issueId)
+    hydrateIssue(params: LinearParams): Promise<NormalizedIssue> {
+      return connector.hydrateIssue(reqText(params.issueId, "issueId"))
     },
 
-    updateIssue(params: Record<string, any>, updates: { title?: string; status?: string; description?: string }): Promise<void> {
-      return connector.updateIssue(params.issueId, updates)
+    updateIssue(params: LinearParams, updates): Promise<void> {
+      return connector.updateIssue(reqText(params.issueId, "issueId"), updates)
     },
 
-    addComment(params: Record<string, any>, comment: string): Promise<void> {
-      return connector.addComment(params.issueId, comment)
+    addComment(params: LinearParams, comment: string): Promise<void> {
+      return connector.addComment(reqText(params.issueId, "issueId"), comment)
     },
 
-    createIssue(params: Record<string, any>, data: { title: string; description: string }): Promise<NormalizedIssue> {
-      return connector.createIssue(params.teamId, data)
+    createIssue(params: LinearParams, data: { title: string; description: string }): Promise<NormalizedIssue> {
+      return connector.createIssue(reqText(params.teamId, "teamId"), data)
     },
   }
+}
+
+function reqText(value: string | undefined, key: string) {
+  if (value) return value
+  throw new Error(`Linear params require ${key}`)
 }
