@@ -275,6 +275,69 @@ describe("acp-session", () => {
     ])
   })
 
+  it("skips redundant model config option when currentValue already matches", async () => {
+    const ctx = conn()
+    const state = merge(init(null), {
+      configOptions: [{
+        id: "mode",
+        name: "Mode",
+        category: "mode",
+        type: "select",
+        currentValue: "plan",
+        options: [{ value: "general", name: "General" }, { value: "plan", name: "Plan" }],
+      }, {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "claude-sonnet-4-6",
+        options: [{ value: "claude-sonnet-4-6", name: "Claude Sonnet" }],
+      }],
+    })
+
+    await sync(ctx.api, state, "s1", prompt())
+
+    // Both mode and model already match — no calls should be made
+    expect(ctx.calls).toEqual([])
+  })
+
+  it("skips redundant unstable_setSessionModel on repeat sync", async () => {
+    const ctx = conn()
+    const state = merge(init(null), {
+      modes: null,
+      models: { currentModelId: "anthropic/claude-sonnet-4-6", availableModels: [] },
+    })
+
+    // First sync sets the model
+    const next = await sync(ctx.api, state, "s1", prompt())
+    expect(ctx.calls).toHaveLength(1)
+
+    // Second sync with same model — should skip
+    ctx.calls.length = 0
+    await sync(ctx.api, next, "s1", prompt())
+    expect(ctx.calls).toEqual([])
+  })
+
+  it("sends unstable_setSessionModel when model changes between syncs", async () => {
+    const ctx = conn()
+    const state = merge(init(null), {
+      modes: null,
+      models: { currentModelId: "anthropic/claude-sonnet-4-6", availableModels: [] },
+    })
+
+    const next = await sync(ctx.api, state, "s1", prompt())
+    ctx.calls.length = 0
+
+    // Change model
+    await sync(ctx.api, next, "s1", prompt({ model: { providerID: "anthropic", modelID: "claude-opus-4-6" } }))
+    expect(ctx.calls).toEqual([
+      {
+        name: "unstable_setSessionModel",
+        args: { sessionId: "s1", modelId: "claude-opus-4-6" },
+      },
+    ])
+  })
+
   it("maps prompt parts through ACP content capabilities", () => {
     const out = blocks([
       { type: "text", text: "hello" },

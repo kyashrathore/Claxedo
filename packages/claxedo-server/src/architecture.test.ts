@@ -1,21 +1,17 @@
-import { beforeEach, describe, expect, test } from "vitest"
-import { configureHarnessMode, getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "./architecture"
+import { describe, expect, test } from "vitest"
+import { getSessionWriteMode, runnerHostForRunner, workspaceProfileForRunner } from "./architecture"
 
-describe("harness architecture", () => {
-  beforeEach(() => {
-    configureHarnessMode("workspace")
+describe("runner-scoped harness resolution", () => {
+  test("keeps existing runners on workspace-hosted execution", () => {
+    expect(runnerHostForRunner({ type: "opencode" })).toBe("workspace")
+    expect(runnerHostForRunner({ type: "claude-acp" })).toBe("workspace")
+    expect(workspaceProfileForRunner({ type: "codex-acp" })).toBe("full")
+    expect(getSessionWriteMode({ type: "cursor-acp" })).toBe("workspace_replicated")
   })
 
-  test("defaults to workspace/full replicated mode", () => {
-    expect(getHarnessMode()).toBe("workspace")
-    expect(getWorkspaceProfile()).toBe("full")
-    expect(getSessionWriteMode()).toBe("workspace_replicated")
-  })
-
-  test("switches to central/minimal canonical mode", () => {
-    expect(configureHarnessMode("central")).toBe("central")
-    expect(getHarnessMode()).toBe("central")
-    expect(getWorkspaceProfile()).toBe("minimal")
-    expect(getSessionWriteMode()).toBe("central_canonical")
+  test("routes pi through the central harness path", () => {
+    expect(runnerHostForRunner({ type: "pi" })).toBe("central")
+    expect(workspaceProfileForRunner({ type: "pi" })).toBe("minimal")
+    expect(getSessionWriteMode({ type: "pi" })).toBe("central_canonical")
   })
 })

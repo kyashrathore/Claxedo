@@ -38,12 +38,17 @@ import {
   localAgentStatus,
   setLocalRunnerOptions,
   setLocalSessionModel,
+  updateLocalSessionConfig,
 } from "../local-agent-engine"
 import { getSessionRunner, normalize, setSessionRunner } from "../session-runner"
 import { resolveWorkspace } from "../workspace-store"
+import { ensureHostForUrl, removeAutoHostsForSource } from "../network/policy"
 import { configureHarnessMode, getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../architecture"
 import { hasHarnessHost } from "../harness/host"
 import { listWorkspaceRuntimes, stopRuntime } from "../workspace-supervisor"
+import { decodePiModel, piModelOptions } from "../harness/pi-support"
+import { resolveRunnerForRequest, resolveRunnerHostForRequest } from "../runner-resolution"
+import { sessionMeta } from "../session-meta"
 
 type AcpConfigOption = {
   id: string
@@ -76,6 +81,7 @@ function runnerKey(runner: { type: string; binary?: string | null }) {
 }
 
 function staticOptions(runner: { type: string; model?: string }): AcpConfigOption[] {
+  if (runner.type === "pi") return piModelOptions({ mcp: {}, auth: {}, runner: { type: "pi", ...(runner.model ? { model: runner.model } : {}) } })
   if (runner.type !== "claude-acp") return []
   return [{
     id: "model",
@@ -88,6 +94,7 @@ function staticOptions(runner: { type: string; model?: string }): AcpConfigOptio
 }
 
 async function refreshOptions(ws: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>, runner: ReturnType<typeof normalize>) {
+  if (runner.type === "pi") return piModelOptions(await loadUserConfig())
   if (runner.type === "opencode") return []
   const key = runnerKey(runner)
   const hit = refreshing.get(key)
@@ -175,10 +182,28 @@ export const AgentConfigRoutes = lazy(
         }
 
         try {
+          const saved = sessionId ? await resolveRunnerForRequest({
+            sessionId,
+            workspaceId: ws.id,
+            directory: ws.directory,
+          }) : runner
+          if (saved.type === "pi") {
+            return c.json({
+              ...saved,
+              workspaceId: ws.id,
+              directory: ws.directory,
+              ...(sessionId ? { sessionId } : {}),
+              status: "ready",
+              ready: true,
+              agentType: "pi",
+              activeType: saved.type,
+              activeBinary: null,
+              error: undefined,
+            })
+          }
           const body = await localAgentStatus(ws, sessionId)
-          const bound = sessionId ? getSessionRunner(ws.id, sessionId) : undefined
           return c.json({
-            ...(bound ?? runner),
+            ...(saved ?? runner),
             workspaceId: ws.id,
             directory: ws.directory,
             ...(sessionId ? { sessionId } : {}),
@@ -206,7 +231,7 @@ export const AgentConfigRoutes = lazy(
       .post("/runner", async (c) => {
         const body = await c.req.json<{ type?: string; binary?: string; sessionId?: string; directory?: string; workspaceId?: string }>().catch(() => null)
         if (!body?.type) return c.json({ error: "type is required" }, 400)
-        const validTypes = ["claude-acp", "codex-acp", "cursor-acp", "opencode"]
+        const validTypes = ["claude-acp", "codex-acp", "cursor-acp", "opencode", "pi"]
         if (!validTypes.includes(body.type)) return c.json({ error: "Invalid runner type" }, 400)
         const sessionId = body.sessionId || c.req.query("sessionId") || c.req.header("x-session-id")
         const workspaceId = body.workspaceId || c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id")
@@ -221,15 +246,21 @@ export const AgentConfigRoutes = lazy(
 
         if (ws && sessionId) {
           const next = normalize({
-            type: body.type as "claude-acp" | "codex-acp" | "cursor-acp" | "opencode",
-            ...(body.type === "opencode" ? {} : { ...(body.binary ? { binary: body.binary } : {}) }),
+            type: body.type as "claude-acp" | "codex-acp" | "cursor-acp" | "opencode" | "pi",
+            ...(
+              body.type === "claude-acp" || body.type === "codex-acp" || body.type === "cursor-acp"
+                ? { ...(body.binary ? { binary: body.binary } : {}) }
+                : {}
+            ),
           })
-          const prev = await getLocalSessionRunner(ws, sessionId)
+          const prev = await resolveRunnerForRequest({
+            sessionId,
+            workspaceId: ws.id,
+            directory: ws.directory,
+          })
           const same = prev.type === next.type && (prev.binary ?? "") === (next.binary ?? "")
           if (!same) {
-            const adapter = await getLocalSessionAdapter(ws, sessionId, prev)
-            const session = await adapter.getSession(sessionId, ws.directory).catch(() => null)
-            if (session) {
+            if (await sessionMeta(sessionId)) {
               return c.json({ error: "Runner changes are only supported before a session is created" }, 409)
             }
           }
@@ -240,8 +271,12 @@ export const AgentConfigRoutes = lazy(
         const config = await loadUserConfig()
         const same = config.runner?.type === body.type
         config.runner = {
-          type: body.type as "claude-acp" | "codex-acp" | "cursor-acp" | "opencode",
-          ...(body.binary ? { binary: body.binary } : {}),
+          type: body.type as "claude-acp" | "codex-acp" | "cursor-acp" | "opencode" | "pi",
+          ...(
+            body.type === "claude-acp" || body.type === "codex-acp" || body.type === "cursor-acp"
+              ? (body.binary ? { binary: body.binary } : {})
+              : {}
+          ),
           ...(same && config.runner?.model ? { model: config.runner.model } : {}),
         }
         await saveUserConfig(config)
@@ -264,7 +299,23 @@ export const AgentConfigRoutes = lazy(
             })
           : undefined
         if (ws && sessionId) {
-          await setLocalSessionModel(ws, sessionId, body.model)
+          const runner = await resolveRunnerForRequest({
+            sessionId,
+            workspaceId: ws.id,
+            directory: ws.directory,
+          })
+          if (runner.type === "pi") {
+            const model = decodePiModel(body.model)
+            await updateLocalSessionConfig(ws, sessionId, {
+              runner: {
+                ...runner,
+                model: body.model,
+              },
+              ...(model ? { model } : {}),
+            })
+          } else {
+            await setLocalSessionModel(ws, sessionId, body.model)
+          }
           return c.json({ ok: true })
         }
         const config = await loadUserConfig()
@@ -287,10 +338,21 @@ export const AgentConfigRoutes = lazy(
           directory,
           create: !!directory,
         })
-        if (!ws) return c.json({ error: "workspaceId or directory is required" }, 400)
         const runner = type === "claude-acp" || type === "codex-acp" || type === "cursor-acp" || type === "opencode"
           ? normalize({ type })
-          : await getLocalSessionRunner(ws, sessionId)
+          : type === "pi"
+          ? normalize({ type })
+          : ws
+          ? await getLocalSessionRunner(ws, sessionId)
+          : defaultRunner(await loadUserConfig())
+        if (runner.type === "pi") {
+          return c.json({
+            options: piModelOptions(await loadUserConfig()),
+            source: "live",
+            stale: false,
+          } satisfies OptionsResponse)
+        }
+        if (!ws) return c.json({ error: "workspaceId or directory is required" }, 400)
         if (runner.type === "opencode") {
           return c.json({
             options: [],
@@ -385,6 +447,12 @@ export const AgentConfigRoutes = lazy(
         await saveUserConfig(config)
         await rebuildOpencodeJsonc()
         fanOutConfig().catch(() => {})
+
+        // Auto-add network allowlist entry for remote MCP server URLs
+        if (type === "remote" && typeof url === "string") {
+          ensureHostForUrl(url as string, `mcp:${name}`)
+        }
+
         return c.json({ ok: true, name })
       })
 
@@ -396,6 +464,9 @@ export const AgentConfigRoutes = lazy(
         await saveUserConfig(config)
         await rebuildOpencodeJsonc()
         fanOutConfig().catch(() => {})
+
+        // Remove auto-created network allowlist entry for this MCP server
+        removeAutoHostsForSource(`mcp:${name}`)
         return c.json({ ok: true })
       })
 

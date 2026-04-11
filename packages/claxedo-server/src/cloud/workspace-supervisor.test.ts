@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, test, beforeEach, afterEach, vi } from "vitest"
-import type { Sandbox } from "@daytonaio/sdk"
+import type { SandboxHandle } from "./sandbox-handle"
 import { claxedoBus, type ClaxedoEvent } from "../bus"
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -26,35 +26,22 @@ function captureProvisionEvents() {
   return { events, cleanup: unsub }
 }
 
-function makeExecuteResult(result: string) {
-  return { result, code: 0 }
-}
-
-function createMockSandbox(overrides?: Record<string, any>): Sandbox {
+function createMockSandbox(overrides?: Record<string, any>): SandboxHandle {
   return {
     id: "sb-test-123",
-    state: "started",
-    process: {
-      executeCommand: vi.fn(() => Promise.resolve(makeExecuteResult("exists"))),
-      createSession: vi.fn(() => Promise.resolve()),
-      executeSessionCommand: vi.fn(() => Promise.resolve()),
-      deleteSession: vi.fn(() => Promise.resolve()),
-    },
-    fs: {
-      uploadFile: vi.fn(() => Promise.resolve()),
-    },
-    getSignedPreviewUrl: vi.fn(() =>
-      Promise.resolve({ url: "https://sandbox.example.com" }),
-    ),
-    getPreviewLink: vi.fn(() =>
-      Promise.resolve({ url: "https://sandbox.example.com" }),
-    ),
+    executeCommand: vi.fn(() => Promise.resolve({ result: "exists" })),
+    uploadFile: vi.fn(() => Promise.resolve()),
+    createSession: vi.fn(() => Promise.resolve()),
+    executeSessionCommand: vi.fn(() => Promise.resolve()),
+    deleteSession: vi.fn(() => Promise.resolve()),
+    getServiceUrl: vi.fn(() => Promise.resolve("https://sandbox.example.com")),
     refreshActivity: vi.fn(() => Promise.resolve()),
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
-    setLabels: vi.fn(() => Promise.resolve({})),
+    destroy: vi.fn(() => Promise.resolve()),
+    setLabels: vi.fn(() => Promise.resolve()),
     ...overrides,
-  } as unknown as Sandbox
+  }
 }
 
 // ── Shared mock state ────────────────────────────────────────────────────
@@ -241,12 +228,7 @@ describe("workspace-supervisor", () => {
     test("full provision event sequence for fresh deploy", async () => {
       // Sandbox returns "missing" for both checks
       activeSandbox = createMockSandbox({
-        process: {
-          executeCommand: vi.fn(() => Promise.resolve(makeExecuteResult("missing"))),
-          createSession: vi.fn(() => Promise.resolve()),
-          executeSessionCommand: vi.fn(() => Promise.resolve()),
-          deleteSession: vi.fn(() => Promise.resolve()),
-        },
+        executeCommand: vi.fn(() => Promise.resolve({ result: "missing" })),
       })
       mockAcquire.mockImplementation(() => Promise.resolve(activeSandbox))
 
@@ -263,7 +245,7 @@ describe("workspace-supervisor", () => {
       expect(steps).toEqual([
         "acquiring_sandbox",
         "cloning",
-        "uploading_runtime",
+        "installing_runtime",
         "starting_runtime",
         "waiting_health",
         "ready",
@@ -285,7 +267,7 @@ describe("workspace-supervisor", () => {
 
       // No cloning or uploading events
       expect(steps).not.toContain("cloning")
-      expect(steps).not.toContain("uploading_runtime")
+      expect(steps).not.toContain("installing_runtime")
       expect(steps).toContain("acquiring_sandbox")
       expect(steps).toContain("starting_runtime")
       expect(steps).toContain("ready")
@@ -338,7 +320,7 @@ describe("workspace-supervisor", () => {
         .map((e) => e.step)
 
       expect(steps).not.toContain("cloning")
-      expect(steps).not.toContain("uploading_runtime")
+      expect(steps).not.toContain("installing_runtime")
       expect(steps).toContain("acquiring_sandbox")
       expect(steps).toContain("starting_runtime")
       expect(steps).toContain("ready")
@@ -355,7 +337,7 @@ describe("workspace-supervisor", () => {
 
       await supervisor.stopRuntime("ws-stop-1", "test")
 
-      expect(activeSandbox.process.deleteSession).toHaveBeenCalledWith("wr-ws-stop-1")
+      expect(activeSandbox.deleteSession).toHaveBeenCalledWith("wr-ws-stop-1")
     })
 
     test("sets status to stopped and clears url", async () => {
@@ -645,7 +627,7 @@ describe("workspace-supervisor: expected wake behavior", () => {
 
     // Clone and upload skipped when filesystem intact
     expect(steps).not.toContain("cloning")
-    expect(steps).not.toContain("uploading_runtime")
+    expect(steps).not.toContain("installing_runtime")
     expect(steps).toContain("acquiring_sandbox")
     expect(steps).toContain("starting_runtime")
     expect(steps).toContain("waiting_health")

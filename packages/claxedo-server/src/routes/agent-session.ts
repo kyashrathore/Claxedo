@@ -26,15 +26,13 @@ import {
 import { opencodeHeaders } from "../opencode-auth"
 import { normalize, type SessionRunner } from "../session-runner"
 import { getWorkspaceByDirectory, resolveWorkspace } from "../workspace-store"
-import { getHarnessMode, getSessionWriteMode } from "../architecture"
+import { getSessionWriteMode } from "../architecture"
 import { createSyncDB } from "../sync-db"
 import { getHarnessHost } from "../harness/host"
+import { parseRunner, resolveRunnerForRequest, resolveRunnerHostForRequest } from "../runner-resolution"
+import { decodePiModel } from "../harness/pi-support"
 
 const sync = createSyncDB({ mode: getSessionWriteMode })
-
-function central() {
-  return getHarnessMode() === "central"
-}
 
 async function workspace(c: {
   req: {
@@ -99,17 +97,11 @@ function runner(c: {
     header: (k: string) => string | undefined
   }
 }) {
-  const type = c.req.header("x-claxedo-runner")
-  const binary = c.req.header("x-claxedo-binary")
-  const model = c.req.header("x-claxedo-model")
-  if (type !== "claude-acp" && type !== "codex-acp" && type !== "cursor-acp" && type !== "opencode") return
-  return normalize({
-    type,
-    ...(type === "opencode" ? {} : {
-      ...(binary ? { binary } : {}),
-      ...(model ? { model } : {}),
-    }),
-  } satisfies SessionRunner)
+  return parseRunner({
+    type: c.req.header("x-claxedo-runner"),
+    binary: c.req.header("x-claxedo-binary"),
+    model: c.req.header("x-claxedo-model"),
+  })
 }
 
 // ── Compat → agent.lifecycle bridge ──────────────────────────────────────────
@@ -175,7 +167,15 @@ export function AgentSessionRoutes() {
   return createSessionRoutes({
     resolveAdapter: async (c, input) => {
       const ws = await workspaceStrict(c as never, input)
-      if (central()) return getHarnessHost(sync).createAdapter(ws)
+      const host = await resolveRunnerHostForRequest({
+        sessionId: input?.sessionId,
+        workspaceId: ws.id,
+        directory: ws.directory,
+        type: c.req.header("x-claxedo-runner"),
+        binary: c.req.header("x-claxedo-binary"),
+        model: c.req.header("x-claxedo-model"),
+      })
+      if (host === "central") return getHarnessHost(sync).createAdapter(ws)
       if (input?.sessionId) return getLocalSessionAdapter(ws, input.sessionId)
       const hit = runner(c as never)
       if (hit) return getLocalAgentAdapter(ws, hit)
@@ -185,10 +185,16 @@ export function AgentSessionRoutes() {
     listSessions: async (c) => {
       const ws = await workspace(c as never)
       if (!ws) return globalSessions()
-      if (central()) {
-        return (await getHarnessHost(sync).createAdapter(ws)).listSessions(ws.directory)
+      const central = await getHarnessHost(sync).createAdapter(ws).then((adapter) => adapter.listSessions(ws.directory)).catch(() => [])
+      const local = await listLocalSessions(ws)
+      const merged = new Map<string, Record<string, unknown>>()
+      for (const row of [...central, ...local]) {
+        if (!row || typeof row !== "object") continue
+        const id = (row as { id?: unknown }).id
+        if (typeof id !== "string") continue
+        merged.set(id, row as Record<string, unknown>)
       }
-      const rows = await listLocalSessions(ws)
+      const rows = [...merged.values()]
       const filtered = rows.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
       // Canonicalize projectID to the resolved workspace's project_id
       if (ws.project_id) {
@@ -197,15 +203,36 @@ export function AgentSessionRoutes() {
       return applySessionMeta(filtered)
     },
     createSession: async (c, _directory, title) => {
-      if (central()) {
+      const hit = runner(c as never)
+      const next = hit ?? await resolveRunnerForRequest({
+        type: c.req.header("x-claxedo-runner"),
+        binary: c.req.header("x-claxedo-binary"),
+        model: c.req.header("x-claxedo-model"),
+      })
+      if ((await resolveRunnerHostForRequest(next)) === "central") {
+        const patch = {
+          runner: next,
+          ...(next.type === "pi" && next.model
+            ? (() => {
+                const model = decodePiModel(next.model)
+                return model ? { model } : {}
+              })()
+            : {}),
+        }
         const ws = await workspace(c as never)
-        if (ws) return (await getHarnessHost(sync).createAdapter(ws)).createSession(ws.directory, title)
+        if (ws) {
+          const adapter = await getHarnessHost(sync).createAdapter(ws)
+          const session = await adapter.createSession(ws.directory, title)
+          await adapter.updateSessionConfig(session.id, patch, ws.directory).catch(() => {})
+          return session
+        }
         const dir = await createGlobalDirectory()
-        const next = globalWorkspace(dir)
-        const adapter = await getHarnessHost(sync).createAdapter(next)
+        const root = globalWorkspace(dir)
+        const adapter = await getHarnessHost(sync).createAdapter(root)
         const session = await adapter.createSession(dir, title)
+        await adapter.updateSessionConfig(session.id, patch, dir).catch(() => {})
         await sync.put_session_meta(session.id, {
-          ws: next,
+          ws: root,
           directory: dir,
           title: title ?? null,
           tags: [GLOBAL_TAG, GLOBAL_SHOW_TAG],
@@ -216,10 +243,10 @@ export function AgentSessionRoutes() {
         }
       }
       const ws = await workspace(c as never)
-      if (ws) return createLocalSession(ws, runner(c as never) ?? await getLocalSessionRunner(ws), title)
+      if (ws) return createLocalSession(ws, next, title)
       const dir = await createGlobalDirectory()
-      const next = globalWorkspace(dir)
-      const session = await createLocalSession(next, runner(c as never) ?? await getLocalSessionRunner(next), title)
+      const root = globalWorkspace(dir)
+      const session = await createLocalSession(root, hit ?? await getLocalSessionRunner(root), title)
       await sync.sync_session_meta(undefined, { ...session, directory: dir })
       await sync.put_session_meta(session.id, {
         directory: dir,
@@ -232,10 +259,17 @@ export function AgentSessionRoutes() {
       }
     },
     getStatus: async (c, directory, adapter) => {
-      if (central()) return sessionStatusSnapshot(await adapter.listSessions(directory))
+      const ws = await workspace(c as never)
+      const host = await resolveRunnerHostForRequest({
+        workspaceId: ws?.id,
+        directory,
+        type: c.req.header("x-claxedo-runner"),
+        binary: c.req.header("x-claxedo-binary"),
+        model: c.req.header("x-claxedo-model"),
+      })
+      if (host === "central") return sessionStatusSnapshot(await adapter.listSessions(directory))
       if (!(adapter instanceof OpenCodeAdapter)) return sessionStatusSnapshot(await adapter.listSessions(directory))
       const url = await adapter.getServerUrl()
-      const ws = await workspace(c as never)
       const res = await fetch(`${url}/session/status`, {
         headers: opencodeHeaders({
           "x-opencode-directory": directory,
@@ -254,26 +288,41 @@ export function AgentSessionRoutes() {
     },
     listPermissions: async (c) => {
       const ws = await workspaceStrict(c as never)
-      if (central()) return (await getHarnessHost(sync).createAdapter(ws)).listPermissions(ws.directory)
-      return listLocalPermissions(ws)
+      const [central, local] = await Promise.all([
+        getHarnessHost(sync).createAdapter(ws).then((adapter) => adapter.listPermissions(ws.directory)).catch(() => []),
+        listLocalPermissions(ws),
+      ])
+      return [...central, ...local]
     },
     afterListSessions: async (c, _directory, sessions) => {
-      if (central()) return
       const ws = await workspace(c as never)
       if (!ws) return
       await sync.sync_session_metas(ws, sessions)
       await sync.sync_cloud_sessions(ws, sessions)
     },
     afterCreateSession: async (c, _directory, session) => {
-      if (central()) return
       const ws = await workspace(c as never)
+      const host = await resolveRunnerHostForRequest({
+        workspaceId: ws?.id,
+        directory: ws?.directory,
+        sessionId: typeof (session as { id?: unknown })?.id === "string" ? (session as { id: string }).id : undefined,
+        type: c.req.header("x-claxedo-runner"),
+        binary: c.req.header("x-claxedo-binary"),
+        model: c.req.header("x-claxedo-model"),
+      })
+      if (host === "central") return
       if (!ws || ws.id === "global") return
       await sync.sync_session_meta(ws, session)
       await sync.sync_cloud_session(ws, session)
     },
     afterGetSession: async (c, _directory, session) => {
-      if (central()) return
       const ws = await workspace(c as never)
+      const host = await resolveRunnerHostForRequest({
+        workspaceId: ws?.id,
+        directory: ws?.directory,
+        sessionId: typeof (session as { id?: unknown })?.id === "string" ? (session as { id: string }).id : undefined,
+      })
+      if (host === "central") return
       if (!ws || ws.id === "global") {
         await sync.sync_session_meta(undefined, session)
         return
@@ -282,18 +331,33 @@ export function AgentSessionRoutes() {
       await sync.sync_cloud_session(ws, session)
     },
     getSessionConfig: async (c, directory, sessionId, adapter) => {
-      if (central()) return adapter.getSessionConfig(sessionId, directory)
       const ws = await workspaceStrict(c as never, { sessionId })
+      const host = await resolveRunnerHostForRequest({
+        workspaceId: ws.id,
+        directory,
+        sessionId,
+      })
+      if (host === "central") return adapter.getSessionConfig(sessionId, directory)
       return getLocalSessionConfig(ws, sessionId)
     },
     updateSessionConfig: async (c, directory, sessionId, patch, adapter) => {
-      if (central()) return adapter.updateSessionConfig(sessionId, patch, directory)
       const ws = await workspaceStrict(c as never, { sessionId })
+      const host = await resolveRunnerHostForRequest({
+        workspaceId: ws.id,
+        directory,
+        sessionId,
+      })
+      if (host === "central") return adapter.updateSessionConfig(sessionId, patch, directory)
       return updateLocalSessionConfig(ws, sessionId, patch)
     },
     afterUpdateSession: async (c, _directory, session) => {
-      if (central()) return
       const ws = await workspace(c as never)
+      const host = await resolveRunnerHostForRequest({
+        workspaceId: ws?.id,
+        directory: ws?.directory,
+        sessionId: typeof (session as { id?: unknown })?.id === "string" ? (session as { id: string }).id : undefined,
+      })
+      if (host === "central") return
       if (!ws || ws.id === "global") {
         await sync.sync_session_meta(undefined, session)
         return
@@ -302,15 +366,28 @@ export function AgentSessionRoutes() {
       await sync.sync_cloud_session(ws, session)
     },
     afterDeleteSession: async (c, _directory, sessionId) => {
-      if (central()) return
       const ws = await workspace(c as never)
+      const host = await resolveRunnerHostForRequest({
+        workspaceId: ws?.id,
+        directory: ws?.directory,
+        sessionId,
+      })
+      if (host === "central") {
+        await sync.delete_session_meta(sessionId)
+        return
+      }
       await sync.delete_session_meta(sessionId)
       if (!ws || ws.id === "global") return
       await sync.delete_cloud_session(ws, sessionId)
     },
     afterMessages: async (c, _directory, sessionId, messages) => {
-      if (central()) return
       const ws = await workspace(c as never)
+      const host = await resolveRunnerHostForRequest({
+        workspaceId: ws?.id,
+        directory: ws?.directory,
+        sessionId,
+      })
+      if (host === "central") return
       if (!ws || ws.id === "global") return
       await sync.sync_cloud_messages(ws, sessionId, messages)
     },

@@ -1,4 +1,5 @@
 import type { Hono } from "hono"
+import { workspaceCapabilities } from "../capabilities"
 import { subscribeGlobalEvents } from "../global-event-bus"
 import { ConfigRoutes, type RuntimeRunner, type RuntimeSnapshot } from "../routes/config"
 import type { WorkspaceHost } from "./host"
@@ -70,7 +71,11 @@ export function createWorkspaceMinimalHost(): WorkspaceHost {
         state,
         runner,
         error: err,
+        workspaceHarnessEnabled: false,
       }
+    },
+    capabilities() {
+      return workspaceCapabilities(false)
     },
     dispose() {},
   }

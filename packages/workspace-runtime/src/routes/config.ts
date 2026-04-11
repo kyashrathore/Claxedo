@@ -4,7 +4,7 @@ import { Log } from "../log"
 const log = Log.create({ service: "config-route" })
 
 export type RuntimeRunner = {
-  type: "claude-acp" | "codex-acp" | "cursor-acp" | "opencode"
+  type: "claude-acp" | "codex-acp" | "cursor-acp" | "opencode" | "pi"
   binary?: string
   model?: string
 }
@@ -14,6 +14,7 @@ export type RuntimeSnapshot = {
   mcp: Record<string, unknown>
   runner: RuntimeRunner
   auth: Record<string, string>
+  workspaceHarnessEnabled?: boolean
 }
 
 export const ConfigRoutes = (apply: (snapshot: RuntimeSnapshot) => Promise<void>) =>

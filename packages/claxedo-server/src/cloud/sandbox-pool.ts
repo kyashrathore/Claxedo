@@ -1,8 +1,15 @@
 import { Daytona, Sandbox, SandboxState } from "@daytonaio/sdk"
 import { Log } from "../log"
 import { ensureSnapshot } from "./sandbox-image"
-import { defaultSandboxProvider, sandboxAuth } from "./provider"
+import { defaultSandboxProvider, sandboxAuth, sandboxAuthAsync } from "./provider"
 import { loadUserConfig } from "../agent-config"
+import { formatDaytonaAllowList, type SandboxNetworkPolicy } from "../network/resolve"
+import type { SandboxHandle } from "./sandbox-handle"
+import type { SandboxProviderID } from "./types"
+import { DaytonaSandboxHandle } from "./sandbox-daytona"
+import { createVercelSandbox } from "./sandbox-vercel"
+import { createCloudflareSandbox } from "./sandbox-cloudflare"
+import { createModalSandbox } from "./sandbox-modal"
 
 const log = Log.create({ service: "sandbox-pool" })
 
@@ -19,13 +26,14 @@ const APP_LABEL = "claxedo"
 export async function poolEnabled(): Promise<boolean> {
   const cfg = await loadUserConfig()
   if (defaultSandboxProvider(cfg.sandbox) !== "daytona") return false
-  return !!sandboxAuth(cfg.sandbox, "daytona")?.api_key
+  const auth = await sandboxAuthAsync(cfg.sandbox, "daytona") ?? sandboxAuth(cfg.sandbox, "daytona")
+  return !!auth?.api_key
 }
 
 async function getDaytona(): Promise<Daytona> {
   if (client) return client
   const cfg = await loadUserConfig()
-  const auth = sandboxAuth(cfg.sandbox, "daytona")
+  const auth = await sandboxAuthAsync(cfg.sandbox, "daytona") ?? sandboxAuth(cfg.sandbox, "daytona")
   if (!auth?.api_key) throw new Error("Missing Daytona API key for sandbox pool")
   client = new Daytona({ apiKey: auth.api_key })
   return client
@@ -74,24 +82,40 @@ async function replenish(): Promise<void> {
   }
 }
 
-export async function acquire(workspaceId: string, projectId: string): Promise<Sandbox> {
+async function acquireDaytona(
+  workspaceId: string,
+  projectId: string,
+  net?: SandboxNetworkPolicy,
+): Promise<SandboxHandle> {
   const daytona = await getDaytona()
-  const result = await daytona.list(warmLabels())
-  const ready = result.items.find((s) => s.state === SandboxState.STARTED)
+  const locked = net?.mode === "restricted"
 
-  if (ready) {
-    await ready.setLabels({
-      app: APP_LABEL,
-      pool: "assigned",
-      workspace_id: workspaceId,
-      project_id: projectId,
-    })
-    log.info("Acquired warm sandbox", { sandboxId: ready.id, workspaceId })
-    replenish().catch(() => {})
-    return ready
+  // If a network policy is configured, skip the warm pool and cold-start
+  // with restrictions — warm sandboxes don't have network restrictions
+  // because they need connectivity for deploy/clone.
+  if (!locked) {
+    const result = await daytona.list(warmLabels())
+    const ready = result.items.find((s) => s.state === SandboxState.STARTED)
+
+    if (ready) {
+      await ready.setLabels({
+        app: APP_LABEL,
+        pool: "assigned",
+        workspace_id: workspaceId,
+        project_id: projectId,
+      })
+      log.info("Acquired warm sandbox", { sandboxId: ready.id, workspaceId })
+      replenish().catch(() => {})
+      return new DaytonaSandboxHandle(ready)
+    }
   }
 
-  log.warn("Warm pool exhausted, cold-starting sandbox", { workspaceId })
+  log.info(
+    locked
+      ? "Cold-starting sandbox with network policy"
+      : "Warm pool exhausted, cold-starting sandbox",
+    { workspaceId, networkCidrs: net?.cidrs.length ?? 0, networkHosts: net?.hosts.length ?? 0 },
+  )
   if (!snapshotName) {
     snapshotName = await ensureSnapshot(daytona)
   }
@@ -103,9 +127,97 @@ export async function acquire(workspaceId: string, projectId: string): Promise<S
       workspace_id: workspaceId,
       project_id: projectId,
     },
+    ...(locked
+      ? {
+          networkBlockAll: true,
+          ...(net.cidrs.length ? { networkAllowList: formatDaytonaAllowList(net.cidrs) } : {}),
+        }
+      : {}),
   })
   replenish().catch(() => {})
-  return sandbox
+  return new DaytonaSandboxHandle(sandbox)
+}
+
+async function acquireVercel(workspaceId: string, net?: SandboxNetworkPolicy): Promise<SandboxHandle> {
+  const cfg = await loadUserConfig()
+  const auth = await sandboxAuthAsync(cfg.sandbox, "vercel") ?? sandboxAuth(cfg.sandbox, "vercel")
+  if (!auth?.access_token) throw new Error("Missing Vercel access token")
+
+  // @vercel/sandbox reads VERCEL_TOKEN from env for auth
+  const prevToken = process.env.VERCEL_TOKEN
+  process.env.VERCEL_TOKEN = auth.access_token
+  try {
+    const handle = await createVercelSandbox({ net })
+    log.info("Acquired Vercel sandbox", { sandboxId: handle.id, workspaceId })
+    return handle
+  } finally {
+    if (prevToken !== undefined) process.env.VERCEL_TOKEN = prevToken
+    else delete process.env.VERCEL_TOKEN
+  }
+}
+
+async function acquireCloudflare(workspaceId: string, net?: SandboxNetworkPolicy): Promise<SandboxHandle> {
+  const cfg = await loadUserConfig()
+  const auth = await sandboxAuthAsync(cfg.sandbox, "cloudflare") ?? sandboxAuth(cfg.sandbox, "cloudflare")
+  if (!auth?.api_token || !auth.worker_url) {
+    throw new Error("Missing Cloudflare API token or Worker URL")
+  }
+
+  const sandboxId = `claxedo-${workspaceId}`
+  const handle = await createCloudflareSandbox({
+    sandboxId,
+    workerUrl: auth.worker_url,
+    apiToken: auth.api_token,
+    net,
+  })
+  log.info("Acquired Cloudflare sandbox", { sandboxId: handle.id, workspaceId })
+  return handle
+}
+
+async function acquireModal(workspaceId: string, net?: SandboxNetworkPolicy): Promise<SandboxHandle> {
+  const cfg = await loadUserConfig()
+  const auth = await sandboxAuthAsync(cfg.sandbox, "modal") ?? sandboxAuth(cfg.sandbox, "modal")
+  if (!auth?.token_id || !auth.token_secret) {
+    throw new Error("Missing Modal token_id or token_secret")
+  }
+
+  const handle = await createModalSandbox({
+    tokenId: auth.token_id,
+    tokenSecret: auth.token_secret,
+    name: `claxedo-${workspaceId}`,
+    net,
+  })
+  log.info("Acquired Modal sandbox", { sandboxId: handle.id, workspaceId })
+  return handle
+}
+
+/**
+ * Acquire a sandbox from the configured provider.
+ *
+ * - Daytona: pulls from a warm pool or cold-starts with snapshot
+ * - Modal: creates via the official `modal` SDK
+ * - Vercel: creates a fresh microVM (millisecond startup)
+ * - Cloudflare: lazy-starts via Worker proxy (container starts on first operation)
+ */
+export async function acquire(
+  workspaceId: string,
+  projectId: string,
+  net?: SandboxNetworkPolicy,
+  provider?: SandboxProviderID,
+): Promise<SandboxHandle> {
+  const cfg = await loadUserConfig()
+  const id = provider ?? defaultSandboxProvider(cfg.sandbox)
+
+  switch (id) {
+    case "daytona":
+      return acquireDaytona(workspaceId, projectId, net)
+    case "modal":
+      return acquireModal(workspaceId, net)
+    case "vercel":
+      return acquireVercel(workspaceId, net)
+    case "cloudflare":
+      return acquireCloudflare(workspaceId, net)
+  }
 }
 
 export async function release(sandboxId: string): Promise<void> {

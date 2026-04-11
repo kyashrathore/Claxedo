@@ -43,6 +43,11 @@ import { initPool, poolEnabled, startPoolMonitor, shutdown as shutdownPool } fro
 import { configureOpenCodeAuth, opencodeHeaders } from "./opencode-auth"
 import { configureHarnessMode, getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "./architecture"
 import { createSyncDB } from "./sync-db"
+import { configureHarnessHost } from "./harness/host"
+import { createPiHost } from "./harness/pi-host"
+import { migrateCredentials } from "./credentials/migrate"
+import { CredentialRoutes } from "./routes/credential"
+import { NetworkPolicyRoutes } from "./routes/network-policy"
 
 const app = new Hono()
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
@@ -108,6 +113,8 @@ app.route("/pages", PagesRoutes())
 app.route("/api/claxedo/agent-config", AgentConfigRoutes())
 app.route("/", SessionMetaRoutes())
 app.route("/api/workspace", WorkspaceRoutes())
+app.route("/api/claxedo/credentials", CredentialRoutes())
+app.route("/api/claxedo/network-policy", NetworkPolicyRoutes())
 
 // Agent hook routes (tab-context, terminal-session, agent-lifecycle, setup)
 mount(app, "/api/claxedo/hook", AgentHookRoutes())
@@ -116,6 +123,7 @@ export function startServer(port = 3001, opencodeUrl = "http://127.0.0.1:4096", 
   process.env.OPENCODE_URL = opencodeUrl
   configureHarnessMode()
   const sync = createSyncDB({ mode: getSessionWriteMode })
+  configureHarnessHost(createPiHost(sync))
   initPostHog()
   mirrorProcessEvents()
   configureOpenCodeAuth(opencodePassword)
@@ -124,6 +132,11 @@ export function startServer(port = 3001, opencodeUrl = "http://127.0.0.1:4096", 
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
     opencode_url: opencodeUrl,
+  })
+
+  // Migrate legacy plaintext credentials into the managed secret backend.
+  migrateCredentials().catch((err) => {
+    console.error("[claxedo-server] WARN  credential migration failed:", err)
   })
 
   // Persist message events from ALL workspaces (local + cloud) to claxedo DB.

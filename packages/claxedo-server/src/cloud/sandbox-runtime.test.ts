@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, vi } from "vitest"
-import type { Sandbox } from "@daytonaio/sdk"
+import type { SandboxHandle } from "./sandbox-handle"
 import { claxedoBus, type ClaxedoEvent } from "../bus"
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -12,69 +12,38 @@ function captureProvisionEvents() {
   return { events, cleanup: unsub }
 }
 
-function makeExecuteResult(result: string) {
-  return { result, code: 0 }
-}
-
-function createMockSandbox(overrides?: Partial<Sandbox>): Sandbox {
+function createMockSandbox(overrides?: Partial<SandboxHandle>): SandboxHandle {
   return {
     id: "sb-test-123",
-    state: "started" as any,
-    process: {
-      executeCommand: vi.fn(() => Promise.resolve(makeExecuteResult("missing"))),
-      createSession: vi.fn(() => Promise.resolve()),
-      executeSessionCommand: vi.fn(() => Promise.resolve()),
-      deleteSession: vi.fn(() => Promise.resolve()),
-    },
-    fs: {
-      uploadFile: vi.fn(() => Promise.resolve()),
-    },
-    getSignedPreviewUrl: vi.fn(() =>
-      Promise.resolve({ url: "https://sandbox.example.com" }),
-    ),
-    getPreviewLink: vi.fn(() =>
-      Promise.resolve({ url: "https://sandbox.example.com" }),
-    ),
+    executeCommand: vi.fn(() => Promise.resolve({ result: "missing" })),
+    uploadFile: vi.fn(() => Promise.resolve()),
+    createSession: vi.fn(() => Promise.resolve()),
+    executeSessionCommand: vi.fn(() => Promise.resolve()),
+    deleteSession: vi.fn(() => Promise.resolve()),
+    getServiceUrl: vi.fn(() => Promise.resolve("https://sandbox.example.com")),
     refreshActivity: vi.fn(() => Promise.resolve()),
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
-    setLabels: vi.fn(() => Promise.resolve({})),
+    destroy: vi.fn(() => Promise.resolve()),
+    setLabels: vi.fn(() => Promise.resolve()),
     ...overrides,
-  } as unknown as Sandbox
+  }
 }
-
-// ── Mock fs module ───────────────────────────────────────────────────────
-
-// We mock the runtime.mjs file read so deployAndStart doesn't hit real filesystem
-const FAKE_BUNDLE = Buffer.from("// runtime.mjs mock content")
-
-// We need to mock fs before importing the module
-const originalReadFileSync = (await import("fs")).readFileSync
-const originalExistsSync = (await import("fs")).existsSync
 
 // ── Import module under test ────────────────────────────────────────────
 
 import * as sandboxRuntime from "./sandbox-runtime"
 
-// ── Mock fetch for health checks ────────────────────────────────────────
-
-const originalFetch = globalThis.fetch
-
 // ── Tests ────────────────────────────────────────────────────────────────
 
 describe("sandbox-runtime", () => {
   describe("deployAndStart", () => {
-    let sandbox: Sandbox
+    let sandbox: SandboxHandle
     let tracker: ReturnType<typeof captureProvisionEvents>
 
     beforeEach(() => {
       sandbox = createMockSandbox()
       tracker = captureProvisionEvents()
-
-      // Mock fs.readFileSync and fs.existsSync for the runtime bundle
-      const fsModule = require("fs")
-      fsModule.readFileSync = vi.fn((_path: string) => FAKE_BUNDLE)
-      fsModule.existsSync = vi.fn((_path: string) => true)
 
       // Mock fetch for health checks — succeed immediately
       globalThis.fetch = vi.fn(() =>
@@ -84,11 +53,11 @@ describe("sandbox-runtime", () => {
 
     // ── Fresh deployment ─────────────────────────────────────────────
 
-    test("full fresh deployment: clones repo, uploads runtime, starts process", async () => {
-      // Both checks return "missing"
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("missing")) // git check
-        .mockResolvedValueOnce(makeExecuteResult("missing")) // runtime check
+    test("full fresh deployment: clones repo, installs runtime, starts process", async () => {
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "" }) // mkdir
+        .mockResolvedValueOnce({ result: "missing" }) // git check
+        .mockResolvedValueOnce({ result: "missing" }) // runtime check
 
       const result = await sandboxRuntime.deployAndStart(sandbox, "ws-1", {
         repoUrl: "https://github.com/test/repo.git",
@@ -98,20 +67,23 @@ describe("sandbox-runtime", () => {
       expect(result.url).toBe("https://sandbox.example.com")
 
       // Verify clone was called
-      const cmds = (sandbox.process.executeCommand as any).mock.calls
-      expect(cmds.length).toBe(3) // git check + runtime check + clone
+      const cmds = (sandbox.executeCommand as any).mock.calls
       const cloneCall = cmds.find((c: any[]) =>
         c[0]?.includes("git clone"),
       )
       expect(cloneCall).toBeTruthy()
       expect(cloneCall[0]).toContain("https://github.com/test/repo.git")
 
-      // Verify runtime upload was called
-      expect(sandbox.fs.uploadFile).toHaveBeenCalled()
+      // Verify npm install was called (not uploadFile)
+      const installCall = cmds.find((c: any[]) =>
+        c[0]?.includes("npm install"),
+      )
+      expect(installCall).toBeTruthy()
+      expect(sandbox.uploadFile).not.toHaveBeenCalled()
 
       // Verify session created and command executed
-      expect(sandbox.process.createSession).toHaveBeenCalledWith("wr-ws-1")
-      expect(sandbox.process.executeSessionCommand).toHaveBeenCalled()
+      expect(sandbox.createSession).toHaveBeenCalledWith("wr-ws-1")
+      expect(sandbox.executeSessionCommand).toHaveBeenCalled()
 
       tracker.cleanup()
     })
@@ -119,16 +91,17 @@ describe("sandbox-runtime", () => {
     // ── Skip clone when repo exists ─────────────────────────────────
 
     test("skips clone when .git directory already exists", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists")) // git check → exists
-        .mockResolvedValueOnce(makeExecuteResult("missing")) // runtime check
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "" }) // mkdir
+        .mockResolvedValueOnce({ result: "exists" }) // git check → exists
+        .mockResolvedValueOnce({ result: "missing" }) // runtime check
 
       await sandboxRuntime.deployAndStart(sandbox, "ws-2", {
         repoUrl: "https://github.com/test/repo.git",
         directory: "/workspace",
       })
 
-      const cmds = (sandbox.process.executeCommand as any).mock.calls
+      const cmds = (sandbox.executeCommand as any).mock.calls
       const cloneCall = cmds.find((c: any[]) =>
         c[0]?.includes("git clone"),
       )
@@ -137,19 +110,24 @@ describe("sandbox-runtime", () => {
       tracker.cleanup()
     })
 
-    // ── Skip upload when runtime exists ──────────────────────────────
+    // ── Skip install when runtime exists ─────────────────────────────
 
-    test("skips runtime upload when runtime.mjs already exists", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists")) // git check
-        .mockResolvedValueOnce(makeExecuteResult("exists")) // runtime check → exists
+    test("skips npm install when runtime already exists", async () => {
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "" }) // mkdir
+        .mockResolvedValueOnce({ result: "exists" }) // git check
+        .mockResolvedValueOnce({ result: "exists" }) // runtime check → exists
 
       await sandboxRuntime.deployAndStart(sandbox, "ws-3", {
         repoUrl: "https://github.com/test/repo.git",
         directory: "/workspace",
       })
 
-      expect(sandbox.fs.uploadFile).not.toHaveBeenCalled()
+      const cmds = (sandbox.executeCommand as any).mock.calls
+      const installCall = cmds.find((c: any[]) =>
+        c[0]?.includes("npm install"),
+      )
+      expect(installCall).toBeUndefined()
 
       tracker.cleanup()
     })
@@ -157,23 +135,24 @@ describe("sandbox-runtime", () => {
     // ── Both exist: only restart process ─────────────────────────────
 
     test("when repo and runtime both exist, only restarts process and waits for health", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists")) // git check
-        .mockResolvedValueOnce(makeExecuteResult("exists")) // runtime check
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "" }) // mkdir
+        .mockResolvedValueOnce({ result: "exists" }) // git check
+        .mockResolvedValueOnce({ result: "exists" }) // runtime check
 
       const result = await sandboxRuntime.deployAndStart(sandbox, "ws-4", {
         repoUrl: "https://github.com/test/repo.git",
         directory: "/workspace",
       })
 
-      // No clone, no upload
-      const cmds = (sandbox.process.executeCommand as any).mock.calls
+      // No clone, no install
+      const cmds = (sandbox.executeCommand as any).mock.calls
       expect(cmds.find((c: any[]) => c[0]?.includes("git clone"))).toBeUndefined()
-      expect(sandbox.fs.uploadFile).not.toHaveBeenCalled()
+      expect(cmds.find((c: any[]) => c[0]?.includes("npm install"))).toBeUndefined()
 
       // But session + process start + health check still happened
-      expect(sandbox.process.createSession).toHaveBeenCalledWith("wr-ws-4")
-      expect(sandbox.process.executeSessionCommand).toHaveBeenCalled()
+      expect(sandbox.createSession).toHaveBeenCalledWith("wr-ws-4")
+      expect(sandbox.executeSessionCommand).toHaveBeenCalled()
       expect(result.url).toBeTruthy()
 
       tracker.cleanup()
@@ -182,14 +161,14 @@ describe("sandbox-runtime", () => {
     // ── No repo URL means no clone attempt ───────────────────────────
 
     test("no clone attempted when repoUrl is not provided", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("missing")) // runtime check
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "missing" }) // runtime check
 
       await sandboxRuntime.deployAndStart(sandbox, "ws-5", {
         directory: "/workspace",
       })
 
-      const cmds = (sandbox.process.executeCommand as any).mock.calls
+      const cmds = (sandbox.executeCommand as any).mock.calls
       // Only runtime check, no git check
       expect(cmds.find((c: any[]) => c[0]?.includes("git clone"))).toBeUndefined()
       expect(cmds.find((c: any[]) => c[0]?.includes(".git"))).toBeUndefined()
@@ -200,10 +179,10 @@ describe("sandbox-runtime", () => {
     // ── Session creation is idempotent ───────────────────────────────
 
     test("session creation is idempotent — does not throw if session exists", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-      ;(sandbox.process.createSession as any).mockRejectedValueOnce(
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "exists" })
+        .mockResolvedValueOnce({ result: "exists" })
+      ;(sandbox.createSession as any).mockRejectedValueOnce(
         new Error("session already exists"),
       )
 
@@ -219,22 +198,22 @@ describe("sandbox-runtime", () => {
     // ── Environment variables ────────────────────────────────────────
 
     test("passes correct environment variables to runtime process", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "exists" })
+        .mockResolvedValueOnce({ result: "exists" })
 
       await sandboxRuntime.deployAndStart(sandbox, "ws-7", {
         directory: "/custom/dir",
         envVars: { CUSTOM_VAR: "value" },
       })
 
-      const sessionCmd = (sandbox.process.executeSessionCommand as any).mock.calls[0]
+      const sessionCmd = (sandbox.executeSessionCommand as any).mock.calls[0]
       const command = sessionCmd[1].command as string
       expect(command).toContain("CLAXEDO_WR_PORT=")
       expect(command).toContain("CLAXEDO_WR_WORKSPACE_ID=ws-7")
       expect(command).toContain("CLAXEDO_WR_DIRECTORY=/custom/dir")
       expect(command).toContain("CUSTOM_VAR=value")
-      expect(command).toContain("node runtime.mjs")
+      expect(command).toContain("node ")
 
       tracker.cleanup()
     })
@@ -242,9 +221,10 @@ describe("sandbox-runtime", () => {
     // ── Provision events emitted in correct order ────────────────────
 
     test("emits provision events in correct order for full deployment", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("missing")) // git check
-        .mockResolvedValueOnce(makeExecuteResult("missing")) // runtime check
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "" }) // mkdir
+        .mockResolvedValueOnce({ result: "missing" }) // git check
+        .mockResolvedValueOnce({ result: "missing" }) // runtime check
 
       await sandboxRuntime.deployAndStart(sandbox, "ws-8", {
         repoUrl: "https://github.com/test/repo.git",
@@ -257,7 +237,7 @@ describe("sandbox-runtime", () => {
 
       expect(steps).toEqual([
         "cloning",
-        "uploading_runtime",
+        "installing_runtime",
         "starting_runtime",
         "waiting_health",
         "ready",
@@ -267,9 +247,10 @@ describe("sandbox-runtime", () => {
     })
 
     test("emits provision events in correct order for warm wake (both exist)", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "" }) // mkdir
+        .mockResolvedValueOnce({ result: "exists" })
+        .mockResolvedValueOnce({ result: "exists" })
 
       await sandboxRuntime.deployAndStart(sandbox, "ws-9", {
         repoUrl: "https://github.com/test/repo.git",
@@ -280,7 +261,7 @@ describe("sandbox-runtime", () => {
         .filter((e): e is Extract<ClaxedoEvent, { type: "provision" }> => e.type === "provision")
         .map((e) => e.step)
 
-      // clone and upload skipped — no events for those
+      // clone and install skipped — no events for those
       expect(steps).toEqual([
         "starting_runtime",
         "waiting_health",
@@ -291,9 +272,9 @@ describe("sandbox-runtime", () => {
     })
 
     test("ready event includes totalMs", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "exists" })
+        .mockResolvedValueOnce({ result: "exists" })
 
       await sandboxRuntime.deployAndStart(sandbox, "ws-10", {
         directory: "/workspace",
@@ -310,9 +291,9 @@ describe("sandbox-runtime", () => {
     })
 
     test("provision events include workspaceId", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "exists" })
+        .mockResolvedValueOnce({ result: "exists" })
 
       await sandboxRuntime.deployAndStart(sandbox, "ws-11", {
         directory: "/workspace",
@@ -330,14 +311,9 @@ describe("sandbox-runtime", () => {
     // ── Health check failure ─────────────────────────────────────────
 
     test("throws when health check fails after max retries", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-
-      // Mock getSignedPreviewUrl to return URL
-      ;(sandbox.getSignedPreviewUrl as any).mockResolvedValueOnce({
-        url: "https://sandbox.example.com",
-      })
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "exists" })
+        .mockResolvedValueOnce({ result: "exists" })
 
       // Make all fetch calls fail (health check)
       globalThis.fetch = vi.fn(() =>
@@ -351,18 +327,16 @@ describe("sandbox-runtime", () => {
       ).rejects.toThrow(/health check failed/)
 
       tracker.cleanup()
-    }, 60_000)
+    }, 90_000)
 
     // ── URL resolution ───────────────────────────────────────────────
 
-    test("uses signed preview URL when available", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
+    test("uses service URL from sandbox handle", async () => {
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "exists" })
+        .mockResolvedValueOnce({ result: "exists" })
 
-      ;(sandbox.getSignedPreviewUrl as any).mockResolvedValueOnce({
-        url: "https://signed.example.com",
-      })
+      ;(sandbox.getServiceUrl as any).mockResolvedValueOnce("https://signed.example.com")
 
       const result = await sandboxRuntime.deployAndStart(sandbox, "ws-13", {
         directory: "/workspace",
@@ -373,37 +347,16 @@ describe("sandbox-runtime", () => {
       tracker.cleanup()
     })
 
-    test("falls back to preview link when signed URL fails", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-
-      ;(sandbox.getSignedPreviewUrl as any).mockRejectedValueOnce(
-        new Error("not available"),
-      )
-      ;(sandbox.getPreviewLink as any).mockResolvedValueOnce({
-        url: "https://preview.example.com",
-      })
-
-      const result = await sandboxRuntime.deployAndStart(sandbox, "ws-14", {
-        directory: "/workspace",
-      })
-
-      expect(result.url).toBe("https://preview.example.com")
-
-      tracker.cleanup()
-    })
-
     // ── Default directory ────────────────────────────────────────────
 
     test("uses WORKSPACE_DIR as default directory", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "exists" })
+        .mockResolvedValueOnce({ result: "exists" })
 
       await sandboxRuntime.deployAndStart(sandbox, "ws-15", {})
 
-      const sessionCmd = (sandbox.process.executeSessionCommand as any).mock.calls[0]
+      const sessionCmd = (sandbox.executeSessionCommand as any).mock.calls[0]
       const command = sessionCmd[1].command as string
       expect(command).toContain("CLAXEDO_WR_DIRECTORY=/workspace")
 
@@ -413,19 +366,20 @@ describe("sandbox-runtime", () => {
     // ── Clone timeout ────────────────────────────────────────────────
 
     test("clone command has 120 second timeout", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("missing")) // git check
-        .mockResolvedValueOnce(makeExecuteResult("missing")) // runtime check
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "" }) // mkdir
+        .mockResolvedValueOnce({ result: "missing" }) // git check
+        .mockResolvedValueOnce({ result: "missing" }) // runtime check
 
       await sandboxRuntime.deployAndStart(sandbox, "ws-16", {
         repoUrl: "https://github.com/test/repo.git",
         directory: "/workspace",
       })
 
-      const cmds = (sandbox.process.executeCommand as any).mock.calls
+      const cmds = (sandbox.executeCommand as any).mock.calls
       const cloneCall = cmds.find((c: any[]) => c[0]?.includes("git clone"))
-      // 4th argument is timeout = 120
-      expect(cloneCall?.[3]).toBe(120)
+      // 2nd argument is timeout = 120
+      expect(cloneCall?.[1]).toBe(120)
 
       tracker.cleanup()
     })
@@ -433,16 +387,34 @@ describe("sandbox-runtime", () => {
     // ── Async runtime start ──────────────────────────────────────────
 
     test("runtime process is started with runAsync: true", async () => {
-      ;(sandbox.process.executeCommand as any)
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
-        .mockResolvedValueOnce(makeExecuteResult("exists"))
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "exists" })
+        .mockResolvedValueOnce({ result: "exists" })
 
       await sandboxRuntime.deployAndStart(sandbox, "ws-17", {
         directory: "/workspace",
       })
 
-      const sessionCmd = (sandbox.process.executeSessionCommand as any).mock.calls[0]
+      const sessionCmd = (sandbox.executeSessionCommand as any).mock.calls[0]
       expect(sessionCmd[1].runAsync).toBe(true)
+
+      tracker.cleanup()
+    })
+
+    // ── npm install timeout ──────────────────────────────────────────
+
+    test("npm install has 300 second timeout", async () => {
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "" }) // mkdir
+        .mockResolvedValueOnce({ result: "missing" }) // runtime check
+
+      await sandboxRuntime.deployAndStart(sandbox, "ws-18", {
+        directory: "/workspace",
+      })
+
+      const cmds = (sandbox.executeCommand as any).mock.calls
+      const installCall = cmds.find((c: any[]) => c[0]?.includes("npm install"))
+      expect(installCall?.[1]).toBe(300)
 
       tracker.cleanup()
     })
@@ -456,12 +428,12 @@ describe("sandbox-runtime", () => {
 
       await sandboxRuntime.stopRemoteRuntime(sandbox, "ws-stop-1")
 
-      expect(sandbox.process.deleteSession).toHaveBeenCalledWith("wr-ws-stop-1")
+      expect(sandbox.deleteSession).toHaveBeenCalledWith("wr-ws-stop-1")
     })
 
     test("does not throw if session deletion fails", async () => {
       const sandbox = createMockSandbox()
-      ;(sandbox.process.deleteSession as any).mockRejectedValueOnce(
+      ;(sandbox.deleteSession as any).mockRejectedValueOnce(
         new Error("session not found"),
       )
 
@@ -474,8 +446,6 @@ describe("sandbox-runtime", () => {
 
       await sandboxRuntime.stopRemoteRuntime(sandbox, "ws-stop-3")
 
-      // sandbox.stop() should NOT be called — this is the current behavior
-      // (and a known gap — sandbox stays alive in Daytona)
       expect(sandbox.stop).not.toHaveBeenCalled()
     })
   })

@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/workspace-runtime",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "type": "module",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -8,7 +8,8 @@
     "workspace-runtime": "./dist/main.mjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "templates"
   ],
   "scripts": {
     "dev": "tsx watch src/main.ts",

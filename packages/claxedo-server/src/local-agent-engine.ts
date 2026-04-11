@@ -119,6 +119,9 @@ async function currentSnapshot(runner?: SessionRunner) {
 }
 
 function createAdapter(ws: Workspace, snapshot: RuntimeConfigSnapshot): AgentAdapter {
+  if (snapshot.runner.type === "pi") {
+    throw new Error("pi runner is central-backed and cannot be created via local-agent-engine")
+  }
   if (snapshot.runner.type === "opencode") {
     return new OpenCodeAdapter(upstream, { headers: opencodeHeaders() })
   }
@@ -188,7 +191,7 @@ export async function createLocalSession(ws: Workspace, runner: SessionRunner, t
   const session = await adapter.createSession(ws.directory, title)
   setSessionConfig(ws.id, session.id, {
     runner: live,
-    ...(live.type !== "opencode" && live.model
+    ...(live.type !== "opencode" && live.type !== "pi" && live.model
       ? { model: { providerID: live.type, modelID: live.model } }
       : {}),
     variant: null,
@@ -200,8 +203,8 @@ export async function createLocalSession(ws: Workspace, runner: SessionRunner, t
 export async function setLocalSessionModel(ws: Workspace, sessionId: string, model: string) {
   const hit = await getLocalSessionRunner(ws, sessionId)
   await updateLocalSessionConfig(ws, sessionId, {
-    ...(hit.type === "opencode" ? {} : { model: { providerID: hit.type, modelID: model } }),
-    ...(hit.type === "opencode"
+    ...(hit.type === "opencode" || hit.type === "pi" ? {} : { model: { providerID: hit.type, modelID: model } }),
+    ...(hit.type === "opencode" || hit.type === "pi"
       ? {}
       : {
           runner: {
@@ -222,7 +225,7 @@ export async function getLocalSessionConfig(ws: Workspace, sessionId: string): P
   const runner = await getLocalSessionRunner(ws, sessionId)
   return {
     runner,
-    ...(runner.type !== "opencode" && runner.model
+    ...(runner.type !== "opencode" && runner.type !== "pi" && runner.model
       ? { model: { providerID: runner.type, modelID: runner.model } }
       : {}),
     variant: null,
@@ -260,6 +263,7 @@ export async function updateLocalSessionConfig(ws: Workspace, sessionId: string,
   updateSessionConfig(ws.id, sessionId, next)
 
   if (next.runner.type === "opencode") return next
+  if (next.runner.type === "pi") return next
   const adapter = await getLocalSessionAdapter(ws, sessionId, next.runner)
   await adapter.updateSessionConfig(sessionId, next, ws.directory)
   return next

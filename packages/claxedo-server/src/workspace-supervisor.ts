@@ -1,7 +1,7 @@
 import path from "path"
 import { spawn, type ChildProcess } from "child_process"
 import { TextDecoder } from "util"
-import type { Sandbox } from "@daytonaio/sdk"
+import type { SandboxHandle } from "./cloud/sandbox-handle"
 import { claxedoBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "./bus"
 import { getRuntimeConfigSnapshot, type RuntimeConfigSnapshot } from "./agent-config"
 import { Log } from "./log"
@@ -9,6 +9,8 @@ import { findFreePort } from "./process/portpick"
 import { getWorkspace, type Workspace } from "./workspace-store"
 import { WORKSPACE_DIR } from "./cloud/sandbox-image"
 import { getHarnessMode } from "./architecture"
+import { listPolicies } from "./network/policy"
+import { resolveSandboxNetworkPolicy } from "./network/resolve"
 import * as pool from "./cloud/sandbox-pool"
 import * as sandboxRuntime from "./cloud/sandbox-runtime"
 
@@ -39,7 +41,7 @@ type State = {
   global?: AbortController
   remote?: boolean
   sandbox_id?: string
-  sandbox?: Sandbox
+  sandbox?: SandboxHandle
   health_monitor?: ReturnType<typeof setInterval>
 }
 
@@ -261,7 +263,16 @@ async function startRemoteRuntime(s: State): Promise<State> {
 
   try {
     sandboxRuntime.emitProvision(s.ws.id, "acquiring_sandbox")
-    const sandbox = s.sandbox ?? await pool.acquire(s.ws.id, s.ws.project_id!)
+
+    const rows = listPolicies(s.ws.id)
+    const net = rows.length > 0
+      ? await resolveSandboxNetworkPolicy(
+          rows.map((e) => ({ target: e.target, kind: e.kind })),
+          needOpts().server_url,
+        )
+      : undefined
+
+    const sandbox = s.sandbox ?? await pool.acquire(s.ws.id, s.ws.project_id!, net)
     s.sandbox = sandbox
     s.sandbox_id = sandbox.id
     s.remote = true

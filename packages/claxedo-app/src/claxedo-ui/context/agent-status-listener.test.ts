@@ -11,7 +11,7 @@
  *    (tested as standalone logic against the real store)
  */
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test"
-import { batch, createEffect, createRoot } from "solid-js"
+import { batch, createEffect, createRoot, createSignal } from "solid-js"
 import { ensureLayoutMocked, getInitLayout } from "./_test-helper"
 
 // ---------------------------------------------------------------------------
@@ -23,6 +23,7 @@ type Listener = (event: any) => void
 function createMockEmitter() {
   const onListeners = new Map<string, Set<Listener>>()
   const listenFns = new Set<Listener>()
+  const [connected, setConnected] = createSignal(false)
 
   return {
     /** Mimics sdk.event.on(type, fn) */
@@ -50,6 +51,10 @@ function createMockEmitter() {
     emitListen(directory: string, details: any) {
       for (const fn of listenFns) fn({ name: directory, details })
     },
+    /** Reactive connected signal (mimics ClaxedoEventsContextValue.connected) */
+    connected,
+    /** Test helper: set connected state to trigger reactive effects */
+    setConnected,
   }
 }
 
@@ -93,6 +98,11 @@ mock.module("@claxedo/providers/claxedo-events", () => ({
   useClaxedoEventsOptional: () => mockEmitter,
 }))
 
+// Mock claxedo API utility
+mock.module("@claxedo/utils/api", () => ({
+  getClaxedoServerUrl: () => "http://test.local",
+}))
+
 // Mock debug logger — must match the full shape (log, verbose, level, enabled)
 const noopDebug = {
   log: () => {},
@@ -134,6 +144,7 @@ mock.module("@claxedo/claxedo-ui/context/claxedo-layout", () => ({
 
 let usePtyExitCleanup: () => void
 let useAgentLifecycleListener: () => void
+let useReconnectCleanup: () => void
 
 beforeAll(async () => {
   await ensureLayoutMocked()
@@ -144,11 +155,31 @@ beforeAll(async () => {
   const mod = await import(`./agent-status-listener.ts?test=${key}`)
   usePtyExitCleanup = mod.usePtyExitCleanup
   useAgentLifecycleListener = mod.useAgentLifecycleListener
+  useReconnectCleanup = mod.useReconnectCleanup
 })
+
+// ---------------------------------------------------------------------------
+// Fetch mock for reconciliation tests
+// ---------------------------------------------------------------------------
+
+let fetchMock: ((url: string) => Promise<Response>) | undefined
+
+const originalFetch = globalThis.fetch
 
 beforeEach(() => {
   mockEmitter = createMockEmitter()
+  fetchMock = undefined
+  globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) => {
+    const urlString = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url
+    if (fetchMock && urlString.includes("/api/claxedo/pty")) {
+      return fetchMock(urlString)
+    }
+    return originalFetch(url, init)
+  }) as typeof fetch
 })
+
+/** Wait for pending microtasks (async reconciliation) to complete */
+const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -795,6 +826,174 @@ describe("optimistic interrupt recovery", () => {
       })
 
       expect(api.terminal.agentStatus("pty-recover")).toBe("working")
+      expect(getTab(api, tabId)?.loading).toBe(true)
+    } finally {
+      dispose()
+    }
+  })
+})
+
+// ===========================================================================
+// useReconnectCleanup — SSE reconnect reconciles agent indicators
+// ===========================================================================
+
+describe("useReconnectCleanup", () => {
+  test("initial connect does not clear anything", () => {
+    const { api, dispose } = createTestHarness(useReconnectCleanup)
+    try {
+      const { tabId } = addTerminal(api, "/ws", "pty-rc-init")
+      api.terminal.setAgentStatus("pty-rc-init", "working")
+      api.patchTab(tabId, { loading: true })
+
+      // Simulate first SSE connect
+      mockEmitter.setConnected(true)
+
+      // Status should remain — initial connect is not a reconnect
+      expect(api.terminal.agentStatus("pty-rc-init")).toBe("working")
+      expect(getTab(api, tabId)?.loading).toBe(true)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("reconnect: server restart (PTY gone) → clears stale status", async () => {
+    const { api, dispose } = createTestHarness(useReconnectCleanup)
+    try {
+      const { tabId } = addTerminal(api, "/ws", "pty-rc-work")
+
+      mockEmitter.setConnected(true)
+
+      api.terminal.setAgentStatus("pty-rc-work", "working")
+      api.patchTab(tabId, { loading: true })
+
+      // Server returns empty PTY list (server restarted, PTYs are gone)
+      fetchMock = async () => new Response(JSON.stringify([]))
+
+      mockEmitter.setConnected(false)
+      mockEmitter.setConnected(true)
+      await tick()
+
+      // PTY no longer on server → indicator cleared
+      expect(api.terminal.agentStatus("pty-rc-work")).toBe("idle")
+      expect(getTab(api, tabId)?.loading).toBe(false)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("reconnect: network blip (PTY still alive) → keeps status", async () => {
+    const { api, dispose } = createTestHarness(useReconnectCleanup)
+    try {
+      const { tabId } = addTerminal(api, "/ws", "pty-rc-blip")
+
+      mockEmitter.setConnected(true)
+
+      api.terminal.setAgentStatus("pty-rc-blip", "working")
+      api.patchTab(tabId, { loading: true })
+
+      // Server returns the PTY (still alive — just a network blip)
+      fetchMock = async () =>
+        new Response(JSON.stringify([{ id: "pty-rc-blip", status: "running" }]))
+
+      mockEmitter.setConnected(false)
+      mockEmitter.setConnected(true)
+      await tick()
+
+      // PTY still exists → indicator preserved
+      expect(api.terminal.agentStatus("pty-rc-blip")).toBe("working")
+      expect(getTab(api, tabId)?.loading).toBe(true)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("reconnect: server unreachable (fetch fails) → clears all", async () => {
+    const { api, dispose } = createTestHarness(useReconnectCleanup)
+    try {
+      const { tabId } = addTerminal(api, "/ws", "pty-rc-fail")
+
+      mockEmitter.setConnected(true)
+
+      api.terminal.setAgentStatus("pty-rc-fail", "working")
+      api.patchTab(tabId, { loading: true })
+
+      // Fetch fails — server is truly down
+      fetchMock = async () => {
+        throw new Error("ECONNREFUSED")
+      }
+
+      mockEmitter.setConnected(false)
+      mockEmitter.setConnected(true)
+      await tick()
+
+      // Fetch failed → clear everything as fallback
+      expect(api.terminal.isTracked("pty-rc-fail")).toBe(false)
+      expect(getTab(api, tabId)?.loading).toBe(false)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("reconnect: mixed PTYs — only clears gone ones", async () => {
+    const { api, dispose } = createTestHarness(useReconnectCleanup)
+    try {
+      const { tabId: tab1 } = addTerminal(api, "/ws", "pty-alive")
+      const { tabId: tab2 } = addTerminal(api, "/ws", "pty-dead")
+
+      mockEmitter.setConnected(true)
+
+      api.terminal.setAgentStatus("pty-alive", "working")
+      api.patchTab(tab1, { loading: true })
+      api.terminal.setAgentStatus("pty-dead", "permission")
+      api.patchTab(tab2, { attention: true })
+
+      // Server only has pty-alive — pty-dead is gone (server partially restarted)
+      fetchMock = async () =>
+        new Response(JSON.stringify([{ id: "pty-alive", status: "running" }]))
+
+      mockEmitter.setConnected(false)
+      mockEmitter.setConnected(true)
+      await tick()
+
+      // pty-alive preserved, pty-dead cleared
+      expect(api.terminal.agentStatus("pty-alive")).toBe("working")
+      expect(getTab(api, tab1)?.loading).toBe(true)
+      expect(api.terminal.agentStatus("pty-dead")).toBe("idle")
+      expect(getTab(api, tab2)?.attention).toBe(false)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("reconnect allows new events after reconciliation", async () => {
+    const { api, dispose } = createTestHarness(() => {
+      useReconnectCleanup()
+      useAgentLifecycleListener()
+    })
+    try {
+      const { tabId } = addTerminal(api, "/ws", "pty-rc-reest")
+
+      mockEmitter.setConnected(true)
+
+      api.terminal.setAgentStatus("pty-rc-reest", "working")
+      api.patchTab(tabId, { loading: true })
+
+      // Server restart — PTY gone
+      fetchMock = async () => new Response(JSON.stringify([]))
+      mockEmitter.setConnected(false)
+      mockEmitter.setConnected(true)
+      await tick()
+
+      expect(getTab(api, tabId)?.loading).toBe(false)
+
+      // New event from restarted server re-establishes status
+      mockEmitter.emitOn("agent.lifecycle", {
+        tabId,
+        terminalId: "pty-rc-reest",
+        eventType: "Busy",
+      })
+
+      expect(api.terminal.agentStatus("pty-rc-reest")).toBe("working")
       expect(getTab(api, tabId)?.loading).toBe(true)
     } finally {
       dispose()

@@ -239,6 +239,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
             spellcheck={false}
             class="max-h-40 w-full font-mono text-xs no-scrollbar"
           />
+
         </div>
 
         <div class="flex justify-end gap-2">

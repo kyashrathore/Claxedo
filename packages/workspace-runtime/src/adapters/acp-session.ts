@@ -46,6 +46,11 @@ function match(opt: SessionConfigOption | null, ids: string[]) {
   return flat(opt.options ?? []).find((item) => set.has(item.value as string))?.value as string | undefined
 }
 
+function currentValue(opt: SessionConfigOption | null): string | undefined {
+  if (!opt || opt.type !== "select") return undefined
+  return typeof opt.currentValue === "string" ? opt.currentValue : undefined
+}
+
 export type ACPState = {
   caps: Caps
   prompt: PromptCapabilities | null | undefined
@@ -53,6 +58,8 @@ export type ACPState = {
   /** Available ACP mode IDs (e.g. ["code", "plan"]). Empty = modes not supported. */
   modeIds: string[]
   models: boolean
+  /** Last modelId sent via unstable_setSessionModel, used to skip redundant calls. */
+  lastModelId?: string
 }
 
 export type ACPConn = Pick<
@@ -90,6 +97,7 @@ export function merge(state: ACPState, meta: Meta): ACPState {
       ? (meta.modes !== null ? extractModeIds(meta.modes) : [])
       : state.modeIds,
     models: meta.models !== undefined ? meta.models !== null : state.models,
+    lastModelId: state.lastModelId,
   }
 }
 
@@ -150,7 +158,7 @@ export async function sync(conn: ACPConn, state: ACPState, sessionId: string, in
 
   const mode = pick(next.cfg, "mode")
   const mid = match(mode, [input.agent])
-  if (mid) {
+  if (mid && currentValue(mode) !== mid) {
     next = merge(next, await conn.setSessionConfigOption({
       sessionId,
       configId: mode!.id,
@@ -169,6 +177,9 @@ export async function sync(conn: ACPConn, state: ACPState, sessionId: string, in
   const cfg = pick(next.cfg, "model")
   const aid = match(cfg, ids(input.model, input.variant))
   if (aid) {
+    // Skip if already set to the desired value — redundant setSessionConfigOption
+    // calls inject visible "/model" local commands into the ACP agent's conversation.
+    if (currentValue(cfg) === aid) return next
     next = merge(next, await conn.setSessionConfigOption({
       sessionId,
       configId: cfg!.id,
@@ -182,7 +193,11 @@ export async function sync(conn: ACPConn, state: ACPState, sessionId: string, in
     const modelId = input.variant
       ? `${input.model.modelID}/${input.variant}`
       : input.model.modelID
+    // Skip if the last-synced model matches — avoids redundant "/model" commands
+    // in the ACP agent's conversation context.
+    if (next.lastModelId === modelId) return next
     await conn.unstable_setSessionModel({ sessionId, modelId })
+    next = { ...next, lastModelId: modelId }
   }
   return next
 }

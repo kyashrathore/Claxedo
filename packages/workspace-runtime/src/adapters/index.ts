@@ -52,7 +52,7 @@ export type PromptInput = {
 }
 
 export type SessionRunner = {
-  type: "claude-acp" | "codex-acp" | "cursor-acp" | "opencode"
+  type: "claude-acp" | "codex-acp" | "cursor-acp" | "opencode" | "pi"
   binary?: string
   model?: string
 }

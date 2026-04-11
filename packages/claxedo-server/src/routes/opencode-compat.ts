@@ -6,10 +6,12 @@ import { randomUUID } from "crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { defaultRunner, listCommands, loadUserConfig, saveUserConfig } from "../agent-config"
+import { putCredential, deleteCredentialsByProvider, getCredentialByProvider } from "../credentials/registry"
 import { rebuildOpencodeJsonc } from "../agent-hooks"
 import { claxedoBus, globalBus } from "../bus"
 import { fanOutConfig } from "../config-fanout"
 import { getLocalAgentAdapter, listLocalSessions } from "../local-agent-engine"
+import { piProviderResponse } from "../harness/pi-support"
 import { applySessionMeta, GLOBAL_SHOW_TAG, GLOBAL_TAG, taggedSessionMetas } from "../session-meta"
 import { normalize } from "../session-runner"
 import { ClaxedoDB } from "../storage/db"
@@ -72,8 +74,14 @@ function workspacePath(root: string, input?: string) {
 
 function runner(c: Ctx, fallback = defaultRunner()) {
   const type = c.req.query("runner") || c.req.header("x-claxedo-runner") || fallback.type
-  if (type !== "claude-acp" && type !== "codex-acp" && type !== "cursor-acp" && type !== "opencode") return fallback
+  if (type !== "claude-acp" && type !== "codex-acp" && type !== "cursor-acp" && type !== "opencode" && type !== "pi") return fallback
   if (type === "opencode") return { type: "opencode" } as const
+  if (type === "pi") {
+    return normalize({
+      type,
+      ...(c.req.header("x-claxedo-model") ? { model: c.req.header("x-claxedo-model")! } : {}),
+    })
+  }
   return normalize({
     type,
     ...(c.req.header("x-claxedo-binary") ? { binary: c.req.header("x-claxedo-binary")! } : {}),
@@ -272,9 +280,9 @@ async function buildAcpProviderResponse() {
       "cursor-acp": runner.type === "cursor-acp" ? runner.model ?? "" : "",
     },
     connected: [
-      ...(process.env.ANTHROPIC_API_KEY || auth["claude-acp"] ? ["claude-acp"] : []),
-      ...(process.env.OPENAI_API_KEY || auth["codex-acp"] ? ["codex-acp"] : []),
-      ...(process.env.CURSOR_API_KEY || auth["cursor-acp"] ? ["cursor-acp"] : []),
+      ...(process.env.ANTHROPIC_API_KEY || auth["claude-acp"] || getCredentialByProvider("claude-acp") ? ["claude-acp"] : []),
+      ...(process.env.OPENAI_API_KEY || auth["codex-acp"] || getCredentialByProvider("codex-acp") ? ["codex-acp"] : []),
+      ...(process.env.CURSOR_API_KEY || auth["cursor-acp"] || getCredentialByProvider("cursor-acp") ? ["cursor-acp"] : []),
     ],
   }
 }
@@ -561,7 +569,7 @@ function cloudSummary(input: {
   }
 }
 
-const VALID_RUNNERS = new Set(["opencode", "claude-acp", "codex-acp", "cursor-acp"])
+const VALID_RUNNERS = new Set(["opencode", "claude-acp", "codex-acp", "cursor-acp", "pi"])
 
 /** Read optional `?runner=` query param; returns undefined when absent or invalid */
 function queryRunnerType(c: Ctx): string | undefined {
@@ -577,6 +585,7 @@ async function resolveRunnerType(override?: string) {
 
 async function providerBody(runnerOverride?: string) {
   const runnerType = await resolveRunnerType(runnerOverride)
+  if (runnerType === "pi") return piProviderResponse(await loadUserConfig())
   if (runnerType !== "opencode") return buildAcpProviderResponse()
   const res = await fetch(new URL("/provider", opencodeUrl()), {
     headers: opencodeHeaders(),
@@ -588,6 +597,10 @@ async function providerBody(runnerOverride?: string) {
 
 async function providerAuthBody(runnerOverride?: string) {
   const runnerType = await resolveRunnerType(runnerOverride)
+  if (runnerType === "pi") {
+    const provider = piProviderResponse(await loadUserConfig())
+    return Object.fromEntries(provider.all.map((item) => [item.id, [{ type: "api", label: "API Key" }]]))
+  }
   if (runnerType !== "opencode") {
     return {
       "claude-acp": [{ type: "api", label: "API Key" }],
@@ -605,6 +618,13 @@ async function providerAuthBody(runnerOverride?: string) {
 
 async function configProvidersBody(runnerOverride?: string) {
   const runnerType = await resolveRunnerType(runnerOverride)
+  if (runnerType === "pi") {
+    const provider = piProviderResponse(await loadUserConfig())
+    return {
+      providers: provider.all,
+      default: provider.default,
+    }
+  }
   if (runnerType !== "opencode") {
     const provider = await buildAcpProviderResponse()
     return {
@@ -753,6 +773,7 @@ export function OpenCodeCompatRoutes() {
     .get("/provider", async (c) => {
       const runnerType = await resolveRunnerType(queryRunnerType(c))
       if (runnerType === "opencode") return proxyUpstream(c, "/provider")
+      if (runnerType === "pi") return c.json(piProviderResponse(await loadUserConfig()))
       return c.json(await buildAcpProviderResponse())
     })
     .get("/session/status", async (c) => {
@@ -793,6 +814,10 @@ export function OpenCodeCompatRoutes() {
     .get("/provider/auth", async (c) => {
       const runnerType = await resolveRunnerType(queryRunnerType(c))
       if (runnerType === "opencode") return proxyUpstream(c, "/provider/auth")
+      if (runnerType === "pi") {
+        const provider = piProviderResponse(await loadUserConfig())
+        return c.json(Object.fromEntries(provider.all.map((item) => [item.id, [{ type: "api", label: "API Key" }]])))
+      }
       return c.json({
         "claude-acp": [{ type: "api", label: "API Key" }],
         "codex-acp": [{ type: "api", label: "API Key" }],
@@ -807,6 +832,13 @@ export function OpenCodeCompatRoutes() {
     .get("/config/providers", async (c) => {
       const runnerType = await resolveRunnerType(queryRunnerType(c))
       if (runnerType === "opencode") return proxyUpstream(c, "/config/providers")
+      if (runnerType === "pi") {
+        const provider = piProviderResponse(await loadUserConfig())
+        return c.json({
+          providers: provider.all,
+          default: provider.default,
+        })
+      }
       const provider = await buildAcpProviderResponse()
       return c.json({
         providers: provider.all,
@@ -821,8 +853,20 @@ export function OpenCodeCompatRoutes() {
       const user = await loadUserConfig()
       const runner = defaultRunner(user)
       if (runner.type === "opencode" && !id.endsWith("-acp")) return proxyUpstream(c, `/auth/${encodeURIComponent(id)}`)
-      user.auth = { ...user.auth, [id]: key }
-      await saveUserConfig(user)
+      // Store through the credential registry instead of plaintext config
+      try {
+        await putCredential({
+          provider_id: id,
+          kind: "api_key",
+          source: "managed",
+          label: `API key for ${id}`,
+          secret: key,
+        })
+      } catch {
+        // Fallback to legacy config if backend is unavailable
+        user.auth = { ...user.auth, [id]: key }
+        await saveUserConfig(user)
+      }
       await fanOutConfig().catch(() => {})
       return c.json({})
     })
@@ -831,9 +875,14 @@ export function OpenCodeCompatRoutes() {
       const user = await loadUserConfig()
       const runner = defaultRunner(user)
       if (runner.type === "opencode" && !id.endsWith("-acp")) return proxyUpstream(c, `/auth/${encodeURIComponent(id)}`)
-      user.auth = { ...user.auth }
-      delete user.auth[id]
-      await saveUserConfig(user)
+      // Delete from credential registry
+      await deleteCredentialsByProvider(id).catch(() => {})
+      // Also clean up legacy config if present
+      if (user.auth?.[id]) {
+        user.auth = { ...user.auth }
+        delete user.auth[id]
+        await saveUserConfig(user)
+      }
       await fanOutConfig().catch(() => {})
       return c.json({})
     })
@@ -880,6 +929,11 @@ export function OpenCodeCompatRoutes() {
       const user = await loadUserConfig()
       const hit = runner(c, defaultRunner(user))
       if (hit.type === "opencode") return proxyUpstream(c, "/agent")
+      if (hit.type === "pi") {
+        return c.json([
+          { name: "pi", description: "Pi (central harness)", mode: "primary" },
+        ])
+      }
       const input = workspaceInput(c)
       const ws = await resolveWorkspace({
         workspaceId: input.workspaceId,

@@ -1,20 +1,60 @@
-import { Show, createEffect, createMemo } from "solid-js"
+import { Show, createEffect, createMemo, type JSX } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
+import { Icon } from "@opencode-ai/ui/icon"
+import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Select } from "@opencode-ai/ui/select"
 import { useParams } from "@solidjs/router"
 import { base64Decode } from "@opencode-ai/util/encode"
+import { ModelSelectorPopover, type PickerItem, type PickerState } from "@/components/dialog-select-model"
 import { useSessionParams } from "@claxedo/claxedo-ui/context/session-params"
-import { acpScope, useAcpConfig, type RunnerType } from "@claxedo/claxedo-ui/context/acp-config"
+import { ACP_DISPLAY_NAMES, acpScope, useAcpConfig, type RunnerType } from "@claxedo/claxedo-ui/context/acp-config"
 
-const RUNNER_OPTIONS: RunnerType[] = ["claude-acp", "codex-acp", "cursor-acp", "opencode"]
+const RUNNER_OPTIONS: RunnerType[] = ["claude-acp", "codex-acp", "cursor-acp", "pi", "opencode"]
 const RUNNER_LABELS: Record<RunnerType, string> = {
   "claude-acp": "Claude",
   "codex-acp": "Codex",
   "cursor-acp": "Cursor",
+  "pi": "Pi (central)",
   "opencode": "OpenCode",
 }
 
+function split(input: string) {
+  const idx = input.indexOf("/")
+  if (idx < 1 || idx === input.length - 1) return
+  return {
+    provider: input.slice(0, idx),
+    model: input.slice(idx + 1),
+  }
+}
+
+function title(input: string) {
+  return input
+    .split(/[-_]/g)
+    .filter(Boolean)
+    .map((item) => item[0]?.toUpperCase() + item.slice(1))
+    .join(" ")
+}
+
+function label(input: string) {
+  return ACP_DISPLAY_NAMES[input] ?? title(input)
+}
+
+function provider(input: string, runner: RunnerType) {
+  if (runner !== "pi") return ""
+  return split(input)?.provider ?? "pi"
+}
+
+type Item = {
+  id: string
+  name: string
+  provider: {
+    id: string
+    name: string
+  }
+}
+
 interface AgentRunnerSelectorProps {
-  triggerStyle?: Record<string, string | number>
+  triggerStyle?: JSX.CSSProperties
   /** When true, the current session already exists — runner cannot be changed. */
   sessionLocked?: boolean
 }
@@ -55,6 +95,33 @@ export function AgentRunnerSelector(props: AgentRunnerSelectorProps) {
   const isError = () => acp.readiness(scope()) === "error"
   const isStale = () => acp.optionsStale(scope())
   const optionsLoading = () => acp.optionsLoading(scope())
+  const rows = createMemo<Item[]>(() => {
+    const runner = acp.runner(scope())
+    return acp.models(scope()).map((item) => {
+      const id = provider(item.id, runner)
+      return {
+        id: item.id,
+        name: item.name,
+        provider: {
+          id,
+          name: id ? label(id) : "",
+        },
+      }
+    })
+  })
+  const picked = createMemo(() => rows().find((item) => item.id === acp.selectedModel(scope())))
+  const model = createMemo<PickerState>(() => ({
+    list: () => rows() as PickerItem[],
+    current: () => picked() as PickerItem | undefined,
+    visible: () => true,
+    set: (item) => {
+      if (!item) return
+      void acp.setModel(scope(), item.modelID, {
+        directory: directory(),
+        sessionId: sessionId(),
+      })
+    },
+  }))
 
   // Disable runner switching after a session is created — backend migration is not supported
   const runnerLocked = () => !!props.sessionLocked
@@ -96,29 +163,32 @@ export function AgentRunnerSelector(props: AgentRunnerSelectorProps) {
         </span>
       </Show>
 
-      {/* Model selector — ACP only (opencode uses its own ModelSelectorPopover) */}
+      {/* Model selector — non-opencode runners use grouped model popover */}
       <Show when={acp.isAcpMode(scope()) && acp.models(scope()).length > 0 && !isError()}>
-        <Select
-          size="normal"
-          options={acp.models(scope()).map((m) => m.id)}
-          current={acp.selectedModel(scope())}
-          label={(id) => {
-            const name = acp.models(scope()).find((m) => m.id === id)?.name ?? id
-            return isStale() ? `${name} (stale)` : name
+        <ModelSelectorPopover
+          model={model()}
+          actions={false}
+          tooltips={false}
+          triggerAs={Button}
+          triggerProps={{
+            variant: "ghost",
+            size: "normal",
+            disabled: optionsLoading() && acp.models(scope()).length === 0,
+            style: style(optionsLoading() && acp.models(scope()).length === 0),
+            class: "min-w-0 max-w-[160px] text-13-regular group",
           }}
-          onSelect={(id) => {
-            if (!id) return
-            void acp.setModel(scope(), id, {
-              directory: directory(),
-              sessionId: sessionId(),
-            })
-          }}
-          class="max-w-[160px]"
-          valueClass={optionsLoading() && acp.models(scope()).length === 0 ? "truncate text-13-regular text-text-weak" : "truncate text-13-regular"}
-          triggerStyle={style(optionsLoading() && acp.models(scope()).length === 0)}
-          variant="ghost"
-          disabled={optionsLoading() && acp.models(scope()).length === 0}
-        />
+        >
+          <Show when={picked()?.provider.id}>
+            <ProviderIcon
+              id={picked()!.provider.id}
+              class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
+            />
+          </Show>
+          <span class={optionsLoading() && acp.models(scope()).length === 0 ? "truncate text-13-regular text-text-weak" : "truncate text-13-regular"}>
+            {picked()?.name ?? "Select model"}
+          </span>
+          <Icon name="chevron-down" size="small" class="shrink-0" />
+        </ModelSelectorPopover>
         <Show when={isStale()}>
           <span class="text-11-regular text-warning-text px-1" title={acp.configError(scope()) ?? "Model list may be outdated"}>
             <span class="inline-block w-2 h-2 rounded-full bg-warning-text" />

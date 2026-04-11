@@ -2,7 +2,7 @@ import type { Context, Next } from "hono"
 import { ensureWorkspaceRuntime, holdRuntime, markRuntimeUse, releaseRuntime, getSandbox } from "./workspace-supervisor"
 import { resolveWorkspace } from "./workspace-store"
 import { opencodeHeaders } from "./opencode-auth"
-import { getHarnessMode } from "./architecture"
+import { resolveRunnerHostForRequest } from "./runner-resolution"
 
 function matches(pathname: string, prefixes: string[]) {
   return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"))
@@ -10,35 +10,31 @@ function matches(pathname: string, prefixes: string[]) {
 
 const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/acp-config-options", "/api/wr/capabilities"]
 
-const WR_FULL_PREFIXES = [
+const WR_ALWAYS_PREFIXES = [
   "/api/claxedo/process",
   "/api/claxedo/diff",
+  "/find",
+]
+
+const WR_HARNESS_PREFIXES = [
   "/session",
   "/permission",
   "/question",
   "/event",
-  "/find",
   "/mcp",
 ]
 
-const WR_MIN_PREFIXES = [
-  "/api/claxedo/process",
-  "/api/claxedo/diff",
-  "/find",
-]
-
-const WR_FULL_PATHS = [
+const WR_ALWAYS_PATHS = [
   "/file",
   "/file/content",
   "/file/status",
+]
+
+const WR_HARNESS_PATHS = [
+  "/agent",
+  "/command",
   "/lsp",
   "/vcs",
-]
-
-const WR_MIN_PATHS = [
-  "/file",
-  "/file/content",
-  "/file/status",
 ]
 
 const CS_PATHS = [
@@ -47,8 +43,6 @@ const CS_PATHS = [
   "/path",
   "/config",
   "/global/config",
-  "/agent",
-  "/command",
   "/api/claxedo/health",
   "/api/claxedo/track",
   "/api/claxedo/events",
@@ -94,6 +88,14 @@ async function resolveRuntime(c: Context): Promise<Hit | undefined> {
     directory: ws.remote_directory || ws.directory,
     url: runtime.url!,
   }
+}
+
+function requestSessionId(c: Context) {
+  const hit = c.req.query("sessionId") || c.req.query("session") || c.req.header("x-session-id")
+  if (hit) return hit
+  const pathname = new URL(c.req.url).pathname
+  const match = pathname.match(/^\/session\/([^/]+)/)
+  return match?.[1]
 }
 
 function noWr(c: Context) {
@@ -174,16 +176,29 @@ async function proxy(c: Context, hit: Hit) {
 
 export async function workspaceRuntimeProxy(c: Context, next: Next): Promise<Response | void> {
   const pathname = new URL(c.req.url).pathname
-  const mode = getHarnessMode()
-  const paths = mode === "central" ? WR_MIN_PATHS : WR_FULL_PATHS
-  const prefixes = mode === "central" ? WR_MIN_PREFIXES : WR_FULL_PREFIXES
 
   if (CS_PATHS.includes(pathname) || matches(pathname, CS_PREFIXES)) {
     return next()
   }
 
-  if (!WR_INTERNAL.includes(pathname) && !paths.includes(pathname) && !matches(pathname, prefixes)) {
+  const internal = WR_INTERNAL.includes(pathname)
+  const always = WR_ALWAYS_PATHS.includes(pathname) || matches(pathname, WR_ALWAYS_PREFIXES)
+  const harness = WR_HARNESS_PATHS.includes(pathname) || matches(pathname, WR_HARNESS_PREFIXES)
+
+  if (!internal && !always && !harness) {
     return next()
+  }
+
+  if (harness) {
+    const host = await resolveRunnerHostForRequest({
+      type: c.req.query("runner") || c.req.header("x-claxedo-runner"),
+      binary: c.req.header("x-claxedo-binary"),
+      model: c.req.header("x-claxedo-model"),
+      sessionId: requestSessionId(c),
+      workspaceId: c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id"),
+      directory: c.req.query("directory") || c.req.header("x-opencode-directory"),
+    })
+    if (host === "central") return next()
   }
 
   try {

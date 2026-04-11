@@ -1,4 +1,4 @@
-export const sandbox_provider_ids = ["daytona", "modal"] as const
+export const sandbox_provider_ids = ["daytona", "modal", "vercel", "cloudflare"] as const
 
 export type SandboxProviderID = (typeof sandbox_provider_ids)[number]
 
@@ -9,6 +9,13 @@ export type SandboxAuth = {
   modal?: {
     token_id?: string
     token_secret?: string
+  }
+  vercel?: {
+    access_token?: string
+  }
+  cloudflare?: {
+    api_token?: string
+    worker_url?: string
   }
 }
 

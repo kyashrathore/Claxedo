@@ -55,3 +55,5 @@ packages/claxedo-desktop/resources/claxedo-server.js
 packages/workspace-runtime-bundle.tar.gz
 packages/opencode/src/provider/models-snapshot.ts
 .collaborator
+.vercel
+.env*.local

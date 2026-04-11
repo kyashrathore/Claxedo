@@ -150,7 +150,7 @@ export const DialogSettings: Component = () => {
                       <Show when={sandboxEnabled()}>
                         <Tabs.Trigger value="compute">
                           <Icon name="cloud-upload" />
-                          Compute
+                          Sandbox
                         </Tabs.Trigger>
                       </Show>
                     </div>

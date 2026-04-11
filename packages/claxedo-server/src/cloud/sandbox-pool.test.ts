@@ -73,11 +73,20 @@ vi.doMock("../agent-config", () => ({
 
 vi.doMock("./sandbox-image", () => ({
   ensureSnapshot: vi.fn(() => Promise.resolve("test-snapshot")),
+  RUNTIME_PORT: 4318,
+  RUNTIME_DIR: "/opt/workspace-runtime",
+  WORKSPACE_DIR: "/workspace",
+  SANDBOX_IMAGE: "ghcr.io/claxedo/test:latest",
 }))
 
 vi.doMock("./provider", () => ({
   defaultSandboxProvider: vi.fn(() => provider),
   sandboxAuth: vi.fn((_cfg: any, _provider: string) => auth),
+  sandboxAuthAsync: vi.fn((_cfg: any, _provider: string) => Promise.resolve(auth)),
+}))
+
+vi.doMock("../network/resolve", () => ({
+  formatDaytonaAllowList: vi.fn((cidrs: string[]) => cidrs),
 }))
 
 vi.doMock("../log", () => ({

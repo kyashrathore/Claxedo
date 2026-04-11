@@ -342,9 +342,11 @@ describe("multi-agent integration", () => {
     })
     expect(put.status).toBe(200)
 
-    // Verify persisted
-    const cfg = await savedConfig()
-    expect(cfg.auth?.["claude-acp"]).toBe("sk-ant-test-key")
+    // Verify persisted via credential registry (not config file —
+    // PUT /auth stores through putCredential, not plaintext config)
+    const { resolveSecret } = await import("./credentials/registry")
+    const secret = await resolveSecret("claude-acp")
+    expect(secret).toBe("sk-ant-test-key")
 
     // Verify connected list
     const provider = await fetch(`${base()}/provider`)
@@ -826,15 +828,15 @@ describe("multi-agent integration", () => {
       body: JSON.stringify({ auth: { key: "sk-oai-key" } }),
     })
 
-    const cfg = await savedConfig()
-    expect(cfg.auth?.["claude-acp"]).toBe("sk-ant-key")
-    expect(cfg.auth?.["codex-acp"]).toBe("sk-oai-key")
+    // Verify via credential registry (PUT /auth stores through putCredential)
+    const { resolveSecret } = await import("./credentials/registry")
+    expect(await resolveSecret("claude-acp")).toBe("sk-ant-key")
+    expect(await resolveSecret("codex-acp")).toBe("sk-oai-key")
 
     // Delete one, other remains
     await fetch(`${base()}/auth/claude-acp`, { method: "DELETE" })
-    const after = await savedConfig()
-    expect(after.auth?.["claude-acp"]).toBeUndefined()
-    expect(after.auth?.["codex-acp"]).toBe("sk-oai-key")
+    expect(await resolveSecret("claude-acp")).toBeNull()
+    expect(await resolveSecret("codex-acp")).toBe("sk-oai-key")
   })
 
   // ── Config format stability ────────────────────────────────────────
@@ -846,7 +848,7 @@ describe("multi-agent integration", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "claude-acp" }),
     })
-    // Auth
+    // Auth (stored in credential registry, not config file)
     await fetch(`${base()}/auth/claude-acp`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -861,13 +863,16 @@ describe("multi-agent integration", () => {
 
     const cfg = await savedConfig()
 
-    // Verify all three mutations persisted atomically
+    // Runner and MCP persist in config file
     expect(cfg.runner?.type).toBe("claude-acp")
-    expect(cfg.auth?.["claude-acp"]).toBe("sk-test")
     expect(cfg.mcp["toolx"]).toBeDefined()
 
-    // Top-level keys should be the known set
+    // Auth is stored in credential registry, verify there
+    const { resolveSecret } = await import("./credentials/registry")
+    expect(await resolveSecret("claude-acp")).toBe("sk-test")
+
+    // Top-level keys should include at least mcp and runner
     const keys = Object.keys(cfg).sort()
-    expect(keys).toEqual(expect.arrayContaining(["auth", "mcp", "runner"]))
+    expect(keys).toEqual(expect.arrayContaining(["mcp", "runner"]))
   })
 })

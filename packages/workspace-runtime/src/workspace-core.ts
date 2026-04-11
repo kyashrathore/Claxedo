@@ -1,1 +1,1 @@
-export { capabilities, mountWorkspaceCore } from "./workspace"
+export { mountWorkspaceCore } from "./workspace"

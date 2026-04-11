@@ -192,6 +192,31 @@ export const { use: useClaxedoLayout, provider: ClaxedoLayoutProvider } = create
       }
     }
 
+    // Clear stale agent status indicators from previous sessions.
+    // loading/attention/done are transient UI states driven by real-time
+    // server events. If agents are still running after reload, fresh
+    // lifecycle events will re-establish the indicators.
+    for (let gi = 0; gi < store.groups.length; gi++) {
+      const items = store.groups[gi]?.tabs?.items
+      if (!items) continue
+      for (let ti = 0; ti < items.length; ti++) {
+        const tab = items[ti]
+        if (tab.loading || tab.attention || tab.done) {
+          setStore("groups", gi, "tabs", "items", ti, {
+            loading: undefined,
+            attention: undefined,
+            done: undefined,
+          })
+        }
+      }
+    }
+    for (const ptyId of Object.keys(store.terminalAgentStatus)) {
+      setStore("terminalAgentStatus", ptyId, undefined)
+    }
+    for (const ptyId of Object.keys(store.terminalAgentSeen)) {
+      setStore("terminalAgentSeen", ptyId, undefined)
+    }
+
     return createClaxedoLayoutFacade({
       store,
       setStore,

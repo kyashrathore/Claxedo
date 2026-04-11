@@ -4,7 +4,7 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { usePlatform } from "@/context/platform"
 
-export type RunnerType = "claude-acp" | "codex-acp" | "cursor-acp" | "opencode"
+export type RunnerType = "claude-acp" | "codex-acp" | "cursor-acp" | "opencode" | "pi"
 export type Readiness = "polling" | "ready" | "degraded" | "error"
 
 export const ACP_DISPLAY_NAMES: Record<string, string> = {
@@ -15,6 +15,7 @@ export const ACP_DISPLAY_NAMES: Record<string, string> = {
   "cursor-agent": "Cursor",
   "cursor-acp": "Cursor",
   "opencode": "OpenCode",
+  "pi": "Pi",
 }
 
 const MODEL_KEY = "claxedo:acp-model-map"
@@ -109,6 +110,15 @@ function read(key: string) {
   }
 }
 
+function decodePiModel(input: string) {
+  const idx = input.indexOf("/")
+  if (idx < 1 || idx === input.length - 1) return
+  return {
+    provider: input.slice(0, idx),
+    model: input.slice(idx + 1),
+  }
+}
+
 function write(key: string, value: Record<string, string>) {
   localStorage.setItem(key, JSON.stringify(value))
 }
@@ -135,7 +145,7 @@ export function pickRunner(type?: string | null, binary?: string | null): Runner
     if (name.includes("codex")) return "codex-acp"
     if (name.includes("claude")) return "claude-acp"
   }
-  if (type === "claude-acp" || type === "codex-acp" || type === "cursor-acp" || type === "opencode") return type
+  if (type === "claude-acp" || type === "codex-acp" || type === "cursor-acp" || type === "opencode" || type === "pi") return type
 }
 
 export function desiredRunner(data: RunnerState): RunnerType | undefined {
@@ -602,6 +612,15 @@ function init() {
     if (!state.selectedModel) return undefined
     const found = modelsFor(scope).find((item) => item.id === state.selectedModel)
     if (!found) return undefined
+    if (state.runner === "pi") {
+      const hit = decodePiModel(state.selectedModel)
+      if (!hit) return undefined
+      return {
+        id: hit.model,
+        name: found.name,
+        provider: { id: hit.provider },
+      }
+    }
     return {
       id: state.selectedModel,
       name: found.name,

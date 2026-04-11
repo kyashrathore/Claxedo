@@ -9,6 +9,8 @@ const execFileAsync = promisify(execFile)
 import { dataDir } from "../paths"
 import { defaultSandboxProvider, listSandboxProviders, sandboxAuth, sandboxProvider } from "../cloud/provider"
 import { loadUserConfig, saveUserConfig } from "../agent-config"
+import { putCredential, deleteCredentialsByProvider } from "../credentials/registry"
+import { ensureHostForUrl } from "../network/policy"
 import { ensureWorkspace, getProjectWorkspace, listProjects, resolveWorkspace } from "../workspace-store"
 import { ensureWorkspaceRuntime } from "../workspace-supervisor"
 
@@ -68,13 +70,32 @@ export function WorkspaceRoutes() {
       if (!id) return c.json({ error: "Unsupported provider" }, 400)
       const body = authBody.parse(await c.req.json().catch(() => ({})))
       const cfg = await loadUserConfig()
+
+      // Store sandbox provider credentials in the credential registry
+      try {
+        const secret = id === "modal"
+          ? JSON.stringify(body.auth)
+          : body.auth.api_key ?? Object.values(body.auth)[0] ?? ""
+        if (secret) {
+          await putCredential({
+            provider_id: id,
+            kind: "sandbox_provider",
+            source: "managed",
+            label: `Sandbox provider ${id}`,
+            secret,
+          })
+        }
+      } catch {
+        // Fallback to legacy config if backend unavailable
+        cfg.sandbox = {
+          ...cfg.sandbox,
+          auth: { ...cfg.sandbox?.auth, [id]: body.auth },
+        }
+      }
+
       cfg.sandbox = {
         ...cfg.sandbox,
         default_provider: body.default ? id : cfg.sandbox?.default_provider,
-        auth: {
-          ...cfg.sandbox?.auth,
-          [id]: body.auth,
-        },
       }
       await saveUserConfig(cfg)
       return c.json(listSandboxProviders(cfg.sandbox))
@@ -83,6 +104,11 @@ export function WorkspaceRoutes() {
       const id = sandboxProvider(c.req.param("id"))
       if (!id) return c.json({ error: "Unsupported provider" }, 400)
       const cfg = await loadUserConfig()
+
+      // Delete from credential registry
+      await deleteCredentialsByProvider(id).catch(() => {})
+
+      // Also clean up legacy config if present
       const auth = { ...cfg.sandbox?.auth }
       delete auth[id]
       cfg.sandbox = {
@@ -151,6 +177,11 @@ export function WorkspaceRoutes() {
       }
 
       await fs.mkdir(dir, { recursive: true })
+
+      // Auto-add git host to network allowlist so sandbox can clone
+      if (repoUrl) {
+        ensureHostForUrl(repoUrl, `workspace:${repoUrl}`)
+      }
 
       let sandbox_id: string | undefined
       let status = "pending_sandbox"

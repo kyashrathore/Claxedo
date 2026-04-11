@@ -27,6 +27,7 @@ import {
   toOpencodeConfig,
   type ResolvedMcpServer,
 } from "../../workspace-runtime/src/mcp-resolver"
+import { resolveAllSecrets } from "./credentials/registry"
 
 const log = Log.create({ service: "agent-config" })
 
@@ -52,7 +53,7 @@ export interface UserMcpServer {
 
 export interface UserAgentConfig {
   mcp: Record<string, UserMcpServer>
-  runner?: { type: "claude-acp" | "codex-acp" | "cursor-acp" | "opencode"; binary?: string; model?: string }
+  runner?: { type: RunnerType; binary?: string; model?: string }
   auth?: Record<string, string>  // providerID → API key, e.g. "claude-acp" → "sk-ant-..."
   sandbox?: SandboxConfig
   harness?: {
@@ -72,6 +73,9 @@ export interface CommandItem {
   content: string
 }
 
+export type AcpRunnerType = "claude-acp" | "codex-acp" | "cursor-acp"
+export type RunnerType = AcpRunnerType | "opencode" | "pi"
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function sanitizeName(name: string): string {
@@ -84,7 +88,7 @@ function cursorBinary() {
   return choices.find((item) => fs.existsSync(item)) ?? "agent"
 }
 
-function acpBinary(type: "claude-acp" | "codex-acp" | "cursor-acp") {
+function acpBinary(type: AcpRunnerType) {
   if (type === "cursor-acp") return cursorBinary()
   const name = type === "codex-acp" ? "codex-acp" : "claude-agent-acp"
   // In packaged Electron app, CLAXEDO_ACP_DIR points to the resources/acp directory
@@ -123,6 +127,12 @@ export async function saveUserConfig(config: UserAgentConfig): Promise<void> {
 export function defaultRunner(config?: UserAgentConfig): NonNullable<UserAgentConfig["runner"]> {
   if (config?.runner?.type) {
     if (config.runner.type === "opencode") return { type: "opencode" }
+    if (config.runner.type === "pi") {
+      return {
+        type: "pi",
+        ...(config.runner.model ? { model: config.runner.model } : {}),
+      }
+    }
     return {
       type: config.runner.type,
       binary: config.runner.binary ?? acpBinary(config.runner.type),
@@ -151,11 +161,19 @@ export async function getRuntimeConfigSnapshot(
   const config = await loadUserConfig()
   const runner = current ?? defaultRunner(config)
   const mcp = await runtimeMcp(config, runner)
+  // Merge legacy config auth with credential registry secrets (registry takes precedence)
+  const legacyAuth = config.auth ?? {}
+  let registryAuth: Record<string, string> = {}
+  try {
+    registryAuth = await resolveAllSecrets()
+  } catch {
+    // Registry may not be initialized yet during early startup
+  }
   return {
     version: 1,
     mcp,
     runner,
-    auth: config.auth ?? {},
+    auth: { ...legacyAuth, ...registryAuth },
   }
 }
 

@@ -1,8 +1,11 @@
+import fs from "fs"
+import os from "os"
 import path from "path"
 import type { Hono } from "hono"
 import { ACPAdapter } from "../adapters/acp"
 import type { AgentAdapter } from "../adapters/index"
 import { OpenCodeAdapter } from "../adapters/opencode"
+import { workspaceCapabilities } from "../capabilities"
 import { subscribeGlobalEvents } from "../global-event-bus"
 import { assertTarget } from "../target"
 import { ConfigRoutes, type RuntimeRunner, type RuntimeSnapshot } from "../routes/config"
@@ -24,13 +27,71 @@ function initialRunner(): RuntimeRunner {
   }
 }
 
+function fallback(type: RuntimeRunner["type"]) {
+  if (type === "cursor-acp") return "agent"
+  if (type === "codex-acp") return path.resolve(import.meta.dirname, "../../../.bin/codex-acp")
+  return path.resolve(import.meta.dirname, "../../../.bin/claude-agent-acp")
+}
+
+function binary(runner: RuntimeRunner) {
+  const raw = runner.binary ?? process.env.CLAXEDO_ACP_BINARY
+  if (!raw) return fallback(runner.type)
+  if (!raw.includes(path.sep)) return raw
+  if (fs.existsSync(raw)) return raw
+  return fallback(runner.type)
+}
+
+function json(input: string | undefined) {
+  if (!input) return
+  try {
+    const value = JSON.parse(input) as Record<string, unknown>
+    return value && typeof value === "object" ? value : undefined
+  } catch {}
+}
+
+function env(input: string | undefined) {
+  const value = json(input)
+  if (!value) return input || undefined
+  if (value.type !== "codex_auth") return input || undefined
+  return typeof value.OPENAI_API_KEY === "string" ? value.OPENAI_API_KEY : undefined
+}
+
+async function codex(input: string | undefined) {
+  const value = json(input)
+  if (!value || value.type !== "codex_auth") return
+  const oauth = value.oauth && typeof value.oauth === "object" ? value.oauth as Record<string, unknown> : undefined
+  const row = value.tokens && typeof value.tokens === "object" ? value.tokens as Record<string, unknown> : undefined
+  const access = typeof row?.access_token === "string" ? row.access_token : typeof oauth?.access === "string" ? oauth.access : undefined
+  const refresh = typeof row?.refresh_token === "string" ? row.refresh_token : typeof oauth?.refresh === "string" ? oauth.refresh : undefined
+  const account = typeof row?.account_id === "string" ? row.account_id : typeof oauth?.account_id === "string" ? oauth.account_id : undefined
+  if (!access || !refresh || !account) return
+  const dir = path.join(os.homedir(), ".codex")
+  await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 })
+  await fs.promises.writeFile(
+    path.join(dir, "auth.json"),
+    JSON.stringify({
+      auth_mode: typeof value.auth_mode === "string" ? value.auth_mode : "chatgpt",
+      OPENAI_API_KEY: typeof value.OPENAI_API_KEY === "string" ? value.OPENAI_API_KEY : null,
+      tokens: {
+        ...(typeof row?.id_token === "string" ? { id_token: row.id_token } : {}),
+        access_token: access,
+        refresh_token: refresh,
+        account_id: account,
+      },
+      last_refresh: typeof value.last_refresh === "string" ? value.last_refresh : new Date().toISOString(),
+    }, null, 2) + "\n",
+    { mode: 0o600 },
+  )
+}
+
+async function materialize(auth: Record<string, string>) {
+  await codex(auth["codex-acp"])
+}
+
 function createAdapter(runner: RuntimeRunner): AgentAdapter {
+  if (runner.type === "pi") throw new Error("pi runner is central-backed and cannot be hosted in workspace-runtime")
   if (acp(runner.type)) {
-    const binary =
-      runner.binary ??
-      process.env.CLAXEDO_ACP_BINARY ??
-      (runner.type === "cursor-acp" ? "agent" : path.resolve(import.meta.dirname, "../../node_modules/.bin/claude-agent-acp"))
-    const adapter = new ACPAdapter({ binary, type: runner.type })
+    const adapter = new ACPAdapter({ binary: binary(runner), type: runner.type })
     if (runner.model) adapter.setModel(runner.model)
     return adapter
   }
@@ -84,11 +145,25 @@ export function createWorkspaceFullHost(): WorkspaceHost {
   let runner = initialRunner()
   let state: "ready" | "applying" | "error" = "ready"
   let err = ""
-  let adapter = createAdapter(runner)
+  let enabled = false
+  let adapter: AgentAdapter | undefined
+
+  function ensure() {
+    if (adapter) return adapter
+    adapter = createAdapter(runner)
+    enabled = true
+    return adapter
+  }
+
+  function clear() {
+    adapter?.dispose()
+    adapter = undefined
+  }
 
   return {
     mount(app: Hono) {
       app.get("/api/wr/acp-config-options", async (c) => {
+        const adapter = ensure()
         if (!acp(runner.type)) return c.json([])
         const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
         try {
@@ -99,6 +174,7 @@ export function createWorkspaceFullHost(): WorkspaceHost {
       })
 
       app.get("/session/status", async (c) => {
+        const adapter = ensure()
         if (runner.type !== "opencode") {
           const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
           return c.json(sessionStatusSnapshot(await adapter.listSessions(directory)))
@@ -107,32 +183,38 @@ export function createWorkspaceFullHost(): WorkspaceHost {
       })
 
       app.get("/mcp", async (c) => {
+        const adapter = ensure()
         if (runner.type !== "opencode") return c.json({})
         return (await proxyOpenCode(c, adapter))!
       })
 
       app.post("/mcp/:name/connect", async (c) => {
+        const adapter = ensure()
         if (runner.type !== "opencode") return c.json(true)
         return (await proxyOpenCode(c, adapter))!
       })
 
       app.post("/mcp/:name/disconnect", async (c) => {
+        const adapter = ensure()
         if (runner.type !== "opencode") return c.json(true)
         return (await proxyOpenCode(c, adapter))!
       })
 
       app.get("/lsp", async (c) => {
+        const adapter = ensure()
         if (runner.type !== "opencode") return c.json([])
         return (await proxyOpenCode(c, adapter))!
       })
 
       app.get("/vcs", async (c) => {
+        const adapter = ensure()
         if (runner.type !== "opencode") return c.json({})
         return (await proxyOpenCode(c, adapter))!
       })
 
       app.get("/global/event", async (c) => {
-        if (runner.type === "opencode" && "getServerUrl" in adapter) {
+        const adapter = runner.type === "opencode" ? ensure() : undefined
+        if (adapter && "getServerUrl" in adapter) {
           try {
             const url = await (adapter as OpenCodeAdapter).getServerUrl()
             const res = await fetch(`${url}/global/event`, {
@@ -173,39 +255,43 @@ export function createWorkspaceFullHost(): WorkspaceHost {
         return new Response(body, { headers: sseHeaders() })
       })
 
-      app.route("/", SessionRoutes(() => adapter))
+      app.route("/", SessionRoutes(() => ensure()))
       app.route("/", ConfigRoutes((snapshot) => this.apply(snapshot)))
       app.route("/", OpenCodeCompatRoutes())
     },
     async apply(next) {
       state = "applying"
+      enabled = next.workspaceHarnessEnabled ?? enabled
       const replacing = next.runner.type !== runner.type || next.runner.binary !== runner.binary
 
       try {
+        await materialize(next.auth)
+
         if (replacing) {
-          adapter.dispose()
+          clear()
           runner = next.runner
-          adapter = createAdapter(runner)
         }
 
-        if (!replacing && acp(next.runner.type) && "setModel" in adapter && next.runner.model !== runner.model) {
+        if (!replacing && adapter && acp(next.runner.type) && "setModel" in adapter && next.runner.model !== runner.model) {
           ;(adapter as ACPAdapter).setModel(next.runner.model ?? "")
         }
 
-        if (acp(next.runner.type) && "setAuth" in adapter) {
+        if (adapter && acp(next.runner.type) && "setAuth" in adapter) {
           ;(adapter as ACPAdapter).setAuth({
-            anthropic: next.auth["claude-acp"] || undefined,
-            openai: next.auth["codex-acp"] || undefined,
-            cursor: next.auth["cursor-acp"] || undefined,
+            anthropic: env(next.auth["claude-acp"]),
+            openai: env(next.auth["codex-acp"]),
+            cursor: env(next.auth["cursor-acp"]),
           })
         }
 
         if (!replacing) runner = next.runner
-        await adapter.applyConfig({
-          mcp: next.mcp,
-          auth: next.auth,
-          runner: next.runner,
-        })
+        if (adapter) {
+          await adapter.applyConfig({
+            mcp: next.mcp,
+            auth: next.auth,
+            runner: next.runner,
+          })
+        }
         state = "ready"
         err = ""
       } catch (cause) {
@@ -219,10 +305,14 @@ export function createWorkspaceFullHost(): WorkspaceHost {
         state,
         runner,
         error: err,
+        workspaceHarnessEnabled: enabled,
       }
     },
+    capabilities() {
+      return workspaceCapabilities(enabled)
+    },
     dispose() {
-      adapter.dispose()
+      clear()
     },
   }
 }

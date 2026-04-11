@@ -802,6 +802,18 @@ export function createTerminalState(input: {
       return !!store.terminalAgentSeen[terminalId]
     },
 
+    /** Reset all tracked agent statuses and seen flags.
+     *  Used on init (page reload) and SSE reconnect to clear stale indicators
+     *  left behind when the server crashes without sending Idle events. */
+    resetAllAgentStatuses() {
+      for (const ptyId of Object.keys(store.terminalAgentStatus)) {
+        setStore("terminalAgentStatus", ptyId, undefined)
+      }
+      for (const ptyId of Object.keys(store.terminalAgentSeen)) {
+        setStore("terminalAgentSeen", ptyId, undefined)
+      }
+    },
+
     getTabAgentStatus(tabId: string): { loading: boolean; attention: boolean; done: boolean } {
       const linked = findTab(tabId)?.terminalId
       const list = terminalIds(tabId)

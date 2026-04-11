@@ -15,10 +15,11 @@
  * - This unifies the notification behavior between terminal CLI agents and sessions
  */
 
-import { batch, createEffect, onCleanup } from "solid-js"
+import { batch, createEffect, onCleanup, untrack } from "solid-js"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useSettings } from "@/context/settings"
 import { playSoundById } from "@/utils/sound"
+import { getClaxedoServerUrl } from "@claxedo/utils/api"
 import { useClaxedoLayout, type TabItem, type TerminalAgentStatus } from "@claxedo/claxedo-ui/context/claxedo-layout"
 import { useClaxedoEventsOptional } from "@claxedo/providers/claxedo-events"
 import { createDebugLogger } from "@claxedo/overrides/utils/debug"
@@ -361,6 +362,121 @@ export function usePtyExitCleanup() {
 }
 
 /**
+ * Hook that reconciles agent status indicators when the SSE connection
+ * reconnects after a disconnect.
+ *
+ * Two scenarios cause SSE disconnects:
+ * 1. **Server restart** — PTYs are dead, no Idle events were sent. Indicators
+ *    are stale and must be cleared.
+ * 2. **Network blip** (Wi-Fi hiccup, laptop sleep) — server and agents are
+ *    still running. Indicators are accurate and must be preserved.
+ *
+ * To distinguish: on reconnect, fetch the PTY list from the server. If a
+ * tracked terminal's PTY no longer exists, the server restarted → clear it.
+ * If the PTY still exists, the agent is likely still running → keep it.
+ */
+export function useReconnectCleanup() {
+  const claxedo = useClaxedoLayout()
+  const claxedoEvents = useClaxedoEventsOptional()
+
+  // Track whether we've ever been connected — reconciliation only fires
+  // after the first disconnect+reconnect cycle, not on initial connect
+  // (init cleanup in claxedo-layout.tsx already handles the page-load case).
+  let hadConnection = false
+
+  createEffect(() => {
+    if (!claxedoEvents) return
+    const isConnected = claxedoEvents.connected()
+
+    if (!isConnected) return
+
+    if (!hadConnection) {
+      hadConnection = true
+      return
+    }
+
+    // SSE reconnected — reconcile with server to distinguish
+    // server restart (clear stale) from network blip (keep state).
+    lifecycleDebug.log("SSE reconnected — reconciling agent statuses")
+    void reconcileAgentStatuses(claxedo)
+  })
+}
+
+/** Fetch live PTY IDs from the server and clear indicators for PTYs that no longer exist. */
+async function reconcileAgentStatuses(claxedo: ReturnType<typeof useClaxedoLayout>) {
+  let livePtyIds: Set<string>
+  try {
+    const res = await fetch(`${getClaxedoServerUrl()}/api/claxedo/pty`)
+    if (!res.ok) throw new Error(`PTY list ${res.status}`)
+    const ptys = (await res.json()) as Array<{ id: string }>
+    livePtyIds = new Set(ptys.map((p) => p.id))
+  } catch {
+    // Server unreachable — it restarted and isn't ready yet, or truly crashed.
+    // Clear everything; fresh events will re-establish if agents are alive.
+    lifecycleDebug.log("PTY fetch failed — clearing all stale statuses")
+    clearAllAgentIndicators(claxedo)
+    return
+  }
+
+  // Check each tracked terminal against the server's live PTY list
+  untrack(() => {
+    let cleared = 0
+    batch(() => {
+      const groups = claxedo.split.groups()
+      for (const group of groups) {
+        for (const tab of group.tabs.items) {
+          if (!tab.loading && !tab.attention) continue
+
+          // Collect terminal IDs for this tab
+          const ids = claxedo.terminal.ids(tab.id)
+          if (tab.terminalId && !ids.includes(tab.terminalId)) ids.push(tab.terminalId)
+          if (ids.length === 0) continue
+
+          // Check if ANY tracked terminal's PTY is gone from the server
+          let hasStale = false
+          for (const id of ids) {
+            if (!claxedo.terminal.isTracked(id)) continue
+            if (claxedo.terminal.agentStatus(id) === "idle") continue
+            if (!livePtyIds.has(id)) {
+              claxedo.terminal.setAgentStatus(id, "idle")
+              claxedo.terminal.clearSeen(id)
+              hasStale = true
+              cleared++
+            }
+          }
+
+          if (hasStale) {
+            const aggregated = claxedo.terminal.getTabAgentStatus(tab.id)
+            claxedo.patchTab(tab.id, {
+              loading: aggregated.loading,
+              attention: aggregated.attention ? undefined : false,
+            })
+          }
+        }
+      }
+    })
+    lifecycleDebug.log("reconciliation complete", { cleared, livePtys: livePtyIds.size })
+  })
+}
+
+function clearAllAgentIndicators(claxedo: ReturnType<typeof useClaxedoLayout>) {
+  untrack(() => {
+    batch(() => {
+      claxedo.terminal.resetAllAgentStatuses()
+
+      const groups = claxedo.split.groups()
+      for (const group of groups) {
+        for (const tab of group.tabs.items) {
+          if (tab.loading || tab.attention) {
+            claxedo.patchTab(tab.id, { loading: false, attention: false })
+          }
+        }
+      }
+    })
+  })
+}
+
+/**
  * Combined hook for agent lifecycle handling
  * Use this in a top-level component
  */
@@ -369,4 +485,5 @@ export function useAgentHooks() {
   useSessionStatusListener()
   useClearAttentionOnFocus()
   usePtyExitCleanup()
+  useReconnectCleanup()
 }

@@ -63,6 +63,10 @@ vi.mock("@opencode-ai/ui/select", () => ({
   },
 }))
 
+vi.mock("@/components/dialog-select-model", () => ({
+  ModelSelectorPopover: (props: any) => <div data-testid="model-selector">{props.children}</div>,
+}))
+
 import { AgentRunnerSelector } from "./agent-runner-selector"
 
 afterEach(() => {
@@ -132,7 +136,7 @@ describe("AgentRunnerSelector — sessionLocked guard", () => {
   test("switching from opencode to claude-acp is blocked when locked", () => {
     const { container } = render(() => <AgentRunnerSelector sessionLocked={true} />)
 
-    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "opencode"]) {
+    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "pi", "opencode"]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
@@ -142,11 +146,11 @@ describe("AgentRunnerSelector — sessionLocked guard", () => {
   test("all runner options are clickable when unlocked", () => {
     const { container } = render(() => <AgentRunnerSelector sessionLocked={false} />)
 
-    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "opencode"]) {
+    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "pi", "opencode"]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
-    expect(setRunnerCalls).toHaveLength(4)
-    expect(setRunnerCalls.map((c) => c.type)).toEqual(["claude-acp", "codex-acp", "cursor-acp", "opencode"])
+    expect(setRunnerCalls).toHaveLength(5)
+    expect(setRunnerCalls.map((c) => c.type)).toEqual(["claude-acp", "codex-acp", "cursor-acp", "pi", "opencode"])
   })
 })

@@ -5,15 +5,11 @@ import { createNodeWebSocket } from "@hono/node-ws"
 import { Pty } from "./pty/index"
 import * as ProcessManager from "./process/index"
 import { workspaceDir, workspaceId } from "./target"
-import { workspaceCapabilities } from "./capabilities"
-import { profileFromEnv, type WorkspaceProfile } from "./profile"
-import { createWorkspaceFullHost, createWorkspaceMinimalHost, mountWorkspaceCore } from "./workspace"
+import { createWorkspaceFullHost, mountWorkspaceCore } from "./workspace"
 import { setupAgentHooks } from "./agent-hooks"
 
-export function startServer(port = 3002, input?: { profile?: WorkspaceProfile }) {
-  const profile = input?.profile ?? profileFromEnv(process.env)
-  const caps = workspaceCapabilities(profile)
-  const host = profile === "full" ? createWorkspaceFullHost() : createWorkspaceMinimalHost()
+export function startServer(port = 3002) {
+  const host = createWorkspaceFullHost()
 
   const app = new Hono()
 
@@ -42,8 +38,8 @@ export function startServer(port = 3002, input?: { profile?: WorkspaceProfile })
         service: "workspace-runtime",
         workspaceId: workspaceId(),
         directory: dir,
-        profile,
-        capabilities: caps,
+        profile: host.capabilities().profile,
+        capabilities: host.capabilities(),
         agentType: detail.runner.type,
         acpBinary: detail.runner.type === "opencode" ? null : detail.runner.binary ?? null,
         model: detail.runner.model ?? null,
@@ -55,14 +51,15 @@ export function startServer(port = 3002, input?: { profile?: WorkspaceProfile })
     })()),
   )
 
-  mountWorkspaceCore(app, upgradeWebSocket, profile)
+  app.get("/api/wr/capabilities", (c) => c.json(host.capabilities()))
+  mountWorkspaceCore(app, upgradeWebSocket)
   app.get("/global/health", (c) => c.json({ healthy: host.detail().state === "ready", service: "workspace-runtime" }))
   host.mount(app)
 
   const server = serve({
     fetch: app.fetch,
     port,
-    hostname: "127.0.0.1",
+    hostname: process.env.CLAXEDO_WR_HOST || "0.0.0.0",
   })
   injectWebSocket(server)
 
