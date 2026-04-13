@@ -1,5 +1,5 @@
 import { Daytona, Image, DaytonaNotFoundError } from "@daytonaio/sdk"
-import { Log } from "../log"
+import { Log } from "../../log"
 
 const log = Log.create({ service: "sandbox-image" })
 
@@ -10,7 +10,7 @@ export const RUNTIME_DIR = "/opt/workspace-runtime"
 /** Shared Docker image with tools + workspace-runtime pre-installed. */
 export const SANDBOX_IMAGE = process.env.CLAXEDO_SANDBOX_IMAGE || "ghcr.io/kyashrathore/claxedo-sandbox:latest"
 
-const SNAPSHOT_NAME = process.env.CLAXEDO_SNAPSHOT_NAME || "claxedo-workspace-runtime-v2"
+const SNAPSHOT_NAME = process.env.CLAXEDO_SNAPSHOT_NAME || "claxedo-workspace-runtime-v3"
 
 export function buildSandboxImage(): Image {
   return Image.base(SANDBOX_IMAGE)

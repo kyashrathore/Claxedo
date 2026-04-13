@@ -138,11 +138,28 @@ async function globSearch(
 }
 
 async function git(root: string, args: string[]) {
-  const { stdout } = await execFileAsync("git", ["-c", "core.fsmonitor=false", "-c", "core.quotepath=false", ...args], { cwd: root })
+  const { stdout } = await execFileAsync(
+    "git",
+    ["-c", "core.fsmonitor=false", "-c", "core.quotepath=false", ...args],
+    {
+      cwd: root,
+      timeout: 1500,
+      killSignal: "SIGKILL",
+    },
+  )
   return stdout
 }
 
 async function fileStatus(root: string) {
+  if (!root.trim()) return []
+  const stat = await fs.promises.stat(root).catch(() => undefined)
+  if (!stat?.isDirectory()) return []
+  const dot = path.join(root, ".git")
+  const has = await fs.promises.access(dot, fs.constants.F_OK).then(
+    () => true,
+    () => false,
+  )
+  if (!has) return []
   try {
     const diff = await git(root, ["diff", "--numstat", "HEAD"])
     const changed = diff
@@ -583,16 +600,42 @@ async function resolveRunnerType(override?: string) {
   return defaultRunner(await loadUserConfig()).type
 }
 
+function emptyProvider() {
+  return {
+    all: [],
+    default: {},
+    connected: [],
+  }
+}
+
+function emptyConfigProviders() {
+  return {
+    providers: [],
+    default: {},
+  }
+}
+
+async function safe<T>(label: string, fallback: () => Promise<T> | T, run: () => Promise<T>) {
+  try {
+    return await run()
+  } catch (err) {
+    console.warn(`[bootstrap] ${label} unavailable`, err)
+    return await fallback()
+  }
+}
+
 async function providerBody(runnerOverride?: string) {
   const runnerType = await resolveRunnerType(runnerOverride)
   if (runnerType === "pi") return piProviderResponse(await loadUserConfig())
   if (runnerType !== "opencode") return buildAcpProviderResponse()
-  const res = await fetch(new URL("/provider", opencodeUrl()), {
-    headers: opencodeHeaders(),
-    signal: AbortSignal.timeout(5_000),
+  return safe("provider", emptyProvider, async () => {
+    const res = await fetch(new URL("/provider", opencodeUrl()), {
+      headers: opencodeHeaders(),
+      signal: AbortSignal.timeout(5_000),
+    })
+    if (!res.ok) throw new Error(`provider fetch failed: ${res.status}`)
+    return res.json()
   })
-  if (!res.ok) throw new Error(`provider fetch failed: ${res.status}`)
-  return res.json()
 }
 
 async function providerAuthBody(runnerOverride?: string) {
@@ -608,12 +651,14 @@ async function providerAuthBody(runnerOverride?: string) {
       "cursor-acp": [{ type: "api", label: "API Key" }],
     }
   }
-  const res = await fetch(new URL("/provider/auth", opencodeUrl()), {
-    headers: opencodeHeaders(),
-    signal: AbortSignal.timeout(5_000),
+  return safe("provider auth", () => ({}), async () => {
+    const res = await fetch(new URL("/provider/auth", opencodeUrl()), {
+      headers: opencodeHeaders(),
+      signal: AbortSignal.timeout(5_000),
+    })
+    if (!res.ok) throw new Error(`provider auth fetch failed: ${res.status}`)
+    return res.json()
   })
-  if (!res.ok) throw new Error(`provider auth fetch failed: ${res.status}`)
-  return res.json()
 }
 
 async function configProvidersBody(runnerOverride?: string) {
@@ -632,26 +677,30 @@ async function configProvidersBody(runnerOverride?: string) {
       default: provider.default,
     }
   }
-  const res = await fetch(new URL("/config/providers", opencodeUrl()), {
-    headers: opencodeHeaders(),
-    signal: AbortSignal.timeout(5_000),
+  return safe("config providers", emptyConfigProviders, async () => {
+    const res = await fetch(new URL("/config/providers", opencodeUrl()), {
+      headers: opencodeHeaders(),
+      signal: AbortSignal.timeout(5_000),
+    })
+    if (!res.ok) throw new Error(`config providers fetch failed: ${res.status}`)
+    return res.json()
   })
-  if (!res.ok) throw new Error(`config providers fetch failed: ${res.status}`)
-  return res.json()
 }
 
 async function globalConfigBody(runnerOverride?: string) {
   const runnerType = await resolveRunnerType(runnerOverride)
+  const user = await loadUserConfig()
   if (runnerType !== "opencode") {
-    const user = await loadUserConfig()
     return configBody(user)
   }
-  const res = await fetch(new URL("/global/config", opencodeUrl()), {
-    headers: opencodeHeaders(),
-    signal: AbortSignal.timeout(5_000),
+  return safe("global config", () => configBody(user), async () => {
+    const res = await fetch(new URL("/global/config", opencodeUrl()), {
+      headers: opencodeHeaders(),
+      signal: AbortSignal.timeout(5_000),
+    })
+    if (!res.ok) throw new Error(`global config fetch failed: ${res.status}`)
+    return res.json()
   })
-  if (!res.ok) throw new Error(`global config fetch failed: ${res.status}`)
-  return res.json()
 }
 
 async function bootstrapBody(runnerOverride?: string) {

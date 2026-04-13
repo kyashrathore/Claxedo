@@ -40,6 +40,11 @@ type Boot = {
   config?: Config
 }
 
+type WorkspaceBoot = {
+  kind?: "local" | "cloud" | null
+  status?: string | null
+}
+
 async function bootstrapData(baseUrl: string, fetchFn: typeof globalThis.fetch, runnerType?: string) {
   try {
     const url = new URL("/api/claxedo/bootstrap", baseUrl)
@@ -69,6 +74,25 @@ function agentClient(input: {
       "x-claxedo-runner": input.runnerType,
     },
   })
+}
+
+async function workspaceBoot(baseUrl: string | undefined, fetchFn: typeof globalThis.fetch | undefined, directory: string) {
+  if (!baseUrl) return
+  try {
+    const url = new URL("/api/workspace/resolve", baseUrl)
+    url.searchParams.set("directory", directory)
+    const res = await (fetchFn ?? globalThis.fetch)(url, {
+      headers: { Accept: "application/json" },
+    })
+    if (!res.ok) return
+    return await res.json() as WorkspaceBoot
+  } catch {
+    return
+  }
+}
+
+function pendingCloud(ws?: WorkspaceBoot) {
+  return ws?.kind === "cloud" && !!ws.status && ws.status !== "ready" && ws.status !== "failed"
 }
 
 export async function bootstrapGlobal(input: {
@@ -231,6 +255,23 @@ export async function bootstrapDirectory(input: {
   }
 
   if (input.store.status !== "complete") input.setStore("status", "partial")
+
+  const ws = await workspaceBoot(input.baseUrl, input.fetch, input.directory)
+
+  if (pendingCloud(ws)) {
+    Promise.allSettled([
+      retry(fetchProvider),
+      input.sdk.path.get().then((x) => input.setStore("path", x.data!)),
+    ]).then(() => {
+      input.setStore("agent", [])
+      input.setStore("command", [])
+      input.setStore("mcp", {})
+      input.setStore("mcp_ready", true)
+      input.setStore("lsp", [])
+      input.setStore("lsp_ready", true)
+    })
+    return
+  }
 
   Promise.all([
     retry(fetchProvider),

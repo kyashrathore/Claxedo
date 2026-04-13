@@ -67,6 +67,8 @@ type Hit = {
   url: string
 }
 
+const RUNTIME_WAIT_MS = 4_000
+
 function requestWorkspace(c: Context) {
   return {
     workspaceId: c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id"),
@@ -82,7 +84,16 @@ async function resolveRuntime(c: Context): Promise<Hit | undefined> {
   })
   if (!ws) return
   if (ws.kind !== "cloud") return
-  const runtime = await ensureWorkspaceRuntime(ws.id)
+  const pending = ensureWorkspaceRuntime(ws.id)
+  const runtime = await Promise.race([
+    pending,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("workspace runtime startup timed out")), RUNTIME_WAIT_MS),
+    ),
+  ]).catch((err) => {
+    void pending.catch(() => undefined)
+    throw err
+  })
   return {
     workspaceId: ws.id,
     directory: ws.remote_directory || ws.directory,

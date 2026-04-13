@@ -29,6 +29,7 @@ import { useSDK } from "@/context/sdk"
 import { usePrompt } from "@/context/prompt"
 import { useComments } from "@/context/comments"
 import { useServer } from "@/context/server"
+import { useGlobalSync } from "@/context/global-sync"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { usePermission } from "@/context/permission"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -62,10 +63,20 @@ import { useSessionParams } from "../../claxedo-ui/context/session-params"
 import { useClaxedoLayout } from "../../claxedo-ui/context/claxedo-layout"
 import { paneDefaults, paneRefSystem } from "../../claxedo-ui/context/claxedo-layout/pane-intent"
 import { useGroupId } from "../../claxedo-ui/context/group-id"
+import { useClaxedoEventsOptional } from "../../providers/claxedo-events"
+import { api, getDefaultBaseUrl } from "../../utils/api"
+import { CloudStartupView, type CloudLog } from "../components/session/cloud-startup-view"
 import { createDebugLogger } from "../utils/debug"
 import { stableSessionInfo, stableSessionMessages } from "./session/view-state"
 
 const trace = (..._args: unknown[]) => undefined
+
+type WorkspaceBoot = {
+  workspaceId: string
+  kind?: "local" | "cloud" | null
+  status?: string | null
+  provider?: string | null
+}
 
 export default function Page() {
   const debug = createDebugLogger("layout.session-page", "layout:session", {
@@ -247,6 +258,124 @@ export default function Page() {
       return dirEncoded()
     },
   }
+  const dir = createMemo(() => sessionParams?.directory() ?? fallbackGroup()?.directory ?? sdk.directory)
+  const globalSync = useGlobalSync()
+  const events = useClaxedoEventsOptional()
+  const base = getDefaultBaseUrl()
+  const ws = createMemo(() =>
+    (sync.project as (typeof sync.project & {
+      workspaces?: Record<string, { id?: string; kind?: "local" | "cloud"; status?: string | null }>
+    }) | undefined)?.workspaces?.[dir()],
+  )
+  const [gate, setGate] = createStore({
+    open: false,
+    sync: false,
+    id: undefined as string | undefined,
+    status: undefined as string | undefined,
+    err: undefined as string | undefined,
+    logs: [] as CloudLog[],
+  })
+
+  const resetGate = () => {
+    setGate({
+      open: false,
+      sync: false,
+      id: undefined,
+      status: undefined,
+      err: undefined,
+      logs: [],
+    })
+  }
+
+  const note = (step: string, message?: string, totalMs?: number) => {
+    setGate("logs", (list) => {
+      const prev = list.at(-1)
+      if (prev?.step === step && prev?.message === message) return list
+      return [...list, { step, message, ts: Date.now(), totalMs }]
+    })
+  }
+
+  createEffect(
+    on(
+      () => [params.id, dir(), ws()?.kind] as const,
+      ([id, cwd, kind]) => {
+        if (id !== "new" || kind !== "cloud") {
+          resetGate()
+          return
+        }
+
+        let dead = false
+        let off = () => {}
+
+        setGate({
+          open: true,
+          sync: false,
+          id: ws()?.id,
+          status: ws()?.status ?? "pending_sandbox",
+          err: undefined,
+          logs: [],
+        })
+
+        const run = async () => {
+          const url = new URL("/api/workspace/resolve", base)
+          url.searchParams.set("directory", cwd)
+          const row = await api.get<WorkspaceBoot>(url.toString())
+          if (dead) return
+
+          setGate("id", row.workspaceId)
+          setGate("status", row.status ?? undefined)
+          if (row.status && row.status !== "ready") {
+            note(row.status, row.status === "stopped" ? "Waking workspace runtime..." : undefined)
+          }
+
+          if (events) {
+            off = events.on("provision", (event) => {
+              if (event.workspaceId !== row.workspaceId) return
+              if (event.step === "acquiring_sandbox" && gate.err) setGate("err", undefined)
+              setGate("status", event.step)
+              note(event.step, event.message, event.totalMs)
+            })
+          }
+
+          await api.post<WorkspaceBoot>(`${base}/api/workspace/ensure`, {
+            workspaceId: row.workspaceId,
+            directory: cwd,
+          })
+          if (dead) return
+          setGate("status", "ready")
+          note("ready")
+          setGate("sync", true)
+          void globalSync.project.reload().catch(() => undefined)
+          await globalSync.refreshDirectory(cwd)
+        }
+
+        void run().catch((err) => {
+          if (dead) return
+          const message = err instanceof Error ? err.message : String(err)
+          setGate("err", message)
+          setGate("sync", false)
+          note("error", message)
+        })
+
+        onCleanup(() => {
+          dead = true
+          off()
+        })
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(() => {
+    if (!gate.sync) return
+    if (sync.data.status !== "complete") return
+    if (!sync.data.provider_ready) return
+    if (!sync.data.mcp_ready) return
+    if (!sync.data.lsp_ready) return
+    setGate("open", false)
+    setGate("sync", false)
+    setGate("err", undefined)
+  })
 
   // Cloud: group-aware navigation helper
   const groupNavigate = (path: string) => {
@@ -2062,57 +2191,90 @@ export default function Page() {
                 </Show>
               </Match>
               <Match when={true}>
-                <NewSessionView
-                  variant={sessionParams ? "compact" : "full"}
-                  worktree={newSessionWorktree()}
-                  onWorktreeChange={(value) => {
-                    if (value === "create") {
-                      setStore("newSessionWorktree", value)
-                      return
-                    }
+                <Show
+                  when={gate.open}
+                  fallback={
+                    <NewSessionView
+                      variant={sessionParams ? "compact" : "full"}
+                      worktree={newSessionWorktree()}
+                      onWorktreeChange={(value) => {
+                        if (value === "create") {
+                          setStore("newSessionWorktree", value)
+                          return
+                        }
 
-                    setStore("newSessionWorktree", "main")
+                        setStore("newSessionWorktree", "main")
 
-                    const target = value === "main" ? sync.project?.worktree : value
-                    if (!target) return
-                    if (target === sync.data.path.directory) return
-                    layout.projects.open(target)
-                    groupNavigate(`/${base64Encode(target)}/session`)
-                  }}
-                />
+                        const target = value === "main" ? sync.project?.worktree : value
+                        if (!target) return
+                        if (target === sync.data.path.directory) return
+                        layout.projects.open(target)
+                        groupNavigate(`/${base64Encode(target)}/session`)
+                      }}
+                    />
+                  }
+                >
+                  <NewSessionView
+                    variant={sessionParams ? "compact" : "full"}
+                    worktree={newSessionWorktree()}
+                    title="Preparing cloud workspace"
+                    onWorktreeChange={(value) => {
+                      if (value === "create") {
+                        setStore("newSessionWorktree", value)
+                        return
+                      }
+
+                      setStore("newSessionWorktree", "main")
+
+                      const target = value === "main" ? sync.project?.worktree : value
+                      if (!target) return
+                      if (target === sync.data.path.directory) return
+                      layout.projects.open(target)
+                      groupNavigate(`/${base64Encode(target)}/session`)
+                    }}
+                  >
+                    <CloudStartupView
+                      status={gate.status}
+                      err={gate.err}
+                      logs={gate.logs}
+                    />
+                  </NewSessionView>
+                </Show>
               </Match>
             </Switch>
           </div>
 
-          <SessionComposerRegion
-            state={composerState}
-            ready={!store.deferRender && messagesReady()}
-            centered={centered()}
-            system={paneIntentSystem()}
-            agent={paneIntentDefaults()?.agent}
-            inputRef={(el) => {
-              inputRef = el
-            }}
-            newSessionWorktree={newSessionWorktree()}
-            onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
-            onSubmit={() => {
-              comments.clear()
-              resumeScroll()
-            }}
-            onResponseSubmit={() => {
-              resumeScroll()
-            }}
-            revert={
-              rolled().length > 0
-                ? {
-                    items: rolled(),
-                    restoring: ui.restoring,
-                    onRestore: restore,
-                  }
-                : undefined
-            }
-            setPromptDockRef={(el) => (promptDock = el)}
-          />
+          <Show when={!gate.open}>
+            <SessionComposerRegion
+              state={composerState}
+              ready={!store.deferRender && messagesReady()}
+              centered={centered()}
+              system={paneIntentSystem()}
+              agent={paneIntentDefaults()?.agent}
+              inputRef={(el) => {
+                inputRef = el
+              }}
+              newSessionWorktree={newSessionWorktree()}
+              onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
+              onSubmit={() => {
+                comments.clear()
+                resumeScroll()
+              }}
+              onResponseSubmit={() => {
+                resumeScroll()
+              }}
+              revert={
+                rolled().length > 0
+                  ? {
+                      items: rolled(),
+                      restoring: ui.restoring,
+                      onRestore: restore,
+                    }
+                  : undefined
+              }
+              setPromptDockRef={(el) => (promptDock = el)}
+            />
+          </Show>
         </div>
       </div>
     </div>

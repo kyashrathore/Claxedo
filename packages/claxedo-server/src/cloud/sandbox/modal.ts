@@ -1,24 +1,22 @@
 import { ModalClient, type Sandbox, type ContainerProcess, type App } from "modal"
-import type { SandboxHandle } from "./sandbox-handle"
-import { Log } from "../log"
-import { RUNTIME_PORT, SANDBOX_IMAGE } from "./sandbox-image"
-import type { SandboxNetworkPolicy } from "../network/resolve"
+import type { SandboxHandle } from "./handle"
+import { Log } from "../../log"
+import { RUNTIME_PORT, SANDBOX_IMAGE } from "./image"
+import type { SandboxNetworkPolicy } from "../../network/resolve"
 
 const log = Log.create({ service: "sandbox-modal" })
 
-let cachedClient: ModalClient | undefined
-let cachedApp: App | undefined
+const clients = new Map<string, ModalClient>()
+const apps = new Map<string, Promise<App>>()
 
 /**
  * Wraps the official Modal SDK Sandbox into the provider-agnostic SandboxHandle.
  */
 export class ModalSandboxHandle implements SandboxHandle {
+  readonly provider = "modal" as const
   private runtimeProc: ContainerProcess<string> | undefined
 
-  constructor(
-    private readonly inner: Sandbox,
-    private readonly client: ModalClient,
-  ) {}
+  constructor(private readonly inner: Sandbox) {}
 
   get id(): string {
     return this.inner.sandboxId
@@ -88,6 +86,11 @@ export class ModalSandboxHandle implements SandboxHandle {
   async setLabels(labels: Record<string, string>): Promise<void> {
     await this.inner.setTags(labels)
   }
+
+  async snapshotFilesystem(): Promise<string> {
+    const image = await this.inner.snapshotFilesystem()
+    return image.imageId
+  }
 }
 
 /**
@@ -98,22 +101,22 @@ export async function createModalSandbox(opts: {
   tokenSecret: string
   name?: string
   net?: SandboxNetworkPolicy
+  imageId?: string
 }): Promise<ModalSandboxHandle> {
-  if (!cachedClient) {
-    cachedClient = new ModalClient({
-      tokenId: opts.tokenId,
-      tokenSecret: opts.tokenSecret,
-    })
-  }
-  const client = cachedClient
+  const key = `${opts.tokenId}:${opts.tokenSecret}`
+  const client = clients.get(key) ?? new ModalClient({
+    tokenId: opts.tokenId,
+    tokenSecret: opts.tokenSecret,
+  })
+  clients.set(key, client)
+  const app = apps.get(key) ?? client.apps.fromName("claxedo", { createIfMissing: true })
+  apps.set(key, app)
 
-  if (!cachedApp) {
-    cachedApp = await client.apps.fromName("claxedo", { createIfMissing: true })
-  }
+  const image = opts.imageId
+    ? await client.images.fromId(opts.imageId)
+    : await client.images.fromRegistry(SANDBOX_IMAGE)
 
-  const image = await client.images.fromRegistry(SANDBOX_IMAGE)
-
-  const sandbox = await client.sandboxes.create(cachedApp, image, {
+  const sandbox = await client.sandboxes.create(await app, image, {
     timeoutMs: 30 * 60 * 1000,
     env: { SHELL: "/bin/bash" },
     encryptedPorts: [RUNTIME_PORT],
@@ -125,5 +128,5 @@ export async function createModalSandbox(opts: {
   })
 
   log.info("Created Modal sandbox", { sandboxId: sandbox.sandboxId, image: SANDBOX_IMAGE })
-  return new ModalSandboxHandle(sandbox, client)
+  return new ModalSandboxHandle(sandbox)
 }

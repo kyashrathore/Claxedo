@@ -55,6 +55,11 @@ type OptionsResponse = {
   stale: boolean
 }
 
+type WorkspaceBoot = {
+  kind?: "local" | "cloud" | null
+  status?: string | null
+}
+
 type ScopeState = {
   agentType: "opencode" | "acp" | "unknown"
   acpBinary: string
@@ -333,11 +338,46 @@ function init() {
     return `?${params}`
   }
 
+  async function workspace(input?: ScopeInput) {
+    if (!input?.directory) return
+    const params = new URLSearchParams()
+    params.set("directory", input.directory)
+    const res = await request(`${base}/api/workspace/resolve?${params}`)
+    if (!res.ok) return
+    return await res.json() as WorkspaceBoot
+  }
+
   async function status(input?: ScopeInput) {
     if (!input?.directory) return
     const res = await request(`${base}/api/claxedo/agent-config/runner${query(input)}`)
     if (!res.ok) return
     return await res.json() as RunnerState
+  }
+
+  async function apply(scope: string, data: RunnerState, input?: ScopeInput) {
+    const want = desiredRunner(data) ?? store[scope]?.runner ?? "opencode"
+    setStore(scope, {
+      ...store[scope],
+      agentType: mode(want),
+      acpBinary: data.activeBinary ?? data.binary ?? "",
+      runner: want,
+      selectedModel: data.model ?? (want === "opencode" ? "" : store[scope]?.selectedModel ?? ""),
+      ...(want === "opencode"
+        ? {
+            dynamicModels: null,
+            optionsSource: "empty" as const,
+            optionsStale: false,
+            optionsLoading: false,
+          }
+        : {}),
+      readiness: failedRunner(data) ? "error" : "ready",
+      configError: data.error ?? undefined,
+      workspaceId: data.workspaceId ?? store[scope]?.workspaceId,
+    })
+    saveScope(scope, "runner", want)
+    if (data.model) saveScope(scope, "model", data.model)
+    if (want !== "opencode" && !failedRunner(data)) void fetchConfigOptions(scope, want, input)
+    if (input?.directory) await refresh(input.directory, want)
   }
 
   async function fetchConfigOptions(
@@ -459,6 +499,15 @@ function init() {
     const run = (async () => {
       if (!input?.directory) return
       if (!input.sessionId || input.sessionId === "new") {
+        const ws = await workspace(input).catch(() => undefined)
+        if (ws?.kind === "cloud") {
+          const data = await status(input).catch(() => undefined)
+          if (data) {
+            await apply(scope, data, input)
+            seen.set(scope, key)
+            return
+          }
+        }
         const type = store[scope]?.runner ?? "opencode"
         setStore(scope, "agentType", mode(type))
         setStore(scope, "readiness", "ready")
@@ -489,21 +538,7 @@ function init() {
         seen.set(scope, key)
         return
       }
-      const want = desiredRunner(data) ?? store[scope]?.runner ?? "opencode"
-      setStore(scope, {
-        ...store[scope],
-        agentType: mode(want),
-        acpBinary: data.activeBinary ?? data.binary ?? "",
-        runner: want,
-        selectedModel: data.model ?? store[scope]?.selectedModel ?? "",
-        readiness: failedRunner(data) ? "error" : "ready",
-        configError: data.error ?? undefined,
-        workspaceId: data.workspaceId ?? store[scope]?.workspaceId,
-      })
-      saveScope(scope, "runner", want)
-      if (data.model) saveScope(scope, "model", data.model)
-      if (want !== "opencode" && !failedRunner(data)) void fetchConfigOptions(scope, want, input)
-      await refresh(input.directory, want)
+      await apply(scope, data, input)
       seen.set(scope, key)
     })()
     inflight.set(scope, run)
@@ -544,6 +579,29 @@ function init() {
     saveScope(scope, "model", "")
 
     if (!input?.sessionId || input.sessionId === "new") {
+      const ws = await workspace(input).catch(() => undefined)
+      if (ws?.kind === "cloud") {
+        try {
+          const res = await request(`${base}/api/claxedo/agent-config/runner`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type,
+              ...(binary ? { binary } : {}),
+              ...(input?.directory ? { directory: input.directory } : {}),
+            }),
+          })
+          if (!res.ok) {
+            const body = await res.json().catch(() => null) as { error?: string } | null
+            throw new Error(body?.error ?? `Failed to switch to ${type}`)
+          }
+        } catch (err) {
+          setStore(scope, "configError", err instanceof Error ? err.message : "Failed to switch runner")
+          setStore(scope, "readiness", "error")
+          setStore(scope, "optionsLoading", false)
+          return
+        }
+      }
       if (type === "opencode") {
         setStore(scope, "acpBinary", "")
         await refresh(input?.directory, type)

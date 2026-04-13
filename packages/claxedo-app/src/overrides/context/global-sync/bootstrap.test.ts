@@ -315,10 +315,11 @@ describe("override bootstrapDirectory", () => {
     await tick()
 
     expect(urls).toEqual([
+      "http://localhost:4096/api/workspace/resolve?directory=%2Ftmp%2Fws",
       "http://localhost:4096/provider?runner=claude-acp",
       "http://localhost:4096/agent?directory=%2Ftmp%2Fws",
     ])
-    expect(headers).toEqual(["", "claude-acp"])
+    expect(headers).toEqual(["", "", "claude-acp"])
     expect(store.agent).toEqual([{ name: "plan", mode: "primary" }])
     expect(store.provider_ready).toBe(true)
     expect(store.provider.all.map((item) => item.id)).toEqual(["claude-acp"])
@@ -409,5 +410,135 @@ describe("override bootstrapDirectory", () => {
     await tick()
 
     expect(store.agent).toEqual([{ name: "plan", mode: "primary" }])
+  })
+
+  test("skips runtime-bound requests while a cloud workspace is still provisioning", async () => {
+    const [store, setStore] = state()
+    const calls: string[] = []
+    let command = 0
+    let status = 0
+    let sessions = 0
+    let mcp = 0
+    let lsp = 0
+    let vcs = 0
+    let permission = 0
+    let question = 0
+    const sdk = {
+      project: {
+        current: async () => ({ data: { id: "proj_1" } }),
+      },
+      provider: {
+        list: async () => {
+          throw new Error("expected runner-scoped provider fetch")
+        },
+      },
+      app: {
+        agents: async () => {
+          throw new Error("expected runtime-bound agent fetch to be skipped")
+        },
+      },
+      config: {
+        get: async () => ({ data: {} }),
+      },
+      path: {
+        get: async () => ({ data: { state: "", config: "", worktree: "", directory: "/tmp/ws", home: "" } }),
+      },
+      command: {
+        list: async () => {
+          command++
+          return { data: [] }
+        },
+      },
+      session: {
+        status: async () => {
+          status++
+          return { data: {} }
+        },
+      },
+      mcp: {
+        status: async () => {
+          mcp++
+          return { data: {} }
+        },
+      },
+      lsp: {
+        status: async () => {
+          lsp++
+          return { data: [] }
+        },
+      },
+      vcs: {
+        get: async () => {
+          vcs++
+          return { data: undefined }
+        },
+      },
+      permission: {
+        list: async () => {
+          permission++
+          return { data: [] }
+        },
+      },
+      question: {
+        list: async () => {
+          question++
+          return { data: [] }
+        },
+      },
+    } as any
+
+    await bootstrapDirectory({
+      directory: "/tmp/ws",
+      sdk,
+      store,
+      setStore,
+      vcsCache: cache(),
+      loadSessions: async () => {
+        sessions++
+      },
+      translate: (key) => key,
+      baseUrl: "http://localhost:4096",
+      runnerType: "claude-acp",
+      fetch: async (input) => {
+        const req = input instanceof Request ? input : new Request(String(input))
+        calls.push(req.url)
+        if (req.url.includes("/api/workspace/resolve")) {
+          return new Response(
+            JSON.stringify({ kind: "cloud", status: "starting_runtime" }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        }
+        if (req.url.includes("/provider")) {
+          return new Response(
+            JSON.stringify({
+              all: [{ id: "claude-acp", name: "Claude ACP", env: [], models: {} }],
+              connected: ["claude-acp"],
+              default: {},
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        }
+        throw new Error(`unexpected fetch: ${req.url}`)
+      },
+    })
+    await tick()
+    await tick()
+
+    expect(calls).toEqual([
+      "http://localhost:4096/api/workspace/resolve?directory=%2Ftmp%2Fws",
+      "http://localhost:4096/provider?runner=claude-acp",
+    ])
+    expect(command).toBe(0)
+    expect(status).toBe(0)
+    expect(sessions).toBe(0)
+    expect(mcp).toBe(0)
+    expect(lsp).toBe(0)
+    expect(vcs).toBe(0)
+    expect(permission).toBe(0)
+    expect(question).toBe(0)
+    expect(store.provider_ready).toBe(true)
+    expect(store.mcp_ready).toBe(true)
+    expect(store.lsp_ready).toBe(true)
+    expect(store.status).toBe("partial")
   })
 })

@@ -12,6 +12,8 @@ export type SandboxAuth = {
   }
   vercel?: {
     access_token?: string
+    team_id?: string
+    project_id?: string
   }
   cloudflare?: {
     api_token?: string

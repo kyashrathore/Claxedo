@@ -1,12 +1,17 @@
-import type { SandboxHandle } from "./sandbox-handle"
-import { Log } from "../log"
-import { claxedoBus } from "../bus"
-import { RUNTIME_PORT, RUNTIME_DIR, WORKSPACE_DIR } from "./sandbox-image"
+import path from "path"
+import type { SandboxHandle } from "./handle"
+import { Log } from "../../log"
+import { claxedoBus } from "../../bus"
+import { RUNTIME_PORT, RUNTIME_DIR, WORKSPACE_DIR } from "./image"
+import { env, file, shell } from "./command"
 
 const log = Log.create({ service: "sandbox-runtime" })
 
 const RUNTIME_PKG = "@claxedo/workspace-runtime@dev"
 const RUNTIME_BIN = `node_modules/@claxedo/workspace-runtime/dist/main.mjs`
+const SESSION_MS = 30_000
+const LAUNCH_MS = 30_000
+const URL_MS = 30_000
 
 type ProvisionStep = "acquiring_sandbox" | "cloning" | "installing_runtime" | "starting_runtime" | "waiting_health" | "ready" | "error"
 
@@ -20,6 +25,20 @@ export function emitProvision(workspaceId: string, step: ProvisionStep, extra?: 
   })
 }
 
+async function within<T>(label: string, ms: number, run: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      run(),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 // ── Deploy + Start ──────────────────────────────────────────────────────
 export async function deployAndStart(
   sandbox: SandboxHandle,
@@ -28,24 +47,35 @@ export async function deployAndStart(
     directory?: string
     repoUrl?: string
     envVars?: Record<string, string>
+    onStep?: (step: ProvisionStep, extra?: Record<string, unknown>) => Promise<void> | void
   },
 ): Promise<{ url: string }> {
   const t0 = Date.now()
   const directory = opts.directory || WORKSPACE_DIR
+  const dir = shell(directory)
+  const repo = opts.repoUrl ? shell(opts.repoUrl) : undefined
+  const git = file(directory, ".git")
+  const runtime = file(RUNTIME_DIR, RUNTIME_BIN)
+  const step = async (name: ProvisionStep, extra?: Record<string, unknown>) => {
+    emitProvision(workspaceId, name, extra)
+    await opts.onStep?.(name, extra)
+  }
 
   // 1. Ensure workspace directory exists (sudo for providers where user can't write to /)
-  await sandbox.executeCommand(`mkdir -p ${directory} 2>/dev/null || sudo mkdir -p ${directory} && sudo chown $(whoami) ${directory}`)
+  await sandbox.executeCommand(
+    `mkdir -p ${dir} 2>/dev/null || { sudo mkdir -p ${dir} && sudo chown "$(whoami)" ${dir}; }`,
+  )
 
   // 2. Clone repo if needed
-  if (opts.repoUrl) {
+  if (repo) {
     const checkGit = await sandbox.executeCommand(
-      `test -d ${directory}/.git && echo exists || echo missing`,
+      `test -d ${git} && echo exists || echo missing`,
     )
     if (checkGit.result?.trim() !== "exists") {
-      emitProvision(workspaceId, "cloning", { message: opts.repoUrl })
+      await step("cloning", { message: opts.repoUrl })
       log.info("Cloning repo into sandbox", { workspaceId, repo: opts.repoUrl })
       await sandbox.executeCommand(
-        `git clone --depth 1 ${opts.repoUrl} ${directory}`,
+        `git clone --depth 1 ${repo} ${dir}`,
         120,
       )
     } else {
@@ -55,51 +85,53 @@ export async function deployAndStart(
 
   // 2. Install workspace-runtime from npm if not already present (snapshot has it pre-installed)
   const check = await sandbox.executeCommand(
-    `test -f ${RUNTIME_DIR}/${RUNTIME_BIN} && echo exists || echo missing`,
+    `test -f ${runtime} && echo exists || echo missing`,
   )
   if (check.result?.trim() !== "exists") {
-    emitProvision(workspaceId, "installing_runtime", { message: RUNTIME_PKG })
+    await step("installing_runtime", { message: RUNTIME_PKG })
     log.info("Installing workspace-runtime from npm", { workspaceId, pkg: RUNTIME_PKG })
     await sandbox.executeCommand(
-      `mkdir -p ${RUNTIME_DIR} && cd ${RUNTIME_DIR} && npm init -y 2>&1 && npm install ${RUNTIME_PKG} 2>&1`,
+      `mkdir -p ${shell(RUNTIME_DIR)} && cd ${shell(RUNTIME_DIR)} && npm init -y 2>&1 && npm install ${shell(RUNTIME_PKG)} 2>&1`,
       300,
     )
   }
 
   // 3. Start runtime process
-  emitProvision(workspaceId, "starting_runtime")
+  await step("starting_runtime")
   const sessionId = `wr-${workspaceId}`
   try {
-    await sandbox.createSession(sessionId)
-  } catch {
+    await within("create session", SESSION_MS, () => sandbox.createSession(sessionId))
+  } catch (err) {
     // session may already exist — idempotent
+    const msg = err instanceof Error ? err.message : String(err)
+    if (!msg.toLowerCase().includes("already exists")) throw err
   }
 
-  const env: Record<string, string> = {
+  const vars: Record<string, string> = {
     CLAXEDO_WR_PORT: String(RUNTIME_PORT),
     CLAXEDO_WR_WORKSPACE_ID: workspaceId,
     CLAXEDO_WR_DIRECTORY: directory,
     ...opts.envVars,
   }
 
-  const exports = Object.entries(env)
-    .map(([k, v]) => `export ${k}=${v}`)
-    .join(" && ")
+  const exports = env(vars)
 
-  await sandbox.executeSessionCommand(sessionId, {
-    command: `${exports} && cd ${RUNTIME_DIR} && node ${RUNTIME_BIN}`,
-    runAsync: true,
-  })
+  await within("start runtime", LAUNCH_MS, () =>
+    sandbox.executeSessionCommand(sessionId, {
+      command: `${exports} && cd ${shell(RUNTIME_DIR)} && node ${shell(path.posix.join(".", RUNTIME_BIN))}`,
+      runAsync: true,
+    }),
+  )
 
   // 4. Get service URL
-  emitProvision(workspaceId, "waiting_health")
-  const url = await resolveServiceUrl(sandbox, RUNTIME_PORT)
+  await step("waiting_health")
+  const url = await within("resolve service url", URL_MS, () => resolveServiceUrl(sandbox, RUNTIME_PORT))
 
   // 5. Poll health
   await waitForRemoteHealth(url, 60)
 
   const totalMs = Date.now() - t0
-  emitProvision(workspaceId, "ready", { totalMs })
+  await step("ready", { totalMs })
   log.info("Remote runtime deployed and ready", { workspaceId, url, totalMs })
   return { url }
 }

@@ -2,7 +2,7 @@
  * Tests for sandbox-pool: acquire, release, initPool, startPoolMonitor, shutdown.
  *
  * Uses vi.doMock to replace external dependencies (@daytonaio/sdk, agent-config,
- * sandbox-image, provider) so the REAL pool logic is exercised.
+ * sandbox/image, provider) so the REAL pool logic is exercised.
  */
 
 import { describe, expect, test, beforeEach, afterEach, vi } from "vitest"
@@ -66,12 +66,15 @@ vi.doMock("@daytonaio/sdk", () => ({
 vi.doMock("../agent-config", () => ({
   loadUserConfig: vi.fn(() =>
     Promise.resolve({
-      sandbox: { auth: { daytona: { api_key: "test-key" } } },
+      sandbox: {
+        ...(provider ? { default_provider: provider } : {}),
+        auth: auth ? { daytona: { api_key: auth.api_key } } : {},
+      },
     }),
   ),
 }))
 
-vi.doMock("./sandbox-image", () => ({
+vi.doMock("./sandbox/image", () => ({
   ensureSnapshot: vi.fn(() => Promise.resolve("test-snapshot")),
   RUNTIME_PORT: 4318,
   RUNTIME_DIR: "/opt/workspace-runtime",
@@ -79,10 +82,9 @@ vi.doMock("./sandbox-image", () => ({
   SANDBOX_IMAGE: "ghcr.io/claxedo/test:latest",
 }))
 
-vi.doMock("./provider", () => ({
-  defaultSandboxProvider: vi.fn(() => provider),
-  sandboxAuth: vi.fn((_cfg: any, _provider: string) => auth),
-  sandboxAuthAsync: vi.fn((_cfg: any, _provider: string) => Promise.resolve(auth)),
+vi.doMock("../credentials/registry", () => ({
+  getCredentialByProvider: vi.fn(() => undefined),
+  resolveSecret: vi.fn(() => Promise.resolve(undefined)),
 }))
 
 vi.doMock("../network/resolve", () => ({
@@ -102,7 +104,7 @@ vi.doMock("../log", () => ({
 
 // ── Import real module under test ─────────────────────────────────────────
 
-const pool = await import("./sandbox-pool")
+const pool = await import("./sandbox")
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
@@ -153,6 +155,23 @@ describe("sandbox-pool", () => {
       expect(mockDaytona.create).toHaveBeenCalled()
     })
 
+    test("fails when warm lookup hangs", async () => {
+      ;(mockDaytona.list as any).mockImplementationOnce(() => new Promise(() => {}))
+
+      await expect(pool.acquire("ws-timeout-1", "proj-1")).rejects.toThrow(
+        /daytona warm lookup timed out|daytona list warm sandboxes timed out/,
+      )
+    }, 65_000)
+
+    test("fails when cold create hangs", async () => {
+      warmSandboxes = []
+      ;(mockDaytona.create as any).mockImplementationOnce(() => new Promise(() => {}))
+
+      await expect(pool.acquire("ws-timeout-2", "proj-1")).rejects.toThrow(
+        /daytona create sandbox timed out/,
+      )
+    }, 65_000)
+
     test("skips non-STARTED sandboxes in warm pool", async () => {
       const stopped = makeSandbox("sb-stopped-1", "stopped", { app: "claxedo", pool: "warm", snapshot: "" })
       const started = makeSandbox("sb-started-1", "started", { app: "claxedo", pool: "warm", snapshot: "" })
@@ -177,51 +196,116 @@ describe("sandbox-pool", () => {
         }),
       )
     })
+
+    test("creates a sandbox from an explicit snapshot", async () => {
+      await pool.acquireFromSnapshot("ws-snap", "proj-1", "snap-1")
+
+      expect(mockDaytona.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          snapshot: "snap-1",
+          labels: expect.objectContaining({
+            workspace_id: "ws-snap",
+            project_id: "proj-1",
+          }),
+        }),
+      )
+    })
+
+    test("creates a sandbox from an explicit image", async () => {
+      await pool.acquireFromImage("ws-img", "proj-1", "img-1")
+
+      expect(mockDaytona.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          image: "img-1",
+          labels: expect.objectContaining({
+            workspace_id: "ws-img",
+            project_id: "proj-1",
+          }),
+        }),
+      )
+    })
   })
 
   // ── release ──────────────────────────────────────────────────────
 
   describe("release", () => {
     test("deletes sandbox on release", async () => {
-      const sb = makeSandbox("sb-release-1", "started", {})
-      warmSandboxes = [sb]
-      ;(mockDaytona.get as any).mockImplementation(() => Promise.resolve(sb))
+      const destroy = vi.fn(() => Promise.resolve())
 
-      await pool.release("sb-release-1")
+      await pool.release({
+        provider: "daytona",
+        id: "sb-release-1",
+        executeCommand: vi.fn(),
+        uploadFile: vi.fn(),
+        createSession: vi.fn(),
+        executeSessionCommand: vi.fn(),
+        deleteSession: vi.fn(),
+        getServiceUrl: vi.fn(),
+        refreshActivity: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        destroy,
+        setLabels: vi.fn(),
+      })
 
-      expect(deletedIds).toContain("sb-release-1")
+      expect(destroy).toHaveBeenCalled()
     })
 
     test("release does NOT call sandbox.stop() — deletes entirely", async () => {
-      const sb = makeSandbox("sb-release-2", "started", {})
-      ;(mockDaytona.get as any).mockImplementation(() => Promise.resolve(sb))
+      const stop = vi.fn(() => Promise.resolve())
+      const destroy = vi.fn(() => Promise.resolve())
 
-      await pool.release("sb-release-2")
+      await pool.release({
+        provider: "daytona",
+        id: "sb-release-2",
+        executeCommand: vi.fn(),
+        uploadFile: vi.fn(),
+        createSession: vi.fn(),
+        executeSessionCommand: vi.fn(),
+        deleteSession: vi.fn(),
+        getServiceUrl: vi.fn(),
+        refreshActivity: vi.fn(),
+        start: vi.fn(),
+        stop,
+        destroy,
+        setLabels: vi.fn(),
+      })
 
-      expect(sb.stop).not.toHaveBeenCalled()
-      expect(deletedIds).toContain("sb-release-2")
+      expect(stop).not.toHaveBeenCalled()
+      expect(destroy).toHaveBeenCalled()
     })
 
     test("release handles missing sandbox gracefully", async () => {
-      ;(mockDaytona.get as any).mockImplementation(() =>
-        Promise.reject(new Error("not found")),
-      )
+      const destroy = vi.fn(() => Promise.reject(new Error("not found")))
 
       // Should not throw
-      await pool.release("nonexistent")
+      await pool.release({
+        provider: "daytona",
+        id: "nonexistent",
+        executeCommand: vi.fn(),
+        uploadFile: vi.fn(),
+        createSession: vi.fn(),
+        executeSessionCommand: vi.fn(),
+        deleteSession: vi.fn(),
+        getServiceUrl: vi.fn(),
+        refreshActivity: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        destroy,
+        setLabels: vi.fn(),
+      })
     })
   })
 
   // ── initPool ────────────────────────────────────────────────────
 
   describe("initPool", () => {
-    test("calls ensureSnapshot and replenishes pool", async () => {
+    test("calls ensureSnapshot and replenishes pool with one warm sandbox", async () => {
       warmSandboxes = []
 
       await pool.initPool()
 
-      // Should have created sandboxes to reach POOL_TARGET (3)
-      expect(mockDaytona.create).toHaveBeenCalled()
+      expect(mockDaytona.create).toHaveBeenCalledTimes(1)
     })
 
     test("no-ops when Daytona auth is missing", async () => {
@@ -237,6 +321,20 @@ describe("sandbox-pool", () => {
 
       await pool.initPool()
 
+      expect(mockDaytona.create).not.toHaveBeenCalled()
+    })
+
+    test("prunes excess warm sandboxes down to one", async () => {
+      warmSandboxes = [
+        makeSandbox("sb-warm-1", "started", { app: "claxedo", pool: "warm", snapshot: "" }),
+        makeSandbox("sb-warm-2", "started", { app: "claxedo", pool: "warm", snapshot: "" }),
+        makeSandbox("sb-warm-3", "started", { app: "claxedo", pool: "warm", snapshot: "" }),
+      ]
+
+      await pool.initPool()
+
+      expect(mockDaytona.delete).toHaveBeenCalledTimes(2)
+      expect(deletedIds).toEqual(["sb-warm-2", "sb-warm-3"])
       expect(mockDaytona.create).not.toHaveBeenCalled()
     })
   })

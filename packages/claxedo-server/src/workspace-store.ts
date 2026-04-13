@@ -184,6 +184,13 @@ function upsert(ws: Workspace) {
   return ws
 }
 
+function visible(ws: Workspace) {
+  if (ws.kind !== "cloud") return true
+  if (ws.status === "failed") return false
+  if (ws.status !== "pending_sandbox") return true
+  return !!ws.sandbox_id || !!ws.sandbox_url
+}
+
 export async function listWorkspaces() {
   await boot()
   return [...byId.values()].sort((a, b) => b.updated_at - a.updated_at)
@@ -338,6 +345,33 @@ export async function bindWorkspace(id: string, dir: string) {
   return next
 }
 
+export async function updateWorkspace(
+  id: string,
+  patch: Partial<Pick<Workspace, "project_name" | "workspace_name" | "provider" | "repo_url" | "sandbox_id" | "remote_directory" | "sandbox_url" | "status">>,
+) {
+  await boot()
+  const ws = byId.get(id)
+  if (!ws) return
+  const next = upsert({
+    ...ws,
+    ...patch,
+    updated_at: Date.now(),
+  })
+  await save()
+  return next
+}
+
+export async function deleteWorkspace(id: string) {
+  await boot()
+  const ws = byId.get(id)
+  if (!ws) return false
+  byDir.delete(ws.directory)
+  byId.delete(id)
+  await save()
+  log.info("Workspace deleted", { workspaceId: id, directory: ws.directory })
+  return true
+}
+
 export async function deleteWorkspaceByDirectory(dir: string) {
   await boot()
   const key = byDir.get(norm(dir))
@@ -369,6 +403,7 @@ export async function listProjects() {
   await boot()
   const map = new Map<string, Workspace[]>()
   for (const row of byId.values()) {
+    if (!visible(row)) continue
     const key = row.project_id ?? row.id
     const list = map.get(key)
     if (list) {

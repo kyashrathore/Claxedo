@@ -5,26 +5,32 @@
 
 import { resolve4 } from "dns/promises"
 import { Log } from "../log"
-import { CONTROL_PLANE_HOSTS, DEFAULT_ALLOWLIST, flattenDefaultAllowlist } from "./types"
+import { CONTROL_PLANE_HOSTS, DEFAULT_ALLOWLIST } from "./types"
 
 const log = Log.create({ service: "network-resolve" })
+const dns = ["1.1.1.1/32", "8.8.8.8/32"] as const
+
+export type PolicyResolveMode = "full" | "cidr"
+
+function loopback(host: string) {
+  return host === "localhost" || host === "127.0.0.1"
+}
 
 async function hostToCidrs(host: string): Promise<string[]> {
   if (/^\d+\.\d+\.\d+\.\d+(\/\d+)?$/.test(host)) {
     return [host.includes("/") ? host : `${host}/32`]
   }
+  if (loopback(host)) {
+    return ["127.0.0.1/32"]
+  }
+  const name = host.startsWith("*.") ? host.slice(2) : host
   try {
-    const ips = await resolve4(host)
+    const ips = await resolve4(name)
     return ips.map((ip) => `${ip}/32`)
   } catch {
     log.warn("Failed to resolve hostname for network policy", { host })
     return []
   }
-}
-
-async function domainToCidrs(pattern: string): Promise<string[]> {
-  const base = pattern.replace(/^\*\./, "")
-  return hostToCidrs(base)
 }
 
 export interface PolicyEntry {
@@ -36,51 +42,81 @@ export interface SandboxNetworkPolicy {
   mode: "allow-all" | "restricted"
   hosts: string[]
   cidrs: string[]
+  rules: {
+    target: string
+    hosts: string[]
+    cidrs: string[]
+  }[]
 }
 
 function cidr(host: string) {
   return /^\d+\.\d+\.\d+\.\d+\/\d+$/.test(host)
 }
 
-async function addHost(hosts: Set<string>, cidrs: Set<string>, host: string) {
-  if (!host) return
-  hosts.add(host)
-  for (const row of await hostToCidrs(host)) cidrs.add(row)
-}
-
-async function addDomain(hosts: Set<string>, cidrs: Set<string>, host: string) {
-  if (!host) return
-  hosts.add(host)
-  for (const row of await domainToCidrs(host)) cidrs.add(row)
-}
-
 export async function resolveSandboxNetworkPolicy(
   entries: PolicyEntry[],
   serverUrl?: string,
+  mode: PolicyResolveMode = "full",
 ): Promise<SandboxNetworkPolicy> {
   const hosts = new Set<string>()
   const cidrs = new Set<string>()
+  const rules: SandboxNetworkPolicy["rules"] = []
+
+  async function addRule(target: string, ruleHosts: string[]) {
+    const nextHosts = new Set<string>()
+    const nextCidrs = new Set<string>()
+    for (const host of ruleHosts) {
+      if (cidr(host)) {
+        nextCidrs.add(host)
+        cidrs.add(host)
+        continue
+      }
+      nextHosts.add(host)
+      for (const row of await hostToCidrs(host)) {
+        nextCidrs.add(row)
+        cidrs.add(row)
+      }
+    }
+    if (mode === "cidr" && nextCidrs.size === 0) {
+      log.warn("Skipping non-CIDR-resolvable network policy target for cidr-only provider", { target })
+      return
+    }
+    for (const host of nextHosts) hosts.add(host)
+    rules.push({
+      target,
+      hosts: [...nextHosts],
+      cidrs: [...nextCidrs],
+    })
+  }
 
   // Always include control-plane
-  for (const host of CONTROL_PLANE_HOSTS) await addHost(hosts, cidrs, host)
+  for (const host of CONTROL_PLANE_HOSTS) await addRule(host, [host])
+
+  // Daytona's CIDR-only firewall blocks DNS unless we explicitly allow
+  // the resolver IPs used by the sandbox image.
+  if (mode === "cidr" && entries.length > 0) {
+    await addRule("dns", [...dns])
+  }
 
   if (serverUrl) {
-    try { await addHost(hosts, cidrs, new URL(serverUrl).hostname) } catch {}
+    try {
+      const host = new URL(serverUrl).hostname
+      await addRule(host, [host])
+    } catch {}
   }
 
   // User-defined entries
   for (const entry of entries) {
     switch (entry.kind) {
       case "host":
-        if (cidr(entry.target)) { cidrs.add(entry.target); continue }
-        await addHost(hosts, cidrs, entry.target)
+        await addRule(entry.target, [entry.target])
         continue
       case "domain":
-        await addDomain(hosts, cidrs, entry.target)
+        await addRule(entry.target, [entry.target])
         continue
       case "group": {
         const items = DEFAULT_ALLOWLIST[entry.target] ?? []
-        for (const h of items) await addHost(hosts, cidrs, h)
+        for (const item of items) await addRule(item, [item])
         continue
       }
     }
@@ -90,6 +126,7 @@ export async function resolveSandboxNetworkPolicy(
     mode: entries.length > 0 ? "restricted" : "allow-all",
     hosts: [...hosts],
     cidrs: [...cidrs],
+    rules,
   }
 }
 

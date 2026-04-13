@@ -628,6 +628,26 @@ describe("control plane integration", () => {
     expect(await store.getWorkspaceByDirectory(created.directory)).toBeUndefined()
   })
 
+  test("file status returns quickly for a deleted worktree directory", async () => {
+    const ws = await repo("worktree-status-missing")
+
+    const create = await fetch(`${base()}/experimental/worktree?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    })
+    expect(create.status).toBe(200)
+    const created = await create.json() as { directory: string }
+
+    await fs.rm(created.directory, { recursive: true, force: true })
+
+    const res = await fetch(`${base()}/file/status?directory=${encodeURIComponent(created.directory)}`, {
+      signal: AbortSignal.timeout(1_000),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([])
+  })
+
   test("proxies cloud session routes through workspace-runtime", async () => {
     const ws = await workspace("cloud-session", "cloud")
     const res = await fetch(`${base()}/session?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`)

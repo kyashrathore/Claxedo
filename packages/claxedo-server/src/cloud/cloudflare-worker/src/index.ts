@@ -99,23 +99,37 @@ export default {
         return json({ url: result.url, port: result.port })
       }
 
-      case "network": {
-        if (typeof body.enableInternet === "boolean") sandbox.enableInternet = body.enableInternet
-        if (Array.isArray(body.allowedHosts)) {
-          sandbox.allowedHosts = body.allowedHosts
-          await sandbox.setAllowedHosts(body.allowedHosts).catch(() => undefined)
+        case "network": {
+          if (typeof body.enableInternet === "boolean") sandbox.enableInternet = body.enableInternet
+          if (Array.isArray(body.allowedHosts)) {
+            sandbox.allowedHosts = body.allowedHosts
+            await sandbox.setAllowedHosts(body.allowedHosts).catch(() => undefined)
         }
         if (Array.isArray(body.deniedHosts)) {
           sandbox.deniedHosts = body.deniedHosts
           await sandbox.setDeniedHosts(body.deniedHosts).catch(() => undefined)
         }
-        return json({
-          ok: true,
-          enableInternet: sandbox.enableInternet,
-          allowedHosts: sandbox.allowedHosts ?? [],
-          deniedHosts: sandbox.deniedHosts ?? [],
-        })
-      }
+          return json({
+            ok: true,
+            enableInternet: sandbox.enableInternet,
+            allowedHosts: sandbox.allowedHosts ?? [],
+            deniedHosts: sandbox.deniedHosts ?? [],
+          })
+        }
+
+        case "create-backup": {
+          const backup = await sandbox.createBackup({
+            dir: body.dir,
+            name: body.name,
+            ttl: body.ttl,
+          })
+          return json({ id: backup.id })
+        }
+
+        case "restore-backup": {
+          await sandbox.restoreBackup(body.backup)
+          return json({ ok: true })
+        }
 
       default:
         return json({ error: `unknown action: ${action}` }, 404)

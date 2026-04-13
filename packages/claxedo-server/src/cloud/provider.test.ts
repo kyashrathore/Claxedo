@@ -1,5 +1,11 @@
-import { describe, expect, test, afterAll } from "vitest"
-import { sandboxProvider, defaultSandboxProvider, sandboxAuth, listSandboxProviders } from "./provider"
+import { afterAll, describe, expect, test, vi } from "vitest"
+
+vi.mock("../credentials/registry", () => ({
+  getCredentialByProvider: vi.fn(() => undefined),
+  resolveSecret: vi.fn(() => Promise.resolve(undefined)),
+}))
+
+import { sandboxProvider, defaultSandboxProvider, sandboxAuth, listSandboxProviders } from "./sandbox"
 import type { SandboxConfig } from "./types"
 
 // Save and clear env vars that could interfere
@@ -8,6 +14,8 @@ const envKeys = [
   "MODAL_TOKEN_ID",
   "MODAL_TOKEN_SECRET",
   "VERCEL_TOKEN",
+  "VERCEL_TEAM_ID",
+  "VERCEL_PROJECT_ID",
   "CLOUDFLARE_API_TOKEN",
   "CLOUDFLARE_SANDBOX_WORKER_URL",
 ] as const
@@ -114,10 +122,10 @@ describe("sandbox provider", () => {
 
   test("returns vercel auth from config", () => {
     const cfg: SandboxConfig = {
-      auth: { vercel: { access_token: "vt_abc123" } },
+      auth: { vercel: { access_token: "vt_abc123", team_id: "team_123", project_id: "prj_123" } },
     }
     const auth = sandboxAuth(cfg, "vercel")
-    expect(auth).toEqual({ access_token: "vt_abc123" })
+    expect(auth).toEqual({ access_token: "vt_abc123", team_id: "team_123", project_id: "prj_123" })
   })
 
   test("returns undefined for vercel when no token configured or in env", () => {
@@ -127,11 +135,15 @@ describe("sandbox provider", () => {
 
   test("falls back to VERCEL_TOKEN env var", () => {
     process.env.VERCEL_TOKEN = "vt_from_env"
+    process.env.VERCEL_TEAM_ID = "team_env"
+    process.env.VERCEL_PROJECT_ID = "prj_env"
     try {
       const auth = sandboxAuth({}, "vercel")
-      expect(auth).toEqual({ access_token: "vt_from_env" })
+      expect(auth).toEqual({ access_token: "vt_from_env", team_id: "team_env", project_id: "prj_env" })
     } finally {
       delete process.env.VERCEL_TOKEN
+      delete process.env.VERCEL_TEAM_ID
+      delete process.env.VERCEL_PROJECT_ID
     }
   })
 
@@ -220,7 +232,11 @@ describe("sandbox provider", () => {
     const vercel = result.providers.find((p) => p.id === "vercel")!
     expect(vercel.configured).toBe(false)
     expect(vercel.default).toBe(false)
-    expect(vercel.fields).toEqual([{ key: "access_token", label: "Access Token", secret: true }])
+    expect(vercel.fields).toEqual([
+      { key: "access_token", label: "Access Token", secret: true },
+      { key: "team_id", label: "Team ID" },
+      { key: "project_id", label: "Project ID" },
+    ])
 
     const cloudflare = result.providers.find((p) => p.id === "cloudflare")!
     expect(cloudflare.configured).toBe(false)

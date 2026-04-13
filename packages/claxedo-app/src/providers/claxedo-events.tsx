@@ -61,7 +61,7 @@ export type ClaxedoEvent =
   | {
       type: "provision"
       workspaceId: string
-      step: "acquiring_sandbox" | "cloning" | "uploading_runtime" | "starting_runtime" | "waiting_health" | "ready" | "error"
+      step: "acquiring_sandbox" | "cloning" | "installing_runtime" | "uploading_runtime" | "starting_runtime" | "waiting_health" | "ready" | "error"
       message?: string
       totalMs?: number
       ts: number

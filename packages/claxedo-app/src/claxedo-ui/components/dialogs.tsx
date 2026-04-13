@@ -1,11 +1,9 @@
 export { DialogEditProject } from "./dialog-edit-project"
 
-import { createMemo, createSignal, onMount, Show } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createMemo, createSignal, onMount } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useLanguage } from "@/context/language"
-import { useGlobalSDK } from "@/context/global-sdk"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/util/path"
 import type { Session } from "@opencode-ai/sdk/v2"
@@ -168,36 +166,12 @@ export interface DialogDeleteWorkspaceProps {
 
 export function DialogDeleteWorkspace(props: DialogDeleteWorkspaceProps) {
   const language = useLanguage()
-  const globalSDK = useGlobalSDK()
 
   // Only show "Destroy Sandbox" for cloud main workspaces
   const isCloudSandbox = () => props.isMain && props.isCloud
 
   const name = createMemo(() => getFilename(props.directory))
   const [deleting, setDeleting] = createSignal(false)
-  const [data, setData] = createStore({
-    status: "loading" as "loading" | "ready" | "error",
-    dirty: false,
-  })
-
-  onMount(() => {
-    if (isCloudSandbox()) {
-       setData({ status: "ready", dirty: true })
-       return
-    }
-
-    // We'll just check status if possible, or skip if complex dependency needed
-    globalSDK.client.file
-      .status({ directory: props.directory })
-      .then((x) => {
-        const files = x.data ?? []
-        const dirty = files.length > 0
-        setData({ status: "ready", dirty })
-      })
-      .catch(() => {
-        setData({ status: "error", dirty: false })
-      })
-  })
 
   const handleDelete = async () => {
     setDeleting(true)
@@ -213,13 +187,6 @@ export function DialogDeleteWorkspace(props: DialogDeleteWorkspaceProps) {
       .finally(() => setDeleting(false))
   }
 
-  const description = () => {
-    if (data.status === "loading") return language.t("workspace.status.checking")
-    if (data.status === "error") return language.t("workspace.status.error")
-    if (!data.dirty) return language.t("workspace.status.clean")
-    return language.t("workspace.status.dirty")
-  }
-
   return (
     <Dialog title={isCloudSandbox() ? "Destroy Sandbox" : language.t("workspace.delete.title")} fit>
       <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
@@ -230,9 +197,6 @@ export function DialogDeleteWorkspace(props: DialogDeleteWorkspaceProps) {
               : language.t("workspace.delete.confirm", { name: name() })
             }
           </span>
-          <Show when={!isCloudSandbox()}>
-            <span class="text-12-regular text-text-weak">{description()}</span>
-          </Show>
         </div>
         <div class="flex justify-end gap-2">
           <Button variant="ghost" size="large" onClick={props.onClose} disabled={deleting()}>
@@ -242,7 +206,7 @@ export function DialogDeleteWorkspace(props: DialogDeleteWorkspaceProps) {
             variant="primary"
             size="large"
             /* TODO: Add danger styling manually since variant is not supported */
-            disabled={deleting() || (!isCloudSandbox() && data.status === "loading")}
+            disabled={deleting()}
             onClick={handleDelete}
           >
             {isCloudSandbox() ? "Destroy Sandbox" : language.t("workspace.delete.button")}

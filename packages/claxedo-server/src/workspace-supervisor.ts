@@ -1,18 +1,25 @@
 import path from "path"
+import { randomUUID } from "crypto"
 import { spawn, type ChildProcess } from "child_process"
 import { TextDecoder } from "util"
-import type { SandboxHandle } from "./cloud/sandbox-handle"
+import type { SandboxHandle } from "./cloud/sandbox/handle"
+import type { WorkspaceLease } from "./cloud/authority-types"
+import type { SandboxProviderID } from "./cloud/types"
 import { claxedoBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "./bus"
-import { getRuntimeConfigSnapshot, type RuntimeConfigSnapshot } from "./agent-config"
+import { getRuntimeConfigSnapshot, type RuntimeConfigSnapshot, loadUserConfig } from "./agent-config"
 import { Log } from "./log"
 import { findFreePort } from "./process/portpick"
-import { getWorkspace, type Workspace } from "./workspace-store"
-import { WORKSPACE_DIR } from "./cloud/sandbox-image"
+import { getWorkspace, updateWorkspace, type Workspace } from "./workspace-store"
+import { WORKSPACE_DIR } from "./cloud/sandbox/image"
 import { getHarnessMode } from "./architecture"
 import { listPolicies } from "./network/policy"
 import { resolveSandboxNetworkPolicy } from "./network/resolve"
-import * as pool from "./cloud/sandbox-pool"
-import * as sandboxRuntime from "./cloud/sandbox-runtime"
+import * as pool from "./cloud/sandbox"
+import * as sandboxRuntime from "./cloud/sandbox/runtime"
+import * as authority from "./cloud/authority"
+import * as lifecycle from "./cloud/lifecycle"
+import { defaultSandboxProvider } from "./cloud/sandbox"
+import { insertSnapshot } from "./storage/prepared-image.sql"
 
 const log = Log.create({ service: "workspace-supervisor" })
 
@@ -24,6 +31,13 @@ type Opts = {
   opencode_url: string
 }
 
+/**
+ * In-memory runtime cache — disposable transport holder.
+ *
+ * The durable authority (SQLite) owns canonical lease state.
+ * This in-memory State holds the things that can't be persisted:
+ * child process handles, abort controllers, sandbox handles, timers.
+ */
 type State = {
   ws: Workspace
   child?: ChildProcess
@@ -35,6 +49,7 @@ type State = {
   crashes: number
   retry_at: number
   active: number
+  holds: string[]
   start?: Promise<State>
   stop?: ReturnType<typeof setTimeout>
   events?: AbortController
@@ -73,6 +88,7 @@ function state(ws: Workspace) {
     crashes: 0,
     retry_at: 0,
     active: 0,
+    holds: [],
   }
   runtimes.set(ws.id, created)
   return created
@@ -135,6 +151,71 @@ function clearStop(state: State) {
   if (!state.stop) return
   clearTimeout(state.stop)
   state.stop = undefined
+}
+
+function releaseHolds(state: State) {
+  for (const id of state.holds.splice(0)) {
+    authority.releaseHold(id)
+  }
+  state.active = 0
+}
+
+async function captureSnapshot(state: State, reason: string) {
+  if (!state.remote || !state.sandbox?.snapshotFilesystem) return
+  const caps = lifecycle.getProviderCapabilities(state.sandbox.provider)
+  if (!caps.supports_filesystem_snapshot) return
+  try {
+    const snap = await state.sandbox.snapshotFilesystem()
+    const lease = authority.updateLease(state.ws.id, {
+      accel_runtime_snapshot_id: snap,
+      provider_snapshot_id: snap,
+    })
+    insertSnapshot({
+      id: randomUUID(),
+      workspace_id: state.ws.id,
+      runtime_snapshot_id: snap,
+      provider_snapshot_id: snap,
+      base_prepared_image_id: lease?.accel_prepared_image_id ?? lease?.accel_base_image_id ?? null,
+      source_sha: null,
+      reason,
+      size_bytes: null,
+      status: "ready",
+      created_at: now(),
+    })
+  } catch (err) {
+    log.warn("Failed to capture workspace snapshot", {
+      workspaceId: state.ws.id,
+      provider: state.sandbox.provider,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+function seedLease(workspaceId: string, provider: SandboxProviderID): WorkspaceLease {
+  const ts = now()
+  return {
+    workspace_id: workspaceId,
+    lease_id: "",
+    epoch: 0,
+    status: "pending",
+    provider,
+    provider_object_id: null,
+    provider_snapshot_id: null,
+    sandbox_id: null,
+    runtime_url: null,
+    retry_count: 0,
+    next_retry_at: null,
+    last_heartbeat_at: null,
+    last_activity_at: null,
+    last_health_failure_at: null,
+    last_error: null,
+    compute_class: null,
+    accel_base_image_id: null,
+    accel_prepared_image_id: null,
+    accel_runtime_snapshot_id: null,
+    created_at: ts,
+    updated_at: ts,
+  }
 }
 
 function scheduleStop(state: State) {
@@ -258,30 +339,146 @@ async function streamGlobal(state: State) {
 }
 
 async function startRemoteRuntime(s: State): Promise<State> {
+  const cfg = await loadUserConfig()
+  const provider = s.ws.provider ?? defaultSandboxProvider(cfg.sandbox)
+  const caps = lifecycle.getProviderCapabilities(provider)
+  const prev = authority.getLease(s.ws.id) ?? seedLease(s.ws.id, provider)
+  let action =
+    prev.status === "ready" && prev.sandbox_id && caps.supports_persistent_resume
+      ? ({ action: "resume", reason: `resume sandbox ${prev.sandbox_id}` } as const)
+      : lifecycle.decideStart(prev, caps, now())
+
+  if (
+    action.action === "skip" &&
+    s.status !== "ready"
+  ) {
+    action = prev.sandbox_id && caps.supports_persistent_resume
+      ? { action: "resume", reason: `resume sandbox ${prev.sandbox_id}` }
+      : { action: "start_fresh", reason: `reconcile ${prev.status} lease` }
+  }
+
+  if (action.action === "wait") {
+    const ms = Math.max(0, action.until - now())
+    if (ms > 0) await sleep(ms)
+    return startRemoteRuntime(s)
+  }
+
+  if (action.action === "mark_failed") {
+    lifecycle.applyDecision({ workspaceId: s.ws.id, lease: prev }, action)
+    throw new Error(action.reason)
+  }
+
+  const { lease } = authority.acquire(s.ws.id, {
+    provider,
+    compute_class: null,
+  })
+  const run = lifecycle.applyDecision({ workspaceId: s.ws.id, lease }, action)
+  if (!run.ok) throw new Error(run.error)
+
   s.status = "starting"
   s.used_at = now()
 
   try {
     sandboxRuntime.emitProvision(s.ws.id, "acquiring_sandbox")
+    const pending = await updateWorkspace(s.ws.id, {
+      status: "acquiring_sandbox",
+    })
+    if (pending) s.ws = pending
 
     const rows = listPolicies(s.ws.id)
-    const net = rows.length > 0
+    const net = provider === "daytona"
+      ? undefined
+      : rows.length > 0
       ? await resolveSandboxNetworkPolicy(
           rows.map((e) => ({ target: e.target, kind: e.kind })),
           needOpts().server_url,
+          "full",
         )
       : undefined
 
-    const sandbox = s.sandbox ?? await pool.acquire(s.ws.id, s.ws.project_id!, net)
+    let sandbox = s.sandbox
+
+    if (action.action === "resume" && lease.sandbox_id) {
+      if (!sandbox || sandbox.id !== lease.sandbox_id) {
+        sandbox = await pool.attach(lease.sandbox_id, provider).catch(() => undefined)
+      }
+      if (sandbox) {
+        await sandbox.start().catch(() => {})
+        if (net && sandbox.setNetworkPolicy) {
+          await sandbox.setNetworkPolicy(net)
+        }
+      }
+    }
+
+    if (!sandbox && action.action === "restore_snapshot") {
+      sandbox = await pool.acquireFromSnapshot(
+        s.ws.id,
+        s.ws.project_id!,
+        action.snapshot_id,
+        net,
+        provider,
+      ).catch((err) => {
+        authority.updateLease(s.ws.id, {
+          accel_runtime_snapshot_id: null,
+          provider_snapshot_id: null,
+        })
+        log.warn("Failed to restore workspace snapshot, falling back to fresh sandbox", {
+          workspaceId: s.ws.id,
+          provider,
+          snapshotId: action.snapshot_id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        return undefined
+      })
+    }
+
+    if (!sandbox && action.action === "start_prepared") {
+      sandbox = await pool.acquireFromImage(
+        s.ws.id,
+        s.ws.project_id!,
+        action.image_id,
+        net,
+        provider,
+      ).catch((err) => {
+        authority.updateLease(s.ws.id, {
+          accel_prepared_image_id: null,
+        })
+        log.warn("Failed to start workspace from prepared image, falling back to fresh sandbox", {
+          workspaceId: s.ws.id,
+          provider,
+          imageId: action.image_id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        return undefined
+      })
+    }
+
+    if (!sandbox) {
+      sandbox = await pool.acquire(s.ws.id, s.ws.project_id!, net, provider)
+    }
+
     s.sandbox = sandbox
     s.sandbox_id = sandbox.id
     s.remote = true
+
+    // Record sandbox assignment on authority
+    lifecycle.recordSandboxAssigned(s.ws.id, sandbox.id, null, sandbox.id)
+    const assigned = await updateWorkspace(s.ws.id, {
+      status: "starting_runtime",
+      sandbox_id: sandbox.id,
+    })
+    if (assigned) s.ws = assigned
 
     const { url } = await sandboxRuntime.deployAndStart(sandbox, s.ws.id, {
       directory: s.ws.remote_directory || WORKSPACE_DIR,
       repoUrl: s.ws.repo_url,
       envVars: {
         CLAXEDO_HARNESS_MODE: getHarnessMode(),
+      },
+      onStep: async (step) => {
+        if (step === "ready" || step === "error") return
+        const next = await updateWorkspace(s.ws.id, { status: step })
+        if (next) s.ws = next
       },
     })
     s.url = url
@@ -292,6 +489,16 @@ async function startRemoteRuntime(s: State): Promise<State> {
     s.started_at = now()
     s.crashes = 0
     s.retry_at = 0
+
+    const ws = await updateWorkspace(s.ws.id, {
+      status: "ready",
+      sandbox_id: sandbox.id,
+      sandbox_url: url,
+    })
+    if (ws) s.ws = ws
+
+    // Record ready on authority
+    lifecycle.recordReady(s.ws.id, url)
 
     void streamEvents(s)
     void streamGlobal(s)
@@ -311,6 +518,10 @@ async function startRemoteRuntime(s: State): Promise<State> {
     s.retry_at = now() + Math.min(BACKOFF_MAX_MS, 1_000 * 2 ** Math.max(0, s.crashes - 1))
     s.status = "backoff"
     const message = err instanceof Error ? err.message : String(err)
+
+    // Record failure on authority
+    lifecycle.recordStartFailure(s.ws.id, message)
+
     sandboxRuntime.emitProvision(s.ws.id, "error", { message })
     log.warn("Remote runtime start failed", {
       workspaceId: s.ws.id,
@@ -331,6 +542,8 @@ function startRemoteHealthMonitor(s: State) {
       })
       if (res.ok) {
         s.sandbox?.refreshActivity().catch(() => {})
+        // Update activity on authority
+        authority.updateLease(s.ws.id, { last_activity_at: now() })
         return
       }
     } catch {}
@@ -340,6 +553,24 @@ function startRemoteHealthMonitor(s: State) {
     s.retry_at = now() + Math.min(BACKOFF_MAX_MS, 1_000 * 2 ** Math.max(0, s.crashes - 1))
     clearInterval(s.health_monitor)
     s.health_monitor = undefined
+
+    const lease = authority.getLease(s.ws.id)
+    if (!lease) return
+    const action = lifecycle.decideHealthFailure(
+      lease,
+      lifecycle.getProviderCapabilities(lease.provider),
+      now(),
+    )
+
+    if (action.action === "mark_failed") {
+      lifecycle.applyDecision({ workspaceId: s.ws.id, lease }, action)
+      return
+    }
+
+    const run = lifecycle.recordStartFailure(s.ws.id, "workspace health check failed")
+    if (run.ok) {
+      s.retry_at = run.lease.next_retry_at ?? s.retry_at
+    }
   }, 15_000)
 }
 
@@ -504,6 +735,10 @@ export function getSandbox(workspaceId: string) {
   return runtimes.get(workspaceId)?.sandbox
 }
 
+export function getWorkspaceRuntimeStatus(workspaceId: string) {
+  return runtimes.get(workspaceId)?.status
+}
+
 export function markRuntimeUse(workspaceId: string) {
   const item = runtimes.get(workspaceId)
   if (!item) return
@@ -517,6 +752,10 @@ export function holdRuntime(workspaceId: string) {
   item.active += 1
   item.used_at = now()
   clearStop(item)
+
+  // Also record a durable hold so the authority knows
+  const hold = authority.acquireHold(workspaceId, "stream", `hold-${item.active}`, "runtime hold")
+  item.holds.push(hold.hold_id)
 }
 
 export function releaseRuntime(workspaceId: string) {
@@ -525,6 +764,10 @@ export function releaseRuntime(workspaceId: string) {
   item.active = Math.max(0, item.active - 1)
   item.used_at = now()
   scheduleStop(item)
+
+  const id = item.holds.pop()
+  if (id) authority.releaseHold(id)
+  authority.cleanExpiredHolds(workspaceId)
 }
 
 export function rememberPty(id: string, workspaceId: string) {
@@ -560,6 +803,7 @@ export async function stopRuntime(workspaceId: string, reason = "manual") {
   const child = item.child
   const isRemote = item.remote
   const sandbox = item.sandbox
+  const caps = sandbox ? lifecycle.getProviderCapabilities(sandbox.provider) : undefined
   item.status = "stopped"
   clearStop(item)
   if (item.health_monitor) {
@@ -570,13 +814,31 @@ export async function stopRuntime(workspaceId: string, reason = "manual") {
   item.events = undefined
   item.global?.abort()
   item.global = undefined
+  releaseHolds(item)
   item.child = undefined
   item.url = undefined
   item.port = undefined
   item.start = undefined
+  const next = await updateWorkspace(item.ws.id, { status: "stopped" }).catch(() => undefined)
+  if (next) item.ws = next
 
   if (isRemote && sandbox) {
+    await captureSnapshot(item, reason)
     await sandboxRuntime.stopRemoteRuntime(sandbox, workspaceId)
+    if (caps?.supports_explicit_stop) {
+      await sandbox.stop().catch((err) => {
+        log.warn("Failed to stop sandbox after runtime shutdown", {
+          workspaceId,
+          sandboxId: sandbox.id,
+          provider: sandbox.provider,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    }
+    if (!caps?.supports_persistent_resume) {
+      item.sandbox = undefined
+      item.sandbox_id = undefined
+    }
   } else if (child) {
     await new Promise<void>((resolve) => {
       let done = false
@@ -599,11 +861,61 @@ export async function stopRuntime(workspaceId: string, reason = "manual") {
       } catch {}
     })
   }
+
+  lifecycle.recordStopped(workspaceId)
+  if (isRemote && sandbox && !caps?.supports_persistent_resume) {
+    authority.updateLease(workspaceId, {
+      sandbox_id: null,
+      provider_object_id: null,
+    })
+  }
   log.info("workspace-runtime stopped", { workspaceId, reason })
+}
+
+export async function discardWorkspaceRuntime(workspaceId: string, reason = "discarded") {
+  const item = runtimes.get(workspaceId)
+  const sandbox = item?.sandbox
+  if (item) {
+    await stopRuntime(workspaceId, reason).catch((err) => {
+      log.warn("workspace-runtime discard stop failed", {
+        workspaceId,
+        reason,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+    releaseHolds(item)
+  }
+  if (sandbox) {
+    await sandbox.destroy().catch((err) => {
+      log.warn("workspace-runtime discard destroy failed", {
+        workspaceId,
+        sandboxId: sandbox.id,
+        provider: sandbox.provider,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }
+  runtimes.delete(workspaceId)
+  authority.releaseLease(workspaceId, reason)
 }
 
 export async function shutdownWorkspaceSupervisor() {
   await Promise.allSettled([...runtimes.keys()].map((id) => stopRuntime(id, "shutdown")))
+}
+
+/**
+ * Query the durable lease state for a workspace.
+ * Unlike the in-memory cache, this survives process restarts.
+ */
+export function getWorkspaceLease(workspaceId: string) {
+  return authority.getLease(workspaceId)
+}
+
+/**
+ * List all durable workspace leases (active and stopped).
+ */
+export function listWorkspaceLeases() {
+  return authority.listLeases()
 }
 
 /**
@@ -622,6 +934,7 @@ export function injectRuntime(ws: Workspace, url: string) {
     crashes: 0,
     retry_at: 0,
     active: 0,
+    holds: [],
     remote: true,
   }
   runtimes.set(ws.id, s)

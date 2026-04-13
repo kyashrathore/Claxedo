@@ -1475,34 +1475,10 @@ export default function Layout(props: ParentProps) {
 
   function DialogDeleteWorkspace(props: { root: string; directory: string }) {
     const name = createMemo(() => getFilename(props.directory))
-    const [data, setData] = createStore({
-      status: "loading" as "loading" | "ready" | "error",
-      dirty: false,
-    })
-
-    onMount(() => {
-      globalSDK.client.file
-        .status({ directory: props.directory })
-        .then((x) => {
-          const files = x.data ?? []
-          const dirty = files.length > 0
-          setData({ status: "ready", dirty })
-        })
-        .catch(() => {
-          setData({ status: "error", dirty: false })
-        })
-    })
 
     const handleDelete = () => {
       dialog.close()
       void deleteWorkspace(props.root, props.directory)
-    }
-
-    const description = () => {
-      if (data.status === "loading") return language.t("workspace.status.checking")
-      if (data.status === "error") return language.t("workspace.status.error")
-      if (!data.dirty) return language.t("workspace.status.clean")
-      return language.t("workspace.status.dirty")
     }
 
     return (
@@ -1512,13 +1488,12 @@ export default function Layout(props: ParentProps) {
             <span class="text-14-regular text-text-strong">
               {language.t("workspace.delete.confirm", { name: name() })}
             </span>
-            <span class="text-12-regular text-text-weak">{description()}</span>
           </div>
           <div class="flex justify-end gap-2">
             <Button variant="ghost" size="large" onClick={() => dialog.close()}>
               {language.t("common.cancel")}
             </Button>
-            <Button variant="primary" size="large" disabled={data.status === "loading"} onClick={handleDelete}>
+            <Button variant="primary" size="large" onClick={handleDelete}>
               {language.t("workspace.delete.button")}
             </Button>
           </div>

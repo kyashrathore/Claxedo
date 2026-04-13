@@ -1,11 +1,16 @@
-import type { Sandbox } from "@daytonaio/sdk"
-import type { SandboxHandle } from "./sandbox-handle"
+import type { Daytona, Sandbox } from "@daytonaio/sdk"
+import type { SandboxHandle } from "./handle"
 
 /**
  * Wraps a Daytona SDK Sandbox into the provider-agnostic SandboxHandle.
  */
 export class DaytonaSandboxHandle implements SandboxHandle {
-  constructor(public readonly inner: Sandbox) {}
+  readonly provider = "daytona" as const
+
+  constructor(
+    public readonly inner: Sandbox,
+    private readonly drop?: (sandbox: Sandbox) => Promise<void>,
+  ) {}
 
   get id(): string {
     return this.inner.id
@@ -60,11 +65,20 @@ export class DaytonaSandboxHandle implements SandboxHandle {
   }
 
   async destroy(): Promise<void> {
-    // Daytona SDK doesn't expose destroy on Sandbox — stop is the equivalent
+    if (this.drop) {
+      await this.drop(this.inner)
+      return
+    }
     await this.inner.stop()
   }
 
   async setLabels(labels: Record<string, string>): Promise<void> {
     await this.inner.setLabels(labels)
   }
+}
+
+export function wrapDaytona(daytona: Daytona, sandbox: Sandbox) {
+  return new DaytonaSandboxHandle(sandbox, async (item) => {
+    await daytona.delete(item)
+  })
 }

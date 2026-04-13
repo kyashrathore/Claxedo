@@ -52,13 +52,13 @@ loadEnvFile(path.resolve(import.meta.dirname, "../../.env"))
 loadEnvFile(path.resolve(import.meta.dirname, "../../../../.env.local"))
 
 import { Daytona, SandboxState } from "@daytonaio/sdk"
-import { ensureSnapshot, RUNTIME_PORT, RUNTIME_DIR, WORKSPACE_DIR } from "./sandbox-image"
-import { deployAndStart, stopRemoteRuntime } from "./sandbox-runtime"
-import type { SandboxHandle } from "./sandbox-handle"
+import { ensureSnapshot, RUNTIME_PORT, RUNTIME_DIR, WORKSPACE_DIR } from "./sandbox/image"
+import { deployAndStart, stopRemoteRuntime } from "./sandbox/runtime"
+import type { SandboxHandle } from "./sandbox/handle"
 import type { SandboxProviderID } from "./types"
-import { DaytonaSandboxHandle } from "./sandbox-daytona"
-import { createVercelSandbox } from "./sandbox-vercel"
-import { createCloudflareSandbox } from "./sandbox-cloudflare"
+import { DaytonaSandboxHandle } from "./sandbox/daytona"
+import { createVercelSandbox } from "./sandbox/vercel"
+import { createCloudflareSandbox } from "./sandbox/cloudflare"
 
 const PROVIDER = (process.env.SANDBOX_PROVIDER || "daytona") as SandboxProviderID
 const TEST_REPO = "https://github.com/kyashrathore/formlink.git"
@@ -114,7 +114,7 @@ async function createModalSandboxHandle(): Promise<{ handle: SandboxHandle; clea
   const tokenSecret = process.env.MODAL_TOKEN_SECRET
   if (!tokenId || !tokenSecret) throw new Error("MODAL_TOKEN_ID and MODAL_TOKEN_SECRET are required")
 
-  const { createModalSandbox } = await import("./sandbox-modal")
+  const { createModalSandbox } = await import("./sandbox/modal")
   const handle = await createModalSandbox({ tokenId, tokenSecret, name: `live-test-${Date.now()}` })
   ok(`sandbox created: id=${handle.id}`)
 

@@ -1,6 +1,7 @@
-import type { SandboxHandle } from "./sandbox-handle"
-import { Log } from "../log"
-import type { SandboxNetworkPolicy } from "../network/resolve"
+import type { SandboxHandle, SnapshotRef } from "./handle"
+import { Log } from "../../log"
+import type { SandboxNetworkPolicy } from "../../network/resolve"
+import { WORKSPACE_DIR } from "./image"
 
 const log = Log.create({ service: "sandbox-cloudflare" })
 
@@ -28,9 +29,12 @@ const log = Log.create({ service: "sandbox-cloudflare" })
  *   POST /sandbox/:id/kill-process  { processId?, signal? }           → {}
  *   POST /sandbox/:id/expose-port   { port, hostname }                → { url }
  *   POST /sandbox/:id/network       { enableInternet, allowedHosts }  → {}
+ *   POST /sandbox/:id/create-backup { dir, name?, ttl? }              → { id }
+ *   POST /sandbox/:id/restore-backup { backup }                       → {}
  *   DELETE /sandbox/:id                                               → {}
  */
 export class CloudflareSandboxHandle implements SandboxHandle {
+  readonly provider = "cloudflare" as const
   private processId: string | undefined
 
   constructor(
@@ -161,6 +165,26 @@ export class CloudflareSandboxHandle implements SandboxHandle {
       allowedHosts: net?.mode === "restricted" ? net.hosts : [],
       deniedHosts: [],
     })
+  }
+
+  async createBackup(dir: string, opts?: { name?: string; ttl?: number }): Promise<SnapshotRef> {
+    const res = await this.post<{ id: string }>("/create-backup", {
+      dir,
+      name: opts?.name,
+      ttl: opts?.ttl,
+    })
+    return { id: res.id }
+  }
+
+  async restoreBackup(ref: SnapshotRef): Promise<void> {
+    await this.post("/restore-backup", {
+      backup: ref.id,
+    })
+  }
+
+  async snapshotFilesystem(): Promise<string> {
+    const ref = await this.createBackup(WORKSPACE_DIR)
+    return ref.id
   }
 }
 

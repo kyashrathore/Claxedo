@@ -7,12 +7,12 @@ import { z } from "zod"
 
 const execFileAsync = promisify(execFile)
 import { dataDir } from "../paths"
-import { defaultSandboxProvider, listSandboxProviders, sandboxAuth, sandboxProvider } from "../cloud/provider"
+import { defaultSandboxProvider, hasSandboxAuth, listSandboxProviders, sandboxProvider } from "../cloud/sandbox"
 import { loadUserConfig, saveUserConfig } from "../agent-config"
 import { putCredential, deleteCredentialsByProvider } from "../credentials/registry"
 import { ensureHostForUrl } from "../network/policy"
-import { ensureWorkspace, getProjectWorkspace, listProjects, resolveWorkspace } from "../workspace-store"
-import { ensureWorkspaceRuntime } from "../workspace-supervisor"
+import { deleteWorkspace, ensureWorkspace, getProjectWorkspace, listProjects, resolveWorkspace } from "../workspace-store"
+import { discardWorkspaceRuntime, ensureWorkspaceRuntime, getWorkspaceRuntimeStatus } from "../workspace-supervisor"
 
 const authBody = z.object({
   auth: z.record(z.string(), z.string()).default({}),
@@ -32,6 +32,11 @@ const createBody = z.object({
   provision: z.boolean().optional(),
 })
 
+const ensureBody = z.object({
+  workspaceId: z.string().optional(),
+  directory: z.string().optional(),
+})
+
 function slug(input: string | undefined, alt: string) {
   const txt = (input ?? "").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "")
   return txt || alt
@@ -45,6 +50,26 @@ async function cloneRepo(repo: string, dir: string) {
 async function addWorktree(base: string, dir: string) {
   await fs.mkdir(path.dirname(dir), { recursive: true })
   await execFileAsync("git", ["-C", base, "worktree", "add", dir])
+}
+
+function workspaceJson(ws: Awaited<ReturnType<typeof resolveWorkspace>>) {
+  if (!ws) return
+  const live = getWorkspaceRuntimeStatus(ws.id)
+  const stopped = live === "stopped" ? "stopped" : undefined
+  return {
+    workspaceId: ws.id,
+    projectId: ws.project_id ?? ws.id,
+    directory: ws.directory,
+    kind: ws.kind,
+    provider: ws.provider ?? null,
+    sandboxId: ws.sandbox_id ?? null,
+    status: stopped ?? ws.status ?? null,
+    git: {
+      repo: ws.repo_name ?? null,
+      branch: ws.git_branch ?? null,
+      remote: ws.git_remote ?? null,
+    },
+  }
 }
 
 export function WorkspaceRoutes() {
@@ -126,27 +151,39 @@ export function WorkspaceRoutes() {
         create: c.req.query("create") === "true",
       })
       if (!ws) return c.json({ error: "Workspace not found" }, 404)
-      return c.json({
-        workspaceId: ws.id,
-        projectId: ws.project_id ?? ws.id,
-        directory: ws.directory,
-        kind: ws.kind,
-        provider: ws.provider ?? null,
-        sandboxId: ws.sandbox_id ?? null,
-        status: ws.status ?? null,
-        git: {
-          repo: ws.repo_name ?? null,
-          branch: ws.git_branch ?? null,
-          remote: ws.git_remote ?? null,
-        },
-      })
+      return c.json(workspaceJson(ws))
     })
     .get("/", async (c) => c.json(await listProjects()))
+    .delete("/:id", async (c) => {
+      const id = c.req.param("id")
+      const ws = await resolveWorkspace({ workspaceId: id })
+      if (!ws) return c.json({ error: "Workspace not found" }, 404)
+      await discardWorkspaceRuntime(id, "workspace_deleted").catch(() => {})
+      await deleteWorkspace(id)
+      if (ws.kind === "cloud") {
+        await fs.rm(ws.directory, { recursive: true, force: true }).catch(() => {})
+      }
+      return c.json({ ok: true })
+    })
+    .post("/ensure", async (c) => {
+      const body = ensureBody.parse(await c.req.json().catch(() => ({})))
+      const ws = await resolveWorkspace({
+        workspaceId: body.workspaceId,
+        directory: body.directory,
+      })
+      if (!ws) return c.json({ error: "Workspace not found" }, 404)
+      if (ws.kind === "cloud") {
+        await ensureWorkspaceRuntime(ws.id)
+      }
+      const next = await resolveWorkspace({ workspaceId: ws.id })
+      if (!next) return c.json({ error: "Workspace not found" }, 404)
+      return c.json(workspaceJson(next))
+    })
     .post("/create", async (c) => {
       const body = createBody.parse(await c.req.json().catch(() => ({})))
       const cfg = await loadUserConfig()
       const id = sandboxProvider(body.provider) ?? defaultSandboxProvider(cfg.sandbox)
-      if (!sandboxAuth(cfg.sandbox, id)) {
+      if (!hasSandboxAuth(cfg.sandbox, id)) {
         return c.json({ error: `Missing ${id} credentials` }, 400)
       }
 
@@ -205,21 +242,11 @@ export function WorkspaceRoutes() {
 
       // Start provisioning immediately (fire-and-forget)
       // Frontend subscribes to /api/claxedo/events for provision progress
-      ensureWorkspaceRuntime(ws.id).catch(() => {})
-
-      return c.json({
-        workspaceId: ws.id,
-        projectId: ws.project_id ?? ws.id,
-        directory: ws.directory,
-        provider: ws.provider,
-        kind: ws.kind,
-        sandboxId: ws.sandbox_id ?? null,
-        status: ws.status ?? null,
-        git: {
-          repo: ws.repo_name ?? null,
-          branch: ws.git_branch ?? null,
-          remote: ws.git_remote ?? null,
-        },
+      void ensureWorkspaceRuntime(ws.id).catch(async () => {
+        await discardWorkspaceRuntime(ws.id, "provision_failed").catch(() => {})
+        await deleteWorkspace(ws.id).catch(() => {})
       })
+
+      return c.json(workspaceJson(ws))
     })
 }

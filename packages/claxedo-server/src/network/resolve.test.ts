@@ -56,6 +56,26 @@ describe("network resolve", () => {
     expect(net.hosts).toContain("openai.com")
   })
 
+  test("resolveSandboxNetworkPolicy skips unresolved wildcard-only targets in cidr mode", async () => {
+    const net = await resolveSandboxNetworkPolicy(
+      [{ target: "openai", kind: "group" }],
+      "http://localhost:3001",
+      "cidr",
+    )
+    expect(net.rules.every((item) => item.cidrs.length > 0)).toBe(true)
+    expect(net.cidrs).toContain("127.0.0.1/32")
+  })
+
+  test("resolveSandboxNetworkPolicy includes DNS resolvers in restricted cidr mode", async () => {
+    const net = await resolveSandboxNetworkPolicy(
+      [{ target: "opencode", kind: "group" }],
+      undefined,
+      "cidr",
+    )
+    expect(net.cidrs).toContain("1.1.1.1/32")
+    expect(net.cidrs).toContain("8.8.8.8/32")
+  })
+
   test("formatDaytonaAllowList joins with commas", () => {
     const result = formatDaytonaAllowList(["10.0.0.0/8", "192.168.1.0/24"])
     expect(result).toBe("10.0.0.0/8,192.168.1.0/24")

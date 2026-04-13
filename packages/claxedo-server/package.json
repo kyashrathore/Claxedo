@@ -13,6 +13,8 @@
     "start": "node --import tsx src/main.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node ./node_modules/vitest/vitest.mjs run",
+    "test:live-ui": "node --import tsx src/cloud/live-ui-test.ts",
+    "bench:live": "node --import tsx src/cloud/live-benchmark.ts",
     "rebuild:native": "npm rebuild better-sqlite3"
   },
   "dependencies": {

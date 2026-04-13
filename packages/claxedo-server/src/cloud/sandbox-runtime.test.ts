@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, vi } from "vitest"
-import type { SandboxHandle } from "./sandbox-handle"
+import type { SandboxHandle } from "./sandbox/handle"
 import { claxedoBus, type ClaxedoEvent } from "../bus"
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -14,6 +14,7 @@ function captureProvisionEvents() {
 
 function createMockSandbox(overrides?: Partial<SandboxHandle>): SandboxHandle {
   return {
+    provider: "daytona",
     id: "sb-test-123",
     executeCommand: vi.fn(() => Promise.resolve({ result: "missing" })),
     uploadFile: vi.fn(() => Promise.resolve()),
@@ -32,7 +33,7 @@ function createMockSandbox(overrides?: Partial<SandboxHandle>): SandboxHandle {
 
 // ── Import module under test ────────────────────────────────────────────
 
-import * as sandboxRuntime from "./sandbox-runtime"
+import * as sandboxRuntime from "./sandbox/runtime"
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
@@ -209,11 +210,30 @@ describe("sandbox-runtime", () => {
 
       const sessionCmd = (sandbox.executeSessionCommand as any).mock.calls[0]
       const command = sessionCmd[1].command as string
-      expect(command).toContain("CLAXEDO_WR_PORT=")
-      expect(command).toContain("CLAXEDO_WR_WORKSPACE_ID=ws-7")
-      expect(command).toContain("CLAXEDO_WR_DIRECTORY=/custom/dir")
-      expect(command).toContain("CUSTOM_VAR=value")
+      expect(command).toContain("export CLAXEDO_WR_PORT='3002'")
+      expect(command).toContain("export CLAXEDO_WR_WORKSPACE_ID='ws-7'")
+      expect(command).toContain("export CLAXEDO_WR_DIRECTORY='/custom/dir'")
+      expect(command).toContain("export CUSTOM_VAR='value'")
       expect(command).toContain("node ")
+
+      tracker.cleanup()
+    })
+
+    test("quotes workspace paths and repo urls before building shell commands", async () => {
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "" })
+        .mockResolvedValueOnce({ result: "missing" })
+        .mockResolvedValueOnce({ result: "exists" })
+
+      await sandboxRuntime.deployAndStart(sandbox, "ws-quote", {
+        directory: "/tmp/my repo; echo nope",
+        repoUrl: "https://example.com/repo name.git?x='1'",
+      })
+
+      const cmds = (sandbox.executeCommand as any).mock.calls.map((item: any[]) => item[0] as string)
+      expect(cmds[0]).toContain("'/tmp/my repo; echo nope'")
+      expect(cmds[1]).toContain("'/tmp/my repo; echo nope/.git'")
+      expect(cmds[2]).toContain("'https://example.com/repo name.git?x='\"'\"'1'\"'\"''")
 
       tracker.cleanup()
     })
@@ -358,7 +378,7 @@ describe("sandbox-runtime", () => {
 
       const sessionCmd = (sandbox.executeSessionCommand as any).mock.calls[0]
       const command = sessionCmd[1].command as string
-      expect(command).toContain("CLAXEDO_WR_DIRECTORY=/workspace")
+      expect(command).toContain("export CLAXEDO_WR_DIRECTORY='/workspace'")
 
       tracker.cleanup()
     })
@@ -418,6 +438,40 @@ describe("sandbox-runtime", () => {
 
       tracker.cleanup()
     })
+
+    test("throws when session creation hangs", async () => {
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "exists" })
+        .mockResolvedValueOnce({ result: "exists" })
+      ;(sandbox.createSession as any).mockImplementationOnce(
+        () => new Promise(() => {}),
+      )
+
+      await expect(
+        sandboxRuntime.deployAndStart(sandbox, "ws-hang-1", {
+          directory: "/workspace",
+        }),
+      ).rejects.toThrow(/create session timed out/)
+
+      tracker.cleanup()
+    }, 35_000)
+
+    test("throws when service url resolution hangs", async () => {
+      ;(sandbox.executeCommand as any)
+        .mockResolvedValueOnce({ result: "exists" })
+        .mockResolvedValueOnce({ result: "exists" })
+      ;(sandbox.getServiceUrl as any).mockImplementationOnce(
+        () => new Promise(() => {}),
+      )
+
+      await expect(
+        sandboxRuntime.deployAndStart(sandbox, "ws-hang-2", {
+          directory: "/workspace",
+        }),
+      ).rejects.toThrow(/resolve service url timed out/)
+
+      tracker.cleanup()
+    }, 35_000)
   })
 
   // ── stopRemoteRuntime ──────────────────────────────────────────────────

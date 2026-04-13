@@ -366,6 +366,32 @@ describe("workspace store", () => {
     expect(project!.workspaces[cloud]?.available).toBe(true)
   })
 
+  test("hides pending cloud placeholders until the lease is ready", async () => {
+    const cloud = path.join(root, "cloud", "pending")
+    await fs.mkdir(cloud, { recursive: true })
+    await mod.ensureWorkspace({
+      workspaceId: "ws_cloud_pending",
+      project_id: "proj_cloud_pending",
+      workspace_name: "main",
+      directory: cloud,
+      kind: "cloud",
+      provider: "daytona",
+      status: "pending_sandbox",
+    })
+
+    let projects = await mod.listProjects()
+    expect(projects.find((item) => item.id === "proj_cloud_pending")).toBeUndefined()
+
+    await mod.updateWorkspace("ws_cloud_pending", {
+      status: "ready",
+      sandbox_id: "sb-pending",
+      sandbox_url: "https://sandbox.example.com",
+    })
+
+    projects = await mod.listProjects()
+    expect(projects.find((item) => item.id === "proj_cloud_pending")).toBeDefined()
+  })
+
   // ── Persistence ──────────────────────────────────────────────────────
 
   test("persists version 3 format with sorted workspaces", async () => {

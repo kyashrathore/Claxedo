@@ -6,9 +6,17 @@
  * with any sandbox provider without coupling to a specific SDK.
  */
 
-import type { SandboxNetworkPolicy } from "../network/resolve"
+import type { SandboxNetworkPolicy } from "../../network/resolve"
+import type { SandboxProviderID } from "../types"
+
+export type SnapshotRef = {
+  id: string
+}
 
 export interface SandboxHandle {
+  /** Provider backing this sandbox handle. */
+  readonly provider: SandboxProviderID
+
   /** Unique sandbox identifier from the provider. */
   readonly id: string
 
@@ -50,4 +58,13 @@ export interface SandboxHandle {
 
   /** Update outbound network access rules when the provider supports it. */
   setNetworkPolicy?(policy?: SandboxNetworkPolicy): Promise<void>
+
+  /** Create a directory backup when the provider supports it. */
+  createBackup?(dir: string, opts?: { name?: string; ttl?: number }): Promise<SnapshotRef>
+
+  /** Restore a previously created directory backup. */
+  restoreBackup?(ref: SnapshotRef): Promise<void>
+
+  /** Snapshot the full filesystem into a reusable provider image/snapshot. */
+  snapshotFilesystem?(): Promise<string>
 }

@@ -39,7 +39,7 @@ import { globalBus } from "./bus"
 import { dataDir } from "./paths"
 import { configureWorkspaceSupervisor, shutdownWorkspaceSupervisor } from "./workspace-supervisor"
 import { configureLocalAgentEngine, shutdownLocalAgentEngine } from "./local-agent-engine"
-import { initPool, poolEnabled, startPoolMonitor, shutdown as shutdownPool } from "./cloud/sandbox-pool"
+import { initPool, poolEnabled, startPoolMonitor, shutdown as shutdownPool } from "./cloud/sandbox"
 import { configureOpenCodeAuth, opencodeHeaders } from "./opencode-auth"
 import { configureHarnessMode, getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "./architecture"
 import { createSyncDB } from "./sync-db"
@@ -157,10 +157,6 @@ export function startServer(port = 3001, opencodeUrl = "http://127.0.0.1:4096", 
       console.error("[claxedo-server] WARN  sandbox pool enablement check failed:", err)
     })
 
-  // Initialize workgraph DB and mount routes
-  const workgraphDb = new Database(path.join(dataDir(), "workgraph.db"))
-  initWorkGraphDb(workgraphDb)
-
   // Connect through the claxedo-server proxy (not directly to opencode) so that in ACP
   // mode the events come from workspace-runtime's /global/event translation layer.
   const opencodeEvents = createOpencodeEvents(`http://127.0.0.1:${port}`)
@@ -177,45 +173,52 @@ export function startServer(port = 3001, opencodeUrl = "http://127.0.0.1:4096", 
     })
   })
 
-  const workgraphApp = createWorkGraphApp(workgraphDb, {
-    execution: createWorkGraphExecution(workgraphDb, opencodeUrl, opencodeEvents),
-    auth: async (provider) => {
-      if (provider !== "github") return null
-      try {
-        const { stdout } = await execFileAsync("gh", ["auth", "token"])
-        const token = stdout.trim()
-        if (!token) return null
-        return { source: "github_cli" as const, token, name: "GitHub CLI" }
-      } catch {
-        return null
-      }
-    },
-    repos: async () => {
-      try {
-        const res = await fetch(`${opencodeUrl}/project`, {
-          headers: opencodeHeaders({ "x-opencode-directory": process.cwd() }),
-        })
-        if (!res.ok) return []
-        const data = await res.json()
-        const projects = Array.isArray(data) ? data : [data]
-        const results = await Promise.all(
-          projects
-            .filter((p: Record<string, unknown>) => p?.id && p?.worktree)
-            .map((item: Record<string, unknown>) =>
-              resolveRepoDir(item.worktree as string, {
-                project_id: item.id as string,
-                project_name: (item.name as string) ?? null,
-              }).catch(() => null),
-            ),
-        )
-        return results.filter((item): item is Exclude<typeof item, null> => !!item)
-      } catch {
-        return []
-      }
-    },
-  })
+  try {
+    const workgraphDb = new Database(path.join(dataDir(), "workgraph.db"))
+    initWorkGraphDb(workgraphDb)
 
-  app.route("/api/workgraph", workgraphApp)
+    const workgraphApp = createWorkGraphApp(workgraphDb, {
+      execution: createWorkGraphExecution(workgraphDb, opencodeUrl, opencodeEvents),
+      auth: async (provider) => {
+        if (provider !== "github") return null
+        try {
+          const { stdout } = await execFileAsync("gh", ["auth", "token"])
+          const token = stdout.trim()
+          if (!token) return null
+          return { source: "github_cli" as const, token, name: "GitHub CLI" }
+        } catch {
+          return null
+        }
+      },
+      repos: async () => {
+        try {
+          const res = await fetch(`${opencodeUrl}/project`, {
+            headers: opencodeHeaders({ "x-opencode-directory": process.cwd() }),
+          })
+          if (!res.ok) return []
+          const data = await res.json()
+          const projects = Array.isArray(data) ? data : [data]
+          const results = await Promise.all(
+            projects
+              .filter((p: Record<string, unknown>) => p?.id && p?.worktree)
+              .map((item: Record<string, unknown>) =>
+                resolveRepoDir(item.worktree as string, {
+                  project_id: item.id as string,
+                  project_name: (item.name as string) ?? null,
+                }).catch(() => null),
+              ),
+          )
+          return results.filter((item): item is Exclude<typeof item, null> => !!item)
+        } catch {
+          return []
+        }
+      },
+    })
+
+    app.route("/api/workgraph", workgraphApp)
+  } catch (err) {
+    console.error("[claxedo-server] WARN  workgraph init failed:", err)
+  }
 
   const server = serve({
     fetch: app.fetch,

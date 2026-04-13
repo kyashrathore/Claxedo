@@ -469,8 +469,10 @@ Profile fields should include:
 
 Implementation direction:
 
-- keep process manager as the service runtime
-- add repo profile as the workspace provisioning contract
+- keep `.claxedo/processes` as the service runtime layer
+- add `.claxedo/workspace` as the outer workspace provisioning contract
+- make `.claxedo/workspace` authoritative for `prepare`, `verify`, runtime requirements, and acceleration policy
+- make `.claxedo/processes` authoritative for long-running service definitions and per-service ports
 
 ### D. Add repo images
 
@@ -490,6 +492,12 @@ Selection precedence:
 1. runtime snapshot
 2. repo image
 3. shared base image
+
+Validity rules:
+
+- runtime snapshot is only valid when base image lineage, repo profile hash, runtime fingerprint, and source compatibility still match
+- repo image is only valid when base image lineage, repo profile hash, runtime fingerprint, and source compatibility still match
+- invalid acceleration layers must be skipped instead of best-effort reused
 
 ### E. Add runtime filesystem snapshots
 
@@ -511,6 +519,12 @@ Triggers:
 - after successful bootstrap for first-time workspaces
 - after major workspace mutations
 - manual save
+
+Failure contract:
+
+- failed `verify` after boot or restore must move the workspace into a non-ready lease state
+- verification failure should not silently publish `ready`
+- retry and backoff rules for `verify` failure must be explicit and separate from sandbox spawn failure
 
 ### F. Add compute classes and admission control
 
@@ -566,6 +580,12 @@ This should integrate with:
 - workspace lease status
 - bootstrap profile verification
 
+Failed verification should:
+
+- block transition to `ready`
+- record the failure on lease state
+- allow configured retry or require explicit operator/user action depending on failure class
+
 ## Implementation Units
 
 - [ ] **Unit 1: Durable workspace lease store**
@@ -600,7 +620,7 @@ Goal:
 
 Files:
 
-- Add repo profile schema and loader under `packages/workspace-runtime/src/`
+- Add `.claxedo/workspace` schema and loader under `packages/workspace-runtime/src/`
 - Integrate with `packages/workspace-runtime/src/process/index.ts`
 - Expose profile status through `packages/workspace-runtime/src/routes/`
 
@@ -672,6 +692,7 @@ Files:
 
 ## Non-Goals
 
+- Backward-compatible migration for old hosted workspace ownership state.
 - Replacing the existing runtime-local session store.
 - Replacing `claxedo_session_meta` or message replay with a brand-new system immediately.
 - Designing the final enterprise secret broker in this doc.

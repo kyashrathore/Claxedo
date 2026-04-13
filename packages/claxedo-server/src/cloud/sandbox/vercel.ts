@@ -1,16 +1,15 @@
-import { Sandbox, Snapshot, type Command, type NetworkPolicy } from "@vercel/sandbox"
-import type { SandboxHandle } from "./sandbox-handle"
-import { Log } from "../log"
-import { RUNTIME_PORT, RUNTIME_DIR, WORKSPACE_DIR } from "./sandbox-image"
-import type { SandboxNetworkPolicy } from "../network/resolve"
+import { Sandbox, type Command, type NetworkPolicy } from "@vercel/sandbox"
+import type { SandboxHandle } from "./handle"
+import { Log } from "../../log"
+import { RUNTIME_PORT, RUNTIME_DIR } from "./image"
+import type { SandboxNetworkPolicy } from "../../network/resolve"
 
 const log = Log.create({ service: "sandbox-vercel" })
 
 const RUNTIME_PKG = "@claxedo/workspace-runtime@dev"
 const RUNTIME_BIN = `${RUNTIME_DIR}/node_modules/@claxedo/workspace-runtime/dist/main.mjs`
 
-// Cached snapshot ID — built once, reused for instant starts
-let cachedSnapshotId: string | undefined
+const snapshots = new Map<string, string>()
 
 function policy(net?: SandboxNetworkPolicy): NetworkPolicy | undefined {
   if (!net || net.mode === "allow-all") return undefined
@@ -27,17 +26,42 @@ function policy(net?: SandboxNetworkPolicy): NetworkPolicy | undefined {
  * First call creates a sandbox, installs everything, snapshots it.
  * Subsequent calls reuse the snapshot for instant startup.
  */
-async function ensureVercelSnapshot(): Promise<string> {
-  if (cachedSnapshotId) return cachedSnapshotId
+type VercelCreds = {
+  token: string
+  teamId: string
+  projectId: string
+}
 
-  // Check env for a pre-built snapshot
+function needCreds(input?: Partial<VercelCreds>) {
+  const token = input?.token ?? process.env.VERCEL_TOKEN
+  const teamId = input?.teamId ?? process.env.VERCEL_TEAM_ID
+  const projectId = input?.projectId ?? process.env.VERCEL_PROJECT_ID
+  if (!token || !teamId || !projectId) {
+    throw new Error("Missing Vercel sandbox credentials")
+  }
+  return { token, teamId, projectId }
+}
+
+function key(input: VercelCreds) {
+  return `${input.teamId}:${input.projectId}`
+}
+
+async function ensureVercelSnapshot(input?: Partial<VercelCreds>): Promise<string> {
+  const creds = needCreds(input)
+  const cache = key(creds)
+  const hit = snapshots.get(cache)
+  if (hit) return hit
+
   if (process.env.CLAXEDO_VERCEL_SNAPSHOT_ID) {
-    cachedSnapshotId = process.env.CLAXEDO_VERCEL_SNAPSHOT_ID
-    return cachedSnapshotId
+    snapshots.set(cache, process.env.CLAXEDO_VERCEL_SNAPSHOT_ID)
+    return process.env.CLAXEDO_VERCEL_SNAPSHOT_ID
   }
 
   log.info("Building Vercel snapshot (first run)...")
   const sandbox = await Sandbox.create({
+    token: creds.token,
+    teamId: creds.teamId,
+    projectId: creds.projectId,
     runtime: "node22",
     ports: [RUNTIME_PORT],
     timeout: 10 * 60 * 1000,
@@ -57,15 +81,16 @@ async function ensureVercelSnapshot(): Promise<string> {
 
   // Snapshot — this stops the sandbox automatically
   const snapshot = await sandbox.snapshot({ expiration: 0 })
-  cachedSnapshotId = snapshot.snapshotId
-  log.info("Vercel snapshot created", { snapshotId: cachedSnapshotId })
-  return cachedSnapshotId
+  snapshots.set(cache, snapshot.snapshotId)
+  log.info("Vercel snapshot created", { snapshotId: snapshot.snapshotId, teamId: creds.teamId, projectId: creds.projectId })
+  return snapshot.snapshotId
 }
 
 /**
  * Wraps a Vercel Sandbox into the provider-agnostic SandboxHandle.
  */
 export class VercelSandboxHandle implements SandboxHandle {
+  readonly provider = "vercel" as const
   private runtimeCmd: Command | undefined
 
   constructor(private readonly inner: InstanceType<typeof Sandbox>) {}
@@ -138,6 +163,11 @@ export class VercelSandboxHandle implements SandboxHandle {
   async setNetworkPolicy(net?: SandboxNetworkPolicy): Promise<void> {
     await this.inner.updateNetworkPolicy(policy(net) ?? "allow-all")
   }
+
+  async snapshotFilesystem(): Promise<string> {
+    const snapshot = await this.inner.snapshot({ expiration: 0 })
+    return snapshot.snapshotId
+  }
 }
 
 /**
@@ -146,10 +176,18 @@ export class VercelSandboxHandle implements SandboxHandle {
 export async function createVercelSandbox(opts?: {
   env?: Record<string, string>
   net?: SandboxNetworkPolicy
+  token?: string
+  teamId?: string
+  projectId?: string
+  snapshotId?: string
 }): Promise<VercelSandboxHandle> {
-  const snapshotId = await ensureVercelSnapshot()
+  const creds = needCreds(opts)
+  const snapshotId = opts?.snapshotId ?? await ensureVercelSnapshot(creds)
 
   const sandbox = await Sandbox.create({
+    token: creds.token,
+    teamId: creds.teamId,
+    projectId: creds.projectId,
     source: { type: "snapshot", snapshotId },
     ports: [RUNTIME_PORT],
     timeout: 30 * 60 * 1000,

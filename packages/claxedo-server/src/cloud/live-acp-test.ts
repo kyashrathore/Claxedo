@@ -36,16 +36,16 @@ loadEnvFile(path.resolve(import.meta.dirname, "../../.env"))
 loadEnvFile(path.resolve(import.meta.dirname, "../../../../.env.local"))
 
 import { Daytona, SandboxState } from "@daytonaio/sdk"
-import { deployAndStart, stopRemoteRuntime } from "./sandbox-runtime"
-import { ensureSnapshot, RUNTIME_DIR, WORKSPACE_DIR } from "./sandbox-image"
-import type { SandboxHandle } from "./sandbox-handle"
+import { deployAndStart, stopRemoteRuntime } from "./sandbox/runtime"
+import { ensureSnapshot, RUNTIME_DIR, WORKSPACE_DIR } from "./sandbox/image"
+import type { SandboxHandle } from "./sandbox/handle"
 import type { SandboxProviderID } from "./types"
-import { DaytonaSandboxHandle } from "./sandbox-daytona"
-import { createModalSandbox } from "./sandbox-modal"
-import { createVercelSandbox } from "./sandbox-vercel"
-import { createCloudflareSandbox } from "./sandbox-cloudflare"
-import { sandboxAuthManaged } from "./provider"
-import { formatDaytonaAllowList, resolveSandboxNetworkPolicy, type SandboxNetworkPolicy } from "../network/resolve"
+import { DaytonaSandboxHandle } from "./sandbox/daytona"
+import { createModalSandbox } from "./sandbox/modal"
+import { createVercelSandbox } from "./sandbox/vercel"
+import { createCloudflareSandbox } from "./sandbox/cloudflare"
+import { sandboxAuthManaged } from "./sandbox"
+import { formatDaytonaAllowList, resolveSandboxNetworkPolicy, type PolicyEntry, type SandboxNetworkPolicy } from "../network/resolve"
 import { syncLocalCredentials } from "../credentials/sync"
 import { resolveAllSecrets } from "../credentials/registry"
 
@@ -177,9 +177,12 @@ async function createVercel(net?: SandboxNetworkPolicy) {
   if (!auth?.access_token) {
     throw new Error("Managed vercel credential is required")
   }
-  process.env.VERCEL_TOKEN = auth.access_token
-  delete process.env.VERCEL_OIDC_TOKEN
-  const handle = await createVercelSandbox({ net })
+  const handle = await createVercelSandbox({
+    net,
+    token: auth.access_token,
+    teamId: auth.team_id,
+    projectId: auth.project_id,
+  })
   ok(`sandbox created: id=${handle.id}`)
   return {
     handle,
@@ -236,13 +239,19 @@ async function main() {
     for (const item of sync.failed) bad(`sync ${item.provider_id}`, item.error)
   }
 
-  const items = [...new Set(runners.map((item) => preset[item]))]
-  const net = await resolveSandboxNetworkPolicy(
-    items.map((target) => ({ target, kind: "host" as const })),
-  )
+  const secrets = await resolveAllSecrets()
+  const active = runners.filter((item) => !!secrets[item])
+  const items = [...new Set((active.length ? active : runners).map((item) => preset[item]))]
+  const entries: PolicyEntry[] = items.map((target) => ({ target, kind: "group" }))
+  if (provider === "modal") {
+    entries.push({ target: "registry.npmjs.org", kind: "host" })
+  }
+  const net = provider === "daytona"
+    ? undefined
+    : await resolveSandboxNetworkPolicy(entries, undefined, "cidr")
   const dynamic = provider === "vercel" || provider === "cloudflare"
   const ws = `ws_live_acp_${Date.now()}`
-  const { handle: sandbox, cleanup } = await acquire(dynamic ? undefined : net)
+  const { handle: sandbox, cleanup } = await acquire(dynamic || provider === "daytona" ? undefined : net)
 
   try {
     console.log("\n\u2500\u2500 Step 1: Deploy workspace-runtime \u2500\u2500")
@@ -251,13 +260,14 @@ async function main() {
     })
     ok(`runtime URL: ${url}`)
 
-    if (dynamic && sandbox.setNetworkPolicy) {
+    if (net && dynamic && sandbox.setNetworkPolicy) {
       await sandbox.setNetworkPolicy(net)
       ok("network policy applied after bootstrap")
     }
 
     console.log("\n\u2500\u2500 Step 2: Verify outbound policy \u2500\u2500")
-    const allow = await probe(sandbox, host[runners[0]!] || "https://api.openai.com")
+    const target = active[0] ?? runners[0]
+    const allow = await probe(sandbox, host[target] || "https://api.openai.com")
     if (allow.code === 0) ok(`allowed host reachable: ${allow.out || "ok"}`)
     else bad("allowed host reachable", allow.out || `exit=${allow.code}`)
 
@@ -266,7 +276,6 @@ async function main() {
     else bad("blocked host denied", deny.out || "expected failure")
 
     console.log("\n\u2500\u2500 Step 3: ACP hello world \u2500\u2500")
-    const secrets = await resolveAllSecrets()
     for (const runner of runners) {
       const secret = secrets[runner]
       if (!secret) {
