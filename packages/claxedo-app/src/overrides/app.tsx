@@ -10,7 +10,7 @@ import { Font } from "@opencode-ai/ui/font"
 import { ThemeProvider } from "@opencode-ai/ui/theme"
 import { MetaProvider } from "@solidjs/meta"
 import { type BaseRouterProps, Router, Route, Navigate } from "@solidjs/router"
-import { type Duration, Effect } from "effect"
+import { Effect } from "effect"
 import {
   type Component,
   createResource,
@@ -119,11 +119,6 @@ const queryClient = new QueryClient({
 //   throttleTime: 250,
 // })
 
-const effectMinDuration =
-  (duration: Duration.Input) =>
-  <A, E, R>(e: Effect.Effect<A, E, R>) =>
-    Effect.all([e, Effect.sleep(duration)], { concurrency: "unbounded" }).pipe(Effect.map((v) => v[0]))
-
 export function AppBaseProviders(props: ParentProps) {
   return (
     <MetaProvider>
@@ -175,7 +170,6 @@ function ConnectionGate(props: ParentProps) {
         if (mode() === "background" || type === "http") return false
       }
     }).pipe(
-      effectMinDuration(mode() === "blocking" ? "1.2 seconds" : 0),
       Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.succeed(false) }),
       Effect.ensuring(Effect.sync(() => setMode("background"))),
       Effect.runPromise,

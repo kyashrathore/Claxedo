@@ -59,6 +59,7 @@ import { MessageTimeline } from "@/pages/session/message-timeline"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { SessionComposerRegion, createSessionComposerState } from "@/pages/session/composer"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
+import { diffs as list } from "@/utils/diffs"
 import { useSessionParams } from "../../claxedo-ui/context/session-params"
 import { useClaxedoLayout } from "../../claxedo-ui/context/claxedo-layout"
 import { paneDefaults, paneRefSystem } from "../../claxedo-ui/context/claxedo-layout/pane-intent"
@@ -561,7 +562,7 @@ export default function Page() {
 
   const infoState = createMemo((prev: ReturnType<typeof stableSessionInfo>) => stableSessionInfo(prev, params.id, params.id ? sync.session.get(params.id) as Session | undefined : undefined))
   const info = createMemo(() => infoState()?.value)
-  const diffs = createMemo(() => (params.id ? (sync.data.session_diff[params.id] ?? []) : []))
+  const diffs = createMemo(() => (params.id ? list(sync.data.session_diff[params.id]) : []))
   const todos = createMemo(() => (params.id ? (sync.data.todo[params.id] ?? []) : []))
   const reviewCount = createMemo(() => Math.max(info()?.summary?.files ?? 0, diffs().length))
   const hasReview = createMemo(() => reviewCount() > 0)
@@ -1003,7 +1004,7 @@ export default function Page() {
     return key
   }, sessionKey())
 
-  const turnDiffs = createMemo(() => lastUserMessage()?.summary?.diffs ?? [])
+  const turnDiffs = createMemo(() => list(lastUserMessage()?.summary?.diffs))
   const reviewDiffs = createMemo(() => (store.changes === "session" ? diffs() : turnDiffs()))
 
   const newSessionWorktree = createMemo(() => {
