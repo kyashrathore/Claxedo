@@ -239,7 +239,18 @@ async function proxyUpstream(c: Ctx, pathname: string) {
     // @ts-ignore
     duplex: "half",
   })
-  const res = await fetch(req)
+  let res: Response
+  try {
+    res = await fetch(req)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.cause && typeof (err as any).cause === "object"
+      ? ((err as any).cause as NodeJS.ErrnoException).code
+      : undefined
+    if (code === "ECONNREFUSED" || code === "ECONNRESET" || code === "ENOTFOUND") {
+      return Response.json({ error: "opencode runtime unavailable" }, { status: 503 })
+    }
+    throw err
+  }
   const responseHeaders = new Headers(res.headers)
   // fetch() auto-decompresses the body, so strip encoding headers to avoid
   // the browser trying to decompress an already-decompressed body.
