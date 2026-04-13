@@ -39,6 +39,40 @@ Each entry should include:
 
 ***
 
+## 2026-04-13
+
+**Status:** ✅ Success
+
+* **Branch:** `sync/2026-04-13`
+* **Previous Upstream Commit:** `988c9894f`
+* **Upstream Commit:** `94f71f59a`
+* **Mode:** Full rebase
+* **New Upstream Commits:** 166
+* **Conflicts:** 4 files across 2 commits
+  - `packages/opencode/script/build.ts`: Kept ours (registry: offline dev build)
+  - `packages/opencode/src/server/server.ts`: Accepted upstream (later commit re-applies our changes)
+  - `packages/opencode/src/server/instance/agent-hook.ts`: File location (routes/ → instance/)
+  - `packages/opencode/src/server/instance/tunnel.ts`: File location (routes/ → instance/)
+  - `packages/opencode/package.json`: Merged — kept our `@opencode-ai/workgraph` dep, accepted upstream version bump
+  - `packages/sdk/js/src/v2/gen/types.gen.ts`: Accepted upstream, re-added fork-specific `ExperimentalWorkspaceStatusResponses`
+  - `bun.lock`: Regenerated
+* **Upstream Drift Review:**
+
+| Area | Decision | Notes |
+|------|----------|-------|
+| `app/src/app.tsx` | Ported | Removed `effectMinDuration` from health check |
+| `app/src/pages/session.tsx` | Ported | Added `diffs()` utility for safe diff normalization |
+| `app/src/context/global-sync/event-reducer.ts` | Auto | Our override delegates to upstream, changes picked up automatically |
+| `app/src/components/terminal.tsx` | Skipped | `sameOrigin` auth fix — our override uses different WebSocket routing |
+| `app/src/context/sync.tsx` | Auto | Not overridden |
+| `app/src/pages/layout/sidebar-workspace.tsx` | Auto | Not overridden — padding fix `pl-9` → `pl-2` |
+| `app/src/pages/session/message-timeline.tsx` | Auto | Not overridden — light mode scroll button style fix |
+| `app/src/utils/diffs.ts` | New | New diff normalization utility — adopted in session.tsx override |
+
+* **Validation:** typecheck ✅, 1980 tests pass ✅, build ✅
+
+***
+
 ## 2026-04-08
 
 **Status:** ✅ Success
