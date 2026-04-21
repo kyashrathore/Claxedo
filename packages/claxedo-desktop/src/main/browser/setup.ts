@@ -19,8 +19,10 @@ import type { Event, WebPreferences } from "electron"
 import log from "electron-log/main.js"
 
 import { isBrowserTabEnabled } from "./flag"
+import { startDesktopHttpBridge, type BridgeHandle } from "./http-bridge"
 import { configureAgentBrowserPartition, installAgentBrowserNavigationGuards } from "./partition"
 import { BrowserRegistry } from "./registry"
+import { ensureDesktopToken } from "./token"
 import {
   AGENT_BROWSER_PARTITION,
   createWillAttachWebviewHandler,
@@ -31,6 +33,13 @@ import {
 export type BrowserTabSetup = {
   registry: BrowserRegistry
   partition: string
+  /**
+   * Promise resolving to the started HTTP bridge. The bridge is started only
+   * after `app.whenReady` because it needs the session partition already
+   * configured to avoid spawning the MCP subprocess against an unreachable
+   * URL. Callers that don't need the handle can ignore it.
+   */
+  bridge: Promise<BridgeHandle>
 }
 
 export function setupBrowserTab(): BrowserTabSetup | undefined {
@@ -89,5 +98,27 @@ export function setupBrowserTab(): BrowserTabSetup | undefined {
 
   const registry = new BrowserRegistry((id) => electronWebContents.fromId(id) ?? undefined)
 
-  return { registry, partition: AGENT_BROWSER_PARTITION }
+  // Mint the per-launch token up front so claxedo-server (which loads
+  // in-process via `await import(...)` in main/index.ts) can read
+  // `process.env.CLAXEDO_DESKTOP_TOKEN` when it resolves the MCP stdio env.
+  // The token is stable across the life of the process.
+  const token = ensureDesktopToken()
+  process.env.CLAXEDO_DESKTOP_TOKEN = token
+
+  // Start the HTTP bridge after `app.whenReady`. Writing the URL into
+  // `process.env.CLAXEDO_DESKTOP_URL` gives the MCP stdio config a clear
+  // injection point (see `getClaxedoMcpStdioConfig` in mcp-resolver.ts).
+  const bridge = app.whenReady().then(async () => {
+    try {
+      const started = await startDesktopHttpBridge({ registry })
+      process.env.CLAXEDO_DESKTOP_URL = started.url
+      log.info("[browser-tab] bridge listening", { url: started.url })
+      return started
+    } catch (err) {
+      log.error("[browser-tab] bridge failed to start", { error: String(err) })
+      throw err
+    }
+  })
+
+  return { registry, partition: AGENT_BROWSER_PARTITION, bridge }
 }

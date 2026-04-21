@@ -255,12 +255,22 @@ export function getClaxedoMcpStdioConfig(
 ) {
   const cmd = resolveClaxedoMcpCommand(options)
   if (!cmd.length) return null
+  const env: Record<string, string> = {
+    OPENCODE_API_URL: `http://localhost:${port}`,
+  }
+  // When the Electron desktop shell is running the agent-browser feature, it
+  // exposes a small local HTTP bridge reachable only on `127.0.0.1` with a
+  // per-launch custom-header token. Pass URL + token through to the MCP
+  // subprocess so the `browser_*` tools can reach the bridge. Absent either
+  // value, the browser tools surface a legible "requires desktop" error.
+  const desktopUrl = process.env.CLAXEDO_DESKTOP_URL
+  const desktopToken = process.env.CLAXEDO_DESKTOP_TOKEN
+  if (desktopUrl) env.CLAXEDO_DESKTOP_URL = desktopUrl
+  if (desktopToken) env.CLAXEDO_DESKTOP_TOKEN = desktopToken
   return {
     command: cmd[0],
     args: cmd.slice(1),
-    env: {
-      OPENCODE_API_URL: `http://localhost:${port}`,
-    },
+    env,
   }
 }
 

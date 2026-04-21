@@ -20,6 +20,7 @@ import { z } from "zod"
 import fsPromises from "node:fs/promises"
 import { Process } from "../process/process"
 import { createProcessClient } from "../process/client"
+import { registerBrowserTools } from "./browser-tools"
 import { handleProcess } from "./process-handler"
 
 // ---------------------------------------------------------------------------
@@ -1390,6 +1391,12 @@ server.registerTool(
     )
   },
 )
+
+// ---------------------------------------------------------------------------
+// Browser tools (agent-browser tab, claxedo-desktop only)
+// ---------------------------------------------------------------------------
+
+registerBrowserTools(server)
 
 // ---------------------------------------------------------------------------
 // Start
