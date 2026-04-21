@@ -3,6 +3,7 @@ import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, nativeIma
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
+import type { BrowserConsoleEntry, BrowserConsoleQuery, BrowserScreenshotClip } from "../preload/types"
 import type { BrowserRegistry } from "./browser/registry"
 import { getStore } from "./store"
 
@@ -232,6 +233,94 @@ function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
       } catch (err) {
         return { ok: false as const, error: String(err instanceof Error ? err.message : err) }
       }
+    },
+  )
+
+  ipcMain.handle(
+    "browser:getConsoleLogs",
+    (_event: IpcMainInvokeEvent, paneId: string, q: BrowserConsoleQuery | undefined) => {
+      const handle = registry.get(paneId)
+      if (!handle) return [] as BrowserConsoleEntry[]
+      return handle.getConsoleLogs(q ?? {}) as BrowserConsoleEntry[]
+    },
+  )
+
+  // Per-renderer console subscriptions. Keyed on (paneId + sender.id) so
+  // multiple windows / drawers can subscribe to the same pane independently.
+  const consoleSubs = new Map<string, () => void>()
+  const subKey = (paneId: string, senderId: number) => `${senderId}:${paneId}`
+
+  ipcMain.handle(
+    "browser:subscribeConsole",
+    (event: IpcMainInvokeEvent, paneId: string) => {
+      const handle = registry.get(paneId)
+      if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+      const key = subKey(paneId, event.sender.id)
+      const existing = consoleSubs.get(key)
+      if (existing) return { ok: true as const }
+      const unsubscribe = handle.onConsoleEntry((entry) => {
+        if (event.sender.isDestroyed()) return
+        event.sender.send(`browser:onConsoleEntry:${paneId}`, entry)
+      })
+      consoleSubs.set(key, unsubscribe)
+      const cleanup = () => {
+        const fn = consoleSubs.get(key)
+        if (fn) {
+          try {
+            fn()
+          } catch {
+            // ignore
+          }
+          consoleSubs.delete(key)
+        }
+      }
+      event.sender.once("destroyed", cleanup)
+      return { ok: true as const }
+    },
+  )
+
+  ipcMain.handle(
+    "browser:unsubscribeConsole",
+    (event: IpcMainInvokeEvent, paneId: string) => {
+      const key = subKey(paneId, event.sender.id)
+      const fn = consoleSubs.get(key)
+      if (fn) {
+        try {
+          fn()
+        } catch {
+          // ignore
+        }
+        consoleSubs.delete(key)
+      }
+      return { ok: true as const }
+    },
+  )
+
+  ipcMain.handle(
+    "browser:captureScreenshot",
+    async (_event: IpcMainInvokeEvent, paneId: string, opts: { clip?: BrowserScreenshotClip } | undefined) => {
+      const handle = registry.get(paneId)
+      if (!handle) return { ok: false as const, error: { code: "no-pane" as const, message: `no browser pane registered for ${paneId}` } }
+      return handle.screenshot(opts ?? {})
+    },
+  )
+
+  ipcMain.handle(
+    "browser:evaluate",
+    async (_event: IpcMainInvokeEvent, paneId: string, expression: string) => {
+      const handle = registry.get(paneId)
+      if (!handle) return { ok: false as const, error: { code: "no-pane" as const, message: `no browser pane registered for ${paneId}` } }
+      return handle.evaluate(expression)
+    },
+  )
+
+  ipcMain.handle(
+    "browser:setAgentAllowed",
+    (_event: IpcMainInvokeEvent, paneId: string, allowed: boolean) => {
+      const handle = registry.get(paneId)
+      if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+      handle.setAgentAllowed(Boolean(allowed))
+      return { ok: true as const }
     },
   )
 }

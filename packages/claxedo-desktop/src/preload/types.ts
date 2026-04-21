@@ -28,6 +28,54 @@ export type BrowserRegisterResult =
 
 export type BrowserResult = { ok: true } | { ok: false; error: string }
 
+export type BrowserConsoleLevel = "log" | "warn" | "error" | "debug" | "info"
+
+export type BrowserConsoleStackFrame = {
+  url?: string
+  function?: string
+  line?: number
+  column?: number
+}
+
+export type BrowserConsoleEntry = {
+  id: number
+  time: number
+  level: BrowserConsoleLevel
+  args: string[]
+  stack?: BrowserConsoleStackFrame[]
+  source: "console" | "exception" | "log"
+  sessionId?: string
+}
+
+export type BrowserConsoleQuery = {
+  since?: number
+  level?: BrowserConsoleLevel
+  limit?: number
+}
+
+export type BrowserScreenshotClip = {
+  x: number
+  y: number
+  width: number
+  height: number
+  scale?: number
+}
+
+export type BrowserScreenshotResult =
+  | { ok: true; dataUrl: string; mimeType: "image/png" | "image/jpeg" }
+  | { ok: false; error: { code: "no-page" | "not-attached" | "cdp-error" | "no-pane"; message?: string } }
+
+export type BrowserEvaluateResult =
+  | { ok: true; result: unknown }
+  | {
+      ok: false
+      error: {
+        code: "eval-denied" | "not-attached" | "cdp-error" | "script-error" | "no-pane"
+        message?: string
+        stack?: string
+      }
+    }
+
 export type BrowserBridge = {
   /** Whether the main-process bridge is live (feature flag set). */
   enabled: () => Promise<boolean>
@@ -37,6 +85,19 @@ export type BrowserBridge = {
   unregister: (paneId: string) => Promise<BrowserResult>
   /** Navigate a registered pane to a new URL (http/https only). */
   navigate: (paneId: string, url: string) => Promise<BrowserResult>
+  /** Pull-read console log entries from the pane's ring buffer. */
+  getConsoleLogs: (paneId: string, q?: BrowserConsoleQuery) => Promise<BrowserConsoleEntry[]>
+  /** Subscribe to live console entries for the pane. Returns unsubscribe. */
+  onConsoleEntry: (paneId: string, cb: (entry: BrowserConsoleEntry) => void) => () => void
+  /** Capture a screenshot of the pane (PNG, or JPEG if re-encoded for size). */
+  captureScreenshot: (
+    paneId: string,
+    opts?: { clip?: BrowserScreenshotClip },
+  ) => Promise<BrowserScreenshotResult>
+  /** Run JS in the pane (refused unless per-tab agentAllowed flag is on). */
+  evaluate: (paneId: string, expression: string) => Promise<BrowserEvaluateResult>
+  /** Per-tab opt-in gate for agent-side `evaluate`. Defaults to false. */
+  setAgentAllowed: (paneId: string, allowed: boolean) => Promise<BrowserResult>
 }
 
 export type ElectronAPI = {

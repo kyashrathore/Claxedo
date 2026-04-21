@@ -1,8 +1,13 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type {
   BrowserBridge,
+  BrowserConsoleEntry,
+  BrowserConsoleQuery,
+  BrowserEvaluateResult,
   BrowserRegisterResult,
   BrowserResult,
+  BrowserScreenshotClip,
+  BrowserScreenshotResult,
   ElectronAPI,
   InitStep,
   SqliteMigrationProgress,
@@ -15,6 +20,25 @@ const browserBridge: BrowserBridge = {
   unregister: (paneId) => ipcRenderer.invoke("browser:unregister", paneId) as Promise<BrowserResult>,
   navigate: (paneId, url) =>
     ipcRenderer.invoke("browser:navigate", paneId, url) as Promise<BrowserResult>,
+  getConsoleLogs: (paneId, q?: BrowserConsoleQuery) =>
+    ipcRenderer.invoke("browser:getConsoleLogs", paneId, q ?? {}) as Promise<BrowserConsoleEntry[]>,
+  onConsoleEntry: (paneId, cb) => {
+    const channel = `browser:onConsoleEntry:${paneId}`
+    const handler = (_: unknown, entry: BrowserConsoleEntry) => cb(entry)
+    ipcRenderer.on(channel, handler)
+    // Tell main to start pushing events for this paneId. Idempotent.
+    void ipcRenderer.invoke("browser:subscribeConsole", paneId)
+    return () => {
+      ipcRenderer.removeListener(channel, handler)
+      void ipcRenderer.invoke("browser:unsubscribeConsole", paneId).catch(() => {})
+    }
+  },
+  captureScreenshot: (paneId, opts?: { clip?: BrowserScreenshotClip }) =>
+    ipcRenderer.invoke("browser:captureScreenshot", paneId, opts ?? {}) as Promise<BrowserScreenshotResult>,
+  evaluate: (paneId, expression) =>
+    ipcRenderer.invoke("browser:evaluate", paneId, expression) as Promise<BrowserEvaluateResult>,
+  setAgentAllowed: (paneId, allowed) =>
+    ipcRenderer.invoke("browser:setAgentAllowed", paneId, Boolean(allowed)) as Promise<BrowserResult>,
 }
 
 const api: ElectronAPI = {

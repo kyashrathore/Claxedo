@@ -58,16 +58,17 @@ export class BrowserRegistry {
   }
 
   /**
-   * Unregister a paneId. Detaches the CDP debugger (no-op in Unit 2) and
-   * removes the handle. Safe to call for an unknown paneId.
+   * Unregister a paneId. Disposes the handle (detaches the CDP debugger and
+   * removes event listeners) and removes the handle. Safe to call for an
+   * unknown paneId.
    */
   unregister(paneId: string): void {
     const handle = this.#handles.get(paneId)
     if (!handle) return
     try {
-      handle.detach()
+      handle.dispose()
     } catch {
-      // best-effort detach; never throw from unregister
+      // best-effort teardown; never throw from unregister
     }
     this.#handles.delete(paneId)
   }

@@ -20,10 +20,24 @@ function makeResolver(map: Map<number, FakeWc>): WebContentsFromId {
     const wc = map.get(id)
     if (!wc) return undefined
     // Cast through unknown to satisfy the Electron WebContents type in the
-    // registry — the registry only reads .id and .isDestroyed().
+    // registry — BrowserHandle now subscribes to a handful of wc + debugger
+    // events in its constructor, so the fake needs no-op `on`/`off`/`debugger`
+    // shims. The registry itself still only reads `.id` and `.isDestroyed()`.
+    const noop = () => {}
     return {
       id: wc.id,
       isDestroyed: () => wc.destroyed,
+      on: noop,
+      off: noop,
+      removeAllListeners: noop,
+      debugger: {
+        attach: noop,
+        detach: noop,
+        isAttached: () => false,
+        sendCommand: async () => ({}),
+        on: noop,
+        off: noop,
+      },
     } as unknown as ReturnType<WebContentsFromId>
   }) as WebContentsFromId
 }
