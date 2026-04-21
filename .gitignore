@@ -47,9 +47,12 @@ packages/claxedo-app/e2e/playwright/report/
 packages/claxedo-app/e2e/playwright/screenshots/
 packages/claxedo-app/e2e/playwright/test-results/
 
-# Electron build outputs
+# Electron build outputs (binaries + bundled JS). Icons and entitlements.plist
+# are versioned; everything else under resources/ is produced at build time.
 packages/claxedo-desktop/resources/acp/
 packages/claxedo-desktop/resources/claxedo-server.js
+packages/claxedo-desktop/resources/claxedo-mcp.js
+packages/claxedo-desktop/resources/opencode-cli
 
 # Build artifacts
 packages/workspace-runtime-bundle.tar.gz
