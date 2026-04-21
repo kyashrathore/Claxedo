@@ -1,5 +1,21 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import type { ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
+import type {
+  BrowserBridge,
+  BrowserRegisterResult,
+  BrowserResult,
+  ElectronAPI,
+  InitStep,
+  SqliteMigrationProgress,
+} from "./types"
+
+const browserBridge: BrowserBridge = {
+  enabled: () => ipcRenderer.invoke("browser:enabled") as Promise<boolean>,
+  register: (paneId, webContentsId) =>
+    ipcRenderer.invoke("browser:register", paneId, webContentsId) as Promise<BrowserRegisterResult>,
+  unregister: (paneId) => ipcRenderer.invoke("browser:unregister", paneId) as Promise<BrowserResult>,
+  navigate: (paneId, url) =>
+    ipcRenderer.invoke("browser:navigate", paneId, url) as Promise<BrowserResult>,
+}
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
@@ -71,6 +87,7 @@ const api: ElectronAPI = {
   installUpdate: () => ipcRenderer.invoke("install-update"),
   setNativeTheme: (theme) => ipcRenderer.send("set-native-theme", theme),
   getDroppedFilePaths: (files) => files.map((f) => webUtils.getPathForFile(f)).filter(Boolean),
+  browser: browserBridge,
 }
 
 contextBridge.exposeInMainWorld("api", api)

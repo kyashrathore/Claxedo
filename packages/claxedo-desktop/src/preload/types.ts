@@ -11,6 +11,34 @@ export type WslConfig = { enabled: boolean }
 
 export type LinuxDisplayBackend = "wayland" | "auto"
 
+/**
+ * Agentic browser-tab preload bridge.
+ *
+ * Exposed at `window.api.browser`. Only populated in builds / launches where
+ * `CLAXEDO_ENABLE_BROWSER_TAB=1` is set on the main process — renderers must
+ * treat `window.api.browser` as potentially undefined and fall back to the
+ * "requires desktop" placeholder when it is absent.
+ *
+ * Streams follow the repo's callback+unsubscribe pattern (mirror
+ * `onSqliteMigrationProgress`); Unit 3 adds `onConsoleEntry` with this shape.
+ */
+export type BrowserRegisterResult =
+  | { ok: true; webContentsId: number }
+  | { ok: false; error: string }
+
+export type BrowserResult = { ok: true } | { ok: false; error: string }
+
+export type BrowserBridge = {
+  /** Whether the main-process bridge is live (feature flag set). */
+  enabled: () => Promise<boolean>
+  /** Register a pane with the webContents id returned by `(webview).getWebContentsId()`. */
+  register: (paneId: string, webContentsId: number) => Promise<BrowserRegisterResult>
+  /** Unregister a pane. Safe to call for an unknown pane. */
+  unregister: (paneId: string) => Promise<BrowserResult>
+  /** Navigate a registered pane to a new URL (http/https only). */
+  navigate: (paneId: string, url: string) => Promise<BrowserResult>
+}
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
@@ -67,4 +95,5 @@ export type ElectronAPI = {
   installUpdate: () => Promise<void>
   setNativeTheme: (theme: "light" | "dark" | "system") => void
   getDroppedFilePaths: (files: File[]) => string[]
+  browser: BrowserBridge
 }

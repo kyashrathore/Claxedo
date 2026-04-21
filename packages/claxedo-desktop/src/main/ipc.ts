@@ -3,6 +3,7 @@ import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, nativeIma
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
+import type { BrowserRegistry } from "./browser/registry"
 import { getStore } from "./store"
 
 type Deps = {
@@ -23,6 +24,8 @@ type Deps = {
   runUpdater: (alertOnFail: boolean) => Promise<void> | void
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
   installUpdate: () => Promise<void> | void
+  /** Optional; only provided when the browser-tab feature flag is set. */
+  browser?: BrowserRegistry
 }
 
 export function registerIpcHandlers(deps: Deps) {
@@ -180,6 +183,57 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.on("set-native-theme", (_event: IpcMainEvent, theme: "light" | "dark" | "system") => {
     nativeTheme.themeSource = theme
   })
+
+  registerBrowserIpcHandlers(deps.browser)
+}
+
+function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
+  // `browser:enabled` is safe to expose unconditionally — tells the renderer
+  // whether the bridge will actually do anything.
+  ipcMain.handle("browser:enabled", () => Boolean(registry))
+
+  if (!registry) return
+
+  ipcMain.handle(
+    "browser:register",
+    (_event: IpcMainInvokeEvent, paneId: string, webContentsId: number) => {
+      try {
+        const handle = registry.register(paneId, webContentsId)
+        return { ok: true as const, webContentsId: handle.webContentsId }
+      } catch (err) {
+        return { ok: false as const, error: String(err instanceof Error ? err.message : err) }
+      }
+    },
+  )
+
+  ipcMain.handle("browser:unregister", (_event: IpcMainInvokeEvent, paneId: string) => {
+    registry.unregister(paneId)
+    return { ok: true as const }
+  })
+
+  ipcMain.handle(
+    "browser:navigate",
+    async (_event: IpcMainInvokeEvent, paneId: string, url: string) => {
+      const handle = registry.get(paneId)
+      if (!handle) {
+        return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+      }
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return { ok: false as const, error: `scheme ${parsed.protocol} not allowed` }
+        }
+      } catch {
+        return { ok: false as const, error: `invalid url: ${url}` }
+      }
+      try {
+        await handle.navigate(url)
+        return { ok: true as const }
+      } catch (err) {
+        return { ok: false as const, error: String(err instanceof Error ? err.message : err) }
+      }
+    },
+  )
 }
 
 export function sendSqliteMigrationProgress(win: BrowserWindow, progress: SqliteMigrationProgress) {

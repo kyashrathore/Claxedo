@@ -23,5 +23,6 @@
     }
   },
   "references": [{ "path": "../app" }],
-  "include": ["src", "package.json"]
+  "include": ["src", "package.json"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

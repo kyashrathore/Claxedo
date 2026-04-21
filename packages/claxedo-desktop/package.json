@@ -11,6 +11,7 @@
   },
   "scripts": {
     "test:contract": "bun test ./scripts/contract.test.ts",
+    "test": "bun test ./src",
     "typecheck": "tsgo -b",
     "predev": "bun ./scripts/predev.ts",
     "dev": "electron-vite dev",

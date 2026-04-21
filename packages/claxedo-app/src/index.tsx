@@ -42,6 +42,13 @@ export interface ClaxedoConfig {
   daytonaApiKey?: string
   /** URL for the standalone claxedo-server (PTY, events, agent hooks) */
   claxedoServerUrl?: string
+  /**
+   * Enable the agentic browser tab. Must be co-set with the main-process flag
+   * `CLAXEDO_ENABLE_BROWSER_TAB=1` for the feature to be end-to-end reachable
+   * (the renderer uses this config flag; the main process reads the env var
+   * directly). Default: false.
+   */
+  browserTabEnabled?: boolean
 }
 
 /**
@@ -107,6 +114,7 @@ export function getDefaultConfig(): ClaxedoConfig {
     workgraphEnabled: import.meta.env.VITE_WORKGRAPH_ENABLED === "true",
     daytonaApiKey: import.meta.env.VITE_DAYTONA_API_KEY as string | undefined,
     claxedoServerUrl: (import.meta.env.VITE_CLAXEDO_SERVER_URL as string | undefined) ?? "http://127.0.0.1:3001",
+    browserTabEnabled: import.meta.env.VITE_CLAXEDO_ENABLE_BROWSER_TAB === "true",
   }
 }
 

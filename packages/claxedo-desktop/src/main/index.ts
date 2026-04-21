@@ -25,6 +25,8 @@ const { autoUpdater } = pkg
 
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
+import type { BrowserRegistry } from "./browser/registry"
+import { setupBrowserTab } from "./browser/setup"
 import type { CommandChild } from "./cli"
 import { installCli, syncCli } from "./cli"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
@@ -66,6 +68,9 @@ let claxedoServerHandle: { close: () => void } | null = null
 let local: { url: string; password: string } | null = null
 let quitting = false
 const loadingComplete = defer<void>()
+
+const browserTabSetup = setupBrowserTab()
+const browserRegistry: BrowserRegistry | undefined = browserTabSetup?.registry
 
 const pendingDeepLinks: string[] = []
 
@@ -377,7 +382,12 @@ registerIpcHandlers({
   runUpdater: async (alertOnFail) => checkForUpdates(alertOnFail),
   checkUpdate: async () => checkUpdate(),
   installUpdate: async () => installUpdate(),
+  browser: browserRegistry,
 })
+
+if (browserTabSetup) {
+  logger.log("browser-tab feature enabled", { partition: browserTabSetup.partition })
+}
 
 function killSidecar() {
   if (!sidecar) return
