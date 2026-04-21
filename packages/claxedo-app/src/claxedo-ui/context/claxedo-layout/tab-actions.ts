@@ -349,6 +349,31 @@ export function createTabActions(
       })
     },
 
+    addBrowserTab(directory: string, url?: string, title?: string) {
+      if (!directory) return ""
+
+      if (url) {
+        const existing = getItems().find(
+          (t) => t.type === "browser" && t.directory === directory && t.currentUrl === url,
+        )
+        if (existing) {
+          setActiveId(existing.id)
+          return existing.id
+        }
+      }
+
+      const browserId = `br-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
+      return tabActions.add({
+        type: "browser",
+        scope: "directory",
+        directory,
+        browserId,
+        currentUrl: url,
+        title: title ?? (url ?? "Browser"),
+        closable: true,
+      })
+    },
+
     close(tabId: string) {
       const items = getItems()
       if (!items || !Array.isArray(items)) return

@@ -13,6 +13,7 @@ export type TabType =
   | "multi-pane"
   | "process"
   | "filetree"
+  | "browser"
 
 export type TabScope = "directory" | "global"
 
@@ -44,6 +45,12 @@ export type TabItem = {
   scrollable?: boolean
   /** Minimum pane width in px when scrollable is true (default: 400) */
   minPaneWidth?: number
+  /** Stable identifier for a browser tab's underlying webview lifecycle */
+  browserId?: string
+  /** Current URL the browser tab is showing */
+  currentUrl?: string
+  /** Last-seen page title — used by the browser tab for its tab label */
+  pageTitle?: string
 }
 
 export type RailState = {

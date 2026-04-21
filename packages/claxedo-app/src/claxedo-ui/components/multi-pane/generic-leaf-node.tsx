@@ -31,6 +31,7 @@ import { PageIndex } from "../page-index"
 import { TabContext } from "../tab-context"
 import { PaneTerminal } from "./pane-terminal"
 import { FileTreePane } from "./file-tree-pane"
+import { BrowserPane } from "../../../browser/components/browser-pane"
 import { useProcessPane } from "../../context/process-pane"
 import { ProcessPanePanel } from "../process-pane-panel"
 import { AddProcessDialog } from "../add-process-dialog"
@@ -947,6 +948,10 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
                     if (id) tabs().setActive(id)
                   }}
                 />
+              </Match>
+
+              <Match when={content().type === "browser"}>
+                <BrowserPane paneId={props.leafId} />
               </Match>
 
               <Match when={content().type === "page" && content().pageId}>

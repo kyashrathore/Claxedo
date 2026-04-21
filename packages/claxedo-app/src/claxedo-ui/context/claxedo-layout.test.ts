@@ -539,6 +539,71 @@ describe("worktree isolation between groups", () => {
     }
   })
 
+  test("addBrowserTab adds a browser tab with generated browserId", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { tabs1 } = splitInto2(api)
+
+      const id = tabs1.addBrowserTab("/workspace-a", "https://example.com", "Example")
+      expect(id).toBeTruthy()
+
+      const items = tabs1.items()
+      expect(items).toHaveLength(1)
+      expect(items[0].type).toBe("browser")
+      expect(items[0].directory).toBe("/workspace-a")
+      expect(items[0].currentUrl).toBe("https://example.com")
+      expect(items[0].title).toBe("Example")
+      expect(items[0].browserId).toBeTruthy()
+      expect(items[0].browserId?.startsWith("br-")).toBe(true)
+      expect(items[0].closable).toBe(true)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("addBrowserTab dedupes by (directory, url) when url is provided", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { tabs1 } = splitInto2(api)
+
+      const a = tabs1.addBrowserTab("/workspace-a", "https://example.com")
+      const b = tabs1.addBrowserTab("/workspace-a", "https://example.com")
+
+      expect(a).toBe(b)
+      expect(tabs1.items()).toHaveLength(1)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("addBrowserTab with no url does NOT dedupe — each call creates a new tab", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { tabs1 } = splitInto2(api)
+
+      const a = tabs1.addBrowserTab("/workspace-a")
+      const b = tabs1.addBrowserTab("/workspace-a")
+
+      expect(a).not.toBe(b)
+      expect(tabs1.items()).toHaveLength(2)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("addBrowserTab returns empty string when directory is missing", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { tabs1 } = splitInto2(api)
+
+      const id = tabs1.addBrowserTab("", "https://example.com")
+      expect(id).toBe("")
+      expect(tabs1.items()).toHaveLength(0)
+    } finally {
+      dispose()
+    }
+  })
+
   test("auto-set worktree.default is per-group (isolation)", () => {
     const { api, dispose } = createTestLayout()
     try {

@@ -187,6 +187,7 @@ export const TAB_ICONS: Record<
   filetree: "file-tree",
   "pages-index": "page",
   workgraph: "page",
+  browser: "window-cursor",
 }
 
 export type TopTabBarProps = {
