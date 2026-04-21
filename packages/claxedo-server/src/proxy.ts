@@ -70,9 +70,10 @@ type Hit = {
 const RUNTIME_WAIT_MS = 4_000
 
 function requestWorkspace(c: Context) {
+  const dir = c.req.query("directory") || c.req.header("x-opencode-directory")
   return {
     workspaceId: c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id"),
-    directory: c.req.query("directory") || c.req.header("x-opencode-directory"),
+    directory: dir ? decodeURIComponent(dir) : undefined,
   }
 }
 
@@ -140,6 +141,12 @@ async function proxy(c: Context, hit: Hit) {
   headers.set("X-Daytona-Skip-Preview-Warning", "true")
   headers.delete("host")
   headers.delete("connection")
+  // Prevent the upstream from compressing responses. Node's fetch (undici)
+  // auto-decompresses, but the Daytona proxy layer can produce responses
+  // where the content-encoding header and actual body encoding disagree,
+  // causing Z_DATA_ERROR (incorrect header check) during decompression.
+  // Requesting identity encoding avoids the mismatch entirely.
+  headers.set("accept-encoding", "identity")
 
   const req = new Request(target.toString(), {
     method: c.req.method,

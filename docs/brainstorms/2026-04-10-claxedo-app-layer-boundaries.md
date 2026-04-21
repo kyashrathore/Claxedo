@@ -34,6 +34,13 @@ The desired direction for this brainstorm is:
 - R4. `src/overrides` must remain the home for upstream shadow files only.
 - R5. `src/shared` must contain only small helpers that are genuinely neutral and not shell-specific or cloud-specific.
 
+**Frontend State Split**
+- R5a. Shell state must be separated from workspace runtime state, session state, and session/draft-scoped preferences. Do not keep those concerns inside one generic `global-sync` or bootstrap path.
+- R5b. The frontend must support multiple loaded sessions cleanly, not treat one active session as the center of the app.
+- R5c. Heavy, slow-changing reads such as project list and provider list should use a shared query cache instead of ad hoc bootstrap fan-out.
+- R5d. Shell and cloud consumers should depend on explicit frontend data ports so HTTP/SDK transport can later be replaced by a reactive DB adapter without rewriting UI state.
+- R5e. Prefer adapting upstream structures behind thin Claxedo seams before introducing new permanent Claxedo-only state systems.
+
 **Boundary Rules**
 - R6. Shell code must not import from overrides.
 - R7. Shell code must not import auth, analytics, SSE, or cloud API clients directly.
@@ -82,6 +89,15 @@ The desired direction for this brainstorm is:
 - Treat shell decoupling as an adapter problem, not a naming problem.
   Rationale: the current shell pulls in analytics, providers, APIs, and overrides directly, so folder motion alone will not enforce the desired rules.
 
+- Treat multi-session frontend state as the primary frontend model.
+  Rationale: Claxedo already supports multiple rendered sessions, per-runner session config, and cloud workspaces, so a single bootstrap-centric session model is now the main source of conceptual and performance drag.
+
+- Split query caching from live session ownership.
+  Rationale: read-mostly resources such as project and provider lists benefit from shared query semantics, while active session state needs session-scoped controllers and optimistic ownership.
+
+- Prefer wrapper seams over replacement seams where upstream behavior is still usable.
+  Rationale: Claxedo is a long-lived fork, so new architecture should first reduce direct coupling and duplicate calls, not immediately replace upstream-derived structures with large permanent Claxedo-only systems.
+
 - Start import-policy enforcement narrowly and make it resolver-aware.
   Rationale: current aliasing and override-first resolution mean naive path-string checks will miss real violations and may block valid bridge imports.
 
@@ -94,6 +110,8 @@ The desired direction for this brainstorm is:
 - `src/main.tsx` is a cloud-specific entrypoint that also initializes analytics, demo persistence, config, and events.
 - `src/overrides/README.md` documents override-first aliasing and instructs non-override code to import overridden contexts from `@opencode-ai/claxedo-app`.
 - A quick repo read found substantial shell leakage in `src/claxedo-ui`, including imports into overrides, cloud APIs, analytics, and providers from core shell files.
+- `src/overrides/context/global-sync/bootstrap.ts` still performs a wide eager bootstrap across provider, agent, session, permission, question, MCP, LSP, and VCS concerns for each directory.
+- `src/overrides/app.tsx` already installs `QueryClientProvider`, but expensive shared reads are still mostly handled through bespoke bootstrap logic rather than query-backed caching.
 
 ## Implementation Risks
 
@@ -102,16 +120,18 @@ The desired direction for this brainstorm is:
 - `src/app` is underspecified if it is expected to contain only composition while current bootstrap code also performs runtime setup concerns.
 - A lightweight import checker that does not resolve aliases and compatibility shims will be too noisy or too weak to trust.
 - `src/overrides` includes load-bearing composition and context behavior, so "shrink overrides" is likely phase-two work rather than a first-milestone deliverable.
+- Trying to keep extending `global-sync` will preserve the upstream OpenCode center of gravity even if folders are renamed, because the biggest issue is mixed ownership, not just path structure.
 
 ## Recommended Sequencing
 
 1. Write `packages/claxedo-app/ARCHITECTURE.md` and document the five layers plus the current exceptions.
-2. Add new layer barrels and compatibility shims so old imports can keep working while internals move.
-3. Add a narrow, resolver-aware import-policy check for the most dangerous edges first.
-4. Extract adapter seams from the worst shell offenders before broad folder motion.
-5. Move one representative slice end-to-end and verify the boundary is real.
-6. Only then do wider file moves and the eventual `claxedo-ui -> shell` rename.
-7. Revisit override reduction after the new boundaries hold in practice.
+2. Land the multi-session frontend state split described in `docs/plans/2026-04-13-pane-local-frontend-orchestration-plan.md`, starting with workspace runtime gating, query-backed shared reads, and the smallest viable wrapper seams around current behavior.
+3. Add new layer barrels and compatibility shims so old imports can keep working while internals move.
+4. Add a narrow, resolver-aware import-policy check for the most dangerous edges first.
+5. Extract adapter seams from the worst shell offenders before broad folder motion.
+6. Move one representative slice end-to-end and verify the boundary is real.
+7. Only then do wider file moves and the eventual `claxedo-ui -> shell` rename.
+8. Revisit override reduction after the new boundaries hold in practice.
 
 ## Outstanding Questions
 
@@ -126,7 +146,18 @@ The desired direction for this brainstorm is:
 - How should the import-policy checker resolve aliases, package self-imports, and override-backed shims?
 - Which current top-level directories map cleanly to `cloud` or `shared`, and which need to be split first?
 - Which overrides are candidates for replacement by extension points versus long-term quarantine?
+- Which parts of `global-sync` remain as shell metadata adapters during migration, and which should move immediately into runtime/session controllers?
+
+## P0 Cloud Regression Fix (Decoupled — 2026-04-13)
+
+The cloud new-session bootstrap regression (`docs/bug-reports/2026-04-13-cloud-new-session-bootstrap-regression.md`) was fixed independently of the broader refactor. Three targeted changes:
+
+1. **Pre-navigation cloud guard** (`session-actions.tsx`): `handleNewSession()` now detects cloud workspaces and sets tab title to "Preparing workspace..." with distinct flow logging.
+2. **Gate timing fix** (`session.tsx`): Removed `{ defer: true }` from the cloud gate effect so it engages on initial mount. More importantly, the gate now **skips entirely for already-ready workspaces** — it calls `/api/workspace/resolve` first, and if `status === "ready"`, closes without opening the gate or triggering a second bootstrap.
+3. **`resolveSessionUrl` extension** (`server.tsx`): Implemented the missing hook that `directory-layout.tsx` consumes for cloud session URL promotion.
+
+The broader refactor described in this document remains justified but is no longer blocking on the cloud regression.
 
 ## Next Steps
 
-→ /prompts:ce-plan for a concrete migration map and phased implementation plan
+→ See `docs/plans/2026-04-13-pane-local-frontend-orchestration-plan.md` for the concrete migration map that turns this boundary direction into frontend state and hydration work.

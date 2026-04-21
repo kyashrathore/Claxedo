@@ -1,6 +1,7 @@
 import { type Accessor, createMemo, createSignal, Match, Show, Switch } from "solid-js"
 import { useRouteData } from "@tui/context/route"
 import { useSync } from "@tui/context/sync"
+import { useProject } from "@tui/context/project"
 import { pipe, sumBy } from "remeda"
 import { useTheme } from "@tui/context/theme"
 import { SplitBorder } from "@tui/component/border"
@@ -71,10 +72,11 @@ export function Header() {
     return result
   })
 
+  const project = useProject()
   const workspace = createMemo(() => {
     const id = session()?.workspaceID
     if (!id) return "Workspace local"
-    const info = sync.workspace.get(id)
+    const info = project.workspace.get(id)
     if (!info) return `Workspace ${id}`
     return `Workspace ${id} (${info.type})`
   })

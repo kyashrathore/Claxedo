@@ -308,24 +308,32 @@ export default function Page() {
         let dead = false
         let off = () => {}
 
-        setGate({
-          open: true,
-          sync: false,
-          id: ws()?.id,
-          status: ws()?.status ?? "pending_sandbox",
-          err: undefined,
-          logs: [],
-        })
-
         const run = async () => {
           const url = new URL("/api/workspace/resolve", base)
           url.searchParams.set("directory", cwd)
           const row = await api.get<WorkspaceBoot>(url.toString())
           if (dead) return
 
-          setGate("id", row.workspaceId)
-          setGate("status", row.status ?? undefined)
-          if (row.status && row.status !== "ready") {
+          // Workspace already ready — skip the gate entirely.
+          // The first bootstrap (from SyncProvider mount) already handles
+          // the full fan-out when pendingCloud() is false, so there is
+          // nothing for the gate to wait on.
+          if (row.status === "ready") {
+            resetGate()
+            return
+          }
+
+          // Workspace is not ready — open the gate and show startup view
+          setGate({
+            open: true,
+            sync: false,
+            id: row.workspaceId,
+            status: row.status ?? "pending_sandbox",
+            err: undefined,
+            logs: [],
+          })
+
+          if (row.status) {
             note(row.status, row.status === "stopped" ? "Waking workspace runtime..." : undefined)
           }
 
@@ -363,7 +371,6 @@ export default function Page() {
           off()
         })
       },
-      { defer: true },
     ),
   )
 

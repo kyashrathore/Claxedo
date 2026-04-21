@@ -4,7 +4,6 @@
 import { Server } from "@/server/server"
 import { Log } from "@/util/log"
 import { Instance } from "@/project/instance"
-import { InstanceBootstrap } from "@/project/bootstrap"
 
 ;(async () => {
   try {
@@ -27,10 +26,9 @@ import { InstanceBootstrap } from "@/project/bootstrap"
 
     await Instance.provide({
       directory: projectDir,
-      init: InstanceBootstrap,
-      fn: () => {
+      fn: async () => {
         console.log("[web-entry] calling Server.listen on port " + port)
-        const server = Server.listen({ port, hostname })
+        const server = await Server.listen({ port, hostname })
         console.log("[web-entry] server listening on http://" + server.hostname + ":" + server.port)
       },
     })

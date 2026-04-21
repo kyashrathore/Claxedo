@@ -8,7 +8,7 @@ import { DialogDeleteSession } from "../components/dialogs"
 import { REVIEW_MODE_LABEL } from "../context/claxedo-layout/review-intent"
 import type { ReviewMode } from "../context/claxedo-layout/types"
 import type { ActionProps, Nav } from "./shared"
-import { findProjectForWorkspace, message } from "./shared"
+import { findProjectForWorkspace, findWorkspaceForDirectory, message } from "./shared"
 import { capture as phCapture } from "../../analytics/posthog"
 import { archiveSession, runUpdate } from "./session-actions.logic"
 import { sessionRoute } from "../context/claxedo-layout/tab-route"
@@ -95,6 +95,24 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     const targetGroupId = groupId ?? matches.find((g) => g.id === focusedId)?.id ?? matches[0]?.id ?? focusedId
     const tabs = targetGroupId ? props.claxedo.groupTabs(targetGroupId) : props.claxedo.topTabs
     if (targetGroupId) props.claxedo.dispatch({ type: "SplitFocusRequested", groupId: targetGroupId })
+
+    // Cloud workspaces: signal cloud-pending intent so the session page
+    // engages the startup gate immediately instead of showing a blank shell.
+    const wsInfo = findWorkspaceForDirectory(props.projects, workspaceDir)
+    if (wsInfo?.isCloud) {
+      props.flowLog("new session cloud guard", { workspaceDir, isCloud: true })
+      const id = tabs.addSession(workspaceDir, "new", "Preparing workspace...")
+      if (id) {
+        tabs.setActive(id)
+        nav(sessionRoute(workspaceDir), "new-session:cloud", {
+          workspaceDir,
+          requestedGroupId: groupId,
+          tabId: id,
+        })
+      }
+      return
+    }
+
     const id = tabs.addSession(workspaceDir, "new", "New Session")
     if (id) {
       tabs.setActive(id)

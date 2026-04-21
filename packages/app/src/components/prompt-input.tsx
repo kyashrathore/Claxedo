@@ -68,6 +68,10 @@ interface PromptInputProps {
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void
   onSubmit?: () => void
+  sessionID?: string
+  navigateOnCreate?: boolean
+  system?: string
+  agent?: string
 }
 
 const EXAMPLES = [
