@@ -4,6 +4,7 @@ import type {
   BrowserConsoleEntry,
   BrowserConsoleQuery,
   BrowserEvaluateResult,
+  BrowserNodeSelectedPayload,
   BrowserRegisterResult,
   BrowserResult,
   BrowserScreenshotClip,
@@ -39,6 +40,18 @@ const browserBridge: BrowserBridge = {
     ipcRenderer.invoke("browser:evaluate", paneId, expression) as Promise<BrowserEvaluateResult>,
   setAgentAllowed: (paneId, allowed) =>
     ipcRenderer.invoke("browser:setAgentAllowed", paneId, Boolean(allowed)) as Promise<BrowserResult>,
+  setInspectMode: (paneId, enabled) =>
+    ipcRenderer.invoke("browser:setInspectMode", paneId, Boolean(enabled)) as Promise<BrowserResult>,
+  onNodeSelected: (paneId, cb) => {
+    const channel = `browser:onNodeSelected:${paneId}`
+    const handler = (_: unknown, payload: BrowserNodeSelectedPayload) => cb(payload)
+    ipcRenderer.on(channel, handler)
+    void ipcRenderer.invoke("browser:subscribeNodeSelected", paneId)
+    return () => {
+      ipcRenderer.removeListener(channel, handler)
+      void ipcRenderer.invoke("browser:unsubscribeNodeSelected", paneId).catch(() => {})
+    }
+  },
 }
 
 const api: ElectronAPI = {

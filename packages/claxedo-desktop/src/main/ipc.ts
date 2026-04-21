@@ -3,7 +3,12 @@ import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, nativeIma
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
-import type { BrowserConsoleEntry, BrowserConsoleQuery, BrowserScreenshotClip } from "../preload/types"
+import type {
+  BrowserConsoleEntry,
+  BrowserConsoleQuery,
+  BrowserNodeSelectedPayload,
+  BrowserScreenshotClip,
+} from "../preload/types"
 import type { BrowserRegistry } from "./browser/registry"
 import { getStore } from "./store"
 
@@ -320,6 +325,65 @@ function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
       const handle = registry.get(paneId)
       if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
       handle.setAgentAllowed(Boolean(allowed))
+      return { ok: true as const }
+    },
+  )
+
+  ipcMain.handle(
+    "browser:setInspectMode",
+    async (_event: IpcMainInvokeEvent, paneId: string, enabled: boolean) => {
+      const handle = registry.get(paneId)
+      if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+      return handle.setInspectMode(Boolean(enabled))
+    },
+  )
+
+  // Per-renderer node-selected subscriptions. Keyed on (paneId + sender.id)
+  // so multiple listeners per pane per window don't clash.
+  const nodeSubs = new Map<string, () => void>()
+  const nodeKey = (paneId: string, senderId: number) => `${senderId}:${paneId}`
+
+  ipcMain.handle(
+    "browser:subscribeNodeSelected",
+    (event: IpcMainInvokeEvent, paneId: string) => {
+      const handle = registry.get(paneId)
+      if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+      const key = nodeKey(paneId, event.sender.id)
+      if (nodeSubs.has(key)) return { ok: true as const }
+      const unsubscribe = handle.onNodeSelected((payload) => {
+        if (event.sender.isDestroyed()) return
+        event.sender.send(`browser:onNodeSelected:${paneId}`, payload as BrowserNodeSelectedPayload)
+      })
+      nodeSubs.set(key, unsubscribe)
+      const cleanup = () => {
+        const fn = nodeSubs.get(key)
+        if (fn) {
+          try {
+            fn()
+          } catch {
+            // ignore
+          }
+          nodeSubs.delete(key)
+        }
+      }
+      event.sender.once("destroyed", cleanup)
+      return { ok: true as const }
+    },
+  )
+
+  ipcMain.handle(
+    "browser:unsubscribeNodeSelected",
+    (event: IpcMainInvokeEvent, paneId: string) => {
+      const key = nodeKey(paneId, event.sender.id)
+      const fn = nodeSubs.get(key)
+      if (fn) {
+        try {
+          fn()
+        } catch {
+          // ignore
+        }
+        nodeSubs.delete(key)
+      }
       return { ok: true as const }
     },
   )

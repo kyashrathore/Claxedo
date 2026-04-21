@@ -54,6 +54,25 @@ export type BrowserEvaluateResult =
   | { ok: true; result: unknown }
   | { ok: false; error: { code: string; message?: string; stack?: string } }
 
+/** Renderer-mirror of the main-process `NodeSelectedPayload`. */
+export type BrowserNodeSelectedPayload =
+  | {
+      ok: true
+      selector: string
+      shadow?: { host: string; inner: string }
+      frameUrl: string
+      boundingBox?: { x: number; y: number; width: number; height: number }
+      outerHTML?: string
+      tagName: string
+      screenshotDataUrl?: string
+    }
+  | {
+      ok: false
+      error: "shadow-root-closed" | "element-not-found" | "not-attached" | "generic" | "timeout"
+      message?: string
+      frameUrl?: string
+    }
+
 export type BrowserBridgeApi = {
   enabled: () => Promise<boolean>
   register: (paneId: string, webContentsId: number) => Promise<{ ok: boolean; error?: string }>
@@ -67,6 +86,8 @@ export type BrowserBridgeApi = {
   captureScreenshot: (paneId: string, opts?: { clip?: BrowserScreenshotClip }) => Promise<BrowserScreenshotResult>
   evaluate: (paneId: string, expression: string) => Promise<BrowserEvaluateResult>
   setAgentAllowed: (paneId: string, allowed: boolean) => Promise<{ ok: boolean; error?: string }>
+  setInspectMode: (paneId: string, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
+  onNodeSelected: (paneId: string, cb: (payload: BrowserNodeSelectedPayload) => void) => () => void
 }
 
 export const MAX_CLIENT_CONSOLE_ENTRIES = 2000
@@ -95,6 +116,10 @@ export type BrowserPaneState = {
   setCurrentUrl: (url: string | undefined) => void
   agentAllowed: Accessor<boolean>
   setAgentAllowed: (allowed: boolean) => Promise<void>
+  inspectMode: Accessor<boolean>
+  setInspectMode: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>
+  lastSelectedNode: Accessor<BrowserNodeSelectedPayload | undefined>
+  clearLastSelectedNode: () => void
   clearConsole: () => void
   captureScreenshot: (opts?: { clip?: BrowserScreenshotClip }) => Promise<BrowserScreenshotResult>
   evaluate: (expression: string) => Promise<BrowserEvaluateResult>
@@ -110,6 +135,8 @@ export const { use: useBrowserPane, provider: BrowserPaneProvider } = createSimp
     const [isLoading, setLoading] = createSignal<boolean>(false)
     const [currentUrl, setCurrentUrl] = createSignal<string | undefined>(props.initialUrl)
     const [agentAllowed, setAgentAllowedSig] = createSignal<boolean>(false)
+    const [inspectMode, setInspectModeSig] = createSignal<boolean>(false)
+    const [lastSelectedNode, setLastSelectedNode] = createSignal<BrowserNodeSelectedPayload | undefined>(undefined)
 
     const appendEntry = (e: BrowserConsoleEntry) => {
       const arr = consoleEntries()
@@ -124,6 +151,20 @@ export const { use: useBrowserPane, provider: BrowserPaneProvider } = createSimp
       onCleanup(() => {
         try {
           unsubscribe()
+        } catch {
+          // ignore
+        }
+      })
+
+      // Node-selected subscription. Chromium auto-disables inspect mode on
+      // click, so the signal is flipped back here regardless of the payload.
+      const unsubscribeNode = bridge.onNodeSelected(props.paneId, (payload) => {
+        setInspectModeSig(false)
+        setLastSelectedNode(payload)
+      })
+      onCleanup(() => {
+        try {
+          unsubscribeNode()
         } catch {
           // ignore
         }
@@ -156,6 +197,26 @@ export const { use: useBrowserPane, provider: BrowserPaneProvider } = createSimp
       return bridge.evaluate(props.paneId, expression)
     }
 
+    const setInspectMode = async (enabled: boolean): Promise<{ ok: boolean; error?: string }> => {
+      if (!bridge) return { ok: false, error: "no-bridge" }
+      // Optimistically flip the UI signal; revert if the main process
+      // refuses. This keeps the button feedback snappy.
+      setInspectModeSig(Boolean(enabled))
+      try {
+        const r = await bridge.setInspectMode(props.paneId, Boolean(enabled))
+        if (!r.ok) {
+          setInspectModeSig(!enabled)
+          return r
+        }
+        return r
+      } catch (err) {
+        setInspectModeSig(!enabled)
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
+    const clearLastSelectedNode = () => setLastSelectedNode(undefined)
+
     return {
       paneId: () => props.paneId,
       bridge: () => bridge,
@@ -168,6 +229,10 @@ export const { use: useBrowserPane, provider: BrowserPaneProvider } = createSimp
       setCurrentUrl,
       agentAllowed,
       setAgentAllowed,
+      inspectMode,
+      setInspectMode,
+      lastSelectedNode,
+      clearLastSelectedNode,
       clearConsole,
       captureScreenshot,
       evaluate,

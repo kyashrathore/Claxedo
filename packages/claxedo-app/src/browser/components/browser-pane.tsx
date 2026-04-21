@@ -65,6 +65,7 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
     <BrowserPaneProvider paneId={props.paneId} bridge={api} initialUrl={props.initialUrl}>
       <div class="flex h-full w-full flex-col bg-background text-foreground">
         <BrowserPaneHeader initialUrl={props.initialUrl} />
+        <BrowserPaneSelectedNodeBanner />
         <div class="relative flex-1">
           <div data-testid="browser-pane-webview-host" class="absolute inset-0">
             <Show
@@ -83,6 +84,7 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
                 <WebviewHost paneId={props.paneId} initialUrl={props.initialUrl} api={apiAccessor()} />
               )}
             </Show>
+            <BrowserPaneInspectShield />
           </div>
         </div>
         <BrowserPaneConsoleDrawer />
@@ -100,6 +102,21 @@ function BrowserPaneHeader(props: { initialUrl?: string }) {
         <span class="truncate text-muted-foreground">{props.initialUrl}</span>
       </Show>
       <div class="ml-auto flex items-center gap-3">
+        <button
+          type="button"
+          classList={{
+            "rounded border px-2 py-0.5 text-xs": true,
+            "border-primary text-primary": ctx.inspectMode(),
+            "border-border text-muted-foreground hover:text-foreground": !ctx.inspectMode(),
+          }}
+          onClick={() => {
+            void ctx.setInspectMode(!ctx.inspectMode())
+          }}
+          data-testid="browser-pane-inspect-toggle"
+          aria-pressed={ctx.inspectMode()}
+        >
+          {ctx.inspectMode() ? "Inspecting..." : "Inspect"}
+        </button>
         <label class="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground">
           <input
             type="checkbox"
@@ -121,6 +138,56 @@ function BrowserPaneHeader(props: { initialUrl?: string }) {
         </button>
       </div>
     </div>
+  )
+}
+
+/**
+ * Surfaces the last node-selected payload below the header. Unit 5 only has
+ * to expose the raw payload — Unit 6 wraps this in a proper comment composer.
+ * When inspect mode is on we also render an invisible overlay that swallows
+ * pointer events so the user's clicks only go to the Chromium picker, not
+ * the underlying guest page's handlers.
+ */
+function BrowserPaneSelectedNodeBanner() {
+  const ctx = useBrowserPane()
+  return (
+    <Show when={ctx.lastSelectedNode()}>
+      {(nodeAccessor) => {
+        const node = nodeAccessor()
+        return (
+          <div
+            class="flex items-start gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-xs"
+            data-testid="browser-pane-selected-node"
+          >
+            <div class="flex-1 overflow-hidden">
+              <Show
+                when={node.ok}
+                fallback={
+                  <span class="text-red-500">
+                    Inspect failed: {!node.ok ? node.error : ""} {!node.ok && node.message ? `– ${node.message}` : ""}
+                  </span>
+                }
+              >
+                <span class="mr-1 font-mono text-foreground">
+                  {node.ok ? node.selector : ""}
+                </span>
+                <Show when={node.ok && node.frameUrl}>
+                  <span class="text-muted-foreground"> · {node.ok ? node.frameUrl : ""}</span>
+                </Show>
+              </Show>
+            </div>
+            <button
+              type="button"
+              class="text-muted-foreground hover:text-foreground"
+              onClick={() => ctx.clearLastSelectedNode()}
+              data-testid="browser-pane-selected-node-dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )
+      }}
+    </Show>
   )
 }
 
@@ -170,6 +237,35 @@ function BrowserPaneConsoleDrawer() {
         </For>
       </ul>
     </div>
+  )
+}
+
+/**
+ * When inspect mode is on, the Chromium-native overlay already handles the
+ * click and dispatches `Overlay.inspectNodeRequested`. However, the
+ * surrounding renderer UI (menus, context-menus, double-click handlers)
+ * should not fire. This shield sits above the webview only while inspect is
+ * on; the overlay passes clicks through to the guest via CDP.
+ *
+ * The shield is `pointer-events: auto` but it does NOT visually occlude —
+ * Chromium's picker already dims the page.
+ */
+function BrowserPaneInspectShield() {
+  const ctx = useBrowserPane()
+  return (
+    <Show when={ctx.inspectMode()}>
+      <div
+        class="absolute inset-0"
+        style={{
+          "pointer-events": "none",
+          // Crosshair cursor on the renderer so the outer UI also reflects
+          // that the user is in pick mode.
+          cursor: "crosshair",
+        }}
+        data-testid="browser-pane-inspect-shield"
+        aria-hidden="true"
+      />
+    </Show>
   )
 }
 

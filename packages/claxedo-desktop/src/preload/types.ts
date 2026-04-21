@@ -65,6 +65,29 @@ export type BrowserScreenshotResult =
   | { ok: true; dataUrl: string; mimeType: "image/png" | "image/jpeg" }
   | { ok: false; error: { code: "no-page" | "not-attached" | "cdp-error" | "no-pane"; message?: string } }
 
+/**
+ * Payload forwarded to the renderer when the user clicks an element with
+ * inspect mode on. Mirrors the main-process `NodeSelectedPayload` — the
+ * renderer must handle both the success and failure variants.
+ */
+export type BrowserNodeSelectedPayload =
+  | {
+      ok: true
+      selector: string
+      shadow?: { host: string; inner: string }
+      frameUrl: string
+      boundingBox?: { x: number; y: number; width: number; height: number }
+      outerHTML?: string
+      tagName: string
+      screenshotDataUrl?: string
+    }
+  | {
+      ok: false
+      error: "shadow-root-closed" | "element-not-found" | "not-attached" | "generic" | "timeout"
+      message?: string
+      frameUrl?: string
+    }
+
 export type BrowserEvaluateResult =
   | { ok: true; result: unknown }
   | {
@@ -98,6 +121,13 @@ export type BrowserBridge = {
   evaluate: (paneId: string, expression: string) => Promise<BrowserEvaluateResult>
   /** Per-tab opt-in gate for agent-side `evaluate`. Defaults to false. */
   setAgentAllowed: (paneId: string, allowed: boolean) => Promise<BrowserResult>
+  /** Toggle the Chromium native element-picker overlay on the pane. */
+  setInspectMode: (paneId: string, enabled: boolean) => Promise<BrowserResult>
+  /** Subscribe to node-selected events. Returns unsubscribe. */
+  onNodeSelected: (
+    paneId: string,
+    cb: (payload: BrowserNodeSelectedPayload) => void,
+  ) => () => void
 }
 
 export type ElectronAPI = {
