@@ -1126,7 +1126,6 @@ export class Pty extends HeyApiClient {
       env?: {
         [key: string]: string
       }
-      previousPtyId?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1142,7 +1141,6 @@ export class Pty extends HeyApiClient {
             { in: "body", key: "cwd" },
             { in: "body", key: "title" },
             { in: "body", key: "env" },
-            { in: "body", key: "previousPtyId" },
           ],
         },
       ],

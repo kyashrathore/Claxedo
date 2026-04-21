@@ -73,6 +73,45 @@ Each entry should include:
 
 ***
 
+## 2026-04-21
+
+**Status:** ✅ Success
+
+* **Branch:** `sync/2026-04-21`
+* **Previous Upstream Commit:** `94f71f59a`
+* **Upstream Commit:** `8cc2c81d5`
+* **Mode:** Full rebase
+* **New Upstream Commits:** 121
+* **Conflicts:** Multi-file replay across sync-store, session status, server, SDK, lockfile, and a restored workspace package
+  - `packages/app/src/context/global-sync.tsx`: Accepted upstream sync-store rewrite, then extracted `loadSessionsQuery` into a helper to keep app-side imports/typecheck clean
+  - `packages/app/src/context/global-sync/bootstrap.ts`: Accepted upstream bootstrap flow
+  - `packages/app/src/pages/session/composer/session-composer-state.ts`: Accepted upstream composer cleanup
+  - `packages/opencode/src/server/server.ts`: Accepted upstream server layout
+  - `packages/opencode/src/session/status.ts`: Accepted upstream status refactor, then re-added fork-only `recovering` status variant
+  - `packages/app/src/context/global-sdk.tsx`: Ported upstream sync-event handling by removing the stale `sync` event skip
+  - `packages/opencode/serve-web-entry.ts`: Updated logging import to match upstream export shape
+  - `packages/util/**`: Restored missing workspace package from pre-rebase fork tip so installs and typechecks still resolve `@opencode-ai/util`
+  - `packages/opencode/package.json`, `packages/claxedo-app/package.json`: Re-added `@opencode-ai/util` workspace dependency after the package restore
+  - `bun.lock`: Regenerated with `bun install`
+* **Upstream Drift Review:**
+
+| Area | Decision | Notes |
+|------|----------|-------|
+| `packages/app/src/context/global-sync.tsx` | Ported | Took upstream query/bootstrap/event flow and kept our app wiring by moving `loadSessionsQuery` into a helper module |
+| `packages/app/src/context/global-sdk.tsx` | Ported | Removed stale sync-event filter so new upstream event envelope flows through |
+| `packages/app/src/pages/layout/sidebar-workspace.tsx` | Ported | Updated import to match extracted query helper |
+| `packages/opencode/src/server/server.ts` | Ported | Accepted upstream route layout and server export structure |
+| `packages/opencode/src/session/status.ts` | Merge | Kept upstream refactor but restored fork-only `recovering` state for existing UI/tests |
+| `packages/sdk/js/src/v2/gen/*` | Regenerated | Regenerated after upstream API changes and the restored `recovering` variant |
+| `packages/sdk/js/openapi.json` | Regenerated | Restored tracked schema file after SDK build script removed it locally |
+| `packages/util/**` | Restored | Pre-existing fork workspace package had to be carried forward manually after replay dropped it |
+
+* **Validation:** `bun install` ✅, `packages/opencode bun run typecheck` ✅, `packages/claxedo-app bun run typecheck` ✅, `packages/claxedo-app bun run build` ✅, `packages/opencode bun run build` ⚠️ reaches successful Vite bundle but hangs afterward in a downstream Bun step
+
+* **Follow-up:** inspect why `packages/opencode` build leaves long-running `bun run script/build.ts` processes after the web bundle completes
+
+***
+
 ## 2026-04-08
 
 **Status:** ✅ Success
