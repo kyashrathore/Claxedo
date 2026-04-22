@@ -32,6 +32,7 @@ import { GlobalSDKProvider } from "@/context/global-sdk"
 import { normalizeServerUrl, ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
 import { SettingsProvider } from "@/context/settings"
 import { NotificationProvider } from "@/context/notification"
+import { BrowserCommentsProvider } from "../browser/store/browser-comments"
 import { ModelsProvider } from "@/context/models"
 import { CommandProvider } from "@/context/command"
 import { LanguageProvider, useLanguage } from "@/context/language"
@@ -293,13 +294,15 @@ function AuthenticatedLayout(
                     <PermissionProvider>
                       <LayoutProvider>
                         <NotificationProvider>
-                          <ModelsProvider>
-                            <CommandProvider>
-                              <HighlightsProvider>
-                                <Layout>{props.children}</Layout>
-                              </HighlightsProvider>
-                            </CommandProvider>
-                          </ModelsProvider>
+                          <BrowserCommentsProvider>
+                            <ModelsProvider>
+                              <CommandProvider>
+                                <HighlightsProvider>
+                                  <Layout>{props.children}</Layout>
+                                </HighlightsProvider>
+                              </CommandProvider>
+                            </ModelsProvider>
+                          </BrowserCommentsProvider>
                         </NotificationProvider>
                       </LayoutProvider>
                     </PermissionProvider>

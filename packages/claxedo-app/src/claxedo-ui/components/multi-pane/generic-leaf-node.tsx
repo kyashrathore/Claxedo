@@ -52,6 +52,7 @@ import {
   getBound,
   bind,
 } from "../../context/pane-bus"
+import { useBrowserComments } from "../../../browser/store/browser-comments"
 import { isMarkdownPath, openMarkdownPageTab } from "../../utils/open-markdown-page-tab"
 
 const paneLeafDebug = createDebugLogger("pane.leaf.summary", "pane:leaf", {
@@ -129,6 +130,13 @@ function SessionPaneBusConsumer(props: { leafId: string; tabId: string; sessionI
   const sync = useSync()
   const prompt = usePrompt()
   const local = useLocal()
+  let browserComments: ReturnType<typeof useBrowserComments> | undefined
+  try {
+    browserComments = useBrowserComments()
+  } catch {
+    // Provider may not be mounted (e.g. tests, non-app contexts); the
+    // page-comment:receive handler short-circuits when absent.
+  }
 
   usePane({
     leafId: props.leafId,
@@ -139,7 +147,7 @@ function SessionPaneBusConsumer(props: { leafId: string; tabId: string; sessionI
       const info = sync.session.get(props.sessionId)
       return info?.title || "Session"
     },
-    capabilities: ["comment:receive", "model:provide", "session:provide"],
+    capabilities: ["comment:receive", "model:provide", "session:provide", "page-comment:receive"],
     handlers: {
       "comment:receive": {
         onComment: (payload) => prompt.context.add(payload),
@@ -153,6 +161,13 @@ function SessionPaneBusConsumer(props: { leafId: string; tabId: string; sessionI
       "session:provide": () => {
         if (!props.sessionId || props.sessionId === "new") return undefined
         return props.sessionId
+      },
+      "page-comment:receive": {
+        onPageComment: (payload) => {
+          if (!browserComments) return
+          if (!props.sessionId || props.sessionId === "new") return
+          browserComments.enqueue(props.sessionId, payload)
+        },
       },
     },
   })
@@ -951,7 +966,7 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
               </Match>
 
               <Match when={content().type === "browser"}>
-                <BrowserPane paneId={props.leafId} />
+                <BrowserPane paneId={props.leafId} tabId={props.tabId} />
               </Match>
 
               <Match when={content().type === "page" && content().pageId}>

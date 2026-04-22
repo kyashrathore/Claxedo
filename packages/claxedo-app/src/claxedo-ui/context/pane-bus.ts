@@ -29,6 +29,27 @@ export type CommentPayload = {
   preview?: string
 }
 
+/**
+ * Payload produced by the browser pane when the user comments on a selected
+ * DOM element. Intentionally disjoint from `CommentPayload` so the
+ * `page-comment:*` capability pair never cross-delivers to review-only
+ * `comment:receive` consumers.
+ *
+ * The consumer is expected to store this into the claxedo-owned
+ * `useBrowserComments` store keyed by its own session id — the producer
+ * doesn't know the session id.
+ */
+export type PageElementCommentPayload = {
+  tabId: string
+  pageUrl: string
+  selector: string
+  comment: string
+  noteText: string
+  boundingBox?: { x: number; y: number; width: number; height: number }
+  outerHTML?: string
+  screenshotDataUrl?: string
+}
+
 export type ModelKey = { providerID: string; modelID: string }
 
 export type PaneCapability =
@@ -39,6 +60,8 @@ export type PaneCapability =
   | "model:provide"
   | "session:provide"
   | "review:focus-file"
+  | "page-comment:produce"
+  | "page-comment:receive"
 
 export type PaneHandlerMap = {
   "comment:receive"?: {
@@ -59,6 +82,10 @@ export type PaneHandlerMap = {
   "review:focus-file"?: {
     onFocusFile: (path: string) => void
   }
+  "page-comment:produce"?: Record<string, never>
+  "page-comment:receive"?: {
+    onPageComment: (payload: PageElementCommentPayload) => void
+  }
 }
 
 export type PaneRegistration = {
@@ -71,7 +98,7 @@ export type PaneRegistration = {
   onAction?: (action: PaneAction) => void
 }
 
-export type BindingType = "comment" | "review"
+export type BindingType = "comment" | "review" | "page-comment"
 
 export type PaneAction =
   | { type: "comment:add"; payload: CommentPayload }
@@ -81,6 +108,7 @@ export type PaneAction =
   | { type: "page-ai:action"; payload: { action: string; instruction?: string } }
   | { type: "page-ai:open" }
   | { type: "review:focus-file"; payload: { path: string } }
+  | { type: "page-comment:add"; payload: PageElementCommentPayload }
   | { type: "custom"; channel: string; payload: unknown }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +359,23 @@ export function sendFocusFile(tabId: string, path: string): number {
   })
 }
 
+/**
+ * Route a page-element comment from a browser producer to its bound session
+ * consumer. Mirrors `sendComment`, but uses the `"page-comment"` binding
+ * type so consumers that only registered `comment:receive` never see these
+ * payloads.
+ */
+export function sendPageComment(fromLeafId: string, payload: PageElementCommentPayload): boolean {
+  const toLeafId = getBindingMap("page-comment").get(fromLeafId)
+  if (!toLeafId) return false
+  const target = state.panes.get(toLeafId)
+  if (!target) return false
+  const handler = target.handlers["page-comment:receive"]
+  if (!handler) return false
+  handler.onPageComment(payload)
+  return true
+}
+
 export function sendContextToggle(leafId: string, sessionId?: string): boolean {
   const target = state.panes.get(leafId)
   if (!target) return false
@@ -396,6 +441,12 @@ export function dispatch(leafId: string, action: PaneAction): boolean {
       const h = target.handlers["review:focus-file"]
       if (!h) return false
       h.onFocusFile(action.payload.path)
+      return true
+    }
+    case "page-comment:add": {
+      const h = target.handlers["page-comment:receive"]
+      if (!h) return false
+      h.onPageComment(action.payload)
       return true
     }
     case "custom":

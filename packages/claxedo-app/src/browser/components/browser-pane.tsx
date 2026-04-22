@@ -1,10 +1,14 @@
-import { For, Show, createSignal, onCleanup, type Component } from "solid-js"
+import { For, Show, createEffect, createSignal, onCleanup, type Component } from "solid-js"
 
 import {
   BrowserPaneProvider,
   useBrowserPane,
   type BrowserBridgeApi,
 } from "../store/browser-pane-context"
+import { useBrowserComments } from "../store/browser-comments"
+import { autoBind, sendPageComment, usePane } from "../../claxedo-ui/context/pane-bus"
+import { formatElementCommentNote } from "../utils/format-element-comment-note"
+import { ElementCommentComposer } from "./element-comment-composer"
 
 /**
  * BrowserPane.
@@ -23,6 +27,7 @@ import {
  */
 export type BrowserPaneProps = {
   paneId: string
+  tabId?: string
   browserId?: string
   initialUrl?: string
 }
@@ -63,9 +68,10 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
 
   return (
     <BrowserPaneProvider paneId={props.paneId} bridge={api} initialUrl={props.initialUrl}>
+      <BrowserPaneBusBridge leafId={props.paneId} tabId={props.tabId} />
       <div class="flex h-full w-full flex-col bg-background text-foreground">
         <BrowserPaneHeader initialUrl={props.initialUrl} />
-        <BrowserPaneSelectedNodeBanner />
+        <BrowserPaneElementCommentArea leafId={props.paneId} tabId={props.tabId} />
         <div class="relative flex-1">
           <div data-testid="browser-pane-webview-host" class="absolute inset-0">
             <Show
@@ -90,6 +96,165 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
         <BrowserPaneConsoleDrawer />
       </div>
     </BrowserPaneProvider>
+  )
+}
+
+/**
+ * Registers the browser pane as a `page-comment:produce` publisher on the
+ * pane bus and auto-binds to a single sibling session consumer. When no
+ * `tabId` is supplied (e.g. rendered outside a claxedo multi-pane shell)
+ * we skip registration entirely — the `useBrowserComments()` history still
+ * works for the local pane, there's just nowhere to route payloads to.
+ */
+function BrowserPaneBusBridge(props: { leafId: string; tabId?: string }) {
+  if (!props.tabId) return null
+  const tabId = props.tabId
+  usePane({
+    leafId: props.leafId,
+    tabId,
+    type: "browser",
+    name: () => "Browser",
+    capabilities: ["page-comment:produce"],
+    handlers: {
+      "page-comment:produce": {},
+    },
+  })
+
+  createEffect(() => {
+    autoBind(props.leafId, "page-comment", "page-comment:receive")
+  })
+  return null
+}
+
+/**
+ * Mounted below the header. When the inspector surfaces a selected node
+ * (via Unit 5), this area swaps from the lightweight selector banner to a
+ * full `ElementCommentComposer`. On submit, the payload is added to the
+ * claxedo-owned `useBrowserComments` store (for local history) and routed
+ * to the bound session via `sendPageComment`.
+ */
+function BrowserPaneElementCommentArea(props: { leafId: string; tabId?: string }) {
+  const ctx = useBrowserPane()
+  const [composing, setComposing] = createSignal(false)
+  let browserComments: ReturnType<typeof useBrowserComments> | undefined
+  try {
+    browserComments = useBrowserComments()
+  } catch {
+    // Tests or non-app contexts — local history write silently skipped,
+    // but pane-bus routing still works so the session consumer enqueues.
+  }
+
+  const handleSubmit = (payload: {
+    tabId: string
+    pageUrl: string
+    selector: string
+    comment: string
+    noteText: string
+    boundingBox?: { x: number; y: number; width: number; height: number }
+    outerHTML?: string
+    screenshotDataUrl?: string
+  }) => {
+    // History: record under the producer's tabId even when we can't send.
+    if (browserComments) {
+      browserComments.add({
+        tabId: payload.tabId,
+        pageUrl: payload.pageUrl,
+        selector: payload.selector,
+        comment: payload.comment,
+        noteText: payload.noteText,
+        boundingBox: payload.boundingBox,
+        outerHTML: payload.outerHTML,
+        screenshotDataUrl: payload.screenshotDataUrl,
+      })
+    }
+    // Route to session consumer, which enqueues under its own sessionId.
+    sendPageComment(props.leafId, payload)
+    ctx.clearLastSelectedNode()
+    setComposing(false)
+  }
+
+  const cancel = () => {
+    ctx.clearLastSelectedNode()
+    setComposing(false)
+  }
+
+  const startComposing = () => setComposing(true)
+
+  return (
+    <Show
+      when={ctx.lastSelectedNode()}
+      fallback={null}
+    >
+      {(nodeAccessor) => {
+        const node = nodeAccessor()
+        if (!node.ok) {
+          return (
+            <div
+              class="flex items-start gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-xs"
+              data-testid="browser-pane-selected-node"
+            >
+              <div class="flex-1 overflow-hidden">
+                <span class="text-red-500">
+                  Inspect failed: {node.error}
+                  {node.message ? ` – ${node.message}` : ""}
+                </span>
+              </div>
+              <button
+                type="button"
+                class="text-muted-foreground hover:text-foreground"
+                onClick={() => ctx.clearLastSelectedNode()}
+                data-testid="browser-pane-selected-node-dismiss"
+              >
+                ×
+              </button>
+            </div>
+          )
+        }
+        return (
+          <Show
+            when={composing()}
+            fallback={
+              <div
+                class="flex items-start gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-xs"
+                data-testid="browser-pane-selected-node"
+              >
+                <div class="flex-1 overflow-hidden">
+                  <span class="mr-1 font-mono text-foreground">{node.selector}</span>
+                  <Show when={node.frameUrl}>
+                    <span class="text-muted-foreground"> · {node.frameUrl}</span>
+                  </Show>
+                </div>
+                <button
+                  type="button"
+                  class="text-xs text-foreground hover:underline"
+                  data-testid="browser-pane-selected-node-comment"
+                  onClick={startComposing}
+                >
+                  Comment
+                </button>
+                <button
+                  type="button"
+                  class="text-muted-foreground hover:text-foreground"
+                  onClick={() => ctx.clearLastSelectedNode()}
+                  data-testid="browser-pane-selected-node-dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            }
+          >
+            <ElementCommentComposer
+              tabId={props.tabId ?? ""}
+              pageUrl={node.frameUrl}
+              node={node}
+              formatNote={formatElementCommentNote}
+              onElementComment={handleSubmit}
+              onCancel={cancel}
+            />
+          </Show>
+        )
+      }}
+    </Show>
   )
 }
 
@@ -138,56 +303,6 @@ function BrowserPaneHeader(props: { initialUrl?: string }) {
         </button>
       </div>
     </div>
-  )
-}
-
-/**
- * Surfaces the last node-selected payload below the header. Unit 5 only has
- * to expose the raw payload — Unit 6 wraps this in a proper comment composer.
- * When inspect mode is on we also render an invisible overlay that swallows
- * pointer events so the user's clicks only go to the Chromium picker, not
- * the underlying guest page's handlers.
- */
-function BrowserPaneSelectedNodeBanner() {
-  const ctx = useBrowserPane()
-  return (
-    <Show when={ctx.lastSelectedNode()}>
-      {(nodeAccessor) => {
-        const node = nodeAccessor()
-        return (
-          <div
-            class="flex items-start gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-xs"
-            data-testid="browser-pane-selected-node"
-          >
-            <div class="flex-1 overflow-hidden">
-              <Show
-                when={node.ok}
-                fallback={
-                  <span class="text-red-500">
-                    Inspect failed: {!node.ok ? node.error : ""} {!node.ok && node.message ? `– ${node.message}` : ""}
-                  </span>
-                }
-              >
-                <span class="mr-1 font-mono text-foreground">
-                  {node.ok ? node.selector : ""}
-                </span>
-                <Show when={node.ok && node.frameUrl}>
-                  <span class="text-muted-foreground"> · {node.ok ? node.frameUrl : ""}</span>
-                </Show>
-              </Show>
-            </div>
-            <button
-              type="button"
-              class="text-muted-foreground hover:text-foreground"
-              onClick={() => ctx.clearLastSelectedNode()}
-              data-testid="browser-pane-selected-node-dismiss"
-            >
-              ×
-            </button>
-          </div>
-        )
-      }}
-    </Show>
   )
 }
 

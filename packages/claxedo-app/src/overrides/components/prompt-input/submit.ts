@@ -25,6 +25,7 @@ import { useClaxedoLayout } from "../../../claxedo-ui/context/claxedo-layout"
 import { sessionRoute } from "../../../claxedo-ui/context/claxedo-layout/tab-route"
 import { paneMentionSystem } from "../../../claxedo-ui/context/claxedo-layout/pane-intent"
 import { acpScope, useAcpConfig } from "../../../claxedo-ui/context/acp-config"
+import { useBrowserComments } from "../../../browser/store/browser-comments"
 
 type PendingPrompt = {
   abort: AbortController
@@ -99,6 +100,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     acpConfig = useAcpConfig()
   } catch {
     /* not in claxedo context */
+  }
+
+  // Claxedo-owned queue of page-element comments; drained after a successful
+  // send so pending browser comments don't re-attach to the next prompt.
+  let browserComments: ReturnType<typeof useBrowserComments> | undefined
+  try {
+    browserComments = useBrowserComments()
+  } catch {
+    /* provider may not be mounted in every host (tests, demo) */
   }
 
   // Multi-pane: detect context so we can update pane content directly instead of navigating
@@ -546,6 +556,29 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
 
     removeCommentItems(commentItems)
+    // Snapshot pending page-element comments keyed by the session we're
+    // sending to. Cleared alongside `prompt.context.items` so they don't
+    // stick around between prompts; restored on send failure below.
+    const pendingBrowserComments = browserComments?.pending(session.id) ?? []
+    if (browserComments) browserComments.clearPending(session.id)
+    const restoreBrowserComments = () => {
+      if (!browserComments) return
+      for (const entry of pendingBrowserComments) {
+        browserComments.add({
+          id: entry.id,
+          createdAt: entry.createdAt,
+          tabId: entry.tabId,
+          sessionId: entry.sessionId,
+          pageUrl: entry.pageUrl,
+          selector: entry.selector,
+          comment: entry.comment,
+          noteText: entry.noteText,
+          boundingBox: entry.boundingBox,
+          outerHTML: entry.outerHTML,
+          screenshotDataUrl: entry.screenshotDataUrl,
+        })
+      }
+    }
     clearInput()
 
     // Multi-pane: update pane content AND add optimistic message in the same batch
@@ -623,6 +656,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         clearBoot()
         removeOptimisticMessage()
         restoreCommentItems(commentItems)
+        restoreBrowserComments()
         restoreInput()
       }
 

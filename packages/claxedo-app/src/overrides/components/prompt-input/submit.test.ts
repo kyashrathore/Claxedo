@@ -201,6 +201,19 @@ beforeAll(async () => {
     },
   }))
 
+  mock.module("../../../browser/store/browser-comments", () => ({
+    useBrowserComments: () => ({
+      pending: () => [],
+      list: () => [],
+      add: (e: any) => ({ ...e, id: "mock-id", createdAt: 0 }),
+      enqueue: (_s: string, p: any) => ({ ...p, id: "mock-id", createdAt: 0 }),
+      remove: () => undefined,
+      update: () => undefined,
+      clearPending: () => undefined,
+      ready: () => true,
+    }),
+  }))
+
   mock.module("../../../claxedo-ui/context/acp-config", () => ({
     acpScope: () => "scope",
     useAcpConfig: () => ({
