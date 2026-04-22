@@ -966,7 +966,18 @@ export function GenericLeafNode(props: GenericLeafNodeProps) {
               </Match>
 
               <Match when={content().type === "browser"}>
-                <BrowserPane paneId={props.leafId} tabId={props.tabId} />
+                <BrowserPane
+                  paneId={props.leafId}
+                  tabId={props.tabId}
+                  browserId={tab()?.browserId}
+                  initialUrl={tab()?.currentUrl}
+                  onNavigationChange={(patch) => {
+                    const ops = tabs()
+                    if (typeof ops.updateBrowserTab === "function") {
+                      ops.updateBrowserTab(props.tabId, patch)
+                    }
+                  }}
+                />
               </Match>
 
               <Match when={content().type === "page" && content().pageId}>

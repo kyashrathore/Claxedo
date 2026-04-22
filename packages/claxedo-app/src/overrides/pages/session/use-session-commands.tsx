@@ -42,6 +42,8 @@ const canAddSelectionContext = (input: {
 import { base64Decode } from "@opencode-ai/util/encode"
 import { useClaxedoLayout } from "@claxedo/claxedo-ui/context/claxedo-layout"
 import { capture as phCapture } from "../../../analytics/posthog"
+import { useConfigOptional } from "../../../context/config"
+import { openBrowserTabWithGate } from "../../../browser/actions/browser-actions"
 
 export type SessionCommandContext = {
   activeMessage: () => UserMessage | undefined
@@ -77,6 +79,8 @@ export const useSessionCommands = (args: SessionCommandContext) => {
   } catch {
     /* not in claxedo mode */
   }
+  const claxedoConfig = useConfigOptional()
+  const browserTabEnabled = () => Boolean(claxedoConfig?.browserTabEnabled)
   const params = useParams()
   const navigate = useNavigate()
 
@@ -267,6 +271,28 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const msg = args.activeMessage()
         if (!msg) return
         args.setExpanded(msg.id, (open: boolean | undefined) => !open)
+      },
+    }),
+    // Agentic browser tab (Unit 7): gated on VITE_CLAXEDO_ENABLE_BROWSER_TAB
+    // via claxedoConfig. The main-process flag (CLAXEDO_ENABLE_BROWSER_TAB=1)
+    // is independent — when it's off the pane renders a legible "requires
+    // desktop" fallback; when the renderer flag is also off we short-circuit
+    // the hotkey entirely with a toast so there is no tab creation at all.
+    viewCommand({
+      id: "browser.new",
+      title: "New Browser Tab",
+      keybind: "mod+shift+b",
+      onSelect: () => {
+        const workspaceDir = params.dir ? base64Decode(params.dir) : sdk.directory
+        const result = openBrowserTabWithGate(
+          {
+            enabled: browserTabEnabled(),
+            claxedo,
+            workspaceDir,
+          },
+          (opts) => showToast(opts),
+        )
+        if (result.ok) phCapture("browser_tab_opened", { via: "keybind" })
       },
     }),
   ])

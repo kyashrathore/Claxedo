@@ -33,6 +33,7 @@ import { normalizeServerUrl, ServerConnection, ServerProvider, serverName, useSe
 import { SettingsProvider } from "@/context/settings"
 import { NotificationProvider } from "@/context/notification"
 import { BrowserCommentsProvider } from "../browser/store/browser-comments"
+import { BrowserHistoryProvider } from "../browser/store/browser-history"
 import { ModelsProvider } from "@/context/models"
 import { CommandProvider } from "@/context/command"
 import { LanguageProvider, useLanguage } from "@/context/language"
@@ -295,13 +296,15 @@ function AuthenticatedLayout(
                       <LayoutProvider>
                         <NotificationProvider>
                           <BrowserCommentsProvider>
-                            <ModelsProvider>
-                              <CommandProvider>
-                                <HighlightsProvider>
-                                  <Layout>{props.children}</Layout>
-                                </HighlightsProvider>
-                              </CommandProvider>
-                            </ModelsProvider>
+                            <BrowserHistoryProvider>
+                              <ModelsProvider>
+                                <CommandProvider>
+                                  <HighlightsProvider>
+                                    <Layout>{props.children}</Layout>
+                                  </HighlightsProvider>
+                                </CommandProvider>
+                              </ModelsProvider>
+                            </BrowserHistoryProvider>
                           </BrowserCommentsProvider>
                         </NotificationProvider>
                       </LayoutProvider>

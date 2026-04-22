@@ -604,6 +604,58 @@ describe("worktree isolation between groups", () => {
     }
   })
 
+  test("browser tab close + reopen restores currentUrl, pageTitle, and browserId", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { tabs1 } = splitInto2(api)
+
+      const id = tabs1.addBrowserTab("/workspace-a", "https://example.com", "Example")
+      expect(id).toBeTruthy()
+
+      // Simulate an in-page navigation + title change via updateBrowserTab —
+      // this is what the live webview wires up through `onNavigationChange`.
+      tabs1.updateBrowserTab(id, {
+        currentUrl: "https://example.com/docs",
+        pageTitle: "Example Docs",
+        title: "Example Docs",
+      })
+
+      const before = tabs1.items().find((t: any) => t.id === id)
+      expect(before?.currentUrl).toBe("https://example.com/docs")
+      expect(before?.pageTitle).toBe("Example Docs")
+      const originalBrowserId = before?.browserId
+      expect(originalBrowserId).toBeTruthy()
+
+      tabs1.close(id)
+      expect(tabs1.items().find((t: any) => t.id === id)).toBeUndefined()
+
+      tabs1.reopenLast()
+      const after = tabs1.items().find((t: any) => t.type === "browser")
+      expect(after).toBeTruthy()
+      expect(after?.currentUrl).toBe("https://example.com/docs")
+      expect(after?.pageTitle).toBe("Example Docs")
+      expect(after?.title).toBe("Example Docs")
+      expect(after?.browserId).toBe(originalBrowserId)
+    } finally {
+      dispose()
+    }
+  })
+
+  test("updateBrowserTab is a no-op on non-browser tabs", () => {
+    const { api, dispose } = createTestLayout()
+    try {
+      const { tabs1 } = splitInto2(api)
+
+      const sessionId = tabs1.addSession("/ws", "s1", "Session 1")
+      tabs1.updateBrowserTab(sessionId, { currentUrl: "https://should-not-apply" })
+
+      const sessionTab = tabs1.items().find((t: any) => t.id === sessionId)
+      expect((sessionTab as any)?.currentUrl).toBeUndefined()
+    } finally {
+      dispose()
+    }
+  })
+
   test("auto-set worktree.default is per-group (isolation)", () => {
     const { api, dispose } = createTestLayout()
     try {

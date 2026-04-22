@@ -538,6 +538,39 @@ export function createTabActions(
       })
     },
 
+    /**
+     * Patch a browser tab's URL / title on navigation so that close+reopen
+     * restores the last-known state. No-op if the tab isn't of type
+     * `"browser"`. Persistence is handled by the existing claxedo-layout
+     * store — this writer just keeps `TabItem` fields in sync with the live
+     * webview's navigation events (see `browser-pane.tsx`).
+     */
+    updateBrowserTab(
+      tabId: string,
+      patch: { currentUrl?: string; pageTitle?: string; title?: string },
+    ) {
+      setItems((items) => {
+        const idx = items.findIndex((t) => t.id === tabId)
+        if (idx === -1) return items
+        const tab = items[idx]
+        if (tab.type !== "browser") return items
+        const nextCurrentUrl = patch.currentUrl ?? tab.currentUrl
+        const nextPageTitle = patch.pageTitle ?? tab.pageTitle
+        const nextTitle = patch.title ?? tab.title
+        if (
+          tab.currentUrl === nextCurrentUrl &&
+          tab.pageTitle === nextPageTitle &&
+          tab.title === nextTitle
+        )
+          return items
+        return items.map((t) =>
+          t.id === tabId
+            ? { ...t, currentUrl: nextCurrentUrl, pageTitle: nextPageTitle, title: nextTitle }
+            : t,
+        )
+      })
+    },
+
     orderedItems: (() => {
       const items = getItems()
       const currentOrder = getOrder()
