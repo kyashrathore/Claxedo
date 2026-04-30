@@ -28,6 +28,23 @@ import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
 import { Persist, persisted } from "@/utils/persist"
 import { createRefreshQueue } from "@/context/global-sync/queue"
+import { queryOptions, skipToken } from "@tanstack/solid-query"
+import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
+
+export const loadSessionsQuery = (directory: string) =>
+  queryOptions<null>({ queryKey: [directory, "loadSessions"], queryFn: skipToken })
+
+export const loadMcpQuery = (directory: string, sdk?: OpencodeClient) =>
+  queryOptions({
+    queryKey: [directory, "mcp"],
+    queryFn: sdk ? () => sdk.mcp.status().then((r) => r.data ?? {}) : skipToken,
+  })
+
+export const loadLspQuery = (directory: string, sdk?: OpencodeClient) =>
+  queryOptions({
+    queryKey: [directory, "lsp"],
+    queryFn: sdk ? () => sdk.lsp.status().then((r) => r.data ?? []) : skipToken,
+  })
 import { createChildStoreManager } from "@/context/global-sync/child-store"
 import { trimSessions } from "@/context/global-sync/session-trim"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "@/context/global-sync/session-load"

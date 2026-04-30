@@ -266,7 +266,7 @@ const createPlatform = (): Platform => {
       return desktopApi().checkUpdate()
     },
 
-    update: async () => {
+    updateAndRestart: async () => {
       if (!UPDATER_ENABLED) return
       await desktopApi().installUpdate()
     },

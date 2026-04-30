@@ -65,8 +65,8 @@ import {
   errorMessage,
   effectiveWorkspaceOrder,
   sortedRootSessions,
-  workspaceKey,
 } from "@/pages/layout/helpers"
+import { pathKey } from "@/utils/path-key"
 import { collectOpenProjectDeepLinks, deepLinkEvent, drainPendingDeepLinks } from "@/pages/layout/deep-links"
 import { createInlineEditorController } from "@/pages/layout/inline-editor"
 import {
@@ -142,7 +142,7 @@ export default function Layout(props: ParentProps) {
 
   const editor = createInlineEditorController()
   const setBusy = (directory: string, value: boolean) => {
-    const key = workspaceKey(directory)
+    const key = pathKey(directory)
     setState("busyWorkspaces", (prev) => {
       const next = new Set(prev)
       if (value) next.add(key)
@@ -150,7 +150,7 @@ export default function Layout(props: ParentProps) {
       return next
     })
   }
-  const isBusy = (directory: string) => state.busyWorkspaces.has(workspaceKey(directory))
+  const isBusy = (directory: string) => state.busyWorkspaces.has(pathKey(directory))
   const navLeave = { current: undefined as number | undefined }
 
   const aim = createAim({
@@ -274,7 +274,7 @@ export default function Layout(props: ParentProps) {
   }
 
   onMount(() => {
-    if (!platform.checkUpdate || !platform.update || !platform.restart) return
+    if (!platform.checkUpdate || !platform.updateAndRestart) return
 
     let toastId: number | undefined
     let interval: ReturnType<typeof setInterval> | undefined
@@ -291,8 +291,7 @@ export default function Layout(props: ParentProps) {
             {
               label: language.t("toast.update.action.installRestart"),
               onClick: async () => {
-                await platform.update!()
-                await platform.restart!()
+                await platform.updateAndRestart!()
               },
             },
             {
@@ -515,7 +514,7 @@ export default function Layout(props: ParentProps) {
   )
 
   const workspaceName = (directory: string, projectId?: string, branch?: string) => {
-    const key = workspaceKey(directory)
+    const key = pathKey(directory)
     const direct = store.workspaceName[key] ?? store.workspaceName[directory]
     if (direct) return direct
     if (!projectId) return
@@ -524,7 +523,7 @@ export default function Layout(props: ParentProps) {
   }
 
   const setWorkspaceName = (directory: string, next: string, projectId?: string, branch?: string) => {
-    const key = workspaceKey(directory)
+    const key = pathKey(directory)
     setStore("workspaceName", (prev) => ({ ...(prev ?? {}), [key]: next }))
     if (!projectId) return
     if (!branch) return
@@ -1534,11 +1533,11 @@ export default function Layout(props: ParentProps) {
     const local = project.worktree
     const dirs = [local, ...(project.sandboxes ?? [])]
     const active = currentProject()
-    const directory = workspaceKey(active?.worktree ?? "") === workspaceKey(project.worktree) ? currentDir() : undefined
+    const directory = pathKey(active?.worktree ?? "") === pathKey(project.worktree) ? currentDir() : undefined
     const extra =
       directory &&
-      workspaceKey(directory) !== workspaceKey(local) &&
-      !dirs.some((item) => workspaceKey(item) === workspaceKey(directory))
+      pathKey(directory) !== pathKey(local) &&
+      !dirs.some((item) => pathKey(item) === pathKey(directory))
         ? directory
         : undefined
     const pending = extra ? WorktreeState.get(extra)?.status === "pending" : false
@@ -1581,7 +1580,7 @@ export default function Layout(props: ParentProps) {
     setStore(
       "workspaceOrder",
       project.worktree,
-      result.filter((directory) => workspaceKey(directory) !== workspaceKey(project.worktree)),
+      result.filter((directory) => pathKey(directory) !== pathKey(project.worktree)),
     )
   }
 
@@ -1613,8 +1612,8 @@ export default function Layout(props: ParentProps) {
       setWorkspaceName(created.directory, created.branch, project.id, created.branch)
 
       const local = project.worktree
-      const key = workspaceKey(created.directory)
-      const root = workspaceKey(local)
+      const key = pathKey(created.directory)
+      const root = pathKey(local)
 
       setBusy(created.directory, true)
       WorktreeState.pending(created.directory)
@@ -1625,7 +1624,7 @@ export default function Layout(props: ParentProps) {
       setStore("workspaceOrder", project.worktree, (prev) => {
         const existing = prev ?? []
         const next = existing.filter((item) => {
-          const id = workspaceKey(item)
+          const id = pathKey(item)
           if (id === root) return false
           return id !== key
         })

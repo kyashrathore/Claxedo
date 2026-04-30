@@ -48,8 +48,8 @@ export type Platform = {
   /** Check for updates (desktop only) */
   checkUpdate?(): Promise<{ updateAvailable: boolean; version?: string }>
 
-  /** Install updates (desktop only) */
-  update?(): Promise<void>
+  /** Install the downloaded update using the platform restart flow */
+  updateAndRestart?(): Promise<void>
 
   /** Fetch override */
   fetch?: typeof fetch
