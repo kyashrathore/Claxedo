@@ -64,7 +64,10 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   })
 
   const busy = createMemo(() => status().type !== "idle")
-  const live = createMemo(() => busy() || blocked())
+  const activeTurn = createMemo(() => {
+    return busy() || blocked()
+  })
+  const live = createMemo(() => activeTurn())
 
   const [store, setStore] = createStore({
     responding: undefined as string | undefined,
@@ -184,6 +187,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
 
   return {
     blocked,
+    activeTurn,
     questionRequest,
     permissionRequest,
     permissionResponding,

@@ -197,6 +197,7 @@ export default function FileTree(props: {
   active?: string
   level?: number
   allowed?: readonly string[]
+  extensions?: readonly string[]
   modified?: readonly string[]
   kinds?: ReadonlyMap<string, Kind>
   draggable?: boolean
@@ -207,6 +208,7 @@ export default function FileTree(props: {
   _deeps?: Map<string, number>
   _kinds?: ReadonlyMap<string, Kind>
   _chain?: readonly string[]
+  _extensions?: readonly string[]
 }) {
   const file = useFile()
   const level = props.level ?? 0
@@ -324,10 +326,52 @@ export default function FileTree(props: {
     ),
   )
 
+  createEffect(() => {
+    const dir = file.tree.state(props.path)
+    if (!shouldListExpanded({ level, dir })) return
+    void file.tree.list(props.path)
+  })
+
+  // When extensions filter is active, eagerly load immediate child directories
+  // so hasMatchingFile can evaluate them instead of defaulting to visible.
+  createEffect(() => {
+    const exts = props._extensions ?? props.extensions
+    if (!exts || exts.length === 0) return
+    const children = file.tree.children(props.path)
+    for (const child of children) {
+      if (child.type !== "directory") continue
+      const st = file.tree.state(child.path)
+      if (st?.loaded || st?.loading) continue
+      void file.tree.list(child.path)
+    }
+  })
+
+  const hasMatchingFile = (dirPath: string, exts: string[]): boolean => {
+    const st = file.tree.state(dirPath)
+    if (!st?.loaded) return true // not loaded yet — keep visible
+    for (const child of file.tree.children(dirPath)) {
+      if (child.type === "file") {
+        const lower = child.path.toLowerCase()
+        if (exts.some((ext) => lower.endsWith(ext))) return true
+      } else if (child.type === "directory") {
+        if (hasMatchingFile(child.path, exts)) return true
+      }
+    }
+    return false
+  }
+
   const nodes = createMemo(() => {
     const nodes = file.tree.children(props.path)
     const current = filter()
-    if (!current) return nodes
+    if (!current) {
+      const exts = (props._extensions ?? props.extensions ?? []).map((ext) => ext.toLowerCase())
+      if (exts.length === 0) return nodes
+      return nodes.filter((node) => {
+        if (node.type === "directory") return hasMatchingFile(node.path, exts)
+        const value = node.path.toLowerCase()
+        return exts.some((ext) => value.endsWith(ext))
+      })
+    }
 
     const parent = (path: string) => {
       const idx = path.lastIndexOf("/")
@@ -435,6 +479,7 @@ export default function FileTree(props: {
                         path={node.path}
                         level={level + 1}
                         allowed={props.allowed}
+                        extensions={props.extensions}
                         modified={props.modified}
                         kinds={props.kinds}
                         active={props.active}
@@ -445,6 +490,7 @@ export default function FileTree(props: {
                         _deeps={deeps()}
                         _kinds={kinds()}
                         _chain={chain}
+                        _extensions={props._extensions ?? props.extensions}
                       />
                     </Show>
                   </Collapsible.Content>

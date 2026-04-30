@@ -68,12 +68,25 @@ function UiI18nBridge(props: ParentProps) {
   return <I18nProvider value={{ locale: language.intl, t: language.t }}>{props.children}</I18nProvider>
 }
 
+type DesktopPerf = {
+  enabled: boolean
+  mark: (name: string, data?: unknown) => void
+  span: <T>(name: string, fn: () => Promise<T>, data?: unknown) => Promise<T>
+}
+
 declare global {
   interface Window {
     __OPENCODE__?: {
       updaterEnabled?: boolean
+      serverPassword?: string
+      serverUrl?: string
+      activeDirectory?: string
       deepLinks?: string[]
       wsl?: boolean
+      debugTerminal?: boolean
+      perfEnabled?: boolean
+      perfPath?: string | null
+      perf?: DesktopPerf
     }
     api?: {
       setTitlebar?: (theme: { mode: "light" | "dark" }) => Promise<void>

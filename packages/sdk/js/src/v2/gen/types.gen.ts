@@ -343,6 +343,11 @@ export type SessionStatus =
   | {
       type: "busy"
     }
+  | {
+      type: "recovering"
+      kind: "process_restart"
+      message: string
+    }
 
 export type EventSessionStatus = {
   type: "session.status"

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, Match, on, onCleanup, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -9,6 +9,7 @@ import { createLineCommentController } from "@opencode-ai/ui/line-comment-annota
 import { sampledChecksum } from "@opencode-ai/core/util/encode"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Markdown } from "@opencode-ai/ui/markdown"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -19,6 +20,100 @@ import { usePrompt } from "@/context/prompt"
 import { getSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
+
+type FileViewMode = "preview" | "raw"
+
+function isMarkdownFile(path: string | undefined): boolean {
+  if (!path) return false
+  return /\.(md|mdx|markdown|mdown)$/i.test(path)
+}
+
+function isExternalHref(value: string): boolean {
+  if (!value) return true
+  if (value.startsWith("#")) return true
+  if (/^[a-z][a-z\d+\-.]*:/i.test(value) && !/^file:/i.test(value)) return true
+  return false
+}
+
+function resolveMarkdownHref(href: string, basePath: string): string | null {
+  const value = href.trim()
+  if (!value || isExternalHref(value)) return null
+
+  let pathname = value
+  if (/^file:/i.test(value)) {
+    try {
+      pathname = new URL(value).pathname || ""
+    } catch {
+      pathname = value.replace(/^file:\/\/+/i, "/")
+    }
+  }
+  const [withoutFragment] = pathname.split("#", 1)
+  const [withoutQuery] = withoutFragment.split("?", 1)
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(withoutQuery)
+  } catch {
+    decoded = withoutQuery
+  }
+  if (!isMarkdownFile(decoded)) return null
+
+  const segments = decoded.startsWith("/")
+    ? decoded.split("/")
+    : (basePath.replace(/\\/g, "/").split("/").slice(0, -1).concat(decoded.split("/")))
+  const out: string[] = []
+  for (const part of segments) {
+    if (!part || part === ".") continue
+    if (part === "..") {
+      out.pop()
+      continue
+    }
+    out.push(part)
+  }
+  const joined = out.join("/")
+  return decoded.startsWith("/") || basePath.startsWith("/") ? `/${joined}` : joined
+}
+
+function FileTabToolbar(props: {
+  mode: FileViewMode
+  onModeChange: (mode: FileViewMode) => void
+  path: string | undefined
+}) {
+  const segments = () => {
+    const p = props.path
+    if (!p) return { parent: "", filename: "" }
+    const parts = p.split("/").filter(Boolean)
+    if (parts.length === 0) return { parent: "", filename: "" }
+    if (parts.length === 1) return { parent: "", filename: parts[0]! }
+    return { parent: parts[parts.length - 2]!, filename: parts[parts.length - 1]! }
+  }
+  const button = (mode: FileViewMode, label: string) => (
+    <button
+      type="button"
+      class="flex items-center gap-1.5 h-6 px-2 text-12-medium rounded-md transition-[background-color,color,transform] active:scale-[0.96]"
+      classList={{
+        "bg-surface-base-hover text-text-strong": props.mode === mode,
+        "text-text-base hover:bg-surface-base-hover": props.mode !== mode,
+      }}
+      aria-pressed={props.mode === mode}
+      onClick={() => props.onModeChange(mode)}
+    >
+      {label}
+    </button>
+  )
+  return (
+    <div class="sticky top-0 z-10 shrink-0 flex items-center gap-2 h-8 px-3 text-13-medium bg-background-base/95 backdrop-blur-md border-b border-border-weak-base/40">
+      <div class="flex-1 min-w-0 flex items-center gap-1.5 text-12-regular text-text-weak">
+        <Show when={segments().parent}>
+          <span class="shrink-0">{segments().parent}</span>
+          <span aria-hidden class="shrink-0 opacity-60">/</span>
+        </Show>
+        <span class="truncate text-text-base">{segments().filename}</span>
+      </div>
+      {button("preview", "Preview")}
+      {button("raw", "Raw")}
+    </div>
+  )
+}
 
 function FileCommentMenu(props: {
   moreLabel: string
@@ -171,7 +266,7 @@ function createScrollSync(input: { tab: () => string; view: ReturnType<typeof us
   }
 }
 
-export function FileTabContent(props: { tab: string }) {
+export function FileTabContent(props: { tab: string; onLinkOpen?: (path: string) => void }) {
   const file = useFile()
   const comments = useComments()
   const language = useLanguage()
@@ -394,6 +489,51 @@ export function FileTabContent(props: { tab: string }) {
     scrollSync.queueRestore()
   })
 
+  const [viewMode, setViewMode] = createSignal<FileViewMode>(
+    isMarkdownFile(path()) ? "preview" : "raw",
+  )
+
+  let scrollEl: HTMLDivElement | undefined
+  const setViewport = (el: HTMLDivElement) => {
+    scrollEl = el
+    scrollSync.setViewport(el)
+  }
+
+  createEffect(
+    on(
+      viewMode,
+      () => {
+        if (scrollEl) scrollEl.scrollTop = 0
+      },
+      { defer: true },
+    ),
+  )
+
+  const handlePreviewClick = (event: MouseEvent) => {
+    if (event.defaultPrevented) return
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement | null
+    if (!target) return
+    const anchor = target.closest("a")
+    if (!anchor) return
+    const href = anchor.getAttribute("href") ?? ""
+    const base = path() ?? ""
+    const resolved = resolveMarkdownHref(href, base)
+    if (!resolved) return
+    event.preventDefault()
+    props.onLinkOpen?.(resolved)
+  }
+
+  const renderPreview = (source: string) => (
+    <div
+      class="md:max-w-200 md:mx-auto 2xl:max-w-[1000px] px-6 py-6 pb-40 select-text"
+      onClick={handlePreviewClick}
+    >
+      <Markdown text={source} cacheKey={cacheKey()} />
+    </div>
+  )
+
   const renderFile = (source: string) => (
     <div class="relative overflow-hidden pb-40">
       <Dynamic
@@ -441,10 +581,24 @@ export function FileTabContent(props: { tab: string }) {
   )
 
   return (
-    <Tabs.Content value={props.tab} class="mt-3 relative h-full">
-      <ScrollView class="h-full" viewportRef={scrollSync.setViewport} onScroll={scrollSync.handleScroll as any}>
+    <Tabs.Content
+      value={props.tab}
+      class="relative h-full"
+      classList={{ "mt-3": !isMarkdownFile(path()) }}
+    >
+      <ScrollView class="h-full" viewportRef={setViewport} onScroll={scrollSync.handleScroll as any}>
+        <Show when={isMarkdownFile(path())}>
+          <FileTabToolbar mode={viewMode()} onModeChange={setViewMode} path={path()} />
+        </Show>
         <Switch>
-          <Match when={state()?.loaded}>{renderFile(contents())}</Match>
+          <Match when={state()?.loaded}>
+            <Show
+              when={isMarkdownFile(path()) && viewMode() === "preview"}
+              fallback={renderFile(contents())}
+            >
+              {renderPreview(contents())}
+            </Show>
+          </Match>
           <Match when={state()?.loading}>
             <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
           </Match>

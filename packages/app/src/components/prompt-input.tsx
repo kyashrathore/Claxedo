@@ -68,6 +68,10 @@ interface PromptInputProps {
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void
   onSubmit?: () => void
+  sessionID?: string
+  navigateOnCreate?: boolean
+  system?: string
+  agent?: string
 }
 
 const EXAMPLES = [
@@ -244,7 +248,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         type: "idle",
       },
   )
-  const working = createMemo(() => status()?.type !== "idle")
+  const working = createMemo(() => status()?.type === "busy" || status()?.type === "retry")
   const imageAttachments = createMemo(() =>
     prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
   )

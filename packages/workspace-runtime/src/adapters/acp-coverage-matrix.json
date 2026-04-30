@@ -1,0 +1,71 @@
+{
+  "sdk_version": "0.16.1",
+  "agent_refs": {
+    "claude-acp": "0.22.1",
+    "codex-acp": "0.10.0",
+    "cursor-acp": "docs-only-2026-04-24"
+  },
+  "methods": {
+    "$/cancel_request": { "handled": false, "reason": "not observed from supported agents" },
+    "authenticate": { "handled": "partial", "reason": "adapter injects env credentials before ACP auth" },
+    "fs/read_text_file": { "handled": true },
+    "fs/write_text_file": { "handled": true },
+    "initialize": { "handled": true },
+    "session/cancel": { "handled": true },
+    "session/close": { "handled": false, "known_gap": "lifecycle work, outside translator scope" },
+    "session/fork": { "handled": true },
+    "session/list": { "handled": false, "known_gap": "local RuntimeStore is authoritative today" },
+    "session/load": { "handled": true, "fallback": true },
+    "session/new": { "handled": true },
+    "session/prompt": { "handled": true },
+    "session/request_permission": { "handled": true },
+    "session/resume": { "handled": true },
+    "session/set_config_option": { "handled": true },
+    "session/set_mode": { "handled": true },
+    "session/set_model": { "handled": true },
+    "session/update": { "handled": true },
+    "terminal/create": { "handled": false, "reason": "supported agents currently send terminal data through tool content/meta" },
+    "terminal/kill": { "handled": false, "reason": "not used by current adapter client implementation" },
+    "terminal/output": { "handled": false, "reason": "not used by current adapter client implementation" },
+    "terminal/release": { "handled": false, "reason": "not used by current adapter client implementation" },
+    "terminal/wait_for_exit": { "handled": false, "reason": "not used by current adapter client implementation" }
+  },
+  "session_update_variants": {
+    "user_message_chunk": { "handled": true, "emits": false, "reason": "policy drop to avoid replay duplication" },
+    "agent_message_chunk": { "handled": true },
+    "agent_thought_chunk": { "handled": true },
+    "tool_call": { "handled": true },
+    "tool_call_update": { "handled": true },
+    "plan": { "handled": true },
+    "available_commands_update": { "handled": true, "emits": false, "reason": "no public event surface yet" },
+    "current_mode_update": { "handled": true },
+    "config_option_update": { "handled": true },
+    "session_info_update": { "handled": true },
+    "usage_update": { "handled": true }
+  },
+  "tool_call_content_variants": {
+    "content": { "handled": "partial", "known_gap": "preserved in metadata; only emitted as output when no rawOutput exists" },
+    "diff": { "handled": true },
+    "terminal": { "handled": true }
+  },
+  "content_block_variants": {
+    "text": { "handled": true },
+    "image": { "handled": true },
+    "audio": { "handled": "partial", "known_gap": "agent thought audio is logged and dropped" },
+    "resource_link": { "handled": "partial", "known_gap": "agent thought resource links are logged and dropped" },
+    "resource": { "handled": "partial", "known_gap": "text resources are emitted; blob resources are logged and dropped" }
+  },
+  "registry_coverage": {
+    "claude-acp": ["shell", "read", "edit", "list", "search", "fetch", "task", "todos", "reasoning", "generic"],
+    "codex-acp": ["shell", "read", "edit", "search", "list", "fetch", "question", "mcp", "delete"],
+    "cursor-acp": ["shell", "lint", "read", "edit", "delete", "list", "search", "mcp", "task", "todos", "question", "image", "computer"]
+  },
+  "known_gaps": [
+    { "agent": "codex-acp", "item": "StreamError", "reason": "dropped upstream before ACP SessionUpdate" },
+    { "agent": "codex-acp", "item": "CollabAgent*", "reason": "dropped upstream before ACP SessionUpdate" },
+    { "agent": "codex-acp", "item": "AgentReasoningRawContent", "reason": "live/replay inconsistency upstream" },
+    { "agent": "cursor-acp", "item": "ask_question.allowMultiple", "reason": "metadata preserved; UI response shape unchanged" },
+    { "agent": "cursor-acp", "item": "update_todos.merge", "reason": "metadata preserved; public todo event shape unchanged" },
+    { "agent": "claude-acp", "item": "subagent nesting", "reason": "parentToolUseId preserved; UI nesting unchanged" }
+  ]
+}

@@ -24,6 +24,10 @@ export function applyTheme(theme: DesktopTheme, themeId?: string): void {
   const themeStyleElement = ensureLoaderStyleElement()
   themeStyleElement.textContent = css
   document.documentElement.setAttribute("data-theme", targetThemeId)
+  document.documentElement.setAttribute(
+    "data-color-scheme",
+    window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+  )
 }
 
 function buildThemeCss(light: ResolvedTheme, dark: ResolvedTheme, themeId: string): string {
@@ -92,12 +96,18 @@ export function removeTheme(): void {
     existingElement.remove()
   }
   document.documentElement.removeAttribute("data-theme")
+  document.documentElement.removeAttribute("data-color-scheme")
 }
 
 export function setColorScheme(scheme: "light" | "dark" | "auto"): void {
   if (scheme === "auto") {
     document.documentElement.style.removeProperty("color-scheme")
+    document.documentElement.setAttribute(
+      "data-color-scheme",
+      window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+    )
   } else {
     document.documentElement.style.setProperty("color-scheme", scheme)
+    document.documentElement.setAttribute("data-color-scheme", scheme)
   }
 }

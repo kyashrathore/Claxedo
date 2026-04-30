@@ -222,6 +222,9 @@ export function createChildStoreManager(input: {
             limit: 5,
             message: {},
             part: {},
+            session_agent: {},
+            session_config: {},
+            session_usage: {},
           })
           children[key] = child
           disposers.set(key, dispose)

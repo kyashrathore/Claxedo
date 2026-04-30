@@ -1,0 +1,261 @@
+type Model = {
+  id: string
+  name: string
+  release_date: string
+  attachment: boolean
+  reasoning: boolean
+  temperature: boolean
+  tool_call: boolean
+  limit: {
+    context: number
+    output: number
+  }
+  cost: {
+    input: number
+    output: number
+  }
+  options: Record<string, unknown>
+}
+
+type Provider = {
+  id: string
+  name: string
+  env: string[]
+  models: Record<string, Model>
+}
+
+export type DemoProject = {
+  id: string
+  worktree: string
+  name: string
+  sandboxes?: string[]
+  time: {
+    created: number
+    updated: number
+  }
+}
+
+export type DemoSession = {
+  id: string
+  slug: string
+  projectID: string
+  directory: string
+  title: string
+  version: string
+  time: {
+    created: number
+    updated: number
+  }
+  summary: {
+    additions: number
+    deletions: number
+    files: number
+  }
+}
+
+type Token = {
+  input: number
+  output: number
+  reasoning: number
+  cache: {
+    read: number
+    write: number
+  }
+}
+
+type MessageInfo = {
+  id: string
+  sessionID: string
+  role: "user" | "assistant"
+  time: Record<string, number>
+  agent: string
+  model?: {
+    providerID: string
+    modelID: string
+  }
+  modelID?: string
+  providerID?: string
+  parentID?: string
+  mode?: string
+  path?: {
+    cwd: string
+    root: string
+  }
+  cost?: number
+  tokens?: Token
+  system?: string
+  variant?: string
+}
+
+export type DemoPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: string
+  text?: string
+  callID?: string
+  tool?: string
+  state?: {
+    status: string
+    input?: Record<string, unknown>
+    output?: unknown
+    title?: string
+    metadata?: Record<string, unknown>
+    time?: {
+      start: number
+      end: number
+    }
+  }
+}
+
+export type DemoMessage = {
+  info: MessageInfo
+  parts: DemoPart[]
+}
+
+export type DemoDiff = {
+  file: string
+  status: string
+  additions: number
+  deletions: number
+  before: string
+  after: string
+}
+
+export type DemoPage = {
+  id: string
+  title: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export type DemoPty = {
+  id: string
+  title: string
+  command: string
+  args: string[]
+  cwd: string
+  status: string
+  pid: number
+}
+
+export type DemoPreview = {
+  terminalId: string
+  surfaceId?: string
+  workspaceId?: string
+  provider?: string
+  sessionId?: string | null
+  transcriptPath?: string | null
+  refName?: string
+  prompt?: string
+  lastAssistantMessage?: string
+  eventType?: string
+  updatedAt: number
+}
+
+type FileNode = {
+  name: string
+  path: string
+  absolute: string
+  type: "file" | "directory"
+  ignored: boolean
+}
+
+type FileStatus = {
+  path: string
+  added: number
+  removed: number
+  status: string
+}
+
+type Arena = {
+  arena: null
+  agents: unknown[]
+  waves: unknown[]
+  messages: unknown[]
+}
+
+export type DemoFixtures = {
+  globalConfig: Record<string, unknown>
+  providerAuth: Record<string, unknown>
+  provider: {
+    all: Provider[]
+    connected: string[]
+    default: {
+      id: string
+      model: string
+    }
+  }
+  agents: Array<{
+    id: string
+    name: string
+    description: string
+  }>
+  config: {
+    provider: {
+      id: string
+      model: string
+    }
+    agent: {
+      id: string
+    }
+  }
+  projects: DemoProject[]
+  projectInfo: Record<string, { id: string; name: string; worktree: string }>
+  sessions: DemoSession[]
+  sessionMessages: Record<string, DemoMessage[]>
+  sessionDiffTargets: {
+    defaultRef: string
+    candidates: string[]
+  }
+  sessionDiffs: Record<string, DemoDiff[]>
+  pages: DemoPage[]
+  ptys: DemoPty[]
+  ptyPreview: Record<string, DemoPreview>
+  fileSearch: string[]
+  fileTree: Record<string, FileNode[]>
+  fileContent: {
+    content: string
+    language: string
+  }
+  fileStatus: FileStatus[]
+  permissions: unknown[]
+  questions: unknown[]
+  skills: unknown[]
+  commands: unknown[]
+  mcp: Record<string, unknown>
+  arenaState: Arena
+  vcs: {
+    branch: string
+  }
+  path: {
+    home: string
+    state: string
+    config: string
+  }
+}
+
+const PATH = "/demo/fixtures.json"
+let cache: Promise<DemoFixtures> | undefined
+
+function clone<T>(value: T): T {
+  if (typeof structuredClone === "function") return structuredClone(value)
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+async function raw() {
+  if (!cache) {
+    cache = fetch(PATH, { cache: "no-store" }).then(async (res) => {
+      if (!res.ok) {
+        throw new Error(`Failed to load demo fixtures: ${res.status}`)
+      }
+      return res.json() as Promise<DemoFixtures>
+    })
+  }
+  return cache
+}
+
+export async function loadFixtures() {
+  return clone(await raw())
+}

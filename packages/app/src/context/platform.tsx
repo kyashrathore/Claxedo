@@ -28,6 +28,9 @@ export type Platform = {
   /** Restart the app  */
   restart(): Promise<void>
 
+  /** Quit the app */
+  quit?(): Promise<void>
+
   /** Navigate back in history */
   back(): void
 
@@ -78,6 +81,9 @@ export type Platform = {
 
   /** Parse markdown to HTML using native parser (desktop only, returns unprocessed code blocks) */
   parseMarkdown?(markdown: string): Promise<string>
+
+  /** Render mermaid source to SVG (desktop only, requires mmdr CLI) */
+  renderMermaid?(source: string): Promise<string>
 
   /** Webview zoom level (desktop only) */
   webviewZoom?: Accessor<number>

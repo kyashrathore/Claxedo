@@ -14,7 +14,8 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { type Session } from "@opencode-ai/sdk/v2/client"
 import { type LocalProject } from "@/context/layout"
-import { loadSessionsQuery, useGlobalSync } from "@/context/global-sync"
+import { useGlobalSync } from "@/context/global-sync"
+import { loadSessionsQuery } from "@/context/global-sync/query"
 import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
 import { NewSessionItem, SessionItem, SessionSkeleton } from "./sidebar-items"
@@ -217,7 +218,7 @@ const WorkspaceActions = (props: {
         <IconButton
           icon="new-session"
           variant="ghost"
-          class="size-6 rounded-md opacity-0 pointer-events-none group-hover/workspace:opacity-100 group-hover/workspace:pointer-events-auto group-focus-within/workspace:opacity-100 group-focus-within/workspace:pointer-events-auto"
+          class="size-6 rounded-md cursor-pointer opacity-0 pointer-events-none group-hover/workspace:opacity-100 group-hover/workspace:pointer-events-auto group-focus-within/workspace:opacity-100 group-focus-within/workspace:pointer-events-auto"
           data-action="workspace-new-session"
           data-workspace={base64Encode(props.directory)}
           aria-label={props.language.t("command.session.new")}

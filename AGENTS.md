@@ -3,6 +3,38 @@
 - The default branch in this repo is `dev`.
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
+- This workspace is for `claxedo` development. Default product work should target `packages/claxedo-app`, `packages/claxedo-server`, or `packages/claxedo-desktop`, not upstream `opencode`, unless the task is explicitly about sync/rebase work.
+
+## Special Agents
+
+### Rebase Agent
+
+When asked to sync with upstream or perform a rebase:
+
+1. **Read the agent documentation first:**
+   - See local-only docs in `.dev-docs/` (gitignored): `REBASE_AGENT.md`, `MERGE_CONFLICTS.md`, `SYNC_LOG.md`
+
+2. **Key remotes:**
+   - `upstream` - anomalyco/opencode (main repo)
+   - `fork` - kyashrathore/opencode (our fork)
+
+3. **Decision tree for conflicts:**
+   - Files in `packages/claxedo-app/` → Keep ours
+   - Files in `packages/app-shared/` → Keep ours
+   - Files in registry → Follow registry strategy
+   - Lockfiles → Accept upstream, regenerate
+   - Default → Accept upstream
+
+4. **Always update documentation** after sync:
+   - Add entry to `SYNC_LOG.md` (local-only in `.dev-docs/`, gitignored)
+   - Update version table in `CLAXEDO_UPSTREAM_SYNC.md` (local-only in `packages/claxedo-app/.dev-docs/`, gitignored)
+   - Document any new modifications discovered
+
+5. **When to escalate:**
+   - Upstream adds their own plugin system
+   - Major architectural refactoring
+   - More than 5 files with complex conflicts
+   - Build fails after auto-resolution
 
 ## Style Guide
 
@@ -96,8 +128,8 @@ const table = sqliteTable("session", {
 
 - Avoid mocks as much as possible
 - Test actual implementation, do not duplicate logic into tests
-- Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/opencode`.
+- Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/claxedo-app`.
 
 ## Type Checking
 
-- Always run `bun typecheck` from package directories (e.g., `packages/opencode`), never `tsc` directly.
+- Always run `bun typecheck` from package directories (e.g., `packages/claxedo-app`), never `tsc` directly.

@@ -387,6 +387,10 @@ pub fn spawn_command(
             "XDG_STATE_HOME".to_string(),
             state_dir.to_string_lossy().to_string(),
         ),
+        (
+            "SENTRY_RELEASE".to_string(),
+            app.package_info().version.to_string(),
+        ),
     ];
     envs.extend(
         extra_env

@@ -72,7 +72,7 @@ function RawMessage(props: {
               {props.message.role} <span class="text-text-base">• {props.message.id}</span>
             </div>
             <div class="flex items-center gap-3">
-              <div class="shrink-0 text-12-regular text-text-weak">{props.time(props.message.time.created)}</div>
+              <div class="shrink-0 text-12-regular text-text-weak">{props.time(props.message.time?.created)}</div>
               <Icon name="chevron-grabber-vertical" size="small" class="shrink-0 text-text-weak" />
             </div>
           </div>
@@ -174,7 +174,7 @@ export function SessionContextTab() {
 
   const breakdown = createMemo(
     on(
-      () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt()],
+      () => [ctx()?.message?.id, ctx()?.input, messages().length, systemPrompt()],
       () => {
         const c = ctx()
         if (!c?.input) return []
@@ -214,8 +214,8 @@ export function SessionContextTab() {
     { label: "context.stats.userMessages", value: () => counts().user.toLocaleString(language.intl()) },
     { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()) },
     { label: "context.stats.totalCost", value: cost },
-    { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
-    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created) },
+    { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time?.created) },
+    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message?.time?.created) },
   ] satisfies { label: string; value: () => JSX.Element }[]
 
   let scroll: HTMLDivElement | undefined

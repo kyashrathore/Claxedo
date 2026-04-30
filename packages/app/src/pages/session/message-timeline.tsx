@@ -26,13 +26,16 @@ import { useLanguage } from "@/context/language"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { usePlatform } from "@/context/platform"
+import { usePermission } from "@/context/permission"
 import { useSettings } from "@/context/settings"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import { makeTimer } from "@solid-primitives/timer"
+import { timelineWorking } from "./message-timeline-state"
 
 type MessageComment = {
   path: string
@@ -45,6 +48,7 @@ type MessageComment = {
 
 const emptyMessages: MessageType[] = []
 const idle = { type: "idle" as const }
+
 type UserActions = {
   fork?: (input: { sessionID: string; messageID: string }) => Promise<void> | void
   revert?: (input: { sessionID: string; messageID: string }) => Promise<void> | void
@@ -211,7 +215,7 @@ export function MessageTimeline(props: {
   mobileChanges: boolean
   mobileFallback: JSX.Element
   actions?: UserActions
-  scroll: { overflow: boolean; bottom: boolean; jump: boolean }
+  scroll: { overflow: boolean; bottom: boolean }
   onResumeScroll: () => void
   setScrollRef: (el: HTMLDivElement | undefined) => void
   onScheduleScrollState: (el: HTMLDivElement) => void
@@ -236,13 +240,16 @@ export function MessageTimeline(props: {
   const globalSDK = useGlobalSDK()
   const sdk = useSDK()
   const sync = useSync()
+  const permission = usePermission()
   const settings = useSettings()
   const dialog = useDialog()
   const language = useLanguage()
   const { params, sessionKey } = useSessionKey()
   const platform = usePlatform()
 
-  const rendered = createMemo(() => props.renderedUserMessages.map((message) => message.id))
+  const rendered = createMemo(() => {
+    return props.renderedUserMessages.map((message) => message.id)
+  })
   const sessionID = createMemo(() => params.id)
   const sessionMessages = createMemo(() => {
     const id = sessionID()
@@ -259,7 +266,27 @@ export function MessageTimeline(props: {
     if (!id) return idle
     return sync.data.session_status[id] ?? idle
   })
-  const working = createMemo(() => sessionStatus().type !== "idle")
+  const rawSessionStatus = createMemo(() => {
+    const id = sessionID()
+    if (!id) return
+    return sync.data.session_status[id]
+  })
+  const blocked = createMemo(() => {
+    const id = sessionID()
+    if (!id) return false
+    const perm = sessionPermissionRequest(sync.data.session, sync.data.permission, id, (item) => {
+      return !permission.autoResponds(item, sdk.directory)
+    })
+    if (perm) return true
+    return !!sessionQuestionRequest(sync.data.session, sync.data.question, id)
+  })
+  const working = createMemo(() =>
+    timelineWorking({
+      pending: !!pending(),
+      blocked: blocked(),
+      status: rawSessionStatus(),
+    }),
+  )
   const tint = createMemo(() => messageAgentColor(sessionMessages(), sync.data.agent))
 
   const [timeoutDone, setTimeoutDone] = createSignal(true)
@@ -287,7 +314,7 @@ export function MessageTimeline(props: {
     }
 
     const status = sessionStatus()
-    if (status.type !== "idle") {
+    if (status.type === "busy" || status.type === "retry") {
       const messages = sessionMessages()
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].role === "user") return messages[i].id
@@ -296,11 +323,27 @@ export function MessageTimeline(props: {
 
     return undefined
   })
-  const info = createMemo(() => {
+  const info = createMemo((prev: ReturnType<typeof sync.session.get> | undefined) => {
+    const id = sessionID()
+    if (!id) return undefined
+    const session = sync.session.get(id)
+    if (session) return session
+    // Session was trimmed from the store — retain the previous value
+    // so the header stays visible while a re-sync restores it.
+    if (prev && prev.id === id) return prev
+    return undefined
+  }, undefined)
+
+  // Re-sync when the session is missing from the store (e.g. trimmed
+  // by a session.created/updated event for a different session).
+  createEffect(() => {
     const id = sessionID()
     if (!id) return
-    return sync.session.get(id)
+    if (!sync.session.get(id)) {
+      void sync.session.sync(id)
+    }
   })
+
   const titleValue = createMemo(() => info()?.title)
   const titleLabel = createMemo(() => sessionTitle(titleValue()))
   const shareUrl = createMemo(() => info()?.share?.url)
@@ -461,7 +504,7 @@ export function MessageTimeline(props: {
 
   const openTitleEditor = () => {
     if (!sessionID() || parentID()) return
-    setTitle({ editing: true, draft: titleLabel() ?? "" })
+    setTitle({ editing: true, draft: titleValue() ?? "" })
     requestAnimationFrame(() => {
       titleRef?.focus()
       titleRef?.select()
@@ -479,7 +522,7 @@ export function MessageTimeline(props: {
     if (titleMutation.isPending) return
 
     const next = title.draft.trim()
-    if (!next || next === (titleLabel() ?? "")) {
+    if (!next || next === (titleValue() ?? "")) {
       setTitle("editing", false)
       return
     }
@@ -594,9 +637,7 @@ export function MessageTimeline(props: {
   }
 
   function DialogDeleteSession(props: { sessionID: string }) {
-    const name = createMemo(
-      () => sessionTitle(sync.session.get(props.sessionID)?.title) ?? language.t("command.session.new"),
-    )
+    const name = createMemo(() => sync.session.get(props.sessionID)?.title ?? language.t("command.session.new"))
     const handleDelete = async () => {
       await deleteSession(props.sessionID)
       dialog.close()
@@ -632,9 +673,10 @@ export function MessageTimeline(props: {
         <div
           class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60] pointer-events-none transition-all duration-200 ease-out"
           classList={{
-            "opacity-100 translate-y-0 scale-100": props.scroll.overflow && props.scroll.jump && !staging.isStaging(),
+            "opacity-100 translate-y-0 scale-100":
+              props.scroll.overflow && !props.scroll.bottom && !staging.isStaging(),
             "opacity-0 translate-y-2 scale-95 pointer-events-none":
-              !props.scroll.overflow || !props.scroll.jump || staging.isStaging(),
+              !props.scroll.overflow || props.scroll.bottom || staging.isStaging(),
           }}
         >
           <button

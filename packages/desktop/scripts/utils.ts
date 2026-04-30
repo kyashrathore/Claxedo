@@ -59,3 +59,5 @@ export function windowsify(path: string) {
   if (path.endsWith(".exe")) return path
   return `${path}${process.platform === "win32" ? ".exe" : ""}`
 }
+
+

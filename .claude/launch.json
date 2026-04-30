@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "claxedo-app",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "PORT=4445 npm run dev"],
+      "cwd": "packages/claxedo-app",
+      "port": 4445
+    },
+    {
+      "name": "claxedo-server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "packages/claxedo-server",
+      "port": 3001
+    },
+    {
+      "name": "opencode",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev", "serve", "--port", "4096"],
+      "cwd": ".",
+      "port": 4096
+    }
+  ]
+}

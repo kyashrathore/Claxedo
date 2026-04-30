@@ -71,6 +71,11 @@
 --text-weak: var(--smoke-light-9);
 --text-weaker: var(--smoke-light-8);
 --text-strong: var(--smoke-light-12);
+--text-stronger: var(--smoke-light-12);
+--text-invert-base: var(--smoke-light-1);
+--text-invert-weak: var(--smoke-light-3);
+--text-invert-weaker: var(--smoke-light-4);
+--text-invert-strong: var(--smoke-light-1);
 --text-interactive-base: var(--cobalt-light-9);
 --text-on-brand-base: var(--smoke-light-alpha-11);
 --text-on-interactive-base: var(--smoke-light-1);
@@ -94,6 +99,7 @@
 --text-on-brand-weak: var(--smoke-light-alpha-9);
 --text-on-brand-weaker: var(--smoke-light-alpha-8);
 --text-on-brand-strong: var(--smoke-light-alpha-12);
+--button-primary-base: var(--smoke-light-12);
 --button-secondary-base: #FDFCFC;
 --button-secondary-hover: #FAF9F9;
 --border-base: var(--smoke-light-alpha-7);
@@ -191,6 +197,7 @@
 --icon-diff-add-active: var(--mint-light-12);
 --icon-diff-delete-base: var(--ember-light-10);
 --icon-diff-delete-hover: var(--ember-light-11);
+--icon-diff-modified-base: #FF8C00;
 --syntax-comment: var(--text-weaker);
 --syntax-regexp: var(--text-base);
 --syntax-string: #007663;
@@ -224,6 +231,18 @@
 --markdown-image: #3B7DD8;
 --markdown-image-text: #318795;
 --markdown-code-block: #1A1A1A;
+--avatar-background-pink: #FEEEF8;
+--avatar-background-mint: #E1FBF4;
+--avatar-background-orange: #FFF1E7;
+--avatar-background-purple: #F9F1FE;
+--avatar-background-cyan: #E7F9FB;
+--avatar-background-lime: #EEFADC;
+--avatar-text-pink: #CD1D8D;
+--avatar-text-mint: #147D6F;
+--avatar-text-orange: #ED5F00;
+--avatar-text-purple: #8445BC;
+--avatar-text-cyan: #0894B3;
+--avatar-text-lime: #5D770D;
 --border-color: #FFFFFF;
 --button-ghost-hover: var(--smoke-light-alpha-2);
 --button-ghost-hover2: var(--smoke-light-alpha-3);

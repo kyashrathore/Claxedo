@@ -26,7 +26,7 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
       try {
         const url = new URL(server.current.http.url)
         const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1"
-        if (url.protocol === "http:" && !loopback) return platform.fetch
+        if (!loopback) return platform.fetch
       } catch {
         return
       }
@@ -156,10 +156,6 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
               resetHeartbeat()
               streamErrorLogged = false
               const directory = event.directory ?? "global"
-              if (event.payload.type === "sync") {
-                continue
-              }
-
               const payload = event.payload as Event
 
               const k = key(directory, payload)

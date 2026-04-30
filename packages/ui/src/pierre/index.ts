@@ -24,9 +24,13 @@ const unsafeCSS = `
   --diffs-bg-separator: var(--diffs-bg-separator-override, light-dark( color-mix(in lab, var(--diffs-bg) 96%, var(--diffs-mixer)), color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-mixer))));
   --diffs-fg: light-dark(var(--diffs-light), var(--diffs-dark));
   --diffs-fg-number: var(--diffs-fg-number-override, light-dark(color-mix(in lab, var(--diffs-fg) 65%, var(--diffs-bg)), color-mix(in lab, var(--diffs-fg) 65%, var(--diffs-bg))));
-  --diffs-deletion-base: var(--syntax-diff-delete);
-  --diffs-addition-base: var(--syntax-diff-add);
-  --diffs-modified-base: var(--syntax-diff-unknown);
+  --diffs-deletion-base: var(--diffs-deletion-color-override, var(--syntax-diff-delete));
+  --diffs-addition-base: var(--diffs-addition-color-override, var(--syntax-diff-add));
+  --diffs-modified-base: var(--diffs-modified-color-override, var(--syntax-diff-unknown));
+  --diffs-deletion-text: var(--diffs-deletion-text-override, var(--diffs-deletion-base));
+  --diffs-addition-text: var(--diffs-addition-text-override, var(--diffs-addition-base));
+  --diffs-deletion-text-strong: var(--diffs-deletion-text-strong-override, var(--diffs-deletion-text));
+  --diffs-addition-text-strong: var(--diffs-addition-text-strong-override, var(--diffs-addition-text));
   --diffs-bg-deletion: var(--diffs-bg-deletion-override, light-dark( color-mix(in lab, var(--diffs-bg) 98%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 92%, var(--diffs-deletion-base))));
   --diffs-bg-deletion-number: var(--diffs-bg-deletion-number-override, light-dark( color-mix(in lab, var(--diffs-bg) 91%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-deletion-base))));
   --diffs-bg-deletion-hover: var(--diffs-bg-deletion-hover-override, light-dark( color-mix(in lab, var(--diffs-bg) 80%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 75%, var(--diffs-deletion-base))));
@@ -96,6 +100,45 @@ const unsafeCSS = `
   box-shadow: inset 0 0 0 9999px var(--diffs-bg-selection);
 }
 
+:host {
+  container-type: inline-size;
+  /* Width consumed by the gutter (line-number column + its left padding + bar + inline gap). */
+  --diffs-gutter-offset: calc(var(--diffs-min-number-column-width, 3ch) + 1ch + 2px + var(--diffs-gap-inline, 4px));
+}
+
+/* Each [data-code] is its own scroll/layout column.
+ * In split mode there are two siblings at 50% width each; in unified there's one full-width.
+ * Making it a container ensures 100cqi inside resolves to *this column's* width,
+ * so an annotation inside the left column doesn't bleed into the right one. */
+[data-code] {
+  container-type: inline-size;
+}
+
+/* Compact gutter: smaller line-number font, tighter padding, thinner change bar. */
+[data-column-number] {
+  font-size: var(--diffs-number-font-size, 11px);
+  padding-left: 1ch !important;
+}
+
+[data-line-number-content] {
+  font-size: var(--diffs-number-font-size, 11px);
+}
+
+[data-indicators='bars'] [data-line-type='change-deletion'][data-column-number]::before,
+[data-indicators='bars'] [data-line-type='change-addition'][data-column-number]::before {
+  width: 2px !important;
+}
+
+[data-overflow='scroll'] [data-annotation-content],
+[data-overflow='scroll'] [data-annotation-slot] {
+  box-sizing: border-box;
+  position: sticky;
+  left: 0;
+  width: calc(100cqi - var(--diffs-gutter-offset));
+  max-width: calc(100cqi - var(--diffs-gutter-offset));
+  min-width: 0;
+}
+
 [data-diff] [data-line][data-selected-line] {
   background-color: var(--diffs-bg-selection);
   box-shadow: inset 2px 0 0 var(--diffs-selection-border);
@@ -123,11 +166,64 @@ const unsafeCSS = `
   color: var(--diffs-selection-number-fg);
 }
 
-/* The deletion word-diff emphasis is stronger than additions; soften it while selected so the selection highlight reads consistently. */
+[data-diff] [data-line][data-line-type='change-addition'] span,
+[data-file] [data-line][data-line-type='change-addition'] span {
+  color: var(--diffs-addition-text) !important;
+}
+
+[data-diff] [data-line][data-line-type='change-deletion'] span,
+[data-file] [data-line][data-line-type='change-deletion'] span {
+  color: var(--diffs-deletion-text) !important;
+}
+
+[data-diff] [data-line][data-line-type='change-addition'] [data-diff-span],
+[data-diff] [data-line][data-line-type='change-addition'] [data-diff-span] span,
+[data-file] [data-line][data-line-type='change-addition'] [data-diff-span],
+[data-file] [data-line][data-line-type='change-addition'] [data-diff-span] span {
+  color: var(--diffs-addition-text-strong) !important;
+}
+
+[data-diff] [data-line][data-line-type='change-deletion'] [data-diff-span],
+[data-diff] [data-line][data-line-type='change-deletion'] [data-diff-span] span,
+[data-file] [data-line][data-line-type='change-deletion'] [data-diff-span],
+[data-file] [data-line][data-line-type='change-deletion'] [data-diff-span] span {
+  color: var(--diffs-deletion-text-strong) !important;
+}
+
+/* Soften deletion word-diff emphasis while selected so the selection highlight reads consistently. */
 [data-diff] [data-line][data-line-type='change-deletion'][data-selected-line] {
   --diffs-bg-deletion-emphasis: light-dark(
-    rgb(from var(--diffs-deletion-base) r g b / 0.07),
+    rgb(from var(--diffs-deletion-base) r g b / 0.08),
     rgb(from var(--diffs-deletion-base) r g b / 0.1)
+  );
+}
+
+[data-gutter-buffer='buffer'] {
+  background-size: 8px 8px;
+  background-position: 0 0;
+  background-origin: border-box;
+  background-color: var(--diffs-bg);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent calc(3px * 1.414),
+    rgb(from var(--diffs-bg-buffer) r g b / 0.8) calc(3px * 1.414),
+    rgb(from var(--diffs-bg-buffer) r g b / 0.8) calc(4px * 1.414)
+  );
+}
+
+[data-content-buffer] {
+  grid-column: 1;
+  background-size: 8px 8px;
+  background-position: 5px 0;
+  background-origin: border-box;
+  background-color: var(--diffs-bg);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent calc(3px * 1.414),
+    var(--diffs-bg-buffer) calc(3px * 1.414),
+    var(--diffs-bg-buffer) calc(4px * 1.414)
   );
 }
 
@@ -159,12 +255,15 @@ ${lineCommentStyles}
 
 `
 
-export function createDefaultOptions<T>(style: FileDiffOptions<T>["diffStyle"]) {
+export function createDefaultOptions<T>(
+  style: FileDiffOptions<T>["diffStyle"],
+  overflow: NonNullable<FileDiffOptions<T>["overflow"]> = "wrap",
+) {
   return {
     theme: "OpenCode",
     themeType: "system",
     disableLineNumbers: false,
-    overflow: "wrap",
+    overflow,
     diffStyle: style ?? "unified",
     diffIndicators: "bars",
     lineHoverHighlight: "both",
@@ -187,5 +286,6 @@ export const styleVariables = {
   "--diffs-font-features": "var(--font-family-mono--font-feature-settings)",
   "--diffs-header-font-family": "var(--font-family-sans)",
   "--diffs-gap-block": 0,
-  "--diffs-min-number-column-width": "4ch",
+  "--diffs-gap-inline": "4px",
+  "--diffs-min-number-column-width": "3ch",
 }

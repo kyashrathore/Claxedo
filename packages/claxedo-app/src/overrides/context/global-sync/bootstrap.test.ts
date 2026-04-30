@@ -1,0 +1,553 @@
+import { afterEach, describe, expect, test } from "bun:test"
+import { createStore } from "solid-js/store"
+import { bootstrapDirectory } from "./bootstrap"
+import type { State } from "./types"
+import { queryClient } from "../../../shared/query/query-client"
+import { getClaxedoServerUrl } from "../../../utils/api"
+
+function tick() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+afterEach(() => {
+  queryClient.clear()
+})
+
+function state() {
+  return createStore<State>({
+    status: "loading",
+    agent: [],
+    command: [],
+    project: "",
+    projectMeta: undefined,
+    icon: undefined,
+    provider_ready: false,
+    provider: { all: [], connected: [], default: {} },
+    config: {},
+    path: { state: "", config: "", worktree: "", directory: "", home: "" },
+    session: [],
+    sessionTotal: 0,
+    session_status: {},
+    session_diff: {},
+    todo: {},
+    permission: {},
+    question: {},
+    mcp_ready: false,
+    mcp: {},
+    lsp_ready: false,
+    lsp: [],
+    vcs: undefined,
+    limit: 5,
+    message: {},
+    part: {},
+    session_agent: {},
+    session_config: {},
+    session_usage: {},
+  })
+}
+
+function runnerProviderUrl(runner = "claude-acp") {
+  const url = new URL("/provider", getClaxedoServerUrl())
+  url.searchParams.set("runner", runner)
+  return url.toString()
+}
+
+describe("override bootstrapDirectory", () => {
+  test("keeps partial stores renderable while refreshing", async () => {
+    const [store, setStore] = state()
+    setStore("status", "partial")
+    const statuses: State["status"][] = []
+    const sdk = {
+      project: {
+        current: async () => ({ data: { id: "proj_1" } }),
+      },
+      provider: {
+        list: async () => ({ data: { all: [], connected: [], default: {} } }),
+      },
+      app: {
+        agents: async () => ({ data: [] }),
+      },
+      config: {
+        get: async () => ({ data: {} }),
+      },
+      path: {
+        get: async () => ({ data: { state: "", config: "", worktree: "", directory: "/tmp/ws", home: "" } }),
+      },
+      command: {
+        list: async () => ({ data: [] }),
+      },
+      session: {
+        status: async () => ({ data: {} }),
+      },
+      mcp: {
+        status: async () => ({ data: {} }),
+      },
+      lsp: {
+        status: async () => ({ data: [] }),
+      },
+      vcs: {
+        get: async () => ({ data: undefined }),
+      },
+      permission: {
+        list: async () => ({ data: [] }),
+      },
+      question: {
+        list: async () => ({ data: [] }),
+      },
+    } as any
+
+    await bootstrapDirectory({
+      directory: "/tmp/ws",
+      sdk,
+      store,
+      setStore: ((...args: Parameters<typeof setStore>) => {
+        if (args[0] === "status" && typeof args[1] === "string") statuses.push(args[1] as State["status"])
+        return setStore(...args)
+      }) as typeof setStore,
+      loadSessions: async () => {},
+      translate: (key) => key,
+    })
+    await Promise.resolve()
+
+    expect(statuses).not.toContain("loading")
+    expect(statuses).toContain("partial")
+  })
+
+  test("marks provider ready without bootstrapping removed mcp/lsp state", async () => {
+    const [store, setStore] = state()
+    let mcp = 0
+    let lsp = 0
+    const sdk = {
+      project: {
+        current: async () => ({ data: { id: "proj_1" } }),
+      },
+      provider: {
+        list: async () => ({
+          data: {
+            all: [{ id: "anthropic", name: "Anthropic", env: [], models: {} }],
+            connected: ["anthropic"],
+            default: {},
+          },
+        }),
+      },
+      app: {
+        agents: async () => ({ data: [] }),
+      },
+      config: {
+        get: async () => ({ data: {} }),
+      },
+      path: {
+        get: async () => ({ data: { state: "", config: "", worktree: "", directory: "/tmp/ws", home: "" } }),
+      },
+      command: {
+        list: async () => ({ data: [] }),
+      },
+      session: {
+        status: async () => ({ data: {} }),
+      },
+      mcp: {
+        status: async () => {
+          mcp++
+          return { data: { foo: { command: "foo", args: [], env: {}, enabled: true, connected: false } } }
+        },
+      },
+      lsp: {
+        status: async () => {
+          lsp++
+          return { data: [] }
+        },
+      },
+      vcs: {
+        get: async () => ({ data: { branch: "dev" } }),
+      },
+      permission: {
+        list: async () => ({ data: [] }),
+      },
+      question: {
+        list: async () => ({ data: [] }),
+      },
+    } as any
+
+    await bootstrapDirectory({
+      directory: "/tmp/ws",
+      sdk,
+      store,
+      setStore,
+      loadSessions: async () => {},
+      translate: (key) => key,
+    })
+    await tick()
+
+    expect(store.provider_ready).toBe(true)
+    expect(mcp).toBe(0)
+    expect(lsp).toBe(0)
+    expect(store.provider.all.map((item) => item.id)).toEqual(["anthropic"])
+  })
+
+  test("leaves session status ownership to the session controller", async () => {
+    const [store, setStore] = state()
+    setStore("session_status", {
+      busy: { type: "busy" },
+      recovering: { type: "recovering", kind: "process_restart", message: "Recovering ACP client..." },
+    } as State["session_status"])
+    let status = 0
+    const sdk = {
+      project: {
+        current: async () => ({ data: { id: "proj_1" } }),
+      },
+      provider: {
+        list: async () => ({ data: { all: [], connected: [], default: {} } }),
+      },
+      app: {
+        agents: async () => ({ data: [] }),
+      },
+      config: {
+        get: async () => ({ data: {} }),
+      },
+      path: {
+        get: async () => ({ data: { state: "", config: "", worktree: "", directory: "/tmp/ws", home: "" } }),
+      },
+      command: {
+        list: async () => ({ data: [] }),
+      },
+      session: {
+        status: async () => {
+          status++
+          return { data: {} }
+        },
+      },
+      mcp: {
+        status: async () => ({ data: {} }),
+      },
+      lsp: {
+        status: async () => ({ data: [] }),
+      },
+      vcs: {
+        get: async () => ({ data: undefined }),
+      },
+      permission: {
+        list: async () => ({ data: [] }),
+      },
+      question: {
+        list: async () => ({ data: [] }),
+      },
+    } as any
+
+    await bootstrapDirectory({
+      directory: "/tmp/ws",
+      sdk,
+      store,
+      setStore,
+      loadSessions: async () => {},
+      translate: (key) => key,
+    })
+    await tick()
+
+    expect(status).toBe(0)
+    expect(store.session_status).toEqual({
+      busy: { type: "busy" },
+      recovering: { type: "recovering", kind: "process_restart", message: "Recovering ACP client..." },
+    })
+  })
+
+  test("uses runner-scoped provider endpoint when runnerType is provided", async () => {
+    const [store, setStore] = state()
+    const urls: string[] = []
+    const headers: string[] = []
+    const sdk = {
+      project: {
+        current: async () => ({ data: { id: "proj_1" } }),
+      },
+      provider: {
+        list: async () => ({ data: { all: [], connected: [], default: {} } }),
+      },
+      app: {
+        agents: async () => {
+          throw new Error("expected runner-scoped agent client")
+        },
+      },
+      config: {
+        get: async () => ({ data: {} }),
+      },
+      path: {
+        get: async () => ({ data: { state: "", config: "", worktree: "", directory: "/tmp/ws", home: "" } }),
+      },
+      command: {
+        list: async () => ({ data: [] }),
+      },
+      session: {
+        status: async () => ({ data: {} }),
+      },
+      mcp: {
+        status: async () => ({ data: {} }),
+      },
+      lsp: {
+        status: async () => ({ data: [] }),
+      },
+      vcs: {
+        get: async () => ({ data: undefined }),
+      },
+      permission: {
+        list: async () => ({ data: [] }),
+      },
+      question: {
+        list: async () => ({ data: [] }),
+      },
+    } as any
+
+    await bootstrapDirectory({
+      directory: "/tmp/ws",
+      sdk,
+      store,
+      setStore,
+      loadSessions: async () => {},
+      translate: (key) => key,
+      baseUrl: "http://localhost:4096",
+      runnerType: "claude-acp",
+      fetch: async (input) => {
+        const req = input instanceof Request ? input : new Request(String(input))
+        urls.push(req.url)
+        headers.push(req.headers.get("x-claxedo-runner") ?? "")
+        if (req.url.includes("/agent")) {
+          return new Response(
+            JSON.stringify([{ name: "plan", mode: "primary" }]),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        }
+        return new Response(
+          JSON.stringify({
+            all: [{ id: "claude-acp", name: "Claude ACP", env: [], models: { opus: { id: "opus", name: "Opus" } } }],
+            connected: ["claude-acp"],
+            default: {},
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      },
+    })
+    await Promise.resolve()
+    await tick()
+
+    expect(urls).toEqual([
+      "http://localhost:4096/api/workspace/resolve?directory=%2Ftmp%2Fws",
+      runnerProviderUrl(),
+      "http://localhost:4096/agent?directory=%2Ftmp%2Fws",
+    ])
+    expect(headers).toEqual(["", "", "claude-acp"])
+    expect(store.agent).toEqual([{ name: "plan", mode: "primary" }])
+    expect(store.provider_ready).toBe(true)
+    expect(store.provider.all.map((item) => item.id)).toEqual(["claude-acp"])
+  })
+
+  test("does not block bootstrap on runner-scoped agent loading", async () => {
+    const [store, setStore] = state()
+    let release = () => {}
+    const wait = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const sdk = {
+      project: {
+        current: async () => ({ data: { id: "proj_1" } }),
+      },
+      provider: {
+        list: async () => ({ data: { all: [], connected: [], default: {} } }),
+      },
+      app: {
+        agents: async () => {
+          throw new Error("expected runner-scoped agent client")
+        },
+      },
+      config: {
+        get: async () => ({ data: {} }),
+      },
+      path: {
+        get: async () => ({ data: { state: "", config: "", worktree: "", directory: "/tmp/ws", home: "" } }),
+      },
+      command: {
+        list: async () => ({ data: [] }),
+      },
+      session: {
+        status: async () => ({ data: {} }),
+      },
+      mcp: {
+        status: async () => ({ data: {} }),
+      },
+      lsp: {
+        status: async () => ({ data: [] }),
+      },
+      vcs: {
+        get: async () => ({ data: undefined }),
+      },
+      permission: {
+        list: async () => ({ data: [] }),
+      },
+      question: {
+        list: async () => ({ data: [] }),
+      },
+    } as any
+
+    await bootstrapDirectory({
+      directory: "/tmp/ws",
+      sdk,
+      store,
+      setStore,
+      loadSessions: async () => {},
+      translate: (key) => key,
+      baseUrl: "http://localhost:4096",
+      runnerType: "claude-acp",
+      fetch: async (input) => {
+        const req = input instanceof Request ? input : new Request(String(input))
+        if (req.url.includes("/agent")) {
+          await wait
+          return new Response(
+            JSON.stringify([{ name: "plan", mode: "primary" }]),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        }
+        return new Response(
+          JSON.stringify({
+            all: [{ id: "claude-acp", name: "Claude ACP", env: [], models: {} }],
+            connected: ["claude-acp"],
+            default: {},
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      },
+    })
+
+    expect(store.status).toBe("partial")
+    expect(store.agent).toEqual([])
+
+    release()
+    await tick()
+    await tick()
+
+    expect(store.agent).toEqual([{ name: "plan", mode: "primary" }])
+  })
+
+  test("skips runtime-bound requests while a cloud workspace is still provisioning", async () => {
+    const [store, setStore] = state()
+    const calls: string[] = []
+    let command = 0
+    let status = 0
+    let sessions = 0
+    let mcp = 0
+    let lsp = 0
+    let vcs = 0
+    let permission = 0
+    let question = 0
+    const sdk = {
+      project: {
+        current: async () => ({ data: { id: "proj_1" } }),
+      },
+      provider: {
+        list: async () => {
+          throw new Error("expected runner-scoped provider fetch")
+        },
+      },
+      app: {
+        agents: async () => {
+          throw new Error("expected runtime-bound agent fetch to be skipped")
+        },
+      },
+      config: {
+        get: async () => ({ data: {} }),
+      },
+      path: {
+        get: async () => ({ data: { state: "", config: "", worktree: "", directory: "/tmp/ws", home: "" } }),
+      },
+      command: {
+        list: async () => {
+          command++
+          return { data: [] }
+        },
+      },
+      session: {
+        status: async () => {
+          status++
+          return { data: {} }
+        },
+      },
+      mcp: {
+        status: async () => {
+          mcp++
+          return { data: {} }
+        },
+      },
+      lsp: {
+        status: async () => {
+          lsp++
+          return { data: [] }
+        },
+      },
+      vcs: {
+        get: async () => {
+          vcs++
+          return { data: undefined }
+        },
+      },
+      permission: {
+        list: async () => {
+          permission++
+          return { data: [] }
+        },
+      },
+      question: {
+        list: async () => {
+          question++
+          return { data: [] }
+        },
+      },
+    } as any
+
+    await bootstrapDirectory({
+      directory: "/tmp/ws",
+      sdk,
+      store,
+      setStore,
+      loadSessions: async () => {
+        sessions++
+      },
+      translate: (key) => key,
+      baseUrl: "http://localhost:4096",
+      runnerType: "claude-acp",
+      fetch: async (input) => {
+        const req = input instanceof Request ? input : new Request(String(input))
+        calls.push(req.url)
+        if (req.url.includes("/api/workspace/resolve")) {
+          return new Response(
+            JSON.stringify({ kind: "cloud", status: "starting_runtime" }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        }
+        if (req.url.includes("/provider")) {
+          return new Response(
+            JSON.stringify({
+              all: [{ id: "claude-acp", name: "Claude ACP", env: [], models: {} }],
+              connected: ["claude-acp"],
+              default: {},
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        }
+        throw new Error(`unexpected fetch: ${req.url}`)
+      },
+    })
+    await tick()
+    await tick()
+
+    expect(calls).toEqual([
+      "http://localhost:4096/api/workspace/resolve?directory=%2Ftmp%2Fws",
+      runnerProviderUrl(),
+    ])
+    expect(command).toBe(0)
+    expect(status).toBe(0)
+    expect(sessions).toBe(0)
+    expect(mcp).toBe(0)
+    expect(lsp).toBe(0)
+    expect(vcs).toBe(0)
+    expect(permission).toBe(0)
+    expect(question).toBe(0)
+    expect(store.provider_ready).toBe(true)
+    expect(store.status).toBe("partial")
+  })
+})

@@ -48,6 +48,7 @@ export type LineCommentAnchorProps = {
 }
 
 export const LineCommentAnchor = (props: LineCommentAnchorProps) => {
+  installLineCommentStyles()
   const hidden = () => !props.inline && props.top === undefined
   const variant = () => props.variant ?? "default"
   const icon = () => props.icon ?? "comment"
@@ -392,8 +393,29 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
             </For>
           </div>
         </Show>
-        <div data-slot="line-comment-actions">
-          <div data-slot="line-comment-editor-label">
+        <div
+          data-slot="line-comment-actions"
+          style={{
+            display: "grid",
+            "grid-template-columns": "minmax(0, 1fr) auto auto",
+            "align-items": "center",
+            "justify-items": "end",
+            gap: "8px",
+            width: "100%",
+            "max-width": "100%",
+            "min-width": "0",
+            "padding-left": "0",
+          }}
+        >
+          <div
+            data-slot="line-comment-editor-label"
+            style={{
+              "grid-column": "1 / -1",
+              "justify-self": "start",
+              "min-width": "0",
+              "max-width": "100%",
+            }}
+          >
             {i18n.t("ui.lineComment.editorLabel.prefix")}
             {split.selection}
             {i18n.t("ui.lineComment.editorLabel.suffix")}

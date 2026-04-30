@@ -1,0 +1,46 @@
+{
+  "name": "@claxedo/workspace-runtime",
+  "version": "0.4.4",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "workspace-runtime": "./dist/main.mjs"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "node --import tsx src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "build": "tsx scripts/build.ts",
+    "bundle": "tsx scripts/bundle.ts",
+    "prepublishOnly": "npm run build",
+    "test": "bun test --path-ignore-patterns='**/store.test*' && node --import tsx --test src/store.test.ts"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "0.16.1",
+    "@zed-industries/claude-agent-acp": "0.22.1",
+    "@zed-industries/codex-acp": "0.10.0",
+    "@hono/node-server": "^1.13.0",
+    "@hono/node-ws": "^1.1.0",
+    "@trpc/client": "11.7.2",
+    "better-sqlite3": "^12.0.0",
+    "hono": "^4.0.0",
+    "node-pty": "^1.0.0",
+    "jsonc-parser": "3.3.1",
+    "portless": "~0.11.1",
+    "zod": "^3.0.0",
+    "zod-to-json-schema": "^3.24.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/sdk": "workspace:*",
+    "@tsconfig/node-lts": "^22.0.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.0.0",
+    "typescript": "catalog:"
+  }
+}

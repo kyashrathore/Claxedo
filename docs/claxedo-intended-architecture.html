@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claxedo Intended Architecture</title>
+  <style>
+    :root {
+      --ink: #17202a;
+      --muted: #5f6f82;
+      --paper: #fbfcfd;
+      --line: #cfd8e3;
+      --panel: #ffffff;
+      --local: #0f7b6c;
+      --cloud: #2563eb;
+      --central: #8a4b18;
+      --convex: #b4235f;
+      --credential: #6b5d12;
+      --danger: #b42318;
+      --ok: #16794c;
+      --sync: #475569;
+      --radius: 8px;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { overflow-x: hidden; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(37, 99, 235, 0.05) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(37, 99, 235, 0.04) 1px, transparent 1px),
+        var(--paper);
+      background-size: 28px 28px;
+      overflow-x: hidden;
+    }
+
+    header {
+      padding: 40px 32px 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.86);
+    }
+
+    main {
+      width: min(1280px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 48px;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      width: min(900px, calc(100vw - 64px));
+      margin-bottom: 12px;
+      font-size: 42px;
+      line-height: 1.05;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin-bottom: 12px;
+      font-size: 24px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin-bottom: 8px;
+      font-size: 16px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    p {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .lead {
+      width: min(860px, calc(100vw - 64px));
+      margin-bottom: 0;
+      font-size: 18px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      width: min(900px, calc(100vw - 64px));
+      margin-top: 22px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: #334155;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 99px;
+      background: var(--line);
+    }
+
+    .dot.local { background: var(--local); }
+    .dot.cloud { background: var(--cloud); }
+    .dot.central { background: var(--central); }
+    .dot.convex { background: var(--convex); }
+    .dot.credential { background: var(--credential); }
+    .dot.sync { background: var(--sync); }
+
+    .section {
+      margin-top: 24px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+    }
+
+    .flow-picker {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    button.flow-tab {
+      min-width: 0;
+      min-height: 72px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+      transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+    }
+
+    button.flow-tab:hover,
+    button.flow-tab:focus-visible {
+      outline: none;
+      border-color: #7aa2f7;
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px rgba(37, 99, 235, 0.12);
+    }
+
+    button.flow-tab[aria-pressed="true"] {
+      border-color: var(--cloud);
+      box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.18);
+    }
+
+    .tab-title {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 720;
+      font-size: 14px;
+    }
+
+    .tab-copy {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .diagram-wrap {
+      position: relative;
+      margin-top: 18px;
+      overflow: hidden;
+      border: 1px solid #d9e2ec;
+      border-radius: var(--radius);
+      background: #f8fafc;
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .node rect {
+      fill: #fff;
+      stroke: #cbd5e1;
+      stroke-width: 1.5;
+      rx: 8;
+    }
+
+    .node .title {
+      fill: var(--ink);
+      font-size: 15px;
+      font-weight: 750;
+    }
+
+    .node .sub {
+      fill: #64748b;
+      font-size: 12px;
+    }
+
+    .node.local rect { stroke: var(--local); }
+    .node.cloud rect { stroke: var(--cloud); }
+    .node.central rect { stroke: var(--central); }
+    .node.convex rect { stroke: var(--convex); }
+    .node.credential rect { stroke: var(--credential); }
+    .node.blocked rect { stroke: var(--danger); stroke-dasharray: 5 5; }
+
+    .lane-label {
+      fill: #64748b;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .flow {
+      fill: none;
+      stroke: #94a3b8;
+      stroke-width: 2;
+      marker-end: url(#arrow);
+      opacity: 0.22;
+      transition: opacity 180ms ease, stroke-width 180ms ease;
+    }
+
+    .flow.local { stroke: var(--local); }
+    .flow.cloud { stroke: var(--cloud); }
+    .flow.central { stroke: var(--central); }
+    .flow.convex { stroke: var(--convex); }
+    .flow.credential { stroke: var(--credential); }
+    .flow.blocked { stroke: var(--danger); stroke-dasharray: 7 7; marker-end: url(#arrow-danger); }
+
+    .flow.active {
+      opacity: 1;
+      stroke-width: 4;
+    }
+
+    .node.dim { opacity: 0.22; }
+    .node.focus rect { stroke-width: 3; }
+
+    .callout {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .explain, .rules {
+      min-width: 0;
+      min-height: 160px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .steps {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .steps li {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 10px;
+      align-items: start;
+      color: #334155;
+      line-height: 1.45;
+    }
+
+    .num {
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      color: #1e293b;
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .matrix-item {
+      min-width: 0;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .matrix-item ul {
+      display: grid;
+      gap: 8px;
+      margin: 10px 0 0;
+      padding-left: 18px;
+      color: #475569;
+      line-height: 1.4;
+    }
+
+    .plain-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .status-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .status-list li {
+      padding: 12px 14px;
+      border-left: 4px solid var(--line);
+      background: #fff;
+      color: #334155;
+      line-height: 1.4;
+    }
+
+    .status-list .done { border-left-color: var(--ok); }
+    .status-list .todo { border-left-color: var(--danger); }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: #eef2f7;
+      color: #263241;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    .small {
+      margin-bottom: 0;
+      font-size: 13px;
+    }
+
+    @media (max-width: 960px) {
+      header { padding: 30px 18px 20px; }
+      main { width: min(100vw - 20px, 1280px); }
+      h1 { font-size: 32px; }
+      .flow-picker,
+      .matrix,
+      .plain-grid,
+      .callout {
+        grid-template-columns: 1fr;
+      }
+      .section { padding: 16px; }
+      h1,
+      .lead,
+      .legend {
+        width: calc(100vw - 36px);
+      }
+      .chip { white-space: normal; }
+      .diagram-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .diagram-wrap svg {
+        min-width: 980px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Claxedo Intended Architecture</h1>
+    <p class="lead">Claxedo supports a downloaded desktop app and a hosted web app. The important idea is simple: the user can work locally, in a sandbox, or through a central Pi agent, while the system chooses the right storage and security boundary at runtime.</p>
+    <div class="legend" aria-label="Diagram legend">
+      <span class="chip"><span class="dot local"></span>Local device</span>
+      <span class="chip"><span class="dot cloud"></span>Cloud sandbox</span>
+      <span class="chip"><span class="dot central"></span>Central Pi agent</span>
+      <span class="chip"><span class="dot convex"></span>Signed cloud storage</span>
+      <span class="chip"><span class="dot credential"></span>Credential gateway</span>
+      <span class="chip"><span class="dot sync"></span>Metadata and message sync</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="section" aria-labelledby="map-title">
+      <h2 id="map-title">User Flows</h2>
+      <p>Choose a scenario to highlight the path. The same app surface can lead to different runtimes and storage depending on whether the user is signed in, whether the workspace is local or cloud, and whether the selected runner is Pi.</p>
+
+      <div class="flow-picker" role="group" aria-label="Architecture scenario selector">
+        <button class="flow-tab" data-scenario="unsigned-local" aria-pressed="true">
+          <span class="tab-title">Desktop, skipped sign in</span>
+          <span class="tab-copy">Local sessions and user-configured cloud sandboxes use local SQLite.</span>
+        </button>
+        <button class="flow-tab" data-scenario="signed-desktop" aria-pressed="false">
+          <span class="tab-title">Desktop, signed in</span>
+          <span class="tab-copy">Local or cloud sessions sync through the account-backed path.</span>
+        </button>
+        <button class="flow-tab" data-scenario="later-signin" aria-pressed="false">
+          <span class="tab-title">Starts unsigned, signs in later</span>
+          <span class="tab-copy">Existing local history stays local unless explicitly imported.</span>
+        </button>
+        <button class="flow-tab" data-scenario="web" aria-pressed="false">
+          <span class="tab-title">Web app</span>
+          <span class="tab-copy">Signed only. Cloud workspace or central Pi, never local runtime.</span>
+        </button>
+        <button class="flow-tab" data-scenario="pi" aria-pressed="false">
+          <span class="tab-title">Pi agent</span>
+          <span class="tab-copy">Always central-hosted, regardless of local or cloud workspace.</span>
+        </button>
+      </div>
+
+      <div class="diagram-wrap" aria-label="Architecture diagram">
+        <svg viewBox="0 0 1180 660" role="img" aria-labelledby="svg-title svg-desc">
+          <title id="svg-title">Claxedo runtime and storage map</title>
+          <desc id="svg-desc">Diagram showing desktop app, web app, local server, hosted server, local workspace runtime, cloud sandbox runtime, central Pi agent, SQLite, Convex, and OneCLI credential gateway.</desc>
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"></path>
+            </marker>
+            <marker id="arrow-danger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#b42318"></path>
+            </marker>
+          </defs>
+
+          <text x="44" y="38" class="lane-label">User device</text>
+          <text x="318" y="38" class="lane-label">Claxedo control</text>
+          <text x="622" y="38" class="lane-label">Execution runtime</text>
+          <text x="900" y="38" class="lane-label">Storage and external APIs</text>
+
+          <g class="node local" data-node="desktop" transform="translate(44 72)">
+            <rect width="210" height="86"></rect>
+            <text class="title" x="18" y="31">Downloaded app</text>
+            <text class="sub" x="18" y="54">Can run signed or unsigned</text>
+          </g>
+
+          <g class="node cloud" data-node="web" transform="translate(44 210)">
+            <rect width="210" height="86"></rect>
+            <text class="title" x="18" y="31">Hosted web app</text>
+            <text class="sub" x="18" y="54">Signed users only</text>
+          </g>
+
+          <g class="node local" data-node="local-server" transform="translate(326 72)">
+            <rect width="230" height="96"></rect>
+            <text class="title" x="18" y="31">Local claxedo-server</text>
+            <text class="sub" x="18" y="55">Desktop sidecar</text>
+            <text class="sub" x="18" y="74">Trusted local unsigned mode</text>
+          </g>
+
+          <g class="node cloud" data-node="hosted-server" transform="translate(326 210)">
+            <rect width="230" height="96"></rect>
+            <text class="title" x="18" y="31">Hosted claxedo-server</text>
+            <text class="sub" x="18" y="55">Public control plane</text>
+            <text class="sub" x="18" y="74">Clerk tenant enforcement</text>
+          </g>
+
+          <g class="node local" data-node="local-runtime" transform="translate(646 60)">
+            <rect width="226" height="94"></rect>
+            <text class="title" x="18" y="31">Local in-process runtime</text>
+            <text class="sub" x="18" y="55">Inside local claxedo-server</text>
+            <text class="sub" x="18" y="74">Local workspace only</text>
+          </g>
+
+          <g class="node cloud" data-node="sandbox" transform="translate(646 205)">
+            <rect width="226" height="104"></rect>
+            <text class="title" x="18" y="31">Cloud sandbox runtime</text>
+            <text class="sub" x="18" y="55">Workspace-runtime in sandbox</text>
+            <text class="sub" x="18" y="74">Browser may attach directly</text>
+          </g>
+
+          <g class="node central" data-node="pi" transform="translate(646 365)">
+            <rect width="226" height="92"></rect>
+            <text class="title" x="18" y="31">Pi agent</text>
+            <text class="sub" x="18" y="55">Always central-hosted</text>
+            <text class="sub" x="18" y="74">Never inside workspace-runtime</text>
+          </g>
+
+          <g class="node local" data-node="sqlite" transform="translate(930 60)">
+            <rect width="202" height="86"></rect>
+            <text class="title" x="18" y="31">SQLite</text>
+            <text class="sub" x="18" y="55">Unsigned local storage</text>
+          </g>
+
+          <g class="node convex" data-node="convex" transform="translate(930 210)">
+            <rect width="202" height="96"></rect>
+            <text class="title" x="18" y="31">Convex</text>
+            <text class="sub" x="18" y="55">Signed account storage</text>
+            <text class="sub" x="18" y="74">Cross-device history</text>
+          </g>
+
+          <g class="node credential" data-node="onecli" transform="translate(930 365)">
+            <rect width="202" height="92"></rect>
+            <text class="title" x="18" y="31">OneCLI gateway</text>
+            <text class="sub" x="18" y="55">Provider keys stay outside</text>
+            <text class="sub" x="18" y="74">Sandbox gets proxy access</text>
+          </g>
+
+          <g class="node" data-node="sync" transform="translate(930 505)">
+            <rect width="202" height="86"></rect>
+            <text class="title" x="18" y="31">Session sync</text>
+            <text class="sub" x="18" y="55">Metadata + message events</text>
+          </g>
+
+          <g class="node blocked" data-node="blocked-local" transform="translate(326 500)">
+            <rect width="546" height="84"></rect>
+            <text class="title" x="18" y="31">Not allowed in hosted web</text>
+            <text class="sub" x="18" y="55">No local workspaces, no local runtime, no unsigned sessions</text>
+          </g>
+
+          <path class="flow local" data-flow="desktop-local-server" d="M254 116 C282 116 294 120 326 120"></path>
+          <path class="flow cloud" data-flow="web-hosted-server" d="M254 252 C282 252 294 258 326 258"></path>
+          <path class="flow local" data-flow="local-server-local-runtime" d="M556 120 C594 120 606 108 646 108"></path>
+          <path class="flow cloud" data-flow="local-server-sandbox" d="M556 138 C606 150 606 254 646 254"></path>
+          <path class="flow cloud" data-flow="hosted-server-sandbox" d="M556 258 C596 258 606 258 646 258"></path>
+          <path class="flow central" data-flow="local-server-pi" d="M556 156 C610 194 594 410 646 410"></path>
+          <path class="flow central" data-flow="hosted-server-pi" d="M556 290 C600 320 604 410 646 410"></path>
+          <path class="flow local" data-flow="local-server-sqlite" d="M556 102 C700 30 820 84 930 102"></path>
+          <path class="flow convex" data-flow="local-server-convex" d="M556 150 C696 188 792 244 930 252"></path>
+          <path class="flow convex" data-flow="hosted-server-convex" d="M556 258 C704 226 786 252 930 258"></path>
+          <path class="flow cloud" data-flow="sandbox-server-sync-local" d="M646 286 C590 330 532 250 438 168"></path>
+          <path class="flow convex" data-flow="sandbox-server-sync-hosted" d="M872 258 C902 258 908 258 930 258"></path>
+          <path class="flow credential" data-flow="sandbox-onecli" d="M872 286 C902 318 908 396 930 410"></path>
+          <path class="flow credential" data-flow="pi-onecli" d="M872 410 C902 410 908 410 930 410"></path>
+          <path class="flow" data-flow="sandbox-metadata-sync" d="M758 309 C760 470 875 520 930 546"></path>
+          <path class="flow" data-flow="pi-metadata-sync" d="M872 438 C910 462 910 526 930 548"></path>
+          <path class="flow convex" data-flow="sync-convex" d="M1031 505 C1040 436 1040 360 1031 306"></path>
+          <path class="flow local" data-flow="sync-sqlite" d="M930 548 C860 500 850 170 930 112"></path>
+          <path class="flow blocked" data-flow="web-blocked-local" d="M254 278 C292 390 292 540 326 540"></path>
+        </svg>
+      </div>
+
+      <div class="callout">
+        <article class="explain">
+          <h3 id="scenario-title">Desktop, skipped sign in</h3>
+          <ol class="steps" id="scenario-steps"></ol>
+        </article>
+        <aside class="rules">
+          <h3>Runtime Rule</h3>
+          <p id="scenario-rule">A downloaded app without sign-in is trusted only by the local machine. It stores state in SQLite and may use the local in-process runtime or a user-configured sandbox runtime.</p>
+          <p class="small"><strong>Plain English:</strong> users can start immediately, and nothing needs a Claxedo cloud account until they choose to sign in or use hosted web.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="decision-title">
+      <h2 id="decision-title">The Three Decisions Claxedo Makes</h2>
+      <div class="matrix">
+        <article class="matrix-item">
+          <h3>Who is the user?</h3>
+          <p class="small">Authority is decided at request time.</p>
+          <ul>
+            <li><code>valid Clerk token</code> means signed account mode.</li>
+            <li><code>no token + local desktop</code> means unsigned local mode.</li>
+            <li><code>no token + web</code> is rejected.</li>
+          </ul>
+        </article>
+        <article class="matrix-item">
+          <h3>Where is the workspace?</h3>
+          <p class="small">Workspace kind chooses the runtime environment.</p>
+          <ul>
+            <li><code>local</code> runs inside the local claxedo-server sidecar.</li>
+            <li><code>cloud</code> runs in a sandbox.</li>
+            <li>Hosted web only allows <code>cloud</code>.</li>
+          </ul>
+        </article>
+        <article class="matrix-item">
+          <h3>Where does the runner live?</h3>
+          <p class="small">Pi is a special central runner.</p>
+          <ul>
+            <li><code>pi</code> always runs in central server mode.</li>
+            <li>Other runners run through the workspace execution path.</li>
+            <li>Local execution is in-process; cloud execution uses sandbox workspace-runtime.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="storage-title">
+      <h2 id="storage-title">Storage and Sync</h2>
+      <div class="plain-grid">
+        <article class="matrix-item">
+          <h3>Unsigned local storage</h3>
+          <p>When the user skips sign-in in the desktop app, sessions, messages, workspaces, and credentials stay local. Cloud sandboxes can still be used if the user configures sandbox and model keys locally.</p>
+        </article>
+        <article class="matrix-item">
+          <h3>Signed cloud storage</h3>
+          <p>When the user is signed in, sessions and messages belong to a Clerk user or organization and sync to Convex. Local desktop can still run local workspaces, but signed history becomes account-backed.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="sync-title">
+      <h2 id="sync-title">Metadata and Message Sync Story</h2>
+      <p>The browser may talk directly to a sandbox for responsiveness, but durable history still needs a central write path. The central server is the place that knows the user, workspace lease, tenant, and storage mode.</p>
+      <div class="matrix">
+        <article class="matrix-item">
+          <h3>Session metadata</h3>
+          <p class="small">Session lists, titles, archive state, workspace IDs, runner choice, and timestamps are lightweight metadata.</p>
+          <ul>
+            <li>Local in-process sessions write metadata directly in the local sidecar.</li>
+            <li>Sandbox runtime reports metadata to central through typed tRPC.</li>
+            <li>Pi writes metadata in central because Pi already runs there.</li>
+          </ul>
+        </article>
+        <article class="matrix-item">
+          <h3>Message events</h3>
+          <p class="small">Messages are the durable conversation stream, so they need idempotent append and replay.</p>
+          <ul>
+            <li>Current local path persists replay from central <code>globalBus</code>.</li>
+            <li>Cloud target should use runtime-to-central typed append, not only background SSE observation.</li>
+            <li>Events need sequence IDs, lease/epoch checks, and retry-safe writes.</li>
+          </ul>
+        </article>
+        <article class="matrix-item">
+          <h3>Storage destination</h3>
+          <p class="small">The same sync events land in different stores depending on authority.</p>
+          <ul>
+            <li>Unsigned desktop writes to SQLite only.</li>
+            <li>Signed desktop writes locally and mirrors to Convex.</li>
+            <li>Hosted web writes through central to Convex.</li>
+          </ul>
+        </article>
+      </div>
+      <div class="plain-grid">
+        <article class="matrix-item">
+          <h3>Why not browser-to-Convex only?</h3>
+          <p>The browser can read account-backed state, but the sandbox needs a trusted authority to validate lease, workspace, tenant, and runner identity before durable writes. That authority is central.</p>
+        </article>
+        <article class="matrix-item">
+          <h3>Why direct browser-to-sandbox is still OK</h3>
+          <p>Direct attach improves interactivity. It does not have to be the durable sync path. The sandbox can stream UI responses to the browser while also appending authoritative events to central.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="credentials-title">
+      <h2 id="credentials-title">Credential Safety</h2>
+      <div class="plain-grid">
+        <article class="matrix-item">
+          <h3>Raw local mode</h3>
+          <p>For local desktop development, credentials can live in local encrypted storage and be used by the local sidecar and its agent adapters when needed.</p>
+        </article>
+        <article class="matrix-item">
+          <h3>OneCLI gateway mode</h3>
+          <p>For cloud sandboxes, provider keys should stay outside the sandbox. The sandbox calls providers through a scoped OneCLI gateway, and network policy blocks direct provider egress.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="status-title">
+      <h2 id="status-title">What Exists vs What Needs Work</h2>
+      <div class="plain-grid">
+        <article>
+          <h3>Already mostly present</h3>
+          <ul class="status-list">
+            <li class="done">Desktop local server and SQLite storage.</li>
+            <li class="done">Local and cloud workspace distinction.</li>
+            <li class="done">Cloud sandbox runtime provisioning.</li>
+            <li class="done">Pi central runner routing.</li>
+            <li class="done">Frontend Clerk login and bearer token plumbing.</li>
+            <li class="done">Runtime-to-central tRPC for session metadata and heartbeat.</li>
+          </ul>
+        </article>
+        <article>
+          <h3>Still required</h3>
+          <ul class="status-list">
+            <li class="todo">Server-side Clerk verification and tenant scoping.</li>
+            <li class="todo">Convex client and signed write-through sync.</li>
+            <li class="todo">Per-request authority resolver: signed Convex, unsigned SQLite, web 401.</li>
+            <li class="todo">Durable runtime-to-central message append for cloud runtimes.</li>
+            <li class="todo">Hosted web enforcement: cloud workspaces only.</li>
+            <li class="todo">OneCLI credential injection plus sandbox egress policy.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const scenarios = {
+      "unsigned-local": {
+        title: "Desktop, skipped sign in",
+        rule: "A downloaded app without sign-in is trusted only by the local machine. It stores state in SQLite and may use the local in-process runtime or a user-configured sandbox runtime.",
+        steps: [
+          "User opens the downloaded app and skips sign-in.",
+          "The app talks to the local claxedo-server sidecar.",
+          "Local workspace sessions run inside the local claxedo-server sidecar.",
+          "Cloud workspace sessions can run in a sandbox after the user configures provider credentials.",
+          "Sessions and messages are stored in local SQLite."
+        ],
+        flows: ["desktop-local-server", "local-server-local-runtime", "local-server-sandbox", "local-server-sqlite", "sandbox-server-sync-local", "sandbox-metadata-sync", "sync-sqlite"],
+        nodes: ["desktop", "local-server", "local-runtime", "sandbox", "sqlite", "sync"]
+      },
+      "signed-desktop": {
+        title: "Desktop, signed in",
+        rule: "The desktop app can still use local or sandbox runtimes, but the account identity changes the authority and storage path.",
+        steps: [
+          "User signs in through Clerk in the desktop app.",
+          "Requests include a bearer token from the frontend.",
+          "Local workspaces may still run inside the local claxedo-server sidecar.",
+          "Cloud workspaces run in sandbox workspace-runtime.",
+          "Session and message history syncs to Convex under the user or organization."
+        ],
+        flows: ["desktop-local-server", "local-server-local-runtime", "local-server-sandbox", "local-server-convex", "sandbox-server-sync-local", "sandbox-metadata-sync", "sync-convex"],
+        nodes: ["desktop", "local-server", "local-runtime", "sandbox", "convex", "sync"]
+      },
+      "later-signin": {
+        title: "Starts unsigned, signs in later",
+        rule: "Signing in should not silently rewrite ownership. Existing unsigned history stays local unless the user chooses to import it.",
+        steps: [
+          "User creates sessions while unsigned; they are local SQLite records.",
+          "Later, the user signs in.",
+          "New sessions can become signed and Convex-backed.",
+          "Old sessions remain local by default.",
+          "An explicit import can copy selected local history into the signed account."
+        ],
+        flows: ["desktop-local-server", "local-server-sqlite", "local-server-convex", "sync-sqlite", "sync-convex"],
+        nodes: ["desktop", "local-server", "sqlite", "convex", "sync"]
+      },
+      "web": {
+        title: "Hosted web app",
+        rule: "Hosted web is signed-only and cloud-only for workspaces. It may use sandbox runtimes or central Pi, but never a local workspace runtime.",
+        steps: [
+          "User logs into the hosted web app.",
+          "Hosted claxedo-server verifies the Clerk identity.",
+          "Cloud workspace sessions run in a sandbox.",
+          "Pi sessions run in the hosted central server.",
+          "All signed history is stored in Convex."
+        ],
+        flows: ["web-hosted-server", "hosted-server-sandbox", "hosted-server-pi", "hosted-server-convex", "sandbox-server-sync-hosted", "sandbox-metadata-sync", "pi-metadata-sync", "sync-convex", "web-blocked-local"],
+        nodes: ["web", "hosted-server", "sandbox", "pi", "convex", "sync", "blocked-local"]
+      },
+      "pi": {
+        title: "Pi agent central mode",
+        rule: "Pi is always central-hosted. The workspace can be local or cloud, but the Pi runner itself does not run inside workspace-runtime.",
+        steps: [
+          "User selects the Pi runner.",
+          "Claxedo routes the session to the central host path.",
+          "On desktop, that central host may be the local sidecar.",
+          "On web, that central host is hosted claxedo-server.",
+          "Storage follows the user's authority: SQLite if unsigned local, Convex if signed."
+        ],
+        flows: ["desktop-local-server", "web-hosted-server", "local-server-pi", "hosted-server-pi", "pi-onecli", "pi-metadata-sync", "local-server-sqlite", "hosted-server-convex", "sync-sqlite", "sync-convex"],
+        nodes: ["desktop", "web", "local-server", "hosted-server", "pi", "onecli", "sqlite", "convex", "sync"]
+      }
+    };
+
+    const buttons = Array.from(document.querySelectorAll(".flow-tab"));
+    const flows = Array.from(document.querySelectorAll(".flow"));
+    const nodes = Array.from(document.querySelectorAll(".node"));
+    const title = document.getElementById("scenario-title");
+    const rule = document.getElementById("scenario-rule");
+    const steps = document.getElementById("scenario-steps");
+
+    function render(name) {
+      const scenario = scenarios[name];
+      buttons.forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.scenario === name));
+      });
+      flows.forEach((flow) => {
+        flow.classList.toggle("active", scenario.flows.includes(flow.dataset.flow));
+      });
+      nodes.forEach((node) => {
+        const focused = scenario.nodes.includes(node.dataset.node);
+        node.classList.toggle("focus", focused);
+        node.classList.toggle("dim", !focused);
+      });
+      title.textContent = scenario.title;
+      rule.textContent = scenario.rule;
+      steps.innerHTML = "";
+      scenario.steps.forEach((item, index) => {
+        const li = document.createElement("li");
+        const num = document.createElement("span");
+        num.className = "num";
+        num.textContent = String(index + 1);
+        const copy = document.createElement("span");
+        copy.textContent = item;
+        li.append(num, copy);
+        steps.append(li);
+      });
+    }
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => render(button.dataset.scenario));
+    });
+
+    render("unsigned-local");
+  </script>
+</body>
+</html>

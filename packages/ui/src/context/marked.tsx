@@ -2,7 +2,7 @@ import { marked } from "marked"
 import markedKatex from "marked-katex-extension"
 import markedShiki from "marked-shiki"
 import katex from "katex"
-import { bundledLanguages, type BundledLanguage } from "shiki"
+import type { BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
 import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } from "@pierre/diffs"
 
@@ -10,7 +10,7 @@ registerCustomTheme("OpenCode", () => {
   return Promise.resolve({
     name: "OpenCode",
     colors: {
-      "editor.background": "var(--color-background-stronger)",
+      "editor.background": "var(--background-stronger)",
       "editor.foreground": "var(--text-base)",
       "gitDecoration.addedResourceForeground": "var(--syntax-diff-add)",
       "gitDecoration.deletedResourceForeground": "var(--syntax-diff-delete)",
@@ -428,11 +428,7 @@ async function highlightCodeBlocks(html: string): Promise<string> {
   const matches = [...html.matchAll(codeBlockRegex)]
   if (matches.length === 0) return html
 
-  const highlighter = await getSharedHighlighter({
-    themes: ["OpenCode"],
-    langs: [],
-    preferredHighlighter: "shiki-wasm",
-  })
+  const highlighter = await getSharedHighlighter({ themes: ["OpenCode"], langs: [] })
 
   let result = html
   for (const match of matches) {
@@ -444,12 +440,18 @@ async function highlightCodeBlocks(html: string): Promise<string> {
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
 
-    let language = lang || "text"
-    if (!(language in bundledLanguages)) {
-      language = "text"
+    if (lang === "mermaid") {
+      result = result.replace(fullMatch, () => mermaidPlaceholder(code))
+      continue
     }
+
+    let language = lang || "text"
     if (!highlighter.getLoadedLanguages().includes(language)) {
-      await highlighter.loadLanguage(language as BundledLanguage)
+      try {
+        await highlighter.loadLanguage(language as BundledLanguage)
+      } catch {
+        language = "text"
+      }
     }
 
     const highlighted = highlighter.codeToHtml(code, {
@@ -463,11 +465,17 @@ async function highlightCodeBlocks(html: string): Promise<string> {
   return result
 }
 
+function mermaidPlaceholder(code: string): string {
+  const escaped = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  return `<div data-component="mermaid"><pre><code class="language-mermaid">${escaped}</code></pre></div>`
+}
+
+export type MermaidRenderer = (source: string) => Promise<string>
 export type NativeMarkdownParser = (markdown: string) => Promise<string>
 
 export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
   name: "Marked",
-  init: (props: { nativeParser?: NativeMarkdownParser }) => {
+  init: (props: { nativeParser?: NativeMarkdownParser; mermaidRenderer?: MermaidRenderer }) => {
     const jsParser = marked.use(
       {
         renderer: {
@@ -483,25 +491,26 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       }),
       markedShiki({
         async highlight(code, lang) {
-          const highlighter = await getSharedHighlighter({
-            themes: ["OpenCode"],
-            langs: [],
-            preferredHighlighter: "shiki-wasm",
-          })
-          if (!(lang in bundledLanguages)) {
-            lang = "text"
-          }
-          if (!highlighter.getLoadedLanguages().includes(lang)) {
-            await highlighter.loadLanguage(lang as BundledLanguage)
+          if (lang === "mermaid") return mermaidPlaceholder(code)
+          const highlighter = await getSharedHighlighter({ themes: ["OpenCode"], langs: [] })
+          let language = lang || "text"
+          if (!highlighter.getLoadedLanguages().includes(language)) {
+            try {
+              await highlighter.loadLanguage(language as BundledLanguage)
+            } catch {
+              language = "text"
+            }
           }
           return highlighter.codeToHtml(code, {
-            lang: lang || "text",
+            lang: language,
             theme: "OpenCode",
             tabindex: false,
           })
         },
       }),
     )
+
+    const renderMermaid = props.mermaidRenderer
 
     if (props.nativeParser) {
       const nativeParser = props.nativeParser
@@ -511,9 +520,13 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
           const withMath = renderMathExpressions(html)
           return highlightCodeBlocks(withMath)
         },
+        renderMermaid,
       }
     }
 
-    return jsParser
+    return {
+      parse: (markdown: string) => jsParser.parse(markdown) as Promise<string>,
+      renderMermaid,
+    }
   },
 })

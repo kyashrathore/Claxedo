@@ -1,0 +1,6 @@
+{
+  "name": "claxedo-web",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

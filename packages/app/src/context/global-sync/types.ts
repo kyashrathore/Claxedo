@@ -72,6 +72,15 @@ export type State = {
   part: {
     [messageID: string]: Part[]
   }
+  session_agent: {
+    [sessionID: string]: string
+  }
+  session_config: {
+    [sessionID: string]: unknown[]
+  }
+  session_usage: {
+    [sessionID: string]: { contextSize: number; contextUsed: number; cost?: { amount: number; currency: string } }
+  }
 }
 
 export type VcsCache = {

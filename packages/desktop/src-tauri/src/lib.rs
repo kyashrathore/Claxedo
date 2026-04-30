@@ -4,6 +4,7 @@ mod constants;
 pub mod linux_display;
 #[cfg(target_os = "linux")]
 pub mod linux_windowing;
+mod license;
 mod logging;
 mod markdown;
 mod os;
@@ -190,6 +191,60 @@ fn open_path(_app: AppHandle, path: String, app_name: Option<String>) -> Result<
     #[cfg(not(target_os = "windows"))]
     tauri_plugin_opener::open_path(path, app_name.as_deref())
         .map_err(|e| format!("Failed to open path: {e}"))
+}
+
+fn sanitize_drop(value: &str, fallback: &str) -> String {
+    let value = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+
+    if value.is_empty() {
+        return fallback.to_string();
+    }
+
+    value
+}
+
+#[tauri::command]
+#[specta::specta]
+fn save_dropped_file(app: AppHandle, name: String, data: Vec<u8>) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("drops");
+
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create drop directory: {e}"))?;
+
+    let source = std::path::Path::new(&name);
+    let stem = sanitize_drop(
+        source.file_stem().and_then(|v| v.to_str()).unwrap_or("drop"),
+        "drop",
+    );
+    let ext = source
+        .extension()
+        .and_then(|v| v.to_str())
+        .map(|v| sanitize_drop(v, ""))
+        .filter(|v| !v.is_empty());
+    let id = uuid::Uuid::new_v4();
+    let file = match ext {
+        Some(ext) => format!("{stem}-{id}.{ext}"),
+        None => format!("{stem}-{id}"),
+    };
+    let path = dir.join(file);
+
+    std::fs::write(&path, data).map_err(|e| format!("Failed to save dropped file: {e}"))?;
+
+    Ok(path.to_string_lossy().to_string())
 }
 
 #[cfg(target_os = "macos")]
@@ -387,7 +442,11 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             check_app_exists,
             wsl_path,
             resolve_app_path,
-            open_path
+            open_path,
+            save_dropped_file,
+            license::validate_license_on_boot,
+            license::activate_license,
+            license::deactivate_license
         ])
         .events(tauri_specta::collect_events![
             LoadingWindowComplete,

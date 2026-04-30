@@ -136,13 +136,14 @@
   }
 
   #review-panel &[data-variant="normal"][data-orientation="horizontal"] {
+    --tabs-bar-height: 36px;
     background-color: var(--background-stronger);
 
     [data-slot="tabs-list"] {
       height: var(--tabs-bar-height);
-      padding-left: 12px;
+      padding-left: 8px;
       padding-right: 0;
-      --tabs-review-gap: 16px;
+      --tabs-review-gap: 4px;
       --tabs-review-fade: 16px;
       gap: var(--tabs-review-gap);
       background-color: var(--background-stronger);
@@ -170,40 +171,33 @@
     }
 
     [data-slot="tabs-trigger-wrapper"] {
-      height: var(--tabs-compact-pill-height);
+      height: 100%;
       margin-block: 0;
       max-width: 320px;
-      padding-inline: var(--tabs-compact-pill-padding-x);
+      padding-inline: 10px;
       box-sizing: border-box;
-      border: 1px solid transparent;
-      border-radius: var(--tabs-compact-pill-radius);
+      border: none;
+      border-radius: 0;
       background-color: transparent;
       gap: 8px;
       color: var(--text-weak);
-      transition:
-        color 120ms ease,
-        background-color 120ms ease,
-        border-color 120ms ease;
+      transition: color 120ms ease;
 
       &::after {
         content: "";
         position: absolute;
-        left: 0;
-        right: 0;
-        bottom: calc((var(--tabs-compact-pill-height) - var(--tabs-bar-height)) / 2);
-        height: 1px;
+        left: 8px;
+        right: 8px;
+        bottom: -1px;
+        height: 2px;
         background-color: var(--text-strong);
+        border-radius: 2px 2px 0 0;
         opacity: 0;
-        transform: scaleX(0.75);
+        transform: scaleX(0.6);
         transform-origin: center;
         transition:
           opacity 120ms ease,
           transform 120ms ease;
-      }
-
-      &[data-value="review"] {
-        padding-left: 8px;
-        padding-right: 8px;
       }
 
       [data-slot="tabs-trigger"] {
@@ -212,7 +206,7 @@
       }
 
       &:has([data-slot="tabs-trigger-close-button"]) {
-        padding-right: 5px;
+        padding-right: 6px;
         [data-slot="tabs-trigger"] {
           padding-right: 0 !important;
         }
@@ -220,8 +214,7 @@
 
       &:has([data-selected]) {
         color: var(--text-strong);
-        background-color: var(--surface-base-active);
-        border-color: var(--border-weak-base);
+        background-color: transparent;
 
         &::after {
           opacity: 1;
@@ -231,7 +224,7 @@
 
       &:hover:not(:disabled):not(:has([data-selected])) {
         color: var(--text-base);
-        background-color: var(--surface-base-hover);
+        background-color: transparent;
       }
 
       /*

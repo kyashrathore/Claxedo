@@ -1,0 +1,20 @@
+const $schema = "https://opencode.ai/desktop-theme.json";
+const name = "Solarized";
+const id = "solarized";
+const light = { "palette": { "neutral": "#fdf6e3", "ink": "#586e75", "primary": "#268bd2", "accent": "#d33682", "success": "#859900", "warning": "#b58900", "error": "#dc322f", "info": "#2aa198", "diffAdd": "#c6dc7a", "diffDelete": "#f2a1a1" }, "overrides": { "syntax-comment": "#657b83", "syntax-keyword": "#728600", "syntax-string": "#1f8f88", "syntax-primitive": "#268bd2", "syntax-property": "#268bd2", "syntax-constant": "#d33682" } };
+const dark = { "palette": { "neutral": "#002b36", "ink": "#93a1a1", "primary": "#6c71c4", "accent": "#d33682", "success": "#859900", "warning": "#b58900", "error": "#dc322f", "info": "#2aa198", "diffAdd": "#4c7654", "diffDelete": "#c34b4b" }, "overrides": { "syntax-comment": "#586e75", "syntax-keyword": "#859900", "syntax-string": "#2aa198", "syntax-primitive": "#268bd2", "syntax-property": "#268bd2", "syntax-constant": "#d33682" } };
+const solarizedThemeJson = {
+  $schema,
+  name,
+  id,
+  light,
+  dark
+};
+export {
+  $schema,
+  dark,
+  solarizedThemeJson as default,
+  id,
+  light,
+  name
+};

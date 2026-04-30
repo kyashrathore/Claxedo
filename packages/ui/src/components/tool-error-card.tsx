@@ -34,6 +34,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
       webfetch: "ui.tool.webfetch",
       websearch: "ui.tool.websearch",
       bash: "ui.tool.shell",
+      edit: "Edit",
       apply_patch: "ui.tool.patch",
       question: "ui.tool.questions",
     }
@@ -42,7 +43,10 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     if (!key.includes(".")) return key
     return i18n.t(key)
   })
-  const cleaned = createMemo(() => split.error.replace(/^Error:\s*/, "").trim())
+  const cleaned = createMemo(() => split.error
+    .replace(/^Error:\s*/, "")
+    .replace(/<\/?tool_use_error>/g, "")
+    .trim())
   const tail = createMemo(() => {
     const value = cleaned()
     const prefix = `${split.tool} `

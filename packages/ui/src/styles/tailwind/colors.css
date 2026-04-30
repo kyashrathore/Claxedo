@@ -76,6 +76,11 @@
   --color-text-weak: var(--text-weak);
   --color-text-weaker: var(--text-weaker);
   --color-text-strong: var(--text-strong);
+  --color-text-stronger: var(--text-stronger);
+  --color-text-invert-base: var(--text-invert-base);
+  --color-text-invert-weak: var(--text-invert-weak);
+  --color-text-invert-weaker: var(--text-invert-weaker);
+  --color-text-invert-strong: var(--text-invert-strong);
   --color-text-interactive-base: var(--text-interactive-base);
   --color-text-on-brand-base: var(--text-on-brand-base);
   --color-text-on-interactive-base: var(--text-on-interactive-base);
@@ -99,6 +104,7 @@
   --color-text-on-brand-weak: var(--text-on-brand-weak);
   --color-text-on-brand-weaker: var(--text-on-brand-weaker);
   --color-text-on-brand-strong: var(--text-on-brand-strong);
+  --color-button-primary-base: var(--button-primary-base);
   --color-button-secondary-base: var(--button-secondary-base);
   --color-button-secondary-hover: var(--button-secondary-hover);
   --color-border-base: var(--border-base);
@@ -196,6 +202,7 @@
   --color-icon-diff-add-active: var(--icon-diff-add-active);
   --color-icon-diff-delete-base: var(--icon-diff-delete-base);
   --color-icon-diff-delete-hover: var(--icon-diff-delete-hover);
+  --color-icon-diff-modified-base: var(--icon-diff-modified-base);
   --color-syntax-comment: var(--syntax-comment);
   --color-syntax-regexp: var(--syntax-regexp);
   --color-syntax-string: var(--syntax-string);
@@ -229,6 +236,18 @@
   --color-markdown-image: var(--markdown-image);
   --color-markdown-image-text: var(--markdown-image-text);
   --color-markdown-code-block: var(--markdown-code-block);
+  --color-avatar-background-pink: var(--avatar-background-pink);
+  --color-avatar-background-mint: var(--avatar-background-mint);
+  --color-avatar-background-orange: var(--avatar-background-orange);
+  --color-avatar-background-purple: var(--avatar-background-purple);
+  --color-avatar-background-cyan: var(--avatar-background-cyan);
+  --color-avatar-background-lime: var(--avatar-background-lime);
+  --color-avatar-text-pink: var(--avatar-text-pink);
+  --color-avatar-text-mint: var(--avatar-text-mint);
+  --color-avatar-text-orange: var(--avatar-text-orange);
+  --color-avatar-text-purple: var(--avatar-text-purple);
+  --color-avatar-text-cyan: var(--avatar-text-cyan);
+  --color-avatar-text-lime: var(--avatar-text-lime);
   --color-border-color: var(--border-color);
   --color-button-ghost-hover: var(--button-ghost-hover);
   --color-button-ghost-hover2: var(--button-ghost-hover2);

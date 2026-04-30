@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claxedo Process Handling + Portless Flow Explainer</title>
+  <style>
+    :root {
+      --paper: #f7f2e8;
+      --paper-2: #eee6d6;
+      --ink: #171411;
+      --muted: #635c52;
+      --line: #c9baa0;
+      --black: #11100e;
+      --steel: #50616f;
+      --teal: #09746b;
+      --green: #24804d;
+      --amber: #bf6b1e;
+      --red: #a33b2f;
+      --blue: #245d91;
+      --cream: #fffaf1;
+      --shadow: 0 18px 50px rgba(42, 35, 25, 0.16);
+      --mono: "SFMono-Regular", "Cascadia Code", "Liberation Mono", monospace;
+      --serif: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+      --sans: Avenir Next, Segoe UI, Verdana, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(90deg, rgba(17, 16, 14, 0.045) 1px, transparent 1px) 0 0 / 28px 28px,
+        linear-gradient(rgba(17, 16, 14, 0.035) 1px, transparent 1px) 0 0 / 28px 28px,
+        var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+      letter-spacing: 0;
+    }
+
+    button,
+    select {
+      font: inherit;
+    }
+
+    .shell {
+      width: min(1440px, 100%);
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .mast {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+      min-height: 330px;
+      border: 1px solid var(--black);
+      background: var(--cream);
+      box-shadow: var(--shadow);
+    }
+
+    .mast-copy {
+      padding: clamp(24px, 4vw, 58px);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 28px;
+      border-right: 1px solid var(--black);
+    }
+
+    .eyebrow {
+      width: fit-content;
+      border: 1px solid var(--black);
+      padding: 6px 9px;
+      font: 700 11px/1 var(--mono);
+      text-transform: uppercase;
+      background: var(--amber);
+      color: #fff7ea;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 840px;
+      font-family: var(--serif);
+      font-size: clamp(36px, 7vw, 82px);
+      line-height: 0.92;
+      font-weight: 700;
+    }
+
+    .lead {
+      margin: 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: clamp(16px, 2vw, 20px);
+      line-height: 1.55;
+    }
+
+    .mast-panel {
+      position: relative;
+      min-height: 330px;
+      overflow: hidden;
+      background:
+        repeating-linear-gradient(135deg, rgba(17, 16, 14, 0.08) 0 1px, transparent 1px 12px),
+        #2a2b24;
+      color: #f8f1df;
+      padding: 26px;
+      display: grid;
+      align-content: center;
+    }
+
+    .circuit {
+      display: grid;
+      gap: 16px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .circuit-row {
+      display: grid;
+      grid-template-columns: 1fr 56px 1fr;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .circuit-node {
+      border: 1px solid rgba(248, 241, 223, 0.72);
+      background: rgba(248, 241, 223, 0.08);
+      min-height: 80px;
+      padding: 14px;
+      display: grid;
+      align-content: center;
+      gap: 5px;
+    }
+
+    .circuit-node strong {
+      font-size: 15px;
+    }
+
+    .circuit-node span {
+      font: 600 11px/1.4 var(--mono);
+      color: #d5cab4;
+    }
+
+    .wire {
+      height: 1px;
+      background: #f1c277;
+      position: relative;
+    }
+
+    .wire::after {
+      content: "";
+      position: absolute;
+      right: -2px;
+      top: -4px;
+      width: 9px;
+      height: 9px;
+      border-top: 1px solid #f1c277;
+      border-right: 1px solid #f1c277;
+      transform: rotate(45deg);
+    }
+
+    .nav {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      border: 1px solid var(--black);
+      background: var(--paper-2);
+    }
+
+    .tab {
+      min-height: 48px;
+      border: 0;
+      border-right: 1px solid var(--black);
+      background: transparent;
+      cursor: pointer;
+      font: 800 12px/1 var(--mono);
+      text-transform: uppercase;
+      color: var(--ink);
+    }
+
+    .tab:last-child {
+      border-right: 0;
+    }
+
+    .tab[aria-selected="true"] {
+      background: var(--black);
+      color: var(--paper);
+    }
+
+    .page {
+      display: none;
+      margin-top: 18px;
+      animation: pageIn 180ms ease-out;
+    }
+
+    .page.active {
+      display: block;
+    }
+
+    @keyframes pageIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .panel,
+    .card {
+      border: 1px solid var(--black);
+      background: var(--cream);
+      box-shadow: 5px 5px 0 rgba(17, 16, 14, 0.18);
+    }
+
+    .panel {
+      padding: 22px;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.05;
+    }
+
+    h2 {
+      font-family: var(--serif);
+      font-size: clamp(26px, 3vw, 40px);
+    }
+
+    h3 {
+      font-size: 17px;
+    }
+
+    .tag {
+      display: inline-flex;
+      min-height: 25px;
+      align-items: center;
+      border: 1px solid var(--black);
+      padding: 4px 7px;
+      background: var(--paper-2);
+      font: 800 11px/1 var(--mono);
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .card {
+      padding: 18px;
+      min-height: 184px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card p,
+    .panel p,
+    li {
+      color: var(--muted);
+      line-height: 1.48;
+    }
+
+    .card p,
+    .panel p {
+      margin: 0;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .metric {
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-top: 1px dashed var(--line);
+      padding-top: 12px;
+      font: 700 12px/1.35 var(--mono);
+      color: var(--ink);
+    }
+
+    .badge {
+      width: 38px;
+      min-width: 38px;
+      height: 38px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--black);
+      background: var(--black);
+      color: var(--paper);
+      font: 900 15px/1 var(--mono);
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.2fr);
+      gap: 14px;
+    }
+
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      background: var(--cream);
+      border: 1px solid var(--black);
+    }
+
+    .matrix th,
+    .matrix td {
+      border: 1px solid var(--black);
+      padding: 12px;
+      vertical-align: top;
+      text-align: left;
+      line-height: 1.4;
+    }
+
+    .matrix th {
+      background: var(--black);
+      color: var(--paper);
+      font: 800 11px/1.2 var(--mono);
+      text-transform: uppercase;
+    }
+
+    .matrix td:first-child {
+      font-weight: 800;
+      color: var(--ink);
+      width: 24%;
+    }
+
+    .switchboard {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      border: 1px solid var(--black);
+      background: var(--cream);
+      box-shadow: var(--shadow);
+    }
+
+    .flow-menu {
+      border-right: 1px solid var(--black);
+      background: #e5d8c1;
+      padding: 14px;
+      display: grid;
+      align-content: start;
+      gap: 10px;
+    }
+
+    .flow-btn {
+      border: 1px solid var(--black);
+      background: var(--cream);
+      min-height: 58px;
+      padding: 11px;
+      text-align: left;
+      cursor: pointer;
+      display: grid;
+      gap: 5px;
+      color: var(--ink);
+    }
+
+    .flow-btn strong {
+      font-size: 13px;
+    }
+
+    .flow-btn span {
+      font: 700 11px/1.35 var(--mono);
+      color: var(--muted);
+    }
+
+    .flow-btn.active {
+      background: var(--black);
+      color: var(--paper);
+    }
+
+    .flow-btn.active span {
+      color: #d7ccb7;
+    }
+
+    .flow-stage {
+      padding: 20px;
+      min-width: 0;
+    }
+
+    .flow-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .flow-head p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      line-height: 1.45;
+      max-width: 780px;
+    }
+
+    .flow-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      white-space: nowrap;
+    }
+
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border: 1px solid var(--black);
+      background: var(--paper-2);
+      color: var(--ink);
+      cursor: pointer;
+      font: 900 17px/1 var(--mono);
+    }
+
+    .flow-rail {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(105px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .node {
+      position: relative;
+      min-height: 106px;
+      border: 1px solid var(--black);
+      background: #fbf6eb;
+      padding: 12px;
+      display: grid;
+      align-content: start;
+      gap: 8px;
+    }
+
+    .node::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -10px;
+      width: 10px;
+      height: 1px;
+      background: var(--black);
+    }
+
+    .node:last-child::after {
+      display: none;
+    }
+
+    .node.active {
+      background: #1d1b17;
+      color: var(--paper);
+    }
+
+    .node small {
+      color: inherit;
+      opacity: 0.78;
+      font: 800 10px/1.2 var(--mono);
+      text-transform: uppercase;
+    }
+
+    .node strong {
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .node p {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.35;
+      color: inherit;
+      opacity: 0.78;
+    }
+
+    .detail-box {
+      border: 1px solid var(--black);
+      background: var(--paper-2);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .detail-box code,
+    .code {
+      font-family: var(--mono);
+      background: rgba(17, 16, 14, 0.08);
+      border: 1px solid rgba(17, 16, 14, 0.2);
+      padding: 2px 5px;
+    }
+
+    .ownership {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .owner {
+      border: 1px solid var(--black);
+      background: var(--cream);
+      padding: 14px;
+      min-height: 120px;
+      display: grid;
+      gap: 9px;
+    }
+
+    .owner[data-kind="keep"] { border-top: 8px solid var(--green); }
+    .owner[data-kind="replace"] { border-top: 8px solid var(--amber); }
+    .owner[data-kind="adapt"] { border-top: 8px solid var(--blue); }
+    .owner[data-kind="avoid"] { border-top: 8px solid var(--red); }
+
+    .note {
+      margin-top: 14px;
+      border-left: 8px solid var(--amber);
+      padding: 14px 16px;
+      background: #fff4dd;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .mini-map {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .path {
+      border: 1px solid var(--black);
+      background: var(--cream);
+      padding: 16px;
+    }
+
+    .path h3 {
+      margin-bottom: 12px;
+    }
+
+    .path-line {
+      display: grid;
+      gap: 8px;
+    }
+
+    .path-step {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+    }
+
+    .dot {
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--black);
+      background: var(--black);
+      color: var(--paper);
+      display: grid;
+      place-items: center;
+      font: 800 11px/1 var(--mono);
+    }
+
+    .path-step p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .sequence {
+      display: grid;
+      gap: 12px;
+    }
+
+    .sequence-row {
+      display: grid;
+      grid-template-columns: 170px minmax(0, 1fr);
+      border: 1px solid var(--black);
+      background: var(--cream);
+    }
+
+    .sequence-row strong {
+      padding: 14px;
+      background: var(--black);
+      color: var(--paper);
+      font: 800 12px/1.25 var(--mono);
+      text-transform: uppercase;
+    }
+
+    .sequence-row div {
+      padding: 14px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .sequence-row p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    @media (max-width: 980px) {
+      .mast,
+      .split,
+      .switchboard {
+        grid-template-columns: 1fr;
+      }
+
+      .mast-copy,
+      .flow-menu {
+        border-right: 0;
+      }
+
+      .mast-copy {
+        border-bottom: 1px solid var(--black);
+      }
+
+      .grid-3,
+      .grid-2,
+      .ownership,
+      .mini-map {
+        grid-template-columns: 1fr;
+      }
+
+      .flow-rail {
+        grid-template-columns: 1fr;
+      }
+
+      .node::after {
+        display: none;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        padding: 12px;
+      }
+
+      .nav {
+        grid-template-columns: 1fr;
+      }
+
+      .tab {
+        border-right: 0;
+        border-bottom: 1px solid var(--black);
+      }
+
+      .tab:last-child {
+        border-bottom: 0;
+      }
+
+      .flow-head {
+        display: grid;
+      }
+
+      .flow-controls {
+        justify-content: start;
+      }
+
+      .matrix {
+        font-size: 13px;
+      }
+
+      .matrix th,
+      .matrix td {
+        padding: 9px;
+      }
+
+      .sequence-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="mast" aria-labelledby="title">
+      <div class="mast-copy">
+        <div class="eyebrow">Architecture Brief</div>
+        <div>
+          <h1 id="title">Claxedo process handling meets Portless</h1>
+          <p class="lead">
+            An interactive map of what the current process system gives users, what Portless owns,
+            where the overlap is real, and how request flows should work locally and in cloud workspaces.
+          </p>
+        </div>
+      </div>
+      <div class="mast-panel" aria-label="Network architecture sketch">
+        <div class="circuit">
+          <div class="circuit-row">
+            <div class="circuit-node"><strong>Process pane</strong><span>start, stop, restart, logs</span></div>
+            <div class="wire"></div>
+            <div class="circuit-node"><strong>Workspace runtime</strong><span>PTY, status, events</span></div>
+          </div>
+          <div class="circuit-row">
+            <div class="circuit-node"><strong>Portless layer</strong><span>name, URL, route, HTTPS</span></div>
+            <div class="wire"></div>
+            <div class="circuit-node"><strong>Preview surface</strong><span>local or cloud URL</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <nav class="nav" aria-label="Explainer sections">
+      <button class="tab" data-page="current" aria-selected="true">Current System</button>
+      <button class="tab" data-page="deep" aria-selected="false">Deep Dive</button>
+      <button class="tab" data-page="portless" aria-selected="false">Portless</button>
+      <button class="tab" data-page="better" aria-selected="false">Better DX</button>
+      <button class="tab" data-page="flows" aria-selected="false">Request Flows</button>
+    </nav>
+
+    <section id="current" class="page active">
+      <div class="panel">
+        <div class="panel-title">
+          <h2>What Claxedo process management enables today</h2>
+          <span class="tag">User-facing capabilities</span>
+        </div>
+        <div class="grid-3">
+          <article class="card">
+            <span class="badge">01</span>
+            <h3>Named workspace processes</h3>
+            <p>Users define dev servers, watchers, and tools in <span class="code">.opencode/processes.jsonc</span>, then manage them from the process pane instead of remembering shell commands.</p>
+            <div class="metric">Config, schema, CRUD <span>owned by Claxedo</span></div>
+          </article>
+          <article class="card">
+            <span class="badge">02</span>
+            <h3>Terminal-backed supervision</h3>
+            <p>Processes run inside PTYs, so users see live logs, can open a process in a terminal tab, and get lifecycle events in the UI.</p>
+            <div class="metric">PTY ID, tab ownership <span>critical</span></div>
+          </article>
+          <article class="card">
+            <span class="badge">03</span>
+            <h3>Lifecycle controls</h3>
+            <p>Start, stop, restart, start all, stop all, auto-start, dependency ordering, restart policies, and crash recovery are part of the product workflow.</p>
+            <div class="metric">Process state <span>idle to crashed</span></div>
+          </article>
+          <article class="card">
+            <span class="badge">04</span>
+            <h3>Custom port handling</h3>
+            <p>The runtime can pick free ports, honor preferred ports, inject env vars or flags, detect conflicts, and ask whether to pick a new port or kill the owner.</p>
+            <div class="metric">Portpick + leases <span>replace candidate</span></div>
+          </article>
+          <article class="card">
+            <span class="badge">05</span>
+            <h3>Diagnostics and cleanup</h3>
+            <p>Diagnostics classify current, stale, leaked, external, tab-owned, managed, server, and MCP processes, then provide terminate actions.</p>
+            <div class="metric">OS process map <span>keep</span></div>
+          </article>
+          <article class="card">
+            <span class="badge">06</span>
+            <h3>Agent and MCP access</h3>
+            <p>The MCP process tool can list, add, start, stop, and restart processes. That lets agents manipulate the same managed-process model as the UI.</p>
+            <div class="metric">Same model <span>UI + agents</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="deep" class="page">
+      <div class="panel">
+        <div class="panel-title">
+          <h2>How a process is created, wired, and watched</h2>
+          <span class="tag">Current internals</span>
+        </div>
+        <div class="sequence">
+          <div class="sequence-row">
+            <strong>1. User creates config</strong>
+            <div>
+              <p>The Add Process dialog builds a JSON body with name, command, cwd, env entries, auto-start, restart policy, dependencies, and optional port config.</p>
+              <p><span class="code">dependsOn</span> is a comma-separated list of process names. <span class="code">port.name</span> is the symbolic name other processes can reference.</p>
+            </div>
+          </div>
+          <div class="sequence-row">
+            <strong>2. Server persists config</strong>
+            <div>
+              <p>The server validates the config, creates a process ID, stores it in memory, writes <span class="code">.opencode/processes.jsonc</span>, and publishes <span class="code">process.config.changed</span>.</p>
+              <p>The UI then creates or reconciles idle process rows for each config.</p>
+            </div>
+          </div>
+          <div class="sequence-row">
+            <strong>3. Start resolves dependencies</strong>
+            <div>
+              <p>When starting a process, the runtime first resolves explicit <span class="code">dependsOn</span> names.</p>
+              <p>It also scans env values for templates like <span class="code">{{port:api}}</span>. If another config owns <span class="code">port.name = "api"</span>, that process becomes an implicit dependency.</p>
+            </div>
+          </div>
+          <div class="sequence-row">
+            <strong>4. Dependency ports flow through env</strong>
+            <div>
+              <p>Dependencies start first. Once they have assigned ports, the runtime builds a port map: <span class="code">{ api: 4172, web: 5173 }</span>.</p>
+              <p>Then child env values are rewritten. Example: <span class="code">API_URL=http://127.0.0.1:{{port:api}}</span> becomes <span class="code">API_URL=http://127.0.0.1:4172</span>.</p>
+            </div>
+          </div>
+          <div class="sequence-row">
+            <strong>5. Own process gets its port</strong>
+            <div>
+              <p>If the process itself has a port config, the runtime assigns a port and injects it either as an env var or as a command flag.</p>
+              <p>If <span class="code">port.inject = "PORT"</span>, env gets <span class="code">PORT=5173</span>. If <span class="code">port.inject = "--port"</span>, the command becomes <span class="code">vite --port 5173</span>.</p>
+            </div>
+          </div>
+          <div class="sequence-row">
+            <strong>6. PTY becomes the log stream</strong>
+            <div>
+              <p>The runtime creates a managed PTY with the config name as title, then writes the command into that shell.</p>
+              <p>The process pane renders a <span class="code">Terminal</span> component for the returned <span class="code">ptyId</span>. That is why users see live logs directly in the process panel and can also open the same PTY in a terminal tab.</p>
+            </div>
+          </div>
+          <div class="sequence-row">
+            <strong>7. Status and crash handling</strong>
+            <div>
+              <p>The server publishes <span class="code">process.started</span>, <span class="code">process.status</span>, <span class="code">process.stopped</span>, and <span class="code">process.crashed</span> events.</p>
+              <p>The command gets an exit marker appended, so when the inner command exits inside the shell, Claxedo can mark the process crashed even if the PTY shell itself is still around.</p>
+            </div>
+          </div>
+          <div class="sequence-row">
+            <strong>Portless change</strong>
+            <div>
+              <p>Portless should replace step 4 and step 5's numeric-port UX with named service URLs.</p>
+              <p>The user and agent should receive <span class="code">API_URL=https://api.myapp.localhost</span> locally or a Claxedo cloud preview URL remotely, while Claxedo still owns process config, PTY logs, lifecycle, and diagnostics.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="portless" class="page">
+      <div class="split">
+        <div class="panel">
+          <div class="panel-title">
+            <h2>What Portless does</h2>
+            <span class="tag">Route layer</span>
+          </div>
+          <ul>
+            <li>Runs commands behind stable named URLs like <span class="code">https://api.myapp.localhost</span>.</li>
+            <li>Starts and manages a local proxy, HTTPS certificates, trust setup, hosts sync, and route cleanup.</li>
+            <li>Assigns an app port, injects <span class="code">PORT</span>, <span class="code">HOST</span>, and <span class="code">PORTLESS_URL</span>.</li>
+            <li>Handles framework quirks for Vite, Astro, React Router, Angular, Expo, React Native, and similar tools.</li>
+            <li>Supports worktree prefixes, aliases, LAN mode, route listing, and orphan pruning.</li>
+          </ul>
+          <div class="note">
+            Portless is not just a free-port helper. It is a local service addressing system:
+            names, route table, proxy, certs, and child command env.
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">
+            <h2>Ownership boundary</h2>
+            <span class="tag">Keep vs replace</span>
+          </div>
+          <table class="matrix">
+            <thead>
+              <tr>
+                <th>Area</th>
+                <th>Current owner</th>
+                <th>Portless fit</th>
+                <th>Recommendation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Process config</td>
+                <td>Claxedo</td>
+                <td>Portless has package config, not Claxedo pane config.</td>
+                <td>Keep Claxedo as source of truth.</td>
+              </tr>
+              <tr>
+                <td>Process lifecycle</td>
+                <td>Claxedo PTY manager</td>
+                <td>CLI can spawn a child, but it is not our app supervisor API.</td>
+                <td>Keep Claxedo start/stop/restart.</td>
+              </tr>
+              <tr>
+                <td>Port assignment</td>
+                <td>Custom portpick</td>
+                <td>Strong match.</td>
+                <td>Replace with Portless-style allocation and route registration.</td>
+              </tr>
+              <tr>
+                <td>Preview URL</td>
+                <td>Usually port number</td>
+                <td>Strong match for local, needs adaptation for cloud.</td>
+                <td>Expose URLs as first-class output.</td>
+              </tr>
+              <tr>
+                <td>Cloud preview</td>
+                <td>Claxedo runtime proxy</td>
+                <td><span class="code">.localhost</span> is wrong from the user's browser.</td>
+                <td>Use Portless semantics, Claxedo cloud routing.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="better" class="page">
+      <div class="panel">
+        <div class="panel-title">
+          <h2>What gets better with Portless</h2>
+          <span class="tag">DX outcome</span>
+        </div>
+        <div class="ownership">
+          <article class="owner" data-kind="replace">
+            <h3>Ports disappear from user workflow</h3>
+            <p>Users click or copy a stable service URL. Ports remain internal implementation detail.</p>
+          </article>
+          <article class="owner" data-kind="adapt">
+            <h3>Local and cloud use one language</h3>
+            <p>Local: <span class="code">api.myapp.localhost</span>. Cloud: <span class="code">api--workspace.preview.claxedo.ai</span>. Same name, different transport.</p>
+          </article>
+          <article class="owner" data-kind="replace">
+            <h3>Worktrees stop colliding</h3>
+            <p>Branch-derived names can isolate parallel checkouts without users hand-editing ports.</p>
+          </article>
+          <article class="owner" data-kind="keep">
+            <h3>Agents get reliable URLs</h3>
+            <p>Agents can read <span class="code">PORTLESS_URL</span> and verify the app without guessing whether Vite chose 5173 or 5174.</p>
+          </article>
+          <article class="owner" data-kind="replace">
+            <h3>Framework port quirks become commodity</h3>
+            <p>We stop maintaining special cases for dev servers that ignore <span class="code">PORT</span>.</p>
+          </article>
+          <article class="owner" data-kind="avoid">
+            <h3>Full replacement is too expensive</h3>
+            <p>Replacing PTY supervision with <span class="code">portless run</span> would blur status, tab ownership, restart policy, and diagnostics.</p>
+          </article>
+          <article class="owner" data-kind="adapt">
+            <h3>Cloud previews become product-grade</h3>
+            <p>Cloud workspaces can expose authenticated named preview URLs through Claxedo, not random sandbox service URLs.</p>
+          </article>
+          <article class="owner" data-kind="keep">
+            <h3>Current process pane remains valuable</h3>
+            <p>The pane stays the cockpit: lifecycle, logs, diagnostics, and recovery. Portless becomes the address system.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="flows" class="page">
+      <div class="switchboard">
+        <aside class="flow-menu" aria-label="Flow picker">
+          <button class="flow-btn active" data-flow="local-current"><strong>Local, current</strong><span>process starts with custom portpick</span></button>
+          <button class="flow-btn" data-flow="local-portless"><strong>Local, with Portless</strong><span>process starts with named URL</span></button>
+          <button class="flow-btn" data-flow="cloud-current"><strong>Cloud, current</strong><span>central server proxies to runtime</span></button>
+          <button class="flow-btn" data-flow="cloud-portless"><strong>Cloud, with Portless semantics</strong><span>named preview through Claxedo</span></button>
+          <button class="flow-btn" data-flow="agent-preview"><strong>Agent preview</strong><span>agent consumes stable URL</span></button>
+          <button class="flow-btn" data-flow="crash-cleanup"><strong>Crash and cleanup</strong><span>restart, stale route, diagnostics</span></button>
+        </aside>
+        <div class="flow-stage">
+          <div class="flow-head">
+            <div>
+              <h2 id="flow-title">Local, current</h2>
+              <p id="flow-summary">The existing process manager owns lifecycle and custom port assignment.</p>
+            </div>
+            <div class="flow-controls" aria-label="Step controls">
+              <button class="icon-btn" id="prev-step" title="Previous step" aria-label="Previous step">‹</button>
+              <span class="tag" id="step-count">1 / 5</span>
+              <button class="icon-btn" id="next-step" title="Next step" aria-label="Next step">›</button>
+            </div>
+          </div>
+          <div class="flow-rail" id="flow-rail" aria-label="Request flow nodes"></div>
+          <div class="detail-box">
+            <h3 id="step-title">User action</h3>
+            <p id="step-detail">The user clicks Start in the process pane or an agent calls the process MCP tool.</p>
+            <p><strong>Boundary:</strong> <span id="step-boundary">Claxedo UI to claxedo-server route.</span></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="mini-map" style="margin-top: 14px;">
+        <article class="path">
+          <h3>Local target shape</h3>
+          <div class="path-line">
+            <div class="path-step"><span class="dot">1</span><p>Claxedo process pane starts a PTY-managed process.</p></div>
+            <div class="path-step"><span class="dot">2</span><p>Portless layer registers <span class="code">service.localhost</span> to the internal app port.</p></div>
+            <div class="path-step"><span class="dot">3</span><p>Browser talks to local Portless proxy, which forwards to <span class="code">127.0.0.1:port</span>.</p></div>
+          </div>
+        </article>
+        <article class="path">
+          <h3>Cloud target shape</h3>
+          <div class="path-line">
+            <div class="path-step"><span class="dot">1</span><p>Cloud runtime starts the process inside the sandbox.</p></div>
+            <div class="path-step"><span class="dot">2</span><p>Runtime records <span class="code">service name -> sandbox port</span>.</p></div>
+            <div class="path-step"><span class="dot">3</span><p>Browser opens an authenticated Claxedo preview URL, then Claxedo proxies to the runtime and app port.</p></div>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const pages = document.querySelectorAll(".page");
+    const tabs = document.querySelectorAll(".tab");
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        tabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
+        pages.forEach((page) => page.classList.toggle("active", page.id === tab.dataset.page));
+      });
+    });
+
+    const flows = {
+      "local-current": {
+        title: "Local, current",
+        summary: "The existing process manager owns lifecycle and custom port assignment.",
+        steps: [
+          ["User action", "The user clicks Start in the process pane or an agent calls the process MCP tool.", "Claxedo UI to claxedo-server route."],
+          ["Load config", "The server reads .opencode/processes.jsonc, mirrors config into per-directory state, and resolves dependencies.", "Process config remains Claxedo-owned."],
+          ["Pick port", "If the config has a port block, custom portpick tries the preferred or leased port, then prompts, kills, or scans.", "This is the main replacement candidate."],
+          ["Create PTY", "The process runs through a managed PTY. Env includes OPENCODE_PROCESS, OPENCODE_PROCESS_ID, CLAXEDO_WORKSPACE_ID, and maybe CLAXEDO_PORT.", "PTY lifecycle stays Claxedo-owned."],
+          ["Update UI", "SSE events update status, the terminal pane owns the PTY, and diagnostics classify the process.", "User sees running, crashed, stopped, logs, and conflicts."]
+        ]
+      },
+      "local-portless": {
+        title: "Local, with Portless",
+        summary: "Claxedo still supervises. Portless semantics own address, route, and app port.",
+        steps: [
+          ["User action", "The user starts a named process from Claxedo.", "Same UI and MCP entrypoints."],
+          ["Resolve route name", "Claxedo derives a stable service name from process name, project, and worktree context.", "New field: routeName or serviceName."],
+          ["Register route", "A Portless-backed route store maps service.localhost to the internal app port and ensures the proxy is running.", "Replace custom lease and port-map behavior."],
+          ["Inject env", "PTY command receives PORT, HOST=127.0.0.1, PORTLESS_URL, and any framework-specific flags.", "Use Portless logic rather than hand-maintained quirks."],
+          ["Open preview", "The process pane shows https://service.localhost, not :5173. Browser traffic hits Portless proxy and forwards to the app port.", "Ports become internal."]
+        ]
+      },
+      "cloud-current": {
+        title: "Cloud, current",
+        summary: "Cloud workspaces already route through a central-to-runtime proxy.",
+        steps: [
+          ["Browser request", "The app sends requests with workspaceId or directory metadata.", "Browser does not talk to sandbox localhost."],
+          ["Central server", "workspaceRuntimeProxy decides whether the path belongs to central server or workspace runtime.", "Claxedo server is the ingress point."],
+          ["Runtime wake", "ensureWorkspaceRuntime starts or resumes the sandbox runtime and gets its provider service URL.", "Provider getServiceUrl exposes the runtime port."],
+          ["Forward request", "Central server forwards the HTTP or SSE request to the workspace-runtime URL with remote directory headers.", "Runtime path handles process, file, session, events."],
+          ["Runtime action", "The runtime manages PTYs and process state inside the sandbox.", "Same process model, remote transport."]
+        ]
+      },
+      "cloud-portless": {
+        title: "Cloud, with Portless semantics",
+        summary: ".localhost is not user-facing in cloud. The name model survives, the transport changes.",
+        steps: [
+          ["User action", "The user starts api in a cloud workspace.", "Same process pane."],
+          ["Internal route", "Workspace runtime maps api to 127.0.0.1:<app-port> inside the sandbox.", "Portless route semantics, not local DNS."],
+          ["Public preview URL", "Claxedo returns an authenticated URL like /w/<workspace>/preview/api or api--workspace.preview.claxedo.ai.", "Claxedo owns cloud ingress."],
+          ["Central proxy", "Browser traffic goes to Claxedo, which authenticates and forwards to the workspace runtime.", "Never depend on user machine localhost."],
+          ["Runtime proxy", "Workspace runtime forwards preview traffic to the internal app port.", "The sandbox app still sees PORT and PORTLESS_URL."]
+        ]
+      },
+      "agent-preview": {
+        title: "Agent preview",
+        summary: "Agents get a deterministic URL in both local and cloud workspaces.",
+        steps: [
+          ["Start process", "Agent calls process.start or user starts from UI.", "Same managed process model."],
+          ["Read URL", "Process state includes previewUrl. The child env includes PORTLESS_URL.", "No guessing ports from logs."],
+          ["Verify", "Agent opens the preview URL and checks health or page content.", "Local URL or cloud URL depending on workspace kind."],
+          ["Report", "Agent can tell the user the exact service URL and whether it responded.", "Better automation output."],
+          ["Recover", "On failure, agent can inspect diagnostics, restart, or prune stale routes.", "Combines Claxedo diagnostics with Portless cleanup."]
+        ]
+      },
+      "crash-cleanup": {
+        title: "Crash and cleanup",
+        summary: "Claxedo remains responsible for status; Portless improves stale route and orphan cleanup.",
+        steps: [
+          ["Crash signal", "PTY exits or the inner command emits the process-exit marker.", "Claxedo detects crash."],
+          ["Status update", "Process becomes crashed, exit code and tail output are retained, and UI badges update.", "Keep current behavior."],
+          ["Route cleanup", "If the process stopped cleanly, remove the registered route. If it died hard, mark route stale.", "Use Portless route cleanup patterns."],
+          ["Diagnostics", "OS process diagnostics identify leaked servers still holding ports.", "Keep Claxedo diagnostics."],
+          ["Recovery", "Restart can reuse the same service name with a new internal port. The user-facing URL stays stable.", "This is the main DX win."]
+        ]
+      }
+    };
+
+    const flowButtons = document.querySelectorAll(".flow-btn");
+    const rail = document.getElementById("flow-rail");
+    const title = document.getElementById("flow-title");
+    const summary = document.getElementById("flow-summary");
+    const stepTitle = document.getElementById("step-title");
+    const stepDetail = document.getElementById("step-detail");
+    const stepBoundary = document.getElementById("step-boundary");
+    const stepCount = document.getElementById("step-count");
+    const prev = document.getElementById("prev-step");
+    const next = document.getElementById("next-step");
+    let activeFlow = "local-current";
+    let activeStep = 0;
+
+    function renderFlow() {
+      const flow = flows[activeFlow];
+      const step = flow.steps[activeStep];
+      title.textContent = flow.title;
+      summary.textContent = flow.summary;
+      stepTitle.textContent = step[0];
+      stepDetail.textContent = step[1];
+      stepBoundary.textContent = step[2];
+      stepCount.textContent = `${activeStep + 1} / ${flow.steps.length}`;
+      rail.innerHTML = "";
+      flow.steps.forEach((item, index) => {
+        const node = document.createElement("button");
+        node.className = `node${index === activeStep ? " active" : ""}`;
+        node.type = "button";
+        node.innerHTML = `<small>Step ${index + 1}</small><strong>${item[0]}</strong><p>${item[2]}</p>`;
+        node.addEventListener("click", () => {
+          activeStep = index;
+          renderFlow();
+        });
+        rail.appendChild(node);
+      });
+    }
+
+    flowButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        activeFlow = button.dataset.flow;
+        activeStep = 0;
+        flowButtons.forEach((item) => item.classList.toggle("active", item === button));
+        renderFlow();
+      });
+    });
+
+    prev.addEventListener("click", () => {
+      const total = flows[activeFlow].steps.length;
+      activeStep = (activeStep - 1 + total) % total;
+      renderFlow();
+    });
+
+    next.addEventListener("click", () => {
+      const total = flows[activeFlow].steps.length;
+      activeStep = (activeStep + 1) % total;
+      renderFlow();
+    });
+
+    renderFlow();
+  </script>
+</body>
+</html>

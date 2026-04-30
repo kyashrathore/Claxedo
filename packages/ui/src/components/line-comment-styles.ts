@@ -2,6 +2,8 @@ export const lineCommentStyles = `
 [data-annotation-slot] {
   padding: 12px;
   box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
 }
 
 [data-component="line-comment"] {
@@ -14,7 +16,9 @@ export const lineCommentStyles = `
   position: relative;
   right: auto;
   display: flex;
+  box-sizing: border-box;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   align-items: flex-start;
 }
@@ -100,6 +104,7 @@ export const lineCommentStyles = `
 
 [data-component="line-comment"][data-inline][data-variant="editor"] [data-slot="line-comment-popover"] {
   width: 100%;
+  max-width: 100%;
 }
 
 [data-component="line-comment"] [data-slot="line-comment-content"] {
@@ -231,17 +236,22 @@ export const lineCommentStyles = `
 }
 
 [data-component="line-comment"] [data-slot="line-comment-actions"] {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  flex-wrap: wrap;
+  justify-items: end;
   gap: 8px;
-  padding-left: 8px;
+  width: 100%;
+  padding-left: 0;
   min-width: 0;
+  max-width: 100%;
 }
 
 [data-component="line-comment"] [data-slot="line-comment-editor-label"] {
-  flex: 1 1 220px;
-  margin-right: auto;
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
 }
 
 [data-component="line-comment"] [data-slot="line-comment-action"] {
@@ -275,14 +285,16 @@ export const lineCommentStyles = `
 let installed = false
 
 export function installLineCommentStyles() {
-  if (installed) return
   if (typeof document === "undefined") return
 
   const id = "opencode-line-comment-styles"
-  if (document.getElementById(id)) {
+  const current = document.getElementById(id)
+  if (current) {
+    if (current.textContent !== lineCommentStyles) current.textContent = lineCommentStyles
     installed = true
     return
   }
+  if (installed) return
 
   const style = document.createElement("style")
   style.id = id

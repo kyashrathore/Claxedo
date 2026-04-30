@@ -47,6 +47,44 @@ const migrations = await Promise.all(
 )
 console.log(`Loaded ${migrations.length} migrations`)
 
+// Load claxedo migrations (if present — only exists when patches are applied)
+const claxedoMigrationDir = path.join(dir, "src/storage/claxedo-migration")
+const claxedoMigrations = await (async () => {
+  try {
+    const dirs = (await fs.promises.readdir(claxedoMigrationDir, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && /^\d{4}\d{2}\d{2}\d{2}\d{2}\d{2}/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort()
+
+    const entries = await Promise.all(
+      dirs.map(async (name) => {
+        const file = path.join(claxedoMigrationDir, name, "migration.sql")
+        try {
+          const sql = await Bun.file(file).text()
+          const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(name)
+          const timestamp = match
+            ? Date.UTC(
+                Number(match[1]),
+                Number(match[2]) - 1,
+                Number(match[3]),
+                Number(match[4]),
+                Number(match[5]),
+                Number(match[6]),
+              )
+            : 0
+          return { sql, timestamp, name }
+        } catch {
+          return null
+        }
+      }),
+    )
+    return entries.filter(Boolean)
+  } catch {
+    return []
+  }
+})()
+console.log(`Loaded ${claxedoMigrations.length} claxedo migrations`)
+
 const singleFlag = process.argv.includes("--single")
 const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
@@ -217,6 +255,7 @@ for (const item of targets) {
     define: {
       OPENCODE_VERSION: `'${Script.version}'`,
       OPENCODE_MIGRATIONS: JSON.stringify(migrations),
+      CLAXEDO_MIGRATIONS: claxedoMigrations.length > 0 ? JSON.stringify(claxedoMigrations) : "undefined",
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
       OPENCODE_WORKER_PATH: workerPath,
       OPENCODE_CHANNEL: `'${Script.channel}'`,

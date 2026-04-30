@@ -371,7 +371,7 @@ export function getToolInfo(tool: string, input: any = {}): ToolInfo {
       return {
         icon: "console",
         title: i18n.t("ui.tool.shell"),
-        subtitle: input.description,
+        subtitle: input.command || input.description,
       }
     case "edit":
       return {
@@ -1292,6 +1292,43 @@ function ToolFileAccordion(props: { path: string; actions?: JSX.Element; childre
   )
 }
 
+function object(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return
+  return value as Record<string, unknown>
+}
+
+function scalar(value: unknown) {
+  if (value == null) return
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value
+}
+
+function copyScalar(target: Record<string, unknown>, source: Record<string, unknown> | undefined, from: string, to = from) {
+  const value = scalar(source?.[from])
+  if (value != null) target[to] = value
+}
+
+function hydrateAcpToolInput(input: Record<string, any>, metadata: Record<string, any>) {
+  const acp = object(metadata.acp)
+  if (!acp) return input
+  const rawInput = object(acp.rawInput)
+  const hydrated: Record<string, unknown> = {}
+
+  for (const key of ["intent", "kind", "mode", "summary", "description", "command", "filePath", "path", "pattern", "query", "url"]) {
+    copyScalar(hydrated, acp, key)
+  }
+  copyScalar(hydrated, acp, "title", "summary")
+
+  for (const key of ["command", "path", "pattern", "query", "url", "offset", "limit", "old_string", "new_string"]) {
+    copyScalar(hydrated, rawInput, key)
+  }
+  copyScalar(hydrated, rawInput, "file_path")
+  copyScalar(hydrated, rawInput, "file_path", "filePath")
+  copyScalar(hydrated, rawInput, "old_string", "oldString")
+  copyScalar(hydrated, rawInput, "new_string", "newString")
+
+  return { ...hydrated, ...input }
+}
+
 PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const data = useData()
   const i18n = useI18n()
@@ -1305,9 +1342,9 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const emptyInput: Record<string, any> = {}
   const emptyMetadata: Record<string, any> = {}
 
-  const input = () => part().state?.input ?? emptyInput
   // @ts-expect-error
   const partMetadata = () => part().state?.metadata ?? emptyMetadata
+  const input = () => hydrateAcpToolInput(part().state?.input ?? emptyInput, partMetadata())
   const taskId = createMemo(() => {
     if (part().tool !== "task") return
     const value = partMetadata().sessionId
@@ -1323,6 +1360,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     if (typeof value === "string" && value) return value
     return taskId()
   })
+  const toolErrorSubtitle = createMemo(() => taskSubtitle() ?? getToolInfo(part().tool, input()).subtitle)
 
   const render = createMemo(() => ToolRegistry.render(part().tool) ?? GenericTool)
 
@@ -1347,7 +1385,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                   tool={part().tool}
                   error={error()}
                   defaultOpen={props.defaultOpen}
-                  subtitle={taskSubtitle()}
+                  subtitle={toolErrorSubtitle()}
                   href={taskHref()}
                 />
               )

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { ConfigInvalidError, ProviderModelNotFoundError } from "./server-errors"
+import type { ConfigInvalidError, ProviderAuthError, ProviderModelNotFoundError } from "./server-errors"
 import { formatServerError, parseReadableConfigInvalidError } from "./server-errors"
 
 function fill(text: string, vars?: Record<string, string | number>) {
@@ -19,6 +19,7 @@ function useLanguageMock() {
     "error.chain.modelNotFound": "Modelo nao encontrado: {{provider}}/{{model}}",
     "error.chain.didYouMean": "Voce quis dizer: {{suggestions}}",
     "error.chain.checkConfig": "Revise provider/model no config",
+    "error.chain.providerAuthFailed": "{{provider}} auth falhou: {{message}}",
   }
   return {
     t(key: string, vars?: Record<string, string | number>) {
@@ -98,6 +99,29 @@ describe("formatServerError", () => {
     expect(formatServerError({ name: "ServerTimeoutError", data: { seconds: 30 } }, language.t)).toBe(
       "Erro desconhecido",
     )
+  })
+
+  test("formats provider auth errors", () => {
+    const error = {
+      name: "ProviderAuthError",
+      data: {
+        providerID: "openai",
+        message: "OpenAI API key is missing",
+      },
+    } satisfies ProviderAuthError
+
+    expect(formatServerError(error, language.t)).toBe("openai auth falhou: OpenAI API key is missing")
+  })
+
+  test("uses data.message for generic opencode errors", () => {
+    expect(formatServerError({ name: "UnknownError", data: { message: "stream failed" } }, language.t)).toBe(
+      "stream failed",
+    )
+  })
+
+  test("unwraps Solid unknown error wrappers with opencode causes", () => {
+    const cause = { name: "UnknownError", data: { message: "real failure" } }
+    expect(formatServerError(new Error("Unknown error", { cause }), language.t)).toBe("real failure")
   })
 
   test("formats provider model errors using provider/model", () => {

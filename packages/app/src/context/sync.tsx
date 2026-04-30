@@ -2,6 +2,8 @@ import { batch, createMemo } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { retry } from "@opencode-ai/core/util/retry"
+import { getExtensions } from "@opencode-ai/app-shared"
+import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import {
   clearSessionPrefetch,
@@ -16,6 +18,12 @@ import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } fro
 import { diffs as list, message as clean } from "@/utils/diffs"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
+const SYNC_TRACE = true
+
+function syncTrace(event: string, payload?: Record<string, unknown>) {
+  if (!SYNC_TRACE) return
+  console.log(`[sync] ${event}`, payload ?? {})
+}
 
 function sortParts(parts: Part[]) {
   return parts.filter((part) => !!part?.id).sort((a, b) => cmp(a.id, b.id))
@@ -32,6 +40,7 @@ function runInflight(map: Map<string, Promise<void>>, key: string, task: () => P
 }
 
 const keyFor = (directory: string, id: string) => `${directory}\n${id}`
+const sessionRoute = (id: string) => !id.startsWith("ses")
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
@@ -313,10 +322,33 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     }
 
     const tracked = (directory: string, sessionID: string) => seen.get(directory)?.has(sessionID) ?? false
+    const sessionBases = new Map<string, Promise<string | undefined>>()
+    const sessionClient = async (directory: string, sessionID: string) => {
+      if (!sessionRoute(sessionID)) return sdk.client
+      const key = keyFor(directory, sessionID)
+      const pending = sessionBases.get(key)
+      const base = pending ?? (async () => {
+        const resolved = await getExtensions().server.resolveSessionUrl?.(sessionID)
+        return resolved ?? undefined
+      })()
+      sessionBases.set(key, base)
+      const url = await base
+      syncTrace("sessionClient", {
+        directory,
+        sessionID,
+        resolvedUrl: url ?? null,
+        scoped: !!url,
+      })
+      if (!url) return sdk.client
+      return createOpencodeClient({
+        baseUrl: url,
+        directory,
+        throwOnError: true,
+      })
+    }
 
     const loadMessages = async (input: {
       directory: string
-      client: typeof sdk.client
       setStore: Setter
       sessionID: string
       limit: number
@@ -324,12 +356,47 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       mode?: "replace" | "prepend"
     }) => {
       const key = keyFor(input.directory, input.sessionID)
-      if (meta.loading[key]) return
+      if (meta.loading[key]) {
+        syncTrace("loadMessages.skip.loading", {
+          directory: input.directory,
+          sessionID: input.sessionID,
+          key,
+        })
+        return
+      }
+
+      syncTrace("loadMessages.start", {
+        directory: input.directory,
+        sessionID: input.sessionID,
+        limit: input.limit,
+        before: input.before ?? null,
+        mode: input.mode ?? "replace",
+        tracked: tracked(input.directory, input.sessionID),
+        currentMessages: current()[0].message[input.sessionID]?.length ?? 0,
+      })
 
       setMeta("loading", key, true)
-      await fetchMessages(input)
+      await fetchMessages({
+        ...input,
+        client: await sessionClient(input.directory, input.sessionID),
+      })
         .then((page) => {
-          if (!tracked(input.directory, input.sessionID)) return
+          syncTrace("loadMessages.fetched", {
+            directory: input.directory,
+            sessionID: input.sessionID,
+            fetchedMessages: page.session.length,
+            fetchedParts: page.part.length,
+            cursor: page.cursor ?? null,
+            complete: page.complete,
+            tracked: tracked(input.directory, input.sessionID),
+          })
+          if (!tracked(input.directory, input.sessionID)) {
+            syncTrace("loadMessages.skip.untracked", {
+              directory: input.directory,
+              sessionID: input.sessionID,
+            })
+            return
+          }
           const next = mergeOptimisticPage(page, getOptimistic(input.directory, input.sessionID))
           for (const messageID of next.confirmed) {
             clearOptimistic(input.directory, input.sessionID, messageID)
@@ -337,6 +404,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           const [store] = globalSync.child(input.directory, { bootstrap: false })
           const cached = input.mode === "prepend" ? (store.message[input.sessionID] ?? []) : []
           const message = input.mode === "prepend" ? merge(cached, next.session) : next.session
+          syncTrace("loadMessages.apply", {
+            directory: input.directory,
+            sessionID: input.sessionID,
+            cachedMessages: cached.length,
+            nextMessages: next.session.length,
+            mergedMessages: message.length,
+            confirmedOptimistic: next.confirmed,
+            existingStoreMessages: store.message[input.sessionID]?.length ?? 0,
+          })
           batch(() => {
             input.setStore("message", input.sessionID, reconcile(message, { key: "id" }))
             for (const p of next.part) {
@@ -355,7 +431,22 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             })
           })
         })
+        .catch((error) => {
+          syncTrace("loadMessages.error", {
+            directory: input.directory,
+            sessionID: input.sessionID,
+            message: error instanceof Error ? error.message : String(error),
+          })
+          throw error
+        })
         .finally(() => {
+          const finalStore = current()[0]
+          syncTrace("loadMessages.finally", {
+            directory: input.directory,
+            sessionID: input.sessionID,
+            tracked: tracked(input.directory, input.sessionID),
+            finalMessages: finalStore.message[input.sessionID]?.length ?? 0,
+          })
           setMeta(
             produce((draft) => {
               if (!tracked(input.directory, input.sessionID)) {
@@ -393,12 +484,23 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           add(input: { directory?: string; sessionID: string; message: Message; parts: Part[] }) {
             const directory = input.directory ?? sdk.directory
             const [, setStore] = target(input.directory)
+            syncTrace("optimistic.add", {
+              directory,
+              sessionID: input.sessionID,
+              messageID: input.message.id,
+              partIDs: input.parts.map((part) => part.id),
+            })
             setOptimistic(directory, input.sessionID, { message: input.message, parts: input.parts })
             setOptimisticAdd(setStore as (...args: unknown[]) => void, input)
           },
           remove(input: { directory?: string; sessionID: string; messageID: string }) {
             const directory = input.directory ?? sdk.directory
             const [, setStore] = target(input.directory)
+            syncTrace("optimistic.remove", {
+              directory,
+              sessionID: input.sessionID,
+              messageID: input.messageID,
+            })
             clearOptimistic(directory, input.sessionID, input.messageID)
             setOptimisticRemove(setStore as (...args: unknown[]) => void, input)
           },
@@ -433,6 +535,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           const [store, setStore] = globalSync.child(directory)
           const key = keyFor(directory, sessionID)
 
+          syncTrace("session.sync.start", {
+            directory,
+            sessionID,
+            force: !!opts?.force,
+            hasSession: Binary.search(store.session, sessionID, (s) => s.id).found,
+            cachedMessages: store.message[sessionID]?.length ?? 0,
+            cachedLimit: meta.limit[key] ?? null,
+          })
+
           touch(directory, setStore, sessionID)
 
           const seeded = getSessionPrefetch(directory, sessionID)
@@ -462,13 +573,21 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
             const hasSession = Binary.search(store.session, sessionID, (s) => s.id).found
             const cached = store.message[sessionID] !== undefined && meta.limit[key] !== undefined
-            if (cached && hasSession && !opts?.force) return
+            if (cached && hasSession && !opts?.force) {
+              syncTrace("session.sync.skip.cached", {
+                directory,
+                sessionID,
+                cachedMessages: store.message[sessionID]?.length ?? 0,
+              })
+              return
+            }
 
             const limit = meta.limit[key] ?? initialMessagePageSize
+            const sessionClientValue = await sessionClient(directory, sessionID)
             const sessionReq =
               hasSession && !opts?.force
                 ? Promise.resolve()
-                : retry(() => client.session.get({ sessionID })).then((session) => {
+                : retry(() => sessionClientValue.session.get({ sessionID })).then((session) => {
                     if (!tracked(directory, sessionID)) return
                     const data = session.data
                     if (!data) return
@@ -490,13 +609,18 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
                 ? Promise.resolve()
                 : loadMessages({
                     directory,
-                    client,
                     setStore,
                     sessionID,
                     limit,
                   })
 
             await Promise.all([sessionReq, messagesReq])
+            syncTrace("session.sync.done", {
+              directory,
+              sessionID,
+              finalMessages: current()[0].message[sessionID]?.length ?? 0,
+              finalParts: (current()[0].message[sessionID] ?? []).reduce((count, message) => count + (current()[0].part[message.id]?.length ?? 0), 0),
+            })
           })
         },
         async diff(sessionID: string, opts?: { force?: boolean }) {
@@ -533,8 +657,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           }
 
           const key = keyFor(directory, sessionID)
+          const sessionClientValue = await sessionClient(directory, sessionID)
           return runInflight(inflightTodo, key, () =>
-            retry(() => client.session.todo({ sessionID })).then((todo) => {
+            retry(() => sessionClientValue.session.todo({ sessionID })).then((todo) => {
               if (!tracked(directory, sessionID)) return
               const list = todo.data ?? []
               setStore("todo", sessionID, reconcile(list, { key: "id" }))
@@ -569,7 +694,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
             await loadMessages({
               directory,
-              client,
               setStore,
               sessionID,
               limit: step,

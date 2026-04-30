@@ -260,11 +260,26 @@ function args(input: Record<string, unknown> | undefined) {
     .slice(0, 3)
 }
 
+function object(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return
+  return value as Record<string, unknown>
+}
+
+function text(value: unknown) {
+  if (typeof value === "string" && value) return value
+}
+
+function genericTitle(tool: string, metadata: Record<string, unknown> | undefined) {
+  const acp = object(metadata?.acp)
+  return text(acp?.title) ?? text(acp?.rawToolName) ?? text(acp?.summary) ?? tool
+}
+
 export function GenericTool(props: {
   tool: string
   status?: string
   hideDetails?: boolean
   input?: Record<string, unknown>
+  metadata?: Record<string, unknown>
 }) {
   const i18n = useI18n()
 
@@ -273,7 +288,7 @@ export function GenericTool(props: {
       icon="mcp"
       status={props.status}
       trigger={{
-        title: i18n.t("ui.basicTool.called", { tool: props.tool }),
+        title: i18n.t("ui.basicTool.called", { tool: genericTitle(props.tool, props.metadata) }),
         subtitle: label(props.input),
         args: args(props.input),
       }}

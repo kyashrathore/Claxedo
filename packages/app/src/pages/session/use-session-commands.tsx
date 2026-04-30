@@ -290,7 +290,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const sessionID = params.id
     if (!sessionID) return
 
-    if (status().type !== "idle") {
+    if (status().type === "busy" || status().type === "retry") {
       await sdk.client.session.abort({ sessionID }).catch(() => {})
     }
 

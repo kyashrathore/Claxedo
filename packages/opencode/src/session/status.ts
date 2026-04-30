@@ -5,7 +5,6 @@ import { SessionID } from "./schema"
 import { zod } from "@/util/effect-zod"
 import { NonNegativeInt, withStatics } from "@/util/schema"
 import { Effect, Layer, Context, Schema } from "effect"
-import z from "zod"
 
 export const Info = Schema.Union([
   Schema.Struct({
@@ -19,6 +18,11 @@ export const Info = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("busy"),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("recovering"),
+    kind: Schema.Literal("process_restart"),
+    message: Schema.String,
   }),
 ])
   .annotate({ identifier: "SessionStatus" })

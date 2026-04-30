@@ -7,7 +7,7 @@ export interface DialogProps extends ParentProps {
   title?: JSXElement
   description?: JSXElement
   action?: JSXElement
-  size?: "normal" | "large" | "x-large"
+  size?: "normal" | "large" | "x-large" | "full"
   class?: ComponentProps<"div">["class"]
   classList?: ComponentProps<"div">["classList"]
   fit?: boolean

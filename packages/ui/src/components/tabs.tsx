@@ -88,7 +88,13 @@ function TabsTrigger(props: ParentProps<TabsTriggerProps>) {
       </Kobalte.Trigger>
       <Show when={split.closeButton}>
         {(closeButton) => (
-          <div data-slot="tabs-trigger-close-button" data-hidden={split.hideCloseButton}>
+          <div
+            data-slot="tabs-trigger-close-button"
+            data-hidden={split.hideCloseButton}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
             {closeButton()}
           </div>
         )}

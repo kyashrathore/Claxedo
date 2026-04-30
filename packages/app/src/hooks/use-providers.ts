@@ -1,4 +1,5 @@
 import { useGlobalSync } from "@/context/global-sync"
+import { useSDK } from "@/context/sdk"
 import { decode64 } from "@/utils/base64"
 import { useParams } from "@solidjs/router"
 import { createMemo } from "solid-js"
@@ -18,7 +19,13 @@ const popularProviderSet = new Set(popularProviders)
 export function useProviders() {
   const globalSync = useGlobalSync()
   const params = useParams()
-  const dir = createMemo(() => decode64(params.dir) ?? "")
+  let sdk: ReturnType<typeof useSDK> | undefined
+  try {
+    sdk = useSDK()
+  } catch {
+    /* optional outside workspace sdk scope */
+  }
+  const dir = createMemo(() => sdk?.directory || decode64(params.dir) || "")
   const providers = () => {
     if (dir()) {
       const [projectStore] = globalSync.child(dir())

@@ -1,4 +1,4 @@
-import { batch, createMemo, createRoot, onCleanup } from "solid-js"
+import { batch, createMemo, createRoot, type Accessor } from "solid-js"
 import { createStore, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useParams } from "@solidjs/router"
@@ -16,6 +16,15 @@ export type LineComment = {
 }
 
 type CommentFocus = { file: string; id: string }
+
+export const { use: useCommentScope, provider: CommentScopeProvider } = createSimpleContext({
+  name: "CommentScope",
+  gate: false,
+  init: (props: {
+    directory: Accessor<string>
+    sessionId?: Accessor<string | undefined>
+  }) => props,
+})
 
 const WORKSPACE_KEY = "__workspace__"
 const MAX_COMMENT_SESSIONS = 20
@@ -195,33 +204,37 @@ function createCommentSession(dir: string, id: string | undefined) {
   }
 }
 
+const commentCache = createScopedCache(
+  (key) => {
+    const decoded = decodeSessionKey(key)
+    return createRoot((dispose) => ({
+      value: createCommentSession(decoded.dir, decoded.id === WORKSPACE_KEY ? undefined : decoded.id),
+      dispose,
+    }))
+  },
+  {
+    maxEntries: MAX_COMMENT_SESSIONS,
+    dispose: (entry) => entry.dispose(),
+  },
+)
+
 export const { use: useComments, provider: CommentsProvider } = createSimpleContext({
   name: "Comments",
   gate: false,
   init: () => {
     const params = useParams()
-    const cache = createScopedCache(
-      (key) => {
-        const decoded = decodeSessionKey(key)
-        return createRoot((dispose) => ({
-          value: createCommentSession(decoded.dir, decoded.id === WORKSPACE_KEY ? undefined : decoded.id),
-          dispose,
-        }))
-      },
-      {
-        maxEntries: MAX_COMMENT_SESSIONS,
-        dispose: (entry) => entry.dispose(),
-      },
-    )
-
-    onCleanup(() => cache.clear())
-
+    let scope: ReturnType<typeof useCommentScope> | undefined
+    try {
+      scope = useCommentScope()
+    } catch {
+      /* route-scoped comments */
+    }
     const load = (dir: string, id: string | undefined) => {
       const key = sessionKey(dir, id)
-      return cache.get(key).value
+      return commentCache.get(key).value
     }
 
-    const session = createMemo(() => load(params.dir!, params.id))
+    const session = createMemo(() => load(scope?.directory() ?? params.dir!, scope?.sessionId?.() ?? params.id))
 
     return {
       ready: () => session().ready(),

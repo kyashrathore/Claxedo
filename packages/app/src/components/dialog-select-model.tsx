@@ -16,14 +16,33 @@ import { useLanguage } from "@/context/language"
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "opencode" && (!cost || cost.input === 0)
 
-type ModelState = ReturnType<typeof useLocal>["model"]
+type LocalModel = ReturnType<typeof useLocal>["model"]
+
+export type PickerItem = {
+  id: string
+  name: string
+  provider: {
+    id: string
+    name: string
+  }
+  cost?: { input: number }
+  latest?: boolean
+}
+
+export type PickerState = {
+  list: () => PickerItem[]
+  current: () => PickerItem | undefined
+  visible: (item: { modelID: string; providerID: string }) => boolean
+  set: (item: { modelID: string; providerID: string } | undefined, options?: { recent?: boolean }) => void
+}
 
 const ModelList: Component<{
   provider?: string
   class?: string
   onSelect: () => void
   action?: JSX.Element
-  model?: ModelState
+  model?: PickerState
+  tooltips?: boolean
 }> = (props) => {
   const model = props.model ?? useLocal().model
   const language = useLanguage()
@@ -53,16 +72,18 @@ const ModelList: Component<{
         if (!popularProviders.includes(aProvider) && popularProviders.includes(bProvider)) return 1
         return popularProviders.indexOf(aProvider) - popularProviders.indexOf(bProvider)
       }}
-      itemWrapper={(item, node) => (
-        <Tooltip
-          class="w-full"
-          placement="right-start"
-          gutter={12}
-          value={<ModelTooltip model={item} latest={item.latest} free={isFree(item.provider.id, item.cost)} />}
-        >
-          {node}
-        </Tooltip>
-      )}
+      itemWrapper={(item, node) => props.tooltips === false
+        ? node
+        : (
+          <Tooltip
+            class="w-full"
+            placement="right-start"
+            gutter={12}
+            value={<ModelTooltip model={item as unknown as Parameters<typeof ModelTooltip>[0]["model"]} latest={item.latest} free={isFree(item.provider.id, item.cost)} />}
+          >
+            {node}
+          </Tooltip>
+        )}
       onSelect={(x) => {
         model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, {
           recent: true,
@@ -90,11 +111,13 @@ type Dismiss = "escape" | "outside" | "select" | "manage" | "provider"
 
 export function ModelSelectorPopover(props: {
   provider?: string
-  model?: ModelState
+  model?: PickerState
   children?: JSX.Element
   triggerAs?: ValidComponent
   triggerProps?: ModelSelectorTriggerProps
   onClose?: (cause: "escape" | "select") => void
+  actions?: boolean
+  tooltips?: boolean
 }) {
   const [store, setStore] = createStore<{
     open: boolean
@@ -163,9 +186,10 @@ export function ModelSelectorPopover(props: {
           <ModelList
             provider={props.provider}
             model={props.model}
+            tooltips={props.tooltips}
             onSelect={() => close("select")}
             class="p-1"
-            action={
+            action={props.actions === false ? undefined : (
               <div class="flex items-center gap-1">
                 <Tooltip placement="top" value={language.t("command.provider.connect")}>
                   <IconButton
@@ -188,7 +212,7 @@ export function ModelSelectorPopover(props: {
                   />
                 </Tooltip>
               </div>
-            }
+            )}
           />
         </Kobalte.Content>
       </Kobalte.Portal>
@@ -196,7 +220,7 @@ export function ModelSelectorPopover(props: {
   )
 }
 
-export const DialogSelectModel: Component<{ provider?: string; model?: ModelState }> = (props) => {
+export const DialogSelectModel: Component<{ provider?: string; model?: PickerState }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
 

@@ -258,6 +258,28 @@
     margin: 1.5rem 0;
     display: block;
   }
+
+  /* Mermaid diagrams */
+  [data-component="mermaid"] {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+  }
+
+  [data-component="mermaid"] [data-slot="mermaid-svg"] {
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  [data-component="mermaid"] [data-slot="mermaid-svg"] svg {
+    max-width: 100%;
+    height: auto;
+  }
 }
 
 [data-component="markdown"] a.external-link:hover > code {

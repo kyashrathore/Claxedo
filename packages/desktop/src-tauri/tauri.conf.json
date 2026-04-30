@@ -6,7 +6,7 @@
   "version": "../package.json",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
   },
@@ -35,6 +35,7 @@
     "category": "DeveloperTool",
     "targets": ["deb", "rpm", "dmg", "nsis", "app"],
     "externalBin": ["sidecars/opencode-cli"],
+    "resources": ["sidecars/claxedo-mcp.js"],
     "linux": {
       "rpm": {
         "compression": {
