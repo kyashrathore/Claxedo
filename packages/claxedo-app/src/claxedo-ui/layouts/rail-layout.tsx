@@ -62,6 +62,7 @@ import { WorkspaceAttachBrowser, type WorkspaceAttachItem } from "../components/
 import { WorkspacePanel } from "../workspace-panel/WorkspacePanel"
 import { WorkspaceFilesNavigator } from "../workspace-panel/WorkspaceFilesNavigator"
 import { WorkspaceProcessesNavigator } from "../workspace-panel/WorkspaceProcessesNavigator"
+import { WorkspaceBrowserPanel } from "../workspace-panel/WorkspaceBrowserPanel"
 import type { WorkspacePanelMode, WorkspacePanelState } from "../workspace-panel/workspace-panel-state"
 import { loadTerminalSessionPreview } from "../utils/terminal-session-preview"
 import { getClaxedoServerUrl } from "../../utils/api"
@@ -434,7 +435,13 @@ function WorkspacePanelBody(props: {
             <div class="flex h-full min-h-0 flex-col">
               <div class="min-h-0 flex-1 overflow-hidden">
                 <Switch>
-                  <Match when={true}>
+                  <Match when={props.mode === "browser"}>
+                    <WorkspaceBrowserPanel
+                      panelKey={`browser:${dir()}`}
+                      sessionId={targetSessionId() ?? "new"}
+                    />
+                  </Match>
+                  <Match when={props.mode !== "browser"}>
                     <Show when={targetSessionId() ?? "new"}>
                       {(sessionId) => (
                         <div class="flex size-full min-w-0 overflow-hidden">
@@ -841,6 +848,16 @@ function RailLayoutBody(props: RailLayoutProps) {
       focus: null,
     })
   }
+  const toggleFocusedWorkspaceBrowser = () => {
+    const target = focusedPanelTarget()
+    if (!target) return
+    claxedoState.workspacePanel.toggle("browser", {
+      workspaceDir: target.workspaceDir,
+      targetPaneId: target.targetPaneId,
+      navigator: null,
+      focus: null,
+    })
+  }
 
   const sidebarDir = createMemo(() => {
     const focusedId = claxedoState.wb.state.focusedPaneId
@@ -1154,6 +1171,12 @@ function RailLayoutBody(props: RailLayoutProps) {
                     label="Workspace Review"
                     active={workspacePanelForFocusedTarget() && workspacePanelMode() === "review" && !workspacePanelNavigator()}
                     onClick={toggleFocusedWorkspaceReview}
+                  />
+                  <WorkspacePanelButton
+                    icon="square-arrow-top-right"
+                    label="Browser"
+                    active={workspacePanelForFocusedTarget() && workspacePanelMode() === "browser"}
+                    onClick={toggleFocusedWorkspaceBrowser}
                   />
                 </Show>
               </div>

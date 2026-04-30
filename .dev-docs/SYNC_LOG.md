@@ -4,6 +4,90 @@ This document tracks upstream sync attempts, outcomes, and the small set of deci
 
 Use this as a decision log, not a diary.
 
+## 2026-05-01 — Port: agentic-browser-tab onto post-multipane dev
+
+Branch: `port/browser-tab-2026-04-30` (off `dev` @ `a0e64a977`).
+Source: `feat/agentic-browser-tab` @ `2e3d99764` (WIP checkpoint commit).
+
+This was a **port, not a merge.** The feature was built against the deleted
+in-leaf multi-pane layout model; dev now exposes browser as a sibling of
+files / changes / review / tasks / processes via `WorkspacePanelMode`. The
+`"browser"` slot was already declared on dev but unimplemented; this port
+fills it.
+
+### Ported as-is
+- `packages/claxedo-app/src/browser/store/{browser-history,browser-comments,browser-pane-context}.tsx` + tests
+- `packages/claxedo-app/src/browser/components/browser-address-bar.test.ts` (pure URL normalization)
+- `packages/claxedo-app/src/browser/actions/browser-actions.ts`
+- `packages/claxedo-desktop/src/browser-preload/index.ts`
+- `packages/claxedo-desktop/src/main/browser/*` (10 files: setup, registry, handle, http-bridge, will-attach-webview, partition, token, flag, agent-audit-log, console-buffer + tests)
+- `packages/claxedo-server/src/claxedo-mcp/{browser-tools,desktop-request}.ts` + tests
+- `docs/plans/2026-04-21-agentic-browser-tab-plan.md`
+- `packages/claxedo-app/.dev-docs/browser-tab.md`
+
+### Rewritten / new
+- **`browser/components/browser-pane.tsx`** — pane-bus integration removed.
+  pane-bus.ts (527 LOC) was deleted on dev as part of the multi-pane
+  simplification (`4075231e4`/`ba062b864`/`5ecd50ac1`/`ef1403716`/`3dc840ef3`).
+  Browser feature relied on `usePane`/`autoBind`/`sendPageComment` for
+  cross-leaf comment routing. In the workspace-panel model the panel is
+  rendered next to the focused surface so routing is implicit (panel →
+  focused session). Replaced with a single `onPageComment?: (payload) => boolean`
+  prop the parent panel implements via `prompt.context.add(...)`.
+- **`browser/components/browser-pane.test.ts` + `cross-pane.test.ts`** — deleted.
+  pane-bus integration tests; cross-pane test conceptually moot in the
+  new model. Address-bar URL-normalization test survives (pure).
+- **`workspace-panel/WorkspaceBrowserPanel.tsx`** (NEW) — workspace-panel host for
+  `mode="browser"`. Mirrors `ProcessPanePanel.tsx` shape. Wires
+  `onPageComment` to `prompt.context.add({ type: "file", path: pageUrl, ... })`.
+- **`rail-layout.tsx WorkspacePanelBody`** — was an always-on `<Match when={true}>`
+  rendering ReviewWorkspace. Split into `<Match when={mode === "browser"}>` for
+  the browser panel + `<Match when={mode !== "browser"}>` for everything else.
+- **`rail-layout.tsx` top bar** — added a fourth `WorkspacePanelButton`
+  (Browser, icon `square-arrow-top-right`) toggling `workspacePanel.toggle("browser")`.
+- **`overrides/components/prompt-input/submit.ts`** — cherry-picked the WIP
+  delta: split URL-shaped FileContextItem paths out of `buildRequestParts`
+  into text-only synthetic parts; added to `removeCommentItems`.
+- **`packages/claxedo-desktop/electron.vite.config.ts`** — new
+  `inline-react-grab-into-browser-preload` plugin, new `browser-preload`
+  rollup input, switched preload output to CJS (required by sandboxed
+  guests). Coordinated with `windows.ts`: preload path `.mjs` → `.cjs`.
+- **`packages/claxedo-desktop/package.json`** — added `react-grab` 0.1.32 +
+  `test` script.
+- **`packages/claxedo-desktop/src/main/{index,ipc,windows}.ts`** — additive
+  integration patches: registry boot, IPC handlers, webviewTag flag.
+- **`packages/claxedo-desktop/src/preload/{index,types}.ts`** — appended
+  `BrowserBridge` type + bridge implementation; `api.browser` exposed.
+- **`packages/claxedo-server/src/claxedo-mcp/server.ts`** — registered
+  `registerBrowserTools(server)` near the bottom.
+
+### Dropped from the plan
+- `"browser"` literal in `claxedo-layout/types.ts TabType` union — dead
+  in the workspace-panel model.
+- `addBrowserTab` factory in `tab-actions.ts` — same.
+- `<Match when={content().type === "browser"}>` in
+  `multi-pane/generic-leaf-node.tsx` — multi-pane dispatch was deleted.
+- `addBrowserPane` button in `multi-pane/pane-sub-header.tsx` — same.
+- `format-element-comment-note.ts`, `element-selection-chip.tsx`,
+  `element-comment-composer.tsx` — host-side composer chrome. Dropped
+  per UX decision: react-grab in-page popover inside the guest webview
+  owns the entire comment UX (the WIP commit captures this pivot).
+- The 9-WIP additions for app-level pane-split hotkeys (mod+d /
+  mod+shift+d) and pane-aware tab close (mod+w) — tangential to browser
+  feature and reference deleted multi-pane API.
+
+### Validation outcomes
+- bun 1.3.13 (matches required ≥ 1.3.13).
+- Other gates (typecheck × 3, tests, build) deferred to PR validation.
+
+### Known follow-ups
+- Manual desktop smoke test deferred to user (requires
+  `CLAXEDO_ENABLE_BROWSER_TAB=1` + `VITE_CLAXEDO_ENABLE_BROWSER_TAB=true`).
+- Possible import-drift fixes after typecheck — track here as they land.
+- Investigate whether `square-arrow-top-right` is the right icon long-term.
+
+
+
 ## Why keep this?
 
 The log is useful only if it helps answer these quickly:

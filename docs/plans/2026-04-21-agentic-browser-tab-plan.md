@@ -4,19 +4,31 @@ type: feat
 status: active
 date: 2026-04-21
 deepened: 2026-04-21
+revised: 2026-04-21  # direction correction: stay claxedo-owned; reframe "new Electron infra" → "new code inside existing claxedo-desktop shell"
 origin: null  # no brainstorm doc; planned directly from user request after parallel research across opencode + ~/test/superset-terminal-ref
+related:
+  - docs/plans/2026-04-13-pane-local-frontend-orchestration-plan.md  # layer direction this plan respects
 references:
   - ~/test/superset-terminal-ref (browser-pane prior art, different codebase)
   - packages/claxedo-app/src/claxedo-ui/components/review-workspace.tsx (comment-on-diff precedent)
-  - packages/claxedo-desktop/src/main/windows.ts (Electron host this feature plugs into)
+  - packages/claxedo-desktop/src/main/windows.ts (existing Electron shell this feature extends)
   - packages/claxedo-server/src/claxedo-mcp/server.ts (agent-tool surface)
 ---
 
 # Agentic Browser Tab
 
+## Architectural Direction (2026-04-21 revision)
+
+This feature lives entirely inside the `claxedo-*` packages. Nothing in `packages/app` or `packages/opencode` is modified. The long-term direction ([2026-04-13 pane-local-frontend-orchestration plan](./2026-04-13-pane-local-frontend-orchestration-plan.md)) is to move *away* from tight coupling with the upstream prompt/context model toward claxedo-owned stores and backend ports. This plan respects that direction:
+
+1. **No new Electron infrastructure.** `packages/claxedo-desktop` is the existing shell. This feature adds *new code inside that shell* — webview enablement, BrowserRegistry, CDP attach, HTTP listener — not a new process boundary.
+2. **New source home: `packages/claxedo-app/src/browser/`** for the browser-tab feature's reusable components and state (mirroring the pane-local plan's `src/shell/`, `src/cloud/runtime/`, `src/session/store/`, `src/pane/store/` layer pattern). Components in this directory *may use* opencode/upstream primitives but are not *tied to* upstream shapes.
+3. **Element comments stay claxedo-owned.** A new `useBrowserComments()` store in `packages/claxedo-app/src/browser/store/` is the source of truth. At submit time, a thin adapter inside the existing `overrides/components/prompt-input/build-request-parts.ts` seam reads from both `prompt.context.items` (upstream) and `useBrowserComments().pending(sessionId)` (claxedo-owned) and emits the merged `PromptRequestPart[]`. We do **not** widen upstream's `ContextItem` union. This keeps the upstream-sync surface minimal and the browser feature's data model portable.
+4. **Reusable components.** `BrowserPane`, `AddressBar`, `ConsoleDrawer`, `ElementCommentComposer` all live under `src/browser/components/`. Each is a self-contained SolidJS component that takes props; no direct coupling to upstream stores beyond what's absolutely necessary.
+
 ## Overview
 
-Add a new first-class `"browser"` tab type to claxedo-app that embeds a live web page inside the existing group/tab/split layout, backed by Electron's native `<webview>` in `packages/claxedo-desktop`. Give the AI agent three capabilities on that page, each modelled on a seam that already exists in this repo:
+Add a new first-class `"browser"` tab type to claxedo-app that embeds a live web page inside the existing group/tab/split layout, backed by Electron's native `<webview>` inside the existing `packages/claxedo-desktop` shell. Give the AI agent three capabilities on that page, each modelled on a seam that already exists in this repo:
 
 1. **Read the running tab's console logs** — via CDP `Runtime.consoleAPICalled` + `Log.entryAdded` + `Runtime.exceptionThrown` on the webview's `webContents.debugger`, buffered in the main process, queryable and streamable by MCP tools.
 2. **Take a screenshot and attach it to the chat** — via CDP `Page.captureScreenshot`, normalized into the existing `ImageAttachmentPart` / dataURL pipeline, pushed into the bound session's prompt composer.
@@ -333,8 +345,8 @@ window.api.browser = {
 - Modify: `packages/claxedo-app/src/claxedo-ui/context/claxedo-layout/tab-type-registry.ts` caller — create `packages/claxedo-app/src/claxedo-ui/register-tabs.ts` if needed, called from the app entry point. Register `"browser"` with `onClose` / `onReopen` / `mergeDedupeKey: browserId`.
 - Modify: `packages/claxedo-app/src/claxedo-ui/components/multi-pane/multi-pane-tab.tsx` (lazy-init branch for `"browser"` in the `createEffect` that seeds `multiPane` state).
 - Modify: `packages/claxedo-app/src/claxedo-ui/components/multi-pane/generic-leaf-node.tsx` (new `<Match when={content().type === "browser"}>` dispatching to `<BrowserPane/>` placeholder).
-- Create: `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-browser.tsx` (minimal shell for now: address bar + an empty `<div class="webview-host"/>`).
-- Create: `packages/claxedo-app/src/claxedo-ui/claxedo-layout-actions/browser-actions.ts` (exports `handleNewBrowserTab(groupId?, url?)` mirroring `handleNewSession` shape).
+- Create: `packages/claxedo-app/src/browser/components/browser-pane.tsx` (minimal shell for now: address bar + an empty `<div class="webview-host"/>`).
+- Create: `packages/claxedo-app/src/browser/actions/browser-actions.ts` (exports `handleNewBrowserTab(groupId?, url?)` mirroring `handleNewSession` shape; lives in `src/browser/` alongside other browser feature code, not in `claxedo-ui/claxedo-layout-actions/`).
 - Modify: wherever keyboard shortcuts are registered (search `mod+` in `packages/claxedo-app/src/`); add `mod+shift+b` → `handleNewBrowserTab`.
 - Test: `packages/claxedo-app/src/claxedo-ui/context/claxedo-layout.test.ts` (extend; add cases for `addBrowserTab`, dedupe by `browserId`, reopen last closed browser tab).
 
@@ -376,7 +388,7 @@ window.api.browser = {
 - Modify: `packages/claxedo-desktop/src/main/ipc.ts` (register `browser:register`, `browser:unregister`, `browser:navigate` handlers via the existing `ipcMain.handle(...)` style).
 - Modify: `packages/claxedo-desktop/src/preload/index.ts` (extend existing `contextBridge.exposeInMainWorld("api", api)` — add `browser` namespace inside the existing `api` object; **global is `window.api.browser`, not `window.claxedo.browser`** — verified during deepening).
 - Modify: `packages/claxedo-desktop/src/preload/types.ts` (extend existing `ElectronAPI` type with `browser: BrowserBridge`; do NOT create a separate top-level type).
-- Modify: `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-browser.tsx` — render `<webview src={url()} partition="persist:agent-browser" on:dom-ready={…}/>` when `window.api?.browser` is present; register paneId ↔ webContents on dom-ready; fall back to "requires desktop with CLAXEDO_ENABLE_BROWSER_TAB=1" placeholder.
+- Modify: `packages/claxedo-app/src/browser/components/browser-pane.tsx` — render `<webview src={url()} partition="persist:agent-browser" on:dom-ready={…}/>` when `window.api?.browser` is present; register paneId ↔ webContents on dom-ready; fall back to "requires desktop with CLAXEDO_ENABLE_BROWSER_TAB=1" placeholder.
 - Modify: `packages/claxedo-app/index.tsx` (renderer-side gate: expose tab type and command only when `import.meta.env.VITE_CLAXEDO_ENABLE_BROWSER_TAB === "true"`, mirroring the existing `VITE_SANDBOX_ENABLED` gate).
 - Test: `packages/claxedo-desktop/src/main/browser/registry.test.ts` (unit tests for register / unregister / get).
 - Test: `packages/claxedo-desktop/src/main/browser/will-attach-webview.test.ts` (assert every dangerous attribute is stripped; bad partitions rejected; non-http(s) src rejected).
@@ -417,8 +429,8 @@ window.api.browser = {
 - Create: `packages/claxedo-desktop/src/main/browser/agent-audit-log.ts` (append-only log of agent-initiated tool calls; consumed by the in-chat "agent performed X" entries — the prompt-injection audit trail).
 - Modify: `packages/claxedo-desktop/src/main/ipc.ts` (add `browser:getConsoleLogs`, `browser:captureScreenshot`, `browser:evaluate`, subscription channel `browser:onConsoleEntry:<paneId>`, plus `browser:setAgentAllowed(paneId, boolean)` per-tab opt-in toggle).
 - Modify: `packages/claxedo-desktop/src/preload/index.ts` (extend `window.api.browser` with callback+unsubscribe stream API for console; promise API for screenshot + evaluate).
-- Create: `packages/claxedo-app/src/claxedo-ui/context/browser-pane.tsx` (`createSimpleContext` wrapping `useBrowser(paneId)` with reactive signals for `consoleEntries`, `isLoading`, `currentUrl`, `agentAllowed`, etc.).
-- Modify: `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-browser.tsx` (subscribe to console stream for a collapsible console drawer under the page; CSS `hidden` toggle per MEMORY.md; per-tab "Allow agent to run JS" toggle UI).
+- Create: `packages/claxedo-app/src/browser/store/browser-pane-context.tsx` (`createSimpleContext` wrapping `useBrowser(paneId)` with reactive signals for `consoleEntries`, `isLoading`, `currentUrl`, `agentAllowed`, etc.).
+- Modify: `packages/claxedo-app/src/browser/components/browser-pane.tsx` (subscribe to console stream for a collapsible console drawer under the page; CSS `hidden` toggle per MEMORY.md; per-tab "Allow agent to run JS" toggle UI).
 - Test: `packages/claxedo-desktop/src/main/browser/handle.test.ts` (state-machine transitions, event-dispatch, console-buffer eviction, sanitization).
 
 **Approach:**
@@ -510,7 +522,7 @@ window.api.browser = {
 - Create: `packages/claxedo-desktop/src/main/browser/selector-generator.guest.ts` (string asset — a self-contained IIFE that loads `@medv/finder`'s minified bundle inline, exposes `__generateSelector(backendNodeId)`; preference ladder: `data-testid`/`data-test`/`data-cy` → stable `id` → semantic attribute combo (`role`, `name`, `aria-label`, `href`) → tag+class (with rejecter for `css-*`, `sc-*`, `jsx-*`, `_module_*` CSS-in-JS prefixes) → `:nth-of-type` chain; shadow-DOM: emit composite `{ host, shadow }` path when the node is inside an open shadow root).
 - Create: `packages/claxedo-desktop/src/main/browser/selector.ts` (main-process wrapper: serializes the guest IIFE into `Runtime.evaluate({ expression, returnByValue: true })`, parses response, falls back to `DOM.describeNode` + `:nth-of-type` chains if the IIFE can't guarantee uniqueness).
 - Modify: `packages/claxedo-desktop/src/main/ipc.ts` (`browser:setInspectMode`, subscription `browser:onNodeSelected:<paneId>`).
-- Modify: `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-browser.tsx` (add "Inspect" toggle button in the address bar; subscribe to node-selected events; suppress user interaction when inspect mode is on).
+- Modify: `packages/claxedo-app/src/browser/components/browser-pane.tsx` (add "Inspect" toggle button in the address bar; subscribe to node-selected events; suppress user interaction when inspect mode is on).
 - Test: `packages/claxedo-desktop/src/main/browser/selector.test.ts` (selector uniqueness + preference-order tests against fixture DOMs in happy-dom; shadow-DOM composite path test; CSS-in-JS prefix rejecter test).
 - Add dependency: `@medv/finder` (pin to ^4.x) in `packages/claxedo-desktop/package.json`. Bundle the minified source into `selector-generator.guest.ts` at build time via Vite's `?raw` import so the main-process bundle carries exactly one copy of the code.
 
@@ -539,52 +551,57 @@ window.api.browser = {
 
 ---
 
-- [ ] **Unit 6: Element-comment composer + `ContextItem` widening + new `page-comment:*` capability**
+- [ ] **Unit 6: Element-comment composer + claxedo-owned `useBrowserComments` store + thin submit-time adapter**
 
-**Goal:** Let the user type a comment on a selected element, store it, and flow it through `pane-bus` to the bound session via a NEW capability pair (`page-comment:produce` / `page-comment:receive`), where submit produces a text part + image part with the right metadata.
+**Goal:** Let the user type a comment on a selected element, store it in a claxedo-owned state primitive, flow it to the bound session via a NEW pane-bus capability pair (`page-comment:produce` / `page-comment:receive`), and have submit emit a text part + image part — without widening upstream's `ContextItem`.
 
 **Requirements:** R6, R7.
 
 **Dependencies:** Unit 5.
 
-**Critical corrections from deepening:**
-1. `packages/claxedo-app/src/overrides/context/prompt.tsx` already exists (293 lines) and owns `ContextItem`. Unit **edits** it in place; does not create it.
-2. No override of `packages/app/src/utils/comment-note.ts`. Formatting happens at the producer. Fewer upstream-sync risks, no chance of silently changing review behavior.
-3. New capability pair `page-comment:produce` / `page-comment:receive`, NOT overloading `comment:*`. Preserves pane-bus opt-in semantics and keeps review consumers untouched.
+**Revised architectural direction (2026-04-21):**
+- `PageElementComment` is a **claxedo-owned type**, lives in `packages/claxedo-app/src/browser/store/`. It does NOT enter `prompt.context` upstream. The browser feature's data model is not tied to upstream's `FileContextItem`.
+- Adapter seam: `packages/claxedo-app/src/overrides/components/prompt-input/build-request-parts.ts` is the single override. It reads from both `prompt.context.items` (upstream) and `useBrowserComments().pending(sessionId)` (claxedo-owned), merges at the serialization boundary, and produces the request parts array. One thin seam; no upstream type widening.
+- Session consumer pane registers `"page-comment:receive"` and routes incoming payloads into `useBrowserComments().enqueue(sessionId, payload)`. The payload rides on a claxedo-owned queue, parallel to but independent of `prompt.context.items`.
+- On submit cleared/rolled back: a watcher in the session pane clears `useBrowserComments().pending(sessionId)` after successful send, matching how `prompt.context.items` is cleared today.
 
 **Files:**
-- Create: `packages/claxedo-app/src/claxedo-ui/components/browser/element-comment-composer.tsx` (wraps `LineCommentEditor` from `packages/ui/src/components/line-comment.tsx`; renders a selector chip + screenshot thumbnail; on submit calls `onElementComment`).
-- Create: `packages/claxedo-app/src/claxedo-ui/components/browser/element-selection-chip.tsx` (the `<selection>` JSX for the editor — shows selector, truncated, with a copy button).
-- Create: `packages/claxedo-app/src/claxedo-ui/utils/format-element-comment-note.ts` (claxedo-app-local helper: `"The user commented on element \`{selector}\` at {pageUrl}: {comment}"`; appends truncated outerHTML as a fenced block if < 1 KB).
-- **Modify** (not create): `packages/claxedo-app/src/overrides/context/prompt.tsx` (widen `ContextItem` to `FileContextItem | ElementContextItem`; add `contextItemKey` branch for `"page-element"` keyed by `(pageUrl, selector, commentID)`). Update the existing `packages/claxedo-app/src/overrides/context/prompt.vitest.tsx` with the new variant's shape + key function.
-- Create: `packages/claxedo-app/src/overrides/components/prompt-input/build-request-parts.ts` (override dispatches on `item.type === "page-element"` to emit text + image parts, otherwise delegates to upstream's `buildRequestParts`).
-- Modify: `packages/claxedo-app/src/claxedo-ui/context/pane-bus.ts` (add `"page-comment:produce"` / `"page-comment:receive"` to the `PaneCapability` union; add `ElementCommentPayload` type; add `sendElementComment(fromLeafId, payload)` wrapping the existing dispatcher; `CommentPayload` remains the file-only shape it is today — NOT widened).
-- Create: `packages/claxedo-app/src/claxedo-ui/context/browser-comments.tsx` (`useBrowserComments()` context: `list(tabId)`, `add`, `remove`, `update`; persisted via `Persist.global("browser.comments.v1", [legacy keys])`).
-- Modify: `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-browser.tsx` (`handleElementComment(payload)` mirrors `handleLineComment`: computes final note string via `formatElementCommentNote`, calls `browserComments.add`, pushes `ElementContextItem` into `prompt.context.add`, watcher effect forwards new items of `type === "page-element"` via `sendElementComment`; `usePane({ capabilities: ["page-comment:produce"], ... })` + `autoBind(leafId, "comment", "page-comment:receive")`).
-- Modify: `packages/claxedo-app/src/claxedo-ui/components/multi-pane/generic-leaf-node.tsx` (`SessionPaneBusConsumer` additionally registers `"page-comment:receive"` with a handler that calls `prompt.context.add(elementPayload)`; file-only `comment:receive` handler unchanged).
-- Create: `packages/claxedo-app/src/overrides/context/prompt.upstream-shape.test.ts` (characterization test: pins the override's `FileContextItem` shape against upstream's exported type; fails with a clear error on any upstream rename — the upstream-sync mitigation from the decisions table).
-- Test: `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-browser.test.ts` (integration: element-comment → pane-bus → prompt.context → buildRequestParts output shape).
+- Create: `packages/claxedo-app/src/browser/store/browser-comments.tsx` (`useBrowserComments()` context: `list(tabId)`, `pending(sessionId)`, `add`, `enqueue(sessionId, payload)`, `remove`, `update`, `clearPending(sessionId)`; persisted via `Persist.global("browser.comments.v1", [])`; types `PageElementComment`, `ElementCommentPayload` live alongside).
+- Create: `packages/claxedo-app/src/browser/components/element-comment-composer.tsx` (wraps `LineCommentEditor` from `packages/ui/src/components/line-comment.tsx`; renders a selector chip + screenshot thumbnail; on submit calls `onElementComment` — this component is reusable and knows nothing about sessions, pane-bus, or chat plumbing).
+- Create: `packages/claxedo-app/src/browser/components/element-selection-chip.tsx` (the `<selection>` JSX for the editor — shows selector, truncated, with a copy button).
+- Create: `packages/claxedo-app/src/browser/utils/format-element-comment-note.ts` (pure helper: `"The user commented on element \`{selector}\` at {pageUrl}: {comment}"`; appends truncated outerHTML as a fenced block if < 1 KB).
+- Create: `packages/claxedo-app/src/overrides/components/prompt-input/build-request-parts.ts` (override: wraps upstream's `buildRequestParts`, computes upstream's parts array, then appends parts for each `PageElementComment` in `useBrowserComments().pending(sessionId)` — synthetic text part with `metadata.opencodeComment = { origin: "browser", selector, boundingBox, pageUrl, outerHTML? }` + image part with the element screenshot). Upstream `ContextItem` unchanged.
+- Modify: `packages/claxedo-app/src/claxedo-ui/context/pane-bus.ts` (add `"page-comment:produce"` / `"page-comment:receive"` to the `PaneCapability` union; add `PageElementCommentPayload` type; add `sendPageComment(fromLeafId, payload)` wrapping the existing dispatcher; `CommentPayload` unchanged).
+- Modify: `packages/claxedo-app/src/browser/components/browser-pane.tsx` (the `pane-browser` component moved here in the earlier units — `handleElementComment(payload)`: (1) compute `noteText` via `formatElementCommentNote`; (2) `browserComments.add(…)` locally for history; (3) `sendPageComment(leafId, payload)` pushes to bound session; `usePane({ capabilities: ["page-comment:produce"] })` + `autoBind(leafId, "page-comment", "page-comment:receive")`).
+- Modify: `packages/claxedo-app/src/claxedo-ui/components/multi-pane/generic-leaf-node.tsx` (`SessionPaneBusConsumer` additionally registers `"page-comment:receive"`; handler calls `useBrowserComments().enqueue(sessionId, payload)`. `comment:receive` handler unchanged).
+- Modify: wherever the session-submit clears `prompt.context.items` on successful send: also call `useBrowserComments().clearPending(sessionId)`.
+- Test: `packages/claxedo-app/src/browser/store/browser-comments.test.ts` (unit: add / enqueue / clearPending / persistence round-trip).
+- Test: `packages/claxedo-app/src/overrides/components/prompt-input/build-request-parts.test.ts` (unit: parts output for empty pending, one-comment pending, mix with `prompt.context.items`; assert upstream's file/context items are emitted byte-for-byte unchanged).
+- Test: `packages/claxedo-app/src/browser/components/browser-pane.test.ts` (integration: inspect → comment → pane-bus → session enqueue → submit → request parts include text + image).
 
 **Approach:**
-- `handleElementComment(payload)` steps: (1) compute `noteText` via `formatElementCommentNote(payload)` — stored on the payload so `comment-note.ts` upstream is never touched; (2) `browserComments.add({...})`; (3) `prompt.context.add({ type: "page-element", pageUrl, selector, boundingBox, outerHTML?, screenshotDataUrl?, comment, noteText, commentID: saved.id, commentOrigin: "browser" })`.
-- `build-request-parts` override emits: synthetic text part (`text = item.noteText`, `metadata.opencodeComment = { origin: "browser", selector, boundingBox, pageUrl, outerHTML? }`) + image part (`{ mime: "image/png", url: screenshotDataUrl, filename: "element-<short(selector-hash)>.png" }`) + any @-mentioned file parts parsed from the comment body. Unchanged items (file comments) pass straight through to upstream.
-- Pane-bus `page-comment:*` capability is independent of `comment:*`. Session consumers register for both; review consumers see only `comment:*`; future third variants get their own capability.
+- **Claxedo-owned data plane:** `PageElementComment { id, pageUrl, selector, boundingBox?, outerHTML?, screenshotDataUrl?, comment, noteText, tabId, sessionId?, createdAt }` lives only in the claxedo store. Persisted as-is. No upstream override ever sees this type's shape.
+- **Thin adapter at submit:** upstream `buildRequestParts` is called first, its output stored; then for each pending page-element comment we push two `PromptRequestPart` entries onto the same array. Order is deterministic (upstream parts first, then element comments in `createdAt` order). No rewriting of upstream output.
+- **Submit-time binding by sessionId:** payloads delivered via pane-bus include the target session's id (from the consumer's `useSessionParams()`). The store keys by sessionId so multiple sessions open at once don't cross-contaminate.
+- **Clear semantics:** on successful submit, clear pending. On session switch, pending survives (attached by id, not by focus). On session close, pending is dropped.
 
 **Patterns to follow:**
-- `review-workspace.tsx:635-661` (`handleLineComment`) is the template for the producer-side handler.
-- `pane-bus.ts:286-325` (`sendComment`) — mirror for `sendElementComment`.
-- `overrides/pages/session.tsx` / existing `overrides/context/prompt.tsx` show the `@/` override shape.
+- `review-workspace.tsx:635-661` (`handleLineComment`) — overall shape of a producer handler; don't mimic its direct write into `prompt.context`, prefer the claxedo-owned queue.
+- `pane-bus.ts:286-325` (`sendComment`) — mirror for `sendPageComment`.
+- `packages/claxedo-app/src/browser/` directory structure follows the pane-local plan's layer pattern (`src/shell/store/`, `src/cloud/runtime/`, `src/session/store/`, `src/pane/store/`).
 
 **Test scenarios:**
-- Submit element comment → `prompt.context.items` has one item `{ type: "page-element", … }` with `noteText` already populated.
-- Bound session pane's `prompt.context.items` receives the item (pane-bus round-trip via `page-comment:receive`).
-- Session pane with ONLY `comment:receive` capability (hypothetical review-only consumer) does NOT receive the element payload.
-- `buildRequestParts` over a payload with one page-element item emits exactly: 1 text part (synthetic, with metadata) + 1 image part. No trailing empty parts.
-- `buildRequestParts` over a payload with file + page-element items produces them in the expected order; file part serialization is identical to upstream.
-- Removing a comment on the producer side fires a `sendCommentRemoval`-equivalent and the consumer's context drops it.
-- Characterization test on upstream shape: renaming `FileContextItem.path` upstream → override test fails loudly with a diff.
+- Submit element comment → `useBrowserComments().pending(sessionId)` contains one entry, `prompt.context.items` is unchanged.
+- Bound session pane receives the payload via `page-comment:receive` → its `useBrowserComments().pending(sessionId)` has the entry.
+- A review-only session consumer (only `comment:receive`) does NOT receive page-element payloads.
+- `buildRequestParts` with empty pending → bit-identical to upstream's output.
+- `buildRequestParts` with one pending → upstream output + 2 trailing parts (text + image).
+- `buildRequestParts` with mix of `prompt.context.items` and pending page-element → upstream order preserved, page-element parts append.
+- Post-submit hook clears `pending(sessionId)`.
+- Persistence round-trip: add + reload → entry survives.
+- Session close: pending dropped.
 
-**Verification:** Full manual flow: open browser tab, load page, open a session pane alongside it, inspect an element, comment, type a short message in the session, send → the chat shows the image + note; the LLM can read the selector via the structured metadata; a review-only consumer pane does not see stray browser comments.
+**Verification:** Full manual flow: open browser tab, load page, open a session pane alongside it, inspect an element, comment, type a short message in the session, send → the chat shows the image + note; the LLM can read the selector via the structured metadata; after submit, the pending queue is empty; review-only consumer panes never see browser comments.
 
 ---
 
@@ -599,7 +616,7 @@ window.api.browser = {
 **Files:**
 - Modify: `packages/claxedo-app/src/claxedo-ui/context/claxedo-layout/types.ts` (`BrowserTabState` extension on `TabItem` persisted).
 - Create: `packages/claxedo-app/src/claxedo-ui/context/browser-history.tsx` (`useBrowserHistory()`: per-tab back/forward + global recent URLs, `Persist.global("browser.history", …)`).
-- Modify: `packages/claxedo-app/src/claxedo-ui/components/multi-pane/pane-browser.tsx` (address-bar autocomplete from recent URLs).
+- Modify: `packages/claxedo-app/src/browser/components/browser-pane.tsx` (address-bar autocomplete from recent URLs).
 - Modify: `packages/claxedo-app/CLAUDE.md` or `packages/claxedo-app/.dev-docs/browser-tab.md` (new): feature-flag instructions; note webview enablement is per-flag.
 - Modify: `MEMORY.md`-style user memory note (auto-memory update via feedback file rather than editing the global memory).
 

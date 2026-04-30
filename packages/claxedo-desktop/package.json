@@ -11,6 +11,7 @@
   },
   "scripts": {
     "test:contract": "bun test ./scripts/contract.test.ts",
+    "test": "bun test ./src",
     "typecheck": "tsgo -b",
     "predev": "bun ./scripts/predev.ts",
     "dev": "electron-vite dev",
@@ -44,6 +45,7 @@
     "jsonc-parser": "^3",
     "marked": "^15",
     "node-pty": "^1.0.0",
+    "react-grab": "0.1.32",
     "solid-js": "catalog:",
     "tree-kill": "^1.2.2"
   },

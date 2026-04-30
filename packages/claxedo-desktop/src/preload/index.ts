@@ -1,5 +1,67 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import type { ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
+import type {
+  BrowserBridge,
+  BrowserConsoleEntry,
+  BrowserConsoleQuery,
+  BrowserEvaluateResult,
+  BrowserNavigationState,
+  BrowserNodeSelectedPayload,
+  BrowserRegisterResult,
+  BrowserResult,
+  BrowserScreenshotClip,
+  BrowserScreenshotResult,
+  BrowserStorageKey,
+  ElectronAPI,
+  InitStep,
+  SqliteMigrationProgress,
+} from "./types"
+
+const browserBridge: BrowserBridge = {
+  enabled: () => ipcRenderer.invoke("browser:enabled") as Promise<boolean>,
+  register: (paneId, webContentsId) =>
+    ipcRenderer.invoke("browser:register", paneId, webContentsId) as Promise<BrowserRegisterResult>,
+  unregister: (paneId) => ipcRenderer.invoke("browser:unregister", paneId) as Promise<BrowserResult>,
+  navigate: (paneId, url) => ipcRenderer.invoke("browser:navigate", paneId, url) as Promise<BrowserResult>,
+  getConsoleLogs: (paneId, q?: BrowserConsoleQuery) =>
+    ipcRenderer.invoke("browser:getConsoleLogs", paneId, q ?? {}) as Promise<BrowserConsoleEntry[]>,
+  onConsoleEntry: (paneId, cb) => {
+    const channel = `browser:onConsoleEntry:${paneId}`
+    const handler = (_: unknown, entry: BrowserConsoleEntry) => cb(entry)
+    ipcRenderer.on(channel, handler)
+    void ipcRenderer.invoke("browser:subscribeConsole", paneId)
+    return () => {
+      ipcRenderer.removeListener(channel, handler)
+      void ipcRenderer.invoke("browser:unsubscribeConsole", paneId).catch(() => {})
+    }
+  },
+  captureScreenshot: (paneId, opts?: { clip?: BrowserScreenshotClip }) =>
+    ipcRenderer.invoke("browser:captureScreenshot", paneId, opts ?? {}) as Promise<BrowserScreenshotResult>,
+  evaluate: (paneId, expression) =>
+    ipcRenderer.invoke("browser:evaluate", paneId, expression) as Promise<BrowserEvaluateResult>,
+  setAgentAllowed: (paneId, allowed) =>
+    ipcRenderer.invoke("browser:setAgentAllowed", paneId, Boolean(allowed)) as Promise<BrowserResult>,
+  setInspectMode: (paneId, enabled) =>
+    ipcRenderer.invoke("browser:setInspectMode", paneId, Boolean(enabled)) as Promise<BrowserResult>,
+  onNodeSelected: (paneId, cb) => {
+    const channel = `browser:onNodeSelected:${paneId}`
+    const handler = (_: unknown, payload: BrowserNodeSelectedPayload) => cb(payload)
+    ipcRenderer.on(channel, handler)
+    void ipcRenderer.invoke("browser:subscribeNodeSelected", paneId)
+    return () => {
+      ipcRenderer.removeListener(channel, handler)
+      void ipcRenderer.invoke("browser:unsubscribeNodeSelected", paneId).catch(() => {})
+    }
+  },
+  getNavigationState: (paneId) =>
+    ipcRenderer.invoke("browser:getNavigationState", paneId) as Promise<BrowserNavigationState>,
+  goBack: (paneId) => ipcRenderer.invoke("browser:goBack", paneId) as Promise<BrowserResult>,
+  goForward: (paneId) => ipcRenderer.invoke("browser:goForward", paneId) as Promise<BrowserResult>,
+  reload: (paneId, hard?: boolean) =>
+    ipcRenderer.invoke("browser:reload", paneId, Boolean(hard)) as Promise<BrowserResult>,
+  openDevTools: (paneId) => ipcRenderer.invoke("browser:openDevTools", paneId) as Promise<BrowserResult>,
+  clearStorage: (paneId, storages?: BrowserStorageKey[]) =>
+    ipcRenderer.invoke("browser:clearStorage", paneId, storages) as Promise<BrowserResult>,
+}
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
@@ -71,6 +133,7 @@ const api: ElectronAPI = {
   installUpdate: () => ipcRenderer.invoke("install-update"),
   setNativeTheme: (theme) => ipcRenderer.send("set-native-theme", theme),
   getDroppedFilePaths: (files) => files.map((f) => webUtils.getPathForFile(f)).filter(Boolean),
+  browser: browserBridge,
 }
 
 contextBridge.exposeInMainWorld("api", api)

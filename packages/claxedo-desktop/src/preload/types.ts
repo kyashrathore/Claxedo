@@ -11,6 +11,130 @@ export type WslConfig = { enabled: boolean }
 
 export type LinuxDisplayBackend = "wayland" | "auto"
 
+/**
+ * Agentic browser-tab preload bridge.
+ *
+ * Exposed at `window.api.browser`. Only populated in builds / launches where
+ * `CLAXEDO_ENABLE_BROWSER_TAB=1` is set on the main process — renderers must
+ * treat `window.api.browser` as potentially undefined and fall back to the
+ * "requires desktop" placeholder when it is absent.
+ */
+export type BrowserRegisterResult =
+  | { ok: true; webContentsId: number }
+  | { ok: false; error: string }
+
+export type BrowserResult = { ok: true } | { ok: false; error: string }
+
+export type BrowserConsoleLevel = "log" | "warn" | "error" | "debug" | "info"
+
+export type BrowserConsoleStackFrame = {
+  url?: string
+  function?: string
+  line?: number
+  column?: number
+}
+
+export type BrowserConsoleEntry = {
+  id: number
+  time: number
+  level: BrowserConsoleLevel
+  args: string[]
+  stack?: BrowserConsoleStackFrame[]
+  source: "console" | "exception" | "log"
+  sessionId?: string
+}
+
+export type BrowserConsoleQuery = {
+  since?: number
+  level?: BrowserConsoleLevel
+  limit?: number
+}
+
+export type BrowserScreenshotClip = {
+  x: number
+  y: number
+  width: number
+  height: number
+  scale?: number
+}
+
+export type BrowserScreenshotResult =
+  | { ok: true; dataUrl: string; mimeType: "image/png" | "image/jpeg" }
+  | { ok: false; error: { code: "no-page" | "not-attached" | "cdp-error" | "no-pane"; message?: string } }
+
+export type BrowserNodeSelectedPayload =
+  | {
+      ok: true
+      selector: string
+      shadow?: { host: string; inner: string }
+      frameUrl: string
+      boundingBox?: { x: number; y: number; width: number; height: number }
+      outerHTML?: string
+      tagName: string
+      screenshotDataUrl?: string
+      computedStyles?: {
+        color?: string
+        backgroundColor?: string
+        fontFamily?: string
+        fontSize?: string
+        display?: string
+      }
+    }
+  | {
+      ok: false
+      error: "shadow-root-closed" | "element-not-found" | "not-attached" | "generic" | "timeout" | "canceled"
+      message?: string
+      frameUrl?: string
+    }
+
+export type BrowserEvaluateResult =
+  | { ok: true; result: unknown }
+  | {
+      ok: false
+      error: {
+        code: "eval-denied" | "not-attached" | "cdp-error" | "script-error" | "no-pane"
+        message?: string
+        stack?: string
+      }
+    }
+
+export type BrowserNavigationState =
+  | { ok: true; url: string; canGoBack: boolean; canGoForward: boolean }
+  | { ok: false; error: string }
+
+export type BrowserStorageKey =
+  | "cookies"
+  | "localstorage"
+  | "indexdb"
+  | "cachestorage"
+  | "serviceworkers"
+
+export type BrowserBridge = {
+  enabled: () => Promise<boolean>
+  register: (paneId: string, webContentsId: number) => Promise<BrowserRegisterResult>
+  unregister: (paneId: string) => Promise<BrowserResult>
+  navigate: (paneId: string, url: string) => Promise<BrowserResult>
+  getConsoleLogs: (paneId: string, q?: BrowserConsoleQuery) => Promise<BrowserConsoleEntry[]>
+  onConsoleEntry: (paneId: string, cb: (entry: BrowserConsoleEntry) => void) => () => void
+  captureScreenshot: (
+    paneId: string,
+    opts?: { clip?: BrowserScreenshotClip },
+  ) => Promise<BrowserScreenshotResult>
+  evaluate: (paneId: string, expression: string) => Promise<BrowserEvaluateResult>
+  setAgentAllowed: (paneId: string, allowed: boolean) => Promise<BrowserResult>
+  setInspectMode: (paneId: string, enabled: boolean) => Promise<BrowserResult>
+  onNodeSelected: (
+    paneId: string,
+    cb: (payload: BrowserNodeSelectedPayload) => void,
+  ) => () => void
+  getNavigationState: (paneId: string) => Promise<BrowserNavigationState>
+  goBack: (paneId: string) => Promise<BrowserResult>
+  goForward: (paneId: string) => Promise<BrowserResult>
+  reload: (paneId: string, hard?: boolean) => Promise<BrowserResult>
+  openDevTools: (paneId: string) => Promise<BrowserResult>
+  clearStorage: (paneId: string, storages?: BrowserStorageKey[]) => Promise<BrowserResult>
+}
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
@@ -67,4 +191,5 @@ export type ElectronAPI = {
   installUpdate: () => Promise<void>
   setNativeTheme: (theme: "light" | "dark" | "system") => void
   getDroppedFilePaths: (files: File[]) => string[]
+  browser: BrowserBridge
 }

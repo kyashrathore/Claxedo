@@ -2,7 +2,17 @@ import { execFile } from "node:child_process"
 import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 
-import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
+import type {
+  BrowserConsoleEntry,
+  BrowserConsoleQuery,
+  BrowserNodeSelectedPayload,
+  BrowserScreenshotClip,
+  InitStep,
+  ServerReadyData,
+  SqliteMigrationProgress,
+  WslConfig,
+} from "../preload/types"
+import type { BrowserRegistry } from "./browser/registry"
 import { getStore } from "./store"
 
 type Deps = {
@@ -23,6 +33,8 @@ type Deps = {
   runUpdater: (alertOnFail: boolean) => Promise<void> | void
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
   installUpdate: () => Promise<void> | void
+  /** Optional; only provided when the browser-tab feature flag is set. */
+  browser?: BrowserRegistry
 }
 
 export function registerIpcHandlers(deps: Deps) {
@@ -180,6 +192,212 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.on("set-native-theme", (_event: IpcMainEvent, theme: "light" | "dark" | "system") => {
     nativeTheme.themeSource = theme
   })
+
+  registerBrowserIpcHandlers(deps.browser)
+}
+
+function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
+  ipcMain.handle("browser:enabled", () => Boolean(registry))
+
+  if (!registry) return
+
+  ipcMain.handle(
+    "browser:register",
+    (_event: IpcMainInvokeEvent, paneId: string, webContentsId: number) => {
+      try {
+        const handle = registry.register(paneId, webContentsId)
+        return { ok: true as const, webContentsId: handle.webContentsId }
+      } catch (err) {
+        return { ok: false as const, error: String(err instanceof Error ? err.message : err) }
+      }
+    },
+  )
+
+  ipcMain.handle("browser:unregister", (_event: IpcMainInvokeEvent, paneId: string) => {
+    registry.unregister(paneId)
+    return { ok: true as const }
+  })
+
+  ipcMain.handle(
+    "browser:navigate",
+    async (_event: IpcMainInvokeEvent, paneId: string, url: string) => {
+      const handle = registry.get(paneId)
+      if (!handle) {
+        return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+      }
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return { ok: false as const, error: `scheme ${parsed.protocol} not allowed` }
+        }
+      } catch {
+        return { ok: false as const, error: `invalid url: ${url}` }
+      }
+      try {
+        await handle.navigate(url)
+        return { ok: true as const }
+      } catch (err) {
+        return { ok: false as const, error: String(err instanceof Error ? err.message : err) }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "browser:getConsoleLogs",
+    (_event: IpcMainInvokeEvent, paneId: string, q: BrowserConsoleQuery | undefined) => {
+      const handle = registry.get(paneId)
+      if (!handle) return [] as BrowserConsoleEntry[]
+      return handle.getConsoleLogs(q ?? {}) as BrowserConsoleEntry[]
+    },
+  )
+
+  const consoleSubs = new Map<string, () => void>()
+  const subKey = (paneId: string, senderId: number) => `${senderId}:${paneId}`
+
+  ipcMain.handle("browser:subscribeConsole", (event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    const key = subKey(paneId, event.sender.id)
+    if (consoleSubs.has(key)) return { ok: true as const }
+    const unsubscribe = handle.onConsoleEntry((entry) => {
+      if (event.sender.isDestroyed()) return
+      event.sender.send(`browser:onConsoleEntry:${paneId}`, entry)
+    })
+    consoleSubs.set(key, unsubscribe)
+    const cleanup = () => {
+      const fn = consoleSubs.get(key)
+      if (fn) {
+        try {
+          fn()
+        } catch {}
+        consoleSubs.delete(key)
+      }
+    }
+    event.sender.once("destroyed", cleanup)
+    return { ok: true as const }
+  })
+
+  ipcMain.handle("browser:unsubscribeConsole", (event: IpcMainInvokeEvent, paneId: string) => {
+    const key = subKey(paneId, event.sender.id)
+    const fn = consoleSubs.get(key)
+    if (fn) {
+      try {
+        fn()
+      } catch {}
+      consoleSubs.delete(key)
+    }
+    return { ok: true as const }
+  })
+
+  ipcMain.handle(
+    "browser:captureScreenshot",
+    async (_event: IpcMainInvokeEvent, paneId: string, opts: { clip?: BrowserScreenshotClip } | undefined) => {
+      const handle = registry.get(paneId)
+      if (!handle) return { ok: false as const, error: { code: "no-pane" as const, message: `no browser pane registered for ${paneId}` } }
+      return handle.screenshot(opts ?? {})
+    },
+  )
+
+  ipcMain.handle("browser:evaluate", async (_event: IpcMainInvokeEvent, paneId: string, expression: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: { code: "no-pane" as const, message: `no browser pane registered for ${paneId}` } }
+    return handle.evaluate(expression)
+  })
+
+  ipcMain.handle("browser:setAgentAllowed", (_event: IpcMainInvokeEvent, paneId: string, allowed: boolean) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    handle.setAgentAllowed(Boolean(allowed))
+    return { ok: true as const }
+  })
+
+  ipcMain.handle("browser:setInspectMode", async (_event: IpcMainInvokeEvent, paneId: string, enabled: boolean) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    return handle.setInspectMode(Boolean(enabled))
+  })
+
+  const nodeSubs = new Map<string, () => void>()
+  const nodeKey = (paneId: string, senderId: number) => `${senderId}:${paneId}`
+
+  ipcMain.handle("browser:subscribeNodeSelected", (event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    const key = nodeKey(paneId, event.sender.id)
+    if (nodeSubs.has(key)) return { ok: true as const }
+    const unsubscribe = handle.onNodeSelected((payload) => {
+      if (event.sender.isDestroyed()) return
+      event.sender.send(`browser:onNodeSelected:${paneId}`, payload as BrowserNodeSelectedPayload)
+    })
+    nodeSubs.set(key, unsubscribe)
+    const cleanup = () => {
+      const fn = nodeSubs.get(key)
+      if (fn) {
+        try {
+          fn()
+        } catch {}
+        nodeSubs.delete(key)
+      }
+    }
+    event.sender.once("destroyed", cleanup)
+    return { ok: true as const }
+  })
+
+  ipcMain.handle("browser:unsubscribeNodeSelected", (event: IpcMainInvokeEvent, paneId: string) => {
+    const key = nodeKey(paneId, event.sender.id)
+    const fn = nodeSubs.get(key)
+    if (fn) {
+      try {
+        fn()
+      } catch {}
+      nodeSubs.delete(key)
+    }
+    return { ok: true as const }
+  })
+
+  ipcMain.handle("browser:getNavigationState", (_event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    const state = handle.getNavigationState()
+    return { ok: true as const, ...state }
+  })
+
+  ipcMain.handle("browser:goBack", (_event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    return handle.goBack()
+  })
+
+  ipcMain.handle("browser:goForward", (_event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    return handle.goForward()
+  })
+
+  ipcMain.handle("browser:reload", (_event: IpcMainInvokeEvent, paneId: string, hard?: boolean) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    return handle.reload(Boolean(hard))
+  })
+
+  ipcMain.handle("browser:openDevTools", (_event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    return handle.openDevTools("detach")
+  })
+
+  ipcMain.handle(
+    "browser:clearStorage",
+    async (
+      _event: IpcMainInvokeEvent,
+      paneId: string,
+      storages?: Array<"cookies" | "localstorage" | "indexdb" | "cachestorage" | "serviceworkers">,
+    ) => {
+      const handle = registry.get(paneId)
+      if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+      return handle.clearStorage(storages)
+    },
+  )
 }
 
 export function sendSqliteMigrationProgress(win: BrowserWindow, progress: SqliteMigrationProgress) {

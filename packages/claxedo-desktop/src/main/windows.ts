@@ -4,6 +4,8 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import log from "electron-log/main.js"
 
+import { isBrowserTabEnabled } from "./browser/flag"
+
 type Globals = {
   updaterEnabled: boolean
   wsl: boolean
@@ -58,8 +60,9 @@ export function createMainWindow(globals: Globals) {
         }
       : {}),
     webPreferences: {
-      preload: join(root, "../preload/index.mjs"),
+      preload: join(root, "../preload/index.cjs"),
       sandbox: false,
+      webviewTag: isBrowserTabEnabled(),
     },
   })
 
@@ -93,8 +96,9 @@ export function createLoadingWindow(globals: Globals) {
         }
       : {}),
     webPreferences: {
-      preload: join(root, "../preload/index.mjs"),
+      preload: join(root, "../preload/index.cjs"),
       sandbox: false,
+      webviewTag: isBrowserTabEnabled(),
     },
   })
 

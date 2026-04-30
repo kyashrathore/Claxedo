@@ -624,7 +624,20 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       }
     }
 
-    const context = prompt.context.items().slice()
+    const allContext = prompt.context.items().slice()
+    // Browser-tab page comments share the FileContextItem shape with a
+    // URL-shaped `path`. `buildRequestParts` would turn that into a
+    // `file://http://...` attachment, which the agent can't read. Split
+    // them out: pass the real file items through buildRequestParts, and
+    // assemble page-comment text parts ourselves below.
+    const isPageCommentPath = (p: string | undefined) =>
+      !!p && (p.startsWith("http://") || p.startsWith("https://") || p === "page")
+    const pageCommentItems = allContext.filter(
+      (item) => item.type === "file" && isPageCommentPath(item.path),
+    )
+    const context = allContext.filter(
+      (item) => !(item.type === "file" && isPageCommentPath(item.path)),
+    )
     const commentItems = context.filter((item) => item.type === "file" && !!item.comment?.trim())
     const system = input.system?.()?.trim()
 
@@ -638,6 +651,27 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       messageID,
       sessionDirectory,
     })
+    // Inject page-comment text parts right after the main text part so the
+    // agent receives the full react-grab context (comment + element +
+    // component/file ref). No file fetches; pure synthetic text.
+    for (const item of pageCommentItems) {
+      if (item.type !== "file") continue
+      const body = item.comment?.trim()
+      if (!body) continue
+      const header = item.path && item.path !== "page" ? `[page: ${item.path}]\n` : ""
+      const textPart = {
+        id: Identifier.ascending("part"),
+        type: "text" as const,
+        text: `${header}${body}`,
+        synthetic: true,
+      }
+      requestParts.push(textPart)
+      optimisticParts.push({
+        ...textPart,
+        sessionID: session.id,
+        messageID,
+      })
+    }
 
     const optimisticMessage: Message = {
       id: messageID,
@@ -665,6 +699,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
 
     removeCommentItems(commentItems)
+    // Page comments live in prompt.context with the same FileContextItem
+    // shape; they need to drain on submit too or they'll re-attach to the
+    // next prompt.
+    removeCommentItems(pageCommentItems)
     clearInput()
 
     // Workbench: update content metadata AND add optimistic message in the same batch

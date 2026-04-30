@@ -20,6 +20,7 @@ import { z } from "zod"
 import fsPromises from "node:fs/promises"
 import { Process } from "../process/process"
 import { createProcessClient } from "../process/client"
+import { registerBrowserTools } from "./browser-tools"
 import { handleProcess } from "./process-handler"
 
 // ---------------------------------------------------------------------------
@@ -1227,6 +1228,12 @@ server.registerTool(
     )
   },
 )
+
+// ---------------------------------------------------------------------------
+// Browser tab tools (agentic <webview> via desktop main bridge)
+// ---------------------------------------------------------------------------
+
+registerBrowserTools(server)
 
 // ---------------------------------------------------------------------------
 // Start
