@@ -139,7 +139,8 @@ export function spec(root = ROOT): Spec {
     output: [
       "out/main/claxedo-server.js",
       "out/main/index.js",
-      "out/preload/index.mjs",
+      "out/preload/index.cjs",
+      "out/preload/browser-preload.cjs",
       "out/renderer/index.html",
       "out/renderer/loading.html",
       "resources/claxedo-mcp.js",
