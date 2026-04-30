@@ -201,11 +201,36 @@ function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
 
   if (!registry) return
 
+  // Subscribers can arrive before `browser:register` (the renderer's
+  // BrowserPaneProvider attaches stream listeners during mount, before the
+  // webview's dom-ready fires register). Queue them per-paneId here and
+  // drain inside the register handler so the first subscription doesn't
+  // get dropped on the floor.
+  const pendingAttach = new Map<string, Array<() => void>>()
+  const queueAttach = (paneId: string, attach: () => void) => {
+    if (!pendingAttach.has(paneId)) pendingAttach.set(paneId, [])
+    pendingAttach.get(paneId)!.push(attach)
+  }
+  const drainPending = (paneId: string) => {
+    const list = pendingAttach.get(paneId)
+    if (!list) return
+    pendingAttach.delete(paneId)
+    for (const fn of list) {
+      try {
+        fn()
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
   ipcMain.handle(
     "browser:register",
     (_event: IpcMainInvokeEvent, paneId: string, webContentsId: number) => {
       try {
         const handle = registry.register(paneId, webContentsId)
+        // Wire any subscribers that arrived before the register IPC.
+        drainPending(paneId)
         return { ok: true as const, webContentsId: handle.webContentsId }
       } catch (err) {
         return { ok: false as const, error: String(err instanceof Error ? err.message : err) }
@@ -215,6 +240,7 @@ function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
 
   ipcMain.handle("browser:unregister", (_event: IpcMainInvokeEvent, paneId: string) => {
     registry.unregister(paneId)
+    pendingAttach.delete(paneId)
     return { ok: true as const }
   })
 
@@ -254,11 +280,11 @@ function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
   const consoleSubs = new Map<string, () => void>()
   const subKey = (paneId: string, senderId: number) => `${senderId}:${paneId}`
 
-  ipcMain.handle("browser:subscribeConsole", (event: IpcMainInvokeEvent, paneId: string) => {
+  const attachConsoleSubscriber = (event: IpcMainInvokeEvent, paneId: string) => {
     const handle = registry.get(paneId)
-    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    if (!handle) return false
     const key = subKey(paneId, event.sender.id)
-    if (consoleSubs.has(key)) return { ok: true as const }
+    if (consoleSubs.has(key)) return true
     const unsubscribe = handle.onConsoleEntry((entry) => {
       if (event.sender.isDestroyed()) return
       event.sender.send(`browser:onConsoleEntry:${paneId}`, entry)
@@ -274,7 +300,14 @@ function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
       }
     }
     event.sender.once("destroyed", cleanup)
-    return { ok: true as const }
+    return true
+  }
+
+  ipcMain.handle("browser:subscribeConsole", (event: IpcMainInvokeEvent, paneId: string) => {
+    if (attachConsoleSubscriber(event, paneId)) return { ok: true as const }
+    // Handle isn't registered yet — defer until register IPC drains us.
+    queueAttach(paneId, () => attachConsoleSubscriber(event, paneId))
+    return { ok: true as const, deferred: true as const }
   })
 
   ipcMain.handle("browser:unsubscribeConsole", (event: IpcMainInvokeEvent, paneId: string) => {
@@ -320,11 +353,11 @@ function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
   const nodeSubs = new Map<string, () => void>()
   const nodeKey = (paneId: string, senderId: number) => `${senderId}:${paneId}`
 
-  ipcMain.handle("browser:subscribeNodeSelected", (event: IpcMainInvokeEvent, paneId: string) => {
+  const attachNodeSelectedSubscriber = (event: IpcMainInvokeEvent, paneId: string) => {
     const handle = registry.get(paneId)
-    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    if (!handle) return false
     const key = nodeKey(paneId, event.sender.id)
-    if (nodeSubs.has(key)) return { ok: true as const }
+    if (nodeSubs.has(key)) return true
     const unsubscribe = handle.onNodeSelected((payload) => {
       if (event.sender.isDestroyed()) return
       event.sender.send(`browser:onNodeSelected:${paneId}`, payload as BrowserNodeSelectedPayload)
@@ -340,7 +373,13 @@ function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
       }
     }
     event.sender.once("destroyed", cleanup)
-    return { ok: true as const }
+    return true
+  }
+
+  ipcMain.handle("browser:subscribeNodeSelected", (event: IpcMainInvokeEvent, paneId: string) => {
+    if (attachNodeSelectedSubscriber(event, paneId)) return { ok: true as const }
+    queueAttach(paneId, () => attachNodeSelectedSubscriber(event, paneId))
+    return { ok: true as const, deferred: true as const }
   })
 
   ipcMain.handle("browser:unsubscribeNodeSelected", (event: IpcMainInvokeEvent, paneId: string) => {
