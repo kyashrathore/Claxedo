@@ -1,5 +1,5 @@
 import { createMemo, For, Show } from "solid-js"
-import { getFilename } from "@opencode-ai/shared/util/path"
+import { getFilename } from "@opencode-ai/core/util/path"
 import { BasicTool } from "./basic-tool"
 import { useI18n } from "../context/i18n"
 import stripAnsi from "strip-ansi"
