@@ -21,8 +21,6 @@ describe("workspace panel state", () => {
       targetPaneId: "pane-session",
       navigator: undefined,
       focus: undefined,
-      tabs: [{ id: "review", type: "review" }],
-      activeTabId: "review",
     })
   })
 
@@ -46,8 +44,6 @@ describe("workspace panel state", () => {
       targetPaneId: "pane-b",
       navigator: undefined,
       focus: undefined,
-      tabs: [{ id: "review", type: "review" }],
-      activeTabId: "review",
     })
   })
 
@@ -107,8 +103,6 @@ describe("workspace panel state", () => {
       targetPaneId: "pane-terminal",
       navigator: undefined,
       focus: undefined,
-      tabs: [{ id: "review", type: "review" }],
-      activeTabId: "review",
     })
   })
 })

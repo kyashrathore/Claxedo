@@ -13,15 +13,17 @@ import {
   createMemo,
   createEffect,
   on,
+  type ComponentProps,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 
-import { useFile } from "@opencode-ai/claxedo-app"
+import { useFile, usePlatform } from "@opencode-ai/claxedo-app"
 import { useLanguage } from "@/context/language"
 import { PromptProvider } from "@/context/prompt"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Popover } from "@opencode-ai/ui/popover"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { SessionContextTab } from "@/components/session/session-context-tab"
 import { FileTabContent } from "@/pages/session/file-tabs"
@@ -29,6 +31,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSelectFile } from "@/components/dialog-select-file"
 import { ProcessPanePanel } from "../workspace-panel/ProcessPanePanel"
 import { WORKSPACE_PANEL_TOGGLE_FULLWIDTH, workspacePanelFullWidth } from "../workspace-panel/WorkspacePanel"
+import { WorkspaceBrowserPanel } from "../workspace-panel/WorkspaceBrowserPanel"
 import { AddProcessDialog } from "./add-process-dialog"
 import { useProcessPane } from "../context/process-pane"
 import { type ReviewMode } from "../workspace-panel/review-intent"
@@ -46,6 +49,7 @@ type WorkspaceTab =
   | { id: "context"; kind: "context"; sessionId: string }
   | { id: string; kind: "file"; tabId: string }
   | { id: string; kind: "process"; processId: string }
+  | { id: string; kind: "browser"; url?: string; title?: string }
 
 const REVIEW_TAB_ID = "review"
 const CONTEXT_TAB_ID = "context"
@@ -131,6 +135,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const file = useFile()
   const language = useLanguage()
   const dialog = useDialog()
+  const platform = usePlatform()
 
   const initialTabs: WorkspaceTab[] = [REVIEW_TAB]
   if (props.focusContextSessionId) {
@@ -185,6 +190,16 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       return
     }
     setStore("tabs", (tabs) => [...tabs, { id, kind: "process", processId }])
+    activateTabAfterMount(id)
+  }
+
+  // Browser tabs are user-created via the "+" menu. Each one mounts an
+  // independent BrowserPane keyed on the tab id, so multiple browser tabs
+  // hold separate webviews. Lifetime is the panel's — closing the
+  // workspace panel tears them down (same as file tabs).
+  const openBrowserTab = (input: { url?: string; title?: string } = {}) => {
+    const id = `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+    setStore("tabs", (tabs) => [...tabs, { id, kind: "browser", url: input.url, title: input.title }])
     activateTabAfterMount(id)
   }
 
@@ -303,6 +318,22 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             <ProcessSectionLabel processId={tab.processId} />
           </Tabs.Trigger>
         )
+      case "browser":
+        return (
+          <Tabs.Trigger
+            value={tab.id}
+            closeButton={closeButtonFor(tab.id, "Close browser tab")}
+            hideCloseButton
+            onMiddleClick={() => closeTab(tab.id)}
+          >
+            <span class="flex max-w-[160px] items-center gap-1 truncate text-xs">
+              <Icon name="square-arrow-top-right" size="small" class="shrink-0" />
+              <span class="truncate">
+                {tab.title?.trim() || tab.url?.replace(/^https?:\/\//, "") || "New tab"}
+              </span>
+            </span>
+          </Tabs.Trigger>
+        )
     }
   }
 
@@ -348,6 +379,25 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             />
           </div>
         )
+      case "browser":
+        return (
+          <div class="relative flex-1 min-h-0 overflow-hidden">
+            <SessionParamsProvider
+              sessionId={() => props.sessionId}
+              directory={() => props.directory}
+              paneId={() => props.leafId ?? ""}
+              surfaceId={() => props.surfaceId}
+              leafId={() => props.leafId}
+            >
+              <PromptProvider>
+                <WorkspaceBrowserPanel
+                  panelKey={`browser:${props.directory}:${tab.id}`}
+                  sessionId={props.sessionId}
+                />
+              </PromptProvider>
+            </SessionParamsProvider>
+          </div>
+        )
     }
   }
 
@@ -367,20 +417,39 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 {(tab) => renderTabTrigger(tab)}
               </For>
               <div class="sticky right-0 shrink-0 flex items-center ml-auto">
-                <Tooltip value={language.t("command.file.open")}>
-                  <IconButton
-                    icon="plus-small"
-                    variant="ghost"
-                    iconSize="large"
-                    class="!rounded-md"
-                    onClick={() =>
-                      dialog.show(() => (
-                        <DialogSelectFile mode="files" />
-                      ))
-                    }
-                    aria-label={language.t("command.file.open")}
-                  />
-                </Tooltip>
+                <Popover
+                  placement="bottom-end"
+                  class="z-50 min-w-[200px] rounded-md border border-border-weak-base bg-background-base p-1 shadow-lg"
+                  triggerAs="button"
+                  triggerProps={{
+                    type: "button" as const,
+                    class:
+                      "flex size-7 items-center justify-center rounded-md text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base",
+                    "aria-label": language.t("command.file.open"),
+                  } as ComponentProps<"button">}
+                  trigger={<Icon name="plus-small" size="large" />}
+                >
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-12-regular text-text-base transition-colors hover:bg-surface-base-hover"
+                    onClick={() => dialog.show(() => <DialogSelectFile mode="files" />)}
+                    data-testid="workspace-tab-open-file"
+                  >
+                    <Icon name="page" size="small" class="text-text-weak" />
+                    <span>{language.t("command.file.open")}</span>
+                  </button>
+                  <Show when={platform.platform === "desktop"}>
+                    <button
+                      type="button"
+                      class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-12-regular text-text-base transition-colors hover:bg-surface-base-hover"
+                      onClick={() => openBrowserTab()}
+                      data-testid="workspace-tab-open-browser"
+                    >
+                      <Icon name="square-arrow-top-right" size="small" class="text-text-weak" />
+                      <span>Open Browser Tab</span>
+                    </button>
+                  </Show>
+                </Popover>
                 <Tooltip value={workspacePanelFullWidth() ? "Collapse workspace panel" : "Expand workspace panel"}>
                   <button
                     type="button"

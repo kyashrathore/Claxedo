@@ -85,6 +85,41 @@ fills it.
   `CLAXEDO_ENABLE_BROWSER_TAB=1` + `VITE_CLAXEDO_ENABLE_BROWSER_TAB=true`).
 - Possible import-drift fixes after typecheck — track here as they land.
 - Investigate whether `square-arrow-top-right` is the right icon long-term.
+- Browser tabs are scoped to `ReviewWorkspace`'s in-memory store — closing
+  the workspace panel tears them down (same lifecycle as file tabs).
+  Persistent browser tabs across panel toggles would need the tab store
+  lifted onto a longer-lived slice. Acceptable v1 behavior.
+
+### 2026-05-01 amendment — fold browser into existing tab bar
+Initial port placed the browser feature as a workspace-panel mode (top-bar
+button). Iterated to a workspace-panel-internal tab bar (`WorkspacePanelTabBar`
+in rail-layout.tsx). User pointed out both versions duplicated existing UI:
+the `ReviewWorkspace` already owns a tab bar (`Review` + opened files + `+`).
+
+Final shape: browser is a fifth `WorkspaceTab` kind inside `ReviewWorkspace`
+(`packages/claxedo-app/src/claxedo-ui/components/review-workspace.tsx`),
+opened via the existing `+` button which is now a Popover with
+"Open File…" + "Open Browser Tab" (gated on `platform === "desktop"`).
+
+Changes from previous shape:
+- `ReviewWorkspace`: extend `WorkspaceTab` union with
+  `{ id: string; kind: "browser"; url?, title? }`; add `openBrowserTab()`
+  factory; add `case "browser"` to `renderTabTrigger` + `renderTabContent`
+  (latter mounts `WorkspaceBrowserPanel` inside `SessionParamsProvider` +
+  `PromptProvider` chain — same as the file case).
+- `+` IconButton replaced with a `Popover` menu hosting both options.
+  Browser entry is `Show when={platform.platform === "desktop"}`.
+- Reverted the panel-level tab plumbing I'd added:
+  `workspace-panel-state.ts` (no `WorkspacePanelTab` / `tabs` /
+  `activeTabId`), state slice (no `addBrowserTab` / `closeTab` /
+  `setActiveTab` / `updateBrowserTab`), persistence validator,
+  state-test fixtures, vitest fixtures.
+- `rail-layout.tsx`: removed `WorkspacePanelTabBar`, removed the
+  panel-level `Switch`, restored `WorkspacePanelBody` to its pre-port
+  shape. Dropped `WorkspaceBrowserPanel` + `WorkspacePanelTab` imports.
+
+`WorkspaceBrowserPanel.tsx` itself is unchanged — it's now mounted by
+`renderTabContent` instead of `WorkspacePanelBody`.
 
 
 

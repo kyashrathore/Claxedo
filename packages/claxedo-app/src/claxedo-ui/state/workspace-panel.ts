@@ -6,13 +6,9 @@
 import type { Accessor } from "solid-js"
 import type { SetStoreFunction } from "solid-js/store"
 import {
-  addBrowserPanelTab,
-  closePanelTab,
   closeWorkspacePanel,
   openWorkspacePanel,
   retargetWorkspacePanel,
-  setActivePanelTab,
-  updateBrowserTabMeta,
   type WorkspacePanelMode,
   type WorkspacePanelState,
   type WorkspacePanelTarget,
@@ -26,10 +22,6 @@ export type WorkspacePanelSliceApi = {
   toggle(mode: WorkspacePanelMode, target?: WorkspacePanelTarget): void
   select(mode: WorkspacePanelMode): void
   retarget(target?: WorkspacePanelTarget): void
-  addBrowserTab(input?: { url?: string; title?: string }): void
-  closeTab(tabId: string): void
-  setActiveTab(tabId: string): void
-  updateBrowserTab(tabId: string, patch: { url?: string; title?: string }): void
 }
 
 export function createWorkspacePanelSlice(input: {
@@ -79,18 +71,6 @@ export function createWorkspacePanelSlice(input: {
         "workspacePanel",
         retargetWorkspacePanel(state.workspacePanel, { ...defaultTarget(), ...target }),
       )
-    },
-    addBrowserTab(input) {
-      setState("workspacePanel", addBrowserPanelTab(state.workspacePanel, input ?? {}))
-    },
-    closeTab(tabId) {
-      setState("workspacePanel", closePanelTab(state.workspacePanel, tabId))
-    },
-    setActiveTab(tabId) {
-      setState("workspacePanel", setActivePanelTab(state.workspacePanel, tabId))
-    },
-    updateBrowserTab(tabId, patch) {
-      setState("workspacePanel", updateBrowserTabMeta(state.workspacePanel, tabId, patch))
     },
   }
 }

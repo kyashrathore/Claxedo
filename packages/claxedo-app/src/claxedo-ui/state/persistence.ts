@@ -166,17 +166,7 @@ function validateWorkspacePanel(input: unknown): WorkspacePanelState {
   if (typeof (input as WorkspacePanelState).open !== "boolean") {
     return createWorkspacePanel()
   }
-  // Back-fill the tabs/activeTabId pair for state persisted before the
-  // browser-tab port (panel didn't have internal tabs). The review tab is
-  // structural so it always exists.
-  const candidate = input as WorkspacePanelState
-  if (!Array.isArray(candidate.tabs) || candidate.tabs.length === 0) {
-    return { ...candidate, tabs: [{ id: "review", type: "review" }], activeTabId: "review" }
-  }
-  if (!candidate.activeTabId || !candidate.tabs.some((t) => t.id === candidate.activeTabId)) {
-    return { ...candidate, activeTabId: candidate.tabs[0].id }
-  }
-  return candidate
+  return input as WorkspacePanelState
 }
 
 /**
