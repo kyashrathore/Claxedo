@@ -255,12 +255,21 @@ export function getClaxedoMcpStdioConfig(
 ) {
   const cmd = resolveClaxedoMcpCommand(options)
   if (!cmd.length) return null
+  // Forward the desktop browser-bridge env vars explicitly when present so
+  // the claxedo-mcp child gets them even if the agent's MCP spawner doesn't
+  // inherit parent `process.env`. Set by `setupBrowserTab()` in the desktop
+  // main when CLAXEDO_ENABLE_BROWSER_TAB=1; absent on cloud / no-desktop
+  // launches, in which case the browser_* tools surface a legible
+  // "desktop bridge unavailable" error.
+  const env: Record<string, string> = {
+    OPENCODE_API_URL: `http://localhost:${port}`,
+  }
+  if (process.env.CLAXEDO_DESKTOP_URL) env.CLAXEDO_DESKTOP_URL = process.env.CLAXEDO_DESKTOP_URL
+  if (process.env.CLAXEDO_DESKTOP_TOKEN) env.CLAXEDO_DESKTOP_TOKEN = process.env.CLAXEDO_DESKTOP_TOKEN
   return {
     command: cmd[0],
     args: cmd.slice(1),
-    env: {
-      OPENCODE_API_URL: `http://localhost:${port}`,
-    },
+    env,
   }
 }
 
