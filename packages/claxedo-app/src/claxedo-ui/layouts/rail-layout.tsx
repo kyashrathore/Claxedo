@@ -369,6 +369,13 @@ function WorkspacePanelBody(props: {
   state: WorkspacePanelState
 }) {
   const claxedoState = useClaxedoState()
+  const platform = usePlatform()
+  // Browser tab is desktop-only — the live <webview> needs Electron's
+  // main-process bridge. On web/cloud the button is hidden, but persisted
+  // state could still carry `mode: "browser"`; coerce to "review" so the
+  // panel renders something legible instead of the desktop-required card.
+  const effectiveMode = (): WorkspacePanelMode =>
+    props.mode === "browser" && platform.platform !== "desktop" ? "review" : props.mode
   const directory = () => props.state.workspaceDir
   const focusPath = () => props.state.focus?.kind === "file" ? props.state.focus.path : undefined
   const focusVersion = () => props.state.focus?.kind === "file" ? props.state.focus.version : 0
@@ -435,13 +442,13 @@ function WorkspacePanelBody(props: {
             <div class="flex h-full min-h-0 flex-col">
               <div class="min-h-0 flex-1 overflow-hidden">
                 <Switch>
-                  <Match when={props.mode === "browser"}>
+                  <Match when={effectiveMode() === "browser"}>
                     <WorkspaceBrowserPanel
                       panelKey={`browser:${dir()}`}
                       sessionId={targetSessionId() ?? "new"}
                     />
                   </Match>
-                  <Match when={props.mode !== "browser"}>
+                  <Match when={effectiveMode() !== "browser"}>
                     <Show when={targetSessionId() ?? "new"}>
                       {(sessionId) => (
                         <div class="flex size-full min-w-0 overflow-hidden">
@@ -1172,12 +1179,14 @@ function RailLayoutBody(props: RailLayoutProps) {
                     active={workspacePanelForFocusedTarget() && workspacePanelMode() === "review" && !workspacePanelNavigator()}
                     onClick={toggleFocusedWorkspaceReview}
                   />
-                  <WorkspacePanelButton
-                    icon="square-arrow-top-right"
-                    label="Browser"
-                    active={workspacePanelForFocusedTarget() && workspacePanelMode() === "browser"}
-                    onClick={toggleFocusedWorkspaceBrowser}
-                  />
+                  <Show when={platform.platform === "desktop"}>
+                    <WorkspacePanelButton
+                      icon="square-arrow-top-right"
+                      label="Browser"
+                      active={workspacePanelForFocusedTarget() && workspacePanelMode() === "browser"}
+                      onClick={toggleFocusedWorkspaceBrowser}
+                    />
+                  </Show>
                 </Show>
               </div>
             </Show>
