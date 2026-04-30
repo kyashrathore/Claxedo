@@ -8,7 +8,7 @@ import { SplitBorder } from "@tui/component/border"
 import type { AssistantMessage, Session } from "@opencode-ai/sdk/v2"
 import { useCommandDialog } from "@tui/component/dialog-command"
 import { useKeybind } from "../../context/keybind"
-import { Flag } from "@/flag/flag"
+import { Flag } from "@opencode-ai/core/flag/flag"
 import { useTerminalDimensions } from "@opentui/solid"
 
 const Title = (props: { session: Accessor<Session> }) => {

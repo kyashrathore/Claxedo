@@ -402,8 +402,11 @@ export class PiAdapter implements AgentAdapter {
     return this.projectionStore.read_session_messages(id)
   }
 
-  async abort(id: string) {
-    await this.live.get(id)?.session.abort()
+  async abort(id: string): Promise<{ ok: true; status: "cancelled" | "already_idle" }> {
+    const entry = this.live.get(id)
+    if (!entry) return { ok: true, status: "already_idle" }
+    await entry.session.abort()
+    return { ok: true, status: "cancelled" }
   }
 
   async revert() {}

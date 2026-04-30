@@ -2,7 +2,7 @@
 // Bun global shim is prepended by build-web.ts — do NOT redefine it here.
 
 import { Server } from "@/server/server"
-import * as Log from "@/util/log"
+import * as Log from "@opencode-ai/core/util/log"
 import { Instance } from "@/project/instance"
 
 ;(async () => {

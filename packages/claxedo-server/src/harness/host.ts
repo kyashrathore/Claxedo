@@ -126,7 +126,9 @@ class PlaceholderAdapter implements AgentAdapter {
     return this.projectionStore.read_session_messages(id)
   }
 
-  async abort() {}
+  async abort(): Promise<{ ok: true; status: "already_idle" }> {
+    return { ok: true, status: "already_idle" }
+  }
 
   async revert() {}
 
