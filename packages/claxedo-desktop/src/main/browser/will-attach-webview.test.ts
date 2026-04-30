@@ -57,7 +57,7 @@ describe("createWillAttachWebviewHandler", () => {
       partition: AGENT_BROWSER_PARTITION,
     }
 
-    handler(event.event, webPreferences, params)
+    handler(event, webPreferences, params)
 
     expect(prevented).toBe(false)
     expect(rejections).toEqual([])

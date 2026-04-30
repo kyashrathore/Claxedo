@@ -15,7 +15,7 @@
     "noEmit": true,
     "emitDeclarationOnly": false,
     "outDir": "node_modules/.ts-dist",
-    "types": ["vite/client", "node", "electron"],
+    "types": ["vite/client", "node", "electron", "bun"],
     "paths": {
       "#terminal-backend": ["../claxedo-app/src/overrides/terminal/backend/xterm"],
       "@claxedo/*": ["../claxedo-app/src/*"],

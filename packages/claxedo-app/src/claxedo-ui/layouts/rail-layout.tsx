@@ -335,7 +335,7 @@ function projectMatchesRef(project: ProjectItem, ref?: string) {
 }
 
 type WorkspacePanelButtonProps = {
-  icon: "file-tree" | "code-lines" | "console"
+  icon: "file-tree" | "code-lines" | "console" | "square-arrow-top-right"
   label: string
   active: boolean
   attention?: boolean

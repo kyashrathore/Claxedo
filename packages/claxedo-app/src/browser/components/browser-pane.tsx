@@ -174,7 +174,7 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
   return (
     <BrowserPaneProvider paneId={props.paneId} bridge={api} initialUrl={props.initialUrl}>
       <BrowserPaneKeyboardHandlers />
-      <div class="flex h-full w-full flex-col bg-background text-foreground">
+      <div class="flex h-full w-full flex-col bg-background-base text-text-base">
         <BrowserPaneToolbar
           initialUrl={props.initialUrl}
           browserId={props.browserId}
@@ -189,14 +189,14 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
             classList={{
               // Subtle ring so the user sees that clicks on the page will be
               // consumed by the picker, not the site.
-              "ring-2 ring-primary ring-inset": false, // driven below via <BrowserPaneInspectRing />
+              "ring-2 ring-border-strong-base ring-inset": false, // driven below via <BrowserPaneInspectRing />
             }}
           >
             <Show
               when={showWebview() && api}
               fallback={
                 <div class="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
-                  <div class="font-medium text-foreground">Browser tabs require the desktop app.</div>
+                  <div class="font-medium text-text-base">Browser tabs require the desktop app.</div>
                   <div>
                     Set <code>CLAXEDO_ENABLE_BROWSER_TAB=1</code> and{" "}
                     <code>VITE_CLAXEDO_ENABLE_BROWSER_TAB=true</code> and relaunch to try this feature.
@@ -692,8 +692,8 @@ function BrowserPaneConsoleDrawer() {
                 <span
                   class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
                   classList={{
-                    "bg-red-500": entry.level === "error",
-                    "bg-yellow-500": entry.level === "warn",
+                    "bg-surface-critical-strong": entry.level === "error",
+                    "bg-surface-warning-strong": entry.level === "warn",
                     "bg-text-weak": entry.level === "debug" || entry.level === "info",
                     "bg-text-base": entry.level === "log",
                   }}
@@ -702,8 +702,8 @@ function BrowserPaneConsoleDrawer() {
                 <span
                   class="w-12 shrink-0 text-12-medium uppercase tracking-wider"
                   classList={{
-                    "text-red-500": entry.level === "error",
-                    "text-yellow-500": entry.level === "warn",
+                    "text-surface-critical-strong": entry.level === "error",
+                    "text-surface-warning-strong": entry.level === "warn",
                     "text-text-weak": entry.level === "debug" || entry.level === "info",
                     "text-text-base": entry.level === "log",
                   }}
