@@ -8,6 +8,7 @@ The fork is allowed to stay heavily drifted. The sync goal is not to erase that 
 
 | Claxedo Version | Upstream Commit | Last Sync Date |
 |----------------|-----------------|----------------|
+| dev (full rebase, pre-rebase squash) | 9bddf7f3e | 2026-04-30 |
 | dev (full rebase) | 8cc2c81d5 | 2026-04-21 |
 | dev (full rebase) | 94f71f59a | 2026-04-13 |
 | dev (full rebase) | 988c9894f | 2026-04-08 |

@@ -39,6 +39,49 @@ Each entry should include:
 
 ***
 
+## 2026-04-30
+
+**Status:** ✅ Success
+
+* **Branch:** `sync/2026-04-30`
+* **Previous Upstream Commit:** `8cc2c81d5`
+* **Upstream Commit:** `9bddf7f3e`
+* **Mode:** Full rebase (with pre-rebase squash)
+* **New Upstream Commits:** 341
+* **Pre-rebase prep:** Squashed 26 local commits between merge-base (`8cc2c81d5`) and dev tip (`9d1177c16`) into one commit before rebasing — the rebase scope included a `de46f728b "lots of bug fixes"` mega-commit (1,101 files, ~1.5M insertions) and several stale `fix: resolve upstream drift after 2026-04-08 rebase` commits that were causing >5 conflicts per commit. Squashing collapsed it to a single conflict resolution pass (7 files vs ~30+ across many commits).
+* **Conflicts:** 7 files
+  - `bun.lock`: Accepted upstream, regenerated after.
+  - `packages/app/src/context/global-sync.tsx`: Took upstream HEAD (full tanstack-query refactor). Our incoming `loadSessionsQuery from "./global-sync/query"` extraction was incomplete — upstream defines `loadSessionsQuery`, `loadMcpQuery`, `loadLspQuery` inline. Took upstream's full `queryOptions/skipToken/useMutation/useQueries/useQuery/useQueryClient` import.
+  - `packages/app/src/context/sync.tsx`: Adopted upstream import-path rename `@opencode-ai/shared/util/*` → `@opencode-ai/core/util/*`; kept our extra imports (`getExtensions`, `createOpencodeClient`).
+  - `packages/app/src/pages/session/message-timeline.tsx`: Kept our richer `working` memo (uses `timelineWorking({pending, blocked, status})` with `sessionPermissionRequest`/`sessionQuestionRequest`) instead of upstream's simpler `sessionStatus().type !== "idle"`. Intentional fork behavior.
+  - `packages/opencode/package.json`: Took upstream's `@openrouter/ai-sdk-provider` 2.5.1 → 2.8.1 bump, kept our `@opencode-ai/util` and `@opencode-ai/workgraph` deps.
+  - `packages/opencode/src/session/status.ts`: Adopted upstream's effect `Schema.Union` migration (away from zod), but added our `recovering`/`process_restart` variant in Schema syntax. Removed now-unused `import z from "zod"`.
+  - `packages/ui/src/components/icon.tsx`: Both sides added new icons. Kept all (upstream's `arrow-undo-down` + our `page`, `terminal`, `terminal-active`, `review`, `review-active`, `status`, `status-active`, `sidebar`, `sidebar-active`, `shield`).
+* **Upstream Drift Review:**
+
+| Area | Decision | Notes |
+|------|----------|-------|
+| `app/src/context/platform.tsx` | Ported | Upstream consolidated `update + restart` → single `updateAndRestart`. Updated override Platform type, `desktop/index.tsx`, `overrides/components/settings-general.tsx`, `overrides/pages/error.tsx`, `overrides/pages/layout.tsx` to match. |
+| `app/src/pages/layout/helpers.ts` | Ported | Upstream extracted `workspaceKey` → `pathKey` in `@/utils/path-key`. Renamed all 12 call sites in `overrides/pages/layout.tsx`. |
+| `app/src/context/global-sync.tsx` | Ported | Re-exported new query factories (`loadSessionsQuery`, `loadMcpQuery`, `loadLspQuery`) from override so upstream's `dialog-select-mcp.tsx` and `status-popover-body.tsx` resolve them via the overridden module. |
+| `app/src/context/global-sync/query.ts` (new) | Deferred | Upstream did NOT add this — our incoming squash created it as a partial extraction. Left in place (only exports `loadSessionsQuery`, harmlessly redundant with the inline version). Cleanup candidate. |
+| `app/src/utils/path-key.ts` (new) | Auto | New utility — adopted via the helpers rename above. |
+| Effect migration in `opencode/src/session/status.ts` | Ported | Migrated from zod to effect Schema, kept fork-specific `recovering` variant. |
+| `@opencode-ai/shared` → `@opencode-ai/core` rename | Ported (partial) | Resolved in `sync.tsx` import. Other call sites may exist; typecheck did not flag any in claxedo-app. |
+
+* **Validation:**
+  - `bun install` ✅
+  - `bun run --cwd packages/claxedo-app typecheck` ✅
+  - `bun run --cwd packages/claxedo-app build` ✅ (4.5MB main chunk warning, pre-existing)
+  - Tests: not run this sync (no claxedo-only test areas touched by drift fixes).
+* **Follow-up:**
+  - Decide whether to delete `packages/app/src/context/global-sync/query.ts` (now redundant — `loadSessionsQuery` lives both there and in `global-sync.tsx`).
+  - Audit other `@opencode-ai/shared/*` imports across the codebase if any remain (typecheck was clean for claxedo-app, but other packages may not have been checked).
+  - Verify session-status `recovering` variant still works end-to-end after Schema migration.
+  - Origin branch (`origin/dev`) is stale — last touched ~2026-04-04 with 18 commits diverged. Decide whether to force-push `sync/2026-04-30` onto `origin/dev` or leave origin untouched.
+
+***
+
 ## 2026-04-13
 
 **Status:** ✅ Success
