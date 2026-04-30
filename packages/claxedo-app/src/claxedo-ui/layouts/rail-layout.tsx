@@ -545,13 +545,11 @@ function WorkspacePanelBody(props: {
               />
               <div class="min-h-0 flex-1 overflow-hidden">
                 <Switch>
-                  <Match when={(() => { const t = activeTab(); return t?.type === "browser" ? t : undefined })()}>
-                    {(tab) => (
-                      <WorkspaceBrowserPanel
-                        panelKey={`browser:${dir()}:${tab().id}`}
-                        sessionId={targetSessionId() ?? "new"}
-                      />
-                    )}
+                  <Match when={activeTab()?.type === "browser"}>
+                    <WorkspaceBrowserPanel
+                      panelKey={`browser:${dir()}:${activeTab()?.id}`}
+                      sessionId={targetSessionId() ?? "new"}
+                    />
                   </Match>
                   <Match when={activeTab()?.type === "review"}>
                     <Show when={targetSessionId() ?? "new"}>
