@@ -19,6 +19,8 @@ const openState: WorkspacePanelState = {
   mode: "files",
   workspaceDir: "/workspace",
   targetPaneId: "pane-session",
+  tabs: [{ id: "review", type: "review" }],
+  activeTabId: "review",
 }
 
 describe("WorkspacePanel", () => {

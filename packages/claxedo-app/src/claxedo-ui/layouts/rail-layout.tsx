@@ -28,6 +28,7 @@ import {
   on,
   onMount,
   onCleanup,
+  type ComponentProps,
   type ParentProps,
   type JSX,
   type Accessor,
@@ -63,7 +64,7 @@ import { WorkspacePanel } from "../workspace-panel/WorkspacePanel"
 import { WorkspaceFilesNavigator } from "../workspace-panel/WorkspaceFilesNavigator"
 import { WorkspaceProcessesNavigator } from "../workspace-panel/WorkspaceProcessesNavigator"
 import { WorkspaceBrowserPanel } from "../workspace-panel/WorkspaceBrowserPanel"
-import type { WorkspacePanelMode, WorkspacePanelState } from "../workspace-panel/workspace-panel-state"
+import type { WorkspacePanelMode, WorkspacePanelState, WorkspacePanelTab } from "../workspace-panel/workspace-panel-state"
 import { loadTerminalSessionPreview } from "../utils/terminal-session-preview"
 import { getClaxedoServerUrl } from "../../utils/api"
 import "../styles.css"
@@ -364,18 +365,109 @@ function WorkspacePanelButton(props: WorkspacePanelButtonProps) {
   )
 }
 
+function WorkspacePanelTabBar(props: {
+  tabs: WorkspacePanelTab[]
+  activeTabId: string
+  onSelect: (id: string) => void
+  onClose: (id: string) => void
+  /** Omit to hide the `+` button (e.g. on web where browser is unavailable). */
+  onAddBrowser?: () => void
+}) {
+  const tabLabel = (tab: WorkspacePanelTab) => {
+    if (tab.type === "review") return "Review"
+    return tab.title?.trim() || tab.url?.replace(/^https?:\/\//, "") || "New tab"
+  }
+  return (
+    <div
+      class="flex h-9 shrink-0 items-center gap-px overflow-x-auto border-b border-border-weak-base bg-background-base px-1"
+      data-testid="workspace-panel-tab-bar"
+      role="tablist"
+    >
+      <For each={props.tabs}>
+        {(tab) => (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={props.activeTabId === tab.id}
+            class="group flex h-7 max-w-[180px] shrink-0 items-center gap-1.5 rounded px-2 text-12-regular text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
+            classList={{
+              "bg-surface-base-hover text-text-base": props.activeTabId === tab.id,
+            }}
+            onClick={() => props.onSelect(tab.id)}
+            data-tab-id={tab.id}
+            data-tab-type={tab.type}
+          >
+            <Icon
+              name={tab.type === "browser" ? "square-arrow-top-right" : "code-lines"}
+              size="small"
+              class="shrink-0"
+            />
+            <span class="truncate">{tabLabel(tab)}</span>
+            <Show when={tab.type !== "review"}>
+              <span
+                role="button"
+                aria-label={`Close ${tabLabel(tab)}`}
+                tabindex={0}
+                class="ml-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded text-text-weaker opacity-0 transition-opacity hover:bg-surface-base-active hover:text-text-base group-hover:opacity-100"
+                classList={{ "opacity-100": props.activeTabId === tab.id }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  props.onClose(tab.id)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    props.onClose(tab.id)
+                  }
+                }}
+              >
+                <Icon name="close-small" size="small" />
+              </span>
+            </Show>
+          </button>
+        )}
+      </For>
+      <Show when={props.onAddBrowser}>
+        {(addBrowser) => (
+          <Popover
+            placement="bottom-start"
+            class="z-50 min-w-[180px] rounded-md border border-border-weak-base bg-background-base p-1 shadow-lg"
+            triggerAs="button"
+            triggerProps={{
+              type: "button" as const,
+              class:
+                "flex size-7 shrink-0 items-center justify-center rounded text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base",
+              "aria-label": "Open new tab",
+            } as ComponentProps<"button">}
+            trigger={<Icon name="plus-small" size="small" />}
+          >
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-12-regular text-text-base transition-colors hover:bg-surface-base-hover"
+              onClick={() => addBrowser()()}
+              data-testid="workspace-panel-add-browser-tab"
+            >
+              <Icon name="square-arrow-top-right" size="small" class="text-text-weak" />
+              <span>Open Browser Tab</span>
+            </button>
+          </Popover>
+        )}
+      </Show>
+    </div>
+  )
+}
+
 function WorkspacePanelBody(props: {
   mode: WorkspacePanelMode
   state: WorkspacePanelState
 }) {
   const claxedoState = useClaxedoState()
   const platform = usePlatform()
-  // Browser tab is desktop-only — the live <webview> needs Electron's
-  // main-process bridge. On web/cloud the button is hidden, but persisted
-  // state could still carry `mode: "browser"`; coerce to "review" so the
-  // panel renders something legible instead of the desktop-required card.
-  const effectiveMode = (): WorkspacePanelMode =>
-    props.mode === "browser" && platform.platform !== "desktop" ? "review" : props.mode
+  const activeTab = () => {
+    const id = props.state.activeTabId
+    return props.state.tabs.find((t) => t.id === id) ?? props.state.tabs[0]
+  }
   const directory = () => props.state.workspaceDir
   const focusPath = () => props.state.focus?.kind === "file" ? props.state.focus.path : undefined
   const focusVersion = () => props.state.focus?.kind === "file" ? props.state.focus.version : 0
@@ -440,15 +532,28 @@ function WorkspacePanelBody(props: {
           <DirectoryScope directory={dir()}>
             <ProcessPaneProvider>
             <div class="flex h-full min-h-0 flex-col">
+              <WorkspacePanelTabBar
+                tabs={props.state.tabs}
+                activeTabId={props.state.activeTabId}
+                onSelect={(id) => claxedoState.workspacePanel.setActiveTab(id)}
+                onClose={(id) => claxedoState.workspacePanel.closeTab(id)}
+                onAddBrowser={
+                  platform.platform === "desktop"
+                    ? () => claxedoState.workspacePanel.addBrowserTab()
+                    : undefined
+                }
+              />
               <div class="min-h-0 flex-1 overflow-hidden">
                 <Switch>
-                  <Match when={effectiveMode() === "browser"}>
-                    <WorkspaceBrowserPanel
-                      panelKey={`browser:${dir()}`}
-                      sessionId={targetSessionId() ?? "new"}
-                    />
+                  <Match when={(() => { const t = activeTab(); return t?.type === "browser" ? t : undefined })()}>
+                    {(tab) => (
+                      <WorkspaceBrowserPanel
+                        panelKey={`browser:${dir()}:${tab().id}`}
+                        sessionId={targetSessionId() ?? "new"}
+                      />
+                    )}
                   </Match>
-                  <Match when={effectiveMode() !== "browser"}>
+                  <Match when={activeTab()?.type === "review"}>
                     <Show when={targetSessionId() ?? "new"}>
                       {(sessionId) => (
                         <div class="flex size-full min-w-0 overflow-hidden">
@@ -855,16 +960,6 @@ function RailLayoutBody(props: RailLayoutProps) {
       focus: null,
     })
   }
-  const toggleFocusedWorkspaceBrowser = () => {
-    const target = focusedPanelTarget()
-    if (!target) return
-    claxedoState.workspacePanel.toggle("browser", {
-      workspaceDir: target.workspaceDir,
-      targetPaneId: target.targetPaneId,
-      navigator: null,
-      focus: null,
-    })
-  }
 
   const sidebarDir = createMemo(() => {
     const focusedId = claxedoState.wb.state.focusedPaneId
@@ -1179,14 +1274,6 @@ function RailLayoutBody(props: RailLayoutProps) {
                     active={workspacePanelForFocusedTarget() && workspacePanelMode() === "review" && !workspacePanelNavigator()}
                     onClick={toggleFocusedWorkspaceReview}
                   />
-                  <Show when={platform.platform === "desktop"}>
-                    <WorkspacePanelButton
-                      icon="square-arrow-top-right"
-                      label="Browser"
-                      active={workspacePanelForFocusedTarget() && workspacePanelMode() === "browser"}
-                      onClick={toggleFocusedWorkspaceBrowser}
-                    />
-                  </Show>
                 </Show>
               </div>
             </Show>
