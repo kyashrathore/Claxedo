@@ -1226,6 +1226,7 @@ export function RailSidebar(props: RailSidebarProps) {
       <div
         class={`h-9 flex items-center shrink-0 ${props.workspaceSelector ? "pl-2 pr-1 gap-1" : "px-3 gap-2"}`}
         style={{ "padding-left": props.trafficLightPad ? "78px" : undefined }}
+        data-tauri-drag-region
       >
         <Tooltip placement="bottom" value="Pin sidebar">
           <div class="max-md:hidden shrink-0">

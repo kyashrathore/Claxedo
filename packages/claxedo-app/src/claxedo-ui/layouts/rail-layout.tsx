@@ -1031,6 +1031,7 @@ function RailLayoutBody(props: RailLayoutProps) {
               <div
                 class="flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base"
                 style={{ "padding-left": trafficLightPad() && !sidebarPinned() ? "78px" : undefined }}
+                data-tauri-drag-region
               >
                 <Show when={workbenchHeaderVisible()}>
                   <Tooltip value="Show Sidebar">
