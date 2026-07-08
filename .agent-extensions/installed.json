@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "installs": [
+    {
+      "id": "pdf",
+      "package_name": "pdf",
+      "source": {
+        "type": "github",
+        "owner": "anthropics",
+        "repo": "skills",
+        "ref": "main",
+        "package_path": "skills/pdf"
+      },
+      "scope": "project",
+      "enabled": true,
+      "targets": [
+        "claude",
+        "codex",
+        "cursor",
+        "opencode"
+      ],
+      "installed_at": 1779985955204,
+      "updated_at": 1779985955204
+    }
+  ]
+}

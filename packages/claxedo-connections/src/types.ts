@@ -1,0 +1,130 @@
+// Contract types for the connections kit. The kit is decision-free
+// mechanism: it reads no env, holds no module-global state, and reaches a
+// host only through the store ports below.
+
+export type IntegrationCapability = "docs" | "work-source" | "channel" | "code-host"
+export type IntegrationMethodKind = "key" | "oauth"
+
+export type IntegrationPrompt = {
+  id: string
+  label: string
+  placeholder?: string
+  // Exactly one prompt per key method carries secret: true. Secret values are
+  // never stored on the connection row and never echoed by any route.
+  secret?: boolean
+}
+
+export type IntegrationDeclaration = {
+  id: string
+  name: string
+  methods: IntegrationMethodKind[]
+  capabilities: IntegrationCapability[]
+  prompts?: IntegrationPrompt[]
+  // Wire form served by the token endpoint for key credentials.
+  keyTokenType?: "bearer" | "basic"
+}
+
+export type ConnectionFields = Record<string, string>
+
+export type VerifyResult =
+  | { ok: true; accountLabel?: string }
+  // Closed enum: verify failures never carry provider error messages or
+  // response bodies — they can embed the pasted secret.
+  | { ok: false; reason: "unauthorized" | "network" }
+
+export type OAuthTokens = {
+  accessToken: string
+  refreshToken?: string
+  expiresAt?: number
+}
+
+export type IntegrationImpl = {
+  verify?: (fields: ConnectionFields, secret: string) => Promise<VerifyResult>
+  authorize?: (state: string, codeVerifier: string) => URL | Promise<URL>
+  callback?: (code: string, codeVerifier: string) => Promise<OAuthTokens>
+  refresh?: (refreshToken: string) => Promise<OAuthTokens>
+}
+
+// Frozen wire shape — identical for key and oauth connections. No expires_at:
+// consumers request a token per operation and never cache across operations.
+export type ConnectionTokenResponse = {
+  token: string
+  tokenType: "bearer" | "basic"
+  fields?: Record<string, string>
+}
+
+export type ConnectionRow = {
+  integrationId: string
+  accountLabel?: string
+  grantedCapabilities: IntegrationCapability[]
+  fields: ConnectionFields
+  createdAt: number
+  updatedAt: number
+}
+
+export type CredentialStatus = "available" | "expired" | "revoked" | "error"
+
+export type CredentialRecord = {
+  kind: "api_key" | "oauth_token"
+  status: CredentialStatus
+  expiresAt?: number
+}
+
+// The only seams to a host. `resolveSecret` is available-status-only (token
+// path); `readSecret` returns the stored secret regardless of status and is
+// used exclusively by re-verify.
+export type CredentialStorePort = {
+  put(input: {
+    providerId: string
+    kind: "api_key" | "oauth_token"
+    secret: string
+    expiresAt?: number
+  }): Promise<void>
+  get(providerId: string): Promise<CredentialRecord | undefined>
+  resolveSecret(providerId: string): Promise<string | null>
+  readSecret(providerId: string): Promise<string | null>
+  setStatus(providerId: string, status: "available" | "error", lastError?: string): Promise<void>
+  deleteByProvider(providerId: string): Promise<void>
+}
+
+export type ConnectionStorePort = {
+  upsert(row: ConnectionRow): Promise<void>
+  get(integrationId: string): Promise<ConnectionRow | undefined>
+  list(): Promise<ConnectionRow[]>
+  delete(integrationId: string): Promise<boolean>
+}
+
+// The only sanctioned credential id format (host stores enforce one auth
+// credential per provider id; the namespace keeps integrations out of the
+// host's harness/model-provider id space).
+export const connectionProviderId = (integrationId: string) => `integration:${integrationId}`
+
+export const CONNECTION_ERROR_CODES = [
+  "connection_exists",
+  "connection_verify_failed",
+  "connection_not_available",
+  "connections_unavailable",
+] as const
+export type ConnectionErrorCode = (typeof CONNECTION_ERROR_CODES)[number]
+
+// Thrown by a host credential-store adapter whose secret seam is absent
+// (e.g. a fail-closed hosted stub). Routes map it to 503.
+export class ConnectionsUnavailableError extends Error {
+  constructor() {
+    super("connections_unavailable")
+  }
+}
+
+export type ConnectionSummary = {
+  integrationId: string
+  accountLabel?: string
+  grantedCapabilities: IntegrationCapability[]
+  fields: ConnectionFields
+  // Derived presentation status: backing credential available → "connected";
+  // error/expired/revoked → "degraded"; credential missing → "broken".
+  status: "connected" | "degraded" | "broken"
+  createdAt: number
+  updatedAt: number
+}
+
+export type AttemptStatus = "pending" | "complete" | "failed" | "expired"

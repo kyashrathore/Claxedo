@@ -1,0 +1,71 @@
+{
+  "baseURL": "http://127.0.0.1:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+  "updatedAt": "2026-07-07T09:52:39.864Z",
+  "surfaces": [
+    {
+      "name": "home-empty-state",
+      "bytes": 19558,
+      "sha256": "e7c420ec45a265675c907a8691ae00fc8c8817eb8c7a41bedbaa393d7fc32180"
+    },
+    {
+      "name": "rail-sidebar",
+      "bytes": 17191,
+      "sha256": "f2a3151cb7284e856dbb1f3819849a5e14dcda1dea21144b9e67af722eab66db"
+    },
+    {
+      "name": "titlebar-top-strip",
+      "bytes": 1509,
+      "sha256": "4ca0ee9c5b8a97937adf9edac5fb25f1bff089e6957fecd7251d1f502f94baee"
+    },
+    {
+      "name": "rail-pinned-session-open",
+      "bytes": 45807,
+      "sha256": "6068428c8fe8628c764a279c675b62dc0791ae13a29d87ac9787028c310f50f1"
+    },
+    {
+      "name": "workbench-header-controls",
+      "bytes": 1120,
+      "sha256": "68227979098f7bed6b6c0e2cb83b787cea05757ac9757451cc8fbab5db11896a"
+    },
+    {
+      "name": "workspace-panel-review",
+      "bytes": 6849,
+      "sha256": "624c91179fcbcb9e567c57561c8fd2bf0c4a5f9961c569d67cced21a9f1b36c9"
+    },
+    {
+      "name": "workspace-panel-files",
+      "bytes": 106287,
+      "sha256": "7653400fe854f31f6650717c51003287a7a4aa8d084b0c9e19124ad4b6aaee5e"
+    },
+    {
+      "name": "workspace-panel-changes",
+      "bytes": 182857,
+      "sha256": "e05e77e0aafb41c1494b7b9fff36fe05fc439056771a85038c4821e9621199e0"
+    },
+    {
+      "name": "workspace-panel-processes",
+      "bytes": 90726,
+      "sha256": "d3efcdcc8eb05fc4166c7fab35a0d9d1872006e64efd98fd07020a89f9c6a900"
+    },
+    {
+      "name": "review-panel",
+      "bytes": 4411,
+      "sha256": "61da80dfd774b3e5180d89ca1785c30b5c76aca575308c268b822f63d986dbc0"
+    },
+    {
+      "name": "rail-hidden-compact-switcher",
+      "bytes": 17116,
+      "sha256": "43a494ea058e52d6009c7f641b1c823d77ea6150a3cc6b68bb38de155ef722d1"
+    },
+    {
+      "name": "workspace-panel-full-width",
+      "bytes": 7825,
+      "sha256": "89d661dd436773413c607b118f5c40c57beb15dd3e91ede331071438b21f7397"
+    },
+    {
+      "name": "mobile-375",
+      "bytes": 19959,
+      "sha256": "33188225c484a8beb04aebe4abcabb9fe8d0f03b2a04c265ab402cd8d9f71805"
+    }
+  ]
+}

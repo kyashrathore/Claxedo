@@ -1,0 +1,290 @@
+import type { GenericDatabaseReader, GenericDatabaseWriter } from "convex/server"
+
+type Db = GenericDatabaseReader<any> | GenericDatabaseWriter<any>
+type IdentityCtx = {
+  auth: {
+    getUserIdentity(): Promise<{
+      tokenIdentifier: string
+      subject?: string
+      issuer?: string
+      email?: string
+      name?: string
+      pictureUrl?: string
+    } | null>
+  }
+}
+
+export type WorkspaceAction = "read" | "write" | "admin" | "owner"
+export type WorkspaceRole = "viewer" | "editor" | "admin" | "owner"
+type OrgRole = "member" | "admin" | "owner"
+const roleRank: Record<WorkspaceRole, number> = {
+  viewer: 1,
+  editor: 2,
+  admin: 3,
+  owner: 4,
+}
+
+function clerkIssuer() {
+  return process.env.CLERK_JWT_ISSUER_DOMAIN ?? process.env.CLERK_JWT_ISSUER
+}
+
+export function roleAllows(role: WorkspaceRole, action: WorkspaceAction) {
+  if (role === "owner") return true
+  if (role === "admin") return action !== "owner"
+  if (role === "editor") return action === "read" || action === "write"
+  return action === "read"
+}
+
+export function maxRole(roles: Array<WorkspaceRole | undefined>) {
+  return roles.filter((role): role is WorkspaceRole => !!role)
+    .sort((a, b) => roleRank[b] - roleRank[a])[0]
+}
+
+export function combineRolePrecedence(input: {
+  owner?: boolean
+  directWorkspace?: WorkspaceRole
+  directProject?: WorkspaceRole
+  directOrg?: WorkspaceRole
+  share?: WorkspaceRole
+  orgShare?: WorkspaceRole
+}) {
+  if (input.owner) return "owner"
+  return maxRole([
+    input.directWorkspace,
+    input.directProject,
+    input.directOrg,
+    input.share,
+    input.orgShare,
+  ])
+}
+
+export async function requireIdentity(ctx: IdentityCtx) {
+  const identity = await ctx.auth.getUserIdentity()
+  if (!identity) throw new Error("Unauthenticated")
+  const issuer = clerkIssuer()
+  if (issuer && identity.issuer !== issuer) throw new Error("Wrong issuer")
+  return identity
+}
+
+export async function readUser(ctx: { db: Db } & IdentityCtx) {
+  const identity = await requireIdentity(ctx)
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_token_identifier", (q) => q.eq("token_identifier", identity.tokenIdentifier))
+    .unique()
+  if (!user) throw new Error("User not found")
+  return user
+}
+
+export async function upsertUser(ctx: { db: GenericDatabaseWriter<any> } & IdentityCtx) {
+  const identity = await requireIdentity(ctx)
+  const now = Date.now()
+  const existing = await ctx.db
+    .query("users")
+    .withIndex("by_token_identifier", (q) => q.eq("token_identifier", identity.tokenIdentifier))
+    .unique()
+  const patch = {
+    clerk_subject: identity.subject,
+    issuer: identity.issuer,
+    email: identity.email,
+    name: identity.name,
+    image_url: identity.pictureUrl,
+    kind: "human" as const,
+    updated_at: now,
+  }
+  if (existing) {
+    await ctx.db.patch(existing._id, patch)
+    return { ...existing, ...patch }
+  }
+  const user = {
+    token_identifier: identity.tokenIdentifier,
+    ...patch,
+    created_at: now,
+  }
+  return {
+    _id: await ctx.db.insert("users", user),
+    ...user,
+  }
+}
+
+export async function upsertServiceUser(ctx: { db: GenericDatabaseWriter<any> }, input: {
+  token_identifier: string
+  subject?: string
+  issuer?: string
+  email?: string
+  name?: string
+  image_url?: string
+}) {
+  const now = Date.now()
+  const existing = await ctx.db
+    .query("users")
+    .withIndex("by_token_identifier", (q) => q.eq("token_identifier", input.token_identifier))
+    .unique()
+  const patch = {
+    clerk_subject: input.subject,
+    issuer: input.issuer,
+    email: input.email,
+    name: input.name,
+    image_url: input.image_url,
+    kind: "agent" as const,
+    updated_at: now,
+  }
+  if (existing) {
+    await ctx.db.patch(existing._id, patch)
+    return { ...existing, ...patch }
+  }
+  const user = {
+    token_identifier: input.token_identifier,
+    ...patch,
+    created_at: now,
+  }
+  return {
+    _id: await ctx.db.insert("users", user),
+    ...user,
+  }
+}
+
+async function directWorkspaceRole(db: Db, userId: unknown, workspaceId: unknown) {
+  const memberships = await db
+    .query("workspace_memberships")
+    .withIndex("by_workspace_user", (q) => q.eq("workspace_id", workspaceId))
+    .collect()
+  const membership = memberships.find((item) => item.user_id === userId)
+  return typeof membership?.role === "string" ? membership.role as WorkspaceRole : undefined
+}
+
+async function directProjectRole(db: Db, userId: unknown, projectId: unknown) {
+  const memberships = await db
+    .query("project_memberships")
+    .withIndex("by_project_user", (q) => q.eq("project_id", projectId))
+    .collect()
+  const membership = memberships.find((item) => item.user_id === userId)
+  return typeof membership?.role === "string" ? membership.role as WorkspaceRole : undefined
+}
+
+async function shareRole(db: Db, userId: unknown, workspaceId: unknown) {
+  const grants = await db
+    .query("workspace_share_grants")
+    .withIndex("by_user", (q) => q.eq("granted_to_user_id", userId))
+    .collect()
+  const grant = grants.find((item) => item.workspace_id === workspaceId && !item.revoked_at)
+  return typeof grant?.role === "string" ? grant.role as WorkspaceRole : undefined
+}
+
+function orgWorkspaceRole(role: OrgRole) {
+  if (role === "owner" || role === "admin") return "admin"
+  return "viewer"
+}
+
+async function directOrgRole(db: Db, userId: unknown, orgId: unknown) {
+  const org = await db.get(orgId as never)
+  if (org?.deleted_at) return
+  const memberships = await db
+    .query("org_memberships")
+    .withIndex("by_org_user", (q) => q.eq("org_id", orgId))
+    .collect()
+  const membership = memberships.find((item) => item.user_id === userId)
+  return typeof membership?.role === "string" ? orgWorkspaceRole(membership.role as OrgRole) : undefined
+}
+
+async function orgShareRole(db: Db, userId: unknown, workspaceId: unknown) {
+  const memberships = await db
+    .query("org_memberships")
+    .withIndex("by_user", (q) => q.eq("user_id", userId))
+    .collect()
+  const grants = (await Promise.all(memberships.map(async (membership) => {
+    return await db
+      .query("workspace_share_grants")
+      .withIndex("by_org", (q) => q.eq("granted_to_org_id", membership.org_id))
+      .collect()
+  }))).flat()
+  const grant = grants.find((item) => item.workspace_id === workspaceId && !item.revoked_at)
+  return typeof grant?.role === "string" ? grant.role as WorkspaceRole : undefined
+}
+
+export async function workspaceRoleForUser(ctx: { db: Db }, workspace: Record<string, unknown>, user: { _id: unknown }) {
+  if (workspace.deleted_at) return
+  const project = typeof workspace.project_id === "string"
+    ? await projectByPublicId(ctx.db, workspace.project_id)
+    : undefined
+  return combineRolePrecedence({
+    owner: workspace.owner_user_id === user._id,
+    directWorkspace: await directWorkspaceRole(ctx.db, user._id, workspace._id),
+    directProject: project ? await directProjectRole(ctx.db, user._id, project._id) : undefined,
+    directOrg: workspace.org_id ? await directOrgRole(ctx.db, user._id, workspace.org_id) : undefined,
+    share: await shareRole(ctx.db, user._id, workspace._id),
+    orgShare: await orgShareRole(ctx.db, user._id, workspace._id),
+  })
+}
+
+export async function workspaceRole(ctx: { db: Db } & IdentityCtx, workspace: Record<string, unknown>) {
+  return workspaceRoleForUser(ctx, workspace, await readUser(ctx))
+}
+
+export async function projectRoleForUser(ctx: { db: Db }, project: Record<string, unknown>, user: { _id: unknown }) {
+  if (project.deleted_at) return
+  return combineRolePrecedence({
+    owner: project.owner_user_id === user._id,
+    directProject: await directProjectRole(ctx.db, user._id, project._id),
+    directOrg: await directOrgRole(ctx.db, user._id, project.org_id),
+  })
+}
+
+export async function projectRole(ctx: { db: Db } & IdentityCtx, project: Record<string, unknown>) {
+  return projectRoleForUser(ctx, project, await readUser(ctx))
+}
+
+export async function authorizeProject(ctx: { db: Db } & IdentityCtx, project: Record<string, unknown>, action: WorkspaceAction) {
+  const role = await projectRole(ctx, project)
+  return role && roleAllows(role, action) ? role : undefined
+}
+
+export async function authorizeProjectForUser(ctx: { db: Db }, project: Record<string, unknown>, user: { _id: unknown }, action: WorkspaceAction) {
+  const role = await projectRoleForUser(ctx, project, user)
+  return role && roleAllows(role, action) ? role : undefined
+}
+
+export async function authorizeWorkspace(ctx: { db: Db } & IdentityCtx, workspace: Record<string, unknown>, action: WorkspaceAction) {
+  const role = await workspaceRole(ctx, workspace)
+  return role && roleAllows(role, action) ? role : undefined
+}
+
+export async function authorizeWorkspaceForUser(ctx: { db: Db }, workspace: Record<string, unknown>, user: { _id: unknown }, action: WorkspaceAction) {
+  const role = await workspaceRoleForUser(ctx, workspace, user)
+  return role && roleAllows(role, action) ? role : undefined
+}
+
+export async function workspaceByPublicId(db: Db, workspaceId: string) {
+  return await db
+    .query("workspaces")
+    .withIndex("by_workspace_id", (q) => q.eq("workspace_id", workspaceId))
+    .unique()
+}
+
+export async function projectByPublicId(db: Db, projectId: string) {
+  return await db
+    .query("projects")
+    .withIndex("by_project_id", (q) => q.eq("project_id", projectId))
+    .unique()
+}
+
+export async function orgByClerkOrgId(db: Db, clerkOrgId: string) {
+  return await db
+    .query("orgs")
+    .withIndex("by_clerk_org_id", (q) => q.eq("clerk_org_id", clerkOrgId))
+    .unique()
+}
+
+export async function userByTokenIdentifier(db: Db, tokenIdentifier: string) {
+  return await db
+    .query("users")
+    .withIndex("by_token_identifier", (q) => q.eq("token_identifier", tokenIdentifier))
+    .unique()
+}
+
+export async function userByClerkSubject(db: Db, clerkSubject: string) {
+  return await db
+    .query("users")
+    .withIndex("by_clerk_subject", (q) => q.eq("clerk_subject", clerkSubject))
+    .unique()
+}

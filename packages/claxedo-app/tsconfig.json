@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "types": ["vite/client", "node", "vitest/globals", "@testing-library/jest-dom"],
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "paths": {
+      "#terminal-backend": ["./src/terminal/backend/xterm"],
+      "@opencode-ai/app-shared": ["./src/extensions/index.ts"],
+      "@/*": ["./src/*"],
+      "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
+      "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],
+      "@claxedo/agent-event-runtime/opencode-compat": ["../agent-event-runtime/src/projections/opencode-compat/index.ts"],
+      "@claxedo/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "vite.cloud.config.ts", "vitest.config.ts", "vitest.setup.ts"],
+  "exclude": ["dist", "node_modules", "src/opencode-patches", "src/opencode-extensions", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.vitest.ts", "src/**/*.vitest.tsx", "src/**/*.integration.vitest.tsx", "src/**/*.ui.vitest.tsx"]
+}

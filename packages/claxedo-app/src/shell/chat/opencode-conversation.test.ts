@@ -1,0 +1,265 @@
+import { describe, expect, test } from "bun:test"
+import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { UIMessage } from "@tanstack/ai"
+import {
+  applyOpencodeConversationEvent,
+  mergeConversationSnapshot,
+  opencodeConversationSnapshot,
+  opencodeConversationProjection,
+  type ConversationChatHandle,
+} from "./opencode-conversation"
+
+function message(id: string, role: "user" | "assistant" = "assistant"): Message {
+  if (role === "user") {
+    return {
+      id,
+      role,
+      sessionID: "ses_1",
+      time: { created: 1 },
+      agent: "assistant",
+      model: { providerID: "openai", modelID: "gpt-4o" },
+      system: "system prompt",
+    } as Message
+  }
+  return {
+    id,
+    role,
+    sessionID: "ses_1",
+    time: { created: 2 },
+    parentID: "msg_user",
+    modelID: "gpt-4o",
+    providerID: "openai",
+    mode: "chat",
+    agent: "assistant",
+    path: { cwd: "/repo", root: "/repo" },
+    cost: 0.25,
+    tokens: { input: 10, output: 5, reasoning: 3, cache: { read: 2, write: 1 } },
+  } as Message
+}
+
+function textPart(id: string, messageID: string, text: string): Part {
+  return {
+    id,
+    sessionID: "ses_1",
+    messageID,
+    type: "text",
+    text,
+  }
+}
+
+function reasoningPart(id: string, messageID: string, text: string): Part {
+  return {
+    id,
+    sessionID: "ses_1",
+    messageID,
+    type: "reasoning",
+    text,
+    time: { start: 1 },
+  }
+}
+
+function toolPart(id: string, messageID: string, status: "running" | "completed" = "running"): Part {
+  return {
+    id,
+    sessionID: "ses_1",
+    messageID,
+    type: "tool",
+    callID: "call_1",
+    tool: "read",
+    state: status === "running"
+      ? { status, input: { file: "README.md" }, time: { start: 1 } }
+      : { status, input: { file: "README.md" }, output: "ok", title: "Read", metadata: {}, time: { start: 1, end: 2 } },
+  }
+}
+
+function event(type: string, properties: Record<string, unknown>): Event {
+  return { type, properties } as Event
+}
+
+function chat(initial: UIMessage[] = []): ConversationChatHandle & { written: UIMessage[][] } {
+  let current = initial
+  const written: UIMessage[][] = []
+  return {
+    written,
+    messages: () => current,
+    setMessages: (messages) => {
+      current = messages
+      written.push(messages)
+    },
+  }
+}
+
+describe("opencode conversation chat adapter", () => {
+  test("hydrates TanStack UI messages from OpenCode message and part snapshots", () => {
+    expect(opencodeConversationSnapshot({
+      messages: [message("msg_user", "user"), message("msg_assistant")],
+      parts: {
+        msg_user: [textPart("part_prompt", "msg_user", "hello")],
+        msg_assistant: [
+          reasoningPart("part_reason", "msg_assistant", "thinking"),
+          textPart("part_text", "msg_assistant", "answer"),
+          toolPart("part_tool", "msg_assistant", "completed"),
+        ],
+      },
+    })).toMatchObject([
+      {
+        id: "msg_user",
+        role: "user",
+        metadata: {
+          opencodeMessage: { system: "system prompt" },
+        },
+        parts: [{ type: "text", content: "hello" }],
+      },
+      {
+        id: "msg_assistant",
+        role: "assistant",
+        metadata: {
+          opencodeMessage: { cost: 0.25 },
+        },
+        parts: [
+          { type: "thinking", content: "thinking", stepId: "part_reason" },
+          { type: "text", content: "answer" },
+          { type: "tool-call", id: "call_1", name: "read", state: "complete", output: "ok" },
+        ],
+      },
+    ])
+  })
+
+  test("applies message and part events through chat setMessages", () => {
+    const handle = chat()
+
+    expect(applyOpencodeConversationEvent(handle, event("message.updated", {
+      info: message("msg_assistant"),
+    }))).toBe(true)
+    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
+      part: textPart("part_text", "msg_assistant", "hel"),
+    }))).toBe(true)
+    expect(applyOpencodeConversationEvent(handle, event("message.part.delta", {
+      messageID: "msg_assistant",
+      partID: "part_text",
+      delta: "lo",
+    }))).toBe(true)
+
+    expect(handle.messages()).toMatchObject([{
+      id: "msg_assistant",
+      parts: [{ type: "text", content: "hello" }],
+    }])
+    expect(handle.written).toHaveLength(3)
+  })
+
+  test("snapshot merge preserves chat-owned live deltas for matching parts", () => {
+    const snapshot = opencodeConversationSnapshot({
+      messages: [message("msg_assistant")],
+      parts: {
+        msg_assistant: [textPart("part_text", "msg_assistant", "hel")],
+      },
+    })
+    const handle = chat(snapshot)
+    applyOpencodeConversationEvent(handle, event("message.part.delta", {
+      messageID: "msg_assistant",
+      partID: "part_text",
+      delta: "lo",
+    }))
+
+    expect(mergeConversationSnapshot(handle.messages(), snapshot)).toMatchObject([{
+      id: "msg_assistant",
+      parts: [{ type: "text", content: "hello" }],
+    }])
+  })
+
+  test("snapshot merge adds fetched history without dropping live chat messages", () => {
+    const live = opencodeConversationSnapshot({
+      messages: [message("msg_live")],
+      parts: {
+        msg_live: [textPart("part_live", "msg_live", "live")],
+      },
+    })
+    const history = opencodeConversationSnapshot({
+      messages: [message("msg_old", "user")],
+      parts: {
+        msg_old: [textPart("part_old", "msg_old", "old")],
+      },
+    })
+
+    expect(mergeConversationSnapshot(live, history).map((item) => item.id)).toEqual(["msg_live", "msg_old"].sort())
+  })
+
+  test("removes messages and parts from chat state", () => {
+    const handle = chat(opencodeConversationSnapshot({
+      messages: [message("msg_assistant")],
+      parts: {
+        msg_assistant: [
+          textPart("part_text", "msg_assistant", "answer"),
+          toolPart("part_tool", "msg_assistant"),
+        ],
+      },
+    }))
+
+    expect(applyOpencodeConversationEvent(handle, event("message.part.removed", {
+      messageID: "msg_assistant",
+      partID: "part_tool",
+    }))).toBe(true)
+    expect(handle.messages()[0]?.parts).toMatchObject([{ type: "text", content: "answer" }])
+
+    expect(applyOpencodeConversationEvent(handle, event("message.removed", {
+      messageID: "msg_assistant",
+    }))).toBe(true)
+    expect(handle.messages()).toEqual([])
+  })
+
+  test("projects chat messages back to OpenCode-shaped messages and live parts", () => {
+    const handle = chat(opencodeConversationSnapshot({
+      messages: [message("msg_user", "user"), message("msg_assistant")],
+      parts: {
+        msg_user: [textPart("part_prompt", "msg_user", "hello")],
+        msg_assistant: [textPart("part_text", "msg_assistant", "hel")],
+      },
+    }))
+    applyOpencodeConversationEvent(handle, event("message.part.delta", {
+      messageID: "msg_assistant",
+      partID: "part_text",
+      delta: "lo",
+    }))
+
+    expect(opencodeConversationProjection(handle.messages())).toMatchObject({
+      messages: [
+        { id: "msg_user", role: "user", system: "system prompt" },
+        { id: "msg_assistant", role: "assistant", tokens: { input: 10 }, cost: 0.25 },
+      ],
+      parts: {
+        msg_assistant: [{ id: "part_text", text: "hello" }],
+        msg_user: [{ id: "part_prompt", text: "hello" }],
+      },
+    })
+  })
+})
+
+describe("opencodeConversationProjection caching", () => {
+  test("reuses projected output for messages whose reference is unchanged", () => {
+    const snapshot = opencodeConversationSnapshot({
+      messages: [message("msg_1"), message("msg_2")],
+      parts: {
+        msg_1: [textPart("part_1", "msg_1", "hello")],
+        msg_2: [textPart("part_2", "msg_2", "world")],
+      },
+    })
+
+    const first = opencodeConversationProjection(snapshot)
+
+    // Simulate a streaming update: only msg_2 gets a new object reference, the
+    // way the event-apply path replaces just the changed index.
+    const updated = snapshot.map((m, index) => (index === 1 ? { ...m, parts: [...m.parts] } : m))
+    const second = opencodeConversationProjection(updated)
+
+    // Unchanged message reuses its projected Message + parts by reference (no
+    // re-projection), so a token append is O(changed), not O(all messages).
+    expect(second.messages[0]).toBe(first.messages[0])
+    expect(second.parts.msg_1).toBe(first.parts.msg_1)
+
+    // Changed message is re-projected with a fresh reference and correct content.
+    expect(second.messages[1]).not.toBe(first.messages[1])
+    expect(second.parts.msg_2).not.toBe(first.parts.msg_2)
+    expect(second.messages[1]).toMatchObject({ id: "msg_2" })
+    expect(second.parts.msg_2).toMatchObject([{ id: "part_2", text: "world" }])
+  })
+})

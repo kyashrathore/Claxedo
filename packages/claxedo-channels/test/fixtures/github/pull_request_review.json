@@ -1,0 +1,22 @@
+{
+  "action": "submitted",
+  "installation": {
+    "id": 4242
+  },
+  "sender": {
+    "login": "reviewer"
+  },
+  "repository": {
+    "name": "infra",
+    "owner": {
+      "login": "acme"
+    }
+  },
+  "pull_request": {
+    "number": 18,
+    "title": "Tighten deploy checks"
+  },
+  "review": {
+    "body": "@claxedo verify this review feedback"
+  }
+}

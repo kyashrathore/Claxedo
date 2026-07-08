@@ -1,0 +1,118 @@
+import { describe, expect, test } from "bun:test"
+import { sessionPaneWorkspaceKey, sessionWorkspaceRuntimeRef } from "./session-workspace-key"
+
+describe("session workspace key", () => {
+  test("uses typed workspace backing before directory shape", () => {
+    const ref = {
+      sessionId: "ses_1",
+      host: "workspace" as const,
+      cwd: "/repo/local",
+      toolSandbox: { kind: "workspace" as const, workspaceId: "ws_cloud_1", hosting: "cloud" as const },
+    }
+
+    expect(sessionWorkspaceRuntimeRef({ directory: "/repo/local", sessionRef: ref })).toEqual({
+      workspaceId: "ws_cloud_1",
+      kind: "cloud",
+    })
+    expect(sessionPaneWorkspaceKey({ directory: "/repo/local", sessionRef: ref })).toBe("ws_cloud_1")
+  })
+
+  test("does not treat central virtual authz scope as real workspace backing", () => {
+    const ref = {
+      sessionId: "ses_central",
+      host: "central" as const,
+      workspaceId: "ws_authz_only",
+      toolSandbox: { kind: "virtual" as const },
+    }
+
+    expect(sessionWorkspaceRuntimeRef({ directory: "workspace:ws_authz_only", sessionRef: ref })).toBeUndefined()
+    expect(sessionPaneWorkspaceKey({ directory: "workspace:ws_authz_only", sessionRef: ref })).toBe("workspace:ws_authz_only")
+  })
+
+  test("keeps bounded workspace selector compatibility behind the shell workspace key", () => {
+    // When the kind cannot be resolved from the signed inventory, the directory
+    // path no longer defaults to "cloud" (which would run the provisioning
+    // resolve and fail for a user-hosted workspace whose mint returns 200). Both
+    // kinds route through the relay; "user-hosted" drives readiness off the
+    // mint+health path, which is the source of truth.
+    expect(sessionWorkspaceRuntimeRef({ directory: "ws_raw" })).toEqual({
+      workspaceId: "ws_raw",
+      kind: "user-hosted",
+    })
+    expect(sessionWorkspaceRuntimeRef({ directory: "workspace:ws_prefixed" })).toEqual({
+      workspaceId: "ws_prefixed",
+      kind: "user-hosted",
+    })
+    expect(sessionWorkspaceRuntimeRef({ directory: "workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e" })).toEqual({
+      workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
+      kind: "user-hosted",
+    })
+    expect(sessionWorkspaceRuntimeRef({ directory: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e" })).toBeUndefined()
+    expect(sessionWorkspaceRuntimeRef({ directory: "/repo/local" })).toBeUndefined()
+  })
+
+  test("resolves the real kind from the signed inventory when present", () => {
+    const projects = [
+      {
+        workspaces: {
+          ws_cleantest1: { workspaceId: "ws_cleantest1", kind: "user-hosted", directory: "/repo/hosted" },
+          ws_cloud_1: { workspaceId: "ws_cloud_1", kind: "cloud", directory: "/repo/cloud" },
+        },
+      },
+    ]
+    // user-hosted resolved by id-ref form
+    expect(sessionWorkspaceRuntimeRef({ directory: "workspace:ws_cleantest1", projects })).toEqual({
+      workspaceId: "ws_cleantest1",
+      kind: "user-hosted",
+    })
+    // cloud resolved from the inventory (NOT defaulted to user-hosted)
+    expect(sessionWorkspaceRuntimeRef({ directory: "ws_cloud_1", projects })).toEqual({
+      workspaceId: "ws_cloud_1",
+      kind: "cloud",
+    })
+    // Bare UUIDs are ambiguous with local project/workspace ids. They only become
+    // runtime-backed when the signed inventory confirms a cloud/user-hosted match.
+    expect(sessionWorkspaceRuntimeRef({ directory: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e", projects: [
+      {
+        workspaces: {
+          "608c72e3-405a-4d2a-bf7f-883b8c76ea8e": {
+            workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
+            kind: "cloud",
+          },
+        },
+      },
+    ] })).toEqual({
+      workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
+      kind: "cloud",
+    })
+  })
+
+  test("resolves a relay workspace from its filesystem worktree directory via the inventory", () => {
+    const projects = [
+      {
+        workspaces: {
+          ws_cleantest1: {
+            workspaceId: "ws_cleantest1",
+            kind: "user-hosted",
+            directory: "/tmp/claxedo-portability/ws_cleantest1-dir",
+          },
+        },
+      },
+    ]
+    // Session rows carry the runtime's real filesystem directory (the
+    // registration-stored remote_directory), not a ws_ ref. The pane MUST
+    // still resolve the relay backing — otherwise the gate never acquires the
+    // connection and isWorkspaceReady stays false for every gated query.
+    expect(sessionWorkspaceRuntimeRef({ directory: "/tmp/claxedo-portability/ws_cleantest1-dir", projects })).toEqual({
+      workspaceId: "ws_cleantest1",
+      kind: "user-hosted",
+    })
+    // macOS /private alias of the same worktree resolves too
+    expect(sessionWorkspaceRuntimeRef({ directory: "/private/tmp/claxedo-portability/ws_cleantest1-dir", projects })).toEqual({
+      workspaceId: "ws_cleantest1",
+      kind: "user-hosted",
+    })
+    // An unknown filesystem directory still resolves to local (undefined)
+    expect(sessionWorkspaceRuntimeRef({ directory: "/repo/unknown", projects })).toBeUndefined()
+  })
+})

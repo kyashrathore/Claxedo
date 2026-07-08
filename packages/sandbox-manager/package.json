@@ -1,0 +1,178 @@
+{
+  "name": "@claxedo/sandbox-manager",
+  "version": "0.5.1",
+  "type": "module",
+  "description": "Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, and Docker",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/sandbox-manager"
+  },
+  "keywords": [
+    "claxedo",
+    "sandbox",
+    "daytona",
+    "modal",
+    "agents"
+  ],
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "bun": "./dist/index.mjs",
+      "development": "./dist/index.mjs",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./command": {
+      "types": "./dist/command.d.ts",
+      "bun": "./dist/command.mjs",
+      "development": "./dist/command.mjs",
+      "import": "./dist/command.mjs",
+      "default": "./dist/command.mjs"
+    },
+    "./constants": {
+      "types": "./dist/constants.d.ts",
+      "bun": "./dist/constants.mjs",
+      "development": "./dist/constants.mjs",
+      "import": "./dist/constants.mjs",
+      "default": "./dist/constants.mjs"
+    },
+    "./defaults": {
+      "types": "./dist/defaults.d.ts",
+      "bun": "./dist/defaults.mjs",
+      "development": "./dist/defaults.mjs",
+      "import": "./dist/defaults.mjs",
+      "default": "./dist/defaults.mjs"
+    },
+    "./driver-catalog": {
+      "types": "./dist/driver-catalog.d.ts",
+      "bun": "./dist/driver-catalog.mjs",
+      "development": "./dist/driver-catalog.mjs",
+      "import": "./dist/driver-catalog.mjs",
+      "default": "./dist/driver-catalog.mjs"
+    },
+    "./drivers/cloudflare": {
+      "types": "./dist/drivers/cloudflare.d.ts",
+      "bun": "./dist/drivers/cloudflare.mjs",
+      "development": "./dist/drivers/cloudflare.mjs",
+      "import": "./dist/drivers/cloudflare.mjs",
+      "default": "./dist/drivers/cloudflare.mjs"
+    },
+    "./drivers/daytona": {
+      "types": "./dist/drivers/daytona.d.ts",
+      "bun": "./dist/drivers/daytona.mjs",
+      "development": "./dist/drivers/daytona.mjs",
+      "import": "./dist/drivers/daytona.mjs",
+      "default": "./dist/drivers/daytona.mjs"
+    },
+    "./drivers/docker": {
+      "types": "./dist/drivers/docker.d.ts",
+      "bun": "./dist/drivers/docker.mjs",
+      "development": "./dist/drivers/docker.mjs",
+      "import": "./dist/drivers/docker.mjs",
+      "default": "./dist/drivers/docker.mjs"
+    },
+    "./drivers/fetch-bridge": {
+      "types": "./dist/drivers/fetch-bridge.d.ts",
+      "bun": "./dist/drivers/fetch-bridge.mjs",
+      "development": "./dist/drivers/fetch-bridge.mjs",
+      "import": "./dist/drivers/fetch-bridge.mjs",
+      "default": "./dist/drivers/fetch-bridge.mjs"
+    },
+    "./drivers/modal": {
+      "types": "./dist/drivers/modal.d.ts",
+      "bun": "./dist/drivers/modal.mjs",
+      "development": "./dist/drivers/modal.mjs",
+      "import": "./dist/drivers/modal.mjs",
+      "default": "./dist/drivers/modal.mjs"
+    },
+    "./drivers/vercel": {
+      "types": "./dist/drivers/vercel.d.ts",
+      "bun": "./dist/drivers/vercel.mjs",
+      "development": "./dist/drivers/vercel.mjs",
+      "import": "./dist/drivers/vercel.mjs",
+      "default": "./dist/drivers/vercel.mjs"
+    },
+    "./image": {
+      "types": "./dist/image.d.ts",
+      "bun": "./dist/image.mjs",
+      "development": "./dist/image.mjs",
+      "import": "./dist/image.mjs",
+      "default": "./dist/image.mjs"
+    },
+    "./lease-policy": {
+      "types": "./dist/lease-policy.d.ts",
+      "bun": "./dist/lease-policy.mjs",
+      "development": "./dist/lease-policy.mjs",
+      "import": "./dist/lease-policy.mjs",
+      "default": "./dist/lease-policy.mjs"
+    },
+    "./lease-types": {
+      "types": "./dist/lease-types.d.ts",
+      "bun": "./dist/lease-types.mjs",
+      "development": "./dist/lease-types.mjs",
+      "import": "./dist/lease-types.mjs",
+      "default": "./dist/lease-types.mjs"
+    },
+    "./runtime-env": {
+      "types": "./dist/runtime-env.d.ts",
+      "bun": "./dist/runtime-env.mjs",
+      "development": "./dist/runtime-env.mjs",
+      "import": "./dist/runtime-env.mjs",
+      "default": "./dist/runtime-env.mjs"
+    },
+    "./service-url-exposure": {
+      "types": "./dist/service-url-exposure.d.ts",
+      "bun": "./dist/service-url-exposure.mjs",
+      "development": "./dist/service-url-exposure.mjs",
+      "import": "./dist/service-url-exposure.mjs",
+      "default": "./dist/service-url-exposure.mjs"
+    },
+    "./stores/memory": {
+      "types": "./dist/stores/memory.d.ts",
+      "bun": "./dist/stores/memory.mjs",
+      "development": "./dist/stores/memory.mjs",
+      "import": "./dist/stores/memory.mjs",
+      "default": "./dist/stores/memory.mjs"
+    },
+    "./drivers/cloudflare-egress": {
+      "types": "./dist/drivers/cloudflare-egress.d.ts",
+      "bun": "./dist/drivers/cloudflare-egress.mjs",
+      "development": "./dist/drivers/cloudflare-egress.mjs",
+      "import": "./dist/drivers/cloudflare-egress.mjs",
+      "default": "./dist/drivers/cloudflare-egress.mjs"
+    }
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@claxedo/workspace-runtime": "0.5.1",
+    "@daytona/sdk": "0.192.0",
+    "@vercel/sandbox": "1.10.2",
+    "modal": "0.7.5"
+  },
+  "scripts": {
+    "build": "tsx scripts/build.ts",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test src"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/bun": "1.3.13",
+    "@types/node": "24.12.2",
+    "esbuild": "0.25.12",
+    "tsx": "4.22.3",
+    "typescript": "5.8.2",
+    "vitest": "2.1.9"
+  }
+}

@@ -1,0 +1,91 @@
+import { describe, expect, test } from "bun:test"
+import {
+  harnessDisplayName,
+  harnessModelKeyForSubmit,
+  harnessModelNameForSubmit,
+  harnessModels,
+  harnessMode,
+  harnessReadyForSubmit,
+  type HarnessSelectionState,
+} from "./selection"
+
+const base = {
+  harnessBinary: "",
+  selectedModel: "",
+  dynamicModels: null,
+  readiness: "ready",
+  optionsLoading: false,
+} satisfies Omit<HarnessSelectionState, "harness">
+
+describe("harness selection", () => {
+  test("resolves display names from harness ids and binaries", () => {
+    expect(harnessDisplayName({ harness: "codex-acp", harnessBinary: "" })).toBe("Codex")
+    expect(harnessDisplayName({ harness: "claude-acp", harnessBinary: "/tmp/claude-agent-acp" })).toBe("Claude")
+    expect(harnessDisplayName({ harness: "opencode", harnessBinary: "custom-binary" })).toBe("custom-binary")
+  })
+
+  test("classifies harness mode from harness type", () => {
+    expect(harnessMode("opencode")).toBe("opencode")
+    expect(harnessMode("codex-acp")).toBe("harness")
+    expect(harnessMode()).toBe("unknown")
+  })
+
+  test("keeps selected model visible when options refresh without that row", () => {
+    expect(harnessModels({
+      ...base,
+      harness: "claude-acp",
+      selectedModel: "opus",
+      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+    })).toEqual([
+      { id: "opus", name: "opus" },
+      { id: "sonnet", name: "Sonnet" },
+    ])
+  })
+
+  test("uses fixed model harnesses without dynamic options", () => {
+    const state = { ...base, harness: "pi" } satisfies HarnessSelectionState
+
+    expect(harnessModelKeyForSubmit(state)).toEqual({ providerID: "pi", modelID: "virtual" })
+    expect(harnessModelNameForSubmit(state)).toBe("Virtual")
+    expect(harnessReadyForSubmit(state)).toBe(true)
+  })
+
+  test("allows the default harness model when no dynamic options have arrived", () => {
+    expect(harnessModelKeyForSubmit({
+      ...base,
+      harness: "claude-acp",
+      selectedModel: "",
+      dynamicModels: [],
+    })).toEqual({ providerID: "claude-acp", modelID: "default" })
+  })
+
+  test("blocks submit while model options are loading or errored", () => {
+    expect(harnessReadyForSubmit({
+      ...base,
+      harness: "claude-acp",
+      selectedModel: "sonnet",
+      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+      optionsLoading: true,
+    })).toBe(false)
+    expect(harnessReadyForSubmit({
+      ...base,
+      harness: "claude-acp",
+      selectedModel: "sonnet",
+      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+      readiness: "error",
+    })).toBe(false)
+  })
+
+  test("returns canonical ModelKey for selectable harness models", () => {
+    const state = {
+      ...base,
+      harness: "codex-acp",
+      selectedModel: "gpt-5.5",
+      dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
+    } satisfies HarnessSelectionState
+
+    expect(harnessModelKeyForSubmit(state)).toEqual({ providerID: "codex-acp", modelID: "gpt-5.5" })
+    expect(harnessModelNameForSubmit(state)).toBe("GPT-5.5")
+    expect(harnessReadyForSubmit(state)).toBe(true)
+  })
+})

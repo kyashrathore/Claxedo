@@ -1,0 +1,223 @@
+import { queryOptions } from "@tanstack/solid-query"
+import { authFetch, getClaxedoServerUrl, normalizeUrl } from "../../utils/api"
+import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import {
+  controlSessionNavigationListUrl,
+  type ControlSessionNavigationListQuery,
+} from "../../utils/workspace-control-routes"
+import type { SessionNavigationRow } from "../../claxedo-ui/navigation-islands/session-navigation"
+import { queryKeys } from "./keys"
+import { queryClient } from "./query-client"
+
+export type SessionListQuery = ControlSessionNavigationListQuery
+
+export type SessionListResponse = {
+  view: {
+    scope: SessionListQuery["scope"]
+    groupBy: NonNullable<SessionListQuery["groupBy"]>
+    sort: "updated_desc"
+    limit: number
+  }
+  items?: SessionNavigationRow[]
+  groups?: Array<{
+    id: string
+    label: string
+    items: SessionNavigationRow[]
+    nextCursor?: string
+    totalKnown?: number
+  }>
+  nextCursor?: string
+  totalKnown?: number
+}
+
+function sessionListBaseQuery(query: SessionListQuery): SessionListQuery {
+  if (!query.cursor) return query
+  const { cursor: _cursor, ...base } = query
+  return base
+}
+
+function mergeSessionListItems(primary: readonly SessionNavigationRow[], tail: readonly SessionNavigationRow[]) {
+  const seen = new Set(primary.map((item) => item.sessionRef))
+  return [
+    ...primary,
+    ...tail.filter((item) => {
+      if (seen.has(item.sessionRef)) return false
+      seen.add(item.sessionRef)
+      return true
+    }),
+  ]
+}
+
+function mergeSessionListResponses(input: {
+  current: SessionListResponse | undefined
+  page: SessionListResponse
+  append: boolean
+}) {
+  if (!input.current?.items || !input.page.items) return input.page
+  const items = input.append
+    ? mergeSessionListItems(input.current.items, input.page.items)
+    : mergeSessionListItems(input.page.items, input.current.items)
+  return {
+    ...input.page,
+    items,
+    nextCursor: items.length > input.page.items.length ? input.current.nextCursor : input.page.nextCursor,
+    totalKnown: Math.max(input.current.totalKnown ?? 0, input.page.totalKnown ?? 0, items.length),
+  }
+}
+
+export function appendSessionListPageQueryData(input: {
+  baseUrl?: string
+  query: SessionListQuery
+  page: SessionListResponse
+}) {
+  const key = queryKeys.shell.sessionList(input.baseUrl, sessionListBaseQuery(input.query))
+  const next = mergeSessionListResponses({
+    current: queryClient.getQueryData<SessionListResponse>(key),
+    page: input.page,
+    append: true,
+  })
+  setSessionListQueryData(key, next)
+  return next
+}
+
+function setSessionListQueryData(
+  key: ReturnType<typeof queryKeys.shell.sessionList>,
+  value: SessionListResponse | ((current: SessionListResponse | undefined) => SessionListResponse | undefined),
+) {
+  queryClient.setQueryData<SessionListResponse>(key, value)
+}
+
+export function sessionListRequest(input: {
+  baseUrl?: string
+  request?: typeof fetch
+}) {
+  if (input.request) return input.request
+  if (centralTransportForServer(input.baseUrl) === "loopback") return globalThis.fetch
+  return authFetch
+}
+
+export function sessionListQueryOptions(input: {
+  baseUrl?: string
+  query: SessionListQuery
+  request?: typeof fetch
+}) {
+  return queryOptions({
+    queryKey: queryKeys.shell.sessionList(input.baseUrl, input.query),
+    queryFn: async () => {
+      const res = await sessionListRequest(input)(controlSessionNavigationListUrl({
+        baseUrl: normalizeUrl(input.baseUrl) ?? getClaxedoServerUrl(),
+        ...input.query,
+      }), {
+        headers: {
+          Accept: "application/json",
+          ...(input.query.directory || input.query.workspaceId || input.query.projectId ? {
+            "x-opencode-directory": input.query.directory ?? `workspace:${input.query.workspaceId ?? input.query.projectId}`,
+          } : {}),
+        },
+      })
+      if (!res.ok) throw new Error((await res.text()) || `Session list request failed: ${res.status}`)
+      const page = await res.json() as SessionListResponse
+      if (input.query.cursor) return page
+      return mergeSessionListResponses({
+        current: queryClient.getQueryData<SessionListResponse>(
+          queryKeys.shell.sessionList(input.baseUrl, sessionListBaseQuery(input.query)),
+        ),
+        page,
+        append: false,
+      })
+    },
+  })
+}
+
+export function reconcileArchivedSessionListQueryData(input: {
+  baseUrl?: string
+  sessionRef: string
+  archivedAt: number
+}) {
+  const base = normalizedBase(input.baseUrl)
+  for (const query of queryClient.getQueryCache().findAll({
+    predicate: (query) => isSessionListQueryKey(query.queryKey, base),
+  })) {
+    const archiveView = sessionListArchiveView(query.queryKey)
+    setSessionListQueryData(query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>, (response) =>
+      response ? reconcileSessionListResponseAfterArchive({
+        response,
+        sessionRef: input.sessionRef,
+        archivedAt: input.archivedAt,
+        archiveView,
+      }) : response,
+    )
+  }
+}
+
+function reconcileSessionListResponseAfterArchive(input: {
+  response: SessionListResponse
+  sessionRef: string
+  archivedAt: number
+  archiveView: NonNullable<SessionListQuery["archived"]>
+}): SessionListResponse {
+  return {
+    ...input.response,
+    ...(input.response.items ? {
+      items: reconcileSessionListRowsAfterArchive(input.response.items, input),
+      totalKnown: reconcileSessionListTotal(input.response.totalKnown, input.response.items, input),
+    } : {}),
+    ...(input.response.groups ? {
+      groups: input.response.groups.map((group) => ({
+        ...group,
+        items: reconcileSessionListRowsAfterArchive(group.items, input),
+        totalKnown: reconcileSessionListTotal(group.totalKnown, group.items, input),
+      })),
+    } : {}),
+  }
+}
+
+function reconcileSessionListRowsAfterArchive(
+  rows: readonly SessionNavigationRow[],
+  input: {
+    sessionRef: string
+    archivedAt: number
+    archiveView: NonNullable<SessionListQuery["archived"]>
+  },
+) {
+  if (input.archiveView === "active") return rows.filter((row) => !matchesSessionListRow(row, input))
+  return rows.map((row) => matchesSessionListRow(row, input) ? { ...row, archivedAt: input.archivedAt } : row)
+}
+
+function reconcileSessionListTotal(
+  total: number | undefined,
+  rows: readonly SessionNavigationRow[],
+  input: {
+    sessionRef: string
+    archivedAt: number
+    archiveView: NonNullable<SessionListQuery["archived"]>
+  },
+) {
+  if (input.archiveView !== "active" || total === undefined) return total
+  return Math.max(0, total - rows.filter((row) => matchesSessionListRow(row, input)).length)
+}
+
+function matchesSessionListRow(
+  row: SessionNavigationRow,
+  input: { sessionRef: string },
+) {
+  return row.sessionRef === input.sessionRef
+}
+
+function sessionListArchiveView(key: readonly unknown[]): NonNullable<SessionListQuery["archived"]> {
+  const query = key[3]
+  if (!query || typeof query !== "object") return "active"
+  const archived = (query as { archived?: unknown }).archived
+  if (archived === "all" || archived === "archived") return archived
+  return "active"
+}
+
+function isSessionListQueryKey(key: readonly unknown[], base: string) {
+  return key[0] === "shell" && key[1] === base && key[2] === "sessionList"
+}
+
+function normalizedBase(url: string | undefined) {
+  const trimmed = url?.trim()
+  if (!trimmed) return "default"
+  return trimmed.replace(/\/+$/, "")
+}

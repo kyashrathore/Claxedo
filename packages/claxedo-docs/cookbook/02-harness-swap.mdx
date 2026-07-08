@@ -1,0 +1,102 @@
+---
+title: "02 — Harness swap"
+description: "One runOnce() function runs Claude, Codex, and Cursor through the identical code path — the harness is data, not architecture."
+---
+
+`runOnce()` below never mentions a vendor. Claude, Codex, and Cursor all run
+through the identical code path — swapping agents is swapping one string.
+
+## Run
+
+```bash
+bun run recipe:02-harness-swap
+```
+
+<Note>
+Needs at least one coding-agent CLI installed **and** authenticated. The
+recipe runs every harness it detects as ready, and honestly lists the rest as
+skipped with the reason.
+</Note>
+
+## The moat: one function, any agent
+
+```ts
+// Nothing in here is claude-specific, codex-specific, or cursor-specific.
+async function runOnce(harness: { id: DetectedHarness["id"]; access: DetectedHarness["access"] }) {
+  const dir = await mkdtemp(path.join(tmpdir(), `claxedo-swap-${harness.id}-`))
+  await writeFile(path.join(dir, "README.md"), "# harness-swap scratch\n")
+
+  const runtime = createAgentRuntime({
+    store: createMemoryRuntimeStore(),
+    harnesses: [harnessFactory(harness)],
+  })
+  try {
+    const session = await runtime.sessions.create({
+      directory: dir,
+      harness,
+      model: { providerID: harness.id, modelID: "default" },
+      title: `swap ${harness.id}`,
+    })
+    const events = runtime.events.subscribe({ sessionId: session.id })
+    await runtime.turns.start({
+      sessionId: session.id,
+      agent: "",
+      text: `Reply with exactly: HELLO FROM ${harness.id.toUpperCase()} VIA CLAXEDO`,
+    })
+    const turn = await waitForTurn(runtime, events, dir, 120_000)
+    const reply = assistantText(await runtime.events.list(session.id))
+    return { turn, reply }
+  } finally {
+    runtime.dispose()
+  }
+}
+```
+
+Full source: [`src/recipes/02-harness-swap.ts`](https://github.com/kyashrathore/Claxedo/blob/dev/claxedo-cookbook/src/recipes/02-harness-swap.ts)
+
+## Expected output
+
+On a machine where only the codex CLI is logged in:
+
+```text
+detected but not runnable:
+  - claude (acp): binary "claude-agent-acp" not on PATH
+  - codex (acp): binary "codex-acp" not on PATH
+  - cursor (acp): binary "cursor-agent-acp" not on PATH
+  - claude (native): installed but not logged in (run `claude /login` or set ANTHROPIC_API_KEY)
+  - cursor (native): needs CURSOR_API_KEY (its login state is not cheaply probeable)
+
+>>> running codex (native) — codex CLI logged in
+<<< codex replied: HELLO FROM CODEX VIA CLAXEDO
+
+--- 02-harness-swap ---
+harness  access  status                                           reply
+----------------------------------------------------------------------------------------------
+codex    native  replied                                          HELLO FROM CODEX VIA CLAXEDO
+claude   acp     skipped (binary "claude-agent-acp" not on PATH)
+...
+--- end ---
+
+--- 02-harness-swap summary ---
+{
+  "ran": ["codex:native"],
+  "replied": 1,
+  "sameCodeForAll": true
+}
+--- end ---
+```
+
+Log into more CLIs and the same run covers them all with zero code change.
+
+## Lift this into your app
+
+`runOnce()` is the pattern: keep the harness id/access pair as data (a user
+setting, a per-session field), register the matching factory, and everything
+downstream — sessions, turns, events, transcripts — stays vendor-agnostic.
+The auth probes are worth stealing too: binary-on-PATH is not the same as
+logged-in, and an unauthenticated CLI fails mid-turn with a masked error.
+
+<Card title="03 — One event shape" icon="shuffle" href="/cookbook/03-one-event-shape">
+  Why the swap works: every harness dialect normalizes to one canonical event
+  envelope.
+</Card>

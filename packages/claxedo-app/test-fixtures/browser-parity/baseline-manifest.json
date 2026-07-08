@@ -1,0 +1,20 @@
+{
+  "baseURL": "http://127.0.0.1:4444",
+  "updatedAt": "2026-07-06T18:33:04.646Z",
+  "viewports": [
+    {
+      "name": "desktop-with-server",
+      "width": 1440,
+      "height": 1000,
+      "bytes": 17036,
+      "sha256": "f21aa035e73b2216f06452e7a551355699c4be17c83b1b98e30d1aaf0b0e436b"
+    },
+    {
+      "name": "mobile-with-server",
+      "width": 390,
+      "height": 844,
+      "bytes": 12880,
+      "sha256": "2f38d5145a5fcbe2b61e94764f3ea30f20a2eed6879a2096249c827884aa4511"
+    }
+  ]
+}

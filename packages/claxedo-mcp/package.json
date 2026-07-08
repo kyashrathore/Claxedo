@@ -1,0 +1,48 @@
+{
+  "name": "@claxedo/mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MCP server for Claxedo runtime operations: process management, logs, session messages, and browser tools",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/claxedo-mcp"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claxedo",
+    "agents"
+  ],
+  "bin": {
+    "claxedo-mcp": "dist/server.js"
+  },
+  "files": [
+    "dist",
+    "mcp.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun build src/server.ts --outfile dist/server.js --target=node",
+    "prepublishOnly": "bun run build",
+    "start": "node --import tsx src/server.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node ./node_modules/vitest/vitest.mjs run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.25.2",
+    "zod": "4.1.8"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/node": "24.12.2",
+    "tsx": "4.22.3",
+    "typescript": "5.8.2",
+    "vitest": "2.1.9"
+  }
+}

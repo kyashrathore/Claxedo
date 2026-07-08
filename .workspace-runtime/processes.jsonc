@@ -1,0 +1,47 @@
+{
+  "processes": [
+    {
+      "id": "proc_root",
+      "name": "root",
+      "command": "bun run dev serve",
+      "args": [],
+      "autoStart": false,
+      "restartPolicy": "never",
+      "maxRestarts": 3,
+      "port": {
+        "name": "opencode",
+        "inject": "--port"
+      }
+    },
+    {
+      "id": "proc_claxedo_server",
+      "name": "claxedo-server",
+      "command": "npm run dev",
+      "args": [],
+      "cwd": "packages/claxedo-server",
+      "autoStart": false,
+      "restartPolicy": "never",
+      "maxRestarts": 3,
+      "port": {
+        "name": "server",
+        "inject": "CLAXEDO_SERVER_PORT",
+        "preferred": 3001
+      }
+    },
+    {
+      "id": "proc_claxedo_app",
+      "name": "claxedo-app",
+      "command": "npm run dev",
+      "args": [],
+      "cwd": "packages/claxedo-app",
+      "autoStart": false,
+      "restartPolicy": "never",
+      "maxRestarts": 3,
+      "port": {
+        "name": "app",
+        "inject": "PORT",
+        "preferred": 4444
+      }
+    }
+  ]
+}

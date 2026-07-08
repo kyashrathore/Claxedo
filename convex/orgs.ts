@@ -1,0 +1,240 @@
+import { mutationGeneric, queryGeneric } from "convex/server"
+import { v } from "convex/values"
+import { orgByClerkOrgId, readUser, upsertUser } from "./model"
+
+export async function personalOrgForUser(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
+  const existing = (await ctx.db
+    .query("orgs")
+    .withIndex("by_owner", (q: any) => q.eq("owner_user_id", user._id))
+    .collect())
+    .find((org: any) => org.kind === "personal" && !org.clerk_org_id && !org.deleted_at)
+  if (existing) return existing
+  const now = Date.now()
+  const orgId = await ctx.db.insert("orgs", {
+    name: user.name ?? user.email ?? "Personal",
+    kind: "personal",
+    owner_user_id: user._id,
+    created_at: now,
+    updated_at: now,
+  })
+  await ctx.db.insert("org_memberships", {
+    org_id: orgId,
+    user_id: user._id,
+    role: "owner",
+    created_at: now,
+    updated_at: now,
+  })
+  return await ctx.db.get(orgId)
+}
+
+export const listForMe = queryGeneric({
+  args: {},
+  handler: async (ctx) => {
+    const user = await readUser(ctx)
+    const memberships = await ctx.db
+      .query("org_memberships")
+      .withIndex("by_user", (q) => q.eq("user_id", user._id))
+      .collect()
+
+    return await Promise.all(memberships.map(async (membership) => {
+      const org = await ctx.db.get(membership.org_id)
+      return org ? {
+        org_id: org._id,
+        clerk_org_id: org.clerk_org_id,
+        slug: org.slug,
+        name: org.name,
+        role: membership.role,
+      } : undefined
+    })).then((items) => items.filter((item) => item !== undefined))
+  },
+})
+
+export const ensurePersonalOrg = mutationGeneric({
+  args: {},
+  handler: async (ctx) => {
+    const user = await upsertUser(ctx)
+    const org = await personalOrgForUser(ctx, user)
+    return {
+      org_id: org._id,
+      clerk_org_id: org.clerk_org_id,
+      role: "owner",
+    }
+  },
+})
+
+export const resolveForMe = mutationGeneric({
+  args: {
+    clerk_org_id: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await upsertUser(ctx)
+    const org = args.clerk_org_id ? await orgByClerkOrgId(ctx.db, args.clerk_org_id) : undefined
+    if (org && !org.deleted_at) {
+      const membership = (await ctx.db
+        .query("org_memberships")
+        .withIndex("by_org_user", (q: any) => q.eq("org_id", org._id))
+        .collect())
+        .find((item: any) => item.user_id === user._id)
+      if (membership) return { org_id: org._id, clerk_org_id: org.clerk_org_id, role: membership.role }
+    }
+    const personal = await personalOrgForUser(ctx, user)
+    return { org_id: personal._id, clerk_org_id: personal.clerk_org_id, role: "owner" }
+  },
+})
+
+export const setActive = queryGeneric({
+  args: {
+    clerk_org_id: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await readUser(ctx)
+    const orgs = await ctx.db.query("orgs").collect()
+    const org = orgs.find((item) => item.clerk_org_id === args.clerk_org_id)
+    if (!org) throw new Error("Org not found")
+    const memberships = await ctx.db
+      .query("org_memberships")
+      .withIndex("by_org_user", (q) => q.eq("org_id", org._id))
+      .collect()
+    const membership = memberships.find((item) => item.user_id === user._id)
+    if (!membership) throw new Error("Org not found")
+    return {
+      org_id: org._id,
+      clerk_org_id: org.clerk_org_id,
+      role: membership.role,
+    }
+  },
+})
+
+function clerkRole(input: unknown) {
+  const value = typeof input === "string" ? input : ""
+  if (value.includes("admin")) return "admin"
+  return "member"
+}
+
+function eventTime(data: Record<string, any>) {
+  const value = data.updated_at ?? data.created_at
+  return typeof value === "number" ? value : Date.now()
+}
+
+async function upsertClerkUser(ctx: any, data: Record<string, any>) {
+  const subject = typeof data.id === "string" ? data.id : undefined
+  if (!subject) return
+  const existing = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_subject", (q: any) => q.eq("clerk_subject", subject))
+    .unique()
+  const now = Date.now()
+  const patch = {
+    clerk_subject: subject,
+    email: data.email_addresses?.[0]?.email_address,
+    name: [data.first_name, data.last_name].filter(Boolean).join(" ") || undefined,
+    image_url: data.image_url,
+    updated_at: now,
+  }
+  if (existing) {
+    await ctx.db.patch(existing._id, patch)
+    return existing._id
+  }
+  return await ctx.db.insert("users", {
+    token_identifier: `clerk:${subject}`,
+    issuer: "clerk",
+    kind: "human",
+    ...patch,
+    created_at: now,
+  })
+}
+
+async function upsertClerkOrg(ctx: any, data: Record<string, any>) {
+  const clerkOrgId = typeof data.id === "string" ? data.id : undefined
+  if (!clerkOrgId) return
+  const existing = await orgByClerkOrgId(ctx.db, clerkOrgId)
+  const updatedAt = eventTime(data)
+  if (existing?.clerk_updated_at && existing.clerk_updated_at > updatedAt) return existing._id
+  const patch = {
+    clerk_org_id: clerkOrgId,
+    slug: data.slug,
+    name: data.name ?? data.slug ?? clerkOrgId,
+    kind: "clerk" as const,
+    deleted_at: undefined,
+    clerk_updated_at: updatedAt,
+    updated_at: Date.now(),
+  }
+  if (existing) {
+    await ctx.db.patch(existing._id, patch)
+    return existing._id
+  }
+  return await ctx.db.insert("orgs", {
+    ...patch,
+    created_at: Date.now(),
+  })
+}
+
+async function upsertClerkMembership(ctx: any, data: Record<string, any>) {
+  const orgId = await upsertClerkOrg(ctx, data.organization ?? {})
+  const clerkSubject = data.public_user_data?.user_id ?? data.user_id
+  if (!orgId || typeof clerkSubject !== "string") return
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_subject", (q: any) => q.eq("clerk_subject", clerkSubject))
+    .unique()
+  if (!user) return
+  const updatedAt = eventTime(data)
+  const existing = (await ctx.db
+    .query("org_memberships")
+    .withIndex("by_org_user", (q: any) => q.eq("org_id", orgId))
+    .collect())
+    .find((membership: any) => membership.user_id === user._id)
+  if (existing?.clerk_updated_at && existing.clerk_updated_at > updatedAt) return
+  const patch = {
+    role: clerkRole(data.role),
+    clerk_updated_at: updatedAt,
+    updated_at: Date.now(),
+  }
+  if (existing) {
+    await ctx.db.patch(existing._id, patch)
+    return
+  }
+  await ctx.db.insert("org_memberships", {
+    org_id: orgId,
+    user_id: user._id,
+    ...patch,
+    created_at: Date.now(),
+  })
+}
+
+async function deleteClerkMembership(ctx: any, data: Record<string, any>) {
+  const clerkOrgId = data.organization?.id
+  const clerkSubject = data.public_user_data?.user_id ?? data.user_id
+  if (typeof clerkOrgId !== "string" || typeof clerkSubject !== "string") return
+  const org = await orgByClerkOrgId(ctx.db, clerkOrgId)
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_subject", (q: any) => q.eq("clerk_subject", clerkSubject))
+    .unique()
+  if (!org || !user) return
+  const membership = (await ctx.db
+    .query("org_memberships")
+    .withIndex("by_org_user", (q: any) => q.eq("org_id", org._id))
+    .collect())
+    .find((item: any) => item.user_id === user._id)
+  if (membership) await ctx.db.delete(membership._id)
+}
+
+export const applyClerkWebhook = mutationGeneric({
+  args: {
+    type: v.string(),
+    data: v.any(),
+  },
+  handler: async (ctx, args) => {
+    const data = args.data as Record<string, any>
+    if (args.type === "user.created") await upsertClerkUser(ctx, data)
+    if (args.type === "organization.created" || args.type === "organization.updated") await upsertClerkOrg(ctx, data)
+    if (args.type === "organizationMembership.created" || args.type === "organizationMembership.updated") await upsertClerkMembership(ctx, data)
+    if (args.type === "organizationMembership.deleted") await deleteClerkMembership(ctx, data)
+    if (args.type === "organization.deleted") {
+      const org = typeof data.id === "string" ? await orgByClerkOrgId(ctx.db, data.id) : undefined
+      if (org) await ctx.db.patch(org._id, { deleted_at: Date.now(), updated_at: Date.now() })
+    }
+    return { ok: true }
+  },
+})

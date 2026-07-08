@@ -1,0 +1,134 @@
+import { afterEach, describe, expect, test } from "bun:test"
+import type { Session } from "@opencode-ai/sdk/v2/client"
+import {
+  directorySessionCacheQuery,
+  directorySessions,
+  ensureDirectorySessionCache,
+  focusDirectorySessionCache,
+  removeDirectorySession,
+  removeDirectorySessionTree,
+  refreshDirectorySessionCache,
+  setDirectorySessionCache,
+  updateDirectorySession,
+  upsertDirectorySession,
+  useDirectorySessionCacheActions,
+} from "./directory-session-cache"
+import { directorySessionCacheQueryOptions } from "./queries"
+import { queryClient } from "../../shared/query/query-client"
+
+afterEach(() => {
+  queryClient.clear()
+})
+
+function session(input: { id: string; parentID?: string }): Session {
+  return {
+    id: input.id,
+    parentID: input.parentID,
+    time: { created: 1, updated: 1 },
+  } as Session
+}
+
+describe("directory session-cache shell-data boundary", () => {
+  test("exposes the disabled session cache query under the shell-data owner", () => {
+    expect(directorySessionCacheQuery("/workspace/project")).toMatchObject({
+      queryKey: directorySessionCacheQueryOptions({ directory: "/workspace/project" }).queryKey,
+      enabled: false,
+    })
+  })
+
+  test("ensure forwards quiet speculative refreshes", async () => {
+    queryClient.removeQueries({
+      queryKey: directorySessionCacheQueryOptions({ directory: "/missing-workspace" }).queryKey,
+      exact: true,
+    })
+    const calls: unknown[] = []
+
+    await ensureDirectorySessionCache({
+      directory: "/missing-workspace",
+      refresh: (...args) => {
+        calls.push(args)
+      },
+      quiet: true,
+    })
+
+    expect(calls).toEqual([["/missing-workspace", undefined, { quiet: true }]])
+  })
+
+  test("refresh keeps explicit loads loud unless the caller opts into quiet", async () => {
+    const calls: unknown[] = []
+
+    await refreshDirectorySessionCache({
+      directory: "/workspace/project",
+      refresh: (...args) => {
+        calls.push(args)
+      },
+    })
+
+    expect(calls).toEqual([["/workspace/project", undefined, { quiet: undefined }]])
+  })
+
+  test("hook-level ensure defaults to quiet while refresh does not", async () => {
+    const source = await Bun.file(new URL("./directory-session-cache.ts", import.meta.url)).text()
+
+    expect(source).toContain("quiet: input.quiet ?? true")
+    expect(source).toMatch(/refresh:\s*\(input: \{ directory: string; harnessType\?: string; quiet\?: boolean \}\) =>[\s\S]{0,180}refreshDirectorySessionCache/)
+    expect(source).not.toMatch(/refresh:[\s\S]{0,180}quiet: input\.quiet \?\? true/)
+    void useDirectorySessionCacheActions
+  })
+
+  test("forwards focused directory updates to the cache refresh queue owner", () => {
+    const calls: Array<string | undefined> = []
+
+    focusDirectorySessionCache({
+      source: {
+        setFocusedDirectory: (directory) => {
+          calls.push(directory)
+        },
+      },
+      directory: "/workspace/project",
+    })
+
+    focusDirectorySessionCache({
+      source: {
+        setFocusedDirectory: (directory) => {
+          calls.push(directory)
+        },
+      },
+    })
+
+    expect(calls).toEqual(["/workspace/project", undefined])
+  })
+
+  test("owns directory session cache writes", () => {
+    setDirectorySessionCache("/workspace/project", {
+      at: 1,
+      limit: 10,
+      total: 1,
+      session: [session({ id: "ses_1" })],
+    })
+
+    upsertDirectorySession("/workspace/project", session({ id: "ses_2" }))
+    updateDirectorySession("/workspace/project", "ses_2", (item) => ({ ...item, title: "Updated" }))
+    removeDirectorySession("/workspace/project", "ses_1")
+
+    expect(directorySessions("/workspace/project")).toMatchObject([
+      { id: "ses_2", title: "Updated" },
+    ])
+  })
+
+  test("removes child sessions with a deleted root", () => {
+    setDirectorySessionCache("/workspace/project", {
+      at: 1,
+      limit: 10,
+      total: 2,
+      session: [
+        session({ id: "ses_root" }),
+        session({ id: "ses_child", parentID: "ses_root" }),
+        session({ id: "ses_other" }),
+      ],
+    })
+
+    expect([...removeDirectorySessionTree("/workspace/project", "ses_root")].sort()).toEqual(["ses_child", "ses_root"])
+    expect(directorySessions("/workspace/project").map((item) => item.id)).toEqual(["ses_other"])
+  })
+})

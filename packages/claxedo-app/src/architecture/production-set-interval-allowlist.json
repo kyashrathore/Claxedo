@@ -1,0 +1,26 @@
+[
+  {
+    "file": "components/debug-bar.tsx",
+    "count": 1,
+    "owner": "dev perf HUD",
+    "reason": "Development-only performance sampler."
+  },
+  {
+    "file": "claxedo-ui/context/process-pane.tsx",
+    "count": 1,
+    "owner": "process pane",
+    "reason": "Sleep-detection timer watches wall-clock gaps."
+  },
+  {
+    "file": "claxedo-ui/layouts/rail-sidebar.tsx",
+    "count": 1,
+    "owner": "rail sidebar clock",
+    "reason": "Visible clock tick."
+  },
+  {
+    "file": "demo/handlers.ts",
+    "count": 2,
+    "owner": "demo runtime",
+    "reason": "MSW demo SSE heartbeat timers; demo fate is Phase 6."
+  }
+]

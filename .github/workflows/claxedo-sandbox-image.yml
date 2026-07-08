@@ -1,0 +1,65 @@
+name: claxedo-sandbox-image
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - packages/claxedo-server/scripts/sandbox/Dockerfile
+      - packages/sandbox-manager/src/image.ts
+      - packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts
+      - packages/claxedo-server/src/workspace-runtime-integration/host-entry.ts
+      - packages/workspace-runtime/package.json
+      - .github/workflows/claxedo-sandbox-image.yml
+  workflow_dispatch:
+    inputs:
+      runtime_version:
+        description: "workspace-runtime core version used for image/snapshot naming (defaults to the checkout's package.json)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build and push sandbox image
+        env:
+          WORKSPACE_RUNTIME_VERSION: ${{ inputs.runtime_version }}
+        run: bun run --cwd packages/claxedo-server sandbox:image --push --latest
+
+      # Surface the content build-id / image tag / snapshot name so operators
+      # can pin the control plane (CLAXEDO_SANDBOX_BUILD_ID / CLAXEDO_SNAPSHOT_NAME
+      # / CLAXEDO_SANDBOX_IMAGE). Deleting the npm-publish gate removed content
+      # immutability at a fixed core version, so the exact build must be nameable.
+      - name: Surface sandbox build identity
+        if: always()
+        run: |
+          INFO=packages/claxedo-server/scripts/sandbox/.build/build-info.json
+          if [ -f "$INFO" ]; then
+            echo "### Sandbox build identity" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat "$INFO" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "Pin the control plane: set CLAXEDO_SANDBOX_BUILD_ID (or CLAXEDO_SNAPSHOT_NAME / CLAXEDO_SANDBOX_IMAGE) to the value above." >> "$GITHUB_STEP_SUMMARY"
+            cat "$INFO"
+          else
+            echo "no build-info.json emitted"
+          fi

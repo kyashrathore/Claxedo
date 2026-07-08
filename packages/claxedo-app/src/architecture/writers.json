@@ -1,0 +1,77 @@
+{
+  "families": [
+    {
+      "family": "session/workspace query cache",
+      "writer": "shell/data/writers.ts",
+      "status": "live"
+    },
+    {
+      "family": "conversation messages",
+      "writer": "shell/chat/conversation-chat-client.ts",
+      "status": "live"
+    },
+    {
+      "family": "session.status-meta",
+      "writer": "session/store/session-status-dispatcher.ts",
+      "status": "live"
+    },
+    {
+      "family": "session.inventory",
+      "writer": "shell/data/inventory-writers.ts",
+      "status": "live"
+    },
+    {
+      "family": "directory.sessionCache",
+      "writer": "shell/data/directory-session-cache.ts",
+      "status": "live"
+    },
+    {
+      "family": "harness-config query cache",
+      "writer": "claxedo-ui/context/harness-query-cache.ts",
+      "status": "live"
+    },
+    {
+      "family": "saved session config signature",
+      "writer": "components/prompt-input/submit-transport.ts",
+      "status": "live"
+    },
+    {
+      "family": "saved views cache",
+      "writer": "shell/data/views-writers.ts",
+      "status": "planned"
+    }
+  ],
+  "grandfathered": [
+    "claxedo-ui/claxedo-layout-actions/project-actions.tsx",
+    "claxedo-ui/components/review-vcs-cache.ts",
+    "claxedo-ui/terminal/pane-terminal-recovery.ts",
+    "claxedo-ui/utils/terminal-log-summary.ts",
+    "claxedo-ui/utils/terminal-session-preview.ts",
+    "components/dialog-connect-provider.tsx",
+    "components/dialog-custom-provider.tsx",
+    "components/settings-providers.tsx",
+    "context/global-sync.tsx",
+    "context/global-sync/queue.ts",
+    "context/local.tsx",
+    "context/permission-auto-response-cache.ts",
+    "context/sdk.tsx",
+    "context/server.tsx",
+    "pages/session/composer/session-question-cache.ts",
+    "pages/session/handoff.ts",
+    "session/store/session-status-telemetry.ts",
+    "session/submit/rolled-back-drafts.ts",
+    "shared/query/project-meta.ts",
+    "shared/query/session-list.ts",
+    "shell/data/bootstrap.ts",
+    "shell/data/directory-cache-manager.ts",
+    "shell/data/global-sync-sdk-client-cache.ts",
+    "shell/data/session-prefetch.ts",
+    "shell/session/local-selection-handoff.ts",
+    "utils/local-selection-handoff.ts",
+    "utils/project-meta-cache.ts",
+    "utils/server-health.ts",
+    "utils/workspace-relay-connection.ts",
+    "utils/workspace-runtime-request.ts",
+    "utils/worktree.ts"
+  ]
+}

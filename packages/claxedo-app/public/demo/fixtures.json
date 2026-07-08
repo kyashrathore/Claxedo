@@ -1,0 +1,1295 @@
+{
+  "globalConfig": {},
+  "providerAuth": {},
+  "provider": {
+    "all": [
+      {
+        "id": "anthropic",
+        "name": "Anthropic",
+        "env": [
+          "ANTHROPIC_API_KEY"
+        ],
+        "models": {
+          "claude-sonnet-4-20250514": {
+            "id": "claude-sonnet-4-20250514",
+            "name": "Claude Sonnet 4",
+            "release_date": "2025-05-14",
+            "attachment": true,
+            "reasoning": false,
+            "temperature": true,
+            "tool_call": true,
+            "limit": {
+              "context": 200000,
+              "output": 16384
+            },
+            "cost": {
+              "input": 3,
+              "output": 15
+            },
+            "options": {}
+          },
+          "claude-opus-4-20250514": {
+            "id": "claude-opus-4-20250514",
+            "name": "Claude Opus 4",
+            "release_date": "2025-05-14",
+            "attachment": true,
+            "reasoning": false,
+            "temperature": true,
+            "tool_call": true,
+            "limit": {
+              "context": 200000,
+              "output": 16384
+            },
+            "cost": {
+              "input": 15,
+              "output": 75
+            },
+            "options": {}
+          }
+        }
+      },
+      {
+        "id": "openai",
+        "name": "OpenAI",
+        "env": [
+          "OPENAI_API_KEY"
+        ],
+        "models": {
+          "o3": {
+            "id": "o3",
+            "name": "o3",
+            "release_date": "2025-04-16",
+            "attachment": true,
+            "reasoning": true,
+            "temperature": false,
+            "tool_call": true,
+            "limit": {
+              "context": 200000,
+              "output": 100000
+            },
+            "cost": {
+              "input": 2,
+              "output": 8
+            },
+            "options": {}
+          },
+          "codex-1": {
+            "id": "codex-1",
+            "name": "Codex",
+            "release_date": "2025-05-16",
+            "attachment": false,
+            "reasoning": true,
+            "temperature": false,
+            "tool_call": true,
+            "limit": {
+              "context": 192000,
+              "output": 16384
+            },
+            "cost": {
+              "input": 2,
+              "output": 8
+            },
+            "options": {}
+          }
+        }
+      }
+    ],
+    "connected": [
+      "anthropic",
+      "openai"
+    ],
+    "default": {
+      "id": "anthropic",
+      "model": "claude-sonnet-4-20250514"
+    }
+  },
+  "agents": [
+    {
+      "id": "code",
+      "name": "Code",
+      "description": "General-purpose coding agent"
+    }
+  ],
+  "config": {
+    "provider": {
+      "id": "anthropic",
+      "model": "claude-sonnet-4-20250514"
+    },
+    "agent": {
+      "id": "code"
+    }
+  },
+  "projects": [
+    {
+      "id": "proj_demo_001",
+      "worktree": "/home/demo/projects/my-app",
+      "name": "my-app",
+      "sandboxes": [
+        "/home/demo/projects/my-app-feature-auth"
+      ],
+      "time": {
+        "created": 1770286520414,
+        "updated": 1772874920414
+      }
+    },
+    {
+      "id": "proj_demo_002",
+      "worktree": "/home/demo/projects/dashboard",
+      "name": "dashboard",
+      "time": {
+        "created": 1771150520414,
+        "updated": 1772871320414
+      }
+    }
+  ],
+  "projectInfo": {
+    "/home/demo/projects/my-app": {
+      "id": "proj_demo_001",
+      "name": "my-app",
+      "worktree": "/home/demo/projects/my-app"
+    },
+    "/home/demo/projects/my-app-feature-auth": {
+      "id": "proj_demo_001",
+      "name": "my-app",
+      "worktree": "/home/demo/projects/my-app-feature-auth"
+    },
+    "/home/demo/projects/dashboard": {
+      "id": "proj_demo_002",
+      "name": "dashboard",
+      "worktree": "/home/demo/projects/dashboard"
+    }
+  },
+  "sessions": [
+    {
+      "id": "ses_demo_001",
+      "slug": "fix-auth-middleware",
+      "projectID": "proj_demo_001",
+      "directory": "/home/demo/projects/my-app",
+      "title": "Fix authentication middleware bug",
+      "version": "2",
+      "time": {
+        "created": 1772871320414,
+        "updated": 1772876720414
+      },
+      "summary": {
+        "additions": 24,
+        "deletions": 8,
+        "files": 3
+      }
+    },
+    {
+      "id": "ses_demo_002",
+      "slug": "add-user-settings",
+      "projectID": "proj_demo_001",
+      "directory": "/home/demo/projects/my-app",
+      "title": "Add user settings page",
+      "version": "2",
+      "time": {
+        "created": 1772860520414,
+        "updated": 1772867720414
+      },
+      "summary": {
+        "additions": 156,
+        "deletions": 12,
+        "files": 7
+      }
+    },
+    {
+      "id": "ses_demo_003",
+      "slug": "refactor-database-queries",
+      "projectID": "proj_demo_001",
+      "directory": "/home/demo/projects/my-app",
+      "title": "Refactor database queries for performance",
+      "version": "2",
+      "time": {
+        "created": 1772792120414,
+        "updated": 1772849720414
+      },
+      "summary": {
+        "additions": 89,
+        "deletions": 134,
+        "files": 11
+      }
+    },
+    {
+      "id": "ses_demo_004",
+      "slug": "setup-ci-pipeline",
+      "projectID": "proj_demo_001",
+      "directory": "/home/demo/projects/my-app",
+      "title": "Set up CI/CD pipeline with GitHub Actions",
+      "version": "2",
+      "time": {
+        "created": 1772705720414,
+        "updated": 1772792120414
+      },
+      "summary": {
+        "additions": 67,
+        "deletions": 0,
+        "files": 4
+      }
+    },
+    {
+      "id": "ses_demo_005",
+      "slug": "api-rate-limiting",
+      "projectID": "proj_demo_001",
+      "directory": "/home/demo/projects/my-app",
+      "title": "Implement API rate limiting",
+      "version": "2",
+      "time": {
+        "created": 1772619320414,
+        "updated": 1772705720414
+      },
+      "summary": {
+        "additions": 42,
+        "deletions": 3,
+        "files": 5
+      }
+    },
+    {
+      "id": "ses_wt_001",
+      "slug": "oauth-google-provider",
+      "projectID": "proj_demo_001",
+      "directory": "/home/demo/projects/my-app-feature-auth",
+      "title": "Add Google OAuth provider",
+      "version": "2",
+      "time": {
+        "created": 1772864120414,
+        "updated": 1772874920414
+      },
+      "summary": {
+        "additions": 87,
+        "deletions": 4,
+        "files": 6
+      }
+    },
+    {
+      "id": "ses_wt_002",
+      "slug": "session-refresh-token",
+      "projectID": "proj_demo_001",
+      "directory": "/home/demo/projects/my-app-feature-auth",
+      "title": "Implement refresh token rotation",
+      "version": "2",
+      "time": {
+        "created": 1772856920414,
+        "updated": 1772864120414
+      },
+      "summary": {
+        "additions": 63,
+        "deletions": 18,
+        "files": 4
+      }
+    },
+    {
+      "id": "ses_p2_001",
+      "slug": "chart-component",
+      "projectID": "proj_demo_002",
+      "directory": "/home/demo/projects/dashboard",
+      "title": "Build real-time chart component",
+      "version": "2",
+      "time": {
+        "created": 1772867720414,
+        "updated": 1772871320414
+      },
+      "summary": {
+        "additions": 210,
+        "deletions": 0,
+        "files": 5
+      }
+    }
+  ],
+  "sessionMessages": {
+    "ses_demo_001": [
+      {
+        "info": {
+          "id": "msg_001_1",
+          "sessionID": "ses_demo_001",
+          "role": "user",
+          "time": {
+            "created": 1772871320414
+          },
+          "agent": "code",
+          "model": {
+            "providerID": "anthropic",
+            "modelID": "claude-sonnet-4-20250514"
+          }
+        },
+        "parts": [
+          {
+            "id": "msg_001_1_text",
+            "sessionID": "ses_demo_001",
+            "messageID": "msg_001_1",
+            "type": "text",
+            "text": "There's a bug in the auth middleware. Expired tokens are still getting through protected routes."
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_001_2",
+          "sessionID": "ses_demo_001",
+          "role": "assistant",
+          "time": {
+            "created": 1772871350414,
+            "completed": 1772871380414
+          },
+          "parentID": "msg_001_1",
+          "modelID": "claude-sonnet-4-20250514",
+          "providerID": "anthropic",
+          "agent": "code",
+          "mode": "code",
+          "path": {
+            "cwd": "/home/demo/projects/my-app",
+            "root": "/home/demo/projects/my-app"
+          },
+          "cost": 0.004,
+          "tokens": {
+            "input": 1200,
+            "output": 420,
+            "reasoning": 0,
+            "cache": {
+              "read": 600,
+              "write": 300
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "part_001_2",
+            "sessionID": "ses_demo_001",
+            "messageID": "msg_001_2",
+            "type": "text",
+            "text": "I traced the issue to the expiry check and updated the middleware to rely on `verify()` plus a 30 second clock tolerance."
+          },
+          {
+            "id": "part_001_3",
+            "sessionID": "ses_demo_001",
+            "messageID": "msg_001_2",
+            "type": "tool",
+            "callID": "part_001_3_call",
+            "tool": "edit",
+            "state": {
+              "status": "completed",
+              "input": {
+                "path": "src/middleware/auth.ts"
+              },
+              "output": "Applied edit",
+              "title": "Edit src/middleware/auth.ts",
+              "metadata": {
+                "path": "src/middleware/auth.ts"
+              },
+              "time": {
+                "start": 1772878515414,
+                "end": 1772878516414
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "ses_demo_002": [
+      {
+        "info": {
+          "id": "msg_002_1",
+          "sessionID": "ses_demo_002",
+          "role": "user",
+          "time": {
+            "created": 1772860520414
+          },
+          "agent": "code",
+          "model": {
+            "providerID": "anthropic",
+            "modelID": "claude-sonnet-4-20250514"
+          }
+        },
+        "parts": [
+          {
+            "id": "msg_002_1_text",
+            "sessionID": "ses_demo_002",
+            "messageID": "msg_002_1",
+            "type": "text",
+            "text": "Create a user settings page with profile, password, and notification preferences."
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_002_2",
+          "sessionID": "ses_demo_002",
+          "role": "assistant",
+          "time": {
+            "created": 1772860565414,
+            "completed": 1772860610414
+          },
+          "parentID": "msg_002_1",
+          "modelID": "claude-sonnet-4-20250514",
+          "providerID": "anthropic",
+          "agent": "code",
+          "mode": "code",
+          "path": {
+            "cwd": "/home/demo/projects/my-app",
+            "root": "/home/demo/projects/my-app"
+          },
+          "cost": 0.004,
+          "tokens": {
+            "input": 1200,
+            "output": 420,
+            "reasoning": 0,
+            "cache": {
+              "read": 600,
+              "write": 300
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "part_002_2",
+            "sessionID": "ses_demo_002",
+            "messageID": "msg_002_2",
+            "type": "text",
+            "text": "The settings page is in place with reusable form inputs and a responsive layout."
+          }
+        ]
+      }
+    ],
+    "ses_demo_003": [
+      {
+        "info": {
+          "id": "msg_003_1",
+          "sessionID": "ses_demo_003",
+          "role": "user",
+          "time": {
+            "created": 1772792120414
+          },
+          "agent": "code",
+          "model": {
+            "providerID": "anthropic",
+            "modelID": "claude-opus-4-20250514"
+          }
+        },
+        "parts": [
+          {
+            "id": "msg_003_1_text",
+            "sessionID": "ses_demo_003",
+            "messageID": "msg_003_1",
+            "type": "text",
+            "text": "The dashboard queries are slow. Can you optimize them?"
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_003_2",
+          "sessionID": "ses_demo_003",
+          "role": "assistant",
+          "time": {
+            "created": 1772792180414,
+            "completed": 1772792300414
+          },
+          "parentID": "msg_003_1",
+          "modelID": "claude-opus-4-20250514",
+          "providerID": "anthropic",
+          "agent": "code",
+          "mode": "code",
+          "path": {
+            "cwd": "/home/demo/projects/my-app",
+            "root": "/home/demo/projects/my-app"
+          },
+          "cost": 0.004,
+          "tokens": {
+            "input": 1200,
+            "output": 420,
+            "reasoning": 0,
+            "cache": {
+              "read": 600,
+              "write": 300
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "part_003_2",
+            "sessionID": "ses_demo_003",
+            "messageID": "msg_003_2",
+            "type": "text",
+            "text": "I replaced the broad scans with filtered queries, added indexes, and documented the expected 10x improvement."
+          }
+        ]
+      }
+    ],
+    "ses_demo_004": [
+      {
+        "info": {
+          "id": "msg_004_1",
+          "sessionID": "ses_demo_004",
+          "role": "user",
+          "time": {
+            "created": 1772705720414
+          },
+          "agent": "code",
+          "model": {
+            "providerID": "anthropic",
+            "modelID": "claude-sonnet-4-20250514"
+          }
+        },
+        "parts": [
+          {
+            "id": "msg_004_1_text",
+            "sessionID": "ses_demo_004",
+            "messageID": "msg_004_1",
+            "type": "text",
+            "text": "Set up CI and deployment workflows for the app."
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_004_2",
+          "sessionID": "ses_demo_004",
+          "role": "assistant",
+          "time": {
+            "created": 1772705770414,
+            "completed": 1772705840414
+          },
+          "parentID": "msg_004_1",
+          "modelID": "claude-sonnet-4-20250514",
+          "providerID": "anthropic",
+          "agent": "code",
+          "mode": "code",
+          "path": {
+            "cwd": "/home/demo/projects/my-app",
+            "root": "/home/demo/projects/my-app"
+          },
+          "cost": 0.004,
+          "tokens": {
+            "input": 1200,
+            "output": 420,
+            "reasoning": 0,
+            "cache": {
+              "read": 600,
+              "write": 300
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "part_004_2",
+            "sessionID": "ses_demo_004",
+            "messageID": "msg_004_2",
+            "type": "text",
+            "text": "CI now runs lint, test, and build, and deployment is gated on the main branch."
+          }
+        ]
+      }
+    ],
+    "ses_demo_005": [
+      {
+        "info": {
+          "id": "msg_005_1",
+          "sessionID": "ses_demo_005",
+          "role": "user",
+          "time": {
+            "created": 1772619320414
+          },
+          "agent": "code",
+          "model": {
+            "providerID": "anthropic",
+            "modelID": "claude-sonnet-4-20250514"
+          }
+        },
+        "parts": [
+          {
+            "id": "msg_005_1_text",
+            "sessionID": "ses_demo_005",
+            "messageID": "msg_005_1",
+            "type": "text",
+            "text": "Add API rate limiting with sensible response headers."
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_005_2",
+          "sessionID": "ses_demo_005",
+          "role": "assistant",
+          "time": {
+            "created": 1772619365414,
+            "completed": 1772619430414
+          },
+          "parentID": "msg_005_1",
+          "modelID": "claude-sonnet-4-20250514",
+          "providerID": "anthropic",
+          "agent": "code",
+          "mode": "code",
+          "path": {
+            "cwd": "/home/demo/projects/my-app",
+            "root": "/home/demo/projects/my-app"
+          },
+          "cost": 0.004,
+          "tokens": {
+            "input": 1200,
+            "output": 420,
+            "reasoning": 0,
+            "cache": {
+              "read": 600,
+              "write": 300
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "part_005_2",
+            "sessionID": "ses_demo_005",
+            "messageID": "msg_005_2",
+            "type": "text",
+            "text": "Added an in-memory sliding window limiter and exposed the standard limit headers."
+          }
+        ]
+      }
+    ],
+    "ses_wt_001": [
+      {
+        "info": {
+          "id": "msg_wt_001_1",
+          "sessionID": "ses_wt_001",
+          "role": "user",
+          "time": {
+            "created": 1772864120414
+          },
+          "agent": "code",
+          "model": {
+            "providerID": "anthropic",
+            "modelID": "claude-sonnet-4-20250514"
+          }
+        },
+        "parts": [
+          {
+            "id": "msg_wt_001_1_text",
+            "sessionID": "ses_wt_001",
+            "messageID": "msg_wt_001_1",
+            "type": "text",
+            "text": "Add Google as an OAuth provider following the GitHub flow."
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_wt_001_2",
+          "sessionID": "ses_wt_001",
+          "role": "assistant",
+          "time": {
+            "created": 1772864150414,
+            "completed": 1772864210414
+          },
+          "parentID": "msg_wt_001_1",
+          "modelID": "claude-sonnet-4-20250514",
+          "providerID": "anthropic",
+          "agent": "code",
+          "mode": "code",
+          "path": {
+            "cwd": "/home/demo/projects/my-app-feature-auth",
+            "root": "/home/demo/projects/my-app-feature-auth"
+          },
+          "cost": 0.004,
+          "tokens": {
+            "input": 1200,
+            "output": 420,
+            "reasoning": 0,
+            "cache": {
+              "read": 600,
+              "write": 300
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "part_wt_001_2",
+            "sessionID": "ses_wt_001",
+            "messageID": "msg_wt_001_2",
+            "type": "text",
+            "text": "Google OAuth is wired into the provider registry and the login page now exposes the new button."
+          }
+        ]
+      }
+    ],
+    "ses_wt_002": [
+      {
+        "info": {
+          "id": "msg_wt_002_1",
+          "sessionID": "ses_wt_002",
+          "role": "user",
+          "time": {
+            "created": 1772856920414
+          },
+          "agent": "code",
+          "model": {
+            "providerID": "anthropic",
+            "modelID": "claude-sonnet-4-20250514"
+          }
+        },
+        "parts": [
+          {
+            "id": "msg_wt_002_1_text",
+            "sessionID": "ses_wt_002",
+            "messageID": "msg_wt_002_1",
+            "type": "text",
+            "text": "Implement refresh token rotation with family invalidation on replay."
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_wt_002_2",
+          "sessionID": "ses_wt_002",
+          "role": "assistant",
+          "time": {
+            "created": 1772856950414,
+            "completed": 1772857010414
+          },
+          "parentID": "msg_wt_002_1",
+          "modelID": "claude-sonnet-4-20250514",
+          "providerID": "anthropic",
+          "agent": "code",
+          "mode": "code",
+          "path": {
+            "cwd": "/home/demo/projects/my-app-feature-auth",
+            "root": "/home/demo/projects/my-app-feature-auth"
+          },
+          "cost": 0.004,
+          "tokens": {
+            "input": 1200,
+            "output": 420,
+            "reasoning": 0,
+            "cache": {
+              "read": 600,
+              "write": 300
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "part_wt_002_2",
+            "sessionID": "ses_wt_002",
+            "messageID": "msg_wt_002_2",
+            "type": "text",
+            "text": "Refresh tokens now rotate on use and revoke the family when an old token is replayed."
+          }
+        ]
+      }
+    ],
+    "ses_p2_001": [
+      {
+        "info": {
+          "id": "msg_p2_001_1",
+          "sessionID": "ses_p2_001",
+          "role": "user",
+          "time": {
+            "created": 1772867720414
+          },
+          "agent": "code",
+          "model": {
+            "providerID": "anthropic",
+            "modelID": "claude-sonnet-4-20250514"
+          }
+        },
+        "parts": [
+          {
+            "id": "msg_p2_001_1_text",
+            "sessionID": "ses_p2_001",
+            "messageID": "msg_p2_001_1",
+            "type": "text",
+            "text": "Build a real-time chart component with live data updates."
+          }
+        ]
+      },
+      {
+        "info": {
+          "id": "msg_p2_001_2",
+          "sessionID": "ses_p2_001",
+          "role": "assistant",
+          "time": {
+            "created": 1772867745414,
+            "completed": 1772867820414
+          },
+          "parentID": "msg_p2_001_1",
+          "modelID": "claude-sonnet-4-20250514",
+          "providerID": "anthropic",
+          "agent": "code",
+          "mode": "code",
+          "path": {
+            "cwd": "/home/demo/projects/dashboard",
+            "root": "/home/demo/projects/dashboard"
+          },
+          "cost": 0.004,
+          "tokens": {
+            "input": 1200,
+            "output": 420,
+            "reasoning": 0,
+            "cache": {
+              "read": 600,
+              "write": 300
+            }
+          }
+        },
+        "parts": [
+          {
+            "id": "part_p2_001_2",
+            "sessionID": "ses_p2_001",
+            "messageID": "msg_p2_001_2",
+            "type": "text",
+            "text": "The chart wrapper now supports line, bar, and area series with a small live data hook."
+          }
+        ]
+      }
+    ]
+  },
+  "sessionDiffTargets": {
+    "defaultRef": "main",
+    "candidates": [
+      "main"
+    ]
+  },
+  "sessionDiffs": {
+    "ses_demo_001": [
+      {
+        "file": "src/middleware/auth.ts",
+        "status": "modified",
+        "additions": 12,
+        "deletions": 5,
+        "before": "if (decoded.exp < Date.now()) {\n  return res.status(401).json({ error: 'Token expired' })\n}",
+        "after": "verify(token, process.env.JWT_SECRET!, { clockTolerance: 30 })\nreq.user = decoded\nnext()"
+      },
+      {
+        "file": "src/middleware/__tests__/auth.test.ts",
+        "status": "modified",
+        "additions": 18,
+        "deletions": 3,
+        "before": "it('should accept valid token', () => {})",
+        "after": "it('should reject expired token', () => {})\nit('should allow 30s clock tolerance', () => {})"
+      }
+    ],
+    "ses_demo_002": [
+      {
+        "file": "src/pages/settings.tsx",
+        "status": "added",
+        "additions": 48,
+        "deletions": 0,
+        "before": "",
+        "after": "export function SettingsPage() {\n  return <div className='space-y-4'>Settings</div>\n}"
+      }
+    ],
+    "ses_demo_003": [
+      {
+        "file": "src/db/queries.ts",
+        "status": "modified",
+        "additions": 35,
+        "deletions": 52,
+        "before": "SELECT * FROM users",
+        "after": "SELECT * FROM users WHERE role = $1 ORDER BY created_at DESC"
+      }
+    ],
+    "ses_demo_004": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "status": "added",
+        "additions": 42,
+        "deletions": 0,
+        "before": "",
+        "after": "name: CI\non: [push, pull_request]\njobs:\n  test:\n    runs-on: ubuntu-latest"
+      }
+    ],
+    "ses_demo_005": [
+      {
+        "file": "src/middleware/rate-limit.ts",
+        "status": "added",
+        "additions": 38,
+        "deletions": 0,
+        "before": "",
+        "after": "const hits = new Map()\nexport function rateLimit(req, res, next) {\n  next()\n}"
+      }
+    ],
+    "ses_wt_001": [
+      {
+        "file": "src/auth/providers/google.ts",
+        "status": "added",
+        "additions": 52,
+        "deletions": 0,
+        "before": "",
+        "after": "export const googleProvider = { name: \"google\" }"
+      }
+    ],
+    "ses_wt_002": [
+      {
+        "file": "src/auth/refresh-token.ts",
+        "status": "added",
+        "additions": 45,
+        "deletions": 0,
+        "before": "",
+        "after": "export async function rotateRefreshToken(oldToken) { return oldToken }"
+      }
+    ],
+    "ses_p2_001": [
+      {
+        "file": "src/components/chart/Chart.tsx",
+        "status": "added",
+        "additions": 120,
+        "deletions": 0,
+        "before": "",
+        "after": "export function Chart() { return <svg /> }"
+      }
+    ]
+  },
+  "pages": [
+    {
+      "id": "page_demo_001",
+      "title": "Project Architecture",
+      "content": "{\"type\":\"doc\",\"content\":[{\"type\":\"heading\",\"attrs\":{\"level\":1},\"content\":[{\"type\":\"text\",\"text\":\"Project Architecture\"}]},{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"This document summarizes the architecture, deployment model, and project layout for my-app.\"}]}]}",
+      "status": "draft",
+      "visibility": "private",
+      "version": 1,
+      "session_id": null,
+      "directory": null,
+      "source_kind": null,
+      "source_repo_root": null,
+      "source_repo_key": null,
+      "source_branch": null,
+      "source_path": null,
+      "base_commit": null,
+      "base_blob_sha": null,
+      "base_tree_sha": null,
+      "last_materialized_commit": null,
+      "last_materialized_blob_sha": null,
+      "last_commit_at": null,
+      "last_commit_author_id": null,
+      "commit_status": null,
+      "created_at": "2026-02-28T10:15:20.414Z",
+      "updated_at": "2026-03-07T08:15:20.414Z"
+    },
+    {
+      "id": "page_demo_002",
+      "title": "API Design Notes",
+      "content": "{\"type\":\"doc\",\"content\":[{\"type\":\"heading\",\"attrs\":{\"level\":1},\"content\":[{\"type\":\"text\",\"text\":\"API Design Notes\"}]},{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Authentication, rate limiting, and endpoint conventions for the API surface live here.\"}]}]}",
+      "status": "draft",
+      "visibility": "private",
+      "version": 1,
+      "session_id": null,
+      "directory": null,
+      "source_kind": null,
+      "source_repo_root": null,
+      "source_repo_key": null,
+      "source_branch": null,
+      "source_path": null,
+      "base_commit": null,
+      "base_blob_sha": null,
+      "base_tree_sha": null,
+      "last_materialized_commit": null,
+      "last_materialized_blob_sha": null,
+      "last_commit_at": null,
+      "last_commit_author_id": null,
+      "commit_status": null,
+      "created_at": "2026-03-04T10:15:20.414Z",
+      "updated_at": "2026-03-06T10:15:20.414Z"
+    },
+    {
+      "id": "page_demo_003",
+      "title": "Sprint Planning",
+      "content": "{\"type\":\"doc\",\"content\":[{\"type\":\"heading\",\"attrs\":{\"level\":1},\"content\":[{\"type\":\"text\",\"text\":\"Sprint Planning\"}]},{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Current sprint goals cover auth hardening, settings work, and chart delivery.\"}]}]}",
+      "status": "draft",
+      "visibility": "private",
+      "version": 1,
+      "session_id": null,
+      "directory": null,
+      "source_kind": null,
+      "source_repo_root": null,
+      "source_repo_key": null,
+      "source_branch": null,
+      "source_path": null,
+      "base_commit": null,
+      "base_blob_sha": null,
+      "base_tree_sha": null,
+      "last_materialized_commit": null,
+      "last_materialized_blob_sha": null,
+      "last_commit_at": null,
+      "last_commit_author_id": null,
+      "commit_status": null,
+      "created_at": "2026-03-06T10:15:20.414Z",
+      "updated_at": "2026-03-07T06:15:20.414Z"
+    }
+  ],
+  "ptys": [
+    {
+      "id": "pty_demo_001",
+      "title": "claude",
+      "command": "claude",
+      "args": [
+        "--dangerously-skip-permissions"
+      ],
+      "cwd": "/home/demo/projects/my-app",
+      "status": "running",
+      "pid": 12345
+    },
+    {
+      "id": "pty_demo_002",
+      "title": "codex",
+      "command": "codex",
+      "args": [
+        "--full-auto"
+      ],
+      "cwd": "/home/demo/projects/my-app",
+      "status": "running",
+      "pid": 12346
+    },
+    {
+      "id": "pty_demo_003",
+      "title": "Terminal",
+      "command": "/bin/zsh",
+      "args": [],
+      "cwd": "/home/demo/projects/my-app",
+      "status": "running",
+      "pid": 12347
+    }
+  ],
+  "ptyPreview": {
+    "pty_demo_001": {
+      "terminalId": "pty_demo_001",
+      "workspaceId": "/home/demo/projects/my-app",
+      "provider": "claude",
+      "sessionId": null,
+      "refName": "mocked-claude-terminal",
+      "prompt": "type anything in the terminal",
+      "lastAssistantMessage": "you are seeing a mocked response",
+      "eventType": "assistant.completed",
+      "updatedAt": 1772878430414
+    },
+    "pty_demo_002": {
+      "terminalId": "pty_demo_002",
+      "workspaceId": "/home/demo/projects/my-app",
+      "provider": "codex",
+      "sessionId": null,
+      "refName": "mocked-codex-terminal",
+      "prompt": "type anything in the terminal",
+      "lastAssistantMessage": "you are seeing a mocked response",
+      "eventType": "assistant.completed",
+      "updatedAt": 1772878460414
+    }
+  },
+  "fileSearch": [
+    "src/index.ts",
+    "src/middleware/auth.ts",
+    "src/pages/settings.tsx",
+    "src/components/ui/button.tsx",
+    "src/db/schema.ts",
+    "package.json",
+    "tsconfig.json"
+  ],
+  "fileTree": {
+    "": [
+      {
+        "name": "src",
+        "path": "src",
+        "absolute": "/home/demo/projects/my-app/src",
+        "type": "directory",
+        "ignored": false
+      },
+      {
+        "name": ".github",
+        "path": ".github",
+        "absolute": "/home/demo/projects/my-app/.github",
+        "type": "directory",
+        "ignored": false
+      },
+      {
+        "name": "package.json",
+        "path": "package.json",
+        "absolute": "/home/demo/projects/my-app/package.json",
+        "type": "file",
+        "ignored": false
+      },
+      {
+        "name": "tsconfig.json",
+        "path": "tsconfig.json",
+        "absolute": "/home/demo/projects/my-app/tsconfig.json",
+        "type": "file",
+        "ignored": false
+      }
+    ],
+    "src": [
+      {
+        "name": "index.ts",
+        "path": "src/index.ts",
+        "absolute": "/home/demo/projects/my-app/src/index.ts",
+        "type": "file",
+        "ignored": false
+      },
+      {
+        "name": "middleware",
+        "path": "src/middleware",
+        "absolute": "/home/demo/projects/my-app/src/middleware",
+        "type": "directory",
+        "ignored": false
+      },
+      {
+        "name": "pages",
+        "path": "src/pages",
+        "absolute": "/home/demo/projects/my-app/src/pages",
+        "type": "directory",
+        "ignored": false
+      },
+      {
+        "name": "components",
+        "path": "src/components",
+        "absolute": "/home/demo/projects/my-app/src/components",
+        "type": "directory",
+        "ignored": false
+      },
+      {
+        "name": "db",
+        "path": "src/db",
+        "absolute": "/home/demo/projects/my-app/src/db",
+        "type": "directory",
+        "ignored": false
+      }
+    ],
+    "src/middleware": [
+      {
+        "name": "auth.ts",
+        "path": "src/middleware/auth.ts",
+        "absolute": "/home/demo/projects/my-app/src/middleware/auth.ts",
+        "type": "file",
+        "ignored": false
+      },
+      {
+        "name": "__tests__",
+        "path": "src/middleware/__tests__",
+        "absolute": "/home/demo/projects/my-app/src/middleware/__tests__",
+        "type": "directory",
+        "ignored": false
+      }
+    ],
+    "src/middleware/__tests__": [
+      {
+        "name": "auth.test.ts",
+        "path": "src/middleware/__tests__/auth.test.ts",
+        "absolute": "/home/demo/projects/my-app/src/middleware/__tests__/auth.test.ts",
+        "type": "file",
+        "ignored": false
+      }
+    ],
+    "src/pages": [
+      {
+        "name": "settings.tsx",
+        "path": "src/pages/settings.tsx",
+        "absolute": "/home/demo/projects/my-app/src/pages/settings.tsx",
+        "type": "file",
+        "ignored": false
+      }
+    ],
+    "src/components": [
+      {
+        "name": "ui",
+        "path": "src/components/ui",
+        "absolute": "/home/demo/projects/my-app/src/components/ui",
+        "type": "directory",
+        "ignored": false
+      }
+    ],
+    "src/components/ui": [
+      {
+        "name": "button.tsx",
+        "path": "src/components/ui/button.tsx",
+        "absolute": "/home/demo/projects/my-app/src/components/ui/button.tsx",
+        "type": "file",
+        "ignored": false
+      },
+      {
+        "name": "input.tsx",
+        "path": "src/components/ui/input.tsx",
+        "absolute": "/home/demo/projects/my-app/src/components/ui/input.tsx",
+        "type": "file",
+        "ignored": false
+      }
+    ],
+    "src/db": [
+      {
+        "name": "schema.ts",
+        "path": "src/db/schema.ts",
+        "absolute": "/home/demo/projects/my-app/src/db/schema.ts",
+        "type": "file",
+        "ignored": false
+      },
+      {
+        "name": "queries.ts",
+        "path": "src/db/queries.ts",
+        "absolute": "/home/demo/projects/my-app/src/db/queries.ts",
+        "type": "file",
+        "ignored": false
+      }
+    ],
+    ".github": [
+      {
+        "name": "workflows",
+        "path": ".github/workflows",
+        "absolute": "/home/demo/projects/my-app/.github/workflows",
+        "type": "directory",
+        "ignored": false
+      }
+    ],
+    ".github/workflows": [
+      {
+        "name": "ci.yml",
+        "path": ".github/workflows/ci.yml",
+        "absolute": "/home/demo/projects/my-app/.github/workflows/ci.yml",
+        "type": "file",
+        "ignored": false
+      }
+    ]
+  },
+  "fileContent": {
+    "content": "",
+    "language": "plaintext"
+  },
+  "fileStatus": [
+    {
+      "path": "src/middleware/auth.ts",
+      "added": 12,
+      "removed": 5,
+      "status": "modified"
+    },
+    {
+      "path": "src/middleware/__tests__/auth.test.ts",
+      "added": 18,
+      "removed": 3,
+      "status": "modified"
+    },
+    {
+      "path": "src/pages/settings.tsx",
+      "added": 48,
+      "removed": 0,
+      "status": "added"
+    },
+    {
+      "path": "src/db/queries.ts",
+      "added": 35,
+      "removed": 52,
+      "status": "modified"
+    }
+  ],
+  "permissions": [],
+  "questions": [],
+  "skills": [],
+  "commands": [],
+  "mcp": {},
+  "arenaState": {
+    "arena": null,
+    "agents": [],
+    "waves": [],
+    "messages": []
+  },
+  "vcs": {
+    "branch": "main"
+  },
+  "path": {
+    "home": "/home/demo",
+    "state": "/home/demo/.local/share/opencode",
+    "config": "/home/demo/.config/opencode"
+  }
+}

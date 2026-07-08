@@ -1,0 +1,74 @@
+---
+title: "@claxedo/agent-sdk-runtime"
+description: "Embeddable AgentRuntime facade over coding-agent harnesses (Claude, Codex, Cursor, OpenCode, Pi) with sessions, turns, SSE routes, and pluggable stores."
+---
+
+`@claxedo/agent-sdk-runtime` is the embeddable SDK for running agent harnesses behind one host-owned runtime API. Register harnesses, choose a store, create a session, start a turn, and subscribe to events. The package owns harness process/session orchestration, adapter lifecycle, MCP resolution, and event fan-out; hosts keep auth policy, workspace routing, HTTP route shape, and UI state.
+
+<Note>
+Published on npm at **0.5.1** (`license: MIT`, `publishConfig.access: public`).
+</Note>
+
+## Install
+
+<CodeGroup>
+```sh npm
+npm install @claxedo/agent-sdk-runtime
+```
+
+```sh pnpm
+pnpm add @claxedo/agent-sdk-runtime
+```
+
+```sh bun
+bun add @claxedo/agent-sdk-runtime
+```
+</CodeGroup>
+
+## Quickstart
+
+```ts
+import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
+import { claude, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
+
+const runtime = createAgentRuntime({
+  store: createSqliteRuntimeStore({ root: ".agent-runtime" }),
+  harnesses: [
+    claude({ access: "native" }),
+    pi(),
+  ],
+})
+
+const session = await runtime.sessions.create({
+  directory: "/repo",
+  harness: { id: "claude", access: "native" },
+  model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+  title: "Review",
+})
+
+const events = runtime.events.subscribe({ sessionId: session.id })
+
+await runtime.turns.start({
+  sessionId: session.id,
+  text: "review this repo",
+})
+```
+
+## Key capabilities
+
+- **Runtime facade** — `runtime.sessions`, `runtime.turns`, `runtime.events`, `runtime.permissions`, `runtime.questions`, `runtime.todos`, `runtime.commands`, `runtime.config`, `runtime.health`.
+- **Harnesses** (`/harnesses`) — `claude`, `codex`, `cursor`, `opencode`, `pi` factories across `access: "acp"` and `access: "native"` modes.
+- **Stores** — first-party `/stores/memory`, `/stores/sqlite`, `/stores/convex` (root import loads neither SQLite nor Convex).
+- **Events & SSE** (`/runtime-event-hub`, `/sse`) — in-process fan-out plus bounded replay for reconnecting clients.
+- **OpenCode transport** — inject a handler, point at an external URL, or supervise a spawn; the transport choice is always the host's, never the package's.
+
+Read session liveness from `session.status` and turn outcome from `session.lastTurn` (`completed | failed | cancelled`), not from message-row metadata.
+
+## Stability
+
+Entry-point status per the README: **Stable** root, `/capabilities`, `/harnesses`, `/stores/memory`, `/stores/sqlite`; **Advanced** `/adapters`; **Integration** `/stores/convex`, `/session-env`, `/mcp-resolver`, `/sse` and friends; **Compatibility** `/compat-events`, `/status`.
+
+## Full API
+
+See the [README on GitHub](https://github.com/kyashrathore/Claxedo/tree/dev/packages/agent-sdk-runtime) for the full layer breakdown, adapter contracts, and the complete public API surface.

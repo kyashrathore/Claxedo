@@ -1,0 +1,37 @@
+name: claxedo-runtime-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Runtime package version to publish"
+        required: true
+        type: string
+      npm_tag:
+        description: "npm dist-tag"
+        required: false
+        default: latest
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+          scope: "@claxedo"
+
+      - name: Publish runtime packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: bun run --cwd packages/claxedo-server release:runtime --version "${{ inputs.version }}" --tag "${{ inputs.npm_tag }}"

@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "claxedo-docs",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "mintlify@latest", "dev", "--port", "3333"],
+      "cwd": "packages/claxedo-docs",
+      "port": 3333
+    }
+  ]
+}

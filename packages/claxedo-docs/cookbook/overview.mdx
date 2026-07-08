@@ -1,0 +1,85 @@
+---
+title: "Cookbook"
+description: "Eight single-file recipes, one capability each — clone the repo, run recipe 01, and climb the ladder to relay-attached workspace placement."
+---
+
+`claxedo-cookbook` is a ladder of eight runnable recipes. Each recipe is one
+single file under `src/recipes/` that demonstrates exactly one capability, and
+each one honors the same contract: it either completes with printed proof, or
+it prints `SKIP: <reason>` with the fix — never a stack trace.
+
+Start at recipe 01 (a working agent backend whose essential path is ~15 lines)
+and climb to a workspace served through an authenticated relay.
+
+## Run
+
+```bash
+git clone https://github.com/kyashrathore/Claxedo.git && cd Claxedo/claxedo-cookbook
+bun install
+bun run recipe:01-hello-agent
+```
+
+<Note>
+  `bun install` runs a postinstall step (`scripts/link-local.mjs`) that links
+  the `@claxedo/*` packages from this monorepo's `packages/` directory. It
+  expects to run inside the repo checkout; outside it, set
+  **`CLAXEDO_PACKAGES_ROOT`** to a checkout root.
+</Note>
+
+Recipes 01–07 run under Node (`tsx`); recipe 08 runs under Bun because
+`@claxedo/workspace-relay` requires `Bun.serve`.
+
+Run the whole ladder — each recipe passes or SKIPs with a reason:
+
+```bash
+bun run recipes:all
+```
+
+## The ladder
+
+| # | Recipe | Capability | The wow |
+| --- | --- | --- | --- |
+| 01 | [Hello, agent](/cookbook/01-hello-agent) | `@claxedo/agent-sdk-runtime` facade | runtime → session → message → real model reply, ~15 essential lines |
+| 02 | [Harness swap](/cookbook/02-harness-swap) | one facade, many vendors | the SAME `runOnce()` runs claude/codex/cursor — only the harness id string changes |
+| 03 | [One event shape](/cookbook/03-one-event-shape) | `@claxedo/agent-event-runtime` | claude-sdk and codex-app-server dialects normalize to one identical event envelope; errors become events |
+| 04 | [Kill and resume](/cookbook/04-kill-and-resume) | sqlite store durability | SIGKILL a process holding a live session; a fresh process recovers it from disk |
+| 05 | [Workspace host](/cookbook/05-workspace-host) | `@claxedo/workspace-runtime` | one loopback host = files, search, git commits, diffs, managed processes, event stream — no agent needed |
+| 06 | [Extensions, once](/cookbook/06-extensions-once) | `@claxedo/agent-extensions` | author one extension package → materialized natively for opencode, claude, codex, and cursor |
+| 07 | [Sandbox secrets](/cookbook/07-sandbox-secrets) | `@claxedo/sandbox-manager` | the manager refuses to leak a brokered secret into a driver that cannot broker — fail-closed by design |
+| 08 | [Place anywhere](/cookbook/08-place-anywhere) | `@claxedo/workspace-relay` | the same `/api/wr/health` route served locally and through an authenticated relay; bypassing the relay gets 401 |
+
+## What each recipe needs
+
+- **01, 02, 04** talk to a real coding agent: they detect installed CLIs
+  (`claude`, `codex`, `cursor-agent`, or their ACP binaries) plus credentials,
+  run what is available, and SKIP the rest with the fix printed.
+- **03, 05, 06** are fully deterministic — no agent, no network, no keys.
+- **07** part 1 (the fail-closed refusal) needs nothing; part 2 provisions a
+  real docker sandbox only when the sandbox image is already present locally.
+- **08** needs Bun only.
+
+All recipes work in fresh temp directories — never in your checkout.
+
+## Operational safety
+
+<Warning>
+  This is **runnable example code, not a production deployment template.** The
+  live recipes drive real agent CLIs with your local credentials and write
+  transcript text to stdout; treat captured output as potentially sensitive.
+  Recipe 08 mints throwaway in-process keypairs — do not reuse its token wiring
+  verbatim without reading the [relay deployment docs](/deploy/relay-attached).
+</Warning>
+
+## What happened to the chat server and UI?
+
+The previous cookbook — a production-shaped chat server with a React UI — was
+removed in favor of this ladder. A composed capstone app will return in a later
+iteration, built on these recipes. If you need the old code:
+`git log -- claxedo-cookbook/src/claxedo-chat-server.ts`.
+
+## Next
+
+<Card title="01 — Hello, agent" icon="play" href="/cookbook/01-hello-agent">
+  Create a runtime, open a session, send one message, and print a real model
+  reply — the whole essential path in ~15 lines.
+</Card>

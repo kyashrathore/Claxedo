@@ -1,0 +1,559 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import DownloadMenu from "../components/DownloadMenu.astro"
+import { previewSrc, docs } from "../config"
+
+const harnesses = ["Claude Code", "Codex", "Gemini CLI"]
+
+const hero = { src: "/screenshots/hero-attached-review.png", alt: "Claxedo review workspace preview" }
+
+const proof = [
+  {
+    tag: "Every agent, as itself",
+    title: "Run it in a terminal — or in chat",
+    desc: "Drive an agent straight from a terminal with keyboard shortcuts, or talk to it in chat — both work on the same session, and Claxedo manages its status, hooks, and lifecycle either way. Model-agnostic isn't enough: Claude Code, Codex, and Gemini CLI run as themselves, not flattened into one loop.",
+    src: "/screenshots/all-coding-agent-dark.png",
+    alt: "Claxedo running multiple coding agents",
+  },
+  {
+    tag: "One session",
+    title: "Local, cloud, or split",
+    desc: "Run the whole loop on your machine. Or in the cloud. Or split it — brain central, hands local — so reasoning runs hosted while tools execute right next to your code, where they're fast. Same session, your call, on your own sandbox provider.",
+    src: "/screenshots/multi-group-dark.png",
+    alt: "Claxedo multi-group workspace",
+  },
+  {
+    tag: "Feedback loop",
+    title: "It runs what it builds",
+    desc: "The agent doesn't just write code — it runs it and watches what happens. It manages your processes and reads their output, and tests what it built in an in-app browser at Codex's level, feeding results straight back into the loop.",
+    src: "/screenshots/long-running-process-dark.png",
+    alt: "Claxedo process management",
+    tags: ["process management — now", "in-app browser testing — at release"],
+  },
+  {
+    tag: "Review",
+    title: "Inspect diffs before anything lands",
+    desc: "Open a dedicated review surface for changed files, session diffs, and comments before you decide what ships — built for multi-agent work.",
+    src: "/screenshots/review-workspace-dark.png",
+    alt: "Claxedo review workspace",
+  },
+]
+
+const everything = [
+  { h: "Built-in terminal", p: "A real terminal alongside your agents." },
+  { h: "Git worktrees", p: "Isolate parallel work without conflicts." },
+  { h: "Cross-platform", p: "macOS, Windows, and Linux." },
+  { h: "Themes & shortcuts", p: "Bend the environment to your habits, not the reverse." },
+  { h: "Workspace-aware MCP", p: "Context that follows the active workspace, not just the file." },
+  { h: "Panes, tabs & groups", p: "Many workspaces open at once; split into side-by-side panes on demand." },
+]
+
+const trust = ["MIT licensed", "BYO harness + model", "No lock-in", "Cloud is the only paid tier"]
+
+const faq = [
+  { q: "Isn't this just another Codex clone?", a: "No — Codex runs only OpenAI models. Claxedo runs Claude Code, Codex, and Gemini CLI, each as itself, and the whole app is MIT-licensed and open." },
+  { q: "Another open app that's slow?", a: "Performance is the point — the app is built to stay responsive as sessions, panes, and diffs pile up. Try the browser preview above and judge the feel yourself." },
+  { q: "What does it cost?", a: "The app is free and open source. You pay your model provider directly. Managed cloud is the only paid tier." },
+  { q: "Which agents are supported?", a: "Any CLI coding agent — Claude Code, Codex, Gemini CLI, and more — each in its own managed terminal, with status and hooks handled for you." },
+  { q: "What if my vendor starts metering my automation?", a: "That's exactly why Claxedo is harness-neutral. Switch harness or model without losing your skills, plugins, or setup." },
+  { q: "What platforms?", a: "macOS, Linux, and Windows." },
+]
+---
+
+<Layout title="Claxedo App — Every coding agent, one app that stays fast">
+  <div class="page-frame">
+    <Nav active="app" />
+
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="hero-kicker" data-reveal="1"><span class="dot"></span> The app</span>
+        <h1 class="hero-title" data-reveal="2">Every coding agent. One app that <span class="accent">stays fast.</span></h1>
+        <p class="hero-sub" data-reveal="3">
+          Claude Code, Codex, Gemini CLI — run them as themselves, local or cloud, with
+          your skills synced across all of them. MIT-licensed. No toll on the agents you
+          already pay for.
+        </p>
+        <div class="hero-actions" data-reveal="4">
+          <DownloadMenu />
+          <a class="btn-secondary" href="#preview">See it in the browser ↓</a>
+        </div>
+        <p class="hero-note" data-reveal="5">macOS · Windows · Linux — free and open source.</p>
+      </div>
+    </section>
+
+    <section class="section section--ruled">
+      <div class="section-head">
+        <span class="section-tag">// The problem</span>
+        <h2 class="section-title">Open tools make you trade UX for freedom. Closed tools lock you in.</h2>
+        <p class="section-lead">
+          You shouldn't have to pick. The polished agent apps are single-vendor and
+          charge a toll. The open ones are honest but fragmented — every harness
+          configured separately, no shared skills, no real feedback loop. Claxedo is the
+          one that's open <em>and</em> fast <em>and</em> neutral.
+        </p>
+      </div>
+    </section>
+
+    <section class="section section--ruled marquee">
+      <span class="section-tag">// The thing no one else does</span>
+      <h2 class="marquee-statement">Write a skill once. It works in every agent — local and cloud.</h2>
+      <p class="marquee-sub">
+        Every other multi-agent tool makes you set up each harness separately. Claxedo
+        keeps your skills, plugins, and MCP servers in one library and syncs them to all
+        of them. Change a skill, every agent has it.
+      </p>
+      <div class="sync-viz" aria-hidden="true">
+        <span class="sync-source">◆ one skill library</span>
+        <span class="sync-arrows">→→</span>
+        <div class="sync-targets">
+          {harnesses.map((h) => <span class="chip"><span class="dot"></span>{h}</span>)}
+        </div>
+      </div>
+    </section>
+
+    <section id="preview" class="preview-block section--ruled">
+      <div class="section preview-intro">
+        <span class="section-tag">// Browser preview</span>
+        <h2 class="section-title">See the workspace before you download.</h2>
+        <p class="section-lead">Backed by demo data and mocked services — explore the layout, navigation, and review flow.</p>
+      </div>
+      <div class="preview">
+        <div class="preview-sticky" id="preview-sticky">
+          <div class="preview-perspective">
+            <div class="preview-frame" id="hero-frame">
+              <div class="preview-shell" id="preview-shell">
+                <div class="preview-poster-frame">
+                  <img id="demo-poster" src={hero.src} alt={hero.alt} class="preview-poster" width="3024" height="1654" loading="eager" decoding="async" fetchpriority="high" />
+                </div>
+                <iframe id="demo-frame" class="preview-app" title="Claxedo browser preview" loading="lazy" tabindex="-1" data-src={previewSrc}></iframe>
+                <div class="preview-banner" id="preview-banner" role="status" aria-live="polite">
+                  <span class="preview-dot" aria-hidden="true"></span>
+                  <span id="preview-banner-text">Loading browser preview...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--ruled">
+      <div class="section-head">
+        <span class="section-tag">// What it does</span>
+        <h2 class="section-title">Built for real coding sessions.</h2>
+      </div>
+      <div class="proof-grid">
+        {proof.map((item) => (
+          <article class="proof-card">
+            <div class="proof-shot">
+              <button type="button" class="proof-open" data-src={item.src} data-alt={item.alt} aria-label={`Open full screenshot for ${item.title}`}>
+                <img src={item.src} alt={item.alt} width="3024" height="1964" loading="lazy" decoding="async" />
+                <span class="proof-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8 4H4v4"></path><path d="M16 4h4v4"></path><path d="M20 16v4h-4"></path><path d="M8 20H4v-4"></path>
+                  </svg>
+                </span>
+              </button>
+            </div>
+            <div class="proof-copy">
+              <span class="proof-tag">{item.tag}</span>
+              <h3>{item.title}</h3>
+              <p>{item.desc}</p>
+              {item.tags && (
+                <div class="chips" style="margin-top:1rem">
+                  {item.tags.map((t) => <span class="tag">{t}</span>)}
+                </div>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="section section--ruled">
+      <div class="section-head">
+        <span class="section-tag">// Stays fast</span>
+        <h2 class="section-title">Speed you feel as the session grows.</h2>
+        <p class="section-lead">
+          More agents, more panes, more diffs — and the app stays responsive.
+          Performance isn't a benchmark we quote; it's what you notice after ten tabs
+          open all day.
+        </p>
+      </div>
+      <div class="cards cards--two">
+        {everything.map((item) => (
+          <article class="card">
+            <div class="card-head"><h3>{item.h}</h3></div>
+            <p>{item.p}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="section section--ruled">
+      <div class="section-head">
+        <span class="section-tag">// Why you can trust it</span>
+        <h2 class="section-title">MIT. No toll. No rebrand roulette.</h2>
+        <p class="section-lead">
+          The whole app is MIT-licensed and open. You bring your harness and your model;
+          we never put a fee between you and the agents you already pay for. Cloud is the
+          only thing we'd ever charge for.
+        </p>
+      </div>
+      <div class="chips">
+        {trust.map((t) => <span class="chip"><span class="dot"></span>{t}</span>)}
+      </div>
+    </section>
+
+    <section class="section section--ruled">
+      <div class="section-head">
+        <span class="section-tag">// FAQ</span>
+        <h2 class="section-title">Questions, answered.</h2>
+      </div>
+      <div class="faq-list" style="border-top:none">
+        {faq.map((item) => (
+          <details class="faq-item">
+            <summary>{item.q}</summary>
+            <p>{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+
+    <section class="section section--ruled cta-band">
+      <span class="section-tag">// Get started</span>
+      <h2 class="section-title">Bring the agent. Bring the model. Keep the speed.</h2>
+      <div class="hero-actions">
+        <DownloadMenu />
+        <a class="btn-secondary" href="/framework">It's built on a framework →</a>
+      </div>
+    </section>
+
+    <Footer />
+
+    <dialog id="zoom" class="zoom" aria-label="Expanded screenshot viewer">
+      <div class="zoom-shell">
+        <button type="button" class="zoom-close" aria-label="Close screenshot viewer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6 18 18"></path><path d="M18 6 6 18"></path></svg>
+        </button>
+        <img id="zoom-img" class="zoom-img" src="" alt="" />
+      </div>
+    </dialog>
+  </div>
+</Layout>
+
+<style>
+  .preview-block { border-top: var(--bw) solid var(--border); }
+  .preview-intro { padding-bottom: 0; }
+
+  .preview {
+    position: relative;
+    height: 260vh;
+  }
+
+  .preview-sticky {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    z-index: 25;
+  }
+
+  .preview-perspective {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    perspective: 1200px;
+    overflow: clip;
+    width: 100%;
+    height: 100%;
+  }
+
+  .preview-frame {
+    width: 100%;
+    height: 100%;
+    border: var(--bw) solid var(--border);
+    overflow: hidden;
+    will-change: transform, opacity;
+    transform: translateY(28px) scale(0.965) rotateX(1.6deg);
+    opacity: 0.76;
+    transition: transform 0.1s linear, opacity 0.1s linear;
+  }
+
+  .preview-shell {
+    --poster-zoom: 1.02;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: hsl(0, 9%, 7%);
+  }
+
+  .preview-poster-frame,
+  .preview-poster,
+  .preview-app { position: absolute; inset: 0; }
+
+  .preview-poster {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top left;
+    transform: scale(var(--poster-zoom));
+    transform-origin: top left;
+    background: hsl(0, 9%, 7%);
+    transition: opacity 0.45s ease, transform 0.45s ease, filter 0.45s ease;
+  }
+
+  .preview-app {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    opacity: 0;
+    transform: scale(1.015);
+    transition: opacity 0.45s ease, transform 0.45s ease;
+    background: hsl(0, 9%, 7%);
+    pointer-events: none;
+  }
+
+  .preview-banner {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+    border: var(--bw) solid hsl(0, 4%, 23%);
+    background: hsl(0, 9%, 7%);
+    color: hsl(0, 4%, 71%);
+    font-size: 13px;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+
+  .preview-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+
+  .preview-shell.is-live .preview-poster {
+    opacity: 0;
+    transform: scale(calc(var(--poster-zoom) + 0.02));
+    filter: blur(10px);
+  }
+
+  .preview-shell.is-live .preview-app { opacity: 1; transform: none; pointer-events: auto; }
+  .preview-shell.is-live .preview-banner { opacity: 0; transform: translateY(12px); pointer-events: none; }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* zoomable screenshots */
+  .proof-open {
+    position: relative;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: zoom-in;
+  }
+
+  .proof-open img { transition: transform 0.22s ease, box-shadow 0.22s ease; }
+
+  .proof-open:hover img,
+  .proof-open:focus-visible img {
+    transform: scale(1.01);
+    box-shadow: 0 20px 50px color-mix(in srgb, var(--text-strong) 20%, transparent);
+  }
+
+  .proof-open:focus-visible { outline: none; }
+
+  .proof-icon {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.6rem;
+    height: 2.6rem;
+    border: var(--bw) solid var(--border);
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    color: var(--text-strong);
+    border-radius: 999px;
+    backdrop-filter: blur(12px);
+    transition: transform 0.2s ease, background 0.2s ease;
+  }
+
+  .proof-icon svg { width: 1rem; height: 1rem; }
+
+  .proof-open:hover .proof-icon,
+  .proof-open:focus-visible .proof-icon {
+    transform: translateY(-2px);
+    background: color-mix(in srgb, var(--bg) 94%, transparent);
+  }
+
+  .zoom {
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    overflow: hidden;
+  }
+
+  .zoom[open] { display: grid; place-items: center; }
+
+  .zoom::backdrop {
+    background: color-mix(in srgb, var(--bg-strong) 82%, transparent);
+    backdrop-filter: blur(14px);
+  }
+
+  .zoom-shell {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: min(94vw, 88rem);
+    max-height: calc(100dvh - 2rem);
+    padding: 1rem;
+  }
+
+  .zoom-close {
+    position: absolute;
+    top: 1.5rem;
+    right: 1.5rem;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: var(--bw) solid var(--border);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    color: var(--text-strong);
+    border-radius: 999px;
+    backdrop-filter: blur(14px);
+  }
+
+  .zoom-close svg { width: 1rem; height: 1rem; }
+
+  .zoom-img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: calc(100dvh - 2rem);
+    object-fit: contain;
+    border: var(--bw) solid var(--border);
+    background: hsl(0, 9%, 7%);
+    box-shadow: 0 24px 80px color-mix(in srgb, var(--text-strong) 22%, transparent);
+  }
+
+  @media (max-width: 40rem) {
+    .preview { height: auto; padding: 0 var(--padding) var(--padding); }
+    .preview-sticky { position: static; height: auto; padding: 0; }
+    .preview-perspective { perspective: none; overflow: visible; height: auto; }
+    .preview-frame { height: auto; aspect-ratio: 1.45 / 1; transform: none; opacity: 1; }
+    .zoom-close { top: 1rem; right: 1rem; }
+  }
+</style>
+
+<script>
+  const shell = document.getElementById("preview-shell")
+  const frame = document.getElementById("demo-frame") as HTMLIFrameElement | null
+  const text = document.getElementById("preview-banner-text")
+  let boot = false
+  let live = false
+  let wait = 0
+
+  function start() {
+    if (boot || !shell || !frame) return
+    const next = frame.dataset.src
+    if (!next) return
+    boot = true
+    if (text) text.textContent = "Loading browser preview..."
+    wait = window.setTimeout(() => {
+      if (!live && text) text.textContent = "Still loading the browser preview..."
+    }, 3200)
+    frame.src = next
+  }
+
+  function ready() {
+    live = true
+    window.clearTimeout(wait)
+    shell?.classList.add("is-live")
+    if (text) text.textContent = "Browser preview ready"
+  }
+
+  frame?.addEventListener("load", ready, { once: true })
+
+  if (shell && frame) {
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver((entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        start()
+        io.disconnect()
+      }, { rootMargin: "280px 0px" })
+      io.observe(shell)
+    }
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(() => start(), { timeout: 1600 })
+    } else {
+      window.setTimeout(() => start(), 900)
+    }
+  }
+
+  const heroFrame = document.getElementById("hero-frame")
+  const previewSection = document.querySelector<HTMLElement>(".preview")
+  const previewSticky = document.getElementById("preview-sticky")
+  const small = window.matchMedia("(max-width: 40rem)")
+
+  if (heroFrame && previewSection && previewSticky && !small.matches) {
+    const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
+
+    const handleScroll = () => {
+      const rect = previewSection.getBoundingClientRect()
+      const windowH = window.innerHeight
+      const scrollable = Math.max(previewSection.offsetHeight - windowH, 1)
+      const scrolled = Math.min(Math.max(-rect.top, 0), scrollable)
+      const progress = scrolled / scrollable
+      const intro = ease(Math.min(progress / 0.3, 1))
+      const translateY = 28 * (1 - intro)
+      const scale = 0.965 + 0.035 * intro
+      const rotateX = 1.6 * (1 - intro)
+      const opacity = 0.76 + 0.24 * intro
+      heroFrame.style.transform = `translateY(${translateY}px) scale(${scale}) rotateX(${rotateX}deg)`
+      heroFrame.style.opacity = String(opacity)
+    }
+
+    window.addEventListener("scroll", handleScroll, { passive: true })
+    handleScroll()
+  }
+
+  const zoom = document.getElementById("zoom") as HTMLDialogElement | null
+  const shot = document.getElementById("zoom-img") as HTMLImageElement | null
+  const shut = document.querySelector<HTMLButtonElement>(".zoom-close")
+  const opens = document.querySelectorAll<HTMLButtonElement>(".proof-open")
+
+  function show(node: HTMLButtonElement) {
+    const src = node.dataset.src
+    if (!zoom || !shot || !src) return
+    shot.src = src
+    shot.alt = node.dataset.alt ?? ""
+    if (zoom.open) return
+    zoom.showModal()
+  }
+
+  opens.forEach((node) => node.addEventListener("click", () => show(node)))
+  shut?.addEventListener("click", () => zoom?.close())
+  zoom?.addEventListener("click", (event) => { if (event.target === zoom) zoom.close() })
+  zoom?.addEventListener("close", () => { if (shot) { shot.src = ""; shot.alt = "" } })
+</script>

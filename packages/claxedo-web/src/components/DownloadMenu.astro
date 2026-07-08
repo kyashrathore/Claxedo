@@ -1,0 +1,21 @@
+---
+import { downloads } from "../config"
+
+interface Props {
+  label?: string
+  up?: boolean
+  extraClass?: string
+}
+
+const { label = "Download Free", up = false, extraClass = "" } = Astro.props
+---
+
+<div class={`dl-wrap${up ? " dl-wrap--up" : ""}`}>
+  <button type="button" class={`btn-primary dl-trigger ${extraClass}`}>
+    {label}
+    <svg class="dl-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5l3 3 3-3" /></svg>
+  </button>
+  <div class="dl-menu">
+    {downloads.map((d) => <a href={d.href} class="dl-item">{d.label}</a>)}
+  </div>
+</div>

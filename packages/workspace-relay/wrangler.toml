@@ -1,0 +1,46 @@
+# Cloudflare Worker config for the Claxedo Workspace Relay.
+#
+# This deploys the Worker-safe Durable Object relay (src/worker.ts) used by the
+# Cloudflare-first deployment shape. The Bun relay remains available for local
+# development and non-Cloudflare regional container deployments.
+#
+# Build / verify (no Cloudflare account needed):
+#   npx wrangler deploy --dry-run --outdir dist-worker
+# Deploy to staging (needs CLOUDFLARE_API_TOKEN + account):
+#   npx wrangler deploy --env staging
+#
+# Secrets expected before staging/prod deploy:
+#   CLAXEDO_RELAY_RESOLVER_TOKEN
+#   CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM
+#   CLAXEDO_CONTROL_PLANE_JWKS_URL
+# Optional:
+#   CLAXEDO_RELAY_RESOLVER_URL or CLAXEDO_CENTRAL_URL
+#   CLAXEDO_RELAY_HOST_PUBLIC_KEY_PEM
+#   CLAXEDO_RELAY_HOST_NEXT_PUBLIC_KEY_PEM
+#   CLAXEDO_RELAY_HOST_KID
+#   CLAXEDO_RELAY_HOST_NEXT_KID
+
+name = "claxedo-workspace-relay"
+main = "src/worker.ts"
+compatibility_date = "2025-05-01"
+
+[observability]
+enabled = true
+
+[[durable_objects.bindings]]
+name = "WORKSPACE_RELAY_ROOM"
+class_name = "WorkspaceRelayRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WorkspaceRelayRoom"]
+
+[env.staging]
+name = "claxedo-workspace-relay-staging"
+
+[env.staging.vars]
+CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP = "32768"
+
+[[env.staging.durable_objects.bindings]]
+name = "WORKSPACE_RELAY_ROOM"
+class_name = "WorkspaceRelayRoom"

@@ -1,0 +1,55 @@
+---
+import DownloadMenu from "./DownloadMenu.astro"
+
+interface Props {
+  active?: "home" | "app" | "framework"
+}
+
+const { active } = Astro.props
+---
+
+<nav class="nav">
+  <a href="/" class="nav-logo">
+    <svg class="brand-mark" viewBox="-100 -90 200 180" fill="none" xmlns="http://www.w3.org/2000/svg" stroke-linecap="round" aria-hidden="true">
+      <path class="brand-mark-arc" d="M 38,-72 A 84,84 0 1 0 38,72"></path>
+      <circle class="brand-mark-dot" cx="38" cy="-72" r="5"></circle>
+      <circle class="brand-mark-core" cx="38" cy="-72" r="2"></circle>
+      <circle class="brand-mark-dot" cx="38" cy="72" r="5"></circle>
+      <circle class="brand-mark-core" cx="38" cy="72" r="2"></circle>
+    </svg>
+    <span>Claxedo</span>
+  </a>
+  <div class="nav-links">
+    <a href="/app" class={active === "app" ? "is-active" : undefined}>App</a>
+    <a href="/framework" class={active === "framework" ? "is-active" : undefined}>Framework</a>
+  </div>
+  <div class="nav-actions">
+    <DownloadMenu />
+  </div>
+</nav>
+
+<script>
+  const triggers = document.querySelectorAll<HTMLButtonElement>(".dl-trigger")
+
+  function closeAll(except?: Element) {
+    document.querySelectorAll(".dl-wrap.is-open").forEach((w) => {
+      if (w !== except) w.classList.remove("is-open")
+    })
+  }
+
+  triggers.forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation()
+      const wrap = btn.closest(".dl-wrap")
+      if (!wrap) return
+      const opening = !wrap.classList.contains("is-open")
+      closeAll(wrap)
+      wrap.classList.toggle("is-open", opening)
+    })
+  })
+
+  document.addEventListener("click", () => closeAll())
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeAll()
+  })
+</script>

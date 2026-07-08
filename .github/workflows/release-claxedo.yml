@@ -1,0 +1,312 @@
+name: Release Claxedo
+
+on:
+  push:
+    tags:
+      - "claxedo-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.0.60)"
+        required: false
+        type: string
+      platforms:
+        description: "Platforms to build"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - macos
+          - windows
+          - linux
+
+env:
+  CLAXEDO_CHANNEL: prod
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: meta
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/claxedo-v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/claxedo-v}"
+          else
+            VERSION=$(jq -r .version packages/claxedo-desktop/package.json)
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=claxedo-v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $VERSION"
+
+  build-desktop:
+    needs: prepare
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            host: macos-latest
+            target: aarch64-apple-darwin
+            arch: arm64
+            cmd: package:mac
+          - platform: macos
+            host: macos-latest
+            target: x86_64-apple-darwin
+            arch: x64
+            cmd: package:mac
+          - platform: windows
+            host: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x64
+            cmd: package:win
+          - platform: linux
+            host: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+            cmd: package:linux
+          - platform: linux
+            host: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            cmd: package:linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip unselected platform
+        if: github.event_name != 'push' && github.event.inputs.platforms != 'all' && github.event.inputs.platforms != matrix.platform
+        run: echo "Skipping ${{ matrix.platform }}"
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnotify-dev \
+            libxtst-dev \
+            libnss3-dev \
+            libgdk-pixbuf2.0-dev \
+            libgtk-3-dev \
+            libxss-dev
+
+      - name: Setup Bun
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        run: bun install
+
+      - name: Pin release version
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require("fs")
+          for (const file of [
+            "packages/claxedo-app/package.json",
+            "packages/claxedo-desktop/package.json",
+          ]) {
+            const pkg = JSON.parse(fs.readFileSync(file, "utf8"))
+            pkg.version = process.env.VERSION
+            fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`)
+          }
+          NODE
+
+      - name: Build desktop
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+        run: bun --cwd packages/claxedo-desktop run build
+
+      - name: Import Apple certificate
+        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$RUNNER_TEMP/certificate.p12" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+          rm "$RUNNER_TEMP/certificate.p12"
+
+      - name: Package macOS
+        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bun --cwd packages/claxedo-desktop run ${{ matrix.cmd }} -- --${{ matrix.arch }}
+
+      - name: Package Windows
+        if: runner.os == 'Windows' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+        run: bun --cwd packages/claxedo-desktop run ${{ matrix.cmd }}
+
+      - name: Package Linux
+        if: runner.os == 'Linux' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+        run: bun --cwd packages/claxedo-desktop run ${{ matrix.cmd }} -- --${{ matrix.arch }}
+
+      - name: Upload build artifacts
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        uses: actions/upload-artifact@v4
+        with:
+          name: claxedo-${{ matrix.target }}-${{ needs.prepare.outputs.version }}
+          path: |
+            packages/claxedo-desktop/dist/*.dmg
+            packages/claxedo-desktop/dist/*.zip
+            packages/claxedo-desktop/dist/*.exe
+            packages/claxedo-desktop/dist/*.AppImage
+            packages/claxedo-desktop/dist/*.deb
+            packages/claxedo-desktop/dist/*.rpm
+            packages/claxedo-desktop/dist/*.yml
+            packages/claxedo-desktop/dist/*.yaml
+            packages/claxedo-desktop/dist/*.blockmap
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Cleanup keychain
+        if: runner.os == 'macOS' && always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+  create-release:
+    needs: [prepare, build-desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          mkdir -p release
+          find artifacts -type f \( \
+            -name '*.dmg' -o \
+            -name '*.zip' -o \
+            -name '*.exe' -o \
+            -name '*.AppImage' -o \
+            -name '*.deb' -o \
+            -name '*.rpm' -o \
+            -name '*.blockmap' \
+          \) -exec cp {} release/ \;
+
+          echo "Release artifacts:"
+          ls -la release/
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: Claxedo v${{ needs.prepare.outputs.version }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  finalize-latest-yml:
+    needs: [prepare, build-desktop, create-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare latest yml payloads
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p latest-yml
+
+          for target in \
+            aarch64-apple-darwin \
+            x86_64-apple-darwin \
+            x86_64-pc-windows-msvc \
+            x86_64-unknown-linux-gnu \
+            aarch64-unknown-linux-gnu
+          do
+            src="artifacts/claxedo-${target}-${VERSION}"
+            if [ ! -d "$src" ]; then
+              continue
+            fi
+            mkdir -p "latest-yml/latest-yml-${target}"
+            cp "$src"/*.yml "latest-yml/latest-yml-${target}/" 2>/dev/null || true
+            cp "$src"/*.yaml "latest-yml/latest-yml-${target}/" 2>/dev/null || true
+          done
+
+          find latest-yml -type f
+
+      - name: Finalize latest yml files
+        working-directory: packages/claxedo-desktop
+        env:
+          LATEST_YML_DIR: ${{ github.workspace }}/latest-yml
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAXEDO_VERSION: ${{ needs.prepare.outputs.version }}
+          CLAXEDO_TAG: ${{ needs.prepare.outputs.tag }}
+        run: bun ./scripts/finalize-latest-yml.ts

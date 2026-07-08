@@ -1,0 +1,391 @@
+import { SerializeAddon } from "@xterm/addon-serialize"
+import "@xterm/xterm/css/xterm.css"
+import "../terminal.css"
+import {
+  createTerminalInstance,
+  setupKeyboardHandler,
+  setupPasteHandler,
+  setupCopyHandler,
+  setupDropHandler,
+  setupResizeHandlers,
+  scrollToBottom,
+} from "../helpers"
+import { createModeScanner } from "../mode-scan"
+import { createQuerySuppressor } from "../query-suppression"
+import type { TerminalBackend, TerminalBackendOptions, Disposable, CreateBackendFn } from "./types"
+
+export const createBackend: CreateBackendFn = async (
+  container: HTMLDivElement,
+  options: TerminalBackendOptions,
+): Promise<TerminalBackend> => {
+  const instance = createTerminalInstance(container, {
+    initialTheme: options.theme,
+    fontFamily: options.fontFamily,
+    onFileLinkClick: options.onFileLinkClick,
+    onUrlClick: options.onUrlClick,
+  })
+
+  const { xterm, fitAddon } = instance
+  // Cleanups are reversed before execution. Keep xterm disposal before renderer
+  // disposal so xterm addons can deregister and refresh while a renderer still
+  // exists.
+  const cleanups: VoidFunction[] = [instance.cleanup, () => xterm.dispose()]
+  const updateScrollbarState = () => {
+    container.toggleAttribute("data-terminal-scrollbar", xterm.buffer.active.baseY > 0)
+  }
+
+  // Load serialize addon
+  const serializeAddon = new SerializeAddon()
+  xterm.loadAddon(serializeAddon)
+
+  // Load search addon (async, best-effort)
+  import("@xterm/addon-search")
+    .then(({ SearchAddon }) => {
+      const searchAddon = new SearchAddon()
+      xterm.loadAddon(searchAddon)
+    })
+    .catch(() => {})
+
+  // Track bracketed paste mode across split writes.
+  const mode = createModeScanner()
+  const suppress = createQuerySuppressor()
+  const originalWrite = xterm.write.bind(xterm)
+
+  // Data/key listeners managed externally
+  let dataListeners: Array<(data: string) => void> = []
+  let terminalResponseListeners: Array<(data: string) => void> = []
+  let keyListeners: Array<(e: { key: string }) => void> = []
+  let resizeListeners: Array<(size: { cols: number; rows: number }) => void> = []
+
+  // Setup keyboard handler with a write function that goes through onData listeners
+  const handleWrite = (data: string) => {
+    for (const fn of dataListeners) fn(data)
+  }
+
+  // Alternate scroll mode (DECSET 1007): when enabled, real terminals map
+  // wheel/trackpad scroll to Up/Down keypresses instead of scrollback.
+  //
+  // Additionally, some TUIs don't enable 1007 but still want scroll gestures
+  // to stay inside the app (not scroll the surrounding page). In alt-screen,
+  // we provide a conservative fallback to PageUp/PageDown when mouse tracking
+  // is disabled.
+  const setupWheel = () => {
+    const el = container
+    let acc = 0
+    const stepPx = 40
+    const maxBurst = 12
+
+    const seq = (dir: 1 | -1) => {
+      const appCursor = mode.modes().applicationCursorKeys
+      if (dir < 0) return appCursor ? "\x1bOA" : "\x1b[A"
+      return appCursor ? "\x1bOB" : "\x1b[B"
+    }
+    const page = (dir: 1 | -1) => {
+      if (dir < 0) return "\x1b[5~"
+      return "\x1b[6~"
+    }
+
+    const onWheel = (event: WheelEvent) => {
+      const m = mode.modes()
+      if (!m.alternateScroll && !m.alternateScreen) return
+
+      // Prevent the surrounding page/panels from scrolling when a fullscreen
+      // TUI is running. Don't stop propagation so xterm can still handle mouse
+      // wheel reporting when mouse tracking is enabled.
+      event.preventDefault()
+
+      const mouse =
+        m.mouseTrackingX10 ||
+        m.mouseTrackingNormal ||
+        m.mouseTrackingHighlight ||
+        m.mouseTrackingButtonEvent ||
+        m.mouseTrackingAnyEvent ||
+        m.mouseUtf8 ||
+        m.mouseSgr
+      if (mouse) return
+      if (!m.alternateScroll && !m.alternateScreen) return
+
+      const dy = event.deltaY
+      if (!Number.isFinite(dy) || dy === 0) return
+
+      // Normalize delta across devices. deltaMode=1 is "lines", 2 is "pages".
+      const unit = event.deltaMode === 1 ? 12 : event.deltaMode === 2 ? 96 : 1
+      acc += dy * unit
+
+      const count = Math.min(maxBurst, Math.floor(Math.abs(acc) / stepPx))
+      if (count <= 0) return
+
+      const dir = acc < 0 ? -1 : 1
+      acc -= dir * count * stepPx
+
+      if (m.alternateScroll) {
+        handleWrite(seq(dir).repeat(count))
+        return
+      }
+
+      // Alt-screen fallback (no 1007): prefer PageUp/PageDown. Arrow keys tend to
+      // move focus rather than scroll in many TUIs.
+      handleWrite(page(dir).repeat(Math.min(6, count)))
+    }
+
+    el.addEventListener("wheel", onWheel, { passive: false, capture: true })
+    return () => el.removeEventListener("wheel", onWheel, { capture: true })
+  }
+
+  cleanups.push(setupWheel())
+
+  const cleanupKeyboard = setupKeyboardHandler(xterm, {
+    onShiftEnter: () => handleWrite("\x1b\r"),
+    onWrite: handleWrite,
+    onSplitVertical: options.onSplitVertical,
+    onSplitHorizontal: options.onSplitHorizontal,
+  })
+  cleanups.push(cleanupKeyboard)
+
+  const cleanupPaste = setupPasteHandler(xterm, {
+    onWrite: handleWrite,
+    isBracketedPasteEnabled: () => mode.bracketed(),
+  })
+  cleanups.push(cleanupPaste)
+
+  const cleanupCopy = setupCopyHandler(xterm)
+  cleanups.push(cleanupCopy)
+
+  const cleanupDrop = setupDropHandler(xterm, container, {
+    image: options.image,
+    onWrite: handleWrite,
+    isBracketedPasteEnabled: () => mode.bracketed(),
+  })
+  cleanups.push(cleanupDrop)
+
+  // Toggle cursor blink on focus/blur.
+  const textarea = xterm.textarea
+  if (textarea) {
+    const onFocus = () => {
+      xterm.options.cursorBlink = true
+    }
+    const onBlur = () => {
+      xterm.options.cursorBlink = false
+    }
+    textarea.addEventListener("focus", onFocus)
+    textarea.addEventListener("blur", onBlur)
+    cleanups.push(() => {
+      textarea.removeEventListener("focus", onFocus)
+      textarea.removeEventListener("blur", onBlur)
+    })
+  }
+
+  // Setup resize handlers (includes visibilitychange + mount fits)
+  const resizeHandlers = setupResizeHandlers(
+    container,
+    xterm,
+    fitAddon,
+    (cols, rows) => {
+      for (const fn of resizeListeners) fn({ cols, rows })
+    },
+    instance.renderer,
+  )
+  cleanups.push(resizeHandlers.cleanup)
+
+  // OSC 10/11 color query detection (foreground/background).
+  // These are matched synchronously in write() before data enters xterm's
+  // async write buffer — registering only via registerOscHandler fires too
+  // late (after setTimeout(0)), causing codex to hit its 2-second timeout.
+  // BEL-terminated (\x07) or ST-terminated (\x1b\) forms are both handled.
+  const osc10QueryRe = /\x1b\]10;\?(?:\x1b\\|\x07)/
+  const osc11QueryRe = /\x1b\]11;\?(?:\x1b\\|\x07)/
+
+  // Wire xterm's native onData (user typing) into our data listeners
+  const xtermOnData = xterm.onData((data) => {
+    for (const fn of dataListeners) fn(data)
+  })
+  cleanups.push(() => xtermOnData.dispose())
+
+  // Wire xterm's native onKey into our key listeners
+  const xtermOnKey = xterm.onKey((e) => {
+    for (const fn of keyListeners) fn({ key: e.key })
+  })
+  cleanups.push(() => xtermOnKey.dispose())
+
+  const xtermOnWriteParsed = xterm.onWriteParsed(updateScrollbarState)
+  const xtermOnScroll = xterm.onScroll(updateScrollbarState)
+  const xtermOnResize = xterm.onResize(updateScrollbarState)
+  cleanups.push(() => {
+    xtermOnWriteParsed.dispose()
+    xtermOnScroll.dispose()
+    xtermOnResize.dispose()
+    container.removeAttribute("data-terminal-scrollbar")
+  })
+  updateScrollbarState()
+
+  let disposed = false
+
+  const backend: TerminalBackend = {
+    get cols() {
+      return xterm.cols
+    },
+    get rows() {
+      return xterm.rows
+    },
+    get textarea() {
+      return xterm.textarea ?? null
+    },
+    get element() {
+      return xterm.element ?? null
+    },
+
+    write(data: string, callback?: () => void) {
+      const filtered = suppress.scan(data)
+      mode.scan(filtered)
+
+      // Respond to OSC 10/11 color queries synchronously — before data enters
+      // xterm's async write buffer. xterm.js defers processing via setTimeout(0),
+      // so registerOscHandler fires too late and codex hits its 2-second timeout.
+      if (filtered.includes("\x1b]") && terminalResponseListeners.length > 0) {
+        if (osc10QueryRe.test(filtered)) {
+          for (const fn of terminalResponseListeners) fn("\x1b]10;rgb:d4d4/d4d4/d4d4\x07")
+        }
+        if (osc11QueryRe.test(filtered)) {
+          for (const fn of terminalResponseListeners) fn("\x1b]11;rgb:1c1c/1c1c/1c1c\x07")
+        }
+      }
+
+      if (!filtered) {
+        callback?.()
+        return
+      }
+      if (callback) {
+        originalWrite(filtered, callback)
+      } else {
+        originalWrite(filtered)
+      }
+    },
+
+    onData(fn: (data: string) => void): Disposable {
+      dataListeners.push(fn)
+      return {
+        dispose() {
+          dataListeners = dataListeners.filter((f) => f !== fn)
+        },
+      }
+    },
+
+    onTerminalResponse(fn: (data: string) => void): Disposable {
+      terminalResponseListeners.push(fn)
+      return {
+        dispose() {
+          terminalResponseListeners = terminalResponseListeners.filter((f) => f !== fn)
+        },
+      }
+    },
+
+    onKey(fn: (e: { key: string }) => void): Disposable {
+      keyListeners.push(fn)
+      return {
+        dispose() {
+          keyListeners = keyListeners.filter((f) => f !== fn)
+        },
+      }
+    },
+
+    onResize(fn: (size: { cols: number; rows: number }) => void): Disposable {
+      resizeListeners.push(fn)
+      return {
+        dispose() {
+          resizeListeners = resizeListeners.filter((f) => f !== fn)
+        },
+      }
+    },
+
+    setTheme(theme) {
+      xterm.options.theme = theme
+    },
+
+    setFontFamily(font) {
+      xterm.options.fontFamily = font
+    },
+
+    setCursorBlink(blink) {
+      xterm.options.cursorBlink = blink
+    },
+
+    focus() {
+      xterm.focus()
+      setTimeout(() => xterm.textarea?.focus(), 0)
+    },
+
+    getSelection() {
+      return xterm.getSelection()
+    },
+
+    hasSelection() {
+      return xterm.hasSelection()
+    },
+
+    scrollToLine(line) {
+      xterm.scrollToLine(line)
+    },
+
+    scrollToBottom() {
+      scrollToBottom(xterm)
+    },
+
+    getViewportY() {
+      return xterm.buffer.active.viewportY
+    },
+
+    isAtBottom() {
+      const buffer = xterm.buffer.active
+      return buffer.viewportY >= buffer.baseY
+    },
+
+    resize(cols, rows) {
+      xterm.resize(cols, rows)
+    },
+
+    fit() {
+      fitAddon.fit()
+    },
+
+    refresh(start, end) {
+      xterm.refresh(start, end)
+    },
+
+    flushResize() {
+      resizeHandlers.coordinator.flush()
+    },
+
+    serialize(options) {
+      return serializeAddon.serialize(options)
+    },
+
+    rehydrateSequences() {
+      return mode.rehydrateSequences()
+    },
+
+    isAltScreen() {
+      try {
+        const active = xterm.buffer.active
+        if ("type" in active) return active.type === "alternate"
+      } catch {}
+      return mode.modes().alternateScreen
+    },
+
+    dispose() {
+      if (disposed) return
+      disposed = true
+      const fns = cleanups.splice(0).reverse()
+      for (const fn of fns) {
+        try {
+          fn()
+        } catch {}
+      }
+      dataListeners = []
+      terminalResponseListeners = []
+      keyListeners = []
+      resizeListeners = []
+    },
+  }
+
+  return backend
+}

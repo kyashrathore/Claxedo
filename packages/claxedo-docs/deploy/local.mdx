@@ -1,0 +1,85 @@
+---
+title: "Local (single user)"
+description: "Run the whole Claxedo stack on your own machine over loopback — the fastest way to get an agent working against a real project directory."
+---
+
+The simplest shape: `@claxedo/workspace-runtime` runs next to a project
+directory on your machine, and your control plane calls it over loopback.
+
+```text
+Product UI → local control plane → workspace-runtime → project directory
+```
+
+Local development needs no environment variables — every process boots on
+loopback defaults. The env knobs documented on the other deploy pages exist for
+production deployments.
+
+## Start a loopback runtime
+
+```ts
+import { loopbackWorkspaceRuntimeExposure, startServer } from "@claxedo/workspace-runtime"
+
+startServer(4096, {
+  exposure: loopbackWorkspaceRuntimeExposure(),
+})
+```
+
+<Note>
+Loopback exposure may run without host-level auth because the socket is
+loopback-only. This is for local development and app-owned desktop flows. It
+allows local browser origins such as `localhost` and `127.0.0.1`.
+</Note>
+
+## Config-authenticated local runtime
+
+If you want a trusted direct token for relay-host middleware and the health
+check (`GET /api/wr/health`), pass a `configToken`:
+
+```ts
+import { loopbackWorkspaceRuntimeExposure, startServer } from "@claxedo/workspace-runtime"
+
+startServer(4096, {
+  exposure: loopbackWorkspaceRuntimeExposure(),
+  configToken: process.env.WORKSPACE_RUNTIME_CONFIG_TOKEN,
+})
+```
+
+<Warning>
+`configToken` is **not** permission to mutate runtime config, and not
+whole-server auth. `POST /api/wr/config` is authorized only by a
+workspace-runtime **management-auth adapter** (the `managementAuth` server
+option — the kit ships the JWT verifier
+`createWorkspaceRuntimeJwtManagementAuth`, wired from
+`WORKSPACE_RUNTIME_MANAGEMENT_*` env by `workspaceRelayRuntimeOptionsFromEnv`);
+without one it returns `401 runtime_config_auth_required`. Embedded and local
+hosts can skip HTTP config entirely and call `runtime.host.apply(...)` in code
+— see [the quickstart](/guides/see-it-in-action#compose-a-local-runtime). The
+config token does not authorize PTY/process/file/session/VCS routes.
+</Warning>
+
+## Point MCP at the local control plane
+
+`@claxedo/mcp` can bridge runtime tools into any MCP client. The client config
+block (and the tool list) lives in
+[See it in action](/guides/see-it-in-action#add-runtime-tools-over-mcp). Note
+that its `CLAXEDO_SERVER_URL` points at the Claxedo **control-plane server**
+(claxedo-server, `http://127.0.0.1:3001` in local dev), not the
+workspace-runtime — the runtime's own API lives on `:4096` under `/api/wr/*`.
+
+## Run the cookbook
+
+For runnable local examples, use the cookbook's recipe ladder — eight
+single-file recipes from a ~15-line hello-agent to relay-attached placement:
+
+```bash
+cd claxedo-cookbook
+bun install
+bun run recipe:01-hello-agent
+```
+
+See [the Cookbook tab](/cookbook/overview) for every recipe with its expected
+output.
+
+<Card title="Move it off your machine" href="/deploy/private-vm" icon="server">
+  Run the runtime on a private VM behind trusted ingress.
+</Card>

@@ -1,0 +1,57 @@
+---
+title: "@claxedo/channels"
+description: "Channel ingress for agent sessions: route GitHub, Slack, Telegram, Discord, and WhatsApp messages into Claxedo runtimes with dedup, session resolution, and approval bridging."
+---
+
+`@claxedo/channels` is the framework glue for running Claxedo sessions from chat-shaped systems — GitHub, Telegram, Slack, Discord, WhatsApp, and local fake transports. It handles inbound command parsing, session resolution, runtime message forwarding, approval prompts, and reply rendering. It deliberately does **not** authenticate provider webhooks itself: the caller or mounted transport must verify signatures, secrets, and scopes before invoking the channel core.
+
+## Install
+
+```sh
+npm install @claxedo/channels
+```
+
+## Quickstart
+
+Wire a channel core with an `authorize` hook and in-memory stores:
+
+```ts
+import {
+  createChannelCore,
+  createMemoryDedupStore,
+  createMemorySessionResolver,
+  type ChannelRuntime,
+} from "@claxedo/channels"
+
+declare const runtime: ChannelRuntime // your session/prompt runtime binding
+
+const core = createChannelCore({
+  runtime,
+  dedup: createMemoryDedupStore(),
+  sessions: createMemorySessionResolver(runtime),
+  authorize: async (envelope) => {
+    if (envelope.channel !== "github") return { ok: false, message: "Unsupported channel." }
+    if (envelope.repo?.owner !== "acme") return { ok: false, message: "Repository is not linked." }
+    return { ok: true }
+  },
+})
+```
+
+The `authorize` hook runs before deduplication and session creation — use it to bind provider identities to workspace permissions and least-privilege channel policy.
+
+## Key capabilities
+
+- **Core** — `createChannelCore` handles inbound commands, session resolution, runtime forwarding, approvals, and replies over shared `InboundEnvelope`/`OutboundChunk` contracts.
+- **Ingress** — `createChannelsIngress` mounts Hono routes and delegates enabled provider routes to a caller-provided bot/transport; `createChannelRegistry` drives env-based registration.
+- **Provider helpers** — `githubWebhookEnvelope` + `verifyGitHubWebhookSignature`, `telegramUpdateEnvelope`, and Baileys WhatsApp personal-mode transport glue.
+- **Memory stores** — `createMemoryDedupStore`, `createMemorySessionResolver`, `createMemoryApprovalBridge` are single-process helpers; use durable storage for multi-instance deployments.
+
+## Trust model
+
+<Warning>
+The memory stores are single-process. Provider webhook verification is the caller's responsibility (e.g. verify `X-Hub-Signature-256` before `githubWebhookEnvelope`). Approval tokens identify pending prompts — they are not a standalone authorization proof.
+</Warning>
+
+## Full API
+
+See the [README on GitHub](https://github.com/kyashrathore/Claxedo/tree/dev/packages/claxedo-channels) for the full export table, per-provider security notes, and trust-model details.

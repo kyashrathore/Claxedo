@@ -1,0 +1,115 @@
+import { createEffect, on, type Accessor } from "solid-js"
+import type { Navigator, Params } from "@solidjs/router"
+
+import { realDirectory, type ContentMeta } from "../claxedo-ui/state"
+import { markRouteIntentClosed } from "../claxedo-ui/state/route-intent"
+import { recoverWorkspaceRuntimeRoute, type RuntimeRouteSessionInventory } from "../claxedo-ui/state/route-runtime-recovery"
+import { focusedSurfaceRouteTarget, surfaceRoute } from "../claxedo-ui/state/surface-route"
+import {
+  sessionRoute as canonicalSessionRoute,
+  workspaceRoute,
+  type ShellRoute,
+} from "./identity/route"
+
+export function useAppShellRouteSync(input: {
+  activeSurface: Accessor<ContentMeta | undefined>
+  activeWorkspaceId: Accessor<string | undefined>
+  findSurface: (predicate: (surface: ContentMeta) => boolean) => ContentMeta | undefined
+  navigate: Navigator
+  params: Params
+  pathname: Accessor<string>
+  routeWorkspaceId: Accessor<string | undefined>
+  sessionInventory: Accessor<RuntimeRouteSessionInventory>
+  shellRouteKind: Accessor<ShellRoute["kind"]>
+}) {
+  createEffect(() => {
+    const sessionId = input.params.sessionId ?? input.params.id
+    if (input.routeWorkspaceId() === "/workspace" && sessionId) {
+      const meta = input.findSurface(
+        (item) =>
+          (item.type === "session" || item.type === "context") &&
+          item.sessionId === sessionId &&
+          !!item.directory &&
+          item.directory !== "/workspace",
+      )
+      const target = meta?.directory ? canonicalSessionRoute(sessionId) : undefined
+      if (target && input.pathname() !== target) {
+        input.navigate(target, { replace: true })
+        return
+      }
+    }
+    const target = recoverWorkspaceRuntimeRoute({
+      routeDir: input.routeWorkspaceId(),
+      sessionId,
+      byWorkspace: input.sessionInventory().byWorkspace,
+      byProject: input.sessionInventory().byProject,
+    })
+    if (target && input.pathname() !== target) input.navigate(target, { replace: true })
+  })
+
+  createEffect(() => {
+    if (input.pathname() !== "/") return
+    const surface = input.activeSurface()
+    if (!surface) return
+    const dir = realDirectory(surface.directory) ?? input.activeWorkspaceId()
+    if (!dir) return
+    input.navigate(surfaceRoute(dir, surface) ?? workspaceRoute(dir), { replace: true })
+  })
+
+  createEffect(
+    on(
+      input.activeSurface,
+      (surface) => {
+        if (
+          input.params.sessionId ||
+          input.params.id ||
+          input.shellRouteKind() === "session" ||
+          input.shellRouteKind() === "workspace"
+        ) return
+        const target = focusedSurfaceRouteTarget({
+          route: {
+            ...input.params,
+            marketplace: input.shellRouteKind() === "marketplace",
+          },
+          surface,
+          routeWorkspaceKey: input.routeWorkspaceId(),
+          activeDirectory: input.activeWorkspaceId(),
+        })
+        if (target && input.pathname() !== target) input.navigate(target, { replace: true })
+      },
+      { defer: true },
+    ),
+  )
+
+  const handleTabClose = (nextSurface: ContentMeta | undefined, closedSurface: ContentMeta) => {
+    const closedDirectory = realDirectory(closedSurface.directory)
+    markRouteIntentClosed({
+      workspaceId: closedDirectory,
+      sessionId: closedSurface.sessionId,
+    })
+    if (closedSurface.sessionId === "new" || !closedSurface.sessionId) {
+      markRouteIntentClosed({ workspaceId: closedDirectory })
+    }
+    markRouteIntentClosed({
+      sessionId: closedSurface.sessionId,
+    })
+    if (nextSurface) {
+      const dir = realDirectory(nextSurface.directory) ?? input.activeWorkspaceId() ?? input.routeWorkspaceId() ?? ""
+      const route = surfaceRoute(dir, nextSurface)
+      if (!route) return
+      input.navigate(route, { replace: true })
+      return
+    }
+    const fallbackDir = realDirectory(closedSurface.directory) ?? input.activeWorkspaceId() ?? input.routeWorkspaceId()
+    if (fallbackDir) {
+      markRouteIntentClosed({ workspaceId: fallbackDir })
+      input.navigate(workspaceRoute(fallbackDir), { replace: true })
+      return
+    }
+    input.navigate("/", { replace: true })
+  }
+
+  return {
+    handleTabClose,
+  }
+}

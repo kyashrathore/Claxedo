@@ -1,0 +1,49 @@
+import type { SignedControlPlaneAuth } from "../../auth"
+import { convexApi } from "./convex-authority-api"
+import { requireExecutor } from "./convex-authority-executor"
+import type { ConvexAuthorityInput } from "./convex-authority-types"
+
+export function runtimeTokenAuthority(input: ConvexAuthorityInput) {
+  return {
+    async recordRuntimeAccessToken(auth: SignedControlPlaneAuth, args: {
+      jti: string
+      workspaceId: string
+      hostId: string
+      expiresAt: number
+    }) {
+      return requireExecutor(input, auth).mutation(convexApi.runtimeAccessTokens.recordMint, {
+        jti: args.jti,
+        workspace_id: args.workspaceId,
+        host_id: args.hostId,
+        expires_at: args.expiresAt,
+      })
+    },
+    async runtimeAccessTokenActive(args: {
+      jti: string
+      workspaceId: string
+      hostId: string
+    }) {
+      return requireExecutor(input, undefined, { allowUnsigned: true }).query(convexApi.runtimeAccessTokens.active, {
+        jti: args.jti,
+        workspace_id: args.workspaceId,
+        host_id: args.hostId,
+      })
+    },
+    async revokeRuntimeAccessToken(auth: SignedControlPlaneAuth, args: {
+      jti: string
+      workspaceId: string
+    }) {
+      return requireExecutor(input, auth).mutation(convexApi.runtimeAccessTokens.revoke, {
+        jti: args.jti,
+        workspace_id: args.workspaceId,
+      })
+    },
+    async revokeRuntimeAccessTokensForWorkspaceUser(auth: SignedControlPlaneAuth, args: {
+      workspaceId: string
+    }) {
+      return requireExecutor(input, auth).mutation(convexApi.runtimeAccessTokens.revokeForWorkspaceUser, {
+        workspace_id: args.workspaceId,
+      })
+    },
+  }
+}

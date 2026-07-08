@@ -1,0 +1,17 @@
+{
+  "revision": 1,
+  "acceptedAt": "2026-07-06T09:41:29.395Z",
+  "snapshot": {
+    "version": 1,
+    "harness": {
+      "id": "opencode",
+      "access": "native"
+    },
+    "mcp": {
+      "keys": []
+    },
+    "auth": {
+      "keys": []
+    }
+  }
+}

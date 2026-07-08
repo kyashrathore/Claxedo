@@ -1,0 +1,7 @@
+{
+  "name": "claxedo-web",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  }
+}

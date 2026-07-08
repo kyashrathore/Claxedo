@@ -1,0 +1,383 @@
+import { describe, expect, test } from "bun:test"
+import { getModel, createAssistantMessageEventStream, type AssistantMessage } from "@mariozechner/pi-ai"
+import type { StreamFn } from "@mariozechner/pi-agent-core"
+import { PiHarnessAdapter } from "./index"
+import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
+import { createVirtualSessionEnv, type PromptInput, type SessionEnvFactoryInput } from "../../index"
+
+function prompt(input: Partial<PromptInput> = {}): PromptInput {
+  return {
+    parts: [{ type: "text", text: "exec: printf hi > note.txt && cat note.txt" }],
+    assistantMessageId: "assistant-1",
+    userMessageId: "user-1",
+    agent: "pi",
+    model: { providerID: "pi", modelID: "virtual" },
+    ...input,
+  }
+}
+
+async function collect<T>(input: AsyncIterable<T>) {
+  const out: T[] = []
+  for await (const event of input) out.push(event)
+  return out
+}
+
+async function nextEvent<T extends { type: string }>(iterator: AsyncIterator<T>, type: string) {
+  while (true) {
+    const next = await iterator.next()
+    if (next.done) throw new Error(`expected ${type}`)
+    if (next.value.type === type) return next.value
+  }
+}
+
+describe("PiHarnessAdapter", () => {
+  test("creates and runs a directory-less virtual turn", async () => {
+    const adapter = new PiHarnessAdapter()
+    const session = await adapter.createSession(undefined, "Hybrid")
+
+    const events = await collect(adapter.sendMessage(session.id, prompt(), undefined))
+
+    expect(events.map((event) => event.type)).toEqual([
+      "message.updated",
+      "message.part.updated",
+      "session-status",
+      "text-delta",
+      "session-status",
+      "finish",
+    ])
+    expect(events).toContainEqual({ type: "text-delta", delta: "hi" })
+    expect(await adapter.listSessions(undefined)).toMatchObject([{ id: session.id, title: "Hybrid" }])
+    expect(await adapter.getMessages(session.id, undefined)).toMatchObject([
+      { info: { id: "user-1", role: "user" }, parts: [{ text: "exec: printf hi > note.txt && cat note.txt" }] },
+      { info: { id: "assistant-1", role: "assistant" }, parts: [{ text: "hi" }] },
+    ])
+  })
+
+  test("late-binds the session environment with explicit placement", async () => {
+    const placements: SessionEnvFactoryInput[] = []
+    const adapter = new PiHarnessAdapter({
+      defaultPlacement: {
+        mode: "local",
+        host: "workspace",
+        directory: "/workspace",
+        workspaceId: "ws_1",
+        toolSandbox: { kind: "virtual", id: "proc_1" },
+      },
+      createEnv: async (input) => {
+        placements.push(input)
+        return createVirtualSessionEnv()
+      },
+    })
+
+    const session = await adapter.createSession("/workspace", "Local workspace")
+
+    expect(placements).toEqual([{
+      sessionId: session.id,
+      mode: "local",
+      host: "workspace",
+      directory: "/workspace",
+      workspaceId: "ws_1",
+      toolSandbox: { kind: "virtual", id: "proc_1" },
+    }])
+  })
+
+  test("resolves placement per session with directory context", async () => {
+    const resolverInputs: Array<{ sessionId: string; directory: string | undefined }> = []
+    const placements: SessionEnvFactoryInput[] = []
+    const adapter = new PiHarnessAdapter({
+      defaultPlacement: async (input) => {
+        resolverInputs.push(input)
+        return {
+          mode: "cloud",
+          host: "workspace",
+          directory: input.directory,
+          workspaceId: `ws-${input.sessionId}`,
+          toolSandbox: { kind: "virtual", id: `ws-${input.sessionId}` },
+        }
+      },
+      createEnv: async (input) => {
+        placements.push(input)
+        return createVirtualSessionEnv()
+      },
+    })
+
+    const session = await adapter.createSession("/cloud/workspace", "Cloud workspace")
+
+    expect(resolverInputs).toEqual([{ sessionId: session.id, directory: "/cloud/workspace" }])
+    expect(placements).toEqual([{
+      sessionId: session.id,
+      mode: "cloud",
+      host: "workspace",
+      directory: "/cloud/workspace",
+      workspaceId: `ws-${session.id}`,
+      toolSandbox: { kind: "virtual", id: `ws-${session.id}` },
+    }])
+  })
+
+  test("falls back to central virtual placement when no placement is configured", async () => {
+    const placements: SessionEnvFactoryInput[] = []
+    const adapter = new PiHarnessAdapter({
+      createEnv: async (input) => {
+        placements.push(input)
+        return createVirtualSessionEnv()
+      },
+    })
+
+    const session = await adapter.createSession(undefined, "Hybrid")
+
+    expect(placements).toEqual([{
+      sessionId: session.id,
+      mode: "hybrid",
+      host: "central",
+      toolSandbox: { kind: "virtual", id: session.id },
+    }])
+  })
+
+  test("does not rebind placement for an existing session", async () => {
+    const placements: SessionEnvFactoryInput[] = []
+    const adapter = new PiHarnessAdapter({
+      createEnv: async (input) => {
+        placements.push(input)
+        return createVirtualSessionEnv()
+      },
+    })
+
+    await adapter.bindSession({
+      id: "session_1",
+      title: "Original",
+      placement: {
+        mode: "hybrid",
+        host: "central",
+        toolSandbox: { kind: "virtual", id: "first" },
+      },
+    })
+    await adapter.bindSession({
+      id: "session_1",
+      title: "Renamed",
+      placement: {
+        mode: "local",
+        host: "workspace",
+        workspaceId: "ws_2",
+        toolSandbox: { kind: "virtual", id: "second" },
+      },
+    })
+
+    expect(placements).toEqual([{
+      sessionId: "session_1",
+      mode: "hybrid",
+      host: "central",
+      toolSandbox: { kind: "virtual", id: "first" },
+    }])
+    expect(await adapter.listSessions(undefined)).toMatchObject([{ id: "session_1", title: "Renamed" }])
+  })
+
+  test("publishes canonical runtime events to the event hub", async () => {
+    const eventHub = createRuntimeEventHub()
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const adapter = new PiHarnessAdapter({ eventHub })
+    const session = await adapter.createSession(undefined, "Hybrid")
+
+    await collect(adapter.sendMessage(session.id, prompt(), undefined))
+
+    expect(runtimeEvents.map((event) => event.payload.type)).toEqual([
+      "session-status",
+      "text-delta",
+      "session-status",
+      "finish",
+    ])
+    expect(runtimeEvents).toContainEqual(expect.objectContaining({
+      directory: session.id,
+      sessionId: session.id,
+      assistantMessageId: "assistant-1",
+      payload: { type: "finish", sessionId: session.id },
+    }))
+  })
+
+  test("supports permission checkpoints before continuing a turn", async () => {
+    const adapter = new PiHarnessAdapter()
+    const session = await adapter.createSession(undefined, "Hybrid")
+    const iterator = adapter.sendMessage(session.id, prompt({
+      parts: [{ type: "text", text: "permission: bash\nexec: printf approved" }],
+    }), undefined)[Symbol.asyncIterator]()
+
+    expect(await nextEvent(iterator, "session-status")).toMatchObject({ type: "session-status", status: "busy" })
+    expect(await nextEvent(iterator, "permission.asked")).toMatchObject({
+      type: "permission.asked",
+      properties: {
+        id: `${session.id}:perm_1`,
+        sessionID: session.id,
+        tool: "bash",
+      },
+    })
+    expect(await adapter.listPermissions(undefined)).toMatchObject([{
+      id: `${session.id}:perm_1`,
+      sessionID: session.id,
+    }])
+
+    await adapter.respondPermission(`${session.id}:perm_1`, "allow_once", undefined)
+    const rest = []
+    for await (const event of { [Symbol.asyncIterator]: () => iterator }) rest.push(event)
+
+    expect(rest.map((event) => event.type)).toEqual(["text-delta", "session-status", "finish"])
+    expect(rest[0]).toMatchObject({ type: "text-delta", delta: "approved" })
+    expect(await adapter.listPermissions(undefined)).toEqual([])
+  })
+
+  test("denies permission checkpoints without running the command", async () => {
+    const adapter = new PiHarnessAdapter()
+    const session = await adapter.createSession(undefined, "Hybrid")
+    const iterator = adapter.sendMessage(session.id, prompt({
+      parts: [{ type: "text", text: "permission: bash\nexec: printf denied" }],
+    }), undefined)[Symbol.asyncIterator]()
+
+    await nextEvent(iterator, "permission.asked")
+    await adapter.respondPermission(`${session.id}:perm_1`, "deny", undefined)
+    const rest = []
+    for await (const event of { [Symbol.asyncIterator]: () => iterator }) rest.push(event)
+
+    expect(rest.map((event) => event.type)).toEqual(["text-delta", "session-status", "finish"])
+    expect(rest[0]).toMatchObject({ type: "text-delta", delta: "Permission denied." })
+  })
+
+  test("does not reuse permission ids after a prompt resolves", async () => {
+    const adapter = new PiHarnessAdapter()
+    const session = await adapter.createSession(undefined, "Hybrid")
+    const first = adapter.sendMessage(session.id, prompt({
+      parts: [{ type: "text", text: "permission: bash\nexec: printf first" }],
+    }), undefined)[Symbol.asyncIterator]()
+
+    expect(await nextEvent(first, "permission.asked")).toMatchObject({ properties: { id: `${session.id}:perm_1` } })
+    await adapter.respondPermission(`${session.id}:perm_1`, "allow_once", undefined)
+    for await (const _event of { [Symbol.asyncIterator]: () => first }) {}
+
+    const second = adapter.sendMessage(session.id, prompt({
+      parts: [{ type: "text", text: "permission: bash\nexec: printf second" }],
+    }), undefined)[Symbol.asyncIterator]()
+
+    expect(await nextEvent(second, "permission.asked")).toMatchObject({ properties: { id: `${session.id}:perm_2` } })
+    await adapter.respondPermission(`${session.id}:perm_2`, "deny", undefined)
+    for await (const _event of { [Symbol.asyncIterator]: () => second }) {}
+  })
+
+  test("auto-denies permission checkpoints after timeout", async () => {
+    const adapter = new PiHarnessAdapter({ permissionTimeoutMs: 1 })
+    const session = await adapter.createSession(undefined, "Hybrid")
+    const events = await collect(adapter.sendMessage(session.id, prompt({
+      parts: [{ type: "text", text: "permission: bash\nexec: printf timed-out" }],
+    }), undefined))
+
+    expect(events.map((event) => event.type)).toEqual([
+      "message.updated",
+      "message.part.updated",
+      "session-status",
+      "permission.asked",
+      "text-delta",
+      "session-status",
+      "finish",
+    ])
+    expect(events[4]).toMatchObject({ type: "text-delta", delta: "Permission denied." })
+  })
+
+  test("runs a real model turn through the configured backend", async () => {
+    const model = getModel("openai-codex", "gpt-5.1-codex-mini")
+    const streamFn: StreamFn = (streamModel, _context, _options) => {
+      const stream = createAssistantMessageEventStream()
+      const message: AssistantMessage = {
+        role: "assistant",
+        content: [{ type: "text", text: "" }],
+        api: streamModel.api,
+        provider: streamModel.provider,
+        model: streamModel.id,
+        usage: {
+          input: 1,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 2,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop",
+        timestamp: Date.now(),
+      }
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: message })
+        stream.push({ type: "text_start", contentIndex: 0, partial: message })
+        stream.push({ type: "text_delta", contentIndex: 0, delta: "hello ", partial: message })
+        stream.push({ type: "text_delta", contentIndex: 0, delta: "from codex", partial: message })
+        const done: AssistantMessage = {
+          ...message,
+          content: [{ type: "text", text: "hello from codex" }],
+        }
+        stream.push({ type: "text_end", contentIndex: 0, content: "hello from codex", partial: done })
+        stream.push({ type: "done", reason: "stop", message: done })
+        stream.end(done)
+      })
+      return stream
+    }
+    const adapter = new PiHarnessAdapter({
+      modelBackend: () => ({
+        model,
+        getApiKey: () => "test-key",
+        streamFn,
+      }),
+    })
+    const session = await adapter.createSession(undefined, "Model")
+    const events = await collect(adapter.sendMessage(session.id, prompt({
+      parts: [{ type: "text", text: "say hello" }],
+    }), undefined))
+
+    const deltas = events.filter((event) => event.type === "text-delta")
+    expect(deltas).toEqual([
+      { type: "text-delta", delta: "hello " },
+      { type: "text-delta", delta: "from codex" },
+    ])
+    expect(events.at(-1)).toEqual({ type: "finish", sessionId: session.id })
+    expect(await adapter.getMessages(session.id, undefined)).toMatchObject([
+      { info: { id: "user-1", role: "user" } },
+      { info: { id: "assistant-1", role: "assistant" }, parts: [{ text: "hello from codex" }] },
+    ])
+  })
+
+  test("model turn failures surface as error events, not silent echoes", async () => {
+    const model = getModel("openai-codex", "gpt-5.1-codex-mini")
+    const streamFn: StreamFn = (streamModel, _context, _options) => {
+      const stream = createAssistantMessageEventStream()
+      const failed: AssistantMessage = {
+        role: "assistant",
+        content: [],
+        api: streamModel.api,
+        provider: streamModel.provider,
+        model: streamModel.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "error",
+        errorMessage: "provider exploded",
+        timestamp: Date.now(),
+      }
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: failed })
+        stream.push({ type: "error", reason: "error", error: failed })
+        stream.end(failed)
+      })
+      return stream
+    }
+    const adapter = new PiHarnessAdapter({
+      modelBackend: () => ({ model, getApiKey: () => "test-key", streamFn }),
+    })
+    const session = await adapter.createSession(undefined, "Model")
+    const events = await collect(adapter.sendMessage(session.id, prompt({
+      parts: [{ type: "text", text: "say hello" }],
+    }), undefined))
+
+    expect(events.some((event) => event.type === "error")).toBe(true)
+    const statuses = events.filter((event) => event.type === "session-status")
+    expect(statuses.at(-1)).toMatchObject({ status: "error" })
+  })
+})

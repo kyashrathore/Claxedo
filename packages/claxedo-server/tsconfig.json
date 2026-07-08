@@ -1,0 +1,12 @@
+{
+  "extends": "@tsconfig/node-lts/tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "noUncheckedIndexedAccess": false,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun", "node"]
+  },
+  "include": ["src", "scripts"]
+}

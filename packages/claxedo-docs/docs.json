@@ -1,0 +1,159 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Claxedo",
+  "colors": {
+    "primary": "#d97706",
+    "light": "#facc15",
+    "dark": "#b45309"
+  },
+  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Start here",
+            "pages": [
+              "index",
+              "guides/introduction",
+              "guides/install",
+              "guides/see-it-in-action"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "concepts/layer-stack",
+              "concepts/sessions-hosts",
+              "concepts/connections-capabilities",
+              "concepts/credentials-sandbox",
+              "concepts/extensions"
+            ]
+          },
+          {
+            "group": "Deploy",
+            "pages": [
+              "deploy/local",
+              "deploy/private-vm",
+              "deploy/relay-attached",
+              "deploy/hosted-control-plane",
+              "deploy/sandbox-drivers-secrets"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Packages",
+        "groups": [
+          {
+            "group": "Agent runtime",
+            "pages": [
+              "packages/agent-event-runtime",
+              "packages/agent-sdk-runtime"
+            ]
+          },
+          {
+            "group": "Workspace & sandboxes",
+            "pages": [
+              "packages/workspace-runtime",
+              "packages/sandbox-manager"
+            ]
+          },
+          {
+            "group": "Relay",
+            "pages": [
+              "packages/workspace-relay",
+              "packages/workspace-relay-protocol"
+            ]
+          },
+          {
+            "group": "Capabilities",
+            "pages": [
+              "packages/agent-extensions",
+              "packages/mcp",
+              "packages/channels",
+              "packages/connections"
+            ]
+          },
+          {
+            "group": "Control plane",
+            "pages": [
+              "packages/control-plane"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Reference",
+            "pages": [
+              "api/overview",
+              "api/workspace-runtime",
+              "api/relay",
+              "api/mcp",
+              "api/connections",
+              "api/channels"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Cookbook",
+        "groups": [
+          {
+            "group": "Cookbook",
+            "pages": [
+              "cookbook/overview",
+              "cookbook/01-hello-agent",
+              "cookbook/02-harness-swap",
+              "cookbook/03-one-event-shape",
+              "cookbook/04-kill-and-resume",
+              "cookbook/05-workspace-host",
+              "cookbook/06-extensions-once",
+              "cookbook/07-sandbox-secrets",
+              "cookbook/08-place-anywhere"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {}
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/kyashrathore/Claxedo"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Try Claxedo",
+      "href": "https://claxedo.com"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "claude",
+      "chatgpt",
+      "cursor",
+      "vscode",
+      "mcp"
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/kyashrathore/Claxedo"
+    }
+  }
+}

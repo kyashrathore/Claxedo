@@ -1,0 +1,119 @@
+---
+title: "Agent Extensions"
+description: "Skills, MCP configs, and plugins across harnesses."
+---
+
+`@claxedo/agent-extensions` gives your product a package lifecycle for reusable
+agent capabilities. A host installs one package and materializes its supported
+components into runner-native locations for OpenCode, Claude, Codex, and Cursor.
+
+Supported components:
+
+- **Skills** (`SKILL.md`)
+- **MCP server configs** (`mcp.json`)
+- **Local runner plugins** where the install path is verified (e.g. Cursor
+  plugin files)
+
+## The lifecycle
+
+```text
+discover → install → sync effective snapshot → materialize into harnesses
+```
+
+A package can be made discoverable, installed into workspace desired state, then
+materialized by every connected runtime that receives that workspace's effective
+snapshot. Install records choose targets; the runtime turns package contents
+into harness-native files.
+
+## Quickstart
+
+```ts
+import { createAgentExtensions } from "@claxedo/agent-extensions"
+
+const extensions = createAgentExtensions({
+  projectDir: process.cwd(),
+})
+
+await extensions.install({
+  source: "acme/review-tools",
+  targets: ["codex", "claude", "opencode"],
+})
+
+console.log(await extensions.list())
+```
+
+For local project packages:
+
+```ts
+await extensions.installCached({
+  packagePath: "agent-extensions/review-tools",
+  id: "review-tools",
+  targets: ["cursor"],
+})
+```
+
+Supported targets are `["opencode", "claude", "codex", "cursor"]`.
+
+## CLI
+
+```sh
+agent-extensions install acme/review-tools --targets codex,claude
+agent-extensions install --path agent-extensions/review-tools --id review-tools
+agent-extensions list --json
+agent-extensions disable review-tools
+agent-extensions enable review-tools
+agent-extensions update review-tools
+agent-extensions uninstall review-tools
+agent-extensions doctor
+```
+
+## Activation is separate from resolution
+
+The same package can be installed but disabled for a workspace, or filtered by
+effective policy before the runtime snapshot is produced. Use pure policy
+overrides when your host has already made authorization decisions:
+
+```ts
+const snapshot = await extensions.snapshot({
+  policyOverrides: [
+    { id: "review-tools", scope: "workspace", enabled: false },
+  ],
+})
+```
+
+Then apply the snapshot inside a runtime host:
+
+```ts
+import { applyRuntimeAgentExtensions } from "@claxedo/agent-extensions/replay"
+
+await applyRuntimeAgentExtensions(snapshot, process.cwd())
+```
+
+`@claxedo/workspace-runtime` calls this replay path during config apply.
+
+## What the package owns vs your host
+
+<CardGroup cols={2}>
+  <Card title="Package owns" icon="box">
+    Source parsing + GitHub fetch/cache, desired/lock state, install lifecycle,
+    policy overlay resolution, snapshot creation, materialization + replay, and
+    owned-artifact cleanup/conflict detection.
+  </Card>
+  <Card title="Your host owns" icon="shield">
+    User/org identity, workspace admin checks, catalog allowlists, hosted
+    persistence, telemetry/audit, and fan-out to connected workspace runtimes.
+  </Card>
+</CardGroup>
+
+## Safety model
+
+Agent Extensions keep ownership records in
+`.agent-extensions/materialized.json` and refuse to overwrite unmanaged target
+paths. Uninstall and disable remove only owned artifacts. GitHub packages are
+locked by resolved SHA and verified against recorded package digests before
+replay. Run `agent-extensions doctor` to inspect desired state, locks, cache
+roots, and materialized paths.
+
+<Card title="@claxedo/agent-extensions reference" href="/packages/agent-extensions" icon="box">
+  The full package reference: API surface, CLI, snapshot format, and replay.
+</Card>

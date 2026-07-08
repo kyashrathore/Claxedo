@@ -1,0 +1,1194 @@
+import type { TerminalBackend } from "@claxedo/terminal/backend/types"
+import { retry } from "@claxedo/terminal/retry"
+import { ComponentProps, createEffect, createMemo, onCleanup, onMount, splitProps } from "solid-js"
+import { useSDK } from "@/context/sdk"
+import { monoFontFamily, useSettings } from "@/context/settings"
+import { LocalPTY } from "@/context/terminal"
+import { usePlatform } from "@claxedo/context/platform"
+import { resolveThemeVariant, useTheme, withAlpha, type HexColor } from "@opencode-ai/ui/theme"
+import { useLanguage } from "@claxedo/context/language"
+import { showToast } from "@opencode-ai/ui/toast"
+import { claimInitialCommand, markInitialCommandRan, releaseInitialCommandClaim } from "@claxedo/terminal/terminal-recovery"
+import { preparePersistBuffer, prepareRestoreBuffer } from "@claxedo/terminal/terminal-buffer"
+import { hostStable, shouldRecoverDesync, shouldSendResize, sizeSane } from "@claxedo/terminal/terminal-geometry"
+import {
+  sigwinchToggleSize,
+  socketCloseIsError,
+  WebSocketCloseError,
+  isRetriableClose,
+  reconnectDelay,
+  MAX_RECONNECT_ATTEMPTS,
+  reconnectingMessage,
+  reconnectedMessage,
+  reconnectFailedMessage,
+  createTerminalPtyClient,
+  openTerminalWebSocket,
+} from "@claxedo/terminal/terminal-connection"
+import { createTerminalRuntimeQueue } from "@claxedo/terminal/terminal-runtime-queue"
+import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize } from "@claxedo/terminal/terminal-tui"
+import { stripTerminalRepliesFromInput } from "@claxedo/terminal/input-reply-filter"
+import { getCapabilityResponses } from "@claxedo/terminal/capability-responder"
+import { authFetch, getClaxedoServerUrl } from "../utils/api"
+import { resolveWorkspaceRuntime } from "../cloud/runtime/workspace-runtime-store"
+import { parse as parseShellCommand } from "shell-quote"
+
+export interface TerminalProps extends ComponentProps<"div"> {
+  pty: LocalPTY
+  autoFocus?: boolean
+  onSubmit?: () => void
+  onCleanup?: (pty: Partial<LocalPTY> & { id: string }) => void
+  onUpdate?: (pty: Partial<LocalPTY> & { id: string }) => void
+  onConnect?: () => void
+  onConnectError?: (error: unknown) => void
+  onAgentInterrupt?: () => void
+  onSplitVertical?: () => void
+  onSplitHorizontal?: () => void
+  onFileLinkOpen?: (path: string, line?: number, col?: number) => void
+}
+
+type TerminalColors = {
+  background: string
+  foreground: string
+  cursor: string
+  selectionBackground: string
+}
+
+function isAgentLaunchCommand(input?: string) {
+  if (!input?.trim()) return false
+  try {
+    const parsed = parseShellCommand(input)
+    if (!parsed.every((item): item is string => typeof item === "string")) return false
+    const command = parsed[0]
+    if (!command) return false
+    const name = command.split(/[\\/]/).pop()
+    return name === "claude" || name === "codex" || name === "gemini" || name === "cursor" || name === "cursor-agent"
+  } catch {
+    return false
+  }
+}
+
+const DEFAULT_TERMINAL_COLORS: Record<"light" | "dark", TerminalColors> = {
+  light: {
+    background: "#fcfcfc",
+    foreground: "#211e1e",
+    cursor: "#211e1e",
+    selectionBackground: withAlpha("#211e1e", 0.2),
+  },
+  dark: {
+    background: "#191515",
+    foreground: "#d4d4d4",
+    cursor: "#d4d4d4",
+    selectionBackground: withAlpha("#d4d4d4", 0.25),
+  },
+}
+
+// Tuned for vtebench full profile (ramp stage 6: 1 MiB samples, max-secs=10,
+// max-samples=200) so heavy TUI output can complete without early throttling.
+// Baseline from stage 6 validation:
+// dense_cells 11.55ms, medium_cells 10.72ms, scrolling 18.02ms,
+// scrolling_bottom_region 17.95ms, scrolling_bottom_small_region 18.05ms,
+// scrolling_fullscreen 23.53ms, scrolling_top_region 18.22ms,
+// scrolling_top_small_region 18.04ms, sync_medium_cells 11.75ms, unicode 9.18ms.
+const MAX_PENDING_BYTES = 128 * 1024 * 1024
+const MAX_STREAM_BYTES = 128 * 1024 * 1024
+const MAX_BATCH_BYTES = 4 * 1024 * 1024
+const MAX_BATCH_ITEMS = 8192
+const MAX_DROPPED_CHUNKS = 1_000_000
+const OPEN_RESIZE_SETTLE_MS = 220
+
+export const Terminal = (props: TerminalProps) => {
+  const sdk = useSDK()
+  // CLAXEDO: PTYs live on claxedo-server — route WebSocket and size sync there
+  const claxedoServerUrl = getClaxedoServerUrl()
+  const settings = useSettings()
+  const theme = useTheme()
+  const language = useLanguage()
+  const platform = usePlatform()
+  const ptyRequest = platform.fetch ?? authFetch
+  let workspaceIdPromise: Promise<string | undefined> | undefined
+  let ptyClientPromise: Promise<ReturnType<typeof createTerminalPtyClient>> | undefined
+
+  const terminalWorkspaceId = () => {
+    // Prefer the SDK scope's stable relay-routing identity. For a relay-backed
+    // (cloud / user-hosted) workspace `sdk.directory` is often the runtime's
+    // filesystem path, which the control-plane resolve cannot map back to a
+    // workspaceId (remote_directory is null on the hosted control plane) — so
+    // resolving by directory returns undefined and the PTY socket falls back to
+    // the central control plane and fails. Reusing `sdk.workspaceId` (the same
+    // identity the composer/provider path uses) keeps the PTY on the relay.
+    const scopeWorkspaceId = sdk.workspaceId
+    if (scopeWorkspaceId) return Promise.resolve(scopeWorkspaceId)
+    workspaceIdPromise ??= resolveWorkspaceRuntime({
+      baseUrl: claxedoServerUrl,
+      request: ptyRequest,
+      directory: sdk.directory,
+    })
+      .then((workspace) =>
+        (workspace?.kind === "cloud" || workspace?.kind === "user-hosted") && workspace.workspaceId
+          ? workspace.workspaceId
+          : undefined,
+      )
+      .catch(() => undefined)
+    return workspaceIdPromise
+  }
+
+  const ptyClient = async () => {
+    ptyClientPromise ??= terminalWorkspaceId().then((workspaceId) =>
+      createTerminalPtyClient({
+        serverUrl: claxedoServerUrl,
+        workspaceId,
+        directory: sdk.directory,
+        request: ptyRequest,
+      }),
+    )
+    return await ptyClientPromise
+  }
+
+  const updatePty = async (body: unknown) => {
+    const response = await (await ptyClient()).update(local.pty.id, body)
+    if (!response.ok) throw new Error((await response.text().catch(() => "")) || `PTY update failed: ${response.status}`)
+  }
+
+  let container!: HTMLDivElement
+  const [local, others] = splitProps(props, ["pty", "autoFocus", "class", "classList", "onConnect", "onConnectError"])
+  const safePty = () => {
+    try {
+      return local.pty
+    } catch {
+      return
+    }
+  }
+  let ptySnapshot = (() => {
+    const pty = safePty()
+    if (!pty) return
+    return { ...pty }
+  })()
+  createEffect(() => {
+    const pty = safePty()
+    if (!pty) return
+    ptySnapshot = { ...pty }
+  })
+
+  let backend: TerminalBackend | undefined
+  let disposed = false
+  let cleaned = false
+  let isBufferRestored = !props.pty.buffer
+  const hasBuffer = !!(props.pty.buffer && props.pty.buffer.length > 0)
+  let cursor =
+    typeof local.pty.cursor === "number" && Number.isSafeInteger(local.pty.cursor) ? local.pty.cursor : 0
+
+  const cleanups: VoidFunction[] = []
+  const trimTrailingLines = (value: string, count: number) => {
+    let out = value
+    let left = count
+    while (left > 0) {
+      const idx = Math.max(out.lastIndexOf("\n"), out.lastIndexOf("\r"))
+      if (idx < 0) return ""
+      out = out.slice(0, idx + 1)
+      left -= 1
+    }
+    return out
+  }
+
+  const cleanup = () => {
+    if (!cleanups.length) return
+    const fns = cleanups.splice(0).reverse()
+    for (const fn of fns) {
+      try {
+        fn()
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // Theme handling
+  const getTerminalColors = (): TerminalColors => {
+    const mode = theme.mode()
+    const fallback = DEFAULT_TERMINAL_COLORS[mode]
+    const currentTheme = theme.themes()[theme.themeId()]
+    if (!currentTheme) return fallback
+    const variant = mode === "dark" ? currentTheme.dark : currentTheme.light
+    if (!variant?.seeds && !variant?.palette) return fallback
+    const resolved = resolveThemeVariant(variant, mode === "dark")
+    const text = resolved["text-stronger"] ?? fallback.foreground
+    const background = resolved["background-stronger"] ?? fallback.background
+    const alpha = mode === "dark" ? 0.25 : 0.2
+    const base = text.startsWith("#") ? (text as HexColor) : (fallback.foreground as HexColor)
+    const selectionBackground = withAlpha(base, alpha)
+    return {
+      background,
+      foreground: text,
+      cursor: text,
+      selectionBackground,
+    }
+  }
+
+  const terminalColors = createMemo(getTerminalColors)
+
+  // Update theme when it changes
+  createEffect(() => {
+    const colors = terminalColors()
+    backend?.setTheme(colors)
+  })
+
+  // Update font when settings change and refit so terminal cell metrics stay current.
+  createEffect(() => {
+    const font = monoFontFamily(settings.appearance.font())
+    backend?.setFontFamily(font)
+    backend?.fit()
+  })
+
+  const focusTerminal = () => {
+    if (!backend) return
+    backend.focus()
+  }
+
+  const refreshTerminal = (reason: string) => {
+    if (!backend) return
+    try {
+      backend.fit()
+    } catch {}
+    try {
+      backend.flushResize()
+    } catch {}
+    try {
+      if (backend.rows > 0) backend.refresh(0, backend.rows - 1)
+    } catch {}
+  }
+
+  let didAutoFocus = false
+  createEffect(() => {
+    const should = local.autoFocus !== false
+    if (!should) {
+      didAutoFocus = false
+      return
+    }
+    if (!backend) return
+    if (didAutoFocus) return
+    didAutoFocus = true
+    queueMicrotask(() => {
+      if (disposed) return
+      if (container.getClientRects().length === 0) return
+      refreshTerminal("auto-focus")
+      focusTerminal()
+    })
+  })
+
+  const handlePointerDown = () => {
+    const activeElement = document.activeElement
+    if (
+      activeElement instanceof HTMLElement &&
+      activeElement !== container &&
+      !container.contains(activeElement)
+    ) {
+      activeElement.blur()
+    }
+    focusTerminal()
+  }
+
+  onMount(() => {
+    const run = async () => {
+      // Lazy-load the xterm backend so @xterm/xterm (+addons, ~106KB gz) stays out
+      // of the eager main chunk — the terminal is mounted from many layout sites.
+      const { createBackend } = await import("#terminal-backend")
+      const b = await createBackend(container, {
+        theme: terminalColors(),
+        fontFamily: monoFontFamily(settings.appearance.font()),
+        image:
+          /\b(?:claude|codex)\b/i.test(local.pty.initialCommand ?? "") || /\b(?:claude|codex)\b/i.test(local.pty.title)
+            ? "paste"
+            : "path",
+        onSplitVertical: props.onSplitVertical,
+        onSplitHorizontal: props.onSplitHorizontal,
+        onUrlClick: (_event: MouseEvent, url: string) => {
+          platform.openLink(url)
+        },
+        onFileLinkClick: (path: string, line?: number, col?: number) => {
+          if (props.onFileLinkOpen) {
+            props.onFileLinkOpen(path, line, col)
+          } else if (platform.openPath) {
+            void platform.openPath(path)
+          }
+        },
+      })
+
+      if (disposed) {
+        b.dispose()
+        return
+      }
+
+      backend = b
+      cleanups.push(() => b.dispose())
+
+      // Refit after all fonts load so custom mono fonts do not leave the terminal
+      // stuck with fallback metrics.
+      if (typeof document !== "undefined" && document.fonts) {
+        document.fonts.ready.then(() => {
+          if (!disposed) backend?.fit()
+        })
+      }
+
+      // Auto-focus: the createEffect-based auto-focus cannot track `backend`
+      // because it's a plain variable (not a signal), so it returns early and
+      // never re-fires. Focus directly after backend creation instead
+      // (matches upstream's focusTerminal() call after t.open()).
+      if (local.autoFocus !== false) {
+        didAutoFocus = true
+        queueMicrotask(() => {
+          if (disposed) return
+          if (container.getClientRects().length === 0) return
+          refreshTerminal("auto-focus")
+          focusTerminal()
+        })
+      }
+      const mountCols = b.cols
+
+      // Allow queued store updates from the previous mount cleanup to settle
+      // so restore/connect use one consistent snapshot (cursor + buffer).
+      await Promise.resolve()
+
+      container.addEventListener("pointerdown", handlePointerDown)
+      cleanups.push(() => container.removeEventListener("pointerdown", handlePointerDown))
+
+      const snapshotCursor =
+        typeof local.pty.cursor === "number" && Number.isSafeInteger(local.pty.cursor) ? local.pty.cursor : undefined
+      const snapshotBuffer = local.pty.buffer
+      const snapshotHasBuffer = !!(snapshotBuffer && snapshotBuffer.length > 0)
+      const snapshotWasAltScreen = local.pty.wasAltScreen ?? false
+      const snapshotRows = local.pty.rows
+      const snapshotCols = local.pty.cols
+      const snapshotWasAtBottom = local.pty.wasAtBottom
+      const snapshotScrollY = local.pty.scrollY
+      cursor = snapshotCursor ?? 0
+      const splitWidthChanged = typeof snapshotCols === "number" && snapshotCols > 0 && snapshotCols !== mountCols
+
+      // Reload detection marker is retained for diagnostics only.
+      const reloadKey = `opencode.pty.${local.pty.id}.reload`
+      const isReload = !!localStorage.getItem(reloadKey)
+      try {
+        localStorage.removeItem(reloadKey)
+      } catch {}
+
+      const persistSnapshot = (reason: string) => {
+        if (!backend) return
+        const buffer = (() => {
+          try {
+            // If a fullscreen TUI is active, persist the alternate buffer so
+            // reloads can restore the screen without waiting for app output.
+            const isAlt = backend.isAltScreen()
+            return preparePersistBuffer(backend.serialize({ excludeAltBuffer: !isAlt, excludeModes: true }))
+          } catch {
+            return ""
+          }
+        })()
+        const modeSequences = (() => {
+          try {
+            return backend.rehydrateSequences()
+          } catch {
+            return ""
+          }
+        })()
+        const wasAltScreen = (() => {
+          try {
+            return backend.isAltScreen()
+          } catch {
+            return false
+          }
+        })()
+        const wasAtBottom = (() => {
+          try {
+            return backend.isAtBottom()
+          } catch {
+            return true
+          }
+        })()
+        const size = { rows: backend.rows, cols: backend.cols }
+        const rect = container.getBoundingClientRect()
+        const saneSize = shouldSendResize(size, rect)
+        props.onUpdate?.({
+          id: local.pty.id,
+          buffer,
+          modeSequences,
+          wasAltScreen,
+          wasAtBottom,
+          cursor,
+          ...(saneSize ? size : {}),
+          scrollY: backend.getViewportY(),
+        })
+      }
+
+      const markReload = () => {
+        // Persist a final snapshot before the document tears down. Solid cleanup
+        // callbacks are not guaranteed to run on a hard reload.
+        persistSnapshot("beforeunload")
+        try {
+          localStorage.setItem(reloadKey, "1")
+        } catch {}
+      }
+      window.addEventListener("beforeunload", markReload)
+      const handlePageHide = () => persistSnapshot("pagehide")
+      window.addEventListener("pagehide", handlePageHide)
+      cleanups.push(() => {
+        window.removeEventListener("beforeunload", markReload)
+        window.removeEventListener("pagehide", handlePageHide)
+        try {
+          localStorage.removeItem(reloadKey)
+        } catch {}
+      })
+
+      const likelyTui = isLikelyTui({
+        snapshotWasAltScreen: snapshotWasAltScreen === true,
+        initialCommand: local.pty.initialCommand ?? "",
+        title: local.pty.title ?? "",
+      })
+
+      // Never restore alternate-screen toggles from mode rehydrate (snapshot
+      // buffer restore handles alt-screen). For non-TUIs, strip mouse/focus
+      // reporting to avoid accidental SGR mouse "gibberish" in shells.
+      const snapshotModeSequences = filterModeSequences({
+        raw: local.pty.modeSequences ?? "",
+        likelyTui,
+      })
+
+      // Setup WebSocket connection.
+      // For normal shell buffers, reconnect from live tail to avoid replaying
+      // stale prompt redraw bytes during split/remount churn.
+      // For TUI/alt-screen sessions, keep cursor replay so the screen can
+      // recover full layout before SIGWINCH reflow.
+      const plan = cursorPlan({
+        likelyTui,
+        splitWidthChanged,
+        isReload,
+        snapshotHasBuffer,
+        snapshotWasAltScreen: snapshotWasAltScreen === true,
+        snapshotCursor,
+      })
+      const hasPersistedBuffer = snapshotHasBuffer
+      const useLiveTailCursor = plan.useLiveTailCursor
+      const cursorStart = plan.cursorStart
+      const launch = initialDelay({ likelyTui })
+      const rawInitialCmd = local.pty.initialCommand ?? ""
+      const initialCmd = isAgentLaunchCommand(rawInitialCmd) ? "" : rawInitialCmd
+      if (rawInitialCmd && !initialCmd) props.onUpdate?.({ id: local.pty.id, initialCommand: undefined })
+      const initialReady = initialCmd ? claimInitialCommand({ id: local.pty.id, initialCommand: initialCmd }) : false
+      let initialSent = false
+      let gated = likelyTui && initialReady
+      let gate: WebSocket | undefined
+      let owner: WebSocket | undefined
+      let settleTimer: ReturnType<typeof setTimeout> | undefined
+      let fallbackTimer: ReturnType<typeof setTimeout> | undefined
+
+      // --- Reconnect state ---
+      // Mutable reference so all handlers (onData, publishResize) always use
+      // the current socket across reconnections.
+      const socketRef: { current: WebSocket | null } = { current: null }
+      let reconnectAttempt = 0
+      let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+      let reconnecting = false
+      let firstConnect = true
+      const once = { value: false }
+      let replayReady = false
+
+      cleanups.push(() => {
+        if (initialReady && !initialSent) {
+          releaseInitialCommandClaim(local.pty.id)
+        }
+        gate = undefined
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer)
+          reconnectTimer = undefined
+        }
+        if (settleTimer) {
+          clearTimeout(settleTimer)
+          settleTimer = undefined
+        }
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer)
+          fallbackTimer = undefined
+        }
+        const sock = socketRef.current
+        if (sock && (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING)) {
+          sock.close()
+        }
+      })
+
+      const clearInitialTimers = (ws?: WebSocket) => {
+        if (ws && owner !== ws) return
+        if (settleTimer) {
+          clearTimeout(settleTimer)
+          settleTimer = undefined
+        }
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer)
+          fallbackTimer = undefined
+        }
+        owner = undefined
+      }
+
+      const releaseGate = (ws: WebSocket, reason: string) => {
+        if (!gated || gate !== ws) return
+        if (socketRef.current !== ws || ws.readyState !== WebSocket.OPEN) {
+          return
+        }
+        gated = false
+        gate = undefined
+        if (!initialSent) queueInitial(ws, reason)
+      }
+
+      const sendInitial = (ws: WebSocket, _reason: string) => {
+        if (!initialReady || initialSent || !initialCmd) return
+        if (socketRef.current !== ws || ws.readyState !== WebSocket.OPEN) {
+          return
+        }
+        clearInitialTimers()
+        initialSent = true
+        markInitialCommandRan(local.pty.id)
+        ws.send(initialCmd + "\n")
+        props.onUpdate?.({ id: local.pty.id, initialCommand: undefined })
+      }
+
+      const armInitial = (ws: WebSocket, reason: string) => {
+        if (!initialReady || initialSent || !initialCmd) return
+        owner = ws
+        if (settleTimer) clearTimeout(settleTimer)
+        settleTimer = setTimeout(() => {
+          settleTimer = undefined
+          sendInitial(ws, reason)
+        }, launch.settleMs)
+      }
+
+      const armInitialFallback = (ws: WebSocket) => {
+        if (!initialReady || initialSent || !initialCmd || fallbackTimer) return
+        owner = ws
+        fallbackTimer = setTimeout(() => {
+          fallbackTimer = undefined
+          sendInitial(ws, "fallback")
+        }, launch.fallbackMs)
+      }
+
+      const queueInitial = (ws: WebSocket, reason: string) => {
+        if (!initialReady || initialSent || !initialCmd) return
+        if (owner && owner !== ws) {
+          clearInitialTimers(owner)
+        }
+        owner = ws
+        armInitialFallback(ws)
+        armInitial(ws, reason)
+      }
+
+      // Wire I/O: user input → server
+      cleanups.push(
+        b.onData((data: string) => {
+          // Ctrl+C ("\x03") or bare Escape ("\x1b", length 1 — excludes escape sequences like "\x1b[A")
+          if (data === "\x03" || data === "\x1b") props.onAgentInterrupt?.()
+
+          // Shell protection: capability replies are already handled from PTY
+          // output in handleMessage() via getCapabilityResponses(). If xterm
+          // also surfaces OSC 10/11 replies on onData(), forwarding them here
+          // makes them look like typed input and pollutes the shell prompt with
+          // `rgb:...` fragments during Codex startup.
+          const filtered = stripTerminalRepliesFromInput(data)
+          if (!filtered) {
+            return
+          }
+          const sock = socketRef.current
+          if (sock && sock.readyState === WebSocket.OPEN) {
+            sock.send(filtered)
+            return
+          }
+        }).dispose,
+      )
+
+      // Enter key tracking
+      cleanups.push(
+        b.onKey((e: { key: string }) => {
+          if (e.key === "Enter") {
+            props.onSubmit?.()
+          }
+        }).dispose,
+      )
+
+      // Debounce backend resize updates
+      let backendResizeTimer: ReturnType<typeof setTimeout> | undefined
+      let openResizeSettleTimer: ReturnType<typeof setTimeout> | undefined
+      let pendingSize: { cols: number; rows: number } | undefined
+      let suspectResizes = 0
+      let lastRecoveryAt = 0
+      let lastPublishedSize: { cols: number; rows: number } | undefined
+      let holdResizeUntil = 0
+
+      const publishResize = (size: { cols: number; rows: number }, source: string) => {
+        const sock = socketRef.current
+        if (!sock || sock.readyState !== WebSocket.OPEN) {
+          return
+        }
+        if (source !== "desync-recovery") {
+          const last = lastPublishedSize
+          if (last && last.cols === size.cols && last.rows === size.rows) {
+            return
+          }
+        }
+        lastPublishedSize = size
+        updatePty({ size }).catch(() => {})
+      }
+      const recoverDesync = () => {
+        const now = Date.now()
+        if (!shouldRecoverDesync({ suspect: suspectResizes, now, last: lastRecoveryAt })) return
+        lastRecoveryAt = now
+        suspectResizes = 0
+        try {
+          b.fit()
+          if (b.rows > 0) b.refresh(0, b.rows - 1)
+        } catch {}
+        const cols = Math.max(2, b.cols)
+        const rows = Math.max(2, b.rows)
+        // Force SIGWINCH so TUIs reflow after transient layout corruption.
+        for (const size of sigwinchToggleSize(cols, rows)) {
+          publishResize(size, "desync-recovery")
+        }
+      }
+      const scheduleOpenResize = (source: string) => {
+        if (openResizeSettleTimer) clearTimeout(openResizeSettleTimer)
+        openResizeSettleTimer = setTimeout(() => {
+          openResizeSettleTimer = undefined
+          holdResizeUntil = 0
+          publishResize(pendingSize ?? { cols: b.cols, rows: b.rows }, source)
+        }, OPEN_RESIZE_SETTLE_MS)
+      }
+
+      cleanups.push(
+        b.onResize((size: { cols: number; rows: number }) => {
+          pendingSize = size
+          if (backendResizeTimer) clearTimeout(backendResizeTimer)
+          backendResizeTimer = setTimeout(() => {
+            if (!pendingSize) return
+            const rect = container.getBoundingClientRect()
+            const hostOk = hostStable(rect)
+            const sizeOk = sizeSane(pendingSize, rect)
+            if (!hostOk || !sizeOk || !shouldSendResize(pendingSize, rect)) {
+              suspectResizes += 1
+              recoverDesync()
+              return
+            }
+            suspectResizes = 0
+            if (holdResizeUntil > Date.now()) {
+              scheduleOpenResize("socket-open-settled")
+              return
+            }
+            publishResize(pendingSize, "backend-onResize")
+          }, 100)
+        }).dispose,
+      )
+      cleanups.push(() => {
+        if (backendResizeTimer) clearTimeout(backendResizeTimer)
+        if (openResizeSettleTimer) clearTimeout(openResizeSettleTimer)
+      })
+
+      let overload = false
+      const handleOverload = (_kind: "pending" | "live", _dropped: number) => {
+        if (overload) return
+        overload = true
+        showToast({
+          variant: "error",
+          title: "Terminal output overflow",
+          description: "This terminal produced too much output too quickly. It has been disconnected to keep the app responsive.",
+        })
+        const sock = socketRef.current
+        if (sock && (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING)) {
+          sock.close(4000, "terminal overload")
+        }
+      }
+      const queue = createTerminalRuntimeQueue({
+        maxPendingBytes: MAX_PENDING_BYTES,
+        maxStreamBytes: MAX_STREAM_BYTES,
+        maxBatchBytes: MAX_BATCH_BYTES,
+        maxBatchItems: MAX_BATCH_ITEMS,
+        maxDroppedChunks: MAX_DROPPED_CHUNKS,
+        requestFrame: (cb) => window.setTimeout(cb, 0),
+        cancelFrame: (id) => window.clearTimeout(id),
+        // xterm write callbacks can be dropped during rapid remount/resize churn.
+        // Complete synchronously so queue drain cannot deadlock on missing callbacks.
+        write: (chunk, done) => {
+          b.write(chunk)
+          done()
+        },
+        onOverload: handleOverload,
+        onThrottled: () => {},
+      })
+      cleanups.push(() => queue.dispose())
+
+      const flushPendingMessages = () => {
+        isBufferRestored = true
+        queue.flushPending()
+      }
+
+      // Restore saved buffer on both tab switch and reload. The serialized buffer
+      // may include the alternate buffer for fullscreen TUIs so reloads can
+      // show the last screen without waiting for app output.
+      // Mode sequences (DECSET/DECRST) are prepended to restore input behavior
+      // (app cursor keys, mouse tracking, bracketed paste, etc.).
+      const restore = prepareRestoreBuffer(snapshotBuffer)
+      const bufferToRestore = restore.value
+      const modeSequences = snapshotModeSequences
+      const wasAltScreen = snapshotWasAltScreen
+
+      if (bufferToRestore) {
+        const size = restoreSize({
+          likelyTui,
+          splitWidthChanged,
+          mountCols,
+          snapshotCols,
+          snapshotRows,
+          backendCols: b.cols,
+          backendRows: b.rows,
+        })
+        if (size.cols > 2 && size.rows > 0) {
+          b.resize(size.cols, size.rows)
+        } else {
+          b.resize(80, 24)
+        }
+
+        const widthChanged = splitWidthChanged
+        const shouldTrimTrailingLine =
+          !isReload &&
+          !wasAltScreen &&
+          snapshotWasAtBottom !== false &&
+          widthChanged &&
+          !likelyTui
+        const restoreBuffer = shouldTrimTrailingLine ? trimTrailingLines(bufferToRestore, 2) : bufferToRestore
+
+        // Restore ordering:
+        // - For fullscreen TUIs: enter alt screen first, then write snapshot.
+        //   This avoids a blank screen on reload when the app doesn't emit
+        //   output until the next input event.
+        // - For normal shells: restore modes + scrollback snapshot.
+        // If a TUI leaves custom SGR attributes active (e.g. composer bg),
+        // subsequent resizes can fill new rows with that background. Reset SGR
+        // after snapshot restore so fit/resize uses theme defaults for new cells.
+        const restoreTail = likelyTui ? "\x1b[0m" : ""
+        const restoreData = wasAltScreen
+          ? `\x1b[?1049h${modeSequences}${restoreBuffer}${restoreTail}`
+          : `${modeSequences}${restoreBuffer}${restoreTail}`
+        b.write(restoreData, () => {
+          // Restore scroll position. Alt-screen TUIs have no scrollback
+          // so the viewport starts at 0 after \x1b[?1049h — no scroll needed.
+          // For normal-screen terminals, scroll to bottom (the common case)
+          // unless the user had explicitly scrolled up.
+          if (!wasAltScreen) {
+            if (snapshotWasAtBottom !== false) {
+              b.scrollToBottom()
+            } else if (typeof snapshotScrollY === "number") {
+              b.scrollToLine(snapshotScrollY)
+            }
+          }
+
+          const stop = retry(
+            () => {
+              if (disposed) return true
+              const rect = container.getBoundingClientRect()
+              if (rect.width < 10 || rect.height < 10) return false
+
+              try {
+                b.flushResize()
+                if (b.cols < 2 || b.rows < 2) return false
+                return true
+              } catch {
+                return false
+              }
+            },
+            {
+              delay: 50,
+              max: 10,
+              onDone: (ok) => {
+                if (disposed) return
+                if (!ok) {
+                  try {
+                    b.resize(80, 24)
+                    b.refresh(0, b.rows - 1)
+                  } catch {}
+                }
+                flushPendingMessages()
+              },
+            },
+          )
+          cleanups.push(stop)
+        })
+      } else {
+        isBufferRestored = true
+        const stop = retry(
+          () => {
+            if (disposed) return true
+            const rect = container.getBoundingClientRect()
+            if (rect.width < 10 || rect.height < 10) return false
+
+            try {
+              b.flushResize()
+              if (b.cols < 2 || b.rows < 2) return false
+              return true
+            } catch {
+              return false
+            }
+          },
+          {
+            delay: 50,
+            max: 10,
+            onDone: (ok) => {
+              if (disposed) return
+              if (!ok) {
+                try {
+                  b.resize(80, 24)
+                  b.refresh(0, b.rows - 1)
+                } catch {}
+              }
+              flushPendingMessages()
+            },
+          },
+        )
+        cleanups.push(stop)
+      }
+
+      // --- Reconnectable WebSocket connection ---
+      // Shared decoders persist across reconnections (no per-socket state).
+      const decoder = new TextDecoder()
+      const encoder = new TextEncoder()
+
+      const scheduleReconnect = () => {
+        if (disposed || overload) return
+        reconnecting = true
+        const delay = reconnectDelay(reconnectAttempt)
+        reconnectAttempt += 1
+        try {
+          b.write(reconnectingMessage(reconnectAttempt, MAX_RECONNECT_ATTEMPTS))
+        } catch {}
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = undefined
+          if (disposed) return
+          void connectSocket()
+        }, delay)
+      }
+
+      const connectSocket = async () => {
+        if (disposed || overload) return
+
+        // Build URL with live cursor on reconnect, or planned cursor on first connect.
+        const cursorParamValue = firstConnect ? plan.cursorParam : cursor
+        firstConnect = false
+
+        // Close previous socket if still lingering
+        const prev = socketRef.current
+        if (prev && (prev.readyState === WebSocket.OPEN || prev.readyState === WebSocket.CONNECTING)) {
+          try { prev.close() } catch {}
+        }
+
+        const ws = await openTerminalWebSocket({
+          serverUrl: claxedoServerUrl,
+          ptyId: local.pty.id,
+          cursor: cursorParamValue,
+          workspaceId: await terminalWorkspaceId(),
+          directory: sdk.directory,
+          request: ptyRequest,
+          locationProtocol: window.location.protocol,
+        })
+        ws.binaryType = "arraybuffer"
+        socketRef.current = ws
+        once.value = false
+        replayReady = false
+
+        if (disposed) {
+          ws.close()
+          return
+        }
+
+        // Per-socket cleanup (removed from main cleanups when socket is replaced)
+        const socketCleanups: VoidFunction[] = []
+        const cleanupSocket = () => {
+          for (const fn of socketCleanups.splice(0).reverse()) {
+            try { fn() } catch {}
+          }
+        }
+        cleanups.push(cleanupSocket)
+        socketCleanups.push(() => {
+          if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            ws.close()
+          }
+        })
+
+        // --- handleOpen ---
+        const wasReconnect = reconnecting
+        const handleOpen = () => {
+          reconnecting = false
+          reconnectAttempt = 0
+
+          if (wasReconnect) {
+            try { b.write(reconnectedMessage()) } catch {}
+          }
+
+          local.onConnect?.()
+
+          // For fullscreen-ish TUIs that run in the normal buffer (Ink/Codex),
+          // ensure resizes don't inherit whatever SGR the app last used.
+          if (likelyTui && (splitWidthChanged || isReload || wasReconnect)) {
+            try {
+              b.write("\x1b[0m")
+            } catch {}
+          }
+
+          // Fit first: after buffer restore, b.cols/rows may still reflect saved
+          // dimensions from b.resize(savedCols, savedRows).
+          try {
+            b.fit()
+          } catch {}
+          // Only force SIGWINCH double-toggle for TUI apps (likelyTui).
+          // Plain shells (zsh/bash) only need a single resize via scheduleOpenResize —
+          // the double-toggle causes ZSH to redraw mid-query, emitting CPR / OSC color
+          // responses that arrive back as echoed garbage in the prompt.
+          // Note: wasReconnect used to implicitly be false here because trim() caused a
+          // remount (resetting reconnecting=false). Now that trim() no longer remounts,
+          // we must explicitly exclude plain terminals from the forced SIGWINCH path.
+          const shouldForceSigwinch = likelyTui
+          if (!shouldForceSigwinch) {
+            holdResizeUntil = Date.now() + OPEN_RESIZE_SETTLE_MS
+            scheduleOpenResize("socket-open")
+            releaseGate(ws, "socket-open")
+          } else {
+            gate = gated ? ws : undefined
+            holdResizeUntil = 0
+            if (openResizeSettleTimer) {
+              clearTimeout(openResizeSettleTimer)
+              openResizeSettleTimer = undefined
+            }
+            if (splitWidthChanged || wasReconnect) {
+              try {
+                b.write("\x1b[0m\x1b[H\x1b[2J")
+              } catch {}
+            }
+            // Force SIGWINCH via resize toggle so TUI apps re-render after reconnect.
+            const targetCols = b.cols
+            const targetRows = b.rows
+            const [first, second] = sigwinchToggleSize(targetCols, targetRows)
+            updatePty({ size: first })
+              .then(() => {
+                return updatePty({ size: second })
+              })
+              .then(() => {
+                releaseGate(ws, "sigwinch")
+              })
+              .catch(() => {
+                releaseGate(ws, "sigwinch-failed")
+              })
+          }
+
+          // Execute initial command only once per PTY, including across reloads.
+          // Wait for shell output to settle instead of firing blindly after a
+          // fixed delay. This avoids racing shell startup on fresh PTYs.
+          if (gated) {
+            armInitialFallback(ws)
+          }
+          if (!gated && !initialSent) {
+            queueInitial(ws, wasReconnect ? "reconnect-open" : "socket-open")
+          }
+        }
+        ws.addEventListener("open", handleOpen)
+        socketCleanups.push(() => ws.removeEventListener("open", handleOpen))
+        socketCleanups.push(() => {
+          if (gate === ws) gate = undefined
+        })
+        socketCleanups.push(() => clearInitialTimers(ws))
+
+        // --- handleMessage ---
+        const handleMessage = (event: MessageEvent) => {
+          if (disposed) return
+          let data = ""
+          if (event.data instanceof ArrayBuffer) {
+            // WebSocket control frame: 0x00 + UTF-8 JSON (currently { cursor }).
+            const bytes = new Uint8Array(event.data)
+            if (bytes[0] === 0) {
+              const json = decoder.decode(bytes.subarray(1))
+              try {
+                const meta = JSON.parse(json) as { cursor?: unknown }
+                const next = meta?.cursor
+                if (typeof next === "number" && Number.isSafeInteger(next) && next >= 0) {
+                  replayReady = true
+                  cursor = next
+                  return
+                }
+              } catch {
+                // ignore
+              }
+              return
+            }
+            data = decoder.decode(bytes)
+          } else {
+            data = typeof event.data === "string" ? event.data : ""
+          }
+
+          if (!data) {
+            return
+          }
+          if (!gated && !initialSent) {
+            queueInitial(ws, "output-settled")
+          }
+          const dataBytes = encoder.encode(data).byteLength
+          cursor += dataBytes
+          // Respond to terminal capability queries immediately, before any queuing.
+          // TUI apps (e.g. codex) query the terminal at startup and time out
+          // after ~2s per query group if no responses arrive. We respond here
+          // unconditionally so the PTY gets the answers now regardless of
+          // whether buffer restoration is in progress. Messages still queue
+          // for rendering as normal.
+          const capabilityResponses = getCapabilityResponses(data)
+          if (capabilityResponses.length > 0 && replayReady) {
+            const responseSock = socketRef.current
+            if (responseSock && responseSock.readyState === WebSocket.OPEN) {
+              for (const r of capabilityResponses) {
+                responseSock.send(r)
+              }
+            }
+          }
+          const next = data
+          // Queue messages if buffer restoration is still in progress
+          if (!isBufferRestored) {
+            queue.push(next)
+            return
+          }
+          b.write(next)
+        }
+        ws.addEventListener("message", handleMessage)
+        socketCleanups.push(() => ws.removeEventListener("message", handleMessage))
+
+        // --- handleError ---
+        const handleError = () => {
+          if (disposed) return
+          // Don't call onConnectError here — let handleClose decide whether
+          // to retry or give up. WebSocket error is always followed by close.
+        }
+        ws.addEventListener("error", handleError)
+        socketCleanups.push(() => ws.removeEventListener("error", handleError))
+
+        // --- handleClose ---
+        const handleClose = (event: CloseEvent) => {
+          if (disposed) return
+
+          // Normal close (1000) or non-error — do nothing
+          if (!socketCloseIsError(event.code)) return
+
+          // Session not found (1008) — PTY is gone, delegate to clone-on-reconnect
+          if (event.code === 1008) {
+            if (once.value) return
+            once.value = true
+            local.onConnectError?.(new WebSocketCloseError(event.code, event.reason))
+            return
+          }
+
+          // Retriable error — schedule reconnect if under the limit
+          if (isRetriableClose(event.code) && reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+            cleanupSocket()
+            scheduleReconnect()
+            return
+          }
+
+          // Exhausted retries or non-retriable code
+          if (once.value) return
+          once.value = true
+          if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+            try { b.write(reconnectFailedMessage()) } catch {}
+          }
+          local.onConnectError?.(new WebSocketCloseError(event.code, event.reason))
+        }
+        ws.addEventListener("close", handleClose)
+        socketCleanups.push(() => ws.removeEventListener("close", handleClose))
+      }
+
+      // Initial connection
+      await connectSocket()
+
+    }
+
+    void run().catch((err) => {
+      if (disposed) return
+      showToast({
+        variant: "error",
+        title: language.t("terminal.connectionLost.title"),
+        description: err instanceof Error ? err.message : language.t("terminal.connectionLost.description"),
+      })
+      local.onConnectError?.(err)
+    })
+  })
+
+  onCleanup(() => {
+    if (cleaned) return
+    cleaned = true
+    disposed = true
+
+    // Serialize state for restoration
+    const pty = (() => {
+      const live = safePty()
+      if (live) return live
+      return ptySnapshot
+    })()
+    if (backend && props.onCleanup && pty) {
+      const buffer = (() => {
+        try {
+          const isAlt = backend.isAltScreen()
+          return preparePersistBuffer(backend.serialize({ excludeAltBuffer: !isAlt, excludeModes: true }))
+        } catch {
+          return ""
+        }
+      })()
+      const modeSequences = (() => {
+        try {
+          return backend.rehydrateSequences()
+        } catch {
+          return ""
+        }
+      })()
+      const wasAltScreen = (() => {
+        try {
+          return backend.isAltScreen()
+        } catch {
+          return false
+        }
+      })()
+      const wasAtBottom = (() => {
+        try {
+          return backend.isAtBottom()
+        } catch {
+          return true
+        }
+      })()
+      props.onCleanup({
+        ...pty,
+        buffer,
+        modeSequences,
+        wasAltScreen,
+        wasAtBottom,
+        cursor,
+        rows: backend.rows,
+        cols: backend.cols,
+        scrollY: backend.getViewportY(),
+      })
+    }
+
+    // Defer backend/xterm disposal so Solid can finish its own DOM teardown first.
+    // Disposing xterm synchronously during cleanNode can race with node removal.
+    queueMicrotask(() => cleanup())
+  })
+
+  return (
+    <div
+      ref={container}
+      data-component="terminal"
+      data-prevent-autofocus
+      tabIndex={-1}
+      style={{ "background-color": terminalColors().background }}
+      classList={{
+        ...(local.classList ?? {}),
+        "select-text": true,
+        "h-full w-full overflow-hidden font-mono": true,
+        [local.class ?? ""]: !!local.class,
+      }}
+      {...others}
+    />
+  )
+}

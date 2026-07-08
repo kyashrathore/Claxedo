@@ -1,0 +1,10 @@
+{
+  "extends": "@tsconfig/node-lts/tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noUncheckedIndexedAccess": false,
+    "lib": ["ESNext", "DOM"]
+  },
+  "include": ["src"]
+}

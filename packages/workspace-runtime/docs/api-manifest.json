@@ -1,0 +1,51 @@
+{
+  "packageExports": [
+    ".",
+    "./client",
+    "./host",
+    "./exposure",
+    "./relay",
+    "./config",
+    "./routes",
+    "./testing"
+  ],
+  "rootRuntimeExports": [
+    "WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER",
+    "WorkspaceRuntimeRouteManifest",
+    "WorkspaceRuntimeRoutes",
+    "createWorkspaceHost",
+    "createWorkspaceRuntimeApp",
+    "createWorkspaceRuntimeJwtManagementAuth",
+    "defaultWorkspaceHarnessRegistry",
+    "embeddedWorkspaceRuntimeExposure",
+    "isLoopbackHostname",
+    "loadWorkspaceRuntimeManagementVerificationKey",
+    "loopbackWorkspaceRuntimeExposure",
+    "normalizeRuntimeSnapshot",
+    "privateNetworkDevUnsafeWorkspaceRuntimeExposure",
+    "privateNetworkWorkspaceRuntimeExposure",
+    "relayWorkspaceRuntimeExposure",
+    "runtimeEnvText",
+    "startServer",
+    "startWorkspaceRuntime",
+    "waitForWorkspaceRuntimeServerPort",
+    "workspaceRuntimeListenHostname",
+    "workspaceRuntimeRoute"
+  ],
+  "routePrefixes": [
+    "/api/wr/health",
+    "/api/wr/capabilities",
+    "/api/wr/config",
+    "/api/wr/harness-config-options",
+    "/api/wr/pty",
+    "/api/wr/process",
+    "/api/wr/events",
+    "/api/wr/runtime-events",
+    "/api/wr/file",
+    "/api/wr/find/file",
+    "/api/wr/diff",
+    "/api/wr/git",
+    "/api/wr/hook",
+    "/api/wr/session-env"
+  ]
+}

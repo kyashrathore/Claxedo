@@ -1,0 +1,80 @@
+---
+title: "06 — Extensions, once"
+description: "Author one Agent Extension package (a skill + an MCP server), install it from a local directory, and materialize it natively for opencode, claude, codex, and cursor."
+---
+
+One package → N files across four harness ecosystems, each in its **native**
+location and format: `.opencode/opencode.jsonc`, `.mcp.json`,
+`.codex/config.toml`, `.cursor/mcp.json`.
+
+## Run
+
+```bash
+bun run recipe:06-extensions-once
+```
+
+<Note>
+Needs nothing beyond the repo checkout — no API keys, no agent, no network.
+Everything happens in a fresh temp project; nothing global is written.
+</Note>
+
+## The core
+
+```ts
+import { createAgentExtensions, type HarnessTarget } from "@claxedo/agent-extensions"
+
+const TARGETS: HarnessTarget[] = ["opencode", "claude", "codex", "cursor"]
+
+// 1. Author the package ONCE: SKILL.md at the package root (standalone-skill
+//    shape) + one MCP server config under mcp/.
+// 2. Install from the local directory — no npm, no GitHub:
+const extensions = createAgentExtensions({ projectDir, homeDir, dataRoot, scope: "project" })
+const record = await extensions.installCached({
+  packagePath: "extensions/team-kit",
+  id: "team-kit",
+  targets: TARGETS,
+}) // install + materialize in one call
+```
+
+Full source: [`src/recipes/06-extensions-once.ts`](https://github.com/kyashrathore/Claxedo/blob/dev/claxedo-cookbook/src/recipes/06-extensions-once.ts)
+
+## Expected output (excerpts)
+
+```text
+--- files materialized into the project (relative paths) ---
+{
+  ".opencode/": [".opencode/opencode.jsonc", ".opencode/skills/team-kit/…"],
+  ".claude/":   [".claude/skills/team-kit/…"],
+  ".agents/":   [".agents/skills/team-kit/…"],
+  ".codex/":    [".codex/config.toml"],
+  ".cursor/":   [".cursor/mcp.json", ".cursor/skills/team-kit/…"],
+  ".mcp.json":  [".mcp.json"]
+}
+--- end ---
+
+--- one MCP server, four native formats ---
+codex -> .codex/config.toml:
+  [mcp_servers.team-tools]
+  command = "npx"
+  args = ["-y", "@claxedo/mcp"]
+claude -> .mcp.json:
+  { "mcpServers": { "team-tools": { "type": "stdio", "command": "npx", … } } }
+--- end ---
+
+1 package -> 8 materialized locations (8 applied components) across 4 harness ecosystems
+```
+
+## Lift this into your app
+
+`installCached` is install + materialize in one call; `snapshot()` returns the
+desired-state a control plane pushes to workspace hosts. Package-shape rules
+worth knowing: the package root must be a marketplace manifest, plugin
+manifest, root `SKILL.md`, or root `mcp.json` (a bare `skills/` directory is
+rejected); codex skills land in `.agents/skills/` and codex MCP in
+`.codex/config.toml` as TOML. Concepts:
+[Extensions](/concepts/extensions).
+
+<Card title="07 — Sandbox secrets" icon="lock" href="/cookbook/07-sandbox-secrets">
+  Brokered secrets fail closed: the manager refuses to leak a credential into
+  an unbrokered sandbox.
+</Card>

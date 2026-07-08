@@ -1,0 +1,64 @@
+# Secrets — never enter the image or build context
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+
+# Dependencies (installed inside the build)
+node_modules
+**/node_modules
+
+# VCS + worktrees
+.git
+.worktrees
+
+# Agent scratch + worktree copies (full repo clones w/ media/dist — ~500MB+;
+# never needed in the image and they ballooned the build context to 640MB).
+.claude
+
+# Local state / scratch
+.workspace-runtime
+**/*.log
+.DS_Store
+
+# Stray incremental build artifacts
+**/*.bun-build
+packages/claxedo-web/dist
+packages/claxedo-web/public/core.js
+
+# Media assets not needed by the server build
+**/*.mp4
+**/*.dmg
+
+# Prebuilt engine output (built inside the image)
+packages/opencode/dist
+
+# Workspace dists — built fresh in the image (Dockerfile build stage) so the
+# image never silently depends on a locally-built dist. Excluding them forces
+# the fresh-clone reproducibility path.
+packages/agent-event-runtime/dist
+packages/agent-sdk-runtime/dist
+packages/workspace-runtime/dist
+packages/sandbox-manager/dist
+packages/claxedo-connections/dist
+packages/claxedo-channels/dist
+
+# Prebuilt app/desktop bundles + non-workspace dirs the server build never
+# touches (they ballooned the build context to ~900MB)
+packages/claxedo-desktop/dist
+packages/claxedo-desktop/resources
+packages/claxedo-desktop/out
+packages/claxedo-desktop/test-results
+packages/desktop/dist
+packages/opencode/dist-js
+packages/opencode/dist-web
+packages/opencode/dist-serve
+packages/claxedo-app/dist-desktop
+packages/claxedo-app/dist-opencode
+packages/claxedo-app/dist-selfhost
+packages/claxedo-app/dist
+packages/claxedo-app/dist-demo
+claxedo-cookbook
+docs
+.agent-extensions

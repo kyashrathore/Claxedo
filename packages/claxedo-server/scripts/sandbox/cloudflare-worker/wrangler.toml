@@ -1,0 +1,45 @@
+name = "claxedo-sandbox-proxy"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The runtime is reached through the worker's own /sandbox/:id/proxy route
+# (containerFetch), NOT exposePort preview subdomains — so NO wildcard route or
+# wildcard ACM cert is required. Served at the workers.dev URL below; for a
+# branded host add `routes = [{ pattern = "sandbox.claxedo.com/*", zone_name =
+# "claxedo.com" }]` on an account that owns the zone.
+workers_dev = true
+
+[observability]
+enabled = true
+
+[[containers]]
+class_name = "Sandbox"
+image = "./Dockerfile"
+# `lite` caps disk at 2GB; the runtime image (all the agent CLIs + workspace-
+# runtime) is ~2.1GB, so it needs at least `basic` (4GB disk).
+instance_type = "basic"
+max_instances = 3
+
+[containers.constraints]
+regions = ["APAC"]
+
+[containers.configuration.observability.logs]
+enabled = true
+
+[[durable_objects.bindings]]
+class_name = "Sandbox"
+name = "Sandbox"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Sandbox"]
+
+# Egress credential broker (Cloudflare Worker-proxy pattern). Brokered secrets
+# are stored here keyed by sandbox id — never inside the container. Create the
+# namespace (`wrangler kv namespace create EGRESS_SECRETS`) and set the signing
+# secret (`wrangler secret put EGRESS_SIGNING_SECRET`). Brokering stays off
+# until both are configured.
+[[kv_namespaces]]
+binding = "EGRESS_SECRETS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"

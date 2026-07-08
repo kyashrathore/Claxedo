@@ -1,0 +1,44 @@
+# Cloudflare Worker config for the hosted Claxedo control plane.
+#
+# This deploys ONLY the Worker-safe hosted control plane (src/worker.ts →
+# src/hosted-app.ts). The local Node server (src/server.ts) is unaffected and is
+# never bundled here. See docs/tech-docs/claxedo-server-worker-deployment-plan.md.
+#
+# Build / verify (no Cloudflare account needed):
+#   npx wrangler deploy --dry-run --outdir dist-worker
+# Deploy to staging (needs CLOUDFLARE_API_TOKEN + account):
+#   npx wrangler deploy --env staging
+#
+# `nodejs_compat` is required for Worker-compatible npm SDKs such as Daytona's
+# TypeScript SDK and also populates `process.env` from text bindings/secrets.
+# Control-plane signing/JWKS use global Web Crypto, not node:crypto — enforced
+# by src/worker.import-graph.test.ts.
+
+name = "claxedo-control-plane"
+main = "src/worker.ts"
+compatibility_date = "2025-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+# Public (non-secret) configuration. Secrets are set with `wrangler secret put`:
+#   CLAXEDO_WORKSPACE_AUTHORITY_URL (or set as a var below), CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN,
+#   CLAXEDO_WORKSPACE_RELAY_URL, CLAXEDO_RELAY_RESOLVER_TOKEN,
+#   CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
+#   CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM (+ optional _NEXT_*),
+#   CLERK_JWT_ISSUER, CLERK_JWKS_URL (+ optional CLERK_JWT_AUDIENCE).
+[vars]
+CLAXEDO_SIGNED_CLOUD_AUTH = "1"
+
+[env.staging]
+name = "claxedo-control-plane-staging"
+
+[env.staging.vars]
+CLAXEDO_SIGNED_CLOUD_AUTH = "1"
+
+# KV namespace for the Cloudflare credential backend (only needed once the hosted
+# surface manages provider credentials; the first surface does not).
+# [[kv_namespaces]]
+# binding = "CLAXEDO_CREDENTIALS"
+# id = "<staging-namespace-id>"

@@ -1,0 +1,76 @@
+---
+title: "API overview"
+description: "Index of every HTTP surface in the Claxedo stack: find which package owns each route family and jump to its reference page."
+---
+
+Claxedo is a set of composable packages for building coding-agent products. The
+HTTP surfaces below are owned by different packages in the stack — each one is a
+distinct trust boundary. This page indexes the surfaces and points at the
+per-surface reference pages.
+
+<Note>
+  These tables are hand-written and checked against the source. Every route,
+  tool, and field on the API Reference pages is meant to match the cited
+  package source exactly. Found a mismatch between these tables and the code?
+  Please open an issue.
+</Note>
+
+## HTTP surfaces
+
+| Surface | Owning package | Reference |
+| --- | --- | --- |
+| `/api/wr/*` — per-workspace host routes (health, capabilities, config, events, files, diff/git, PTY, process, hooks, session-env) | `@claxedo/workspace-runtime` | [Workspace runtime API](/api/workspace-runtime) |
+| Relay tunnel edge + `/metrics` + `/health` | `@claxedo/workspace-relay` | [Relay API](/api/relay) |
+| MCP runtime tools (stdio) | `@claxedo/mcp` | [MCP tools](/api/mcp) |
+| `/api/claxedo/integrations/*` — connections framework | `@claxedo/connections` (mounted by the host) | [Connections API](/api/connections) |
+| Channel ingress webhooks (github / slack / telegram / discord / whatsapp) | `@claxedo/channels` | [Channels API](/api/channels) |
+
+## Package roles
+
+| Package | Use it for |
+| --- | --- |
+| `@claxedo/workspace-runtime` | Run or embed a per-workspace host next to the project directory the agent should work on. |
+| `@claxedo/agent-extensions` | Discover, install, lock, materialize, and replay reusable Agent Extension packages for OpenCode, Claude, Codex, and Cursor. |
+| `@claxedo/agent-sdk-runtime` | Embed one `AgentRuntime` facade over OpenCode, ACP harnesses, native SDK harnesses, or Pi. |
+| `@claxedo/agent-event-runtime` | Normalize raw harness events into a canonical `AgentRuntimeEvent` stream and project them into compatibility formats. |
+| `@claxedo/workspace-relay-protocol` | Use tunnel wire types and token verifier contracts without pulling in Hono or server code. |
+| `@claxedo/workspace-relay` | Run the relay process that connects browsers/gateways to workspace-runtime hosts. |
+| `@claxedo/mcp` | Expose Claxedo runtime tools to any MCP client. |
+| `@claxedo/sandbox-manager` | Manage sandbox placement and epoch-based leases for running workspace runtimes inside provider sandboxes (Cloudflare, Daytona, Docker, Modal, Vercel). |
+| `@claxedo/channels` | Route GitHub / Slack / Telegram / Discord / WhatsApp messages into Claxedo sessions with dedup, session resolution, and approval bridging. |
+| `@claxedo/connections` | Link external accounts (Notion, Atlassian, GitHub, Google) once and consume them by capability. |
+| control-plane (`claxedo-server`) | Study the gateway/host composition Claxedo itself runs. Private and unpublished; a `@claxedo/control-plane` split is planned. See [control-plane](/packages/control-plane). |
+
+## Code-supported vs product-owned
+
+The runtime and relay packages ship code-supported surfaces. Some concerns are
+deliberately **product / control-plane owned** and are not part of any package
+API surface:
+
+| Product-owned surface | Status |
+| --- | --- |
+| Agent Extension catalog policy | Curated catalog data and marketplace UX live in the product/control plane, not in `@claxedo/agent-extensions`. |
+| Agent Extension auth and org UX | Workspace/user/org authorization and team-wide activation UX live in the control plane. The package exposes desired state and policy primitives. |
+| Agent Extension fan-out | Server/supervisor code decides which connected workspace runtimes receive snapshots. The package materializes the snapshot it is given. |
+
+<Note>
+  `@claxedo/workgraph` is published at `0.1.0` (an event-sourced work inbox for
+  agents). Its API is early and still stabilizing.
+</Note>
+
+## Supported package entry points
+
+| Surface | Supported today | Source |
+| --- | --- | --- |
+| Standalone workspace runtime | `startServer(port, options)` | `packages/workspace-runtime/src/server.ts` |
+| Embedded runtime Hono app | `createWorkspaceRuntimeApp(options)` | `packages/workspace-runtime/src/server.ts` |
+| Low-level Workspace Host | `createWorkspaceHost(options)` | `packages/workspace-runtime/src/workspace/runtime.ts` |
+| Core route mounting | `mountWorkspaceCore(app, upgradeWebSocket, { eventHub, exposure })` | `packages/workspace-runtime/src/workspace/core.ts` |
+| Relay-attached runtime options | `workspaceRelayRuntimeOptionsFromEnv` | `packages/workspace-runtime/src/workspace-relay-env.ts` |
+| MCP runtime tools | `@claxedo/mcp` CLI package | `packages/claxedo-mcp/package.json`, `packages/claxedo-mcp/src/server.ts` |
+
+---
+
+For per-package install instructions and architecture, start at the
+[workspace-runtime package page](/packages/workspace-runtime) and follow the
+sidebar; each API page above also links back to its owning package.
