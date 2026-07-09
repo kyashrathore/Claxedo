@@ -1281,6 +1281,50 @@ describe("control plane session routes", () => {
     expect(convex.readSessionMessages).not.toHaveBeenCalled()
   })
 
+  test("loopback workspace session messages fall back to authority when projection is empty", async () => {
+    const svc = services()
+    const convex = {
+      readSessionMessages: vi.fn(async () => ({
+        allowed: true,
+        messages: [
+          {
+            info: { id: "msg_workspace", sessionID: "session-1", role: "assistant" },
+            parts: [{ id: "part_workspace", messageID: "msg_workspace", type: "text", text: "workspace replay" }],
+          },
+        ],
+      })),
+    }
+    svc.authority = convex as never
+    svc.projectionStore.read_session_messages = vi.fn(() => [])
+    svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 0)
+
+    const messages = await ControlPlaneSessionRoutes(svc, signedOptions).request(
+      "http://127.0.0.1/sessions/session-1/messages?workspaceId=ws_1",
+      {
+        headers: {
+          Authorization: "Bearer local-test-token",
+          Origin: "http://127.0.0.1:4444",
+        },
+      },
+    )
+
+    expect(messages.status).toBe(200)
+    await expect(messages.json()).resolves.toMatchObject({
+      allowed: true,
+      messages: [
+        {
+          info: { id: "msg_workspace" },
+          parts: [{ id: "part_workspace", text: "workspace replay" }],
+        },
+      ],
+      maxEventOrdinal: 0,
+    })
+    expect(convex.readSessionMessages).toHaveBeenCalledWith(expect.objectContaining({ token: "local-test-token" }), {
+      sessionId: "session-1",
+      workspaceId: "ws_1",
+    })
+  })
+
   test("signed hosted browser loopback session messages use the authority path", async () => {
     const svc = services()
     const convex = {

@@ -274,6 +274,100 @@ describe("agent-extensions CLI", () => {
     })
   })
 
+  test("materialize preserves installs made with install", async () => {
+    const source = path.join(root, "packages", "docs")
+    await fs.mkdir(source, { recursive: true })
+    await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: docs\n---\n")
+    const home = path.join(root, "home")
+
+    await expect(runAgentExtensionsCli([
+      "install",
+      "--project",
+      root,
+      "--home",
+      home,
+      "--cache-dir",
+      path.join(root, "data"),
+      "--path",
+      "packages/docs",
+      "--id",
+      "docs",
+      "--targets",
+      "cursor",
+    ], {
+      cwd: root,
+      now: 100,
+      stdout: () => {},
+      stderr: () => {},
+    })).resolves.toBe(0)
+
+    await writeProjectSkill(root)
+    await expect(runAgentExtensionsCli([
+      "materialize",
+      "--project",
+      root,
+      "--home",
+      home,
+      "--targets",
+      "cursor",
+    ], {
+      cwd: root,
+      now: 200,
+      stdout: () => {},
+      stderr: () => {},
+    })).resolves.toBe(0)
+
+    // materialize must not erase the lifecycle install or delete its artifacts
+    const installed = JSON.parse(await fs.readFile(path.join(root, ".agent-extensions", "installed.json"), "utf8")) as {
+      installs: Array<{ id: string }>
+    }
+    expect(installed.installs.map((item) => item.id).sort()).toEqual(["docs", "first-party-agent-extensions"])
+    await expect(fs.readFile(path.join(root, ".cursor", "skills", "docs", "SKILL.md"), "utf8")).resolves.toContain("name: docs")
+    await expect(fs.readFile(path.join(root, ".cursor", "skills", "review", "SKILL.md"), "utf8")).resolves.toBe("review skill")
+  })
+
+  test("lifecycle commands exit non-zero when the id is unknown", async () => {
+    const out: string[] = []
+
+    await expect(runAgentExtensionsCli([
+      "disable",
+      "ghost",
+      "--project",
+      root,
+      "--cache-dir",
+      path.join(root, "data"),
+    ], {
+      cwd: root,
+      stdout: (text) => out.push(text),
+      stderr: () => {},
+    })).resolves.toBe(1)
+    expect(out.pop()).toBe("disable ghost: not found")
+  })
+
+  test("doctor reports a corrupted state file instead of reading it as empty", async () => {
+    await fs.mkdir(path.join(root, ".agent-extensions"), { recursive: true })
+    await fs.writeFile(path.join(root, ".agent-extensions", "installed.json"), "{ truncated")
+    const out: string[] = []
+
+    await expect(runAgentExtensionsCli([
+      "doctor",
+      "--project",
+      root,
+      "--cache-dir",
+      path.join(root, "data"),
+      "--json",
+    ], {
+      cwd: root,
+      stdout: (text) => out.push(text),
+      stderr: () => {},
+    })).resolves.toBe(1)
+
+    expect(JSON.parse(out.join("\n"))).toMatchObject({
+      ok: false,
+      issues: [{ code: "corrupt_state_file" }],
+    })
+  })
+
   test("doctor reports broken state as JSON", async () => {
     await fs.mkdir(path.join(root, ".agent-extensions"), { recursive: true })
     await fs.writeFile(path.join(root, ".agent-extensions", "installed.json"), JSON.stringify({

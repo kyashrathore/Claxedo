@@ -1,4 +1,4 @@
-import { Show, type Accessor } from "solid-js"
+import { Show, onCleanup, type Accessor } from "solid-js"
 
 import type { ContentMeta } from "../state"
 import {
@@ -36,6 +36,8 @@ export type RailSidebarShellProps = {
   onRemoveProject?: (project: ProjectItem) => void
   onSettings?: () => void
   onSidebarMouseLeave: () => void
+  onSidebarResize: (width: number) => void
+  onSidebarResizeEnd: () => void
   onSessionSelect?: (workspaceDir: string, sessionId: string) => void
   onTabSelect?: (surface: ContentMeta) => void
   onToggleSidebar: () => void
@@ -55,6 +57,46 @@ export type RailSidebarShellProps = {
 }
 
 export function RailSidebarShell(props: RailSidebarShellProps) {
+  let resizing = false
+  let startX = 0
+  let startWidth = 0
+
+  const finishResize = () => {
+    if (!resizing) return
+    resizing = false
+    props.onRailLockChange(false)
+    props.onSidebarResizeEnd()
+    document.body.style.cursor = ""
+    document.body.style.userSelect = ""
+    window.dispatchEvent(new Event("opencode:terminal-fit"))
+    window.removeEventListener("pointermove", handleResizeMove)
+    window.removeEventListener("pointerup", finishResize)
+    window.removeEventListener("pointercancel", finishResize)
+  }
+
+  const handleResizeMove = (event: PointerEvent) => {
+    if (!resizing) return
+    props.onSidebarResize(startWidth + event.clientX - startX)
+    window.dispatchEvent(new Event("opencode:terminal-fit"))
+  }
+
+  const startResize = (event: PointerEvent) => {
+    if (!props.sidebarExpanded()) return
+    resizing = true
+    startX = event.clientX
+    startWidth = props.sidebarWidth()
+    props.onRailLockChange(true)
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+    window.addEventListener("pointermove", handleResizeMove)
+    window.addEventListener("pointerup", finishResize)
+    window.addEventListener("pointercancel", finishResize)
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  onCleanup(finishResize)
+
   return (
     <Show when={props.sidebarEligible()}>
       <Show when={props.mobileSidebarOpen()}>
@@ -66,7 +108,7 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
 
       <div
         class={`
-          flex flex-col
+          relative flex flex-col
           w-[var(--claxedo-sidebar-width)] shrink-0 overflow-hidden transition-[width] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)]
           ${props.sidebarHidden() ? "pointer-events-none" : "pointer-events-auto"}
           ${props.sidebarPinned() ? "" : "md:absolute md:left-0 md:top-0 md:bottom-0 md:z-[80]"}
@@ -155,6 +197,15 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
             trafficLightPad={props.trafficLightPad()}
           />
         </div>
+        <Show when={props.sidebarExpanded()}>
+          <div
+            aria-hidden="true"
+            class="max-md:hidden absolute top-0 right-[-4px] bottom-0 w-2 cursor-col-resize z-[90] group"
+            onPointerDown={startResize}
+          >
+            <div class="absolute top-0 bottom-0 left-1/2 w-px -translate-x-1/2 bg-transparent group-hover:bg-border-base/80 transition-colors duration-100" />
+          </div>
+        </Show>
       </div>
     </Show>
   )

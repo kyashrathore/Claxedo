@@ -454,8 +454,7 @@ describe("AgentRuntimeClient", () => {
     expect(page.data?.map((row) => row.info.id)).toEqual(["msg_1"])
     expect(page.maxEventOrdinal).toBe(12)
     expect(calls).toEqual([
-      "GET http://127.0.0.1:3001/api/workspace/ws_1/connection",
-      "GET https://relay.example/workspaces/ws_1/session/runtime-session-1/message?limit=20&before=cursor-1 Bearer runtime-token",
+      "GET http://127.0.0.1:3001/workspaces/ws_1/session/runtime-session-1/message?limit=20&before=cursor-1",
     ])
   })
 
@@ -489,8 +488,7 @@ describe("AgentRuntimeClient", () => {
 
     expect(page.maxEventOrdinal).toBe(3)
     expect(calls).toEqual([
-      "GET http://127.0.0.1:3001/api/workspace/ws_1/connection",
-      "GET https://relay.example/workspaces/ws_1/session/runtime-session-1/message?limit=20 Bearer runtime-token",
+      "GET http://127.0.0.1:3001/workspaces/ws_1/session/runtime-session-1/message?limit=20",
     ])
   })
 

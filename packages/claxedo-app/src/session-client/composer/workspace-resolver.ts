@@ -100,7 +100,10 @@ export function submitSessionDirectory(input: {
   projects: readonly ProjectCatalogItem[]
   sdkWorkspace?: WorkspaceCatalogEntry
 }) {
-  return signedWorkspaceForDirectory(input)?.directory ?? input.directory
+  const workspace = signedWorkspaceForDirectory(input)
+  const workspaceId = workspace?.workspaceId ?? workspace?.id
+  if (workspaceId && input.directory === workspaceId) return input.directory
+  return workspace?.directory ?? input.directory
 }
 
 export function sessionRefForSubmitTarget(input: {
@@ -181,12 +184,14 @@ export function resolveWorkspaceSubmitPlan(input: ResolveWorkspaceSubmitPlanInpu
   }
 
   if (isRemoteWorkspaceKind(input.workspaceKind)) {
-    const selectedDirectory = selectedWorktreeDirectory({
-      worktreeSelection: input.worktreeSelection,
-      projectDirectory: input.projectDirectory,
-      fallbackDirectory: input.fallbackDirectory,
-      projects: input.projects,
-    })
+    const selectedDirectory = input.worktreeSelection === "main" && input.runtimeWorkspaceRef?.(input.projectDirectory)
+      ? input.projectDirectory
+      : selectedWorktreeDirectory({
+          worktreeSelection: input.worktreeSelection,
+          projectDirectory: input.projectDirectory,
+          fallbackDirectory: input.fallbackDirectory,
+          projects: input.projects,
+        })
     const existingDirectory = existingRemoteWorkspaceDirectory({
       worktreeSelection: input.worktreeSelection,
       directory: selectedDirectory,

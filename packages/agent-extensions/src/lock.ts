@@ -1,5 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
+import { readFileIfExists, writeFileAtomic } from "./fs-safe"
+import { AgentExtensionStateError } from "./state"
 import type { HarnessTarget } from "./manifest"
 import type { PackageInstallSource } from "./source"
 
@@ -52,8 +54,16 @@ export function encodeLock(input: ExtensionLock) {
 }
 
 export async function readExtensionLock(file: string): Promise<ExtensionLock> {
-  const data = await fs.readFile(file, "utf8").then((raw) => JSON.parse(raw) as Partial<ExtensionLock>).catch(() => null)
-  if (!data) return { version: 1, packages: {} }
+  const raw = await readFileIfExists(file)
+  if (raw === undefined) return { version: 1, packages: {} }
+  let data: Partial<ExtensionLock>
+  try {
+    data = JSON.parse(raw) as Partial<ExtensionLock>
+  } catch (err) {
+    throw new AgentExtensionStateError(
+      `Agent Extension lock file ${file} is not valid JSON; fix or remove it: ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
   return sortedLock({
     version: 1,
     packages: data.packages ?? {},
@@ -62,5 +72,5 @@ export async function readExtensionLock(file: string): Promise<ExtensionLock> {
 
 export async function writeExtensionLock(file: string, lock: ExtensionLock) {
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o755 })
-  await fs.writeFile(file, encodeLock(lock), { mode: 0o644 })
+  await writeFileAtomic(file, encodeLock(lock))
 }

@@ -121,6 +121,16 @@
     }
   }
 
+  [data-slot="select-section"] {
+    padding: 4px 8px 2px;
+    color: var(--text-weak);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large);
+    letter-spacing: var(--letter-spacing-normal);
+  }
+
   [data-slot="select-select-item"] {
     position: relative;
     display: flex;

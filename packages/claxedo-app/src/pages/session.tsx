@@ -48,7 +48,7 @@ import { usePaneId } from "../claxedo-ui/context/pane-id"
 import { useClaxedoState } from "../claxedo-ui/state"
 import { useClaxedoEventsOptional } from "../providers/claxedo-events"
 import { CloudStartupView, isForbiddenConnectionError, type CloudLog } from "@claxedo/components/session/cloud-startup-view"
-import { resolveSessionDirectory, resolveSessionIdentity, type SessionIdentity } from "@claxedo/pages/session/session-identity"
+import { resolveSessionDirectory, resolveSessionIdentity, resolveSignedSessionWorkspaceId, signedProjectWorkspaceId, type SessionIdentity } from "@claxedo/pages/session/session-identity"
 import {
   shouldDispatchIdleAfterStaleBusyRefresh,
   shouldReconcileBusySessionToIdle,
@@ -68,12 +68,7 @@ import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../runtime/
 import { getClaxedoServerUrl } from "../utils/api"
 import { principalHasSignedAccess, usePrincipal } from "../shell/auth/identity-provider"
 import { placementFor } from "../shell/auth/placement"
-import {
-  parseShellRoute,
-  sessionRoute,
-  shellRouteWorkspaceKey,
-  workspaceSessionRoute,
-} from "../shell/identity/route"
+import { parseShellRoute, sessionRoute, shellRouteWorkspaceKey, workspaceSessionRoute } from "../shell/identity/route"
 import { sessionViewKey, terminalScopeKey } from "../shell/identity/session-view-key"
 import { shellDataKeys } from "../shell/data/keys"
 import { sessionWorkspaceRuntimeRef } from "../shell/workspace/session-workspace-key"
@@ -149,6 +144,7 @@ export default function Page() {
   )
   const sessionID = createMemo(() => sessionIdentity().id)
   const routeDirectory = createMemo(() => sessionParams.directory())
+  const routeWorkspaceId = createMemo(() => { const route = parseShellRoute(location.pathname); return route.kind === "workspace-session" ? route.workspaceId : undefined })
   const terminalHandoffKey = createMemo(() => terminalScopeKey(routeDirectory()))
   const sessionInventoryQuery = useQuery(() =>
     sessionInventoryQueryOptions<SessionInventoryRow>({
@@ -231,17 +227,18 @@ export default function Page() {
     })
     return !!placement && placement.transport !== "loopback"
   })
-  const signedWorkspaceId = createMemo(() => {
-    if (!signedControlPlane()) return undefined
-    const inventoryWorkspaceId = inventorySession()?.workspaceId
-    if (inventoryWorkspaceId) return inventoryWorkspaceId
-    const signedWorkspace = signedWorkspaceFromProjects(projects(), dir())
-    if (signedWorkspace) return signedWorkspace.workspaceId
-    const workspace = ws() as { id?: string; workspaceId?: string; kind?: string } | undefined
-    if (workspace?.kind === "cloud" || workspace?.kind === "user-hosted") return workspace.workspaceId ?? workspace.id
-    const cwd = dir()
-    return sessionWorkspaceRuntimeRef({ directory: cwd })?.workspaceId
-  })
+  const signedWorkspaceId = createMemo(() =>
+    resolveSignedSessionWorkspaceId({
+      signedControlPlane: signedControlPlane(),
+      routeWorkspaceId: routeWorkspaceId(),
+      inventoryWorkspaceId: inventorySession()?.workspaceId,
+      projectWorkspaceId: signedProjectWorkspaceId({
+        signedWorkspace: signedWorkspaceFromProjects(projects(), dir()),
+        workspace: ws() as { id?: string; workspaceId?: string; kind?: string } | undefined,
+      }),
+      workspaceId: sessionWorkspaceRuntimeRef({ directory: dir() })?.workspaceId,
+    }),
+  )
   const replayWorkspaceId = createMemo(() => inventorySession()?.workspaceId ?? signedWorkspaceId() ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.workspaceId ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.id)
   // The split "New Session" pane resolves `ws()` from activeProject(), which
   // often does NOT contain the workspace — leaving kind undefined. The fallback
@@ -1489,7 +1486,7 @@ export default function Page() {
                     agent={contentIntentDefaults()?.agent}
                     status={sessionController.status}
                     activeTurn={sessionController.activeTurn}
-                    diffFiles={diffFiles}
+                    diffFiles={diffFiles} sessionDirectory={dir()}
                     sessionRef={activeSessionRef}
                     signedControlPlane={signedControlPlane}
                     workspaceId={signedWorkspaceId}

@@ -1,6 +1,7 @@
 import type { ChatClientPersistence } from "@tanstack/ai-client"
 import type { UIMessage } from "@tanstack/ai"
 import { createStore, del, get, set, type UseStore } from "idb-keyval"
+import { compactConversationSnapshot } from "./conversation-snapshot"
 
 /**
  * Durable per-session conversation persistence backed by IndexedDB.
@@ -26,7 +27,9 @@ try {
 }
 
 export const conversationPersistence: ChatClientPersistence = {
-  getItem: (id) => (store ? get<UIMessage[]>(id, store) : undefined),
-  setItem: (id, messages) => (store ? set(id, messages, store) : undefined),
+  getItem: (id) => store
+    ? get<UIMessage[]>(id, store).then((messages) => compactConversationSnapshot(messages))
+    : undefined,
+  setItem: (id, messages) => (store ? set(id, compactConversationSnapshot(messages) ?? [], store) : undefined),
   removeItem: (id) => (store ? del(id, store) : undefined),
 }

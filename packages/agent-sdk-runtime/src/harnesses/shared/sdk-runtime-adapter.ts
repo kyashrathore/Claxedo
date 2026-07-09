@@ -146,6 +146,7 @@ function fallbackSessionTitle(input: string) {
 
 export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   readonly adapterCapabilities = ["runtime-config"] as const
+  readonly commitsStreamEvents = true
   private store: SdkRuntimeStore
   private ownsStore = false
   private storeClosed = false

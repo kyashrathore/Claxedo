@@ -283,7 +283,7 @@ describe("session transport split", () => {
       "http://test.local/api/control/sessions/0251fd86-2f35-4efe-a802-b2fd6d473992/messages?workspaceId=ws_1&limit=8",
     )
     expect(calls.at(-1)?.url).toBe(
-      "http://test.local/api/control/sessions/0251fd86-2f35-4efe-a802-b2fd6d473992/capabilities?workspaceId=ws_1",
+      "https://relay.test/workspaces/ws_1/session/0251fd86-2f35-4efe-a802-b2fd6d473992/capabilities",
     )
     expect(calls.some((item) =>
       item.url.startsWith("http://test.local/session/0251fd86-2f35-4efe-a802-b2fd6d473992")
@@ -310,6 +310,30 @@ describe("session transport split", () => {
     expect(result.data?.[0]?.info?.id).toBe("msg_control")
     expect(calls.map((item) => item.url)).toEqual([
       "http://test.local/api/control/sessions/0251fd86-2f35-4efe-a802-b2fd6d473992/messages?workspaceId=ws_known&limit=8",
+    ])
+  })
+
+  test("local signed workspace message reads use the workspace runtime proxy", async () => {
+    const client = {
+      get: mock(async () => ({ data: { id: "ses_123" } })),
+      messages: mock(async () => ({ data: [], response: new Response(null) })),
+      todo: mock(async () => ({ data: [] })),
+    }
+
+    const result = await fetchSessionMessagesByTransport({
+      client,
+      claxedoServerUrl: "http://127.0.0.1:3001",
+      directory: "/workspace",
+      workspaceId: "ws_known",
+      sessionID: "ses_123",
+      limit: 8,
+      signedControlPlane: true,
+    })
+
+    expect(client.messages).toHaveBeenCalledTimes(0)
+    expect(result.data?.[0]?.info?.id).toBe("msg_1")
+    expect(calls.map((item) => item.url)).toEqual([
+      "http://127.0.0.1:3001/workspaces/ws_known/session/ses_123/message?limit=8",
     ])
   })
 

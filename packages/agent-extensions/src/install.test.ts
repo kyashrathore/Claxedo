@@ -10,6 +10,7 @@ import {
 } from "./state"
 import { digestDirectory } from "./cache"
 import { lockStatePath, writeExtensionLock } from "./lock"
+import { materializedRecordPath, readMaterializedRuntimeRecord } from "./materialization"
 import { AgentExtensionConflictError, disableAgentExtension, enableAgentExtension, installCachedAgentExtension, uninstallAgentExtension, updateAgentExtension } from "./install"
 
 const root = path.join(os.tmpdir(), `agent-extensions-install-${randomUUID().slice(0, 8)}`)
@@ -566,6 +567,47 @@ describe("cached Agent Extension install flow", () => {
         },
       },
     })
+  })
+
+  test("a conflict on a later target keeps earlier applied components owned so retry succeeds", async () => {
+    await writeSource("mcp.json", JSON.stringify({ servers: { docs: { command: "node" } } }))
+    // A foreign (unowned) server already occupies the cursor target file.
+    await fs.mkdir(path.join(project, ".cursor"), { recursive: true })
+    await fs.writeFile(path.join(project, ".cursor", "mcp.json"), JSON.stringify({
+      mcpServers: { docs: { command: "someone-else" } },
+    }, null, 2))
+    const input = {
+      sourceRoot: source,
+      source: { type: "github" as const, owner: "acme", repo: "docs-mcp" },
+      resolvedSha: "abcdef1234567890",
+      scope: "project" as const,
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+      targets: ["claude" as const, "cursor" as const],
+      id: "docs-mcp",
+      now: 100,
+    }
+
+    await expect(installCachedAgentExtension(input)).rejects.toThrow("already exists")
+
+    // The claude component applied before the cursor conflict; it must be
+    // recorded as owned, otherwise every retry conflicts with our own output.
+    const record = await readMaterializedRuntimeRecord(
+      materializedRecordPath(agentExtensionStateRoot({ scope: "project", projectDir: project })),
+    )
+    expect(record.packages["docs-mcp"]?.status).toBe("failed")
+    expect(record.packages["docs-mcp"]?.components).toContainEqual({
+      runner: "claude",
+      component: "docs",
+      type: "mcp",
+      status: "applied",
+      path: path.join(project, ".mcp.json"),
+    })
+
+    await fs.rm(path.join(project, ".cursor", "mcp.json"))
+    const retry = await installCachedAgentExtension({ ...input, now: 200 })
+    expect(retry.materialized.status).toBe("applied")
   })
 
   test("same id from a different source returns a structured conflict", async () => {

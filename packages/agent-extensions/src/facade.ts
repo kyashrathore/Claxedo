@@ -153,17 +153,49 @@ async function list(input: AgentExtensionsOptions = {}): Promise<AgentExtensions
   return { desired, materialized }
 }
 
+// Lock records come from disk and may be malformed (non-hex SHA, unsafe
+// package path); doctor must report them, not crash on them.
+function lockCacheRoot(locked: { resolved_sha: string; package_path?: string }, dataRoot: string) {
+  try {
+    return cachePackageRoot({
+      resolvedSha: locked.resolved_sha,
+      ...(locked.package_path ? { packagePath: locked.package_path } : {}),
+      dataRoot,
+    })
+  } catch {
+    return undefined
+  }
+}
+
+// State readers throw on corrupted (unparseable) files so lifecycle commands
+// never mistake corruption for emptiness. Doctor is the tool for diagnosing
+// exactly that state, so it downgrades those throws to reported issues.
+async function readOrReport<T>(read: Promise<T>, empty: T, file: string, issues: AgentExtensionsDoctorIssue[]) {
+  try {
+    return await read
+  } catch (err) {
+    issues.push({
+      code: "corrupt_state_file",
+      message: err instanceof Error ? err.message : String(err),
+      path: file,
+    })
+    return empty
+  }
+}
+
 async function doctor(input: AgentExtensionsOptions = {}): Promise<AgentExtensionsDoctorResult> {
   const defaults = resolved(input)
   const files = stateFiles(input)
+  const corruption: AgentExtensionsDoctorIssue[] = []
   const [desired, lock, materialized] = await Promise.all([
-    readDesiredExtensionState(files.installed),
-    readExtensionLock(files.lock),
-    readMaterializedRuntimeRecord(files.materialized),
+    readOrReport(readDesiredExtensionState(files.installed), { version: 1 as const, installs: [] }, files.installed, corruption),
+    readOrReport(readExtensionLock(files.lock), { version: 1 as const, packages: {} }, files.lock, corruption),
+    readOrReport(readMaterializedRuntimeRecord(files.materialized), { version: 1 as const, packages: {} }, files.materialized, corruption),
   ])
   const desiredIds = new Set(desired.installs.map((item) => item.id))
   const lockIds = new Set(Object.keys(lock.packages))
   const issues: AgentExtensionsDoctorIssue[] = [
+    ...corruption,
     ...desired.installs.flatMap((item) => item.targets.every(isHarnessTarget) ? [] : [{
       code: "invalid_targets",
       message: `Agent Extension ${item.id} contains unsupported targets`,
@@ -175,18 +207,14 @@ async function doctor(input: AgentExtensionsOptions = {}): Promise<AgentExtensio
       id: item.id,
     }] : []),
     ...Object.entries(lock.packages).flatMap(([id, locked]) => {
-      const cacheRoot = cachePackageRoot({
-        resolvedSha: locked.resolved_sha,
-        ...(locked.package_path ? { packagePath: locked.package_path } : {}),
-        dataRoot: defaults.dataRoot,
-      })
+      const cacheRoot = lockCacheRoot(locked, defaults.dataRoot)
       return desiredIds.has(id)
         ? []
         : [{
             code: "orphaned_lock",
             message: `Lock record ${id} has no desired install`,
             id,
-            path: cacheRoot,
+            ...(cacheRoot ? { path: cacheRoot } : {}),
           }]
     }),
     ...Object.keys(materialized.packages).flatMap((id) => desiredIds.has(id) || lockIds.has(id) ? [] : [{
@@ -196,11 +224,15 @@ async function doctor(input: AgentExtensionsOptions = {}): Promise<AgentExtensio
     }]),
   ]
   for (const [id, locked] of Object.entries(lock.packages)) {
-    const cacheRoot = cachePackageRoot({
-      resolvedSha: locked.resolved_sha,
-      ...(locked.package_path ? { packagePath: locked.package_path } : {}),
-      dataRoot: defaults.dataRoot,
-    })
+    const cacheRoot = lockCacheRoot(locked, defaults.dataRoot)
+    if (!cacheRoot) {
+      issues.push({
+        code: "invalid_lock_record",
+        message: `Lock record ${id} has an invalid resolved SHA or package path`,
+        id,
+      })
+      continue
+    }
     if (!await fs.stat(cacheRoot).then((stat) => stat.isDirectory()).catch(() => false)) {
       issues.push({
         code: "missing_cache",

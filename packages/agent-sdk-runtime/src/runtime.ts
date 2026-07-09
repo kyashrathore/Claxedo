@@ -16,6 +16,7 @@ import type {
   AgentTurnOutcome,
 } from "./index"
 import type { AgentHarnessAdapter } from "./adapter-contract"
+import { hasAdapterCapability } from "./capabilities"
 import { buildSession, eventSessionId, sessionError, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
@@ -293,7 +294,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const compat = toCompatEvent(payload)
         if (compat) {
           if (compat.type === "session.idle") await maybeEmitTitle()
-          commitAndPublish(sessionId, directory, normalizeCompatEvent(compat), { dir: "in", method: "sendMessage" })
+          if (adapter.commitsStreamEvents) {
+            publish({ sessionId, directory, payload: normalizeCompatEvent(compat) })
+          } else {
+            commitAndPublish(sessionId, directory, normalizeCompatEvent(compat), { dir: "in", method: "sendMessage" })
+          }
           continue
         }
         if (isProjectableRuntimeEvent(payload)) {
@@ -308,11 +313,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
         commitAndPublish(sessionId, directory, payload, { dir: "out", method: "runtime.finish" })
       }
-      store.finishTurn?.({
-        sessionId,
-        assistantMessageId: prompt.assistantMessageId,
-        outcome: outcome ?? { status: "completed", completedAt: Date.now() },
-      })
+      if (!adapter.commitsStreamEvents || !terminal) {
+        store.finishTurn?.({
+          sessionId,
+          assistantMessageId: prompt.assistantMessageId,
+          outcome: outcome ?? { status: "completed", completedAt: Date.now() },
+        })
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "turn failed"
       const payload = sessionError(message, sessionId)
@@ -329,6 +336,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     sessions: {
       async create(create: AgentRuntimeSessionCreateInput): Promise<AgentSession> {
         const adapter = adapterFor(create.harness)
+        if (create.model && hasAdapterCapability(adapter, "runtime-config")) {
+          adapter.setModel(create.model.modelID === "default" ? "" : create.model.modelID)
+        }
         const session = await adapter.createSession(create.directory, create.title)
         if (!store.getSession(session.id)) {
           store.bindSession({
@@ -561,6 +571,9 @@ function outcomeFromPayload(payload: AgentRuntimeStreamEvent): AgentTurnOutcome 
 function mergeOutcome(prev: AgentTurnOutcome | undefined, next: AgentTurnOutcome | undefined) {
   if (!next) return prev
   if (!prev) return next
+  if (prev.status === "failed" && next.status === "failed" && prev.error === "session error" && next.error) {
+    return { ...prev, error: next.error }
+  }
   if (prev.status === "failed" || prev.status === "cancelled") return prev
   if (next.status === "failed" || next.status === "cancelled") return next
   return prev

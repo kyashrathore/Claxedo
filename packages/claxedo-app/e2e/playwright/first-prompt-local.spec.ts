@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test"
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 
 // Flow #7 from docs/tech-docs/architecture-direction-flow.md "Real Browser
 // Coverage": "Send first prompt in a new local OpenCode session."
@@ -59,6 +59,7 @@ type Hits = {
     agent?: string
     providerID?: string
     modelID?: string
+    variant?: string
   }>
   shellCount: number
   shellBodies: Array<{
@@ -132,7 +133,7 @@ function providerResponse() {
   }
 }
 
-function session(title = "") {
+function session(title = "", config?: unknown) {
   return {
     id: SESSION_ID,
     slug: SESSION_ID,
@@ -142,6 +143,7 @@ function session(title = "") {
     version: "2",
     time: { created: Date.now(), updated: Date.now() },
     summary: { additions: 0, deletions: 0, files: 0 },
+    ...(config ? { config } : {}),
   }
 }
 
@@ -214,7 +216,9 @@ async function seed(page: Page) {
 }
 
 type SetupOptions = {
-  harness?: "opencode" | "claude-acp"
+  harness?: "opencode" | "claude-acp" | "codex-app-server" | "cursor-acp"
+  optionsError?: string
+  statusError?: string
 }
 
 function createHits(): Hits {
@@ -235,7 +239,33 @@ function createHits(): Hits {
 }
 
 async function setup(page: Page, hits: Hits, options: SetupOptions = {}) {
-  const harness = options.harness ?? "opencode"
+  let harness = options.harness ?? "opencode"
+  const harnessModel = () => harness === "codex-app-server"
+    ? { id: "gpt-5.5", name: "GPT-5.5" }
+    : harness === "cursor-acp"
+    ? { id: "cursor-auto", name: "Cursor Auto" }
+    : { id: "claude-sonnet-4-6", name: "Sonnet 4.6" }
+  const sessionConfig = () => {
+    const model = harnessModel()
+    const harnessStatus = {
+      status: options.statusError ? "error" : "ready",
+      ready: !options.statusError,
+      ...(options.statusError ? { error: options.statusError } : {}),
+    }
+    return harness === "opencode"
+      ? {
+          harness: { type: "opencode", model: "claude-sonnet-4-6", status: "ready", ready: true },
+          model: { providerID: "claude-acp", modelID: "claude-sonnet-4-6" },
+          provider: { id: "claude-acp", model: "claude-sonnet-4-6" },
+          agent: "build",
+        }
+      : {
+          harness: { type: harness, model: model.id, ...harnessStatus },
+          model: { providerID: harness, modelID: model.id },
+          provider: { id: harness, model: model.id },
+          agent: "build",
+        }
+  }
   page.on("console", (message) => {
     if (message.type() === "error" || message.type() === "warning") {
       hits.console.push(`${message.type()}: ${message.text()}`)
@@ -411,6 +441,15 @@ async function setup(page: Page, hits: Hits, options: SetupOptions = {}) {
 
   await page.route("**/api/claxedo/agent-config/harness/options**", async (route) => {
     if (!api(route)) return route.continue()
+    if (options.optionsError) {
+      await route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ error: options.optionsError }),
+      })
+      return
+    }
+    const model = harnessModel()
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -423,8 +462,8 @@ async function setup(page: Page, hits: Hits, options: SetupOptions = {}) {
             name: "Model",
             category: "model",
             type: "select",
-            currentValue: "claude-sonnet-4-6",
-            selectOptions: [{ id: "claude-sonnet-4-6", name: "Sonnet 4.6" }],
+            currentValue: model.id,
+            selectOptions: [model],
           },
         ],
       }),
@@ -434,13 +473,23 @@ async function setup(page: Page, hits: Hits, options: SetupOptions = {}) {
   await page.route("**/api/claxedo/agent-config/harness**", async (route) => {
     if (!api(route)) return route.continue()
     if (new URL(route.request().url()).pathname !== "/api/claxedo/agent-config/harness") return route.fallback()
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON() as { type?: SetupOptions["harness"] } | undefined
+      harness = body?.type ?? harness
+    }
+    const model = harnessModel()
+    const harnessStatus = {
+      status: options.statusError ? "error" : "ready",
+      ready: !options.statusError,
+      ...(options.statusError ? { error: options.statusError } : {}),
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(
         harness === "opencode"
           ? { type: "opencode", ok: true }
-          : { type: "claude-acp", model: "claude-sonnet-4-6", ok: true, ready: true },
+          : { type: harness, model: model.id, ok: true, ...harnessStatus },
       ),
     })
   })
@@ -481,13 +530,13 @@ async function setup(page: Page, hits: Hits, options: SetupOptions = {}) {
       else hits.opencodeSessionCreateCount += 1
       sessionCreated = true
       messages = []
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session()) })
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session("", sessionConfig())) })
       return
     }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(sessionCreated ? [session(textOf(messages[0]?.parts) || "")] : []),
+      body: JSON.stringify(sessionCreated ? [session(textOf(messages[0]?.parts) || "", sessionConfig())] : []),
     })
   }
 
@@ -501,12 +550,7 @@ async function setup(page: Page, hits: Hits, options: SetupOptions = {}) {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        harness: { type: "opencode", model: "claude-sonnet-4-6", status: "ready", ready: true },
-        model: { providerID: "claude-acp", modelID: "claude-sonnet-4-6" },
-        provider: { id: "claude-acp", model: "claude-sonnet-4-6" },
-        agent: "build",
-      }),
+      body: JSON.stringify(sessionConfig()),
     })
   })
 
@@ -544,8 +588,9 @@ async function setup(page: Page, hits: Hits, options: SetupOptions = {}) {
       messageID?: string
       parts?: unknown
       agent?: string
-      model?: { providerID?: string; modelID?: string }
-    }
+    model?: { providerID?: string; modelID?: string }
+    variant?: string
+  }
     const text = textOf(body?.parts) || `message ${hits.promptCount}`
     hits.promptBodies.push({
       messageID: body?.messageID,
@@ -553,6 +598,7 @@ async function setup(page: Page, hits: Hits, options: SetupOptions = {}) {
       agent: body?.agent,
       providerID: body?.model?.providerID,
       modelID: body?.model?.modelID,
+      variant: body?.variant,
     })
     const id = body?.messageID || `msg_user_${hits.promptCount}`
     const providerID = body?.model?.providerID || "claude-acp"
@@ -624,7 +670,7 @@ async function setup(page: Page, hits: Hits, options: SetupOptions = {}) {
   await page.route("**/session/*", async (route) => {
     if (!api(route)) return route.continue()
     if (!new URL(route.request().url()).pathname.match(/^\/session\/[^/]+$/)) return route.fallback()
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session(textOf(messages[0]?.parts) || "")) })
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session(textOf(messages[0]?.parts) || "", sessionConfig())) })
   })
 }
 
@@ -691,6 +737,29 @@ async function openDraftPrompt(page: Page) {
   return input
 }
 
+async function expectOnlyHarnessModelControl(page: Page, modelName: string | RegExp) {
+  await expect(page.locator('[data-action="prompt-harness-model"]').last()).toContainText(
+    typeof modelName === "string" ? literalText(modelName) : modelName,
+    { timeout: 20_000 },
+  )
+  await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
+  await expect(page.locator('[data-action="prompt-model-variant"]')).toHaveCount(0)
+}
+
+function literalText(value: string) {
+  return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+}
+
+async function composePrompt(page: Page, input: Locator, text: string) {
+  await input.click()
+  await input.fill(text)
+  if (!((await input.textContent()) ?? "").includes(text)) {
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A")
+    await page.keyboard.type(text)
+  }
+  await expect(input).toContainText(text, { timeout: 10_000 })
+}
+
 test("core local session survives multiple turns and reload resume @core", async ({ page }) => {
   const hits = createHits()
 
@@ -733,6 +802,150 @@ test("core local session survives multiple turns and reload resume @core", async
   expect(nonClerkConsole(hits)).toEqual([])
   expect(nonClerkFailures(hits)).toEqual([])
   expect(hits.badResponses).toEqual([])
+})
+
+for (const harnessCase of [
+  {
+    label: "Claude ACP",
+    option: /^Claude$/,
+    optionIndex: 0,
+    modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i,
+    providerID: "claude-acp",
+    modelID: "claude-sonnet-4-6",
+  },
+  {
+    label: "Codex Native SDK",
+    option: /^Codex$/,
+    optionIndex: 1,
+    modelLabel: /GPT-5\.5|gpt-5\.5/i,
+    providerID: "codex-app-server",
+    modelID: "gpt-5.5",
+  },
+  {
+    label: "Cursor ACP",
+    option: /^Cursor$/,
+    optionIndex: 0,
+    modelLabel: /Cursor Auto|cursor-auto/i,
+    providerID: "cursor-acp",
+    modelID: "cursor-auto",
+  },
+] as const) {
+test(`core local ${harnessCase.label} keeps OpenCode model controls out across turns and reload @core`, async ({ page }) => {
+  const hits = createHits()
+
+  await seed(page)
+  await setup(page, hits)
+
+  const input = await openDraftPrompt(page)
+  await page.getByRole("button", { name: /^OpenCode$/ }).last().click()
+  await page.getByRole("option", { name: harnessCase.option }).nth(harnessCase.optionIndex).click()
+  await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
+
+  const first = `core local ${harnessCase.label.toLowerCase()} first turn`
+  await composePrompt(page, input, first)
+  await page.locator('[data-action="prompt-submit"]').last().click()
+
+  await expect.poll(() => hits.promptCount, { timeout: 15_000 }).toBe(1)
+  expect(hits.createSessionCount).toBe(1)
+  expect(hits.harnessSessionCreateCount).toBe(1)
+  expect(hits.promptBodies[0]).toMatchObject({
+    text: first,
+    agent: "build",
+    providerID: harnessCase.providerID,
+    modelID: harnessCase.modelID,
+  })
+  expect(hits.promptBodies[0]?.variant).toBeUndefined()
+  await expect(page).toHaveURL(sessionUrlPattern(SESSION_ID))
+  await expect(page.getByText(`ack 1: ${first}`, { exact: true })).toBeVisible({ timeout: 20_000 })
+  await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
+
+  const second = `core local ${harnessCase.label.toLowerCase()} second turn`
+  await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), second)
+  await page.locator('[data-action="prompt-submit"]').last().click()
+  await expect.poll(() => hits.promptCount, { timeout: 15_000 }).toBe(2)
+  expect(hits.promptBodies[1]).toMatchObject({
+    text: second,
+    agent: "build",
+    providerID: harnessCase.providerID,
+    modelID: harnessCase.modelID,
+  })
+  expect(hits.promptBodies[1]?.variant).toBeUndefined()
+  await expect(page.getByText(`ack 2: ${second}`, { exact: true })).toBeVisible({ timeout: 20_000 })
+  await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
+
+  await page.reload({ waitUntil: "domcontentloaded" })
+  await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+  await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
+
+  const third = `core local ${harnessCase.label.toLowerCase()} resumed turn`
+  await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), third)
+  await page.locator('[data-action="prompt-submit"]').last().click()
+
+  await expect.poll(() => hits.promptCount, { timeout: 15_000 }).toBe(3)
+  expect(hits.promptBodies[2]).toMatchObject({
+    text: third,
+    agent: "build",
+    providerID: harnessCase.providerID,
+    modelID: harnessCase.modelID,
+  })
+  expect(hits.promptBodies[2]?.variant).toBeUndefined()
+  expectNoRouteStackOverflow(hits)
+  expect(nonClerkConsole(hits)).toEqual([])
+  expect(nonClerkFailures(hits)).toEqual([])
+  expect(hits.badResponses).toEqual([])
+})
+}
+
+test("core local unavailable harness does not fall back to OpenCode controls @core", async ({ page }) => {
+  const hits = createHits()
+
+  await seed(page)
+  await setup(page, hits, { optionsError: "Authentication required. Please run 'agent login' first." })
+
+  await openDraftPrompt(page)
+  await page.getByRole("button", { name: /^OpenCode$/ }).last().click()
+  await page.getByRole("option", { name: /^Claude$/ }).first().click()
+
+  await expect(page.getByRole("button", { name: /^Claude$/ }).last()).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('[data-action="prompt-harness-model"]').last()).toContainText(/Unavailable|Select model/i, { timeout: 20_000 })
+  await expect(page.locator("[aria-label=\"Authentication required. Please run 'agent login' first.\"]")).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
+  await expect(page.locator('[data-action="prompt-model-variant"]')).toHaveCount(0)
+
+  await page.getByRole("textbox", { name: /Ask anything/i }).last().fill("should not send")
+  await expect(page.locator('[data-action="prompt-submit"]').last()).toBeDisabled()
+  await page.waitForTimeout(250)
+  expect(hits.promptCount).toBe(0)
+  expect(hits.createSessionCount).toBe(0)
+  expectNoRouteStackOverflow(hits)
+  expect(nonClerkConsole(hits)).toEqual([])
+  expect(nonClerkFailures(hits)).toEqual([])
+})
+
+test("core local unavailable SDK harness disables submit with fixed model visible @core", async ({ page }) => {
+  const hits = createHits()
+
+  await seed(page)
+  await setup(page, hits, {
+    statusError: "Codex SDK is unavailable. Please sign in before sending.",
+  })
+
+  const input = await openDraftPrompt(page)
+  await page.getByRole("button", { name: /^OpenCode$/ }).last().click()
+  await page.getByRole("option", { name: /^Codex$/ }).nth(1).click()
+
+  await expect(page.getByRole("button", { name: /^Codex$/ }).last()).toBeVisible({ timeout: 20_000 })
+  await expectOnlyHarnessModelControl(page, /GPT-5\.5|gpt-5\.5/i)
+
+  await composePrompt(page, input, "should not send while sdk unavailable")
+  await expect(page.locator('[data-action="prompt-submit"]').last()).toBeDisabled()
+  await page.locator('[data-action="prompt-submit"]').last().click({ force: true })
+  await page.waitForTimeout(250)
+  expect(hits.promptCount).toBe(0)
+  expect(hits.createSessionCount).toBe(0)
+  expectNoRouteStackOverflow(hits)
+  expect(nonClerkConsole(hits)).toEqual([])
+  expect(nonClerkFailures(hits)).toEqual([])
 })
 
 test("first prompt in a new local OpenCode session round-trips through the runtime", async ({ page }) => {

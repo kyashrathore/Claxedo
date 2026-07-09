@@ -11,8 +11,8 @@ export { encodeLock, lockStatePath, readExtensionLock, sortedLock, writeExtensio
 export { agentExtensionFiles, materializedAgentExtensionFiles, workspaceAgentExtensionFiles, type AgentExtensionFiles, } from "./storage";
 export { discoverAgentExtensionComponents, type DiscoveredAgentExtensionComponent, } from "./discovery";
 export { applyRuntimeAgentExtensions, type ReplayOptions, type RuntimeAgentExtensions, } from "./replay";
-export { materializeAgentExtensionSnapshot, removeStaleMaterializedComponents, type AgentExtensionMaterializationInstall, type AgentExtensionMaterializeOptions, } from "./materialize";
-export { AgentExtensionMaterializationError, componentOwnedBy, linkOrCopyOwnedDirectory, materializedRecordPath, readMaterializedRuntimeRecord, uninstallOwnedComponents, writeMaterializedRuntimeRecord, type MaterializedComponent, type MaterializedExtensionPackage, type MaterializedRuntimeRecord, } from "./materialization";
+export { materializeAgentExtensionSnapshot, removeStaleMaterializedComponents, uninstallOwnedComponents, type AgentExtensionMaterializationInstall, type AgentExtensionMaterializeOptions, } from "./materialize";
+export { AgentExtensionMaterializationError, componentOwnedBy, linkOrCopyOwnedDirectory, materializedRecordPath, readMaterializedRuntimeRecord, writeMaterializedRuntimeRecord, type MaterializedComponent, type MaterializedExtensionPackage, type MaterializedRuntimeRecord, } from "./materialization";
 export { materializeStandaloneMcp, mcpTargetPath, normalizeStandaloneMcpConfig, removeStandaloneMcpEntries, type StandaloneMcpConfig, type StandaloneMcpServerConfig, } from "./materializers/mcp";
 export { getClaudeManagedHookCommand, materializeAgentHooks, type AgentHookMaterializationResult, type AgentHookRunner, type MaterializeAgentHooksOptions, } from "./materializers/hooks";
 export { generateOpenCodeDocAgentMarkdown, materializeOpenCodeDocAgent, OPENCODE_DOC_AGENT_FILE, } from "./materializers/opencode-agent";

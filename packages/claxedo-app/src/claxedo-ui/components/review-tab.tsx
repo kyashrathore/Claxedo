@@ -13,10 +13,10 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 
-import { useComments, useFile } from "@opencode-ai/claxedo-app"
 import { useLanguage } from "@claxedo/context/language"
 import { usePlatform } from "@claxedo/context/platform"
-import { selectionFromLines } from "@/context/file"
+import { selectionFromLines, useFile } from "@/context/file"
+import { useComments } from "@/context/comments"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import {

@@ -15,8 +15,8 @@
 
 Connections coverage today is three disjoint layers that never meet:
 
-1. Kit unit tests (`packages/claxedo-connections/src/*.test.ts`) — routes, service,
-   tokens, attempts, google/atlassian impls via injectable `fetch`.
+1. Kit unit tests (`packages/claxedo-connections/src/**/*.test.ts`) — routes, service,
+   tokens, attempts, google/atlassian impls (`src/impls/*.test.ts`) via injectable `fetch`.
 2. Server composition tests (`packages/claxedo-server/src/connections-cors.test.ts`) —
    CORS + loopback/header gates on credential routes.
 3. App flow tests (`settings-connections-core.test.ts`) — connect state machine, no server.

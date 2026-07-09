@@ -70,9 +70,11 @@ async function buildSidecar() {
 
   log("Building patched OpenCode sidecar...")
   try {
+    // Claxedo ships its own Electron renderer, so skip embedding upstream's
+    // web UI in the sidecar — its source (packages/app) was removed in the fork.
     await (sidecarConfig.ocBinary.includes("-baseline")
-      ? $`bun run build --single --baseline --skip-install`
-      : $`bun run build --single --skip-install`
+      ? $`bun run build --single --baseline --skip-install --skip-embed-web-ui`
+      : $`bun run build --single --skip-install --skip-embed-web-ui`
     ).cwd(OPENCODE_DIR).env({
       ...Bun.env,
       MODELS_DEV_API_JSON: models,
@@ -86,6 +88,19 @@ async function buildSidecar() {
       throw e
     }
   }
+}
+
+// ── node-embed artifact ──
+
+/**
+ * The sidecar build (`buildSidecar`) runs `rm -rf dist` in packages/opencode,
+ * which wipes the `opencode/node-embed` artifact (dist/node/node.js) that
+ * claxedo-server imports. Regenerate it before bundling the server.
+ */
+async function buildNodeEmbed() {
+  log("Building opencode/node-embed artifact...")
+  await $`bun run build:node`.cwd(OPENCODE_DIR).env(Bun.env)
+  log("node-embed built")
 }
 
 // ── claxedo-server ──
@@ -189,11 +204,17 @@ async function copyAcpBinaries() {
 
 // ── Main ──
 
+// buildSidecar wipes packages/opencode/dist (including the node-embed artifact),
+// so the sidecar → node-embed → server chain must run in sequence. Icon and ACP
+// copying are independent and run alongside it.
 await Promise.all([
   copyIcons(),
-  buildSidecar(),
-  bundleServer(),
   copyAcpBinaries(),
+  (async () => {
+    await buildSidecar()
+    await buildNodeEmbed()
+    await bundleServer()
+  })(),
 ])
 
 log("Done.")

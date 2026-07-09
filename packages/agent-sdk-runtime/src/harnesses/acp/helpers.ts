@@ -1,6 +1,7 @@
 import type { McpServer, Usage } from "@agentclientprotocol/sdk"
 import { Log } from "../../log"
 import type { ACPTransportEnv } from "./transport"
+import { claudeAuthEnv, claudeAuthValue } from "../claude/auth"
 
 const log = Log.create({ service: "acp-adapter" })
 
@@ -16,16 +17,26 @@ export function sameAcpEnv(a: ACPTransportEnv, b: ACPTransportEnv) {
 }
 
 export function envFromConfig(config: Record<string, unknown>) {
-  return mergeAcpEnv(envRecord(config.env), envRecord(config.auth, true))
+  const authRecord = stringRecord(config.auth)
+  const auth = envRecord(config.auth, true)
+  return mergeAcpEnv(
+    mergeAcpEnv(envRecord(config.env), auth),
+    claudeAuthEnv(claudeAuthValue(authRecord)),
+  )
 }
 
 function envRecord(input: unknown, onlyEnvKeys = false): ACPTransportEnv {
+  return Object.fromEntries(
+    Object.entries(stringRecord(input))
+      .filter(([key]) => !onlyEnvKeys || /^[A-Z_][A-Z0-9_]*$/.test(key)),
+  )
+}
+
+function stringRecord(input: unknown): Record<string, string> {
   if (!input || typeof input !== "object" || Array.isArray(input)) return {}
   return Object.fromEntries(
     Object.entries(input as Record<string, unknown>)
-      .filter((item): item is [string, string] =>
-        typeof item[1] === "string" && (!onlyEnvKeys || /^[A-Z_][A-Z0-9_]*$/.test(item[0])),
-      ),
+      .filter((item): item is [string, string] => typeof item[1] === "string"),
   )
 }
 

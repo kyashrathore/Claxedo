@@ -112,6 +112,7 @@ export {
 export {
   materializeAgentExtensionSnapshot,
   removeStaleMaterializedComponents,
+  uninstallOwnedComponents,
   type AgentExtensionMaterializationInstall,
   type AgentExtensionMaterializeOptions,
 } from "./materialize"
@@ -122,7 +123,6 @@ export {
   linkOrCopyOwnedDirectory,
   materializedRecordPath,
   readMaterializedRuntimeRecord,
-  uninstallOwnedComponents,
   writeMaterializedRuntimeRecord,
   type MaterializedComponent,
   type MaterializedExtensionPackage,

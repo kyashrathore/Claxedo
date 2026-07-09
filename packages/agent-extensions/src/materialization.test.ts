@@ -3,7 +3,8 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import { linkOrCopyOwnedDirectory } from "./materialization"
+import { linkOrCopyOwnedDirectory, type MaterializedRuntimeRecord } from "./materialization"
+import { uninstallOwnedComponents } from "./materialize"
 
 const root = path.join(os.tmpdir(), `workspace-runtime-materialization-${randomUUID().slice(0, 8)}`)
 
@@ -93,6 +94,44 @@ describe("Agent Extension materialization ownership", () => {
         },
       },
     })).resolves.toEqual({ status: "applied", path: target })
+  })
+
+  test("uninstallOwnedComponents removes MCP entries without deleting the shared config file", async () => {
+    const mcpFile = path.join(root, "project", ".mcp.json")
+    const skillDir = path.join(root, "project", ".cursor", "skills", "docs")
+    await fs.mkdir(path.dirname(mcpFile), { recursive: true })
+    await fs.mkdir(skillDir, { recursive: true })
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), "docs skill")
+    await fs.writeFile(mcpFile, JSON.stringify({
+      mcpServers: {
+        docs: { type: "stdio", command: "node", args: [], env: {} },
+        unrelated: { type: "stdio", command: "python", args: [], env: {} },
+      },
+    }, null, 2))
+    const record: MaterializedRuntimeRecord = {
+      version: 1,
+      packages: {
+        docs: {
+          package_name: "docs",
+          source: { type: "github", owner: "acme", repo: "docs" },
+          resolved_sha: "abc",
+          enabled: true,
+          targets: ["claude", "cursor"],
+          components: [
+            { runner: "claude", component: "docs", type: "mcp", status: "applied", path: mcpFile },
+            { runner: "cursor", component: "docs", type: "skill", status: "applied", path: skillDir },
+          ],
+          materialized_at: 1,
+          status: "applied",
+        },
+      },
+    }
+
+    await uninstallOwnedComponents({ record, ownerId: "docs" })
+
+    await expect(fs.stat(skillDir)).rejects.toThrow()
+    const remaining = JSON.parse(await fs.readFile(mcpFile, "utf8")) as { mcpServers: Record<string, unknown> }
+    expect(Object.keys(remaining.mcpServers)).toEqual(["unrelated"])
   })
 
   test("still rejects unmanaged symlink collisions outside generated caches", async () => {

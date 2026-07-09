@@ -93,14 +93,21 @@ async function copyPackageToCache(input) {
     ...packagePath ? { packagePath } : {},
     dataRoot: input.dataRoot
   });
-  await fs.rm(target, { recursive: true, force: true });
+  const staging = `${target}.${crypto.randomBytes(6).toString("hex")}.tmp`;
   await fs.mkdir(path.dirname(target), { recursive: true, mode: 493 });
-  await fs.cp(realSource, target, {
+  await fs.cp(realSource, staging, {
     recursive: true,
     force: true,
     dereference: false,
     filter: (source2) => !path.relative(realSource, source2).split(path.sep).includes(".git")
   });
+  try {
+    await fs.rm(target, { recursive: true, force: true });
+    await fs.rename(staging, target);
+  } catch (err) {
+    await fs.rm(staging, { recursive: true, force: true });
+    throw err;
+  }
   return {
     path: target,
     checksum: await digestDirectory(target)

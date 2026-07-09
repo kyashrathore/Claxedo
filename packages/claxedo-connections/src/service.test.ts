@@ -128,7 +128,15 @@ describe("connections service", () => {
   })
 
   test("atlassian-style fields ride the token response", async () => {
-    const decl: IntegrationDeclaration = { ...KEY_DECL, keyTokenType: "basic" }
+    const decl: IntegrationDeclaration = {
+      ...KEY_DECL,
+      keyTokenType: "basic",
+      prompts: [
+        { id: "site_url", label: "Site URL" },
+        { id: "email", label: "Account email" },
+        { id: "token", label: "API token", secret: true },
+      ],
+    }
     const { service } = harness({ decl })
     await service.connect({
       integrationId: "fake",
@@ -144,6 +152,27 @@ describe("connections service", () => {
         fields: { site_url: "https://acme.atlassian.net", email: "a@acme.io" },
       },
     })
+  })
+
+  test("only declared non-secret prompt fields are persisted and echoed", async () => {
+    // Storage contract: a secret copied into fields (or any undeclared field)
+    // must never land on the connection row or come back from list().
+    const decl: IntegrationDeclaration = {
+      ...KEY_DECL,
+      prompts: [
+        { id: "email", label: "Account email" },
+        { id: "token", label: "API token", secret: true },
+      ],
+    }
+    const { service, connections } = harness({ decl })
+    const result = await service.connect({
+      integrationId: "fake",
+      fields: { email: "a@acme.io", token: "good", undeclared: "junk" },
+      secret: "good",
+    })
+    expect(result).toEqual({ ok: true })
+    expect((await connections.get("fake"))?.fields).toEqual({ email: "a@acme.io" })
+    expect((await service.list())[0]?.fields).toEqual({ email: "a@acme.io" })
   })
 
   test("oauth connect/callback stores envelope and replay is rejected", async () => {

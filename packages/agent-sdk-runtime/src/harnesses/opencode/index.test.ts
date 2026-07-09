@@ -45,25 +45,43 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
     expect(env.OPENCODE_CONFIG_DIR).toBe("/tmp/opencode-config")
   })
 
-  test("emits session.error when the event stream ends before a terminal event", async () => {
+  test("posts to the async message route and emits streamed assistant content before completion", async () => {
     const adapter = new OpenCodeHarnessAdapter("http://127.0.0.1:4096")
     const prev = globalThis.fetch
+    const seen: Array<{ method: string; path: string; directory: string | null; body: unknown }> = []
+    const enc = new TextEncoder()
     let ctrl: ReadableStreamDefaultController<Uint8Array> | undefined
 
     globalThis.fetch = (async (input, init) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url.endsWith("/global/event")) {
+      const url = new URL(req.url)
+      seen.push({
+        method: req.method,
+        path: url.pathname,
+        directory: req.headers.get("x-opencode-directory"),
+        body: req.method === "POST" ? await req.json() : undefined,
+      })
+      if (url.pathname === "/global/event") {
         return new Response(new ReadableStream<Uint8Array>({
           start(next) {
             ctrl = next
           },
-        }), {
-          status: 200,
-          headers: { "Content-Type": "text/event-stream" },
-        })
+        }), { status: 200, headers: { "Content-Type": "text/event-stream" } })
       }
-      if (req.url.endsWith("/session/s1/prompt_async")) {
-        queueMicrotask(() => ctrl?.close())
+      if (url.pathname === "/session/s1/prompt_async" && req.method === "POST") {
+        queueMicrotask(() => {
+          ctrl?.enqueue(enc.encode(`data: ${JSON.stringify({
+            type: "message.part.updated",
+            properties: {
+              sessionID: "s1",
+              part: { id: "part-real", sessionID: "s1", messageID: "msg-assistant", type: "text", text: "done" },
+            },
+          })}\n\n`))
+          ctrl?.enqueue(enc.encode(`data: ${JSON.stringify({
+            type: "session.idle",
+            properties: { sessionID: "s1" },
+          })}\n\n`))
+        })
         return new Response(null, { status: 204 })
       }
       throw new Error(`unexpected fetch: ${req.url}`)
@@ -75,50 +93,71 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
         events.push(event)
       }
 
-      expect(events.some((event) => event.type === "message.completed")).toBe(false)
-      expect(events.at(-1)).toMatchObject({
-        type: "session.error",
-        properties: {
-          sessionID: "s1",
-          error: {
-            data: {
-              message: "OpenCode event stream ended before the session completed",
-            },
+      expect(seen).toEqual([
+        { method: "GET", path: "/global/event", directory: "/work", body: undefined },
+        {
+          method: "POST",
+          path: "/session/s1/prompt_async",
+          directory: "/work",
+          body: {
+            parts: [{ type: "text", text: "hello" }],
+            messageID: "msg-user",
+            agent: "build",
+            model: { providerID: "opencode", modelID: "model" },
           },
         },
-      })
+      ])
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "message.part.updated",
+        properties: expect.objectContaining({
+          part: expect.objectContaining({
+            id: "part-real",
+            messageID: "msg-assistant",
+            text: "done",
+          }),
+        }),
+      }))
+      expect(events.at(-2)).toMatchObject({ type: "session.idle" })
+      expect(events.at(-1)).toMatchObject({ type: "message.completed" })
     } finally {
       globalThis.fetch = prev
     }
   })
 
-  test("closes the global event stream when the consumer breaks early", async () => {
+  test("treats patch-only upstream completions as no visible assistant content", async () => {
     const adapter = new OpenCodeHarnessAdapter("http://127.0.0.1:4096")
     const prev = globalThis.fetch
     const enc = new TextEncoder()
-    let aborted = false
     let ctrl: ReadableStreamDefaultController<Uint8Array> | undefined
 
     globalThis.fetch = (async (input, init) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url.endsWith("/global/event")) {
-        req.signal.addEventListener("abort", () => {
-          aborted = true
-        })
+      const url = new URL(req.url)
+      if (url.pathname === "/global/event") {
         return new Response(new ReadableStream<Uint8Array>({
           start(next) {
             ctrl = next
           },
-        }), {
-          status: 200,
-          headers: { "Content-Type": "text/event-stream" },
-        })
+        }), { status: 200, headers: { "Content-Type": "text/event-stream" } })
       }
-      if (req.url.endsWith("/session/s1/prompt_async")) {
+      if (url.pathname === "/session/s1/prompt_async" && req.method === "POST") {
         queueMicrotask(() => {
           ctrl?.enqueue(enc.encode(`data: ${JSON.stringify({
-            type: "session.status",
-            properties: { sessionID: "s1", status: { type: "busy" } },
+            type: "message.part.updated",
+            properties: {
+              sessionID: "s1",
+              part: {
+                id: "part-patch",
+                sessionID: "s1",
+                messageID: "msg-assistant",
+                type: "patch",
+                files: ["/work/.workspace-runtime/runtime-config/apply-status.json"],
+              },
+            },
+          })}\n\n`))
+          ctrl?.enqueue(enc.encode(`data: ${JSON.stringify({
+            type: "session.idle",
+            properties: { sessionID: "s1" },
           })}\n\n`))
         })
         return new Response(null, { status: 204 })
@@ -127,13 +166,92 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
     }) as typeof fetch
 
     try {
-      let count = 0
-      for await (const _event of adapter.sendMessage("s1", prompt(), "/work")) {
-        count++
-        if (count === 4) break
+      const events = []
+      for await (const event of adapter.sendMessage("s1", prompt(), "/work")) {
+        events.push(event)
       }
 
-      expect(aborted).toBe(true)
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "session.error",
+        properties: expect.objectContaining({
+          error: expect.objectContaining({
+            data: expect.objectContaining({
+              message: expect.stringContaining("without visible assistant content"),
+            }),
+          }),
+        }),
+      }))
+      expect(events.some((event) => event.type === "message.completed")).toBe(false)
+    } finally {
+      globalThis.fetch = prev
+    }
+  })
+
+  test("requires visible content for each streamed prompt", async () => {
+    const adapter = new OpenCodeHarnessAdapter("http://127.0.0.1:4096")
+    const prev = globalThis.fetch
+    let calls = 0
+    const enc = new TextEncoder()
+    let ctrl: ReadableStreamDefaultController<Uint8Array> | undefined
+
+    globalThis.fetch = (async (input, init) => {
+      const req = input instanceof Request ? input : new Request(String(input), init)
+      const url = new URL(req.url)
+      if (url.pathname === "/global/event") {
+        return new Response(new ReadableStream<Uint8Array>({
+          start(next) {
+            ctrl = next
+          },
+        }), { status: 200, headers: { "Content-Type": "text/event-stream" } })
+      }
+      if (url.pathname === "/session/s1/prompt_async" && req.method === "POST") {
+        calls += 1
+        queueMicrotask(() => {
+          ctrl?.enqueue(enc.encode(`data: ${JSON.stringify({
+            type: "message.part.updated",
+            properties: {
+              sessionID: "s1",
+              part: { id: `step-start-${calls}`, sessionID: "s1", messageID: `msg-user-${calls}_r`, type: "text", text: `answer-${calls}` },
+            },
+          })}\n\n`))
+          ctrl?.enqueue(enc.encode(`data: ${JSON.stringify({
+            type: "session.idle",
+            properties: { sessionID: "s1" },
+          })}\n\n`))
+        })
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected fetch: ${req.url}`)
+    }) as typeof fetch
+
+    try {
+      const first = []
+      for await (const event of adapter.sendMessage("s1", {
+        ...prompt(),
+        userMessageId: "msg-user-1",
+        assistantMessageId: "msg-user-1_r",
+      }, "/work")) {
+        first.push(event)
+      }
+      const second = []
+      for await (const event of adapter.sendMessage("s1", {
+        ...prompt(),
+        userMessageId: "msg-user-2",
+        assistantMessageId: "msg-user-2_r",
+      }, "/work")) {
+        second.push(event)
+      }
+
+      expect(first.find((event) =>
+        event.type === "message.part.updated" && event.properties.part.messageID === "msg-user-1_r"
+      )).toMatchObject({
+        properties: { part: { id: "step-start-1", messageID: "msg-user-1_r", text: "answer-1" } },
+      })
+      expect(second.find((event) =>
+        event.type === "message.part.updated" && event.properties.part.messageID === "msg-user-2_r"
+      )).toMatchObject({
+        properties: { part: { id: "step-start-2", messageID: "msg-user-2_r", text: "answer-2" } },
+      })
     } finally {
       globalThis.fetch = prev
     }
@@ -202,27 +320,34 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
     expect(received).toBe(JSON.stringify({ title: "Body Session" }))
   })
 
-  test("bridges a streaming text/event-stream Response from the injected handler", async () => {
-    const enc = new TextEncoder()
+  test("sends messages through the injected handler", async () => {
     let promptSeen = false
+    const enc = new TextEncoder()
+    let ctrl: ReadableStreamDefaultController<Uint8Array> | undefined
     const handler: OpenCodeRequestFn = async (req) => {
       const url = new URL(req.url)
       if (url.pathname === "/global/event") {
         return new Response(new ReadableStream<Uint8Array>({
-          start(ctrl) {
-            ctrl.enqueue(enc.encode(`data: ${JSON.stringify({
-              type: "session.status",
-              properties: { sessionID: "s1", status: { type: "busy" } },
-            })}\n\n`))
-            ctrl.enqueue(enc.encode(`data: ${JSON.stringify({
-              type: "session.idle",
-              properties: { sessionID: "s1" },
-            })}\n\n`))
+          start(next) {
+            ctrl = next
           },
         }), { status: 200, headers: { "Content-Type": "text/event-stream" } })
       }
       if (url.pathname === "/session/s1/prompt_async") {
         promptSeen = true
+        queueMicrotask(() => {
+          ctrl?.enqueue(enc.encode(`data: ${JSON.stringify({
+            type: "message.part.updated",
+            properties: {
+              sessionID: "s1",
+              part: { id: "part-assistant", sessionID: "s1", messageID: "msg-assistant", type: "text", text: "done" },
+            },
+          })}\n\n`))
+          ctrl?.enqueue(enc.encode(`data: ${JSON.stringify({
+            type: "session.idle",
+            properties: { sessionID: "s1" },
+          })}\n\n`))
+        })
         return new Response(null, { status: 204 })
       }
       return new Response("unexpected", { status: 500 })
@@ -235,7 +360,7 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
     }
 
     expect(promptSeen).toBe(true)
-    expect(events.some((event) => event.type === "session.status")).toBe(true)
     expect(events.some((event) => event.type === "session.idle")).toBe(true)
+    expect(events.some((event) => event.type === "message.part.updated")).toBe(true)
   })
 })

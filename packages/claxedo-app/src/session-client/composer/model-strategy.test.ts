@@ -15,9 +15,19 @@ import {
 describe("model-strategy", () => {
   test("uses the provider default when it exists", () => {
     expect(firstConnectedModel({
-      connected: [{ id: "opencode", models: { "big-pickle": { id: "big-pickle" } } }],
+      connected: [{ id: "openai", models: { "gpt-5.3-chat-latest": { id: "gpt-5.3-chat-latest" } } }],
+      defaults: { openai: "gpt-5.3-chat-latest" },
+    })).toEqual({ providerID: "openai", modelID: "gpt-5.3-chat-latest" })
+  })
+
+  test("skips the stale OpenCode default when live free models are available", () => {
+    expect(firstConnectedModel({
+      connected: [{ id: "opencode", models: {
+        "mimo-v2.5-free": { id: "mimo-v2.5-free" },
+        "big-pickle": { id: "big-pickle" },
+      } }],
       defaults: { opencode: "big-pickle" },
-    })).toEqual({ providerID: "opencode", modelID: "big-pickle" })
+    })).toEqual({ providerID: "opencode", modelID: "mimo-v2.5-free" })
   })
 
   test("falls back to the first connected model", () => {
@@ -37,11 +47,12 @@ describe("model-strategy", () => {
     })).toEqual({ providerID: "opencode", modelID: "next-model" })
   })
 
-  test("prefers OpenCode provider models over generic connected providers", () => {
+  test("prefers OpenCode free models over generic connected providers", () => {
     expect(firstConnectedModel({
       connected: [
-        { id: "google", models: { "gemini-3-pro-image-preview": { id: "gemini-3-pro-image-preview" } } },
         { id: "opencode", models: { "deepseek-v4-flash-free": { id: "deepseek-v4-flash-free" } } },
+        { id: "google", models: { "gemini-3-pro-image-preview": { id: "gemini-3-pro-image-preview" } } },
+        { id: "openai", models: { "gpt-5.3-chat-latest": { id: "gpt-5.3-chat-latest" } } },
       ],
       defaults: {},
     })).toEqual({ providerID: "opencode", modelID: "deepseek-v4-flash-free" })
@@ -72,11 +83,12 @@ describe("model-strategy", () => {
   test("runtime submit model selection parses connected provider responses", () => {
     expect(selectRuntimeModel({
       all: [
+        { id: "openai", models: { "gpt-5.3-chat-latest": { name: "GPT 5.3 Chat" } } },
         { id: "google", models: { "gemini-3-pro-image-preview": { name: "Gemini 3 Pro Image" } } },
         { id: "opencode", models: { "deepseek-v4-flash-free": { name: "DeepSeek V4 Flash" } } },
       ],
-      connected: ["google", "opencode"],
-      default: { google: "gemini-3-pro-image-preview", opencode: "deepseek-v4-flash-free" },
+      connected: ["google", "opencode", "openai"],
+      default: { google: "gemini-3-pro-image-preview", opencode: "deepseek-v4-flash-free", openai: "gpt-5.3-chat-latest" },
     }, undefined)).toMatchObject({
       id: "deepseek-v4-flash-free",
       name: "DeepSeek V4 Flash",

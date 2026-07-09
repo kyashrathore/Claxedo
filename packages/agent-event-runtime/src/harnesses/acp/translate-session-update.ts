@@ -137,12 +137,22 @@ function errorText(value: unknown, metadata?: Record<string, unknown>) {
 function translateContentChunk(input: {
   kind: "agent_message_chunk" | "agent_thought_chunk"
   content: Extract<SessionUpdate, { sessionUpdate: "agent_message_chunk" | "agent_thought_chunk" }>["content"]
-}): AgentRuntimeEvent[] {
+  messageId?: string
+  state: SessionState
+}): AgentRuntimeEvent[] | null {
   const isThought = input.kind === "agent_thought_chunk"
   if (input.content.type === "text") {
+    const text = textChunkDelta({
+      kind: input.kind,
+      content: input.content,
+      messageId: input.messageId,
+      state: input.state,
+    })
+    if (!text) return []
+    if (isCursorWritableIterableTail(input.kind, input.state, text)) return null
     return [isThought
-      ? { type: "thinking-delta", delta: input.content.text }
-      : { type: "text-delta", delta: input.content.text }]
+      ? { type: "thinking-delta", delta: text }
+      : { type: "text-delta", delta: text }]
   }
   if (input.content.type === "image") {
     return isThought
@@ -181,6 +191,36 @@ function translateContentChunk(input: {
     return [{ type: "resource-delta", resource, channel: isThought ? "thinking" : "assistant" }]
   }
   return []
+}
+
+function textChunkDelta(input: {
+  kind: "agent_message_chunk" | "agent_thought_chunk"
+  messageId?: string
+  state: SessionState
+  content: { type: "text"; text: string }
+}) {
+  const key = input.messageId ?? (input.kind === "agent_thought_chunk" ? "__thinking" : "__assistant")
+  const seen = input.kind === "agent_thought_chunk"
+    ? input.state.assistantThinkingByMessageId
+    : input.state.assistantTextByMessageId
+  const previous = seen[key] ?? ""
+  const delta = input.content.text.startsWith(previous)
+    ? input.content.text.slice(previous.length)
+    : input.content.text
+  seen[key] = input.content.text.startsWith(previous)
+    ? input.content.text
+    : `${previous}${input.content.text}`
+  return delta
+}
+
+function isCursorWritableIterableTail(
+  kind: "agent_message_chunk" | "agent_thought_chunk",
+  state: SessionState,
+  text: string,
+) {
+  return state.client === "cursor-acp"
+    && kind === "agent_message_chunk"
+    && text.trim() === "Error: RetriableError: WritableIterable is closed"
 }
 
 function flattenSelectOptions(
@@ -442,7 +482,13 @@ export function translateSessionUpdate(
       }
 
       const typedContent = content as Extract<SessionUpdate, { sessionUpdate: "agent_message_chunk" | "agent_thought_chunk" }>["content"]
-      const translated = translateContentChunk({ kind, content: typedContent })
+      const translated = translateContentChunk({
+        kind,
+        content: typedContent,
+        messageId: "messageId" in update ? update.messageId ?? undefined : undefined,
+        state: ctx.state,
+      })
+      if (translated === null) return chunks
       if (translated.length) {
         chunks.push(...translated)
       } else {

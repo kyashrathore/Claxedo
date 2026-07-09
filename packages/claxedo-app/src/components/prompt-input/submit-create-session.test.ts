@@ -242,7 +242,7 @@ describe("acquireSubmitSessionTarget", () => {
 
 describe("finalizeSubmitSessionTarget", () => {
   test("promotes created sessions and schedules projection without running the handoff callback", () => {
-    const promoted: Array<{ sessionID: string; variant: string | null }> = []
+    const promoted: Array<{ sessionID: string; harness?: HarnessRef; variant: string | null }> = []
     const scheduled: Parameters<SubmitProjectionScheduler>[0][] = []
     const navigations: string[] = []
     const tabs: string[] = []
@@ -251,7 +251,9 @@ describe("finalizeSubmitSessionTarget", () => {
       target: { created: true },
       draftId: "draft-1",
       runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "cloud" },
-      promoteSession: (_directory, sessionID, config) => promoted.push({ sessionID, variant: config.variant }),
+      harness: { id: "opencode" },
+      promoteSession: (_directory, sessionID, config) =>
+        promoted.push({ sessionID, harness: config.harness, variant: config.variant }),
       scheduleProjectionPull: (input) => {
         scheduled.push(input)
         return undefined
@@ -260,7 +262,7 @@ describe("finalizeSubmitSessionTarget", () => {
       navigate: (href) => navigations.push(href),
     })
 
-    expect(promoted).toEqual([{ sessionID: "session-1", variant: "variant-a" }])
+    expect(promoted).toEqual([{ sessionID: "session-1", harness: { id: "opencode" }, variant: "variant-a" }])
     expect(scheduled).toEqual([
       {
         action: "register",
@@ -297,6 +299,18 @@ describe("finalizeSubmitSessionTarget", () => {
       target: { created: false },
       runtimeWorkspaceRef: { workspaceId: "ws_fallback", kind: "cloud" },
     }).sessionRef).toEqual(sessionRef("session-1", "ws_fallback"))
+  })
+
+  test("merges submitted harness refs into existing follow-up session refs", () => {
+    expect(finalizeSessionTarget({
+      target: { created: false },
+      surfaceId: "surface-1",
+      claxedoState: claxedoStateWithRefs({ surfaceRef: sessionRef("session-1", "ws_surface") }),
+      harness: { id: "claude-acp" },
+    }).sessionRef).toEqual({
+      ...sessionRef("session-1", "ws_surface"),
+      harness: { id: "claude-acp" },
+    })
   })
 
   test("created sessions ignore stale draft surface refs and use the resolved target workspace", () => {

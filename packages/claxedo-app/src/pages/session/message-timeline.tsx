@@ -69,7 +69,14 @@ import { useSDK } from "@/context/sdk"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { makeTimer } from "@solid-primitives/timer"
-import { MessageComment, SummaryDiff, Timeline, TimelineRow, TimelineRowMap } from "./message-timeline.data"
+import {
+  assistantMessageSettled,
+  MessageComment,
+  SummaryDiff,
+  Timeline,
+  TimelineRow,
+  TimelineRowMap,
+} from "./message-timeline.data"
 import { registeredConversationSnapshot } from "../../shell/chat/conversation-registry"
 import { directorySessionCacheQueryOptions } from "../../shell/data/queries"
 import { agentListQuery, configQuery } from "../../shared/query/directory"
@@ -1020,7 +1027,10 @@ export function MessageTimeline(props: {
     )
   }
 
-  const workingTurn = (userMessageID: string) => sessionStatus().type !== "idle" && activeMessageID() === userMessageID
+  const turnSettled = (userMessageID: string) =>
+    (assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages).some(assistantMessageSettled)
+  const workingTurn = (userMessageID: string) =>
+    sessionStatus().type !== "idle" && activeMessageID() === userMessageID && !turnSettled(userMessageID)
 
   const turnDurationMs = (userMessageID: string) => {
     const message = messageByID().get(userMessageID)

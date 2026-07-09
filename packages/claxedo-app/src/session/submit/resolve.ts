@@ -144,10 +144,9 @@ export async function resolveSubmittedConfig(
 ): Promise<SubmittedConfig | undefined> {
   if (input.harnessMode) {
     if (!input.harnessModelKey) return
-    const currentAgent = input.currentAgent ?? input.defaultAgent
     return {
       model: { modelID: input.harnessModelKey.modelID, providerID: input.harnessModelKey.providerID },
-      agent: input.agentOverride || currentAgent?.name || "build",
+      agent: resolveSubmitAgent(input),
       ...(input.variant ? { variant: input.variant } : {}),
     }
   }
@@ -156,13 +155,19 @@ export async function resolveSubmittedConfig(
   const currentModel = (model || input.allowModelFallback)
     ? await input.modelForSubmit(model)
     : undefined
-  const currentAgent = input.currentAgent ?? input.defaultAgent
   if (!currentModel) return
   return {
     model: { modelID: currentModel.id, providerID: currentModel.provider.id },
-    agent: input.agentOverride || currentAgent?.name || "build",
+    agent: resolveSubmitAgent(input),
     ...(input.variant ? { variant: input.variant } : {}),
   }
+}
+
+function resolveSubmitAgent(input: ResolveSubmittedConfigContext) {
+  if (input.agentOverride) return input.agentOverride
+  if (input.currentAgent?.name && input.currentAgent.name !== "default") return input.currentAgent.name
+  if (input.defaultAgent?.name && input.defaultAgent.name !== "default") return input.defaultAgent.name
+  return "build"
 }
 
 export async function resolvePromptDispatchClient(input: ResolvePromptDispatchClientContext) {

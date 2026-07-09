@@ -3,6 +3,7 @@ import { sandboxDriverIds, type SandboxDriverID } from "@claxedo/sandbox-manager
 import { Log } from "../log"
 import { getCredentialByProvider, putCredential } from "./registry"
 import type { CredentialKind, CredentialSource } from "./types"
+import { execFileSync } from "child_process"
 import fs from "fs"
 import os from "os"
 import path from "path"
@@ -50,6 +51,42 @@ function codexAccountsPath() {
 
 function homeDir() {
   return process.env.HOME ?? os.homedir()
+}
+
+function claudeCodeOAuthToken() {
+  const env = clean(process.env.CLAUDE_CODE_OAUTH_TOKEN) ?? clean(process.env.ANTHROPIC_AUTH_TOKEN)
+  if (env) return claudeCodeOAuthAccessToken(env)
+  if (process.platform !== "darwin") return
+  try {
+    return claudeCodeOAuthAccessToken(execFileSync("security", [
+      "find-generic-password",
+      "-s",
+      "Claude Code-credentials",
+      "-a",
+      os.userInfo().username,
+      "-w",
+    ], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2_000,
+    }))
+  } catch {}
+}
+
+function claudeCodeOAuthAccessToken(input: string) {
+  const raw = clean(input)
+  if (!raw) return
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return raw
+    const row = parsed as Record<string, unknown>
+    const oauth = row.claudeAiOauth && typeof row.claudeAiOauth === "object" && !Array.isArray(row.claudeAiOauth)
+      ? row.claudeAiOauth as Record<string, unknown>
+      : undefined
+    return clean(typeof oauth?.accessToken === "string" ? oauth.accessToken : undefined) ?? raw
+  } catch {
+    return raw
+  }
 }
 
 function codexAuth() {
@@ -231,6 +268,22 @@ function put(map: Map<string, Item>, item: Item | undefined) {
   map.set(item.provider_id, item)
 }
 
+function claudeOAuthItem(providerId: "claude-acp" | "claude-sdk", token: string | undefined) {
+  const accessToken = clean(token)
+  if (!accessToken) return
+  const fromEnv = Boolean(process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.ANTHROPIC_AUTH_TOKEN)
+  return {
+    provider_id: providerId,
+    kind: "oauth_token" as const,
+    source: "managed" as const,
+    label: fromEnv ? "Synced from Claude OAuth env" : "Synced from local Claude Code login",
+    secret: JSON.stringify({
+      type: "claude_code_oauth",
+      claudeAiOauth: { accessToken },
+    }),
+  }
+}
+
 function sandboxDriverCredentialItem(
   driverId: SandboxDriverID,
   source: CredentialSource,
@@ -281,6 +334,9 @@ export async function collectLocalCredentials() {
   put(map, opencodeCodex(opencode?.openai, codex))
   put(map, opencodeCopilot(opencode?.["github-copilot"], "github-copilot"))
   put(map, opencodeCopilot(opencode?.["github-copilot-enterprise"], "github-copilot-enterprise"))
+  const claudeOAuth = claudeCodeOAuthToken()
+  put(map, claudeOAuthItem("claude-acp", claudeOAuth))
+  put(map, claudeOAuthItem("claude-sdk", claudeOAuth))
 
   for (const [providerId, secret] of Object.entries(cfg.auth ?? {})) {
     const txt = clean(secret)

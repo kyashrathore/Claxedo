@@ -7,6 +7,7 @@ import {
 } from "@claxedo/agent-sdk-runtime"
 import {
   defaultHarness,
+  getRuntimeConfigSnapshot,
   loadUserConfig,
   saveUserConfig,
 } from "../agent-config"
@@ -33,6 +34,7 @@ import {
 import { localAgentConfigAllowed } from "./agent-config-local-auth"
 import type { AgentConfigRouteOptions } from "./agent-config-extension-support"
 import type { SandboxFetchOptions } from "../sandbox-target-fetch"
+import { isLoopbackLocalRequest } from "./local-only-projection"
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
@@ -75,7 +77,7 @@ async function harnessStatusResponse(c: Context, options: AgentConfigRouteOption
 
   try {
     const saved = sessionId
-      ? await cloudRuntimeSessionHarness(ws, sessionId, sandboxFetchOptions(options)) ?? await resolveHarnessForRequest({
+      ? await cloudRuntimeSessionHarness(ws, sessionId, sandboxFetchOptions(c, options)) ?? await resolveHarnessForRequest({
           sessionId,
           workspaceId: ws.id,
           directory: ws.directory,
@@ -85,7 +87,7 @@ async function harnessStatusResponse(c: Context, options: AgentConfigRouteOption
       ws,
       "/api/wr/health",
       undefined,
-      sandboxFetchOptions(options),
+      sandboxFetchOptions(c, options),
     ).catch(() => ({
       ok: false,
       status: "configured",
@@ -175,7 +177,7 @@ async function updateHarnessResponse(c: Context, options: AgentConfigRouteOption
       if (
         getSessionConfig(ws.id, sessionId)
         || await sessionMeta(sessionId)
-        || await sandboxSessionExists(ws, sessionId, sandboxFetchOptions(options))
+        || await sandboxSessionExists(ws, sessionId, sandboxFetchOptions(c, options))
       ) {
         return c.json(
           errorBody("agent_config_harness_change_locked", "Harness changes are only supported before a session is created"),
@@ -221,7 +223,7 @@ async function updateHarnessModelResponse(c: Context, options: AgentConfigRouteO
     if (
       !getSessionConfig(ws.id, sessionId)
       && !(await sessionMeta(sessionId))
-      && !(await sandboxSessionExists(ws, sessionId, sandboxFetchOptions(options)))
+      && !(await sandboxSessionExists(ws, sessionId, sandboxFetchOptions(c, options)))
     ) {
       return c.json(
         errorBody("agent_config_session_model_locked", "Session model changes require an existing session"),
@@ -281,6 +283,18 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
     return c.json(errorBody("harness_config_options_unavailable", harnessConfigOptionsUnavailable(harness)), 404)
   }
   if (harness.access === "native" && isNativeSdkHarnessId(harness.id)) {
+    if (harness.id === "cursor") {
+      const snapshot = await getRuntimeConfigSnapshot(harness).catch(() => undefined)
+      if (!snapshot?.auth["cursor-sdk"]) {
+        return c.json(
+          errorBody(
+            "harness_config_options_unavailable",
+            "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
+          ),
+          502,
+        )
+      }
+    }
     return c.json({
       options: [sdkModelConfigOption(harness.id, getSessionConfig(ws.id, sessionId ?? "")?.model?.modelID) as HarnessConfigOption],
       source: "catalog",
@@ -289,16 +303,16 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
   }
   const url = new URL("/api/wr/harness-config-options", "http://sandbox-manager.local")
   url.searchParams.set("directory", ws.kind === "cloud" ? ws.remote_directory || "/workspace" : ws.directory)
-  url.searchParams.set("harness", harness.id)
+  url.searchParams.set("harness", harnessKey(harness) ?? harness.id)
   if (harnessBinary(harness)) url.searchParams.set("binary", harnessBinary(harness)!)
   const live = await sandboxJson<unknown[]>(
     ws,
     `${url.pathname}${url.search}`,
     undefined,
-    sandboxFetchOptions(options),
+    sandboxFetchOptions(c, options),
   ).catch((cause) => {
     const message = cause instanceof Error ? cause.message : String(cause)
-    return errorBody("harness_config_options_unavailable", message)
+    return errorBody("harness_config_options_unavailable", harnessOptionsErrorMessage(harness, message))
   })
   if (live && typeof live === "object" && !Array.isArray(live) && (("ok" in live && live.ok === false) || "error" in live)) return c.json(live, 502)
   if (Array.isArray(live) && live.length > 0) {
@@ -311,12 +325,26 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
   return c.json(errorBody("harness_config_options_unavailable", harnessConfigOptionsUnavailable(harness)), 502)
 }
 
-function sandboxFetchOptions(options: AgentConfigRouteOptions): SandboxFetchOptions {
+function harnessOptionsErrorMessage(harness: ReturnType<typeof normalize>, message: string) {
+  if (harness.id === "codex" && harness.access === "acp" && message.startsWith("ACP connection closed")) {
+    const detail = message.replace(/^ACP connection closed:?\s*/, "").replace(/^Error:\s*/, "")
+    if (detail) return `Codex could not start: ${detail}. Run \`codex doctor\`, fix the reported Codex config/auth issue, then retry.`
+    return "Codex could not start. Run `codex doctor`, fix the reported Codex config/auth issue, then retry."
+  }
+  return message
+}
+
+function sandboxFetchOptions(c: Context, options: AgentConfigRouteOptions): SandboxFetchOptions {
+  const request = c.req.raw
+  const url = new URL(request.url)
   return {
     ...(options.services?.sandbox.sandboxManager
       ? { sandboxManager: options.services.sandbox.sandboxManager }
       : {}),
     ...(options.services?.relay.provider ? { relayProvider: options.services.relay.provider } : {}),
+    ...(options.services?.localExecution.enabled && isLoopbackLocalRequest(request)
+      ? { loopbackRelayUrl: `${url.protocol}//127.0.0.1${url.port ? `:${url.port}` : ""}` }
+      : {}),
     ...(options.services?.defaultHomeRegion ? { defaultHomeRegion: options.services.defaultHomeRegion } : {}),
   }
 }

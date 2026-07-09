@@ -283,7 +283,7 @@ describe("Agent Extensions runtime config projection", () => {
     })
   })
 
-  test("org disabled policy blocks workspace enable and excludes runtime install", async () => {
+  test("org disabled policy blocks workspace enable and projects the install as disabled", async () => {
     await expect(getRuntimeAgentExtensionsSnapshot({ projectDir: project }, {
       workspaceInstalls: [{
         desired: {
@@ -308,9 +308,16 @@ describe("Agent Extensions runtime config projection", () => {
         { id: "review", scope: "org", enabled: false, reason: "org blocked" },
         { id: "review", scope: "workspace", enabled: true, reason: "workspace requested" },
       ],
-    })).resolves.toEqual({
+    })).resolves.toMatchObject({
       version: 1,
-      installs: [],
+      installs: [{
+        desired: { id: "review", enabled: false },
+        effective: {
+          enabled: false,
+          source: "org",
+          reason: "org blocked",
+        },
+      }],
     })
   })
 
@@ -376,9 +383,16 @@ describe("Agent Extensions runtime config projection", () => {
         { id: "review", scope: "user", enabled: true, reason: "user default" },
         { id: "review", scope: "workspace", enabled: false, reason: "workspace disabled" },
       ],
-    })).resolves.toEqual({
+    })).resolves.toMatchObject({
       version: 1,
-      installs: [],
+      installs: [{
+        desired: { id: "review", enabled: false },
+        effective: {
+          enabled: false,
+          source: "workspace",
+          reason: "workspace disabled",
+        },
+      }],
     })
   })
 })

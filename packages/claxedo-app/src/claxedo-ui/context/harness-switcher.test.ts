@@ -18,6 +18,7 @@ let clearedTries: string[]
 let workspace: WorkspaceBoot | undefined
 let useLocal: boolean
 let postResponse: Response
+let statusResponse: Response
 let postRelease: (() => void) | undefined
 let workspaceCalls: number
 
@@ -33,6 +34,7 @@ beforeEach(() => {
   workspace = { kind: "local" }
   useLocal = true
   postResponse = new Response(null, { status: 204 })
+  statusResponse = Response.json({ type: "claude-acp", status: "ready", ready: true })
   postRelease = undefined
   workspaceCalls = 0
 })
@@ -139,6 +141,26 @@ describe("harness switcher", () => {
     expect(optionFetches).toEqual([])
   })
 
+  test("applies unavailable status from successful local switch responses", async () => {
+    statusResponse = Response.json({
+      harness: { id: "codex", access: "native" },
+      model: "gpt-5.5",
+      status: "configured",
+      ready: false,
+    })
+    const switcher = switcherFor()
+
+    await switcher.setHarness(scope, "codex-app-server", { directory: "/repo", sessionId: "new" })
+
+    expect(patches).toContainEqual(expect.objectContaining({
+      harness: "codex-app-server",
+      selectedModel: "gpt-5.5",
+      readiness: "error",
+    }))
+    expect(optionFetches).toEqual([{ scope, type: "codex-app-server", directory: "/repo", sessionId: "new" }])
+    expect(refreshes).toEqual([{ directory: "/repo", type: "codex-app-server", draft: true }])
+  })
+
   test("stays out of direct query-client and store ownership", async () => {
     const source = await Bun.file(new URL("./harness-switcher.ts", import.meta.url)).text()
 
@@ -175,6 +197,7 @@ function switcherFor(input?: {
     runtime: {
       useLocalHarnessConfig: () => useLocal,
       localHarnessConfigFetch: () => async (url, init) => {
+        if (!init?.method || init.method === "GET") return statusResponse
         posts.push({
           url: String(url),
           body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,

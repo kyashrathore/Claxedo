@@ -1574,17 +1574,41 @@ export class RuntimeStore {
   }) {
     const active = this.db
       .prepare(`
-        SELECT provider_session_id, assistant_message_id
+        SELECT provider_session_id, user_message_id, assistant_message_id, payload_json, created_at
         FROM runtime_journal
         WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
         ORDER BY seq DESC
         LIMIT 1
       `)
-      .get(input.sessionId) as { provider_session_id: string | null; assistant_message_id: string | null } | null
+      .get(input.sessionId) as {
+        provider_session_id: string | null
+        user_message_id: string | null
+        assistant_message_id: string | null
+        payload_json: string
+        created_at: number
+      } | null
     if (!active?.assistant_message_id) return
     if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return
 
     if (input.outcome.status === "failed") {
+      const control = JSON.parse(active.payload_json) as Partial<Turn>
+      const session = this.getSession(input.sessionId) as { directory?: string } | null
+      this.appendEvent({
+        sessionId: input.sessionId,
+        ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
+        payload: messageUpdated(buildAssistantMessage({
+          id: active.assistant_message_id,
+          sessionID: input.sessionId,
+          parentID: active.user_message_id ?? input.sessionId,
+          agent: control.agent ?? "build",
+          model: control.model ?? { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+          directory: session?.directory ?? "",
+          created: active.created_at,
+          completed: input.outcome.completedAt ?? Date.now(),
+          error: { name: "UnknownError", data: { message: input.outcome.error ?? "turn failed" } },
+          ...(control.variant ? { variant: control.variant } : {}),
+        })),
+      })
       this.appendEvent({
         sessionId: input.sessionId,
         ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
@@ -1592,6 +1616,8 @@ export class RuntimeStore {
       })
       return
     }
+
+    if (this.hasMessageCompleted(input.sessionId, active.assistant_message_id)) return
 
     this.appendEvent({
       sessionId: input.sessionId,
@@ -1603,6 +1629,20 @@ export class RuntimeStore {
       ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
       payload: sessionIdle(input.sessionId),
     })
+  }
+
+  private hasMessageCompleted(sessionId: string, messageId: string) {
+    return !!this.db
+      .prepare(`
+        SELECT 1
+        FROM runtime_journal
+        WHERE session_id = ?
+          AND kind = 'event'
+          AND type = 'message.completed'
+          AND json_extract(payload_json, '$.properties.messageID') = ?
+        LIMIT 1
+      `)
+      .get(sessionId, messageId)
   }
 
   private session(row: {
@@ -1660,7 +1700,7 @@ export class RuntimeStore {
   private lastTurn(sessionId: string) {
     const row = this.db
       .prepare(`
-        SELECT type, created_at, payload_json
+        SELECT seq, type, created_at, payload_json
         FROM runtime_journal
         WHERE session_id = ?
           AND kind = 'event'
@@ -1668,7 +1708,7 @@ export class RuntimeStore {
         ORDER BY seq DESC
         LIMIT 1
       `)
-      .get(sessionId) as { type: string; created_at: number; payload_json: string } | null
+      .get(sessionId) as { seq: number; type: string; created_at: number; payload_json: string } | null
     if (!row) return
     const payload = JSON.parse(row.payload_json) as { properties?: Record<string, unknown> }
     if (row.type === "message.completed") {
@@ -1686,10 +1726,26 @@ export class RuntimeStore {
       : undefined
     return {
       status: "failed" as const,
-      assistantMessageId: undefined,
+      assistantMessageId: this.lastStartedAssistant(sessionId, row.seq),
       completedAt: row.created_at,
       error: typeof message === "string" ? message : "session error",
     }
+  }
+
+  private lastStartedAssistant(sessionId: string, beforeSeq: number) {
+    const row = this.db
+      .prepare(`
+        SELECT assistant_message_id
+        FROM runtime_journal
+        WHERE session_id = ?
+          AND kind = 'control'
+          AND type = 'turn.start'
+          AND seq < ?
+        ORDER BY seq DESC
+        LIMIT 1
+      `)
+      .get(sessionId, beforeSeq) as { assistant_message_id: string | null } | null
+    return row?.assistant_message_id ?? undefined
   }
 
   listSessions(directory: string) {

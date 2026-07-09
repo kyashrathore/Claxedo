@@ -19,8 +19,8 @@ import {
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
 
-import { useFile } from "@opencode-ai/claxedo-app"
 import { useLanguage } from "@claxedo/context/language"
+import { useFile } from "@/context/file"
 import { PromptProvider } from "@/context/prompt"
 import { ClaxedoIcon as Icon } from "./claxedo-icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"

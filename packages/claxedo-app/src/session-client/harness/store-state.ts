@@ -102,7 +102,6 @@ export function readyHarnessFallbackPatch(type: HarnessType): HarnessStorePatch 
 
 export function harnessSwitchStartPatch(input: {
   type: HarnessType
-  useLocalHarnessConfig: boolean
 }): HarnessStorePatch {
   return {
     harness: input.type,
@@ -113,7 +112,7 @@ export function harnessSwitchStartPatch(input: {
     readiness: "ready",
     optionsSource: "empty",
     optionsStale: false,
-    optionsLoading: input.useLocalHarnessConfig && harnessHasConfigOptions(input.type),
+    optionsLoading: harnessHasConfigOptions(input.type),
   }
 }
 

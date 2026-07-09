@@ -65,9 +65,9 @@ function scheduleDelayedTask(task: () => void, delay: number) {
 export function conversationHasAssistantMessage(sessionID: string, assistantMessageId: string | undefined) {
   if (!assistantMessageId) return false
   const conversation = registeredConversationSnapshot(sessionID)
-  return conversation.messages.some(
-    (message) => message.role === "assistant" && message.id === assistantMessageId,
-  ) && (conversation.parts[assistantMessageId]?.length ?? 0) > 0
+  const message = conversation.messages.find((item) => item.role === "assistant" && item.id === assistantMessageId)
+  if (!message) return false
+  return "error" in message && !!message.error || (conversation.parts[assistantMessageId]?.length ?? 0) > 0
 }
 
 export function firstFoldSessionHydrateDelay(input: {

@@ -194,7 +194,7 @@ export function finalizeSubmitSessionTarget(input: {
   readonly promoteSession: (
     directory: SubmitDirectory,
     sessionID: string,
-    config: { agent: string; model: { providerID: string; modelID: string }; variant: string | null },
+    config: { harness?: HarnessRef; agent: string; model: { providerID: string; modelID: string }; variant: string | null },
   ) => void
 }) {
   const sessionRef = sessionRefForSurface({
@@ -210,6 +210,7 @@ export function finalizeSubmitSessionTarget(input: {
 
   if (input.target.created) {
     input.promoteSession(input.sessionDirectory, input.session.id, {
+      ...(input.harness ? { harness: input.harness } : {}),
       agent: input.agent,
       model: input.model,
       variant: input.variant ?? null,
@@ -250,6 +251,25 @@ export function finalizeSubmitSessionTarget(input: {
   }
 }
 
+export function patchExistingSubmitSessionRef(input: {
+  readonly claxedoState: ReturnType<typeof useClaxedoState> | undefined
+  readonly surfaceId: string | undefined
+  readonly sessionID: string
+  readonly sessionRef: SessionRef
+}) {
+  const meta = input.surfaceId
+    ? input.claxedoState?.meta.get(input.surfaceId)
+    : input.claxedoState?.meta.find((item) => item.sessionId === input.sessionID)
+  if (meta?.content?.type !== "session") return
+  input.claxedoState?.meta.patch(meta.id, {
+    content: {
+      ...meta.content,
+      type: "session",
+      sessionRef: input.sessionRef,
+    },
+  })
+}
+
 function sessionRefForSurface(input: {
   readonly created: boolean
   readonly session: SubmitSessionTarget
@@ -269,8 +289,10 @@ function sessionRefForSurface(input: {
   })
   if (input.created) return resolved()
 
+  const withHarness = (ref: SessionRef | undefined) =>
+    ref && input.harness ? { ...ref, harness: input.harness } : ref
   const surfaceMeta = input.surfaceId ? input.claxedoState?.meta.get(input.surfaceId) : undefined
-  return surfaceMeta?.content?.sessionRef ??
-    input.claxedoState?.meta.find((meta) => meta.sessionId === input.session.id)?.content?.sessionRef ??
+  return withHarness(surfaceMeta?.content?.sessionRef) ??
+    withHarness(input.claxedoState?.meta.find((meta) => meta.sessionId === input.session.id)?.content?.sessionRef) ??
     resolved()
 }

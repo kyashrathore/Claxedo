@@ -26,7 +26,7 @@ export function copyIcons(channel = resolveChannel()) {
 
 export function copyWorkspaceRuntimeTemplates(dest: string) {
   const packageDir = path.resolve(import.meta.dir, "..")
-  const src = path.resolve(packageDir, "../workspace-runtime/templates")
+  const src = path.resolve(packageDir, "../workspace-runtime/src/agent-hooks/templates")
 
   if (!fs.existsSync(src)) {
     throw new Error(`Workspace runtime templates dir not found at ${src}`)

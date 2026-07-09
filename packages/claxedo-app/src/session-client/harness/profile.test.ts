@@ -4,6 +4,8 @@ import {
   decodeSessionConfig,
   effectiveHarnessModel,
   extractModelsFromConfigOptions,
+  failedHarness,
+  hardFailedHarness,
   harnessProfile,
   optionsResponse,
   pickHarness,
@@ -70,6 +72,28 @@ describe("harness profile", () => {
     })
   })
 
+  test("normalizes Cursor ACP default model spelling", () => {
+    expect(extractModelsFromConfigOptions([
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "default[]",
+        options: [
+          { value: "default[]", name: "Auto" },
+          { value: "gpt-5.5[reasoning=medium]", name: "GPT-5.5" },
+        ],
+      },
+    ])).toEqual({
+      currentModel: "default",
+      models: [
+        { id: "default", name: "Auto" },
+        { id: "gpt-5.5[reasoning=medium]", name: "GPT-5.5" },
+      ],
+    })
+  })
+
   test("decodes legacy runner session config", () => {
     expect(decodeSessionConfig({
       runner: {
@@ -102,6 +126,32 @@ describe("harness profile", () => {
         id: "unknown",
       },
     }).harness?.type).toBeUndefined()
+  })
+
+  test("decodes structured native and ACP harness identities", () => {
+    expect(decodeSessionConfig({
+      harness: {
+        id: "codex",
+        access: "native",
+        ready: false,
+      },
+    }).harness).toMatchObject({
+      type: "codex-app-server",
+      ready: false,
+    })
+
+    expect(decodeSessionConfig({
+      harness: {
+        id: "cursor",
+        access: "acp",
+      },
+    }).harness?.type).toBe("cursor-acp")
+  })
+
+  test("separates hard failures from not-ready status", () => {
+    expect(failedHarness({ type: "codex-app-server", status: "configured", ready: false })).toBe(true)
+    expect(hardFailedHarness({ type: "codex-app-server", status: "configured", ready: false })).toBe(false)
+    expect(hardFailedHarness({ type: "codex-app-server", error: "auth required" })).toBe(true)
   })
 
   test("normalizes options response source and choices", () => {

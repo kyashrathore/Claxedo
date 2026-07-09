@@ -161,7 +161,7 @@ export class ACPProcess {
 
     this.agent = this.connection.agent
     void this.connection.closed.then(() => {
-      this.failExitWaiters(new Error("ACP connection closed"))
+      this.failExitWaiters(new Error(this.connectionClosedMessage()))
       this.notifyDead()
     })
     this.resetIdleTimer()
@@ -180,6 +180,12 @@ export class ACPProcess {
     return this.lastStderr
       ? `ACP transport exited with ${status}: ${this.lastStderr}`
       : `ACP transport exited with ${status}`
+  }
+
+  private connectionClosedMessage() {
+    return this.lastStderr
+      ? `ACP connection closed: ${this.lastStderr}`
+      : "ACP connection closed"
   }
 
   private failExitWaiters(err: Error) {
@@ -223,6 +229,10 @@ export class ACPProcess {
     ])
     this.caps = result.agentCapabilities ?? null
     log.info("ACP initialize: handshake complete", { directory: this.directory, ms: Date.now() - t0 })
+  }
+
+  failureDetail() {
+    return this.lastStderr
   }
 
   private state(sessionId: string) {

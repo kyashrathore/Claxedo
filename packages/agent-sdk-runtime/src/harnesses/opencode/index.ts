@@ -13,7 +13,6 @@
 import {
   buildAssistantMessage,
   buildUserMessage,
-  isTerminalCompatEvent,
   messageCompleted,
   messagePartUpdated,
   messageUpdated,
@@ -129,6 +128,26 @@ function promptParts(sessionId: string, messageId: string, parts: unknown[]): Co
     }
     return [] as CompatPart[]
   })
+}
+
+function visiblePartText(part: CompatPart) {
+  const row = part as { text?: unknown; content?: unknown }
+  return typeof row.text === "string" ? row.text : typeof row.content === "string" ? row.content : ""
+}
+
+function eventHasVisibleAssistantContent(event: CompatEvent) {
+  if (event.type === "message.part.updated") {
+    return visiblePartText(event.properties.part).trim().length > 0
+  }
+  if (event.type === "message.part.delta") {
+    const row = event.properties as { field?: unknown; delta?: unknown }
+    return (row.field === "text" || row.field === "content") && typeof row.delta === "string" && row.delta.trim().length > 0
+  }
+  return false
+}
+
+function eventIsError(event: CompatEvent) {
+  return event.type === "session.error"
 }
 
 export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
@@ -381,8 +400,8 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       directory,
     }))
 
-    const eventStream = openEventStream(request, this.base)
-    await eventStream.ready
+    const stream = openEventStream(request, this.headers(directory, false))
+    await stream.ready
 
     const postRes = await request(OpenCodeHarnessAdapter.request(`/session/${id}/prompt_async`, {
       method: "POST",
@@ -397,29 +416,34 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
         ...(input.system ? { system: input.system } : {}),
         ...(input.variant ? { variant: input.variant } : {}),
       }),
-    })).catch((err) => {
-      eventStream.close()
-      return null as null
-    })
+    })).catch(() => null as null)
 
     if (!postRes || !postRes.ok) {
-      eventStream.close()
       const text = postRes ? await postRes.text().catch(() => "unknown error") : "connection refused"
-      yield messageCompleted(id, input.assistantMessageId)
+      stream.close()
       const error = sessionError(`Failed to send message: ${text}`, id)
       publishRuntime(error)
       yield error
       return
     }
 
-    let terminal: CompatEvent["type"] | undefined
-    for await (const event of drainEventStream(eventStream, id)) {
+    let sawVisibleAssistantContent = false
+    let sawError = false
+    for await (const event of drainEventStream(stream, id)) {
+      if (eventHasVisibleAssistantContent(event)) sawVisibleAssistantContent = true
+      if (eventIsError(event)) sawError = true
       publishRuntime(event)
       yield event
-      if (isTerminalCompatEvent(event)) terminal = event.type
     }
-    if (terminal === "session.error") return
-    yield messageCompleted(id, input.assistantMessageId)
+
+    if (!sawError && !sawVisibleAssistantContent) {
+      const error = sessionError("OpenCode completed without visible assistant content", id)
+      publishRuntime(error)
+      yield error
+      return
+    }
+
+    if (!sawError) yield messageCompleted(id, input.assistantMessageId)
   }
 
   // ── Remaining API methods ────────────────────────────────────────────────────

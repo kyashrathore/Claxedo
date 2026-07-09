@@ -1,6 +1,6 @@
 {
-  "imageTag": "ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-0-5-1-45b956e4a7-v8",
-  "snapshotName": "claxedo-workspace-runtime-0-5-1-45b956e4a7-v8",
-  "buildId": "45b956e4a7",
+  "imageTag": "ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-0-5-1-8d86391695-v8",
+  "snapshotName": "claxedo-workspace-runtime-0-5-1-8d86391695-v8",
+  "buildId": "8d86391695",
   "coreVersion": "0.5.1"
 }

@@ -12,8 +12,18 @@ import {
   type ConnectionTokenResponse,
   type CredentialStorePort,
   type IntegrationCapability,
+  type IntegrationDeclaration,
   type VerifyResult,
 } from "./types.js"
+
+// Enforce the storage contract (types.ts): connection rows hold only declared
+// non-secret prompt values. Anything else — including a secret echoed into
+// fields by a confused client — is dropped before verify and persistence, so
+// it can never come back out of list() or the token response.
+function declaredNonSecretFields(decl: IntegrationDeclaration, fields: ConnectionFields): ConnectionFields {
+  const allowed = new Set((decl.prompts ?? []).filter((prompt) => !prompt.secret).map((prompt) => prompt.id))
+  return Object.fromEntries(Object.entries(fields).filter(([key]) => allowed.has(key)))
+}
 
 export type ConnectResult =
   | { ok: true }
@@ -112,11 +122,12 @@ export function createConnectionsService(deps: {
       }
       const existing = await deps.connections.get(input.integrationId)
       if (existing && input.confirmReplace !== true) return { ok: false, code: "connection_exists" }
-      const verified = await entry.impl.verify(input.fields, input.secret)
+      const fields = declaredNonSecretFields(entry.decl, input.fields)
+      const verified = await entry.impl.verify(fields, input.secret)
       if (!verified.ok) return { ok: false, code: "connection_verify_failed", reason: verified.reason }
       await storeConnection({
         integrationId: input.integrationId,
-        fields: input.fields,
+        fields,
         ...(verified.accountLabel !== undefined ? { accountLabel: verified.accountLabel } : {}),
         kind: "api_key",
         secret: input.secret,

@@ -23,7 +23,7 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
 } from "../control-plane/auth"
-import { isLoopbackLocalRequest } from "../routes/local-only-projection"
+import { isLoopbackLocalRequest, stampRequestPeerAddress } from "../routes/local-only-projection"
 import type { ControlPlaneCredentials } from "../control-plane/services"
 import { createConnectionStoreAdapter, createCredentialStoreAdapter } from "./store-adapter"
 
@@ -69,8 +69,22 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
   // loopback. Stricter than routes/events.ts: in unsigned mode
   // controlPlaneAuthContext is a pass-through, so the loopback check is the
   // effective gate — never copy the ungated credential/provider-auth mounts.
+  //
+  // Ownership: connections are HOST-GLOBAL (rows and credentials are keyed
+  // only by integration id). The signed principal's subject is validated but
+  // deliberately not used for scoping, so every signed user of this host
+  // shares — and can replace/delete — the same connections. Acceptable for a
+  // single-team server; per-user/tenant scoping is a tracked follow-up and
+  // needs a store schema change, not just a gate change.
+  //
+  // Note: GET /callback is NOT behind this gate by design — it arrives via
+  // the provider redirect; single-use TTL attempt state guards it (routes.ts).
   const gate: RouteGate = async (c: Context) => {
     try {
+      // Self-sufficient stamp (normally done by the app-level middleware):
+      // the loopback check must see the socket peer even when these routes
+      // are mounted without the parent app.
+      stampRequestPeerAddress(c.req.raw, c.env)
       if (isLoopbackLocalRequest(c.req.raw)) return null
       const context = await controlPlaneAuthContext(c.req.raw, {
         ...(options.authConfig ? { config: options.authConfig } : {}),
@@ -91,6 +105,7 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
   // CORS allowlist actually gates them (a page on any http://localhost:*
   // origin would otherwise pass the loopback check).
   const tokenGate: RouteGate = (c: Context) => {
+    stampRequestPeerAddress(c.req.raw, c.env)
     if (!isLoopbackLocalRequest(c.req.raw)) return c.json({ code: "connections_loopback_required" }, 403)
     if (c.req.header(CONNECTIONS_TOKEN_HEADER) !== "1") return c.json({ code: "connections_header_required" }, 403)
     return null

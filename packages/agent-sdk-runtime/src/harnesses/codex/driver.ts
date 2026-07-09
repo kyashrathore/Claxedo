@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from "child_process"
 import { randomUUID } from "crypto"
+import fs from "fs"
+import os from "os"
+import path from "path"
 import {
   createAgentEventRuntime,
   type AgentEventRuntime,
@@ -23,6 +26,8 @@ import {
 
 const log = Log.create({ service: "codex-app-server-adapter" })
 const CODEX_SOURCE = "codex.app-server"
+const OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+const OPENAI_ISSUER = "https://auth.openai.com"
 
 type CodexActiveThread = {
   sessionId: string
@@ -30,21 +35,29 @@ type CodexActiveThread = {
   project: (method: string, payload: JsonRecord, frame: unknown) => void
 }
 
-export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: { binary?: string } = {}): SdkRuntimeDriver {
+export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: CodexDriverOptions = {}): SdkRuntimeDriver {
   return new CodexAppServerDriver(host, options)
 }
+
+type CodexDriverOptions = { binary?: string; fetch?: typeof fetch; codexHome?: string }
 
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
   private auth: SdkRuntimeAuth = {}
+  private codexAuth: JsonRecord | undefined
   private process: CodexAppServerProcess | null = null
   private processError: string | null = null
   private activeThreads = new Map<string, CodexActiveThread>()
+  private readonly codexHome: string
 
   constructor(
     private readonly host: SdkRuntimeDriverHost,
-    private readonly options: { binary?: string },
-  ) {}
+    private readonly options: CodexDriverOptions,
+  ) {
+    // Resolve the codex home once so auth reads/writes never fall back to the
+    // real `~/.codex` under test. Honors the same CODEX_HOME the CLI respects.
+    this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
+  }
 
   setAuth(keys: SdkRuntimeAuth) {
     this.auth = {
@@ -55,8 +68,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
 
   applyConfig(config: Record<string, unknown>) {
     const auth = record(config.auth) as Record<string, string> | undefined
+    const source = auth?.["codex-app-server"] ?? auth?.["codex-acp"] ?? auth?.openai
+    this.codexAuth = sourceCodexAuthValue(source)
     this.auth = {
-      openai: sourceAuthValue(auth?.["codex-app-server"] ?? auth?.["codex-acp"] ?? auth?.openai),
+      openai: sourceAuthValue(source),
     }
   }
 
@@ -90,11 +105,26 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     let turnId = ""
     let resolveCompleted: (() => void) | undefined
     let rejectCompleted: ((err: Error) => void) | undefined
+    let rejectTurnStart: ((err: Error) => void) | undefined
     const completed = new Promise<void>((resolve, reject) => {
       resolveCompleted = resolve
       rejectCompleted = reject
     })
-    const onAbort = () => rejectCompleted?.(new Error("Codex turn aborted"))
+    const turnStartFailed = new Promise<never>((_, reject) => {
+      rejectTurnStart = reject
+    })
+    completed.catch(() => {})
+    turnStartFailed.catch(() => {})
+    const failTurn = (err: Error) => {
+      rejectCompleted?.(err)
+      rejectTurnStart?.(err)
+    }
+    const onAbort = () => failTurn(new Error("Codex turn aborted"))
+    const onStderr = (message: string) => {
+      if (message.includes("401 Unauthorized")) {
+        failTurn(new Error("Codex authentication failed with 401 Unauthorized. Run `codex login` or sync a valid Codex credential, then retry."))
+      }
+    }
     const model = codexTurnModel(input.input, input.model)
     const project = (method: string, payload: JsonRecord, frame: unknown) => input.ingest({
       source: CODEX_SOURCE,
@@ -124,9 +154,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       if (method === "turn/completed") resolveCompleted?.()
       project(method, params, message)
     })
+    const unsubscribeStderr = proc.onStderr(onStderr)
     input.abort.signal.addEventListener("abort", onAbort, { once: true })
     try {
-      const result = await proc.request("turn/start", {
+      const result = await Promise.race([proc.request("turn/start", {
         threadId,
         input: codexUserInput(input.input.parts),
         cwd: input.directory,
@@ -140,7 +171,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
           excludeSlashTmp: false,
         },
         ...(model ? { model } : {}),
-      }) as JsonRecord
+      }) as Promise<JsonRecord>, turnStartFailed])
       turnId = text(record(result.turn)?.id) ?? turnId
       this.host.lifecycle().set(input.sessionId, {
         abort: input.abort,
@@ -152,6 +183,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       await completed
     } finally {
       input.abort.signal.removeEventListener("abort", onAbort)
+      unsubscribeStderr()
       unsubscribe()
       this.activeThreads.delete(threadId)
     }
@@ -196,6 +228,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       directory,
       env: {
         ...process.env,
+        CODEX_HOME: this.codexHome,
         ...(this.auth.openai ? { OPENAI_API_KEY: this.auth.openai } : {}),
       },
       requestHandler: (message) => this.handleServerRequest(message),
@@ -204,6 +237,19 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         this.failInteractiveState(err)
       },
     })
+    const tokens = codexChatgptAuthTokens(this.codexAuth)
+    if (tokens && !this.auth.openai) {
+      try {
+        await started.request("account/login/start", {
+          type: "chatgptAuthTokens",
+          accessToken: tokens.access,
+          chatgptAccountId: tokens.accountId,
+          chatgptPlanType: tokens.planType ?? null,
+        })
+      } catch (err) {
+        throw new Error(`Codex ChatGPT auth could not initialize: ${errorMessage(err)}`)
+      }
+    }
     this.process = started
     this.processError = null
     return this.process
@@ -263,9 +309,47 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       return permissionResponse(method, decision, params)
     }
     if (method === "account/chatgptAuthTokens/refresh") {
-      throw new Error("ChatGPT auth token refresh is not available in workspace runtime")
+      const tokens = await this.refreshChatgptAuthTokens()
+      return {
+        accessToken: tokens.access,
+        chatgptAccountId: tokens.accountId,
+        chatgptPlanType: tokens.planType ?? null,
+      }
     }
     throw new Error(`Unsupported Codex app-server request: ${method}`)
+  }
+
+  private async refreshChatgptAuthTokens() {
+    const current = codexChatgptAuthTokens(this.codexAuth) ?? codexChatgptAuthTokens(readCodexAuthFile(this.codexHome))
+    if (!current?.refresh) {
+      throw new Error("Codex ChatGPT auth is missing a refresh token. Run `codex login` or sync a valid Codex credential, then retry.")
+    }
+    const response = await (this.options.fetch ?? fetch)(`${OPENAI_ISSUER}/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: current.refresh,
+        client_id: OPENAI_CLIENT_ID,
+      }).toString(),
+    })
+    if (!response.ok) {
+      throw new Error(`Codex ChatGPT auth refresh failed (${response.status}). Run \`codex login\` or sync a valid Codex credential, then retry.`)
+    }
+    const row = record(await response.json().catch(() => undefined))
+    const access = text(row?.access_token)
+    const refresh = text(row?.refresh_token) ?? current.refresh
+    if (!access) throw new Error("Codex ChatGPT auth refresh returned no access token")
+    const next = {
+      access,
+      refresh,
+      accountId: text(row?.account_id) ?? accountIdFromClaims(row) ?? current.accountId,
+      idToken: text(row?.id_token) ?? current.idToken,
+      planType: current.planType,
+    }
+    this.codexAuth = mergeCodexAuth(this.codexAuth ?? readCodexAuthFile(this.codexHome), next)
+    await writeCodexAuthFile(this.codexHome, this.codexAuth)
+    return next
   }
 }
 
@@ -279,6 +363,7 @@ class CodexAppServerProcess {
     reject: (err: Error) => void
   }>()
   private listeners = new Set<(message: JsonRecord) => void>()
+  private stderrListeners = new Set<(message: string) => void>()
 
   private constructor(
     private readonly binary: string,
@@ -296,7 +381,9 @@ class CodexAppServerProcess {
     this.proc.stderr?.setEncoding("utf8")
     this.proc.stdout?.on("data", (chunk: string) => this.read(chunk))
     this.proc.stderr?.on("data", (chunk: string) => {
-      log.warn("codex app-server stderr", { message: chunk.trim() })
+      const message = chunk.trim()
+      log.warn("codex app-server stderr", { message })
+      for (const listener of this.stderrListeners) listener(message)
     })
     this.proc.on("error", (cause) => {
       const err = cause instanceof Error ? cause : new Error(String(cause))
@@ -340,6 +427,11 @@ class CodexAppServerProcess {
   onMessage(listener: (message: JsonRecord) => void) {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  onStderr(listener: (message: string) => void) {
+    this.stderrListeners.add(listener)
+    return () => this.stderrListeners.delete(listener)
   }
 
   request(method: string, params: unknown): Promise<unknown> {
@@ -421,9 +513,108 @@ function sourceAuthValue(input: string | undefined) {
   if (!input) return
   try {
     const value = JSON.parse(input) as JsonRecord
+    if (codexChatgptAuthTokens(value)) return
     return text(value.OPENAI_API_KEY)
   } catch {
     return input
+  }
+}
+
+function sourceCodexAuthValue(input: string | undefined) {
+  if (!input) return
+  try {
+    const value = JSON.parse(input) as JsonRecord
+    if (value.type === "codex_auth" || value.auth_mode === "chatgpt" || codexChatgptAuthTokens(value)) return value
+  } catch {}
+}
+
+function readCodexAuthFile(home: string) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(home, "auth.json"), "utf8")) as JsonRecord
+  } catch {
+    return
+  }
+}
+
+async function writeCodexAuthFile(home: string, input: JsonRecord | undefined) {
+  if (!input) return
+  await fs.promises.mkdir(home, { recursive: true, mode: 0o700 })
+  await fs.promises.writeFile(path.join(home, "auth.json"), JSON.stringify(input, null, 2) + "\n", { mode: 0o600 })
+}
+
+function codexChatgptAuthTokens(input: JsonRecord | undefined) {
+  if (!input) return
+  const tokens = record(input.tokens)
+  const oauth = record(input.oauth)
+  const access = text(input.access) ?? text(tokens?.access_token) ?? text(oauth?.access)
+  const refresh = text(input.refresh) ?? text(tokens?.refresh_token) ?? text(oauth?.refresh)
+  const idToken = text(input.id_token) ?? text(tokens?.id_token) ?? text(oauth?.id_token)
+  const accountId = text(input.account_id)
+    ?? text(input.accountId)
+    ?? text(tokens?.account_id)
+    ?? text(oauth?.account_id)
+    ?? accountIdFromClaims(input)
+  if (!access || !accountId) return
+  return {
+    access,
+    ...(refresh ? { refresh } : {}),
+    ...(idToken ? { idToken } : {}),
+    accountId,
+    ...(text(input.chatgptPlanType) ?? text(input.plan_type) ?? text(oauth?.plan_type)
+      ? { planType: text(input.chatgptPlanType) ?? text(input.plan_type) ?? text(oauth?.plan_type) }
+      : {}),
+  }
+}
+
+function mergeCodexAuth(input: JsonRecord | undefined, tokens: { access: string; refresh: string; accountId: string; idToken?: string; planType?: string }) {
+  const current = input ?? { type: "codex_auth", auth_mode: "chatgpt" }
+  const existingTokens = record(current.tokens) ?? {}
+  const existingOauth = record(current.oauth) ?? {}
+  // Codex (>=0.143) requires `tokens.id_token`; carry the refreshed one forward,
+  // falling back to any previously-stored value so the file never regresses to
+  // a shape the codex CLI refuses to parse.
+  const idToken = tokens.idToken ?? text(existingTokens.id_token) ?? text(existingOauth.id_token)
+  return {
+    ...current,
+    type: "codex_auth",
+    auth_mode: text(current.auth_mode) ?? "chatgpt",
+    tokens: {
+      ...existingTokens,
+      ...(idToken ? { id_token: idToken } : {}),
+      access_token: tokens.access,
+      refresh_token: tokens.refresh,
+      account_id: tokens.accountId,
+    },
+    access: tokens.access,
+    refresh: tokens.refresh,
+    account_id: tokens.accountId,
+    last_refresh: new Date().toISOString(),
+    oauth: {
+      ...existingOauth,
+      ...(idToken ? { id_token: idToken } : {}),
+      access: tokens.access,
+      refresh: tokens.refresh,
+      account_id: tokens.accountId,
+      ...(tokens.planType ? { plan_type: tokens.planType } : {}),
+    },
+  }
+}
+
+function accountIdFromClaims(input: JsonRecord | undefined) {
+  return accountIdFromJwt(text(input?.id_token) ?? text(record(input?.tokens)?.id_token))
+    ?? accountIdFromJwt(text(input?.access_token) ?? text(input?.access) ?? text(record(input?.tokens)?.access_token))
+}
+
+function accountIdFromJwt(token: string | undefined) {
+  if (!token) return
+  const payload = token.split(".")[1]
+  if (!payload) return
+  try {
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as JsonRecord
+    const openai = record(claims["https://api.openai.com/auth"])
+    return text(claims.chatgpt_account_id) ?? text(openai?.chatgpt_account_id)
+  } catch {
+    return
   }
 }
 

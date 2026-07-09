@@ -1,7 +1,9 @@
 import { execFile } from "child_process"
+import crypto from "crypto"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
+import { writeFileAtomic } from "./fs-safe"
 import { materializeAgentExtensionSnapshot, type AgentExtensionMaterializationInstall } from "./materialize"
 import { FIRST_PARTY_AGENT_EXTENSIONS_DIR } from "./types"
 import { digestDirectory } from "./cache"
@@ -125,6 +127,18 @@ async function verifyPackageDigest(input: {
   }
 }
 
+// The resolved SHA comes from a pushed snapshot; it is used both as a git
+// argument and as a cache path segment, so anything but a hex commit id
+// (option injection, path traversal) must be rejected before use.
+function resolvedSha(input: RuntimeInstall) {
+  const sha = str(input.lock?.resolved_sha)
+  if (!sha) throw new Error(`Agent Extension ${String(input.desired.id ?? "unknown")} is missing resolved SHA`)
+  if (!/^[A-Fa-f0-9]{7,64}$/.test(sha)) {
+    throw new Error(`Agent Extension ${String(input.desired.id ?? "unknown")} resolved SHA must be a hex commit id`)
+  }
+  return sha.toLowerCase()
+}
+
 async function fetchToCache(input: {
   install: RuntimeInstall
   cacheRoot: string
@@ -133,9 +147,9 @@ async function fetchToCache(input: {
 }) {
   const info = source(input.install)
   if (info.type !== "github") throw new Error(`Unsupported Agent Extension source for ${String(input.install.desired.id ?? "unknown")}`)
-  const sha = str(input.install.lock?.resolved_sha)
-  if (!sha) throw new Error(`Agent Extension ${String(input.install.desired.id ?? "unknown")} is missing resolved SHA`)
-  const target = info.packagePath ? path.join(input.cacheRoot, sha, info.packagePath) : path.join(input.cacheRoot, sha)
+  const sha = resolvedSha(input.install)
+  const shaRoot = path.join(input.cacheRoot, sha)
+  const target = info.packagePath ? path.join(shaRoot, info.packagePath) : shaRoot
   if (await fs.stat(target).then((stat) => stat.isDirectory()).catch(() => false)) return target
   const root = await fs.mkdtemp(path.join(input.tempRoot, "claxedo-runtime-extension-"))
   try {
@@ -148,13 +162,24 @@ async function fetchToCache(input: {
     await input.execFile("git", ["fetch", "--depth", "1", "origin", sha], { cwd: root })
     await input.execFile("git", ["checkout", "--detach", "FETCH_HEAD"], { cwd: root })
     const sourceRoot = info.packagePath ? path.join(root, info.packagePath) : root
-    await fs.rm(target, { recursive: true, force: true })
+    // Copy into a sibling temp dir and rename into place so a crash mid-copy
+    // never leaves a partial directory at the final cache path — the
+    // exists-check above would keep returning it and every replay would fail
+    // its digest verification with no way to self-heal.
+    const staging = `${target}.${crypto.randomBytes(6).toString("hex")}.tmp`
     await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o755 })
-    await fs.cp(sourceRoot, target, {
+    await fs.cp(sourceRoot, staging, {
       recursive: true,
       force: true,
       filter: (source) => !path.relative(sourceRoot, source).split(path.sep).includes(".git"),
     })
+    try {
+      await fs.rm(target, { recursive: true, force: true })
+      await fs.rename(staging, target)
+    } catch (err) {
+      await fs.rm(staging, { recursive: true, force: true })
+      throw err
+    }
     return target
   } finally {
     await fs.rm(root, { recursive: true, force: true })
@@ -200,18 +225,33 @@ async function packageRoots(input: {
 }) {
   const entries = (await Promise.all(input.installs.map(async (install) => {
     if (typeof install.desired.id !== "string") return []
-    const packageRoot = input.packageRoots?.[install.desired.id]
+    const provided = input.packageRoots?.[install.desired.id]
       ?? await resolveProjectPackageRoot({
         install,
         projectDir: input.projectDir,
       })
-      ?? await fetchToCache({
-        install,
-        cacheRoot: input.cacheRoot,
-        execFile: input.execFile,
-        tempRoot: input.tempRoot,
-      })
-    await verifyPackageDigest({ install, packageRoot })
+    if (provided) {
+      await verifyPackageDigest({ install, packageRoot: provided })
+      return [[install.desired.id, provided]]
+    }
+    const fetchInput = {
+      install,
+      cacheRoot: input.cacheRoot,
+      execFile: input.execFile,
+      tempRoot: input.tempRoot,
+    }
+    const packageRoot = await fetchToCache(fetchInput)
+    try {
+      await verifyPackageDigest({ install, packageRoot })
+    } catch {
+      // A cache entry that no longer matches its lock digest (partial copy
+      // from an old crash, manual edit) would otherwise fail every future
+      // replay: discard it and fetch fresh before giving up.
+      await fs.rm(packageRoot, { recursive: true, force: true })
+      const refetched = await fetchToCache(fetchInput)
+      await verifyPackageDigest({ install, packageRoot: refetched })
+      return [[install.desired.id, refetched]]
+    }
     return [[install.desired.id, packageRoot]]
   }))).flat() as Array<[string, string]>
   return sorted(Object.fromEntries(entries) as Record<string, string>)
@@ -220,6 +260,10 @@ async function packageRoots(input: {
 async function wait(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms))
 }
+
+// A crashed replay leaves the lock directory behind; treat locks older than
+// this as stale and take them over instead of spinning forever.
+const REPLAY_LOCK_STALE_MS = 10 * 60 * 1000
 
 async function withReplayLock(root: string, fn: () => Promise<void>) {
   const lock = path.join(root, ".replay-lock")
@@ -230,6 +274,11 @@ async function withReplayLock(root: string, fn: () => Promise<void>) {
       break
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err
+      const stat = await fs.stat(lock).catch(() => undefined)
+      if (stat && Date.now() - stat.mtimeMs > REPLAY_LOCK_STALE_MS) {
+        await fs.rm(lock, { recursive: true, force: true })
+        continue
+      }
       await wait(100)
     }
   }
@@ -246,18 +295,18 @@ async function applyRuntimeAgentExtensionsNow(input: RuntimeAgentExtensions | un
   await withReplayLock(root, async () => {
     const installs = input.installs
     const enabledInstalls = installs.filter((item) => item.desired.enabled !== false)
-    await fs.writeFile(path.join(root, "installed.json"), JSON.stringify({
+    await writeFileAtomic(path.join(root, "installed.json"), JSON.stringify({
       version: 1,
       installs: installs.map((item) => item.desired).sort((a, b) =>
         String(a.id ?? "").localeCompare(String(b.id ?? "")),
       ),
-    }, null, 2) + "\n", { mode: 0o644 })
-    await fs.writeFile(path.join(root, "lock.json"), JSON.stringify({
+    }, null, 2) + "\n")
+    await writeFileAtomic(path.join(root, "lock.json"), JSON.stringify({
       version: 1,
       packages: sorted(Object.fromEntries(installs.flatMap((item) =>
         item.lock && typeof item.desired.id === "string" ? [[item.desired.id, item.lock]] : [],
       ))),
-    }, null, 2) + "\n", { mode: 0o644 })
+    }, null, 2) + "\n")
     await materializeAgentExtensionSnapshot({
       installs: installs.flatMap((item) => canonicalInstall(item) ?? []),
       packageRoots: await packageRoots({

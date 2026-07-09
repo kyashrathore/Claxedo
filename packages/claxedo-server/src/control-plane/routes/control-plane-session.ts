@@ -49,6 +49,14 @@ function hasBearerToken(req: Request) {
   return /^Bearer\s+\S+$/i.test(req.headers.get("authorization") ?? "")
 }
 
+function authorityMessages(body: unknown) {
+  return Array.isArray(body)
+    ? body
+    : body && typeof body === "object" && Array.isArray((body as { messages?: unknown }).messages)
+      ? (body as { messages: unknown[] }).messages
+      : []
+}
+
 function isSignedHostedBrowserRequest(req: Request) {
   return hasBearerToken(req) &&
     !!req.headers.get("origin") &&
@@ -317,9 +325,21 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
       try {
         const sessionId = c.req.param("sessionId")
         if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
+          const replayMessages = services.projectionStore.read_session_messages(sessionId)
+          const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(sessionId)
+          const workspaceId = c.req.query("workspaceId")
+          if (replayMessages.length === 0 && workspaceId && hasBearerToken(c.req.raw)) {
+            const auth = await signedAuth(c.req.raw, options)
+            const body = await requireAuthority(services).readSessionMessages(auth, { sessionId, workspaceId })
+            return c.json({
+              ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
+              messages: authorityMessages(body),
+              maxEventOrdinal,
+            })
+          }
           return c.json({
-            messages: services.projectionStore.read_session_messages(sessionId),
-            maxEventOrdinal: services.projectionStore.read_session_max_event_ordinal(sessionId),
+            messages: replayMessages,
+            maxEventOrdinal,
           })
         }
         const auth = await signedAuth(c.req.raw, options)
@@ -333,15 +353,11 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         }
         const workspaceId = requiredWorkspaceId(c.req.query("workspaceId"))
         const body = await requireAuthority(services).readSessionMessages(auth, { sessionId, workspaceId })
-        const authorityMessages = Array.isArray(body)
-          ? body
-          : body && typeof body === "object" && Array.isArray((body as { messages?: unknown }).messages)
-            ? (body as { messages: unknown[] }).messages
-            : []
+        const messages = authorityMessages(body)
         const replayMessages = services.projectionStore.read_session_messages(sessionId)
         return c.json({
           ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
-          messages: replayMessages.length > 0 ? replayMessages : authorityMessages,
+          messages: replayMessages.length > 0 ? replayMessages : messages,
           maxEventOrdinal: services.projectionStore.read_session_max_event_ordinal(sessionId),
         })
       } catch (err) {

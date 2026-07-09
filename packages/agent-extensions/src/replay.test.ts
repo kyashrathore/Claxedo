@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { promisify } from "util"
+import { digestDirectory } from "./cache"
 import { applyRuntimeAgentExtensions } from "./replay"
 
 const root = path.join(os.tmpdir(), `workspace-runtime-agent-extensions-${crypto.randomUUID().slice(0, 8)}`)
@@ -357,6 +358,37 @@ describe("runtime Agent Extensions replay", () => {
     })
   })
 
+  test("takes over a stale replay lock left by a crashed process", async () => {
+    const packageRoot = path.join(root, "agent-extensions")
+    await fs.mkdir(path.join(packageRoot, "skills", "review"), { recursive: true })
+    await fs.writeFile(path.join(packageRoot, "skills", "review", "SKILL.md"), "review skill")
+    const lock = path.join(root, ".agent-extensions", ".replay-lock")
+    await fs.mkdir(lock, { recursive: true })
+    const crashedAt = new Date(Date.now() - 11 * 60 * 1000)
+    await fs.utimes(lock, crashedAt, crashedAt)
+
+    await applyRuntimeAgentExtensions({
+      version: 1,
+      installs: [{
+        desired: {
+          id: "first-party-agent-extensions",
+          package_name: "agent-extensions",
+          source: { type: "project", package_path: "agent-extensions" },
+          scope: "project",
+          enabled: true,
+          targets: ["cursor"],
+        },
+        components: [],
+      }],
+    }, root, {
+      tempRoot: root,
+      homeDir: path.join(root, "home"),
+    })
+
+    await expect(fs.readFile(path.join(root, ".cursor", "skills", "review", "SKILL.md"), "utf8")).resolves.toBe("review skill")
+    await expect(fs.stat(lock)).rejects.toThrow()
+  })
+
   test("verifies lock digests before materializing runtime packages", async () => {
     const execFile = async (_file: string, args: string[]) => {
       if (args[0] === "init") {
@@ -434,6 +466,82 @@ describe("runtime Agent Extensions replay", () => {
     expect(commands.filter((args) => args[0] === "fetch")).toHaveLength(1)
     await expect(fs.readFile(path.join(root, ".cursor", "skills", "review", "SKILL.md"), "utf8")).resolves.toBe("review skill")
     await expect(fs.stat(path.join(root, ".agent-extensions", "cache", sha, "packages", "review", "SKILL.md"))).resolves.toMatchObject({ size: 12 })
+  })
+
+  test("discards a corrupted runtime cache entry and refetches instead of failing forever", async () => {
+    const repo = path.join(root, "source")
+    const bare = path.join(root, "source.git")
+    await fs.mkdir(path.join(repo, "packages", "review"), { recursive: true })
+    await fs.writeFile(path.join(repo, "packages", "review", "SKILL.md"), "review skill")
+    await execFile("git", ["init", "-b", "main"], { cwd: repo })
+    await execFile("git", ["config", "user.email", "test@example.com"], { cwd: repo })
+    await execFile("git", ["config", "user.name", "Test User"], { cwd: repo })
+    await execFile("git", ["add", "."], { cwd: repo })
+    await execFile("git", ["commit", "-m", "add review skill"], { cwd: repo })
+    const sha = (await execFile("git", ["rev-parse", "HEAD"], { cwd: repo })).stdout.trim()
+    await execFile("git", ["clone", "--bare", repo, bare])
+    const digest = await digestDirectory(path.join(repo, "packages", "review"))
+
+    // Simulate a crash mid-copy from an earlier replay: the cache path exists
+    // but its content does not match the locked digest.
+    const cached = path.join(root, ".agent-extensions", "cache", sha, "packages", "review")
+    await fs.mkdir(cached, { recursive: true })
+    await fs.writeFile(path.join(cached, "SKILL.md"), "partial copy")
+
+    const replayExecFile = async (file: string, args: string[], options?: { cwd?: string }) => {
+      const rewritten = args[0] === "remote" && args[1] === "add"
+        ? ["remote", "add", "origin", bare]
+        : args
+      return execFile(file, rewritten, options)
+    }
+
+    await applyRuntimeAgentExtensions({
+      version: 1,
+      installs: [{
+        desired: {
+          id: "review",
+          package_name: "review",
+          source: { type: "github" as const, owner: "acme", repo: "review", package_path: "packages/review" },
+          enabled: true,
+          targets: ["cursor"],
+        },
+        lock: {
+          resolved_sha: sha,
+          component_digests: { package: digest },
+          targets: ["cursor"],
+        },
+        components: [],
+      }],
+    }, root, { execFile: replayExecFile, tempRoot: root, homeDir: path.join(root, "home") })
+
+    await expect(fs.readFile(path.join(cached, "SKILL.md"), "utf8")).resolves.toBe("review skill")
+    await expect(fs.readFile(path.join(root, ".cursor", "skills", "review", "SKILL.md"), "utf8")).resolves.toBe("review skill")
+  })
+
+  test("rejects runtime installs whose resolved SHA is not a hex commit id", async () => {
+    await expect(applyRuntimeAgentExtensions({
+      version: 1,
+      installs: [{
+        desired: {
+          id: "review",
+          package_name: "review",
+          source: { type: "github" as const, owner: "acme", repo: "review" },
+          enabled: true,
+          targets: ["cursor"],
+        },
+        lock: {
+          resolved_sha: "--upload-pack=/tmp/evil",
+          targets: ["cursor"],
+        },
+        components: [],
+      }],
+    }, root, {
+      execFile: async () => {
+        throw new Error("git must not run for an invalid SHA")
+      },
+      tempRoot: root,
+      homeDir: path.join(root, "home"),
+    })).rejects.toThrow("hex commit id")
   })
 
   test("replaces materialized skill trees instead of merging stale files", async () => {

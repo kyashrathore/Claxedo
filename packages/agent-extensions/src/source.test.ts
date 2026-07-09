@@ -45,6 +45,7 @@ describe("Agent Extension source parsing", () => {
     expect(() => parsePackageSource("https://github.com/acme/tools/blob/main/plugin.json")).toThrow("Only GitHub repo roots")
     expect(() => parsePackageSource("https://github.com/acme/tools/tree/main/../escape")).toThrow("package path must stay inside")
     expect(() => parsePackageSource("acme/tools@../main")).toThrow("GitHub ref is unsafe")
+    expect(() => parsePackageSource("acme/tools@--upload-pack=/tmp/evil")).toThrow("GitHub ref is unsafe")
   })
 
   test("normalizes and rejects unsafe relative paths", () => {

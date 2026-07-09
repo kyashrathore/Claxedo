@@ -74,6 +74,20 @@ describe("harness selection", () => {
       dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
       readiness: "error",
     })).toBe(false)
+    expect(harnessReadyForSubmit({
+      ...base,
+      harness: "claude-acp",
+      selectedModel: "sonnet",
+      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+      configError: "Authentication required. Please run 'agent login' first.",
+    })).toBe(false)
+    expect(harnessReadyForSubmit({
+      ...base,
+      harness: "codex-app-server",
+      selectedModel: "gpt-5.5",
+      dynamicModels: [],
+      readiness: "error",
+    })).toBe(false)
   })
 
   test("returns canonical ModelKey for selectable harness models", () => {

@@ -148,6 +148,24 @@ type ActiveAcpTurn = {
   drain(message: string): void
 }
 
+const activePromptCounts = new Map<AcpHarnessId, number>()
+
+function activePromptCount(harness: AcpHarnessId) {
+  return activePromptCounts.get(harness) ?? 0
+}
+
+function enterActivePrompt(harness: AcpHarnessId) {
+  activePromptCounts.set(harness, activePromptCount(harness) + 1)
+  return () => {
+    const next = activePromptCount(harness) - 1
+    if (next > 0) {
+      activePromptCounts.set(harness, next)
+      return
+    }
+    activePromptCounts.delete(harness)
+  }
+}
+
 function root() {
   return process.cwd()
 }
@@ -170,10 +188,16 @@ function fingerprint(input: unknown) {
   return `acp:${createHash("sha256").update(stableKey(input)).digest("hex")}`
 }
 
+function unrestorable(harness: AcpHarnessId, err: unknown) {
+  if (missing(err)) return true
+  return harness === "cursor" && errorMessage(err).includes("Invalid params")
+}
+
 // ── AcpHarnessAdapter ────────────────────────────────────────────────────────────────
 
 export class AcpHarnessAdapter implements AgentHarnessAdapter {
   readonly adapterCapabilities = ["runtime-config"] as const
+  readonly commitsStreamEvents = true
   private store: AcpRuntimeStore
   private ownsStore = false
   private storeClosed = false
@@ -186,6 +210,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
   private ignoreStoredProcessKeys = false
   private permissionOwners = new Map<string, ACPProcess>()
   private probe: ProbeEntry | null = null
+  private configRestartPending = false
 
   constructor(private readonly options: AcpHarnessAdapterOptions) {
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
@@ -194,7 +219,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
   }
 
   private harnessId(): AcpHarnessId {
-    return this.options.harness ?? "claude"
+    return this.options?.harness ?? "claude"
   }
 
   private acpClient() {
@@ -365,13 +390,18 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     return new ACPProcess(
       root(),
       this.options.binary,
-      this.options.args ?? [],
+      this.commandArgs(),
       this.currentModel,
       () => this.currentMcp,
       dead,
       this.options.createTransport ?? createStdioACPTransport,
       () => this.currentEnv,
     )
+  }
+
+  private commandArgs() {
+    if (this.harnessId() !== "codex" || !this.currentModel || this.currentModel === "default") return this.options.args ?? []
+    return [...(this.options.args ?? []), "-c", `model="${this.currentModel}"`]
   }
 
   private async getOrSpawnProcessForKey(key: ACPProcessKey, directory: string): Promise<{ proc: ACPProcess; isNew: boolean }> {
@@ -504,7 +534,14 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
-  private async initialize(proc: { initialize: () => Promise<void>; dispose: () => void }, ms = initializeTimeoutMs()) {
+  private async initialize(
+    proc: {
+      initialize: () => Promise<void>
+      dispose: () => void
+      failureDetail?: () => string
+    },
+    ms = initializeTimeoutMs(),
+  ) {
     let id: ReturnType<typeof setTimeout> | undefined
     try {
       return await Promise.race([
@@ -515,6 +552,11 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       ])
     } catch (err) {
       proc.dispose()
+      const message = errorMessage(err)
+      const detail = proc.failureDetail?.()
+      if (message === "ACP connection closed" && detail) {
+        throw new Error(`ACP connection closed: ${detail}`)
+      }
       throw err
     } finally {
       if (id) clearTimeout(id)
@@ -623,6 +665,9 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
   async updateSessionConfig(id: string, update: SessionConfigUpdate, directory: string): Promise<SessionConfig> {
     directory = requireWorkspaceDirectory(directory)
     const next = this.store.updateSessionConfig(id, update) ?? await this.getSessionConfig(id, directory)
+    if (next.model?.modelID) {
+      this.setModel(next.model.modelID === "default" ? "" : next.model.modelID)
+    }
     const proc = this.entryForSession(id)?.proc
     const agentSessionId = this.store.getAgentSessionId(id)
     if (!proc?.alive || !agentSessionId) return next
@@ -661,10 +706,12 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       yield sessionError("Session is already processing a message", id)
       return
     }
+    const leaveActivePrompt = enterActivePrompt(this.harnessId())
 
     try {
       yield* this._sendMessage(id, input, directory, t0)
     } finally {
+      leaveActivePrompt()
       leaveBusy()
     }
   }
@@ -680,6 +727,10 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     const session = this.store.getSession(id) as { title?: string | null } | null
     let created = Date.now()
     log.info("sendMessage: found session in store", { id, agentSessionId })
+    if (input.model?.modelID) {
+      const nextModel = input.model.modelID === "default" ? "" : input.model.modelID
+      if ((this.currentModel || "") !== nextModel) this.setModel(nextModel)
+    }
 
     let proc: ACPProcess
     let fresh = false
@@ -855,14 +906,14 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         try {
           await bound("ACP resume", proc.resumeSession(agentSessionId, directory))
         } catch (err) {
-          if (!missing(err)) throw err
+          if (!unrestorable(this.harnessId(), err)) throw err
           await replace()
         }
       }
       try {
         await bound("ACP sync", proc.syncSession(agentSessionId, input))
       } catch (err) {
-        if (!missing(err)) throw err
+        if (!unrestorable(this.harnessId(), err)) throw err
         await replace()
         await bound("ACP sync", proc.syncSession(agentSessionId, input))
       }
@@ -1292,7 +1343,8 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     const mcp = config.mcp as Record<string, ResolvedMcpServer> | undefined
     const nextMcp = toAcpMcpServers(mcp ?? {})
     const nextEnv = mergeAcpEnv(this.currentEnv, envFromConfig(config))
-    if (sameAcpMcp(this.currentMcp, nextMcp) && sameAcpEnv(this.currentEnv, nextEnv)) {
+    const unchanged = sameAcpMcp(this.currentMcp, nextMcp) && sameAcpEnv(this.currentEnv, nextEnv)
+    if (unchanged && !this.configRestartPending) {
       log.info("ACP config apply skipped restart because effective config is unchanged", {
         keys: Object.keys(config),
         harness: this.harnessId(),
@@ -1300,11 +1352,20 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       })
       return
     }
-    if (this.lifecycle().activeTurns.size > 0) {
-      throw new Error("ACP process config cannot change while a prompt is active")
+    if (this.lifecycle().activeTurns.size > 0 || activePromptCount(this.harnessId()) > 0) {
+      this.currentMcp = nextMcp
+      this.currentEnv = nextEnv
+      this.configRestartPending = true
+      log.info("ACP config apply deferred restart because a prompt is active", {
+        keys: Object.keys(config),
+        harness: this.harnessId(),
+        binary: this.options.binary,
+      })
+      return
     }
     this.currentMcp = nextMcp
     this.currentEnv = nextEnv
+    this.configRestartPending = false
     this.restart()
     this.forgetSessionProcessBindings()
     log.info("Applied config in-memory, restarted ACP process", {
@@ -1330,6 +1391,9 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     if (live) {
       log.info("probeConfigOptions: returning cached options from existing process")
       return live
+    }
+    if (activePromptCount(this.harnessId()) > 0) {
+      throw new Error("ACP harness config options are temporarily unavailable while a prompt is active")
     }
     const wait = async <T>(label: string, run: Promise<T>) => {
       const ms = probeTimeoutMs()

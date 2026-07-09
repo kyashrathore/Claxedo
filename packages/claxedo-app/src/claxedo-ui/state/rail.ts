@@ -9,6 +9,8 @@ import type { ClaxedoState } from "./types"
 
 const RAIL_COLLAPSED_WIDTH = 0
 const RAIL_EXPANDED_WIDTH = 260
+const RAIL_MIN_WIDTH = 220
+const RAIL_MAX_WIDTH = 520
 const HOT_ZONE_WIDTH = 48
 const HOT_ZONE_HEIGHT = 48
 const EXPAND_DELAY_MS = 100
@@ -28,6 +30,7 @@ export type RailSliceApi = {
   toggle(): void
   pin(): void
   unpin(): void
+  setWidth(width: number): void
 
   handleHotZoneEnter(): void
   handleMouseLeave(e?: MouseEvent): void
@@ -65,7 +68,7 @@ export function createRailSlice(input: {
     pinned: (() => state.rail.pinned) as Accessor<boolean>,
     locked: (() => state.rail.locked) as Accessor<boolean>,
     width: createMemo(() =>
-      state.rail.collapsed && !state.rail.pinned ? RAIL_COLLAPSED_WIDTH : RAIL_EXPANDED_WIDTH,
+      state.rail.collapsed && !state.rail.pinned ? RAIL_COLLAPSED_WIDTH : state.rail.width ?? RAIL_EXPANDED_WIDTH,
     ),
 
     lock() {
@@ -128,6 +131,11 @@ export function createRailSlice(input: {
 
     unpin() {
       setState("rail", "pinned", false)
+    },
+
+    setWidth(width) {
+      if (!Number.isFinite(width)) return
+      setState("rail", "width", Math.min(Math.max(width, RAIL_MIN_WIDTH), RAIL_MAX_WIDTH))
     },
 
     handleHotZoneEnter() {

@@ -59,6 +59,7 @@ import { principalHasSignedAccess, usePrincipal } from "../../shell/auth/identit
 import { placementFor } from "../../shell/auth/placement"
 import { registeredConversationHasUserMessage } from "../../shell/chat/conversation-registry"
 import { promptSessionStatusStage } from "../../session/store/session-status-dispatcher"
+import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"
 import { PROMPT_EXAMPLES } from "./examples"
 import { composerHarnessId, isComposerHarnessMode } from "./mode"
 import { composerModeSnapshot } from "./mode-snapshot"
@@ -91,6 +92,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const mode = composerMode()
     if (mode.kind === "session") return isComposerHarnessMode(mode)
     return harnessController.isHarnessMode(scope) || isComposerHarnessMode(mode)
+  }
+  const toolbarHarnessMode = (scope: string) => {
+    const mode = composerMode()
+    return isComposerHarnessMode(mode) ||
+      harnessController.isHarnessMode(scope) ||
+      !!harnessSelectionController?.read(scope).isHarnessMode
   }
   const harnessReadiness = (scope: string) => harnessController.readiness(scope)
   const harnessReadyForSubmit = (scope: string) => harnessController.readyForSubmit(scope)
@@ -273,7 +280,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const projectsQuery = useQuery(() => queryOptions.projects())
   const projectCatalog = () => (projectsQuery.data ?? []) as ProjectCatalogItem[]
   const submitSessionDirectory = () => {
+    const routeRef = sessionWorkspaceRuntimeRef({ directory: sessionParams.directory() })
+    if (routeRef) return routeRef.workspaceId
     const directory = resolvedSessionDirectory() ?? sdk.directory
+    const runtimeRef = sessionWorkspaceRuntimeRef({
+      directory,
+      sessionRef: props.sessionRef?.(),
+    })
+    if (runtimeRef) return runtimeRef.workspaceId
     return resolveSubmitSessionDirectory({
       directory,
       projects: projectCatalog(),
@@ -479,7 +493,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     hasSelectedModel: () => !!local.model.selected(),
     modelRestorePending: local.model.restorePending,
     fallbackModel: signedWorkspaceRuntimeFallback.model,
-    harnessMode: () => isHarnessMode(scope()),
+    harnessMode: () => toolbarHarnessMode(scope()),
     existingSession: () => !!resolvedSessionId() && resolvedSessionId() !== "new",
     variantList: local.model.variant.list,
     selectedVariant,
@@ -723,14 +737,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         restoreFocus()
       }}
       agentTriggerStyle={() => ({ ...control(), opacity: buttonsSpring() * fade() })}
-      modelHarnessMode={() => isHarnessMode(scope())}
+      modelHarnessMode={() => toolbarHarnessMode(scope())}
       paidProviderCount={() => providers.paid().length}
       providerLoading={providers.loading}
       providerID={() => toolbarState.currentModel()?.provider?.id}
       modelLabel={() => toolbarState.readiness().label ?? language.t("dialog.model.select.title")}
       model={pickerModel}
       onModelClose={restoreFocus}
-      showVariantSelector={() => !isHarnessMode(scope()) && toolbarState.variants().length > 1}
+      showVariantSelector={() => !toolbarHarnessMode(scope()) && toolbarState.variants().length > 1}
       variants={toolbarState.variants}
       currentVariant={toolbarState.currentVariant}
       variantLabel={(x) => (x === "default" ? language.t("common.default") : x)}

@@ -44,6 +44,10 @@ describe("composer workspace resolver", () => {
     expect(submitSessionDirectory({
       directory: "ws_cloud_main",
       projects,
+    })).toBe("ws_cloud_main")
+    expect(submitSessionDirectory({
+      directory: "/repo/cloud-main",
+      projects,
     })).toBe("/repo/cloud-main")
     expect(signedWorkspaceForDirectory({
       directory: "/repo/main",
@@ -106,6 +110,19 @@ describe("composer workspace resolver", () => {
       workspaceKind: "cloud",
       projects,
     })).toEqual({ status: "prepare-remote-workspace", directory: "ws_cloud_main" })
+  })
+
+  test("cloud workspace id routes keep the routed workspace instead of project main", () => {
+    expect(resolveWorkspaceSubmitPlan({
+      isNewSession: true,
+      projectDirectory: "ws_live",
+      defaultDirectory: "/default",
+      worktreeSelection: "main",
+      workspaceKind: "cloud",
+      projects,
+      runtimeWorkspaceRef: (directory) =>
+        directory === "ws_live" ? { workspaceId: "ws_live", kind: "cloud" } : undefined,
+    })).toEqual({ status: "prepare-remote-workspace", directory: "ws_live" })
   })
 
   test("cloud missing an existing workspace plans provisioning from project id", () => {

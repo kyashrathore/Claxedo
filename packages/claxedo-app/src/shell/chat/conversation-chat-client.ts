@@ -7,6 +7,7 @@ import { queryClient } from "../../shared/query/query-client"
 import { shellDataKeys } from "../data/keys"
 import type { ConversationChatHandle } from "./opencode-conversation"
 import { conversationPersistence } from "./conversation-persistence"
+import { compactConversationSnapshot } from "./conversation-snapshot"
 
 /**
  * One canonical conversation store per session: a registry-owned TanStack
@@ -33,11 +34,11 @@ export function conversationSnapshotKey(sessionID: string) {
 }
 
 export function readConversationSnapshot(sessionID: string) {
-  return queryClient.getQueryData<UIMessage[]>(conversationSnapshotKey(sessionID))
+  return compactConversationSnapshot(queryClient.getQueryData<UIMessage[]>(conversationSnapshotKey(sessionID)))
 }
 
 export function writeConversationSnapshot(sessionID: string, snapshot: UIMessage[]) {
-  queryClient.setQueryData(conversationSnapshotKey(sessionID), snapshot)
+  queryClient.setQueryData(conversationSnapshotKey(sessionID), compactConversationSnapshot(snapshot) ?? [])
 }
 
 // Placeholder transport until the subscribe-mode claxedo adapter lands (W1-P3).
@@ -74,7 +75,7 @@ export function createConversationChatClient(sessionID: string): ConversationCha
   })
   const handle: ConversationChatHandle = {
     messages: () => client.getMessages(),
-    setMessages: (messages) => client.setMessagesManually(messages),
+    setMessages: (messages) => client.setMessagesManually(compactConversationSnapshot(messages) ?? []),
   }
   return { sessionID, client, version, handle, refs: 0 }
 }

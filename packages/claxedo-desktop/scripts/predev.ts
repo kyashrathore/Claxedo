@@ -42,9 +42,11 @@ const models = Bun.env.MODELS_DEV_API_JSON ?? path.join("test", "tool", "fixture
 
 console.log(`[predev] Building patched OpenCode sidecar...`)
 try {
+  // Claxedo ships its own Electron renderer, so skip embedding upstream's
+  // web UI in the sidecar — its source (packages/app) was removed in the fork.
   await (sidecarConfig.ocBinary.includes("-baseline")
-    ? $`bun run build --single --baseline --skip-install`
-    : $`bun run build --single --skip-install`
+    ? $`bun run build --single --baseline --skip-install --skip-embed-web-ui`
+    : $`bun run build --single --skip-install --skip-embed-web-ui`
   ).cwd(OPENCODE_DIR).env({
     ...Bun.env,
     MODELS_DEV_API_JSON: models,
@@ -58,6 +60,13 @@ try {
     throw e
   }
 }
+
+// The sidecar build above runs `rm -rf dist` in packages/opencode, wiping the
+// `opencode/node-embed` artifact (dist/node/node.js) that claxedo-server imports.
+// Regenerate it before bundling the server.
+console.log(`[predev] Building opencode/node-embed artifact...`)
+await $`bun run build:node`.cwd(OPENCODE_DIR).env(Bun.env)
+console.log(`[predev] node-embed built`)
 
 // Bundle claxedo-server so dev mode doesn't rely on a stale prebuild artifact
 const serverSource = path.resolve(CLAXEDO_SERVER_DIR, "src/server.ts")

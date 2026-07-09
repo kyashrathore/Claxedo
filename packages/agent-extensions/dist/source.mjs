@@ -23,7 +23,7 @@ function safeRelativePath(input, label = "path") {
 function safeRef(input) {
   const value = input.trim();
   if (!value) throw new AgentExtensionSourceError("GitHub ref must be non-empty");
-  if (value.includes("\\") || value.includes("..") || value.startsWith("/") || value.endsWith("/")) {
+  if (value.includes("\\") || value.includes("..") || value.startsWith("/") || value.endsWith("/") || value.startsWith("-")) {
     throw new AgentExtensionSourceError("GitHub ref is unsafe");
   }
   return value;

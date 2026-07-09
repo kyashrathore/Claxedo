@@ -16,7 +16,10 @@
     "zod": "3.25.76",
     "zod-to-json-schema": "3.25.2",
     "@cursor/sdk": "1.0.18",
+    "@mariozechner/pi-agent-core": "0.73.1",
+    "@mariozechner/pi-ai": "0.73.1",
     "@opencode-ai/sdk": "1.17.8",
+    "@sinclair/typebox": "^0.34.41",
     "@zed-industries/claude-agent-acp": "0.22.1",
     "@zed-industries/codex-acp": "0.10.0",
     "just-bash": "3.0.1"

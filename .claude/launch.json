@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "claxedo-web-local",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "web:dev:local"],
+      "port": 4444
+    },
+    {
       "name": "claxedo-docs",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["--yes", "mintlify@latest", "dev", "--port", "3333"],

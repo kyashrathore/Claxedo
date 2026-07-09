@@ -10,6 +10,8 @@ mkdirSync(root, { recursive: true })
 const prev = process.env.CLAXEDO_DATA_DIR
 const prevHome = process.env.HOME
 const prevAnthropic = process.env.ANTHROPIC_API_KEY
+const prevClaudeOAuth = process.env.CLAUDE_CODE_OAUTH_TOKEN
+const prevAnthropicAuth = process.env.ANTHROPIC_AUTH_TOKEN
 const prevModalId = process.env.MODAL_TOKEN_ID
 const prevModalSecret = process.env.MODAL_TOKEN_SECRET
 const prevVercelToken = process.env.VERCEL_TOKEN
@@ -18,7 +20,7 @@ const prevVercelProject = process.env.VERCEL_PROJECT_ID
 process.env.CLAXEDO_DATA_DIR = root
 
 const { createTestBackend, setBackendOverride } = await import("./store")
-const { putCredential, resolveSecret, deleteCredentialsByProvider } = await import("./registry")
+const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("./registry")
 const { syncLocalCredentials } = await import("./sync")
 const { saveUserConfig } = await import("../agent-config")
 const { ClaxedoDB } = await import("../storage/db")
@@ -33,6 +35,8 @@ describe("syncLocalCredentials", () => {
     process.env.HOME = path.join(root, "home")
     mkdirSync(process.env.HOME, { recursive: true })
     delete process.env.ANTHROPIC_API_KEY
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN
+    delete process.env.ANTHROPIC_AUTH_TOKEN
     delete process.env.MODAL_TOKEN_ID
     delete process.env.MODAL_TOKEN_SECRET
     delete process.env.VERCEL_TOKEN
@@ -40,6 +44,7 @@ describe("syncLocalCredentials", () => {
     delete process.env.VERCEL_PROJECT_ID
     await Promise.all([
       deleteCredentialsByProvider("claude-acp"),
+      deleteCredentialsByProvider("claude-sdk"),
       deleteCredentialsByProvider("codex-acp"),
       deleteCredentialsByProvider("cursor-acp"),
       deleteCredentialsByProvider("openai"),
@@ -58,6 +63,8 @@ describe("syncLocalCredentials", () => {
     process.env.CLAXEDO_DATA_DIR = prev
     process.env.HOME = prevHome
     process.env.ANTHROPIC_API_KEY = prevAnthropic
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = prevClaudeOAuth
+    process.env.ANTHROPIC_AUTH_TOKEN = prevAnthropicAuth
     process.env.MODAL_TOKEN_ID = prevModalId
     process.env.MODAL_TOKEN_SECRET = prevModalSecret
     process.env.VERCEL_TOKEN = prevVercelToken
@@ -94,6 +101,30 @@ describe("syncLocalCredentials", () => {
       token_id: "modal-id",
       token_secret: "modal-secret",
     }))
+  })
+
+  test("syncs Claude Code OAuth env credentials for ACP and SDK harnesses", async () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = JSON.stringify({
+      claudeAiOauth: {
+        accessToken: "sk-ant-oauth-env",
+      },
+    })
+
+    const result = await syncLocalCredentials(["claude-acp", "claude-sdk"])
+    const acp = JSON.parse(await resolveSecret("claude-acp") ?? "{}") as Record<string, any>
+    const sdk = JSON.parse(await resolveSecret("claude-sdk") ?? "{}") as Record<string, any>
+
+    expect(result.synced).toEqual(["claude-acp", "claude-sdk"])
+    expect(result.existing).toEqual([])
+    expect(result.missing).toEqual([])
+    expect(result.failed).toEqual([])
+    expect((await getCredentialByProvider("claude-acp"))?.source).toBe("managed")
+    expect((await getCredentialByProvider("claude-sdk"))?.source).toBe("managed")
+    expect(acp).toEqual({
+      type: "claude_code_oauth",
+      claudeAiOauth: { accessToken: "sk-ant-oauth-env" },
+    })
+    expect(sdk).toEqual(acp)
   })
 
   test("syncs complete Vercel sandbox driver credentials as structured managed secret", async () => {

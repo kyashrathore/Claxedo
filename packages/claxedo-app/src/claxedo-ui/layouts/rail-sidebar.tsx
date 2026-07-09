@@ -2541,22 +2541,24 @@ export function RailSidebar(props: RailSidebarProps) {
       data-testid="rail-sidebar"
       aria-label={language.t("sidebar.nav.projectsAndSessions")}
     >
-      {/* Header - fixed at top, h-9 matches the workspace toolbar height so borders align */}
       <div
-        class="h-9 flex items-center shrink-0 px-3 gap-2"
+        class="flex h-9 shrink-0 items-center gap-2 border-b border-border-weaker-base bg-background-base px-3"
         style={{ "padding-left": props.trafficLightPad ? "78px" : undefined }}
       >
-        <Tooltip placement="bottom" value="Pin sidebar">
-          <div class="max-md:hidden shrink-0">
-            <IconButton
-              icon="layout-left-partial"
-              variant="ghost"
-              class="rounded"
-              onClick={props.onToggleSidebar}
-              aria-label="Pin sidebar"
-            />
-          </div>
-        </Tooltip>
+        <Show when={docked()}>
+          <Tooltip placement="bottom" value="Hide Sidebar">
+            <div class="max-md:hidden shrink-0">
+              <IconButton
+                icon="layout-left-partial"
+                variant="ghost"
+                class="h-7 w-7 rounded-md text-icon-weak-base hover:text-icon-base"
+                onClick={props.onToggleSidebar}
+                aria-label="Hide Sidebar"
+                data-testid="sidebar-toggle"
+              />
+            </div>
+          </Tooltip>
+        </Show>
         <div class="flex-1" />
       </div>
 

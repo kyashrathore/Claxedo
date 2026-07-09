@@ -1,5 +1,6 @@
 import fs from "fs/promises"
 import path from "path"
+import { readFileIfExists, writeFileAtomic } from "./fs-safe"
 import type { PackageInstallSource } from "./source"
 import type { HarnessTarget } from "./manifest"
 
@@ -76,8 +77,16 @@ export function encodeDesiredState(input: DesiredExtensionState) {
 }
 
 export async function readDesiredExtensionState(file: string): Promise<DesiredExtensionState> {
-  const data = await fs.readFile(file, "utf8").then((raw) => JSON.parse(raw) as Partial<DesiredExtensionState>).catch(() => null)
-  if (!data) return { version: 1, installs: [] }
+  const raw = await readFileIfExists(file)
+  if (raw === undefined) return { version: 1, installs: [] }
+  let data: Partial<DesiredExtensionState>
+  try {
+    data = JSON.parse(raw) as Partial<DesiredExtensionState>
+  } catch (err) {
+    throw new AgentExtensionStateError(
+      `Agent Extension state file ${file} is not valid JSON; fix or remove it (treating it as empty would uninstall every recorded extension): ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
   return sortedState({
     version: 1,
     installs: Array.isArray(data.installs) ? data.installs as DesiredExtensionInstall[] : [],
@@ -86,7 +95,7 @@ export async function readDesiredExtensionState(file: string): Promise<DesiredEx
 
 export async function writeDesiredExtensionState(file: string, state: DesiredExtensionState) {
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o755 })
-  await fs.writeFile(file, encodeDesiredState(state), { mode: 0o644 })
+  await writeFileAtomic(file, encodeDesiredState(state))
 }
 
 export async function upsertDesiredExtensionInstall(file: string, install: DesiredExtensionInstall) {

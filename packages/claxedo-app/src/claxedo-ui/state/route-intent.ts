@@ -32,6 +32,7 @@ import { workspaceSessionRoute } from "../../shell/identity/route"
 import { sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "../../shell/identity/session-ref"
 import type { ClaxedoStateApi } from "./provider"
 import type { ContentMeta } from "./types"
+import { routeSessionHarness } from "./route-session-harness"
 
 type Badge = {
   additions: number
@@ -51,9 +52,9 @@ export type RouteIntent = {
 }
 
 type RouteIntentInventory = {
-  global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string } }>
-  byWorkspace: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; environment?: { kind?: string } }> }>
-  byProject: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string } }>>
+  global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>
+  byWorkspace: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }> }>
+  byProject: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>>
   loaded?: boolean
 }
 
@@ -136,6 +137,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
         (group.key && group.key !== "/workspace" ? group.key : undefined) ??
         (group.directory && group.directory !== "/workspace" ? group.directory : undefined) ??
         key
+      const harness = routeSessionHarness(session)
       return {
         directory,
         title: session?.title,
@@ -146,6 +148,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
             workspaceId: group.workspaceId,
             kind: session?.environment?.kind,
           }),
+          ...(harness ? { harness } : {}),
         }),
       }
     })
@@ -154,6 +157,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
     .filter((session) => session.id === sessionId)
     .flatMap((session): InventorySessionTarget[] => {
       const directory = session.workspaceId ?? session.directory
+      const harness = routeSessionHarness(session)
       return directory
         ? [{
             directory,
@@ -161,10 +165,11 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
             sessionRef: sessionRefForWorkspaceSession({
               sessionId,
               directory,
-              workspace: workspaceBacking({
+            workspace: workspaceBacking({
                 workspaceId: session.workspaceId,
                 kind: session.environment?.kind,
               }),
+              ...(harness ? { harness } : {}),
             }),
           }]
         : []
@@ -173,6 +178,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
     .filter((session) => session.id === sessionId)
     .flatMap((session): InventorySessionTarget[] => {
       const directory = session.workspaceId ?? session.directory
+      const harness = routeSessionHarness(session)
       return directory
         ? [{
             directory,
@@ -180,10 +186,11 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
             sessionRef: sessionRefForWorkspaceSession({
               sessionId,
               directory,
-              workspace: workspaceBacking({
+            workspace: workspaceBacking({
                 workspaceId: session.workspaceId,
                 kind: session.environment?.kind,
               }),
+              ...(harness ? { harness } : {}),
             }),
           }]
         : []

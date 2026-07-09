@@ -15,7 +15,7 @@ import {
 import type { AgentConfigOptionRow } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
-import { requireSdkModelId } from "../../sdk-model-catalog"
+import { requireSdkModelId, sdkModelConfigOption } from "../../sdk-model-catalog"
 import {
   extractTextFromParts,
   record,
@@ -25,6 +25,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
+import { claudeAuthEnv, claudeAuthValue } from "./auth"
 
 const CLAUDE_PENDING_PREFIX = "claude-sdk:"
 
@@ -49,7 +50,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   applyConfig(config: Record<string, unknown>) {
     const auth = record(config.auth) as Record<string, string> | undefined
     this.auth = {
-      anthropic: auth?.["claude-sdk"] ?? auth?.["claude-acp"] ?? auth?.anthropic,
+      anthropic: claudeAuthValue(auth),
     }
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
   }
@@ -120,7 +121,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         ...(Object.keys(this.currentMcp).length ? { mcpServers: claudeMcpServers(this.currentMcp) } : {}),
         env: {
           ...process.env,
-          ...(this.auth.anthropic ? { ANTHROPIC_API_KEY: this.auth.anthropic } : {}),
+          ...claudeAuthEnv(this.auth.anthropic),
           CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",
         },
       },
@@ -149,7 +150,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
 
   configOptions(_currentModel: string): AgentConfigOptionRow[] {
-    throw new Error("claude-sdk does not expose live model options")
+    return [sdkModelConfigOption("claude", _currentModel)]
   }
 }
 

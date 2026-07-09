@@ -109,6 +109,12 @@ function claxedoMcpWorkspaceId() {
   return textEnv("CLAXEDO_WORKSPACE_ID") ?? textEnv("CLAXEDO_WR_WORKSPACE_ID")
 }
 
+// Special case: the first-party Claxedo MCP package (claxedo-mcp installed
+// from kyashrathore/Claxedo@dev) gets its connection env rewritten from the
+// materializing process's environment, and any CLAXEDO_* auth tokens in the
+// package config are stripped so credentials never land in target files.
+// This applies ONLY to that exact id+source; third-party packages are
+// materialized verbatim.
 function isFirstPartyClaxedoMcpInstall(input: AgentExtensionMaterializationInstall) {
   const source = input.desired.source
   return input.desired.id === "claxedo-mcp"
@@ -169,6 +175,18 @@ async function removeMaterializedComponent(component: MaterializedComponent) {
     return
   }
   await removeStandaloneMcpEntries({ file: component.path, names: [component.component] })
+}
+
+// Removes only what the package owns: whole trees/links for skills and
+// plugins, but individual entries for MCP components — their recorded path is
+// a shared config file (.mcp.json, ~/.claude.json) that must never be rm'd
+// wholesale.
+export async function uninstallOwnedComponents(input: {
+  record: MaterializedRuntimeRecord
+  ownerId: string
+}) {
+  await Promise.all((input.record.packages[input.ownerId]?.components ?? [])
+    .map((item) => removeMaterializedComponent(item)))
 }
 
 export async function removeStaleMaterializedComponents(previous: MaterializedRuntimeRecord, next: MaterializedRuntimeRecord) {
@@ -257,6 +275,21 @@ async function materializeDiscoveredComponent(input: {
   }]
 }
 
+function componentKey(component: Pick<MaterializedComponent, "runner" | "component" | "type">) {
+  return `${component.runner}\n${component.type}\n${component.component}`
+}
+
+// A component that failed mid-run must not cost the package the components it
+// applied on earlier runs: keep previous applied entries that this run did not
+// re-produce, so ownership survives and stale-removal does not delete them.
+function withPreviousApplied(components: MaterializedComponent[], previous: MaterializedExtensionPackage | undefined) {
+  const seen = new Set(components.map(componentKey))
+  return [
+    ...components,
+    ...(previous?.components ?? []).filter((component) => component.status === "applied" && !seen.has(componentKey(component))),
+  ]
+}
+
 async function materializePackage(input: {
   install: AgentExtensionMaterializationInstall
   packageRoot: string
@@ -270,24 +303,42 @@ async function materializePackage(input: {
   const ownerId = input.install.desired.id
   const targetScope = scope(input.install)
   const components: MaterializedComponent[] = []
+  const failures: unknown[] = []
   const discovered = await discoverAgentExtensionComponents(input.packageRoot)
 
   for (const runner of targets(input.install)) {
     if (discovered.length > 0) {
       for (const component of discovered) {
-        components.push(...await materializeDiscoveredComponent({
-          component,
-          install: input.install,
-          runner,
-          packageRoot: input.packageRoot,
-          packageName: name,
-          targetScope,
-          ownerId,
-          projectDir: input.projectDir,
-          homeDir: input.homeDir,
-          previous: input.previous,
-          replaceOwned: input.replaceOwned,
-        }))
+        // Desired/lock state is committed before materializers run and each
+        // component may touch shared target files, so a throw here must not
+        // abort the run before the record is written: components applied so
+        // far would be on disk but unowned, and every retry would then
+        // conflict against the package's own prior output. Record the failure
+        // and keep going; the caller rethrows after persisting the record.
+        try {
+          components.push(...await materializeDiscoveredComponent({
+            component,
+            install: input.install,
+            runner,
+            packageRoot: input.packageRoot,
+            packageName: name,
+            targetScope,
+            ownerId,
+            projectDir: input.projectDir,
+            homeDir: input.homeDir,
+            previous: input.previous,
+            replaceOwned: input.replaceOwned,
+          }))
+        } catch (err) {
+          failures.push(err)
+          components.push({
+            runner,
+            component: component.name,
+            type: component.type,
+            status: "failed",
+            reason: err instanceof Error ? err.message : String(err),
+          })
+        }
       }
       continue
     }
@@ -300,22 +351,30 @@ async function materializePackage(input: {
     })
   }
 
+  const recorded = failures.length > 0
+    ? withPreviousApplied(components, input.previous.packages[ownerId])
+    : components
+
   return {
-    package_name: name,
-    source: input.install.desired.source,
-    resolved_sha: input.install.lock?.resolved_sha ?? "",
-    enabled: true,
-    targets: targets(input.install),
-    components,
-    materialized_at: input.materializedAt,
-    status: status(components, input.install.status),
-  } satisfies MaterializedExtensionPackage
+    package: {
+      package_name: name,
+      source: input.install.desired.source,
+      resolved_sha: input.install.lock?.resolved_sha ?? "",
+      enabled: true,
+      targets: targets(input.install),
+      components: recorded,
+      materialized_at: input.materializedAt,
+      status: status(recorded, input.install.status),
+    } satisfies MaterializedExtensionPackage,
+    failures,
+  }
 }
 
 export async function materializeAgentExtensionSnapshot(input: AgentExtensionMaterializeOptions) {
   const materializedFile = path.join(input.stateRoot, "materialized.json")
   const previous = await readMaterializedRuntimeRecord(materializedFile)
   const materializedAt = now(input)
+  const failures: unknown[] = []
   const packageEntries = (await Promise.all(input.installs
     .map(async (install) => {
       const existing = previous.packages[install.desired.id]
@@ -343,7 +402,7 @@ export async function materializeAgentExtensionSnapshot(input: AgentExtensionMat
         return [[install.desired.id, existing]]
       }
       if (!packageRoot) return []
-      return [[install.desired.id, await materializePackage({
+      const result = await materializePackage({
         install,
         packageRoot,
         projectDir: input.projectDir,
@@ -351,7 +410,9 @@ export async function materializeAgentExtensionSnapshot(input: AgentExtensionMat
         previous,
         materializedAt,
         replaceOwned: input.replaceOwned ?? !!existing,
-      })]]
+      })
+      failures.push(...result.failures)
+      return [[install.desired.id, result.package]]
     }))).flat() as Array<[string, MaterializedExtensionPackage]>
   const packages = sorted(Object.fromEntries(packageEntries) as Record<string, MaterializedExtensionPackage>)
   const next = {
@@ -360,5 +421,8 @@ export async function materializeAgentExtensionSnapshot(input: AgentExtensionMat
   }
   await removeStaleMaterializedComponents(previous, next)
   await writeMaterializedRuntimeRecord(materializedFile, next)
+  // Rethrow only after the record is on disk so applied components stay owned
+  // and a retry does not conflict against this run's own output.
+  if (failures.length > 0) throw failures[0]
   return readMaterializedRuntimeRecord(materializedFile)
 }

@@ -1,5 +1,6 @@
 import fs from "fs/promises"
 import path from "path"
+import { readFileIfExists, writeFileAtomic } from "../fs-safe"
 
 export type AgentHookRunner = "claude" | "codex" | "cursor" | "droid" | "gemini" | "mastra"
 
@@ -37,11 +38,20 @@ function shellQuote(value: string) {
   return "'" + value.replaceAll("'", "'\\''") + "'"
 }
 
+// These are user-owned settings files (~/.claude/settings.json and friends).
+// A parse failure must abort this runner's hook materialization instead of
+// being read as "empty" — an empty read would rewrite the file with only the
+// managed hooks, destroying everything else the user configured. applyHook
+// reports the throw as a failed component for that runner.
 async function readJson(filePath: string) {
+  const raw = await readFileIfExists(filePath)
+  if (raw === undefined || !raw.trim()) return {}
   try {
-    return JSON.parse(await fs.readFile(filePath, "utf-8")) as unknown
-  } catch {
-    return {}
+    return JSON.parse(raw) as unknown
+  } catch (err) {
+    throw new Error(
+      `Hook target config ${filePath} contains invalid JSON; fix it before materializing hooks (refusing to rewrite a file that cannot be parsed): ${err instanceof Error ? err.message : String(err)}`,
+    )
   }
 }
 
@@ -51,7 +61,7 @@ async function writeIfChanged(filePath: string, content: string, mode: number, f
     if (existing === content) return false
   }
   await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o755 })
-  await fs.writeFile(filePath, content, { mode })
+  await writeFileAtomic(filePath, content, mode)
   return true
 }
 

@@ -69,7 +69,12 @@ const project = {
   },
 } satisfies ProjectItem
 
-function renderSidebar(input?: { group?: "project" | "workspace"; onWorkspaceSelect?: ReturnType<typeof vi.fn> }) {
+function renderSidebar(input?: {
+  group?: "project" | "workspace"
+  railDocked?: boolean
+  onToggleSidebar?: ReturnType<typeof vi.fn>
+  onWorkspaceSelect?: ReturnType<typeof vi.fn>
+}) {
   if (input?.group) {
     localStorage.setItem("claxedo.session-view.v1", JSON.stringify({
       group: input.group,
@@ -90,8 +95,8 @@ function renderSidebar(input?: { group?: "project" | "workspace"; onWorkspaceSel
           onRailLockChange={() => undefined}
           onRailMouseLeave={() => undefined}
           onRailTrackPosition={() => undefined}
-          onToggleSidebar={() => undefined}
-          railDocked
+          onToggleSidebar={input?.onToggleSidebar ?? (() => undefined)}
+          railDocked={input?.railDocked ?? true}
           railExpanded
           railWidth={260}
         />
@@ -101,6 +106,22 @@ function renderSidebar(input?: { group?: "project" | "workspace"; onWorkspaceSel
 }
 
 describe("RailSidebar disclosure controls", () => {
+  test("shows the sidebar toggle while docked", () => {
+    const onToggleSidebar = vi.fn()
+    renderSidebar({ onToggleSidebar })
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide Sidebar" }))
+
+    expect(onToggleSidebar).toHaveBeenCalledOnce()
+  })
+
+  test("hides the sidebar toggle while floating open", () => {
+    renderSidebar({ railDocked: false })
+
+    expect(screen.queryByRole("button", { name: "Hide Sidebar" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Dock Sidebar" })).toBeNull()
+  })
+
   test("project chevron is focusable and toggles with Enter", () => {
     const onWorkspaceSelect = vi.fn()
     renderSidebar({ group: "project", onWorkspaceSelect })

@@ -61,6 +61,26 @@ describe("materializeAgentHooks", () => {
     })
   })
 
+  test("reports a corrupted settings file as failed instead of rewriting it", async () => {
+    const claudePath = path.join(root, ".claude", "settings.json")
+    await fs.mkdir(path.dirname(claudePath), { recursive: true })
+    await fs.writeFile(claudePath, "{ this is not json")
+
+    const results = await materializeAgentHooks({
+      homeDir: root,
+      notifyPath,
+      geminiHookPath,
+      cursorHookPath,
+      force: true,
+    })
+
+    const claude = results.find((item) => item.runner === "claude")
+    expect(claude?.status).toBe("failed")
+    expect(claude?.reason).toContain("invalid JSON")
+    await expect(fs.readFile(claudePath, "utf8")).resolves.toBe("{ this is not json")
+    expect(results.filter((item) => item.runner !== "claude").every((item) => item.status === "applied")).toBe(true)
+  })
+
   test("preserves user hooks and removes stale managed Codex hooks when native hooks are disabled", async () => {
     const codexPath = path.join(root, ".codex", "hooks.json")
     await fs.mkdir(path.dirname(codexPath), { recursive: true })

@@ -1,5 +1,3 @@
-// Claxedo extends upstream prompt submit so new sessions can target local worktrees or cloud runtime workspaces.
-// Extracted phase helpers live in session/submit/*; this file wires them to component context.
 import type { OutputFormat } from "@opencode-ai/sdk/v2/client"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -31,7 +29,7 @@ import {
   addRegisteredConversationMessage,
   removeRegisteredConversationMessage,
 } from "../../shell/chat/conversation-registry"
-import { harnessProfile, pickHarness, type HarnessType } from "@claxedo/session-client/harness/profile"
+import { harnessProfile, pickHarness } from "@claxedo/session-client/harness/profile"
 import { createHarnessSubmitController, type HarnessSubmitController } from "@claxedo/session-client/harness/controller"
 import { useConfigOptional } from "../../context/config"
 import { workspaceCreateUrl } from "../../utils/workspace-control-routes"
@@ -45,17 +43,16 @@ import {
   type ResolvedSubmitMode,
   type SubmitMode,
 } from "../../session/submit"
-import {
-  type ProjectCatalogItem,
-} from "../../session-client/composer/workspace-resolver"
+import { type ProjectCatalogItem } from "../../session-client/composer/workspace-resolver"
 import { admitPromptSubmission } from "../../session-client/commands/prompt-machine"
 import { composerHarnessId, isComposerHarnessMode, type ComposerMode } from "../../session-client/composer/mode"
 import { dispatchCommandPromptSubmit } from "./submit-command-prompt"
 import { createPromptAbort } from "./submit-abort"
-import { acquireSubmitSessionTarget, createCloudStartupController, finalizeSubmitSessionTarget, type CloudStartupState } from "./submit-create-session"
+import { acquireSubmitSessionTarget, createCloudStartupController, finalizeSubmitSessionTarget, patchExistingSubmitSessionRef, type CloudStartupState } from "./submit-create-session"
 import { resolvePreparedSubmitDirectory } from "./submit-directory"
 import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
 import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
+import { parseCachedSessionConfig, parseExistingSessionConfig, sameExistingSessionConfig } from "./submit-session-config"
 import { createSubmitTransportAdapter, savedSessionConfigQueryKey, _resetSavedSessionConfigCacheForTest, workspaceRuntimeRef } from "./submit-transport"
 
 export { savedSessionConfigQueryKey, _resetSavedSessionConfigCacheForTest }
@@ -116,13 +113,6 @@ type PromptSubmitInput = {
 type CreateWorkspaceResult = {
   workspaceId: string
   directory?: string
-}
-
-type ExistingSessionConfig = {
-  harnessType: HarnessType
-  agent?: string
-  model?: { providerID: string; modelID: string }
-  variant?: string
 }
 
 type CommentItem = {
@@ -379,23 +369,28 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
 
-    const scope = panePreferenceScope({
-      directory: sessionDirectory,
-      sessionId: explicitSessionID,
-      surfaceId: surfaceId(),
-      draftId,
-    })
-    // Workspace-runtime sessions default to the OpenCode harness, but an
-    // explicit harness selection (Claude/Codex ACP, SDK transports, etc.) must
-    // be honored. The old unconditional force silently rewrote the user's
-    // composer selection back to OpenCode for every relay-backed workspace.
-    if (workspaceRuntimeRef(sessionDirectory) && !selectedHarnessMode(scope)) {
+    const scopeIdentity = { sessionId: explicitSessionID, surfaceId: surfaceId(), draftId }
+    const sourceScope = panePreferenceScope({ directory: projectDirectory ?? fallbackDirectory ?? sdk.directory, ...scopeIdentity })
+    const scope = panePreferenceScope({ directory: sessionDirectory, ...scopeIdentity })
+    if (isNewSession && sourceScope !== scope && selectedHarnessMode(sourceScope) && !selectedHarnessMode(scope)) {
+      // Cloud workspace creation changes submit directory; carry draft harness ownership.
+      harnessController.promote(sourceScope, scope)
+    }
+    const existingSessionConfig = isNewSession ? undefined
+      : parseExistingSessionConfig(input.info()?.config) ??
+        parseCachedSessionConfig(explicitSessionID ? queryClient.getQueryData<string>(savedSessionConfigQueryKey(explicitSessionID)) : undefined) ??
+        parseExistingSessionConfig((await sessionClient(sessionDirectory).session
+          .get({ sessionID: explicitSessionID!, directory: sessionDirectory })
+          .then((result) => (result.data as { config?: unknown } | undefined)?.config)
+          .catch(() => undefined)))
+    // Workspace-runtime drafts default to OpenCode only when no persisted
+    // session config owns the existing session.
+    if (workspaceRuntimeRef(sessionDirectory) && !existingSessionConfig && !selectedHarnessMode(scope)) {
       await harnessController.setHarness(scope, "opencode", {
         directory: sessionDirectory,
         sessionId: explicitSessionID,
       })
     }
-    const existingSessionConfig = isNewSession ? undefined : parseExistingSessionConfig(input.info()?.config)
     const harnessMode = existingSessionConfig ? existingSessionConfig.harnessType !== "opencode" : selectedHarnessMode(scope)
     const sessionHarnessType = existingSessionConfig?.harnessType ?? (harnessMode ? selectedHarnessType(scope) : "opencode")
     const signedControlPlane = usesSignedControlPlane(sessionDirectory)
@@ -445,11 +440,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         phase: "sending",
       })
     }
+    const selectedVariant = harnessMode ? undefined : input.variant?.() ?? local.model.variant.current()
     const submittedConfig = existingSessionConfig?.model
       ? {
           model: existingSessionConfig.model,
           agent: input.agent?.() || existingSessionConfig.agent || local.agent.current()?.name || "build",
-          ...(existingSessionConfig.variant ? { variant: existingSessionConfig.variant } : {}),
+          ...(!harnessMode && existingSessionConfig.variant ? { variant: existingSessionConfig.variant } : {}),
         }
       : await resolveSubmittedConfig({
           harnessMode,
@@ -460,7 +456,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           currentAgent: local.agent.current(),
           defaultAgent: local.agent.list()[0] ?? (usesWorkspaceRuntimeSession(sessionDirectory) ? { name: "build" } : undefined),
           agentOverride: input.agent?.(),
-          variant: input.variant?.() ?? local.model.variant.current(),
+          variant: selectedVariant,
           modelForSubmit: (selected) => modelForSubmit(sessionDirectory, selected),
         })
     if (!submittedConfig) {
@@ -475,6 +471,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const model = submittedConfig.model
     const agent = submittedConfig.agent
     const variant = submittedConfig.variant
+    const persistedHarnessType = sessionHarnessType === "opencode"
+      ? pickHarness(model.providerID) ?? sessionHarnessType
+      : sessionHarnessType
+    const persistedHarnessRef = persistedHarnessType !== "opencode" ? { id: persistedHarnessType } : selectedHarnessRef(scope)
     publishCloudHandoff("creating_session", "Creating session.")
 
     let session = input.info()
@@ -536,7 +536,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       claxedoState,
       projects: projectCatalog(),
       runtimeWorkspaceRef: workspaceRuntimeRef(sessionDirectory),
-      harness: selectedHarnessRef(scope),
+      harness: persistedHarnessRef,
       agent,
       model: { providerID: model.providerID, modelID: model.modelID },
       variant,
@@ -551,18 +551,22 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       publishCloudHandoff,
       promoteSession: (directory, sessionID, config) =>
         local.session.promote(directory, sessionID, {
+          ...(config.harness ? { harness: config.harness } : {}),
           agent: config.agent,
           model: config.model,
           variant: config.variant,
         }),
     })
     const sessionRef = finalizedSessionTarget.sessionRef
+    if (!target.created && persistedHarnessRef && sessionRef) {
+      patchExistingSubmitSessionRef({ claxedoState, surfaceId: surfaceId(), sessionID: session.id, sessionRef })
+    }
     handoffCreatedSession = finalizedSessionTarget.handoffCreatedSession
 
     const refreshPromptDirectory = () =>
       directorySessionCacheActions.refresh({
         directory: sessionDirectory,
-        harnessType: sessionHarnessType,
+        harnessType: persistedHarnessType,
       })
 
     const markBusy = () => {
@@ -593,13 +597,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const recordPromptSubmissionContext = {
       onSubmit: input.onSubmit,
       saveSessionConfig: () => {
-        const configScope = panePreferenceScope({
-          directory: sessionDirectory,
-          sessionId: session.id,
-          surfaceId: surfaceId(),
-        })
         if (existingSessionConfig && sameExistingSessionConfig(existingSessionConfig, {
-          harnessType: sessionHarnessType,
+          harnessType: persistedHarnessType,
           agent,
           model,
           variant,
@@ -609,7 +608,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         return saveSessionConfig({
           sessionID: session.id,
           directory: sessionDirectory,
-          harnessType: existingSessionConfig?.harnessType ?? (selectedHarnessMode(configScope) ? selectedHarnessType(configScope) : "opencode"),
+          harnessType: persistedHarnessType,
           agent,
           model,
           variant,
@@ -763,35 +762,3 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     handleSubmit,
   }
 }
-
-function parseExistingSessionConfig(input: unknown): ExistingSessionConfig | undefined {
-  const row = record(input)
-  const harness = record(row?.harness)
-  const harnessType = pickHarness(string(row?.harnessType) ?? string(harness?.id) ?? string(harness?.type), string(harness?.binary))
-  if (!harnessType) return
-  return {
-    harnessType,
-    ...modelConfig(row?.model),
-    ...(string(row?.agent) ? { agent: string(row?.agent) } : {}),
-    ...(string(row?.variant) ? { variant: string(row?.variant) } : {}),
-  }
-}
-
-function sameExistingSessionConfig(left: ExistingSessionConfig, right: ExistingSessionConfig) {
-  return left.harnessType === right.harnessType &&
-    left.agent === right.agent &&
-    left.variant === right.variant &&
-    left.model?.providerID === right.model?.providerID &&
-    left.model?.modelID === right.model?.modelID
-}
-
-function modelConfig(input: unknown) {
-  const model = record(input)
-  const providerID = string(model?.providerID)
-  const modelID = string(model?.modelID)
-  return providerID && modelID ? { model: { providerID, modelID } } : {}
-}
-
-function record(input: unknown) { return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined }
-
-function string(input: unknown) { return typeof input === "string" && input.length > 0 ? input : undefined }

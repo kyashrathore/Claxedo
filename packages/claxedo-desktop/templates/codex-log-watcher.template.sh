@@ -8,7 +8,7 @@ STATE_ID="${2:-${CLAXEDO_TERMINAL_ID:-$CLAXEDO_TAB_ID}}"
 [ -z "$LOG_PATH" ] && exit 0
 [ -z "$STATE_ID" ] && exit 0
 
-STATE_DIR="$HOME/.claxedo/state"
+STATE_DIR="${WORKSPACE_RUNTIME_STATE_DIR:-$HOME/.workspace-runtime/state}"
 TURN_FILE="$STATE_DIR/$STATE_ID.codex-turn"
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 touch "$LOG_PATH" 2>/dev/null || true

@@ -6,6 +6,7 @@ import path from "path"
 import {
   messagePartUpdated,
   messageUpdated,
+  messageCompleted,
   messagePartDelta,
   permissionAsked,
   questionAsked,
@@ -958,6 +959,91 @@ describe("RuntimeStore", () => {
     const replayed = new RuntimeStore(root)
     assert.equal((replayed.getSession("s1") as { status?: string } | null)?.status, "idle")
     assert.equal((replayed.getMessages("s1")[1]?.info.time as { completed?: number } | undefined)?.completed !== undefined, true)
+  })
+
+  it("finishTurn does not duplicate terminal events already committed by an adapter", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({
+      sessionId: "s1",
+      directory: "/work",
+      agentSessionId: "a1",
+      createdAt: 1,
+    })
+    store.startTurn({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      userMessageId: "u1",
+      assistantMessageId: "m1",
+      agent: "general",
+      model: { providerID: "opencode", modelID: "big-pickle" },
+      parts: [{ type: "text", text: "hello" }],
+    })
+    store.appendEvent({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      payload: messageCompleted("s1", "m1"),
+    })
+    store.appendEvent({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      payload: sessionIdle("s1"),
+    })
+
+    store.finishTurn({
+      sessionId: "s1",
+      assistantMessageId: "m1",
+      outcome: { status: "completed", completedAt: 123 },
+    })
+
+    const rows = journal(root, "s1")
+    assert.equal(rows.filter((row) => row.type === "message.completed").length, 1)
+    assert.equal(rows.filter((row) => row.type === "session.idle").length, 1)
+    assert.equal(
+      ((store.getSession("s1") as { lastTurn?: { assistantMessageId?: string } } | null)?.lastTurn)?.assistantMessageId,
+      "m1",
+    )
+  })
+
+  it("finishTurn records failed turns on the assistant message", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({
+      sessionId: "s1",
+      directory: "/work",
+      agentSessionId: "a1",
+      createdAt: 1,
+    })
+    store.startTurn({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      userMessageId: "u1",
+      assistantMessageId: "m1",
+      agent: "build",
+      model: { providerID: "codex-app-server", modelID: "gpt-5.5" },
+      parts: [{ type: "text", text: "hello" }],
+    })
+
+    store.finishTurn({
+      sessionId: "s1",
+      assistantMessageId: "m1",
+      outcome: { status: "failed", completedAt: 123, error: "The database connection is not open" },
+    })
+
+    const assistant = store.getMessages("s1")[1]?.info as { error?: { data?: { message?: string } } }
+    assert.equal(assistant.error?.data?.message, "The database connection is not open")
+    assert.equal(
+      ((store.getSession("s1") as { lastTurn?: { assistantMessageId?: string } } | null)?.lastTurn)?.assistantMessageId,
+      "m1",
+    )
+
+    const rows = journal(root, "s1")
+    assert.equal(rows.at(-2)?.type, "message.updated")
+    assert.equal(rows.at(-1)?.type, "session.error")
+
+    const replayed = new RuntimeStore(root)
+    const replayedAssistant = replayed.getMessages("s1")[1]?.info as { error?: { data?: { message?: string } } }
+    assert.equal(replayedAssistant.error?.data?.message, "The database connection is not open")
   })
 
   it("recoverBusySessions is idempotent once a session is recovering", () => {

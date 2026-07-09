@@ -49,9 +49,9 @@ function createHarness(input: {
   focused?: string | null
   meta?: ContentMeta[]
   sessionInventory?: {
-    global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string } }>
-    byWorkspace?: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; environment?: { kind?: string } }> }>
-    byProject?: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string } }>>
+    global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>
+    byWorkspace?: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }> }>
+    byProject?: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>>
     loaded?: boolean
   }
   resolveSession?: (sessionId: string) => Promise<{ directory: string; title?: string; workspaceId?: string; environment?: { kind?: string }; sessionRef?: SessionRef } | undefined>
@@ -354,9 +354,9 @@ function storeBackedWb(input: {
 
 function createRealRouteHarness(input: {
   sessionInventory?: {
-    global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string } }>
-    byWorkspace?: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; environment?: { kind?: string } }> }>
-    byProject?: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string } }>>
+    global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>
+    byWorkspace?: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }> }>
+    byProject?: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>>
     loaded?: boolean
   }
 } = {}) {
@@ -878,6 +878,33 @@ describe("state route intent", () => {
     }])
     expect(harness.refreshCalls).toEqual(["ws_cloud_1"])
     expect(harness.focused()).toBe("session:ses-cloud")
+  })
+
+  test("session inventory preserves harness refs on workspace sessions", () => {
+    const harness = createHarness({
+      sessionInventory: {
+        byWorkspace: {
+          ws_cloud_1: {
+            workspaceId: "ws_cloud_1",
+            directory: "/workspace/cloud",
+            sessions: [{
+              id: "ses-cloud",
+              title: "Cloud session",
+              environment: { kind: "cloud" },
+              harness: { type: "codex-acp" },
+            }],
+          },
+        },
+      },
+    })
+
+    harness.receive({
+      workspaceId: undefined,
+      sessionId: "ses-cloud",
+      sessionTitle: "Fallback",
+    })
+
+    expect(harness.opened[0]?.sessionRef?.harness).toEqual({ id: "codex-acp" })
   })
 
   test("session route without workspace uses workspace id instead of placeholder /workspace keys", () => {

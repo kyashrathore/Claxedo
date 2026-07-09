@@ -87,14 +87,24 @@ export async function copyPackageToCache(input: {
     ...(packagePath ? { packagePath } : {}),
     dataRoot: input.dataRoot,
   })
-  await fs.rm(target, { recursive: true, force: true })
+  // Stage the copy next to the target and rename into place: a crash mid-copy
+  // must not leave a partial directory at the cache path, because enable()
+  // resolves package roots from here and verifies digests before replaying.
+  const staging = `${target}.${crypto.randomBytes(6).toString("hex")}.tmp`
   await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o755 })
-  await fs.cp(realSource, target, {
+  await fs.cp(realSource, staging, {
     recursive: true,
     force: true,
     dereference: false,
     filter: (source) => !path.relative(realSource, source).split(path.sep).includes(".git"),
   })
+  try {
+    await fs.rm(target, { recursive: true, force: true })
+    await fs.rename(staging, target)
+  } catch (err) {
+    await fs.rm(staging, { recursive: true, force: true })
+    throw err
+  }
   return {
     path: target,
     checksum: await digestDirectory(target),

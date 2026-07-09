@@ -90,6 +90,18 @@ describe("harness store state projectors", () => {
       optionsStale: false,
       optionsLoading: false,
     })
+
+    expect(harnessStatusPatch({
+      data: {
+        type: "codex-app-server",
+        status: "configured",
+        ready: false,
+      },
+    })).toMatchObject({
+      harnessMode: "harness",
+      harness: "codex-app-server",
+      readiness: "error",
+    })
   })
 
   test("keeps hydration and switch patches aligned with options policy", () => {
@@ -115,7 +127,6 @@ describe("harness store state projectors", () => {
     })
     expect(harnessSwitchStartPatch({
       type: "claude-acp",
-      useLocalHarnessConfig: true,
     })).toMatchObject({
       harness: "claude-acp",
       harnessMode: "harness",

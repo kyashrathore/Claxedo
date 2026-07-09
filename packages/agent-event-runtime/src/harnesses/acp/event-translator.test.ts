@@ -36,6 +36,97 @@ describe("createAcpEventTranslator", () => {
     ])
   })
 
+  test("emits only unseen assistant text when ACP chunks are cumulative", () => {
+    const agent = runtime()
+
+    agent.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "message-1",
+        content: { type: "text", text: "A" },
+      },
+    })
+
+    expect(agent.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "message-1",
+        content: { type: "text", text: "A1" },
+      },
+    }).events.map((event) => ({ type: event.type, ...("delta" in event ? { delta: event.delta } : {}) }))).toEqual([
+      { type: "text-delta", delta: "1" },
+    ])
+  })
+
+  test("preserves incremental assistant deltas that are not cumulative snapshots", () => {
+    const agent = runtime()
+
+    agent.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "message-1",
+        content: { type: "text", text: "A" },
+      },
+    })
+
+    expect(agent.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "message-1",
+        content: { type: "text", text: "1" },
+      },
+    }).events.map((event) => ({ type: event.type, ...("delta" in event ? { delta: event.delta } : {}) }))).toEqual([
+      { type: "text-delta", delta: "1" },
+    ])
+  })
+
+  test("drops Cursor ACP writable-iterable transport tail text", () => {
+    const agent = runtime("cursor-acp")
+
+    expect(agent.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "message-1",
+        content: { type: "text", text: "E" },
+      },
+    }).events.map((event) => ({ type: event.type, ...("delta" in event ? { delta: event.delta } : {}) }))).toEqual([
+      { type: "step-start" },
+      { type: "text-delta", delta: "E" },
+    ])
+
+    expect(agent.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "message-1",
+        content: { type: "text", text: "1" },
+      },
+    }).events.map((event) => ({ type: event.type, ...("delta" in event ? { delta: event.delta } : {}) }))).toEqual([
+      { type: "text-delta", delta: "1" },
+    ])
+
+    expect(agent.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "message-1",
+        content: { type: "text", text: "\n\nError: RetriableError: WritableIterable is closed" },
+      },
+    }).events).toEqual([])
+  })
+
   test("preserves tool output evidence when a later rawOutput is null", () => {
     const agent = runtime()
     agent.ingest({

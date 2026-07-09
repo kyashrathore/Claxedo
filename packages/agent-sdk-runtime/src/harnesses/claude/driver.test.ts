@@ -1,0 +1,24 @@
+import { describe, expect, test } from "bun:test"
+import { createClaudeSdkDriver } from "./driver"
+
+describe("Claude SDK driver", () => {
+  test("exposes static Claude model config options", () => {
+    const driver = createClaudeSdkDriver({
+      lifecycle: () => ({ set() {}, delete() {}, get() {}, activeTurns: new Map() }),
+      pendingPermissions: new Map(),
+      pendingQuestions: new Map(),
+      bindSession() {},
+    } as never)
+
+    expect(driver.configOptions("claude-opus-4-6")).toEqual([
+      expect.objectContaining({
+        id: "model",
+        currentValue: "claude-opus-4-6",
+        selectOptions: expect.arrayContaining([
+          expect.objectContaining({ id: "claude-sonnet-4-6" }),
+          expect.objectContaining({ id: "claude-opus-4-6" }),
+        ]),
+      }),
+    ])
+  })
+})

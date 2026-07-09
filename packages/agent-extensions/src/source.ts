@@ -38,7 +38,9 @@ export function safeRelativePath(input: string, label = "path") {
 function safeRef(input: string) {
   const value = input.trim()
   if (!value) throw new AgentExtensionSourceError("GitHub ref must be non-empty")
-  if (value.includes("\\") || value.includes("..") || value.startsWith("/") || value.endsWith("/")) {
+  // Leading "-" would let the ref be parsed as a git option when passed as a
+  // bare argument (e.g. to ls-remote); git refs cannot start with "-" anyway.
+  if (value.includes("\\") || value.includes("..") || value.startsWith("/") || value.endsWith("/") || value.startsWith("-")) {
     throw new AgentExtensionSourceError("GitHub ref is unsafe")
   }
   return value

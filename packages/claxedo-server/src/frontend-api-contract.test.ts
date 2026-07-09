@@ -104,11 +104,12 @@ vi.mock("./opencode-auth", () => ({
   opencodeHeaders: vi.fn((headers?: HeadersInit) => new Headers(headers)),
 }))
 
-const [serverMod, servicesMod, syncMod, compatMod] = await Promise.all([
+const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod] = await Promise.all([
   import("./server"),
   import("./control-plane/services"),
   import("./control-plane/adapters/sqlite/central-store"),
   import("./routes/opencode-compat"),
+  import("./agent-config"),
 ])
 
 function seedSyntheticCloudWorkspace() {
@@ -118,6 +119,7 @@ function seedSyntheticCloudWorkspace() {
     workspace_name: "Frontend Contract",
     kind: "cloud",
     provider: "daytona",
+    org_id: "org_frontend_contract",
     directory: "/tmp/frontend-contract",
     remote_directory: "/workspace",
     repo_url: "https://github.com/test/repo.git",
@@ -138,6 +140,15 @@ function createContractApp() {
   }, {
     localExecution: { enabled: true },
     telemetry: { capture: () => {} },
+    relay: {
+      provider: {
+        getRelayEndpoint: async () => "http://runtime.frontend.test",
+        mintHostTunnelToken: async () => ({ token: "host-token", expiresAt: Date.now() + 60_000, jti: "host-jti" }),
+        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: Date.now() + 60_000, jti: "runtime-jti" }),
+        resolveTarget: async () => undefined,
+        drainWorkspace: async () => {},
+      },
+    },
     sandbox: { sandboxManager: { ensure: sandboxEnsure } as never },
   })).app
 }
@@ -186,7 +197,8 @@ describe("frontend API contract", () => {
       }
       runtimeFetches.push(req.url)
       const url = new URL(req.url)
-      if (url.pathname === "/provider") {
+      const runtimePath = url.pathname.replace(/^\/workspaces\/[^/]+/, "")
+      if (runtimePath === "/provider") {
         return Response.json({
           all: [{
             id: "opencode",
@@ -202,10 +214,17 @@ describe("frontend API contract", () => {
           default: { opencode: "big-pickle" },
         })
       }
-      if (url.pathname === "/session") return Response.json([])
-      if (url.pathname === "/file/status") return Response.json([])
-      if (url.pathname === "/command") return Response.json([])
-      if (url.pathname === "/agent") return Response.json([])
+      if (runtimePath === "/session") return Response.json([])
+      if (runtimePath === "/file/status") return Response.json([])
+      if (runtimePath === "/command") return Response.json([])
+      if (runtimePath === "/agent") return Response.json([])
+      if (runtimePath === "/api/wr/harness-config-options" && url.searchParams.get("harness") === "codex-acp") {
+        return Response.json({
+          error: {
+            message: "ACP connection closed: Error: error loading config: ~/.codex/config.toml:7:16: unknown variant `default`, expected `fast` or `flex`",
+          },
+        }, { status: 502 })
+      }
       return Response.json({ ok: true })
     }) as unknown as typeof fetch
   })
@@ -286,9 +305,57 @@ describe("frontend API contract", () => {
     await expect(responses.slashCommands.json()).resolves.toEqual([])
 
     expect(runtimeFetches.sort()).toEqual([
-      "http://runtime.frontend.test/command?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
-      "http://runtime.frontend.test/file/status?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
-      "http://runtime.frontend.test/session?directory=%2Fworkspace&workspaceId=ws_frontend_contract&roots=true&limit=55",
+      "http://runtime.frontend.test/workspaces/ws_frontend_contract/command?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
+      "http://runtime.frontend.test/workspaces/ws_frontend_contract/file/status?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
+      "http://runtime.frontend.test/workspaces/ws_frontend_contract/session?directory=%2Fworkspace&workspaceId=ws_frontend_contract&roots=true&limit=55",
     ].sort())
+  })
+
+  test("maps Codex ACP close from runtime options to startup guidance", async () => {
+    const res = await createContractApp().request(
+      "/api/claxedo/agent-config/harness/options?workspaceId=ws_frontend_contract&type=codex-acp",
+    )
+
+    expect(res.status).toBe(502)
+    await expect(res.json()).resolves.toMatchObject({
+      error: {
+        code: "harness_config_options_unavailable",
+        message: "Codex could not start: error loading config: ~/.codex/config.toml:7:16: unknown variant `default`, expected `fast` or `flex`. Run `codex doctor`, fix the reported Codex config/auth issue, then retry.",
+      },
+    })
+  })
+
+  test("reports Cursor SDK unavailable without explicit SDK auth", async () => {
+    await agentConfigMod.saveUserConfig({ mcp: {}, auth: {} })
+
+    const res = await createContractApp().request(
+      "/api/claxedo/agent-config/harness/options?workspaceId=ws_frontend_contract&type=cursor-sdk",
+    )
+
+    expect(res.status).toBe(502)
+    await expect(res.json()).resolves.toMatchObject({
+      error: {
+        code: "harness_config_options_unavailable",
+        message: "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
+      },
+    })
+  })
+
+  test("serves Cursor SDK catalog when explicit SDK auth exists", async () => {
+    await agentConfigMod.saveUserConfig({ mcp: {}, auth: { "cursor-sdk": "cursor-sdk-test-key" } })
+
+    const res = await createContractApp().request(
+      "/api/claxedo/agent-config/harness/options?workspaceId=ws_frontend_contract&type=cursor-sdk",
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      source: "catalog",
+      stale: false,
+      options: [{
+        id: "model",
+        currentValue: "auto",
+      }],
+    })
   })
 })

@@ -266,6 +266,18 @@ describe("resolveSubmittedConfig", () => {
     })
   })
 
+  test("ignores default sentinel when a live agent is available", async () => {
+    const result = await resolveSubmittedConfig({
+      harnessMode: false,
+      selectedModel: sonnet,
+      allowModelFallback: true,
+      currentAgent: { name: "default" },
+      defaultAgent: { name: "general" },
+      modelForSubmit: async (m) => m,
+    })
+    expect(result?.agent).toBe("general")
+  })
+
   test("harness path tolerates absent agent", async () => {
     const result = await resolveSubmittedConfig({
       harnessMode: true,

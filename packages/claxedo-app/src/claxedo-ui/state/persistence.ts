@@ -24,7 +24,7 @@ const contentTypes = new Set<string>(CONTENT_TYPES)
 
 // ── default factories ─────────────────────────────────────────────────────
 function defaultRail(): RailSlice {
-  return { collapsed: false, hovered: false, pinned: true, locked: false }
+  return { collapsed: false, hovered: false, pinned: true, locked: false, width: 260 }
 }
 
 function defaultTerminal(): TerminalSlice {
@@ -98,11 +98,15 @@ function missingRequiredSessionRef(meta: ContentMeta) {
 
 function validateRail(input: unknown): RailSlice {
   const o = obj(input)
+  const width = typeof o.width === "number" && Number.isFinite(o.width) && o.width >= 220 && o.width <= 520
+    ? o.width
+    : 260
   return {
     collapsed: typeof o.collapsed === "boolean" ? o.collapsed : false,
     hovered: typeof o.hovered === "boolean" ? o.hovered : false,
     pinned: typeof o.pinned === "boolean" ? o.pinned : true,
     locked: typeof o.locked === "boolean" ? o.locked : false,
+    width,
   }
 }
 

@@ -23,6 +23,23 @@ describe("createConversationChatClient", () => {
     expect(entry.handle.messages().map((m) => m.id)).toEqual(["msg_1"])
   })
 
+  test("compacts duplicate cached messages on construct and write", () => {
+    queryClient.setQueryData(conversationSnapshotKey("ses_dupe"), [
+      uiMessage("msg_1", "stale"),
+      uiMessage("msg_1", "fresh"),
+    ])
+    const entry = createConversationChatClient("ses_dupe")
+    expect(entry.handle.messages().map((m) => m.id)).toEqual(["msg_1"])
+    expect(entry.handle.messages()[0]?.parts).toEqual([{ type: "text", content: "fresh" }])
+
+    entry.handle.setMessages([
+      uiMessage("msg_2", "older"),
+      uiMessage("msg_2", "newer"),
+    ])
+    expect(readConversationSnapshot("ses_dupe")?.map((m) => m.id)).toEqual(["msg_2"])
+    expect(readConversationSnapshot("ses_dupe")?.[0]?.parts).toEqual([{ type: "text", content: "newer" }])
+  })
+
   test("starts empty with no cached snapshot", () => {
     const entry = createConversationChatClient("ses_empty")
     expect(entry.handle.messages()).toEqual([])

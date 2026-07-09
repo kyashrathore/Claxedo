@@ -1,7 +1,8 @@
 import fs from "fs/promises"
 import path from "path"
-import { applyEdits, modify, parse as parseJsonc } from "jsonc-parser"
+import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-parser"
 import type { MaterializedAgentExtensionScope, HarnessTarget } from "../types"
+import { readFileIfExists, writeFileAtomic } from "../fs-safe"
 import { AgentExtensionMaterializationError, type MaterializedRuntimeRecord } from "../materialization"
 
 export type StdioMcpServerConfig = {
@@ -213,21 +214,38 @@ function codexMcpSections(raw: string) {
 }
 
 async function readText(file: string) {
-  return fs.readFile(file, "utf8").catch(() => "")
+  return await readFileIfExists(file) ?? ""
 }
 
 async function readJson(file: string): Promise<Record<string, unknown>> {
-  return fs.readFile(file, "utf8").then(readJsonFromText).catch(() => ({}))
+  const raw = await readFileIfExists(file)
+  if (raw === undefined || !raw.trim()) return {}
+  return readJsonFromText(raw, file)
 }
 
-function readJsonFromText(raw: string): Record<string, unknown> {
-  return asRecord(parseJsonc(raw))
+// Target config files (.mcp.json, ~/.claude.json, opencode.jsonc, ...) are
+// user-owned. A parse failure must abort instead of reading as "empty":
+// an empty read would rewrite the file with only this extension's servers,
+// or delete it outright on uninstall.
+function readJsonFromText(raw: string, file: string): Record<string, unknown> {
+  const errors: ParseError[] = []
+  const parsed = parseJsonc(raw, errors)
+  if (errors.length > 0) {
+    throw new AgentExtensionMaterializationError(
+      `MCP target config ${file} contains invalid JSON; fix it before materializing (refusing to rewrite a file that cannot be parsed)`,
+      "agent_extension_materialization_error",
+      { targetPath: file },
+    )
+  }
+  return asRecord(parsed)
 }
 
 async function writeJson(file: string, input: Record<string, unknown>) {
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o755 })
-  await fs.writeFile(file, JSON.stringify(input, null, 2) + "\n", { mode: 0o644 })
+  await writeFileAtomic(file, JSON.stringify(input, null, 2) + "\n")
 }
+
+const JSONC_FORMAT = { formattingOptions: { tabSize: 2, insertSpaces: true } }
 
 export async function removeStandaloneMcpEntries(input: {
   file: string
@@ -235,21 +253,45 @@ export async function removeStandaloneMcpEntries(input: {
 }) {
   if (input.file.endsWith(".toml")) {
     const raw = await readText(input.file)
+    // Nothing to remove from a missing or empty file; writing here would
+    // recreate a config file the user deleted.
+    if (!raw) return
     const names = new Set(input.names)
     const sections = codexMcpSections(raw).filter((section) => names.has(section.name))
+    if (sections.length === 0) return
     const next = [...sections].reverse().reduce((text, section) => `${text.slice(0, section.start)}${text.slice(section.end)}`, raw)
-    await fs.writeFile(input.file, next.replace(/\n{3,}/g, "\n\n"), { mode: 0o644 })
+    await writeFileAtomic(input.file, next.replace(/\n{3,}/g, "\n\n"))
+    return
+  }
+  if (input.file.endsWith("opencode.jsonc") || input.file.endsWith("opencode.json")) {
+    const raw = await readText(input.file)
+    if (!raw.trim()) return
+    readJsonFromText(raw, input.file)
+    // Remove entries with jsonc edits (mirroring how they were added) so the
+    // user's comments and formatting survive instead of being re-serialized.
+    let text = raw
+    for (const name of input.names) {
+      text = applyEdits(text, modify(text, ["mcp", name], undefined, JSONC_FORMAT))
+    }
+    const withoutEntries = readJsonFromText(text, input.file)
+    if (Object.keys(asRecord(withoutEntries.mcp)).length === 0) {
+      text = applyEdits(text, modify(text, ["mcp"], undefined, JSONC_FORMAT))
+    }
+    if (Object.keys(readJsonFromText(text, input.file)).length === 0) {
+      await fs.rm(input.file, { force: true })
+      return
+    }
+    await writeFileAtomic(input.file, `${text.trimEnd()}\n`)
     return
   }
   const root = await readJson(input.file)
-  const key = input.file.endsWith("opencode.jsonc") || input.file.endsWith("opencode.json") ? "mcp" : "mcpServers"
-  const current = asRecord(root[key])
+  const current = asRecord(root.mcpServers)
   for (const name of input.names) {
     delete current[name]
   }
   const next = { ...root }
-  if (Object.keys(current).length > 0) next[key] = sortedObject(current)
-  else delete next[key]
+  if (Object.keys(current).length > 0) next.mcpServers = sortedObject(current)
+  else delete next.mcpServers
   if (Object.keys(next).length === 0) {
     await fs.rm(input.file, { force: true })
     return
@@ -318,13 +360,13 @@ export async function materializeStandaloneMcp(input: {
       .replace(/\n{3,}/g, "\n\n")
     const prefix = withoutOwned.trim() ? `${withoutOwned.trimEnd()}\n\n` : ""
     await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o755 })
-    await fs.writeFile(target, `${prefix}${Object.entries(nextSections).map(([name, cfg]) => codexMcpSection(name, cfg)).join("\n")}`, { mode: 0o644 })
+    await writeFileAtomic(target, `${prefix}${Object.entries(nextSections).map(([name, cfg]) => codexMcpSection(name, cfg)).join("\n")}`)
     return mcpComponents({ runner: input.runner, target, names: Object.keys(nextSections) })
   }
 
   if (input.runner === "opencode") {
     const raw = await readText(target)
-    const root = raw.trim() ? readJsonFromText(raw) : {}
+    const root = raw.trim() ? readJsonFromText(raw, target) : {}
     const current = asRecord(root.mcp)
     const nextServers = toOpenCodeMcpServers(input.config)
     const drifted = new Set<string>()
@@ -359,7 +401,7 @@ export async function materializeStandaloneMcp(input: {
       formattingOptions: { tabSize: 2, insertSpaces: true },
     })), raw.trim() ? raw : "{}")
     await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o755 })
-    await fs.writeFile(target, `${next.trimEnd()}\n`, { mode: 0o644 })
+    await writeFileAtomic(target, `${next.trimEnd()}\n`)
     return mcpComponents({ runner: input.runner, target, names: Object.keys(nextServers) })
   }
 

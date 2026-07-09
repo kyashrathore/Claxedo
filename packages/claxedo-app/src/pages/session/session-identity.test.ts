@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { resolveSessionDirectory, resolveSessionIdentity } from "./session-identity"
+import {
+  resolveSessionDirectory,
+  resolveSessionIdentity,
+  resolveSignedSessionWorkspaceId,
+} from "./session-identity"
 
 describe("resolveSessionIdentity", () => {
   test("resets a remembered pane session when switching to an explicit new session", () => {
@@ -61,5 +65,24 @@ describe("resolveSessionDirectory", () => {
         toolSandbox: { kind: "local", cwd: "/repo/main" },
       },
     })).toBe("/repo/main")
+  })
+})
+
+describe("resolveSignedSessionWorkspaceId", () => {
+  test("workspace-session route ownership beats stale inventory workspace ownership", () => {
+    expect(resolveSignedSessionWorkspaceId({
+      signedControlPlane: true,
+      routeWorkspaceId: "ws_route",
+      inventoryWorkspaceId: "ws_stale_inventory",
+      projectWorkspaceId: "ws_project",
+      workspaceId: "ws_runtime",
+    })).toBe("ws_route")
+  })
+
+  test("returns no workspace id for loopback sessions", () => {
+    expect(resolveSignedSessionWorkspaceId({
+      signedControlPlane: false,
+      routeWorkspaceId: "ws_route",
+    })).toBeUndefined()
   })
 })

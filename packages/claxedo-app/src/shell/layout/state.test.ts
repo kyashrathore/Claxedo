@@ -73,6 +73,37 @@ describe("shell layout state", () => {
     })
   })
 
+  test("resizes the docked rail and snaps below the minimum to fully collapsed", () => {
+    createRoot((dispose) => {
+      const layout = createShellLayoutState({
+        target: () => "desktop",
+        initialRail: { collapsed: false, pinned: true, width: 260 },
+        initialWorkspacePanel: { open: false, width: 520 },
+      })
+
+      layout.setRailWidth(360)
+      expect(layout.config().regions.rail).toMatchObject({
+        size: { unit: "px", value: 360 },
+        docked: true,
+      })
+      expect(layout.committedRailWidth()).toBe(360)
+
+      layout.setRailWidth(180)
+      expect(layout.config().regions.rail).toMatchObject({
+        size: { unit: "px", value: 0 },
+        docked: false,
+      })
+      expect(layout.committedRailWidth()).toBe(360)
+
+      layout.toggleRail()
+      expect(layout.config().regions.rail).toMatchObject({
+        size: { unit: "px", value: 360 },
+        docked: true,
+      })
+      dispose()
+    })
+  })
+
   test("owns workspace panel committed visibility and measured width", () => {
     createRoot((dispose) => {
       const layout = createShellLayoutState({

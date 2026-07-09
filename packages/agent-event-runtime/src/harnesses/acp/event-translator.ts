@@ -20,6 +20,8 @@ export function createAcpEventTranslator(options: AcpEventTranslatorOptions): Ha
     createInitialState: () => createAcpTranslatorState(options.client),
     translate({ state, event }) {
       if (event.method && event.method !== "session/update") return []
+      state.assistantTextByMessageId ??= {}
+      state.assistantThinkingByMessageId ??= {}
       const diagnostics = createAcpDiagnostics()
       const events = translateAcpSessionUpdate(event.payload as Parameters<typeof translateAcpSessionUpdate>[0], {
         state,

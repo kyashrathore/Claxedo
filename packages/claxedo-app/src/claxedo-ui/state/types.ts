@@ -142,6 +142,7 @@ export type RailSlice = {
   hovered: boolean
   pinned: boolean
   locked: boolean
+  width?: number
 }
 
 export type TerminalAgentStatus = "idle" | "working" | "permission"

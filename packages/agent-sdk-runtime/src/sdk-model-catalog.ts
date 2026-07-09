@@ -13,12 +13,7 @@ export const SDK_MODEL_CATALOG = {
     { id: "gpt-5.5", name: "GPT-5.5" },
     { id: "gpt-5.4", name: "GPT-5.4" },
     { id: "gpt-5.4-mini", name: "GPT-5.4-Mini" },
-    { id: "gpt-5.3-codex", name: "gpt-5.3-codex" },
-    { id: "gpt-5.3-codex-spark", name: "GPT-5.3-Codex-Spark" },
-    { id: "gpt-5.2-codex", name: "gpt-5.2-codex" },
     { id: "gpt-5.2", name: "gpt-5.2" },
-    { id: "gpt-5.1-codex-max", name: "gpt-5.1-codex-max" },
-    { id: "gpt-5.1-codex-mini", name: "gpt-5.1-codex-mini" },
   ],
   cursor: [
     { id: "auto", name: "Auto" },

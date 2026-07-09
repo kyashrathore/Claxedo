@@ -117,6 +117,33 @@ describe("connections host", () => {
     host.dispose()
   })
 
+  test("gates: spoofed Host: 127.0.0.1 from a non-loopback peer never reaches credential routes", async () => {
+    // External-bind regression (CLAXEDO_SERVER_HOST=0.0.0.0): the Host header
+    // is client-controlled, so the gate must also verify the socket peer.
+    const host = createConnectionsHost({ credentials: credentialsPort(), env: {} })
+    const remoteEnv = { incoming: { socket: { remoteAddress: "203.0.113.7" } } }
+
+    const list = await host.routes.request("http://127.0.0.1/", {}, remoteEnv)
+    expect(list.status).toBeGreaterThanOrEqual(401)
+
+    const token = await host.routes.request(
+      "http://127.0.0.1/connections/notion/token?capability=docs",
+      { headers: { [CONNECTIONS_TOKEN_HEADER]: "1" } },
+      remoteEnv,
+    )
+    expect(token.status).toBe(403)
+    expect(await token.json()).toEqual({ code: "connections_loopback_required" })
+
+    // Same request from a genuine loopback peer still passes the gates.
+    const localToken = await host.routes.request(
+      "http://127.0.0.1/connections/notion/token?capability=docs",
+      { headers: { [CONNECTIONS_TOKEN_HEADER]: "1" } },
+      { incoming: { socket: { remoteAddress: "127.0.0.1" } } },
+    )
+    expect(localToken.status).toBe(404)
+    host.dispose()
+  })
+
   test("integrations routes are never proxied into workspace runtimes", async () => {
     const { routeOwnership, RouteHandler } = await import("../route-ownership")
     for (const pathname of [

@@ -34,7 +34,10 @@ type RuntimeModelProvider = {
   models?: Record<string, ProviderModel>
 }
 
-const preferredProviderOrder = ["opencode"]
+const preferredProviderOrder = ["opencode", "google", "openai"]
+const staleProviderDefaults: Record<string, Set<string>> = {
+  opencode: new Set(["big-pickle"]),
+}
 
 export function firstConnectedModel(input: {
   connected: ProviderItem[]
@@ -52,7 +55,7 @@ export function firstConnectedModelInfo(input: {
   return sortedConnectedProviders(input.connected)
     .map((provider) => {
       const configured = input.defaults[provider.id]
-      const model = configured && provider.models?.[configured]
+      const model = configured && !staleProviderDefaults[provider.id]?.has(configured) && provider.models?.[configured]
         ? provider.models[configured]
         : Object.values(provider.models ?? {})[0]
       if (!model) return undefined

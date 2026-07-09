@@ -76,6 +76,7 @@ describe("DockerSandboxDriver", () => {
       image: "claxedo-sandbox:test",
       docker: docker.fn,
       syncLocalAuth: false,
+      waitForHealth: false,
       runner: "opencode",
       env: (_input, host) => ({
         WORKSPACE_RUNTIME_LEASE_ID: `lease-${host.id}`,
@@ -148,6 +149,27 @@ describe("DockerSandboxDriver", () => {
     expect(result).not.toHaveProperty("runtimeUrl")
   })
 
+  test("waits for mapped runtime health before returning a ready target", async () => {
+    const docker = runner()
+    const healthFetch = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503, statusText: "Starting" }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    const driver = createDockerSandboxDriver({
+      image: "claxedo-sandbox:test",
+      docker: docker.fn,
+      syncLocalAuth: false,
+      healthFetch,
+      healthIntervalMs: 0,
+    })
+
+    const result = await driver.ensureHost(input)
+    if ("provisioning" in result) throw new Error("expected ready")
+
+    expect(healthFetch).toHaveBeenCalledWith("http://127.0.0.1:5330/global/health", expect.any(Object))
+    expect(healthFetch).toHaveBeenCalledTimes(2)
+    expect(result.url).toBe("http://127.0.0.1:5330")
+  })
+
   test("stages local auth into a stopped container before start", async () => {
     const authHome = await tempDir()
     await fs.mkdir(path.join(authHome, ".codex", "accounts"), { recursive: true })
@@ -158,6 +180,7 @@ describe("DockerSandboxDriver", () => {
       image: "claxedo-sandbox:test",
       docker: docker.fn,
       authHome,
+      waitForHealth: false,
     })
 
     await driver.ensureHost(input)
@@ -173,6 +196,7 @@ describe("DockerSandboxDriver", () => {
       image: "claxedo-sandbox:test",
       docker: docker.fn,
       syncLocalAuth: false,
+      waitForHealth: false,
     })
 
     await driver.ensureHost({ ...input, bootSource: { kind: "image", image: "prepared-image:test" } })
@@ -191,6 +215,7 @@ describe("DockerSandboxDriver", () => {
       image: "claxedo-sandbox:test",
       docker: runner().fn,
       syncLocalAuth: false,
+      waitForHealth: false,
     })
 
     await expect(
@@ -207,6 +232,7 @@ describe("DockerSandboxDriver", () => {
       image: "claxedo-sandbox:test",
       docker: docker.fn,
       syncLocalAuth: false,
+      waitForHealth: false,
     })
 
     const restarted = await driver.resumeHost!({

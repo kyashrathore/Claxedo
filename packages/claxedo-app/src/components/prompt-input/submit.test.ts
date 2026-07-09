@@ -901,6 +901,70 @@ describe("upstream contract", () => {
     expect(unsignedCalls.filter((call) => call.url.includes("/config"))).toEqual([])
   })
 
+  test("existing structured ACP follow-up does not fall back to OpenCode", async () => {
+    demoMode = false
+    harnessMode = false
+    localCurrentModel = { id: "big-pickle", provider: { id: "opencode" } }
+    localCurrentAgent = { name: "stale-agent" }
+
+    const submit = createSubmit({
+      info: () => ({
+        id: "session-1",
+        config: {
+          harness: { id: "claude", access: "acp" },
+          agent: "build",
+          model: { providerID: "claude-acp", modelID: "claude-sonnet-4-6" },
+        },
+      }),
+      sessionID: () => "session-1",
+      sessionDirectory: () => "/repo/main",
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await settleSubmitEffects()
+    await waitForSubmitEffect(() => calls.transportAsync > 0)
+
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
+      sessionID: "session-1",
+      directory: "/repo/main",
+      agent: "build",
+      model: { providerID: "claude-acp", modelID: "claude-sonnet-4-6" },
+    })
+    expect(unsignedCalls.filter((call) => call.url.includes("/config"))).toEqual([])
+    expect(runnerSetCalls).toEqual([])
+  })
+
+  test("existing workspace-runtime follow-up uses cached session config when info config is not hydrated", async () => {
+    demoMode = false
+    harnessMode = false
+    localCurrentModel = { id: "big-pickle", provider: { id: "opencode" } }
+    localCurrentAgent = { name: "stale-agent" }
+    queryClient.setQueryData(savedSessionConfigQueryKey("session-1"), JSON.stringify({
+      harness: { type: "codex-acp" },
+      agent: "build",
+      model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+    }))
+
+    const submit = createSubmit({
+      info: () => ({ id: "session-1" }),
+      sessionID: () => "session-1",
+      sessionDirectory: () => "ws_1",
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await settleSubmitEffects()
+    await waitForSubmitEffect(() => calls.transportAsync > 0)
+
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
+      sessionID: "session-1",
+      directory: "ws_1",
+      agent: "build",
+      model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+    })
+    expect(runtimeCalls.filter((call) => call.input.includes("/config"))).toEqual([])
+    expect(runnerSetCalls).toEqual([])
+  })
+
   test("keeps upstream ordering by adding the optimistic prompt only after session creation", async () => {
     demoMode = false
     const submit = createSubmit()
@@ -1019,6 +1083,63 @@ describe("prompt submit demo path", () => {
       sessionID: "session-1",
       directory: "/repo/main",
       model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+    })
+  })
+
+  test("runner submit does not leak the OpenCode reasoning variant", async () => {
+    demoMode = false
+    harnessMode = true
+
+    const submit = createSubmit({
+      sessionID: () => "new",
+      sessionDirectory: () => "/repo/main",
+      variant: () => "high",
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await settleSubmitEffects()
+    await waitForSubmitEffect(() => calls.transportAsync > 0)
+
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
+      sessionID: "session-1",
+      directory: "/repo/main",
+      model: { providerID: "claude-acp", modelID: "opus" },
+    })
+    expect(transportPromptAsyncCalls.at(-1)).not.toHaveProperty("variant")
+    expect(JSON.parse(unsignedCalls.at(-1)?.body ?? "{}")).not.toHaveProperty("variant")
+  })
+
+  test("existing runner follow-up drops a stale persisted OpenCode variant", async () => {
+    demoMode = false
+
+    const submit = createSubmit({
+      info: () => ({
+        id: "session-1",
+        config: {
+          harness: { type: "claude-acp" },
+          agent: "build",
+          model: { providerID: "claude-acp", modelID: "opus" },
+          variant: "high",
+        },
+      }),
+      sessionID: () => "session-1",
+      sessionDirectory: () => "/repo/main",
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await settleSubmitEffects()
+    await waitForSubmitEffect(() => calls.transportAsync > 0)
+
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
+      sessionID: "session-1",
+      directory: "/repo/main",
+      model: { providerID: "claude-acp", modelID: "opus" },
+    })
+    expect(transportPromptAsyncCalls.at(-1)).not.toHaveProperty("variant")
+    expect(JSON.parse(unsignedCalls.at(-1)?.body ?? "{}")).toEqual({
+      harness: { type: "claude-acp" },
+      agent: "build",
+      model: { providerID: "claude-acp", modelID: "opus" },
     })
   })
 

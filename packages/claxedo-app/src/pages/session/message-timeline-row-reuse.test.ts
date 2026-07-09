@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { TimelineRow } from "./message-timeline.data"
+import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
+import { Timeline, TimelineRow } from "./message-timeline.data"
 
 describe("timeline row reuse", () => {
   test("token updates replace only changed row references in a large timeline", () => {
@@ -47,4 +48,58 @@ describe("timeline row reuse", () => {
 
     expect(reused).toEqual([row])
   })
+
+  test("stale busy status does not hide a completed assistant response behind thinking", () => {
+    const rows = Timeline.constructMessageRows(
+      userMessage("msg_user"),
+      (messageID) => messageID === "msg_assistant" ? [textPart("part_text", "msg_assistant", "opencode-1")] : [],
+      [assistantMessage("msg_assistant", "msg_user", { completed: 20 })],
+      0,
+      false,
+      "busy",
+      true,
+    )
+
+    expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
+  })
 })
+
+function userMessage(id: string): UserMessage {
+  return {
+    id,
+    sessionID: "ses_1",
+    role: "user",
+    time: { created: 1 },
+  } as UserMessage
+}
+
+function assistantMessage(
+  id: string,
+  parentID: string,
+  time: AssistantMessage["time"],
+): AssistantMessage {
+  return {
+    id,
+    sessionID: "ses_1",
+    role: "assistant",
+    time: { created: 2, ...time },
+    parentID,
+    modelID: "big-pickle",
+    providerID: "opencode",
+    mode: "build",
+    agent: "build",
+    path: { cwd: "/workspace", root: "/workspace" },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  }
+}
+
+function textPart(id: string, messageID: string, text: string): Part {
+  return {
+    id,
+    sessionID: "ses_1",
+    messageID,
+    type: "text",
+    text,
+  } as Part
+}

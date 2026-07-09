@@ -192,26 +192,18 @@ export async function localLoopbackCloudConnectionInfo(
   }
   const hostId = target.hostId
   const orgId = current.org_id ?? ws.org_id
-  const token = options.runtimeAccessTokenSigner
-    ? orgId
-      ? await options.runtimeAccessTokenSigner({
-          subject: "local",
-          orgId,
-          workspaceId: ws.id,
-          hostId,
-          role: "owner",
-        })
-      : undefined
+  const token = options.runtimeAccessTokenSigner && orgId
+    ? await options.runtimeAccessTokenSigner({
+        subject: "local",
+        orgId,
+        workspaceId: ws.id,
+        hostId,
+        role: "owner",
+      })
     : {
         runtimeAccessToken: `local-loopback-${ws.id}`,
         tokenExpiresAt: Date.now() + 24 * 60 * 60_000,
       }
-  if (!token) {
-    return {
-      error: apiError("workspace_org_required", "Workspace is missing org identity for runtime token minting"),
-      status: 409,
-    } as const
-  }
   return {
     connection: {
       access: "cloud",

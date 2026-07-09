@@ -2,33 +2,22 @@
 {{MARKER}}
 # Called by CLI agents on lifecycle events
 
-# Debug helper - writes to log file, not terminal
-CLAXEDO_LOG="{{LOG_FILE}}"
-debug() {
-  [ "${CLAXEDO_DEBUG:-0}" = "1" ] && echo "$(date '+%H:%M:%S') [notify] $*" >> "$CLAXEDO_LOG"
-}
+[ -z "$CLAXEDO_TAB_ID" ] && exit 0
 
-debug "notify.sh called with args: $*"
-debug "CLAXEDO_TAB_ID=$CLAXEDO_TAB_ID CLAXEDO_PORT=$CLAXEDO_PORT CLAXEDO_SERVER_PORT=$CLAXEDO_SERVER_PORT"
-
-[ -z "$CLAXEDO_TAB_ID" ] && { debug "No CLAXEDO_TAB_ID, exiting"; exit 0; }
-
-	if [ -n "$1" ]; then
-	  INPUT="$1"
-	else
-	  # Read from stdin when piped. Avoid blocking if invoked without stdin.
-	  if [ -t 0 ]; then
-	    INPUT="{}"
-	  else
-	    # Read one line from stdin. Use head -1 instead of read -t because
-	    # macOS /bin/bash 3.2 mishandles fractional timeouts on pipes,
-	    # causing read -t 0.1 to return empty even when data is available.
-	    INPUT=$(head -1 2>/dev/null || true)
-	    [ -z "$INPUT" ] && INPUT="{}"
-	  fi
-	fi
-
-	debug "Raw input: $INPUT"
+if [ -n "$1" ]; then
+  INPUT="$1"
+else
+  # Read from stdin when piped. Avoid blocking if invoked without stdin.
+  if [ -t 0 ]; then
+    INPUT="{}"
+  else
+    # Read one line from stdin. Use head -1 instead of read -t because
+    # macOS /bin/bash 3.2 mishandles fractional timeouts on pipes,
+    # causing read -t 0.1 to return empty even when data is available.
+    INPUT=$(head -1 2>/dev/null || true)
+    [ -z "$INPUT" ] && INPUT="{}"
+  fi
+fi
 
 extract_json_field() {
   local key="$1"
@@ -44,11 +33,9 @@ EVENT_TYPE=""
 CODEX_TYPE=""
 
 EVENT_TYPE=$(echo "$INPUT" | grep -oE '"hook_event_name"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -oE '"[^"]*"$' | tr -d '"' 2>/dev/null)
-debug "hook_event_name extracted: $EVENT_TYPE"
 
 if [ -z "$EVENT_TYPE" ]; then
   CODEX_TYPE=$(echo "$INPUT" | grep -oE '"type"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -oE '"[^"]*"$' | tr -d '"' 2>/dev/null)
-  debug "Codex type extracted: $CODEX_TYPE"
   case "$CODEX_TYPE" in
     "agent-turn-complete") EVENT_TYPE="Idle" ;;
     "agent-turn-start") EVENT_TYPE="Busy" ;;
@@ -108,60 +95,46 @@ if [ -z "$PROVIDER" ] && [ -n "$CODEX_TYPE" ]; then
   PROVIDER="codex"
 fi
 
-debug "Final EVENT_TYPE: $EVENT_TYPE"
-debug "Session payload provider=$PROVIDER session=$SESSION_ID transcript=$TRANSCRIPT_PATH prompt=$PROMPT assistant=$LAST_ASSISTANT_MESSAGE"
+[ -z "$EVENT_TYPE" ] && exit 0
 
-[ -z "$EVENT_TYPE" ] && { debug "No event type, exiting"; exit 0; }
-
-STATE_DIR="$HOME/.claxedo/state"
+STATE_DIR="${WORKSPACE_RUNTIME_STATE_DIR:-$HOME/.workspace-runtime/state}"
 STATE_ID="${CLAXEDO_TERMINAL_ID:-$CLAXEDO_TAB_ID}"
 STATE_FILE="$STATE_DIR/$STATE_ID.agent"
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
-debug "State file: $STATE_FILE"
-
 # Simple state tracking to prevent duplicate spurious settled events
 if [ "$EVENT_TYPE" = "Busy" ] || [ "$EVENT_TYPE" = "UserActionRequired" ]; then
   echo "busy" > "$STATE_FILE" 2>/dev/null || true
-  debug "State: marked busy"
 fi
 
 if [ "$EVENT_TYPE" = "Idle" ] || [ "$EVENT_TYPE" = "Error" ]; then
   if [ ! -f "$STATE_FILE" ]; then
     # First settled event for this terminal - allow it (handles Codex)
     echo "idle" > "$STATE_FILE" 2>/dev/null || true
-    debug "State: first settled event, allowing"
   elif grep -q "^busy$" "$STATE_FILE" 2>/dev/null; then
     # Was busy, now idle
     echo "idle" > "$STATE_FILE" 2>/dev/null || true
-    debug "State: marked idle"
   else
     # Already idle - duplicate settled event
-    debug "Settled event ignored: already idle"
     exit 0
   fi
 fi
 
 HOOK_PORT="${CLAXEDO_SERVER_PORT:-${CLAXEDO_PORT:-{{PORT}}}}"
-HOOK_URL="http://127.0.0.1:${HOOK_PORT}/api/claxedo/hook/agent-lifecycle"
-debug "Calling: $HOOK_URL tabId=$CLAXEDO_TAB_ID eventType=$EVENT_TYPE"
+HOOK_URL="http://127.0.0.1:${HOOK_PORT}/api/wr/hook/agent-lifecycle"
 
-(
-  RESPONSE=$(curl -sG "$HOOK_URL" \
-    --connect-timeout 1 \
-    --max-time 2 \
-    --data-urlencode "tabId=$CLAXEDO_TAB_ID" \
-    --data-urlencode "terminalId=$CLAXEDO_TERMINAL_ID" \
-    --data-urlencode "workspaceId=$CLAXEDO_WORKSPACE_ID" \
-    --data-urlencode "eventType=$EVENT_TYPE" \
-    --data-urlencode "provider=$PROVIDER" \
-    --data-urlencode "sessionId=$SESSION_ID" \
-    --data-urlencode "transcriptPath=$TRANSCRIPT_PATH" \
-    --data-urlencode "prompt=$PROMPT" \
-    --data-urlencode "lastAssistantMessage=$LAST_ASSISTANT_MESSAGE" \
-    2>&1)
-  CURL_EXIT=$?
-  [ "${CLAXEDO_DEBUG:-0}" = "1" ] && echo "$(date '+%H:%M:%S') [notify] curl exit=$CURL_EXIT response=$RESPONSE" >> "$CLAXEDO_LOG"
-) &
+curl -sG "$HOOK_URL" \
+  --connect-timeout 1 \
+  --max-time 2 \
+  --data-urlencode "tabId=$CLAXEDO_TAB_ID" \
+  --data-urlencode "terminalId=$CLAXEDO_TERMINAL_ID" \
+  --data-urlencode "workspaceId=$CLAXEDO_WORKSPACE_ID" \
+  --data-urlencode "eventType=$EVENT_TYPE" \
+  --data-urlencode "provider=$PROVIDER" \
+  --data-urlencode "sessionId=$SESSION_ID" \
+  --data-urlencode "transcriptPath=$TRANSCRIPT_PATH" \
+  --data-urlencode "prompt=$PROMPT" \
+  --data-urlencode "lastAssistantMessage=$LAST_ASSISTANT_MESSAGE" \
+  >/dev/null 2>&1 &
 
 exit 0

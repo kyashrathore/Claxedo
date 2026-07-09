@@ -10,6 +10,7 @@ import { setupAgentHooks } from "@claxedo/workspace-runtime/host"
 import { capture, initPostHog, shutdownPostHog } from "./posthog"
 import { configureAgentConfig } from "./agent-config"
 import { eventsHandler } from "./routes/events"
+import { peerAddressStamp } from "./routes/local-only-projection"
 import { createConnectionsHost } from "./connections-host/connections-host"
 import { mirrorProcessEvents } from "./process-events"
 import { PagesRoutes } from "./routes/pages"
@@ -145,6 +146,10 @@ export function isConnectionsCredentialPath(path: string): boolean {
 
 export function createApp(services: ControlPlaneServices, options: { onOpencodeAccess?: () => void } = {}) {
   const app = new Hono()
+  // Record the transport peer address for every request (including
+  // @hono/node-ws upgrades, whose Requests lack the node-server internals)
+  // so loopback gates verify the socket, not the spoofable Host header.
+  app.use(peerAddressStamp())
   const runtimeProxyOptions = {
     ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
     ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),

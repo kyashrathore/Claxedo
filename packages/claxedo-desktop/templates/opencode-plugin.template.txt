@@ -6,7 +6,7 @@
  *
  * ROBUSTNESS FEATURES (v2):
  * - Session-scoped: Tracks root sessionID, ignores events from other sessions
- * - Deduplication: Only sends Start on idle→busy, Stop on busy→idle transitions
+ * - Deduplication: Only sends Start on idle->busy, Stop on busy->idle transitions
  * - Safe defaults: On error, assumes child session to avoid false positives
  * - Delegates to notify script instead of direct HTTP for consistent event mapping
  */

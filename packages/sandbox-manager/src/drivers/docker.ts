@@ -17,6 +17,7 @@ type SandboxEnv = Record<string, string | undefined>
 
 export type DockerCommandResult = { stdout?: string | Buffer; stderr?: string | Buffer }
 export type DockerCommandRunner = (args: string[], timeoutMs?: number) => Promise<DockerCommandResult>
+export type DockerHealthFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export type DockerSandboxDriverOptions = {
   image: string
@@ -28,11 +29,17 @@ export type DockerSandboxDriverOptions = {
   syncLocalAuth?: boolean
   authHome?: string
   operationTimeoutMs?: number
+  waitForHealth?: boolean
+  healthTimeoutMs?: number
+  healthIntervalMs?: number
+  healthFetch?: DockerHealthFetch
   docker?: DockerCommandRunner
 }
 
 const execFileAsync = promisify(execFile)
 const DEFAULT_OPERATION_TIMEOUT_MS = 60_000
+const DEFAULT_HEALTH_TIMEOUT_MS = 20_000
+const DEFAULT_HEALTH_INTERVAL_MS = 250
 const DEFAULT_RUNTIME_COMMAND = "/usr/local/bin/workspace-runtime"
 const DEFAULT_WORKSPACE_DIR = "/workspace"
 const DOCKER_LABEL = "claxedo"
@@ -104,6 +111,10 @@ async function docker(args: string[], timeoutMs = DEFAULT_OPERATION_TIMEOUT_MS) 
   })
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function stageLocalAgentAuth(
   containerId: string,
   input: { authHome: string; syncLocalAuth: boolean; docker: DockerCommandRunner; timeoutMs: number },
@@ -171,6 +182,9 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
   const runtimeCommand = options.runtimeCommand ?? DEFAULT_RUNTIME_COMMAND
   const workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR
   const timeoutMs = options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS
+  const healthTimeoutMs = options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS
+  const healthIntervalMs = options.healthIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS
+  const healthFetch = options.healthFetch ?? fetch
   const syncLocalAuth = options.syncLocalAuth ?? dockerSandboxSyncLocalAuth()
   const authHome = options.authHome ?? dockerSandboxAuthHome()
 
@@ -209,6 +223,7 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
     const out = await dockerCommand(["port", sandboxId, `${runtimePort(input)}/tcp`], timeoutMs)
     const url = parseDockerPort(String(out.stdout ?? ""))
     if (!url) throw new Error(`Docker container ${sandboxId} does not expose workspace runtime port ${runtimePort(input)}`)
+    if (options.waitForHealth !== false) await waitForHealth(url)
     return {
       workspaceId: input.workspaceId,
       sandboxId,
@@ -221,6 +236,24 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
       },
       labels: input.labels,
     }
+  }
+
+  async function waitForHealth(url: string) {
+    const until = Date.now() + healthTimeoutMs
+    let error = "workspace runtime not ready"
+    while (Date.now() < until) {
+      try {
+        const res = await healthFetch(`${url}/global/health`, {
+          signal: AbortSignal.timeout(Math.min(2_000, Math.max(1, healthTimeoutMs))),
+        })
+        if (res.ok) return
+        error = `${res.status} ${res.statusText}`
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err)
+      }
+      await sleep(healthIntervalMs)
+    }
+    throw new Error(error)
   }
 
   async function ensureHost(input: SandboxDriverEnsureInput) {

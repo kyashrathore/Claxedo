@@ -1775,6 +1775,43 @@ describe("workspace routes signed control plane authority", () => {
     expect(svc.authority?.recordRuntimeAccessToken).not.toHaveBeenCalled()
   })
 
+  test("loopback cloud connection falls back to local token when signer exists but workspace has no org", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const signer = vi.fn(async () => ({
+      runtimeAccessToken: "rat_should_not_be_needed",
+      tokenExpiresAt: 123_000,
+      jti: "jti_should_not_be_needed",
+    }))
+    mocks.resolveWorkspace.mockResolvedValue({
+      id: "ws_1",
+      directory: "/workspace",
+      kind: "cloud",
+      created_at: 1,
+      updated_at: 1,
+    })
+    const app = WorkspaceRoutes(svc, {
+      authConfig,
+      verifier,
+      relayUrl: "http://relay.test",
+      runtimeAccessTokenSigner: signer,
+    })
+
+    const res = await app.request("http://localhost/ws_1/connection")
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      access: "cloud",
+      backing: "cloud-vm",
+      workspaceId: "ws_1",
+      relayUrl: "http://relay.test",
+      runtimeAccessToken: "local-loopback-ws_1",
+      role: "owner",
+    })
+    expect(signer).not.toHaveBeenCalled()
+  })
+
   test("loopback cloud connection falls back to local Relay-compatible origin when no relay is configured", async () => {
     const svc = services()
     const sandbox = readySandboxManager()

@@ -7,6 +7,7 @@ import type { RelayProvider, RelayTokenInput } from "./relay-provider"
 export type SandboxFetchOptions = {
   sandboxManager?: SandboxManager
   relayProvider?: RelayProvider
+  loopbackRelayUrl?: string
   defaultHomeRegion?: ClaxedoRegion
   subject?: string
   orgId?: string
@@ -22,6 +23,18 @@ export async function sandboxFetch(
   if (ws.kind !== "cloud") {
     const runtime = await ensureEmbeddedWorkspaceRuntime(ws)
     return runtime.app.fetch(new Request(new URL(path, "http://embedded-workspace-runtime.local"), init))
+  }
+  if (options.loopbackRelayUrl && !options.relayProvider) {
+    const headers = new Headers(init?.headers)
+    headers.set("x-opencode-directory", `workspace:${ws.id}`)
+    headers.set("accept-encoding", "identity")
+    return fetch(
+      `${options.loopbackRelayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(ws.id)}${sandboxPath(path)}`,
+      {
+        ...init,
+        headers,
+      },
+    )
   }
   const target = await sandboxTarget(ws, options)
   if (!options.relayProvider) {

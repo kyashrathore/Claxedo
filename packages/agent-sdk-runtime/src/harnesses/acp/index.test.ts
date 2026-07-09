@@ -421,6 +421,114 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     ])
   })
 
+  test("passes the selected model to Codex ACP process args", () => {
+    const calls: unknown[] = []
+    const transport: ACPTransport = {
+      kind: "streamable-http",
+      stream: {
+        readable: new ReadableStream(),
+        writable: new WritableStream(),
+      },
+      metadata: { transport: "fake-http" },
+      alive: true,
+      dispose() {},
+    }
+    const item = new AcpHarnessAdapter({
+      binary: "codex-acp",
+      harness: "codex",
+      args: ["-c", "service_tier=\"fast\""],
+      store: {} as AcpRuntimeStore,
+      createTransport(input) {
+        calls.push(input.args)
+        return transport
+      },
+    })
+
+    item.setModel("gpt-5.5")
+    ;(item as unknown as { make: () => unknown }).make()
+
+    expect(calls).toEqual([["-c", "service_tier=\"fast\"", "-c", "model=\"gpt-5.5\""]])
+  })
+
+  test("session config model patch updates Codex ACP process args", async () => {
+    const calls: unknown[] = []
+    const transport: ACPTransport = {
+      kind: "streamable-http",
+      stream: {
+        readable: new ReadableStream(),
+        writable: new WritableStream(),
+      },
+      metadata: { transport: "fake-http" },
+      alive: true,
+      dispose() {},
+    }
+    const item = new AcpHarnessAdapter({
+      binary: "codex-acp",
+      harness: "codex",
+      args: ["-c", "service_tier=\"fast\""],
+      store: {
+        updateSessionConfig() {
+          return {
+            harness: { id: "codex", access: "acp" },
+            model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+            variant: null,
+            agent: "build",
+          }
+        },
+        getAgentSessionId() {
+          return undefined
+        },
+      } as AcpRuntimeStore,
+      createTransport(input) {
+        calls.push(input.args)
+        return transport
+      },
+    })
+
+    await item.updateSessionConfig("s1", {
+      model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+    }, "/work")
+    ;(item as unknown as { make: () => unknown }).make()
+
+    expect(calls).toEqual([["-c", "service_tier=\"fast\"", "-c", "model=\"gpt-5.5\""]])
+  })
+
+  test("sendMessage applies the prompt model before process lookup", async () => {
+    const calls: string[] = []
+    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+      store: {
+        getAgentSessionId: () => string
+        getSession: () => { title: string }
+      }
+      setModel: (model: string) => void
+      getOrSpawnProcess: () => Promise<never>
+    }
+    item.store = {
+      getAgentSessionId() {
+        return "agent-session-1"
+      },
+      getSession() {
+        return { title: "Test" }
+      },
+    }
+    item.setModel = (model) => calls.push(`setModel:${model}`)
+    item.getOrSpawnProcess = async () => {
+      calls.push("getOrSpawnProcess")
+      throw new Error("stop")
+    }
+
+    for await (const _ of (item as unknown as {
+      _sendMessage: (id: string, input: unknown, directory: string, t0: number) => AsyncIterable<unknown>
+    })._sendMessage("s1", {
+      parts: [],
+      model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+    } as never, "/work", Date.now())) {
+      break
+    }
+
+    expect(calls).toEqual(["setModel:gpt-5.5", "getOrSpawnProcess"])
+  })
+
   test("initialization timeout disposes the process", async () => {
     const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
       initialize: (proc: { initialize: () => Promise<void>; dispose: () => void }, ms: number) => Promise<void>
@@ -437,6 +545,28 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }, 5)).rejects.toThrow("ACP initialize timed out after 5ms")
 
     expect(disposed).toBe(true)
+  })
+
+  test("initialization failure preserves ACP stderr detail", async () => {
+    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+      initialize: (proc: {
+        initialize: () => Promise<void>
+        dispose: () => void
+        failureDetail: () => string
+      }, ms: number) => Promise<void>
+    }
+
+    await expect(item.initialize({
+      async initialize() {
+        throw new Error("ACP connection closed")
+      },
+      dispose() {},
+      failureDetail() {
+        return "Error: error loading config: ~/.codex/config.toml:7:16: unknown variant `default`"
+      },
+    }, 5)).rejects.toThrow(
+      "ACP connection closed: Error: error loading config: ~/.codex/config.toml:7:16: unknown variant `default`",
+    )
   })
 
   test("session creation timeout disposes the process before storing a session", async () => {
@@ -675,7 +805,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }
   })
 
-  test("config apply drains an active turn instead of leaving the session busy", async () => {
+  test("config apply defers restart while a turn is active", async () => {
     const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
       store: {
         getAgentSessionId: (id: string) => string
@@ -690,6 +820,10 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       sessions: Map<string, { directory: string; proc: unknown; init: null }>
       probe: null
       currentMcp: unknown[]
+      currentEnv: Record<string, string>
+      configRestartPending: boolean
+      restart: () => void
+      forgetSessionProcessBindings: () => void
       getOrSpawnProcess: () => Promise<{
         proc: {
           permissionPushers: Map<string, unknown>
@@ -709,6 +843,10 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.sessions = new Map()
     item.probe = null
     item.currentMcp = []
+    item.currentEnv = {}
+    item.configRestartPending = false
+    item.restart = () => calls.push("restart")
+    item.forgetSessionProcessBindings = () => calls.push("forget")
     item.store = {
       getAgentSessionId() {
         return "agent-session-1"
@@ -752,8 +890,10 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     expect(item.turnLifecycle.busySessions.has("s1")).toBe(true)
     expect(calls).toContain("prompt")
 
-    await expect(item.applyConfig({ mcp: {}, auth: { OPENAI_API_KEY: "sk-new" } }))
-      .rejects.toThrow("ACP process config cannot change while a prompt is active")
+    await item.applyConfig({ mcp: {}, auth: { OPENAI_API_KEY: "sk-new" } })
+
+    expect(calls).not.toContain("restart")
+    expect(item.configRestartPending).toBe(true)
     item.turnLifecycle.drain("s1", "test cleanup")
 
     const events: string[] = []
@@ -766,8 +906,15 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     expect(events).toContain("session.error")
     expect(calls).toContain("cancel")
     expect(calls).toContain("dispose")
+    expect(calls).not.toContain("restart")
     expect(item.turnLifecycle.busySessions.has("s1")).toBe(false)
     expect(item.turnLifecycle.activeTurns.size).toBe(0)
+
+    await item.applyConfig({ mcp: {}, auth: { OPENAI_API_KEY: "sk-new" } })
+
+    expect(calls).toContain("restart")
+    expect(calls).toContain("forget")
+    expect(item.configRestartPending).toBe(false)
   })
 
   test("unchanged config apply does not drain an active turn", async () => {
@@ -800,6 +947,39 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     expect(calls).toEqual([])
     expect(item.turnLifecycle.busySessions.has("s1")).toBe(true)
     expect(item.turnLifecycle.activeTurns.size).toBe(1)
+  })
+
+  test("claude oauth config applies as Claude Code oauth env", async () => {
+    const item = Object.create(AcpHarnessAdapter.prototype) as AcpHarnessAdapter & {
+      currentEnv: Record<string, string>
+      currentMcp: unknown[]
+      options: { binary: string; type: "claude-acp" }
+      turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
+      restart: () => void
+      forgetSessionProcessBindings: () => void
+    }
+
+    const calls: string[] = []
+    item.currentEnv = {}
+    item.currentMcp = []
+    item.options = { binary: "fake-acp", type: "claude-acp" }
+    item.turnLifecycle = createSessionTurnLifecycle()
+    item.restart = () => calls.push("restart")
+    item.forgetSessionProcessBindings = () => calls.push("forget")
+
+    await item.applyConfig({
+      mcp: {},
+      auth: {
+        "claude-acp": JSON.stringify({
+          claudeAiOauth: {
+            accessToken: "sk-ant-oauth",
+          },
+        }),
+      },
+    })
+
+    expect(item.currentEnv).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oauth" })
+    expect(calls).toEqual(["restart", "forget"])
   })
 
   test("probe config cache wait clears its polling interval", async () => {

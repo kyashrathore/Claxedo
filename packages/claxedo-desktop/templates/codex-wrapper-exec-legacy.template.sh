@@ -1,6 +1,6 @@
 # Legacy Codex wrapper: no native hooks.json. Use notify bridge + log watcher.
 
-STATE_DIR="$HOME/.claxedo/state"
+STATE_DIR="${WORKSPACE_RUNTIME_STATE_DIR:-$HOME/.workspace-runtime/state}"
 STATE_ID="${CLAXEDO_TERMINAL_ID:-${CLAXEDO_TAB_ID:-}}"
 PID_FILE="$STATE_DIR/$STATE_ID.codex-watch.pid"
 TURN_FILE="$STATE_DIR/$STATE_ID.codex-turn"

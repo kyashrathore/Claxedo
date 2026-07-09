@@ -54,6 +54,24 @@ export function railPeekCommand(expanded: boolean, expandedWidth = 260): LayoutC
   }
 }
 
+export function railResizeCommand(width: number, options: {
+  minWidth?: number
+  maxWidth?: number
+} = {}): LayoutCommand {
+  const minWidth = options.minWidth ?? 220
+  const maxWidth = options.maxWidth ?? 520
+  const nextWidth = width < minWidth ? 0 : Math.min(Math.max(width, minWidth), maxWidth)
+  return {
+    type: "region.update",
+    regionId: "rail",
+    region: {
+      visible: true,
+      size: { unit: "px", value: nextWidth },
+      docked: nextWidth > 0,
+    },
+  }
+}
+
 export function applyLayoutCommand(config: LayoutConfig, command: LayoutCommand): LayoutConfig {
   if (command.type === "replace") return command.config
   if (command.type === "reset") return defaultLayoutConfig({ target: command.target ?? config.target })

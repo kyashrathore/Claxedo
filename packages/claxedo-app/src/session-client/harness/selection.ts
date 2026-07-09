@@ -17,6 +17,7 @@ export type HarnessSelectionState = {
   readonly dynamicModels?: readonly { id: string; name: string }[] | null
   readonly readiness: HarnessReadiness
   readonly optionsLoading: boolean
+  readonly configError?: string
 }
 
 export function harnessMode(type?: HarnessType) {
@@ -63,8 +64,8 @@ export function harnessModelNameForSubmit(state: HarnessSelectionState) {
 
 export function harnessReadyForSubmit(state: HarnessSelectionState) {
   if (state.harness === "opencode") return true
+  if (state.configError || state.readiness === "error" || state.optionsLoading) return false
   if (fixedHarnessModel(state.harness)) return true
-  if (state.readiness === "error" || state.optionsLoading) return false
   return !!harnessModelKeyForSubmit(state)
 }
 

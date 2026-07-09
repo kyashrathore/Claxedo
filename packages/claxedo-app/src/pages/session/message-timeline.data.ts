@@ -153,6 +153,7 @@ export namespace Timeline {
     const interruptedMessageIndex = assistantMessages.findIndex((m) => m.error?.name === "MessageAbortedError")
     const interrupted = interruptedMessageIndex !== -1
     const error = assistantMessages.find((m) => m.error && m.error.name !== "MessageAbortedError")?.error
+    const settled = assistantMessages.some(assistantMessageSettled)
     const assistantPartRefs = assistantMessages.flatMap((message, messageIndex) =>
       getMessageParts(message.id)
         .filter((part) => renderablePart(part, showReasoning))
@@ -225,7 +226,7 @@ export namespace Timeline {
       assistantGroupIndex += 1
     })
 
-    if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
+    if (isActive && status === "busy" && !settled && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
       const heading = assistantMessages
         .flatMap((message) => getMessageParts(message.id))
         .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
@@ -367,6 +368,10 @@ export namespace Timeline {
 const contextGroupTools = new Set(["read", "glob", "grep", "list"])
 const hiddenTools = new Set(["todowrite"])
 const renderableParts = new Set(["compaction", "text", "reasoning", "tool"])
+
+export function assistantMessageSettled(message: AssistantMessage) {
+  return typeof message.time.completed === "number" || !!message.error
+}
 
 function groupParts(parts: { messageID: string; part: Part }[]) {
   const result: PartGroup[] = []

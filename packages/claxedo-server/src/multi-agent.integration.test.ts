@@ -858,11 +858,13 @@ describe("multi-agent integration", () => {
       `${base()}/api/claxedo/agent-config/runner/options?workspaceId=${encodeURIComponent(ws.id)}&type=codex-acp`,
     )
     expect(res.status).toBe(502)
-    expect(await res.json()).toMatchObject({
+    const body = await res.json() as { error?: { code?: string; message?: string } }
+    expect(body).toMatchObject({
       error: {
         code: "harness_config_options_unavailable",
       },
     })
+    expect(body.error?.message).not.toContain("codex-app-server")
   })
 
   test("GET /runner/options uses catalog for SDK runners and no static placeholder ACP options", async () => {

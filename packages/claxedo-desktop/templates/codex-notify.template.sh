@@ -16,7 +16,7 @@ fi
 
 # Fallback: start the log watcher from here if the wrapper's poller didn't.
 if [ -n "${CLAXEDO_TAB_ID:-}" ] && [ -n "${CODEX_TUI_SESSION_LOG_PATH:-}" ]; then
-  STATE_DIR="$HOME/.claxedo/state"
+  STATE_DIR="${WORKSPACE_RUNTIME_STATE_DIR:-$HOME/.workspace-runtime/state}"
   STATE_ID="${CLAXEDO_TERMINAL_ID:-$CLAXEDO_TAB_ID}"
   PID_FILE="$STATE_DIR/$STATE_ID.codex-watch.pid"
   if [ -f "$PID_FILE" ]; then

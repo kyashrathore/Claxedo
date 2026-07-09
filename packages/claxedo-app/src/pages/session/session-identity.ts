@@ -46,3 +46,28 @@ export function resolveSessionDirectory(input: {
   if (input.inventoryDirectory) return input.inventoryDirectory
   return input.routeDirectory
 }
+
+export function resolveSignedSessionWorkspaceId(input: {
+  signedControlPlane: boolean
+  routeWorkspaceId?: string
+  inventoryWorkspaceId?: string
+  projectWorkspaceId?: string
+  workspaceId?: string
+}) {
+  if (!input.signedControlPlane) return undefined
+  return input.routeWorkspaceId ??
+    input.inventoryWorkspaceId ??
+    input.projectWorkspaceId ??
+    input.workspaceId
+}
+
+export function signedProjectWorkspaceId(input: {
+  signedWorkspace?: { workspaceId?: string }
+  workspace?: { id?: string; workspaceId?: string; kind?: string }
+}) {
+  if (input.signedWorkspace?.workspaceId) return input.signedWorkspace.workspaceId
+  if (input.workspace?.kind === "cloud" || input.workspace?.kind === "user-hosted") {
+    return input.workspace.workspaceId ?? input.workspace.id
+  }
+  return undefined
+}

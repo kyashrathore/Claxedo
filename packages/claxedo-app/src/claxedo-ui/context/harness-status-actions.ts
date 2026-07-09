@@ -1,6 +1,7 @@
 import {
   desiredHarness,
   failedHarness,
+  hardFailedHarness,
   type HarnessState,
   type HarnessType,
 } from "../../session-client/harness/profile"
@@ -60,11 +61,13 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
   }
 
   const applyStatus = async (scope: string, data: HarnessState, params?: ScopeInput) => {
+    const current = input.state(scope)
     const want = desiredHarness(data) ?? input.state(scope)?.harness ?? "opencode"
-    input.applyPatch(scope, harnessStatusPatch({ data, current: input.state(scope) }))
+    if (failedHarness(data) && current?.harness && want !== current.harness) return
+    input.applyPatch(scope, harnessStatusPatch({ data, current }))
     input.save(scope, "harness", want)
     if (data.model) input.save(scope, "model", data.model)
-    if (shouldFetchConfigOptionsForScope(want, failedHarness(data), params)) {
+    if (shouldFetchConfigOptionsForScope(want, hardFailedHarness(data), params)) {
       input.fetchConfigOptions(scope, want, params)
     }
     if (params?.directory && shouldRefreshDirectoryAfterHarnessStatus(params)) {

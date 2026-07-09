@@ -3,12 +3,18 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Select } from "@opencode-ai/ui/select"
+import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { ModelSelectorPopover, type PickerItem, type PickerState } from "@claxedo/components/dialog-select-model"
 import { HARNESS_DISPLAY_NAMES, type HarnessType } from "@claxedo/session-client/harness/profile"
 import type { HarnessSelectionController } from "@claxedo/session-client/harness/controller"
 import { panePreferenceScope } from "../../pane/store/pane-preferences"
 import { createModelSelectionController, modelKeyFromPickerSelection } from "../../session-client/commands/model-selection"
-const HARNESS_OPTIONS: HarnessType[] = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "opencode"]
+const HARNESS_OPTIONS: HarnessType[] = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]
+const HARNESS_OPTION_LABELS: Partial<Record<HarnessType, string>> = {
+  "claude-sdk": "Claude",
+  "codex-app-server": "Codex",
+  "cursor-sdk": "Cursor",
+}
 
 function title(input: string) {
   return input
@@ -20,6 +26,16 @@ function title(input: string) {
 
 function label(input: string) {
   return HARNESS_DISPLAY_NAMES[input] ?? title(input)
+}
+
+function harnessOptionLabel(input: HarnessType) {
+  return HARNESS_OPTION_LABELS[input] ?? label(input)
+}
+
+function harnessOptionGroup(input: HarnessType) {
+  if (input === "claude-acp" || input === "codex-acp" || input === "cursor-acp") return "ACP"
+  if (input === "claude-sdk" || input === "codex-app-server" || input === "cursor-sdk") return "Native SDK"
+  return "Direct"
 }
 
 type Item = {
@@ -111,7 +127,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const isStale = () => selection().optionsStale
   const optionsLoading = () => selection().optionsLoading
   const [switchingHarness, setSwitchingHarness] = createSignal<HarnessType | undefined>()
-  const [showModelIssue, setShowModelIssue] = createSignal(false)
   const harnessSwitching = () => !!switchingHarness()
   const rows = createMemo<Item[]>(() => {
     const currentHarness = harness()
@@ -216,7 +231,8 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         size="normal"
         options={HARNESS_OPTIONS}
         current={harness()}
-        label={(r) => label(r)}
+        label={(r) => harnessOptionLabel(r)}
+        groupBy={(r) => harnessOptionGroup(r)}
         onSelect={(r) => {
           const current = harness()
           if (!r || harnessDisabled()) return
@@ -273,7 +289,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
           triggerAs={Button}
           triggerProps={modelTriggerProps()}
         >
-          <Show when={picked()?.provider.id && !modelUnavailable()}>
+          <Show when={picked()?.provider.id && !modelUnavailable() && !modelOptionsFailed()}>
             <ProviderIcon
               id={picked()!.provider.id}
               class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
@@ -293,32 +309,24 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
           </Show>
         </ModelSelectorPopover>
         <Show when={modelIssue()}>
-          <span
-            role="button"
-            tabIndex={0}
-            class="text-11-regular px-1"
-            title={modelIssue()}
-            aria-label={modelIssue()}
-            onClick={() => setShowModelIssue((current) => !current)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" && event.key !== " ") return
-              event.preventDefault()
-              setShowModelIssue((current) => !current)
-            }}
+          <TooltipV2
+            value={modelIssue()}
+            placement="top"
+            contentClass="max-w-[320px] text-11-regular"
           >
-            <span class={modelIssueIsError()
-              ? "inline-block w-2 h-2 rounded-full bg-surface-critical-strong"
-              : "inline-block w-2 h-2 rounded-full bg-surface-warning-strong"}
-            />
-          </span>
-        </Show>
-        <Show when={showModelIssue() && modelIssue()}>
-          <span class={modelIssueIsError()
-            ? "max-w-[260px] truncate text-11-regular text-text-on-critical-base px-1"
-            : "max-w-[260px] truncate text-11-regular text-text-on-warning-base px-1"}
-          >
-            {modelIssue()}
-          </span>
+            <span
+              role="img"
+              tabIndex={0}
+              class="text-11-regular px-1 outline-none"
+              aria-label={modelIssue()}
+              title={modelIssue()}
+            >
+              <span class={modelIssueIsError()
+                ? "inline-block w-2 h-2 rounded-full bg-surface-critical-strong"
+                : "inline-block w-2 h-2 rounded-full bg-surface-warning-strong"}
+              />
+            </span>
+          </TooltipV2>
         </Show>
       </Show>
 

@@ -141,6 +141,7 @@ export function createHarnessConfigRuntime(input: {
     return await workspaceHarnessTransport(params).fetch(workspaceRuntimeAgentConfigPath({
       resource: "api/wr/harness-config-options",
       directory: params.directory,
+      harnessType: type,
     }))
   }
 

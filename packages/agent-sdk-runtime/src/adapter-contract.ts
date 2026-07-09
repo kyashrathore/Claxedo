@@ -39,6 +39,7 @@ export type AgentInteractionResult = {
 
 export interface AgentHarnessAdapterCore {
   readonly adapterCapabilities?: readonly AdapterCapability[]
+  readonly commitsStreamEvents?: boolean
 
   listSessions(directory: RuntimeDirectory): Promise<AgentSession[]>
   getSession(id: string, directory: RuntimeDirectory): Promise<AgentSession | null>

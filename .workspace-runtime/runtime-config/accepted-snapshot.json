@@ -1,17 +1,20 @@
 {
-  "revision": 810,
-  "acceptedAt": "2026-07-08T19:45:48.533Z",
+  "revision": 39,
+  "acceptedAt": "2026-07-09T19:47:35.729Z",
   "snapshot": {
     "version": 1,
     "harness": {
-      "id": "opencode",
+      "id": "claude",
       "access": "native"
     },
     "mcp": {
       "keys": []
     },
     "auth": {
-      "keys": []
+      "keys": [
+        "claude-acp",
+        "claude-sdk"
+      ]
     },
     "agent_extensions": {
       "version": 1,

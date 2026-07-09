@@ -29,7 +29,7 @@ import {
   workspaceSessionRoute,
   workspaceRoute,
 } from "../../shell/identity/route"
-import { hasBacking, sessionRefForWorkspaceSession } from "../../shell/identity/session-ref"
+import { hasBacking, sessionRefForWorkspaceSession, type HarnessRef } from "../../shell/identity/session-ref"
 import { principalHasSignedAccess, usePrincipal } from "../../shell/auth/identity-provider"
 import { queryClient } from "../../shared/query/query-client"
 import type { SessionInventoryRow } from "../../shared/query/types"
@@ -40,6 +40,7 @@ import { useClaxedoState } from "."
 import { projectWorkspaceDirectories } from "../utils/workspace-display"
 import { sessionTitleFromSources, sessionTitleSignature } from "../session-title-sync"
 import { createRouteIntentAdapter, isRouteIntentClosed, sessionInventoryTarget } from "./route-intent"
+import { routeSessionHarness } from "./route-session-harness"
 export { recoverWorkspaceRuntimeRoute } from "./route-runtime-recovery"
 import {
   collectNewSessionDeepLinks,
@@ -112,6 +113,29 @@ function routeBridgeClaxedoSessionMetaUrl(input: { serverUrl?: string; sessionID
     `/api/claxedo/session/${encodeURIComponent(input.sessionID)}/meta`,
     routeBridgeServerUrl(input.serverUrl),
   )
+}
+
+function routeBridgeSessionConfigUrl(input: {
+  serverUrl?: string
+  sessionID: string
+  workspaceDirectory: string
+}) {
+  const url = new URL(
+    `/session/${encodeURIComponent(input.sessionID)}/config`,
+    routeBridgeServerUrl(input.serverUrl),
+  )
+  url.searchParams.set("directory", input.workspaceDirectory)
+  return url
+}
+
+async function routeBridgeSessionConfigHarness(input: {
+  serverUrl?: string
+  sessionID: string
+  workspaceDirectory: string
+}) {
+  const response = await authFetch(routeBridgeSessionConfigUrl(input)).catch(() => undefined)
+  if (!response?.ok) return
+  return routeSessionHarness(await response.json().catch(() => undefined))
 }
 
 export async function probeRouteSessionDirectory(sessionId: string, directories: string[]) {
@@ -320,6 +344,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         directory: resolvedDirectory,
         workspaceId: session.workspaceID,
       })
+      const harness = routeSessionHarness(session) ?? activeSurfaceHarnessForSession(sessionId, resolvedDirectory)
       return {
         directory: resolvedDirectory,
         title: session.title,
@@ -327,6 +352,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           sessionId,
           directory: resolvedDirectory,
           ...(workspace ? { workspace } : {}),
+          ...(harness ? { harness } : {}),
         }),
       }
     }
@@ -349,12 +375,18 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     resolveSession: async (id) => {
       const routed = workspaceId()
       if (routed && routed !== "/workspace") {
+        const harness = await routeBridgeSessionConfigHarness({
+          serverUrl: getClaxedoServerUrl(),
+          sessionID: id,
+          workspaceDirectory: routed,
+        })
         return {
           directory: routed,
           title: sessionTitleFromInventory(id, routed),
           sessionRef: sessionRefForWorkspaceSession({
             sessionId: id,
             directory: routed,
+            ...(harness ? { harness } : {}),
           }),
         }
       }
@@ -362,12 +394,18 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       if (cached) return cached
       const probed = await probeRouteSessionDirectory(id, routeResolutionDirectories())
       if (probed) {
+        const harness = await routeBridgeSessionConfigHarness({
+          serverUrl: getClaxedoServerUrl(),
+          sessionID: id,
+          workspaceDirectory: probed,
+        })
         return {
           directory: probed,
           title: undefined,
           sessionRef: sessionRefForWorkspaceSession({
             sessionId: id,
             directory: probed,
+            ...(harness ? { harness } : {}),
           }),
         }
       }
@@ -382,6 +420,10 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
                 title?: unknown
                 workspaceID?: unknown
                 workspaceId?: unknown
+                harness?: unknown
+                runner?: unknown
+                harnessType?: unknown
+                config?: unknown
               }>
             : undefined
         )
@@ -400,6 +442,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         directory,
         workspaceId: sessionWorkspaceId,
       })
+      const harness = routeSessionHarness(session) ?? await routeBridgeSessionConfigHarness({
+        serverUrl: getClaxedoServerUrl(),
+        sessionID: id,
+        workspaceDirectory: directory,
+      })
       return {
         directory,
         title: typeof session?.title === "string" ? session.title : undefined,
@@ -407,6 +454,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           sessionId: id,
           directory,
           ...(workspace ? { workspace } : {}),
+          ...(harness ? { harness } : {}),
         }),
       }
     },
@@ -428,6 +476,14 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     if (content?.type === "session") return content.sessionRef?.host
     return undefined
   })
+  function activeSurfaceHarnessForSession(sessionId: string, workspaceDir: string): HarnessRef | undefined {
+    const surface = activeSurface()
+    if (surface?.type !== "session" && surface?.type !== "context") return undefined
+    if (surface.sessionId !== sessionId || !sameWorkspaceDirectory(surface.directory, workspaceDir)) return undefined
+    if (surface.content?.type !== "session") return undefined
+    const harness = surface.content.sessionRef?.harness
+    return harness?.id && harness.id !== "opencode" ? harness : undefined
+  }
   const routeLocalSessionResolutionMisses = new Set<string>()
   const routeSessionMetaLookups = new Set<string>()
   const routeSessionMetaLookupDone = new Set<string>()
@@ -438,12 +494,14 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       const session = directorySessions(directory).find((item) => item.id === sessionId)
       if (!session) continue
       const resolvedDirectory = routeSessionDirectory(session.directory, directory)
+      const harness = routeSessionHarness(session) ?? activeSurfaceHarnessForSession(sessionId, resolvedDirectory)
       return {
         directory: resolvedDirectory,
         title: session.title,
         sessionRef: sessionRefForWorkspaceSession({
           sessionId,
           directory: resolvedDirectory,
+          ...(harness ? { harness } : {}),
         }),
       }
     }
@@ -472,6 +530,10 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
               title?: unknown
               workspaceID?: unknown
               workspaceId?: unknown
+              harness?: unknown
+              runner?: unknown
+              harnessType?: unknown
+              config?: unknown
             }>
           : undefined
       )
@@ -490,6 +552,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           directory,
           workspaceId,
         })
+        const harness = routeSessionHarness(session) ?? await routeBridgeSessionConfigHarness({
+          serverUrl: getClaxedoServerUrl(),
+          sessionID: sessionId,
+          workspaceDirectory: directory,
+        })
         if (directSessionRouteId() !== sessionId) return
         if (isRouteIntentClosed({ sessionId })) return
         const surface = activeSurface()
@@ -507,6 +574,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
               sessionId,
               directory,
               ...(workspace ? { workspace } : {}),
+              ...(harness ? { harness } : {}),
             }),
           },
         )

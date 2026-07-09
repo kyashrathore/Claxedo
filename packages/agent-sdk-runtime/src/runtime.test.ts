@@ -32,8 +32,19 @@ function tick() {
 function testHarness(options: {
   sendMessage?: (id: string) => AsyncIterable<AgentRuntimeStreamEvent>
   abort?: (id: string) => Promise<AgentRuntimeAbortResult>
+  runtimeConfigCalls?: string[]
 } = {}): AgentHarnessFactory {
   const adapter: AgentHarnessAdapter = {
+    ...(options.runtimeConfigCalls
+      ? {
+          adapterCapabilities: ["runtime-config"] as const,
+          setModel(model: string) {
+            options.runtimeConfigCalls?.push(`setModel:${model}`)
+          },
+          setAuth() {},
+          async applyConfig() {},
+        }
+      : {}),
     async listSessions() {
       return []
     },
@@ -41,6 +52,7 @@ function testHarness(options: {
       return null
     },
     async createSession() {
+      options.runtimeConfigCalls?.push("createSession")
       return { id: "ses_test" }
     },
     async updateSession() {
@@ -105,6 +117,23 @@ describe("createAgentRuntime", () => {
       { info: { role: "user" } },
       { info: { role: "assistant" } },
     ])
+    runtime.dispose()
+  })
+
+  test("applies the selected runtime model before creating a session", async () => {
+    const calls: string[] = []
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({ runtimeConfigCalls: calls })],
+    })
+
+    await runtime.sessions.create({
+      directory: "/workspace",
+      harness: { id: "pi", access: "native" },
+      model: { providerID: "pi", modelID: "gpt-5.5" },
+    })
+
+    expect(calls).toEqual(["setModel:gpt-5.5", "createSession"])
     runtime.dispose()
   })
 
@@ -724,6 +753,67 @@ describe("createAgentRuntime", () => {
     expect(sessions.at(-1)).toMatchObject({
       id: "ses_1",
       lastTurn: { status: "completed", completedAt: 123, assistantMessageId: "msg_assistant" },
+    })
+  })
+
+  test("records failed turn errors on the active assistant message", () => {
+    const store = createMemoryRuntimeStore()
+    store.bindSession({
+      sessionId: "ses_1",
+      directory: "/repo",
+      title: "Review",
+      agentSessionId: "ses_1",
+    })
+    store.startTurn({
+      sessionId: "ses_1",
+      userMessageId: "msg_user",
+      assistantMessageId: "msg_assistant",
+      agent: "build",
+      model: { providerID: "codex-app-server", modelID: "gpt-5.5" },
+      parts: [{ type: "text", text: "hello" }],
+    })
+    store.finishTurn({
+      sessionId: "ses_1",
+      assistantMessageId: "msg_assistant",
+      outcome: { status: "failed", completedAt: 123, error: "Codex authentication failed" },
+    })
+
+    expect(store.getMessages("ses_1")[1]).toMatchObject({
+      info: {
+        id: "msg_assistant",
+        error: { data: { message: "Codex authentication failed" } },
+        time: { completed: 123 },
+      },
+    })
+  })
+
+  test("keeps the specific runtime error after a generic error status", async () => {
+    const store = createMemoryRuntimeStore()
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [testHarness({
+        sendMessage: async function* () {
+          yield { type: "session-status", status: "error" }
+          yield { type: "error", error: "Codex authentication failed with 401 Unauthorized" }
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+      model: { providerID: "pi", modelID: "virtual" },
+    })
+
+    await runtime.turns.start({
+      sessionId: session.id,
+      text: "hello",
+      model: { providerID: "pi", modelID: "virtual" },
+    })
+    while (!store.getSession(session.id)?.lastTurn) await tick()
+
+    expect(store.getSession(session.id)?.lastTurn).toMatchObject({
+      status: "failed",
+      error: "Codex authentication failed with 401 Unauthorized",
     })
   })
 })

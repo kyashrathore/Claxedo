@@ -118,6 +118,7 @@ function ids(input: PromptInput["model"], variant?: string) {
     `${input.providerID}/${input.modelID}`,
     ...(variant ? [`${input.modelID}/${variant}`] : []),
     input.modelID,
+    ...(input.modelID === "default" ? ["default[]"] : []),
   ]
   return [...new Set(out)]
 }

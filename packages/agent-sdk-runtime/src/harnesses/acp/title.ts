@@ -61,7 +61,7 @@ export function extractTextFromParts(parts: unknown[]): string {
   return ""
 }
 
-/** Emit a truncated-text title immediately; fire-and-forget an LLM title generation via ACP. */
+/** Emit a deterministic prompt-derived title without starting another provider turn. */
 export function maybeAutoTitle(
   deps: ACPTitleDeps,
   id: string,
@@ -75,7 +75,6 @@ export function maybeAutoTitle(
     const text = extractTextFromParts(parts)
     if (!text) return null
 
-    // Immediate fallback: truncated user message
     const fallback = fallbackSessionTitle(text)
     const now = Date.now()
     const event = sessionUpdated({
@@ -92,11 +91,6 @@ export function maybeAutoTitle(
       agentSessionId,
       payload: event,
       source: { dir: "in", method: "auto-title", frame: { title: fallback } },
-    })
-
-    // Fire-and-forget: generate a better title via the ACP process
-    generateAITitle(deps, id, directory, text).catch((err) => {
-      log.warn("generateAITitle: failed (keeping fallback title)", { err })
     })
 
     return event

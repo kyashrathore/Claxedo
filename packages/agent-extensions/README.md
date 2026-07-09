@@ -57,12 +57,15 @@ installs, and mirrored workspace state. `--runtime-dir` controls generated runti
 state for `materialize` and `list` output, defaulting to
 `<project>/.agent-extensions`.
 
-`materialize` remains available for first-party project extensions stored under
-`agent-extensions/`:
+`materialize` replays the full desired state — first-party project extensions
+stored under `agent-extensions/` plus everything added with `install`:
 
 ```sh
 agent-extensions materialize --targets codex,claude,opencode,cursor
 ```
+
+`--targets` limits the first-party package only; installed packages keep the
+targets they were installed with.
 
 ## Package Shape
 
@@ -130,12 +133,31 @@ import { applyRuntimeAgentExtensions } from "@claxedo/agent-extensions/replay"
 await applyRuntimeAgentExtensions(snapshot, process.cwd())
 ```
 
+The snapshot is the whole world for the runtime that applies it: installs
+absent from the snapshot are uninstalled on replay. Disabled installs are kept
+in the snapshot with `enabled: false` (host policy is folded into that flag),
+so disable/enable round-trips survive replay.
+
 ## Safety Model
 
 Agent Extensions keep ownership records in `.agent-extensions/materialized.json`
 and refuse to overwrite unmanaged target paths. Uninstall and disable remove
 only owned artifacts. GitHub packages are locked by resolved SHA and verified
 against recorded package digests before replay.
+
+State files and target configs are written atomically (temp file + rename).
+Corrupted (unparseable) state or target config files abort the operation
+instead of being read as empty — a truncated `installed.json` or a typo in a
+hand-edited `.mcp.json` never triggers deletion of other installs or a rewrite
+of the user's file. `agent-extensions doctor` reports such files as
+`corrupt_state_file` issues. When a component fails to materialize (for
+example an MCP-server name conflict), everything applied up to that point is
+still recorded as owned, so a retry after fixing the conflict succeeds.
+
+One special case: the first-party `claxedo-mcp` install (exact id and
+`kyashrathore/Claxedo@dev` source) gets its connection env rewritten from the
+materializing process's environment and any `CLAXEDO_*` auth tokens stripped
+from target files. Third-party packages are always materialized verbatim.
 
 Run `agent-extensions doctor` to inspect desired state, locks, cache roots, and
 materialized paths.

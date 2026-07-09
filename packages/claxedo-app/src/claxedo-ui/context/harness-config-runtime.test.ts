@@ -72,6 +72,22 @@ describe("harness config runtime", () => {
     })
   })
 
+  test("scopes workspace-runtime option discovery to the selected harness", async () => {
+    const urls: string[] = []
+    const harnessRuntime = runtime({
+      transportFetch: async (input) => {
+        urls.push(String(input))
+        return Response.json({ ok: true })
+      },
+    })
+
+    await harnessRuntime.configOptionsFetch("codex-acp", { directory: "workspace:ws_cloud" })
+
+    expect(urls).toEqual([
+      "/api/wr/harness-config-options?directory=workspace%3Aws_cloud&harness=codex-acp",
+    ])
+  })
+
   test("looks up project inventory workspace kind without freezing project data", () => {
     let projects: ProjectInventoryItem[] = [{
       worktree: "/repo",

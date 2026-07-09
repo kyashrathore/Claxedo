@@ -1,5 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
+import { readFileIfExists, writeFileAtomic } from "./fs-safe"
+import { AgentExtensionStateError } from "./state"
 import type { PackageSource, HarnessTarget } from "./types"
 
 /**
@@ -59,19 +61,28 @@ export function materializedRecordPath(root: string) {
 }
 
 export async function readMaterializedRuntimeRecord(file: string): Promise<MaterializedRuntimeRecord> {
-  const data = await fs.readFile(file, "utf8").then((raw) => JSON.parse(raw) as Partial<MaterializedRuntimeRecord>).catch(() => null)
+  const raw = await readFileIfExists(file)
+  if (raw === undefined) return { version: 1, packages: {} }
+  let data: Partial<MaterializedRuntimeRecord>
+  try {
+    data = JSON.parse(raw) as Partial<MaterializedRuntimeRecord>
+  } catch (err) {
+    throw new AgentExtensionStateError(
+      `Materialized Agent Extension record ${file} is not valid JSON; fix or remove it (it is the ownership record that guards deletions): ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
   return {
     version: 1,
-    packages: data?.packages ?? {},
+    packages: data.packages ?? {},
   }
 }
 
 export async function writeMaterializedRuntimeRecord(file: string, record: MaterializedRuntimeRecord) {
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o755 })
-  await fs.writeFile(file, JSON.stringify({
+  await writeFileAtomic(file, JSON.stringify({
     version: 1,
     packages: Object.fromEntries(Object.entries(record.packages).sort(([a], [b]) => a.localeCompare(b))),
-  }, null, 2) + "\n", { mode: 0o644 })
+  }, null, 2) + "\n")
 }
 
 export function componentOwnedBy(record: MaterializedRuntimeRecord | undefined, targetPath: string, ownerId: string) {
@@ -160,11 +171,3 @@ export async function linkOrCopyOwnedDirectory(input: {
   }
 }
 
-export async function uninstallOwnedComponents(input: {
-  record: MaterializedRuntimeRecord
-  ownerId: string
-}) {
-  await Promise.all((input.record.packages[input.ownerId]?.components ?? [])
-    .filter((item) => item.path && item.status === "applied")
-    .map((item) => fs.rm(item.path!, { recursive: true, force: true })))
-}

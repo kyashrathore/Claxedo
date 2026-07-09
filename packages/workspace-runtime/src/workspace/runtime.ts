@@ -18,6 +18,7 @@ import {
   type AgentQuestionRow,
   type SessionConfig,
   type SessionConfigUpdate,
+  sdkModelConfigOption,
 } from "@claxedo/agent-sdk-runtime"
 import { applyRuntimeAgentExtensions } from "@claxedo/agent-extensions"
 import {
@@ -27,6 +28,7 @@ import {
   CursorHarnessAdapter,
   OpenCodeHarnessAdapter,
   PiHarnessAdapter,
+  claudeAuthEnv,
   createStreamableHttpACPTransportFactory,
   createWebSocketACPTransportFactory,
   hasAdapterCapability,
@@ -189,6 +191,7 @@ const HARNESS_BINARY_FALLBACKS: Partial<Record<string, () => string>> = {
 }
 
 const ACP_ARGS: Partial<Record<AgentHarnessId, string[]>> = {
+  codex: ["-c", "service_tier=\"fast\""],
   cursor: ["acp"],
 }
 
@@ -284,7 +287,7 @@ function binary(harness: RuntimeRunner) {
 }
 
 function acpArgs(harness: RuntimeRunner) {
-  return ACP_ARGS[harness.id] ?? processConnection(harness)?.args ?? []
+  return [...(ACP_ARGS[harness.id] ?? []), ...(processConnection(harness)?.args ?? [])]
 }
 
 export function acpRemoteTransportEnabled(env: NodeJS.ProcessEnv = process.env) {
@@ -312,9 +315,13 @@ export function acpTransportFactory(harness: RuntimeRunner, env: NodeJS.ProcessE
 function acpEnv(harness: RuntimeRunner, auth: Record<string, string>) {
   const definition = harnessDefinition(harness)
   if (definition?.access !== "acp" || !definition.authEnv || !definition.authSlot) return {}
-  const value = definition.authSlot === "openai"
+  if (definition.authSlot === "anthropic") {
+    return claudeAuthEnv(auth[definition.key] ?? auth[definition.authSlot])
+  }
+  const input = definition.authSlot === "openai"
     ? codexAuthInput(auth)
-    : auth[harnessKey(harness)] ?? auth[definition.authSlot]
+    : auth[definition.key] ?? auth[definition.authSlot]
+  const value = definition.authSlot === "openai" ? runtimeAuthKey(input) : input
   if (!value) return {}
   return { [definition.authEnv]: value }
 }
@@ -362,6 +369,19 @@ function errorMessage(input: unknown) {
     } catch {}
   }
   return String(input)
+}
+
+function harnessConfigOptionsErrorMessage(input: {
+  harness: RuntimeRunner
+  cause: unknown
+}) {
+  const message = errorMessage(input.cause)
+  if (input.harness.id === "codex" && input.harness.access === "acp" && message.startsWith("ACP connection closed")) {
+    const detail = message.replace(/^ACP connection closed:?\s*/, "").replace(/^Error:\s*/, "")
+    if (detail) return `Codex could not start: ${detail}. Run \`codex doctor\`, fix the reported Codex config/auth issue, then retry.`
+    return "Codex could not start. Run `codex doctor`, fix the reported Codex config/auth issue, then retry."
+  }
+  return message
 }
 
 function agentExtensionApplyFailureReason(input: unknown) {
@@ -498,7 +518,7 @@ export async function materializeCodexAuth(input: string | undefined) {
     path.join(dir, "auth.json"),
     JSON.stringify({
       auth_mode: typeof value.auth_mode === "string" ? value.auth_mode : "chatgpt",
-      OPENAI_API_KEY: typeof value.OPENAI_API_KEY === "string" ? value.OPENAI_API_KEY : null,
+      OPENAI_API_KEY: null,
       tokens: {
         ...(typeof row?.id_token === "string" ? { id_token: row.id_token } : {}),
         access_token: access,
@@ -1062,6 +1082,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     adapter?.dispose()
     if (adapter) activeTurns.delete(adapter)
     adapter = undefined
+    sessionRuntimes.clear()
   }
 
   function store() {
@@ -1261,9 +1282,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
               ...(c.req.query("binary") ? { connection: { kind: "process" as const, binary: c.req.query("binary")! } } : {}),
             }
           : runner
-        const adapter = adapterKey(targetRunner) === adapterKey(runner)
-          ? ensure()
-          : await ensureSessionAdapter(targetRunner)
         if (targetRunner.id === "opencode") {
           return c.json({
             ok: false,
@@ -1274,6 +1292,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             },
           }, 404)
         }
+        if (
+          (targetRunner.access === "native" && isStaticSdkHarness(targetRunner.id))
+          || (targetRunner.id === "codex" && targetRunner.access === "acp")
+        ) {
+          return c.json([sdkModelConfigOption(targetRunner.id)])
+        }
+        const adapter = await ensureSessionAdapter(targetRunner)
         const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
         try {
           if (!adapter.probeConfigOptions) {
@@ -1293,7 +1318,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             error: {
               code: "harness_config_options_unavailable",
               harness: targetRunner.id,
-              message: errorMessage(cause),
+              message: harnessConfigOptionsErrorMessage({
+                harness: targetRunner,
+                cause,
+              }),
             },
           }, 502)
         }
@@ -1466,8 +1494,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           return recovered
         },
         updateSessionConfig: async ({ adapter, directory, sessionId, update }) => {
-          const next = store().updateSessionConfig(sessionId, update, { directory })
-          if (next) return next
+          store().updateSessionConfig(sessionId, update, { directory })
           const adapterConfig = await adapter.updateSessionConfig(sessionId, update, directory)
           return store().updateSessionConfig(sessionId, adapterConfig, { directory }) ?? adapterConfig
         },
@@ -1533,4 +1560,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       sessionConfigStore = undefined
     },
   }
+}
+
+function isStaticSdkHarness(id: AgentHarnessId): id is "claude" | "codex" | "cursor" {
+  return id === "claude" || id === "codex" || id === "cursor"
 }

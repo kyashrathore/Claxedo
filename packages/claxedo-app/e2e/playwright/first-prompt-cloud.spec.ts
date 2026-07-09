@@ -38,6 +38,13 @@ const BIG_PICKLE = {
   providerID: "opencode",
   cost: { input: 1, output: 1 },
 }
+type CloudHarness = "opencode" | "claude-acp" | "codex-acp"
+
+const HARNESS_MODELS: Record<CloudHarness, { id: string; name: string; providerID: CloudHarness }> = {
+  opencode: BIG_PICKLE,
+  "claude-acp": { id: "claude-sonnet-4-6", name: "Sonnet 4.6", providerID: "claude-acp" },
+  "codex-acp": { id: "gpt-5.2-codex", name: "GPT-5.2 Codex", providerID: "codex-acp" },
+}
 
 type RelayHit = {
   method: string
@@ -115,14 +122,14 @@ function textOf(parts: unknown): string {
     .trim()
 }
 
-function turnMessages(input: { index: number; messageID: string; text: string }) {
+function turnMessages(input: { index: number; messageID: string; text: string; providerID: string; modelID: string }) {
   const user: MessageRow = {
     info: {
       id: input.messageID,
       sessionID: SESSION_ID,
       role: "user",
       time: { created: Date.now() },
-      model: { providerID: "opencode", modelID: "big-pickle" },
+      model: { providerID: input.providerID, modelID: input.modelID },
     },
     parts: [{ id: `${input.messageID}_text`, sessionID: SESSION_ID, messageID: input.messageID, type: "text", text: input.text }],
   }
@@ -134,8 +141,8 @@ function turnMessages(input: { index: number; messageID: string; text: string })
       role: "assistant",
       time: { created: Date.now(), completed: Date.now() },
       parentID: input.messageID,
-      providerID: "opencode",
-      modelID: "big-pickle",
+      providerID: input.providerID,
+      modelID: input.modelID,
     },
     parts: [{
       id: `${assistantID}_text`,
@@ -207,10 +214,28 @@ function api(route: Route) {
   return type === "fetch" || type === "xhr" || type === "eventsource" || route.request().method() === "OPTIONS"
 }
 
-async function setup(page: Page, hits: Hits) {
+async function setup(page: Page, hits: Hits, options?: { workspaceCreated?: boolean; workspaceOptionsError?: string }) {
   const replayMessages: MessageRow[] = []
-  let workspaceCreated = false
+  let workspaceCreated = options?.workspaceCreated ?? false
   let sessionCreated = false
+  let selectedHarness: CloudHarness = "opencode"
+  const harnessModel = (harness = selectedHarness) => HARNESS_MODELS[harness]
+  const providerCatalog = () =>
+    Object.entries(HARNESS_MODELS).map(([id, model]) => ({
+      id,
+      name: id === "opencode" ? "OpenCode" : id === "claude-acp" ? "Claude" : "Codex",
+      env: [],
+      models: { [model.id]: model },
+    }))
+  const currentSessionConfig = () => {
+    const model = harnessModel()
+    return {
+      harness: { type: selectedHarness, model: model.id, status: "ready", ready: true, workspaceId: WORKSPACE_ID },
+      runner: { type: selectedHarness, model: model.id, status: "ready", ready: true, workspaceId: WORKSPACE_ID },
+      model: { providerID: selectedHarness, modelID: model.id },
+      agent: "build",
+    }
+  }
 
   const cloudProject = () => ({
     id: PROJECT_ID,
@@ -304,16 +329,30 @@ async function setup(page: Page, hits: Hits) {
       }
       if (runtimePath === "/provider") {
         await json(route, {
-          all: [
-            {
-              id: "opencode",
-              name: "OpenCode",
-              env: [],
-              models: { "big-pickle": BIG_PICKLE },
-            },
-          ],
-          connected: ["opencode"],
-          default: { opencode: "big-pickle" },
+          all: providerCatalog(),
+          connected: Object.keys(HARNESS_MODELS),
+          default: Object.fromEntries(Object.entries(HARNESS_MODELS).map(([id, model]) => [id, model.id])),
+        })
+        return
+      }
+      if (runtimePath === "/api/wr/harness-config-options") {
+        const requestedHarness = (url.searchParams.get("harness") as CloudHarness | null) ?? selectedHarness
+        if (options?.workspaceOptionsError && requestedHarness !== "opencode") {
+          await json(route, { error: options.workspaceOptionsError }, 401)
+          return
+        }
+        const model = harnessModel(requestedHarness)
+        await json(route, {
+          source: "runner",
+          stale: false,
+          options: [{
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: model.id,
+            selectOptions: [{ id: model.id, name: model.name }],
+          }],
         })
         return
       }
@@ -368,14 +407,11 @@ async function setup(page: Page, hits: Hits) {
       }
       if (/^\/session\/[^/]+\/config$/.test(runtimePath)) {
         if (request.method() === "GET") {
-          await json(route, {
-            harness: { type: "opencode", model: "big-pickle", status: "ready", ready: true, workspaceId: WORKSPACE_ID },
-            runner: { type: "opencode", model: "big-pickle", status: "ready", ready: true, workspaceId: WORKSPACE_ID },
-            model: { providerID: "opencode", modelID: "big-pickle" },
-            agent: "build",
-          })
+          await json(route, currentSessionConfig())
           return
         }
+        const body = request.postDataJSON() as { harness?: { type?: CloudHarness }; model?: { providerID?: CloudHarness; modelID?: string } }
+        selectedHarness = body.harness?.type ?? body.model?.providerID ?? selectedHarness
         await json(route, { ok: true })
         return
       }
@@ -418,12 +454,17 @@ async function setup(page: Page, hits: Hits) {
         const body = request.postDataJSON() as {
           messageID?: string
           parts?: unknown
+          model?: { providerID?: string; modelID?: string }
         }
         const text = textOf(body.parts) || `cloud message ${replayMessages.length / 2 + 1}`
+        const model = body.model?.providerID && body.model.modelID
+          ? { providerID: body.model.providerID, modelID: body.model.modelID }
+          : { providerID: selectedHarness, modelID: harnessModel().id }
         replayMessages.push(...turnMessages({
           index: replayMessages.length / 2 + 1,
           messageID: body.messageID || `msg_cloud_user_${replayMessages.length / 2 + 1}`,
           text,
+          ...model,
         }))
         await route.fulfill({ status: 204, body: "" })
         return
@@ -559,6 +600,7 @@ async function setup(page: Page, hits: Hits) {
           updatedAt: 2,
           tags: [],
           attachments: [],
+          harness: { type: selectedHarness, model: harnessModel().id, status: "ready", ready: true },
         },
       ] : []
       await json(route, {
@@ -582,6 +624,7 @@ async function setup(page: Page, hits: Hits) {
             title: "First prompt cloud session",
             created_at: 1,
             updated_at: 2,
+            harness: { type: selectedHarness, model: harnessModel().id, status: "ready", ready: true },
           },
         ] : [],
       })
@@ -629,16 +672,9 @@ async function setup(page: Page, hits: Hits) {
         path: { state: "", config: "", worktree: DIR, directory: DIR, home: "" },
         project: [cloudProject()],
         provider: {
-          all: [
-            {
-              id: "opencode",
-              name: "OpenCode",
-              env: [],
-              models: { "big-pickle": BIG_PICKLE },
-            },
-          ],
-          default: { opencode: "big-pickle" },
-          connected: ["opencode"],
+          all: providerCatalog(),
+          default: Object.fromEntries(Object.entries(HARNESS_MODELS).map(([id, model]) => [id, model.id])),
+          connected: Object.keys(HARNESS_MODELS),
         },
         provider_auth: {},
         config: { provider: { id: "opencode", model: "big-pickle" }, agent: { id: "build" } },
@@ -668,10 +704,16 @@ async function setup(page: Page, hits: Hits) {
       return
     }
     if (url.pathname === "/api/claxedo/agent-config/harness") {
-      await json(route, { type: "opencode", model: "big-pickle", status: "ready", ready: true })
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as { type?: CloudHarness } | undefined
+        selectedHarness = body?.type ?? selectedHarness
+      }
+      const model = harnessModel()
+      await json(route, { type: selectedHarness, model: model.id, status: "ready", ready: true })
       return
     }
     if (url.pathname === "/api/claxedo/agent-config/harness/options") {
+      const model = harnessModel((url.searchParams.get("type") as CloudHarness | null) ?? selectedHarness)
       await json(route, {
         source: "runner",
         stale: false,
@@ -681,8 +723,8 @@ async function setup(page: Page, hits: Hits) {
             name: "Model",
             category: "model",
             type: "select",
-            currentValue: "big-pickle",
-            selectOptions: [{ id: "big-pickle", name: "Big Pickle" }],
+            currentValue: model.id,
+            selectOptions: [{ id: model.id, name: model.name }],
           },
         ],
       })
@@ -702,16 +744,9 @@ async function setup(page: Page, hits: Hits) {
     // session creation and prompt dispatch are still asserted on the relay lane.
     if (url.pathname === "/provider") {
       await json(route, {
-        all: [
-          {
-            id: "opencode",
-            name: "OpenCode",
-            env: [],
-            models: { "big-pickle": BIG_PICKLE },
-          },
-        ],
-        connected: ["opencode"],
-        default: { opencode: "big-pickle" },
+        all: providerCatalog(),
+        connected: Object.keys(HARNESS_MODELS),
+        default: Object.fromEntries(Object.entries(HARNESS_MODELS).map(([id, model]) => [id, model.id])),
       })
       return
     }
@@ -827,6 +862,76 @@ async function composePrompt(page: Page, input: Locator, text: string) {
   }
   await expect(input).toContainText(text, { timeout: 10_000 })
 }
+
+function literalText(value: string) {
+  return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+}
+
+async function expectOnlyHarnessModelControl(page: Page, modelName: string | RegExp) {
+  await expect(page.locator('[data-action="prompt-harness-model"]').last()).toContainText(
+    typeof modelName === "string" ? literalText(modelName) : modelName,
+    { timeout: 20_000 },
+  )
+  await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
+  await expect(page.locator('[data-action="prompt-model-variant"]')).toHaveCount(0)
+}
+
+test("core cloud vm unavailable harness does not fall back to OpenCode controls @core", async ({ page }) => {
+  const hits: Hits = {
+    console: [],
+    failed: [],
+    badResponses: [],
+    unhandled: [],
+    workspaceCreates: [],
+    relayRuntime: [],
+    controlPlaneEvents: [],
+    controlPlaneSessionMessages: [],
+    controlPlaneSessionEvents: [],
+    controlPlaneSessionCapabilities: [],
+    controlPlaneSessionLists: [],
+    controlPlaneWorkspaceLists: [],
+    connections: [],
+    forbiddenOldRuntime: [],
+  }
+
+  await seed(page)
+  await setup(page, hits, {
+    workspaceCreated: true,
+    workspaceOptionsError: "Authentication required. Please run 'agent login' first.",
+  })
+  await page.goto(`/w/${encodeURIComponent(WORKSPACE_ID)}/session`, { waitUntil: "domcontentloaded" })
+  await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+
+  const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+  await expect(input).toBeVisible({ timeout: 20_000 })
+  await page.getByRole("button", { name: /^OpenCode$/ }).last().click()
+  await page.getByRole("option", { name: /^Claude$/ }).first().click()
+  await expect(page.getByRole("button", { name: /^Claude$/ }).last()).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('[data-action="prompt-harness-model"]').last()).toContainText(/Unavailable|Select model/i, { timeout: 20_000 })
+  await expect(page.locator("[aria-label=\"Authentication required. Please run 'agent login' first.\"]")).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
+  await expect(page.locator('[data-action="prompt-model-variant"]')).toHaveCount(0)
+
+  await composePrompt(page, input, "should not send")
+  await expect(page.locator('[data-action="prompt-submit"]').last()).toBeDisabled()
+  await page.waitForTimeout(250)
+  expect(hits.workspaceCreates).toEqual([])
+  expect(
+    hits.relayRuntime.filter((item) =>
+      item.method === "POST" && new URL(item.url).pathname === `/workspaces/${WORKSPACE_ID}/session`
+    ),
+  ).toEqual([])
+  expect(
+    hits.relayRuntime.filter((item) =>
+      item.method === "POST" &&
+      new URL(item.url).pathname === `/workspaces/${WORKSPACE_ID}/session/${SESSION_ID}/prompt_async`
+    ),
+  ).toEqual([])
+  expectNoRouteStackOverflow(hits)
+  expect(hits.unhandled).toEqual([])
+  expect(nonClerkConsole(hits)).toEqual([])
+  expect(nonAbortFailures(hits)).toEqual([])
+})
 
 test("core cloud workspace session posts through relay and resumes after reload @core", async ({ page }) => {
   const hits: Hits = {
@@ -1000,3 +1105,151 @@ ${hits.console.join("\n") || "(none)"}`)
   expect(nonClerkConsole(hits)).toEqual([])
   expect(nonAbortFailures(hits)).toEqual([])
 })
+
+for (const harnessCase of [
+  {
+    label: "Claude",
+    option: /^Claude$/,
+    providerID: "claude-acp",
+    modelID: "claude-sonnet-4-6",
+    modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i,
+  },
+  {
+    label: "Codex",
+    option: /^Codex$/,
+    providerID: "codex-acp",
+    modelID: "gpt-5.2-codex",
+    modelLabel: /GPT-5\.2 Codex|gpt-5\.2-codex/i,
+  },
+] as const) {
+test(`core cloud vm ${harnessCase.label} harness model ownership survives create, reload, and follow-up @core`, async ({ page }) => {
+  const hits: Hits = {
+    console: [],
+    failed: [],
+    badResponses: [],
+    unhandled: [],
+    workspaceCreates: [],
+    relayRuntime: [],
+    controlPlaneEvents: [],
+    controlPlaneSessionMessages: [],
+    controlPlaneSessionEvents: [],
+    controlPlaneSessionCapabilities: [],
+    controlPlaneSessionLists: [],
+    controlPlaneWorkspaceLists: [],
+    connections: [],
+    forbiddenOldRuntime: [],
+  }
+
+  await seed(page)
+  await setup(page, hits)
+  await page.goto(`/${slug(DIR)}/session`, { waitUntil: "domcontentloaded" })
+  await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+
+  const promptVisible = await page
+    .getByRole("textbox", { name: /Ask anything/i })
+    .isVisible()
+    .catch(() => false)
+  if (!promptVisible) {
+    await page.getByRole("button", { name: /New session/i }).first().click()
+  }
+  const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+  await expect(input).toBeVisible({ timeout: 20_000 })
+
+  await page.getByRole("button", { name: /^OpenCode$/ }).last().click()
+  await page.getByRole("option", { name: harnessCase.option }).first().click()
+  await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
+
+  const environment = page.getByRole("group", { name: "Workspace environment" })
+  await environment.getByRole("button", { name: "cloud" }).click()
+  await expect(environment.getByRole("button", { name: "cloud" })).toHaveAttribute("aria-pressed", "true")
+
+  const first = `core cloud ${harnessCase.label.toLowerCase()} first`
+  const second = `core cloud ${harnessCase.label.toLowerCase()} second`
+  const third = `core cloud ${harnessCase.label.toLowerCase()} after reload`
+  await composePrompt(page, input, first)
+  await page.locator('[data-action="prompt-submit"]').last().click()
+
+  await expect
+    .poll(
+      () =>
+        hits.relayRuntime.filter(
+          (item) =>
+            item.method === "POST" &&
+            new URL(item.url).pathname === `/workspaces/${WORKSPACE_ID}/session/${SESSION_ID}/prompt_async`,
+        ).length,
+      { timeout: 20_000 },
+    )
+    .toBe(1)
+
+  const firstPrompt = hits.relayRuntime.find(
+    (item) =>
+      item.method === "POST" &&
+      new URL(item.url).pathname === `/workspaces/${WORKSPACE_ID}/session/${SESSION_ID}/prompt_async`,
+  )?.body as { model?: { providerID?: string; modelID?: string }; parts?: unknown; variant?: string } | undefined
+  expect(textOf(firstPrompt?.parts)).toBe(first)
+  expect(firstPrompt?.model).toEqual({ providerID: harnessCase.providerID, modelID: harnessCase.modelID })
+  expect(firstPrompt?.variant).toBeUndefined()
+  const workspaceOptionRequests = hits.relayRuntime.filter((item) =>
+    new URL(item.url).pathname === `/workspaces/${WORKSPACE_ID}/api/wr/harness-config-options`
+  )
+  expect(workspaceOptionRequests.every((item) => new URL(item.url).searchParams.get("harness") === harnessCase.providerID)).toBe(true)
+  await expect(page.getByText(`cloud ack 1: ${first}`, { exact: true })).toBeVisible({ timeout: 20_000 })
+  await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
+
+  await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), second)
+  await page.locator('[data-action="prompt-submit"]').last().click()
+  await expect
+    .poll(
+      () =>
+        hits.relayRuntime.filter(
+          (item) =>
+            item.method === "POST" &&
+            new URL(item.url).pathname === `/workspaces/${WORKSPACE_ID}/session/${SESSION_ID}/prompt_async`,
+        ).length,
+      { timeout: 20_000 },
+    )
+    .toBe(2)
+  const secondPrompt = hits.relayRuntime.filter(
+    (item) =>
+      item.method === "POST" &&
+      new URL(item.url).pathname === `/workspaces/${WORKSPACE_ID}/session/${SESSION_ID}/prompt_async`,
+  ).at(-1)?.body as { model?: { providerID?: string; modelID?: string }; parts?: unknown; variant?: string } | undefined
+  expect(textOf(secondPrompt?.parts)).toBe(second)
+  expect(secondPrompt?.model).toEqual({ providerID: harnessCase.providerID, modelID: harnessCase.modelID })
+  expect(secondPrompt?.variant).toBeUndefined()
+  await expect(page.getByText(`cloud ack 2: ${second}`, { exact: true })).toBeVisible({ timeout: 20_000 })
+  await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
+
+  await page.reload({ waitUntil: "domcontentloaded" })
+  await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+  await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
+
+  await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), third)
+  await page.locator('[data-action="prompt-submit"]').last().click()
+  await expect
+    .poll(
+      () =>
+        hits.relayRuntime.filter(
+          (item) =>
+            item.method === "POST" &&
+            new URL(item.url).pathname === `/workspaces/${WORKSPACE_ID}/session/${SESSION_ID}/prompt_async`,
+        ).length,
+      { timeout: 20_000 },
+    )
+    .toBe(3)
+  const thirdPrompt = hits.relayRuntime.filter(
+    (item) =>
+      item.method === "POST" &&
+      new URL(item.url).pathname === `/workspaces/${WORKSPACE_ID}/session/${SESSION_ID}/prompt_async`,
+  ).at(-1)?.body as { model?: { providerID?: string; modelID?: string }; parts?: unknown; variant?: string } | undefined
+  expect(textOf(thirdPrompt?.parts)).toBe(third)
+  expect(thirdPrompt?.model).toEqual({ providerID: harnessCase.providerID, modelID: harnessCase.modelID })
+  expect(thirdPrompt?.variant).toBeUndefined()
+
+  expect(hits.forbiddenOldRuntime).toEqual([])
+  expectNoRouteStackOverflow(hits)
+  expect(hits.unhandled).toEqual([])
+  expect(nonClerkConsole(hits)).toEqual([])
+  expect(nonAbortFailures(hits)).toEqual([])
+})
+}

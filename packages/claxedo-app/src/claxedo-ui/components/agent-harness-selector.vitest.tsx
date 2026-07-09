@@ -22,6 +22,11 @@ vi.mock("../../pane/store/pane-preferences", () => ({
 // Stub Select to expose trigger + option buttons in the DOM
 vi.mock("@opencode-ai/ui/select", () => ({
   Select: (props: any) => {
+    const groups = (props.options as string[]).reduce((result, opt) => {
+      const group = props.groupBy?.(opt) ?? ""
+      result.set(group, [...(result.get(group) ?? []), opt])
+      return result
+    }, new Map<string, string[]>())
     return (
       <div data-testid="select" data-disabled={props.disabled ? "true" : "false"}>
         <button
@@ -30,13 +35,18 @@ vi.mock("@opencode-ai/ui/select", () => ({
         >
           {props.label?.(props.current) ?? props.current}
         </button>
-        {(props.options as string[]).map((opt: string) => (
-          <button
-            data-testid={`select-option-${opt}`}
-            onClick={() => props.onSelect?.(opt)}
-          >
-            {props.label?.(opt) ?? opt}
-          </button>
+        {[...groups.entries()].map(([group, options]) => (
+          <div data-testid={`select-group-${group}`}>
+            <span>{group}</span>
+            {options.map((opt: string) => (
+              <button
+                data-testid={`select-option-${opt}`}
+                onClick={() => props.onSelect?.(opt)}
+              >
+                {props.label?.(opt) ?? opt}
+              </button>
+            ))}
+          </div>
         ))}
       </div>
     )
@@ -48,7 +58,7 @@ vi.mock("@claxedo/components/dialog-select-model", () => ({
     const items = props.model?.list?.() ?? []
     return (
       <div data-testid="model-selector" data-disabled={props.triggerProps?.disabled ? "true" : "false"}>
-        {props.children}
+        <div data-testid="model-trigger-content">{props.children}</div>
         {items.map((item: any) => (
           <button
             data-testid={`model-option-${item.id}`}
@@ -60,6 +70,14 @@ vi.mock("@claxedo/components/dialog-select-model", () => ({
       </div>
     )
   },
+}))
+
+vi.mock("@opencode-ai/ui/v2/tooltip-v2", () => ({
+  TooltipV2: (props: any) => (
+    <span data-testid="tooltip-v2" data-value={props.value}>
+      {props.children}
+    </span>
+  ),
 }))
 
 import { AgentHarnessSelector } from "./agent-harness-selector"
@@ -177,7 +195,7 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
   test("switching from opencode to claude-acp is blocked when locked", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
 
-    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "opencode"]) {
+    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
@@ -187,11 +205,24 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
   test("only starts one runner switch while a switch is in flight", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
-    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "opencode"]) {
+    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
     expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: "codex-acp" }])
+  })
+
+  test("groups harness choices by ACP, native SDK, and direct runners", () => {
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+
+    expect(container.querySelector("[data-testid='select-group-ACP']")?.textContent).toContain("Claude")
+    expect(container.querySelector("[data-testid='select-group-ACP']")?.textContent).toContain("Codex")
+    expect(container.querySelector("[data-testid='select-group-ACP']")?.textContent).toContain("Cursor")
+    expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Claude")
+    expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Codex")
+    expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Cursor")
+    expect(container.querySelector("[data-testid='select-group-Direct']")?.textContent).toContain("Pi")
+    expect(container.querySelector("[data-testid='select-group-Direct']")?.textContent).toContain("OpenCode")
   })
 
   test("renders the selected model when ACP model options are available", () => {
@@ -265,7 +296,7 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     expect(container.textContent).toContain("Loading models")
   })
 
-  test("shows runner config error from the issue dot on click", () => {
+  test("surfaces runner config errors through the issue dot tooltip", () => {
     configError = "Authentication required. Please run 'agent login' first."
     optionsStale = true
     models = [{ id: "default", name: "Default (recommended)" }]
@@ -275,10 +306,46 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     const issue = container.querySelector("[aria-label=\"Authentication required. Please run 'agent login' first.\"]") as HTMLElement
 
     expect(issue).not.toBeNull()
-    expect(issue.title).toBe("Authentication required. Please run 'agent login' first.")
-    expect(container.textContent).toContain("Unavailable")
-    fireEvent.click(issue)
-    expect(container.textContent).toContain("Authentication required. Please run 'agent login' first.")
+    expect(issue.getAttribute("title")).toBe("Authentication required. Please run 'agent login' first.")
+    expect(container.querySelector("[data-testid='tooltip-v2']")?.getAttribute("data-value")).toBe(
+      "Authentication required. Please run 'agent login' first.",
+    )
+    const trigger = container.querySelector("[data-testid='model-trigger-content']")
+    expect(trigger?.textContent).toContain("Unavailable")
+    expect(trigger?.textContent).not.toContain("Default (recommended)")
+  })
+
+  test("surfaces Cursor SDK auth requirements through the issue dot", () => {
+    configError = "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login."
+    optionsStale = true
+    models = []
+
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+    const issue = container.querySelector("[aria-label='Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.']") as HTMLElement
+
+    expect(issue).not.toBeNull()
+    expect(issue.getAttribute("title")).toBe(
+      "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
+    )
+    expect(container.querySelector("[data-testid='tooltip-v2']")?.getAttribute("data-value")).toBe(
+      "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
+    )
+  })
+
+  test("shows unavailable when option discovery fails", () => {
+    configError = "ACP connection closed"
+    optionsStale = true
+    models = [{ id: "default", name: "Default (recommended)" }]
+    selectedModel = "default"
+
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+
+    const selector = container.querySelector("[data-testid='model-selector']")
+    expect(selector).not.toBeNull()
+    expect(selector!.getAttribute("data-disabled")).toBe("true")
+    const trigger = container.querySelector("[data-testid='model-trigger-content']")
+    expect(trigger?.textContent).toContain("Unavailable")
+    expect(trigger?.textContent).not.toContain("Default (recommended)")
   })
 
   test("keeps an explicit unavailable model slot when runner config fails", () => {

@@ -131,6 +131,20 @@ describe("harness status actions", () => {
     expect(refreshes).toEqual([])
   })
 
+  test("ignores failed status for a different harness in the same scope", async () => {
+    state.harness = "cursor-acp"
+
+    await actions().applyStatus(scope, {
+      type: "cursor-sdk",
+      activeType: "cursor-sdk",
+      error: "Cursor SDK requires an explicit cursor-sdk API key",
+    }, { directory: "/repo", sessionId: "new" })
+
+    expect(patches).toEqual([])
+    expect(saved).toEqual([])
+    expect(optionFetches).toEqual([])
+  })
+
   test("does not clear saved model when status has no truthy model", async () => {
     await actions().applyStatus(scope, {
       type: "claude-acp",

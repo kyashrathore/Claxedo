@@ -113,4 +113,43 @@ describe("sandboxFetch", () => {
 
     expect(globalThis.fetch).not.toHaveBeenCalled()
   })
+
+  test("uses the explicit loopback relay for local cloud workspace requests", async () => {
+    const requests: Array<{ url: string; directory: string | null; encoding: string | null }> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        requests.push({
+          url: request.url,
+          directory: request.headers.get("x-opencode-directory"),
+          encoding: request.headers.get("accept-encoding"),
+        })
+        return Response.json({ ok: true })
+      },
+    })
+
+    try {
+      const res = await sandboxFetch(
+        {
+          id: "ws_loopback",
+          kind: "cloud",
+          directory: "/workspace",
+          created_at: 1,
+          updated_at: 1,
+        } as Workspace,
+        "/api/wr/harness-config-options?directory=%2Fworkspace&harness=claude%3Aacp",
+        undefined,
+        { loopbackRelayUrl: server.url.origin },
+      )
+
+      expect(res.status).toBe(200)
+      expect(requests).toEqual([{
+        url: `${server.url.origin}/workspaces/ws_loopback/api/wr/harness-config-options?directory=%2Fworkspace&harness=claude%3Aacp`,
+        directory: "workspace:ws_loopback",
+        encoding: "identity",
+      }])
+    } finally {
+      server.stop(true)
+    }
+  })
 })

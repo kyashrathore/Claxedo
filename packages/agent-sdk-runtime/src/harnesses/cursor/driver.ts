@@ -10,7 +10,7 @@ import type {
 import type { AgentConfigOptionRow } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
-import { requireSdkModelId } from "../../sdk-model-catalog"
+import { requireSdkModelId, sdkModelConfigOption } from "../../sdk-model-catalog"
 import {
   extractTextFromParts,
   record,
@@ -22,7 +22,6 @@ import {
 } from "../shared/sdk-runtime-adapter"
 
 const CURSOR_PENDING_PREFIX = "cursor-sdk:"
-
 type CursorEntry = {
   directory: string
   agent: CursorSDKAgent
@@ -51,7 +50,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   applyConfig(config: Record<string, unknown>) {
     const auth = record(config.auth) as Record<string, string> | undefined
     this.auth = {
-      cursor: auth?.["cursor-sdk"] ?? auth?.["cursor-acp"] ?? auth?.cursor,
+      cursor: auth?.["cursor-sdk"],
     }
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
   }
@@ -154,7 +153,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   }
 
   configOptions(_currentModel: string): AgentConfigOptionRow[] {
-    throw new Error("cursor-sdk does not expose live model options")
+    return [sdkModelConfigOption("cursor", _currentModel)]
   }
 
   private async ensureAgent(sessionId: string, agentSessionId: string, directory: string) {
@@ -204,6 +203,6 @@ function cursorMcpServers(input: Record<string, ResolvedMcpServer>): Record<stri
 
 function cursorSdkModel(model: string | undefined) {
   const value = text(model)
-  if (!value || value === "default") return
+  if (!value || value === "default") return { id: "auto" }
   return { id: requireSdkModelId("cursor", value) }
 }

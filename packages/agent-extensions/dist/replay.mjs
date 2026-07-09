@@ -2,85 +2,110 @@ import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
 
 // src/replay.ts
 import { execFile } from "child_process";
-import fs6 from "fs/promises";
+import crypto3 from "crypto";
+import fs7 from "fs/promises";
 import os from "os";
-import path8 from "path";
+import path9 from "path";
 
-// src/materialize.ts
-import fs4 from "fs/promises";
-import path6 from "path";
-
-// src/discovery.ts
+// src/fs-safe.ts
+import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
+async function writeFileAtomic(file, data, mode = 420) {
+  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomBytes(6).toString("hex")}.tmp`);
+  await fs.writeFile(tmp, data, { mode });
+  try {
+    await fs.rename(tmp, file);
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
+}
+async function readFileIfExists(file) {
+  try {
+    return await fs.readFile(file, "utf8");
+  } catch (err) {
+    const code = err.code;
+    if (code === "ENOENT" || code === "ENOTDIR") return void 0;
+    throw err;
+  }
+}
+
+// src/materialize.ts
+import fs5 from "fs/promises";
+import path7 from "path";
+
+// src/discovery.ts
+import fs2 from "fs/promises";
+import path2 from "path";
 async function fileExists(file) {
-  return fs.stat(file).then((item) => item.isFile()).catch(() => false);
+  return fs2.stat(file).then((item) => item.isFile()).catch(() => false);
 }
 async function dirExists(dir) {
-  return fs.stat(dir).then((item) => item.isDirectory()).catch(() => false);
+  return fs2.stat(dir).then((item) => item.isDirectory()).catch(() => false);
 }
 async function readDir(dir) {
-  return fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  return fs2.readdir(dir, { withFileTypes: true }).catch(() => []);
 }
 function componentName(fileOrDir) {
-  const base = path.basename(fileOrDir);
-  const ext = path.extname(base);
+  const base = path2.basename(fileOrDir);
+  const ext = path2.extname(base);
   return ext ? base.slice(0, -ext.length) : base;
 }
 async function pluginName(file, fallback) {
-  const manifest = JSON.parse(await fs.readFile(file, "utf8"));
+  const manifest = JSON.parse(await fs2.readFile(file, "utf8"));
   return typeof manifest.name === "string" && manifest.name.trim() ? manifest.name.trim() : fallback;
 }
 async function discoverSkills(root) {
-  const skillsDir = path.join(root, "skills");
+  const skillsDir = path2.join(root, "skills");
   const conventional = (await Promise.all((await readDir(skillsDir)).filter((entry) => entry.isDirectory()).map(async (entry) => {
-    const skillDir = path.join(skillsDir, entry.name);
-    if (!await fileExists(path.join(skillDir, "SKILL.md"))) return [];
+    const skillDir = path2.join(skillsDir, entry.name);
+    if (!await fileExists(path2.join(skillDir, "SKILL.md"))) return [];
     return [{ type: "skill", name: entry.name, path: skillDir }];
   }))).flat();
   if (conventional.length > 0) return conventional;
-  if (!await fileExists(path.join(root, "SKILL.md"))) return [];
-  return [{ type: "skill", name: path.basename(root), path: root }];
+  if (!await fileExists(path2.join(root, "SKILL.md"))) return [];
+  return [{ type: "skill", name: path2.basename(root), path: root }];
 }
 async function discoverMcp(root) {
-  const mcpDir = path.join(root, "mcp");
+  const mcpDir = path2.join(root, "mcp");
   const conventional = (await readDir(mcpDir)).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => ({
     type: "mcp",
     name: componentName(entry.name),
-    path: path.join(mcpDir, entry.name)
+    path: path2.join(mcpDir, entry.name)
   }));
   if (conventional.length > 0) return conventional;
-  if (await fileExists(path.join(root, "mcp.json"))) {
-    return [{ type: "mcp", name: path.basename(root), path: path.join(root, "mcp.json") }];
+  if (await fileExists(path2.join(root, "mcp.json"))) {
+    return [{ type: "mcp", name: path2.basename(root), path: path2.join(root, "mcp.json") }];
   }
-  if (await fileExists(path.join(root, ".vscode", "mcp.json"))) {
-    return [{ type: "mcp", name: path.basename(root), path: path.join(root, ".vscode", "mcp.json") }];
+  if (await fileExists(path2.join(root, ".vscode", "mcp.json"))) {
+    return [{ type: "mcp", name: path2.basename(root), path: path2.join(root, ".vscode", "mcp.json") }];
   }
   return [];
 }
 async function discoverCursorPlugins(root) {
-  const pluginsDir = path.join(root, "plugins", "cursor");
+  const pluginsDir = path2.join(root, "plugins", "cursor");
   const nested = (await Promise.all((await readDir(pluginsDir)).filter((entry) => entry.isDirectory()).map(async (entry) => {
-    const pluginDir = path.join(pluginsDir, entry.name);
-    if (!await fileExists(path.join(pluginDir, "plugin.json"))) return [];
+    const pluginDir = path2.join(pluginsDir, entry.name);
+    if (!await fileExists(path2.join(pluginDir, "plugin.json"))) return [];
     return [{ type: "plugin", runner: "cursor", name: entry.name, path: pluginDir }];
   }))).flat();
   if (nested.length > 0) return nested;
-  const conventionalPlugin = path.join(pluginsDir, "plugin.json");
+  const conventionalPlugin = path2.join(pluginsDir, "plugin.json");
   if (await fileExists(conventionalPlugin)) {
     return [{
       type: "plugin",
       runner: "cursor",
-      name: await pluginName(conventionalPlugin, path.basename(root)),
+      name: await pluginName(conventionalPlugin, path2.basename(root)),
       path: pluginsDir
     }];
   }
-  const legacyPlugin = path.join(root, ".cursor-plugin", "plugin.json");
+  const legacyPlugin = path2.join(root, ".cursor-plugin", "plugin.json");
   if (await fileExists(legacyPlugin)) {
     return [{
       type: "plugin",
       runner: "cursor",
-      name: await pluginName(legacyPlugin, path.basename(root)),
+      name: await pluginName(legacyPlugin, path2.basename(root)),
       path: root
     }];
   }
@@ -92,13 +117,13 @@ function hookRunner(name) {
   return void 0;
 }
 async function discoverHooks(root) {
-  const hooksDir = path.join(root, "hooks");
+  const hooksDir = path2.join(root, "hooks");
   return (await readDir(hooksDir)).flatMap((entry) => {
     if (!entry.isFile() || !entry.name.endsWith(".json")) return [];
     const name = componentName(entry.name);
     const runner = hookRunner(name);
     if (!runner) return [];
-    return [{ type: "hook", runner, name, path: path.join(hooksDir, entry.name) }];
+    return [{ type: "hook", runner, name, path: path2.join(hooksDir, entry.name) }];
   });
 }
 async function discoverAgentExtensionComponents(root) {
@@ -112,11 +137,21 @@ async function discoverAgentExtensionComponents(root) {
 }
 
 // src/materializers/cursor.ts
-import path3 from "path";
+import path4 from "path";
 
 // src/materialization.ts
-import fs2 from "fs/promises";
-import path2 from "path";
+import fs3 from "fs/promises";
+import path3 from "path";
+
+// src/state.ts
+var AgentExtensionStateError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "AgentExtensionStateError";
+  }
+};
+
+// src/materialization.ts
 var AgentExtensionMaterializationError = class extends Error {
   constructor(message, code = "agent_extension_materialization_error", details = {}) {
     super(message);
@@ -126,31 +161,40 @@ var AgentExtensionMaterializationError = class extends Error {
   }
 };
 async function readMaterializedRuntimeRecord(file) {
-  const data = await fs2.readFile(file, "utf8").then((raw) => JSON.parse(raw)).catch(() => null);
+  const raw = await readFileIfExists(file);
+  if (raw === void 0) return { version: 1, packages: {} };
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    throw new AgentExtensionStateError(
+      `Materialized Agent Extension record ${file} is not valid JSON; fix or remove it (it is the ownership record that guards deletions): ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
   return {
     version: 1,
-    packages: data?.packages ?? {}
+    packages: data.packages ?? {}
   };
 }
 async function writeMaterializedRuntimeRecord(file, record) {
-  await fs2.mkdir(path2.dirname(file), { recursive: true, mode: 493 });
-  await fs2.writeFile(file, JSON.stringify({
+  await fs3.mkdir(path3.dirname(file), { recursive: true, mode: 493 });
+  await writeFileAtomic(file, JSON.stringify({
     version: 1,
     packages: Object.fromEntries(Object.entries(record.packages).sort(([a], [b]) => a.localeCompare(b)))
-  }, null, 2) + "\n", { mode: 420 });
+  }, null, 2) + "\n");
 }
 function componentOwnedBy(record, targetPath, ownerId) {
   return record?.packages[ownerId]?.components.some((item) => item.path === targetPath && item.status === "applied") ?? false;
 }
 async function sameRealPath(a, b) {
   const [left, right] = await Promise.all([
-    fs2.realpath(a).catch(() => null),
-    fs2.realpath(b).catch(() => null)
+    fs3.realpath(a).catch(() => null),
+    fs3.realpath(b).catch(() => null)
   ]);
   return !!left && left === right;
 }
 function agentExtensionCacheKey(input) {
-  const parts = path2.resolve(input).split(path2.sep);
+  const parts = path3.resolve(input).split(path3.sep);
   const root = parts.findIndex(
     (part, index) => part === ".agent-extensions" && parts[index + 1] === "cache"
   );
@@ -159,25 +203,25 @@ function agentExtensionCacheKey(input) {
 async function isGeneratedCacheSymlinkToSamePackage(input) {
   if (!input.existing.isSymbolicLink()) return false;
   const [source2, target] = await Promise.all([
-    fs2.realpath(input.sourceDir).catch(() => void 0),
-    fs2.realpath(input.targetDir).catch(() => void 0)
+    fs3.realpath(input.sourceDir).catch(() => void 0),
+    fs3.realpath(input.targetDir).catch(() => void 0)
   ]);
   if (!source2 || !target) return false;
   const sourceKey = agentExtensionCacheKey(source2);
   return !!sourceKey && sourceKey === agentExtensionCacheKey(target);
 }
 async function emptyDir(target) {
-  await fs2.rm(target, { recursive: true, force: true });
-  await fs2.mkdir(path2.dirname(target), { recursive: true, mode: 493 });
+  await fs3.rm(target, { recursive: true, force: true });
+  await fs3.mkdir(path3.dirname(target), { recursive: true, mode: 493 });
 }
 async function linkOrCopyOwnedDirectory(input) {
-  if (path2.resolve(input.sourceDir) === path2.resolve(input.targetDir) || await sameRealPath(input.sourceDir, input.targetDir)) {
+  if (path3.resolve(input.sourceDir) === path3.resolve(input.targetDir) || await sameRealPath(input.sourceDir, input.targetDir)) {
     if (componentOwnedBy(input.record, input.targetDir, input.ownerId)) {
       return { status: "applied", path: input.targetDir };
     }
     return { status: "skipped", reason: "source already at target path", path: input.targetDir };
   }
-  const existing = await fs2.lstat(input.targetDir).catch(() => null);
+  const existing = await fs3.lstat(input.targetDir).catch(() => null);
   if (existing) {
     const owned = componentOwnedBy(input.record, input.targetDir, input.ownerId);
     const adoptable = owned ? false : await isGeneratedCacheSymlinkToSamePackage({
@@ -201,17 +245,17 @@ async function linkOrCopyOwnedDirectory(input) {
   }
   await emptyDir(input.targetDir);
   try {
-    await (input.symlink ?? fs2.symlink)(input.sourceDir, input.targetDir, "dir");
+    await (input.symlink ?? fs3.symlink)(input.sourceDir, input.targetDir, "dir");
     return { status: "applied", path: input.targetDir };
   } catch {
-    await fs2.cp(input.sourceDir, input.targetDir, { recursive: true, force: true });
+    await fs3.cp(input.sourceDir, input.targetDir, { recursive: true, force: true });
     return { status: "applied", path: input.targetDir, reason: "copied because symlink failed" };
   }
 }
 
 // src/materializers/cursor.ts
 function cursorLocalPluginDir(input) {
-  return path3.join(input.homeDir, ".cursor", "plugins", "local", input.pluginName);
+  return path4.join(input.homeDir, ".cursor", "plugins", "local", input.pluginName);
 }
 async function materializeCursorLocalPlugin(input) {
   const result = await linkOrCopyOwnedDirectory({
@@ -233,8 +277,8 @@ async function materializeCursorLocalPlugin(input) {
 }
 
 // src/materializers/mcp.ts
-import fs3 from "fs/promises";
-import path4 from "path";
+import fs4 from "fs/promises";
+import path5 from "path";
 import { applyEdits, modify, parse as parseJsonc } from "jsonc-parser";
 function asRecord(input) {
   return input && typeof input === "object" && !Array.isArray(input) ? input : {};
@@ -268,34 +312,34 @@ function mcpTargetPath(input) {
   if (input.runner === "cursor") {
     if (input.scope === "project") {
       if (!input.projectDir) throw new Error("projectDir is required for project Cursor MCP materialization");
-      return path4.join(input.projectDir, ".cursor", "mcp.json");
+      return path5.join(input.projectDir, ".cursor", "mcp.json");
     }
     if (!input.homeDir) throw new Error("homeDir is required for machine Cursor MCP materialization");
-    return path4.join(input.homeDir, ".cursor", "mcp.json");
+    return path5.join(input.homeDir, ".cursor", "mcp.json");
   }
   if (input.runner === "claude") {
     if (input.scope === "project") {
       if (!input.projectDir) throw new Error("projectDir is required for project Claude MCP materialization");
-      return path4.join(input.projectDir, ".mcp.json");
+      return path5.join(input.projectDir, ".mcp.json");
     }
     if (!input.homeDir) throw new Error("homeDir is required for machine Claude MCP materialization");
-    return path4.join(input.homeDir, ".claude.json");
+    return path5.join(input.homeDir, ".claude.json");
   }
   if (input.runner === "codex") {
     if (input.scope === "project") {
       if (!input.projectDir) throw new Error("projectDir is required for project Codex MCP materialization");
-      return path4.join(input.projectDir, ".codex", "config.toml");
+      return path5.join(input.projectDir, ".codex", "config.toml");
     }
     if (!input.homeDir) throw new Error("homeDir is required for machine Codex MCP materialization");
-    return path4.join(input.homeDir, ".codex", "config.toml");
+    return path5.join(input.homeDir, ".codex", "config.toml");
   }
   if (input.runner === "opencode") {
     if (input.scope === "project") {
       if (!input.projectDir) throw new Error("projectDir is required for project OpenCode MCP materialization");
-      return path4.join(input.projectDir, ".opencode", "opencode.jsonc");
+      return path5.join(input.projectDir, ".opencode", "opencode.jsonc");
     }
     if (!input.homeDir) throw new Error("homeDir is required for machine OpenCode MCP materialization");
-    return path4.join(input.homeDir, ".config", "opencode", "opencode.jsonc");
+    return path5.join(input.homeDir, ".config", "opencode", "opencode.jsonc");
   }
   return void 0;
 }
@@ -395,38 +439,71 @@ function codexMcpSections(raw) {
   return sections;
 }
 async function readText(file) {
-  return fs3.readFile(file, "utf8").catch(() => "");
+  return await readFileIfExists(file) ?? "";
 }
 async function readJson(file) {
-  return fs3.readFile(file, "utf8").then(readJsonFromText).catch(() => ({}));
+  const raw = await readFileIfExists(file);
+  if (raw === void 0 || !raw.trim()) return {};
+  return readJsonFromText(raw, file);
 }
-function readJsonFromText(raw) {
-  return asRecord(parseJsonc(raw));
+function readJsonFromText(raw, file) {
+  const errors = [];
+  const parsed = parseJsonc(raw, errors);
+  if (errors.length > 0) {
+    throw new AgentExtensionMaterializationError(
+      `MCP target config ${file} contains invalid JSON; fix it before materializing (refusing to rewrite a file that cannot be parsed)`,
+      "agent_extension_materialization_error",
+      { targetPath: file }
+    );
+  }
+  return asRecord(parsed);
 }
 async function writeJson(file, input) {
-  await fs3.mkdir(path4.dirname(file), { recursive: true, mode: 493 });
-  await fs3.writeFile(file, JSON.stringify(input, null, 2) + "\n", { mode: 420 });
+  await fs4.mkdir(path5.dirname(file), { recursive: true, mode: 493 });
+  await writeFileAtomic(file, JSON.stringify(input, null, 2) + "\n");
 }
+var JSONC_FORMAT = { formattingOptions: { tabSize: 2, insertSpaces: true } };
 async function removeStandaloneMcpEntries(input) {
   if (input.file.endsWith(".toml")) {
     const raw = await readText(input.file);
+    if (!raw) return;
     const names = new Set(input.names);
     const sections = codexMcpSections(raw).filter((section) => names.has(section.name));
+    if (sections.length === 0) return;
     const next2 = [...sections].reverse().reduce((text, section) => `${text.slice(0, section.start)}${text.slice(section.end)}`, raw);
-    await fs3.writeFile(input.file, next2.replace(/\n{3,}/g, "\n\n"), { mode: 420 });
+    await writeFileAtomic(input.file, next2.replace(/\n{3,}/g, "\n\n"));
+    return;
+  }
+  if (input.file.endsWith("opencode.jsonc") || input.file.endsWith("opencode.json")) {
+    const raw = await readText(input.file);
+    if (!raw.trim()) return;
+    readJsonFromText(raw, input.file);
+    let text = raw;
+    for (const name of input.names) {
+      text = applyEdits(text, modify(text, ["mcp", name], void 0, JSONC_FORMAT));
+    }
+    const withoutEntries = readJsonFromText(text, input.file);
+    if (Object.keys(asRecord(withoutEntries.mcp)).length === 0) {
+      text = applyEdits(text, modify(text, ["mcp"], void 0, JSONC_FORMAT));
+    }
+    if (Object.keys(readJsonFromText(text, input.file)).length === 0) {
+      await fs4.rm(input.file, { force: true });
+      return;
+    }
+    await writeFileAtomic(input.file, `${text.trimEnd()}
+`);
     return;
   }
   const root = await readJson(input.file);
-  const key = input.file.endsWith("opencode.jsonc") || input.file.endsWith("opencode.json") ? "mcp" : "mcpServers";
-  const current = asRecord(root[key]);
+  const current = asRecord(root.mcpServers);
   for (const name of input.names) {
     delete current[name];
   }
   const next = { ...root };
-  if (Object.keys(current).length > 0) next[key] = sortedObject(current);
-  else delete next[key];
+  if (Object.keys(current).length > 0) next.mcpServers = sortedObject(current);
+  else delete next.mcpServers;
   if (Object.keys(next).length === 0) {
-    await fs3.rm(input.file, { force: true });
+    await fs4.rm(input.file, { force: true });
     return;
   }
   await writeJson(input.file, next);
@@ -480,13 +557,13 @@ async function materializeStandaloneMcp(input) {
     const prefix = withoutOwned.trim() ? `${withoutOwned.trimEnd()}
 
 ` : "";
-    await fs3.mkdir(path4.dirname(target), { recursive: true, mode: 493 });
-    await fs3.writeFile(target, `${prefix}${Object.entries(nextSections).map(([name, cfg]) => codexMcpSection(name, cfg)).join("\n")}`, { mode: 420 });
+    await fs4.mkdir(path5.dirname(target), { recursive: true, mode: 493 });
+    await writeFileAtomic(target, `${prefix}${Object.entries(nextSections).map(([name, cfg]) => codexMcpSection(name, cfg)).join("\n")}`);
     return mcpComponents({ runner: input.runner, target, names: Object.keys(nextSections) });
   }
   if (input.runner === "opencode") {
     const raw = await readText(target);
-    const root2 = raw.trim() ? readJsonFromText(raw) : {};
+    const root2 = raw.trim() ? readJsonFromText(raw, target) : {};
     const current2 = asRecord(root2.mcp);
     const nextServers2 = toOpenCodeMcpServers(input.config);
     const drifted2 = /* @__PURE__ */ new Set();
@@ -520,9 +597,9 @@ async function materializeStandaloneMcp(input) {
     const next = Object.entries(nextServers2).reduce((text, [name, value]) => applyEdits(text, modify(text, ["mcp", name], value, {
       formattingOptions: { tabSize: 2, insertSpaces: true }
     })), raw.trim() ? raw : "{}");
-    await fs3.mkdir(path4.dirname(target), { recursive: true, mode: 493 });
-    await fs3.writeFile(target, `${next.trimEnd()}
-`, { mode: 420 });
+    await fs4.mkdir(path5.dirname(target), { recursive: true, mode: 493 });
+    await writeFileAtomic(target, `${next.trimEnd()}
+`);
     return mcpComponents({ runner: input.runner, target, names: Object.keys(nextServers2) });
   }
   const root = await readJson(target);
@@ -567,20 +644,20 @@ async function materializeStandaloneMcp(input) {
 }
 
 // src/materializers/skills.ts
-import path5 from "path";
+import path6 from "path";
 function skillTargetDir(input) {
   if (input.scope === "project") {
     if (!input.projectDir) throw new Error("projectDir is required for project skill materialization");
-    if (input.runner === "claude") return path5.join(input.projectDir, ".claude", "skills", input.name);
-    if (input.runner === "codex") return path5.join(input.projectDir, ".agents", "skills", input.name);
-    if (input.runner === "opencode") return path5.join(input.projectDir, ".opencode", "skills", input.name);
-    return path5.join(input.projectDir, ".cursor", "skills", input.name);
+    if (input.runner === "claude") return path6.join(input.projectDir, ".claude", "skills", input.name);
+    if (input.runner === "codex") return path6.join(input.projectDir, ".agents", "skills", input.name);
+    if (input.runner === "opencode") return path6.join(input.projectDir, ".opencode", "skills", input.name);
+    return path6.join(input.projectDir, ".cursor", "skills", input.name);
   }
   if (!input.homeDir) throw new Error("homeDir is required for machine skill materialization");
-  if (input.runner === "claude") return path5.join(input.homeDir, ".claude", "skills", input.name);
-  if (input.runner === "codex") return path5.join(input.homeDir, ".codex", "skills", input.name);
-  if (input.runner === "opencode") return path5.join(input.homeDir, ".config", "opencode", "skills", input.name);
-  return path5.join(input.homeDir, ".cursor", "skills", input.name);
+  if (input.runner === "claude") return path6.join(input.homeDir, ".claude", "skills", input.name);
+  if (input.runner === "codex") return path6.join(input.homeDir, ".codex", "skills", input.name);
+  if (input.runner === "opencode") return path6.join(input.homeDir, ".config", "opencode", "skills", input.name);
+  return path6.join(input.homeDir, ".cursor", "skills", input.name);
 }
 async function materializeStandaloneSkill(input) {
   const result = await linkOrCopyOwnedDirectory({
@@ -622,7 +699,7 @@ function targets(input) {
   return (input.desired.targets ?? []).filter(isHarnessTarget);
 }
 function packageName(input, packageRoot) {
-  return input.desired.package_name ?? input.desired.id ?? path6.basename(packageRoot);
+  return input.desired.package_name ?? input.desired.id ?? path7.basename(packageRoot);
 }
 function packageNameWithoutRoot(input) {
   return input.desired.package_name ?? input.desired.id;
@@ -636,7 +713,7 @@ function status(components, fallback) {
   return "applied";
 }
 async function readJson2(file) {
-  return JSON.parse(await fs4.readFile(file, "utf8"));
+  return JSON.parse(await fs5.readFile(file, "utf8"));
 }
 var CLAXEDO_MCP_MANAGED_ENV = /* @__PURE__ */ new Set([
   "CLAXEDO_SERVER_URL",
@@ -657,7 +734,7 @@ function textEnv(name) {
   return value || void 0;
 }
 function claxedoMcpServerUrl() {
-  return textEnv("CLAXEDO_SERVER_URL") ?? textEnv("OPENCODE_API_URL") ?? "http://127.0.0.1:3001";
+  return textEnv("CLAXEDO_SERVER_URL") ?? "http://127.0.0.1:3001";
 }
 function claxedoMcpWorkspaceId() {
   return textEnv("CLAXEDO_WORKSPACE_ID") ?? textEnv("CLAXEDO_WR_WORKSPACE_ID");
@@ -692,9 +769,9 @@ function managedClaxedoMcpConfig(input) {
   };
 }
 async function removeTreeOrLink(target) {
-  const stat = await fs4.lstat(target).catch(() => void 0);
+  const stat = await fs5.lstat(target).catch(() => void 0);
   if (!stat) return;
-  await fs4.rm(target, { recursive: stat.isDirectory() && !stat.isSymbolicLink(), force: true });
+  await fs5.rm(target, { recursive: stat.isDirectory() && !stat.isSymbolicLink(), force: true });
 }
 async function removeMaterializedComponent(component) {
   if (component.status !== "applied" || !component.path) return;
@@ -724,7 +801,7 @@ async function materializeDiscoveredComponent(input) {
   if (input.component.type === "skill") {
     return [await materializeStandaloneSkill({
       skillDir: input.component.path,
-      name: path6.resolve(input.component.path) === path6.resolve(input.packageRoot) ? input.packageName : input.component.name,
+      name: path7.resolve(input.component.path) === path7.resolve(input.packageRoot) ? input.packageName : input.component.name,
       runner: input.runner,
       scope: input.targetScope,
       ownerId: input.ownerId,
@@ -774,28 +851,52 @@ async function materializeDiscoveredComponent(input) {
     reason: "agent hook package materialization is not implemented yet"
   }];
 }
+function componentKey(component) {
+  return `${component.runner}
+${component.type}
+${component.component}`;
+}
+function withPreviousApplied(components, previous) {
+  const seen = new Set(components.map(componentKey));
+  return [
+    ...components,
+    ...(previous?.components ?? []).filter((component) => component.status === "applied" && !seen.has(componentKey(component)))
+  ];
+}
 async function materializePackage(input) {
   const name = packageName(input.install, input.packageRoot);
   const ownerId = input.install.desired.id;
   const targetScope = scope(input.install);
   const components = [];
+  const failures = [];
   const discovered = await discoverAgentExtensionComponents(input.packageRoot);
   for (const runner of targets(input.install)) {
     if (discovered.length > 0) {
       for (const component of discovered) {
-        components.push(...await materializeDiscoveredComponent({
-          component,
-          install: input.install,
-          runner,
-          packageRoot: input.packageRoot,
-          packageName: name,
-          targetScope,
-          ownerId,
-          projectDir: input.projectDir,
-          homeDir: input.homeDir,
-          previous: input.previous,
-          replaceOwned: input.replaceOwned
-        }));
+        try {
+          components.push(...await materializeDiscoveredComponent({
+            component,
+            install: input.install,
+            runner,
+            packageRoot: input.packageRoot,
+            packageName: name,
+            targetScope,
+            ownerId,
+            projectDir: input.projectDir,
+            homeDir: input.homeDir,
+            previous: input.previous,
+            replaceOwned: input.replaceOwned
+          }));
+        } catch (err) {
+          failures.push(err);
+          components.push({
+            runner,
+            component: component.name,
+            type: component.type,
+            status: "failed",
+            reason: err instanceof Error ? err.message : String(err)
+          });
+        }
       }
       continue;
     }
@@ -807,21 +908,26 @@ async function materializePackage(input) {
       reason: "unsupported package shape"
     });
   }
+  const recorded = failures.length > 0 ? withPreviousApplied(components, input.previous.packages[ownerId]) : components;
   return {
-    package_name: name,
-    source: input.install.desired.source,
-    resolved_sha: input.install.lock?.resolved_sha ?? "",
-    enabled: true,
-    targets: targets(input.install),
-    components,
-    materialized_at: input.materializedAt,
-    status: status(components, input.install.status)
+    package: {
+      package_name: name,
+      source: input.install.desired.source,
+      resolved_sha: input.install.lock?.resolved_sha ?? "",
+      enabled: true,
+      targets: targets(input.install),
+      components: recorded,
+      materialized_at: input.materializedAt,
+      status: status(recorded, input.install.status)
+    },
+    failures
   };
 }
 async function materializeAgentExtensionSnapshot(input) {
-  const materializedFile = path6.join(input.stateRoot, "materialized.json");
+  const materializedFile = path7.join(input.stateRoot, "materialized.json");
   const previous = await readMaterializedRuntimeRecord(materializedFile);
   const materializedAt = now(input);
+  const failures = [];
   const packageEntries = (await Promise.all(input.installs.map(async (install) => {
     const existing = previous.packages[install.desired.id];
     if (install.desired.enabled === false) {
@@ -841,7 +947,7 @@ async function materializeAgentExtensionSnapshot(input) {
       return [[install.desired.id, existing]];
     }
     if (!packageRoot) return [];
-    return [[install.desired.id, await materializePackage({
+    const result = await materializePackage({
       install,
       packageRoot,
       projectDir: input.projectDir,
@@ -849,7 +955,9 @@ async function materializeAgentExtensionSnapshot(input) {
       previous,
       materializedAt,
       replaceOwned: input.replaceOwned ?? !!existing
-    })]];
+    });
+    failures.push(...result.failures);
+    return [[install.desired.id, result.package]];
   }))).flat();
   const packages = sorted(Object.fromEntries(packageEntries));
   const next = {
@@ -858,13 +966,14 @@ async function materializeAgentExtensionSnapshot(input) {
   };
   await removeStaleMaterializedComponents(previous, next);
   await writeMaterializedRuntimeRecord(materializedFile, next);
+  if (failures.length > 0) throw failures[0];
   return readMaterializedRuntimeRecord(materializedFile);
 }
 
 // src/cache.ts
-import fs5 from "fs/promises";
-import path7 from "path";
-import crypto from "crypto";
+import fs6 from "fs/promises";
+import path8 from "path";
+import crypto2 from "crypto";
 
 // src/source.ts
 var AgentExtensionSourceError = class extends Error {
@@ -894,11 +1003,11 @@ var AgentExtensionCacheError = class extends Error {
   }
 };
 async function walkFiles(root, current = root) {
-  const entries = (await fs5.readdir(current, { withFileTypes: true })).filter((entry) => !(entry.isDirectory() && entry.name === ".git"));
+  const entries = (await fs6.readdir(current, { withFileTypes: true })).filter((entry) => !(entry.isDirectory() && entry.name === ".git"));
   const nested = await Promise.all(entries.map(async (entry) => {
-    const full = path7.join(current, entry.name);
+    const full = path8.join(current, entry.name);
     if (entry.isSymbolicLink()) {
-      throw new AgentExtensionCacheError(`Cache source symlinks are not supported: ${path7.relative(root, full)}`);
+      throw new AgentExtensionCacheError(`Cache source symlinks are not supported: ${path8.relative(root, full)}`);
     }
     if (entry.isDirectory()) return walkFiles(root, full);
     if (entry.isFile()) return [full];
@@ -907,14 +1016,14 @@ async function walkFiles(root, current = root) {
   return nested.flat();
 }
 async function digestDirectory(root) {
-  const hash = crypto.createHash("sha256");
-  const realRoot = await fs5.realpath(root);
-  const files = (await walkFiles(realRoot)).sort((a, b) => path7.relative(realRoot, a).localeCompare(path7.relative(realRoot, b)));
+  const hash = crypto2.createHash("sha256");
+  const realRoot = await fs6.realpath(root);
+  const files = (await walkFiles(realRoot)).sort((a, b) => path8.relative(realRoot, a).localeCompare(path8.relative(realRoot, b)));
   for (const file of files) {
-    const relative2 = path7.relative(realRoot, file).split(path7.sep).join("/");
+    const relative2 = path8.relative(realRoot, file).split(path8.sep).join("/");
     hash.update(relative2);
     hash.update("\0");
-    hash.update(await fs5.readFile(file));
+    hash.update(await fs6.readFile(file));
     hash.update("\0");
   }
   return hash.digest("hex");
@@ -1009,14 +1118,22 @@ async function verifyPackageDigest(input) {
     throw new Error(`Agent Extension ${String(input.install.desired.id ?? "unknown")} cache checksum mismatch`);
   }
 }
+function resolvedSha(input) {
+  const sha = str(input.lock?.resolved_sha);
+  if (!sha) throw new Error(`Agent Extension ${String(input.desired.id ?? "unknown")} is missing resolved SHA`);
+  if (!/^[A-Fa-f0-9]{7,64}$/.test(sha)) {
+    throw new Error(`Agent Extension ${String(input.desired.id ?? "unknown")} resolved SHA must be a hex commit id`);
+  }
+  return sha.toLowerCase();
+}
 async function fetchToCache(input) {
   const info = source(input.install);
   if (info.type !== "github") throw new Error(`Unsupported Agent Extension source for ${String(input.install.desired.id ?? "unknown")}`);
-  const sha = str(input.install.lock?.resolved_sha);
-  if (!sha) throw new Error(`Agent Extension ${String(input.install.desired.id ?? "unknown")} is missing resolved SHA`);
-  const target = info.packagePath ? path8.join(input.cacheRoot, sha, info.packagePath) : path8.join(input.cacheRoot, sha);
-  if (await fs6.stat(target).then((stat) => stat.isDirectory()).catch(() => false)) return target;
-  const root = await fs6.mkdtemp(path8.join(input.tempRoot, "claxedo-runtime-extension-"));
+  const sha = resolvedSha(input.install);
+  const shaRoot = path9.join(input.cacheRoot, sha);
+  const target = info.packagePath ? path9.join(shaRoot, info.packagePath) : shaRoot;
+  if (await fs7.stat(target).then((stat) => stat.isDirectory()).catch(() => false)) return target;
+  const root = await fs7.mkdtemp(path9.join(input.tempRoot, "claxedo-runtime-extension-"));
   try {
     await input.execFile("git", ["init", root]);
     await input.execFile("git", ["remote", "add", "origin", githubRepoUrl({
@@ -1026,24 +1143,31 @@ async function fetchToCache(input) {
     })], { cwd: root });
     await input.execFile("git", ["fetch", "--depth", "1", "origin", sha], { cwd: root });
     await input.execFile("git", ["checkout", "--detach", "FETCH_HEAD"], { cwd: root });
-    const sourceRoot = info.packagePath ? path8.join(root, info.packagePath) : root;
-    await fs6.rm(target, { recursive: true, force: true });
-    await fs6.mkdir(path8.dirname(target), { recursive: true, mode: 493 });
-    await fs6.cp(sourceRoot, target, {
+    const sourceRoot = info.packagePath ? path9.join(root, info.packagePath) : root;
+    const staging = `${target}.${crypto3.randomBytes(6).toString("hex")}.tmp`;
+    await fs7.mkdir(path9.dirname(target), { recursive: true, mode: 493 });
+    await fs7.cp(sourceRoot, staging, {
       recursive: true,
       force: true,
-      filter: (source2) => !path8.relative(sourceRoot, source2).split(path8.sep).includes(".git")
+      filter: (source2) => !path9.relative(sourceRoot, source2).split(path9.sep).includes(".git")
     });
+    try {
+      await fs7.rm(target, { recursive: true, force: true });
+      await fs7.rename(staging, target);
+    } catch (err) {
+      await fs7.rm(staging, { recursive: true, force: true });
+      throw err;
+    }
     return target;
   } finally {
-    await fs6.rm(root, { recursive: true, force: true });
+    await fs7.rm(root, { recursive: true, force: true });
   }
 }
 async function resolveProjectPackageRoot(input) {
   const info = source(input.install);
   if (info.type !== "project") return void 0;
-  const root = path8.join(input.projectDir, info.packagePath);
-  if (!await fs6.stat(root).then((stat) => stat.isDirectory()).catch(() => false)) {
+  const root = path9.join(input.projectDir, info.packagePath);
+  if (!await fs7.stat(root).then((stat) => stat.isDirectory()).catch(() => false)) {
     throw new Error(`Project Agent Extension root does not exist: ${info.packagePath}`);
   }
   return root;
@@ -1066,16 +1190,29 @@ function canonicalInstall(input) {
 async function packageRoots(input) {
   const entries = (await Promise.all(input.installs.map(async (install) => {
     if (typeof install.desired.id !== "string") return [];
-    const packageRoot = input.packageRoots?.[install.desired.id] ?? await resolveProjectPackageRoot({
+    const provided = input.packageRoots?.[install.desired.id] ?? await resolveProjectPackageRoot({
       install,
       projectDir: input.projectDir
-    }) ?? await fetchToCache({
+    });
+    if (provided) {
+      await verifyPackageDigest({ install, packageRoot: provided });
+      return [[install.desired.id, provided]];
+    }
+    const fetchInput = {
       install,
       cacheRoot: input.cacheRoot,
       execFile: input.execFile,
       tempRoot: input.tempRoot
-    });
-    await verifyPackageDigest({ install, packageRoot });
+    };
+    const packageRoot = await fetchToCache(fetchInput);
+    try {
+      await verifyPackageDigest({ install, packageRoot });
+    } catch {
+      await fs7.rm(packageRoot, { recursive: true, force: true });
+      const refetched = await fetchToCache(fetchInput);
+      await verifyPackageDigest({ install, packageRoot: refetched });
+      return [[install.desired.id, refetched]];
+    }
     return [[install.desired.id, packageRoot]];
   }))).flat();
   return sorted2(Object.fromEntries(entries));
@@ -1083,48 +1220,54 @@ async function packageRoots(input) {
 async function wait(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
+var REPLAY_LOCK_STALE_MS = 10 * 60 * 1e3;
 async function withReplayLock(root, fn) {
-  const lock = path8.join(root, ".replay-lock");
-  await fs6.mkdir(root, { recursive: true, mode: 493 });
+  const lock = path9.join(root, ".replay-lock");
+  await fs7.mkdir(root, { recursive: true, mode: 493 });
   while (true) {
     try {
-      await fs6.mkdir(lock, { mode: 493 });
+      await fs7.mkdir(lock, { mode: 493 });
       break;
     } catch (err) {
       if (err.code !== "EEXIST") throw err;
+      const stat = await fs7.stat(lock).catch(() => void 0);
+      if (stat && Date.now() - stat.mtimeMs > REPLAY_LOCK_STALE_MS) {
+        await fs7.rm(lock, { recursive: true, force: true });
+        continue;
+      }
       await wait(100);
     }
   }
   try {
     await fn();
   } finally {
-    await fs6.rm(lock, { recursive: true, force: true });
+    await fs7.rm(lock, { recursive: true, force: true });
   }
 }
 async function applyRuntimeAgentExtensionsNow(input, projectDir = projectDirDefault(), options = {}) {
   if (!input) return;
-  const root = options.stateRoot ?? path8.join(projectDir, ".agent-extensions");
+  const root = options.stateRoot ?? path9.join(projectDir, ".agent-extensions");
   await withReplayLock(root, async () => {
     const installs = input.installs;
     const enabledInstalls = installs.filter((item) => item.desired.enabled !== false);
-    await fs6.writeFile(path8.join(root, "installed.json"), JSON.stringify({
+    await writeFileAtomic(path9.join(root, "installed.json"), JSON.stringify({
       version: 1,
       installs: installs.map((item) => item.desired).sort(
         (a, b) => String(a.id ?? "").localeCompare(String(b.id ?? ""))
       )
-    }, null, 2) + "\n", { mode: 420 });
-    await fs6.writeFile(path8.join(root, "lock.json"), JSON.stringify({
+    }, null, 2) + "\n");
+    await writeFileAtomic(path9.join(root, "lock.json"), JSON.stringify({
       version: 1,
       packages: sorted2(Object.fromEntries(installs.flatMap(
         (item) => item.lock && typeof item.desired.id === "string" ? [[item.desired.id, item.lock]] : []
       )))
-    }, null, 2) + "\n", { mode: 420 });
+    }, null, 2) + "\n");
     await materializeAgentExtensionSnapshot({
       installs: installs.flatMap((item) => canonicalInstall(item) ?? []),
       packageRoots: await packageRoots({
         installs: enabledInstalls,
         projectDir,
-        cacheRoot: path8.join(root, "cache"),
+        cacheRoot: path9.join(root, "cache"),
         execFile: options.execFile ?? execFileDefault,
         tempRoot: options.tempRoot ?? os.tmpdir(),
         ...options.packageRoots ? { packageRoots: options.packageRoots } : {}

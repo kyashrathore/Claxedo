@@ -253,7 +253,10 @@ export function createAgentRuntimeClient(options: {
     return await queryClient.fetchQuery({
       queryKey: agentRuntimeWorkspaceTargetQueryKey({ serverUrl: serverUrl(), directory }),
       queryFn: async () => {
-        const res = await request(workspaceResolveUrl({ baseUrl: serverUrl(), scope: directory }))
+        const res = await request(
+          workspaceResolveUrl({ baseUrl: serverUrl(), scope: directory }),
+          await signedControlPlaneInit(),
+        )
         const body = await readJson<{ workspaceId?: string; kind?: unknown }>(res)
         if (!body?.workspaceId) throw new Error(`Signed session transport requires a workspace id for ${directory}`)
         return {
@@ -280,7 +283,7 @@ export function createAgentRuntimeClient(options: {
     workspaceId?: string
     preferRelayOnLoopback?: boolean
   }): Placement {
-    const loopback = centralTransportForServer(serverUrl()) === "loopback"
+    const loopback = centralTransportForServer(agentRuntimeBaseUrl(serverUrl())) === "loopback"
     const workspaceTransport = input.preferRelayOnLoopback || !loopback ? "workspace-relay" : "loopback"
     if (input.sessionRef?.host === "central") {
       return {
@@ -376,6 +379,17 @@ export function createAgentRuntimeClient(options: {
         sessionRef: options.sessionRef,
       }).fetch(`${runtimeUrl.pathname}${runtimeUrl.search}`, init)
     }
+    if (
+      signed &&
+      target?.workspaceId &&
+      input.resource === "messages" &&
+      centralTransportForServer(agentRuntimeBaseUrl(serverUrl())) === "loopback"
+    ) {
+      return await runtimeTransport({
+        directory: input.directory,
+        workspaceId: target.workspaceId,
+      }).fetch(`${runtimeUrl.pathname}${runtimeUrl.search}`, init)
+    }
     if (signed && target?.workspaceId && (targetKind === USER_HOSTED_WORKSPACE_KIND || (!targetKind && directoryWorkspaceId))) {
       return await runtimeTransport({
         directory: input.directory,
@@ -403,8 +417,7 @@ export function createAgentRuntimeClient(options: {
     return await request(controlUrl, init)
   }
 
-  async function signedControlPlaneInit(init?: RequestInit) {
-    if (!signed || request !== authFetch) return init
+  async function controlPlaneAuthInit(init?: RequestInit) {
     const headers = new Headers(init?.headers)
     if (!headers.has("Authorization")) {
       const token = await getAuthToken()
@@ -413,8 +426,14 @@ export function createAgentRuntimeClient(options: {
     return { ...init, headers }
   }
 
+  async function signedControlPlaneInit(init?: RequestInit) {
+    if (!signed) return init
+    return await controlPlaneAuthInit(init)
+  }
+
   async function fetchRuntimePath(input: { directory: AgentRuntimeDirectory; path: string; init?: RequestInit }) {
-    const method = input.init?.method?.toUpperCase() ?? "GET"
+    const init = await signedControlPlaneInit(input.init)
+    const method = init?.method?.toUpperCase() ?? "GET"
     const target = signed || options.sessionRef?.toolSandbox?.kind === "workspace" || options.sessionRef?.workspaceId || options.workspaceId || workspaceIdFromLegacyScope(input.directory)
       ? await workspaceTarget(input.directory, { forceResolve: method !== "GET" && method !== "HEAD" })
       : undefined
@@ -424,7 +443,7 @@ export function createAgentRuntimeClient(options: {
       sessionRef,
       workspaceId: target?.workspaceId,
       preferRelayOnLoopback: signed,
-    }).fetch(input.path, input.init)
+    }).fetch(input.path, init)
   }
 
   async function fetchRuntimeSession(input: {
@@ -467,10 +486,13 @@ export function createAgentRuntimeClient(options: {
         })
         return { sessions: await readJson<ClaxedoSession[]>(res) }
       }
-      const res = await request(controlSessionListUrl({
-        baseUrl: agentRuntimeBaseUrl(serverUrl()),
-        workspaceId: target.workspaceId,
-      }))
+      const res = await request(
+        controlSessionListUrl({
+          baseUrl: agentRuntimeBaseUrl(serverUrl()),
+          workspaceId: target.workspaceId,
+        }),
+        await signedControlPlaneInit(),
+      )
       return await readJson<{ sessions?: ClaxedoSession[] }>(res)
     }
     const res = await fetchPath(input.directory, sessionListUrl({
@@ -558,10 +580,10 @@ export function createAgentRuntimeClient(options: {
     async getCapabilities(input: { directory: AgentRuntimeDirectory; sessionID?: string }) {
       if (!shouldUseRuntimeSessionTransport(input)) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
       if (!input.sessionID) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
-      const res = await fetchSessionResource({
+      const res = await fetchRuntimeSession({
         sessionID: input.sessionID,
         directory: input.directory,
-        resource: "capabilities",
+        suffix: "/capabilities",
         init: { headers: { Accept: "application/json" } },
       })
       return await readJson<SessionTransportCapabilities>(res)
@@ -712,10 +734,10 @@ export function createAgentRuntimeClient(options: {
         before: input.before,
       },
     })
-    const res = await request(url, {
+    const res = await request(url, await controlPlaneAuthInit({
       cache: "no-store",
       headers: { Accept: "application/json" },
-    })
+    }))
     if (!res.ok) return
     const body = await readJson<AgentRuntimeMessageRow[] | { messages?: AgentRuntimeMessageRow[]; maxEventOrdinal?: number }>(res)
     const data = Array.isArray(body) ? body : body.messages ?? []

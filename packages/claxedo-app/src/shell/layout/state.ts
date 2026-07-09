@@ -2,6 +2,7 @@ import { createSignal, type Accessor } from "solid-js"
 import {
   applyLayoutCommand,
   railPeekCommand,
+  railResizeCommand,
   railToggleCommand,
   workspacePanelVisibilityCommand,
   type LayoutCommand,
@@ -10,6 +11,8 @@ import { layoutConfigFromLiveChromeState, type LayoutConfig, type LayoutTarget }
 
 const HOT_ZONE_WIDTH = 48
 const HOT_ZONE_HEIGHT = 48
+const RAIL_MIN_WIDTH = 220
+const RAIL_MAX_WIDTH = 520
 
 type RailLayoutInput = {
   collapsed: boolean
@@ -35,6 +38,7 @@ export function createShellLayoutState(input: {
   let railLocked = false
   let collapsePending = false
   let mutedUntilLeave = false
+  let committedRailWidth = input.initialRail.width ?? 260
 
   const baseConfig = () => layoutConfigFromLiveChromeState({
     target: input.target(),
@@ -61,7 +65,14 @@ export function createShellLayoutState(input: {
 
   const railWidth = () => {
     const region = config().regions.rail
-    return region.size.unit === "px" ? region.size.value : input.initialRail.width ?? 260
+    return region.size.unit === "px" ? region.size.value : committedRailWidth
+  }
+  const setRailWidth = (width: number) => {
+    if (!Number.isFinite(width)) return
+    if (width >= RAIL_MIN_WIDTH) committedRailWidth = Math.min(Math.max(width, RAIL_MIN_WIDTH), RAIL_MAX_WIDTH)
+    collapsePending = false
+    mutedUntilLeave = width < RAIL_MIN_WIDTH
+    dispatch("rail", railResizeCommand(width, { minWidth: RAIL_MIN_WIDTH, maxWidth: RAIL_MAX_WIDTH }))
   }
   const railPinned = () => config().regions.rail.docked !== false
   const railExpanded = () => railWidth() > 0
@@ -85,7 +96,7 @@ export function createShellLayoutState(input: {
       return
     }
     collapsePending = false
-    dispatch("rail", railPeekCommand(false, input.initialRail.width ?? 260))
+    dispatch("rail", railPeekCommand(false, committedRailWidth))
   }
 
   return {
@@ -93,13 +104,16 @@ export function createShellLayoutState(input: {
     dispatch,
     setWorkspacePanelOpen,
     setWorkspacePanelWidth,
+    setRailWidth,
+    committedRailWidth: () => committedRailWidth,
+    railWidth,
     workspacePanelWidth,
     toggleRail: () => {
       mutedUntilLeave = railPinned()
       collapsePending = false
-      dispatch("rail", railToggleCommand(config(), input.initialRail.width ?? 260))
+      dispatch("rail", railToggleCommand(config(), committedRailWidth))
     },
-    peekRail: (expanded: boolean) => dispatch("rail", railPeekCommand(expanded, input.initialRail.width ?? 260)),
+    peekRail: (expanded: boolean) => dispatch("rail", railPeekCommand(expanded, committedRailWidth)),
     lockRail: (locked: boolean) => {
       railLocked = locked
       if (!locked && collapsePending) collapseFloatingRail()
@@ -119,7 +133,7 @@ export function createShellLayoutState(input: {
       }
       if (!railExpanded()) {
         const inHotZone = clientX <= HOT_ZONE_WIDTH && clientY <= HOT_ZONE_HEIGHT
-        if (inHotZone && !mutedUntilLeave) dispatch("rail", railPeekCommand(true, input.initialRail.width ?? 260))
+        if (inHotZone && !mutedUntilLeave) dispatch("rail", railPeekCommand(true, committedRailWidth))
         if (!inHotZone) mutedUntilLeave = false
         return
       }

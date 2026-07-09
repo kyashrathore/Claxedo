@@ -336,7 +336,7 @@ describe("Agent Extensions runtime config projection", () => {
     })
   })
 
-  test("org disabled policy blocks workspace enable and excludes runtime install", async () => {
+  test("org disabled policy blocks workspace enable and projects the install as disabled", async () => {
     await expect(getRuntimeAgentExtensionsSnapshot({ projectDir: project }, {
       workspaceInstalls: [{
         desired: {
@@ -363,7 +363,31 @@ describe("Agent Extensions runtime config projection", () => {
       ],
     })).resolves.toEqual({
       version: 1,
-      installs: [],
+      installs: [{
+        desired: {
+          id: "review",
+          package_name: "review",
+          source: { type: "github", owner: "acme", repo: "review" },
+          scope: "workspace",
+          enabled: false,
+          targets: ["cursor"],
+          installed_at: 10,
+          updated_at: 20,
+        },
+        lock: {
+          source: { type: "github", owner: "acme", repo: "review" },
+          resolved_sha: "fedcba9876543210",
+          manifest_digests: { package: "digest" },
+          component_digests: { package: "digest" },
+          targets: ["cursor"],
+        },
+        effective: {
+          enabled: false,
+          source: "org",
+          reason: "org blocked",
+        },
+        components: [],
+      }],
     })
   })
 
@@ -429,9 +453,16 @@ describe("Agent Extensions runtime config projection", () => {
         { id: "review", scope: "user", enabled: true, reason: "user default" },
         { id: "review", scope: "workspace", enabled: false, reason: "workspace disabled" },
       ],
-    })).resolves.toEqual({
+    })).resolves.toMatchObject({
       version: 1,
-      installs: [],
+      installs: [{
+        desired: { id: "review", enabled: false },
+        effective: {
+          enabled: false,
+          source: "workspace",
+          reason: "workspace disabled",
+        },
+      }],
     })
   })
 })

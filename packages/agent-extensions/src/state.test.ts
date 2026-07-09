@@ -48,6 +48,18 @@ describe("Agent Extension desired state", () => {
     expect(() => agentExtensionStateRoot({ scope: "project" })).toThrow("projectDir is required")
   })
 
+  test("refuses to treat a corrupted state file as empty", async () => {
+    const file = installedStatePath({ scope: "project", projectDir: project })
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(file, "{ truncated")
+    await expect(readDesiredExtensionState(file)).rejects.toThrow("not valid JSON")
+  })
+
+  test("reads a missing state file as empty", async () => {
+    const file = installedStatePath({ scope: "project", projectDir: project })
+    await expect(readDesiredExtensionState(file)).resolves.toEqual({ version: 1, installs: [] })
+  })
+
   test("writes deterministic sorted project install records", async () => {
     const file = installedStatePath({ scope: "project", projectDir: project })
     await upsertDesiredExtensionInstall(file, install("zeta"))

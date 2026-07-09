@@ -1,5 +1,7 @@
+import fs from "fs/promises"
 import os from "os"
 import path from "path"
+import { cachePackageRoot } from "./cache"
 import { createAgentExtensions, parseHarnessTargets } from "./facade"
 import {
   discoverAgentExtensionComponents,
@@ -9,6 +11,7 @@ import {
   readMaterializedRuntimeRecord,
 } from "./materialization"
 import { applyRuntimeAgentExtensions } from "./replay"
+import { getRuntimeAgentExtensionsSnapshot, type RuntimeAgentExtensionsSnapshot } from "./runtime-config"
 import {
   allHarnessTargets,
   FIRST_PARTY_AGENT_EXTENSION_ID,
@@ -254,31 +257,52 @@ async function list(flags: Flags, io: ResolvedCliIO) {
   return 0
 }
 
+// Reuse packages already fetched into the durable install cache so
+// materialize does not re-fetch GitHub sources into the runtime dir.
+async function installedCacheRoots(snapshot: RuntimeAgentExtensionsSnapshot, dataRoot: string) {
+  const entries = await Promise.all(snapshot.installs.map(async (install): Promise<Array<[string, string]>> => {
+    if (install.desired.enabled === false || install.desired.source.type === "project") return []
+    const sha = install.lock?.resolved_sha
+    if (!sha) return []
+    try {
+      const root = cachePackageRoot({
+        resolvedSha: sha,
+        ...(install.lock?.package_path ? { packagePath: install.lock.package_path } : {}),
+        dataRoot,
+      })
+      return await fs.stat(root).then((stat) => stat.isDirectory()).catch(() => false) ? [[install.desired.id, root]] : []
+    } catch {
+      return []
+    }
+  }))
+  return Object.fromEntries(entries.flat())
+}
+
 async function materialize(flags: Flags, io: ResolvedCliIO) {
   const options = clientOptions(flags, io)
   const stateRoot = runtimeDir(flags, io, options.projectDir)
   const sourceRoot = path.join(options.projectDir, FIRST_PARTY_AGENT_EXTENSIONS_DIR)
   const discovered = await discoverAgentExtensionComponents(sourceRoot)
-  if (discovered.length === 0) throw new Error(`No Agent Extension components found in ${relative(io.cwd, sourceRoot)}`)
+  // The snapshot carries every desired install (plus the discovered
+  // first-party package), so replaying it preserves installs made with
+  // `agent-extensions install` instead of erasing them.
+  const snapshot = await getRuntimeAgentExtensionsSnapshot({ projectDir: options.projectDir })
+  if (discovered.length === 0 && snapshot.installs.length === 0) {
+    throw new Error(`No Agent Extension components found in ${relative(io.cwd, sourceRoot)}`)
+  }
+  const requested = targets(flags)
+  const installs = snapshot.installs.map((install) =>
+    requested && install.desired.id === FIRST_PARTY_AGENT_EXTENSION_ID
+      ? { ...install, desired: { ...install.desired, targets: requested } }
+      : install,
+  )
   await applyRuntimeAgentExtensions({
     version: 1,
-    installs: [{
-      desired: {
-        id: FIRST_PARTY_AGENT_EXTENSION_ID,
-        package_name: "agent-extensions",
-        source: {
-          type: "project",
-          package_path: FIRST_PARTY_AGENT_EXTENSIONS_DIR,
-        },
-        scope: "project",
-        enabled: true,
-        targets: targets(flags) ?? allHarnessTargets(),
-      },
-      components: [],
-    }],
+    installs,
   }, options.projectDir, {
     homeDir: options.homeDir,
     stateRoot,
+    packageRoots: await installedCacheRoots(snapshot, options.dataRoot),
     ...(io.now !== undefined ? { now: io.now } : {}),
   })
   const state = await projectState({
@@ -333,7 +357,7 @@ async function lifecycle(command: string, flags: Flags, positionals: string[], i
         ? await extensions.disable({ id })
         : await extensions.uninstall({ id })
   io.stdout(flags.json ? json({ id, result }) : `${command} ${id}: ${result ? "ok" : "not found"}`)
-  return 0
+  return result ? 0 : 1
 }
 
 async function doctor(flags: Flags, io: ResolvedCliIO) {

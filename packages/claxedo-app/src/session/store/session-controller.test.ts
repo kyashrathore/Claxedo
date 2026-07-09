@@ -6,6 +6,7 @@ import {
   acceptedPromptRefreshMatches,
   activeSessionStatusPollingDecision,
   activeTurnTransition,
+  conversationHasAssistantMessage,
   fetchCompatTransportSession,
   FAST_SESSION_SWITCH_NETWORK_QUIET_MS,
   FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS,
@@ -36,6 +37,10 @@ import { normalizeMessageRows } from "./message-page"
 import { queryClient } from "../../shared/query/query-client"
 import { shellDataKeys } from "../../shell/data/keys"
 import { directorySessionCacheQueryOptions, setSessionStatusQueryData } from "../../shell/data/queries"
+import {
+  clearConversationChatRegistryForTest,
+  hydrateRegisteredConversationSnapshot,
+} from "../../shell/chat/conversation-registry"
 
 const idle: SessionStatus = { type: "idle" }
 const busy: SessionStatus = { type: "busy" }
@@ -43,6 +48,7 @@ const originalWindow = (globalThis as typeof globalThis & { window?: unknown }).
 
 afterEach(() => {
   queryClient.clear()
+  clearConversationChatRegistryForTest()
   delete (globalThis as typeof globalThis & { __claxedoFastSessionSwitch?: unknown }).__claxedoFastSessionSwitch
   if (originalWindow === undefined) delete (globalThis as typeof globalThis & { window?: unknown }).window
   else (globalThis as typeof globalThis & { window?: unknown }).window = originalWindow
@@ -138,6 +144,23 @@ describe("session controller helpers", () => {
     expect(isSessionNotFoundError(new Error("Request failed: 404"))).toBe(true)
     expect(isSessionNotFoundError({ error: { code: "session_not_found", message: "Session not found" } })).toBe(true)
     expect(isSessionNotFoundError(new Error("Request failed: 500"))).toBe(false)
+  })
+
+  test("assistant error messages count as present even without renderable parts", () => {
+    hydrateRegisteredConversationSnapshot({
+      sessionID: "ses_error",
+      messages: [{
+        id: "msg_assistant",
+        sessionID: "ses_error",
+        role: "assistant",
+        parentID: "msg_user",
+        time: { created: 1, completed: 2 },
+        error: { name: "UnknownError", data: { message: "provider failed" } },
+      } as Message],
+      parts: { msg_assistant: [] },
+    })
+
+    expect(conversationHasAssistantMessage("ses_error", "msg_assistant")).toBe(true)
   })
 
   test("removes missing sessions from the directory cache", () => {

@@ -966,7 +966,7 @@ describe("harness config helpers", () => {
     })
 
     test("all runner types have a display name", () => {
-      const types: HarnessType[] = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "opencode"]
+      const types: HarnessType[] = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "opencode"]
       for (const t of types) {
         expect(HARNESS_DISPLAY_NAMES[t]).toBeTruthy()
       }

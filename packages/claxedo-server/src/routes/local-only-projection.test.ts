@@ -1,7 +1,14 @@
 import { Hono } from "hono"
+import { serve } from "@hono/node-server"
 import { describe, expect, test } from "vitest"
 import type { ClerkVerifier, ControlPlaneAuthConfig } from "../control-plane/auth"
-import { localOnlyProjection } from "./local-only-projection"
+import {
+  isLoopbackLocalRequest,
+  localOnlyProjection,
+  peerAddressStamp,
+  requestPeerAddress,
+  stampRequestPeerAddress,
+} from "./local-only-projection"
 import { mountLazyLocalOnlyWorkGraph, mountLocalOnlyWorkGraph } from "../server"
 
 const signed = {
@@ -162,6 +169,79 @@ describe("local-only projection middleware", () => {
 
     expect(loopback.status).toBe(200)
     await expect(loopback.json()).resolves.toEqual({ ok: true })
+  })
+
+  test("external-bind regression: Host: 127.0.0.1 from a non-loopback peer is not local", async () => {
+    // With CLAXEDO_SERVER_HOST=0.0.0.0 a remote client controls the Host
+    // header; only the transport peer address is trustworthy.
+    const request = new Request("http://127.0.0.1/api/workgraph/runs")
+    stampRequestPeerAddress(request, { incoming: { socket: { remoteAddress: "203.0.113.7" } } })
+    expect(isLoopbackLocalRequest(request)).toBe(false)
+  })
+
+  test("loopback peer with loopback Host stays local", async () => {
+    for (const remoteAddress of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) {
+      const request = new Request("http://localhost/api/workgraph/runs")
+      stampRequestPeerAddress(request, { incoming: { socket: { remoteAddress } } })
+      expect(isLoopbackLocalRequest(request)).toBe(true)
+    }
+  })
+
+  test("loopback peer forwarding for a non-loopback client is not local", async () => {
+    const request = new Request("http://127.0.0.1/api/workgraph/runs", {
+      headers: { "x-forwarded-for": "198.51.100.9, 127.0.0.1" },
+    })
+    stampRequestPeerAddress(request, { incoming: { socket: { remoteAddress: "127.0.0.1" } } })
+    expect(isLoopbackLocalRequest(request)).toBe(false)
+
+    const localForward = new Request("http://127.0.0.1/api/workgraph/runs", {
+      headers: { "x-forwarded-for": "127.0.0.1" },
+    })
+    stampRequestPeerAddress(localForward, { incoming: { socket: { remoteAddress: "127.0.0.1" } } })
+    expect(isLoopbackLocalRequest(localForward)).toBe(true)
+  })
+
+  test("peerAddressStamp middleware records env.incoming for gates behind it", async () => {
+    const app = new Hono()
+      .use(peerAddressStamp())
+      .use("/api/workgraph/*", localOnlyProjection({ authConfig: localOnly, verifier, label: "WorkGraph" }))
+      .get("/api/workgraph/runs", (c) => c.json({ ok: true }))
+
+    const spoofed = await app.request(
+      "http://127.0.0.1/api/workgraph/runs",
+      {},
+      { incoming: { socket: { remoteAddress: "203.0.113.7" } } },
+    )
+    expect(spoofed.status).toBe(403)
+
+    const local = await app.request(
+      "http://127.0.0.1/api/workgraph/runs",
+      {},
+      { incoming: { socket: { remoteAddress: "127.0.0.1" } } },
+    )
+    expect(local.status).toBe(200)
+  })
+
+  test("pins @hono/node-server socket exposure over a real TCP connection", async () => {
+    // Guards the Symbol("incomingKey") fallback in requestPeerAddress: if a
+    // node-server upgrade stops exposing the IncomingMessage on the Request,
+    // this fails loudly instead of silently degrading to Host-header trust.
+    const app = new Hono().get("/peer", (c) =>
+      c.json({ peer: requestPeerAddress(c.req.raw) ?? null, local: isLoopbackLocalRequest(c.req.raw) }),
+    )
+    const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" })
+    try {
+      await new Promise<void>((resolve) => server.on("listening", () => resolve()))
+      const address = server.address()
+      if (!address || typeof address === "string") throw new Error("expected socket address")
+      const res = await fetch(`http://127.0.0.1:${address.port}/peer`)
+      const body = (await res.json()) as { peer: string | null; local: boolean }
+      expect(body.peer).not.toBeNull()
+      expect(["127.0.0.1", "::ffff:127.0.0.1", "::1"]).toContain(body.peer)
+      expect(body.local).toBe(true)
+    } finally {
+      server.close()
+    }
   })
 
   test("lazy WorkGraph mount rejects non-loopback requests before loading the optional app", async () => {

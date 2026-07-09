@@ -1,9 +1,13 @@
 import {
+  decodeHarnessState,
   effectiveHarnessModel,
+  failedHarness,
   harnessHasConfigOptions,
+  type HarnessState,
   type HarnessType,
 } from "../../session-client/harness/profile"
 import {
+  harnessStatusPatch,
   harnessSwitchStartPatch,
   type HarnessStorePatch,
 } from "../../session-client/harness/store-state"
@@ -52,7 +56,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     const useLocalHarnessConfig = input.runtime.useLocalHarnessConfig(params)
     input.seed(scope)
     input.dropPrepared(scope)
-    input.applyPatch(scope, harnessSwitchStartPatch({ type, useLocalHarnessConfig }))
+    input.applyPatch(scope, harnessSwitchStartPatch({ type }))
     input.cache.clearOptionsTries(scope)
     input.saveHarness(scope, type)
     input.saveModel(scope, effectiveHarnessModel(type))
@@ -78,17 +82,19 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     useLocalHarnessConfig: boolean,
   ) => {
     const workspace = await input.runtime.workspace(params).catch(() => undefined)
-    if (useLocalHarnessConfig && workspace?.kind !== "cloud" && workspace?.kind !== "user-hosted") {
-      const ok = await postHarnessConfig(scope, type, params, binary)
-      if (!ok) return
-    }
+    const status = useLocalHarnessConfig && workspace?.kind !== "cloud" && workspace?.kind !== "user-hosted"
+      ? await postHarnessConfig(scope, type, params, binary)
+      : true
+    if (!status) return
     if (!harnessHasConfigOptions(type)) {
       input.applyPatch(scope, { harnessBinary: "" })
       await input.refresh(params?.directory, type, { draft: true })
+      applyPostedStatus(scope, status)
       return
     }
-    if (useLocalHarnessConfig) input.fetchConfigOptions(scope, type, params)
+    input.fetchConfigOptions(scope, type, params)
     await input.refresh(params?.directory, type, { draft: true })
+    applyPostedStatus(scope, status)
   }
 
   const switchExistingLocalHarness = async (
@@ -97,13 +103,14 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     params: ScopeInput,
     binary?: string,
   ) => {
-    const ok = await postHarnessConfig(scope, type, params, binary, {
+    const status = await postHarnessConfig(scope, type, params, binary, {
       sessionId: params.sessionId,
       directory: params.directory,
     })
-    if (!ok) return
+    if (!status) return
     if (binary) input.applyPatch(scope, { harnessBinary: binary })
     await input.refresh(params.directory, type)
+    applyPostedStatus(scope, status)
     if (!harnessHasConfigOptions(type)) {
       input.applyPatch(scope, {
         harnessBinary: "",
@@ -137,7 +144,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
           }),
         },
       )
-      if (res.ok) return true
+      if (res.ok) return decodeHarnessState(await res.json().catch(() => undefined)) ?? await fetchHarnessStatus(params, session) ?? true
       throw new Error(await input.errorMessage(res, `Failed to switch to ${type}`))
     } catch (err) {
       input.applyPatch(scope, {
@@ -147,6 +154,26 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
       })
       return false
     }
+  }
+
+  const applyPostedStatus = (scope: string, status: true | HarnessState) => {
+    if (status !== true && failedHarness(status)) input.applyPatch(scope, harnessStatusPatch({ data: status }))
+  }
+
+  const fetchHarnessStatus = async (
+    params: ScopeInput | undefined,
+    session?: { sessionId?: string; directory?: string },
+  ) => {
+    if (!params?.directory && !session?.directory) return undefined
+    const res = await input.runtime.localHarnessConfigFetch(params)(
+      harnessConfigUrl({
+        serverUrl: input.base,
+        directory: session?.directory ?? params?.directory,
+        sessionId: session?.sessionId ?? params?.sessionId,
+      }),
+    )
+    if (!res.ok) return undefined
+    return decodeHarnessState(await res.json().catch(() => undefined))
   }
 
   return {

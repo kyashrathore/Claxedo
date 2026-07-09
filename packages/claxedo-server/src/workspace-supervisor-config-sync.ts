@@ -19,7 +19,8 @@ export async function runtimeConfigSnapshot(state?: WorkspaceRuntimeState) {
 
 export async function pushRuntimeConfig(state: WorkspaceRuntimeState, cfg?: RuntimeConfigSnapshot) {
   if (!state.url) throw new Error("workspace runtime missing url")
-  const res = await fetch(`${state.url}/api/wr/config`, {
+  const url = `${state.url}/api/wr/config`
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -28,6 +29,10 @@ export async function pushRuntimeConfig(state: WorkspaceRuntimeState, cfg?: Runt
     },
     body: JSON.stringify(cfg ?? await runtimeConfigSnapshot(state)),
     signal: AbortSignal.timeout(5_000),
+  }).catch((err) => {
+    const message = err instanceof Error ? err.message : String(err)
+    const cause = err instanceof Error && err.cause instanceof Error ? `: ${err.cause.message}` : ""
+    throw new Error(`config push failed: ${url}: ${message}${cause}`)
   })
   if (!res.ok) {
     const bodyText = await res.text().catch(() => "")

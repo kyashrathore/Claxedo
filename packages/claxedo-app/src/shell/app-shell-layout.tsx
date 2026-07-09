@@ -244,6 +244,12 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const toggleSidebar = () => {
     shellLayout.toggleRail()
   }
+  const resizeSidebar = (width: number) => {
+    shellLayout.setRailWidth(width)
+  }
+  const commitSidebarResize = () => {
+    claxedoState.rail.setWidth(shellLayout.committedRailWidth())
+  }
   const handleSidebarHotZoneEnter = () => {
     if (sidebarPinned() || sidebarExpanded()) return
     shellLayout.peekRail(true)
@@ -301,6 +307,8 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           sidebarHidden={sidebarHidden}
           sidebarPinned={sidebarPinned}
           sidebarWidth={sidebarWidth}
+          onSidebarResize={resizeSidebar}
+          onSidebarResizeEnd={commitSidebarResize}
           onSidebarMouseLeave={handleSidebarMouseLeave}
           onToggleSidebar={toggleSidebar}
           trafficLightPad={chrome.trafficLightPad}

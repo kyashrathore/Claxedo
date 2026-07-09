@@ -213,6 +213,18 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (input.assistantMessageId && prev.activeTurn.assistantMessageId !== input.assistantMessageId) return
     const assistantMessageId = input.assistantMessageId ?? prev.activeTurn.assistantMessageId
     const status = input.outcome.status === "failed" ? "error" : null
+    if (input.outcome.status === "failed") {
+      const message = this.ensureMessage(input.sessionId, assistantMessageId)
+      const time = message.info.time && typeof message.info.time === "object" ? message.info.time : {}
+      this.upsertMessage(input.sessionId, {
+        ...message,
+        info: {
+          ...message.info,
+          time: { ...time, completed: input.outcome.completedAt },
+          error: { name: "UnknownError", data: { message: input.outcome.error ?? "turn failed" } },
+        },
+      })
+    }
     this.sessions.set(input.sessionId, {
       ...prev,
       activeTurn: undefined,

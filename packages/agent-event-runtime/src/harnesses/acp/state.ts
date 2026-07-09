@@ -30,6 +30,8 @@ type ToolState = {
 export type SessionState = {
   client: AcpClient
   lastMessageId: string | null
+  assistantTextByMessageId: Record<string, string>
+  assistantThinkingByMessageId: Record<string, string>
   status: "idle" | "busy" | "error"
   turn: number
   tools: Record<string, ToolState>
@@ -607,6 +609,8 @@ export function createAcpTranslatorState(client?: string): SessionState {
   return {
     client: acpClient(client),
     lastMessageId: null,
+    assistantTextByMessageId: {},
+    assistantThinkingByMessageId: {},
     status: "idle",
     turn: 0,
     tools: {},
