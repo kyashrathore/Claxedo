@@ -138,13 +138,20 @@ export async function getRuntimeAgentExtensionsSnapshot(
     readExtensionLock(lockStatePath(root)),
     readMaterializedRuntimeRecord(materializedRecordPath(root)),
   ])
-  const workspace = options.workspaceInstalls ?? []
   const desiredInstalls = desired.installs.filter((item) =>
     config.scope !== "project" || item.id !== FIRST_PARTY_AGENT_EXTENSION_ID || item.source.type !== "project"
   )
   const firstParty = config.scope !== "project" || desiredInstalls.some((item) => item.id === FIRST_PARTY_AGENT_EXTENSION_ID)
     ? undefined
     : await discoverFirstPartyAgentExtensions(config.projectDir)
+  // Local desired state is authoritative for ids it already tracks; a
+  // workspace record with the same id would otherwise produce a duplicate
+  // installed.json row on replay.
+  const localIds = new Set([
+    ...desiredInstalls.map((item) => item.id),
+    ...(firstParty ? [firstParty.id] : []),
+  ])
+  const workspace = (options.workspaceInstalls ?? []).filter((item) => !localIds.has(item.desired.id))
   const installs: Array<{
     desired: DesiredExtensionInstall
     lock?: LockedExtensionPackage
@@ -170,14 +177,20 @@ export async function getRuntimeAgentExtensionsSnapshot(
   ]
   return {
     version: 1,
+    // Disabled installs stay in the snapshot with enabled=false. Replay treats
+    // the snapshot as the whole world, so dropping them would erase their
+    // desired/lock state and delete their artifacts as stale — disable would
+    // become uninstall. Effective policy is folded into desired.enabled so the
+    // replaying runtime never materializes a policy-blocked install.
     installs: installs
       .map((item) => ({
         ...item,
         effective: resolveEffectiveAgentExtensionPolicy(item.desired, options.policyOverrides),
       }))
-      .filter((item) => item.effective.enabled)
       .map((item) => ({
-        desired: item.desired,
+        desired: item.effective.enabled === item.desired.enabled
+          ? item.desired
+          : { ...item.desired, enabled: item.effective.enabled },
         ...(item.lock ? { lock: item.lock } : {}),
         ...(item.status ? { status: item.status } : {}),
         effective: item.effective,

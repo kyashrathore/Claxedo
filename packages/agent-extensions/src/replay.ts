@@ -3,7 +3,7 @@ import crypto from "crypto"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { writeFileAtomic } from "./fs-safe"
+import { withAgentExtensionStateLock, writeFileAtomic } from "./fs-safe"
 import { materializeAgentExtensionSnapshot, type AgentExtensionMaterializationInstall } from "./materialize"
 import { FIRST_PARTY_AGENT_EXTENSIONS_DIR } from "./types"
 import { digestDirectory } from "./cache"
@@ -257,42 +257,10 @@ async function packageRoots(input: {
   return sorted(Object.fromEntries(entries) as Record<string, string>)
 }
 
-async function wait(ms: number) {
-  await new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-// A crashed replay leaves the lock directory behind; treat locks older than
-// this as stale and take them over instead of spinning forever.
-const REPLAY_LOCK_STALE_MS = 10 * 60 * 1000
-
-async function withReplayLock(root: string, fn: () => Promise<void>) {
-  const lock = path.join(root, ".replay-lock")
-  await fs.mkdir(root, { recursive: true, mode: 0o755 })
-  while (true) {
-    try {
-      await fs.mkdir(lock, { mode: 0o755 })
-      break
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err
-      const stat = await fs.stat(lock).catch(() => undefined)
-      if (stat && Date.now() - stat.mtimeMs > REPLAY_LOCK_STALE_MS) {
-        await fs.rm(lock, { recursive: true, force: true })
-        continue
-      }
-      await wait(100)
-    }
-  }
-  try {
-    await fn()
-  } finally {
-    await fs.rm(lock, { recursive: true, force: true })
-  }
-}
-
 async function applyRuntimeAgentExtensionsNow(input: RuntimeAgentExtensions | undefined, projectDir = projectDirDefault(), options: ReplayOptions = {}) {
   if (!input) return
   const root = options.stateRoot ?? path.join(projectDir, ".agent-extensions")
-  await withReplayLock(root, async () => {
+  await withAgentExtensionStateLock(root, async () => {
     const installs = input.installs
     const enabledInstalls = installs.filter((item) => item.desired.enabled !== false)
     await writeFileAtomic(path.join(root, "installed.json"), JSON.stringify({

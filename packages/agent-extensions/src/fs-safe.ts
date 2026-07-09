@@ -28,3 +28,41 @@ export async function readFileIfExists(file: string): Promise<string | undefined
     throw err
   }
 }
+
+// A crashed holder leaves the lock directory behind; treat locks older than
+// this as stale and take them over instead of spinning forever.
+const STATE_LOCK_STALE_MS = 10 * 60 * 1000
+
+async function wait(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// Cross-process mutex over an .agent-extensions state root. Both runtime
+// replay and the lifecycle commands (install/enable/disable/uninstall) do
+// read-modify-write over installed.json/lock.json/materialized.json, so they
+// must serialize against each other or interleaved runs lose updates.
+// The dir name predates lifecycle locking and is kept for compatibility with
+// concurrently running older processes.
+export async function withAgentExtensionStateLock<T>(root: string, fn: () => Promise<T>): Promise<T> {
+  const lock = path.join(root, ".replay-lock")
+  await fs.mkdir(root, { recursive: true, mode: 0o755 })
+  while (true) {
+    try {
+      await fs.mkdir(lock, { mode: 0o755 })
+      break
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err
+      const stat = await fs.stat(lock).catch(() => undefined)
+      if (stat && Date.now() - stat.mtimeMs > STATE_LOCK_STALE_MS) {
+        await fs.rm(lock, { recursive: true, force: true })
+        continue
+      }
+      await wait(100)
+    }
+  }
+  try {
+    return await fn()
+  } finally {
+    await fs.rm(lock, { recursive: true, force: true })
+  }
+}

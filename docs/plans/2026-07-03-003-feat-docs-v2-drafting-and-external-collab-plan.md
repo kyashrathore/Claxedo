@@ -9,14 +9,15 @@ date: 2026-07-03
 
 > **Amendment (2026-07-10, restoration + connections update):** this document
 > was deleted from the working tree during the pre-hard-fork docs trim
-> (history reset 2026-07-09) and has been restored with corrections. Two
+> (history reset 2026-07-09) and has been restored with corrections. Three
 > material changes since first authoring:
 > 1. **The connections framework is now IMPLEMENTED** — `@claxedo/connections`
 >    kit (`packages/claxedo-connections`: registry, attempt state machine,
 >    token service, impls for google/notion/atlassian/github) + claxedo-server
 >    host (`src/connections-host/`, `storage/connection.sql.ts`, mounted at
 >    `/api/claxedo/integrations`) + app UI (`settings-connections.tsx`,
->    `dialog-connect-integration.tsx`). **LANE CX below is COMPLETE**; its
+>    `dialog-connect-integration.tsx`). The **Connections Framework
+>    (IMPLEMENTED — reference)** section below records the completed work; its
 >    code-grounded reference is
 >    `docs/plans/2026-07-03-004-feat-connections-framework-plan.md`. Google
 >    registers only when `CLAXEDO_INTEGRATION_GOOGLE_CLIENT_ID/SECRET` are
@@ -150,7 +151,10 @@ Do not re-litigate inside a lane; if one proves impossible, stop and report.
 4. **Append-only revision log** replaces the version-int. Every content write
    creates a `doc_revision` row (author kind: user|agent, optional session
    provenance). Publish binds to a specific revision. Optimistic concurrency:
-   writers pass `parent_revision_id`; mismatch → 409 (no silent clobber).
+   writers pass `parent_revision_id`; mismatch → 409 (no silent clobber). Each
+   write runs in one SQLite write transaction: validate the current head,
+   allocate `seq`, insert the revision, and advance the head atomically; parent
+   or sequence contention maps to the same 409 contract.
 5. **No git coupling.** Docs are not repo files. `from-repo` and
    `commit-to-git` flows are deleted, not ported. (Product decision: plans/PRDs
    don't belong in source code.)
@@ -205,9 +209,10 @@ Do not re-litigate inside a lane; if one proves impossible, stop and report.
 17. **Arena v2 in this plan = re-point, not rethink.** Arena moves onto the new
     doc/revision store with minimal behavior change. A deeper arena redesign
     (agents-as-sessions, coordination model) is deferred work with its own doc.
-18. **Google OAuth scope = `drive.file` + `documents`** (faster review; limits
-    comment access to docs the app created/opened — acceptable since the
-    kit creates the docs). Notion ships a `key` method
+18. **Google OAuth scope = `drive.file`** (the recommended non-sensitive scope;
+    it is sufficient for Docs and Drive operations on files the app creates or
+    the user explicitly opens with the app). Adopting an existing Google Doc
+    therefore requires an explicit app-authorization flow. Notion ships a `key` method
     (internal-integration secret) alongside OAuth; Confluence ships a `key`
     method (API token) alongside 3LO — both dodge app-review calendar risk for
     solo users. Cross-check against what the shipped connection impls
@@ -376,13 +381,16 @@ Originally specified here; since built. Authoritative reference:
   toggle per connection: `docs` (this plan), `work-source`, `channel`,
   `code-host`. One Atlassian connection serves Confluence docs AND Jira
   work-source.
-- **What this plan still needs from it** (verify, don't assume):
-  1. in-process access to the token service from the doc-collab kit (same
-     server process — no route needed; LANE 0 pins how the host hands the
-     service to sibling kits);
-  2. capability metadata on connections (if not present, the docs kit
-     filters by integration id — acceptable v1);
-  3. Confluence/Notion `key`-method fallbacks per Locked Decision 18.
+- **Seams this plan uses** (verified against current source):
+  1. the host passes `connectionsHost.service` to the doc-collab host, which
+     obtains a `CapabilityHandle` through
+     `forCapability("docs", { integration })`; each destination operation calls
+     `handle.getToken()` and never caches the returned token;
+  2. connection rows already carry `grantedCapabilities`; docs discovery
+     filters on the implemented `docs` capability;
+  3. the shipped Notion and Atlassian implementations already provide their
+     `key` methods. Notion OAuth and Atlassian 3LO are not implemented and
+     remain an explicit v1 scope decision.
 - **Evaluated and not adopted** (recorded for posterity): integrations.sh
   (spec registry only, no auth) and executor.sh (MIT MCP gateway; OAuth-app
   ownership undocumented; wouldn't replace the DocDestination layer). Revisit
@@ -419,6 +427,7 @@ claxedo_doc_publication(
   destination TEXT NOT NULL,       -- 'google-docs' | 'notion' | 'confluence'
   external_id TEXT NOT NULL, url TEXT NOT NULL,
   published_revision_id TEXT NOT NULL,
+  external_revision TEXT NOT NULL, -- last destination revision/version observed
   state TEXT NOT NULL,             -- 'in_sync' | 'behind' | 'foreign_edits'
   open_comment_count INTEGER, last_synced_at,
   last_resolution_session_id TEXT, created_at, updated_at,
@@ -456,6 +465,11 @@ Auth: the kit does NOT implement OAuth — it reads live access tokens from the
 connections token service in-process. Provider HTTP happens only server-side;
 agents, MCP processes, and clients never see tokens.
 
+Markdown rendering and destination conversion use one sanitization contract:
+raw HTML is disabled or allowlist-sanitized, unsafe URL schemes are rejected,
+and destination markup is escaped. Tests cover scripts, event handlers,
+`javascript:` links, embedded data URLs, and hostile imported content.
+
 ```ts
 interface DocDestination {
   readonly id: "google-docs" | "notion" | "confluence"   // destination id
@@ -467,7 +481,6 @@ interface DocDestination {
   listComments(ref: DocRef, f: { status: "open" | "all" }): Promise<CommentThread[]>
   replyToComment(ref: DocRef, commentId: string, body: string): Promise<void>
   resolveComment(ref: DocRef, commentId: string, replyBody?: string): Promise<"resolved" | "reply_marker" | "unsupported">
-  share(ref: DocRef, i: { email?: string; role?: "reader" | "commenter" | "writer" }): Promise<"shared" | "url_only">
 }
 // Edit = { op: "replace_section" | "append_section" | "replace_all", anchor?, markdown }
 ```
@@ -477,7 +490,12 @@ ids; explicit `outcome` fields; results are
 raw data for the agent): `doc_create`, `doc_get`, `doc_edit` (internal
 revision), `doc_list`, `doc_publish`, `doc_import_external` (foreign edits →
 new revision), `doc_link`, `doc_comments_list`, `doc_comment_reply`,
-`doc_comment_resolve`, `doc_share`, `doc_sync`, `doc_check_feedback`.
+`doc_comment_resolve`, `doc_sync`, `doc_check_feedback`.
+
+`doc_link` accepts only canonical HTTPS URLs for the selected destination,
+extracts a destination resource id without fetching arbitrary URLs, rejects
+off-origin redirects, verifies that the active connection can read the
+resource, and persists publication metadata only after verification succeeds.
 
 ### Provider capability matrix
 
@@ -488,7 +506,6 @@ new revision), `doc_link`, `doc_comments_list`, `doc_comment_reply`,
 | Read comments | Drive v3 `comments.list` (anchored, quoted content) | comments API — **unresolved threads only** | inline + footer comments REST |
 | Reply | `replies.create` | yes | yes |
 | Resolve | yes (`replies.create` `action: "resolve"`) | **no API resolve** → `reply_marker` (`✅ Resolved by Claxedo:` reply) | inline-comment resolve supported |
-| Share | Drive `permissions.create` | **no sharing API** → `url_only` | restrictions API partial → `url_only` in v1 |
 | Format bridge | structured ↔ markdown, near-lossless | blocks ↔ markdown, exotic blocks left untouched | storage-XHTML lossy on macros → **refuse `replace_all` when unknown macros present; append-only fallback** |
 
 Verify at implementation time (APIs move): Notion comment-resolution and
@@ -496,12 +513,10 @@ webhook support; Google suggestion APIs. Upgrade the matrix + tests if changed.
 
 ## Open Questions
 
-- How the doc-collab kit gets the connections token service in-process
-  (direct kit import vs a handle the host passes in) — LANE 0 pins it.
 - Which pipeline ships first-party skills (agent-hooks templates vs the
   extensions materializer) — LANE M pins it.
-- Do the shipped google/notion/atlassian impls cover the `key`-method
-  fallbacks of Locked Decision 18? Extend impls if not.
+- Whether v1 adds Notion OAuth and Atlassian 3LO in addition to the shipped
+  key methods, and which lane owns that connections work.
 - Is `status-editor-dialog.tsx` pages-only? Grep consumers; delete only if sole
   consumer (LANE RF).
 - Does anything besides pages consume workspace-runtime `git/snapshot`? Keep
@@ -526,15 +541,19 @@ LANE 0 → LANE D → { LANE RF, LANE A, LANE PG, LANE PN, LANE PC } → LANE M 
 ```
 
 - **LANE 0 — Contract** (serial, first): freeze `DocDestination` + `Edit` +
-  outcome types, doc/revision/publication schema, MCP tool schemas; read the
-  connections kit's token service and pin the in-process token seam.
+  outcome types, doc/revision/publication schema, MCP tool schemas; wire the
+  existing `ConnectionsService.forCapability("docs", { integration })`
+  capability-handle seam into the doc-collab host.
   Deliverable: types + empty implementations compile repo-wide.
 - **LANE D — Core store rebuild + server removal**: new `doc.sql.ts` +
   migration (wipes pages/arena tables), `routes/docs.ts` + `docs-arena.ts`
   (port), delete `routes/pages*.ts`, `page-store.ts`, `page-content.ts`,
   `page-arena-*.ts`, `storage/page.sql.ts`, `page-arena.sql.ts`, the `/pages`
   mount in `server.ts`; update `architecture.test.ts` /
-  `architecture-ownership.ts`. Forbidden: touching `convex/`,
+  `architecture-ownership.ts`; replace the page entries in
+  `storage/repair.ts` and `repair.test.ts`, update `storage/schema.ts`, and
+  remove the obsolete page import path from `storage/migrate-legacy.ts` so a
+  restart cannot recreate deleted tables. Forbidden: touching `convex/`,
   `control-plane/authority.ts`, `packages/claxedo-connections/`.
 - **LANE RF — Frontend removal + docs-index**: delete page-* components,
   tab-page*, pages-api.ts, page content renderers, page layout actions, Tiptap
@@ -556,8 +575,13 @@ LANE 0 → LANE D → { LANE RF, LANE A, LANE PG, LANE PN, LANE PC } → LANE M 
 ## Per-Phase Acceptance Criteria
 
 **Phase 1 — Contract + core rebuild + removal (lanes 0, D, RF):**
-- [ ] `grep -ri claxedo_page packages/` → zero production hits; pages routes,
+- [ ] `rg -n 'claxedo_page' packages/claxedo-{server,app}/src
+      --glob '!**/storage/claxedo-migration/**' --glob '!**/*.test.ts'` → zero
+      production hits; historical migrations remain intact; pages routes,
       store, editor, board, tab chrome deleted; app builds and boots.
+      Progress:
+- [ ] A post-migration restart leaves all page and page-arena tables absent;
+      repair and legacy-import paths do not recreate them.
       Progress:
 - [ ] New docs CRUD + revision log green: create → agent edit → user edit with
       stale `parent_revision_id` → 409; scoped fetches 404 cross-scope; loopback
@@ -580,10 +604,10 @@ LANE 0 → LANE D → { LANE RF, LANE A, LANE PG, LANE PN, LANE PC } → LANE M 
 
 **Phase 3 — Notion + Confluence (lanes PN, PC):**
 - [ ] `capability-matrix.test.ts` green including degradation outcomes
-      (`reply_marker`, `url_only`, macro append-only fallback).
+      (`reply_marker`, macro append-only fallback).
       Progress:
-- [ ] Live publish + reply-resolve demo on Notion (key method) and Confluence
-      (key method).
+- [ ] Live publish + reply-marker demo on Notion (key method) and inline-comment
+      resolve demo on Confluence (key method).
       Progress:
 
 **Phase 4 — Loop + UX (lanes M, U):**
@@ -608,15 +632,15 @@ LANE 0 → LANE D → { LANE RF, LANE A, LANE PG, LANE PN, LANE PC } → LANE M 
   pages+docs code after LANE D/RF merge.
 - Make illegal states unrepresentable: outcome unions, lifecycle-derived state,
   branded ids; no destination HTTP outside `src/destinations/`.
-- Secrets stay server-side; clients and MCP processes see short-lived access
-  tokens stay inside claxedo-server; nothing secret in client or MCP state.
+- Secrets stay server-side; short-lived access tokens stay inside
+  claxedo-server; nothing secret is stored in client or MCP state.
 - Use parallel agents/Workflows per lane with disjoint file ownership; verify
   each slice before merging the next.
 
 ## Verification Loop
 
 - Per-package: targeted vitest file lists (full claxedo-server suite hangs
-  locally — known); `tsc` per touched package; `bun run test` in claxedo-app
+  locally — known); package-local `bun typecheck`; `bun run test` in claxedo-app
   (needs `--conditions=browser`).
 - Live-provider smoke: scripted create→publish→comment→resolve run per
   provider with human-supplied credentials (recorded; human checkpoint —
@@ -633,6 +657,8 @@ LANE 0 → LANE D → { LANE RF, LANE A, LANE PG, LANE PN, LANE PC } → LANE M 
 - No refresh tokens outside the connections host.
 - Every `DocDestination` capability gap returns a typed outcome — grep for
   silent catch/no-op paths in providers.
+- Markdown rendering/import sanitization tests and destination-specific
+  `doc_link` URL allowlist/authorization tests are green.
 - Authz: cross-org/project fetches 404 (port the pages-auth test patterns to
   docs routes).
 - `capability-matrix.test.ts` is the single source of truth for degradations;
@@ -656,8 +682,8 @@ LANE 0 → LANE D → { LANE RF, LANE A, LANE PG, LANE PN, LANE PC } → LANE M 
       tested; no ACL code anywhere in the kit.
       Progress:
 - [ ] Full loop demoed end-to-end on Google (draft → publish → comment →
-      resolve → summary), reply-resolve variants demoed on Notion and
-      Confluence.
+      resolve → summary), reply-marker behavior demoed on Notion, and inline
+      comment resolution demoed on Confluence.
       Progress:
 - [ ] Revision-round path demoed (feedback → rev N+1 → re-publish → threads
       answered).

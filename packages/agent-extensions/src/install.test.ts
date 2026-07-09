@@ -569,6 +569,37 @@ describe("cached Agent Extension install flow", () => {
     })
   })
 
+  test("lifecycle commands wait for the shared state lock instead of interleaving", async () => {
+    await writeSource("SKILL.md", "---\nname: review\n---\n")
+    const lockDir = path.join(project, ".agent-extensions", ".replay-lock")
+    await fs.mkdir(lockDir, { recursive: true })
+
+    let settled = false
+    const pending = installCachedAgentExtension({
+      sourceRoot: source,
+      source: { type: "github", owner: "acme", repo: "review" },
+      resolvedSha: "abcdef1234567890",
+      scope: "project",
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+      targets: ["cursor"],
+      id: "review",
+      now: 100,
+    }).then((result) => {
+      settled = true
+      return result
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(settled).toBe(false)
+
+    await fs.rm(lockDir, { recursive: true, force: true })
+    const result = await pending
+    expect(result.materialized.status).toBe("applied")
+    await expect(fs.stat(lockDir)).rejects.toThrow()
+  })
+
   test("a conflict on a later target keeps earlier applied components owned so retry succeeds", async () => {
     await writeSource("mcp.json", JSON.stringify({ servers: { docs: { command: "node" } } }))
     // A foreign (unowned) server already occupies the cursor target file.

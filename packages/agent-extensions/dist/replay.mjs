@@ -30,6 +30,33 @@ async function readFileIfExists(file) {
     throw err;
   }
 }
+var STATE_LOCK_STALE_MS = 10 * 60 * 1e3;
+async function wait(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+async function withAgentExtensionStateLock(root, fn) {
+  const lock = path.join(root, ".replay-lock");
+  await fs.mkdir(root, { recursive: true, mode: 493 });
+  while (true) {
+    try {
+      await fs.mkdir(lock, { mode: 493 });
+      break;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      const stat = await fs.stat(lock).catch(() => void 0);
+      if (stat && Date.now() - stat.mtimeMs > STATE_LOCK_STALE_MS) {
+        await fs.rm(lock, { recursive: true, force: true });
+        continue;
+      }
+      await wait(100);
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await fs.rm(lock, { recursive: true, force: true });
+  }
+}
 
 // src/materialize.ts
 import fs5 from "fs/promises";
@@ -1217,37 +1244,10 @@ async function packageRoots(input) {
   }))).flat();
   return sorted2(Object.fromEntries(entries));
 }
-async function wait(ms) {
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-var REPLAY_LOCK_STALE_MS = 10 * 60 * 1e3;
-async function withReplayLock(root, fn) {
-  const lock = path9.join(root, ".replay-lock");
-  await fs7.mkdir(root, { recursive: true, mode: 493 });
-  while (true) {
-    try {
-      await fs7.mkdir(lock, { mode: 493 });
-      break;
-    } catch (err) {
-      if (err.code !== "EEXIST") throw err;
-      const stat = await fs7.stat(lock).catch(() => void 0);
-      if (stat && Date.now() - stat.mtimeMs > REPLAY_LOCK_STALE_MS) {
-        await fs7.rm(lock, { recursive: true, force: true });
-        continue;
-      }
-      await wait(100);
-    }
-  }
-  try {
-    await fn();
-  } finally {
-    await fs7.rm(lock, { recursive: true, force: true });
-  }
-}
 async function applyRuntimeAgentExtensionsNow(input, projectDir = projectDirDefault(), options = {}) {
   if (!input) return;
   const root = options.stateRoot ?? path9.join(projectDir, ".agent-extensions");
-  await withReplayLock(root, async () => {
+  await withAgentExtensionStateLock(root, async () => {
     const installs = input.installs;
     const enabledInstalls = installs.filter((item) => item.desired.enabled !== false);
     await writeFileAtomic(path9.join(root, "installed.json"), JSON.stringify({

@@ -28,6 +28,7 @@ async function readFileIfExists(file) {
     throw err;
   }
 }
+var STATE_LOCK_STALE_MS = 10 * 60 * 1e3;
 
 // src/materialization.ts
 var AgentExtensionMaterializationError = class extends Error {

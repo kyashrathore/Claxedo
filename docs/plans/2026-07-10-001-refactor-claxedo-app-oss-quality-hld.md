@@ -6,6 +6,8 @@ Scope: `packages/claxedo-app` only
 Companion docs:
 - LLD worker packages: `2026-07-10-002-refactor-claxedo-app-oss-quality-lld.md`
 - Full audit findings (evidence for every claim here): `2026-07-10-003-claxedo-app-audit-findings-appendix.md`
+- Organization review (file placement / granularity / naming / test location): `2026-07-10-004-claxedo-app-org-review-appendix.md`
+- Execution goal (leader/worker protocol): `2026-07-10-005-goal-execute-claxedo-app-oss-quality.md`
 
 This is the "leader knowledge" document: what is wrong at bird's-eye level, what the
 target state is, and in what order the worker packages in the LLD must execute.
@@ -212,6 +214,15 @@ WP touches routing, layout, chat, or visuals.
   (WP-A3), portal-slot unification (WP-A4), terminal-fit event centralization (WP-A5),
   i18n parity tooling + dead keys (WP-A6), shared-helper dedup (WP-A7), fork-legacy
   strings/links (WP-A8).
+
+- **Wave 1.5 — Organization moves (move/rename only, no behavior change):**
+  WP-ORG-1 root topology (28 top-level src dirs → ≤20: kill the single-file dirs, the
+  overrides/ tombstone, the src/e2e vs e2e/ collision); WP-ORG-2 claxedo-ui reorg
+  (layout/→workbench/, layouts/→rail/, the 21 mislabeled harness files out of context/);
+  WP-ORG-3 feature folders (page-editor/, review-workspace/, dialogs/, settings/,
+  titlebar/); WP-ORG-4 cross-boundary moves + test placement (the six context/ files
+  whose own target-layer comments point at shell/data; runner-suffix liars; docstrings
+  citing a deleted file). Evidence: org-review appendix (doc 004).
 
 - **Wave 2 — Directory deep refactors (the bulk; one WP per directory, disjoint):**
   WP-B1 claxedo-ui/components · WP-B2 claxedo-ui layout+layouts · WP-B3 claxedo-ui misc

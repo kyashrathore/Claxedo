@@ -3,6 +3,9 @@ import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);
 // src/materialization.ts
 import path2 from "path";
 
+// src/fs-safe.ts
+var STATE_LOCK_STALE_MS = 10 * 60 * 1e3;
+
 // src/state.ts
 import path from "path";
 var AgentExtensionStateError = class extends Error {

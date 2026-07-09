@@ -336,6 +336,48 @@ describe("Agent Extensions runtime config projection", () => {
     })
   })
 
+  test("prefers local desired installs over workspace records with the same id", async () => {
+    await installCachedAgentExtension({
+      sourceRoot: source,
+      source: { type: "github", owner: "acme", repo: "review" },
+      resolvedSha: "abcdef1234567890",
+      scope: "project",
+      projectDir: project,
+      dataRoot: data,
+      homeDir: home,
+      targets: ["cursor"],
+      id: "review",
+      now: 100,
+    })
+
+    const snapshot = await getRuntimeAgentExtensionsSnapshot({ projectDir: project }, {
+      workspaceInstalls: [{
+        desired: {
+          id: "review",
+          package_name: "review",
+          source: { type: "github", owner: "other", repo: "review" },
+          scope: "workspace",
+          enabled: true,
+          targets: ["cursor"],
+          installed_at: 10,
+          updated_at: 20,
+        },
+        lock: {
+          source: { type: "github", owner: "other", repo: "review" },
+          resolved_sha: "fedcba9876543210",
+          manifest_digests: { package: "digest" },
+          component_digests: { package: "digest" },
+          targets: ["cursor"],
+        },
+      }],
+    })
+
+    const review = snapshot.installs.filter((item) => item.desired.id === "review")
+    expect(review).toHaveLength(1)
+    expect(review[0]?.desired.scope).toBe("project")
+    expect(review[0]?.desired.source).toMatchObject({ owner: "acme" })
+  })
+
   test("org disabled policy blocks workspace enable and projects the install as disabled", async () => {
     await expect(getRuntimeAgentExtensionsSnapshot({ projectDir: project }, {
       workspaceInstalls: [{

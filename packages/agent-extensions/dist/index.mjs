@@ -509,6 +509,33 @@ async function readFileIfExists(file) {
     throw err;
   }
 }
+var STATE_LOCK_STALE_MS = 10 * 60 * 1e3;
+async function wait(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+async function withAgentExtensionStateLock(root, fn) {
+  const lock = path5.join(root, ".replay-lock");
+  await fs5.mkdir(root, { recursive: true, mode: 493 });
+  while (true) {
+    try {
+      await fs5.mkdir(lock, { mode: 493 });
+      break;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      const stat = await fs5.stat(lock).catch(() => void 0);
+      if (stat && Date.now() - stat.mtimeMs > STATE_LOCK_STALE_MS) {
+        await fs5.rm(lock, { recursive: true, force: true });
+        continue;
+      }
+      await wait(100);
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    await fs5.rm(lock, { recursive: true, force: true });
+  }
+}
 
 // src/state.ts
 import fs6 from "fs/promises";
@@ -1531,71 +1558,73 @@ async function installFetchedAgentExtension(input) {
   const id = input.id ?? packageName2;
   const targets2 = input.targets ?? allAgentExtensionTargets();
   const files = filesFor(input);
-  const [desired, lock] = await Promise.all([
-    readDesiredExtensionState(files.installed),
-    readExtensionLock(files.lock)
-  ]);
-  const existing = desired.installs.find((item) => item.id === id);
-  if (existing && !sameSource(existing.source, input.source) && !input.replaceOwned) {
-    throw new AgentExtensionConflictError(
-      "agent_extension_source_conflict",
-      `Agent Extension ${id} is already installed from a different source`,
-      {
-        id,
-        existingSource: existing.source,
-        requestedSource: input.source
-      }
-    );
-  }
-  const checksum = input.checksum ?? await digestDirectory(packageRoot);
-  const timestamp = input.now ?? Date.now();
-  const state = upsertInstallState({
-    state: desired,
-    id,
-    packageName: packageName2,
-    source: input.source,
-    scope: input.scope,
-    targets: targets2,
-    enabled: existing?.enabled ?? true,
-    installedAt: input.installedAt ?? existing?.installed_at ?? timestamp,
-    updatedAt: timestamp
-  });
-  const nextLock = {
-    version: 1,
-    packages: {
-      ...lock.packages,
-      [id]: {
-        source: input.source,
-        resolved_sha: input.resolvedSha,
-        ...input.packagePath ? { package_path: input.packagePath } : {},
-        manifest_digests: { package: checksum },
-        component_digests: { package: checksum },
-        targets: targets2
-      }
+  return withAgentExtensionStateLock(files.root, async () => {
+    const [desired, lock] = await Promise.all([
+      readDesiredExtensionState(files.installed),
+      readExtensionLock(files.lock)
+    ]);
+    const existing = desired.installs.find((item) => item.id === id);
+    if (existing && !sameSource(existing.source, input.source) && !input.replaceOwned) {
+      throw new AgentExtensionConflictError(
+        "agent_extension_source_conflict",
+        `Agent Extension ${id} is already installed from a different source`,
+        {
+          id,
+          existingSource: existing.source,
+          requestedSource: input.source
+        }
+      );
     }
-  };
-  await applyProjection({
-    state,
-    lock: nextLock,
-    files,
-    projectDir: projectDirFor(input),
-    homeDir: input.homeDir,
-    now: input.now,
-    packageRoots: { [id]: packageRoot },
-    ...input.replaceOwned !== void 0 ? { replaceOwned: input.replaceOwned } : {}
+    const checksum = input.checksum ?? await digestDirectory(packageRoot);
+    const timestamp = input.now ?? Date.now();
+    const state = upsertInstallState({
+      state: desired,
+      id,
+      packageName: packageName2,
+      source: input.source,
+      scope: input.scope,
+      targets: targets2,
+      enabled: existing?.enabled ?? true,
+      installedAt: input.installedAt ?? existing?.installed_at ?? timestamp,
+      updatedAt: timestamp
+    });
+    const nextLock = {
+      version: 1,
+      packages: {
+        ...lock.packages,
+        [id]: {
+          source: input.source,
+          resolved_sha: input.resolvedSha,
+          ...input.packagePath ? { package_path: input.packagePath } : {},
+          manifest_digests: { package: checksum },
+          component_digests: { package: checksum },
+          targets: targets2
+        }
+      }
+    };
+    await applyProjection({
+      state,
+      lock: nextLock,
+      files,
+      projectDir: projectDirFor(input),
+      homeDir: input.homeDir,
+      now: input.now,
+      packageRoots: { [id]: packageRoot },
+      ...input.replaceOwned !== void 0 ? { replaceOwned: input.replaceOwned } : {}
+    });
+    const materialized = await readMaterializedRuntimeRecord(files.materialized);
+    const nextPackage = materialized.packages[id];
+    if (!nextPackage) throw new Error(`Agent Extension ${id} was not materialized`);
+    return {
+      id,
+      package: packageType,
+      cache: {
+        path: packageRoot,
+        checksum
+      },
+      materialized: nextPackage
+    };
   });
-  const materialized = await readMaterializedRuntimeRecord(files.materialized);
-  const nextPackage = materialized.packages[id];
-  if (!nextPackage) throw new Error(`Agent Extension ${id} was not materialized`);
-  return {
-    id,
-    package: packageType,
-    cache: {
-      path: packageRoot,
-      checksum
-    },
-    materialized: nextPackage
-  };
 }
 async function installGitHubAgentExtension(input) {
   const source3 = parsePackageSource(input.source);
@@ -1702,7 +1731,9 @@ async function verifyPackageRoots(input) {
   await Promise.all(Object.entries(input.packageRoots ?? {}).map(async ([id, packageRoot]) => {
     const expected = expectedPackageDigest(input.lock.packages[id]);
     if (!expected) return;
-    if (await digestDirectory(packageRoot) !== expected) throw new Error(`Agent Extension ${id} cache checksum mismatch`);
+    if (await digestDirectory(packageRoot) !== expected) {
+      throw new Error(`Agent Extension ${id} cache checksum mismatch; run \`agent-extensions update ${id}\` to refetch the package`);
+    }
   }));
 }
 async function applyProjection(input) {
@@ -1747,104 +1778,110 @@ function setEnabled(input) {
 }
 async function disableAgentExtension(input) {
   const files = filesFor(input);
-  const [desired, lock, record] = await Promise.all([
-    readDesiredExtensionState(files.installed),
-    readExtensionLock(files.lock),
-    readMaterializedRuntimeRecord(files.materialized)
-  ]);
-  const item = record.packages[input.id];
-  const desiredInstall2 = desired.installs.find((install) => install.id === input.id);
-  if (!item && !desiredInstall2) return void 0;
-  const state = setEnabled({
-    state: desired,
-    id: input.id,
-    enabled: false,
-    updatedAt: input.now ?? Date.now()
+  return withAgentExtensionStateLock(files.root, async () => {
+    const [desired, lock, record] = await Promise.all([
+      readDesiredExtensionState(files.installed),
+      readExtensionLock(files.lock),
+      readMaterializedRuntimeRecord(files.materialized)
+    ]);
+    const item = record.packages[input.id];
+    const desiredInstall2 = desired.installs.find((install) => install.id === input.id);
+    if (!item && !desiredInstall2) return void 0;
+    const state = setEnabled({
+      state: desired,
+      id: input.id,
+      enabled: false,
+      updatedAt: input.now ?? Date.now()
+    });
+    await applyProjection({
+      state,
+      lock,
+      files,
+      projectDir: projectDirFor(input),
+      homeDir: input.homeDir,
+      now: input.now
+    });
+    const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[input.id];
+    if (!materialized) throw new Error(`Agent Extension ${input.id} was not materialized`);
+    return {
+      id: input.id,
+      materialized
+    };
   });
-  await applyProjection({
-    state,
-    lock,
-    files,
-    projectDir: projectDirFor(input),
-    homeDir: input.homeDir,
-    now: input.now
-  });
-  const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[input.id];
-  if (!materialized) throw new Error(`Agent Extension ${input.id} was not materialized`);
-  return {
-    id: input.id,
-    materialized
-  };
 }
 async function enableAgentExtension(input) {
   if (!input.homeDir) throw new Error("homeDir is required to enable an Agent Extension");
   const files = filesFor(input);
-  const [desired, lock] = await Promise.all([
-    readDesiredExtensionState(files.installed),
-    readExtensionLock(files.lock)
-  ]);
-  const desiredInstall2 = desired.installs.find((item) => item.id === input.id);
-  const locked = lock.packages[input.id];
-  if (!desiredInstall2 || !locked) return void 0;
-  const packageRoot = cachePackageRoot({
-    resolvedSha: locked.resolved_sha,
-    ...locked.package_path ? { packagePath: locked.package_path } : {},
-    dataRoot: dataRootFor(input)
-  });
-  await applyProjection({
-    state: setEnabled({
-      state: desired,
+  return withAgentExtensionStateLock(files.root, async () => {
+    const [desired, lock] = await Promise.all([
+      readDesiredExtensionState(files.installed),
+      readExtensionLock(files.lock)
+    ]);
+    const desiredInstall2 = desired.installs.find((item) => item.id === input.id);
+    const locked = lock.packages[input.id];
+    if (!desiredInstall2 || !locked) return void 0;
+    const packageRoot = cachePackageRoot({
+      resolvedSha: locked.resolved_sha,
+      ...locked.package_path ? { packagePath: locked.package_path } : {},
+      dataRoot: dataRootFor(input)
+    });
+    await applyProjection({
+      state: setEnabled({
+        state: desired,
+        id: input.id,
+        enabled: true,
+        updatedAt: input.now ?? Date.now()
+      }),
+      lock,
+      files,
+      projectDir: projectDirFor(input),
+      homeDir: input.homeDir,
+      now: input.now,
+      packageRoots: { [input.id]: packageRoot }
+    });
+    const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[input.id];
+    if (!materialized) throw new Error(`Agent Extension ${input.id} was not materialized`);
+    return {
       id: input.id,
-      enabled: true,
-      updatedAt: input.now ?? Date.now()
-    }),
-    lock,
-    files,
-    projectDir: projectDirFor(input),
-    homeDir: input.homeDir,
-    now: input.now,
-    packageRoots: { [input.id]: packageRoot }
+      materialized
+    };
   });
-  const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[input.id];
-  if (!materialized) throw new Error(`Agent Extension ${input.id} was not materialized`);
-  return {
-    id: input.id,
-    materialized
-  };
 }
 async function uninstallAgentExtension(input) {
   const files = filesFor(input);
-  const [desired, record, lock] = await Promise.all([
-    readDesiredExtensionState(files.installed),
-    readMaterializedRuntimeRecord(files.materialized),
-    readExtensionLock(files.lock)
-  ]);
-  const item = record.packages[input.id];
-  const desiredInstall2 = desired.installs.find((install) => install.id === input.id);
-  const lockedPackage2 = lock.packages[input.id];
-  if (!item && !desiredInstall2 && !lockedPackage2) return void 0;
-  const { [input.id]: _removedLock, ...locked } = lock.packages;
-  await applyProjection({
-    state: {
-      version: 1,
-      installs: desired.installs.filter((install) => install.id !== input.id)
-    },
-    lock: { version: 1, packages: locked },
-    files,
-    projectDir: projectDirFor(input),
-    homeDir: input.homeDir,
-    now: input.now
+  return withAgentExtensionStateLock(files.root, async () => {
+    const [desired, record, lock] = await Promise.all([
+      readDesiredExtensionState(files.installed),
+      readMaterializedRuntimeRecord(files.materialized),
+      readExtensionLock(files.lock)
+    ]);
+    const item = record.packages[input.id];
+    const desiredInstall2 = desired.installs.find((install) => install.id === input.id);
+    const lockedPackage2 = lock.packages[input.id];
+    if (!item && !desiredInstall2 && !lockedPackage2) return void 0;
+    const { [input.id]: _removedLock, ...locked } = lock.packages;
+    await applyProjection({
+      state: {
+        version: 1,
+        installs: desired.installs.filter((install) => install.id !== input.id)
+      },
+      lock: { version: 1, packages: locked },
+      files,
+      projectDir: projectDirFor(input),
+      homeDir: input.homeDir,
+      now: input.now
+    });
+    return item ?? {
+      package_name: desiredInstall2?.package_name ?? input.id,
+      source: desiredInstall2?.source ?? lockedPackage2.source,
+      resolved_sha: lockedPackage2?.resolved_sha ?? "",
+      enabled: false,
+      targets: desiredInstall2?.targets ?? lockedPackage2?.targets ?? [],
+      components: [],
+      materialized_at: input.now ?? Date.now(),
+      status: "disabled"
+    };
   });
-  return item ?? {
-    package_name: desiredInstall2?.package_name ?? input.id,
-    source: desiredInstall2?.source ?? lockedPackage2.source,
-    resolved_sha: lockedPackage2?.resolved_sha ?? "",
-    enabled: false,
-    targets: desiredInstall2?.targets ?? lockedPackage2?.targets ?? [],
-    components: [],
-    materialized_at: input.now ?? Date.now(),
-    status: "disabled"
-  };
 }
 
 // src/replay.ts
@@ -2032,37 +2069,10 @@ async function packageRoots(input) {
   }))).flat();
   return sorted2(Object.fromEntries(entries));
 }
-async function wait(ms) {
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-var REPLAY_LOCK_STALE_MS = 10 * 60 * 1e3;
-async function withReplayLock(root, fn) {
-  const lock = path14.join(root, ".replay-lock");
-  await fs11.mkdir(root, { recursive: true, mode: 493 });
-  while (true) {
-    try {
-      await fs11.mkdir(lock, { mode: 493 });
-      break;
-    } catch (err) {
-      if (err.code !== "EEXIST") throw err;
-      const stat = await fs11.stat(lock).catch(() => void 0);
-      if (stat && Date.now() - stat.mtimeMs > REPLAY_LOCK_STALE_MS) {
-        await fs11.rm(lock, { recursive: true, force: true });
-        continue;
-      }
-      await wait(100);
-    }
-  }
-  try {
-    await fn();
-  } finally {
-    await fs11.rm(lock, { recursive: true, force: true });
-  }
-}
 async function applyRuntimeAgentExtensionsNow(input, projectDir = projectDirDefault(), options = {}) {
   if (!input) return;
   const root = options.stateRoot ?? path14.join(projectDir, ".agent-extensions");
-  await withReplayLock(root, async () => {
+  await withAgentExtensionStateLock(root, async () => {
     const installs = input.installs;
     const enabledInstalls = installs.filter((item) => item.desired.enabled !== false);
     await writeFileAtomic(path14.join(root, "installed.json"), JSON.stringify({
@@ -2177,11 +2187,15 @@ async function getRuntimeAgentExtensionsSnapshot(input, options = {}) {
     readExtensionLock(lockStatePath(root)),
     readMaterializedRuntimeRecord(materializedRecordPath(root))
   ]);
-  const workspace = options.workspaceInstalls ?? [];
   const desiredInstalls = desired.installs.filter(
     (item) => config.scope !== "project" || item.id !== FIRST_PARTY_AGENT_EXTENSION_ID || item.source.type !== "project"
   );
   const firstParty = config.scope !== "project" || desiredInstalls.some((item) => item.id === FIRST_PARTY_AGENT_EXTENSION_ID) ? void 0 : await discoverFirstPartyAgentExtensions(config.projectDir);
+  const localIds = /* @__PURE__ */ new Set([
+    ...desiredInstalls.map((item) => item.id),
+    ...firstParty ? [firstParty.id] : []
+  ]);
+  const workspace = (options.workspaceInstalls ?? []).filter((item) => !localIds.has(item.desired.id));
   const installs = [
     ...desiredInstalls.map((item) => ({
       desired: item,

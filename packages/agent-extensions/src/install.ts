@@ -17,6 +17,7 @@ import {
   type DesiredExtensionState,
 } from "./state"
 import { readExtensionLock, writeExtensionLock, type ExtensionLock } from "./lock"
+import { withAgentExtensionStateLock } from "./fs-safe"
 
 export class AgentExtensionConflictError extends Error {
   constructor(
@@ -85,79 +86,99 @@ export async function installCachedAgentExtension(input: InstallCachedAgentExten
   })
 }
 
+// Marketplace manifests carry no single package name; prefer the manifest's
+// own name, then the source repo, before falling back to the cache directory
+// basename (which is the resolved SHA for repo-root GitHub installs).
+function marketplacePackageName(input: {
+  manifest: Record<string, unknown>
+  source: PackageInstallSource
+  packageRoot: string
+}) {
+  if (typeof input.manifest.name === "string" && input.manifest.name.trim()) return input.manifest.name.trim()
+  if (input.source.type === "github" && input.source.repo) return input.source.repo
+  return path.basename(input.packageRoot)
+}
+
 export async function installFetchedAgentExtension(input: InstallFetchedAgentExtensionInput) {
   const packageRoot = input.packageRoot
   const packageType = await discoverAgentExtensionPackage(packageRoot)
-  const packageName = packageType.type === "marketplace" ? path.basename(packageRoot) : packageType.name
+  const packageName = packageType.type === "marketplace"
+    ? marketplacePackageName({ manifest: packageType.manifest, source: input.source, packageRoot })
+    : packageType.name
   const id = input.id ?? packageName
   const targets = input.targets ?? allAgentExtensionTargets()
   const files = filesFor(input)
-  const [desired, lock] = await Promise.all([
-    readDesiredExtensionState(files.installed),
-    readExtensionLock(files.lock),
-  ])
-  const existing = desired.installs.find((item) => item.id === id)
-  if (existing && !sameSource(existing.source, input.source) && !input.replaceOwned) {
-    throw new AgentExtensionConflictError(
-      "agent_extension_source_conflict",
-      `Agent Extension ${id} is already installed from a different source`,
-      {
-        id,
-        existingSource: existing.source,
-        requestedSource: input.source,
+  // Lifecycle commands and runtime replay both read-modify-write the same
+  // state files; serialize the whole transaction against concurrent holders
+  // (another CLI process, applyRuntimeAgentExtensions) or updates get lost.
+  return withAgentExtensionStateLock(files.root, async () => {
+    const [desired, lock] = await Promise.all([
+      readDesiredExtensionState(files.installed),
+      readExtensionLock(files.lock),
+    ])
+    const existing = desired.installs.find((item) => item.id === id)
+    if (existing && !sameSource(existing.source, input.source) && !input.replaceOwned) {
+      throw new AgentExtensionConflictError(
+        "agent_extension_source_conflict",
+        `Agent Extension ${id} is already installed from a different source`,
+        {
+          id,
+          existingSource: existing.source,
+          requestedSource: input.source,
+        },
+      )
+    }
+    const checksum = input.checksum ?? await digestDirectory(packageRoot)
+    const timestamp = input.now ?? Date.now()
+    const state = upsertInstallState({
+      state: desired,
+      id,
+      packageName,
+      source: input.source,
+      scope: input.scope,
+      targets,
+      enabled: existing?.enabled ?? true,
+      installedAt: input.installedAt ?? existing?.installed_at ?? timestamp,
+      updatedAt: timestamp,
+    })
+    const nextLock: ExtensionLock = {
+      version: 1,
+      packages: {
+        ...lock.packages,
+        [id]: {
+          source: input.source,
+          resolved_sha: input.resolvedSha,
+          ...(input.packagePath ? { package_path: input.packagePath } : {}),
+          manifest_digests: { package: checksum },
+          component_digests: { package: checksum },
+          targets,
+        },
       },
-    )
-  }
-  const checksum = input.checksum ?? await digestDirectory(packageRoot)
-  const timestamp = input.now ?? Date.now()
-  const state = upsertInstallState({
-    state: desired,
-    id,
-    packageName,
-    source: input.source,
-    scope: input.scope,
-    targets,
-    enabled: existing?.enabled ?? true,
-    installedAt: input.installedAt ?? existing?.installed_at ?? timestamp,
-    updatedAt: timestamp,
-  })
-  const nextLock: ExtensionLock = {
-    version: 1,
-    packages: {
-      ...lock.packages,
-      [id]: {
-        source: input.source,
-        resolved_sha: input.resolvedSha,
-        ...(input.packagePath ? { package_path: input.packagePath } : {}),
-        manifest_digests: { package: checksum },
-        component_digests: { package: checksum },
-        targets,
-      },
-    },
-  }
-  await applyProjection({
-    state,
-    lock: nextLock,
-    files,
-    projectDir: projectDirFor(input),
-    homeDir: input.homeDir,
-    now: input.now,
-    packageRoots: { [id]: packageRoot },
-    ...(input.replaceOwned !== undefined ? { replaceOwned: input.replaceOwned } : {}),
-  })
-  const materialized = await readMaterializedRuntimeRecord(files.materialized)
-  const nextPackage = materialized.packages[id]
-  if (!nextPackage) throw new Error(`Agent Extension ${id} was not materialized`)
+    }
+    await applyProjection({
+      state,
+      lock: nextLock,
+      files,
+      projectDir: projectDirFor(input),
+      homeDir: input.homeDir,
+      now: input.now,
+      packageRoots: { [id]: packageRoot },
+      ...(input.replaceOwned !== undefined ? { replaceOwned: input.replaceOwned } : {}),
+    })
+    const materialized = await readMaterializedRuntimeRecord(files.materialized)
+    const nextPackage = materialized.packages[id]
+    if (!nextPackage) throw new Error(`Agent Extension ${id} was not materialized`)
 
-  return {
-    id,
-    package: packageType,
-    cache: {
-      path: packageRoot,
-      checksum,
-    },
-    materialized: nextPackage,
-  }
+    return {
+      id,
+      package: packageType,
+      cache: {
+        path: packageRoot,
+        checksum,
+      },
+      materialized: nextPackage,
+    }
+  })
 }
 
 export async function installGitHubAgentExtension(input: InstallGitHubAgentExtensionInput) {
@@ -283,7 +304,9 @@ async function verifyPackageRoots(input: {
   await Promise.all(Object.entries(input.packageRoots ?? {}).map(async ([id, packageRoot]) => {
     const expected = expectedPackageDigest(input.lock.packages[id])
     if (!expected) return
-    if (await digestDirectory(packageRoot) !== expected) throw new Error(`Agent Extension ${id} cache checksum mismatch`)
+    if (await digestDirectory(packageRoot) !== expected) {
+      throw new Error(`Agent Extension ${id} cache checksum mismatch; run \`agent-extensions update ${id}\` to refetch the package`)
+    }
   }))
 }
 
@@ -358,104 +381,110 @@ function setEnabled(input: {
 
 export async function disableAgentExtension(input: AgentExtensionLifecycleInput) {
   const files = filesFor(input)
-  const [desired, lock, record] = await Promise.all([
-    readDesiredExtensionState(files.installed),
-    readExtensionLock(files.lock),
-    readMaterializedRuntimeRecord(files.materialized),
-  ])
-  const item = record.packages[input.id]
-  const desiredInstall = desired.installs.find((install) => install.id === input.id)
-  if (!item && !desiredInstall) return undefined
-  const state = setEnabled({
-    state: desired,
-    id: input.id,
-    enabled: false,
-    updatedAt: input.now ?? Date.now(),
+  return withAgentExtensionStateLock(files.root, async () => {
+    const [desired, lock, record] = await Promise.all([
+      readDesiredExtensionState(files.installed),
+      readExtensionLock(files.lock),
+      readMaterializedRuntimeRecord(files.materialized),
+    ])
+    const item = record.packages[input.id]
+    const desiredInstall = desired.installs.find((install) => install.id === input.id)
+    if (!item && !desiredInstall) return undefined
+    const state = setEnabled({
+      state: desired,
+      id: input.id,
+      enabled: false,
+      updatedAt: input.now ?? Date.now(),
+    })
+    await applyProjection({
+      state,
+      lock,
+      files,
+      projectDir: projectDirFor(input),
+      homeDir: input.homeDir,
+      now: input.now,
+    })
+    const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[input.id]
+    if (!materialized) throw new Error(`Agent Extension ${input.id} was not materialized`)
+    return {
+      id: input.id,
+      materialized,
+    }
   })
-  await applyProjection({
-    state,
-    lock,
-    files,
-    projectDir: projectDirFor(input),
-    homeDir: input.homeDir,
-    now: input.now,
-  })
-  const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[input.id]
-  if (!materialized) throw new Error(`Agent Extension ${input.id} was not materialized`)
-  return {
-    id: input.id,
-    materialized,
-  }
 }
 
 export async function enableAgentExtension(input: AgentExtensionLifecycleInput) {
   if (!input.homeDir) throw new Error("homeDir is required to enable an Agent Extension")
   const files = filesFor(input)
-  const [desired, lock] = await Promise.all([
-    readDesiredExtensionState(files.installed),
-    readExtensionLock(files.lock),
-  ])
-  const desiredInstall = desired.installs.find((item) => item.id === input.id)
-  const locked = lock.packages[input.id]
-  if (!desiredInstall || !locked) return undefined
-  const packageRoot = cachePackageRoot({
-    resolvedSha: locked.resolved_sha,
-    ...(locked.package_path ? { packagePath: locked.package_path } : {}),
-    dataRoot: dataRootFor(input),
-  })
-  await applyProjection({
-    state: setEnabled({
-      state: desired,
+  return withAgentExtensionStateLock(files.root, async () => {
+    const [desired, lock] = await Promise.all([
+      readDesiredExtensionState(files.installed),
+      readExtensionLock(files.lock),
+    ])
+    const desiredInstall = desired.installs.find((item) => item.id === input.id)
+    const locked = lock.packages[input.id]
+    if (!desiredInstall || !locked) return undefined
+    const packageRoot = cachePackageRoot({
+      resolvedSha: locked.resolved_sha,
+      ...(locked.package_path ? { packagePath: locked.package_path } : {}),
+      dataRoot: dataRootFor(input),
+    })
+    await applyProjection({
+      state: setEnabled({
+        state: desired,
+        id: input.id,
+        enabled: true,
+        updatedAt: input.now ?? Date.now(),
+      }),
+      lock,
+      files,
+      projectDir: projectDirFor(input),
+      homeDir: input.homeDir,
+      now: input.now,
+      packageRoots: { [input.id]: packageRoot },
+    })
+    const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[input.id]
+    if (!materialized) throw new Error(`Agent Extension ${input.id} was not materialized`)
+    return {
       id: input.id,
-      enabled: true,
-      updatedAt: input.now ?? Date.now(),
-    }),
-    lock,
-    files,
-    projectDir: projectDirFor(input),
-    homeDir: input.homeDir,
-    now: input.now,
-    packageRoots: { [input.id]: packageRoot },
+      materialized,
+    }
   })
-  const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[input.id]
-  if (!materialized) throw new Error(`Agent Extension ${input.id} was not materialized`)
-  return {
-    id: input.id,
-    materialized,
-  }
 }
 
 export async function uninstallAgentExtension(input: AgentExtensionLifecycleInput) {
   const files = filesFor(input)
-  const [desired, record, lock] = await Promise.all([
-    readDesiredExtensionState(files.installed),
-    readMaterializedRuntimeRecord(files.materialized),
-    readExtensionLock(files.lock),
-  ])
-  const item = record.packages[input.id]
-  const desiredInstall = desired.installs.find((install) => install.id === input.id)
-  const lockedPackage = lock.packages[input.id]
-  if (!item && !desiredInstall && !lockedPackage) return undefined
-  const { [input.id]: _removedLock, ...locked } = lock.packages
-  await applyProjection({
-    state: {
-      version: 1,
-      installs: desired.installs.filter((install) => install.id !== input.id),
-    },
-    lock: { version: 1, packages: locked },
-    files,
-    projectDir: projectDirFor(input),
-    homeDir: input.homeDir,
-    now: input.now,
+  return withAgentExtensionStateLock(files.root, async () => {
+    const [desired, record, lock] = await Promise.all([
+      readDesiredExtensionState(files.installed),
+      readMaterializedRuntimeRecord(files.materialized),
+      readExtensionLock(files.lock),
+    ])
+    const item = record.packages[input.id]
+    const desiredInstall = desired.installs.find((install) => install.id === input.id)
+    const lockedPackage = lock.packages[input.id]
+    if (!item && !desiredInstall && !lockedPackage) return undefined
+    const { [input.id]: _removedLock, ...locked } = lock.packages
+    await applyProjection({
+      state: {
+        version: 1,
+        installs: desired.installs.filter((install) => install.id !== input.id),
+      },
+      lock: { version: 1, packages: locked },
+      files,
+      projectDir: projectDirFor(input),
+      homeDir: input.homeDir,
+      now: input.now,
+    })
+    return item ?? {
+      package_name: desiredInstall?.package_name ?? input.id,
+      source: desiredInstall?.source ?? lockedPackage!.source,
+      resolved_sha: lockedPackage?.resolved_sha ?? "",
+      enabled: false,
+      targets: desiredInstall?.targets ?? lockedPackage?.targets ?? [],
+      components: [],
+      materialized_at: input.now ?? Date.now(),
+      status: "disabled" as const,
+    }
   })
-  return item ?? {
-    package_name: desiredInstall?.package_name ?? input.id,
-    source: desiredInstall?.source ?? lockedPackage!.source,
-    resolved_sha: lockedPackage?.resolved_sha ?? "",
-    enabled: false,
-    targets: desiredInstall?.targets ?? lockedPackage?.targets ?? [],
-    components: [],
-    materialized_at: input.now ?? Date.now(),
-    status: "disabled" as const,
-  }
 }

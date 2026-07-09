@@ -47,7 +47,12 @@ Effort tags: S ≈ ≤1h, M ≈ half-day, L ≈ 1–2 days of agent work.
    duplicates — components/ is the fork-era component library; claxedo-ui is the
    tab/pane app shell composing it) in `src/components/README.md`.
 4. Publish the tests-as-specs standard (HLD §5 verbatim) + one exemplary template test
-   into CONTRIBUTING.md; document the bun:test vs vitest file-extension convention.
+   into CONTRIBUTING.md; document the bun:test vs vitest file-extension convention AND
+   the test-location standard (appendix-004 test-placement): colocation everywhere, the
+   suffix taxonomy (`.test.ts` = bun, `.vitest.ts(x)` = vitest, qualifier segments like
+   `.integration`/`.bugs`), sanctioned exceptions (`src/architecture/*.guard.test.ts`,
+   per-feature ordered spec suites like workbench/tests/), and where shared fakes live
+   (`src/utils/test-support/` — only fakes reused by 2+ unrelated suites).
 5. Rewrite `src/overrides/README.md` for post-hard-fork reality (no packages/app,
    `@/*` → `./src/*`, no upstream diffing) or delete it if the dir is empty.
 **DoD:** docs exist, cross-linked from AGENTS.md; no code changes.
@@ -183,6 +188,90 @@ production project filtering in control-plane.ts.
 
 ---
 
+## Wave 1.5 — Organization moves (parallel; runs AFTER Wave 1, BEFORE Wave 2)
+
+Source: org-review appendix `2026-07-10-004-claxedo-app-org-review-appendix.md` (each WP
+reads its sections, including the proposed-tree sketches). These are move/rename-only
+packages: `git mv` + import updates + test-file moves — **no behavior changes**. They run
+as their own batch so Wave 1's renames land first and Wave 2's deep refactors operate on
+the final tree. Verification per WP: typecheck + the moved files' tests + a grep proving
+the old paths are gone.
+
+### WP-ORG-1 · Root topology (M)
+**Appendix-004:** root-topology, test-placement. **Owns:** the moved/deleted dirs + importers.
+Steps: delete `src/overrides/` (fold its README's historical content into CONTRIBUTING.md);
+merge single-file top-level dirs: `providers/claxedo-events.tsx`→`context/`,
+`pane/store/pane-preferences.ts`→`claxedo-ui/state/`, `analytics/posthog.ts`→`utils/analytics.ts`,
+`constants/file-picker.ts`→`utils/`, `hooks/use-providers.ts`→`context/`,
+`vite-shims/lru-map-default.ts`→`utils/lru-map.ts` (update the vite alias);
+flatten `cloud/runtime/`→`cloud/workspace-runtime-store.ts` and relocate the unrelated
+`agent-event-runtime.browser.test.ts` (→ `architecture/` or beside global-sdk.tsx);
+move `src/e2e/dialog-matrix-harness.tsx`→`src/pages/` (it is a production route; kills
+the src/e2e vs root e2e/ name collision); move the 3 root `e2e/restoration-e2e-*.spec.ts`
+into `e2e/playwright/` and `e2e/playwright/real-provider-preflight.test.ts`→`e2e/bun/`.
+Result target: src/ top level drops from 28 dirs to ≤20, every survivor a real subsystem.
+
+### WP-ORG-2 · claxedo-ui reorganization (L)
+**Appendix-004:** claxedo-ui-org, test-placement. **Owns:** `src/claxedo-ui/**` minus components/.
+Steps: rename `layout/`→`workbench/` (its own main file is workbench.tsx) and
+`layouts/`→`rail/` — kills the one-letter collision; move the loose
+`claxedo-layout-actions.tsx` into the same-named dir as `index.ts` and rename the dir
+`layout-actions/` (drop the product-prefix stutter; same for `claxedo-layout-commands.ts`,
+which moves next to `rail/rail-keyboard-commands.ts`); `claxedo-layout.css`→`app-shell.css`
+(it is global chrome CSS, not engine styling); move the 21 `context/harness-*` files to a
+new `claxedo-ui/harness/` (27 of 31 files in context/ are the harness subsystem, not
+SolidJS contexts), leaving context/ with its 5 real providers; root strays
+`session-title-sync.ts` + `workspace-scope-ids.ts` (+tests)→`utils/`;
+flatten `state/tests/` (3 files colocate with their subjects); kebab-case the PascalCase
+outliers in `workspace-panel/` and `compact-switcher/`; `state/process-pane.ts`→
+`process-pane-slice.ts` (vs context/process-pane.tsx same-name trap); `styles.css`→
+`pane-controls.css` (57 lines, only touches .pane-ctrl-icon).
+Decision recorded here: `workbench/tests/` keeps its lettered A–N spec files (sanctioned
+ordered-spec suite) but gains a README naming the convention.
+
+### WP-ORG-3 · Feature folders (L)
+**Appendix-004:** claxedo-ui-org, components-pages-session-org. **Owns:**
+`src/claxedo-ui/components/**`, `src/components/**` (moves only), `src/marketplace/**`.
+Steps: in claxedo-ui/components — create `page-editor/` (the verified 20-file slice incl.
+slash-commands, mermaid-block, status-editor-dialog, page-index) and `review-workspace/`
+(15-file slice incl. claxedo-session-review.tsx) feature folders; split `dialogs.tsx`'s
+3 inline dialogs into `dialogs/` with one file each. In components/ — `dialogs/` (24
+dialog-* files, drop the prefix inside the folder), `settings/` (15 settings-* +
+network-policy-settings cluster), `titlebar/` (5 files), flatten `server/server-row.tsx`
+up and delete the dir; `session.ts`→`session/index.ts`;
+`session-client/session-ui.barrel.ts`→`index.ts` (kill the one-off .barrel.ts suffix);
+pick ONE "extracted pure logic" suffix (`-logic.ts`) and apply to the mixed
+-core/-helpers/-form strays; `pages/session/handoff.ts`→`prompt-preview-handoff.ts`.
+Marketplace: `marketplace-panel.tsx` becomes `marketplace/{panel,filters,cards,install-flow}`
+skeleton ONLY if WP-B10 hasn't run yet — otherwise skip (B10 owns the real split).
+
+### WP-ORG-4 · Cross-boundary moves + test placement (M)
+**Appendix-004:** shell-context-org, support-dirs-org, test-placement. **Owns:** the named files.
+Steps: move the files whose own `// target-layer:` comments point at shell/data —
+`context/global-sdk-fetch.ts`, `context/global-sync/{bootstrap-orchestrator,event-ingress,inventory-source,session-filter}.ts`,
+`context/global-sdk-event-fetch.ts` — into `shell/data/` (turns the known context↔shell
+cycle into one-directional; coordinates with WP-02's baseline, which should shrink);
+`shell/chrome/app-state-snapshot.ts`→shell root, then rename `shell/chrome/`→`shell/review/`
+and `shell/state/`→`shell/connection/`; move `pages/session/{session-layout,helpers}.ts`
+to the session domain (they're imported by components/session — backwards layering);
+`components/dialog-select-directory-routes.ts`→`utils/`;
+`components/dialog-provider-stack.vitest.tsx`→packages/ui (it tests that package's dialog
+context) or rename to state its integration nature; terminal: create `terminal/integration/`
+for the 6 cross-module scenario tests, `terminal-backend.d.ts`→`backend/`,
+`utils/terminal-websocket-url.ts`→`terminal/`.
+Test hygiene: relocate `claxedo-ui/layouts/review-mount-retention.vitest.tsx`→
+`shell/review/` beside its subject; fix the two runner-suffix liars
+(`extensions/server.test.ts`→`.vitest.ts`, `navigation-islands/session-navigation.test.ts`→
+`.vitest.ts`); rename `utils/resolve-runtime-target.test.ts`→
+`workspace-runtime-request.test.ts`; fix the three files whose docstrings cite the
+deleted `rail-layout.tsx` (point at rail-sidebar.tsx / app-shell-layout.tsx);
+rename mis-named `shell/harnesses/profile.test.tsx`→`.test.ts` and the misfiled
+open-sessions / session-inventory tests to colocate with their subjects.
+(`workspace-project-integrity.test.ts`'s move to `context/layout-projects.test.ts`
+belongs to WP-B2's rewrite of it — leave the file alone here.)
+
+---
+
 ## Wave 2 — Directory deep refactors (parallel, one worker per WP)
 
 Common contract for every B-package: extract pure logic into tested modules following
@@ -193,7 +282,9 @@ superseded copies. Verify with the WP's test list + typecheck; browser-verify an
 touching layout/chat/terminal visuals.
 
 ### WP-B1 · claxedo-ui/components (L)
-**Appendix:** ui-components. **Owns:** `src/claxedo-ui/components/**` (minus WP-A3/A4 files).
+**Appendix:** ui-components. **Owns:** `src/claxedo-ui/components/**` (minus WP-A3/A4
+files; WP-ORG-3 has already grouped these into `page-editor/`, `review-workspace/`, and
+`dialogs/` folders — operate on the new paths).
 Key steps: split `dialog-process-diagnostics.tsx` (1050) into `process-diagnostics/`
 with pure, tested `groups.ts` (buildExternal/groupStatus/scoring — this logic decides
 what gets SIGKILLed; test before touching); unit-test `page-editor-ai.ts`'s
@@ -218,9 +309,11 @@ replace `workspace-project-integrity.test.ts`'s 1186 lines of hand-copied shadow
 with imports of the real functions (this is the audit's only CRITICAL test finding);
 reconcile the two keyboard systems' double-bound mod+w / mod+alt+Arrow into one
 dispatch path (full registry consolidation is WP-C2 — here just eliminate the
-double-binding with an integration test proving no double-fire); rename `layout/`→
-`workbench-engine/` and flatten `claxedo-layout-actions`→`layout-actions/`; ARIA +
-keyboard for the pane resize divider; fix Help link if WP-A8 didn't own it.
+double-binding with an integration test proving no double-fire); ARIA + keyboard for the
+pane resize divider; fix Help link if WP-A8 didn't own it. Directory renames
+(layout→workbench, layouts→rail) already landed in WP-ORG-2 — operate on the new paths;
+when rewriting workspace-project-integrity.test.ts, relocate it to its subject
+(`context/layout-projects.test.ts` per appendix-004 test-placement).
 
 ### WP-B3 · claxedo-ui misc (M)
 **Appendix:** ui-misc. **Owns:** `src/claxedo-ui/{workspace-panel,compact-switcher,content-renderers,navigation-islands,utils}/**`.
@@ -272,7 +365,8 @@ dispose-once tests.
 ### WP-B7 · terminal/ (L)
 **Appendix:** terminal, a11y. **Owns:** `src/terminal/**` (minus WP-A1 deletions).
 Key steps: split helpers.ts (907) into `renderer.ts` / `keyboard.ts` / `clipboard.ts` /
-`resize-handlers.ts` with matching spec files; direct tests for setupResizeHandlers
+`resize-handlers.ts` — landing INSIDE `backend/`, of which helpers.ts is already an
+undeclared part (appendix-004 support-dirs-org) — with matching spec files; direct tests for setupResizeHandlers
 (ResizeObserver wiring, fontSize-nudge, retry-fit exhaustion) and loadRenderer (WebGL
 probe, MAX_WEBGL_RENDERERS ceiling, coarse-pointer fallback) via jsdom + fake
 ResizeObserver; make capability-responder.ts the single OSC 10/11 implementation
@@ -396,11 +490,16 @@ layer a real path + WP-02-enforced import rule (no pane/, shell/, claxedo-ui/, r
 context/); shrink composer-isolation mocks as proof (~20 → single-digit).
 
 ### WP-D3 · utils/ dissolution (M)
-Relocate the 3220-line route-audit test into WP-02's scanner framework (split by
-concern); move TanStack cache accessors → `shared/query/`; move
-workspace-relay-connection + workspace-runtime-request → transport home per charter;
-split pages-api.ts into pages-api + arena-api; close remaining test gaps (auth-client,
-prompt.ts, scoped-cache, server-errors, diffs).
+Execute the full cluster→home map in appendix-004 support-dirs-org (its proposed_tree
+table is the authority): route-audit test → WP-02's scanner framework (split by concern);
+TanStack cache accessors + directory-config-cache → `shared/query/`; transport/infra
+(workspace-relay-connection, workspace-runtime-request, workspace-control-routes) →
+`runtime/`; backend clients (api.ts, convex-client, auth-client, prompt.ts, worktree.ts)
+→ `shared/data/`; split pages-api.ts into pages-api + arena-api; keep a slim utils/ of
+dependency-free primitives only; close remaining test gaps (auth-client, prompt.ts,
+scoped-cache, server-errors, diffs). Also split `shared/query/utils.ts` into
+`sort.ts` + `provider-list.ts` and document shared/'s charter (data = wire shapes +
+transport; query = TanStack wrappers) in `src/ARCHITECTURE.md`.
 
 ### WP-D4 · Package scope rename @opencode-ai/* → @claxedo/* (M, repo-wide)
 claxedo-app/server/desktop/web package.json names + all cross-package references +
@@ -416,6 +515,11 @@ design note before execution; do not improvise this one.
 
 ## Dependency notes
 - WP-02's layering guard baseline must land before Wave 2 so B-packages can only shrink it.
+- Wave 1.5 (WP-ORG-*) runs strictly after Wave 1 (renames first, then moves) and strictly
+  before Wave 2 (deep refactors operate on the final tree). Within 1.5 the four packages
+  are disjoint; WP-ORG-4's shell/data moves should shrink WP-02's context↔shell baseline.
+- Wave 2+ WPs reference PRE-move paths in their prose where written before Wave 1.5
+  executed — workers resolve against the actual tree and the appendix-004 rename maps.
 - WP-B3's row primitive precedes WP-C1's row semantics (same files otherwise — that's why rows land in B3 and only ARIA polish in C1).
 - WP-B7's a11y toggle precedes WP-C1's addon-a11y wiring.
 - WP-A3 renames tab-page.css; WP-C3 must reference page-editor.css.
