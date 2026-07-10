@@ -128,10 +128,10 @@ function UsageBar(props: { bar: Bar }): JSX.Element {
   return (
     <div class="flex flex-col gap-1.5">
       <div class="flex items-baseline justify-between">
-        <span class="text-xs text-text-muted">{props.bar.label}</span>
+        <span class="text-xs text-text-weak">{props.bar.label}</span>
         <div class="flex items-baseline gap-1.5">
           <Show when={reset()}>
-            <span class="text-2xs text-text-faint">resets {reset()}</span>
+            <span class="text-2xs text-text-weaker">resets {reset()}</span>
           </Show>
           <span class={`text-xs font-semibold tabular-nums ${t().text}`}>{props.bar.percent}%</span>
         </div>
@@ -161,7 +161,7 @@ function ProviderCard(props: { entry: Entry; index: number }): JSX.Element {
       <div class="flex items-center justify-between">
         <span class="text-sm font-medium text-text-base">{props.entry.label}</span>
         <Show when={props.entry.provider.plan_label}>
-          <span class="rounded-full bg-surface-raised-base px-2 py-0.5 text-2xs uppercase tracking-wider text-text-faint">
+          <span class="rounded-full bg-surface-raised-base px-2 py-0.5 text-2xs uppercase tracking-wider text-text-weaker">
             {props.entry.provider.plan_label}
           </span>
         </Show>
@@ -249,7 +249,7 @@ function PopoverBody(): JSX.Element {
         <div class="flex items-baseline gap-2">
           <span class="text-xs font-semibold text-text-base tracking-wide">Usage limits</span>
           <Show when={query.data && !isFirstLoad()}>
-            <span class="text-2xs text-text-faint">{formatAge(query.dataUpdatedAt)}</span>
+            <span class="text-2xs text-text-weaker">{formatAge(query.dataUpdatedAt)}</span>
           </Show>
         </div>
         <button
@@ -277,14 +277,14 @@ function PopoverBody(): JSX.Element {
         <Match when={query.isError}>
           <div class="flex flex-col items-center gap-1 py-8 text-center">
             <Icon name="warning" size="small" class="text-icon-critical-base" />
-            <span class="text-xs text-text-muted">{(query.error as Error)?.message ?? "Failed to load usage"}</span>
+            <span class="text-xs text-text-weak">{(query.error as Error)?.message ?? "Failed to load usage"}</span>
           </div>
         </Match>
         <Match when={total() === 0}>
           <div class="flex flex-col items-center gap-1.5 py-8 text-center">
             <Icon name="gauge" class="text-icon-base/50" />
-            <span class="text-xs text-text-muted">No signed-in harnesses</span>
-            <span class="text-2xs text-text-faint px-4">Log in to a coding agent on this machine to track its limits here.</span>
+            <span class="text-xs text-text-weak">No signed-in harnesses</span>
+            <span class="text-2xs text-text-weaker px-4">Log in to a coding agent on this machine to track its limits here.</span>
           </div>
         </Match>
         <Match when={total() > 0}>
@@ -296,7 +296,7 @@ function PopoverBody(): JSX.Element {
             </div>
             <Show when={partition().issues.length > 0}>
               <div class="mt-1.5 pt-2 border-t border-border-weak-base/20">
-                <span class="text-2xs uppercase tracking-wider text-text-faint">Needs attention</span>
+                <span class="text-2xs uppercase tracking-wider text-text-weaker">Needs attention</span>
                 <div class="mt-1.5 flex flex-col gap-1.5">
                   <Index each={partition().issues}>
                     {(entry) => {
@@ -304,8 +304,8 @@ function PopoverBody(): JSX.Element {
                       return (
                         <div class="flex items-center gap-2 py-0.5">
                           <span class={`h-1.5 w-1.5 shrink-0 rounded-full ${status().dot}`} />
-                          <span class="text-xs text-text-muted shrink-0">{entry().label}</span>
-                          <span class="text-2xs text-text-faint truncate">{status().text}</span>
+                          <span class="text-xs text-text-weak shrink-0">{entry().label}</span>
+                          <span class="text-2xs text-text-weaker truncate">{status().text}</span>
                         </div>
                       )
                     }}
