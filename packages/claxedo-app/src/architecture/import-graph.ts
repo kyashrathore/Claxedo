@@ -86,7 +86,7 @@ function exportRoots(appRoot: string, target: string) {
   })
 }
 
-function importSpecifiers(text: string) {
+export function importSpecifiers(text: string) {
   const clean = stripComments(text)
   const specs = new Set<string>()
   let match: RegExpExecArray | null
@@ -159,7 +159,7 @@ function configAliasRootModules(appRoot: string) {
   )
 }
 
-function resolveImport(appRoot: string, fromFile: string, specifier: string) {
+export function resolveImport(appRoot: string, fromFile: string, specifier: string) {
   if (specifier.startsWith("./") || specifier.startsWith("../")) {
     return tryFile(path.resolve(path.dirname(fromFile), specifier))
   }
