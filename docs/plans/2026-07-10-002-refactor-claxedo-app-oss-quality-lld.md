@@ -514,6 +514,25 @@ design note before execution; do not improvise this one.
 ---
 
 ## Dependency notes
+- **Leader re-scope 2026-07-11 (Wave 0 dispatch):** the live e2e session (separate
+  thread) owns `e2e/**`, helpers, perf-harness, `.github/workflows/test.yml`, and the
+  pending debt-ratchet baseline bump. Consequences: (a) WP-02 **step 3** (manifest
+  renames `size-allowlist.json`→`size-baseline.json`, `writers.json`→
+  `query-cache-writers.json`) is deferred until that session's baseline commit lands;
+  (b) WP-03 is split — **WP-03a** (`src/utils/test-support/mock-api.ts` fixture) runs in
+  Wave 0 now; **WP-03b** (mobile Playwright project, axe sweep, `playwright.config.ts`,
+  `test:ui`→`test:vitest` script rename, `.live.spec.ts` naming) is dispatched only
+  after the e2e session lands. Wave 0's gate item "mobile project + axe sweep run"
+  transfers to the WP-03b dispatch.
+- **Leader re-scope 2026-07-11 (fixme-ledger reconciliation):** see
+  `2026-07-11-002-fixme-ledger-wp-reconciliation.md` — the authoritative map from e2e
+  `test.fixme` pins to WPs; flipping a pinned fixme IS the WP's falsifiable evidence.
+  Ownership additions: `src/app.tsx`, `src/main.tsx`, `src/index.tsx` → **WP-B8**;
+  `src/shared/query/session-list.ts` (+ its confirmed `mergeSessionListResponses`
+  stale-nextCursor bug, pinned by core-sidebar-tree:671) → **WP-A7** with a named test
+  gap. Out-of-scope orphan bugs (agent-event-runtime projection, claxedo-mcp routes,
+  session-ui part renderers, agent-sdk-runtime codex driver) are spun off to separate
+  sessions — not any WP's job.
 - WP-02's layering guard baseline must land before Wave 2 so B-packages can only shrink it.
 - Wave 1.5 (WP-ORG-*) runs strictly after Wave 1 (renames first, then moves) and strictly
   before Wave 2 (deep refactors operate on the final tree). Within 1.5 the four packages
