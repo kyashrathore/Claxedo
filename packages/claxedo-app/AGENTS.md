@@ -80,3 +80,21 @@ Use parallel tool calls for independent reads, searches, typechecks, and tests
 when they cannot corrupt shared state. Do not parallelize file edits,
 regeneration steps, shared-cache mutations, or commands that write the same
 output.
+
+## Docs map
+
+Start here before making a nontrivial change in this package:
+
+- `src/VOCABULARY.md` — canonical noun list (session, host, toolSandbox,
+  harness, the five senses of "workspace", directory, project, pane/tab/
+  panel/group, `opencode`). Read this before naming anything.
+- `src/ARCHITECTURE.md` — charter for every top-level `src/` directory,
+  current (unenforced) import-direction reality including the confirmed
+  `context/`↔`shell/` and `components/`↔`claxedo-ui/components/` cycles, and
+  "where do I add X" for the five commonest contribution types.
+- `src/components/README.md` — the `components/` vs `claxedo-ui/components/`
+  layering question specifically (they are layers, not duplicates).
+- `src/overrides/README.md` — why this directory is an intentionally empty
+  tombstone post-hard-fork (no `packages/app`, no override scanner).
+- `CONTRIBUTING.md` — the tests-as-specs merge bar, bun:test vs vitest
+  runner convention, test-location/colocation standard, and PR checklist.
