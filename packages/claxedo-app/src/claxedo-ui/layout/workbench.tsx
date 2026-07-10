@@ -159,24 +159,6 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       if (s.focusedPaneId) wb.split.close(s.focusedPaneId, { destroyContent: false })
       return
     }
-    if (matchKey(e, km.splitHorizontal)) {
-      e.preventDefault()
-      if (s.focusedPaneId) {
-        const pane = s.panes.find((p) => p.id === s.focusedPaneId)
-        const contentId = pane?.contentId
-        if (contentId) wb.split.split(s.focusedPaneId, "right", contentId)
-      }
-      return
-    }
-    if (matchKey(e, km.splitVertical)) {
-      e.preventDefault()
-      if (s.focusedPaneId) {
-        const pane = s.panes.find((p) => p.id === s.focusedPaneId)
-        const contentId = pane?.contentId
-        if (contentId) wb.split.split(s.focusedPaneId, "bottom", contentId)
-      }
-      return
-    }
     if (
       matchKey(e, km.focusLeft) ||
       matchKey(e, km.focusRight) ||

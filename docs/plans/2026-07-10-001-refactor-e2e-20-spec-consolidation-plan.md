@@ -32,12 +32,44 @@ This plan replaces the suite with **25 spec files** in two tiers:
 
 Each spec file is a user journey containing multiple `test()` scenarios (~180 total).
 
-## The Oracle (non-negotiable, applies to every scenario that sends a prompt)
+## Verification doctrine (anti-false-positive — the #1 rule)
 
-> Proof of a completed turn is: assistant reply **text** visible inside
-> `[data-slot="session-turn-assistant-content"]` whose `aria-hidden` is **not** `"true"`,
-> the Thinking row **gone**, and the submit control back to **ready**.
-> Payload, store, message-count, and network assertions are supplements — never proof.
+The core learning from the 2026-07-09 regression marathon: **an assertion is a claim,
+not proof.** The agent's tests were green while the app was broken, its recorder counted
+"visible" from message data instead of the DOM, and its videos showed failures it
+described as passes. Therefore:
+
+1. **Nothing is "done" because tests pass.** Done = tests pass **AND** the visual
+   evidence has actually been looked at (by a vision-capable reviewer — AI or human) and
+   confirms what the assertions claim. Any agent executing this plan must never report a
+   spec complete on green output alone.
+2. **Every oracle assertion produces evidence.** The oracle helper captures a screenshot
+   at the moment of each claimed reply, into a per-run evidence directory; core-suite
+   runs record video (`PLAYWRIGHT_VIDEO=1`).
+3. **Evidence gets reviewed, not just archived.** After a spec goes green, its author (or
+   a dedicated verifier) opens the oracle screenshots/video frames and confirms with
+   their own eyes that the reply text is legibly rendered — not hidden, not covered, not
+   off-screen, not a Thinking placeholder. The review verdict is reported separately from
+   the test verdict (`visual_verified: true/false`), and a spec is not accepted without it.
+4. **If the evidence contradicts the assertion, the assertion is the bug.** Fix the
+   oracle, never the evidence.
+
+## The Oracle (three layers, applies to every scenario that sends a prompt)
+
+Proof of a completed turn is ALL of:
+
+- **DOM truth** — assistant reply **text** present inside
+  `[data-slot="session-turn-assistant-content"]` whose `aria-hidden` is not `"true"`,
+  the Thinking row gone, the submit control back to ready.
+- **Geometric truth** — the reply element has a non-zero bounding box inside the
+  viewport (after scroll), and a hit-test (`document.elementFromPoint` at its center)
+  resolves inside the assistant content — this catches overlays, zero-height collapse,
+  and off-screen rendering that CSS-visibility checks miss.
+- **Visual evidence** — a screenshot captured at assertion time into
+  `test-results/evidence/<spec>/<scenario>.png` (plus suite video), reviewed per the
+  doctrine above.
+
+Payload, store, message-count, and network assertions are supplements — never proof.
 
 Implemented once as `e2e/helpers/turn-oracle.ts` (`expectAssistantReplyVisible`), used by
 every send in every spec. A grep ratchet bans asserting assistant text any other way.
@@ -45,6 +77,10 @@ every send in every spec. A grep ratchet bans asserting assistant text any other
 The default mock must stream `busy → message parts → completed → idle` as **separate
 events**, with variant hooks for: stale-busy (completed message, idle never arrives),
 delayed idle, error mid-turn, dispatch failure, and slow/failed config PATCH.
+
+Tier L (live) specs additionally record a **slow, annotated video of the full journey**
+(the same style as the manual `record-live-harness-video.mjs` runs) and the run is not a
+pass until a vision review of that video confirms every turn's reply is visibly rendered.
 
 ## The SPEC comment (every spec file, non-negotiable)
 
@@ -334,6 +370,33 @@ behavior at the UI layer.
 > the intended contract is; if server-side enforcement is the intent, that's a product
 > fix to make first, not a test to write around.
 
+## Operational contract (learned 2026-07-11, the hard way)
+
+Tier M MUST run against `bun run dev` (as `playwright.config.ts`'s webServer already
+declares) — NEVER against a `vite preview` production build. Production builds
+dead-code-eliminate the DEV-only seams several specs depend on: the webdriver auth
+bypass in `testAuth` (auth-client.ts, `import.meta.env.DEV`-gated), the
+`window.__claxedoConnections` reconnect hooks, and `window.__claxedoQueryClient`.
+A prod build passes most specs and silently fails exactly the auth/reconnect/debug-seam
+subset — a confusing, hours-costing failure signature. Where possible, new tests should
+prefer visible-DOM assertions over DEV debug handles so they stay build-agnostic.
+Dev-server note: a long-lived dev server degrades under sustained multi-suite load —
+recycle it between heavy phases (CI's boot-per-run does this naturally).
+
+## Follow-up workstream: Tier M-real (approved 2026-07-10, implement after integration)
+
+One env flag (`CLAXEDO_E2E_REAL=1`) flips the shared mock into pass-through mode so the
+same Tier M specs run against the real stack: `installMockRuntime` stops fulfilling
+routes, keeps its `requests.*` counters alive via a `page.on('request')` observer, and
+returns a capability descriptor. Scenarios needing mock-only capabilities (event
+injection, failure shapes: stale-busy, dispatch 500, readiness=error…) self-skip with a
+visible reason — those stay mock-only by design. Reply assertions use
+determinism-by-prompt ("Reply with exactly: …") like spec 22. Real mode reuses the live
+tier's preflight + loud-skip gating and runs nightly next to Tier L. Expected coverage:
+~60–70% of scenarios. Side benefit: real mode continuously validates the mock's route
+and event shapes against true traffic (the `/api/wr/events` gap class becomes
+self-detecting).
+
 ## Perf harness — kept
 
 Metrics (unchanged thresholds): `p95FrameMs` (fail > 16.67ms), `worstFrameMs`
@@ -364,18 +427,23 @@ Flows deleted (2): `launch-empty-home`, `three-pane-resize`.
 
 ## Definition of Done
 
-1. `e2e/INVARIANTS.md` exists stating the oracle + cross-cutting invariants; every spec
-   file opens with the SPEC comment block per the template above; every `test()` cites
-   behavior numbers; a review rule rejects tests without citations and behaviors without
-   tests.
-2. `expectAssistantReplyVisible` helper exists; grep ratchet fails on any assistant-text
-   assertion outside it; zero `waitForTimeout` as the sole guard of a negative.
-3. Default mock streams status as separate events with all failure-shape variants;
+1. `e2e/INVARIANTS.md` exists stating the verification doctrine + oracle + cross-cutting
+   invariants; every spec file opens with the SPEC comment block per the template above;
+   every `test()` cites behavior numbers; a review rule rejects tests without citations
+   and behaviors without tests.
+2. `expectAssistantReplyVisible` implements all three oracle layers (DOM + geometric
+   hit-test + evidence screenshot); grep ratchet fails on any assistant-text assertion
+   outside it; zero `waitForTimeout` as the sole guard of a negative.
+3. **Visual verification is recorded, not assumed:** every spec's acceptance includes a
+   `visual_verified` verdict from an actual look at the evidence screenshots/video by a
+   vision-capable reviewer; specs claiming green without reviewed evidence are rejected.
+4. Default mock streams status as separate events with all failure-shape variants;
    stale-busy is a permanent non-skipped test; spec 10's fixtures are generated from the
    agent-event-runtime golden/adapter traces (a script regenerates them; hand-edited
    fixtures are rejected).
-4. Exactly 25 spec files; `test:e2e:all` (Tier M) green locally and in CI.
-5. CI: specs 1–7 + 10 on every PR; all Tier M nightly; Tier L nightly on a credentialed
-   runner with loud-skip semantics.
-6. The role-enforcement finding (spec 25 note) is resolved as either a server-side fix or
+5. Exactly 25 spec files; `test:e2e:all` (Tier M) green locally and in CI; evidence
+   artifacts (screenshots + video) uploaded from CI runs.
+6. CI: specs 1–7 + 10 on every PR; all Tier M nightly; Tier L nightly on a credentialed
+   runner with loud-skip semantics and annotated-video evidence per run.
+7. The role-enforcement finding (spec 25 note) is resolved as either a server-side fix or
    a documented, deliberately-pinned UI-only contract.

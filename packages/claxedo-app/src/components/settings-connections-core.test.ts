@@ -54,7 +54,9 @@ const listBody = {
   integrations: [notion, google],
   connections: [
     {
+      id: "notion-team",
       integrationId: "notion",
+      scope: "team",
       accountLabel: "Acme",
       grantedCapabilities: ["docs"],
       fields: { workspace: "acme" },
@@ -95,10 +97,10 @@ describe("connections list store", () => {
       { status: 200, body: { integrations: listBody.integrations, connections: [] } },
     ])
     const store = createConnectionsStore({ request })
-    const result = await store.disconnect("notion")
+    const result = await store.disconnect("notion-team")
 
     expect(result.ok).toBe(true)
-    expect(calls[0]).toEqual({ path: "/connections/notion", method: "DELETE", body: undefined })
+    expect(calls[0]).toEqual({ path: "/connections/notion-team", method: "DELETE", body: undefined })
     expect(calls[1]?.path).toBe("")
     expect(store.state.connections).toEqual([])
   })
@@ -109,9 +111,9 @@ describe("connections list store", () => {
       { status: 200, body: listBody },
     ])
     const store = createConnectionsStore({ request })
-    const result = await store.reverify("notion")
+    const result = await store.reverify("notion-team")
 
-    expect(calls[0]).toEqual({ path: "/connections/notion/reverify", method: "POST", body: undefined })
+    expect(calls[0]).toEqual({ path: "/connections/notion-team/reverify", method: "POST", body: undefined })
     expect(result.ok).toBe(false)
     expect(result.error).toContain("rejected")
     expect(store.state.loaded).toBe(true)
@@ -138,6 +140,23 @@ describe("connect flow: key method", () => {
     // Secret is cleared on success and never appears in error state.
     expect(flow.state.secret).toBe("")
     expect(flow.state.error).toBeUndefined()
+  })
+
+  test("signed hosts submit the selected personal scope while unsigned hosts keep the legacy request shape", async () => {
+    const signed = scriptedRequest([{ status: 200, body: { ok: true } }])
+    const signedFlow = createConnectFlow({ integration: notion, request: signed.request, personalScopeEnabled: true })
+    signedFlow.setScope("personal")
+    signedFlow.setSecret("ntn_secret")
+    await signedFlow.submitKey()
+    expect(signed.calls[0]?.body).toEqual({ fields: { workspace: "" }, secret: "ntn_secret", scope: "personal" })
+
+    const unsigned = scriptedRequest([{ status: 200, body: { ok: true } }])
+    const unsignedFlow = createConnectFlow({ integration: notion, request: unsigned.request })
+    unsignedFlow.setScope("personal")
+    unsignedFlow.setSecret("ntn_secret")
+    await unsignedFlow.submitKey()
+    expect(unsigned.calls[0]?.body).toEqual({ fields: { workspace: "" }, secret: "ntn_secret" })
+    expect(unsignedFlow.state.scope).toBe("team")
   })
 
   test("submitKey refuses an empty secret without hitting the network", async () => {

@@ -12,6 +12,7 @@ import { configureAgentConfig } from "./agent-config"
 import { eventsHandler } from "./routes/events"
 import { peerAddressStamp } from "./routes/local-only-projection"
 import { createConnectionsHost } from "./connections-host/connections-host"
+import { createConnectionTurnCredentials } from "./connections-host/turn-credentials"
 import { mirrorProcessEvents } from "./process-events"
 import { PagesRoutes } from "./routes/pages"
 import { AgentConfigRoutes } from "./routes/agent-config"
@@ -61,6 +62,7 @@ import { mountControlPlaneChannels } from "./channels-control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
 import { createClaxedoSessionEnvFactory } from "./workspace-runtime-integration/session-env"
 import { loadWorkGraphApp, mountLazyLocalOnlyWorkGraph } from "./server-workgraph"
+import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
 
 export { mountLazyLocalOnlyWorkGraph, mountLocalOnlyWorkGraph } from "./server-workgraph"
 
@@ -155,12 +157,14 @@ export function createApp(services: ControlPlaneServices, options: { onOpencodeA
     ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
     ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
   }
+  const turnCredentials = createConnectionTurnCredentials()
   const centralControl = createCentralControlApp(services, {
     ...authRouteOptions(services),
     // Central Pi sessions run tools in the placement selected at session
     // creation: virtual (in-memory) by default, or a workspace runtime via
     // /api/wr/session-env/* when toolSandbox.kind === "workspace-runtime".
-    createEnv: createClaxedoSessionEnvFactory({ fetchOptions: runtimeProxyOptions }),
+    createEnv: createClaxedoSessionEnvFactory({ fetchOptions: runtimeProxyOptions, turnCredentials }),
+    turnCredentials,
   })
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
   const workspaceRuntimeProxy = createWorkspaceRuntimeProxy(runtimeProxyOptions)
@@ -369,11 +373,13 @@ export function createApp(services: ControlPlaneServices, options: { onOpencodeA
   // with host-injected gates — auth on every route, loopback+header on token.
   const connectionsHost = createConnectionsHost({
     credentials: services.credentials,
+    turnCredentials,
     ...authRouteOptions(services),
   })
   app.route("/api/claxedo/integrations", connectionsHost.routes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
   app.route("/api/claxedo/living-apps", LivingAppsRoutes())
+  mountLocalOnlyUsageLimits(app, authRouteOptions(services))
   mountControlPlaneChannels(app, {
     services,
     runtime: centralControl.runtime,

@@ -36,6 +36,7 @@ export type RelayHostTokenClaims = {
   org_id: string
   workspace_id: string
   host_id: string
+  role: RelayRole
   exp: number
   iat: number
   jti: string

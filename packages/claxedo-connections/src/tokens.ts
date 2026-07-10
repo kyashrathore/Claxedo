@@ -87,7 +87,7 @@ export function createTokenService(deps: TokenDeps) {
 
   return {
     async getLiveToken(row: ConnectionRow): Promise<ConnectionTokenResponse> {
-      const providerId = connectionProviderId(row.integrationId)
+      const providerId = connectionProviderId(row.id)
       const decl = deps.registry.byId(row.integrationId)?.decl
       let credential
       try {

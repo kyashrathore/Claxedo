@@ -1511,6 +1511,8 @@ export default function Page() {
               system={contentIntentDefaults()?.system}
               agent={contentIntentDefaults()?.agent}
               canAbort={() => supports("abort")}
+              status={sessionController.status}
+              activeTurn={sessionController.activeTurn}
               sessionDirectory={dir()}
               sessionRef={activeSessionRef}
               signedControlPlane={signedControlPlane}

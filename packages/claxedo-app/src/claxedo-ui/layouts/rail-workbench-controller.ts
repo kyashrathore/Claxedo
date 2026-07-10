@@ -24,6 +24,7 @@ export function useRailWorkbenchController(input: {
   onTabClose?: (nextActiveTab: ContentMeta | undefined, closedTab: ContentMeta) => void
   onTabSelect?: (meta: ContentMeta) => void
   onWorkspacePanelVisibilityChange?: (visible: boolean) => void
+  roleBlocksTerminal?: Accessor<boolean>
   sidebarDir: () => string | undefined
   state: ClaxedoStateApi
   workspacePanelWidth: Accessor<number>
@@ -33,6 +34,7 @@ export function useRailWorkbenchController(input: {
     state: input.state,
     activeWorkspaceId: input.activeWorkspaceId,
   })
+  const terminalBlocked = () => panelTarget.focusedSurfaceWorkspaceToolsBlocked() || input.roleBlocksTerminal?.() === true
   const headerSurfaces = useRailHeaderSurfaces({
     state: input.state,
     client: input.client,
@@ -47,7 +49,7 @@ export function useRailWorkbenchController(input: {
   const headerActions = createRailHeaderActions({
     focusedPaneWorkspaceDir: input.focusedPaneWorkspaceDir,
     focusedSplitPaneId: panelTarget.focusedSplitPaneId,
-    focusedSurfaceWorkspaceToolsBlocked: panelTarget.focusedSurfaceWorkspaceToolsBlocked,
+    focusedSurfaceWorkspaceToolsBlocked: terminalBlocked,
     onNewSession: input.onNewSession,
     onNewTerminal: input.onNewTerminal,
     sidebarDir: input.sidebarDir,
@@ -64,7 +66,7 @@ export function useRailWorkbenchController(input: {
   })
 
   return {
-    canUseTerminal: () => !panelTarget.focusedSurfaceWorkspaceToolsBlocked(),
+    canUseTerminal: () => !terminalBlocked(),
     closeSurface: headerSurfaces.closeSurface,
     createHeaderSession: headerActions.createSession,
     createHeaderTerminal: headerActions.createTerminal,

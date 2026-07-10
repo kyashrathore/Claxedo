@@ -4,6 +4,7 @@ import type { UpgradeWebSocket } from "hono/ws"
 import { Pty } from "../pty/index"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { assertTarget, resolveWorkspacePath, WorkspaceTargetError } from "../target"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 
 function invalidInput(details: Record<string, unknown>) {
   return errorBody("pty_invalid_input", "Invalid PTY request body", details)
@@ -31,10 +32,17 @@ function requestPort(url: string) {
 }
 
 export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket) {
-  return new Hono()
+  return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
       throw err
+    })
+    // Terminal access is sensitive even when the transport method is GET.
+    .use("*", async (c, next) => {
+      if (c.get("relayHostAuth")?.role === "viewer") {
+        return c.json(errorBody("relay_role_denied", "Workspace role does not allow terminal access"), 403)
+      }
+      return await next()
     })
     .get("/", async (c) => {
       return c.json(Pty.list())

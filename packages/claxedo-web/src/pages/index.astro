@@ -3,36 +3,209 @@ import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
 import DownloadMenu from "../components/DownloadMenu.astro"
+import { github } from "../config"
 
-const harnesses = ["Claude Code", "Codex", "Gemini CLI", "local · cloud · hybrid", "MIT"]
+const chips = [
+  "Claude Code",
+  "Codex",
+  "Gemini CLI",
+  "ACP agents",
+  "local · cloud · hybrid",
+  "MIT — every layer",
+]
+
+const stack = [
+  { layer: "Web + desktop app", note: "the workspace you live in — macOS, Windows, Linux, browser" },
+  { layer: "Control plane", note: "sessions, workspaces, auth, credential fan-out" },
+  { layer: "Workspace runtime", note: "where agents actually run — your laptop or your cloud" },
+  { layer: "Harness adapters", note: "Claude Code, Codex, Gemini CLI, ACP agents" },
+  { layer: "Extensions & connections", note: "skills, MCP servers, keys — written once, synced everywhere" },
+  { layer: "Relay", note: "reach sessions on your local machine from web or phone — no inbound ports" },
+  { layer: "Storage", note: "SQLite — zero third-party services required" },
+]
+
+const harness = [
+  {
+    title: "Run them as themselves",
+    body: "The terminal is a first-class tab. Claude Code looks like Claude Code — nothing wrapped, nothing parsed. ACP (Agent Client Protocol) agents plug into the same workspace.",
+  },
+  {
+    title: "Mix them",
+    body: "Run harnesses side by side and split panes across them. The pi orchestrator drives sessions across machines — plan on your laptop, execute on three cloud workspaces.",
+  },
+  {
+    title: "Your setup follows you",
+    body: "Skills, keys, and MCP servers are workspace state, not dotfiles. The backend fans them out to every machine and every harness — new workspaces come up already configured. And if your keys cross a wire, it can be your wire.",
+  },
+]
+
+const packages = [
+  "agent-sdk-runtime",
+  "agent-event-runtime",
+  "agent-extensions",
+  "workspace-runtime",
+  "workspace-relay",
+  "workspace-relay-protocol",
+  "mcp",
+  "workgraph",
+]
 ---
 
-<Layout title="Claxedo — Every coding agent, in one fast app">
+<Layout
+  title="Claxedo — Deploy your entire agent stack. One click. Your servers."
+  description="Claxedo is the open-source agent stack: app, control plane, workspace runtime, relay, and the packages they're built from — all MIT. Run Claude Code, Codex, Gemini CLI, or any ACP agent. Deploy the whole stack to your own infrastructure, or use the hosted backend. Same code either way."
+>
   <div class="page-frame">
     <Nav active="home" />
 
     <section class="home-hero">
       <div class="home-hero-inner">
-        <span class="hero-kicker" data-reveal="1"><span class="dot"></span> Open source · Harness-agnostic</span>
-        <h1 class="home-title" data-reveal="2">Every coding agent.<br />One fast app.</h1>
+        <span class="hero-kicker" data-reveal="1"><span class="dot"></span> 100% open source — every layer, MIT</span>
+        <h1 class="home-title" data-reveal="2">Deploy your entire<br />agent stack.<br />One click. Your servers.</h1>
         <p class="home-sub" data-reveal="3">
-          Claxedo runs Claude Code, Codex, and Gemini CLI side by side — local, cloud, or
-          hybrid. No lock-in, no toll on the agents you already pay for. Built on an open
-          framework you can build on too.
+          Any model. Any harness. Any kind of work. Claxedo deploys the open-source app,
+          backend, workspaces, and agent runtime to infrastructure you control — or runs
+          on our hosted backend. Same code either way.
         </p>
 
         <div class="hero-actions" data-reveal="4">
-          <DownloadMenu />
-          <a class="btn-secondary" href="/app">Tour the app →</a>
+          <a class="btn-primary" href="#deploy">Deploy your agent stack</a>
+          <DownloadMenu label="Try the desktop app" extraClass="as-secondary" />
         </div>
 
-        <div class="home-chips" data-reveal="5">
-          {harnesses.map((h) => <span class="chip"><span class="dot"></span>{h}</span>)}
-        </div>
-
-        <p class="home-fw" data-reveal="6">
-          Building on Claxedo? <a href="/framework">Explore the open framework →</a>
+        <p class="deploy-line" data-reveal="5">
+          <code>$ claxedo deploy</code>
+          <span class="deploy-note">— the whole stack, on your own servers, in minutes</span>
         </p>
+
+        <div class="home-chips" data-reveal="6">
+          {chips.map((c) => <span class="chip"><span class="dot"></span>{c}</span>)}
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--ruled" id="stack">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-tag">// what gets deployed</span>
+          <h2 class="section-title">One deploy. The whole stack.</h2>
+          <p class="section-lead">
+            Claxedo looks like a desktop app. It is actually eight MIT npm packages plus a
+            SQLite-backed backend you can stand up on your own servers with one command.
+            Every layer below ships in the deploy — no client pointed at somebody else's
+            cloud.
+          </p>
+        </div>
+        <ul class="stack">
+          {stack.map((s) => (
+            <li class="stack-row">
+              <span class="stack-layer">{s.layer}</span>
+              <span class="stack-note">{s.note}</span>
+              <span class="stack-tag">MIT</span>
+            </li>
+          ))}
+        </ul>
+        <p class="stack-foot">Yours, all the way down — deploy it together, or compose your own from the packages.</p>
+      </div>
+    </section>
+
+    <section class="section section--ruled">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-tag">// any harness</span>
+          <h2 class="section-title">Any harness. Any kind of work.</h2>
+          <p class="section-lead">
+            Agent harnesses stopped being just for coding — research, operations, and
+            content run through the same loops that write software. Claxedo runs Claude
+            Code, Codex, Gemini CLI, and any agent CLI side by side, with one setup shared
+            across all of them.
+          </p>
+        </div>
+        <div class="cards">
+          {harness.map((c) => (
+            <div class="card">
+              <h3 class="card-head">{c.title}</h3>
+              <p>{c.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--ruled">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-tag">// open source at every layer</span>
+          <h2 class="section-title">Open source that includes the backend.</h2>
+          <p class="section-lead">
+            Plenty of tools say "open source" and ship a source-available license, or open
+            the client while the backend stays theirs. Claxedo is MIT at every layer — the
+            app, the control plane, the relay, and the packages they're assembled from.
+            Published, not promised — no "open-sourcing soon," no source-available
+            asterisk, no conversion date. Read all of it, fork any of it.
+          </p>
+        </div>
+        <div class="home-chips">
+          {packages.map((p) => <span class="chip"><span class="dot"></span>@claxedo/{p}</span>)}
+        </div>
+        <p class="home-fw">
+          <a href="/framework">Explore the packages →</a>
+        </p>
+      </div>
+    </section>
+
+    <section class="section section--ruled" id="deploy">
+      <div class="container">
+        <div class="section-head">
+          <span class="section-tag">// deploy</span>
+          <h2 class="section-title">Your servers, or ours.</h2>
+          <p class="section-lead">
+            <code>claxedo deploy</code> stands the stack up on your own infrastructure —
+            Fly.io today, more targets on the way — and hands you your URL. Open it in the
+            browser, or connect the desktop app to it. Don't want to run servers? Claxedo
+            Cloud is the same published code, operated by us — not the secret real
+            product. Because it's the same code, leaving is a deploy, not a migration.
+          </p>
+        </div>
+        <div class="deploy-steps">
+          <span class="deploy-step"><code>claxedo deploy</code></span>
+          <span class="deploy-arrow">→</span>
+          <span class="deploy-step">your URL is live</span>
+          <span class="deploy-arrow">→</span>
+          <span class="deploy-step">open the web app or connect desktop</span>
+        </div>
+        <p class="section-lead deploy-why">
+          This year, agent backends kept getting acquired, shut down, or closed-sourced.
+          An acquisition can't relicense code you already run — that's how MIT works, and
+          it's the point.
+        </p>
+      </div>
+    </section>
+
+    <section class="section section--ruled">
+      <div class="container">
+        <div class="lineage">
+          <span class="section-tag">// lineage</span>
+          <p>
+            Claxedo is built on the <strong>OpenCode engine</strong> — openly. The engine is
+            vendored and credited, and we cherry-pick upstream engine fixes (we don't track
+            upstream features). What we build is the stack around it: the workspace, the
+            sync, the relay, and the control plane. Fork point and lineage are documented
+            <a href={github}> in the repo</a>.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="cta-band">
+          <h2 class="section-title">Own the stack. Bring any harness.</h2>
+          <div class="hero-actions">
+            <a class="btn-primary" href="#deploy">Deploy your agent stack</a>
+            <DownloadMenu label="Try the desktop app" extraClass="as-secondary" up={true} />
+          </div>
+        </div>
       </div>
     </section>
 
@@ -48,12 +221,12 @@ const harnesses = ["Claude Code", "Codex", "Gemini CLI", "local · cloud · hybr
     padding: var(--padding);
   }
 
-  .home-hero-inner { max-width: 60rem; }
+  .home-hero-inner { max-width: 62rem; }
 
   .home-title {
     font-family: var(--font-display);
-    font-size: clamp(2.8rem, 7vw, 5.4rem);
-    line-height: 0.98;
+    font-size: clamp(2.6rem, 6vw, 4.8rem);
+    line-height: 1.02;
     font-weight: 650;
     letter-spacing: -0.045em;
     color: var(--text-strong);
@@ -70,11 +243,140 @@ const harnesses = ["Claude Code", "Codex", "Gemini CLI", "local · cloud · hybr
     margin-bottom: 1.75rem;
   }
 
+  .hero-actions :global(.as-secondary) {
+    background: transparent;
+    color: var(--text-strong);
+    border-color: var(--border);
+  }
+
+  .hero-actions :global(.as-secondary:hover) {
+    background: var(--bg-weak);
+  }
+
+  .deploy-line {
+    margin-top: 1.25rem;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--text-weak);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .deploy-line code {
+    color: var(--text-strong);
+    background: var(--bg-weak);
+    border: var(--bw) solid var(--border);
+    padding: 6px 12px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .deploy-note { font-size: 13px; }
+
   .home-chips {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
     margin-top: 1.75rem;
+  }
+
+  .stack {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: var(--bw) solid var(--border);
+    max-width: 56rem;
+  }
+
+  .stack-row {
+    display: grid;
+    grid-template-columns: 15rem 1fr auto;
+    gap: 1rem;
+    align-items: baseline;
+    padding: 14px 18px;
+  }
+
+  .stack-row + .stack-row { border-top: 1px solid var(--border); }
+
+  .stack-layer {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-strong);
+  }
+
+  .stack-note {
+    font-size: 14px;
+    color: var(--text);
+  }
+
+  .stack-tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--accent-text);
+    background: var(--accent);
+    padding: 2px 8px;
+  }
+
+  .stack-foot {
+    margin-top: 1rem;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-weak);
+  }
+
+  @media (max-width: 48rem) {
+    .stack-row { grid-template-columns: 1fr auto; }
+    .stack-note { grid-column: 1 / -1; }
+  }
+
+  .deploy-steps {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--text);
+    margin: 1.5rem 0;
+  }
+
+  .deploy-steps code,
+  .section-lead code,
+  .lineage code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: var(--bg-weak);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    color: var(--text-strong);
+  }
+
+  .deploy-step { white-space: nowrap; }
+  .deploy-arrow { color: var(--text-weak); }
+
+  .deploy-why {
+    max-width: 46rem;
+    margin-top: 0.5rem;
+  }
+
+  .lineage {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text);
+    max-width: 52rem;
+  }
+
+  .lineage p { margin-top: 0.75rem; }
+
+  .lineage a {
+    color: var(--text-strong);
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   .home-fw {
@@ -91,7 +393,7 @@ const harnesses = ["Claude Code", "Codex", "Gemini CLI", "local · cloud · hybr
   }
 
   @media (max-width: 40rem) {
-    .home-title { font-size: clamp(2.2rem, 13vw, 3.4rem); }
+    .home-title { font-size: clamp(2rem, 11vw, 3.1rem); }
     .home-hero { min-height: calc(100svh - 7rem); }
   }
 </style>

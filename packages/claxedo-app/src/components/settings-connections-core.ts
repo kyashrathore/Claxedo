@@ -25,7 +25,9 @@ export type IntegrationInfo = {
 }
 
 export type ConnectionInfo = {
+  id: string
   integrationId: string
+  scope: "team" | "personal"
   accountLabel?: string
   grantedCapabilities: string[]
   fields: Record<string, string>
@@ -56,6 +58,7 @@ export type ConnectionsListState = {
   error: string | undefined
   integrations: IntegrationInfo[]
   connections: ConnectionInfo[]
+  personalScopeEnabled: boolean
 }
 
 export function createConnectionsStore(options: { request: ConnectionsRequest }) {
@@ -65,6 +68,7 @@ export function createConnectionsStore(options: { request: ConnectionsRequest })
     error: undefined,
     integrations: [],
     connections: [],
+    personalScopeEnabled: false,
   })
 
   async function load() {
@@ -84,19 +88,23 @@ export function createConnectionsStore(options: { request: ConnectionsRequest })
         error: undefined,
         integrations: Array.isArray(body.integrations) ? (body.integrations as IntegrationInfo[]) : [],
         connections: Array.isArray(body.connections) ? (body.connections as ConnectionInfo[]) : [],
+        personalScopeEnabled: body.personalScopeEnabled === true,
       })
     } catch (err) {
       setState({ loading: false, error: err instanceof Error ? err.message : String(err) })
     }
   }
 
-  const connectionFor = (integrationId: string) =>
-    state.connections.find((connection) => connection.integrationId === integrationId)
+  const connectionsFor = (integrationId: string) =>
+    state.connections.filter((connection) => connection.integrationId === integrationId)
+
+  const connectionFor = (integrationId: string, scope: ConnectionInfo["scope"] = "team") =>
+    connectionsFor(integrationId).find((connection) => connection.scope === scope)
 
   /** DELETE /connections/:id, then refresh the list. */
-  async function disconnect(integrationId: string): Promise<{ ok: boolean; error?: string }> {
+  async function disconnect(id: string): Promise<{ ok: boolean; error?: string }> {
     try {
-      const response = await options.request(`/connections/${encodeURIComponent(integrationId)}`, {
+      const response = await options.request(`/connections/${encodeURIComponent(id)}`, {
         method: "DELETE",
       })
       if (!response.ok && response.status !== 404) {
@@ -110,9 +118,9 @@ export function createConnectionsStore(options: { request: ConnectionsRequest })
   }
 
   /** POST /connections/:id/reverify, then refresh the list. */
-  async function reverify(integrationId: string): Promise<{ ok: boolean; error?: string }> {
+  async function reverify(id: string): Promise<{ ok: boolean; error?: string }> {
     try {
-      const response = await options.request(`/connections/${encodeURIComponent(integrationId)}/reverify`, {
+      const response = await options.request(`/connections/${encodeURIComponent(id)}/reverify`, {
         method: "POST",
       })
       const body = await jsonOf(response)
@@ -124,7 +132,7 @@ export function createConnectionsStore(options: { request: ConnectionsRequest })
     }
   }
 
-  return { state, load, connectionFor, disconnect, reverify }
+  return { state, load, connectionFor, connectionsFor, disconnect, reverify }
 }
 
 export type ConnectionsStore = ReturnType<typeof createConnectionsStore>
@@ -138,6 +146,7 @@ export type ConnectFlowState = {
   error: string | undefined
   fields: Record<string, string>
   secret: string
+  scope: "team" | "personal"
   /** Which submission the confirm-replace prompt would retry. */
   pendingMode: "key" | "oauth" | undefined
 }
@@ -154,6 +163,9 @@ export type ConnectFlowOptions = {
   pollIntervalMs?: number
   /** Safety cap on attempt polls before giving up. */
   maxPolls?: number
+  /** Signed hosts enable a user choice; unsigned-local stays team-only. */
+  personalScopeEnabled?: boolean
+  initialScope?: "team" | "personal"
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -171,6 +183,7 @@ export function createConnectFlow(options: ConnectFlowOptions) {
     error: undefined,
     fields: {},
     secret: "",
+    scope: options.personalScopeEnabled ? options.initialScope ?? "team" : "team",
     pendingMode: undefined,
   })
   // Bumped by reset(); in-flight oauth polling stops when its generation is stale.
@@ -178,6 +191,10 @@ export function createConnectFlow(options: ConnectFlowOptions) {
 
   const setField = (id: string, value: string) => setState("fields", id, value)
   const setSecret = (value: string) => setState("secret", value)
+  const setScope = (scope: "team" | "personal") => {
+    if (scope === "personal" && !options.personalScopeEnabled) return
+    setState("scope", scope)
+  }
 
   async function succeed() {
     setState({ phase: "done", error: undefined, secret: "", pendingMode: undefined })
@@ -219,7 +236,10 @@ export function createConnectFlow(options: ConnectFlowOptions) {
   }
 
   async function submit(mode: "key" | "oauth", confirmReplace: boolean) {
-    const body: Record<string, unknown> = confirmReplace ? { confirmReplace: true } : {}
+    const body: Record<string, unknown> = {
+      ...(confirmReplace ? { confirmReplace: true } : {}),
+      ...(options.personalScopeEnabled ? { scope: state.scope } : {}),
+    }
     if (mode === "oauth") {
       body.method = "oauth"
     } else {
@@ -300,10 +320,17 @@ export function createConnectFlow(options: ConnectFlowOptions) {
   /** Clears everything (including the secret) and cancels in-flight polling. */
   const reset = () => {
     generation++
-    setState({ phase: "form", error: undefined, fields: {}, secret: "", pendingMode: undefined })
+    setState({
+      phase: "form",
+      error: undefined,
+      fields: {},
+      secret: "",
+      scope: options.personalScopeEnabled ? options.initialScope ?? "team" : "team",
+      pendingMode: undefined,
+    })
   }
 
-  return { state, setField, setSecret, submitKey, startOAuth, confirmReplace, cancelReplace, reset }
+  return { state, setField, setSecret, setScope, submitKey, startOAuth, confirmReplace, cancelReplace, reset }
 }
 
 export type ConnectFlow = ReturnType<typeof createConnectFlow>

@@ -28,6 +28,36 @@ function decodeProcessStatus(value: string): ProcessStatus | undefined {
   return status.success ? status.data : undefined
 }
 
+/**
+ * True when `incoming` is a stale HTTP-response snapshot that must NOT
+ * overwrite the client's current state for this process.
+ *
+ * Root cause (BUG B — status heading stuck green after a process crashes):
+ * `client.start()`'s HTTP response captures process state at the moment the
+ * PTY spawned (status "running"), taken server-side BEFORE the launched
+ * command has necessarily finished executing. If that command exits (e.g.
+ * `exit 1`) fast enough, the SSE `process.crashed` event can reach the
+ * browser and update the store to "crashed" BEFORE the slower HTTP response
+ * for the original `start()` call resolves. When that HTTP response then
+ * arrives, `applyProcess` would blindly overwrite the store back to
+ * "running" with the stale snapshot — the exact race that leaves the status
+ * dot green for an already-dead process. `process.status` SSE events already
+ * guard the mirror-image race for "stopping" (see the `unsubStatus` handler
+ * below); this guards the HTTP-response side for "crashed"/"stopped".
+ *
+ * Scoped to the SAME ptyId (spawn generation): a subsequent start/restart
+ * legitimately gets a new ptyId and must always apply normally.
+ */
+export function isStaleProcessSnapshot(
+  existing: ManagedProcess | undefined,
+  incoming: ManagedProcess,
+): boolean {
+  if (!existing) return false
+  if (existing.status !== "crashed" && existing.status !== "stopped") return false
+  if (!existing.ptyId || !incoming.ptyId) return false
+  return existing.ptyId === incoming.ptyId
+}
+
 function decodeProcessConfigs(values: unknown[]) {
   return values.map((value) => Process.ProcessConfig.safeParse(value)).flatMap((parsed) => parsed.success ? [parsed.data] : [])
 }
@@ -250,6 +280,10 @@ const processPaneContextInput = {
     /** Update a single process entry in the store from a server response. */
     function applyProcess(proc: ManagedProcess | undefined) {
       if (!proc) return
+      // Guard against a stale HTTP-response snapshot clobbering a newer
+      // crashed/stopped state already applied from an SSE event — see
+      // isStaleProcessSnapshot above (BUG B).
+      if (isStaleProcessSnapshot(store.processes[proc.configId], proc)) return
       setStore("processes", proc.configId, {
         ...proc,
         conflict: undefined,

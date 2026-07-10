@@ -53,24 +53,41 @@ function homeDir() {
   return process.env.HOME ?? os.homedir()
 }
 
+function claudeCredentialsPath() {
+  return path.join(homeDir(), ".claude", ".credentials.json")
+}
+
+function claudeCredentialsFileToken() {
+  try {
+    const file = claudeCredentialsPath()
+    if (!fs.existsSync(file)) return
+    return claudeCodeOAuthAccessToken(fs.readFileSync(file, "utf8"))
+  } catch (err) {
+    log.warn("Failed to read Claude Code credentials file", { error: String(err) })
+  }
+}
+
 function claudeCodeOAuthToken() {
   const env = clean(process.env.CLAUDE_CODE_OAUTH_TOKEN) ?? clean(process.env.ANTHROPIC_AUTH_TOKEN)
   if (env) return claudeCodeOAuthAccessToken(env)
-  if (process.platform !== "darwin") return
-  try {
-    return claudeCodeOAuthAccessToken(execFileSync("security", [
-      "find-generic-password",
-      "-s",
-      "Claude Code-credentials",
-      "-a",
-      os.userInfo().username,
-      "-w",
-    ], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 2_000,
-    }))
-  } catch {}
+  if (process.platform === "darwin") {
+    try {
+      const token = claudeCodeOAuthAccessToken(execFileSync("security", [
+        "find-generic-password",
+        "-s",
+        "Claude Code-credentials",
+        "-a",
+        os.userInfo().username,
+        "-w",
+      ], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 2_000,
+      }))
+      if (token) return token
+    } catch {}
+  }
+  return claudeCredentialsFileToken()
 }
 
 function claudeCodeOAuthAccessToken(input: string) {

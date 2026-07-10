@@ -23,7 +23,22 @@ Execution model: **leader = Fable (this doc's operator), workers = Sonnet subage
 
 - I1. `bun run typecheck` green from `packages/claxedo-app` (and monorepo typecheck green before merging a wave branch).
 - I2. All pre-existing targeted test files that passed before the wave still pass (never run the full local vitest suite — it hangs; run explicit file lists).
-- I3. Browser E2E smoke green: app boots on vite :4444 against backend :3001, `/s/:sessionId` renders, a prompt round-trips, a terminal tab opens and echoes, a pane splits and closes.
+- I3. Browser E2E green via the **Tier-M suite** (this replaces the old ad-hoc smoke; suite
+  built 2026-07-10/11, see `2026-07-10-001-refactor-e2e-20-spec-consolidation-plan.md`):
+  every wave gate runs `bun run test:e2e:core` (@core specs — first-prompt, turns/reload,
+  harness ownership, model/effort, busy/abort, composer modes, docks, rendering matrix);
+  a wave touching a surface with a dedicated spec additionally runs that spec
+  (composer → `core-composer-modes`, timeline → `core-timeline-rendering-scroll`,
+  sidebar → `core-sidebar-tree`, panes/tabs → `core-panes-split-tabs`, terminal →
+  `core-terminal`, processes → `core-processes`, settings/auth → `core-settings-auth`,
+  session actions → `core-session-actions`, cloud → `core-cloud-*`).
+  Run rules (learned the hard way): against `bun run dev` — NEVER a `vite preview` prod
+  build (DEV-only test seams get dead-code-eliminated; see the e2e plan's "Operational
+  contract"); `--workers=1` per suite; **at most 2–3 concurrent Playwright suites
+  machine-wide** (more DoS'es the dev server — proven twice); e2e gates are run by the
+  LEADER serially, not by each worker in parallel. `test.fixme` entries are pinned
+  known-bugs, not slack: a wave may flip a fixme to green (with the underlying fix) but
+  must never delete one or let a green test regress to fixme without a written waiver.
 - I4. Electron smoke green when a wave touched terminal/titlebar/browser-pane/platform glue: `claxedo-desktop` dev build boots, terminal opens, session sends (remember: fix BOTH prebuild.ts and predev.ts if the desktop build breaks — known trap).
 - I5. Terminal perf: any wave touching `src/terminal/**` or `src/components/terminal.tsx` runs the frame-first perf harness (`packages/*/perf-harness`: `bun run run`) with no frame-rate regression.
 - I6. `src/architecture` ratchet baselines only ever shrink. New guards (layering, retired-vocabulary, grep-test) stay green.
@@ -36,6 +51,17 @@ Execution model: **leader = Fable (this doc's operator), workers = Sonnet subage
 **Out:** engine/vendored packages, claxedo-server, upstream syncs, new product features beyond the named a11y/responsive work, the workspace-vs-directory split's *server-side* half (WP-D5 requires its own design note first — do not improvise).
 
 ## Execution steps (dependency order)
+
+- [ ] **Wave −1 — Land the e2e suite + bug-fix state (prerequisite, leader + user).**
+      The working tree currently carries the entire new e2e suite (25 specs, helpers,
+      INVARIANTS.md), ~8 app-source bug fixes, and interleaved changes from parallel
+      Codex sessions — all uncommitted. Before Wave 0 can "cut branch from dev", this
+      state must be reviewed, separated, committed, and merged (feature branch to origin
+      `kyashrathore/Claxedo`, never upstream). Also reconcile the e2e **fixme ledger**
+      (~25 source-cited app bugs pinned as `test.fixme` across the specs, each with
+      file:line citations) against the audit findings appendix: where a WP fixes a bug
+      that has a pinned test, flipping that fixme to green IS the WP's falsifiable
+      evidence — cheaper and stronger than fresh proof.
 
 Run each wave as one or more Workflow invocations of Sonnet workers. Standard wave shape:
 
@@ -87,8 +113,49 @@ d. Leader gate (Fable, personally — never delegated): I1–I6 as applicable, p
 
 ## Operating rules
 
-- Workers are **Sonnet** (`model: 'sonnet'` in every Workflow agent call); the leader
-  stays Fable and never delegates gate verification.
+- Workers are **Sonnet** (`model: 'sonnet'` in every Workflow agent call) or **Codex CLI
+  background workers** (below); the leader stays Fable and never delegates gate
+  verification.
+- **Verification doctrine** (inherited from the e2e plan, non-negotiable): green output
+  is a claim, not proof. Any worker claiming a UI behavior works must attach visual
+  evidence (screenshot/video) that a vision-capable reviewer actually viewed; the leader
+  gate includes viewing a sample with its own eyes. If evidence contradicts an
+  assertion, the assertion is the bug.
+
+### Codex CLI background workers (second worker pool)
+
+Some WPs suit OpenAI Codex CLI workers (user-preferred models: luna / sol — pass via
+`--model`; verify the exact model id your plan exposes with a 1-line probe run first,
+the public docs don't enumerate them). Best fit: mechanical waves (WP-A*, WP-ORG-*) and
+single-file refactors — NOT wave gates, NOT shared-helper/e2e-infra edits.
+
+How to dispatch (non-interactive, per the official CLI docs):
+
+```bash
+codex exec \
+  --cd /Users/yashvardhansingh/test/opencode/packages/claxedo-app \
+  --model <luna-or-sol-model-id> \
+  --config model_reasoning_effort="high" \
+  --sandbox workspace-write \
+  --ask-for-approval never \
+  --output-last-message /tmp/wp-a3-report.md \
+  "WP-A3 from docs/plans/2026-07-10-002-...-lld.md. Ownership: <explicit file list>.
+   Rules: smallest complete change; tests first for named gaps; if you need a file
+   outside your ownership list, STOP and write why to the report instead."
+```
+
+- `codex exec` streams to stdout; add `--json` for NDJSON events when the leader wants
+  to machine-parse progress. Resume an interrupted worker with
+  `codex exec resume --last` (from the same `--cd` directory).
+- Run each under the leader's process supervision (background shell with output file),
+  one Codex worker per WP, same disjoint-ownership law as Sonnet workers.
+- NEVER `--dangerously-bypass-approvals-and-sandbox` in this repo; `workspace-write`
+  is the ceiling. Codex workers must not run Playwright suites (they'd collide with the
+  leader's serialized e2e gates) — their DoD is typecheck + targeted unit tests +
+  report; the leader runs the e2e gate.
+- A Codex worker's report is a claim like any other — stage (c) review applies
+  unchanged. Read `--output-last-message` for the summary; treat the session transcript
+  (`codex exec resume` can reopen it) as the audit trail.
 - Workers follow `packages/claxedo-app/AGENTS.md` (tests first for named gaps, smallest
   complete change, one canonical path, record skipped verification with reason).
 - Commit granularity: one commit per WP on the wave branch, message names the WP.

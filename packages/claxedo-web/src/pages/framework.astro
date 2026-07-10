@@ -11,39 +11,86 @@ const cookbook = `${github}/tree/dev/claxedo-cookbook`
 const sections = [
   {
     num: "01",
-    h: "Run any harness",
-    p: "Stand up a workspace runtime that runs whatever harness you choose. The runner is just a field. Model-agnostic isn't enough; these run as themselves.",
-    mods: ["workspace-runtime", "agent-sdk-runtime"],
+    h: "Run any coding agent",
+    p: "One runtime, many harnesses. The vendor is a value, not an architecture decision — Claude, Codex, Cursor, OpenCode, and Pi ship as factories, and a session picks one at creation. They run as themselves.",
+    mods: ["agent-sdk-runtime"],
     file: "runtime.ts",
-    code: `import { createWorkspaceRuntimeApp } from "@claxedo/workspace-runtime"
-import type { AgentRunnerType } from "@claxedo/agent-sdk-runtime"
+    code: `import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
+import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
+import { claude, codex, cursor } from "@claxedo/agent-sdk-runtime/harnesses"
 
-const runner: AgentRunnerType = "claude-acp"
-//  "claude-acp" | "codex-acp" | "cursor-acp"
-//  "codex-app-server" | "opencode" | "pi"
+const runtime = createAgentRuntime({
+  store: createMemoryRuntimeStore(),
+  harnesses: [claude({ access: "acp" }), codex(), cursor()],
+})
 
-createWorkspaceRuntimeApp({
-  target: { workspaceId, directory },
-  runner: { type: runner, model: "claude-sonnet-4-6" },
-})`,
+// The vendor is data, not architecture.
+const session = await runtime.sessions.create({
+  directory: "/tmp/scratch",
+  harness: { id: "claude", access: "acp" },
+  model: { providerID: "claude", modelID: "default" },
+})
+
+await runtime.turns.start({ sessionId: session.id, agent: "", text: "Fix the failing test" })
+// stream the loop: runtime.events.subscribe({ sessionId: session.id })`,
   },
   {
     num: "02",
-    h: "Switch harness mid-session",
-    p: "The runner isn't locked in. Patch a live session to a different harness or model — no restart, same session, same history. Switch from Claude to Codex and keep going.",
-    mods: ["workspace-runtime"],
+    h: "Swap the harness mid-session",
+    p: "Sessions aren't married to their vendor. One call updates a live session's harness or model — same session, same history. Claude plans, Codex continues.",
+    mods: ["agent-sdk-runtime"],
     file: "switch.ts",
-    code: `// Same session — swap the harness or the model on the fly.
-await fetch(\`/sessions/\${sessionId}/config\`, {
-  method: "PATCH",
-  body: JSON.stringify({
-    runner: { type: "codex-acp" },
-    model: { providerID: "openai", modelID: "gpt-5.5" },
-  }),
+    code: `// Same session, same history — swap the harness AND the model between turns.
+await runtime.config.update(session.id, {
+  harness: { id: "codex", access: "acp" },
+  model: { providerID: "codex", modelID: "default" },
+})
+
+await runtime.turns.start({
+  sessionId: session.id,
+  agent: "",
+  text: "Pick up where Claude left off.",
 })`,
   },
   {
     num: "03",
+    h: "Sync extensions to every harness",
+    p: "The layer nobody else ships: declare a skill and an MCP server once, and it's materialized into each harness's own native config — the exact files each tool reads. The same call runs on your laptop or a fresh cloud VM.",
+    mods: ["agent-extensions"],
+    file: "extensions.ts",
+    code: `import { createAgentExtensions, type HarnessTarget } from "@claxedo/agent-extensions"
+
+const targets: HarnessTarget[] = ["opencode", "claude", "codex", "cursor"]
+const extensions = createAgentExtensions({ projectDir })
+
+// One package — a SKILL.md and an MCP server — installed once...
+await extensions.installCached({ packagePath: "extensions/team-kit", id: "team-kit", targets })
+
+// ...materialized into every harness's NATIVE config:
+//   .mcp.json (claude)         .codex/config.toml
+//   .opencode/opencode.jsonc   .cursor/mcp.json`,
+  },
+  {
+    num: "04",
+    h: "Speak every harness",
+    p: "agent-event-runtime folds each harness's raw wire frames onto one contract (AgentRuntimeEvent). To support a new harness — or your own agent loop — you write one HarnessEventAdapter; every client stays unchanged.",
+    mods: ["agent-event-runtime"],
+    file: "events.ts",
+    code: `import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
+import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
+import { codexAppServerAdapter } from "@claxedo/agent-event-runtime/harnesses/codex"
+
+const claude = createAgentEventRuntime({ harness: "claude-sdk", threadId, adapter: claudeSdkAdapter() })
+const codex = createAgentEventRuntime({ harness: "codex-app-server", threadId, adapter: codexAppServerAdapter() })
+
+// Two vendors' raw wire frames in -> identical canonical envelopes out.
+const a = claude.ingest({ source: "claude.sdk.message", payload: claudeFrame }).events
+const b = codex.ingest({ source: "codex.app-server", method: "item/agentMessage/delta", payload: codexFrame }).events
+
+// Even garbage becomes a 'diagnostic' event — never a throw.`,
+  },
+  {
+    num: "05",
     h: "Place the brain and the hands",
     p: "host (where the loop reasons) and toolSandbox (where the tools run) are separate. All local, all cloud, or split — brain hosted, hands next to the code. toolSandbox is late-bound and swappable; no host flip.",
     mods: ["agent-sdk-runtime"],
@@ -57,96 +104,54 @@ const cloud: SessionEnvFactoryInput = { sessionId, mode: "cloud", host: "central
 const split: SessionEnvFactoryInput = {
   sessionId,
   mode: "hybrid",
-  host: "central",                                  // brain: fixed at creation
-  toolSandbox: { kind: "docker-sandbox", id: box }, // hands: late-bound, swappable
+  host: "central",                                    // brain: fixed at creation
+  toolSandbox: { kind: "workspace-runtime", workspaceId: "box-1" }, // hands: swappable
 }`,
   },
   {
-    num: "04",
-    h: "Speak every harness",
-    p: "The critical layer: agent-event-runtime folds each harness's raw frames onto one contract (AgentRuntimeEvent), then a projection renders client wire events. To support a new harness or your own agent loop you write only a ProviderAdapter — the client never changes.",
-    mods: ["agent-event-runtime"],
-    file: "events.ts",
-    code: `import { translateRawProviderEvent } from "@claxedo/agent-event-runtime"
-import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/providers/claude-sdk"
+    num: "06",
+    h: "One option flips placement",
+    p: "The same workspace host serves loopback on your laptop or sits behind an authenticated relay on a VM — the difference is one exposure option. Files, search, git, diffs, managed processes, PTY, and SSE, all at /api/wr/*.",
+    mods: ["workspace-runtime"],
+    file: "serve.ts",
+    code: `import {
+  createWorkspaceRuntimeApp,
+  loopbackWorkspaceRuntimeExposure,
+  relayWorkspaceRuntimeExposure,
+} from "@claxedo/workspace-runtime"
 
-// A harness is a ProviderAdapter: raw frames -> AgentRuntimeEvent[].
-const adapter = claudeSdkAdapter()
-let state = adapter.createInitialState?.()
+// Local: loopback, no relay, no token.
+const local = createWorkspaceRuntimeApp({
+  target: { workspaceId, directory },
+  exposure: loopbackWorkspaceRuntimeExposure(),
+})
 
-for (const event of harness.rawEvents()) {
-  const out = translateRawProviderEvent({ adapter, state, event, context })
-  state = out.state
-  out.events.forEach(bus.publish) // one contract, every client
-}`,
+// Cloud VM or a teammate's laptop: same app — ONE option changes.
+const cloud = createWorkspaceRuntimeApp({
+  target: { workspaceId, directory },
+  exposure: relayWorkspaceRuntimeExposure({ key: hostKeys.publicKey, workspaceId, hostId }),
+})
+// serve local.app.fetch — bypassing the relay on the cloud host gets a 401.`,
   },
   {
-    num: "05",
-    h: "Host it behind auth — reach a VM or a laptop",
-    p: "Put it on the internet safely. Your control plane authenticates the human (swappable verifier, Clerk by default), then mints a short-lived token scoped to ONE workspace and role. The same token reaches a cloud VM or a teammate's laptop — the relay verifies it and forwards over the host tunnel.",
+    num: "07",
+    h: "Mint access, reach anywhere",
+    p: "Authenticate the human once — the verifier is swappable, Clerk by default — then mint a short-lived token scoped to ONE workspace and role. The relay verifies it and forwards: to a cloud VM, or down a reverse tunnel a laptop opened outbound.",
     mods: ["workspace-relay-protocol", "workspace-relay"],
     file: "connection.ts",
     code: `import { createClerkTokenVerifier } from "@claxedo/workspace-relay-protocol"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 
-// 1. Authenticate the human at your control-plane boundary.
-//    The verifier is swappable — Clerk by default.
-const verifier = createClerkTokenVerifier({ issuer, jwksUrl })
-const user = await verifier.verify(bearerToken) // { subject, claims }
+const verifier = createClerkTokenVerifier({ issuer, jwksUrl }) // swappable — Clerk by default
+const { subject, claims } = await verifier.verify(bearerToken)
 
-// 2. Authorize, then mint a token scoped to ONE workspace + role.
-//    It cannot address any other workspace.
-const runtimeAccessToken = await mintRuntimeAccessToken({
-  subject: user.subject,
-  orgId: user.claims.org_id,
-  workspaceId, hostId,
-  role: "editor",
-}, relayPrivateKey, "EdDSA")
+const runtimeAccessToken = await mintRuntimeAccessToken(
+  { subject, orgId: claims.org_id, workspaceId, hostId, role: "editor" },
+  relayPrivateKey, "EdDSA",
+)
 
-// 3. Hand the client { relayUrl, runtimeAccessToken }. The client
-//    talks to the relay directly; it forwards to the VM, or down a
-//    reverse tunnel a teammate's laptop opened outbound.
-return Response.json({ relayUrl, runtimeAccessToken, role: "editor" })`,
-  },
-  {
-    num: "06",
-    h: "Connect a client",
-    p: "Talk to a session the same way the Claxedo app does: create it, send a message, and stream the reply. The events are already normalized by the event runtime — plain HTTP and SSE, wire it into any UI.",
-    mods: ["control plane"],
-    file: "client.ts",
-    code: `// 1. Create a session (placement chosen here).
-const { id } = await fetch("/sessions", {
-  method: "POST",
-  body: JSON.stringify({ workspacePlacement: "cloud-vm" }),
-}).then((r) => r.json())
-
-// 2. Send a message.
-await fetch(\`/sessions/\${id}/messages\`, {
-  method: "POST",
-  body: JSON.stringify({ text: "Refactor the auth module" }),
-})
-
-// 3. Stream the reply (already translated to one contract).
-const events = new EventSource(\`/sessions/\${id}/events\`)
-events.onmessage = (e) => render(JSON.parse(e.data))`,
-  },
-  {
-    num: "07",
-    h: "Sync extensions to every harness",
-    p: "One declared set of skills, plugins, and MCP servers — materialized into each harness's own config, local and cloud. Enforce it at the org level so the whole team gets the same capabilities.",
-    mods: ["agent-extensions"],
-    file: "extensions.ts",
-    code: `import { RUNNER_TARGETS } from "@claxedo/agent-extensions"
-import { applyRuntimeAgentExtensions } from "@claxedo/workspace-runtime"
-
-RUNNER_TARGETS // ["opencode", "claude", "codex", "cursor"]
-
-await applyRuntimeAgentExtensions({
-  installs: [
-    { desired: { id: "my-skills",  kind: "skill", enabled: true } },
-    { desired: { id: "linear-mcp", kind: "mcp",   enabled: true } },
-  ],
-}, workspaceDir)`,
+// This ONE token reaches a cloud VM — or a laptop that dialed out.
+// No inbound ports. No access to any other workspace.`,
   },
 ]
 
@@ -180,26 +185,26 @@ const contrast = [
 ]
 
 const faq = [
-  { q: "Is this real code or marketing pseudocode?", a: "Real, and the diagram is traced from the source. Most snippets are the actual API from claxedo-cookbook — a runnable, production-shaped Claxedo chat server." },
-  { q: "How do I add a harness Claxedo doesn't ship?", a: "Write a ProviderAdapter in agent-event-runtime: it folds the harness's raw frames onto the shared AgentRuntimeEvent contract. The projection and every client stay unchanged." },
+  { q: "Is this real code or marketing pseudocode?", a: "Real. Every import and call on this page is drawn from claxedo-cookbook — a set of runnable recipes in the repo — and checked against the published packages. The architecture diagram is traced from the source." },
+  { q: "How do I add a harness Claxedo doesn't ship?", a: "Write a HarnessEventAdapter in agent-event-runtime: it folds the harness's raw frames onto the shared AgentRuntimeEvent contract. The projection and every client stay unchanged." },
   { q: "Does local traffic go through the relay?", a: "No. Local sessions talk to the workspace-runtime directly over loopback — no relay, no token. The relay exists only for hosted (cloud VM or user-hosted) sessions." },
   { q: "How is this different from LangChain or the OpenAI Agents SDK?", a: "Those give you the loop. Claxedo gives you the outer loop and hosting — processes/VCS/LSP/sessions, event translation, the relay, scoped access — the parts those SDKs don't touch." },
   { q: "What's the license?", a: "MIT — all of it." },
 ]
 ---
 
-<Layout title="Claxedo Framework — Your AI infra">
+<Layout title="Claxedo Framework — The agent stack, as packages">
   <div class="page-frame">
     <Nav active="framework" />
 
     <section class="hero">
       <div class="hero-copy">
         <span class="hero-kicker" data-reveal="1"><span class="dot"></span> The framework · MIT</span>
-        <h1 class="hero-title" data-reveal="2">Your AI infra.</h1>
+        <h1 class="hero-title" data-reveal="2">The agent stack,<br />as packages.</h1>
         <p class="hero-sub" data-reveal="3">
-          Not another agent SDK — the open framework your coding-agent app runs on. Any
-          harness, any model, run local or hosted. Compose the primitives, host them, and
-          it's your AI infrastructure. The SDKs' job ends where Claxedo's begins.
+          Not another agent SDK — the published MIT packages the Claxedo app is assembled
+          from. Any harness, any model, run local or hosted. Compose the primitives, deploy
+          them, and the stack is yours. The SDKs' job ends where Claxedo's begins.
         </p>
         <div class="hero-actions" data-reveal="4">
           <a class="btn-primary" href={docs}>Read the docs</a>
@@ -348,10 +353,10 @@ const faq = [
 
     <section class="section section--ruled">
       <div class="section-head">
-        <span class="section-tag">// Self-hosted AI infra</span>
-        <h2 class="section-title">Compose the primitives. Host them. That's your AI infra.</h2>
+        <span class="section-tag">// Your own agent stack</span>
+        <h2 class="section-title">Compose the primitives. Deploy them. That's your agent stack.</h2>
         <p class="section-lead">
-          The same modules, composed and hosted on infrastructure you own — so your whole
+          The same modules, composed and deployed on infrastructure you own — so your whole
           team gets one secure, extensible agent platform instead of a pile of CLIs.
         </p>
       </div>

@@ -491,6 +491,45 @@ describe("workspace relay server", () => {
     })
   })
 
+  test("denies viewer access to terminal routes including WebSocket upgrades", async () => {
+    const relay = await harness({
+      fetch: ((url, init) => {
+        relay.forwarded.push({ url: String(url), request: new Request(url, init) })
+        return Promise.resolve(new Response("unexpected"))
+      }) as typeof fetch,
+    })
+    const token = await relay.token("viewer")
+
+    const list = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/pty", {
+      headers: { authorization: `Bearer ${token}` },
+    })
+    const connect = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/pty/pty_1/connect", {
+      headers: {
+        authorization: `Bearer ${token}`,
+        connection: "Upgrade",
+        upgrade: "websocket",
+      },
+    })
+    const encodedConnect = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/%70ty/pty_1/connect", {
+      headers: {
+        authorization: `Bearer ${token}`,
+        connection: "Upgrade",
+        upgrade: "websocket",
+      },
+    })
+
+    expect(list.status).toBe(403)
+    expect(connect.status).toBe(403)
+    expect(encodedConnect.status).toBe(403)
+    await expect(connect.json()).resolves.toEqual({
+      error: {
+        code: "relay_role_denied",
+        message: "Workspace role does not allow this relay request",
+      },
+    })
+    expect(relay.forwarded).toEqual([])
+  })
+
   test("allows editor admin and owner relay write requests", async () => {
     const relay = await harness({
       fetch: ((url, init) => {

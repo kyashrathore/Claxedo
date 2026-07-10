@@ -17,6 +17,7 @@ describe("role policy", () => {
   const workspaceCapabilities = [
     "read.workspace",
     "view.workspace-tools",
+    "use.terminal",
     "mutate.session",
     "mutate.workspace",
     "manage.runners",
@@ -26,6 +27,7 @@ describe("role policy", () => {
     owner: {
       "read.workspace": true,
       "view.workspace-tools": true,
+      "use.terminal": true,
       "mutate.session": true,
       "mutate.workspace": true,
       "manage.runners": true,
@@ -33,6 +35,7 @@ describe("role policy", () => {
     admin: {
       "read.workspace": true,
       "view.workspace-tools": true,
+      "use.terminal": true,
       "mutate.session": true,
       "mutate.workspace": true,
       "manage.runners": true,
@@ -40,6 +43,7 @@ describe("role policy", () => {
     editor: {
       "read.workspace": true,
       "view.workspace-tools": true,
+      "use.terminal": true,
       "mutate.session": true,
       "mutate.workspace": false,
       "manage.runners": false,
@@ -47,6 +51,7 @@ describe("role policy", () => {
     viewer: {
       "read.workspace": true,
       "view.workspace-tools": true,
+      "use.terminal": false,
       "mutate.session": false,
       "mutate.workspace": false,
       "manage.runners": false,

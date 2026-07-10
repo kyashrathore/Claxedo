@@ -33,6 +33,7 @@ export type RuntimeAccessVerifierClaims = TokenVerifierBaseClaims & {
 
 export type RelayHostVerifierClaims = TokenVerifierBaseClaims & {
   org_id: string
+  role: "viewer" | "editor" | "admin" | "owner"
 } & (
   | { access: "cloud"; backing: "cloud-vm" }
   | { access: "user-hosted"; backing: "local-worktree" }

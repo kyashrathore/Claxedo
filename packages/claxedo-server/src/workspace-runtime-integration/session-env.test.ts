@@ -17,6 +17,7 @@ vi.mock("../workspace-store", () => ({
 import type { SandboxFetchOptions } from "../sandbox-target-fetch"
 import { createClaxedoSessionEnvFactory, createWorkspaceRuntimeSessionEnv } from "./session-env"
 import type { Workspace } from "../workspace-store"
+import { CONNECTION_TURN_HEADER, createConnectionTurnCredentials } from "../connections-host/turn-credentials"
 
 // Embedded (local) workspace — dispatches in-process via
 // ensureEmbeddedWorkspaceRuntime(...).app.fetch. Used by the behaviour tests
@@ -91,6 +92,24 @@ describe("createClaxedoSessionEnvFactory", () => {
     const env = await factory({ sessionId: "s1", mode: "hybrid", host: "central" })
     expect(env.kind).toBe("virtual")
     expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("propagates only the active turn credential to workspace-runtime requests", async () => {
+    const turns = createConnectionTurnCredentials({ random: () => "turn-credential" })
+    const factory = createClaxedoSessionEnvFactory({ fetchOptions, turnCredentials: turns })
+    const env = await factory({
+      sessionId: "s1",
+      mode: "hybrid",
+      host: "central",
+      toolSandbox: { kind: "workspace-runtime", workspaceId: "ws-1" },
+    })
+    mockEmbeddedResponse(ndjsonResponse([{ type: "exit", exitCode: 0 }]))
+    const credential = turns.mint({ sessionId: "s1", subject: "user-a" })
+
+    await turns.run(credential, () => env.exec("printf hi"))
+
+    expect(lastEmbeddedCall().request.headers.get(CONNECTION_TURN_HEADER)).toBe(credential)
+    turns.dispose()
   })
 
   test("returns a virtual env for a virtual tool sandbox", async () => {

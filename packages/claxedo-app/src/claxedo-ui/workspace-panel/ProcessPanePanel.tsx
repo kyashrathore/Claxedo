@@ -9,7 +9,7 @@
  */
 
 import { Show, createMemo } from "solid-js"
-import { Terminal } from "@/components/terminal"
+import { RoleGuardedTerminal } from "../../terminal/role-guarded-terminal"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -316,7 +316,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
             </div>
           }
         >
-          {(pty) => <Terminal pty={pty} />}
+          {(pty) => <RoleGuardedTerminal pty={pty} />}
         </Show>
         <Show when={hit()}>
           <div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-text-weak bg-background-base cursor-default px-6 max-w-md mx-auto">

@@ -5,6 +5,7 @@
  * @claxedo/connections kit deliberately refuses to make.
  */
 import type { Context } from "hono"
+import { randomUUID } from "crypto"
 import {
   atlassianIntegration,
   createConnectionsService,
@@ -26,6 +27,7 @@ import {
 import { isLoopbackLocalRequest, stampRequestPeerAddress } from "../routes/local-only-projection"
 import type { ControlPlaneCredentials } from "../control-plane/services"
 import { createConnectionStoreAdapter, createCredentialStoreAdapter } from "./store-adapter"
+import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "./turn-credentials"
 
 export const CONNECTIONS_TOKEN_HEADER = "x-claxedo-connections"
 
@@ -35,10 +37,12 @@ export type ConnectionsHostOptions = {
   verifier?: ClerkVerifier
   env?: Record<string, string | undefined>
   publicUrl?: string
+  turnCredentials?: ConnectionTurnCredentials
 }
 
 export function createConnectionsHost(options: ConnectionsHostOptions) {
   const env = options.env ?? process.env
+  const owners = new WeakMap<Request, string | undefined>()
   const registry = createIntegrationRegistry()
   for (const reference of [notionIntegration(), atlassianIntegration(), githubIntegration()]) {
     registry.register(reference.decl, reference.impl)
@@ -63,19 +67,13 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
     registry,
     credentials: createCredentialStoreAdapter(options.credentials),
     connections: createConnectionStoreAdapter(),
+    newId: randomUUID,
   })
 
   // Every route: control-plane auth, with unsigned-local accepted ONLY from
   // loopback. Stricter than routes/events.ts: in unsigned mode
   // controlPlaneAuthContext is a pass-through, so the loopback check is the
   // effective gate — never copy the ungated credential/provider-auth mounts.
-  //
-  // Ownership: connections are HOST-GLOBAL (rows and credentials are keyed
-  // only by integration id). The signed principal's subject is validated but
-  // deliberately not used for scoping, so every signed user of this host
-  // shares — and can replace/delete — the same connections. Acceptable for a
-  // single-team server; per-user/tenant scoping is a tracked follow-up and
-  // needs a store schema change, not just a gate change.
   //
   // Note: GET /callback is NOT behind this gate by design — it arrives via
   // the provider redirect; single-use TTL attempt state guards it (routes.ts).
@@ -85,7 +83,10 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
       // the loopback check must see the socket peer even when these routes
       // are mounted without the parent app.
       stampRequestPeerAddress(c.req.raw, c.env)
-      if (isLoopbackLocalRequest(c.req.raw)) return null
+      if (isLoopbackLocalRequest(c.req.raw)) {
+        owners.set(c.req.raw, undefined)
+        return null
+      }
       const context = await controlPlaneAuthContext(c.req.raw, {
         ...(options.authConfig ? { config: options.authConfig } : {}),
         ...(options.verifier ? { verifier: options.verifier } : {}),
@@ -93,6 +94,7 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
       if (context.mode === "unsigned-local") {
         return c.json({ code: "connections_loopback_required" }, 403)
       }
+      owners.set(c.req.raw, context.user.subject)
       return null
     } catch (err) {
       if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -113,7 +115,14 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
 
   return {
     service: service as ConnectionsService,
-    routes: createIntegrationsRoutes(service, { gate, tokenGate }),
+    routes: createIntegrationsRoutes(service, {
+      gate,
+      tokenGate,
+      owner: (c) => owners.get(c.req.raw),
+      // Absent, expired, or unknown credentials resolve team-only. The host
+      // minted credential is the sole input that unlocks personal rows.
+      tokenOwner: (c) => options.turnCredentials?.resolve(c.req.header(CONNECTION_TURN_HEADER))?.subject,
+    }),
     dispose: () => service.dispose(),
   }
 }

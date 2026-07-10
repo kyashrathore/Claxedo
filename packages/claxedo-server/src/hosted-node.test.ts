@@ -86,7 +86,8 @@ describe("hosted Node entrypoint", () => {
     const source = fs.readFileSync(path.resolve(import.meta.dirname, "hosted-node.ts"), "utf8")
     // The bug was a MISSING createEnv on hosted central control — assert it is
     // wired and backed by the workspace-runtime factory.
-    expect(source).toContain("createEnv: hostedSessionEnvFactory(plane.services)")
+    expect(source).toContain("createEnv: hostedSessionEnvFactory(plane.services, turnCredentials)")
+    expect(source).toContain("turnCredentials,")
     expect(source).toContain("createClaxedoSessionEnvFactory")
   })
 

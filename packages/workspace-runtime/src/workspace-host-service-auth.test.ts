@@ -576,7 +576,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
         },
       },
     }))
-    app2.get("/api/wr/health", (c) => c.json({ ok: true }))
+    app2.get("/api/wr/health", (c) => c.json({ ok: true, role: c.get("relayHostAuth")?.role }))
     const res = await app2.request("http://localhost/api/wr/health", {
       headers: {
         authorization: "Bearer static-rht-1",
@@ -585,7 +585,62 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
       },
     })
     expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ ok: true, role: "editor" })
     expect(calls).toEqual(["static-rht-1"])
+  })
+
+  test("rejects injected TokenVerifier claims with missing or malformed roles", async () => {
+    const { createStaticTokenVerifier } = await import("@claxedo/workspace-relay-protocol")
+    const now = Math.floor(Date.now() / 1000)
+    const claims = {
+      iss: "workspace-relay",
+      aud: "workspace-host-service",
+      sub: "u-static",
+      org_id: "org_static",
+      workspace_id: "ws_static",
+      host_id: "host_static",
+      access: "cloud",
+      backing: "cloud-vm",
+      iat: now,
+      exp: now + 60,
+      jti: "jti-static",
+    } as const
+    const verifier = createStaticTokenVerifier({
+      tokens: {
+        missing: { subject: "u-static", scopes: [], claims },
+        malformed: {
+          subject: "u-static",
+          scopes: [],
+          claims: { ...claims, role: "maintainer" },
+        },
+      },
+    })
+    const app2 = new Hono()
+    app2.use("*", createRelayHostAuthMiddleware({
+      key: new Uint8Array(32) as unknown as Parameters<typeof createRelayHostAuthMiddleware>[0]["key"],
+      workspaceId: "ws_static",
+      hostId: "host_static",
+      verifier: verifier as unknown as NonNullable<Parameters<typeof createRelayHostAuthMiddleware>[0]["verifier"]>,
+    }))
+    app2.get("/api/wr/health", (c) => c.json({ ok: true }))
+
+    for (const token of ["missing", "malformed"]) {
+      const res = await app2.request("http://localhost/api/wr/health", {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-workspace-id": "ws_static",
+          "x-forwarded-by": "workspace-relay",
+        },
+      })
+
+      expect(res.status).toBe(401)
+      await expect(res.json()).resolves.toEqual({
+        error: {
+          code: "relay_token_claims_invalid",
+          message: "Relay Host Token is invalid",
+        },
+      })
+    }
   })
 
   test("rejects injected TokenVerifier claims outside the relay-host token contract", async () => {
@@ -602,6 +657,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             org_id: "org_static",
             workspace_id: "ws_static",
             host_id: "host_other",
+            role: "editor",
             access: "cloud",
             backing: "cloud-vm",
             iat: Math.floor(Date.now() / 1000),
@@ -651,6 +707,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             org_id: "org_static",
             workspace_id: "ws_static",
             host_id: "host_static",
+            role: "editor",
             access: "cloud",
             backing: "local-worktree",
             iat: Math.floor(Date.now() / 1000),

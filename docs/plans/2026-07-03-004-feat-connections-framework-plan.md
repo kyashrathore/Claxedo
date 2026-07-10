@@ -1,7 +1,7 @@
 # Connections Framework
 
 Status: retained code-grounded reference
-Last updated: 2026-07-09
+Last updated: 2026-07-10
 
 This document is retained because `packages/claxedo-server/src/server.ts` and
 `packages/claxedo-server/src/storage/connection.sql.ts` point here for the
@@ -52,15 +52,22 @@ All integration routes are mounted under `/api/claxedo/integrations`.
 - `GET /callback` is deliberately ungated: it arrives from the user's browser
   via the provider redirect, so the guards are single-use TTL-bound attempt
   state and a fixed static response page. Do not add the auth gate to it.
-- Connections are host-global (keyed only by `integration_id`); any signed
-  principal shares them. Per-user/tenant scoping is an open follow-up.
+- Signed principals manage team connections and their own personal
+  connections. Subject-less loopback callers use the team partition only, so
+  they never list, manage, or resolve a personal row.
+- Token resolution accepts a host-minted, short-lived
+  `x-claxedo-connection-turn` credential. A valid credential carrying a
+  subject may resolve that subject's personal connection; absent, expired,
+  unknown, and unattended credentials resolve team connections only.
 
 ## Storage Contract
 
-`claxedo_connection` stores non-secret connection state keyed by
-`integration_id`. Secrets live in the server credential store under provider ids
-such as `integration:{integration_id}`. The service enforces this: only
-declared non-secret prompt fields survive `connect()` (see
+`claxedo_connection` stores non-secret connection state with a durable `id` and
+an optional opaque `owner`; an absent owner is the team partition. One team row
+and one personal row per owner can coexist for an integration. Secrets live in
+the server credential store under provider ids such as
+`integration:{connection_id}`. The service enforces this: only declared
+non-secret prompt fields survive `connect()` (see
 `declaredNonSecretFields` in `service.ts`).
 
 ## Tests To Check

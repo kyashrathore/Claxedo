@@ -1,9 +1,19 @@
-import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { describe, expect, test, beforeEach, afterAll, vi } from "vitest"
 import { realpathSync, mkdirSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+
+// Keychain lookups must fail in tests so the macOS dev machine's real
+// Claude Code credentials never leak into assertions.
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>()
+  const execFileSync = () => {
+    throw new Error("keychain unavailable in tests")
+  }
+  return { ...actual, default: { ...actual, execFileSync }, execFileSync }
+})
 
 const root = path.join(realpathSync(os.tmpdir()), `cred-sync-test-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
@@ -125,6 +135,31 @@ describe("syncLocalCredentials", () => {
       claudeAiOauth: { accessToken: "sk-ant-oauth-env" },
     })
     expect(sdk).toEqual(acp)
+  })
+
+  test("falls back to Claude Code credentials file when env and keychain are unavailable", async () => {
+    const dir = path.join(process.env.HOME!, ".claude")
+    mkdirSync(dir, { recursive: true })
+    await fs.writeFile(path.join(dir, ".credentials.json"), JSON.stringify({
+      claudeAiOauth: {
+        accessToken: "sk-ant-oauth-file",
+        refreshToken: "refresh-file",
+        expiresAt: 1_790_000_000_000,
+      },
+    }))
+
+    const result = await syncLocalCredentials(["claude-acp", "claude-sdk"])
+    const acp = JSON.parse(await resolveSecret("claude-acp") ?? "{}") as Record<string, any>
+
+    expect(result.synced).toEqual(["claude-acp", "claude-sdk"])
+    expect(result.missing).toEqual([])
+    expect(result.failed).toEqual([])
+    expect(acp).toEqual({
+      type: "claude_code_oauth",
+      claudeAiOauth: { accessToken: "sk-ant-oauth-file" },
+    })
+    expect(await resolveSecret("claude-sdk")).toBe(await resolveSecret("claude-acp"))
+    expect((await getCredentialByProvider("claude-acp"))?.label).toBe("Synced from local Claude Code login")
   })
 
   test("syncs complete Vercel sandbox driver credentials as structured managed secret", async () => {

@@ -17,6 +17,7 @@ ClaxedoDB.Drizzle()
 
 const { createConnectionsHost, CONNECTIONS_TOKEN_HEADER } = await import("./connections-host")
 const { createConnectionStoreAdapter, createCredentialStoreAdapter } = await import("./store-adapter")
+const { CONNECTION_TURN_HEADER, createConnectionTurnCredentials } = await import("./turn-credentials")
 import type { ControlPlaneCredentials } from "../control-plane/services"
 
 function credentialsPort(): ControlPlaneCredentials {
@@ -48,6 +49,7 @@ describe("connections host", () => {
   test("store adapters round-trip: connection rows + namespaced credential", async () => {
     const connections = createConnectionStoreAdapter()
     await connections.upsert({
+      id: "connection-notion",
       integrationId: "notion",
       accountLabel: "Acme Bot",
       grantedCapabilities: ["docs"],
@@ -64,19 +66,19 @@ describe("connections host", () => {
     expect(await connections.list()).toHaveLength(1)
 
     const credentials = createCredentialStoreAdapter(credentialsPort())
-    await credentials.put({ providerId: "integration:notion", kind: "api_key", secret: "ntn-123" })
-    expect(await credentials.get("integration:notion")).toMatchObject({ kind: "api_key", status: "available" })
-    expect(await credentials.resolveSecret("integration:notion")).toBe("ntn-123")
+    await credentials.put({ providerId: "integration:connection-notion", kind: "api_key", secret: "ntn-123" })
+    expect(await credentials.get("integration:connection-notion")).toMatchObject({ kind: "api_key", status: "available" })
+    expect(await credentials.resolveSecret("integration:connection-notion")).toBe("ntn-123")
 
     // readSecret works across a non-available status (re-verify path).
-    await credentials.setStatus("integration:notion", "error", "auth_failure_reported")
-    expect(await credentials.resolveSecret("integration:notion")).toBeNull()
-    expect(await credentials.readSecret("integration:notion")).toBe("ntn-123")
+    await credentials.setStatus("integration:connection-notion", "error", "auth_failure_reported")
+    expect(await credentials.resolveSecret("integration:connection-notion")).toBeNull()
+    expect(await credentials.readSecret("integration:connection-notion")).toBe("ntn-123")
 
-    await credentials.deleteByProvider("integration:notion")
-    expect(await credentials.get("integration:notion")).toBeUndefined()
-    expect(await connections.delete("notion")).toBe(true)
-    expect(await connections.delete("notion")).toBe(false)
+    await credentials.deleteByProvider("integration:connection-notion")
+    expect(await credentials.get("integration:connection-notion")).toBeUndefined()
+    expect(await connections.delete("connection-notion")).toBe(true)
+    expect(await connections.delete("connection-notion")).toBe(false)
   })
 
   test("connection credentials stay out of the shared fanout", async () => {
@@ -142,6 +144,102 @@ describe("connections host", () => {
     )
     expect(localToken.status).toBe(404)
     host.dispose()
+  })
+
+  test("signed subjects see and manage only their own personal connections", async () => {
+    const host = createConnectionsHost({
+      credentials: credentialsPort(),
+      env: {},
+      authConfig: { enabled: true, issuer: "https://issuer.example", jwksUrl: "https://issuer.example/jwks" },
+      verifier: async (token) => ({
+        mode: "signed",
+        user: { subject: token, tokenIdentifier: token, issuer: "https://issuer.example" },
+      }),
+    })
+    const connections = createConnectionStoreAdapter()
+    await connections.upsert({
+      id: "team-notion",
+      integrationId: "notion",
+      grantedCapabilities: ["docs"],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await connections.upsert({
+      id: "user-a-notion",
+      integrationId: "notion",
+      owner: "user-a",
+      grantedCapabilities: ["docs"],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+
+    const listFor = async (subject: string) =>
+      await (await host.routes.request("http://relay.example/", { headers: { authorization: `Bearer ${subject}` } })).json() as {
+        connections: Array<{ id: string; scope: string }>
+      }
+
+    expect((await listFor("user-a")).connections.map((connection) => connection.id).sort()).toEqual(["team-notion", "user-a-notion"])
+    expect((await listFor("user-b")).connections.map((connection) => connection.id)).toEqual(["team-notion"])
+    expect((await (await host.routes.request("http://127.0.0.1/")).json() as { connections: Array<{ id: string }> }).connections)
+      .toEqual([expect.objectContaining({ id: "team-notion" })])
+
+    const forbiddenDelete = await host.routes.request("http://relay.example/connections/user-a-notion", {
+      method: "DELETE",
+      headers: { authorization: "Bearer user-b" },
+    })
+    expect(forbiddenDelete.status).toBe(404)
+    const forbiddenReverify = await host.routes.request("http://relay.example/connections/user-a-notion/reverify", {
+      method: "POST",
+      headers: { authorization: "Bearer user-b" },
+    })
+    expect(forbiddenReverify.status).toBe(404)
+    host.dispose()
+  })
+
+  test("token resolution requires a valid subject-bearing turn credential for personal rows", async () => {
+    const turns = createConnectionTurnCredentials()
+    const host = createConnectionsHost({ credentials: credentialsPort(), env: {}, turnCredentials: turns })
+    const connections = createConnectionStoreAdapter()
+    const credentials = createCredentialStoreAdapter(credentialsPort())
+    await connections.upsert({
+      id: "team-notion",
+      integrationId: "notion",
+      grantedCapabilities: ["docs"],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await connections.upsert({
+      id: "user-a-notion",
+      integrationId: "notion",
+      owner: "user-a",
+      grantedCapabilities: ["docs"],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await credentials.put({ providerId: "integration:team-notion", kind: "api_key", secret: "team-token" })
+    await credentials.put({ providerId: "integration:user-a-notion", kind: "api_key", secret: "personal-token" })
+
+    const token = async (id: string, turn?: string) =>
+      await host.routes.request(`http://127.0.0.1/connections/${id}/token?capability=docs`, {
+        headers: {
+          [CONNECTIONS_TOKEN_HEADER]: "1",
+          ...(turn ? { [CONNECTION_TURN_HEADER]: turn } : {}),
+        },
+      })
+
+    expect((await token("user-a-notion")).status).toBe(404)
+    const interactive = turns.mint({ sessionId: "session-1", subject: "user-a" })
+    expect(await (await token("user-a-notion", interactive)).json()).toMatchObject({ token: "personal-token" })
+    expect(await (await token("team-notion", interactive)).json()).toMatchObject({ token: "team-token" })
+    const unattended = turns.mint({ sessionId: "session-1" })
+    expect((await token("user-a-notion", unattended)).status).toBe(404)
+    expect((await token("user-a-notion", "unknown")).status).toBe(404)
+    host.dispose()
+    turns.dispose()
   })
 
   test("integrations routes are never proxied into workspace runtimes", async () => {

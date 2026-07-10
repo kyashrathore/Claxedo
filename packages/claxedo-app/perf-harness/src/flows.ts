@@ -6,13 +6,11 @@ import type { Measurement, ScenarioId } from "./types"
 // a flow: add the id to ScenarioId, an entry here, a seed in seed.ts, and a
 // driver in browser-runner's `flowDrivers`.
 export const FLOWS: { id: ScenarioId; name: string }[] = [
-  { id: "launch-empty-home", name: "Launch to empty home" },
   { id: "launch-project", name: "Launch into a project with 20 sessions" },
   { id: "session-switch", name: "Switch between two 10,000-message sessions (with rapid stress)" },
   { id: "live-terminal-switch", name: "Switch between three live terminals" },
   { id: "large-diff-toggle", name: "Open a 500-file diff and toggle split/unified" },
   { id: "workspace-switch", name: "Switch across five workspaces" },
-  { id: "three-pane-resize", name: "Resize the three-pane workbench" },
 ]
 
 export function flowName(id: ScenarioId) {

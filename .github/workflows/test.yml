@@ -138,9 +138,21 @@ jobs:
           path: ${{ github.workspace }}/.playwright-browsers
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
 
-      # NOTE (007 Tier E): the upstream packages/app e2e job was removed with the
-      # package. claxedo-app has its own Playwright suite (packages/claxedo-app/
-      # e2e/playwright) that should be wired into this job separately.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        working-directory: packages/claxedo-app
+        run: npx playwright install chromium
+
+      # claxedo-app's Playwright suite (packages/claxedo-app/e2e/playwright): the
+      # @core-tagged specs (1-7 + 10 of the 25-spec plan) run on every PR. The full
+      # Tier M suite (all mocked/fixture specs) and Tier L (live) run nightly on a
+      # separate schedule/credentialed runner, not here.
+      - name: Run claxedo-app e2e core suite
+        working-directory: packages/claxedo-app
+        timeout-minutes: 30
+        run: bun run test:e2e:core
 
       - name: Upload Playwright artifacts
         if: always()

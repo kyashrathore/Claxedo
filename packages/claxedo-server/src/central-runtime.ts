@@ -15,6 +15,7 @@ import {
 } from "./control-plane/auth"
 import type { ControlPlaneServices } from "./control-plane/services"
 import { requireAuthority } from "./control-plane/authority"
+import type { ConnectionTurnCredentials } from "./connections-host/turn-credentials"
 
 export { createCentralSessionRuntime } from "./central-session-runtime"
 export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "./control-plane/auth"
@@ -25,6 +26,7 @@ export type CentralControlAppOptions = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   createEnv?: SessionEnvFactory
+  turnCredentials?: ConnectionTurnCredentials
 }
 
 function centralControlRequest(request: Request) {
@@ -74,12 +76,12 @@ async function authorizeSignedCentralRuntimeSession(
   })
 }
 
-async function centralRuntimeAuthResponse(
+async function centralRuntimeAccess(
   request: Request,
   services: ControlPlaneServices,
   options: CentralControlAppOptions,
 ) {
-  if (isLoopbackLocalRequest(request)) return
+  if (isLoopbackLocalRequest(request)) return {}
   try {
     const auth = await controlPlaneAuthContext(request, {
       config: options.authConfig,
@@ -97,6 +99,7 @@ async function centralRuntimeAuthResponse(
       )
     }
     await authorizeSignedCentralRuntimeSession(services, auth, sessionId)
+    return { subject: auth.user.subject }
   } catch (err) {
     if (err instanceof ControlPlaneAuthError) {
       return Response.json(controlPlaneAuthErrorBody(err), { status: err.status })
@@ -108,6 +111,7 @@ async function centralRuntimeAuthResponse(
 export function createCentralControlApp(services: ControlPlaneServices, options: CentralControlAppOptions = {}) {
   const runtime = createCentralSessionRuntime(services, {
     ...(options.createEnv ? { createEnv: options.createEnv } : {}),
+    ...(options.turnCredentials ? { turnCredentials: options.turnCredentials } : {}),
   })
   const app = new Hono()
   app.route("/api/control", ControlPlaneSessionRoutes(services, {
@@ -115,14 +119,22 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     ...(options.verifier ? { verifier: options.verifier } : {}),
     createHybridSession: runtime.createHybridSession,
   }))
-  app.all("/api/control", async (c) =>
-    await centralRuntimeAuthResponse(c.req.raw, services, options)
-      ?? runtime.routes.fetch(centralControlRequest(c.req.raw)))
-  app.all("/api/control/*", async (c) =>
-    await centralRuntimeAuthResponse(c.req.raw, services, options)
-      ?? runtime.routes.fetch(centralControlRequest(c.req.raw)))
-  app.get("/api/wr/runtime-events", async (c: Context) =>
-    await centralRuntimeAuthResponse(c.req.raw, services, options)
-      ?? runtime.runtimeEvents(c as never))
+  const forwardRuntimeRequest = async (request: Request) => {
+    const access = await centralRuntimeAccess(request, services, options)
+    if (access instanceof Response) return access
+    const sessionId = centralRuntimeSessionId(request)
+    const message = request.method === "POST" && new URL(request.url).pathname.endsWith("/message")
+    if (!message || !sessionId) return runtime.routes.fetch(centralControlRequest(request))
+    return runtime.runTurn({ sessionId, ...(access.subject ? { subject: access.subject } : {}) }, () =>
+      runtime.routes.fetch(centralControlRequest(request)),
+    )
+  }
+  app.all("/api/control", async (c) => forwardRuntimeRequest(c.req.raw))
+  app.all("/api/control/*", async (c) => forwardRuntimeRequest(c.req.raw))
+  app.get("/api/wr/runtime-events", async (c: Context) => {
+    const access = await centralRuntimeAccess(c.req.raw, services, options)
+    if (access instanceof Response) return access
+    return runtime.runtimeEvents(c as never)
+  })
   return { app, runtime }
 }

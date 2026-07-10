@@ -36,6 +36,7 @@ import {
 import { createSessionRoutes, runtimeEventsHandler, type RuntimeSessionBusEvent } from "@claxedo/workspace-runtime/routes"
 import type { ControlPlaneServices } from "./control-plane/services"
 import type { SessionMeta } from "./session-meta"
+import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "./connections-host/turn-credentials"
 
 type SourceChannel = "github" | "slack" | "telegram" | "discord" | "whatsapp"
 
@@ -108,6 +109,7 @@ function messageRow(input: unknown): input is AgentMessageRow {
 
 type CentralSessionRuntimeOptions = {
   createEnv?: SessionEnvFactory
+  turnCredentials?: ConnectionTurnCredentials
 }
 
 /** Registry providers that may carry a codex auth bundle, preferred first. */
@@ -250,6 +252,7 @@ function buildWakeTools(wakes: Wakes, sessionId: string, workspaceId: string): P
 
 export function createCentralSessionRuntime(services: ControlPlaneServices, options: CentralSessionRuntimeOptions = {}) {
   const eventHub = createRuntimeEventHub()
+  const turnCredentials = options.turnCredentials ?? createConnectionTurnCredentials()
   // Late-bound dispatch tools: the spawn_session tool needs createHybridSession
   // + the message routes, which are built AFTER the adapter. The wrapped
   // resolver reads this array per turn, so pushing after construction is safe.
@@ -296,6 +299,10 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     } as unknown as AgentHarnessFactory],
   })
   const sessionBus = createSessionBus()
+  const runTurn = <T>(input: { sessionId: string; subject?: string }, fn: () => T) => {
+    const credential = turnCredentials.mint(input)
+    return turnCredentials.run(credential, fn)
+  }
   function bindRuntimeSession(input: { id: string; title?: string | null }) {
     runtimeStore.bindSession({
       sessionId: input.id,
@@ -543,11 +550,13 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       authorize: () => true,
       spawnTurn: async (sessionId, result) => {
         const target = sessionId ?? (await createHybridSession({ title: "Scheduled Session" })).id
-        await placementRoutes.request(`http://127.0.0.1/session/${encodeURIComponent(target)}/message`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ parts: [{ type: "text", text: renderWakeResult(result) }] }),
-        })
+        await runTurn({ sessionId: target }, () =>
+          placementRoutes.request(`http://127.0.0.1/session/${encodeURIComponent(target)}/message`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ parts: [{ type: "text", text: renderWakeResult(result) }] }),
+          }),
+        )
       },
     })
     createScheduler(wakes, {
@@ -582,11 +591,13 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
           toolSandbox: { kind: "workspace-runtime", workspaceId },
         } : {}),
       })
-      void Promise.resolve(placementRoutes.request(`http://127.0.0.1/session/${encodeURIComponent(session.id)}/message`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ parts: [{ type: "text", text: args.prompt }] }),
-      })).catch((err: unknown) => {
+      void Promise.resolve(runTurn({ sessionId: session.id }, () =>
+        placementRoutes.request(`http://127.0.0.1/session/${encodeURIComponent(session.id)}/message`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ parts: [{ type: "text", text: args.prompt }] }),
+        }),
+      )).catch((err: unknown) => {
         console.error(`[central-runtime] spawn_session initial prompt failed for ${session.id}:`, err)
       })
       const result = { session_id: session.id, app_url: `/s/${encodeURIComponent(session.id)}`, workspace_id: workspaceId ?? null }
@@ -601,6 +612,8 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     sourceChannelSessionCountsByWeek: (input?: { channel?: string; includeHidden?: boolean }) =>
       services.projectionStore.source_channel_session_counts_by_week?.(input) ?? Promise.resolve([]),
     createHybridSession,
+    turnCredentials,
+    runTurn,
     /** Present when CLAXEDO_WAKES=1. The channels/webhook layer calls deliverEvent/resolve. */
     wakes,
   }

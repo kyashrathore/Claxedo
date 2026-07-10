@@ -71,7 +71,10 @@ const modelsContextInput = {
         mapValues((models) =>
           pipe(
             models,
-            groupBy((x) => x.family),
+            // remeda's groupBy excludes an item entirely when the callback returns
+            // undefined (rather than bucketing it), so models without a `family`
+            // need a stable fallback key or they silently vanish from `latestSet`.
+            groupBy((x) => x.family ?? x.id),
             values(),
             (groups) =>
               groups.flatMap((g) => {

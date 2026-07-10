@@ -19,6 +19,7 @@ import {
 } from "./workspace-runtime-integration/session-env"
 import type { SandboxFetchOptions } from "./sandbox-target-fetch"
 import { ControlPlaneAuthError } from "./control-plane/auth"
+import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "./connections-host/turn-credentials"
 
 function centralStorePorts() {
   const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
@@ -76,7 +77,7 @@ function hostedWorkspaceResolver(): WorkspaceResolver {
   }
 }
 
-function hostedSessionEnvFactory(services: ControlPlaneServices) {
+function hostedSessionEnvFactory(services: ControlPlaneServices, turnCredentials: ConnectionTurnCredentials) {
   const fetchOptions: SandboxFetchOptions = {
     ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
     ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
@@ -85,18 +86,21 @@ function hostedSessionEnvFactory(services: ControlPlaneServices) {
   return createClaxedoSessionEnvFactory({
     fetchOptions,
     resolveWorkspace: hostedWorkspaceResolver(),
+    turnCredentials,
   })
 }
 
 export function createHostedNodeApp(env: HostedWorkerEnv = process.env) {
   const plane = composeHostedNodeControlPlane(env)
+  const turnCredentials = createConnectionTurnCredentials()
   const app = createHostedApp(plane, { centralSessionRuntime: true })
   const centralControl = createCentralControlApp(plane.services, {
     authConfig: plane.services.auth.config,
     ...(plane.services.auth.verifier ? { verifier: plane.services.auth.verifier } : {}),
     // Wire the workspace-runtime SessionEnv factory so hosted hybrid sessions do
     // not silently fall back to the virtual env. See hostedWorkspaceResolver.
-    createEnv: hostedSessionEnvFactory(plane.services),
+    createEnv: hostedSessionEnvFactory(plane.services, turnCredentials),
+    turnCredentials,
   })
   app.route("/", centralControl.app)
   mountControlPlaneChannels(app, {

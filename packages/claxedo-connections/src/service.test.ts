@@ -22,7 +22,8 @@ function harness(input: { impl?: IntegrationImpl; decl?: IntegrationDeclaration 
   const credentials = createMemoryCredentialStore()
   const connections = createMemoryConnectionStore()
   const attempts = createAttempts({ sweepIntervalMs: 0 })
-  const service = createConnectionsService({ registry, credentials, connections, attempts })
+  let nextId = 0
+  const service = createConnectionsService({ registry, credentials, connections, attempts, newId: () => `connection-${++nextId}` })
   return { registry, credentials, connections, service }
 }
 
@@ -31,7 +32,7 @@ describe("connections service", () => {
     const { service, credentials, connections } = harness()
     const result = await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
     expect(result).toEqual({ ok: true })
-    expect(await credentials.get("integration:fake")).toMatchObject({ kind: "api_key", status: "available" })
+    expect(await credentials.get("integration:connection-1")).toMatchObject({ kind: "api_key", status: "available" })
     expect(await connections.get("fake")).toMatchObject({
       integrationId: "fake",
       accountLabel: "Acme",
@@ -52,7 +53,7 @@ describe("connections service", () => {
     const { service, credentials } = harness()
     const result = await service.connect({ integrationId: "fake", fields: {}, secret: "bad" })
     expect(result).toEqual({ ok: false, code: "connection_verify_failed", reason: "unauthorized" })
-    expect(await credentials.get("integration:fake")).toBeUndefined()
+    expect(await credentials.get("integration:connection-1")).toBeUndefined()
   })
 
   test("verify() error fence: a throwing impl embedding the secret leaks nothing", async () => {
@@ -80,21 +81,46 @@ describe("connections service", () => {
   test("remove deletes row and credential", async () => {
     const { service, credentials } = harness()
     await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
-    expect(await service.remove("fake")).toBe(true)
-    expect(await credentials.get("integration:fake")).toBeUndefined()
-    expect(await service.remove("fake")).toBe(false)
+    expect(await service.remove("connection-1")).toBe(true)
+    expect(await credentials.get("integration:connection-1")).toBeUndefined()
+    expect(await service.remove("connection-1")).toBe(false)
+  })
+
+  test("removeOwner cascades one owner's personal rows and spares team + other owners", async () => {
+    const { service, credentials, connections } = harness()
+    // connection-1: team, connection-2: alice, connection-3: bob.
+    await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
+    await service.connect({ integrationId: "fake", owner: "alice", fields: {}, secret: "good" })
+    await service.connect({ integrationId: "fake", owner: "bob", fields: {}, secret: "good" })
+
+    expect(await service.removeOwner("alice")).toBe(1)
+
+    // Alice's row + credential are gone.
+    expect(await connections.get("fake", "alice")).toBeUndefined()
+    expect(await credentials.get("integration:connection-2")).toBeUndefined()
+    // Team and bob survive untouched.
+    expect(await connections.get("fake", undefined)).toMatchObject({ id: "connection-1" })
+    expect(await connections.get("fake", "bob")).toMatchObject({ id: "connection-3" })
+    expect(await credentials.get("integration:connection-1")).toMatchObject({ status: "available" })
+    expect(await credentials.get("integration:connection-3")).toMatchObject({ status: "available" })
+
+    // Idempotent: a second cascade for the same owner removes nothing.
+    expect(await service.removeOwner("alice")).toBe(0)
+    // Empty owner is a no-op (never a wildcard that reaps team rows).
+    expect(await service.removeOwner("")).toBe(0)
+    expect(await connections.get("fake", undefined)).toMatchObject({ id: "connection-1" })
   })
 
   test("reportAuthFailure flips status; getToken then 409; reverify restores", async () => {
     const { service, credentials } = harness()
     await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
-    await service.reportAuthFailure("fake", "401 from provider")
-    expect(credentials.inspect("integration:fake")).toMatchObject({ status: "error", lastError: "auth_failure_reported" })
-    const denied = await service.getToken("fake", "docs")
+    await service.reportAuthFailure("connection-1", "401 from provider")
+    expect(credentials.inspect("integration:connection-1")).toMatchObject({ status: "error", lastError: "auth_failure_reported" })
+    const denied = await service.getToken("connection-1", "docs")
     expect(denied).toMatchObject({ ok: false, status: 409, code: "connection_not_available" })
-    const reverified = await service.reverify("fake")
+    const reverified = await service.reverify("connection-1")
     expect(reverified).toMatchObject({ ok: true })
-    const granted = await service.getToken("fake", "docs")
+    const granted = await service.getToken("connection-1", "docs")
     expect(granted).toMatchObject({ ok: true, response: { token: "good", tokenType: "bearer" } })
   })
 
@@ -102,8 +128,8 @@ describe("connections service", () => {
     const { service } = harness()
     expect(await service.getToken("nope", "docs")).toMatchObject({ ok: false, status: 404 })
     await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
-    expect(await service.getToken("fake", "channel")).toMatchObject({ ok: false, status: 403, code: "capability_not_granted" })
-    expect(await service.getToken("fake", undefined)).toMatchObject({ ok: false, status: 403 })
+    expect(await service.getToken("connection-1", "channel")).toMatchObject({ ok: false, status: 403, code: "capability_not_granted" })
+    expect(await service.getToken("connection-1", undefined)).toMatchObject({ ok: false, status: 403 })
   })
 
   test("forCapability filters by granted capability and integration", async () => {
@@ -117,13 +143,40 @@ describe("connections service", () => {
     expect(await service.forCapability("docs", { integration: "other" })).toHaveLength(0)
   })
 
+  test("resolveForCapability is capability-first and honors explicit scope", async () => {
+    const { service, connections } = harness()
+    await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
+    await connections.upsert({
+      id: "personal-without-docs",
+      integrationId: "fake",
+      owner: "user-a",
+      grantedCapabilities: [],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+
+    const resolved = await service.resolveForCapability("docs", { owner: "user-a" })
+    expect(resolved).toHaveLength(1)
+    expect(resolved[0]).toMatchObject({ scope: "team" })
+
+    await service.connect({ integrationId: "fake", fields: {}, secret: "good", owner: "user-a", confirmReplace: true })
+    const personal = await service.resolveForCapability("docs", { owner: "user-a" })
+    expect(personal).toHaveLength(1)
+    expect(personal[0]).toMatchObject({ scope: "personal" })
+
+    const personalMissing = await service.resolveForCapability("docs", { owner: "user-b", scope: "personal" })
+    expect(personalMissing).toEqual([])
+    await expect(service.resolveForCapability("docs", { scope: "personal" })).rejects.toThrow("requires an owner")
+  })
+
   test("list derives connected/degraded/broken status", async () => {
     const { service, credentials } = harness()
     await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
     expect((await service.list())[0]).toMatchObject({ status: "connected" })
-    await credentials.setStatus("integration:fake", "error", "boom")
+    await credentials.setStatus("integration:connection-1", "error", "boom")
     expect((await service.list())[0]).toMatchObject({ status: "degraded" })
-    await credentials.deleteByProvider("integration:fake")
+    await credentials.deleteByProvider("integration:connection-1")
     expect((await service.list())[0]).toMatchObject({ status: "broken" })
   })
 
@@ -143,7 +196,7 @@ describe("connections service", () => {
       fields: { site_url: "https://acme.atlassian.net", email: "a@acme.io" },
       secret: "good",
     })
-    const result = await service.getToken("fake", "docs")
+    const result = await service.getToken("connection-1", "docs")
     expect(result).toMatchObject({
       ok: true,
       response: {
@@ -186,19 +239,20 @@ describe("connections service", () => {
     )
     const credentials = createMemoryCredentialStore()
     const connections = createMemoryConnectionStore()
-    const service = createConnectionsService({ registry, credentials, connections, attempts: createAttempts({ sweepIntervalMs: 0 }) })
+    const service = createConnectionsService({ registry, credentials, connections, attempts: createAttempts({ sweepIntervalMs: 0 }), newId: () => "connection-1" })
 
-    const started = await service.connectOAuth({ integrationId: "oauthy" })
+    const started = await service.connectOAuth({ integrationId: "oauthy", owner: "user-a" })
     expect(started.ok).toBe(true)
     const state = (started as { attemptId: string }).attemptId
     expect((started as { url: string }).url).toContain(`state=${state}`)
 
     expect(await service.handleCallback(state, "code-1")).toEqual({ ok: true })
-    expect(await credentials.readSecret("integration:oauthy")).toBe(JSON.stringify({ access: "at-code-1", refresh: "rt-1" }))
+    expect(await credentials.readSecret("integration:connection-1")).toBe(JSON.stringify({ access: "at-code-1", refresh: "rt-1" }))
+    expect(await connections.get("oauthy", "user-a")).toMatchObject({ id: "connection-1", owner: "user-a" })
     expect(service.attemptStatus(state)).toMatchObject({ status: "complete" })
 
     // Replay: same state again must be rejected before the impl runs.
     expect(await service.handleCallback(state, "code-2")).toEqual({ ok: false })
-    expect(await credentials.readSecret("integration:oauthy")).toBe(JSON.stringify({ access: "at-code-1", refresh: "rt-1" }))
+    expect(await credentials.readSecret("integration:connection-1")).toBe(JSON.stringify({ access: "at-code-1", refresh: "rt-1" }))
   })
 })

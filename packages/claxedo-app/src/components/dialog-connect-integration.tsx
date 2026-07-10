@@ -21,11 +21,15 @@ export function DialogConnectIntegration(props: {
   integration: IntegrationInfo
   request: ConnectionsRequest
   onConnected?: () => void | Promise<void>
+  personalScopeEnabled?: boolean
+  initialScope?: "team" | "personal"
 }) {
   const dialog = useDialog()
   const flow = createConnectFlow({
     integration: props.integration,
     request: props.request,
+    personalScopeEnabled: props.personalScopeEnabled,
+    initialScope: props.initialScope,
     openUrl: (url) => window.open(url, "_blank", "noopener"),
     onConnected: async () => {
       await props.onConnected?.()
@@ -47,6 +51,31 @@ export function DialogConnectIntegration(props: {
   return (
     <Dialog title={`Connect ${props.integration.name}`} transition>
       <div class="flex flex-col gap-4">
+        <Show when={props.personalScopeEnabled}>
+          <div class="flex flex-col gap-2">
+            <span class="text-13-medium text-text-strong">Connection scope</span>
+            <div class="flex flex-col gap-2 text-13-regular text-text-base" role="radiogroup" aria-label="Connection scope">
+              <label class="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="connection-scope"
+                  checked={flow.state.scope === "team"}
+                  onChange={() => flow.setScope("team")}
+                />
+                <span>Team — anyone on this host can use it</span>
+              </label>
+              <label class="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="connection-scope"
+                  checked={flow.state.scope === "personal"}
+                  onChange={() => flow.setScope("personal")}
+                />
+                <span>Only me — used only in your interactive turns</span>
+              </label>
+            </div>
+          </div>
+        </Show>
         <Switch>
           <Match when={flow.state.phase === "confirm-replace"}>
             <div class="flex flex-col gap-4">

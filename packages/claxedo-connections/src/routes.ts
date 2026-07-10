@@ -1,27 +1,33 @@
-// HTTP surface as a Hono router factory. The kit implements NO auth policy:
-// hosts inject gates. `gate` runs on every route; `tokenGate` additionally
-// on the token and auth-failure routes (the host puts its strongest checks
-// there — e.g. loopback + custom header).
 import { Hono } from "hono"
 import type { Context } from "hono"
 import type { ConnectionsService } from "./service.js"
-import type { IntegrationCapability } from "./types.js"
+import type { ConnectionScope, IntegrationCapability } from "./types.js"
 
 export type RouteGate = (c: Context) => Promise<Response | null> | Response | null
+export type RouteOwnerResolver = (c: Context) => string | undefined
 
 export type IntegrationsRouteOptions = {
   gate?: RouteGate
   tokenGate?: RouteGate
+  // Hosts resolve an authenticated subject to this opaque owner key. No
+  // resolver means unsigned-local and therefore the team partition only.
+  owner?: RouteOwnerResolver
+  // Token callers prove their turn separately from management callers. An
+  // omitted resolver safely grants team rows only.
+  tokenOwner?: RouteOwnerResolver
 }
 
 const CAPABILITIES: IntegrationCapability[] = ["docs", "work-source", "channel", "code-host"]
 
-// Fixed static pages: never a redirect, never echoes request parameters —
-// the UI learns the outcome by polling attempt status.
 const CALLBACK_PAGE = (ok: boolean) =>
   `<!doctype html><html><body style="font-family:sans-serif;padding:2rem"><h2>${
     ok ? "Connection complete" : "Connection failed"
   }</h2><p>You can close this window and return to the app.</p></body></html>`
+
+function scopeFrom(body: { scope?: string }): ConnectionScope | undefined {
+  if (body.scope === undefined) return "team"
+  if (body.scope === "team" || body.scope === "personal") return body.scope
+}
 
 export function createIntegrationsRoutes(service: ConnectionsService, options: IntegrationsRouteOptions = {}) {
   const app = new Hono()
@@ -31,17 +37,32 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   const gated = async (c: Context, extra?: RouteGate) => {
     const denied = await gate(c)
     if (denied) return denied
-    if (extra) {
-      const deniedExtra = await extra(c)
-      if (deniedExtra) return deniedExtra
-    }
-    return null
+    if (!extra) return null
+    return extra(c)
+  }
+
+  const visibleConnection = async (id: string, owner: string | undefined) => {
+    const row = await service.getById(id)
+    if (!row || (row.owner !== undefined && row.owner !== owner)) return undefined
+    return row
+  }
+
+  const connectOwner = (c: Context, scope: ConnectionScope) => {
+    if (scope === "team") return { ok: true as const }
+    const owner = options.owner?.(c)
+    if (owner === undefined) return { ok: false as const }
+    return { ok: true as const, owner }
   }
 
   app.get("/", async (c) => {
     const denied = await gated(c)
     if (denied) return denied
-    return c.json({ integrations: service.listIntegrations(), connections: await service.list() })
+    const owner = options.owner?.(c)
+    return c.json({
+      integrations: service.listIntegrations(),
+      connections: await service.list({ owner }),
+      personalScopeEnabled: owner !== undefined,
+    })
   })
 
   app.post("/:id/connect", async (c) => {
@@ -53,10 +74,16 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
       fields?: Record<string, string>
       secret?: string
       confirmReplace?: boolean
+      scope?: string
     }
+    const scope = scopeFrom(body)
+    if (!scope) return c.json({ ok: false, code: "invalid_connection_scope" }, 422)
+    const owner = connectOwner(c, scope)
+    if (!owner.ok) return c.json({ ok: false, code: "personal_scope_requires_signed_subject" }, 422)
     if (body.method === "oauth") {
       const result = await service.connectOAuth({
         integrationId,
+        ...(owner.owner !== undefined ? { owner: owner.owner } : {}),
         ...(body.confirmReplace !== undefined ? { confirmReplace: body.confirmReplace } : {}),
       })
       if (!result.ok) return c.json(result, result.code === "connection_exists" ? 409 : 404)
@@ -67,6 +94,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     }
     const result = await service.connect({
       integrationId,
+      ...(owner.owner !== undefined ? { owner: owner.owner } : {}),
       fields: body.fields ?? {},
       secret: body.secret,
       ...(body.confirmReplace !== undefined ? { confirmReplace: body.confirmReplace } : {}),
@@ -79,8 +107,6 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   })
 
   app.get("/callback", async (c) => {
-    // The callback arrives from the user's browser via the provider redirect;
-    // attempt-state single-use + TTL are the guards here (plan), not the gate.
     const state = c.req.query("state") ?? ""
     const code = c.req.query("code")
     const outcome = state ? await service.handleCallback(state, code) : { ok: false }
@@ -98,33 +124,41 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   app.delete("/connections/:id", async (c) => {
     const denied = await gated(c)
     if (denied) return denied
-    const removed = await service.remove(c.req.param("id"))
-    return removed ? c.json({ ok: true }) : c.json({ code: "connection_not_found" }, 404)
+    const row = await visibleConnection(c.req.param("id"), options.owner?.(c))
+    if (!row) return c.json({ code: "connection_not_found" }, 404)
+    await service.remove(row.id)
+    return c.json({ ok: true })
   })
 
   app.post("/connections/:id/reverify", async (c) => {
     const denied = await gated(c)
     if (denied) return denied
-    const result = await service.reverify(c.req.param("id"))
+    const row = await visibleConnection(c.req.param("id"), options.owner?.(c))
+    if (!row) return c.json({ code: "connection_not_found" }, 404)
+    const result = await service.reverify(row.id)
     return c.json(result, result.ok ? 200 : 422)
   })
 
   app.post("/connections/:id/auth-failure", async (c) => {
     const denied = await gated(c, tokenGate)
     if (denied) return denied
+    const row = await visibleConnection(c.req.param("id"), options.tokenOwner?.(c))
+    if (!row) return c.json({ code: "connection_not_found" }, 404)
     const body = (await c.req.json().catch(() => ({}))) as { reason?: string }
-    await service.reportAuthFailure(c.req.param("id"), typeof body.reason === "string" ? body.reason : "unspecified")
+    await service.reportAuthFailure(row.id, typeof body.reason === "string" ? body.reason : "unspecified")
     return c.body(null, 204)
   })
 
   app.get("/connections/:id/token", async (c) => {
     const denied = await gated(c, tokenGate)
     if (denied) return denied
+    const row = await visibleConnection(c.req.param("id"), options.tokenOwner?.(c))
+    if (!row) return c.json({ code: "connection_not_found" }, 404)
     const capabilityRaw = c.req.query("capability")
     const capability = CAPABILITIES.includes(capabilityRaw as IntegrationCapability)
       ? (capabilityRaw as IntegrationCapability)
       : undefined
-    const result = await service.getToken(c.req.param("id"), capability)
+    const result = await service.getToken(row.id, capability)
     if (!result.ok) {
       return c.json(
         {

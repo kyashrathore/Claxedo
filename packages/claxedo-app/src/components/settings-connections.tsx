@@ -60,20 +60,22 @@ export const SettingsConnections: Component = () => {
 
   onMount(() => void store.load())
 
-  const openConnect = (integration: IntegrationInfo) => {
+  const openConnect = (integration: IntegrationInfo, scope?: ConnectionInfo["scope"]) => {
     dialog.show(() => (
       <DialogConnectIntegration
         integration={integration}
         request={integrationsRequest}
         onConnected={() => store.load()}
+        personalScopeEnabled={store.state.personalScopeEnabled}
+        initialScope={scope}
       />
     ))
   }
 
-  const disconnect = async (integration: IntegrationInfo) => {
+  const disconnect = async (integration: IntegrationInfo, connection: ConnectionInfo) => {
     setConfirming(undefined)
-    setBusy(integration.id)
-    const result = await store.disconnect(integration.id)
+    setBusy(connection.id)
+    const result = await store.disconnect(connection.id)
     setBusy(undefined)
     if (result.ok) {
       showToast({ variant: "success", icon: "circle-check", title: `${integration.name} disconnected` })
@@ -82,9 +84,9 @@ export const SettingsConnections: Component = () => {
     showToast({ variant: "error", title: result.error ?? "Disconnect failed" })
   }
 
-  const reverify = async (integration: IntegrationInfo) => {
-    setBusy(integration.id)
-    const result = await store.reverify(integration.id)
+  const reverify = async (integration: IntegrationInfo, connection: ConnectionInfo) => {
+    setBusy(connection.id)
+    const result = await store.reverify(connection.id)
     setBusy(undefined)
     if (result.ok) {
       showToast({ variant: "success", icon: "circle-check", title: `${integration.name} verified` })
@@ -120,75 +122,87 @@ export const SettingsConnections: Component = () => {
             >
               <For each={store.state.integrations}>
                 {(integration) => {
-                  const connection = () => store.connectionFor(integration.id)
-                  const status = () => connection()?.status
+                  const connections = () => store.connectionsFor(integration.id)
                   return (
-                    <div class="flex flex-wrap items-center justify-between gap-4 min-h-16 py-3 border-b border-border-weak-base last:border-none">
-                      <div class="flex flex-col gap-1 min-w-0">
-                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <div class="flex flex-col gap-3 min-h-16 py-3 border-b border-border-weak-base last:border-none">
+                      <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div class="flex flex-col gap-1 min-w-0">
                           <span class="text-14-medium text-text-strong">{integration.name}</span>
-                          <Show when={status()}>{(current) => <StatusChip status={current()} />}</Show>
+                          <div class="flex flex-wrap items-center gap-1">
+                            <For each={integration.capabilities}>{(capability) => <Tag>{capability}</Tag>}</For>
+                          </div>
                         </div>
-                        <Show when={connection()?.accountLabel}>
-                          {(label) => <span class="text-12-regular text-text-weak">{label()}</span>}
-                        </Show>
-                        <div class="flex flex-wrap items-center gap-1">
-                          <For each={integration.capabilities}>{(capability) => <Tag>{capability}</Tag>}</For>
+                        <Button size="small" variant="secondary" icon="plus-small" onClick={() => openConnect(integration)}>
+                          {connections().length > 0 ? "Add connection" : "Connect"}
+                        </Button>
+                      </div>
+                      <Show when={connections().length > 0}>
+                        <div class="flex flex-col gap-2">
+                          <For each={connections()}>
+                            {(connection) => {
+                              const status = () => connection.status
+                              return (
+                                <div class="flex flex-wrap items-center justify-between gap-4 rounded-md bg-surface-base px-3 py-2">
+                                  <div class="flex flex-col gap-1 min-w-0">
+                                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                      <Show when={store.state.personalScopeEnabled}>
+                                        <Tag>{connection.scope === "personal" ? "Only me" : "Team"}</Tag>
+                                      </Show>
+                                      <StatusChip status={status()} />
+                                      <Show when={connection.accountLabel}>
+                                        {(label) => <span class="text-12-regular text-text-weak">{label()}</span>}
+                                      </Show>
+                                    </div>
+                                  </div>
+                                  <div class="flex items-center gap-2 shrink-0">
+                                    <Show when={status() === "degraded"}>
+                                      <Button
+                                        size="small"
+                                        variant="secondary"
+                                        disabled={busy() === connection.id}
+                                        onClick={() => void reverify(integration, connection)}
+                                      >
+                                        Re-verify
+                                      </Button>
+                                    </Show>
+                                    <Show when={status() === "degraded" || status() === "broken"}>
+                                      <Button size="small" variant="secondary" onClick={() => openConnect(integration, connection.scope)}>
+                                        Reconnect
+                                      </Button>
+                                    </Show>
+                                    <Show
+                                      when={confirming() === connection.id}
+                                      fallback={
+                                        <Button
+                                          size="small"
+                                          variant="ghost"
+                                          disabled={busy() === connection.id}
+                                          onClick={() => setConfirming(connection.id)}
+                                        >
+                                          Disconnect
+                                        </Button>
+                                      }
+                                    >
+                                      <span class="text-12-regular text-text-weak">Disconnect?</span>
+                                      <Button
+                                        size="small"
+                                        variant="primary"
+                                        disabled={busy() === connection.id}
+                                        onClick={() => void disconnect(integration, connection)}
+                                      >
+                                        Confirm
+                                      </Button>
+                                      <Button size="small" variant="ghost" onClick={() => setConfirming(undefined)}>
+                                        Cancel
+                                      </Button>
+                                    </Show>
+                                  </div>
+                                </div>
+                              )
+                            }}
+                          </For>
                         </div>
-                      </div>
-
-                      <div class="flex items-center gap-2 shrink-0">
-                        <Show
-                          when={connection()}
-                          fallback={
-                            <Button size="small" variant="secondary" icon="plus-small" onClick={() => openConnect(integration)}>
-                              Connect
-                            </Button>
-                          }
-                        >
-                          <Show when={status() === "degraded"}>
-                            <Button
-                              size="small"
-                              variant="secondary"
-                              disabled={busy() === integration.id}
-                              onClick={() => void reverify(integration)}
-                            >
-                              Re-verify
-                            </Button>
-                          </Show>
-                          <Show when={status() === "degraded" || status() === "broken"}>
-                            <Button size="small" variant="secondary" onClick={() => openConnect(integration)}>
-                              Reconnect
-                            </Button>
-                          </Show>
-                          <Show
-                            when={confirming() === integration.id}
-                            fallback={
-                              <Button
-                                size="small"
-                                variant="ghost"
-                                disabled={busy() === integration.id}
-                                onClick={() => setConfirming(integration.id)}
-                              >
-                                Disconnect
-                              </Button>
-                            }
-                          >
-                            <span class="text-12-regular text-text-weak">Disconnect?</span>
-                            <Button
-                              size="small"
-                              variant="primary"
-                              disabled={busy() === integration.id}
-                              onClick={() => void disconnect(integration)}
-                            >
-                              Confirm
-                            </Button>
-                            <Button size="small" variant="ghost" onClick={() => setConfirming(undefined)}>
-                              Cancel
-                            </Button>
-                          </Show>
-                        </Show>
-                      </div>
+                      </Show>
                     </div>
                   )
                 }}

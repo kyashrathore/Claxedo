@@ -59,7 +59,9 @@ async function githubAuthFromConnections(connections: ConnectionsService | undef
   if (!connections) return null
   for (const capability of ["work-source", "code-host"] as const) {
     try {
-      const [handle] = await connections.forCapability(capability, { integration: "github" })
+      // WorkGraph runs out of band from an interactive user turn, so it is
+      // permanently constrained to the team partition.
+      const [handle] = await connections.forCapability(capability, { integration: "github", scope: "team" })
       if (!handle) continue
       const { token } = await handle.getToken()
       if (!token) continue

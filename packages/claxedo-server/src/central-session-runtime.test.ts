@@ -5,6 +5,8 @@ import type { ControlPlaneServices } from "./control-plane/services"
 import type { RuntimeEventEnvelope } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { createVirtualSessionEnv, type SessionEnv, type SessionEnvFactoryInput } from "@claxedo/agent-sdk-runtime"
 import { createCentralSessionRuntime } from "./central-session-runtime"
+import { createCentralControlApp } from "./central-runtime"
+import { createConnectionTurnCredentials } from "./connections-host/turn-credentials"
 
 function services(): ControlPlaneServices {
   return {
@@ -134,6 +136,75 @@ describe("createCentralSessionRuntime", () => {
         info: expect.objectContaining({ id: "user-1_r", role: "assistant" }),
       }),
     }))
+  })
+
+  test("mints a subjectless turn credential for a loopback message route", async () => {
+    const turns = createConnectionTurnCredentials({ random: () => "loopback-turn" })
+    const control = createCentralControlApp(services(), { turnCredentials: turns })
+    const session = await control.runtime.createHybridSession({ title: "Credential" })
+
+    const res = await control.app.request(`http://127.0.0.1/api/control/session/${session.id}/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "exec: printf credential" }],
+        messageID: "turn-credential",
+        agent: "pi",
+        model: { providerID: "pi", modelID: "virtual" },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(turns.resolve("loopback-turn")).toEqual({ sessionId: session.id })
+    turns.dispose()
+  })
+
+  test("mints the signed subject at the central message entry point", async () => {
+    const svc = services()
+    const sessionId = "signed-session"
+    svc.projectionStore.session_meta = vi.fn(async () => ({
+      sessionID: sessionId,
+      workspaceID: "workspace-1",
+      host: "central" as const,
+      title: "Signed",
+      createdAt: 1,
+      updatedAt: 1,
+      tags: [],
+      attachments: [],
+    }))
+    const authority = { authorizeSessionRead: vi.fn(async () => {}) }
+    svc.authority = authority as never
+    const turns = createConnectionTurnCredentials({ random: () => "signed-turn" })
+    const control = createCentralControlApp(svc, {
+      authConfig: { enabled: true, issuer: "https://issuer.example", jwksUrl: "https://issuer.example/jwks" },
+      verifier: async () => ({
+        mode: "signed",
+        user: { subject: "user-a", tokenIdentifier: "user-a", issuer: "https://issuer.example" },
+      }),
+      turnCredentials: turns,
+    })
+    await control.runtime.createHybridSession({ title: "Signed" })
+
+    const res = await control.app.request(`http://relay.example/api/control/session/${sessionId}/message`, {
+      method: "POST",
+      headers: { authorization: "Bearer signed-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "exec: printf signed" }],
+        messageID: "signed-message",
+        agent: "pi",
+        model: { providerID: "pi", modelID: "virtual" },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(turns.resolve("signed-turn")).toEqual({ sessionId, subject: "user-a" })
+    expect(authority.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({
+      user: expect.objectContaining({ subject: "user-a" }),
+    }), {
+      sessionId,
+      workspaceId: "workspace-1",
+    })
+    turns.dispose()
   })
 
   test("persists auto-title updates for central runtime sessions", async () => {

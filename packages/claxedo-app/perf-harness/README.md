@@ -15,7 +15,7 @@ every flow run.
 
 ```sh
 bun run list            # list the measured flows
-bun run run             # run the default flow (launch-empty-home), headless
+bun run run             # run the default flow (launch-project), headless
 bun run run:all         # run every flow
 bun run run:debug       # run every flow and print the debug sub-metrics
 bun run run:headed      # watch it drive the app
@@ -26,7 +26,7 @@ bun run test            # unit tests (pure frame/gate logic, no browser)
 Run a single flow:
 
 ```sh
-bun src/cli.ts run --scenario three-pane-resize --headed
+bun src/cli.ts run --scenario workspace-switch --headed
 ```
 
 ## How it measures frame rate
@@ -62,17 +62,15 @@ and fixed — only the per-flow worst-frame regression budget is stored
 
 ## Flows
 
-Seven user-observable flows, each frame-gated:
+Five user-observable flows, each frame-gated:
 
 | Flow | Headline interaction |
 | --- | --- |
-| `launch-empty-home` | cold launch to a usable home (completion = time-to-ready) |
 | `launch-project` | launch into a 20-session project |
 | `session-switch` | rapid back-and-forth between two 10k-message sessions |
 | `live-terminal-switch` | switch between three live terminals |
 | `large-diff-toggle` | toggle split/unified on a 500-file diff |
 | `workspace-switch` | switch to another workspace and into a session |
-| `three-pane-resize` | scroll + resize the three-pane workbench |
 
 Headline = the frame timing of the flow's primary interaction. Each flow also
 captures debug sub-metrics (panel-open ms, file-tree load ms, …) that are stored

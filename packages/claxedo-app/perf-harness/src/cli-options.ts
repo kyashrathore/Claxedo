@@ -15,5 +15,5 @@ export function scenarioIds(args: string[]): ScenarioId[] {
   const scenario = option(args, "scenario")
   if (scenario) return [scenario as ScenarioId]
   if (flag(args, "all")) return FLOWS.map((flow) => flow.id)
-  return ["launch-empty-home"]
+  return [FLOWS[0].id]
 }

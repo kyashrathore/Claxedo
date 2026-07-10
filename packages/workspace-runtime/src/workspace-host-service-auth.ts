@@ -76,6 +76,11 @@ function stringClaim(payload: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim() ? value : undefined
 }
 
+function roleClaim(payload: Record<string, unknown>) {
+  const value = stringClaim(payload, "role")
+  return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
+}
+
 function numberClaim(payload: Record<string, unknown>, key: string) {
   const value = payload[key]
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
@@ -96,6 +101,7 @@ function validateRelayHostVerifierClaims(
   const org_id = stringClaim(payload, "org_id")
   const workspace_id = stringClaim(payload, "workspace_id")
   const host_id = stringClaim(payload, "host_id")
+  const role = roleClaim(payload)
   const access = stringClaim(payload, "access")
   const backing = stringClaim(payload, "backing")
   const pair = { access, backing }
@@ -108,6 +114,7 @@ function validateRelayHostVerifierClaims(
     || !org_id
     || !workspace_id
     || !host_id
+    || !role
     || !isRelayClaimPair(pair)
     || !exp
     || !iat
@@ -129,6 +136,7 @@ function validateRelayHostVerifierClaims(
     org_id,
     workspace_id,
     host_id,
+    role,
     ...pair,
     exp,
     iat,

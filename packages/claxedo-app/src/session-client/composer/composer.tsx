@@ -6,6 +6,8 @@ import {
   Component,
   createMemo,
   createResource,
+  createSignal,
+  onCleanup,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
@@ -58,7 +60,7 @@ import { getClaxedoServerUrl } from "../../utils/api"
 import { principalHasSignedAccess, usePrincipal } from "../../shell/auth/identity-provider"
 import { placementFor } from "../../shell/auth/placement"
 import { registeredConversationHasUserMessage } from "../../shell/chat/conversation-registry"
-import { promptSessionStatusStage } from "../../session/store/session-status-dispatcher"
+import { promptSessionStatusStage, subscribePromptSessionStatusMeta } from "../../session/store/session-status-dispatcher"
 import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"
 import { PROMPT_EXAMPLES } from "./examples"
 import { composerHarnessId, isComposerHarnessMode } from "./mode"
@@ -326,9 +328,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (activeTurn !== undefined) return activeTurn
     return status()?.type === "busy" || status()?.type === "retry"
   })
+  // status-meta is written with plain setQueryData/removeQueries (no query
+  // observer), so promptSessionStatusStage alone is a non-reactive snapshot —
+  // without this cache subscription the escalation stages ("pending"/"long"/
+  // "failed") would never re-render after their timers fire.
+  const [statusMetaVersion, setStatusMetaVersion] = createSignal(0)
+  createEffect(() => {
+    const sid = resolvedSessionId()
+    if (!sid) return
+    const unsubscribe = subscribePromptSessionStatusMeta(sid, () => setStatusMetaVersion((version) => version + 1))
+    onCleanup(unsubscribe)
+  })
   const statusStage = createMemo(() => {
     const explicit = props.statusStage?.()
     if (explicit !== undefined) return explicit
+    statusMetaVersion()
     return promptSessionStatusStage(resolvedSessionId())
   })
   const canAbort = createMemo(() => props.canAbort?.() ?? true)

@@ -1,0 +1,996 @@
+{
+  "envelopes": [
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "type": "message.completed",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "messageID": "msg_assistant_1"
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000000_message-1-text",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000000_message-1-text",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "text",
+            "text": ""
+          },
+          "time": 1010
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.delta:message-1:000000_message-1-text",
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "messageID": "message-1",
+          "partID": "000000_message-1-text",
+          "field": "text",
+          "delta": "Building the "
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.delta:message-1:000000_message-1-text",
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "messageID": "message-1",
+          "partID": "000000_message-1-text",
+          "field": "text",
+          "delta": "feature now."
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000001_tool-bash-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000001_tool-bash-1",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "tool",
+            "callID": "tool-bash-1",
+            "tool": "bash",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "shell",
+                "kind": "execute",
+                "summary": "Terminal",
+                "command": "printf hi",
+                "description": "printf hi"
+              },
+              "metadata": {
+                "acp": {
+                  "client": "claude-acp",
+                  "kind": "execute",
+                  "intent": "shell",
+                  "status": "running",
+                  "title": "Terminal",
+                  "summary": "Terminal",
+                  "command": "printf hi",
+                  "rawInput": {
+                    "command": "printf hi"
+                  },
+                  "extractor": "claude-shell",
+                  "toolCallId": "tool-bash-1"
+                }
+              },
+              "time": {
+                "start": 1030
+              }
+            },
+            "metadata": {
+              "acp": {
+                "client": "claude-acp",
+                "kind": "execute",
+                "intent": "shell",
+                "status": "running",
+                "title": "Terminal",
+                "summary": "Terminal",
+                "command": "printf hi",
+                "rawInput": {
+                  "command": "printf hi"
+                },
+                "extractor": "claude-shell",
+                "toolCallId": "tool-bash-1"
+              }
+            }
+          },
+          "time": 1030
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000001_tool-bash-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000001_tool-bash-1",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "tool",
+            "callID": "tool-bash-1",
+            "tool": "bash",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "shell",
+                "kind": "execute",
+                "summary": "Terminal",
+                "command": "printf hi",
+                "description": "printf hi"
+              },
+              "metadata": {
+                "acp": {
+                  "client": "claude-acp",
+                  "kind": "execute",
+                  "intent": "shell",
+                  "status": "running",
+                  "title": "Terminal",
+                  "summary": "Terminal",
+                  "command": "printf hi",
+                  "rawInput": {
+                    "command": "printf hi"
+                  },
+                  "extractor": "claude-shell",
+                  "toolCallId": "tool-bash-1"
+                }
+              },
+              "time": {
+                "start": 1040
+              }
+            },
+            "metadata": {
+              "acp": {
+                "client": "claude-acp",
+                "kind": "execute",
+                "intent": "shell",
+                "status": "running",
+                "title": "Terminal",
+                "summary": "Terminal",
+                "command": "printf hi",
+                "rawInput": {
+                  "command": "printf hi"
+                },
+                "extractor": "claude-shell",
+                "toolCallId": "tool-bash-1"
+              }
+            }
+          },
+          "time": 1040
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000001_tool-bash-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000001_tool-bash-1",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "tool",
+            "callID": "tool-bash-1",
+            "tool": "bash",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "shell",
+                "kind": "execute",
+                "summary": "Terminal",
+                "command": "printf hi",
+                "description": "printf hi"
+              },
+              "metadata": {
+                "acp": {
+                  "client": "claude-acp",
+                  "kind": "execute",
+                  "intent": "shell",
+                  "status": "running",
+                  "title": "Terminal",
+                  "summary": "Terminal",
+                  "command": "printf hi",
+                  "rawInput": {
+                    "command": "printf hi"
+                  },
+                  "extractor": "claude-shell",
+                  "toolCallId": "tool-bash-1",
+                  "rawOutput": {
+                    "stdout": "hi"
+                  },
+                  "stats": {
+                    "stdout": "hi"
+                  }
+                }
+              },
+              "time": {
+                "start": 1050
+              }
+            },
+            "metadata": {
+              "acp": {
+                "client": "claude-acp",
+                "kind": "execute",
+                "intent": "shell",
+                "status": "running",
+                "title": "Terminal",
+                "summary": "Terminal",
+                "command": "printf hi",
+                "rawInput": {
+                  "command": "printf hi"
+                },
+                "extractor": "claude-shell",
+                "toolCallId": "tool-bash-1",
+                "rawOutput": {
+                  "stdout": "hi"
+                },
+                "stats": {
+                  "stdout": "hi"
+                }
+              }
+            }
+          },
+          "time": 1050
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000001_tool-bash-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000001_tool-bash-1",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "tool",
+            "callID": "tool-bash-1",
+            "tool": "bash",
+            "state": {
+              "status": "completed",
+              "input": {
+                "intent": "shell",
+                "kind": "execute",
+                "summary": "Terminal",
+                "command": "printf hi",
+                "description": "printf hi"
+              },
+              "output": "",
+              "title": "bash",
+              "metadata": {
+                "acp": {
+                  "client": "claude-acp",
+                  "kind": "execute",
+                  "intent": "shell",
+                  "status": "completed",
+                  "title": "Terminal",
+                  "summary": "Terminal",
+                  "command": "printf hi",
+                  "rawInput": {
+                    "command": "printf hi"
+                  },
+                  "extractor": "claude-shell",
+                  "toolCallId": "tool-bash-1",
+                  "rawOutput": {
+                    "stdout": "hi"
+                  },
+                  "stats": {
+                    "stdout": "hi"
+                  }
+                }
+              },
+              "time": {
+                "start": 1060,
+                "end": 1060
+              }
+            },
+            "metadata": {
+              "acp": {
+                "client": "claude-acp",
+                "kind": "execute",
+                "intent": "shell",
+                "status": "completed",
+                "title": "Terminal",
+                "summary": "Terminal",
+                "command": "printf hi",
+                "rawInput": {
+                  "command": "printf hi"
+                },
+                "extractor": "claude-shell",
+                "toolCallId": "tool-bash-1",
+                "rawOutput": {
+                  "stdout": "hi"
+                },
+                "stats": {
+                  "stdout": "hi"
+                }
+              }
+            }
+          },
+          "time": 1060
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "runtime.diagnostic:ses_harness_matrix_claude-acp:projection.opencode_compat.duplicate_terminal_tool_update",
+        "type": "runtime.diagnostic",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "projection": "opencode-compat",
+          "phase": "ingest",
+          "code": "projection.opencode_compat.duplicate_terminal_tool_update",
+          "message": "OpenCode compatibility projection ignored a duplicate terminal tool update",
+          "severity": "warn",
+          "eventType": "tool-output"
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000002_tool-read-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000002_tool-read-1",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "tool",
+            "callID": "tool-read-1",
+            "tool": "read",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "read",
+                "kind": "read",
+                "summary": "Read File",
+                "filePath": "src/index.ts",
+                "path": "src/index.ts",
+                "sourcePath": "src/index.ts",
+                "files": [
+                  "src/index.ts"
+                ]
+              },
+              "metadata": {
+                "acp": {
+                  "client": "claude-acp",
+                  "kind": "read",
+                  "intent": "read",
+                  "status": "running",
+                  "title": "Read File",
+                  "summary": "Read File",
+                  "path": "src/index.ts",
+                  "filePath": "src/index.ts",
+                  "sourcePath": "src/index.ts",
+                  "files": [
+                    "src/index.ts"
+                  ],
+                  "locations": [
+                    {
+                      "path": "src/index.ts",
+                      "line": 3
+                    }
+                  ],
+                  "rawInput": {
+                    "filePath": "src/index.ts"
+                  },
+                  "extractor": "claude-read",
+                  "toolCallId": "tool-read-1"
+                }
+              },
+              "time": {
+                "start": 1070
+              }
+            },
+            "metadata": {
+              "acp": {
+                "client": "claude-acp",
+                "kind": "read",
+                "intent": "read",
+                "status": "running",
+                "title": "Read File",
+                "summary": "Read File",
+                "path": "src/index.ts",
+                "filePath": "src/index.ts",
+                "sourcePath": "src/index.ts",
+                "files": [
+                  "src/index.ts"
+                ],
+                "locations": [
+                  {
+                    "path": "src/index.ts",
+                    "line": 3
+                  }
+                ],
+                "rawInput": {
+                  "filePath": "src/index.ts"
+                },
+                "extractor": "claude-read",
+                "toolCallId": "tool-read-1"
+              }
+            }
+          },
+          "time": 1070
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000002_tool-read-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000002_tool-read-1",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "tool",
+            "callID": "tool-read-1",
+            "tool": "read",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "read",
+                "kind": "read",
+                "summary": "Read File",
+                "filePath": "src/index.ts",
+                "path": "src/index.ts",
+                "sourcePath": "src/index.ts",
+                "files": [
+                  "src/index.ts"
+                ]
+              },
+              "metadata": {
+                "acp": {
+                  "client": "claude-acp",
+                  "kind": "read",
+                  "intent": "read",
+                  "status": "running",
+                  "title": "Read File",
+                  "summary": "Read File",
+                  "path": "src/index.ts",
+                  "filePath": "src/index.ts",
+                  "sourcePath": "src/index.ts",
+                  "files": [
+                    "src/index.ts"
+                  ],
+                  "locations": [
+                    {
+                      "path": "src/index.ts",
+                      "line": 3
+                    }
+                  ],
+                  "rawInput": {
+                    "filePath": "src/index.ts"
+                  },
+                  "extractor": "claude-read",
+                  "toolCallId": "tool-read-1"
+                }
+              },
+              "time": {
+                "start": 1080
+              }
+            },
+            "metadata": {
+              "acp": {
+                "client": "claude-acp",
+                "kind": "read",
+                "intent": "read",
+                "status": "running",
+                "title": "Read File",
+                "summary": "Read File",
+                "path": "src/index.ts",
+                "filePath": "src/index.ts",
+                "sourcePath": "src/index.ts",
+                "files": [
+                  "src/index.ts"
+                ],
+                "locations": [
+                  {
+                    "path": "src/index.ts",
+                    "line": 3
+                  }
+                ],
+                "rawInput": {
+                  "filePath": "src/index.ts"
+                },
+                "extractor": "claude-read",
+                "toolCallId": "tool-read-1"
+              }
+            }
+          },
+          "time": 1080
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000002_tool-read-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000002_tool-read-1",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "tool",
+            "callID": "tool-read-1",
+            "tool": "read",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "read",
+                "kind": "read",
+                "summary": "Read File",
+                "filePath": "src/index.ts",
+                "path": "src/index.ts",
+                "sourcePath": "src/index.ts",
+                "files": [
+                  "src/index.ts"
+                ]
+              },
+              "metadata": {
+                "acp": {
+                  "client": "claude-acp",
+                  "kind": "read",
+                  "intent": "read",
+                  "status": "running",
+                  "title": "Read File",
+                  "summary": "Read File",
+                  "path": "src/index.ts",
+                  "filePath": "src/index.ts",
+                  "sourcePath": "src/index.ts",
+                  "files": [
+                    "src/index.ts"
+                  ],
+                  "locations": [
+                    {
+                      "path": "src/index.ts",
+                      "line": 3
+                    }
+                  ],
+                  "rawInput": {
+                    "filePath": "src/index.ts"
+                  },
+                  "extractor": "claude-read",
+                  "toolCallId": "tool-read-1"
+                }
+              },
+              "time": {
+                "start": 1090
+              }
+            },
+            "metadata": {
+              "acp": {
+                "client": "claude-acp",
+                "kind": "read",
+                "intent": "read",
+                "status": "running",
+                "title": "Read File",
+                "summary": "Read File",
+                "path": "src/index.ts",
+                "filePath": "src/index.ts",
+                "sourcePath": "src/index.ts",
+                "files": [
+                  "src/index.ts"
+                ],
+                "locations": [
+                  {
+                    "path": "src/index.ts",
+                    "line": 3
+                  }
+                ],
+                "rawInput": {
+                  "filePath": "src/index.ts"
+                },
+                "extractor": "claude-read",
+                "toolCallId": "tool-read-1"
+              }
+            }
+          },
+          "time": 1090
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000002_tool-read-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000002_tool-read-1",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "tool",
+            "callID": "tool-read-1",
+            "tool": "read",
+            "state": {
+              "status": "completed",
+              "input": {
+                "intent": "read",
+                "kind": "read",
+                "summary": "Read File",
+                "filePath": "src/index.ts",
+                "path": "src/index.ts",
+                "sourcePath": "src/index.ts",
+                "files": [
+                  "src/index.ts"
+                ]
+              },
+              "output": "",
+              "title": "read",
+              "metadata": {
+                "acp": {
+                  "client": "claude-acp",
+                  "kind": "read",
+                  "intent": "read",
+                  "status": "completed",
+                  "title": "Read File",
+                  "summary": "Read File",
+                  "path": "src/index.ts",
+                  "filePath": "src/index.ts",
+                  "sourcePath": "src/index.ts",
+                  "files": [
+                    "src/index.ts"
+                  ],
+                  "locations": [
+                    {
+                      "path": "src/index.ts",
+                      "line": 3
+                    }
+                  ],
+                  "rawInput": {
+                    "filePath": "src/index.ts"
+                  },
+                  "extractor": "claude-read",
+                  "toolCallId": "tool-read-1",
+                  "rawOutput": {
+                    "content": "export const x = 1"
+                  },
+                  "body": "export const x = 1",
+                  "stats": {
+                    "content": "export const x = 1"
+                  }
+                }
+              },
+              "time": {
+                "start": 1100,
+                "end": 1100
+              }
+            },
+            "metadata": {
+              "acp": {
+                "client": "claude-acp",
+                "kind": "read",
+                "intent": "read",
+                "status": "completed",
+                "title": "Read File",
+                "summary": "Read File",
+                "path": "src/index.ts",
+                "filePath": "src/index.ts",
+                "sourcePath": "src/index.ts",
+                "files": [
+                  "src/index.ts"
+                ],
+                "locations": [
+                  {
+                    "path": "src/index.ts",
+                    "line": 3
+                  }
+                ],
+                "rawInput": {
+                  "filePath": "src/index.ts"
+                },
+                "extractor": "claude-read",
+                "toolCallId": "tool-read-1",
+                "rawOutput": {
+                  "content": "export const x = 1"
+                },
+                "body": "export const x = 1",
+                "stats": {
+                  "content": "export const x = 1"
+                }
+              }
+            }
+          },
+          "time": 1100
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "runtime.diagnostic:ses_harness_matrix_claude-acp:projection.opencode_compat.duplicate_terminal_tool_update",
+        "type": "runtime.diagnostic",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "projection": "opencode-compat",
+          "phase": "ingest",
+          "code": "projection.opencode_compat.duplicate_terminal_tool_update",
+          "message": "OpenCode compatibility projection ignored a duplicate terminal tool update",
+          "severity": "warn",
+          "eventType": "tool-output"
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000003_tool-task-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000003_tool-task-1",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "tool",
+            "callID": "tool-task-1",
+            "tool": "task",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "task",
+                "kind": "other",
+                "summary": "Task",
+                "subagentType": "code-reviewer",
+                "description": "Review the auth module",
+                "subagent_type": "code-reviewer"
+              },
+              "metadata": {
+                "acp": {
+                  "client": "claude-acp",
+                  "kind": "other",
+                  "intent": "task",
+                  "status": "running",
+                  "title": "Task",
+                  "summary": "Task",
+                  "rawInput": {
+                    "description": "Review the auth module",
+                    "subagent_type": "code-reviewer"
+                  },
+                  "extractor": "claude-task",
+                  "toolCallId": "tool-task-1",
+                  "subagentType": "code-reviewer"
+                }
+              },
+              "time": {
+                "start": 1110
+              }
+            },
+            "metadata": {
+              "acp": {
+                "client": "claude-acp",
+                "kind": "other",
+                "intent": "task",
+                "status": "running",
+                "title": "Task",
+                "summary": "Task",
+                "rawInput": {
+                  "description": "Review the auth module",
+                  "subagent_type": "code-reviewer"
+                },
+                "extractor": "claude-task",
+                "toolCallId": "tool-task-1",
+                "subagentType": "code-reviewer"
+              }
+            }
+          },
+          "time": 1110
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000003_tool-task-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000003_tool-task-1",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "tool",
+            "callID": "tool-task-1",
+            "tool": "task",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "task",
+                "kind": "other",
+                "summary": "Task",
+                "subagentType": "code-reviewer",
+                "description": "Review the auth module",
+                "subagent_type": "code-reviewer"
+              },
+              "metadata": {
+                "acp": {
+                  "client": "claude-acp",
+                  "kind": "other",
+                  "intent": "task",
+                  "status": "running",
+                  "title": "Task",
+                  "summary": "Task",
+                  "rawInput": {
+                    "description": "Review the auth module",
+                    "subagent_type": "code-reviewer"
+                  },
+                  "extractor": "claude-task",
+                  "toolCallId": "tool-task-1",
+                  "subagentType": "code-reviewer"
+                }
+              },
+              "time": {
+                "start": 1120
+              }
+            },
+            "metadata": {
+              "acp": {
+                "client": "claude-acp",
+                "kind": "other",
+                "intent": "task",
+                "status": "running",
+                "title": "Task",
+                "summary": "Task",
+                "rawInput": {
+                  "description": "Review the auth module",
+                  "subagent_type": "code-reviewer"
+                },
+                "extractor": "claude-task",
+                "toolCallId": "tool-task-1",
+                "subagentType": "code-reviewer"
+              }
+            }
+          },
+          "time": 1120
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "message.part.updated:message-1:000003_tool-task-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "part": {
+            "id": "000003_tool-task-1",
+            "sessionID": "ses_harness_matrix_claude-acp",
+            "messageID": "message-1",
+            "type": "tool",
+            "callID": "tool-task-1",
+            "tool": "task",
+            "state": {
+              "status": "completed",
+              "input": {
+                "intent": "task",
+                "kind": "other",
+                "summary": "Task",
+                "subagentType": "code-reviewer",
+                "description": "Review the auth module",
+                "subagent_type": "code-reviewer"
+              },
+              "output": "",
+              "title": "task",
+              "metadata": {
+                "acp": {
+                  "client": "claude-acp",
+                  "kind": "other",
+                  "intent": "task",
+                  "status": "completed",
+                  "title": "Task",
+                  "summary": "Task",
+                  "rawInput": {
+                    "description": "Review the auth module",
+                    "subagent_type": "code-reviewer"
+                  },
+                  "extractor": "claude-task",
+                  "toolCallId": "tool-task-1",
+                  "subagentType": "code-reviewer"
+                },
+                "sessionId": "ses_child_claude_task"
+              },
+              "time": {
+                "start": 1130,
+                "end": 1130
+              }
+            },
+            "metadata": {
+              "acp": {
+                "client": "claude-acp",
+                "kind": "other",
+                "intent": "task",
+                "status": "completed",
+                "title": "Task",
+                "summary": "Task",
+                "rawInput": {
+                  "description": "Review the auth module",
+                  "subagent_type": "code-reviewer"
+                },
+                "extractor": "claude-task",
+                "toolCallId": "tool-task-1",
+                "subagentType": "code-reviewer"
+              },
+              "sessionId": "ses_child_claude_task"
+            }
+          },
+          "time": 1130
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "runtime.diagnostic:ses_harness_matrix_claude-acp:projection.opencode_compat.duplicate_terminal_tool_update",
+        "type": "runtime.diagnostic",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "projection": "opencode-compat",
+          "phase": "ingest",
+          "code": "projection.opencode_compat.duplicate_terminal_tool_update",
+          "message": "OpenCode compatibility projection ignored a duplicate terminal tool update",
+          "severity": "warn",
+          "eventType": "tool-output"
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
+      "payload": {
+        "id": "todo.updated:ses_harness_matrix_claude-acp",
+        "type": "todo.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-acp",
+          "todos": [
+            {
+              "content": "Ship the fix",
+              "status": "completed",
+              "priority": "medium"
+            },
+            {
+              "content": "Write tests",
+              "status": "in_progress",
+              "priority": "medium"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

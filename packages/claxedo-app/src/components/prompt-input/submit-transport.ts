@@ -201,11 +201,12 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     url.searchParams.set("directory", configInput.directory)
     url.searchParams.set("harness", configInput.harnessType)
     try {
-      await sessionRequest(configInput.directory, `${url.pathname}${url.search}`, {
+      const res = await sessionRequest(configInput.directory, `${url.pathname}${url.search}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: next,
       })
+      if (!res.ok) throw new Error((await res.text().catch(() => "")) || `session config save failed: ${res.status}`)
       queryClient.setQueryData(queryKey, next)
     } catch (err) {
       input.showToast({

@@ -218,13 +218,11 @@ function mergeBrowserRuns(rawRuns: BrowserRun[]): BrowserRun {
 // The flow registry. Each driver returns one headline FrameMetric + debug
 // sub-metrics. To add a flow: add it to ScenarioId/FLOWS/seed, then add a driver.
 const flowDrivers: Record<ScenarioId, (page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>) => Promise<FlowResult>> = {
-  "launch-empty-home": launchEmptyHome,
   "launch-project": launchProject,
   "session-switch": sessionSwitch,
   "live-terminal-switch": liveTerminalSwitch,
   "large-diff-toggle": largeDiffToggle,
   "workspace-switch": workspaceSwitch,
-  "three-pane-resize": threePaneResize,
 }
 
 async function runFlow(scenario: ScenarioId, page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>) {
@@ -234,23 +232,6 @@ async function runFlow(scenario: ScenarioId, page: Page, app: BrowserTarget, fix
 // Launch flows: the headline samples the post-load settle (first-frame smoothness)
 // while completionMs carries the user-visible time-to-ready. Frame sampling cannot
 // span the full navigation because page.goto replaces the document (and our recorder).
-async function launchEmptyHome(page: Page, app: BrowserTarget, _fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
-  const launch = await launchTo(page, app, "/")
-  const headline = await measureInteraction(page, "launch-empty-home", async () => {
-    await focusFirstInput(page)
-    await settleForVideo(page)
-  })
-  headline.completionMs = Math.round(launch.ready * 100) / 100
-  return {
-    headline,
-    debug: [
-      lower("launch_first_window_ms", launch.domContentLoaded),
-      lower("launch_first_useful_screen_ms", launch.useful),
-      lower("launch_workspace_ready_ms", launch.ready),
-    ],
-  }
-}
-
 async function launchProject(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
   const launch = await launchTo(page, app, workspacePath(fixture.directory))
   await showSessionInventory(page, fixture, fixture.sessions.length)
@@ -446,85 +427,6 @@ async function workspaceSwitch(page: Page, app: BrowserTarget, fixture: ReturnTy
   const files = await measureWorkspaceFiles(page, fixture, { settle: "frame" })
   await settleForVideo(page)
   return { headline, debug: files }
-}
-
-async function threePaneResize(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
-  await launchTo(page, app, sessionPath(fixture.sessions[0]!, fixture.sessions[0]!.id))
-  await waitForTranscript(page, fixture, fixture.sessions[0]!.id, fixture.sessions[0]!.title)
-  await openTerminalSurface(page, fixture)
-  await openReviewSurface(page, fixture)
-  await waitForReviewStable(page)
-  // Headline: drag the real pane divider back and forth — the canonical layout jank.
-  // This redistributes pane widths (NOT a browser-window resize), so the frames we
-  // sample are the app's actual relayout work, and the video shows the divider move.
-  let drag = { ms: 0, movedPx: 0 }
-  const headline = await measureInteraction(page, "three-pane-resize", async () => {
-    drag = await dragPaneDivider(page, fixture)
-  })
-  await settleForVideo(page)
-  return {
-    headline,
-    debug: [
-      lower("divider_drag_ms", Math.round(drag.ms * 100) / 100),
-      lower("divider_moved_px", Math.round(drag.movedPx), "px"),
-    ],
-  }
-}
-
-// Drive a real pointer drag on a pane divider (content↔review separator, or the
-// sidebar resize handle as a fallback) and SELF-VERIFY it actually moved the panes:
-// if the divider's x-position doesn't change, the flow is faking a resize and we
-// fail it. Returns the wall-clock of the drag.
-async function dragPaneDivider(page: Page, fixture: ReturnType<typeof fixtureFor>) {
-  // The content↔review divider (the workspace-panel separator) is the meaningful
-  // three-pane handle. Fall back to the generic layout resize-handle only if it's
-  // absent. We pin to the specific element so the self-check reads the same handle.
-  const selector = '[role="separator"][aria-label="Resize workspace panel"]'
-  const fallback = '[data-component="resize-handle"][data-direction="horizontal"]'
-  const handle = page.locator(selector).first()
-  const useSelector = (await handle.isVisible({ timeout: 5_000 }).catch(() => false)) ? selector : fallback
-  const target = page.locator(useSelector).first()
-  if (!(await target.isVisible({ timeout: 2_000 }).catch(() => false))) {
-    recordVisualFailure(fixture, "no pane divider was visible to resize")
-    return { ms: 0, movedPx: 0 }
-  }
-  const before = await target.boundingBox()
-  if (!before) {
-    recordVisualFailure(fixture, "pane divider had no bounding box")
-    return { ms: 0, movedPx: 0 }
-  }
-  const cx = before.x + before.width / 2
-  const cy = before.y + before.height / 2
-  const dividerX = () =>
-    page.evaluate((sel) => {
-      const el = document.querySelector(sel)
-      return el ? el.getBoundingClientRect().x : -1
-    }, useSelector)
-
-  const started = performance.now()
-  await page.mouse.move(cx, cy)
-  await page.mouse.down()
-  // Paced sweep (~1s round trip) so the divider visibly tracks on the video and each
-  // relayout frame is sampled. The wait between steps is the human cadence of a drag.
-  for (let offset = 15; offset <= 180; offset += 15) {
-    await page.mouse.move(cx - offset, cy)
-    await page.waitForTimeout(25)
-  }
-  const midDragX = await dividerX() // divider should now sit ~180px left of where we grabbed it
-  for (let offset = 180; offset >= 0; offset -= 15) {
-    await page.mouse.move(cx - offset, cy)
-    await page.waitForTimeout(25)
-  }
-  await page.mouse.up()
-  const ms = performance.now() - started
-  const movedPx = midDragX < 0 ? 0 : Math.abs(midDragX - before.x)
-  // Anti-theater self-check: if the divider didn't actually move, the flow is faking
-  // a resize — fail it loudly instead of reporting jank for an interaction that never
-  // happened. `divider_moved_px` in the debug output is the hard proof it resized.
-  if (movedPx < 40) {
-    recordVisualFailure(fixture, `pane divider did not move during drag (x ${Math.round(before.x)} → ${Math.round(midDragX)})`)
-  }
-  return { ms, movedPx }
 }
 
 async function launchTo(page: Page, app: BrowserTarget, pathName: string) {
@@ -1254,11 +1156,10 @@ function loadingOnly(text: string) {
   return normalized === "Loading..." || normalized === "Loading" || normalized.endsWith(" Loading...")
 }
 
-function sessionScenario(scenario: ScenarioId) {
-  // Flows that don't navigate into a specific session — the harness shouldn't
-  // fail them on "session messages were not requested". Only the empty-home
-  // launch qualifies; every other flow opens a session.
-  return scenario !== "launch-empty-home"
+function sessionScenario(_scenario: ScenarioId) {
+  // Every surviving flow navigates into a specific session, so this always
+  // qualifies for the "session messages were requested" check.
+  return true
 }
 
 export function missingSessionMessageRequest(scenario: ScenarioId, fixture: SessionRequestCountsForValidation) {
@@ -2320,29 +2221,6 @@ function workspaceLabel(fixture: ReturnType<typeof fixtureFor>, directory: strin
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
-
-async function focusFirstInput(page: Page) {
-  const focused = await page.evaluate(() => {
-    for (const selector of [
-      "[data-component='session-new-design-text']",
-      "[data-component='session-composer-text']",
-      "textarea",
-      "input",
-      "[contenteditable=true]",
-    ]) {
-      const element = document.querySelector<HTMLElement>(selector)
-      if (!element) continue
-      const rect = element.getBoundingClientRect()
-      const style = window.getComputedStyle(element)
-      if (!rect.width || !rect.height || style.visibility === "hidden" || style.display === "none") continue
-      element.focus()
-      return true
-    }
-    return false
-  })
-  if (focused) return
-  await page.mouse.click(20, 20)
 }
 
 async function scrollMain(page: Page, deltaY: number) {

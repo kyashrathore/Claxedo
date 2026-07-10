@@ -36,6 +36,8 @@ const FORBIDDEN_BARE = [
   "fs/promises",
   "posthog-node",
   "modal",
+  "tokentracker-cli",
+  "tokentracker-cli/src/lib/usage-limits.js",
   "@vercel/sandbox",
 ]
 
@@ -50,6 +52,7 @@ const FORBIDDEN_LOCAL = [
   "credentials/local",
   "cloud/sandbox",
   "server.ts",
+  "server-usage-limits",
   "workgraph-execution",
   "central-runtime",
   "central-session-runtime",

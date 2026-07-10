@@ -215,6 +215,25 @@ export function promptSessionStatusStage(sessionID: string | undefined) {
   return promptSessionStatusMeta(sessionID)?.stage
 }
 
+/**
+ * Notifies `listener` whenever this session's status-meta cache entry changes
+ * (stage escalation writes AND the remove-on-reconcile clear). status-meta is
+ * written with plain `setQueryData`/`removeQueries` — there is no query
+ * observer on it — so UI reads of `promptSessionStatusStage` are NOT reactive
+ * on their own; consumers that render the stage must resubscribe through this
+ * to re-read after each escalation timer fires.
+ */
+export function subscribePromptSessionStatusMeta(sessionID: string, listener: VoidFunction) {
+  const target = promptSessionStatusMetaKey(sessionID)
+  return queryClient.getQueryCache().subscribe((event) => {
+    const key = event.query.queryKey
+    if (
+      key.length === target.length &&
+      key.every((part: unknown, index: number) => part === target[index])
+    ) listener()
+  })
+}
+
 export function clearAllPromptSessionStatusTimeoutsForTest() {
   for (const sessionID of promptSessionStatusTimeouts.keys()) {
     clearPromptSessionStatusTimeouts(sessionID)

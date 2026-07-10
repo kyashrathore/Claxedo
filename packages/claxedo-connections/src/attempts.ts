@@ -12,25 +12,29 @@ type PendingEntry = {
   completing: boolean
   verifier: string
   integrationId: string
+  owner?: string
+  scope: "team" | "personal"
   createdAt: number
   expiresAt: number
 }
 type TerminalEntry = {
   status: "complete" | "failed" | "expired"
   integrationId: string
+  owner?: string
+  scope: "team" | "personal"
   message?: string
   removeAt: number
 }
 type AttemptEntry = PendingEntry | TerminalEntry
 
 export type Attempts = {
-  create(integrationId: string): { state: string; verifier: string }
+  create(input: { integrationId: string; owner?: string; scope: "team" | "personal" }): { state: string; verifier: string }
   // Atomic consume: returns the pending entry exactly once (flips
   // `completing`); unknown, expired, terminal, or already-consuming states
   // return undefined.
-  consume(state: string): { integrationId: string; verifier: string } | undefined
+  consume(state: string): { integrationId: string; owner?: string; scope: "team" | "personal"; verifier: string } | undefined
   settle(state: string, ok: boolean, message?: string): void
-  status(state: string): { status: AttemptStatus; integrationId: string; message?: string } | undefined
+  status(state: string): { status: AttemptStatus; integrationId: string; scope: "team" | "personal"; message?: string } | undefined
   sweep(): void
   dispose(): void
 }
@@ -50,7 +54,13 @@ export function createAttempts(options: {
     const ts = now()
     for (const [state, entry] of map) {
       if (entry.status === "pending" && entry.expiresAt <= ts) {
-        map.set(state, { status: "expired", integrationId: entry.integrationId, removeAt: ts + retentionMs })
+        map.set(state, {
+          status: "expired",
+          integrationId: entry.integrationId,
+          ...(entry.owner !== undefined ? { owner: entry.owner } : {}),
+          scope: entry.scope,
+          removeAt: ts + retentionMs,
+        })
         continue
       }
       if (entry.status !== "pending" && entry.removeAt <= ts) map.delete(state)
@@ -63,7 +73,7 @@ export function createAttempts(options: {
   interval?.unref?.()
 
   return {
-    create(integrationId) {
+    create(input) {
       const state = randomBytes(32).toString("base64url")
       const verifier = randomBytes(32).toString("base64url")
       const ts = now()
@@ -71,7 +81,9 @@ export function createAttempts(options: {
         status: "pending",
         completing: false,
         verifier,
-        integrationId,
+        integrationId: input.integrationId,
+        ...(input.owner !== undefined ? { owner: input.owner } : {}),
+        scope: input.scope,
         createdAt: ts,
         expiresAt: ts + ttlMs,
       })
@@ -81,11 +93,22 @@ export function createAttempts(options: {
       const entry = map.get(state)
       if (!entry || entry.status !== "pending" || entry.completing) return undefined
       if (entry.expiresAt <= now()) {
-        map.set(state, { status: "expired", integrationId: entry.integrationId, removeAt: now() + retentionMs })
+        map.set(state, {
+          status: "expired",
+          integrationId: entry.integrationId,
+          ...(entry.owner !== undefined ? { owner: entry.owner } : {}),
+          scope: entry.scope,
+          removeAt: now() + retentionMs,
+        })
         return undefined
       }
       entry.completing = true
-      return { integrationId: entry.integrationId, verifier: entry.verifier }
+      return {
+        integrationId: entry.integrationId,
+        ...(entry.owner !== undefined ? { owner: entry.owner } : {}),
+        scope: entry.scope,
+        verifier: entry.verifier,
+      }
     },
     settle(state, ok, message) {
       const entry = map.get(state)
@@ -93,6 +116,8 @@ export function createAttempts(options: {
       map.set(state, {
         status: ok ? "complete" : "failed",
         integrationId: entry.integrationId,
+        ...(entry.owner !== undefined ? { owner: entry.owner } : {}),
+        scope: entry.scope,
         ...(message ? { message } : {}),
         removeAt: now() + retentionMs,
       })
@@ -103,6 +128,7 @@ export function createAttempts(options: {
       return {
         status: entry.status,
         integrationId: entry.integrationId,
+        scope: entry.scope,
         ...(entry.status !== "pending" && entry.message ? { message: entry.message } : {}),
       }
     },

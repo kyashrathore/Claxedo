@@ -1,10 +1,9 @@
 /**
- * Host adapters: implement @claxedo/connections store ports over
- * claxedo-server's credential registry (via the ControlPlaneCredentials
- * port) and the claxedo_connection drizzle table. The package stays
- * decision-free; everything claxedo-specific lives here.
+ * Host adapters: implement @claxedo/connections store ports over the claxedo
+ * credential registry and connection table. Owner values remain opaque here;
+ * identity and authorization belong to connections-host.ts.
  */
-import { eq } from "drizzle-orm"
+import { and, eq, isNull } from "drizzle-orm"
 import {
   ConnectionsUnavailableError,
   type ConnectionRow,
@@ -15,8 +14,31 @@ import {
 import type { ControlPlaneCredentials } from "../control-plane/services"
 import { ClaxedoDB } from "../storage/db"
 import { ClaxedoConnectionTable } from "../storage/connection.sql"
+import { Log } from "../log"
+
+const log = Log.create({ service: "connections-store-adapter" })
+
+function legacyProviderId(providerId: string) {
+  if (!providerId.startsWith("integration:")) return
+  const record = ClaxedoDB.use((db) =>
+    db.select().from(ClaxedoConnectionTable).where(eq(ClaxedoConnectionTable.id, providerId.slice("integration:".length))).get(),
+  )
+  if (!record || providerId === `integration:${record.integration_id}`) return
+  return `integration:${record.integration_id}`
+}
 
 export function createCredentialStoreAdapter(credentials: ControlPlaneCredentials): CredentialStorePort {
+  const credentialFor = async (providerId: string) => {
+    const current = await credentials.getCredentialByProvider(providerId)
+    if (current) return { credential: current, providerId }
+    const legacyId = legacyProviderId(providerId)
+    if (!legacyId) return
+    const legacy = await credentials.getCredentialByProvider(legacyId)
+    if (!legacy) return
+    log.warn("using legacy connection credential provider id", { providerId, legacyId })
+    return { credential: legacy, providerId: legacyId }
+  }
+
   return {
     async put(input) {
       await credentials.putCredential({
@@ -28,7 +50,8 @@ export function createCredentialStoreAdapter(credentials: ControlPlaneCredential
       })
     },
     async get(providerId) {
-      const meta = await credentials.getCredentialByProvider(providerId)
+      const result = await credentialFor(providerId)
+      const meta = result?.credential
       if (!meta || (meta.kind !== "api_key" && meta.kind !== "oauth_token")) return undefined
       return {
         kind: meta.kind,
@@ -38,27 +61,26 @@ export function createCredentialStoreAdapter(credentials: ControlPlaneCredential
     },
     async resolveSecret(providerId) {
       if (!credentials.resolveCredentialSecret) throw new ConnectionsUnavailableError()
-      return await credentials.resolveCredentialSecret(providerId)
+      const result = await credentialFor(providerId)
+      if (!result) return null
+      return credentials.resolveCredentialSecret(result.providerId)
     },
     async readSecret(providerId) {
-      // The registry's secret read is available-status-only. Re-verify needs
-      // the stored secret regardless of status, so restore "available" first
-      // and let the caller's verify outcome set the final status. Single
-      // user-initiated flow on a single-process server: the window is
-      // microseconds and re-verify immediately overwrites the status.
       if (!credentials.resolveCredentialSecret) throw new ConnectionsUnavailableError()
-      const meta = await credentials.getCredentialByProvider(providerId)
-      if (!meta) return null
-      if (meta.status !== "available") await credentials.updateCredentialStatus(meta.id, "available")
-      return await credentials.resolveCredentialSecret(providerId)
+      const result = await credentialFor(providerId)
+      if (!result) return null
+      if (result.credential.status !== "available") await credentials.updateCredentialStatus(result.credential.id, "available")
+      return credentials.resolveCredentialSecret(result.providerId)
     },
     async setStatus(providerId, status, lastError) {
-      const meta = await credentials.getCredentialByProvider(providerId)
-      if (!meta) return
-      await credentials.updateCredentialStatus(meta.id, status, lastError)
+      const result = await credentialFor(providerId)
+      if (!result) return
+      await credentials.updateCredentialStatus(result.credential.id, status, lastError)
     },
     async deleteByProvider(providerId) {
       await credentials.deleteCredentialsByProvider(providerId)
+      const legacyId = legacyProviderId(providerId)
+      if (legacyId) await credentials.deleteCredentialsByProvider(legacyId)
     },
   }
 }
@@ -67,7 +89,9 @@ type ConnectionRowRecord = typeof ClaxedoConnectionTable.$inferSelect
 
 function toRow(record: ConnectionRowRecord): ConnectionRow {
   return {
+    id: record.id,
     integrationId: record.integration_id,
+    ...(record.owner !== null ? { owner: record.owner } : {}),
     ...(record.account_label !== null ? { accountLabel: record.account_label } : {}),
     grantedCapabilities: JSON.parse(record.granted_capabilities) as IntegrationCapability[],
     fields: JSON.parse(record.fields) as Record<string, string>,
@@ -80,39 +104,53 @@ export function createConnectionStoreAdapter(): ConnectionStorePort {
   return {
     async upsert(row) {
       const values = {
+        id: row.id,
         integration_id: row.integrationId,
+        owner: row.owner ?? null,
         account_label: row.accountLabel ?? null,
         granted_capabilities: JSON.stringify(row.grantedCapabilities),
         fields: JSON.stringify(row.fields),
         created_at: row.createdAt,
         updated_at: row.updatedAt,
       }
-      ClaxedoDB.use((db) =>
-        db
-          .insert(ClaxedoConnectionTable)
-          .values(values)
-          .onConflictDoUpdate({ target: ClaxedoConnectionTable.integration_id, set: values })
-          .run(),
-      )
+      const existing = await this.get(row.integrationId, row.owner)
+      if (existing) {
+        ClaxedoDB.use((db) => db.update(ClaxedoConnectionTable).set({ ...values, id: existing.id }).where(eq(ClaxedoConnectionTable.id, existing.id)).run())
+        return
+      }
+      ClaxedoDB.use((db) => db.insert(ClaxedoConnectionTable).values(values).run())
     },
-    async get(integrationId) {
+    async get(integrationId, owner) {
       const record = ClaxedoDB.use((db) =>
-        db.select().from(ClaxedoConnectionTable).where(eq(ClaxedoConnectionTable.integration_id, integrationId)).get(),
+        db
+          .select()
+          .from(ClaxedoConnectionTable)
+          .where(and(
+            eq(ClaxedoConnectionTable.integration_id, integrationId),
+            owner === undefined ? isNull(ClaxedoConnectionTable.owner) : eq(ClaxedoConnectionTable.owner, owner),
+          ))
+          .get(),
       )
       return record ? toRow(record) : undefined
     },
-    async list() {
-      const records = ClaxedoDB.use((db) => db.select().from(ClaxedoConnectionTable).all())
+    async getById(id) {
+      const record = ClaxedoDB.use((db) =>
+        db.select().from(ClaxedoConnectionTable).where(eq(ClaxedoConnectionTable.id, id)).get(),
+      )
+      return record ? toRow(record) : undefined
+    },
+    async list(filter) {
+      const records = ClaxedoDB.use((db) => {
+        if (filter?.owner === undefined) return db.select().from(ClaxedoConnectionTable).all()
+        if (filter.owner === null) return db.select().from(ClaxedoConnectionTable).where(isNull(ClaxedoConnectionTable.owner)).all()
+        return db.select().from(ClaxedoConnectionTable).where(eq(ClaxedoConnectionTable.owner, filter.owner)).all()
+      })
       return records.map(toRow)
     },
-    async delete(integrationId) {
-      const existing = ClaxedoDB.use((db) =>
-        db.select().from(ClaxedoConnectionTable).where(eq(ClaxedoConnectionTable.integration_id, integrationId)).get(),
-      )
+    async delete(id) {
+      const existing = await this.getById(id)
       if (!existing) return false
-      ClaxedoDB.use((db) =>
-        db.delete(ClaxedoConnectionTable).where(eq(ClaxedoConnectionTable.integration_id, integrationId)).run(),
-      )
+      ClaxedoDB.use((db) => db.delete(ClaxedoConnectionTable).where(eq(ClaxedoConnectionTable.id, id)).run())
       return true
     },
   }

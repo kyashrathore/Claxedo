@@ -5,7 +5,7 @@ import { createIntegrationsRoutes } from "./routes.js"
 import { createAttempts } from "./attempts.js"
 import { createMemoryConnectionStore, createMemoryCredentialStore } from "./stores/memory.js"
 
-function harness(gates: { gateDenies?: boolean; tokenGateDenies?: boolean } = {}) {
+function harness(gates: { gateDenies?: boolean; tokenGateDenies?: boolean; owner?: string; tokenOwner?: string } = {}) {
   const registry = createIntegrationRegistry()
   registry.register(
     {
@@ -22,15 +22,19 @@ function harness(gates: { gateDenies?: boolean; tokenGateDenies?: boolean } = {}
     { verify: async (_f, secret) => (secret === "good" ? { ok: true, accountLabel: "Acme" } : { ok: false, reason: "unauthorized" }) },
   )
   const credentials = createMemoryCredentialStore()
+  let nextId = 0
   const service = createConnectionsService({
     registry,
     credentials,
     connections: createMemoryConnectionStore(),
     attempts: createAttempts({ sweepIntervalMs: 0 }),
+    newId: () => `connection-${++nextId}`,
   })
   const app = createIntegrationsRoutes(service, {
     gate: () => (gates.gateDenies ? new Response("denied", { status: 403 }) : null),
     tokenGate: () => (gates.tokenGateDenies ? new Response("token denied", { status: 403 }) : null),
+    owner: () => gates.owner,
+    tokenOwner: () => gates.tokenOwner,
   })
   return { app, service, credentials }
 }
@@ -69,11 +73,11 @@ describe("integrations routes", () => {
     })
     expect(connect.status).toBe(200)
 
-    const listing = (await (await app.request("/")).json()) as { integrations: unknown[]; connections: Array<{ status: string }> }
+    const listing = (await (await app.request("/")).json()) as { integrations: unknown[]; connections: Array<{ id: string; status: string }> }
     expect(listing.integrations).toHaveLength(1)
     expect(listing.connections[0]).toMatchObject({ integrationId: "fake", status: "connected", accountLabel: "Acme" })
 
-    const token = await app.request("/connections/fake/token?capability=docs")
+    const token = await app.request(`/connections/${listing.connections[0]!.id}/token?capability=docs`)
     expect(token.status).toBe(200)
     expect(await token.json()).toEqual({
       token: "good",
@@ -87,11 +91,11 @@ describe("integrations routes", () => {
     expect((await app.request("/connections/nope/token?capability=docs")).status).toBe(404)
 
     await app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
-    expect((await app.request("/connections/fake/token?capability=channel")).status).toBe(403)
-    expect((await app.request("/connections/fake/token")).status).toBe(403)
+    expect((await app.request("/connections/connection-1/token?capability=channel")).status).toBe(403)
+    expect((await app.request("/connections/connection-1/token")).status).toBe(403)
 
-    await service.reportAuthFailure("fake", "x")
-    const res = await app.request("/connections/fake/token?capability=docs")
+    await service.reportAuthFailure("connection-1", "x")
+    const res = await app.request("/connections/connection-1/token?capability=docs")
     expect(res.status).toBe(409)
     expect(await res.json()).toEqual({ code: "connection_not_available", status: "error" })
   })
@@ -111,14 +115,49 @@ describe("integrations routes", () => {
     expect(await conflict.json()).toEqual({ ok: false, code: "connection_exists" })
   })
 
+  test("scopes connections by opaque owner and hides foreign personal rows", async () => {
+    const unsigned = harness()
+    const personalUnsigned = await unsigned.app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ ...connectBody, scope: "personal" }),
+    })
+    expect(personalUnsigned.status).toBe(422)
+    expect((await unsigned.app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })).status).toBe(200)
+    const unsignedListing = await (await unsigned.app.request("/")).json() as {
+      connections: Array<{ scope: string }>
+      personalScopeEnabled: boolean
+    }
+    expect(unsignedListing.connections).toEqual([expect.objectContaining({ scope: "team" })])
+    expect(unsignedListing.personalScopeEnabled).toBe(false)
+
+    const { app, service } = harness({ owner: "user-a", tokenOwner: "user-a" })
+    await app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    await app.request("/fake/connect", { method: "POST", body: JSON.stringify({ ...connectBody, scope: "personal" }) })
+    const ownerListing = await (await app.request("/")).json() as {
+      connections: Array<{ id: string; scope: string }>
+      personalScopeEnabled: boolean
+    }
+    expect(ownerListing.connections.map((connection) => connection.scope).sort()).toEqual(["personal", "team"])
+    expect(ownerListing.personalScopeEnabled).toBe(true)
+    const personal = ownerListing.connections.find((connection) => connection.scope === "personal")!
+    expect((await app.request(`/connections/${personal.id}/token?capability=docs`)).status).toBe(200)
+
+    const otherUser = createIntegrationsRoutes(service, { owner: () => "user-b", tokenOwner: () => "user-b" })
+    const otherListing = await (await otherUser.request("/")).json() as { connections: Array<{ scope: string }> }
+    expect(otherListing.connections).toEqual([expect.objectContaining({ scope: "team" })])
+    expect((await otherUser.request(`/connections/${personal.id}`, { method: "DELETE" })).status).toBe(404)
+    expect((await otherUser.request(`/connections/${personal.id}/reverify`, { method: "POST" })).status).toBe(404)
+    expect((await otherUser.request(`/connections/${personal.id}/token?capability=docs`)).status).toBe(404)
+  })
+
   test("reverify + auth-failure + delete flow", async () => {
     const { app } = harness()
     await app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
-    expect((await app.request("/connections/fake/auth-failure", { method: "POST", body: JSON.stringify({ reason: "401" }) })).status).toBe(204)
-    expect((await app.request("/connections/fake/token?capability=docs")).status).toBe(409)
-    expect((await app.request("/connections/fake/reverify", { method: "POST" })).status).toBe(200)
-    expect((await app.request("/connections/fake/token?capability=docs")).status).toBe(200)
-    expect((await app.request("/connections/fake", { method: "DELETE" })).status).toBe(200)
+    expect((await app.request("/connections/connection-1/auth-failure", { method: "POST", body: JSON.stringify({ reason: "401" }) })).status).toBe(204)
+    expect((await app.request("/connections/connection-1/token?capability=docs")).status).toBe(409)
+    expect((await app.request("/connections/connection-1/reverify", { method: "POST" })).status).toBe(200)
+    expect((await app.request("/connections/connection-1/token?capability=docs")).status).toBe(200)
+    expect((await app.request("/connections/connection-1", { method: "DELETE" })).status).toBe(200)
     expect((await app.request("/connections/nope", { method: "DELETE" })).status).toBe(404)
   })
 
@@ -129,7 +168,7 @@ describe("integrations routes", () => {
     // (and are responsible for scoping) any CORS middleware.
     const { app } = harness()
     await app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
-    const res = await app.request("/connections/fake/token?capability=docs", {
+    const res = await app.request("/connections/connection-1/token?capability=docs", {
       headers: { Origin: "http://localhost:6666" },
     })
     expect(res.status).toBe(200)

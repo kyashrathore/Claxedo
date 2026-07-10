@@ -100,4 +100,25 @@ describe("submit transport adapter", () => {
       },
     ])
   })
+
+  test("session config PATCH resolving with a non-2xx response shows a toast and does not cache the payload", async () => {
+    const adapter = createAdapter(() => new Response("server error", { status: 500 }))
+
+    await adapter.saveSessionConfig({
+      sessionID: "session-http-failed",
+      directory: "/repo/main",
+      harnessType: "codex",
+      agent: "build",
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(queryClient.getQueryData(savedSessionConfigQueryKey("session-http-failed"))).toBeUndefined()
+    expect(toasts).toEqual([
+      {
+        title: "Could not save session config",
+        description: "server error",
+        variant: "error",
+      },
+    ])
+  })
 })

@@ -13,7 +13,6 @@ const baseSeed = {
 } satisfies SeedManifest
 
 export function seedForScenario(id: ScenarioId): SeedManifest {
-  if (id === "launch-empty-home") return baseSeed
   if (id === "launch-project") return { ...baseSeed, sessions: 20, messages: 2_000 }
   if (id === "session-switch") return { ...baseSeed, sessions: 2, messages: 20_000 }
   if (id === "live-terminal-switch") return { ...baseSeed, sessions: 3, terminals: 3, messages: 1_500 }

@@ -49,7 +49,22 @@ export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTarge
         !!draftTab &&
         draftTab.id === input.surfaceId &&
         (!activeContentId || activeContentId === draftTab.id)
-      if (draftIsSubmittingSurface) {
+      if (draftIsSubmittingSurface && draftTab) {
+        // Retarget the submitting draft surface in place BEFORE navigating.
+        // The route-intent adapter matches contents by (directory, sessionId),
+        // so a draft left at sessionId "new" never matches the created
+        // session's route — openSession would mint a duplicate content while
+        // the draft stayed mounted (stashed) with a live Session() instance.
+        input.claxedoState?.meta.patch(draftTab.id, {
+          directory: input.sessionDirectory,
+          sessionId: input.session.id,
+          content: sessionContentPayload({
+            current: draftTab.content,
+            directory: input.sessionDirectory,
+            sessionId: input.session.id,
+            sessionRef: input.sessionRef,
+          }),
+        })
         queueMicrotask(() => input.navigate(createdSessionRoute({
           sessionID: input.session.id,
           sessionDirectory: input.sessionDirectory,

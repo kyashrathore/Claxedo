@@ -49,14 +49,14 @@ test("a below-120hz-but-above-60hz headline warns, does not fail", () => {
 })
 
 test("sustained sub-60hz frames fail the gate", () => {
-  const { status, failures } = gateHeadline(frame({ p95FrameMs: 20, worstFrameMs: 40, framesOver1667: 8 }), { scenario: "three-pane-resize" })
+  const { status, failures } = gateHeadline(frame({ p95FrameMs: 20, worstFrameMs: 40, framesOver1667: 8 }), { scenario: "session-switch" })
   expect(status).toBe("fail")
   expect(failures.length).toBeGreaterThan(0)
 })
 
 test("launch flows warn (not fail) on dropped frames, since they are load events", () => {
   const dropped = frame({ p95FrameMs: 0.2, worstFrameMs: 212, framesOver1667: 4 })
-  const launch = gateHeadline(dropped, { scenario: "launch-empty-home" })
+  const launch = gateHeadline(dropped, { scenario: "launch-project" })
   expect(launch.status).toBe("warn")
   expect(launch.failures).toEqual([])
 
@@ -140,7 +140,7 @@ test("browser validation accepts visibly rendered session transcript without leg
 test("explicit scenario selection wins over --all", () => {
   expect(scenarioIds(["run", "--all", "--scenario", "large-diff-toggle"])).toEqual(["large-diff-toggle"])
   expect(scenarioIds(["run", "--all"]).length).toBeGreaterThan(1)
-  expect(scenarioIds(["run"])).toEqual(["launch-empty-home"])
+  expect(scenarioIds(["run"])).toEqual(["launch-project"])
 })
 
 test("browser scenario crashes are reportable failed rows", () => {

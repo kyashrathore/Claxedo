@@ -303,6 +303,79 @@ describe("applyCreatedSessionTargetEffects", () => {
     expect(navigated).toBe("/w/%2Frepo%2Fmain/session/ses_1")
   })
 
+  test("focused submitting surface is retargeted in place before navigation (no duplicate content)", async () => {
+    // Regression pin: leaving the submitting draft at sessionId "new" makes the
+    // route-intent adapter mint a SECOND content for the created session while
+    // the draft stays mounted (stashed) with a live Session() page instance.
+    const patches: Array<{ id: string; patch: Record<string, unknown> }> = []
+    let opened = 0
+    let navigated = ""
+    const result = applyCreatedSessionTargetEffects({
+      created: true,
+      session: { id: "ses_1" },
+      sourceScope: "scope-1",
+      sessionDirectory: "/repo/main",
+      sessionRef: localSessionRef("ses_1"),
+      surfaceId: "tab-new",
+      shouldAutoAccept: false,
+      enableAutoAccept: () => undefined,
+      navigateOnCreate: true,
+      previousSessionId: "new",
+      setLayoutTabs: () => undefined,
+      navigate: (href) => {
+        navigated = href
+      },
+      publishCloudHandoff: () => undefined,
+      claxedoState: {
+        wb: {
+          selectors: {
+            focusedContent: () => "tab-new",
+          },
+        },
+        meta: {
+          get: () => ({
+            id: "tab-new",
+            type: "session",
+            directory: "/repo/main",
+            sessionId: "new",
+            content: { type: "session", directory: "/repo/main", sessionId: "new", title: "New Session" },
+          }),
+          patch: (id: string, patch: Record<string, unknown>) => patches.push({ id, patch }),
+          find: () => undefined,
+        },
+        layout: {
+          openSession: () => {
+            opened++
+            return "tab-added"
+          },
+          showContent: () => undefined,
+        },
+      } as never,
+    })
+
+    result.handoffCreatedSession?.()
+
+    expect(patches).toEqual([
+      {
+        id: "tab-new",
+        patch: {
+          directory: "/repo/main",
+          sessionId: "ses_1",
+          content: {
+            type: "session",
+            directory: "/repo/main",
+            sessionId: "ses_1",
+            title: "New Session",
+            sessionRef: localSessionRef("ses_1"),
+          },
+        },
+      },
+    ])
+    expect(opened).toBe(0)
+    await Promise.resolve()
+    expect(navigated).toBe("/w/%2Frepo%2Fmain/session/ses_1")
+  })
+
   test("draft-created sessions still return a workspace handoff before canonical navigation", async () => {
     const opened: unknown[] = []
     let navigated = ""

@@ -1,5 +1,6 @@
 ---
 import DownloadMenu from "./DownloadMenu.astro"
+import { github } from "../config"
 
 interface Props {
   active?: "home" | "app" | "framework"
@@ -20,13 +21,34 @@ const { active } = Astro.props
     <span>Claxedo</span>
   </a>
   <div class="nav-links">
+    <a href="/#stack">Stack</a>
     <a href="/app" class={active === "app" ? "is-active" : undefined}>App</a>
-    <a href="/framework" class={active === "framework" ? "is-active" : undefined}>Framework</a>
+    <a href="/framework" class={active === "framework" ? "is-active" : undefined}>Packages</a>
+    <a href={github}>GitHub</a>
   </div>
   <div class="nav-actions">
-    <DownloadMenu />
+    <a class="btn-primary" href="/#deploy">Deploy</a>
+    <DownloadMenu label="Download" extraClass="as-secondary" />
   </div>
 </nav>
+
+<style>
+  .nav-actions { display: flex; align-items: center; gap: 10px; }
+
+  .nav-actions :global(.as-secondary) {
+    background: transparent;
+    color: var(--text-strong);
+    border-color: var(--border);
+  }
+
+  .nav-actions :global(.as-secondary:hover) {
+    background: var(--bg-weak);
+  }
+
+  @media (max-width: 40rem) {
+    .nav-actions :global(.dl-wrap) { display: none; }
+  }
+</style>
 
 <script>
   const triggers = document.querySelectorAll<HTMLButtonElement>(".dl-trigger")

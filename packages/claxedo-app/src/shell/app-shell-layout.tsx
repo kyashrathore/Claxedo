@@ -34,6 +34,9 @@ import { useRailShellChromeState } from "../claxedo-ui/layouts/rail-shell-chrome
 import { RailSidebarShell } from "../claxedo-ui/layouts/rail-sidebar-shell"
 import { RailWorkbenchShell } from "../claxedo-ui/layouts/rail-workbench-shell"
 import { useRailWorkbenchController } from "../claxedo-ui/layouts/rail-workbench-controller"
+import { terminalBlockedByRole } from "../terminal/terminal-role-gate"
+import { workspacePlacement } from "./workspace/workspace-connection"
+import { sessionWorkspaceRuntimeRef } from "./workspace/session-workspace-key"
 import { useRailSidebarSelection } from "../claxedo-ui/layouts/rail-sidebar-selection"
 import { useRailProjectSessionInfo } from "../claxedo-ui/layouts/rail-project-session-info"
 import {
@@ -212,6 +215,9 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     onTabClose: props.onTabClose,
     onTabSelect: props.onTabSelect,
     onWorkspacePanelVisibilityChange: shellLayout.setWorkspacePanelOpen,
+    roleBlocksTerminal: () => terminalBlockedByRole(workspacePlacement(
+      props.activeWorkspaceId ? sessionWorkspaceRuntimeRef({ directory: props.activeWorkspaceId })?.workspaceId : undefined,
+    )),
     sidebarDir: sidebarSelection.sidebarDir,
     state: claxedoState,
     workspacePanelWidth,

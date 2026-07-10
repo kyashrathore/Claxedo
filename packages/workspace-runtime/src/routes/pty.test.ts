@@ -1,11 +1,41 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { Hono } from "hono"
 import type { UpgradeWebSocket } from "hono/ws"
 import { PtyRoutes } from "./pty"
 import { Pty } from "../pty/index"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 
 const upgradeWebSocket = (() => () => new Response(null, { status: 501 })) as unknown as UpgradeWebSocket
 const previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
+
+function relayAuth(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"]): NonNullable<RelayHostAuthContext["relayHostAuth"]> {
+  const now = Math.floor(Date.now() / 1000)
+  return {
+    iss: "workspace-relay",
+    aud: "workspace-host-service",
+    sub: "user_1",
+    org_id: "org_1",
+    workspace_id: "ws_1",
+    host_id: "host_1",
+    role,
+    access: "cloud",
+    backing: "cloud-vm",
+    exp: now + 60,
+    iat: now,
+    jti: "jti_1",
+  }
+}
+
+function appForRole(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"]) {
+  const app = new Hono<{ Variables: RelayHostAuthContext }>()
+  app.use("*", async (c, next) => {
+    c.set("relayHostAuth", relayAuth(role))
+    return await next()
+  })
+  app.route("/", PtyRoutes(upgradeWebSocket))
+  return app
+}
 
 afterEach(() => {
   if (previousDirectory === undefined) {
@@ -55,6 +85,33 @@ describe("PtyRoutes", () => {
         message: "Session not found",
       },
     })
+  })
+
+  test("denies every terminal route to authenticated viewers", async () => {
+    const app = appForRole("viewer")
+
+    const list = await app.request("http://localhost/")
+    const connect = await app.request("http://localhost/pty_1/connect", {
+      headers: {
+        connection: "Upgrade",
+        upgrade: "websocket",
+      },
+    })
+
+    expect(list.status).toBe(403)
+    expect(connect.status).toBe(403)
+    await expect(connect.json()).resolves.toEqual({
+      error: {
+        code: "relay_role_denied",
+        message: "Workspace role does not allow terminal access",
+      },
+    })
+  })
+
+  test("allows terminal routes for authenticated editors", async () => {
+    const res = await appForRole("editor").request("http://localhost/")
+
+    expect(res.status).toBe(200)
   })
 
   test("rejects create requests outside the pinned workspace before spawning", async () => {

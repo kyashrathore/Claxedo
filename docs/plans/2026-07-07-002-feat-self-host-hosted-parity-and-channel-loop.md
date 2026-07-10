@@ -235,6 +235,105 @@ specific. Suspicious on a FRESH boot with no sessions — may be a runaway
       DELIBERATELY deferred until the frontend Better-Auth login flow exists;
       flipping now would deploy boxes whose UI cannot log in (bearer-only).
 - [ ] Frontend login flow (seam: login.tsx:43-46 single callback).
+
+**AUTH TIERS — CLI-DRIVEN (owner decision, 2026-07-08).** The account model is a
+`claxedo deploy` choice, not a hardcode. Better Auth supports social + email
+flows via config, but each needs a bring-your-own third-party credential, so
+they are OPT-IN and the CLI only asks when chosen (same "ask goals, derive what
+to ask for" principle). Two tiers:
+- [ ] **Default — "just trying it out" (minimum third-party):** embedded Better
+      Auth, EMAIL+PASSWORD only. No email provider, no social, no OAuth apps —
+      zero external accounts. Sign up / in / out / change-password-while-logged-in
+      all work with nothing configured.
+- [ ] **Account recovery MUST live in the CLI** (the no-email case can't
+      self-serve a reset): `claxedo auth reset-password --remote <url>` (admin
+      reset against the box's embedded-auth.sqlite), and/or the CLI auto-creates
+      a first-run admin and prints the credential ONCE. This is why reset belongs
+      in the CLI, not only the web UI — a forgotten password on a no-email box is
+      otherwise a lockout.
+- [ ] **Opt-in — "set it up properly" (CLI prompts only if chosen):**
+      (a) social login → CLI asks for GitHub/Google OAuth client id+secret
+      (deployer's own app) → add `socialProviders` to embedded-auth.ts, buttons
+      appear when the env creds are present;
+      (b) email provider → CLI asks for SMTP/Resend key → wire
+      `sendResetPassword` + `sendVerificationEmail` → forgot-password + email
+      verification light up.
+- [ ] Login screen renders email+password always; GitHub/Google buttons +
+      "forgot password" link appear conditionally on configured provider/email
+      creds (rides the frontend-login item above).
+- NOTE: sign-in-with-GitHub here = IDENTITY (Better Auth socialProviders); it is
+  DISTINCT from W6 "connect my GitHub" = tool/repo ACCESS (connections
+  framework). Same provider, different purpose — don't conflate.
+
+**IMPLEMENTATION PLAN (2026-07-08).** Backend embedded Better Auth already
+landed (email+password + bearer); this makes it deployable/usable end-to-end.
+
+LINCHPIN — runtime auth-config, NOT build-time. The box serves a PREBUILT bundle
+(`dist-selfhost`, currently built with `VITE_AUTH_ENABLED=false` baked in). A
+prebuilt image can't re-bake per deploy, and each deployer's auth choices differ
+(email-only vs +GitHub vs +email-reset). So the frontend MUST read auth
+capabilities at RUNTIME from the server. This is the load-bearing change —
+without it the prebuilt-image model and per-deploy auth are incompatible.
+
+Phase 1 — backend (no deps; do first):
+- [ ] `GET /api/claxedo/auth-config` (PUBLIC, no auth) → `{ mode:
+      "better-auth"|"clerk"|"unsigned", emailPassword, social:[...],
+      passwordReset, emailVerification }`, derived from env at boot. Everything
+      else reads this.
+- [ ] Extend embedded-auth.ts (embedded-auth.ts:96-111), all ENV-GATED so the
+      default stays zero-dependency: `socialProviders {github,google}` when
+      `CLAXEDO_AUTH_{GITHUB,GOOGLE}_CLIENT_ID`/secret set; a `sendEmail`
+      transport (`CLAXEDO_AUTH_SMTP_*` / `RESEND_API_KEY`) → wire
+      `sendResetPassword` + `sendVerificationEmail` when present. Untouched
+      default = email+password + bearer only.
+- [ ] Admin reset primitive `resetUserPassword(email,newPassword)` against
+      embedded-auth.sqlite (better-auth admin API or direct), admin/loopback-only
+      — the CLI recovery calls this; no email required.
+- [ ] GOTCHAS: `CLAXEDO_EMBEDDED_AUTH_SECRET` must be STABLE across deploys
+      (else sessions invalidate) — generate once, store as a Fly secret; confirm
+      getMigrations applies the socialProviders/verification columns on an
+      existing sqlite.
+
+Phase 2 — frontend (depends on Phase 1a; THE critical-path item):
+CORRECTION (login.tsx read 2026-07-08): the login screen EXISTS but is a
+CLERK-REDIRECT SHELL — a single "Continue" button → `auth.signIn()` →
+clerk.redirectToSignIn (login.tsx:45-46). Clerk hosts the actual form/social/
+reset. For embedded Better Auth there is NO hosted page to redirect to, so the
+form must live IN-APP. This is a SWAP of the button for a form, NOT a new screen.
+- [ ] KEEP: the page shell, branding, terms/privacy footer, `useAuthSession`
+      abstraction, post-login redirect (login.tsx). Reusable as-is.
+- [ ] Runtime bootstrap: on start, fetch `/api/claxedo/auth-config`; stop
+      treating build-time `VITE_AUTH_ENABLED` as source of truth. Drop the
+      Dockerfile's `VITE_AUTH_ENABLED=false` build flag; auth-enabled comes from
+      the endpoint. (This is the real work — it touches app bootstrap.)
+- [ ] Better-Auth client impl in the auth-session layer (`createAuthClient` from
+      `better-auth/client`, baseURL=origin) ALONGSIDE the Clerk one; select by
+      `mode` from the endpoint.
+- [ ] Replace the "Continue→Clerk" button (login.tsx:45-70) with an
+      email+password form; GitHub/Google buttons rendered IFF `social` non-empty;
+      "forgot password" link IFF `passwordReset`. All conditional on the endpoint.
+- [ ] Bearer wiring: Better Auth issues its token via the `set-auth-token`
+      response header → store + attach on the app's authFetch (adapt token
+      SOURCE; the bearer transport to the control plane already exists).
+- [ ] Conditional forgot/reset pages (only when advertised).
+
+Phase 3 — CLI (3a/3c depend on Phase 1; 3b depends on Phase 2 shipping):
+- [ ] deploy.ts: add the auth-tier question (see AUTH TIERS above) → set
+      `CLAXEDO_EMBEDDED_AUTH=1` + a generated stable secret; on "set up properly",
+      prompt + set the social/email Fly secrets.
+- [ ] Flip `claxedo deploy` to SIGNED by default; unsigned = explicit `--dev`
+      (localhost-only). Remove the interim no-auth warning. BLOCKED on Phase 2.
+- [ ] `claxedo auth reset-password --remote <url> [--email <addr>]` → calls the
+      Phase-1c admin primitive; optional first-run admin auto-create printed once.
+
+Phase 4 — verify: auth-config shaping per env combo; social/email gating; admin
+reset; frontend login smoke (signup→login→authenticated call) with conditional
+rendering; `deploy --dev` vs default env; end-to-end default-tier deploy →
+signup → login → use, entirely email+password, zero third-party.
+
+Dependency chain (one line): **auth-config endpoint → frontend form (swap the
+Clerk button) → flip deploy to signed-default**; social/email/reset are
+independent env-gated add-ons hanging off the auth-config endpoint.
 - [x] INVESTIGATION DONE (parity scout, 2026-07-07): `betterAuthAdapter`
       (control-plane/auth.ts:216-246) wraps ANY `BetterAuthVerifier`
       `(token) => Promise<BetterAuthSession|null>` — no JWKS/issuer config at

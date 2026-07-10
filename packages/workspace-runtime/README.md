@@ -382,7 +382,7 @@ import { createRelayHostAuthMiddleware } from "@claxedo/workspace-runtime/relay"
 
 // Verifier claims are still validated against the relay-host contract:
 // `iss` must be "workspace-relay", `aud` must be "workspace-host-service",
-// `sub`/`org_id`/`workspace_id`/`host_id`/`exp`/`iat`/`jti` are required,
+// `sub`/`org_id`/`workspace_id`/`host_id`/`role`/`exp`/`iat`/`jti` are required,
 // and `access`/`backing` must be a valid pair ("cloud"/"cloud-vm" or
 // "user-hosted"/"local-worktree"). `workspace_id`/`host_id` must match the
 // middleware's expected values.
@@ -399,6 +399,7 @@ const verifier = createStaticTokenVerifier<RelayHostVerifierClaims>({
         org_id: "org_1",
         workspace_id: "ws_1",
         host_id: "host_1",
+        role: "editor",
         access: "cloud",
         backing: "cloud-vm",
         exp: now + 300,

@@ -502,9 +502,28 @@ function targetUrl(target: WorkspaceRelayTarget, path: string, search: string) {
   return url
 }
 
-function roleAllowsRelayRequest(role: RelayRole, method: string) {
+// A PTY WebSocket upgrade is a GET but still grants an interactive shell.
+const RELAY_VIEWER_DENIED_PATH = /^\/api\/wr\/pty(?:\/|$)/
+
+function relayRuntimePath(request: Request) {
+  return new URL(request.url).pathname.replace(/^\/workspaces\/[^/]+\/?/, "/")
+}
+
+function relayAuthorizationPath(path: string) {
+  try {
+    return decodeURIComponent(path)
+  } catch {
+    return undefined
+  }
+}
+
+function roleAllowsRelayRequest(role: RelayRole, method: string, path: string) {
   if (role === "owner" || role === "admin" || role === "editor") return true
-  if (role === "viewer") return method === "GET" || method === "HEAD" || method === "OPTIONS"
+  if (role === "viewer") {
+    const authorizationPath = relayAuthorizationPath(path)
+    if (!authorizationPath || RELAY_VIEWER_DENIED_PATH.test(authorizationPath)) return false
+    return method === "GET" || method === "HEAD" || method === "OPTIONS"
+  }
   return false
 }
 
@@ -962,7 +981,8 @@ export async function authorizeWorkspaceRelayRequest(
         }),
       }
     }
-    if (!roleAllowsRelayRequest(claims.role, request.method)) {
+    const path = relayRuntimePath(request)
+    if (!roleAllowsRelayRequest(claims.role, request.method, path)) {
       return {
         ok: false,
         code: "relay_role_denied",
@@ -1022,7 +1042,7 @@ export async function authorizeWorkspaceRelayRequest(
         claims,
         target,
         relayHostToken,
-        path: new URL(request.url).pathname.replace(/^\/workspaces\/[^/]+\/?/, "/"),
+        path,
       },
     }
   } catch (err) {

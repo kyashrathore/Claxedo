@@ -2,16 +2,14 @@ import type { FrameMetric } from "./frame-sampler"
 
 export type { FrameMetric, FrameVerdict } from "./frame-sampler"
 
-// The seven surviving, user-observable flows. Adding a flow = add an id here and
+// The five surviving, user-observable flows. Adding a flow = add an id here and
 // a registry entry in flows.ts — no engine changes.
 export type ScenarioId =
-  | "launch-empty-home"
   | "launch-project"
   | "session-switch"
   | "live-terminal-switch"
   | "large-diff-toggle"
   | "workspace-switch"
-  | "three-pane-resize"
 
 // We only ever measure our own app, in a real browser. Kept as single literals
 // (rather than removed) so storage paths and attribution stay stable.

@@ -1,0 +1,54 @@
+{
+  "main": [
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-pi",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_pi",
+          "part": {
+            "id": "msg_assistant_1-text",
+            "sessionID": "ses_harness_matrix_pi",
+            "messageID": "msg_assistant_1",
+            "type": "text",
+            "text": ""
+          },
+          "time": 100
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-pi",
+      "payload": {
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_pi",
+          "messageID": "msg_assistant_1",
+          "partID": "msg_assistant_1-text",
+          "field": "text",
+          "delta": "Reading the config, then editing it."
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-pi",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_pi",
+          "part": {
+            "id": "msg_assistant_1-reasoning",
+            "sessionID": "ses_harness_matrix_pi",
+            "messageID": "msg_assistant_1",
+            "type": "reasoning",
+            "text": "First read the file to see its current shape.",
+            "time": {
+              "start": 110
+            }
+          },
+          "time": 110
+        }
+      }
+    }
+  ]
+}

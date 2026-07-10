@@ -27,6 +27,7 @@ import { usePermission } from "@/context/permission"
 import { useOptionalTerminal } from "@/context/terminal"
 import { DialogEditProject } from "../components/dialog-edit-project"
 import { DialogProcessDiagnostics } from "../components/dialog-process-diagnostics"
+import { UsageLimitsButton } from "../components/usage-limits-popover"
 import { getFilename } from "@claxedo/utils/path"
 import type { SessionInventoryRow } from "../../shared/query/types"
 import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../utils/workspace-display"
@@ -2652,6 +2653,7 @@ export function RailSidebar(props: RailSidebarProps) {
                 </div>
               </Tooltip>
               <FilterMenu />
+              <UsageLimitsButton />
               <Tooltip placement="top" value={language.t("sidebar.settings")}>
                 <div>
                   <IconButton

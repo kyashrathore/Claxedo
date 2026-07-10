@@ -1,6 +1,8 @@
 import Database from "better-sqlite3"
 import { describe, expect, test } from "vitest"
-import { readFileSync, readdirSync } from "fs"
+import { readFileSync, readdirSync, rmSync } from "fs"
+import { randomUUID } from "crypto"
+import os from "os"
 import path from "path"
 import { repair } from "./repair"
 
@@ -168,6 +170,54 @@ describe("claxedo schema", () => {
       host: "central",
       directory: null,
     })
+  })
+
+  test("connection scoping migrates a pre-feature database file and preserves credential metadata", () => {
+    const file = path.join(os.tmpdir(), `claxedo-connection-migration-${randomUUID()}.db`)
+    const sqlite = new Database(file)
+    const target = "20260710000400_connection_scoping"
+    try {
+      for (const entry of entries()) {
+        if (entry.name === target) break
+        applyMigration(sqlite, entry.name)
+      }
+      sqlite.prepare(`
+        INSERT INTO claxedo_connection (
+          integration_id, account_label, granted_capabilities, fields, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run("notion", "Legacy Notion", JSON.stringify(["docs"]), JSON.stringify({ workspace: "acme" }), 1, 2)
+      sqlite.prepare(`
+        INSERT INTO claxedo_provider_credential (
+          id, provider_id, kind, source, secure_ref, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run("credential_1", "integration:notion", "api_key", "managed", "secret-ref-1", "available", 1, 2)
+
+      applyMigration(sqlite, target)
+
+      const connection = sqlite.prepare("SELECT * FROM claxedo_connection WHERE integration_id = 'notion'").get() as {
+        id: string
+        owner: string | null
+        account_label: string
+        granted_capabilities: string
+      }
+      expect(connection.id).toMatch(/^[a-f0-9]{32}$/)
+      expect(connection.owner).toBeNull()
+      expect(connection.account_label).toBe("Legacy Notion")
+      expect(JSON.parse(connection.granted_capabilities)).toEqual(["docs"])
+      expect(sqlite.prepare("SELECT provider_id, secure_ref FROM claxedo_provider_credential WHERE id = 'credential_1'").get())
+        .toEqual({ provider_id: `integration:${connection.id}`, secure_ref: "secret-ref-1" })
+      expect(() => sqlite.prepare(`
+        INSERT INTO claxedo_connection (id, integration_id, owner, granted_capabilities, fields, created_at, updated_at)
+        VALUES ('duplicate-team', 'notion', NULL, '[]', '{}', 3, 3)
+      `).run()).toThrow()
+      expect(() => sqlite.prepare(`
+        INSERT INTO claxedo_connection (id, integration_id, owner, granted_capabilities, fields, created_at, updated_at)
+        VALUES ('personal-notion', 'notion', 'user-a', '[]', '{}', 3, 3)
+      `).run()).not.toThrow()
+    } finally {
+      sqlite.close()
+      rmSync(file, { force: true })
+    }
   })
 
   test("message event ordinal migrations backfill monotonic ordinals", () => {

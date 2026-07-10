@@ -5,6 +5,7 @@ import { usePrincipal, type Principal } from "./identity-provider"
 export type WorkspaceCapability =
   | "read.workspace"
   | "view.workspace-tools"
+  | "use.terminal"
   | "mutate.session"
   | "mutate.workspace"
   | "manage.runners"
@@ -15,15 +16,17 @@ export type Capability = WorkspaceCapability | PrincipalCapability
 const ownerCapabilities = [
   "read.workspace",
   "view.workspace-tools",
+  "use.terminal",
   "mutate.session",
   "mutate.workspace",
   "manage.runners",
 ] satisfies WorkspaceCapability[]
 
+// Terminal grants arbitrary command execution, so viewers cannot use it.
 export const RolePolicy: Record<RelayRole, ReadonlySet<WorkspaceCapability>> = {
   owner: new Set(ownerCapabilities),
   admin: new Set(ownerCapabilities),
-  editor: new Set(["read.workspace", "view.workspace-tools", "mutate.session"]),
+  editor: new Set(["read.workspace", "view.workspace-tools", "use.terminal", "mutate.session"]),
   viewer: new Set(["read.workspace", "view.workspace-tools"]),
 }
 

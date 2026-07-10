@@ -59,12 +59,12 @@ const platform: Platform = {
     if (isEmbedMode()) return
     if (!("Notification" in window)) return
 
-    const permission =
-      Notification.permission === "default"
-        ? await Notification.requestPermission().catch(() => "denied")
-        : Notification.permission
-
-    if (permission !== "granted") return
+    // Never request permission here — turn completion must not trigger the
+    // browser's permission prompt. Permission is only ever requested from an
+    // explicit Settings toggle interaction (see
+    // src/utils/notification-permission.ts). If the user hasn't decided yet
+    // (still "default") or has denied it, silently skip.
+    if (Notification.permission !== "granted") return
 
     const inView = document.visibilityState === "visible" && document.hasFocus()
     if (inView) return

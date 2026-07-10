@@ -13,6 +13,7 @@ import {
   dispatchSessionTodoEvent,
   promptSessionStatusMeta,
   promptSessionStatusStage,
+  subscribePromptSessionStatusMeta,
 } from "./session-status-dispatcher"
 import {
   SESSION_STATUS_TELEMETRY_CONFIG,
@@ -443,6 +444,46 @@ describe("session-status dispatcher", () => {
     expect(source).not.toContain("createSignal")
     expect(source).not.toContain("promptSessionStatusMetaBySession")
     expect(source).toContain('shellDataKeys.sessionId(sessionID, "status-meta")')
+  })
+
+  test("subscribePromptSessionStatusMeta notifies on stage writes and on the reconcile clear, for its session only", () => {
+    const now = 10_000
+    let notified = 0
+    const unsubscribe = subscribePromptSessionStatusMeta("ses_sub", () => notified++)
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "optimistic", sessionID: "ses_sub", status: { type: "busy" }, now },
+    })
+    const afterOptimistic = notified
+    expect(afterOptimistic).toBeGreaterThan(0)
+
+    // A different session's meta writes must not notify this subscriber.
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "optimistic", sessionID: "ses_other", status: { type: "busy" }, now },
+    })
+    expect(notified).toBe(afterOptimistic)
+
+    // Escalation stage write (the read path consumers re-read on notify).
+    dispatchSessionStatusTimeoutStage({
+      event: { type: "session.status.timeout", sessionID: "ses_sub", stage: "pending" },
+    })
+    const afterStage = notified
+    expect(afterStage).toBeGreaterThan(afterOptimistic)
+    expect(promptSessionStatusStage("ses_sub")).toBe("pending")
+
+    // Server reconciliation clears meta via removeQueries — must also notify.
+    dispatchSessionStatusEvent({
+      event: { type: "session.idle", source: "server", sessionID: "ses_sub" },
+    })
+    expect(notified).toBeGreaterThan(afterStage)
+    expect(promptSessionStatusStage("ses_sub")).toBeUndefined()
+
+    unsubscribe()
+    const afterUnsubscribe = notified
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "optimistic", sessionID: "ses_sub", status: { type: "busy" }, now },
+    })
+    expect(notified).toBe(afterUnsubscribe)
   })
 })
 

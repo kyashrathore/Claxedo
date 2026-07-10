@@ -12,6 +12,7 @@ module-global state, and implements no auth policy. Hosts supply storage
 ## Quickstart (in-memory host)
 
 ```ts
+import { randomUUID } from "node:crypto"
 import {
   createIntegrationRegistry, createConnectionsService, createIntegrationsRoutes,
   createMemoryCredentialStore, createMemoryConnectionStore,
@@ -27,6 +28,7 @@ const service = createConnectionsService({
   registry,
   credentials: createMemoryCredentialStore(),   // implement CredentialStorePort for real storage
   connections: createMemoryConnectionStore(),   // implement ConnectionStorePort for real storage
+  newId: randomUUID,                            // host-owned row identity
 })
 
 // Mount under your app with YOUR gates — the kit enforces no auth policy.
@@ -56,9 +58,11 @@ registry.register(...Object.values(googleIntegration({
 
 ## Model
 
-- A **connection** is an authenticated link to an external account. One
-  connection per integration per host (an explicit replace flow handles
-  re-linking).
+- A **connection** is an authenticated link to an external account. Hosts can
+  partition connections with an opaque owner key: an absent owner is the team
+  partition and a present owner is a host-defined personal partition. Each
+  partition has one connection per integration (an explicit replace flow
+  handles re-linking).
 - **Capabilities are granted at connect time**, derived from what the
   credential actually covers; changing grants = reconnect with broader
   consent. There is no toggle API.
@@ -91,8 +95,9 @@ treadmill is how OAuth libraries die.
 - **No API middleware in the token path** — no retries, rate limiting,
   request proxying, or provider API wrappers. Tokens out; nothing else.
 - **No webhook subscription management. No UI.** Hosts own both.
-- **No multi-account per integration** (yet — requires a by-id secret
-  resolver on the credential port).
+- **No multiple accounts within one integration/owner partition.** Hosts can
+  create independent team and personal partitions, while multiple accounts in
+  the same partition remain out of scope.
 
 ## Ports
 
@@ -106,11 +111,13 @@ type CredentialStorePort = {
   deleteByProvider(providerId): Promise<void>
 }
 type ConnectionStorePort = {
-  upsert(row); get(id); list(); delete(id)
+  upsert(row); get(integrationId, owner?); getById(id); delete(id)
+  // `undefined` = all partitions, `null` = team only, string = one owner.
+  list({ owner? })
 }
 ```
 
-Credential ids are always namespaced `integration:{id}` so they never
+Credential ids are always namespaced `integration:{connectionId}` so they never
 collide with a host's other credentials. Secrets must live server-side; the
 routes never echo them, and `verify` failures are a closed enum
 (`unauthorized | network`) precisely so provider error bodies (which can

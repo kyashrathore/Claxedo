@@ -443,6 +443,29 @@ given.
    `undefined` vs `null` vs string semantics now documented as a
    requirement on the port type.
 
+8b. **Orphaned personal connections are undeletable after the owner is
+   removed — CONFIRMED gap (fix-in-plan, unimplemented).** With
+   owner-mismatch → 404 for every caller and loopback callers scoped to
+   the team partition (`routes.ts` `visibleConnection` + gate), a
+   personal row whose owner subject no longer exists (member removed from
+   the org / Better Auth row deleted) can never be matched again: no
+   principal — not even the operator on loopback — can delete it, and its
+   live third-party OAuth token (`remove()` never revokes provider-side,
+   `service.ts`) persists indefinitely. Needs ONE of: a user-deletion
+   cascade that deletes connections `WHERE owner = <removed subject>`; an
+   explicit operator escape hatch (loopback/team principal may delete any
+   row, stated as a deliberate trust-model choice); or admin-role
+   management pulled forward for personal rows. RESOLVED (mechanism =
+   owner cascade primitive, settled 2026-07-10): `ConnectionsService.
+   removeOwner(owner)` landed in the kit (deletes an owner's rows +
+   credentials; team/foreign rows spared; empty-owner no-op; idempotent;
+   tested). Provider-side revocation is a deliberate v1 accepted-risk
+   (local row + credential deleted, third-party token not revoked).
+   Remaining work is the control-plane wiring — call `removeOwner` from a
+   member/user-removal path — which is BLOCKED because no such path exists
+   in code yet; the seam is exposed and documented. Full plan:
+   `docs/plans/2026-07-10-005-feat-orphaned-connection-deletion-plan.md`.
+
 8. **Personal fallback is invisible (accepted-risk).** Personal-then-team
    means the owner's interactive turns silently behave differently from
    teammates' — a debugging surprise, and a prompt-injected agent in the

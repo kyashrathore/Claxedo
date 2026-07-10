@@ -5,6 +5,7 @@ import { createMemoryCredentialStore } from "./stores/memory.js"
 import type { ConnectionRow, OAuthTokens } from "./types.js"
 
 const ROW: ConnectionRow = {
+  id: "connection-1",
   integrationId: "oauthy",
   grantedCapabilities: ["docs"],
   fields: {},
@@ -26,7 +27,7 @@ function oauthHarness(input: {
   const credentials = createMemoryCredentialStore()
   const seed = async () =>
     credentials.put({
-      providerId: "integration:oauthy",
+      providerId: "integration:connection-1",
       kind: "oauth_token",
       secret: JSON.stringify(input.envelope ?? { access: "old-access", refresh: "old-refresh" }),
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
@@ -59,7 +60,7 @@ describe("token service", () => {
     expect(a).toEqual({ token: "new-access", tokenType: "bearer" })
     expect(b).toEqual({ token: "new-access", tokenType: "bearer" })
     // Rotating refresh token atomically replaced in the envelope.
-    expect(await credentials.readSecret("integration:oauthy")).toBe(
+    expect(await credentials.readSecret("integration:connection-1")).toBe(
       JSON.stringify({ access: "new-access", refresh: "new-refresh" }),
     )
   })
@@ -71,7 +72,7 @@ describe("token service", () => {
     })
     await seed()
     await tokens.getLiveToken(ROW)
-    expect(await credentials.readSecret("integration:oauthy")).toBe(
+    expect(await credentials.readSecret("integration:connection-1")).toBe(
       JSON.stringify({ access: "new-access", refresh: "old-refresh" }),
     )
   })
@@ -85,7 +86,7 @@ describe("token service", () => {
     })
     await seed()
     await expect(tokens.getLiveToken(ROW)).rejects.toMatchObject({ status: 409, code: "connection_not_available" })
-    expect(credentials.inspect("integration:oauthy")).toMatchObject({ status: "error", lastError: "refresh_failed" })
+    expect(credentials.inspect("integration:connection-1")).toMatchObject({ status: "error", lastError: "refresh_failed" })
     // Subsequent calls: 409 immediately (status gate), no retry loop.
     await expect(tokens.getLiveToken(ROW)).rejects.toMatchObject({ status: 409 })
   })
@@ -102,7 +103,7 @@ describe("token service", () => {
     })
     await seed()
     await expect(tokens.getLiveToken(ROW)).rejects.toMatchObject({ status: 503, code: "connection_refresh_transient" })
-    expect(credentials.inspect("integration:oauthy")).toMatchObject({ status: "available" })
+    expect(credentials.inspect("integration:connection-1")).toMatchObject({ status: "available" })
     expect(await tokens.getLiveToken(ROW)).toEqual({ token: "recovered", tokenType: "bearer" })
     expect(calls).toBe(2)
   })
@@ -115,7 +116,7 @@ describe("token service", () => {
     })
     await seed()
     await expect(tokens.getLiveToken(ROW)).rejects.toBeInstanceOf(ConnectionTokenError)
-    expect(credentials.inspect("integration:oauthy")).toMatchObject({ status: "error" })
+    expect(credentials.inspect("integration:connection-1")).toMatchObject({ status: "error" })
   })
 
   test("missing credential is 409 connection_not_available", async () => {

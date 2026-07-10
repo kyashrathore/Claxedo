@@ -1,0 +1,49 @@
+{
+  "note": "Target repos whose stargazers are AI-developer ICP for Claxedo. Tiers control ranking weight, not just grouping.",
+  "tiers": {
+    "tier1_direct_competitor": [
+      "anomalyco/opencode",
+      "anthropics/claude-code",
+      "openai/codex",
+      "All-Hands-AI/OpenHands",
+      "cline/cline",
+      "Aider-AI/aider",
+      "block/goose",
+      "getpaseo/paseo",
+      "superset-sh/superset",
+      "Kilo-Org/kilocode",
+      "continuedev/continue",
+      "TabbyML/tabby"
+    ],
+    "tier2_agent_frameworks_and_mcp": [
+      "langchain-ai/langgraph",
+      "crewAIInc/crewAI",
+      "pydantic/pydantic-ai",
+      "run-llama/llama_index",
+      "modelcontextprotocol/servers",
+      "modelcontextprotocol/python-sdk",
+      "modelcontextprotocol/typescript-sdk",
+      "vercel/ai",
+      "BerriAI/litellm",
+      "microsoft/autogen"
+    ],
+    "tier3_eval_observability": [
+      "confident-ai/deepeval",
+      "langfuse/langfuse",
+      "promptfoo/promptfoo",
+      "Arize-ai/phoenix",
+      "explodinggradients/ragas"
+    ],
+    "tier4_volume_topup_diluted": [
+      "openclaw/openclaw",
+      "ollama/ollama",
+      "langchain-ai/langchain",
+      "zed-industries/zed"
+    ]
+  },
+  "excluded": {
+    "apache/superset": "Data-BI crowd, wrong ICP. Not the 'superset' you want.",
+    "conductor-oss/conductor": "Netflix workflow engine, unrelated to conductor.build (which has no public repo)."
+  },
+  "weights": { "tier1_direct_competitor": 4, "tier2_agent_frameworks_and_mcp": 2, "tier3_eval_observability": 2, "tier4_volume_topup_diluted": 1 }
+}

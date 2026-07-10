@@ -23,6 +23,7 @@ import {
   useSettings,
 } from "@/context/settings"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
+import { requestNotificationPermission } from "@/utils/notification-permission"
 import { capture as phCapture } from "@claxedo/analytics/posthog"
 import { AccountSettingsSection } from "@claxedo/components/settings-account-section"
 import { Can } from "../shell/auth/role"
@@ -408,6 +409,11 @@ export const SettingsGeneral: Component = () => {
                   onChange={(checked) => {
                     phCapture("setting_changed", { setting: "notification_agent", value: checked })
                     settings.notifications.setAgent(checked)
+                    // Request browser notification permission from THIS user
+                    // gesture only — never from turn completion (see
+                    // src/utils/notification-permission.ts). No-ops once the
+                    // user has already granted/denied it.
+                    if (checked) void requestNotificationPermission()
                   }}
                 />
               </div>
@@ -438,6 +444,8 @@ export const SettingsGeneral: Component = () => {
                   onChange={(checked) => {
                     phCapture("setting_changed", { setting: "notification_errors", value: checked })
                     settings.notifications.setErrors(checked)
+                    // See settings-notifications-agent above.
+                    if (checked) void requestNotificationPermission()
                   }}
                 />
               </div>

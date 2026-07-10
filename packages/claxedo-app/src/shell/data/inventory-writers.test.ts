@@ -210,6 +210,46 @@ describe("session inventory writers", () => {
     expect(inventory.byWorkspace["/repo/a"].sessions.map((item) => item.id)).toEqual(["ses_root"])
   })
 
+  test("lifecycle title update patches an existing row even when the event carries no projectID", () => {
+    // Regression: an ACP harness session's auto-title fallback publishes a
+    // `session.updated` event with `projectID: ""` (see
+    // packages/agent-sdk-runtime/src/harnesses/acp/title.ts `maybeAutoTitle`).
+    // Before this fix, applySessionInventoryLifecycle unconditionally dropped
+    // ANY lifecycle event (created or updated) with an unresolved projectID,
+    // so a harness session's title update silently never reached the sidebar
+    // inventory even though the row already existed there.
+    updateSessionInventoryQueryData<SessionInventoryRow>({
+      baseUrl: "http://test",
+      mutate: (draft) => {
+        applySessionInventoryLifecycle(draft, session("ses_harness", 2), "created")
+        applySessionInventoryLifecycle(
+          draft,
+          session("ses_harness", 3, { title: "fix the flaky retry test", projectID: "" }),
+          "updated",
+        )
+      },
+    })
+
+    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    expect(inventory.sessions.map((item) => item.id)).toEqual(["ses_harness"])
+    expect(inventory.sessions[0]?.title).toBe("fix the flaky retry test")
+    // The row keeps its originally-known projectID/grouping rather than being
+    // dropped from its project group.
+    expect(inventory.byProject.project_a.map((item) => item.id)).toEqual(["ses_harness"])
+  })
+
+  test("lifecycle drops a created event with no resolvable projectID (nowhere to place a brand-new row)", () => {
+    updateSessionInventoryQueryData<SessionInventoryRow>({
+      baseUrl: "http://test",
+      mutate: (draft) => {
+        applySessionInventoryLifecycle(draft, session("ses_unplaced", 2, { projectID: "" }), "created")
+      },
+    })
+
+    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    expect(inventory.sessions).toEqual([])
+  })
+
   test("lifecycle keeps only visible global-tagged sessions", () => {
     updateSessionInventoryQueryData<SessionInventoryRow>({
       baseUrl: "http://test",

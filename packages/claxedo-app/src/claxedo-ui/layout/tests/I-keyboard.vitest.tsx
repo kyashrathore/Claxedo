@@ -3,11 +3,15 @@ import { fireEvent } from "@solidjs/testing-library"
 import { mountWorkbench } from "./dom-helpers"
 
 describe("I. keyboard", () => {
-  test("mod+\\ on a single pane is a no-op (self-drop guard)", () => {
+  // mod+\ / mod+shift+\ split shortcuts were removed entirely (2026-07-10): the
+  // handler could only ever pass the focused pane's own contentId into split(),
+  // which the self-drop guard rejects, so the binding was dead since inception.
+  test("mod+\\ is unbound and never mutates the layout", () => {
     const h = mountWorkbench()
     h.api().contents.add("a")
     h.api().navigation.show("a")
     fireEvent.keyDown(window, { key: "\\", metaKey: true })
+    fireEvent.keyDown(window, { key: "\\", metaKey: true, shiftKey: true })
     expect(h.state().panes).toHaveLength(1)
   })
 

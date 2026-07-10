@@ -28,8 +28,6 @@ export type WorkbenchState = {
 export type PaneRect = { top: number; left: number; width: number; height: number }
 
 export type KeyMap = {
-  splitHorizontal: string
-  splitVertical: string
   closePane: string
   focusLeft: string
   focusRight: string

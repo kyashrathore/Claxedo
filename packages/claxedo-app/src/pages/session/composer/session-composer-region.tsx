@@ -20,6 +20,7 @@ import { directorySessions } from "@/shell/data/directory-session-cache"
 import type { SessionRef } from "@/shell/identity/session-ref"
 import type { ComposerMode } from "@/session-client/composer/mode"
 import { usePromptHarnessControllersOptional } from "@/components/prompt-input/harness-controller"
+import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 
 export function SessionComposerRegion(props: {
   state: SessionComposerState
@@ -78,6 +79,16 @@ export function SessionComposerRegion(props: {
   system?: string
   agent?: string
   canAbort?: () => boolean
+  /**
+   * Session status/active-turn supplied by the session owner (`sessionController`).
+   * Without these the composer's `working()`/`busy()` derivation
+   * (`session-client/composer/composer.tsx:324-328`) falls back to its
+   * "embedded context" default of always-idle, which permanently hides the
+   * busy/stop icon and the escalation-ladder status banner for this — the
+   * primary — session composer.
+   */
+  status?: () => SessionStatus
+  activeTurn?: () => boolean
 }) {
   const navigate = useNavigate()
   const layout = useLayout()
@@ -323,6 +334,8 @@ export function SessionComposerRegion(props: {
                       system={props.system}
                       agent={props.agent}
                       canAbort={props.canAbort}
+                      status={props.status}
+                      activeTurn={props.activeTurn}
                     />
                   </Show>
                 }

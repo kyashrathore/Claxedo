@@ -58,17 +58,24 @@ export function createMemoryConnectionStore(): ConnectionStorePort {
   const rows = new Map<string, ConnectionRow>()
   return {
     async upsert(row) {
-      rows.set(row.integrationId, { ...row })
+      rows.set(row.id, { ...row })
     },
-    async get(integrationId) {
-      const row = rows.get(integrationId)
+    async get(integrationId, owner) {
+      return [...rows.values()]
+        .filter((row) => row.owner === owner)
+        .find((row) => row.integrationId === integrationId)
+    },
+    async getById(id) {
+      const row = rows.get(id)
       return row ? { ...row } : undefined
     },
-    async list() {
-      return [...rows.values()].map((row) => ({ ...row }))
+    async list(filter) {
+      return [...rows.values()]
+        .filter((row) => filter?.owner === undefined || (filter.owner === null ? row.owner === undefined : row.owner === filter.owner))
+        .map((row) => ({ ...row }))
     },
-    async delete(integrationId) {
-      return rows.delete(integrationId)
+    async delete(id) {
+      return rows.delete(id)
     },
   }
 }

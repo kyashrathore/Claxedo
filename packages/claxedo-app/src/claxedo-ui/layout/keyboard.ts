@@ -28,8 +28,6 @@ export function matchKey(event: KeyboardEvent, spec: string): boolean {
 
 export function resolveKeyMap(partial?: Partial<KeyMap>): KeyMap {
   return {
-    splitHorizontal: partial?.splitHorizontal ?? "mod+\\",
-    splitVertical: partial?.splitVertical ?? "mod+shift+\\",
     closePane: partial?.closePane ?? "mod+w",
     focusLeft: partial?.focusLeft ?? "mod+alt+ArrowLeft",
     focusRight: partial?.focusRight ?? "mod+alt+ArrowRight",

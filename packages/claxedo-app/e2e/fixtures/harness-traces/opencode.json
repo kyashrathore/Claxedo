@@ -1,0 +1,575 @@
+{
+  "main": [
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-text",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "text",
+            "text": ""
+          },
+          "time": 100
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "messageID": "msg_assistant_1",
+          "partID": "msg_assistant_1-text",
+          "field": "text",
+          "delta": "Reading the config, then editing it."
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-reasoning",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "reasoning",
+            "text": "First read the file to see its current shape.",
+            "time": {
+              "start": 110
+            }
+          },
+          "time": 110
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-read",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-read-1",
+            "tool": "read",
+            "state": {
+              "status": "completed",
+              "input": {
+                "filePath": "config.json"
+              },
+              "output": "{}",
+              "title": "read",
+              "metadata": {},
+              "time": {
+                "start": 120,
+                "end": 130
+              }
+            }
+          },
+          "time": 130
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-list",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-list-1",
+            "tool": "list",
+            "state": {
+              "status": "completed",
+              "input": {
+                "path": "src"
+              },
+              "output": "index.ts\nconfig.json",
+              "title": "list",
+              "metadata": {},
+              "time": {
+                "start": 130,
+                "end": 140
+              }
+            }
+          },
+          "time": 140
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-glob",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-glob-1",
+            "tool": "glob",
+            "state": {
+              "status": "completed",
+              "input": {
+                "pattern": "**/*.json",
+                "path": "."
+              },
+              "output": "config.json",
+              "title": "glob",
+              "metadata": {},
+              "time": {
+                "start": 140,
+                "end": 150
+              }
+            }
+          },
+          "time": 150
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-webfetch",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-webfetch-1",
+            "tool": "webfetch",
+            "state": {
+              "status": "completed",
+              "input": {
+                "url": "https://example.com/docs"
+              },
+              "output": "docs",
+              "title": "webfetch",
+              "metadata": {},
+              "time": {
+                "start": 150,
+                "end": 160
+              }
+            }
+          },
+          "time": 160
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-websearch",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-websearch-1",
+            "tool": "websearch",
+            "state": {
+              "status": "completed",
+              "input": {
+                "query": "opencode config schema"
+              },
+              "output": "https://example.com/docs",
+              "title": "websearch",
+              "metadata": {
+                "provider": "exa"
+              },
+              "time": {
+                "start": 160,
+                "end": 170
+              }
+            }
+          },
+          "time": 170
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-write",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-write-1",
+            "tool": "write",
+            "state": {
+              "status": "completed",
+              "input": {
+                "filePath": "config.json",
+                "content": "{\"ok\":true}"
+              },
+              "output": "",
+              "title": "write",
+              "metadata": {},
+              "time": {
+                "start": 170,
+                "end": 180
+              }
+            }
+          },
+          "time": 180
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-skill",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-skill-1",
+            "tool": "skill",
+            "state": {
+              "status": "completed",
+              "input": {
+                "name": "pdf"
+              },
+              "output": "done",
+              "title": "skill",
+              "metadata": {},
+              "time": {
+                "start": 180,
+                "end": 190
+              }
+            }
+          },
+          "time": 190
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-apply-patch",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-apply-patch-1",
+            "tool": "apply_patch",
+            "state": {
+              "status": "completed",
+              "input": {
+                "files": [
+                  {
+                    "filePath": "src/app.ts",
+                    "diff": "@@ -1 +1 @@\n-old\n+new"
+                  }
+                ]
+              },
+              "output": "",
+              "title": "apply_patch",
+              "metadata": {
+                "files": [
+                  {
+                    "filePath": "src/app.ts",
+                    "relativePath": "src/app.ts",
+                    "type": "update",
+                    "patch": "@@ -1 +1 @@\n-old\n+new"
+                  }
+                ]
+              },
+              "time": {
+                "start": 191,
+                "end": 194
+              }
+            }
+          },
+          "time": 194
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-compaction",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "compaction"
+          },
+          "time": 195
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-custom",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-custom-1",
+            "tool": "custom_mcp_tool",
+            "state": {
+              "status": "completed",
+              "input": {
+                "query": "vector search"
+              },
+              "output": "3 hits",
+              "title": "custom_mcp_tool",
+              "metadata": {},
+              "time": {
+                "start": 195,
+                "end": 200
+              }
+            }
+          },
+          "time": 200
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "part": {
+            "id": "msg_assistant_1-question",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-question-1",
+            "tool": "question",
+            "state": {
+              "status": "pending",
+              "input": {
+                "questions": [
+                  {
+                    "question": "Which environment should I target?"
+                  }
+                ]
+              },
+              "raw": "{}"
+            }
+          },
+          "time": 205
+        }
+      }
+    }
+  ],
+  "questionAnswered": {
+    "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+    "payload": {
+      "type": "message.part.updated",
+      "properties": {
+        "sessionID": "ses_harness_matrix_opencode",
+        "time": 210,
+        "part": {
+          "id": "msg_assistant_1-question",
+          "sessionID": "ses_harness_matrix_opencode",
+          "messageID": "msg_assistant_1",
+          "type": "tool",
+          "callID": "tool-question-1",
+          "tool": "question",
+          "state": {
+            "status": "completed",
+            "input": {
+              "questions": [
+                {
+                  "question": "Which environment should I target?"
+                }
+              ]
+            },
+            "output": "",
+            "title": "question",
+            "metadata": {
+              "answers": [
+                [
+                  "staging"
+                ]
+              ]
+            },
+            "time": {
+              "start": 205,
+              "end": 210
+            }
+          },
+          "metadata": {
+            "answers": [
+              [
+                "staging"
+              ]
+            ]
+          }
+        }
+      }
+    }
+  },
+  "lifecycle": {
+    "pending": {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "time": 300,
+          "part": {
+            "id": "msg_assistant_1-lifecycle",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-lifecycle-1",
+            "tool": "bash",
+            "state": {
+              "status": "pending",
+              "input": {
+                "command": "bun test"
+              },
+              "raw": "{}"
+            }
+          }
+        }
+      }
+    },
+    "running": {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "time": 310,
+          "part": {
+            "id": "msg_assistant_1-lifecycle",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-lifecycle-1",
+            "tool": "bash",
+            "state": {
+              "status": "running",
+              "input": {
+                "command": "bun test"
+              },
+              "time": {
+                "start": 310
+              }
+            }
+          }
+        }
+      }
+    },
+    "completed": {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "time": 320,
+          "part": {
+            "id": "msg_assistant_1-lifecycle",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-lifecycle-1",
+            "tool": "bash",
+            "state": {
+              "status": "completed",
+              "input": {
+                "command": "bun test"
+              },
+              "output": "12 pass",
+              "title": "bash",
+              "metadata": {},
+              "time": {
+                "start": 310,
+                "end": 320
+              }
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+      "payload": {
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_opencode",
+          "time": 330,
+          "part": {
+            "id": "msg_assistant_1-lifecycle",
+            "sessionID": "ses_harness_matrix_opencode",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-lifecycle-1",
+            "tool": "bash",
+            "state": {
+              "status": "error",
+              "input": {
+                "command": "bun test"
+              },
+              "error": "exit code 1",
+              "time": {
+                "start": 320,
+                "end": 330
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "sessionDiff": {
+    "directory": "/tmp/e2e-core-harness-rendering-matrix-opencode",
+    "payload": {
+      "type": "session.diff",
+      "properties": {
+        "sessionID": "ses_harness_matrix_opencode",
+        "diff": [
+          {
+            "file": "config.json",
+            "additions": 1,
+            "deletions": 0,
+            "status": "modified"
+          }
+        ]
+      }
+    }
+  }
+}

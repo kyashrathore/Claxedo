@@ -13,6 +13,7 @@ import { ensureEmbeddedWorkspaceRuntime } from "../embedded-workspace-runtime"
 import { normalizeClaxedoRegion } from "../region"
 import { resolveWorkspace } from "../workspace-store"
 import type { Workspace } from "../workspace-store"
+import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "../connections-host/turn-credentials"
 
 const SESSION_ENV_BASE = "/api/wr/session-env"
 
@@ -38,6 +39,7 @@ type WorkspaceRuntimeSessionEnvInput = {
   workspace: Workspace
   directory?: string
   fetchOptions: SandboxFetchOptions
+  connectionTurnCredential?: () => string | undefined
 }
 
 /**
@@ -61,7 +63,11 @@ function isRetriableStatus(status: number) {
   return status >= 500
 }
 
-function createCloudSandboxRequester(ws: Workspace, options: SandboxFetchOptions): SandboxRequester {
+function createCloudSandboxRequester(
+  ws: Workspace,
+  options: SandboxFetchOptions,
+  connectionTurnCredential?: () => string | undefined,
+): SandboxRequester {
   const { sandboxManager, relayProvider } = options
   if (!sandboxManager) throw new Error(`sandbox manager unavailable: ${ws.id}`)
   if (!relayProvider) throw new Error(`workspace relay provider unavailable: ${ws.id}`)
@@ -127,6 +133,8 @@ function createCloudSandboxRequester(ws: Workspace, options: SandboxFetchOptions
     headers.set("authorization", `Bearer ${accessToken}`)
     headers.set("x-opencode-directory", `workspace:${ws.id}`)
     headers.set("accept-encoding", "identity")
+    const credential = connectionTurnCredential?.()
+    if (credential) headers.set(CONNECTION_TURN_HEADER, credential)
     return fetch(
       `${endpoint.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(ws.id)}${sandboxPath(requestPath)}`,
       { ...init, headers },
@@ -167,21 +175,28 @@ function createCloudSandboxRequester(ws: Workspace, options: SandboxFetchOptions
   }
 }
 
-function createEmbeddedSandboxRequester(ws: Workspace): SandboxRequester {
+function createEmbeddedSandboxRequester(ws: Workspace, connectionTurnCredential?: () => string | undefined): SandboxRequester {
   return {
     async send(requestPath, init) {
       const runtime = await ensureEmbeddedWorkspaceRuntime(ws)
+      const headers = new Headers(init?.headers)
+      const credential = connectionTurnCredential?.()
+      if (credential) headers.set(CONNECTION_TURN_HEADER, credential)
       return runtime.app.fetch(
-        new Request(new URL(requestPath, "http://embedded-workspace-runtime.local"), init),
+        new Request(new URL(requestPath, "http://embedded-workspace-runtime.local"), { ...init, headers }),
       )
     },
   }
 }
 
-function createSandboxRequester(ws: Workspace, options: SandboxFetchOptions): SandboxRequester {
+function createSandboxRequester(
+  ws: Workspace,
+  options: SandboxFetchOptions,
+  connectionTurnCredential?: () => string | undefined,
+): SandboxRequester {
   return ws.kind === "cloud"
-    ? createCloudSandboxRequester(ws, options)
-    : createEmbeddedSandboxRequester(ws)
+    ? createCloudSandboxRequester(ws, options, connectionTurnCredential)
+    : createEmbeddedSandboxRequester(ws, connectionTurnCredential)
 }
 
 function sandboxPath(requestPath: string) {
@@ -301,7 +316,7 @@ export function createWorkspaceRuntimeSessionEnv(input: WorkspaceRuntimeSessionE
   const cwd = input.directory && input.directory.trim().length > 0
     ? path.posix.resolve("/", input.directory)
     : "/"
-  const requester = createSandboxRequester(input.workspace, input.fetchOptions)
+  const requester = createSandboxRequester(input.workspace, input.fetchOptions, input.connectionTurnCredential)
   const request = async (op: string, requestPath: string, init?: RequestInit) => {
     const response = await requester.send(requestPath, init)
     if (!response.ok) {
@@ -423,9 +438,11 @@ export type WorkspaceResolver = (input: { workspaceId: string }) => Promise<Work
 export function createClaxedoSessionEnvFactory(options: {
   fetchOptions: SandboxFetchOptions
   resolveWorkspace?: WorkspaceResolver
+  turnCredentials?: ConnectionTurnCredentials
 }): SessionEnvFactory {
   const resolve: WorkspaceResolver =
     options.resolveWorkspace ?? ((input) => resolveWorkspace({ workspaceId: input.workspaceId }))
+  const connectionTurnCredential = options.turnCredentials ? () => options.turnCredentials?.current() : undefined
   return async (input: SessionEnvFactoryInput) => {
     const toolSandbox = input.toolSandbox
     if (toolSandbox?.kind !== "workspace-runtime") return createVirtualSessionEnv()
@@ -437,6 +454,7 @@ export function createClaxedoSessionEnvFactory(options: {
       workspace,
       ...(toolSandbox.directory ? { directory: toolSandbox.directory } : {}),
       fetchOptions: options.fetchOptions,
+      ...(connectionTurnCredential ? { connectionTurnCredential } : {}),
     })
   }
 }

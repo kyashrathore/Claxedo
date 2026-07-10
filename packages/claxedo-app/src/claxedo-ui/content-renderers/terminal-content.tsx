@@ -1,6 +1,6 @@
 import { Show, batch, createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
 import { useLocation, useNavigate } from "@solidjs/router"
-import { Terminal } from "@/components/terminal"
+import { RoleGuardedTerminal } from "../../terminal/role-guarded-terminal"
 import { useTerminal } from "@/context/terminal"
 import { WebSocketCloseError } from "@claxedo/terminal/terminal-connection"
 import { requestTerminalFitOnPaneChange } from "../terminal/terminal-fit"
@@ -321,7 +321,7 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
           data-content-id={props.meta.id}
           class="flex-1 min-h-0 h-full w-full overflow-hidden"
         >
-          <Terminal
+          <RoleGuardedTerminal
             pty={pty}
             data-testid="terminal-xterm-host"
             autoFocus={false}
