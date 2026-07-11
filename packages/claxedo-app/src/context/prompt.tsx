@@ -7,7 +7,7 @@ import { Persist, persisted } from "@/utils/persist"
 import { checksum } from "@claxedo/utils/encode"
 import { useServer } from "@/context/server"
 import { createLruResourceCache } from "@/context/live-resource-cache"
-import { sessionViewKey } from "../shell/identity/session-view-key"
+import { promptScopeKey } from "../shell/identity/session-view-key"
 
 interface PartBase {
   content: string
@@ -240,9 +240,9 @@ const promptContextInput = {
 
     const session = createMemo(() =>
       load(
-        sessionViewKey({
-          directory: props.directory ? value(props.directory) : undefined,
-          sessionId: props.sessionId ? value(props.sessionId) : undefined,
+        promptScopeKey({
+          dir: props.directory ? value(props.directory) : undefined,
+          id: props.sessionId ? value(props.sessionId) : undefined,
         }),
         undefined,
       ),
@@ -250,13 +250,13 @@ const promptContextInput = {
     // A cross-session scope must resolve to the SAME prompt-cache/persist entry
     // the composer reads through `session()` — otherwise a scoped `set`/`reset`
     // (e.g. DialogFork restoring the forked message's draft into the new
-    // session) writes to an orphan entry the composer never mounts. `session()`
-    // keys on `sessionViewKey(...)`, so `pick` must derive the key the same way
-    // instead of the raw `load(dir, id)` it used before the session-view-key
-    // refactor. Scope carries the raw directory + session id, mirroring
-    // `PromptProviderProps`.
-    const pick = (scope?: Scope) =>
-      scope ? load(sessionViewKey({ directory: scope.dir, sessionId: scope.id }), undefined) : session()
+    // session, or the submit path clearing the composer after send) writes to an
+    // orphan entry the composer never mounts. BOTH `session()` and `pick` derive
+    // their key through the one canonical `promptScopeKey`, which applies
+    // `sessionViewKey` exactly once. A `Scope` therefore carries the RAW
+    // directory + session id (mirroring `PromptProviderProps`); a scope producer
+    // must never pre-compute the key or it double-wraps here.
+    const pick = (scope?: Scope) => (scope ? load(promptScopeKey({ dir: scope.dir, id: scope.id }), undefined) : session())
 
     return {
       ready: () => session().ready(),

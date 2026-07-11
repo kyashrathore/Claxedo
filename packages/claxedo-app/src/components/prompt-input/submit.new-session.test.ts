@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "../../shared/query/query-client"
+import { promptScopeKey } from "./submit-prompt-scope"
 import * as h from "./submit.harness.test"
 
 const {
@@ -45,9 +46,18 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
+    // clearInput resets RAW {dir, id} scopes — `pick`/`promptScopeKey` applies
+    // `sessionViewKey` exactly once, resolving each to the same persist key the
+    // composer reads (the draft slot before creation, the session slot after).
+    // Pre-computing the key inside the scope would double-wrap it and leave the
+    // just-sent text in the composer.
     expect(promptCalls.reset).toEqual([
-      { dir: repoMainPromptScope },
-      { dir: "workspace:%2Frepo%2Fmain:session:session-1" },
+      { dir: "/repo/main", id: "new" },
+      { dir: "/repo/main", id: "session-1" },
+    ])
+    expect(promptCalls.reset.map((scope) => promptScopeKey(scope))).toEqual([
+      repoMainPromptScope,
+      "workspace:%2Frepo%2Fmain:session:session-1",
     ])
     expect(sessionCreateCalls.at(-1)?.options?.headers?.["x-claxedo-draft-id"]).toBe("draft-1")
   })

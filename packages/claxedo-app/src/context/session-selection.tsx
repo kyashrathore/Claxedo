@@ -20,9 +20,9 @@ import {
   sessionConfigRawQueryKey,
   sessionConfigPatchFromLocalSelection,
   sessionConfigSelectionQueryKey,
-  sessionConfigSelectionSyncQueryKey,
   shouldExposeDefaultLocalModelFallback,
 } from "@claxedo/shell/session/session-config-selection"
+import { createSessionSyncRetry } from "./session-config-sync-retry"
 import { decodeSessionConfig } from "@claxedo/session-client/harness/profile"
 import { agentListQuery, configQuery } from "../shared/query/directory"
 import { useWorkspaceQuery } from "../shell/workspace/use-workspace-query"
@@ -260,41 +260,47 @@ const localContextInput = {
       return sessionConfigSelectionQuery.isLoading || sessionConfigSelectionQuery.isFetching
     })
 
-    const syncSessionSelection = (session: string, state: State) => {
-      if (!isOpenCodeSessionScope(session)) return
-      const key = sessionConfigSelectionSyncQueryKey(session)
-      const pending = queryClient.getQueryData<Promise<void>>(key)
-      if (pending) return
-
-      const run = createAgentRuntimeClient({
-        serverUrl: sdk.url,
-        request: platform.fetch ?? fetch,
-        opencodeClient: sdk.client,
-        ...(workspaceClientOptions()),
-      }).updateSessionConfig({
-        directory: sdk.directory,
-        sessionID: session,
-        patch: sessionConfigPatchFromLocalSelection(state),
-      })
-        .then(() => {
-          queryClient.setQueryData(sessionConfigSelectionQueryKey(session), cloneLocalSelectionState(state))
-          if (sameState(saved.session[session], state)) setSaved("dirty", session, false)
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (queryClient.getQueryData(sessionConfigSelectionSyncQueryKey(session)) === run) {
-            queryClient.removeQueries({ queryKey: sessionConfigSelectionSyncQueryKey(session), exact: true })
-          }
-        })
-
-      queryClient.setQueryData(key, run)
-    }
+    // Deliberate, bounded retry for the config-selection PATCH. Replaces the old accidental
+    // retry that re-fired the same doomed PATCH on every `sessionConfigRawQuery.isFetching`
+    // toggle during hydration. On failure we retry on an explicit backoff timer up to
+    // `maxAttempts`; after that the cycle stops but the persisted `dirty` flag is kept, so the
+    // write is never silently dropped — it flushes again on the next mount, or is re-armed by an
+    // explicit user selection (`deliberate: true`).
+    const syncRetry = createSessionSyncRetry({
+      maxAttempts: 5,
+      backoffMs: (failed) => Math.min(30_000, 500 * 2 ** (failed - 1)),
+      scopeReady: (session) => isOpenCodeSessionScope(session),
+      sameState,
+      patch: (session, state) =>
+        createAgentRuntimeClient({
+          serverUrl: sdk.url,
+          request: platform.fetch ?? fetch,
+          opencodeClient: sdk.client,
+          ...(workspaceClientOptions()),
+        }).updateSessionConfig({
+          directory: sdk.directory,
+          sessionID: session,
+          patch: sessionConfigPatchFromLocalSelection(state),
+        }),
+      onSuccess: (session, state) => {
+        queryClient.setQueryData(sessionConfigSelectionQueryKey(session), cloneLocalSelectionState(state))
+        if (sameState(saved.session[session], state)) setSaved("dirty", session, false)
+      },
+      // onExhausted intentionally omitted: the persisted `dirty` flag stays set so a permanently
+      // failed write surfaces on the next hydration rather than being silently discarded.
+      schedule: (fn, ms) => {
+        const timer = setTimeout(fn, ms)
+        return { cancel: () => clearTimeout(timer) }
+      },
+    })
+    onCleanup(() => syncRetry.dispose())
 
     const commitSessionState = (session: string, state: State) => {
       setSaved("session", session, state)
       if (!isOpenCodeSessionScope(session)) return
       setSaved("dirty", session, true)
-      syncSessionSelection(session, state)
+      // Explicit user selection: reset the retry ledger and fire a fresh attempt.
+      syncRetry.arm(session, state, { deliberate: true })
     }
 
     createEffect(() => {
@@ -303,7 +309,10 @@ const localContextInput = {
       if (!saved.dirty[session]) return
       const state = saved.session[session]
       if (!state) return
-      syncSessionSelection(session, state)
+      // Hydration flush: `arm` reads `scopeReady` (which tracks `sessionConfigRawQuery.isFetching`),
+      // so this effect still re-runs on hydration churn — but `arm` now only advances an
+      // already-armed idle attempt and never re-fires a failed or exhausted PATCH.
+      syncRetry.arm(session, state, { deliberate: false })
     })
 
     const scope = createMemo<State | undefined>(() => {

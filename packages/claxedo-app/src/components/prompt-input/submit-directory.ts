@@ -183,15 +183,25 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
   readonly onPublish?: (state: Omit<CloudStartupState, "open">) => void
 }) {
   let logs: NonNullable<CloudStartupState["logs"]> = []
-  const publish = (state: Omit<CloudStartupState, "open">) => {
+  // `overlay: false` suppresses the submit-time cloud-startup overlay
+  // (`onCloudStartup`) while still remembering the last state for the harness
+  // handoff (`onPublish`). User-hosted workspaces own their connection UI via
+  // WorkspaceGate (see resolveSubmitDirectory's comment), so surfacing the
+  // overlay here would double up — and worse, strand it: the overlay's clear
+  // path (`clearCloudStartup`) is gated to `workspaceKind === "cloud"` in
+  // submit.ts, so an overlay opened for a user-hosted submit is NEVER closed and
+  // permanently masks the session timeline once the send navigates.
+  const publish = (state: Omit<CloudStartupState, "open">, opts?: { overlay?: boolean }) => {
     const next = {
       logs,
       ...state,
     }
-    input.onCloudStartup?.({
-      open: true,
-      ...next,
-    })
+    if (opts?.overlay !== false) {
+      input.onCloudStartup?.({
+        open: true,
+        ...next,
+      })
+    }
     input.onPublish?.(next)
   }
   const userHostedWorkspace = (() => {
@@ -207,14 +217,14 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
         publish({
           status,
           err: status === "error" ? input.text.requestFailed : undefined,
-        })
+        }, { overlay: false })
       },
       onLog: (log) => {
         logs = appendWorkspaceRuntimeLog(logs, log.step, log.message, log.totalMs, log.ts)
         publish({
           status: log.step,
           err: log.step === "error" ? log.message : undefined,
-        })
+        }, { overlay: false })
       },
     }).catch((err: unknown) => ({
       ok: false as const,
@@ -224,7 +234,7 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
       publish({
         status: "error",
         err: ("message" in result ? result.message : undefined) ?? input.text.requestFailed,
-      })
+      }, { overlay: false })
       return false
     }
     return true

@@ -115,4 +115,37 @@ describe("session workspace key", () => {
     // An unknown filesystem directory still resolves to local (undefined)
     expect(sessionWorkspaceRuntimeRef({ directory: "/repo/unknown", projects })).toBeUndefined()
   })
+
+  test("a session pane and a secondary surface of the same workspace converge on ONE connection key", () => {
+    // Behavior 19 (e2e core-panes-split-tabs): two panes on the same relay-backed
+    // workspace must share ONE ref-counted connection. The two surfaces reach the
+    // resolver by DIFFERENT directory shapes:
+    //   - the session pane carries the workspace's filesystem worktree (its
+    //     sessionRef cwd / meta.directory), and
+    //   - a newly opened terminal inherits `activeWorkspaceId` — the relay-backed
+    //     workspace id itself (route key).
+    // Both MUST resolve the SAME workspaceId+kind, otherwise the second surface
+    // opens (or skips) a different connection entry and refs never reaches 2.
+    const projects = [
+      {
+        workspaces: {
+          ws_cloud_1: { workspaceId: "ws_cloud_1", kind: "cloud", directory: "/tmp/e2e-cloud-dir" },
+        },
+      },
+    ]
+    const fromWorktree = sessionWorkspaceRuntimeRef({ directory: "/tmp/e2e-cloud-dir", projects })
+    const fromWorkspaceId = sessionWorkspaceRuntimeRef({ directory: "ws_cloud_1", projects })
+    expect(fromWorktree).toEqual({ workspaceId: "ws_cloud_1", kind: "cloud" })
+    expect(fromWorkspaceId).toEqual({ workspaceId: "ws_cloud_1", kind: "cloud" })
+    expect(sessionPaneWorkspaceKey({ directory: "/tmp/e2e-cloud-dir", projects })).toBe(
+      sessionPaneWorkspaceKey({ directory: "ws_cloud_1", projects }),
+    )
+
+    // The failure mode that made behavior 19 stall at refs=1: a secondary surface
+    // whose inherited directory is a `local-<sessionId>` id the inventory does NOT
+    // carry resolves to local (undefined) and takes no ref. This is exactly what
+    // the default mock `/api/workspace/resolve` produced before the harness was
+    // made faithful to the cloud inventory.
+    expect(sessionWorkspaceRuntimeRef({ directory: "local-ses_cloud_1", projects })).toBeUndefined()
+  })
 })

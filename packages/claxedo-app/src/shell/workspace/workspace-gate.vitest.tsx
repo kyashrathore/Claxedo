@@ -88,17 +88,19 @@ describe("WorkspaceGate", () => {
     expect(acquiredIds.filter((id) => id === "ws_split")).toHaveLength(2)
   })
 
-  // Cross-file pin (DISCOVERED-BUG rule): the "second pane refs stuck at 1"
-  // symptom (e2e core-panes-split-tabs behavior 19) is NOT in this gate or the
-  // connection authority — both ref-count correctly (proven above +
-  // workspace-connection.test.ts). Its cause is
-  // `claxedo-ui/components/session-pane-scope.tsx:38,121` — when
-  // `suppressConnectionGate` is set (the Review panel / secondary surfaces),
-  // the pane renders its child DIRECTLY with no `acquireWorkspaceConnection`,
-  // so no second ref is ever taken. Owned by WP-B1.
-  test.todo(
-    "secondary surfaces sharing a relay workspace must take a ref instead of skipping WorkspaceGate (WP-B1: session-pane-scope suppressConnectionGate)",
-  )
+  // RESOLVED 2026-07-11 (WP-B5): the "second pane refs stuck at 1" symptom (e2e
+  // core-panes-split-tabs behavior 19) is NOT in this gate or the connection
+  // authority — both ref-count correctly (proven above +
+  // workspace-connection.test.ts). The earlier `suppressConnectionGate`
+  // hypothesis was WRONG: a terminal surface does NOT set that flag. The real
+  // cause was workspace RESOLUTION divergence — a newly opened terminal inherits
+  // `activeWorkspaceId` (the route key) as its directory, and when that route key
+  // disagrees with the signed inventory (a mock `/api/workspace/resolve` that
+  // answers `local-<sessionId>` for a directory the inventory calls cloud) the
+  // terminal's SessionPaneScope resolves `local` and its gate is a no-op, so no
+  // second ref is taken. The two surfaces converging on ONE connection key is now
+  // pinned at the resolver layer: session-workspace-key.test.ts, "a session pane
+  // and a secondary surface of the same workspace converge on ONE connection key".
 
   test("reacquires when a fallback workspace kind is refined", () => {
     const firstRelease = vi.fn()
