@@ -44,12 +44,27 @@ vi.mock("@opencode-ai/ui/select", () => ({
           <div data-testid={`select-group-${group}`}>
             <span>{group}</span>
             {options.map((opt: string) => (
-              <button
-                data-testid={`select-option-${opt}`}
-                onClick={() => props.onSelect?.(opt)}
-              >
-                {props.label?.(opt) ?? opt}
-              </button>
+              <>
+                {/* Choosing an option is only reachable with the menu open, so
+                    faithfully fire onOpenChange(true) first (real Kobalte does). */}
+                <button
+                  data-testid={`select-option-${opt}`}
+                  onClick={() => {
+                    props.onOpenChange?.(true)
+                    props.onSelect?.(opt)
+                  }}
+                >
+                  {props.label?.(opt) ?? opt}
+                </button>
+                {/* Simulates the trigger's typeahead-while-closed: a value change
+                    WITHOUT the menu ever opening. */}
+                <button
+                  data-testid={`select-typeahead-${opt}`}
+                  onClick={() => props.onSelect?.(opt)}
+                >
+                  {props.label?.(opt) ?? opt}
+                </button>
+              </>
             ))}
           </div>
         ))}
@@ -186,6 +201,18 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     expect(option).not.toBeNull()
 
     fireEvent.click(option)
+    expect(setHarnessCalls).toHaveLength(0)
+  })
+
+  test("a typeahead-while-closed change does NOT switch the harness", () => {
+    // Regression: with the trigger focused (never opened), the Kobalte trigger's
+    // typeahead mutates the value on a bare keystroke. Stray typing must not
+    // silently switch the session's harness.
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+    const typeahead = container.querySelector("[data-testid='select-typeahead-codex-acp']") as HTMLButtonElement
+    expect(typeahead).not.toBeNull()
+
+    fireEvent.click(typeahead)
     expect(setHarnessCalls).toHaveLength(0)
   })
 

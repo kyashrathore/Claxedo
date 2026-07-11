@@ -107,6 +107,21 @@ export function upsertCommandRegistration(registrations: CommandRegistration[], 
   return [entry, ...registrations.filter((x) => x.key !== entry.key)]
 }
 
+// The effective keybind the command palette displays next to a command: a
+// user's custom rebind (settings.keybinds) wins over the command's registered
+// default, and the "none" sentinel (or an empty override) means "no binding" so
+// the palette shows nothing rather than a stale default. Exported so the
+// discoverability contract — palette lists the ACTIVE binding, not the default —
+// is unit-testable without mounting the whole command context.
+export function resolveEffectiveKeybind(
+  custom: string | undefined,
+  registeredDefault: KeybindConfig | undefined,
+): KeybindConfig | undefined {
+  const config = custom ?? registeredDefault
+  if (!config || config === "none") return undefined
+  return config
+}
+
 export function parseKeybind(config: string): Keybind[] {
   if (!config || config === "none") return []
 
@@ -258,12 +273,8 @@ const commandContextInput = {
       createStore<CommandCatalog>({}),
     )
 
-    const bind = (id: string, def: KeybindConfig | undefined) => {
-      const custom = settings.keybinds.get(actionId(id))
-      const config = custom ?? def
-      if (!config || config === "none") return
-      return config
-    }
+    const bind = (id: string, def: KeybindConfig | undefined) =>
+      resolveEffectiveKeybind(settings.keybinds.get(actionId(id)), def)
 
     const registered = createMemo(() => {
       const seen = new Set<string>()

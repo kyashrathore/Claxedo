@@ -32,6 +32,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useRailKeyboardController } from "../claxedo-ui/rail/rail-keyboard-controller"
 import { useRailEmptyDraftController } from "../claxedo-ui/rail/rail-empty-draft-controller"
 import { useRailShellChromeState } from "../claxedo-ui/rail/rail-shell-chrome-state"
+import { isNarrowViewport } from "../claxedo-ui/workbench"
 import { RailSidebarShell } from "../claxedo-ui/rail/rail-sidebar-shell"
 import { RailWorkbenchShell } from "../claxedo-ui/rail/rail-workbench-shell"
 import { useRailWorkbenchController } from "../claxedo-ui/rail/rail-workbench-controller"
@@ -45,6 +46,7 @@ import {
   workspacePanelFullWidthCommand,
 } from "./layout/commands"
 import { createShellLayoutState } from "./layout/state"
+import { focusComposerSurface } from "../components/prompt-input/composer-focus"
 import "../claxedo-ui/ui-overrides.css"
 
 export type AppShellLayoutProps = ParentProps<{
@@ -251,6 +253,16 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const toggleSidebar = () => {
     shellLayout.toggleRail()
   }
+  // At narrow width the rail is a drawer and the desktop pinned-rail toggle is
+  // meaningless — the header "Show Sidebar" affordance must open the mobile
+  // drawer instead (WP-C3 collapse design §3.1).
+  const showSidebar = () => {
+    if (isNarrowViewport()) {
+      chrome.openMobileSidebar()
+      return
+    }
+    toggleSidebar()
+  }
   const resizeSidebar = (width: number) => {
     shellLayout.setRailWidth(width)
   }
@@ -273,11 +285,30 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     <div class="flex flex-col w-full h-full bg-background-base overflow-hidden" data-claxedo>
       {/* Desktop window chrome spacer - for macOS traffic lights / Windows title bar */}
 
+      {/* Skip link: the project/session tree in the sidebar renders one tab stop
+          per row/action (hundreds), which buries the composer at the very end of
+          the tab order. This WCAG 2.4.1 bypass is the first focusable element, so
+          one Tab + Enter jumps a keyboard user straight to the composer. It stays
+          visually hidden until focused. */}
+      <button
+        type="button"
+        data-testid="skip-to-composer"
+        class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-surface-raised-base focus:px-3 focus:py-1.5 focus:text-13-regular focus:text-text-base focus:shadow focus:outline-none"
+        onClick={() => focusComposerSurface()}
+      >
+        Skip to composer
+      </button>
+
       <div class="flex flex-1 min-h-0 overflow-hidden relative">
         {/* The sidebar stays hidden until the first project exists. On a
             brand-new (zero-project) account the only thing the user sees is
             the centered empty state + New Project CTA. As soon as a project
             is added it appears here (pinned by default). */}
+        {/* `role="navigation"` landmark (via `class="contents"` so it adds no
+            layout box — the sidebar shell stays the flex child) so the sidebar's
+            content lives inside a landmark (axe `region`) alongside the
+            workbench `main`. Single nav on the page, so no label is required. */}
+        <nav class="contents">
         <RailSidebarShell
           activeGlobal={emptyDraft.activeGlobal}
           activeProjectId={props.activeProjectId}
@@ -290,6 +321,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           headerTitle={() => emptyDraft.activeGlobal() ? "Global" : sidebarSelection.sidebarWorkspaceName()}
           homedir={props.homedir}
           mobileSidebarOpen={chrome.mobileSidebarOpen}
+          openMobileSidebar={chrome.openMobileSidebar}
           onArchiveSession={props.onArchiveSession}
           onDeleteSession={props.onDeleteSession}
           onDeleteWorkspace={props.onDeleteWorkspace}
@@ -320,6 +352,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onToggleSidebar={toggleSidebar}
           trafficLightPad={chrome.trafficLightPad}
         />
+        </nav>
         <RailWorkbenchShell
           activeGlobal={emptyDraft.activeGlobal}
           canUsePages={props.canUsePages}
@@ -338,7 +371,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onWorkspacePanelWidthChange={shellLayout.setWorkspacePanelWidth}
           onSelectSurface={workbenchController.selectSurface}
           onSettings={props.onSettings}
-          onShowSidebar={toggleSidebar}
+          onShowSidebar={showSidebar}
           onSidebarHotZoneEnter={handleSidebarHotZoneEnter}
           onToggleWorkspacePanel={toggleWorkspacePanel}
           onToggleWorkspacePanelFullWidth={toggleWorkspacePanelFullWidth}

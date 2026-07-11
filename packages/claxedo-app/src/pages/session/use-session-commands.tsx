@@ -44,6 +44,7 @@ import { configQuery } from "../../shared/query/directory"
 import { workspaceSessionRoute, workspaceTerminalRoute } from "../../shell/identity/route"
 import { sessionViewKey } from "../../shell/identity/session-view-key"
 import { createModelSelectionPicker } from "../../session-client/commands/model-selection"
+import { focusComposerWhenReady } from "../../components/prompt-input/composer-focus"
 
 export type SessionCommandContext = {
   sessionId: Accessor<string | undefined>
@@ -93,7 +94,6 @@ export const useSessionCommands = (args: SessionCommandContext) => {
     })
   })
   const tabs = createMemo(() => layout.tabs(sessionKey))
-  const view = createMemo(() => layout.view(sessionKey))
   const selectedModelKey = () => {
     const model = local.model.current()
     if (!model) return undefined
@@ -173,6 +173,13 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       onSelect: () => {
         phCapture("session_new")
         navigate(workspaceSessionRoute(args.directory()))
+        // Hand focus to the new draft's composer once it mounts. Without this a
+        // keyboard user who runs "New session" from the palette/chord lands with
+        // focus on BODY and has to tab past the whole sidebar to start typing.
+        // The draft composer mounts asynchronously after the route change, so
+        // retry across frames until it appears (falling back to the current
+        // page's composer if the destination never mounts).
+        focusComposerWhenReady({ fallback: () => args.focusInput() })
       },
     }),
   ])
@@ -311,6 +318,46 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const contentId = claxedoState.layout.openTerminal(dir, pendingId, "Terminal")
         claxedoState.workspacePanel.close()
         claxedoState.terminal.queueCreateForContent(contentId, dir, undefined, undefined, paneId)
+        navigate(workspaceTerminalRoute(dir, pendingId))
+      },
+    }),
+    terminalCommand({
+      // Previously a ghost command: `terminal.toggle` was referenced by
+      // session-header's keybind badge, desktop-menu.ts, and command-palette's
+      // EDITABLE_KEYBIND_IDS, and the terminal xterm handler deliberately passes
+      // Ctrl+` through for "the parent app toggle" — but nothing ever registered
+      // the command, so the badge rendered empty and there was no keyboard path.
+      //
+      // Its first registration (WP-C2) forwarded to `view().terminal.toggle()`,
+      // which only flips the vestigial upstream `store.terminal.opened` drawer
+      // flag — a surface no Claxedo component renders. In Claxedo a terminal is a
+      // Workbench pane (see `terminal.new`), so from the palette/chord the toggle
+      // silently no-op'd: no pty request, no terminal pane. Drive the real
+      // Workbench terminal instead: close the focused terminal if one is focused,
+      // otherwise open a new one for the focused pane's directory.
+      id: "terminal.toggle",
+      title: language.t("command.terminal.toggle"),
+      keybind: "ctrl+`",
+      disabled: !claxedoState,
+      onSelect: () => {
+        if (!claxedoState) return
+        const state = claxedoState
+        const focusedId = state.wb.selectors.focusedContent()
+        const focusedMeta = focusedId ? state.meta.get(focusedId) : undefined
+        if (focusedId && focusedMeta?.type === "terminal") {
+          state.layout.closeContent(focusedId, "user")
+          return
+        }
+        const paneId = state.wb.state.focusedPaneId ?? undefined
+        const worktree = paneId
+          ? state.workspace.paneWorktree(paneId)
+          : { pinned: undefined, default: undefined }
+        const dir = focusedMeta?.directory ?? worktree.pinned ?? worktree.default ?? args.directory()
+        if (!dir) return
+        const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+        const contentId = state.layout.openTerminal(dir, pendingId, "Terminal")
+        state.workspacePanel.close()
+        state.terminal.queueCreateForContent(contentId, dir, undefined, undefined, paneId)
         navigate(workspaceTerminalRoute(dir, pendingId))
       },
     }),

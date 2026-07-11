@@ -228,11 +228,11 @@ export function SessionHeader() {
     ] as const
   })
 
+  // Route through the terminal.toggle command: the old view().terminal.toggle()
+  // only flipped a vestigial upstream drawer flag no Claxedo surface renders,
+  // leaving this button inert (same dead path the palette command had).
   const toggleTerminal = () => {
-    const next = !view().terminal.opened()
-    view().terminal.toggle()
-    if (!next) return
-
+    command.trigger("terminal.toggle")
     const id = terminal.active()
     if (!id) return
     focusTerminalById(id)

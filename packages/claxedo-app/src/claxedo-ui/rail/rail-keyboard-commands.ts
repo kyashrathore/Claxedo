@@ -39,13 +39,6 @@ export function createRailKeyboardCommands(actions: RailKeyboardCommandActions):
       onSelect: actions.showPreviousSurface,
     },
     {
-      id: "claxedo.surface.reopen",
-      title: "Reopen Closed Surface",
-      category: "View",
-      keybind: "mod+shift+t",
-      onSelect: () => {},
-    },
-    {
       id: "claxedo.sidebar.toggle",
       title: "Toggle Sidebar",
       category: "View",

@@ -7,6 +7,7 @@ import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { ModelSelectorPopover, type PickerItem, type PickerState } from "@claxedo/components/dialogs/select-model"
 import { HARNESS_DISPLAY_NAMES, type HarnessType } from "@claxedo/session-client/harness/profile"
 import type { HarnessSelectionController } from "@claxedo/session-client/harness/controller"
+import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
 import { panePreferenceScope } from "../../pane/store/pane-preferences"
 import { createModelSelectionController, modelKeyFromPickerSelection } from "../../session-client/commands/model-selection"
 const HARNESS_OPTIONS: HarnessType[] = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]
@@ -128,6 +129,10 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const optionsLoading = () => selection().optionsLoading
   const [switchingHarness, setSwitchingHarness] = createSignal<HarnessType | undefined>()
   const harnessSwitching = () => !!switchingHarness()
+  // Tracks whether the harness menu was actually opened before a value change
+  // arrived, so a stray typeahead-while-closed keystroke cannot silently switch
+  // the harness. Reset after each selection is evaluated.
+  let openedViaMenu = false
   const rows = createMemo<Item[]>(() => {
     const currentHarness = harness()
     return selection().models.map((item) => ({
@@ -233,12 +238,19 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         current={harness()}
         label={(r) => harnessOptionLabel(r)}
         groupBy={(r) => harnessOptionGroup(r)}
+        onOpenChange={(open) => {
+          if (open) openedViaMenu = true
+        }}
         onSelect={(r) => {
           const current = harness()
-          if (!r || harnessDisabled()) return
-          if (r === current) {
-            return
-          }
+          const apply = shouldApplyHarnessSelection({
+            next: r,
+            current,
+            disabled: harnessDisabled(),
+            openedViaMenu,
+          })
+          openedViaMenu = false
+          if (!apply || !r) return
           setSwitchingHarness(r)
           void Promise.resolve(
             props.harnessController.setHarness(scope(), r, {
