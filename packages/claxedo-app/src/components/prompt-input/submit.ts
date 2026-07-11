@@ -8,7 +8,7 @@ import { useShellQueryOptions as useQueryOptions } from "@claxedo/shell/data/que
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@claxedo/context/language"
 import { useLayout } from "@/context/layout"
-import { useLocal } from "@/context/local"
+import { useLocal } from "@/context/session-selection"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, usePrompt } from "@/context/prompt"
 import { usePermission } from "@/context/permission"
 import { usePlatform } from "@claxedo/context/platform"
@@ -67,31 +67,28 @@ export type FollowupDraft = {
   variant?: string
 }
 
-type PromptSubmitInput = {
+// `createPromptSubmit`'s options were one ~40-field flag bag; the cohesive
+// sub-interfaces below (recomposed by intersection into `PromptSubmitInput`,
+// so the flat call shape and every existing field reference stay unchanged)
+// group them by role instead of one wall of fields.
+
+/** Which existing session / draft this submit acts on. */
+type PromptSubmitTargetInput = {
   info: Accessor<{ id: string; config?: unknown } | undefined>
   sessionID?: Accessor<string | undefined>
   sessionDirectory?: Accessor<string | undefined>
   draftId?: Accessor<string | undefined>
   surfaceId?: Accessor<string | undefined>
+}
+
+/** The composer content and per-request overrides carried into the prompt. */
+type PromptSubmitContentInput = {
   imageAttachments: Accessor<ImageAttachmentPart[]>
   commentCount: Accessor<number>
   autoAccept: Accessor<boolean>
   mode: Accessor<SubmitMode>
   working: Accessor<boolean>
-  editor: () => HTMLDivElement | undefined
-  queueScroll: () => void
-  promptLength: (prompt: Prompt) => number
-  addToHistory: (prompt: Prompt, mode: SubmitMode) => void
-  resetHistoryNavigation: () => void
-  setMode: (mode: SubmitMode) => void
-  setPopover: (popover: "at" | "slash" | null) => void
   composerMode: Accessor<ComposerMode>
-  newSessionWorktree?: Accessor<string | undefined>
-  newSessionWorkspaceKind?: Accessor<"local" | "cloud" | "user-hosted" | undefined>
-  onNewSessionWorktreeReset?: () => void
-  onCloudStartup?: (state?: CloudStartupState) => void
-  onSubmit?: () => void
-  navigateOnCreate?: Accessor<boolean>
   /** System prompt injected with every request (e.g. page context for dock sessions). */
   system?: Accessor<string | undefined>
   /** Override the agent name (e.g. force "doc" agent in page dock). */
@@ -100,15 +97,47 @@ type PromptSubmitInput = {
   variant?: Accessor<string | undefined>
   /** Structured output format for embedded flows. */
   format?: Accessor<OutputFormat | undefined>
-  setBooting?: (value?: { harness: string; sessionID?: string; phase?: "booting" | "sending" }) => void
-  bootScope?: Accessor<string>
+}
+
+/** Callbacks bridging back to the editor / input surface after a submit. */
+type PromptSubmitEditorBridge = {
+  editor: () => HTMLDivElement | undefined
+  queueScroll: () => void
+  promptLength: (prompt: Prompt) => number
+  addToHistory: (prompt: Prompt, mode: SubmitMode) => void
+  resetHistoryNavigation: () => void
+  setMode: (mode: SubmitMode) => void
+  setPopover: (popover: "at" | "slash" | null) => void
+}
+
+/** New-session provisioning: which worktree/workspace to create and where it lives. */
+type PromptSubmitProvisioningInput = {
+  newSessionWorktree?: Accessor<string | undefined>
+  newSessionWorkspaceKind?: Accessor<"local" | "cloud" | "user-hosted" | undefined>
+  onNewSessionWorktreeReset?: () => void
+  onCloudStartup?: (state?: CloudStartupState) => void
+  navigateOnCreate?: Accessor<boolean>
   signedControlPlane?: Accessor<boolean>
   workspaceId?: Accessor<string | undefined>
   workspaceKind?: Accessor<"cloud" | "user-hosted" | undefined>
   fallbackModel?: Accessor<{ id: string; provider: { id: string } } | undefined>
-  canAbort?: Accessor<boolean>
-  harnessController?: HarnessSubmitController
 }
+
+/** Boot / sending status reporting hooks. */
+type PromptSubmitStatusInput = {
+  setBooting?: (value?: { harness: string; sessionID?: string; phase?: "booting" | "sending" }) => void
+  bootScope?: Accessor<string>
+}
+
+type PromptSubmitInput = PromptSubmitTargetInput &
+  PromptSubmitContentInput &
+  PromptSubmitEditorBridge &
+  PromptSubmitProvisioningInput &
+  PromptSubmitStatusInput & {
+    onSubmit?: () => void
+    canAbort?: Accessor<boolean>
+    harnessController?: HarnessSubmitController
+  }
 
 type CreateWorkspaceResult = {
   workspaceId: string
@@ -376,9 +405,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       // Cloud workspace creation changes submit directory; carry draft harness ownership.
       harnessController.promote(sourceScope, scope)
     }
+    const infoSessionConfig = isNewSession ? undefined : parseExistingSessionConfig(input.info()?.config)
+    const cachedSessionConfig = isNewSession || infoSessionConfig ? undefined : parseCachedSessionConfig(explicitSessionID ? queryClient.getQueryData<string>(savedSessionConfigQueryKey(explicitSessionID)) : undefined)
     const existingSessionConfig = isNewSession ? undefined
-      : parseExistingSessionConfig(input.info()?.config) ??
-        parseCachedSessionConfig(explicitSessionID ? queryClient.getQueryData<string>(savedSessionConfigQueryKey(explicitSessionID)) : undefined) ??
+      : infoSessionConfig ?? cachedSessionConfig ??
         parseExistingSessionConfig((await sessionClient(sessionDirectory).session
           .get({ sessionID: explicitSessionID!, directory: sessionDirectory })
           .then((result) => (result.data as { config?: unknown } | undefined)?.config)
@@ -441,7 +471,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
     const selectedVariant = harnessMode ? undefined : input.variant?.() ?? local.model.variant.current()
-    const submittedConfig = existingSessionConfig?.model
+    // A fresh local model diverging from our OWN dedup-cache signature is a deliberate mid-session swap that must win — else the
+    // unchanged PATCH body is skipped by rubric-C1 dedup and dropped (authoritative config / harness sessions are excluded).
+    const freshSelectedModel = harnessMode ? undefined : local.model.current()
+    const selectionOverridesExisting = !!freshSelectedModel && existingSessionConfig === cachedSessionConfig && !!cachedSessionConfig?.model &&
+      (freshSelectedModel.provider.id !== cachedSessionConfig.model.providerID || freshSelectedModel.id !== cachedSessionConfig.model.modelID)
+    const submittedConfig = existingSessionConfig?.model && !selectionOverridesExisting
       ? {
           model: existingSessionConfig.model,
           agent: input.agent?.() || existingSessionConfig.agent || local.agent.current()?.name || "build",

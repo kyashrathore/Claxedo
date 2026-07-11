@@ -692,10 +692,6 @@ function TitlebarUpdatePill(props: { update?: TitlebarUpdate }) {
   )
 }
 
-function DesktopTitlebarIconButton(props: Parameters<typeof IconButtonV2>[0]) {
-  return
-}
-
 function TabNavItem(props: {
   href: string
   title: string

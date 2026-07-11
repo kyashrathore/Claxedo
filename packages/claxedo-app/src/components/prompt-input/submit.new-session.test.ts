@@ -331,7 +331,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
 
     await submit.handleSubmit(submitEvent())
     await settleSubmitEffects()
-    await waitForSubmitEffect(() => flowEvents.some((item) => item === "navigate:/s/session-1"))
+    await waitForSubmitEffect(() => flowEvents.some((item) => item === "navigate:/w/ws_1/session/session-1"))
 
     expect(patchCalls).toEqual([])
     expect(openCalls).toEqual([{ directory: "ws_1", sessionID: "session-1", title: "Session" }])
@@ -341,7 +341,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       sessionID: "session-1",
     })
     expect(startup.some((item) => item.status === "opening_session")).toBe(true)
-    expect(flowEvents.indexOf("optimistic:session-1")).toBeLessThan(flowEvents.indexOf("navigate:/s/session-1"))
+    expect(flowEvents.indexOf("optimistic:session-1")).toBeLessThan(flowEvents.indexOf("navigate:/w/ws_1/session/session-1"))
   })
 
 
@@ -698,7 +698,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(showCalls).toEqual(["tab-added"])
     expect(handoffCalls).toEqual([{ sessionKey: "workspace:%2Frepo%2Fmain:session:session-1", sessionID: "session-1" }])
     expect(navCalls).toHaveLength(1)
-    expect(navCalls).toEqual(["/s/session-1"])
+    expect(navCalls).toEqual(["/w/%2Frepo%2Fmain/session/session-1"])
     expect(refreshCalls).toEqual([{ directory: "/repo/main", harnessType: "opencode" }])
     expect(optimisticAdds.map((item) => ({ directory: item.directory, sessionID: item.sessionID }))).toEqual([
       { directory: "/repo/main", sessionID: "session-1" },
@@ -774,7 +774,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(patchCalls).toEqual([])
     expect(showCalls).toEqual(["tab-added"])
     expect(navCalls).toHaveLength(1)
-    expect(navCalls).toEqual(["/s/session-1"])
+    expect(navCalls).toEqual(["/w/%2Frepo%2Fmain/session/session-1"])
     expect(refreshCalls).toEqual([{ directory: "/repo/main", harnessType: "opencode" }])
   })
 
@@ -844,7 +844,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(openCalls).toEqual([{ directory: "/repo/main", sessionID: "session-1", title: "Session" }])
     expect(showCalls).toEqual(["tab-added"])
     expect(closeCalls).toEqual([])
-    expect(navCalls).toEqual(["/s/session-1"])
+    expect(navCalls).toEqual(["/w/%2Frepo%2Fmain/session/session-1"])
   })
 
 

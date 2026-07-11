@@ -19,6 +19,16 @@ import {
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import type { FileNode } from "@opencode-ai/sdk/v2"
+import {
+  buildAllowedFilter,
+  dirsToExpand,
+  leafName,
+  parentPath,
+  resolveTreeKeyAction,
+  shouldListExpanded,
+  shouldListRoot,
+  type FileTreeFilter as Filter,
+} from "./file-tree-helpers"
 
 const MAX_DEPTH = 128
 
@@ -27,39 +37,6 @@ function pathToFileUrl(filepath: string): string {
 }
 
 type Kind = "add" | "del" | "mix"
-
-type Filter = {
-  files: Set<string>
-  dirs: Set<string>
-}
-
-export function shouldListRoot(input: { level: number; dir?: { loaded?: boolean; loading?: boolean } }) {
-  if (input.level !== 0) return false
-  if (input.dir?.loaded) return false
-  if (input.dir?.loading) return false
-  return true
-}
-
-export function shouldListExpanded(input: {
-  level: number
-  dir?: { expanded?: boolean; loaded?: boolean; loading?: boolean }
-}) {
-  if (input.level === 0) return false
-  if (!input.dir?.expanded) return false
-  if (input.dir.loaded) return false
-  if (input.dir.loading) return false
-  return true
-}
-
-export function dirsToExpand(input: {
-  level: number
-  filter?: { dirs: Set<string> }
-  expanded: (dir: string) => boolean
-}) {
-  if (input.level !== 0) return []
-  if (!input.filter) return []
-  return [...input.filter.dirs].filter((dir) => !input.expanded(dir))
-}
 
 const kindLabel = (kind: Kind) => {
   if (kind === "add") return "A"
@@ -216,6 +193,30 @@ export default function FileTree(props: {
   const file = useFile()
   const level = props.level ?? 0
   const draggable = () => props.draggable ?? true
+
+  // Container-level WAI-ARIA tree keyboard navigation (root only — nested
+  // FileTree instances bubble their keydowns up to this handler). Rows are the
+  // focusable [role="treeitem"] elements (Kobalte trigger button for a
+  // directory, the file button for a file); expanded state is read from the
+  // trigger's aria-expanded so expand/collapse reuses the existing click path.
+  const handleTreeKeyDown = (event: KeyboardEvent) => {
+    const root = event.currentTarget as HTMLElement | null
+    if (!root) return
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[role="treeitem"]'))
+    const current = (event.target as HTMLElement | null)?.closest<HTMLElement>('[role="treeitem"]') ?? null
+    const index = current ? items.indexOf(current) : -1
+    const expandedAttr = current?.getAttribute("aria-expanded")
+    const expanded = expandedAttr === null || expandedAttr === undefined ? undefined : expandedAttr === "true"
+    const action = resolveTreeKeyAction({ key: event.key, index, count: items.length, expanded })
+    if (action.kind === "none") return
+    event.preventDefault()
+    if (action.kind === "toggle") {
+      current?.click()
+      return
+    }
+    items[action.index]?.focus()
+  }
+
   const batchSize = () => props.visibleLimit ?? Number.POSITIVE_INFINITY
   const [visibleCount, setVisibleCount] = createSignal(batchSize())
 
@@ -232,19 +233,7 @@ export default function FileTree(props: {
     const allowed = props.allowed
     if (!allowed) return
 
-    const files = new Set(allowed)
-    const dirs = new Set<string>()
-
-    for (const item of allowed) {
-      const parts = item.split("/")
-      const parents = parts.slice(0, -1)
-      for (const [idx] of parents.entries()) {
-        const dir = parents.slice(0, idx + 1).join("/")
-        if (dir) dirs.add(dir)
-      }
-    }
-
-    return { files, dirs }
+    return buildAllowedFilter(allowed)
   })
 
   const marks = createMemo(() => {
@@ -378,16 +367,8 @@ export default function FileTree(props: {
       })
     }
 
-    const parent = (path: string) => {
-      const idx = path.lastIndexOf("/")
-      if (idx === -1) return ""
-      return path.slice(0, idx)
-    }
-
-    const leaf = (path: string) => {
-      const idx = path.lastIndexOf("/")
-      return idx === -1 ? path : path.slice(idx + 1)
-    }
+    const parent = parentPath
+    const leaf = leafName
 
     const out = nodes.filter((node) => {
       if (node.type === "file") return current.files.has(node.path)
@@ -444,7 +425,13 @@ export default function FileTree(props: {
   })
 
   return (
-    <div data-component="filetree" class={`flex flex-col gap-0.5 ${props.class ?? ""}`}>
+    <div
+      data-component="filetree"
+      class={`flex flex-col gap-0.5 ${props.class ?? ""}`}
+      role={level === 0 ? "tree" : "group"}
+      aria-label={level === 0 ? "File tree" : undefined}
+      onKeyDown={level === 0 ? handleTreeKeyDown : undefined}
+    >
       <Show when={loadingEmpty()}>
         <div data-file-tree-loading class="flex flex-col gap-0.5 p-1" aria-label="Loading files">
           <For each={Array.from({ length: level === 0 ? 8 : 3 })}>
@@ -478,7 +465,11 @@ export default function FileTree(props: {
                   open={expanded()}
                   onOpenChange={(open) => (open ? file.tree.expand(node.path) : file.tree.collapse(node.path))}
                 >
-                  <Collapsible.Trigger>
+                  <Collapsible.Trigger
+                    role="treeitem"
+                    aria-level={level + 1}
+                    aria-selected={node.path === props.active}
+                  >
                     <FileTreeNode
                       node={node}
                       level={level}
@@ -539,6 +530,9 @@ export default function FileTree(props: {
                   marks={marks()}
                   as="button"
                   type="button"
+                  role="treeitem"
+                  aria-level={level + 1}
+                  aria-selected={node.path === props.active}
                   data-file-tree-path={node.path}
                   onClick={() => props.onFileClick?.(node)}
                 >

@@ -7,16 +7,10 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { List } from "@opencode-ai/ui/list"
 import { showToast } from "@opencode-ai/ui/toast"
 import { extractPromptFromParts } from "@/utils/prompt"
-import type { TextPart as SDKTextPart } from "@opencode-ai/sdk/v2/client"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useLanguage } from "@claxedo/context/language"
 import { registeredConversationSnapshot } from "@claxedo/shell/chat/conversation-registry"
-
-interface ForkableMessage {
-  id: string
-  text: string
-  time: string
-}
+import { forkableMessages, resolveForkSessionId, type ForkableMessage } from "./fork-messages"
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString(undefined, { timeStyle: "short" })
@@ -29,35 +23,15 @@ export const DialogFork: Component = () => {
   const prompt = usePrompt()
   const dialog = useDialog()
   const language = useLanguage()
-  const conversation = createMemo(() => registeredConversationSnapshot(params.id))
+  const sessionId = () => resolveForkSessionId(params)
+  const conversation = createMemo(() => registeredConversationSnapshot(sessionId()))
 
-  const messages = createMemo((): ForkableMessage[] => {
-    const sessionID = params.id
-    if (!sessionID) return []
-
-    const result: ForkableMessage[] = []
-
-    for (const message of conversation().messages) {
-      if (message.role !== "user") continue
-
-      const parts = conversation().parts[message.id] ?? []
-      const textPart = parts.find((x): x is SDKTextPart => x.type === "text" && !x.synthetic && !x.ignored)
-      if (!textPart) continue
-
-      result.push({
-        id: message.id,
-        text: textPart.text.replace(/\n/g, " ").slice(0, 200),
-        time: formatTime(new Date(message.time.created)),
-      })
-    }
-
-    return result.reverse()
-  })
+  const messages = createMemo((): ForkableMessage[] => forkableMessages(conversation(), { formatTime }))
 
   const handleSelect = (item: ForkableMessage | undefined) => {
     if (!item) return
 
-    const sessionID = params.id
+    const sessionID = sessionId()
     if (!sessionID) return
 
     const parts = conversation().parts[item.id] ?? []

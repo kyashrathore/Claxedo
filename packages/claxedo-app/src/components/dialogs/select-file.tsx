@@ -425,7 +425,11 @@ export function DialogSelectFile(props: {
   })
 
   return (
-    <Dialog class="pt-3 pb-0 !max-h-[480px]" transition>
+    <Dialog
+      class="pt-3 pb-0 !max-h-[480px]"
+      transition
+      aria-label={filesOnly() ? language.t("session.header.searchFiles") : language.t("palette.search.placeholder")}
+    >
       <div data-testid={filesOnly() ? "file-palette" : "command-palette"}>
         <List
           search={{

@@ -115,6 +115,48 @@ describe("resolvePreparedSubmitDirectory", () => {
     })
   })
 
+  test("cloud workspace creation rejection shows exactly one toast and aborts", async () => {
+    const toasts: SubmitToast[] = []
+
+    const result = await resolveDirectory({
+      workspaceKind: "cloud",
+      projectDirectory: "/repo/main",
+      projects: [{ id: "project-1", worktree: "/repo/main" }],
+      showToast: (toast) => toasts.push(toast),
+      createCloudWorkspace: async () => {
+        throw new Error("boom")
+      },
+    })
+
+    expect(result).toBeUndefined()
+    expect(toasts).toEqual([
+      {
+        title: "Failed to create cloud workspace",
+        description: "boom",
+      },
+    ])
+  })
+
+  test("cloud workspace resolving without a workspaceId shows the request-failed toast once", async () => {
+    const toasts: SubmitToast[] = []
+
+    const result = await resolveDirectory({
+      workspaceKind: "cloud",
+      projectDirectory: "/repo/main",
+      projects: [{ id: "project-1", worktree: "/repo/main" }],
+      showToast: (toast) => toasts.push(toast),
+      createCloudWorkspace: async () => ({}),
+    })
+
+    expect(result).toBeUndefined()
+    expect(toasts).toEqual([
+      {
+        title: "Failed to create cloud workspace",
+        description: "Request failed",
+      },
+    ])
+  })
+
   test("creates local worktrees from the project root and marks the result pending", async () => {
     const createdFrom: string[] = []
     const pending: string[] = []

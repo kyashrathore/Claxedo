@@ -122,13 +122,21 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
     return
   }
 
+  // Track whether the create call itself rejected so we surface exactly one
+  // toast per failure. Previously the .catch below toasted the error and
+  // returned undefined, which then fell through into the `!workspaceId` branch
+  // and toasted a *second* generic "request failed" message for the same
+  // failure (see core-cloud-provisioning e2e: one toast, no pipeline/session).
+  let creationRejected = false
   const createdWorkspace = await input.createCloudWorkspace(plan.projectId).catch((err) => {
+    creationRejected = true
     input.showToast({
       title: input.text.cloudWorkspaceCreateFailedTitle,
       description: input.errorMessage(err),
     })
     return undefined
   })
+  if (creationRejected) return
   if (!createdWorkspace?.workspaceId) {
     input.showToast({
       title: input.text.cloudWorkspaceCreateFailedTitle,

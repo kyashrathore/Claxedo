@@ -5,7 +5,7 @@ import { harnessQueryFetch } from "../../shell/data/transport/harness-query-fetc
 import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"
 import type { SessionRef } from "../../shell/identity/session-ref"
 import { queryClient } from "../../shared/query/query-client"
-import { createAgentRuntimeClient } from "../../runtime/agent-runtime-client"
+import { createAgentRuntimeClient } from "../../agent-runtime/agent-runtime-client"
 import { resolveSessionUrl } from "../../utils/session-url"
 import { workspaceResolveUrl } from "../../utils/workspace-control-routes"
 import {

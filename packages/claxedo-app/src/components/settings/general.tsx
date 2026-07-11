@@ -1,6 +1,6 @@
 // Claxedo keeps this general settings override for analytics events and hosted account controls.
 
-import { Component, createMemo, onMount, Show, type JSX } from "solid-js"
+import { Component, createMemo, createUniqueId, onMount, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Select } from "@opencode-ai/ui/select"
@@ -601,13 +601,26 @@ interface SettingsRowProps {
 }
 
 const SettingsRow: Component<SettingsRowProps> = (props) => {
+  // Programmatically tie the visible title/description to the row's control so a
+  // screen reader announces which setting the switch/select belongs to. The
+  // control markup itself lives in `children` (Kobalte Switch/Select), so we
+  // label the group wrapper — the control's own role (switch/combobox) is still
+  // exposed, now with the setting's name as its group's accessible name.
+  const titleId = createUniqueId()
+  const descId = createUniqueId()
   return (
     <div class="flex flex-wrap items-center justify-between gap-4 py-3 border-b border-border-weak-base last:border-none">
       <div class="flex flex-col gap-0.5 min-w-0">
-        <span class="text-14-medium text-text-strong">{props.title}</span>
-        <span class="text-12-regular text-text-weak">{props.description}</span>
+        <span id={titleId} class="text-14-medium text-text-strong">
+          {props.title}
+        </span>
+        <span id={descId} class="text-12-regular text-text-weak">
+          {props.description}
+        </span>
       </div>
-      <div class="flex-shrink-0">{props.children}</div>
+      <div class="flex-shrink-0" role="group" aria-labelledby={titleId} aria-describedby={descId}>
+        {props.children}
+      </div>
     </div>
   )
 }

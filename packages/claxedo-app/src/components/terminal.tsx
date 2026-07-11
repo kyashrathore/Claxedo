@@ -13,9 +13,7 @@ import { preparePersistBuffer, prepareRestoreBuffer } from "@claxedo/terminal/te
 import { hostStable, shouldRecoverDesync, shouldSendResize, sizeSane } from "@claxedo/terminal/terminal-geometry"
 import {
   sigwinchToggleSize,
-  socketCloseIsError,
   WebSocketCloseError,
-  isRetriableClose,
   reconnectDelay,
   MAX_RECONNECT_ATTEMPTS,
   reconnectingMessage,
@@ -25,13 +23,15 @@ import {
   openTerminalWebSocket,
 } from "@claxedo/terminal/terminal-connection"
 import { createTerminalRuntimeQueue } from "@claxedo/terminal/terminal-runtime-queue"
-import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize } from "@claxedo/terminal/terminal-tui"
+import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize } from "@claxedo/terminal/reconnect-heuristics"
 import { stripTerminalRepliesFromInput } from "@claxedo/terminal/input-reply-filter"
 import { getCapabilityResponses } from "@claxedo/terminal/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "../utils/api"
 import { resolveWorkspaceRuntime } from "../cloud/workspace-runtime-store"
-import { parse as parseShellCommand } from "shell-quote"
 import { resolveTerminalReloadFlag, terminalReloadStorageKey } from "./terminal-pty-key-migration"
+import { resolveInitialCommand } from "./terminal-initial-command"
+import { buildRestoreWrite, shouldTrimRestoredTail, trimTrailingLines } from "./terminal-restore"
+import { classifyTerminalClose } from "./terminal-close"
 
 export interface TerminalProps extends ComponentProps<"div"> {
   pty: LocalPTY
@@ -52,20 +52,6 @@ type TerminalColors = {
   foreground: string
   cursor: string
   selectionBackground: string
-}
-
-function isAgentLaunchCommand(input?: string) {
-  if (!input?.trim()) return false
-  try {
-    const parsed = parseShellCommand(input)
-    if (!parsed.every((item): item is string => typeof item === "string")) return false
-    const command = parsed[0]
-    if (!command) return false
-    const name = command.split(/[\\/]/).pop()
-    return name === "claude" || name === "codex" || name === "gemini" || name === "cursor" || name === "cursor-agent"
-  } catch {
-    return false
-  }
 }
 
 const DEFAULT_TERMINAL_COLORS: Record<"light" | "dark", TerminalColors> = {
@@ -179,17 +165,6 @@ export const Terminal = (props: TerminalProps) => {
     typeof local.pty.cursor === "number" && Number.isSafeInteger(local.pty.cursor) ? local.pty.cursor : 0
 
   const cleanups: VoidFunction[] = []
-  const trimTrailingLines = (value: string, count: number) => {
-    let out = value
-    let left = count
-    while (left > 0) {
-      const idx = Math.max(out.lastIndexOf("\n"), out.lastIndexOf("\r"))
-      if (idx < 0) return ""
-      out = out.slice(0, idx + 1)
-      left -= 1
-    }
-    return out
-  }
 
   const cleanup = () => {
     if (!cleanups.length) return
@@ -466,9 +441,8 @@ export const Terminal = (props: TerminalProps) => {
       const useLiveTailCursor = plan.useLiveTailCursor
       const cursorStart = plan.cursorStart
       const launch = initialDelay({ likelyTui })
-      const rawInitialCmd = local.pty.initialCommand ?? ""
-      const initialCmd = isAgentLaunchCommand(rawInitialCmd) ? "" : rawInitialCmd
-      if (rawInitialCmd && !initialCmd) props.onUpdate?.({ id: local.pty.id, initialCommand: undefined })
+      const { command: initialCmd, clearStored: clearStoredInitialCmd } = resolveInitialCommand(local.pty.initialCommand)
+      if (clearStoredInitialCmd) props.onUpdate?.({ id: local.pty.id, initialCommand: undefined })
       const initialReady = initialCmd ? claimInitialCommand({ id: local.pty.id, initialCommand: initialCmd }) : false
       let initialSent = false
       let gated = likelyTui && initialReady
@@ -748,12 +722,13 @@ export const Terminal = (props: TerminalProps) => {
         }
 
         const widthChanged = splitWidthChanged
-        const shouldTrimTrailingLine =
-          !isReload &&
-          !wasAltScreen &&
-          snapshotWasAtBottom !== false &&
-          widthChanged &&
-          !likelyTui
+        const shouldTrimTrailingLine = shouldTrimRestoredTail({
+          isReload,
+          wasAltScreen,
+          snapshotWasAtBottom,
+          widthChanged,
+          likelyTui,
+        })
         const restoreBuffer = shouldTrimTrailingLine ? trimTrailingLines(bufferToRestore, 2) : bufferToRestore
 
         // Restore ordering:
@@ -764,10 +739,7 @@ export const Terminal = (props: TerminalProps) => {
         // If a TUI leaves custom SGR attributes active (e.g. composer bg),
         // subsequent resizes can fill new rows with that background. Reset SGR
         // after snapshot restore so fit/resize uses theme defaults for new cells.
-        const restoreTail = likelyTui ? "\x1b[0m" : ""
-        const restoreData = wasAltScreen
-          ? `\x1b[?1049h${modeSequences}${restoreBuffer}${restoreTail}`
-          : `${modeSequences}${restoreBuffer}${restoreTail}`
+        const restoreData = buildRestoreWrite({ wasAltScreen, modeSequences, restoreBuffer, likelyTui })
         b.write(restoreData, () => {
           // Restore scroll position. Alt-screen TUIs have no scrollback
           // so the viewport starts at 0 after \x1b[?1049h — no scroll needed.
@@ -1068,31 +1040,36 @@ export const Terminal = (props: TerminalProps) => {
         const handleClose = (event: CloseEvent) => {
           if (disposed) return
 
-          // Normal close (1000) or non-error — do nothing
-          if (!socketCloseIsError(event.code)) return
-
-          // Session not found (1008) — PTY is gone, delegate to clone-on-reconnect
-          if (event.code === 1008) {
-            if (once.value) return
-            once.value = true
-            local.onConnectError?.(new WebSocketCloseError(event.code, event.reason))
-            return
+          const action = classifyTerminalClose({
+            code: event.code,
+            reconnectAttempt,
+            maxAttempts: MAX_RECONNECT_ATTEMPTS,
+          })
+          switch (action.kind) {
+            // Normal close (1000) or non-error — do nothing
+            case "ignore":
+              return
+            // Session not found (1008) — PTY is gone, delegate to clone-on-reconnect
+            case "session-gone":
+              if (once.value) return
+              once.value = true
+              local.onConnectError?.(new WebSocketCloseError(event.code, event.reason))
+              return
+            // Retriable error under the limit — schedule reconnect
+            case "reconnect":
+              cleanupSocket()
+              scheduleReconnect()
+              return
+            // Exhausted retries or non-retriable code
+            case "fail":
+              if (once.value) return
+              once.value = true
+              if (action.exhausted) {
+                try { b.write(reconnectFailedMessage()) } catch {}
+              }
+              local.onConnectError?.(new WebSocketCloseError(event.code, event.reason))
+              return
           }
-
-          // Retriable error — schedule reconnect if under the limit
-          if (isRetriableClose(event.code) && reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
-            cleanupSocket()
-            scheduleReconnect()
-            return
-          }
-
-          // Exhausted retries or non-retriable code
-          if (once.value) return
-          once.value = true
-          if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-            try { b.write(reconnectFailedMessage()) } catch {}
-          }
-          local.onConnectError?.(new WebSocketCloseError(event.code, event.reason))
         }
         ws.addEventListener("close", handleClose)
         socketCleanups.push(() => ws.removeEventListener("close", handleClose))

@@ -1,7 +1,7 @@
 import type { CloudLog } from "@claxedo/components/session/cloud-startup-view"
 import { appendWorkspaceRuntimeLog } from "../../cloud/workspace-runtime-store"
 import type { useClaxedoState } from "../../claxedo-ui/state"
-import { scheduleSessionProjectionPull } from "../../runtime/session-projection"
+import { scheduleSessionProjectionPull } from "../../agent-runtime/session-projection"
 import type {
   HarnessConfigPromoter,
   ClaxedoLifecycleListener,
