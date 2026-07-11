@@ -85,6 +85,8 @@ Paths relative to `packages/claxedo-app` unless prefixed `packages/`.
 | Wave 1 (WP-A4 review) | Solid ref-callback returned-closure cleanup silently ignored → titlebar slots never cleared | FIXED in `f101eb8ee6` (onCleanup pattern + factory test pinning the discard semantics) | portal-slot.test.ts 7P |
 | Wave 1 (I5 gate) | perf-harness launch-project flow functionally broken (0/20 seeded sessions visible) — pre-existing | CHIP task_7f4fd469 (perf-harness owner) | identical failure at pre-wave commit |
 
+| Wave 1.5 gate | Second pane on same relay-backed workspace never increments shared connection refs (seam workspace-connection.ts:112 stuck at 1) | PINNED: `test.fixme` core-panes-split-tabs behavior 19 (leader-flipped; A/B-proven pre-existing at e76ec13f0c AND 4390e5614d — not a Wave 1/1.5 regression; e2e session's earlier "13P" panes figure not reproducible in leader env) | owning WP-B5; suspects: workspace-gate.tsx acquire path for terminal/second surfaces |
+
 ## Orphans and leader dispositions (2026-07-11)
 
 **In-scope, previously unowned — leader assignments (reflected in LLD dependency notes):**

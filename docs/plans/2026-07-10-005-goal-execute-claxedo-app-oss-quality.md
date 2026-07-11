@@ -126,6 +126,14 @@ d. Leader gate (Fable, personally — never delegated): I1–I6 as applicable, p
 - Workers are **Sonnet** (`model: 'sonnet'` in every Workflow agent call) or **Codex CLI
   background workers** (below); the leader stays Fable and never delegates gate
   verification.
+- **User directive 2026-07-11 (speed/capability escalation):** from Wave 2 onward, use
+  the strongest available worker configuration per WP instead of defaulting to Sonnet:
+  Opus with `effort: 'high'` for deep-refactor/design-sensitive WPs (B1-B11, C*, D*) and
+  for adversarial verifiers; Sonnet or Codex CLI workers for mechanical slices
+  (moves, renames, import churn, grep-proofs); fan sub-workers out per file-cluster
+  inside big WPs aggressively. Waves stay barriers and disjoint ownership stays law —
+  the escalation is about per-worker capability and within-wave parallelism, not about
+  skipping gates.
 - **Verification doctrine** (inherited from the e2e plan, non-negotiable): green output
   is a claim, not proof. Any worker claiming a UI behavior works must attach visual
   evidence (screenshot/video) that a vision-capable reviewer actually viewed; the leader
@@ -136,7 +144,11 @@ d. Leader gate (Fable, personally — never delegated): I1–I6 as applicable, p
 
 Some WPs suit OpenAI Codex CLI workers (user-preferred models: luna / sol — pass via
 `--model`; verify the exact model id your plan exposes with a 1-line probe run first,
-the public docs don't enumerate them). Best fit: mechanical waves (WP-A*, WP-ORG-*) and
+the public docs don't enumerate them).
+**Probed 2026-07-11 (leader):** CLI upgraded 0.143.0 → 0.144.1 (older CLI rejects the
+account's default model). Verified working ids: `gpt-5.6-sol`, `gpt-5.6-luna`
+(bare `luna`/`sol` are rejected); CLI default resolves to GPT-5.3-Codex. Use
+`--model gpt-5.6-sol --config model_reasoning_effort="high"` for worker runs. Best fit: mechanical waves (WP-A*, WP-ORG-*) and
 single-file refactors — NOT wave gates, NOT shared-helper/e2e-infra edits.
 
 How to dispatch (non-interactive, per the official CLI docs):
