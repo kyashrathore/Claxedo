@@ -624,25 +624,13 @@ test.describe("core cloud provisioning @core", () => {
     await expect(viewAfterReload).not.toContainText(STEP_SUMMARY.cloning)
   })
 
-  // REAL APP BUG (confirmed by running this exact scenario, not a hypothesis):
-  // `resolveCloudSessionDirectory` in `src/components/prompt-input/
-  // submit-directory.ts:125-137` fires the "Failed to create cloud workspace"
-  // toast TWICE for a REJECTED create request (network error / non-2xx
-  // response): the `.catch()` handler at line 125 shows toast #1 and returns
-  // `undefined` (not `return`s out of the function), so control falls through
-  // to line 132's `!createdWorkspace?.workspaceId` check, which is also true
-  // for `undefined` and fires toast #2 (with a less useful generic "Request
-  // failed" description, discarding the real error message already shown in
-  // toast #1). Reproduced live: two DOM nodes
-  // (`#toast-cl-51-title`/`#toast-cl-52-title`), both
-  // "Failed to create cloud workspace", after a single submit. The sibling
-  // scenario below (200-with-missing-`workspaceId`) does NOT double-fire,
-  // because `createCloudWorkspace` does not throw in that case and only the
-  // line-132 branch runs — proving the bug is specific to the thrown/rejected
-  // path, not this spec's mock. Fix: `return` inside the `.catch()` handler
-  // (or restructure so the two toasts are mutually exclusive) so a rejected
-  // create fires exactly one toast, matching the 200-missing-fields case.
-  test.fixme(
+  // Fixed in Wave 2 (WP-B4): `resolveCloudSessionDirectory`
+  // (src/components/prompt-input/submit-directory.ts) now sets a
+  // `creationRejected` flag inside the `.catch()` and `return`s immediately
+  // afterward, so a rejected cloud-create fires exactly one toast instead of
+  // falling through to the second `!createdWorkspace?.workspaceId` toast.
+  // Flipped from test.fixme; awaiting leader gate run.
+  test(
     "cloud workspace create failure (request rejected) shows a toast, opens no pipeline, creates no session, and preserves composer text — behavior 6",
     async ({ page }) => {
       test.setTimeout(120_000)

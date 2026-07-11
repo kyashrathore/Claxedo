@@ -493,31 +493,32 @@ test.describe("core sidebar tree @core", () => {
     expect(page.url()).toBe(draftUrl)
   })
 
-  test.fixme(
-    "project-header body click selects the project's primary workspace — behavior 2 (real app bug)",
-    async () => {
-      // REAL APP BUG, not a test gap: `openOrCreateSession` in
-      // `src/claxedo-ui/claxedo-layout-actions/workspace-actions.ts:48-61`
-      // treats ANY meta content with a truthy `sessionId` as an "existing,
-      // reusable" session — including the literal placeholder `"new"` that
-      // the empty-draft composer registers for the directory the moment a
-      // bare `/<dir>/session` route mounts (see `openSession`,
-      // `src/claxedo-ui/state/orchestration.ts:181-217`, which stores
-      // `sessionId: "new"` in `state.meta` for that draft). The check at
-      // workspace-actions.ts:50 (`existing.sessionId`) needs to exclude the
-      // `"new"` sentinel the same way `isWorkspaceDraftSession`
-      // (`src/claxedo-ui/state/route-intent.ts:347-350`) already does
-      // elsewhere in this codebase — it doesn't, so `handleWorkspaceSelect`
-      // treats the draft as `reused: true, sessionId: "new"` and navigates
-      // to `canonicalSessionRoute("new")` = `/s/new`, a malformed dead-end
-      // route, instead of `workspaceSessionRoute(workspaceDir)` =
-      // `/w/<dir>/session`. Reproduced directly against the real app (not
-      // just this mock) via a minimal Playwright repro that clicks
-      // project-header body on first load of a bare draft route and
-      // observes the final URL. Filed as a finding; this scenario cannot
-      // pass until workspace-actions.ts's reuse check excludes `"new"`.
-    },
-  )
+  test("project-header body click selects the project's primary workspace — behavior 2", async ({ page }) => {
+    // Fixed in Wave 2 (WP-B2): `openOrCreateSession`
+    // (src/claxedo-ui/layout-actions/workspace-actions.ts) now excludes the
+    // `"new"` draft sentinel from its reuse check
+    // (`existing.sessionId && existing.sessionId !== "new"`), so a
+    // project-header body click on a bare draft route no longer treats the draft
+    // as a reusable session and navigates to the malformed `/s/new`. It routes
+    // to `workspaceSessionRoute(workspaceDir)` (`/w/<dir>/session`).
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "primary" }) })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
+
+    const header = page.locator('[data-testid="project-header"]')
+    await expect(header).toBeVisible({ timeout: 15_000 })
+
+    // Click the header BODY (x=60 clears the disclosure caret at the far left
+    // and lands ahead of the opacity-0 HeaderActions further right) — this fires
+    // `onWorkspaceSelect` -> `handleWorkspaceSelect` -> `openOrCreateSession`.
+    await header.click({ position: { x: 60, y: 8 } })
+
+    // Fix proof: navigates to the canonical workspace session route, never the
+    // malformed `/s/new` dead-end the "new" sentinel used to produce.
+    await expect(page).toHaveURL(/\/w\/.+\/session/, { timeout: 15_000 })
+    await expect(page).not.toHaveURL(/\/s\/new/)
+  })
 
   test("workspace-header disclosure caret toggles collapse only, never navigates — behavior 1", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
@@ -668,33 +669,32 @@ test.describe("core sidebar tree @core", () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  test.fixme(
-    "load more's done notice replaces the button once every session is loaded — behavior 6 (real app bug)",
-    async () => {
-      // REAL APP BUG, not a test gap: `mergeSessionListResponses`
-      // (`src/shared/query/session-list.ts:51-66`) computes the merged
-      // page's `nextCursor` as `items.length > input.page.items.length ?
-      // input.current.nextCursor : input.page.nextCursor` (line 63). In
-      // append mode `items` is the FULL merged list (current + new page)
-      // and `input.page.items` is only the freshly-fetched page's items, so
-      // `items.length > input.page.items.length` is true on essentially
-      // every successful "load more" (the merged list is always at least as
-      // long as the page alone once `current` already held anything) — the
-      // condition picks the STALE first page's `nextCursor` instead of the
-      // just-fetched page's `nextCursor`, which is the one that actually
-      // reflects whether more data remains. Net effect: once you've loaded
-      // more than one page, `nextCursor` never clears, `more()`
-      // (rail-sidebar.tsx:1761-1763/1974-1976/2258-2260) stays truthy
-      // forever, the "Load more" button never disappears, and `doneLoaded()`
-      // (same file, the `!more()` clause) can never fire. Reproduced
-      // directly: after clicking "Load more" once (5 -> 7 rows, cursor "5"
-      // -> undefined from the mock), the button is still present and
-      // `[data-testid="rail-sidebar-session-list-done"]` never renders.
-      // Filed as a finding; this scenario cannot pass until the ternary at
-      // session-list.ts:63 uses `input.page.nextCursor` for an append that
-      // actually added new items.
-    },
-  )
+  test("load more's done notice replaces the button once every session is loaded — behavior 6", async ({ page }) => {
+    // Fixed in Wave 2 (WP-A7): `mergeSessionListResponses`
+    // (src/shared/query/session-list.ts) now advances an append to the
+    // freshly-fetched page's OWN `nextCursor` — including `undefined` once the
+    // server reports no further pages — instead of keeping the stale first-page
+    // cursor. So once the final page loads, `nextCursor` clears, `more()` goes
+    // falsy, the "Load more" button disappears and `doneLoaded()` fires.
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(7, { prefix: "done" }) })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
+
+    const rows = page.locator('[data-testid="rail-sidebar-session-row"]')
+    await expect(rows).toHaveCount(5, { timeout: 15_000 })
+
+    const loadMore = page.getByRole("button", { name: "Load more" })
+    await expect(loadMore).toBeVisible()
+    await loadMore.click()
+
+    await expect(rows).toHaveCount(7, { timeout: 15_000 })
+
+    // Fix proof: page 2's cursor is `undefined`, so after the append the
+    // "Load more" button is gone and the done notice renders in its place.
+    await expect(loadMore).toHaveCount(0, { timeout: 15_000 })
+    await expect(page.getByText("All sessions loaded.")).toBeVisible({ timeout: 15_000 })
+  })
 
   test("view options: Group by restructures the tree; Archived radio changes the fetched set — behavior 7", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })

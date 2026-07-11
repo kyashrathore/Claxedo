@@ -588,14 +588,27 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     },
   )
 
-  test.fixme(
-    "mod+\\ / mod+shift+\\ split the focused pane via keyboard — behavior 7 (dead shortcut: src/claxedo-ui/layout/workbench.tsx:162-179 always passes the focused pane's OWN contentId into wb.split.split, which src/claxedo-ui/layout/reducers/split.ts:33's self-drop guard unconditionally rejects — confirmed intentional by layout/tests/I-keyboard.vitest.tsx 'mod+\\\\ on a single pane is a no-op')",
-    async () => {
-      // Intentionally not implemented as a passing assertion — see SPEC BEHAVIORS
-      // #7 / INVARIANTS #1. Asserting "no-op" here would test a documented dead
-      // code path, not user-visible product behavior; flagged as a finding.
-    },
-  )
+  test("mod+\\ splits the focused pane by revealing the MRU hidden surface — behavior 7", async ({ page }) => {
+    // Fixed in Wave 2 (WP-B2): the keyboard split handler
+    // (src/claxedo-ui/workbench/workbench.tsx) no longer passes the focused
+    // pane's OWN contentId into `wb.split.split` (which the self-drop guard
+    // always rejected, making the chord a dead no-op). It now splits the
+    // most-recent hidden surface (`wb.selectors.mruHiddenContent()`) into a new
+    // pane beside the focused one.
+    await buildDraftPlusTerminalSplit(page)
+    // Collapse to a single visible pane while keeping two background surfaces —
+    // an MRU hidden surface for the split to reveal (same setup as behavior 8).
+    await page.getByRole("button", { name: "New Codex Terminal", exact: true }).first().click()
+    await expect(switcherTabs(page)).toHaveCount(3, { timeout: 10_000 })
+    await expect(visiblePaneContents(page)).toHaveCount(1, { timeout: 10_000 })
+
+    // mod+\ reveals the MRU hidden surface in a second pane beside the focused one.
+    await page.keyboard.press(`${await modKey(page)}+\\`)
+    await expect
+      .poll(async () => visiblePaneContents(page).count(), { timeout: 10_000 })
+      .toBe(2)
+    await expect(page.locator('[data-testid="workbench-divider"]')).toBeVisible({ timeout: 10_000 })
+  })
 
   test("mod+tab / mod+shift+tab cycle focus by most-recently-used order — behavior 8", async ({ page }) => {
     await buildDraftPlusTerminalSplit(page)

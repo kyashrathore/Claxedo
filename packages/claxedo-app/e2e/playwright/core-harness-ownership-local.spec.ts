@@ -135,16 +135,19 @@
  *      ready without ever showing the "Unavailable" indicator, submission is never
  *      gated on it, and the submitted payload carries `providerID: "pi"`,
  *      `modelID: "virtual"`.
- *   5. [Currently unreachable — see the fixme's citation on this behavior's test] A
- *      workspace hydrated onto an unavailable/auth-error harness renders the red
+ *   5. A workspace hydrated onto an unavailable/auth-error harness renders the red
  *      "Unavailable" indicator with its error message in a tooltip, keeps the submit
  *      control disabled, and sends zero session/prompt requests even after the user
  *      types and attempts to submit — and the plain-OpenCode model control
- *      (`[data-action="prompt-model"]`) never reappears as a silent fallback. In
- *      practice a fresh draft never even reaches this state: `applyStatus`
- *      (`src/claxedo-ui/context/harness-status-actions.ts:66`) silently drops the
- *      failed-harness status against the store's seeded "opencode" placeholder,
- *      so the draft stays on OpenCode instead of ever showing Claude/red-dot/etc.
+ *      (`[data-action="prompt-model"]`) never reappears as a silent fallback. FIXED:
+ *      a fresh draft used to never even reach this state — `applyStatus`
+ *      (`src/claxedo-ui/harness/harness-status-actions.ts`) silently dropped the
+ *      failed-harness status against the store's seeded "opencode" placeholder
+ *      (indistinguishable from a real user-confirmed selection), so the draft stayed
+ *      on OpenCode instead of ever showing Claude/red-dot/etc. The guard now also
+ *      requires `current.harness !== "opencode"`, which correctly limits protection
+ *      to a genuinely confirmed non-opencode harness since "opencode" is the only
+ *      value a fresh, never-confirmed scope can seed.
  *   6. [Currently unreachable — see STATE MODEL] readiness never resolves to
  *      `"polling"` for a local harness, so the "Connecting" pill, the composer's
  *      contenteditable lock, and the attach-button disable that are gated on it never
@@ -465,78 +468,107 @@ test.describe("core harness ownership (local) @core", () => {
     expect(mock.requests.harnessOptionsCount).toBe(0)
   })
 
-  test.fixme(
+  test(
     "unavailable/auth-error harness shows the red dot, blocks submit, sends zero requests, never falls back to OpenCode — behavior 5",
-    async () => {
-      // REAL APP BUG (verified by reading source, not a test gap): a fresh draft
-      // that auto-hydrates onto a FAILED/auth-error harness never actually applies
-      // that harness — it silently stays on the "OpenCode" default instead, so
-      // none of behavior 5's assertions (red dot, [aria-label] error tooltip,
-      // disabled submit tied to the harness-model control, zero-fallback proof)
-      // ever get to run against the right harness in the first place.
-      //
-      // `applyStatus` (src/claxedo-ui/context/harness-status-actions.ts:63-76) —
-      // the function `hydrate()` calls to apply whatever the harness-status GET
-      // reports as "current" (see this file's STATE MODEL path (b)) — has this
-      // guard at line 66:
-      //
-      //   const want = desiredHarness(data) ?? input.state(scope)?.harness ?? "opencode"
-      //   if (failedHarness(data) && current?.harness && want !== current.harness) return
-      //
-      // `hydrate()` (src/claxedo-ui/context/harness-hydrator.ts:97) calls
-      // `input.seed(scope)` BEFORE fetching status, which seeds the store to the
-      // default state `{harness: "opencode", ...}`
-      // (`initialHarnessStoreState`/`initialHarness`, src/session-client/harness/
-      // store-state.ts:40-44 + store-policy.ts:31-34 — a fresh scope with no saved
-      // preference always resolves to "opencode"). So by the time `applyStatus`
-      // runs, `current.harness` is ALREADY the truthy placeholder "opencode" —
-      // not "no prior state" — even though the user never made a real choice.
-      // For this scenario: `data` decodes to `{type:"claude-acp", status:"error",
-      // ready:false, error:"..."}`, so `failedHarness(data)` is true, `want` is
-      // "claude-acp", `current.harness` is "opencode", and `want !== current.harness`
-      // — all three guard conditions hold, so `applyStatus` returns on line 66
-      // WITHOUT ever calling `input.applyPatch`/`input.save`. The draft harness
-      // Select is left showing "OpenCode" forever; the harness-matrix's
-      // `expectHarnessAutoHydrated(page, /^Claude$/)` never resolves (confirmed:
-      // reproduces deterministically both inside the full file and in isolation,
-      // `npx playwright test ... -g "behavior 5" --retries=0`, screenshot shows
-      // the composer still reading "OpenCode" after the button-visible wait times
-      // out).
-      //
-      // The guard is presumably meant to stop a stale/failed re-poll from
-      // flipping an EXISTING session away from a harness the user already
-      // deliberately picked — but it fires identically for a brand-new draft's
-      // seeded placeholder, which was never a real user decision. Fix belongs in
-      // `applyStatus` (distinguish "seeded placeholder" from "user-confirmed
-      // harness" before honoring the guard), not in this test.
+    async ({ page }) => {
+      // FIXED: `applyStatus` (src/claxedo-ui/harness/harness-status-actions.ts)
+      // used to guard `current?.harness && want !== current.harness` — since
+      // `hydrate()` seeds the store to the placeholder `{harness: "opencode"}`
+      // BEFORE fetching status (src/claxedo-ui/harness/harness-hydrator.ts:90,
+      // `initialHarnessStoreState`/`initialHarness`,
+      // src/session-client/harness/store-state.ts:40-44 +
+      // store-policy.ts:31-34), that seed was indistinguishable from a real,
+      // user-confirmed non-opencode selection, so a fresh draft's failed-harness
+      // status was silently dropped and the draft stayed on OpenCode forever.
+      // The guard now also requires `current.harness !== "opencode"` — the seed
+      // is the ONLY state a fresh scope with no saved preference can carry, so
+      // this correctly limits protection to a genuinely confirmed non-opencode
+      // harness while still applying a failed status over the seeded
+      // placeholder (see harness-status-actions.test.ts "applies a failed
+      // harness status over the seeded opencode placeholder so the error
+      // surfaces" and store-state.test.ts "seeds a fresh scope with the
+      // un-confirmed opencode placeholder").
+      const errorMessage = "claude binary not found"
+      const mock = await installMockRuntime(page, {
+        dir: DIR,
+        sessionId: "ses_core_harness_unavailable",
+        harness: "claude-acp",
+        harnessReadiness: "error",
+        harnessReadinessError: errorMessage,
+      })
+
+      await seedOneProject(page, DIR)
+      const input = await openDraftPrompt(page, DIR)
+
+      // Auto-hydrates onto the actually-configured (failing) harness — see
+      // expectHarnessAutoHydrated's doc — instead of silently staying on the
+      // seeded "OpenCode" placeholder.
+      await expectHarnessAutoHydrated(page, /^Claude$/)
+
+      // Red-dot "Unavailable" readiness indicator, never the "Connecting" pill.
+      await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0)
+
+      // The error message surfaces in the model-issue tooltip glyph.
+      await expect(page.locator(`[aria-label="${errorMessage}"]`)).toBeVisible()
+
+      // Submit stays disabled (gated on the harness model control, not the
+      // plain-OpenCode one) even after the user types and attempts to submit.
+      await composePrompt(page, input, "core harness unavailable attempt")
+      await expect(page.locator(SELECTORS.submitControl).last()).toBeDisabled()
+      await page.locator(SELECTORS.submitControl).last().click({ force: true }).catch(() => {})
+
+      // Never silently falls back to plain OpenCode.
+      await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
+      await expect(page.locator('[data-action="prompt-harness-model"]')).toHaveCount(1)
+      await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
+
+      // Zero session/prompt requests were ever sent.
+      expect(mock.requests.promptCount).toBe(0)
+      expect(mock.requests.createSessionCount).toBe(0)
     },
   )
 
-  test.fixme(
+  test(
     "Connecting pill + composer fade + attach-disabled while readiness is polling — behavior 6",
-    async () => {
-      // REAL APP BUG (dead code, not a test gap): readiness never resolves to
-      // "polling" for a local harness. `harnessStatusPatch`
-      // (src/session-client/harness/store-state.ts:81) computes
-      // `readiness: failedHarness(input.data) ? "error" : "ready"` — a strict
-      // binary with no polling branch. `failedHarness` (profile.ts:61) is true
-      // whenever `ready === false`, so a backend `status:"applying"` (still
-      // starting up, exactly what the mock's `harnessReadiness:"polling"` /
-      // `harnessPollingTurns` options model) resolves to readiness "error", NOT
-      // "polling". `AgentHarnessSelector.isPolling()`
-      // (src/claxedo-ui/components/agent-harness-selector.tsx:125) and the
-      // composer's `harnessPending()`
-      // (src/session-client/composer/composer.tsx:202-206) both gate on
-      // `readiness === "polling"`, and grepping every file under
-      // src/session-client/harness/ and src/claxedo-ui/context/ for the string
-      // "polling" turns up zero assignments outside the type declaration
-      // (src/session-client/harness/selection.ts:11). The consequence: an
-      // in-progress harness startup renders the exact same red "Unavailable"
-      // dot + disabled submit as a hard auth failure — there is no visual
-      // "still connecting, hang on" state, and the attach-button-disable /
-      // editor-contenteditable-lock this behavior specifies can never be
-      // observed. Fix belongs in store-state.ts's `harnessStatusPatch` (map
-      // status:"applying" to a distinct readiness), not in this test.
+    async ({ page }) => {
+      // Fixed in Wave 2 (WP-B9): `harnessStatusPatch`
+      // (src/session-client/harness/store-state.ts) now maps a non-opencode
+      // harness reporting `ready:false` without a hard failure (backend
+      // `status:"applying"`, i.e. still starting up) to readiness "polling"
+      // during a startup/in-flight probe — distinct from the hard-failure
+      // "error" state (which requires an error status/message or a *settled*
+      // completed switch response). So the selector renders the pulsing
+      // "Connecting" pill instead of the red "Unavailable" dot.
+      const mock = await installMockRuntime(page, {
+        dir: DIR,
+        sessionId: "ses_core_harness_polling",
+        harness: "claude-acp",
+        harnessReadiness: "polling",
+        // Keep the harness in the "applying" window for the whole assertion so
+        // the polling state is stable (it never flips to ready mid-test).
+        harnessPollingTurns: 1000,
+      })
+
+      await seedOneProject(page, DIR)
+      const input = await openDraftPrompt(page, DIR)
+
+      // Auto-hydrates onto the configured (still-connecting) harness.
+      await expectHarnessAutoHydrated(page, /^Claude$/)
+
+      // The "Connecting" pill is shown while polling — never the red
+      // "Unavailable" dot, which is reserved for a hard/settled failure.
+      await expect(page.locator('[title="Connecting to agent runtime..."]')).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
+
+      // Submit stays disabled while the harness is still connecting.
+      await composePrompt(page, input, "core harness polling attempt")
+      await expect(page.locator(SELECTORS.submitControl).last()).toBeDisabled()
+
+      // Never silently falls back to plain OpenCode, and no requests are sent.
+      await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
+      expect(mock.requests.promptCount).toBe(0)
+      expect(mock.requests.createSessionCount).toBe(0)
     },
   )
 

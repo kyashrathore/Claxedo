@@ -552,37 +552,12 @@ test.describe("core session actions: rename @core", () => {
 
 test.describe("core session actions: fork @core", () => {
   test("forking a message creates a new session and restores its draft — behavior 6", async ({ page }) => {
-    test.fixme(
-      true,
-      "Real app bug, not a test issue — verified live: DialogFork " +
-        "(src/components/dialog-fork.tsx:26,35) reads the session id via " +
-        "`useParams()` from @solidjs/router (`params.id`), which is only populated " +
-        "on the legacy `/:dir/session/:id?` route shape (src/app.tsx:476). Every " +
-        "session — including this spec's local mock session — is actually addressed " +
-        "post-creation via the canonical `/w/:workspaceId/session/:sessionId` route " +
-        "(src/app.tsx:468, matched to HiddenRouteOutlet), whose Solid Router param is " +
-        "named `sessionId`, not `id`; `params.id` is therefore always `undefined` on " +
-        "that URL shape, so `registeredConversationSnapshot(undefined)` " +
-        "(src/shell/chat/conversation-registry.ts:169-170) returns `[]` and the fork " +
-        "dialog always renders its empty state ('No messages to fork from') with zero " +
-        "list rows, regardless of how many forkable messages the session actually has. " +
-        "Confirmed live (not just by reading source): after a real send, " +
-        "page.url() was `http://localhost:4455/w/%2Ftmp%2Fe2e-core-session-actions/" +
-        "session/ses_mock_runtime`, exactly one `[data-component=\"user-message\"]` row " +
-        "was rendered in the timeline (the registry demonstrably has the message — " +
-        "src/pages/session/use-session-commands.tsx's own `visibleUserMessages` memo, " +
-        "which reads the SAME registry via `args.sessionId()` " +
-        "(src/claxedo-ui/context/session-params.tsx's canonical `useSessionParams()`, " +
-        "not raw route params), is what gates the /fork command enabled in the first " +
-        "place), yet the opened dialog showed 'No messages to fork from' and " +
-        "`[data-slot=\"list-item\"]` count 0. The fix is for DialogFork to read the " +
-        "session id via `useSessionParams().sessionId()` (session-params.tsx: \"route-" +
-        "to-pane handoff is the only owner of URL identity\") instead of `useParams()` " +
-        "— this is one instance of the documented ~44-site directory/session-id-shape " +
-        "routing debt. Filed as a finding; this test stays fixme (not deleted, not " +
-        "weakened) until the source fix lands, per e2e/INVARIANTS.md's 'assertion is a " +
-        "claim, not proof' doctrine.",
-    )
+    // Fixed in Wave 2 (WP-B4): DialogFork now resolves the session id via
+    // `resolveForkSessionId(params)` (src/components/dialogs/fork-messages.ts),
+    // which returns `params.sessionId ?? params.id` — so the canonical
+    // `/w/:workspaceId/session/:sessionId` route shape now populates the fork
+    // list instead of falling back to the empty state. Un-fixme'd; awaiting
+    // leader gate run.
 
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
     const forkedText = "fork source message please branch me"

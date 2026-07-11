@@ -911,25 +911,13 @@ test.describe("core terminal panel @core", () => {
     expect(afterBox!.y + afterBox!.height).toBeLessThanOrEqual(paneRect!.y + paneRect!.height + 1)
   })
 
-  // REAL APP BUG (confirmed by reading source, not a test defect): `usePtyExitCleanup`
-  // (src/claxedo-ui/state/agent-status-listener.ts:316-338) only calls
-  // `state.terminal.setAgentStatus(ptyId, "idle")` on `pty.exited` — it never calls
-  // `state.terminal.clearSeen(ptyId)`. Per `terminalSurfaceStatus`
-  // (src/claxedo-ui/compact-switcher/surface-status.ts:10-18), a status dot is "done"
-  // (visible) whenever `seen` is true, regardless of *why* status is idle — and
-  // `setAgentStatus` (src/claxedo-ui/state/terminal.ts:121-126) sets `agentSeen[id] =
-  // true` the moment status ever went non-idle (e.g. the "Busy" event this test sends
-  // first), and NEVER clears it back. So after a tracked terminal's PTY exits
-  // externally, the sidebar dot does not disappear as this spec's BEHAVIORS #7 and the
-  // comment below both claim — it flips to "done" and stays visible (confirmed via a
-  // real run against a genuine `vite dev` server, not the production `vite preview`
-  // build the pooled run's shared port happened to be serving: `data-sidebar-status`
-  // stayed `"done"`, `toHaveCount(0)` timed out). The sibling code path
-  // `reconcileAgentStatuses` (agent-status-listener.ts:418-427, used on stream
-  // reconnect) gets this right — it calls BOTH `setAgentStatus(id, "idle")` AND
-  // `state.terminal.clearSeen(id)` together — so the fix is almost certainly to make
-  // `usePtyExitCleanup` do the same. See findings for the write-up.
-  test.fixme("an externally exited PTY clears its tracked agent status — behaviors 7", async ({ page }) => {
+  // Fixed in Wave 2 (WP-B11): `reconcilePtyExit`
+  // (src/claxedo-ui/state/agent-status-listener.ts) now batches BOTH
+  // `setAgentStatus(ptyId, "idle")` AND `clearSeen(ptyId)` on `pty.exited`,
+  // matching the reconnect-reconcile path, so the stale `seen` flag no longer
+  // leaves the sidebar "done" dot stuck. Flipped from test.fixme; awaiting
+  // leader gate run.
+  test("an externally exited PTY clears its tracked agent status — behaviors 7", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-external-exit"
     await installAppBootMock(page, DIR)
     await installFakeTerminalSocket(page)
