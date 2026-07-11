@@ -159,6 +159,21 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       if (s.focusedPaneId) wb.split.close(s.focusedPaneId, { destroyContent: false })
       return
     }
+    if (matchKey(e, km.splitRight) || matchKey(e, km.splitDown)) {
+      // Keyboard split: reveal the most-recent hidden surface in a new pane
+      // beside the focused one. The prior handler passed the focused pane's own
+      // contentId into split(), which the self-drop guard always rejected, so
+      // the chord was dead (core-panes-split-tabs:591). Splitting a background
+      // surface into view is the model-consistent realization — the workbench
+      // holds one content per pane, so there is nothing to "duplicate".
+      e.preventDefault()
+      if (!s.focusedPaneId) return
+      const hidden = wb.selectors.mruHiddenContent()
+      if (!hidden) return
+      const edge = matchKey(e, km.splitRight) ? "right" : "bottom"
+      wb.split.split(s.focusedPaneId, edge, hidden)
+      return
+    }
     if (
       matchKey(e, km.focusLeft) ||
       matchKey(e, km.focusRight) ||
@@ -385,6 +400,24 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               window.addEventListener("pointerup", onUp)
               e.preventDefault()
             }
+            // Keyboard resize parity for the pointer-drag divider: arrow keys
+            // nudge the split ratio so keyboard/screen-reader users can resize
+            // panes (previously pointer-only, a named a11y gap).
+            const KEYBOARD_STEP = 0.02
+            const onKeyDown = (e: KeyboardEvent) => {
+              const root = rs()
+              const horizontal = root.dir === "h"
+              let delta = 0
+              if (horizontal && e.key === "ArrowLeft") delta = -KEYBOARD_STEP
+              else if (horizontal && e.key === "ArrowRight") delta = KEYBOARD_STEP
+              else if (!horizontal && e.key === "ArrowUp") delta = -KEYBOARD_STEP
+              else if (!horizontal && e.key === "ArrowDown") delta = KEYBOARD_STEP
+              else if (e.key === "Home") delta = -1
+              else if (e.key === "End") delta = 1
+              if (delta === 0) return
+              e.preventDefault()
+              wb.split.resize([], Math.min(1, Math.max(0, root.size + delta)))
+            }
             const dividerStyle = (): JSX.CSSProperties => {
               const root = rs()
               if (root.dir === "h") {
@@ -415,8 +448,16 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
             return (
               <div
                 data-testid="workbench-divider"
+                role="separator"
+                tabindex="0"
+                aria-label="Resize panes"
+                aria-orientation={rs().dir === "h" ? "vertical" : "horizontal"}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(rs().size * 100)}
                 style={dividerStyle()}
                 onPointerDown={onPointerDown}
+                onKeyDown={onKeyDown}
               />
             )
           }}

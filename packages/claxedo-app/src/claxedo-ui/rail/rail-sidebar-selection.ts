@@ -2,7 +2,7 @@ import { createMemo, type Accessor } from "solid-js"
 import { getFilename } from "@claxedo/utils/path"
 
 import type { ContentMeta } from "../state"
-import type { ProjectItem } from "./rail-sidebar"
+import type { ProjectItem } from "./domain-types"
 import { workspaceToolDirectoryForContent, workspaceToolsBlockedForContent } from "./workspace-surface-gates"
 import {
   railProjectHasDir,

@@ -13,7 +13,7 @@
 // - Hands off to `recoverMissingWorkspace` when the workspace was
 //   deleted on disk; honours the recovery callback's directory.
 
-import type { ProjectItem } from "../rail/rail-sidebar"
+import type { ProjectItem } from "../rail/domain-types"
 import { sessionRoute as canonicalSessionRoute, workspaceSessionRoute } from "../../shell/identity/route"
 import type { ActionProps, Nav } from "./shared"
 import { ensureDirectorySessionCache, sessionRefForActionWorkspace } from "./shared"
@@ -47,7 +47,10 @@ export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
 
   const openOrCreateSession = (workspaceDir: string): { id: string; sessionId: string; reused: boolean } => {
     const existing = findExistingSessionContent(workspaceDir)
-    if (existing && existing.type === "session" && existing.sessionId) {
+    // The "new" sentinel is a draft placeholder, not a persisted session id.
+    // Treating it as reusable routes to the malformed canonical `/s/new`
+    // (core-sidebar-tree:496); a draft must take the workspace route instead.
+    if (existing && existing.type === "session" && existing.sessionId && existing.sessionId !== "new") {
       const id = props.state.layout.openSession(workspaceDir, existing.sessionId, undefined, {
         sessionRef: existing.content?.sessionRef ?? sessionRefForActionWorkspace({
           projects: props.projects,

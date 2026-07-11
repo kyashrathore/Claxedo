@@ -35,6 +35,8 @@ import { getTerminalCommands } from "../../components/settings/terminals"
 import {
   activateDisclosureFromKeyboard,
   isRootWorktreeRef,
+  railProjectCaptionFromName,
+  railProjectLabel,
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
@@ -85,8 +87,9 @@ import {
   type SessionNavigationDisplayRow,
 } from "../navigation-islands/session-navigation-list"
 import { TerminalSurfaceNavigation } from "../navigation-islands/terminal-surface-navigation"
-import { parseOwnerRepo } from "./rail-git-remote"
 export { parseOwnerRepo } from "./rail-git-remote"
+import type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
+export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 
 const VIEW_KEY = "claxedo.session-view.v1"
 const GLOBAL_TAG = "global"
@@ -126,7 +129,6 @@ function SessionListNotice(props: {
 
 type Group = "project" | "workspace"
 type Archive = "active" | "all" | "archived"
-type RuntimeKind = "local" | "cloud" | "user-hosted"
 
 function showCloud(input: {
   worktree: string
@@ -139,64 +141,6 @@ function showCloud(input: {
   const ws = input.workspaces?.[dir]
   if (ws) return ws.kind === "cloud"
   return false
-}
-
-export type SessionItem = {
-  id: string
-  sessionRef?: string
-  title?: string
-  time?: number
-  directory?: string
-  workspaceId?: string
-  projectID?: string
-  projectName?: string
-  workspaceName?: string
-  tags?: string[]
-  attachments?: Array<{ kind: string; targetID: string }>
-  environment?: { kind?: string; driver?: string }
-  git?: { repo?: string; branch?: string; remote?: string }
-}
-
-export type WorkspaceItem = {
-  id: string
-  directory: string
-  workspaceId?: string
-  workspaceName?: string
-  name?: string
-  isMain?: boolean
-  projectWorktree?: string
-  isCloud?: boolean
-  canDelete?: boolean
-  available?: boolean
-}
-
-export type WorkspaceInfo = {
-  id: string
-  workspaceId?: string
-  workspace_name?: string
-  directory: string
-  kind: RuntimeKind
-  available?: boolean
-  provider?: string
-  status?: string
-  sandbox_id?: string
-  remote_directory?: string
-  repo_url?: string
-}
-
-export type ProjectItem = {
-  id: string
-  worktree: string
-  name?: string
-  icon?: {
-    url?: string
-    override?: string
-    color?: string
-  }
-  expanded?: boolean
-  sandboxes?: string[]
-  workspaces?: Record<string, WorkspaceInfo>
-  commands?: { start?: string }
 }
 
 type RailTrackPosition = (clientX: number, clientY: number, railRect: { top: number; right: number; bottom: number }) => void
@@ -617,17 +561,9 @@ export function RailSidebar(props: RailSidebarProps) {
     return workspaceDisplayName(project, dir, { cloud: sectionCloud(project, dir) })
   }
 
-  const projectLabel = (project: ProjectItem) => {
-    return project.name ?? parseOwnerRepo(Object.values(project.workspaces ?? {}).find((item) => item.repo_url)?.repo_url) ?? getFilename(project.worktree)
-  }
+  const projectLabel = (project: ProjectItem) => railProjectLabel(project)
 
-  const projectCaption = (project: ProjectItem) => {
-    const repo = project.name ?? parseOwnerRepo(Object.values(project.workspaces ?? {}).find((item) => item.repo_url)?.repo_url)
-    const folder = getFilename(project.worktree)
-    if (!repo) return folder
-    if (repo === folder) return repo
-    return `${repo} · ${folder}`
-  }
+  const projectCaption = (project: ProjectItem) => railProjectCaptionFromName(project)
 
   const workspace = (project: ProjectItem, dir: string): WorkspaceItem => {
     const main = dir === project.worktree

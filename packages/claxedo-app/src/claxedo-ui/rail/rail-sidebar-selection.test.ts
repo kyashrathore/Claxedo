@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 
 import type { ContentMeta } from "../state/types"
-import type { ProjectItem } from "./rail-sidebar"
+import type { ProjectItem } from "./domain-types"
 import { useRailSidebarSelection } from "./rail-sidebar-selection"
 
 const projects: ProjectItem[] = [

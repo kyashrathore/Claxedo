@@ -1,4 +1,4 @@
-import { createEffect, createMemo, on, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, on, type Accessor } from "solid-js"
 
 import { isGlobalContent, type ContentMeta } from "../state"
 
@@ -40,12 +40,19 @@ export function useRailEmptyDraftController(input: {
   const emptyDraftDirectory = createMemo(() => input.activeWorkspaceId() ?? input.projects()[0]?.worktree)
   const sidebarEligible = createMemo(() => input.projects().length > 0 || hasOpenSurfaces())
 
-  let blockedUntil = 0
+  // The block window must be reactive: a plain `let` read inside the memo below
+  // is not a tracked dependency, so calling blockNextAutoOpen() after the memo
+  // already recomputed to `true` (the surface was removed first, then the block
+  // applied) leaves the memo returning a stale `true` and the queued re-open
+  // microtask fires anyway — the draft reappears in ~80ms instead of being
+  // suppressed (core-panes-split-tabs:802). A signal forces the memo (and the
+  // effect's microtask re-check) to re-evaluate the fresh time gate.
+  const [blockedUntil, setBlockedUntil] = createSignal(0)
   const blockNextAutoOpen = () => {
-    blockedUntil = Date.now() + 2_000
+    setBlockedUntil(Date.now() + 2_000)
   }
   const shouldOpenEmptyDraftSession = createMemo(() => {
-    if (Date.now() < blockedUntil) return false
+    if (Date.now() < blockedUntil()) return false
     if (input.autoOpenDisabled()) return false
     if (!emptyDraftDirectory()) return false
     if (visibleRenderableSurfaceIds().length > 0) return false

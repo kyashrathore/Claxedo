@@ -2,12 +2,8 @@ import { Show, onCleanup, type Accessor } from "solid-js"
 
 import type { ContentMeta } from "../state"
 import { emitTerminalFit } from "../terminal/terminal-fit"
-import {
-  RailSidebar,
-  type ProjectItem,
-  type SessionItem,
-  type WorkspaceItem,
-} from "./rail-sidebar"
+import { RailSidebar } from "./rail-sidebar"
+import type { ProjectItem, SessionItem, WorkspaceItem } from "./domain-types"
 import type { WorkspaceBarItem } from "./workspace-toolbar"
 
 export type RailSidebarShellProps = {

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { directorySessionCacheQueryOptions } from "../../shell/data/queries"
 import { queryClient } from "../../shared/query/query-client"
-import type { ProjectItem } from "./rail-sidebar"
+import type { ProjectItem } from "./domain-types"
 import {
   createRailProjectSessionLookups,
   railProjectCaption,

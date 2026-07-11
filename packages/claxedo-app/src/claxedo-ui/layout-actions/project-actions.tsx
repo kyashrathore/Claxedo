@@ -8,7 +8,7 @@ import { DialogCreateCloudWorkspace } from "../../components/dialogs/create-clou
 import { DialogNewProject } from "../../components/dialogs/new-project"
 import { api, getDefaultBaseUrl } from "../../utils/api"
 import { DialogDeleteWorkspace } from "../components/dialogs"
-import type { ProjectItem, WorkspaceItem } from "../rail/rail-sidebar"
+import type { ProjectItem, WorkspaceItem } from "../rail/domain-types"
 import type { WorkspaceBarItem } from "../rail/workspace-toolbar"
 import { getAuthToken } from "../../utils/auth-client"
 import { Worktree as WorktreeState } from "@/utils/worktree"
@@ -230,7 +230,14 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         const result = await props.globalSDK.client.worktree.create({ directory: worktree, worktreeCreateInput: {} })
         const created = result.data?.directory
         const name = result.data?.name
-        if (created) return onWorktreeCreated(created, name ?? getFilename(created), true)
+        if (created) {
+          // The create call resolved, so the worktree exists on disk. Nothing
+          // else in production flips WorktreeState pending→ready, so mark it
+          // ready here; otherwise onWorktreeCreated's WorktreeState.wait() below
+          // blocks forever (core-workspace-lifecycle:544).
+          WorktreeState.ready(created)
+          return onWorktreeCreated(created, name ?? getFilename(created), true)
+        }
       } catch (err) {
         handleError(err)
       }

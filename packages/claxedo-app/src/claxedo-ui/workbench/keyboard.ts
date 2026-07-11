@@ -33,6 +33,8 @@ export function resolveKeyMap(partial?: Partial<KeyMap>): KeyMap {
     focusRight: partial?.focusRight ?? "mod+alt+ArrowRight",
     focusUp: partial?.focusUp ?? "mod+alt+ArrowUp",
     focusDown: partial?.focusDown ?? "mod+alt+ArrowDown",
+    splitRight: partial?.splitRight ?? "mod+\\",
+    splitDown: partial?.splitDown ?? "mod+shift+\\",
   }
 }
 

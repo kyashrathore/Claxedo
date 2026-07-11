@@ -13,10 +13,15 @@ export type RailKeyboardCommandActions = {
 export function createRailKeyboardCommands(actions: RailKeyboardCommandActions): CommandOption[] {
   return [
     {
+      // Keybind intentionally omitted: the workbench's own window keydown
+      // listener (workbench/keyboard.ts, keyMap.closePane === "mod+w") is the
+      // single dispatch owner of this chord. Binding it here too made a single
+      // mod+w fire two diverging handlers. The palette entry stays invokable
+      // (and retains the desktop last-pane Quit affordance in closeFocusedPane).
+      // Full registry consolidation of these two systems is WP-C2.
       id: "claxedo.pane.close",
       title: "Close Pane",
       category: "View",
-      keybind: "mod+w",
       onSelect: actions.closeFocusedPane,
     },
     {
@@ -55,17 +60,17 @@ export function createRailKeyboardCommands(actions: RailKeyboardCommandActions):
       onSelect: () => actions.showSurfaceAtIndex(i),
     })),
     {
+      // Keybind intentionally omitted (see claxedo.pane.close above): the
+      // workbench listener owns mod+alt+Arrow with geometric, 4-direction focus.
       id: "claxedo.split.focusLeft",
       title: "Focus Left/Top Panel",
       category: "View",
-      keybind: "mod+alt+ArrowLeft",
       onSelect: actions.focusSplitLeft,
     },
     {
       id: "claxedo.split.focusRight",
       title: "Focus Right/Bottom Panel",
       category: "View",
-      keybind: "mod+alt+ArrowRight",
       onSelect: actions.focusSplitRight,
     },
   ]

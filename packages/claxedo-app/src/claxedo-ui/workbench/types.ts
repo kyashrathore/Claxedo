@@ -33,6 +33,8 @@ export type KeyMap = {
   focusRight: string
   focusUp: string
   focusDown: string
+  splitRight: string
+  splitDown: string
 }
 
 export const WORKBENCH_DRAG_MIME = "application/x-workbench-content"

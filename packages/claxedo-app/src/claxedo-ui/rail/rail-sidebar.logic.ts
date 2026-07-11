@@ -1,3 +1,36 @@
+import { getFilename } from "@claxedo/utils/path"
+import { parseOwnerRepo } from "./rail-git-remote"
+import type { ProjectItem } from "./domain-types"
+
+/**
+ * The owner/repo label shown for a project in the rail, derived from (in order)
+ * an explicit project name, the parsed owner/repo of the first workspace with a
+ * git remote (`repo_url`), or the worktree's folder name. This is the real
+ * implementation used by rail-sidebar.tsx — previously an inline closure that a
+ * 1186-line test file hand-mirrored (and had already drifted from: the mirror
+ * read `sessions[].git.remote`, not `workspaces[].repo_url`).
+ */
+export function railProjectLabel(project: Pick<ProjectItem, "name" | "worktree" | "workspaces">): string {
+  return (
+    project.name ??
+    parseOwnerRepo(Object.values(project.workspaces ?? {}).find((item) => item.repo_url)?.repo_url) ??
+    getFilename(project.worktree)
+  )
+}
+
+/**
+ * The project caption ("owner/repo · folder", or just one when they coincide).
+ * Real implementation used by rail-sidebar.tsx's project header.
+ */
+export function railProjectCaptionFromName(project: Pick<ProjectItem, "name" | "worktree" | "workspaces">): string {
+  const repo =
+    project.name ?? parseOwnerRepo(Object.values(project.workspaces ?? {}).find((item) => item.repo_url)?.repo_url)
+  const folder = getFilename(project.worktree)
+  if (!repo) return folder
+  if (repo === folder) return repo
+  return `${repo} · ${folder}`
+}
+
 export function shouldAutoOpenWorkspaceSection(input: {
   rows: number
   terminals?: number

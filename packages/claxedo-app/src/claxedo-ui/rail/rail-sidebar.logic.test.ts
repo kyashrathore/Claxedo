@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
-  railProjectCaption,
+  railProjectCaptionFromName,
   railProjectLabel,
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
@@ -22,13 +22,17 @@ describe("railProjectLabel", () => {
     expect(railProjectLabel(project({ worktree: "/repo/main", name: "Custom" }))).toBe("Custom")
   })
 
-  test("derives owner/repo from the first workspace repo_url (not from session git remotes)", () => {
+  test("derives owner/repo from the first workspace repo_url in iteration order (not from session git remotes)", () => {
     const label = railProjectLabel(
       project({
         worktree: "/home/me/claxedo",
         workspaces: {
           a: { id: "a", directory: "/home/me/claxedo", kind: "local" },
           b: { id: "b", directory: "/home/me/claxedo-ws", kind: "cloud", repo_url: "git@github.com:kyashrathore/Claxedo.git" },
+          // A second repo_url-bearing workspace, later in insertion order. `.find()`
+          // returns the first match, so `b` must win over `c` — this pins that the
+          // first-in-iteration remote is chosen, never the last.
+          c: { id: "c", directory: "/home/me/claxedo-other", kind: "cloud", repo_url: "git@github.com:someoneelse/Fork.git" },
         },
       }),
     )
@@ -40,10 +44,10 @@ describe("railProjectLabel", () => {
   })
 })
 
-describe("railProjectCaption", () => {
+describe("railProjectCaptionFromName", () => {
   test("joins owner/repo and folder when they differ", () => {
     expect(
-      railProjectCaption(
+      railProjectCaptionFromName(
         project({
           worktree: "/home/me/claxedo-checkout",
           workspaces: { a: { id: "a", directory: "/x", kind: "local", repo_url: "https://github.com/kyashrathore/Claxedo" } },
@@ -53,11 +57,11 @@ describe("railProjectCaption", () => {
   })
 
   test("collapses to a single token when repo and folder coincide", () => {
-    expect(railProjectCaption(project({ worktree: "/home/me/thing", name: "thing" }))).toBe("thing")
+    expect(railProjectCaptionFromName(project({ worktree: "/home/me/thing", name: "thing" }))).toBe("thing")
   })
 
   test("falls back to just the folder when no repo is known", () => {
-    expect(railProjectCaption(project({ worktree: "/home/me/thing" }))).toBe("thing")
+    expect(railProjectCaptionFromName(project({ worktree: "/home/me/thing" }))).toBe("thing")
   })
 })
 

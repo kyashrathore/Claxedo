@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test"
 import { workspaceSessionRoute } from "../../shell/identity/route"
-import type { ProjectItem } from "../rail/rail-sidebar"
+import type { ProjectItem } from "../rail/domain-types"
 import type { WorkspaceActionProps } from "./workspace-actions"
 
 let createWorkspaceActions: typeof import("./workspace-actions").createWorkspaceActions
@@ -216,6 +216,25 @@ describe("createWorkspaceActions", () => {
         },
       },
     }])
+  })
+
+  test("does not treat a draft ('new') session meta as a reusable session — avoids the malformed /s/new route", () => {
+    // Regression for core-sidebar-tree:496 — a draft session content whose
+    // sessionId is the "new" sentinel must NOT be routed as a reused session
+    // (canonicalSessionRoute("new") === "/s/new"); it must take the workspace
+    // route like any fresh draft.
+    const { props, navs, nav, seedMeta } = makeProps()
+    seedMeta({ id: "content-draft", type: "session", directory: "/workspace/feature", sessionId: "new" })
+
+    createWorkspaceActions(props, nav).handleWorkspaceSelect(
+      project({ id: "p1", worktree: "/workspace/main", sandboxes: ["/workspace/feature"] }),
+      "/workspace/feature",
+    )
+
+    expect(navs).toHaveLength(1)
+    expect(navs[0].path).not.toBe("/s/new")
+    expect(navs[0].path).toBe(workspaceSessionRoute("/workspace/feature"))
+    expect(navs[0].reason).toBe("workspace-select:new-session")
   })
 
   test("binds the focused pane's worktree to the selected workspace", () => {

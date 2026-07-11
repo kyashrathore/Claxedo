@@ -70,6 +70,7 @@ export type UseWorkbench = {
     visiblePanes: () => readonly Pane[]
     paneRect: (paneId: string) => PaneRect | undefined
     focusedContent: () => string | null
+    mruHiddenContent: () => string | null
     snapshotFor: (contentId: string) => Snapshot | undefined
   }
 }
@@ -136,6 +137,7 @@ export function useWorkbench(): UseWorkbench {
       visiblePanes: () => pureSelectors.visiblePanes(ctx.getState()),
       paneRect: (id) => pureSelectors.paneRect(ctx.getState(), id),
       focusedContent: () => pureSelectors.focusedContent(ctx.getState()),
+      mruHiddenContent: () => pureSelectors.mruHiddenContent(ctx.getState()),
       snapshotFor: (id) => pureSelectors.snapshotFor(ctx.getState(), id),
     },
   }

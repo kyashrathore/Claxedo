@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createOpenSurfaceActions } from "./open-surface-actions-ui"
-import { sessionRoute, workspacePageRoute } from "../../shell/identity/route"
+import { sessionRoute, workspacePageRoute, workspaceSessionRoute } from "../../shell/identity/route"
 import type { ContentMeta } from "../state"
 
 function makeProps(dir?: string) {
@@ -79,7 +79,9 @@ describe("createOpenSurfaceActions", () => {
     }))
     await Promise.resolve()
 
-    expect(calls.map((call) => call.path)).toEqual(["/s/ses-typed"])
+    // A typed session tab (sessionRef with a workspace host + cwd) resolves to the
+    // canonical /w/<dir>/session/<id> route, not the legacy /s/<id> form.
+    expect(calls.map((call) => call.path)).toEqual([workspaceSessionRoute("/workspace/main", "ses-typed")])
   })
 
   test("navigates legacy session tabs using the payload session id", async () => {

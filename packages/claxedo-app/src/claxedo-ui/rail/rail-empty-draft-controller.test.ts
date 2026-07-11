@@ -36,6 +36,23 @@ describe("useRailEmptyDraftController", () => {
     }, (workspaceDir) => opened.push(workspaceDir))
   })
 
+  test("honors blockNextAutoOpen even when the surface is closed before the block is applied", async () => {
+    // Regression for core-panes-split-tabs:802 — the 2s suppression must not
+    // depend on the non-reactive `Date.now() < blockedUntil` read being cached
+    // in a favorable order. When the surface is removed first (memo already
+    // recomputed to shouldOpen=true and queued the microtask) and the block is
+    // applied afterwards, a non-reactive gate leaves the memo returning a stale
+    // `true` and the draft re-opens anyway. A reactive gate must re-evaluate.
+    const opened: (string | undefined)[] = []
+    await withSuppressibleCloseSequence((controller, closeLastSurface) => {
+      closeLastSurface()
+      controller.blockNextAutoOpen()
+    }, async () => {
+      await settleMicrotasks()
+      expect(opened).toEqual([])
+    }, (workspaceDir) => opened.push(workspaceDir))
+  })
+
   test("does not auto-open when a visible renderable surface exists", async () => {
     const opened: (string | undefined)[] = []
     await withController({

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { parseOwnerRepo } from "./rail-git-remote"
 
 // parseOwnerRepo turns a git remote URL into the "owner/repo" label the rail
-// shows for a project. It is the derivation railProjectLabel/railProjectCaption
+// shows for a project. It is the derivation railProjectLabel/railProjectCaptionFromName
 // build on, so its URL-shape handling is specified directly here.
 
 describe("parseOwnerRepo", () => {

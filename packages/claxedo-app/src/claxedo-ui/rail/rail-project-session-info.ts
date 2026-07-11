@@ -10,7 +10,7 @@ import {
 } from "../../shell/data/queries"
 import { queryClient } from "../../shared/query/query-client"
 import type { SessionInventoryRow } from "../../shared/query/types"
-import type { ProjectItem, WorkspaceItem } from "./rail-sidebar"
+import type { ProjectItem, WorkspaceItem } from "./domain-types"
 import { parseOwnerRepo } from "./rail-git-remote"
 
 type SessionGitMetadata = {

@@ -4,7 +4,7 @@ import { shellDataKeys } from "../../shell/data/keys"
 import { directorySessionCacheQueryOptions, setSessionStatusQueryData } from "../../shell/data/queries"
 import { workspaceSessionRoute } from "../../shell/identity/route"
 import type { ClaxedoEvent } from "../../context/claxedo-events"
-import type { ProjectItem, WorkspaceItem } from "../rail/rail-sidebar"
+import type { ProjectItem, WorkspaceItem } from "../rail/domain-types"
 import type { ProjectActionProps } from "./project-actions"
 
 let createProjectActions: typeof import("./project-actions").createProjectActions
@@ -281,26 +281,21 @@ function make(dir: string) {
 }
 
 describe("createProjectActions.handleNewWorkspace", () => {
-  test("waits for worktree readiness before opening the new session tab", async () => {
+  test("opens the new session tab after a successful worktree create without an external readiness signal", async () => {
+    // Regression for core-workspace-lifecycle:544. A resolved
+    // client.worktree.create means the worktree exists on disk, so the flow
+    // must proceed to open the session tab on its own. Nothing in production
+    // ever flips WorktreeState pending→ready, so the previous code awaited
+    // WorktreeState.wait() forever — the old test masked the hang by calling
+    // WorktreeState.ready(dir) by hand, a signal production never emits.
     const dir = `/workspace/feature-${Date.now().toString(36)}`
-    const { props, adds, acts, navs, nav, worktreeReady } = make(dir)
+    const { props, adds, acts, navs, nav } = make(dir)
 
-    const run = createProjectActions(props, nav).handleNewWorkspace(project({
+    const result = await createProjectActions(props, nav).handleNewWorkspace(project({
       id: "p1",
       worktree: "/workspace/main",
       sandboxes: [],
     }))
-
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    expect(adds).toEqual([])
-    expect(acts).toEqual([])
-    expect(navs).toEqual([])
-
-    worktreeReady.status = "complete"
-    WorktreeState.ready(dir)
-
-    const result = await run
 
     expect(result).toEqual({
       id: dir,
@@ -324,21 +319,22 @@ describe("createProjectActions.handleNewWorkspace", () => {
     ])
   })
 
-  test("shows an error and skips tab creation when worktree startup fails", async () => {
+  test("shows an error and skips tab creation when the worktree create call rejects", async () => {
     const dir = `/workspace/feature-${Date.now().toString(36)}-fail`
     const { props, adds, acts, navs, nav } = make(dir)
+    // The real production failure path is a rejected create call (caught by
+    // handleError), not an externally-injected WorktreeState.failed() that
+    // nothing in production emits.
+    props.globalSDK.client.worktree.create = async () => {
+      throw new Error("boom")
+    }
+    toasts.length = 0
 
-    const run = createProjectActions(props, nav).handleNewWorkspace(project({
+    const result = await createProjectActions(props, nav).handleNewWorkspace(project({
       id: "p1",
       worktree: "/workspace/main",
       sandboxes: [],
     }))
-
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    WorktreeState.failed(dir, "boom")
-
-    const result = await run
 
     expect(result).toBeUndefined()
     expect(adds).toEqual([])

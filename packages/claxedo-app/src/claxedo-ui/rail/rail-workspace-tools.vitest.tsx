@@ -7,7 +7,7 @@ import { emptyClaxedoState } from "../state/persistence"
 import type { ClaxedoState, ContentMeta } from "../state/types"
 import { setReviewWorkspaceActiveTab } from "../components/review-workspace/review-workspace-active-tab"
 import { AppShellLayout } from "../../shell/app-shell-layout"
-import type { ProjectItem } from "./rail-sidebar"
+import type { ProjectItem } from "./domain-types"
 
 vi.mock("./rail-sidebar", async () => {
   const actual = await vi.importActual<typeof import("./rail-sidebar")>("./rail-sidebar")
@@ -74,6 +74,7 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 vi.mock("../../shell/workspace/workspace-connection", () => ({
   isWorkspaceReady: () => true,
   workspaceOffline: () => undefined,
+  workspacePlacement: () => undefined,
 }))
 
 vi.mock("../../components/settings/terminals", () => ({

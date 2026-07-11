@@ -3,7 +3,7 @@ import type { useLayout, useGlobalSDK, usePlatform } from "@opencode-ai/claxedo-
 import type { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { useConfigOptional } from "../../context/config"
 import type { useClaxedoEventsOptional } from "../../context/claxedo-events"
-import type { ProjectItem } from "../rail/rail-sidebar"
+import type { ProjectItem } from "../rail/domain-types"
 import type { WorkspaceBarItem } from "../rail/workspace-toolbar"
 import type { ClaxedoStateApi } from "../state"
 import type { useDirectorySessionCacheActions } from "../../shell/data/directory-session-cache"
