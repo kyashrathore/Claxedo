@@ -41,7 +41,7 @@ vi.mock("../workspace-panel/workspace-processes-navigator", () => ({
   WorkspaceProcessesNavigator: () => <div data-testid="workspace-processes-navigator" />,
 }))
 
-vi.mock("@opencode-ai/claxedo-app", () => ({
+vi.mock("@claxedo/app", () => ({
   getAvatarColors: () => ({ background: "#000", color: "#fff" }),
   useCommand: () => ({ register: vi.fn() }),
   usePlatform: () => ({ fetch }),

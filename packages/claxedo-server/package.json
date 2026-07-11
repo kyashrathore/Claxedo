@@ -1,5 +1,5 @@
 {
-  "name": "@opencode-ai/claxedo-server",
+  "name": "@claxedo/server",
   "version": "1.0.0",
   "description": "Self-hostable control plane for Claxedo workspaces and sessions",
   "license": "MIT",

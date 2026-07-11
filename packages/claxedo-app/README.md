@@ -2,8 +2,7 @@
 
 The web app for **Claxedo** — a cloud/hosted coding-agent platform built on the
 [OpenCode](https://github.com/anomalyco/opencode) engine. This package
-(`@opencode-ai/claxedo-app`, the npm scope is a historical name still being
-migrated to `@claxedo/*`) is a **hard fork of OpenCode's web UI**: the fork
+(`@claxedo/app`) is a **hard fork of OpenCode's web UI**: the fork
 history was reset to a single commit and the code is developed as first-party
 source, not synced via merge.
 
@@ -16,7 +15,7 @@ It is the SolidJS frontend and adds the features Claxedo is built around:
 - **Multi-harness agents** — model/harness selection per session.
 
 It also **powers the Electron desktop app**: `packages/claxedo-desktop` consumes
-this package (`@opencode-ai/claxedo-app`) as its renderer.
+this package (`@claxedo/app`) as its renderer.
 
 Repo: `kyashrathore/Claxedo`. All frontend source lives under `src/**`; there is
 no `packages/app` and no upstream override system (an earlier setup that

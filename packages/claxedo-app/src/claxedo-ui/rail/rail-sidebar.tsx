@@ -20,7 +20,7 @@ import { ClaxedoIconButton as IconButton } from "../components/claxedo-icon-butt
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { showToast } from "@opencode-ai/ui/toast"
-import { useLanguage, useServer } from "@opencode-ai/claxedo-app"
+import { useLanguage, useServer } from "@claxedo/app"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { usePermission } from "@/context/permission"

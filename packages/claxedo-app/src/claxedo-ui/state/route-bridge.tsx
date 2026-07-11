@@ -7,7 +7,7 @@ import {
   usePlatform,
   useServer,
   type LocalProject,
-} from "@opencode-ai/claxedo-app"
+} from "@claxedo/app"
 import { useQuery } from "@tanstack/solid-query"
 import { useShellQueryOptions as useQueryOptions } from "@/shell/data/query-options"
 import { useClaxedoEventsOptional } from "../../context/claxedo-events"

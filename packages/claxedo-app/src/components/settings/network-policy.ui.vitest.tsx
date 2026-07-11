@@ -48,7 +48,7 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit) {
   throw new Error(`unexpected request: ${request.method} ${request.url}`)
 }
 
-vi.mock("@opencode-ai/claxedo-app", () => ({
+vi.mock("@claxedo/app", () => ({
   usePlatform: () => ({ fetch: fakeFetch }),
 }))
 

@@ -90,7 +90,7 @@
       },
     },
     "packages/claxedo-app": {
-      "name": "@opencode-ai/claxedo-app",
+      "name": "@claxedo/app",
       "version": "0.0.59",
       "dependencies": {
         "@claxedo/agent-event-runtime": "workspace:0.5.1",
@@ -220,10 +220,10 @@
       },
     },
     "packages/claxedo-desktop": {
-      "name": "@opencode-ai/claxedo-desktop",
+      "name": "@claxedo/desktop",
       "version": "0.0.1",
       "dependencies": {
-        "@opencode-ai/claxedo-app": "workspace:0.0.59",
+        "@claxedo/app": "workspace:0.0.59",
         "@opencode-ai/session-ui": "workspace:*",
         "@opencode-ai/ui": "workspace:*",
         "@solid-primitives/i18n": "2.2.1",
@@ -281,7 +281,7 @@
       },
     },
     "packages/claxedo-server": {
-      "name": "@opencode-ai/claxedo-server",
+      "name": "@claxedo/server",
       "version": "1.0.0",
       "dependencies": {
         "@claxedo/agent-extensions": "workspace:0.5.1",
@@ -326,7 +326,7 @@
       },
     },
     "packages/claxedo-web": {
-      "name": "@opencode-ai/claxedo-web",
+      "name": "@claxedo/web",
       "version": "0.0.1",
       "dependencies": {
         "@astrojs/check": "0.9.6",
@@ -2139,13 +2139,13 @@
 
     "@openauthjs/openauth": ["@openauthjs/openauth@0.0.0-20250322224806", "", { "dependencies": { "@standard-schema/spec": "1.0.0-beta.3", "aws4fetch": "1.0.20", "jose": "5.9.6" }, "peerDependencies": { "arctic": "^2.2.2", "hono": "^4.0.0" } }, "sha512-p5IWSRXvABcwocH2dNI0w8c1QJelIOFulwhKk+aLLFfUbs8u1pr7kQbYe8yCSM2+bcLHiwbogpUQc2ovrGwCuw=="],
 
-    "@opencode-ai/claxedo-app": ["@opencode-ai/claxedo-app@workspace:packages/claxedo-app"],
+    "@claxedo/app": ["@claxedo/app@workspace:packages/claxedo-app"],
 
-    "@opencode-ai/claxedo-desktop": ["@opencode-ai/claxedo-desktop@workspace:packages/claxedo-desktop"],
+    "@claxedo/desktop": ["@claxedo/desktop@workspace:packages/claxedo-desktop"],
 
-    "@opencode-ai/claxedo-server": ["@opencode-ai/claxedo-server@workspace:packages/claxedo-server"],
+    "@claxedo/server": ["@claxedo/server@workspace:packages/claxedo-server"],
 
-    "@opencode-ai/claxedo-web": ["@opencode-ai/claxedo-web@workspace:packages/claxedo-web"],
+    "@claxedo/web": ["@claxedo/web@workspace:packages/claxedo-web"],
 
     "@opencode-ai/cli": ["@opencode-ai/cli@workspace:packages/cli"],
 
@@ -7257,7 +7257,7 @@
 
     "@openauthjs/openauth/jose": ["jose@5.9.6", "", {}, "sha512-AMlnetc9+CV9asI19zHmrgS/WYsWUwCn2R7RzlbJWD7F9eWYUTGyBmU9o6PxngtLGOiDGPRu+Uc4fhKzbpteZQ=="],
 
-    "@opencode-ai/claxedo-desktop/typescript": ["typescript@5.6.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-hjcS1mhfuyi4WW8IWtjP7brDrG2cuDZukyrYrSauoXGNgx0S7zceP07adYkJycEr56BOUTNPzbInooiN3fn1qw=="],
+    "@claxedo/desktop/typescript": ["typescript@5.6.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-hjcS1mhfuyi4WW8IWtjP7brDrG2cuDZukyrYrSauoXGNgx0S7zceP07adYkJycEr56BOUTNPzbInooiN3fn1qw=="],
 
     "@opencode-ai/cli/effect": ["effect@4.0.0-beta.83", "", { "dependencies": { "@standard-schema/spec": "^1.1.0", "fast-check": "^4.8.0", "find-my-way-ts": "^0.1.6", "ini": "^7.0.0", "kubernetes-types": "^1.30.0", "msgpackr": "^2.0.1", "multipasta": "^0.2.7", "toml": "^4.1.1", "uuid": "^14.0.0", "yaml": "^2.9.0" } }, "sha512-0wsak8RtgGAr9UWSbVDgJHZcUqMSvicHcvaZv1MbMM7MCGgW4Rn/137J1MHQbwYPcwYGxT/IqehFd+UbYuj78w=="],
 

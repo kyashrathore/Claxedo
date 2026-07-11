@@ -126,7 +126,7 @@ vi.mock("@/shared/data/pages-api", () => ({
   pagesApi: h.api,
 }))
 
-vi.mock("@opencode-ai/claxedo-app", () => ({
+vi.mock("@claxedo/app", () => ({
   useSync: () => h.sync,
   useGlobalSDK: () => ({
     client: {

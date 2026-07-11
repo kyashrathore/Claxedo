@@ -163,9 +163,9 @@ export function resolveImport(appRoot: string, fromFile: string, specifier: stri
   if (specifier.startsWith("./") || specifier.startsWith("../")) {
     return tryFile(path.resolve(path.dirname(fromFile), specifier))
   }
-  if (specifier === "@opencode-ai/claxedo-app") return tryFile(path.join(appRoot, "src/index.tsx"))
-  if (specifier.startsWith("@opencode-ai/claxedo-app/")) {
-    return tryFile(path.join(appRoot, "src", specifier.slice("@opencode-ai/claxedo-app/".length)))
+  if (specifier === "@claxedo/app") return tryFile(path.join(appRoot, "src/index.tsx"))
+  if (specifier.startsWith("@claxedo/app/")) {
+    return tryFile(path.join(appRoot, "src", specifier.slice("@claxedo/app/".length)))
   }
   if (specifier.startsWith("@/")) return tryFile(path.join(appRoot, "src", specifier.slice(2)))
   if (specifier === "#terminal-backend") return tryFile(path.join(appRoot, "src/terminal/backend/xterm"))

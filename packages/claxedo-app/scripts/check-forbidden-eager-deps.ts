@@ -124,7 +124,7 @@ function resolveUiSubpath(spec: string): string | null {
 }
 
 const UI_PKG_PREFIXES = ["@opencode-ai/ui/", "@opencode-ai/ui"]
-const CLAXEDO_APP_PKG = "@opencode-ai/claxedo-app"
+const CLAXEDO_APP_PKG = "@claxedo/app"
 
 // ---------------------------------------------------------------------------
 // Module resolution
@@ -167,7 +167,7 @@ function resolveToFile(spec: string, fromFile: string): string | null {
   if (spec.startsWith("./") || spec.startsWith("../")) {
     return tryFile(path.resolve(path.dirname(fromFile), spec))
   }
-  // self-package import (rare): @opencode-ai/claxedo-app[/...]
+  // self-package import (rare): @claxedo/app[/...]
   if (spec === CLAXEDO_APP_PKG || spec.startsWith(CLAXEDO_APP_PKG + "/")) {
     const sub = spec.slice(CLAXEDO_APP_PKG.length).replace(/^\//, "")
     return tryFile(path.join(appSrc, sub || "index.tsx"))

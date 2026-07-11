@@ -71,7 +71,7 @@ package that vendored upstream OpenCode's web UI. `src/overrides/` used to
 hold first-party replacement files for individual upstream `@/...` modules,
 resolved by a dynamic override-scanning system, and its README used to
 document each mapped override plus a `@opencode-ai/app` vs
-`@opencode-ai/claxedo-app` import-resolution contract.
+`@claxedo/app` import-resolution contract.
 
 **That system no longer exists.** Verified at the time of the README's last
 rewrite:
@@ -99,7 +99,7 @@ has a target.
 If you are trying to change behavior that used to live in an "override" per
 old documentation you found elsewhere (an old `CONTRIBUTING.md` revision, or
 a two-level "App scope vs Directory scope" context architecture, or a
-`@opencode-ai/app` vs `@opencode-ai/claxedo-app` import distinction), that
+`@opencode-ai/app` vs `@claxedo/app` import distinction), that
 behavior is not overridden anymore — it is simply implemented directly at
 `src/app.tsx`, `src/pages/layout.tsx`, `src/context/global-sync.tsx`, and so
 on. Edit those files directly, and use plain `@/...` or `@claxedo/...`

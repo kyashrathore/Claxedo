@@ -58,6 +58,10 @@ export function createElectronRenderer(mode: string): UserConfig {
           replacement: normalize(path.join(claxedoAppDir, "src/extensions/index.ts")),
         },
         {
+          find: /^@claxedo\/app$/,
+          replacement: normalize(path.join(claxedoAppDir, "src/index.tsx")),
+        },
+        {
           find: /^@claxedo\/agent-event-runtime$/,
           replacement: normalize(path.join(agentEventRuntimeDir, "src/index.ts")),
         },

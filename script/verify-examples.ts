@@ -1,25 +1,25 @@
 const examples = [
   {
     dir: "examples/local-single-user",
-    packageImports: ["@opencode-ai/claxedo-server"],
+    packageImports: ["@claxedo/server"],
   },
   {
     dir: "examples/hosted-team",
-    packageImports: ["@opencode-ai/claxedo-server"],
+    packageImports: ["@claxedo/server"],
   },
   {
     dir: "examples/runtime-only-host",
     packageImports: ["@claxedo/workspace-runtime"],
-    forbiddenImports: ["@opencode-ai/claxedo-server"],
+    forbiddenImports: ["@claxedo/server"],
   },
   {
     dir: "examples/headless-client",
-    packageImports: ["@opencode-ai/claxedo-server"],
+    packageImports: ["@claxedo/server"],
   },
   {
     dir: "examples/extension-client",
     packageImports: ["@claxedo/agent-extensions"],
-    forbiddenImports: ["@opencode-ai/claxedo-server"],
+    forbiddenImports: ["@claxedo/server"],
   },
 ] as const
 

@@ -5,7 +5,7 @@ import { ClaxedoStateProvider } from "../state"
 import { emptyClaxedoState } from "../state/persistence"
 import { RailSidebar, type ProjectItem } from "./rail-sidebar"
 
-vi.mock("@opencode-ai/claxedo-app", () => ({
+vi.mock("@claxedo/app", () => ({
   getAvatarColors: () => ({ background: "#000", color: "#fff" }),
   useLanguage: () => ({ t: (key: string) => key }),
   useServer: () => ({ isLocal: () => true }),

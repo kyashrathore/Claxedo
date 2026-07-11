@@ -1,5 +1,5 @@
 {
-  "name": "@opencode-ai/claxedo-desktop",
+  "name": "@claxedo/desktop",
   "private": true,
   "version": "0.0.1",
   "type": "module",
@@ -31,7 +31,7 @@
   },
   "main": "./out/main/index.js",
   "dependencies": {
-    "@opencode-ai/claxedo-app": "workspace:0.0.59",
+    "@claxedo/app": "workspace:0.0.59",
     "@opencode-ai/session-ui": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@solid-primitives/i18n": "2.2.1",

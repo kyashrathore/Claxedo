@@ -5,7 +5,7 @@ import {
   type LocalProject,
   useGlobalSDK,
   usePlatform,
-} from "@opencode-ai/claxedo-app"
+} from "@claxedo/app"
 import { useShellQueryOptions as useQueryOptions } from "@/shell/data/query-options"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"

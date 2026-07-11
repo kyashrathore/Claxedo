@@ -9,7 +9,7 @@
 import { createSignal, createMemo, createResource, For, Show, onMount } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
-import { usePlatform } from "@opencode-ai/claxedo-app"
+import { usePlatform } from "@claxedo/app"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { can } from "../../shell/auth/role"
 import { placementFromWorkspaceConnection } from "../../shell/auth/placement"

@@ -1,3 +1,22 @@
+// PENDING REWRITE (chip task_ac7919fb): this string-grep route/boundary audit
+// is slated to be replaced by declarative scanner rules (architecture/scanners).
+// Until then it is kept honest by mechanical reconciliation to production drift.
+// Known dead-invariant assertions that survive that rewrite, NOT masked here
+// because WP-D2 collapsed the two-alias world (@claxedo/ first-party vs @/
+// upstream/override) into a single @/ alias, which erased the distinction these
+// assertions encoded:
+//   - "Claxedo command context owns the typed command bus bridge": the
+//     `@/context/command` offender scan now flags legitimate first-party imports.
+//   - "Claxedo platform context owns desktop and auth platform capabilities":
+//     same, for `@/context/platform`.
+//   - "Claxedo language context owns extension string merging": same, for
+//     `@/context/language`.
+//   - "directory-layout route is a pass-through": the `@claxedo/pages/...`
+//     positive + `@/pages/...` negative pair is un-expressible post-collapse
+//     (app.tsx now legitimately imports `@/pages/directory-layout`).
+// Also non-drift: the Pages-API scan flags shared/data/arena-api.ts on a
+// docstring `/pages/:id/arena/*` (comment false-positive; real route building
+// is delegated to pages-api.ts's array builder).
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
 import { can, RolePolicy } from "../shell/auth/role"
@@ -485,7 +504,7 @@ describe("workspace runtime route audit", () => {
     const app = await Bun.file(path.join(root, "app.tsx")).text()
     const health = await Bun.file(path.join(root, "shared/data/server-health.ts")).text()
 
-    expect(app).toMatch(/@claxedo\/utils\/server-health/)
+    expect(app).toMatch(/@\/shared\/data\/server-health/)
     expect(app).not.toMatch(/@\/utils\/server-health/)
     expect(await Bun.file(path.join(root, "overrides/shared/data/server-health.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/shared/data/server-health.test.ts")).exists()).toBe(false)
@@ -891,7 +910,7 @@ describe("workspace runtime route audit", () => {
     expect(hook).not.toMatch(/useGlobalSync/)
     expect(hook).not.toMatch(/globalSync\.data\.provider/)
     for (const text of providerConsumers) {
-      expect(text).toMatch(/@claxedo\/context\/use-providers/)
+      expect(text).toMatch(/@\/context\/use-providers/)
       expect(text).not.toMatch(/@\/hooks\/use-providers|@claxedo\/hooks\/use-providers/)
       expect(text).not.toMatch(/["']\/hooks\/use-providers["']/)
     }
@@ -903,13 +922,13 @@ describe("workspace runtime route audit", () => {
     expect(settings).not.toMatch(/globalSync\.updateConfig/)
     expect(settings).not.toMatch(/globalSync\.data\.(?:provider|config)/)
     expect(settings).not.toMatch(/globalSync\.set\("(?:provider|config)"/)
-    expect(settingsDialog).toMatch(/@claxedo\/components\/settings\/general/)
-    expect(settingsDialog).toMatch(/@claxedo\/components\/settings\/providers/)
-    expect(settingsDialog).toMatch(/@claxedo\/components\/settings\/terminals/)
-    expect(settingsDialog).toMatch(/@claxedo\/components\/settings\/sandbox-section/)
-    expect(settingsDialog).toMatch(/@claxedo\/context\/config/)
+    expect(settingsDialog).toMatch(/@\/components\/settings\/general/)
+    expect(settingsDialog).toMatch(/@\/components\/settings\/providers/)
+    expect(settingsDialog).toMatch(/@\/components\/settings\/terminals/)
+    expect(settingsDialog).toMatch(/@\/components\/settings\/sandbox-section/)
+    expect(settingsDialog).toMatch(/@\/context\/config/)
     expect(general).toMatch(/AccountSettingsSection/)
-    expect(general).toMatch(/@claxedo\/components\/settings\/account-section/)
+    expect(general).toMatch(/@\/components\/settings\/account-section/)
     expect(general).not.toMatch(/@claxedo\/context\/config/)
     expect(connect).toMatch(/queryOptions\.providerAuth\(\)/)
     expect(connect).toMatch(/queryOptions\.providers\(null\)/)
@@ -920,7 +939,7 @@ describe("workspace runtime route audit", () => {
     expect(custom).toMatch(/queryOptions\.providers\(null\)/)
     expect(custom).toMatch(/claxedoCredentialRequest/)
     expect(custom).toMatch(/globalSDK\.client\.global\.config[\s\S]{0,80}\.update/)
-    expect(custom).toMatch(/@claxedo\/components\/dialogs\/select-provider/)
+    expect(custom).toMatch(/@\/components\/dialogs\/select-provider/)
     expect(custom).not.toMatch(/\.\/dialog-select-provider/)
     expect(custom).not.toMatch(/globalSDK\.client\.auth\.set/)
     expect(custom).not.toMatch(/auth:\s*\{[\s\S]{0,120}key:/)
@@ -938,32 +957,32 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, dialogSelectModel)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, dialogSelectModelUnpaid)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, dialogSelectProvider)).exists()).toBe(true)
-    expect(settings).toMatch(/@claxedo\/components\/dialogs\/connect-provider/)
+    expect(settings).toMatch(/@\/components\/dialogs\/connect-provider/)
     expect(settings).not.toMatch(/\.\/dialog-connect-provider/)
-    expect(settings).toMatch(/@claxedo\/components\/dialogs\/custom-provider/)
+    expect(settings).toMatch(/@\/components\/dialogs\/custom-provider/)
     expect(settings).not.toMatch(/@\/components\/dialog-custom-provider/)
-    expect(select).toMatch(/@claxedo\/context\/use-providers/)
-    expect(select).toMatch(/@claxedo\/context\/language/)
-    expect(select).toMatch(/@claxedo\/components\/dialogs\/connect-provider/)
+    expect(select).toMatch(/@\/context\/use-providers/)
+    expect(select).toMatch(/@\/context\/language/)
+    expect(select).toMatch(/@\/components\/dialogs\/connect-provider/)
     expect(select).not.toMatch(/@\/components\/dialog-connect-provider/)
-    expect(select).toMatch(/@claxedo\/components\/dialogs\/custom-provider/)
+    expect(select).toMatch(/@\/components\/dialogs\/custom-provider/)
     expect(select).not.toMatch(/@\/components\/dialog-custom-provider/)
     expect(select).not.toMatch(/\.\/dialog-connect-provider/)
     expect(select).not.toMatch(/\.\/dialog-custom-provider/)
-    expect(manageModels).toMatch(/@claxedo\/components\/dialogs\/select-provider/)
+    expect(manageModels).toMatch(/@\/components\/dialogs\/select-provider/)
     expect(manageModels).not.toMatch(/@\/components\/dialog-select-provider/)
-    expect(selectModel).toMatch(/@claxedo\/components\/dialogs\/select-provider/)
-    expect(selectModel).toMatch(/@claxedo\/components\/dialogs\/manage-models/)
+    expect(selectModel).toMatch(/@\/components\/dialogs\/select-provider/)
+    expect(selectModel).toMatch(/@\/components\/dialogs\/manage-models/)
     expect(selectModel).not.toMatch(/@\/components\/dialog-manage-models/)
     expect(selectModel).not.toMatch(/@\/components\/dialog-select-provider/)
     expect(selectModel).not.toMatch(/\.\/dialog-select-provider/)
     expect(selectModel).not.toMatch(/\.\/dialog-manage-models/)
-    expect(commands).toMatch(/@claxedo\/components\/dialogs\/select-model/)
+    expect(commands).toMatch(/@\/components\/dialogs\/select-model/)
     expect(commands).not.toMatch(/@\/components\/dialog-select-model/)
-    expect(prompt).toMatch(/@claxedo\/components\/dialogs\/select-model/)
+    expect(prompt).toMatch(/@\/components\/dialogs\/select-model/)
     expect(prompt).not.toMatch(/@\/components\/dialog-select-model/)
-    expect(selectModelUnpaid).toMatch(/@claxedo\/components\/dialogs\/connect-provider/)
-    expect(selectModelUnpaid).toMatch(/@claxedo\/components\/dialogs\/select-provider/)
+    expect(selectModelUnpaid).toMatch(/@\/components\/dialogs\/connect-provider/)
+    expect(selectModelUnpaid).toMatch(/@\/components\/dialogs\/select-provider/)
     expect(selectModelUnpaid).not.toMatch(/@\/components\/dialog-connect-provider/)
     expect(selectModelUnpaid).not.toMatch(/@\/components\/dialog-select-provider/)
     expect(selectModelUnpaid).not.toMatch(/\.\/dialog-connect-provider/)
@@ -987,7 +1006,7 @@ describe("workspace runtime route audit", () => {
     expect(context).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
     expect(context).toMatch(/cachedGlobalSyncSdkClient/)
     expect(context).toMatch(/clearGlobalSyncSdkClientsForDirectory/)
-    expect(context).toMatch(/@claxedo\/shell\/data\/global-sync-types/)
+    expect(context).toMatch(/@\/shell\/data\/global-sync-types/)
     expect(context).not.toMatch(/@\/context\/global-sync\/types/)
     expect(context).not.toMatch(/sdkCache = new Map/)
     expect(context).not.toMatch(/sdkCache\.(?:get|set|delete|keys)/)
@@ -1004,7 +1023,7 @@ describe("workspace runtime route audit", () => {
     // Post WP-A2 alias collapse: the canonical name is createDirectoryCacheManager and the
     // context file legitimately imports it from its shell/data owner. The boundary rule is
     // that global-sync must not own a local implementation of the directory cache manager.
-    expect(context).toMatch(/import \{ createDirectoryCacheManager \} from "@claxedo\/shell\/data\/directory-cache-manager"/)
+    expect(context).toMatch(/import \{ createDirectoryCacheManager \} from "@\/shell\/data\/directory-cache-manager"/)
     expect(context).not.toMatch(/(?:function|const|let)\s+createDirectoryCacheManager/)
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/child-store.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/bootstrap.ts")).exists()).toBe(false)
@@ -1129,7 +1148,7 @@ describe("workspace runtime route audit", () => {
     expect(directoryLayout).toMatch(/resolveLegacyRedirect\(pathname/)
     expect(directoryLayout).toMatch(/\.\/directory-layout-routes/)
     expect(directoryLayout).not.toMatch(/@claxedo\/runtime\/runtime-gateway/)
-    expect(directoryLayout).toMatch(/@claxedo\/utils\/api/)
+    expect(directoryLayout).toMatch(/@\/shared\/data\/api/)
     expect(directoryLayout).not.toMatch(/\/page\/:pageId[\s\S]*workspacePageRoute/)
     expect(directoryLayout).not.toMatch(/\/terminal\/:terminalId[\s\S]*workspaceTerminalRoute/)
     expect(state).toMatch(/shellRouteWorkspaceKey\(shellRoute\(\)\)/)
@@ -1343,7 +1362,7 @@ describe("workspace runtime route audit", () => {
     expect(local).not.toMatch(/@solidjs\/router/)
     expect(file).toMatch(/cachedFileReadRequest/)
     expect(file).toMatch(/clearFileRequestCache/)
-    expect(file).toMatch(/@claxedo\/context\/file\/view-cache/)
+    expect(file).toMatch(/@\/context\/file\/view-cache/)
     expect(file).not.toMatch(/\.\/file\/view-cache/)
     expect(await Bun.file(path.join(root, "overrides/context/file.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/context/file/view-cache.ts")).exists()).toBe(false)
@@ -1436,7 +1455,7 @@ describe("workspace runtime route audit", () => {
     expect(submit).not.toMatch(/harnessModel:\s*/)
     expect(submit).not.toMatch(/submitModelFromModelKey/)
 
-    expect(submitTypes).toMatch(/import type \{ ModelKey \} from "\.\.\/\.\.\/session-client\/composer\/model-strategy"/)
+    expect(submitTypes).toMatch(/import type \{ ModelKey \} from "\.\.\/\.\.\/session\/composer\/model-strategy"/)
     expect(submitTypes).toMatch(/harnessModelKey\?: ModelKey/)
     expect(submitTypes).not.toMatch(/harnessModel\?: SubmitModel/)
 
@@ -1577,7 +1596,7 @@ describe("workspace runtime route audit", () => {
     expect(language).toMatch(/loadLocaleDict/)
     expect(language).toMatch(/normalizeLocale/)
     expect(language).not.toMatch(/createResource/)
-    expect(index).toMatch(/@claxedo\/context\/language/)
+    expect(index).toMatch(/@\/context\/language/)
     expect(index).toMatch(/loadLocaleDict/)
     expect(index).toMatch(/normalizeLocale/)
     expect(index).toMatch(/type Locale/)
@@ -1861,7 +1880,7 @@ describe("workspace runtime route audit", () => {
     expect(payload).not.toMatch(/sessionRefForPane/)
     expect(payload).toMatch(/sessionRef\?: SessionRef/)
     expect(payload).toMatch(/\.\.\.\(input\.sessionRef \? \{ sessionRef: input\.sessionRef \} : \{\}\)/)
-    expect(submitTest).toMatch(/navigate:\/s\/session-1/)
+    expect(submitTest).toMatch(/navigate:\/w\/ws_1\/session\/session-1/)
     expect(submitTest).not.toMatch(/navigate:\/ws_1\/session\/session-1/)
   })
 
@@ -2483,8 +2502,8 @@ describe("workspace runtime route audit", () => {
     expect(sessionPageText).toMatch(/from "\.\/session\/composer"/)
     expect(sessionPageText).not.toMatch(/@\/pages\/session\/composer/)
     expect(text).toMatch(/useSessionParams/)
-    expect(text).toMatch(/@claxedo\/claxedo-ui\/context\/session-params/)
-    expect(text).toMatch(/@claxedo\/shell\/data\/queries/)
+    expect(text).toMatch(/@\/claxedo-ui\/context\/session-params/)
+    expect(text).toMatch(/@\/shell\/data\/queries/)
     expect(text).toMatch(/directorySessionCacheQueryOptions/)
     expect(text).toMatch(/sessionStatusQueryOptions/)
     expect(text).toMatch(/sessionTodoQueryOptions/)
@@ -2578,11 +2597,11 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp-logic.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/status-popover.tsx")).exists()).toBe(false)
-    expect(claxedoDialog).toMatch(/@claxedo\/components\/dialogs\/select-mcp-logic/)
+    expect(claxedoDialog).toMatch(/@\/components\/dialogs\/select-mcp-logic/)
     expect(claxedoLogic).toMatch(/function mcpExtensionUrl/)
     expect(claxedoLogic).not.toMatch(/RuntimeGateway\./)
     expect(claxedoStatus).toMatch(/return null/)
-    expect(claxedoSessionHeader).toMatch(/@claxedo\/components\/status-popover/)
+    expect(claxedoSessionHeader).toMatch(/@\/components\/status-popover/)
     expect(claxedoSessionHeader).not.toMatch(/\.\.\/status-popover/)
     expect(backend).toMatch(/getMcpStatus: async/)
     expect(backend).toMatch(/getLspStatus: async/)
@@ -2752,7 +2771,7 @@ describe("workspace runtime route audit", () => {
     // terminal.tsx now acquires through the ref-counted factory wrapping
     // createRoot(createTerminalSession); the per-provider release-handle map
     // (TerminalCacheEntry) stays local and must not re-inline the shared Map.
-    expect(text).toMatch(/import \{ createRefCountedResourceCache \} from "@claxedo\/context\/live-resource-cache"/)
+    expect(text).toMatch(/import \{ createRefCountedResourceCache \} from "@\/context\/live-resource-cache"/)
     expect(text).toMatch(/const sharedTerminalCache = createRefCountedResourceCache<TerminalSession>\(MAX_TERMINAL_SESSIONS\)/)
     expect(text).toMatch(/sharedTerminalCache\.acquire\(key, \(\) =>[\s\S]*createRoot\(\(dispose\) => \(\{[\s\S]*createTerminalSession\(sdk, dir, options\)/)
     expect(text).not.toMatch(/new Map<string, SharedTerminalCacheEntry>/)
@@ -2774,8 +2793,8 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, terminalComponent)).exists()).toBe(true)
     expect(text).toMatch(/createTerminalPtyClient/)
     expect(text).toMatch(/resolveWorkspaceRuntime/)
-    expect(text).toMatch(/@claxedo\/context\/platform/)
-    expect(text).toMatch(/@claxedo\/context\/language/)
+    expect(text).toMatch(/@\/context\/platform/)
+    expect(text).toMatch(/@\/context\/language/)
     expect(text).not.toMatch(/\.\.\/\.\.\/utils\/api/)
     expect(text).not.toMatch(/\.\.\/\.\.\/cloud\/runtime\/workspace-runtime-store/)
     // index.tsx re-exports the first-party Terminal directly; the pane

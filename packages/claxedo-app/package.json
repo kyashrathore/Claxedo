@@ -1,5 +1,5 @@
 {
-  "name": "@opencode-ai/claxedo-app",
+  "name": "@claxedo/app",
   "version": "0.0.59",
   "private": true,
   "description": "Cloud extension package for OpenCode (Claxedo)",

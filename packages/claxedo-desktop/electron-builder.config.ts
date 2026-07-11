@@ -15,7 +15,7 @@ const getBase = (): Configuration => ({
   files: [
     "out/**/*",
     "resources/**/*",
-    "!**/node_modules/@opencode-ai/claxedo-app/**",
+    "!**/node_modules/@claxedo/app/**",
     "!**/node_modules/@opencode-ai/ui/**",
     "!**/node_modules/@openai/codex/vendor",
     "!**/node_modules/@anthropic-ai/claude-agent-sdk/vendor",

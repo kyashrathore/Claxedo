@@ -10,7 +10,7 @@ import {
   lazy,
   onCleanup,
 } from "solid-js"
-import { usePlatform } from "@opencode-ai/claxedo-app"
+import { usePlatform } from "@claxedo/app"
 
 import { useClaxedoState } from "../state"
 import { SessionPaneScope } from "../components/session-pane-scope"

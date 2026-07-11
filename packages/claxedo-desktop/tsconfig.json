@@ -18,6 +18,7 @@
     "types": ["vite/client", "node", "electron"],
     "paths": {
       "#terminal-backend": ["../claxedo-app/src/terminal/backend/xterm"],
+      "@claxedo/app": ["../claxedo-app/src/index.tsx"],
       "@claxedo/*": ["../claxedo-app/src/*"],
       "@/*": ["../claxedo-app/src/*"]
     }

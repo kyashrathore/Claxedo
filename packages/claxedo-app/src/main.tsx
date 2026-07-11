@@ -8,7 +8,7 @@
 // @refresh reload
 import { render } from "solid-js/web"
 import { AppBaseProviders, AppInterface } from "@/app"
-import { PlatformProvider, type Platform } from "@opencode-ai/claxedo-app"
+import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
 import { getAuthToken } from "@/shared/data/auth-client"
 import { authFetch } from "@/shared/data/api"

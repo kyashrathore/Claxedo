@@ -1,4 +1,4 @@
-# @opencode-ai/claxedo-server
+# @claxedo/server
 
 Claxedo's control-plane / gateway server. Node-only Hono app.
 

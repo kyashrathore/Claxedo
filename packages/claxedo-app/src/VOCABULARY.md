@@ -167,20 +167,24 @@ brand-specific at all.
 
 ## Package scope: `@opencode-ai/*` vs `@claxedo/*`
 
-Verified as of this writing: `packages/claxedo-app`, `packages/claxedo-server`,
-`packages/claxedo-desktop`, and `packages/claxedo-web` all still declare
-`"name": "@opencode-ai/..."` in their `package.json` (e.g.
-`packages/claxedo-app/package.json:2` is `"@opencode-ai/claxedo-app"`).
+The four product packages are now `@claxedo/*`-scoped: `packages/claxedo-app`,
+`packages/claxedo-server`, `packages/claxedo-desktop`, and `packages/claxedo-web`
+declare `"name": "@claxedo/app"`, `"@claxedo/server"`, `"@claxedo/desktop"`, and
+`"@claxedo/web"` respectively (e.g. `packages/claxedo-app/package.json:2` is
+`"@claxedo/app"`). Directories stay `packages/claxedo-*` (the name/dir mismatch
+is accepted as cosmetic). The scope drops the `claxedo-` stutter: the scope
+carries the brand, the basename says what the package is. This rename was
+WP-D4 and is DONE.
 
 Intra-app imports use a single alias: `@/*` → `./src/*` (see `tsconfig.json`'s
 path map). WP-D2 retired the former `@claxedo/*` → `./src/*` duplicate alias —
 that scope no longer maps to this app's own `src`, so `@/context/...`,
-`@/shell/...`, etc. are now the one canonical form. The only surviving
-`@claxedo/*` entries are the real workspace package `@claxedo/agent-event-runtime`
-and its subpaths. Freeing the `@claxedo/*` scope from the src-alias duplication
-is what lets WP-D4 rename the four product packages into `@claxedo/*` without a
-collision; that rename is tracked as LLD WP-D4 and has NOT happened yet — do not
-assume the scope name reflects package identity.
+`@/shell/...`, etc. are now the one canonical form. `@claxedo/*` now names real
+workspace packages only — the four product packages above plus
+`@claxedo/agent-event-runtime` and the other framework packages (and their
+subpaths). Freeing the `@claxedo/*` scope from the src-alias duplication in
+WP-D2 is what let WP-D4 rename the four product packages into `@claxedo/*`
+without a collision.
 Design-system/shared packages this app also imports (`@opencode-ai/ui`,
 `@opencode-ai/session-ui`) are a separate, intentionally-unrenamed case (they
 are shared upstream-lineage UI kits, not one of the four product packages)
