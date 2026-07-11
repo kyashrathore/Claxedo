@@ -313,6 +313,32 @@ function useClearAttentionOnFocus() {
   })
 }
 
+/**
+ * Reconcile a single tracked terminal after its PTY exits externally.
+ *
+ * An externally-exited PTY is done: it must both drop to `idle` AND clear the
+ * `seen` flag, matching the reconnect-reconcile path (see
+ * `reconcileAgentStatuses` below, which pairs `setAgentStatus(id, "idle")` with
+ * `clearSeen(id)`). Setting `idle` alone leaves a stale `seen` flag, which the
+ * status aggregator reads as `done` (`seen && !working && !permission`), so the
+ * sidebar "done" dot sticks forever and never disappears.
+ *
+ * Returns true when the terminal was tracked, non-idle, and got reconciled.
+ */
+export function reconcilePtyExit(
+  state: Pick<ClaxedoStateApi, "terminal">,
+  ptyId: string | undefined,
+): boolean {
+  if (!ptyId) return false
+  if (!state.terminal.isTracked(ptyId)) return false
+  if (state.terminal.agentStatus(ptyId) === "idle") return false
+  batch(() => {
+    state.terminal.setAgentStatus(ptyId, "idle")
+    state.terminal.clearSeen(ptyId)
+  })
+  return true
+}
+
 function usePtyExitCleanup() {
   const state = useClaxedoState()
   const claxedoEvents = useClaxedoEventsOptional()
@@ -321,16 +347,7 @@ function usePtyExitCleanup() {
     if (!claxedoEvents) return
 
     const unsub = claxedoEvents.on("pty.exited", (event) => {
-      const ptyId = event.id as string | undefined
-      if (!ptyId) return
-
-      if (!state.terminal.isTracked(ptyId)) return
-      const status = state.terminal.agentStatus(ptyId)
-      if (status === "idle") return
-
-      batch(() => {
-        state.terminal.setAgentStatus(ptyId, "idle")
-      })
+      reconcilePtyExit(state, event.id as string | undefined)
     })
 
     onCleanup(unsub)

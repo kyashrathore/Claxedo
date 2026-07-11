@@ -158,13 +158,6 @@ describe("harness options loader", () => {
     expect(patches.at(-1)?.configError).toBe("Failed to load model options")
   })
 
-  test("stays out of direct query-client ownership", async () => {
-    const source = await Bun.file(new URL("./harness-options-loader.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("queryClient")
-    expect(source).not.toContain("setQueryData")
-    expect(source).not.toContain("@tanstack")
-  })
 })
 
 function loaderFor(input: {

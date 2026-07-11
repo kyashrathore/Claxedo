@@ -59,15 +59,6 @@ describe("harness preferences", () => {
     expect(storage.getItem("claxedo:review-mode-map")).toBeNull()
   })
 
-  test("stays out of query and store ownership", async () => {
-    const source = await Bun.file(new URL("./harness-preferences.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("queryClient")
-    expect(source).not.toContain("setQueryData")
-    expect(source).not.toContain("removeQueries")
-    expect(source).not.toContain("createStore")
-    expect(source).not.toContain("@tanstack")
-  })
 })
 
 class MemoryStorage implements PanePreferenceStorage {

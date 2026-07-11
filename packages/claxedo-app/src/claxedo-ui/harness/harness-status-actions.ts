@@ -63,7 +63,15 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
   const applyStatus = async (scope: string, data: HarnessState, params?: ScopeInput) => {
     const current = input.state(scope)
     const want = desiredHarness(data) ?? input.state(scope)?.harness ?? "opencode"
-    if (failedHarness(data) && current?.harness && want !== current.harness) return
+    // Skip a failed status only when the user has confirmed a *different* real
+    // harness. The store seeds `harness: "opencode"` before any confirmation,
+    // so the seed must NOT be treated as a deliberate selection — otherwise a
+    // failed status for the harness this scope is actually configured with is
+    // silently swallowed, leaving submit unblocked with no error dot
+    // (core-harness-ownership-local). applyStatus only runs during hydration
+    // (no external callers), so a confirmed non-opencode selection is the only
+    // thing worth protecting here.
+    if (failedHarness(data) && current?.harness && current.harness !== "opencode" && want !== current.harness) return
     input.applyPatch(scope, harnessStatusPatch({ data, current }))
     input.save(scope, "harness", want)
     if (data.model) input.save(scope, "model", data.model)

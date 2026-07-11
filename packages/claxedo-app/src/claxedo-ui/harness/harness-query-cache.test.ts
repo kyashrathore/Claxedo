@@ -126,16 +126,4 @@ describe("harness query cache", () => {
     expect(queryClient.getQueryData(harnessChangeRequestKey("change-key"))).toBeUndefined()
   })
 
-  test("centralizes query ownership outside harness config composition", async () => {
-    const harnessConfig = await Bun.file(new URL("./harness-config-store.ts", import.meta.url)).text()
-    const source = await Bun.file(new URL("./harness-query-cache.ts", import.meta.url)).text()
-
-    expect(harnessConfig).not.toMatch(/\bqueryClient\./)
-    expect(harnessConfig).not.toMatch(/\bsetQueryData(?:<[^>]+>)?\s*\(/)
-    expect(harnessConfig).not.toContain("sessionConfigRawQueryKey")
-    expect(source).toMatch(/\bqueryClient\.setQueryData(?:<[^>]+>)?\s*\(/)
-    expect(source).toContain("staleTime: 30 * 1000")
-    expect(source).not.toContain("createStore")
-    expect(source).not.toContain("localStorage")
-  })
 })

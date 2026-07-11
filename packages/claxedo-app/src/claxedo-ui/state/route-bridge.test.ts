@@ -9,21 +9,9 @@ import {
   parseNewSessionDeepLink,
 } from "./route-deep-links"
 
-describe("route bridge URLs", () => {
-  test("keeps stable session metadata and messages probe URL building local", async () => {
-    const source = await Bun.file(new URL("./route-bridge.tsx", import.meta.url)).text()
-
-    expect(source).not.toContain("RuntimeGateway")
-    expect(source).toMatch(/function routeBridgeServerUrl\(serverUrl: string \| undefined\)/)
-    expect(source).toMatch(/normalizeUrl\(serverUrl\) \?\? getClaxedoServerUrl\(\)/)
-    expect(source).toMatch(/function routeBridgeSessionMessagesProbeUrl/)
-    expect(source).toMatch(/`\/session\/\$\{encodeURIComponent\(input\.sessionID\)\}\/message`/)
-    expect(source).toMatch(/url\.searchParams\.set\("directory", input\.workspaceDirectory\)/)
-    expect(source).toMatch(/url\.searchParams\.set\("limit", "1"\)/)
-    expect(source).toMatch(/function routeBridgeClaxedoSessionMetaUrl/)
-    expect(source).toMatch(/`\/api\/claxedo\/session\/\$\{encodeURIComponent\(input\.sessionID\)\}\/meta`/)
-  })
-})
+// The session-probe/metadata URL builders moved to ./route-bridge-resolution;
+// their behavior is now exercised in route-bridge-resolution.test.ts (real URL
+// output) rather than by grepping this component's source text.
 
 describe("route bridge deep links", () => {
   test("parses open-project deep links", () => {
@@ -60,12 +48,6 @@ describe("route bridge deep links", () => {
     expect(newSessionDeepLinkRoute({ directory: "/repo/main", prompt: "line one\nline two & more" }, routeFor)).toBe(
       "/w/%2Frepo%2Fmain/session?prompt=line%20one%0Aline%20two%20%26%20more",
     )
-  })
-
-  test("keeps the route bridge wired to preserve new-session prompt text", async () => {
-    const source = await Bun.file(new URL("./route-bridge.tsx", import.meta.url)).text()
-
-    expect(source).toContain("newSessionDeepLinkRoute(link, workspaceSessionRoute)")
   })
 
   test("drains pending window deep links exactly once", () => {

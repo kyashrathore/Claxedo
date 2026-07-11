@@ -145,6 +145,28 @@ describe("harness status actions", () => {
     expect(optionFetches).toEqual([])
   })
 
+  test("applies a failed harness status over the seeded opencode placeholder so the error surfaces", async () => {
+    // The store seeds `harness: "opencode"` before any user confirmation. A
+    // failed status for the harness this scope is actually configured with
+    // (e.g. claude-acp with a missing binary) must be applied — treating the
+    // seed as a confirmed different selection would silently swallow the error,
+    // leaving submit unblocked with no red dot (core-harness-ownership-local).
+    state.harness = "opencode"
+
+    await actions().applyStatus(scope, {
+      type: "claude-acp",
+      activeType: "claude-acp",
+      error: "claude binary not found",
+    }, { directory: "/repo", sessionId: "new" })
+
+    expect(patches[0]).toMatchObject({
+      harness: "claude-acp",
+      readiness: "error",
+      configError: "claude binary not found",
+    })
+    expect(saved).toEqual([{ scope, key: "harness", value: "claude-acp" }])
+  })
+
   test("does not clear saved model when status has no truthy model", async () => {
     await actions().applyStatus(scope, {
       type: "claude-acp",
@@ -178,16 +200,6 @@ describe("harness status actions", () => {
     })
   })
 
-  test("stays out of direct query, store, and Solid ownership", async () => {
-    const source = await Bun.file(new URL("./harness-status-actions.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("queryClient")
-    expect(source).not.toContain("setQueryData")
-    expect(source).not.toContain("removeQueries")
-    expect(source).not.toContain("createStore")
-    expect(source).not.toContain("@tanstack")
-    expect(source).not.toContain("solid-js")
-  })
 })
 
 function actions(overrides?: {

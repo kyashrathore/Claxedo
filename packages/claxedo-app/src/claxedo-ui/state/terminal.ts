@@ -4,7 +4,7 @@
 // createSignal-backed locals. They are not part of the persisted ClaxedoState
 // and callers never read them across reloads.
 
-import { createSignal, untrack } from "solid-js"
+import { createSignal, onCleanup, untrack } from "solid-js"
 import type { SetStoreFunction } from "solid-js/store"
 import type { ClaxedoState, TerminalAgentStatus, TerminalLifecycleState } from "./types"
 
@@ -89,9 +89,15 @@ export function createTerminalSlice(input: {
   // See old terminal.ts: start at 1 so process PTYs arriving before
   // ProcessPaneProvider mounts don't get auto-tabbed.
   const [pendingProcessStarts, setPendingProcessStarts] = createSignal(1)
-  setTimeout(() => {
+  // Collapse the initial reservation to 0 once the ProcessPaneProvider has had
+  // time to mount (any real process PTY it owns will have bumped the counter by
+  // now). Tie the timer to the owning reactive scope so repeated
+  // mount/unmount (tests, hot reload) don't leak a timer firing against a stale
+  // signal closure.
+  const initialProcessStartTimer = setTimeout(() => {
     setPendingProcessStarts((n) => (n === 1 ? 0 : n))
   }, 15_000)
+  onCleanup(() => clearTimeout(initialProcessStartTimer))
 
   const transitionLifecycle = (
     id: string,

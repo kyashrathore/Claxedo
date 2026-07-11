@@ -15,6 +15,9 @@ import { getClaxedoServerUrl } from "../../utils/api"
 import { useClaxedoEventsOptional } from "../../context/claxedo-events"
 import { useClaxedoState } from "../state"
 import { createProcessOwnership, createTerminalTabOps } from "./process-ownership"
+import { createProcessPaneSync, isStaleProcessSnapshot } from "./process-pane-status"
+import { createProcessEventHandlers, type ProcessPaneStore } from "./process-pane-events"
+import { afterVisibleWork, createWakeDetector } from "./process-pane-scheduling"
 import { AddProcessDialog } from "../components/add-process-dialog"
 import { fastSessionSwitchAnyNetworkQuiet } from "../../session/store/fast-session-switch"
 
@@ -23,83 +26,10 @@ type ManagedProcess = Process.ManagedProcess
 type ProcessStatus = Process.Status
 type LaunchResult = Process.LaunchResult
 
-function decodeProcessStatus(value: string): ProcessStatus | undefined {
-  const status = Process.Status.safeParse(value)
-  return status.success ? status.data : undefined
-}
-
-/**
- * True when `incoming` is a stale HTTP-response snapshot that must NOT
- * overwrite the client's current state for this process.
- *
- * Root cause (BUG B — status heading stuck green after a process crashes):
- * `client.start()`'s HTTP response captures process state at the moment the
- * PTY spawned (status "running"), taken server-side BEFORE the launched
- * command has necessarily finished executing. If that command exits (e.g.
- * `exit 1`) fast enough, the SSE `process.crashed` event can reach the
- * browser and update the store to "crashed" BEFORE the slower HTTP response
- * for the original `start()` call resolves. When that HTTP response then
- * arrives, `applyProcess` would blindly overwrite the store back to
- * "running" with the stale snapshot — the exact race that leaves the status
- * dot green for an already-dead process. `process.status` SSE events already
- * guard the mirror-image race for "stopping" (see the `unsubStatus` handler
- * below); this guards the HTTP-response side for "crashed"/"stopped".
- *
- * Scoped to the SAME ptyId (spawn generation): a subsequent start/restart
- * legitimately gets a new ptyId and must always apply normally.
- */
-export function isStaleProcessSnapshot(
-  existing: ManagedProcess | undefined,
-  incoming: ManagedProcess,
-): boolean {
-  if (!existing) return false
-  if (existing.status !== "crashed" && existing.status !== "stopped") return false
-  if (!existing.ptyId || !incoming.ptyId) return false
-  return existing.ptyId === incoming.ptyId
-}
-
-function decodeProcessConfigs(values: unknown[]) {
-  return values.map((value) => Process.ProcessConfig.safeParse(value)).flatMap((parsed) => parsed.success ? [parsed.data] : [])
-}
-
-type ProcessPaneStore = {
-  configs: ProcessConfig[]
-  processes: Record<string, ManagedProcess>
-  paneHeight: number
-}
-
 const DEFAULT_PANE_HEIGHT = 300
 const MIN_PANE_HEIGHT = 100
 const FETCH_TIMEOUT = 5_000
 const POST_TIMEOUT = 10_000
-
-function afterVisibleWork(callback: () => void) {
-  let cancelled = false
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let frame: ReturnType<typeof requestAnimationFrame> | undefined
-  let idle: ReturnType<typeof requestIdleCallback> | undefined
-
-  frame = requestAnimationFrame(() => {
-    frame = undefined
-    if (cancelled) return
-    const schedule = () => {
-      if (cancelled) return
-      callback()
-    }
-    if (typeof requestIdleCallback === "function") {
-      idle = requestIdleCallback(schedule, { timeout: 1_200 })
-      return
-    }
-    timer = setTimeout(schedule, 120)
-  })
-
-  return () => {
-    cancelled = true
-    if (frame !== undefined) cancelAnimationFrame(frame)
-    if (idle !== undefined && typeof cancelIdleCallback === "function") cancelIdleCallback(idle)
-    if (timer) clearTimeout(timer)
-  }
-}
 
 const processPaneContextInput = {
   name: "ProcessPane",
@@ -170,14 +100,14 @@ const processPaneContextInput = {
       return !id || can("mutate.workspace", workspacePlacement(id))
     }
 
-    const sync = () => {
-      const crashed = anyCrashed()
-      state.processPane.setRunning(sdk.directory, anyRunning())
-      state.processPane.setCrashed(sdk.directory, crashed)
-      if (!crashed) {
-        state.processPane.setCrashedWhileClosed(false)
-      }
-    }
+    const sync = createProcessPaneSync({
+      processes: () => store.processes,
+      directory: () => sdk.directory,
+      isProcessOpen,
+      setRunning: state.processPane.setRunning,
+      setCrashed: state.processPane.setCrashed,
+      setCrashedWhileClosed: state.processPane.setCrashedWhileClosed,
+    })
 
     const native = platform.fetch ?? globalThis.fetch
 
@@ -453,147 +383,6 @@ const processPaneContextInput = {
     // the deferred effect to re-clean when ClaxedoLayout persistence loads late.
     let lastFetchedPtyIds = new Set<string>()
 
-    // ── SSE event subscription ───────────────────────────────────────
-    // Process events now come from claxedo-server via claxedoBus (flat structure).
-    // Subscribe via ClaxedoEventsProvider; fall back silently if unavailable.
-
-    if (claxedoEvents) {
-      const unsubStarted = claxedoEvents.on("process.started", (event) => {
-        const { configId, ptyId } = event
-        // Own the PTY before updating the store — the detection
-        // effect's existing `owner` check will skip it.
-        if (ptyId) {
-          ownership.ownProcess(configId, ptyId)
-          tabOps.removeAutoCreatedTab(ptyId)
-        }
-        setStore("processes", configId, {
-          configId,
-          ptyId,
-          status: "running" as ProcessStatus,
-          restartCount: store.processes[configId]?.restartCount ?? 0,
-          startedAt: Date.now(),
-          exitedAt: undefined,
-          exitCode: undefined,
-        })
-        // If openInTab was called before the process was running,
-        // open the terminal tab now that we have a ptyId.
-        if (pendingTabOpens.has(configId) && ptyId) {
-          pendingTabOpens.delete(configId)
-          openTerminalTab(configId, ptyId)
-        }
-        sync()
-      })
-      onCleanup(unsubStarted)
-
-      const unsubStopped = claxedoEvents.on("process.stopped", (event) => {
-        const { configId, exitCode } = event
-        const existing = store.processes[configId]
-        if (existing) {
-          setStore("processes", configId, {
-            ...existing,
-            status: "stopped" as ProcessStatus,
-            ptyId: undefined,
-            exitCode,
-            exitedAt: Date.now(),
-          })
-        }
-        sync()
-      })
-      onCleanup(unsubStopped)
-
-      const unsubCrashed = claxedoEvents.on("process.crashed", (event) => {
-        // Fires when the PTY itself dies OR when the inner command exits
-        // inside the interactive shell (detected via OSC process-exit marker).
-        // Preserve existing ptyId via spread, and also accept ptyId from the
-        // event itself (command-exit crashes include it) so even if the client
-        // store was cleared (e.g. during mount), the ptyId is recovered.
-        const { configId, exitCode, restartCount, ptyId: eventPtyId } = event
-        const existing = store.processes[configId]
-        const ptyId = existing?.ptyId ?? eventPtyId
-        if (ptyId) {
-          ownership.ownProcess(configId, ptyId)
-        }
-        setStore("processes", configId, {
-          ...(existing ?? { configId }),
-          status: "crashed" as ProcessStatus,
-          ptyId,
-          exitCode,
-          restartCount,
-          exitedAt: Date.now(),
-        })
-        // Alert workspace dot indicator when the process panel is not active.
-        if (!isProcessOpen()) {
-          state.processPane.setCrashedWhileClosed(true)
-        }
-        sync()
-        void fetchProcesses()
-      })
-      onCleanup(unsubCrashed)
-
-      const unsubStatus = claxedoEvents.on("process.status", (event) => {
-        const { configId } = event
-        const status = decodeProcessStatus(event.status)
-        if (!status) return
-        const existing = store.processes[configId]
-        // Guard: reject stale "stopping" events for processes already
-        // in a terminal state. Once confirmed stopped/crashed (via
-        // belt-and-suspenders or process.stopped/crashed SSE), only
-        // "starting" (explicit user action) should transition out.
-        if (
-          existing &&
-          status === "stopping" &&
-          (existing.status === "stopped" || existing.status === "crashed")
-        ) {
-          return
-        }
-        if (existing) {
-          setStore("processes", configId, {
-            ...existing,
-            status,
-          })
-        } else {
-          setStore("processes", configId, {
-            configId,
-            status,
-            restartCount: 0,
-          })
-        }
-        sync()
-        // Port-conflict crashes only emit process.status (not process.crashed).
-        // Re-fetch to pick up the full state including the conflict field so
-        // the inline overlay can render.
-        if (status === "crashed") {
-          void fetchProcesses()
-        }
-      })
-      onCleanup(unsubStatus)
-
-      const unsubConfigChanged = claxedoEvents.on("process.config.changed", (event) => {
-        const configs = decodeProcessConfigs(event.configs)
-        const configIds = new Set(configs.map((c) => c.id))
-        batch(() => {
-          setStore("configs", reconcile(configs, { key: "id" }))
-          // Reconcile process entries: keep existing for known configs,
-          // create idle entries for new configs, drop removed ones.
-          const next: Record<string, ManagedProcess> = {}
-          for (const id of configIds) {
-            if (store.processes[id]) {
-              next[id] = store.processes[id]!
-            } else {
-              next[id] = {
-                configId: id,
-                status: "idle",
-                restartCount: 0,
-              }
-            }
-          }
-          setStore("processes", reconcile(next))
-        })
-        sync()
-      })
-      onCleanup(unsubConfigChanged)
-    }
-
     // ── Tab integration ──────────────────────────────────────────────
 
     // Track configIds that should be opened in a tab once their ptyId
@@ -611,6 +400,31 @@ const processPaneContextInput = {
 
       const surfaceId = tabOps.addTerminalTab(dir, ptyId, title)
       if (surfaceId) tabOps.setActiveTab(surfaceId)
+    }
+
+    // ── SSE event subscription ───────────────────────────────────────
+    // Process events come from claxedo-server via claxedoBus (flat structure).
+    // Subscribe via ClaxedoEventsProvider; fall back silently if unavailable.
+    // Subscribed here (after openTerminalTab/pendingTabOpens are defined) so
+    // the handler factory can close over them.
+    if (claxedoEvents) {
+      const handlers = createProcessEventHandlers({
+        store,
+        setStore,
+        ownProcess: ownership.ownProcess,
+        removeAutoCreatedTab: tabOps.removeAutoCreatedTab,
+        sync,
+        isProcessOpen,
+        setCrashedWhileClosed: state.processPane.setCrashedWhileClosed,
+        fetchProcesses: () => void fetchProcesses(),
+        pendingTabOpens,
+        openTerminalTab,
+      })
+      onCleanup(claxedoEvents.on("process.started", handlers.started))
+      onCleanup(claxedoEvents.on("process.stopped", handlers.stopped))
+      onCleanup(claxedoEvents.on("process.crashed", handlers.crashed))
+      onCleanup(claxedoEvents.on("process.status", handlers.status))
+      onCleanup(claxedoEvents.on("process.config.changed", handlers.configChanged))
     }
 
     // ── Initial fetch ────────────────────────────────────────────────
@@ -668,33 +482,15 @@ const processPaneContextInput = {
     )
 
     // ── Wake detection ──────────────────────────────────────────────
-
-    // Detect system sleep via setInterval time-gap (works in both web
-    // and desktop shells). Add visibilitychange as fast-path for browser tab switching.
-    let lastTick = Date.now()
-    const TICK_INTERVAL = 10_000 // check every 10s
-    const SLEEP_THRESHOLD = 30_000 // >30s gap = sleep detected
-
-    const wakeTimer = setInterval(() => {
-      const now = Date.now()
-      const gap = now - lastTick
-      lastTick = now
-      if (gap > SLEEP_THRESHOLD && !fastSessionSwitchAnyNetworkQuiet() && (loaded() || isProcessOpen())) {
-        void fetchProcesses()
-      }
-    }, TICK_INTERVAL)
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible" && !fastSessionSwitchAnyNetworkQuiet() && (loaded() || isProcessOpen())) {
-        void fetchProcesses()
-      }
-    }
-    document.addEventListener("visibilitychange", onVisibilityChange)
-
-    onCleanup(() => {
-      clearInterval(wakeTimer)
-      document.removeEventListener("visibilitychange", onVisibilityChange)
-    })
+    // Detect system sleep (interval time-gap) plus a visibilitychange
+    // fast-path, and re-reconcile on wake (unless a fast session switch is
+    // suppressing network, and only once the pane has loaded or is open).
+    onCleanup(
+      createWakeDetector({
+        onWake: () => void fetchProcesses(),
+        shouldReconcile: () => !fastSessionSwitchAnyNetworkQuiet() && (loaded() || isProcessOpen()),
+      }),
+    )
 
     // Clear the "crashed while closed" attention badge whenever the pane
     // becomes visible. The toggle() API resets this for explicit open paths,
@@ -1025,7 +821,11 @@ const processPaneContextInput = {
     onCleanup(() => {
       queueMicrotask(() => {
         state.processPane.setRunning(sdk.directory, false)
-        state.processPane.setCrashed(sdk.directory, false)
+        // Do NOT reset `crashed` here. A crashed process must keep lighting the
+        // toolbar attention dot after this provider unmounts (navigation away,
+        // or a second same-directory provider instance tearing down). Clearing
+        // it unconditionally clobbered the crash indicator — the transient flag
+        // is re-derived by sync() when a provider remounts and reconciles.
       })
     })
 

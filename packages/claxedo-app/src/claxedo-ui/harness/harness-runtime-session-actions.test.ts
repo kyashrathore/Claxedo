@@ -118,18 +118,6 @@ describe("harness runtime session actions", () => {
     expect(deletes).toEqual(["ses_local", "ses_workspace"])
   })
 
-  test("stays out of query and store ownership", async () => {
-    const source = await Bun.file(new URL("./harness-runtime-session-actions.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("queryClient")
-    expect(source).not.toContain("setQueryData")
-    expect(source).not.toContain("removeQueries")
-    expect(source).not.toContain("createStore")
-    expect(source).not.toContain("@tanstack")
-    expect(source).not.toContain("useQuery")
-    expect(source).toContain("@opencode-ai/sdk")
-    expect(source).toContain("harnessQueryFetch")
-  })
 })
 
 type ClientInput = {

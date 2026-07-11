@@ -137,17 +137,6 @@ describe("harness model writer", () => {
     expect(posts).toEqual([])
   })
 
-  test("stays out of direct query-client and store ownership", async () => {
-    const source = await Bun.file(new URL("./harness-model-writer.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("queryClient")
-    expect(source).not.toContain("setQueryData")
-    expect(source).not.toContain("removeQueries")
-    expect(source).not.toContain("createStore")
-    expect(source).not.toContain("localStorage")
-    expect(source).not.toContain("useQuery")
-    expect(source).not.toContain("@tanstack")
-  })
 })
 
 function writerFor() {

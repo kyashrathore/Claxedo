@@ -92,7 +92,13 @@ export type WorkspacePanelSliceApi = {
   setNavigatorHidden(hidden: boolean): void
 }
 
-const sessionPanelSnapshots = new Map<string, WorkspacePanelState>()
+/**
+ * Upper bound on retained per-session panel snapshots. Snapshots live only to
+ * restore panel layout when a user re-selects a session, so a bounded LRU is
+ * ample. Without a cap this Map grew once per session opened for the entire
+ * lifetime of a (long-running Electron) process — an unbounded leak.
+ */
+export const MAX_SESSION_PANEL_SNAPSHOTS = 64
 
 function usableSessionId(sessionId: string | undefined): sessionId is string {
   return !!sessionId && sessionId !== "new"
@@ -113,6 +119,20 @@ export function createWorkspacePanelSlice(input: {
   defaultTarget: () => WorkspacePanelTarget
 }): WorkspacePanelSliceApi {
   const { state, setState, defaultTarget } = input
+
+  // Per-provider-instance (a second ClaxedoStateProvider mount no longer shares
+  // and cross-contaminates snapshots) and bounded (see MAX_SESSION_PANEL_SNAPSHOTS).
+  const sessionPanelSnapshots = new Map<string, WorkspacePanelState>()
+  const touchSnapshot = (sessionId: string, snapshot: WorkspacePanelState) => {
+    // Re-insert so this key becomes the most-recent in insertion order (LRU).
+    sessionPanelSnapshots.delete(sessionId)
+    sessionPanelSnapshots.set(sessionId, snapshot)
+    while (sessionPanelSnapshots.size > MAX_SESSION_PANEL_SNAPSHOTS) {
+      const oldest = sessionPanelSnapshots.keys().next().value
+      if (oldest === undefined) break
+      sessionPanelSnapshots.delete(oldest)
+    }
+  }
 
   const accessor: Accessor<WorkspacePanelState> = () => state.workspacePanel
   const resolvedTarget = (target: WorkspacePanelTarget) =>
@@ -171,12 +191,14 @@ export function createWorkspacePanelSlice(input: {
     },
     rememberSession(sessionId) {
       if (!usableSessionId(sessionId)) return
-      sessionPanelSnapshots.set(sessionId, snapshotPanel(state.workspacePanel))
+      touchSnapshot(sessionId, snapshotPanel(state.workspacePanel))
     },
     restoreSession(sessionId, target) {
       if (!usableSessionId(sessionId)) return false
       const snapshot = sessionPanelSnapshots.get(sessionId)
       if (!snapshot) return false
+      // Mark as recently used so an active session isn't evicted first.
+      touchSnapshot(sessionId, snapshot)
       const resolved = resolvedTarget(target ?? {})
       replacePanel({
         ...snapshotPanel(snapshot),

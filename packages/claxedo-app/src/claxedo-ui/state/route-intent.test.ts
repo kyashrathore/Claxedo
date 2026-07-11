@@ -1,9 +1,12 @@
-import { beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import {
+  CLOSED_ROUTE_MAX,
   createRouteIntentAdapter,
+  isRouteIntentClosed,
   markRouteIntentClosed,
   resetRouteIntentClosedForTest,
+  routeIntentClosedSizeForTest,
   type RouteIntentStateApi,
   type RouteIntent,
 } from "./route-intent"
@@ -434,32 +437,6 @@ describe("state route intent", () => {
     expect(harness.opened).toEqual([{ name: "openMarketplace" }])
     expect(harness.focused()).toBe("marketplace")
     expect(harness.workspacePanelCalls).toEqual([])
-  })
-
-  test("layout bridge falls back to parsed shell route session id for hidden /s routes", async () => {
-    const source = await Bun.file(new URL("./route-bridge.tsx", import.meta.url)).text()
-
-    expect(source).toMatch(/const routeSessionId = createMemo/)
-    expect(source).toMatch(/signedWorkspaceFromProjects/)
-    expect(source).toMatch(/function routeSessionWorkspaceBacking/)
-    expect(source).toMatch(/route\.kind === "session"[\s\S]{0,80}return route\.sessionId/)
-    expect(source).toMatch(/params\.sessionId \?\? params\.id \?\? routeSessionId\(\)/)
-    expect(source).toMatch(/const directSessionRouteId = createMemo/)
-    expect(source).toMatch(/activeSurface\(\)\?\.sessionId/)
-    expect(source).toMatch(/state\.layout\.openSession\([\s\S]{0,240}target\.directory[\s\S]{0,240}sessionId/)
-    expect(source).toMatch(/sessionInventory\(\)\.loaded/)
-    expect(source).toMatch(/routeSessionMetaLookupVersion\(\)/)
-    expect(source).toMatch(/probeRouteSessionDirectory/)
-    expect(source).toMatch(/const metaLookupInFlight = cachedTarget/)
-    expect(source).toMatch(/if \(metaLookupInFlight\) return/)
-    expect(source).toMatch(/cachedRouteSessionTarget/)
-    expect(source).toMatch(/routeLocalSessionResolutionMisses/)
-    expect(source).toMatch(/const unresolvedRouteWorkspaceTarget = \(directories: string\[\]\)/)
-    expect(source).toMatch(/const fallbackDirectory = unresolvedRouteWorkspaceTarget\(directories\)/)
-    expect(source).toMatch(/state\.layout\.openSession\(\s*fallbackDirectory,\s*sessionId,[\s\S]{0,180}sessionRefForWorkspaceSession\(\{[\s\S]{0,100}directory: fallbackDirectory/)
-    expect(source).not.toMatch(/workspaceId \? \{ workspace: \{ workspaceId, kind: "user-hosted"/)
-    expect(source).not.toMatch(/routeLocalSessionResolutionPending/)
-    expect(source).not.toMatch(/Promise\.all\(directories\.map/)
   })
 
   test("workspace browse route opens the workspace panel without creating a session surface", () => {
@@ -1640,5 +1617,41 @@ describe("state route intent", () => {
     expect(harness.focused()).toBe("terminal-pending")
     expect(harness.workspacePanelCloseCalls).toEqual(["close"])
     expect(harness.navigateCalls).toEqual([])
+  })
+})
+
+describe("closed-route marker eviction", () => {
+  afterEach(() => {
+    resetRouteIntentClosedForTest()
+    setSystemTime()
+  })
+
+  // setSystemTime(new Date(0)) is treated by bun as "reset to real clock", so
+  // anchor on a nonzero base instant.
+  const T0 = 1_000_000
+
+  test("sweeps TTL-expired markers on the next write so stale entries do not accumulate", () => {
+    resetRouteIntentClosedForTest()
+    setSystemTime(new Date(T0))
+    markRouteIntentClosed({ sessionId: "ses-old" })
+    expect(routeIntentClosedSizeForTest()).toBe(1)
+    expect(isRouteIntentClosed({ sessionId: "ses-old" })).toBe(true)
+
+    // Past the 10s TTL, the next write sweeps the expired marker.
+    setSystemTime(new Date(T0 + 11_000))
+    markRouteIntentClosed({ sessionId: "ses-new" })
+
+    expect(routeIntentClosedSizeForTest()).toBe(1)
+    expect(isRouteIntentClosed({ sessionId: "ses-old" })).toBe(false)
+    expect(isRouteIntentClosed({ sessionId: "ses-new" })).toBe(true)
+  })
+
+  test("caps the retained set under a burst of closes within the TTL window", () => {
+    resetRouteIntentClosedForTest()
+    setSystemTime(new Date(T0))
+    for (let i = 0; i < CLOSED_ROUTE_MAX + 50; i++) {
+      markRouteIntentClosed({ sessionId: `ses-${i}` })
+    }
+    expect(routeIntentClosedSizeForTest()).toBeLessThanOrEqual(CLOSED_ROUTE_MAX)
   })
 })

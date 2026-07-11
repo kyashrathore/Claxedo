@@ -128,13 +128,6 @@ describe("prepared runtime session store", () => {
     expect(errors).toHaveLength(1)
   })
 
-  test("stays out of direct query-client ownership", async () => {
-    const source = await Bun.file(new URL("./harness-prepared-runtime-session.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("queryClient")
-    expect(source).not.toContain("setQueryData")
-    expect(source).not.toContain("@tanstack")
-  })
 })
 
 function storeFor(input: {

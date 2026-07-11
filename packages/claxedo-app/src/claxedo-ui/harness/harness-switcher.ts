@@ -157,7 +157,10 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   }
 
   const applyPostedStatus = (scope: string, status: true | HarnessState) => {
-    if (status !== true && failedHarness(status)) input.applyPatch(scope, harnessStatusPatch({ data: status }))
+    // A posted switch response is settled/definitive: a ready:false here means
+    // the switch completed and the harness came back unavailable → "error", not
+    // the "polling" a startup hydration probe would report.
+    if (status !== true && failedHarness(status)) input.applyPatch(scope, harnessStatusPatch({ data: status, settled: true }))
   }
 
   const fetchHarnessStatus = async (

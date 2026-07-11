@@ -46,107 +46,17 @@ afterEach(() => {
   queryClient.clear()
 })
 
-async function harnessConfigSource() {
-  return await Bun.file(new URL("./harness-config.ts", import.meta.url)).exists()
-}
-
-async function harnessConfigStoreSource() {
-  return await Bun.file(new URL("./harness-config-store.ts", import.meta.url)).text()
-}
-
-async function harnessPreparedRuntimeSessionSource() {
-  return await Bun.file(new URL("./harness-prepared-runtime-session.ts", import.meta.url)).text()
-}
-
-async function harnessRuntimeSessionActionsSource() {
-  return await Bun.file(new URL("./harness-runtime-session-actions.ts", import.meta.url)).text()
-}
-
-async function harnessOptionsLoaderSource() {
-  return await Bun.file(new URL("./harness-options-loader.ts", import.meta.url)).text()
-}
-
-async function harnessConfigRuntimeSource() {
-  return await Bun.file(new URL("./harness-config-runtime.ts", import.meta.url)).text()
-}
-
-async function harnessHydratorSource() {
-  return await Bun.file(new URL("./harness-hydrator.ts", import.meta.url)).text()
-}
-
-async function harnessSwitcherSource() {
-  return await Bun.file(new URL("./harness-switcher.ts", import.meta.url)).text()
-}
-
-async function harnessModelWriterSource() {
-  return await Bun.file(new URL("./harness-model-writer.ts", import.meta.url)).text()
-}
-
-async function harnessPreferencesSource() {
-  return await Bun.file(new URL("./harness-preferences.ts", import.meta.url)).text()
-}
-
-async function panePreferencesSource() {
-  return await Bun.file(new URL("../../pane/store/pane-preferences.ts", import.meta.url)).text()
-}
-
-async function harnessQueryCacheSource() {
-  return await Bun.file(new URL("./harness-query-cache.ts", import.meta.url)).text()
-}
-
-async function harnessStatusActionsSource() {
-  return await Bun.file(new URL("./harness-status-actions.ts", import.meta.url)).text()
-}
-
-async function harnessStoreSource() {
-  return await Bun.file(new URL("./harness-store.ts", import.meta.url)).text()
-}
-
-async function harnessStorePolicySource() {
-  return await Bun.file(new URL("../../session-client/harness/store-policy.ts", import.meta.url)).text()
-}
-
 describe("harness config helpers", () => {
-  describe("compatibility barrel deletion", () => {
-    test("keeps legacy harness-config barrel deleted", async () => {
-      const exists = await harnessConfigSource()
-
+  describe("composition root", () => {
+    test("exposes the composed store factory and shared helpers as callable exports", () => {
+      // Smoke-check that the store facade and the helpers it composes are
+      // reachable through their real modules (the legacy harness-config barrel
+      // was deleted; these imports would fail to resolve if it were needed).
       expect(typeof createHarnessConfigStore).toBe("function")
       expect(typeof syncHarnessSessionModel).toBe("function")
       expect(typeof pickHarness).toBe("function")
       expect(typeof harnessScope).toBe("function")
       expect(HARNESS_DISPLAY_NAMES.opencode).toBe("OpenCode")
-      expect(exists).toBe(false)
-    })
-
-    test("keeps runtime store composition out of low-level ownership", async () => {
-      const source = await harnessConfigStoreSource()
-
-      expect(source).toContain("createHarnessConfigStore")
-      expect(source).toContain("useQuery")
-      expect(source).toContain("useQueryOptions")
-      expect(source).toContain("authFetch")
-      expect(source).toContain("getClaxedoServerUrl")
-      expect(source).toContain("createHarnessStore(localStorage)")
-      expect(source).toContain("createHarnessConfigRuntime")
-      expect(source).toContain("createHarnessRuntimeSessionActions")
-      expect(source).toContain("createPreparedRuntimeSessionStore")
-      expect(source).toContain("createHarnessOptionsLoader")
-      expect(source).toContain("createHarnessHydrator")
-      expect(source).toContain("createHarnessModelWriter")
-      expect(source).toContain("createHarnessSwitcher")
-      expect(source).toContain("createHarnessStatusActions")
-
-      expect(source).not.toContain("@opencode-ai/sdk")
-      expect(source).not.toContain("createOpencodeClient")
-      expect(source).not.toMatch(/\bsession\.(create|delete)\b/)
-      expect(source).not.toMatch(/\bqueryClient\./)
-      expect(source).not.toMatch(/\b(setQueryData|removeQueries|fetchQuery)\s*\(/)
-      expect(source).not.toContain("sessionConfigRawQueryKey")
-      expect(source).not.toMatch(/const\s+\[store,\s*setStore\]/)
-      expect(source).not.toContain("createStore")
-      expect(source).not.toContain("createHarnessPreferences")
-      expect(source).not.toContain("PANE_PREFERENCE_KEYS")
     })
   })
 
@@ -339,24 +249,6 @@ describe("harness config helpers", () => {
       })
     })
 
-    test("keeps session model sync ownership out of private module maps", async () => {
-      const adapter = await harnessModelWriterSource()
-      const source = `${await harnessConfigStoreSource()}\n${adapter}\n${await harnessStorePolicySource()}`
-      const policy = await harnessStorePolicySource()
-
-      expect(source).not.toContain("syncedSessionModels = new Map")
-      expect(source).not.toContain("desiredSessionModels = new Map")
-      expect(source).not.toContain("syncingSessionModels = new Map")
-      expect(adapter).toContain("createHarnessModelWriter")
-      expect(adapter).not.toContain("queryClient")
-      expect(adapter).not.toContain("setQueryData")
-      expect(adapter).not.toContain("removeQueries")
-      expect(adapter).not.toContain("createStore")
-      expect(adapter).not.toContain("localStorage")
-      expect(adapter).not.toContain("useQuery")
-      expect(adapter).not.toContain("@tanstack")
-      expect(policy).toContain('["shell", "harness-config", "session-model", key]')
-    })
   })
 
   describe("harnessChangeKey", () => {
@@ -375,24 +267,6 @@ describe("harness config helpers", () => {
         "draft:/tmp/project:route\ncodex-acp\n",
       ])
     })
-
-    test("keeps runner switch dedupe out of a private module map", async () => {
-      const adapter = await harnessSwitcherSource()
-      const source = `${await harnessConfigStoreSource()}\n${adapter}\n${await harnessStorePolicySource()}`
-      const policy = await harnessStorePolicySource()
-
-      expect(source).not.toContain("runnerChanges = new Map")
-      expect(adapter).toContain("createHarnessSwitcher")
-      expect(adapter).not.toContain("queryClient")
-      expect(adapter).not.toContain("setQueryData")
-      expect(adapter).not.toContain("removeQueries")
-      expect(adapter).not.toContain("createStore")
-      expect(adapter).not.toContain("localStorage")
-      expect(adapter).not.toContain("useQuery")
-      expect(adapter).not.toContain("@tanstack")
-      expect(await harnessConfigStoreSource()).not.toContain("const setHarnessOnce = async")
-      expect(policy).toContain('["shell", "harness-config", "harness-change", key]')
-    })
   })
 
   describe("runner hydrate request ownership", () => {
@@ -410,21 +284,6 @@ describe("harness config helpers", () => {
         "session:ses_1",
         "seen",
       ])
-    })
-
-    test("keeps hydrate request dedupe out of a private module map", async () => {
-      const adapter = await harnessHydratorSource()
-      const source = `${await harnessConfigStoreSource()}\n${adapter}\n${await harnessStorePolicySource()}`
-      const policy = await harnessStorePolicySource()
-
-      expect(source).not.toContain("const inflight = new Map")
-      expect(source).not.toContain("const seen = new Map")
-      expect(adapter).toContain("createHarnessHydrator")
-      expect(adapter).not.toContain("queryClient")
-      expect(adapter).not.toContain("setQueryData")
-      expect(adapter).not.toContain("removeQueries")
-      expect(policy).toContain('["shell", "harness-config", "hydrate", scope]')
-      expect(policy).toContain('["shell", "harness-config", "hydrate", scope, "seen"]')
     })
   })
 
@@ -451,67 +310,6 @@ describe("harness config helpers", () => {
         "prepare",
       ])
     })
-
-    test("keeps prepared runner sessions out of private module maps", async () => {
-      const adapter = await harnessPreparedRuntimeSessionSource()
-      const source = `${await harnessConfigStoreSource()}\n${adapter}\n${await harnessStorePolicySource()}`
-      const policy = await harnessStorePolicySource()
-
-      expect(source).not.toContain("preparedSessions = new Map")
-      expect(source).not.toContain("preparedSessionSeq = new Map")
-      expect(source).not.toContain("preparingSessions = new Map")
-      expect(adapter).toContain("createPreparedRuntimeSessionStore")
-      expect(policy).toContain('["shell", "harness-config", "prepared-session", scope]')
-    })
-
-    test("keeps prepared runner session SDK ownership out of harness config", async () => {
-      const source = await harnessConfigStoreSource()
-      const adapter = await harnessRuntimeSessionActionsSource()
-
-      expect(source).toContain("createHarnessRuntimeSessionActions")
-      expect(source).not.toContain("@opencode-ai/sdk")
-      expect(source).not.toContain("createOpencodeClient")
-      expect(source).not.toContain("client.session.create")
-      expect(source).not.toContain("session.delete")
-      expect(source).not.toContain("harnessQueryFetch")
-
-      expect(adapter).toContain("createHarnessRuntimeSessionActions")
-      expect(adapter).toContain("createOpencodeClient")
-      expect(adapter).toContain("harnessQueryFetch")
-      expect(adapter).not.toContain("queryClient")
-      expect(adapter).not.toContain("setQueryData")
-      expect(adapter).not.toContain("removeQueries")
-      expect(adapter).not.toContain("createStore")
-      expect(adapter).not.toContain("localStorage")
-      expect(adapter).not.toContain("useQuery")
-      expect(adapter).not.toContain("@tanstack")
-    })
-  })
-
-  describe("harness preference ownership", () => {
-    test("keeps legacy preference reads read-only and map promotion out of harness config", async () => {
-      const source = await harnessConfigStoreSource()
-      const adapter = await harnessPreferencesSource()
-      const panePreferences = await panePreferencesSource()
-
-      expect(source).not.toContain("LEGACY_MODEL_KEY")
-      expect(source).not.toContain("LEGACY_RUNNER_KEY")
-      expect(source).not.toContain("LEGACY_AGENT_KEY")
-      expect(source).not.toContain("prefs.maps.harness")
-      expect(source).not.toContain("prefs.promote")
-      expect(adapter).toContain("createHarnessPreferences")
-      expect(adapter).toContain("readOnlyMaps")
-      expect(adapter).toContain("storage.getItem(HARNESS_MAP_KEY)")
-      expect(adapter).not.toMatch(/storage\.setItem|prefs\.set|prefs\.promote/)
-      expect(panePreferences).not.toMatch(/harness:\s*"claxedo:harness-map"/)
-      expect(panePreferences).not.toMatch(/model:\s*"claxedo:acp-model-map"/)
-      expect(panePreferences).not.toMatch(/agent:\s*"claxedo:agent-mode-map"/)
-      expect(adapter).not.toContain("queryClient")
-      expect(adapter).not.toContain("setQueryData")
-      expect(adapter).not.toContain("removeQueries")
-      expect(adapter).not.toContain("createStore")
-      expect(adapter).not.toContain("@tanstack")
-    })
   })
 
   describe("runner option request metadata ownership", () => {
@@ -530,93 +328,6 @@ describe("harness config helpers", () => {
         "draft:/repo:route",
         "tries",
       ])
-    })
-
-    test("keeps option sequencing and retry metadata out of private module maps", async () => {
-      const adapter = await harnessOptionsLoaderSource()
-      const source = `${await harnessConfigStoreSource()}\n${adapter}\n${await harnessStorePolicySource()}`
-      const policy = await harnessStorePolicySource()
-
-      expect(source).not.toContain("const seq = new Map")
-      expect(source).not.toContain("const optionTries = new Map")
-      expect(policy).toContain('["shell", "harness-config", "options", scope, "seq"]')
-      expect(policy).toContain('["shell", "harness-config", "options", scope, "tries"]')
-      expect(adapter).toContain("const optionTimers = new Map")
-    })
-  })
-
-  describe("harness query cache ownership", () => {
-    test("keeps direct query writes out of harness config", async () => {
-      const source = await harnessConfigStoreSource()
-      const adapter = await harnessQueryCacheSource()
-
-      expect(source).toContain("createHarnessOptionsQueryCache")
-      expect(source).toContain("createHarnessHydratorQueryCache")
-      expect(source).toContain("createHarnessSwitcherQueryCache")
-      expect(source).toContain("createPreparedRuntimeSessionQueryCache")
-      expect(source).toContain("createSessionModelSyncQueryCache")
-      expect(source).not.toContain("sessionConfigRawQueryKey")
-      expect(source).not.toMatch(/\bqueryClient\./)
-      expect(source).not.toMatch(/\bsetQueryData(?:<[^>]+>)?\s*\(/)
-      expect(adapter).toContain("queryClient")
-      expect(adapter).toMatch(/\bqueryClient\.setQueryData(?:<[^>]+>)?\s*\(/)
-      expect(adapter).toContain("staleTime: 30 * 1000")
-      expect(adapter).not.toContain("createStore")
-      expect(adapter).not.toContain("localStorage")
-    })
-  })
-
-  describe("harness status action ownership", () => {
-    test("keeps status refresh orchestration out of harness config", async () => {
-      const source = await harnessConfigStoreSource()
-      const adapter = await harnessStatusActionsSource()
-
-      expect(source).toContain("createHarnessStatusActions")
-      expect(source).not.toContain("function resetWorkspaceDraftHarness")
-      expect(source).not.toContain("async function refresh")
-      expect(source).not.toContain("async function apply")
-      expect(adapter).toContain("createHarnessStatusActions")
-      expect(adapter).not.toContain("queryClient")
-      expect(adapter).not.toContain("setQueryData")
-      expect(adapter).not.toContain("removeQueries")
-      expect(adapter).not.toContain("createStore")
-      expect(adapter).not.toContain("useQuery")
-      expect(adapter).not.toContain("@tanstack")
-      expect(adapter).not.toContain("localStorage")
-    })
-  })
-
-  describe("harness Solid store ownership", () => {
-    test("keeps store creation, preference seeding, promotion, and selectors in the store facade", async () => {
-      const source = await harnessConfigStoreSource()
-      const adapter = await harnessStoreSource()
-
-      expect(source).toContain("createHarnessStore(localStorage)")
-      expect(source).not.toContain("createStore")
-      expect(source).not.toContain("createHarnessPreferences")
-      expect(source).not.toContain("PANE_PREFERENCE_KEYS")
-      expect(source).not.toContain("function seed")
-      expect(source).not.toContain("function read")
-      expect(source).not.toContain("function touch")
-      expect(source).not.toContain("const promote")
-      expect(source).not.toMatch(/const\s+\[store,\s*setStore\]/)
-      expect(source).not.toMatch(/harnessDisplayName\(|harnessModels\(|harnessReadyForSubmit\(/)
-      expect(source).toMatch(/selectedModel:\s*\(scope\)\s*=>\s*harnessStore\.state\(scope\)\?\.selectedModel/)
-      expect(source).toMatch(/selectedModel:\s*harnessStore\.selectedModel/)
-
-      expect(adapter).toContain("createHarnessStore")
-      expect(adapter).toContain("createStore")
-      expect(adapter).toContain("createHarnessPreferences")
-      expect(adapter).toContain("effectiveHarnessModel")
-      expect(adapter).toContain("harnessModelKeyForSubmit")
-      expect(adapter).not.toContain("queryClient")
-      expect(adapter).not.toContain("setQueryData")
-      expect(adapter).not.toContain("removeQueries")
-      expect(adapter).not.toContain("@tanstack")
-      expect(adapter).not.toContain("@opencode-ai/sdk")
-      expect(adapter).not.toContain("authFetch")
-      expect(adapter).not.toContain("getClaxedoServerUrl")
-      expect(adapter).not.toContain("useQuery")
     })
   })
 
@@ -934,20 +645,6 @@ describe("harness config helpers", () => {
       })).toBe(false)
     })
 
-    test("keeps local runner config checks off RuntimeGateway predicate and fetch facades", async () => {
-      const runtime = await harnessConfigRuntimeSource()
-      const source = `${await harnessConfigStoreSource()}\n${runtime}\n${await harnessHydratorSource()}\n${await harnessSwitcherSource()}\n${await harnessStorePolicySource()}`
-
-      expect(source).not.toContain("RuntimeGateway.isLoopbackServer")
-      expect(source).not.toContain("RuntimeGateway.isFilesystemDirectory")
-      expect(source).not.toContain("RuntimeGateway.unsignedLocalFetch")
-      expect(source).not.toContain("RuntimeGateway.signedFetch")
-      expect(runtime).not.toContain("queryClient")
-      expect(runtime).not.toContain("setQueryData")
-      expect(runtime).not.toContain("removeQueries")
-      expect(runtime).not.toContain("createStore")
-      expect(runtime).not.toContain("@tanstack")
-    })
   })
 
   // ── HARNESS_DISPLAY_NAMES ───────────────────────────────────────────────

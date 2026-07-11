@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { useShellQueryOptions as useQueryOptions } from "@claxedo/shell/data/query-options"
 import { useClaxedoEventsOptional } from "../../context/claxedo-events"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "../../utils/api"
-import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../../runtime/signed-workspace"
+import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../../agent-runtime/signed-workspace"
 import { wasRolledBackDraft } from "../../session/submit/rolled-back-drafts"
 import { suppressedByFastSessionSwitch } from "../../session/store/fast-session-switch"
 import { workspaceIdFromRef } from "../../shell/identity/legacy-resolver"
@@ -41,6 +41,14 @@ import { projectWorkspaceDirectories } from "../utils/workspace-display"
 import { sessionTitleFromSources, sessionTitleSignature } from "../utils/session-title-sync"
 import { createRouteIntentAdapter, isRouteIntentClosed, sessionInventoryTarget } from "./route-intent"
 import { routeSessionHarness } from "./route-session-harness"
+import {
+  probeRouteSessionDirectory,
+  routeBridgeClaxedoSessionMetaUrl,
+  routeBridgeSessionConfigHarness,
+  routeKnownSessionDirectory,
+  routeSessionDirectory,
+  routeSessionWorkspaceBacking,
+} from "./route-bridge-resolution"
 export { recoverWorkspaceRuntimeRoute } from "./route-runtime-recovery"
 import {
   collectNewSessionDeepLinks,
@@ -49,7 +57,7 @@ import {
   drainPendingDeepLinks,
   newSessionDeepLinkRoute,
 } from "./route-deep-links"
-import type { ProjectItem } from "../rail/rail-sidebar"
+import type { ProjectItem } from "../rail/domain-types"
 
 export function projectToProjectItem(project: LocalProject): ProjectItem {
   return {
@@ -64,90 +72,13 @@ export function projectToProjectItem(project: LocalProject): ProjectItem {
   }
 }
 
-export function routeSessionDirectory(sessionDirectory: string | undefined, cacheDirectory: string) {
-  if (!sessionDirectory) return cacheDirectory
-  return sameWorkspaceDirectory(sessionDirectory, cacheDirectory) ? cacheDirectory : sessionDirectory
-}
-
-export function routeKnownSessionDirectory(sessionDirectory: string | undefined, cacheDirectories: string[]) {
-  if (!sessionDirectory) return undefined
-  return cacheDirectories.find((directory) => sameWorkspaceDirectory(sessionDirectory, directory)) ?? sessionDirectory
-}
-
-export function routeSessionWorkspaceBacking(input: {
-  projects: Parameters<typeof signedWorkspaceFromProjects>[0]
-  directory: string
-  workspaceId?: string
-}) {
-  const workspace =
-    signedWorkspaceFromProjects(input.projects, input.directory) ??
-    (input.workspaceId ? signedWorkspaceFromProjects(input.projects, input.workspaceId) : undefined)
-  if (!workspace) return
-  if (input.workspaceId && workspace.workspaceId !== input.workspaceId) return
-  return {
-    workspaceId: workspace.workspaceId,
-    kind: workspace.kind,
-  }
-}
-
-function routeBridgeServerUrl(serverUrl: string | undefined) {
-  return normalizeUrl(serverUrl) ?? getClaxedoServerUrl()
-}
-
-function routeBridgeSessionMessagesProbeUrl(input: {
-  serverUrl?: string
-  sessionID: string
-  workspaceDirectory: string
-}) {
-  const url = new URL(
-    `/session/${encodeURIComponent(input.sessionID)}/message`,
-    routeBridgeServerUrl(input.serverUrl),
-  )
-  url.searchParams.set("directory", input.workspaceDirectory)
-  url.searchParams.set("limit", "1")
-  return url
-}
-
-function routeBridgeClaxedoSessionMetaUrl(input: { serverUrl?: string; sessionID: string }) {
-  return new URL(
-    `/api/claxedo/session/${encodeURIComponent(input.sessionID)}/meta`,
-    routeBridgeServerUrl(input.serverUrl),
-  )
-}
-
-function routeBridgeSessionConfigUrl(input: {
-  serverUrl?: string
-  sessionID: string
-  workspaceDirectory: string
-}) {
-  const url = new URL(
-    `/session/${encodeURIComponent(input.sessionID)}/config`,
-    routeBridgeServerUrl(input.serverUrl),
-  )
-  url.searchParams.set("directory", input.workspaceDirectory)
-  return url
-}
-
-async function routeBridgeSessionConfigHarness(input: {
-  serverUrl?: string
-  sessionID: string
-  workspaceDirectory: string
-}) {
-  const response = await authFetch(routeBridgeSessionConfigUrl(input)).catch(() => undefined)
-  if (!response?.ok) return
-  return routeSessionHarness(await response.json().catch(() => undefined))
-}
-
-export async function probeRouteSessionDirectory(sessionId: string, directories: string[]) {
-  for (const directory of directories.filter((item) => item.startsWith("/")).slice(0, 8)) {
-    const response = await authFetch(routeBridgeSessionMessagesProbeUrl({
-      serverUrl: getClaxedoServerUrl(),
-      sessionID: sessionId,
-      workspaceDirectory: directory,
-    })).catch(() => undefined)
-    if (response?.ok) return directory
-  }
-  return undefined
+// Pure resolution + session-probe helpers now live in ./route-bridge-resolution.
+// Re-exported below to keep this module's public surface unchanged.
+export {
+  probeRouteSessionDirectory,
+  routeKnownSessionDirectory,
+  routeSessionDirectory,
+  routeSessionWorkspaceBacking,
 }
 
 export function ClaxedoRouteStateBridge(props: ParentProps) {
