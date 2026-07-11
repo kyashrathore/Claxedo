@@ -165,7 +165,7 @@ mock.module("@/context/layout", () => ({
   }),
 }))
 
-mock.module("@/context/local", () => ({
+mock.module("@/context/session-selection", () => ({
   useLocal: () => ({
     agent: {
       move: () => undefined,

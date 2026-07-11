@@ -13,7 +13,7 @@ import {
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useQuery } from "@tanstack/solid-query"
-import { useLocal } from "@/context/local"
+import { useLocal } from "@/context/session-selection"
 import { createStore } from "solid-js/store"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 
@@ -22,7 +22,7 @@ import { useLayout } from "@/context/layout"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@claxedo/context/language"
 import { useLocation, useNavigate } from "@solidjs/router"
-import { UserMessage, type Session, type SnapshotFileDiff } from "@opencode-ai/sdk/v2"
+import { UserMessage, type SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { useSDK } from "@/context/sdk"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -36,19 +36,19 @@ import { createNewSessionWorkspaceState, type ProjectWorkspace } from "../compon
 import { PromptInput } from "@/session-client/composer/composer"
 import { same } from "@/utils/same"
 import { extractPromptFromParts } from "@/utils/prompt"
-import { createSessionHistoryWindow, emptyUserMessages } from "@claxedo/pages/session/history-window"
-import { setSessionHandoff, setTerminalHandoff } from "@/pages/session/prompt-preview-handoff"
-import { terminalTabLabel } from "@/pages/session/terminal-label"
-import { MessageTimeline } from "@claxedo/pages/session/message-timeline"
-import { useSessionCommands } from "@/pages/session/use-session-commands"
-import { SessionComposerRegion, createSessionComposerState } from "@claxedo/pages/session/composer"
-import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
+import { createSessionHistoryWindow, emptyUserMessages } from "./session/history-window"
+import { setSessionHandoff, setTerminalHandoff } from "./session/prompt-preview-handoff"
+import { terminalTabLabel } from "./session/terminal-label"
+import { MessageTimeline } from "./session/message-timeline"
+import { useSessionCommands } from "./session/use-session-commands"
+import { SessionComposerRegion, createSessionComposerState } from "./session/composer"
+import { useSessionHashScroll } from "./session/use-session-hash-scroll"
 import { useSessionParams } from "../claxedo-ui/context/session-params"
 import { usePaneId } from "../claxedo-ui/context/pane-id"
 import { useClaxedoState } from "../claxedo-ui/state"
 import { useClaxedoEventsOptional } from "../context/claxedo-events"
 import { CloudStartupView, isForbiddenConnectionError, type CloudLog } from "@claxedo/components/session/cloud-startup-view"
-import { resolveSessionDirectory, resolveSessionIdentity, resolveSignedSessionWorkspaceId, signedProjectWorkspaceId, type SessionIdentity } from "@claxedo/pages/session/session-identity"
+import { resolveSessionDirectory, resolveSessionIdentity, resolveSignedSessionWorkspaceId, signedProjectWorkspaceId, type SessionIdentity } from "./session/session-identity"
 import {
   shouldDispatchIdleAfterStaleBusyRefresh,
   shouldReconcileBusySessionToIdle,
@@ -62,9 +62,9 @@ import {
   staleBusyReconciliationKey,
   timelineMountSessionKey,
   visibleSessionUserMessages,
-} from "@claxedo/pages/session/view-state"
+} from "./session/view-state"
 import { createSessionController } from "../session/store/session-controller"
-import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../runtime/signed-workspace"
+import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../agent-runtime/signed-workspace"
 import { getClaxedoServerUrl } from "../utils/api"
 import { principalHasSignedAccess, usePrincipal } from "../shell/auth/identity-provider"
 import { placementFor } from "../shell/auth/placement"
@@ -89,8 +89,14 @@ import { createSessionComposerModes } from "./session/composer/session-composer-
 import { createNewSessionDeepLinkPromptSeed } from "./session/composer/deep-link-prompt"
 import { assistantMessageIdForUserMessage, type ClaxedoSession } from "../shared/data/session-types"
 import { usePromptHarnessControllersOptional } from "../components/prompt-input/harness-controller"
+import { emptyTitleEditorState, openTitleEditorPatch, resolveTitleSave } from "./session/session-title-editor"
+import { nextSiblingAfterRemoval, sessionRemovalNavigation } from "./session/session-archive"
+import { previewPromptText } from "./session/prompt-preview"
+import { buildDiffKindTree } from "./session/diff-kind-tree"
+import { computeScrollState, pickAnchorMessageId } from "./session/scroll-anchor"
+import { classifySessionKeydown, isEditableTagName } from "./session/session-keydown"
 
-export default function Page() {
+export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
@@ -498,14 +504,15 @@ export default function Page() {
   createEffect(
     on(
       sessionKey,
-      () => setTitle({ draft: "", editing: false, saving: false, menuOpen: false, pendingRename: false }),
+      () => setTitle(emptyTitleEditorState()),
       { defer: true },
     ),
   )
 
   const openTitleEditor = () => {
-    if (!sessionID()) return
-    setTitle({ editing: true, draft: info()?.title ?? "" })
+    const patch = openTitleEditorPatch({ hasSession: !!sessionID(), currentTitle: info()?.title })
+    if (!patch) return
+    setTitle(patch)
     requestAnimationFrame(() => {
       titleRef?.focus()
       titleRef?.select()
@@ -522,11 +529,12 @@ export default function Page() {
     if (!currentSessionID) return
     if (title.saving) return
 
-    const next = title.draft.trim()
-    if (!next || next === (info()?.title ?? "")) {
+    const decision = resolveTitleSave({ draft: title.draft, currentTitle: info()?.title })
+    if (!decision.commit) {
       setTitle({ editing: false, saving: false })
       return
     }
+    const next = decision.title
 
     setTitle("saving", true)
     await sdk.client.session
@@ -548,25 +556,24 @@ export default function Page() {
     const session = directorySession(targetSessionID)
     if (!session) return
 
-    const sessions = directorySessions()
-    const index = sessions.findIndex((s: Session) => s.id === targetSessionID)
-    const nextSession = index === -1 ? undefined : (sessions[index + 1] ?? sessions[index - 1])
+    const nextSession = nextSiblingAfterRemoval(directorySessions(), targetSessionID)
 
     await sdk.client.session
       .update({ sessionID: targetSessionID, time: { archived: Date.now() } })
       .then(() => {
         removeDirectorySession(dir(), targetSessionID)
 
-        if (sessionID() !== targetSessionID) return
-        if (session.parentID) {
-          groupNavigate(sessionRoute(session.parentID))
+        const nav = sessionRemovalNavigation({
+          currentSessionID: sessionID(),
+          targetSessionID,
+          parentID: session.parentID,
+          nextSessionID: nextSession?.id,
+        })
+        if (nav.kind === "parent" || nav.kind === "next") {
+          groupNavigate(sessionRoute(nav.sessionID))
           return
         }
-        if (nextSession) {
-          groupNavigate(sessionRoute(nextSession.id))
-          return
-        }
-        groupNavigate(workspaceSessionRoute(dir()))
+        if (nav.kind === "root") groupNavigate(workspaceSessionRoute(dir()))
       })
       .catch((err) => {
         showToast({
@@ -731,31 +738,7 @@ export default function Page() {
     scrollToMessage(msgs[targetIndex], "auto")
   }
 
-  const kinds = createMemo(() => {
-    const merge = (a: "add" | "del" | "mix" | undefined, b: "add" | "del" | "mix") => {
-      if (!a) return b
-      if (a === b) return a
-      return "mix" as const
-    }
-
-    const normalize = (p: string) => p.replaceAll("\\\\", "/").replace(/\/+$/, "")
-
-    const out = new Map<string, "add" | "del" | "mix">()
-    for (const diff of diffs()) {
-      const file = normalize(diff.file ?? "")
-      const kind = diff.status === "added" ? "add" : diff.status === "deleted" ? "del" : "mix"
-
-      out.set(file, kind)
-
-      const parts = file.split("/")
-      for (const [idx] of parts.slice(0, -1).entries()) {
-        const dir = parts.slice(0, idx + 1).join("/")
-        if (!dir) continue
-        out.set(dir, merge(out.get(dir), kind))
-      }
-    }
-    return out
-  })
+  const kinds = createMemo(() => buildDiffKindTree(diffs()))
   const emptyDiffFiles: string[] = []
   const diffFiles = createMemo(
     () => diffs().map((d: SnapshotFileDiff) => d.file).filter((file): file is string => !!file),
@@ -865,7 +848,7 @@ export default function Page() {
 
   const isEditableTarget = (target: EventTarget | null | undefined) => {
     if (!(target instanceof HTMLElement)) return false
-    return /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName) || target.isContentEditable
+    return isEditableTagName(target.tagName) || target.isContentEditable
   }
 
   const deepActiveElement = () => {
@@ -899,12 +882,13 @@ export default function Page() {
     }
 
     // Only treat explicit scroll keys as potential "user scroll" gestures.
-    if (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End") {
+    const action = classifySessionKeydown(event)
+    if (action === "scroll-gesture") {
       markScrollGesture()
       return
     }
 
-    if (event.key.length === 1 && event.key !== "Unidentified" && !(event.ctrlKey || event.metaKey)) {
+    if (action === "focus-input") {
       if (composerState.blocked()) return
       inputRef?.focus()
     }
@@ -954,10 +938,11 @@ export default function Page() {
   let scrollToEnd = () => {}
 
   const updateScrollState = (el: HTMLDivElement) => {
-    const max = el.scrollHeight - el.clientHeight
-    const overflow = max > 1
-    const bottom = !overflow || el.scrollTop >= max - 2
-    const jump = overflow && max - el.scrollTop > Math.max(400, el.clientHeight)
+    const { overflow, bottom, jump } = computeScrollState({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      scrollTop: el.scrollTop,
+    })
 
     if (ui.scroll.overflow === overflow && ui.scroll.bottom === bottom && ui.scroll.jump === jump) return
     setUi("scroll", { overflow, bottom, jump })
@@ -1018,19 +1003,7 @@ export default function Page() {
       })
       .filter((item): item is { id: string; top: number; bottom: number } => !!item)
 
-    const shown = list.filter((item) => item.bottom > box.top && item.top < box.bottom)
-    const hit = shown.find((item) => item.top <= line && item.bottom >= line)
-    if (hit) return hit.id
-
-    const near = [...shown].sort((a, b) => {
-      const da = Math.abs(a.top - line)
-      const db = Math.abs(b.top - line)
-      if (da !== db) return da - db
-      return a.top - b.top
-    })[0]
-    if (near) return near.id
-
-    return list.filter((item) => item.top <= line).at(-1)?.id ?? list[0]?.id ?? store.messageId
+    return pickAnchorMessageId({ items: list, box, line, fallback: store.messageId })
   }
 
   const setScrollRef = (el: HTMLDivElement | undefined) => {
@@ -1289,21 +1262,9 @@ export default function Page() {
     document.addEventListener("keydown", handleKeyDown)
   })
 
-  const previewPrompt = () =>
-    prompt
-      .current()
-      .map((part) => {
-        if (part.type === "file") return `[file:${part.path}]`
-        if (part.type === "agent") return `@${part.name}`
-        if (part.type === "image") return `[image:${part.filename}]`
-        return part.content
-      })
-      .join("")
-      .trim()
-
   createEffect(() => {
     if (!prompt.ready()) return
-    setSessionHandoff(sessionKey(), { prompt: previewPrompt() })
+    setSessionHandoff(sessionKey(), { prompt: previewPromptText(prompt.current()) })
   })
 
   createEffect(() => {

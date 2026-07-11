@@ -56,7 +56,9 @@ import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { Popover as KobaltePopover } from "@kobalte/core/popover"
 import { normalize } from "@claxedo/session-client"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
-import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
+import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "./message-gesture"
+import { openTitleEditorPatch, resolveTitleSave } from "./session-title-editor"
+import { nextSiblingAfterRemoval, sessionRemovalNavigation } from "./session-archive"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useData } from "@claxedo/session-client"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
@@ -903,8 +905,13 @@ export function MessageTimeline(props: {
   )
 
   const openTitleEditor = () => {
-    if (!sessionID() || parentID()) return
-    setTitle({ editing: true, draft: titleLabel() ?? "" })
+    const patch = openTitleEditorPatch({
+      hasSession: !!sessionID(),
+      isChild: !!parentID(),
+      currentTitle: titleLabel(),
+    })
+    if (!patch) return
+    setTitle(patch)
     requestAnimationFrame(() => {
       titleRef?.focus()
       titleRef?.select()
@@ -921,35 +928,34 @@ export function MessageTimeline(props: {
     if (!id) return
     if (titleMutation.isPending) return
 
-    const next = title.draft.trim()
-    if (!next || next === (titleLabel() ?? "")) {
+    const decision = resolveTitleSave({ draft: title.draft, currentTitle: titleLabel() })
+    if (!decision.commit) {
       setTitle("editing", false)
       return
     }
 
-    titleMutation.mutate({ id, title: next })
+    titleMutation.mutate({ id, title: decision.title })
   }
 
   const navigateAfterSessionRemoval = (sessionID: string, parentID?: string, nextSessionID?: string) => {
-    if (params.id !== sessionID) return
-    if (parentID) {
-      navigate(sessionRoute(parentID))
+    const nav = sessionRemovalNavigation({
+      currentSessionID: params.id,
+      targetSessionID: sessionID,
+      parentID,
+      nextSessionID,
+    })
+    if (nav.kind === "parent" || nav.kind === "next") {
+      navigate(sessionRoute(nav.sessionID))
       return
     }
-    if (nextSessionID) {
-      navigate(sessionRoute(nextSessionID))
-      return
-    }
-    navigate(workspaceSessionRoute(sdk.directory))
+    if (nav.kind === "root") navigate(workspaceSessionRoute(sdk.directory))
   }
 
   const archiveSession = async (sessionID: string) => {
     const session = directorySession(sessionID)
     if (!session) return
 
-    const sessions = directorySessionRows()
-    const index = sessions.findIndex((s) => s.id === sessionID)
-    const nextSession = index === -1 ? undefined : (sessions[index + 1] ?? sessions[index - 1])
+    const nextSession = nextSiblingAfterRemoval(directorySessionRows(), sessionID)
 
     await sdk.client.session
       .update({ sessionID, time: { archived: Date.now() } })
@@ -969,9 +975,10 @@ export function MessageTimeline(props: {
     const session = directorySession(sessionID)
     if (!session) return false
 
-    const sessions = directorySessionRows().filter((s) => !s.parentID && !s.time?.archived)
-    const index = sessions.findIndex((s) => s.id === sessionID)
-    const nextSession = index === -1 ? undefined : (sessions[index + 1] ?? sessions[index - 1])
+    const nextSession = nextSiblingAfterRemoval(
+      directorySessionRows().filter((s) => !s.parentID && !s.time?.archived),
+      sessionID,
+    )
 
     const result = await sdk.client.session
       .delete({ sessionID })

@@ -6,14 +6,15 @@ import { useLayout } from "@/context/layout"
 import { PromptInput } from "@/session-client/composer/composer"
 import { useLanguage } from "@claxedo/context/language"
 import { usePrompt } from "@/context/prompt"
-import { getSessionHandoff, setSessionHandoff } from "@/pages/session/prompt-preview-handoff"
+import { getSessionHandoff, setSessionHandoff } from "../prompt-preview-handoff"
+import { previewPromptText } from "../prompt-preview"
 import { useSessionKey } from "@/session/session-layout"
-import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
-import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
-import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
-import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
-import type { SessionComposerState } from "@claxedo/pages/session/composer/session-composer-state"
-import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
+import { SessionPermissionDock } from "./session-permission-dock"
+import { SessionQuestionDock } from "./session-question-dock"
+import { SessionFollowupDock } from "./session-followup-dock"
+import { SessionRevertDock } from "./session-revert-dock"
+import type { SessionComposerState } from "./session-composer-state"
+import { SessionTodoDock } from "./session-todo-dock"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { directorySessions } from "@/shell/data/directory-session-cache"
@@ -110,21 +111,9 @@ export function SessionComposerRegion(props: {
   const child = createMemo(() => !!parentID())
   const showComposer = createMemo(() => !props.state.blocked() || child())
 
-  const previewPrompt = () =>
-    prompt
-      .current()
-      .map((part) => {
-        if (part.type === "file") return `[file:${part.path}]`
-        if (part.type === "agent") return `@${part.name}`
-        if (part.type === "image") return `[image:${part.filename}]`
-        return part.content
-      })
-      .join("")
-      .trim()
-
   createEffect(() => {
     if (!prompt.ready()) return
-    setSessionHandoff(sessionKey(), { prompt: previewPrompt() })
+    setSessionHandoff(sessionKey(), { prompt: previewPromptText(prompt.current()) })
   })
 
   const [store, setStore] = createStore({

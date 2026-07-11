@@ -16,6 +16,13 @@ import {
   sessionQuestionDockSnapshot,
   setSessionQuestionDockSnapshot,
 } from "./session-question-cache"
+import {
+  clampFocus,
+  classifyQuestionKey,
+  focusIndexForTab,
+  isAnswered,
+  mergeCustomAnswer,
+} from "./session-question-dock-nav"
 
 function Mark(props: { multi: boolean; picked: boolean; onClick?: (event: MouseEvent) => void }) {
   return (
@@ -103,23 +110,14 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   const last = createMemo(() => store.tab >= total() - 1)
 
   const customUpdate = (value: string, selected: boolean = on()) => {
-    const prev = input().trim()
-    const next = value.trim()
+    const previous = input()
 
     setStore("custom", store.tab, value)
     if (!selected) return
 
-    if (multi()) {
-      setStore("answers", store.tab, (current = []) => {
-        const removed = prev ? current.filter((item) => item.trim() !== prev) : current
-        if (!next) return removed
-        if (removed.some((item) => item.trim() === next)) return removed
-        return [...removed, next]
-      })
-      return
-    }
-
-    setStore("answers", store.tab, next ? [next] : [])
+    setStore("answers", store.tab, (current = []) =>
+      mergeCustomAnswer({ multi: multi(), current, previous, next: value }),
+    )
   }
 
   const measure = () => {
@@ -144,16 +142,14 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     root.style.setProperty("--question-prompt-max-height", `${max}px`)
   }
 
-  const clamp = (i: number) => Math.max(0, Math.min(count() - 1, i))
+  const clamp = (i: number) => clampFocus(i, count())
 
-  const pickFocus = (tab: number = store.tab) => {
-    const list = questions()[tab]?.options ?? []
-    if (store.customOn[tab] === true) return list.length
-    return Math.max(
-      0,
-      list.findIndex((item) => store.answers[tab]?.includes(item.label) ?? false),
-    )
-  }
+  const pickFocus = (tab: number = store.tab) =>
+    focusIndexForTab({
+      options: questions()[tab]?.options ?? [],
+      answers: store.answers[tab],
+      customOn: store.customOn[tab],
+    })
 
   const focus = (i: number) => {
     const next = clamp(i)
@@ -262,10 +258,8 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
 
   const submit = () => void reply(questions().map((_, i) => store.answers[i] ?? []))
 
-  const answered = (i: number) => {
-    if ((store.answers[i]?.length ?? 0) > 0) return true
-    return store.customOn[i] === true && (store.custom[i] ?? "").trim().length > 0
-  }
+  const answered = (i: number) =>
+    isAnswered({ answers: store.answers[i], customOn: store.customOn[i], custom: store.custom[i] })
 
   const picked = (answer: string) => store.answers[store.tab]?.includes(answer) ?? false
 
@@ -322,49 +316,34 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   }
 
   const nav = (event: KeyboardEvent) => {
-    if (event.defaultPrevented) return
-
-    if (event.key === "Escape") {
-      event.preventDefault()
-      void reject()
-      return
-    }
-
-    const mod = (event.metaKey || event.ctrlKey) && !event.altKey
-    if (mod && event.key === "Enter") {
-      if (event.repeat) return
-      event.preventDefault()
-      next()
-      return
-    }
-
     const target =
       event.target instanceof HTMLElement ? event.target.closest('[data-slot="question-options"]') : undefined
-    if (store.editing) return
-    if (!(target instanceof HTMLElement)) return
-    if (event.altKey || event.ctrlKey || event.metaKey) return
+    const action = classifyQuestionKey(event, {
+      editing: store.editing,
+      inOptions: target instanceof HTMLElement,
+      count: count(),
+    })
 
-    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-      event.preventDefault()
-      move(1)
-      return
+    switch (action.type) {
+      case "reject":
+        event.preventDefault()
+        void reject()
+        return
+      case "next":
+        event.preventDefault()
+        next()
+        return
+      case "move":
+        event.preventDefault()
+        move(action.step)
+        return
+      case "focus":
+        event.preventDefault()
+        focus(action.index)
+        return
+      default:
+        return
     }
-
-    if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-      event.preventDefault()
-      move(-1)
-      return
-    }
-
-    if (event.key === "Home") {
-      event.preventDefault()
-      focus(0)
-      return
-    }
-
-    if (event.key !== "End") return
-    event.preventDefault()
-    focus(count() - 1)
   }
 
   const selectOption = (optIndex: number) => {

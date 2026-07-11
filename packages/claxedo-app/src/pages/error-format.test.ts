@@ -171,6 +171,22 @@ describe("formatError chain + edge cases", () => {
     expect(out.match(/Error: same/g)?.length).toBe(1)
   })
 
+  test("an init-error cause whose formatted message duplicates the parent is dropped entirely", () => {
+    // The parent Error's message equals the formatted rendering of the init-error
+    // cause, so the isInitError dedup branch (depth > 0 && parentMessage === message)
+    // returns "" and the caused-by block is omitted rather than repeated.
+    const causeMessage = formatInitError(init("ProviderInitError", { providerID: "x" }), t)
+    const parent = new Error(causeMessage)
+    parent.stack = `Error: ${causeMessage}\n  at parentFrame`
+    parent.cause = init("ProviderInitError", { providerID: "x" })
+
+    const out = formatError(parent, t)
+    expect(out).not.toContain(CHAIN_SEPARATOR)
+    expect(out).not.toContain("error.chain.causedBy")
+    // the rendered init message appears exactly once (in the parent), never re-emitted
+    expect(out.match(/providerInitFailed\(provider=x\)/g)?.length).toBe(1)
+  })
+
   test("an 'Unknown error' wrapper unwraps to its cause without adding a level", () => {
     const wrapper = new Error("Unknown error")
     wrapper.cause = new Error("real")

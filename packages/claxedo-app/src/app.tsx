@@ -117,6 +117,7 @@ const ConfigPage = lazy(() => import("@claxedo/pages/config"))
 const LoginPage = lazy(() => import("@claxedo/pages/login"))
 const CliLoginPage = lazy(() => import("@claxedo/pages/cli-login"))
 const DialogMatrixHarness = lazy(() => import("@claxedo/pages/dialog-matrix-harness"))
+const ErrorPageHarness = lazy(() => import("@claxedo/pages/error-page-harness"))
 const Loading = () => <div class="size-full" />
 const HiddenRouteOutlet = () => <div class="hidden" />
 
@@ -427,6 +428,17 @@ export function AppInterface(props: {
           component={() => (
             <Suspense fallback={<Loading />}>
               <DialogMatrixHarness />
+            </Suspense>
+          )}
+        />
+      ) : null}
+
+      {import.meta.env.DEV ? (
+        <Route
+          path="/__e2e/error-page"
+          component={() => (
+            <Suspense fallback={<Loading />}>
+              <ErrorPageHarness />
             </Suspense>
           )}
         />
