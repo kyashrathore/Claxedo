@@ -581,6 +581,19 @@ function createSuggestionRenderer() {
 
 // ── Tiptap extension ───────────────────────────────────────────────────
 
+/**
+ * The shipped slash-menu filter predicate. An empty/whitespace query returns
+ * the full list unchanged (identity, so callers can `===`-compare); otherwise
+ * items are matched case-insensitively against their title + description +
+ * search text. Exported so the extension config and its tests exercise the
+ * exact same predicate.
+ */
+export function filterSlashCommands(items: SlashCommandItem[], query: string): SlashCommandItem[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return items
+  return items.filter((item) => `${item.title} ${item.description} ${item.search}`.toLowerCase().includes(q))
+}
+
 export const SlashCommands = Extension.create({
   name: "slashCommands",
 
@@ -595,13 +608,7 @@ export const SlashCommands = Extension.create({
           const textBeforeSlash = $slash.parent.textBetween(0, $slash.parentOffset, "\n", "\n")
           return textBeforeSlash.trim().length === 0
         },
-        items: ({ query }: { query: string }) => {
-          const q = query.trim().toLowerCase()
-          if (!q) return slashCommandItems
-          return slashCommandItems.filter((item) =>
-            `${item.title} ${item.description} ${item.search}`.toLowerCase().includes(q),
-          )
-        },
+        items: ({ query }: { query: string }) => filterSlashCommands(slashCommandItems, query),
         render: createSuggestionRenderer,
         command: ({ editor, range, props }: { editor: SlashCommandEditor; range: Range; props: { item: SlashCommandItem } }) => {
           phCapture("page_slash_command_used", { command_id: props.item.id, command_title: props.item.title })

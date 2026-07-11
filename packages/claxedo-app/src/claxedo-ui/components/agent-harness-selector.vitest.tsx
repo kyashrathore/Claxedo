@@ -17,6 +17,11 @@ let optionsLoading = false
 
 vi.mock("../../pane/store/pane-preferences", () => ({
   panePreferenceScope: () => "test-scope",
+  // store-state → store-policy re-exports these at module load; the live
+  // harnessStatusPatch assertion below doesn't exercise them, so stubs suffice.
+  isDraftPaneScope: (scope: string) => scope.startsWith("draft:"),
+  initialPaneHarness: (_scope: string, saved?: string, legacy?: string | null) => saved ?? legacy ?? undefined,
+  initialPaneValue: (_scope: string, saved?: string, legacy?: string | null) => saved ?? legacy ?? "",
 }))
 
 // Stub Select to expose trigger + option buttons in the DOM
@@ -81,6 +86,7 @@ vi.mock("@opencode-ai/ui/v2/tooltip-v2", () => ({
 }))
 
 import { AgentHarnessSelector } from "./agent-harness-selector"
+import { harnessStatusPatch } from "@claxedo/session-client/harness/store-state"
 import type { HarnessSelectionController } from "@claxedo/session-client/harness/controller"
 
 function harnessController(): HarnessSelectionController {
@@ -401,5 +407,45 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     ))
 
     expect(hydrateCalls).toEqual([])
+  })
+})
+
+describe("AgentHarnessSelector — readiness UI", () => {
+  test("readiness 'polling' shows the Connecting pill and not the Unavailable error", () => {
+    readiness = "polling"
+    const { getByText, queryByText } = render(() => (
+      <TestAgentHarnessSelector active directory="/repo/main" sessionId="ses_1" sessionLocked={false} />
+    ))
+    expect(getByText("Connecting")).toBeTruthy()
+    expect(queryByText("Unavailable")).toBeNull()
+  })
+
+  test("readiness 'error' does not show the Connecting pill", () => {
+    readiness = "error"
+    const { queryByText } = render(() => (
+      <TestAgentHarnessSelector active directory="/repo/main" sessionId="ses_1" sessionLocked={false} />
+    ))
+    expect(queryByText("Connecting")).toBeNull()
+  })
+
+  // Cross-WP pin (fixme ledger core-harness-ownership-local:515), now LIVE after
+  // WP-B9. Before B9 the harness store's readiness was an error/ready binary, so a
+  // still-connecting harness never produced "polling" — the Connecting pill was
+  // unreachable and a starting harness showed a red "Unavailable". Drive the real
+  // store projector (harnessStatusPatch) with a startup status frame (ready:false,
+  // no hard failure, not a settled switch response) and assert it yields "polling"
+  // that this selector renders as "Connecting" — proving the path is reachable
+  // end-to-end, not just that the selector renders a hardcoded readiness.
+  test("startup status frame drives the store to 'polling', making the Connecting pill reachable [WP-B9]", () => {
+    const patch = harnessStatusPatch({
+      data: { type: "codex-app-server", status: "configured", ready: false },
+    })
+    expect(patch.readiness).toBe("polling")
+    readiness = patch.readiness!
+    const { getByText, queryByText } = render(() => (
+      <TestAgentHarnessSelector active directory="/repo/main" sessionId="ses_1" sessionLocked={false} />
+    ))
+    expect(getByText("Connecting")).toBeTruthy()
+    expect(queryByText("Unavailable")).toBeNull()
   })
 })

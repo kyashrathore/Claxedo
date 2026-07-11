@@ -84,7 +84,7 @@ vi.mock("../../shell/data/queries", () => ({
   }),
 }))
 
-vi.mock("@/context/local", () => ({
+vi.mock("@/context/session-selection", () => ({
   LocalProvider: (props: any) => <>{props.children}</>,
 }))
 

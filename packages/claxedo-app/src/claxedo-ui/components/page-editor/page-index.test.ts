@@ -6,7 +6,13 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal, createMemo } from "solid-js"
 import type { Page, PageStatus } from "../../../utils/pages-api"
-import { allowedPageStatusTransitions, groupPagesByStatus } from "./page-index"
+import {
+  allowedPageStatusTransitions,
+  groupPagesByStatus,
+  optimisticDropPage,
+  optimisticMovePage,
+  runOptimisticPageMutation,
+} from "./page-index"
 
 // ── Test fixtures ─────────────────────────────────────────────────────
 
@@ -155,43 +161,87 @@ describe("allowed transitions", () => {
   })
 })
 
-describe("optimistic mutations", () => {
-  test("optimistic delete removes page from list", () => {
-    const pages = [
-      makePage("p1", "A", "draft"),
-      makePage("p2", "B", "draft"),
-      makePage("p3", "C", "in_review"),
-    ]
-    const after = pages.filter((p) => p.id !== "p2")
-    expect(after.length).toBe(2)
-    expect(after.map((p) => p.id)).toEqual(["p1", "p3"])
-  })
-
-  test("optimistic transition moves page between groups", () => {
-    const pages = [
-      makePage("p1", "A", "draft"),
-      makePage("p2", "B", "draft"),
-    ]
-    // Simulate: transition p1 from draft to in_review
-    const after = pages.map((p) => (p.id === "p1" ? { ...p, status: "in_review" } : p))
-
+describe("optimisticMovePage", () => {
+  test("rewrites only the target page's status, leaving others untouched", () => {
+    const pages = [makePage("p1", "A", "draft"), makePage("p2", "B", "draft")]
+    const after = optimisticMovePage(pages, "p1", "in_review")
     const groups = groupPagesByStatus(after, STATUSES)
-    const draft = groups.find((g) => g.status.id === "draft")!
-    expect(draft.pages.length).toBe(1)
-    expect(draft.pages[0].id).toBe("p2")
-    const review = groups.find((g) => g.status.id === "in_review")!
-    expect(review.pages.length).toBe(1)
-    expect(review.pages[0].id).toBe("p1")
+    expect(groups.find((g) => g.status.id === "draft")!.pages.map((p) => p.id)).toEqual(["p2"])
+    expect(groups.find((g) => g.status.id === "in_review")!.pages.map((p) => p.id)).toEqual(["p1"])
   })
 
-  test("optimistic create prepends page", () => {
-    const pages = [
-      makePage("p1", "Existing", "done"),
-    ]
-    const created = makePage("p2", "New", "draft")
-    const after = [created, ...pages]
-    expect(after.length).toBe(2)
-    expect(after[0].id).toBe("p2")
+  test("returns a new array and does not mutate the input", () => {
+    const pages = [makePage("p1", "A", "draft")]
+    const after = optimisticMovePage(pages, "p1", "done")
+    expect(after).not.toBe(pages)
+    expect(pages[0].status).toBe("draft")
+    expect(after[0].status).toBe("done")
+  })
+})
+
+describe("optimisticDropPage", () => {
+  test("removes the target page and keeps the rest in order", () => {
+    const pages = [makePage("p1", "A", "draft"), makePage("p2", "B", "draft"), makePage("p3", "C", "in_review")]
+    expect(optimisticDropPage(pages, "p2").map((p) => p.id)).toEqual(["p1", "p3"])
+  })
+})
+
+describe("runOptimisticPageMutation", () => {
+  function harness(initial: Page[]) {
+    let current = initial
+    const setCalls: Page[][] = []
+    return {
+      getPages: () => current,
+      setPages: (next: Page[]) => {
+        current = next
+        setCalls.push(next)
+      },
+      snapshot: () => current,
+      setCalls,
+    }
+  }
+
+  test("applies the optimistic transform immediately, before the commit resolves", async () => {
+    const h = harness([makePage("p1", "A", "draft"), makePage("p2", "B", "draft")])
+    let resolveCommit: () => void = () => {}
+    const commit = () => new Promise<void>((resolve) => (resolveCommit = resolve))
+    const onError = () => {
+      throw new Error("onError must not fire on success")
+    }
+    const run = runOptimisticPageMutation({
+      getPages: h.getPages,
+      setPages: h.setPages,
+      optimistic: (list) => optimisticDropPage(list, "p2"),
+      commit,
+      onError,
+    })
+    // Optimistic state is visible synchronously, while commit is still pending.
+    expect(h.snapshot().map((p) => p.id)).toEqual(["p1"])
+    resolveCommit()
+    await run
+    // Success: the optimistic edit stays; no rollback happened.
+    expect(h.snapshot().map((p) => p.id)).toEqual(["p1"])
+    expect(h.setCalls).toHaveLength(1)
+  })
+
+  test("rolls back to the exact pre-mutation snapshot and reports the error when commit rejects", async () => {
+    const initial = [makePage("p1", "A", "draft"), makePage("p2", "B", "in_review")]
+    const h = harness(initial)
+    const failure = new Error("network down")
+    const errors: unknown[] = []
+    await runOptimisticPageMutation({
+      getPages: h.getPages,
+      setPages: h.setPages,
+      optimistic: (list) => optimisticMovePage(list, "p1", "done"),
+      commit: () => Promise.reject(failure),
+      onError: (err) => errors.push(err),
+    })
+    // Rolled back to the original reference, and the caller was told why.
+    expect(h.snapshot()).toBe(initial)
+    expect(h.snapshot().find((p) => p.id === "p1")!.status).toBe("draft")
+    expect(errors).toEqual([failure])
+    // Exactly two writes: optimistic, then rollback.
+    expect(h.setCalls).toHaveLength(2)
   })
 })
 

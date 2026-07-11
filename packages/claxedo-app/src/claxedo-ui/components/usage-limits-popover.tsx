@@ -7,6 +7,7 @@ import { Popover as Kobalte } from "@kobalte/core/popover"
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/solid-query"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ClaxedoIcon as Icon } from "./claxedo-icon"
+import { USAGE_LIMITS_QUERY_KEY, writeUsageLimitsSnapshot } from "./usage-limits-cache"
 import {
   fetchUsageLimits,
   USAGE_PROVIDERS,
@@ -191,7 +192,7 @@ function PopoverBody(): JSX.Element {
   // keepPreviousData paints the last snapshot instantly on reopen while a
   // background revalidation refreshes it (fixes the "stale until Refresh" flash).
   const query = useQuery(() => ({
-    queryKey: ["claxedo", "usage-limits"],
+    queryKey: USAGE_LIMITS_QUERY_KEY,
     queryFn: () => fetchUsageLimits(),
     refetchOnMount: "always" as const,
     refetchInterval: 60_000,
@@ -224,7 +225,7 @@ function PopoverBody(): JSX.Element {
   // ~2min cache and returns the same snapshot — so the button felt dead. Force a
   // live re-probe (`refresh: true` → ?refresh=1 → resetUsageLimitsCache), and
   // hold the spinner ≥500ms so a fast, unchanged response still reads as "did
-  // something". setQueryData refreshes both the data and the "updated" age.
+  // something". writeUsageLimitsSnapshot refreshes both the data and the age.
   const queryClient = useQueryClient()
   const [refreshing, setRefreshing] = createSignal(false)
   const doRefresh = async () => {
@@ -233,7 +234,7 @@ function PopoverBody(): JSX.Element {
     const started = Date.now()
     try {
       const data = await fetchUsageLimits({ refresh: true })
-      queryClient.setQueryData(["claxedo", "usage-limits"], data)
+      writeUsageLimitsSnapshot(queryClient, data)
     } catch {
       // Leave the last snapshot in place; the query's own error path is unaffected.
     }

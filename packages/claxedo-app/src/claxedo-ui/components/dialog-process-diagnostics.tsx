@@ -7,11 +7,24 @@ import { usePlatform } from "@claxedo/context/platform"
 import { useClaxedoState } from "../state"
 import { getClaxedoServerUrl } from "../../utils/api"
 import { Process } from "@claxedo/process/process"
-import { collapse, clip, formatMB, formatCPU, errorText } from "../utils/text"
+import { errorText } from "../utils/text"
+import { formatMB, formatCPU } from "../utils/process-stats-format"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Icon } from "@opencode-ai/ui/icon"
 import { createProcessClient } from "../../process/client"
 import { resolveWorkspaceRuntime } from "../../cloud/workspace-runtime-store"
+import {
+  EMPTY_BUCKET,
+  buildExternal,
+  clipped,
+  formatAge,
+  formatUptimeSeconds,
+  kindLabel,
+  kindTone,
+  reasonLabel,
+  rooted,
+  score,
+} from "./process-diagnostics/groups"
 
 type Snapshot = Process.DiagnosticSnapshot
 type OsRow = Process.DiagnosticOsProcess
@@ -31,131 +44,6 @@ type ResourceRow = {
   rssKb: number
   os: OsRow[]
   status: string
-}
-
-const EMPTY_BUCKET: Process.DiagnosticSummaryBucket = {
-  groups: 0,
-  rows: 0,
-  cpu_percent: 0,
-  rss_kb: 0,
-  hidden_children: 0,
-  problem_children: 0,
-}
-
-const score = (status: string) => (status === "stale" ? 3 : status === "suspect" ? 2 : status === "running" ? 1 : 0)
-const clipped = (value: string | undefined, max = 180) => clip(collapse(value), max)
-const groupScore = (status: Process.DiagnosticStatus) => (status === "stale" ? 3 : status === "suspect" ? 2 : 1)
-const rooted = (root?: string, dir?: string) => {
-  if (!dir) return root
-  if (/^(?:[A-Za-z]:[\\/]|\/)/.test(dir)) return dir
-  if (!root) return dir
-  return `${root.replace(/[\\/]+$/, "")}/${dir.replace(/^[./\\]+/, "")}`
-}
-
-/** Convert ps etime format (MM:SS, HH:MM:SS, DD-HH:MM:SS) to human-readable. */
-function formatAge(elapsed: string) {
-  const dayMatch = elapsed.match(/^(\d+)-(\d+):(\d+):(\d+)$/)
-  if (dayMatch) {
-    const d = Number(dayMatch[1])
-    const h = Number(dayMatch[2])
-    return h > 0 ? `${d}d ${h}h` : `${d}d`
-  }
-  const hmsMatch = elapsed.match(/^(\d+):(\d+):(\d+)$/)
-  if (hmsMatch) {
-    const h = Number(hmsMatch[1])
-    const m = Number(hmsMatch[2])
-    return m > 0 ? `${h}h ${m}m` : `${h}h`
-  }
-  const msMatch = elapsed.match(/^(\d+):(\d+)$/)
-  if (msMatch) {
-    const m = Number(msMatch[1])
-    const s = Number(msMatch[2])
-    return m > 0 ? `${m}m ${s}s` : `${s}s`
-  }
-  return elapsed
-}
-
-function formatUptimeSeconds(s: number) {
-  const d = Math.floor(s / 86400)
-  const h = Math.floor((s % 86400) / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  if (d > 0) return h > 0 ? `${d}d ${h}h` : `${d}d`
-  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`
-  return `${m}m`
-}
-
-function reasonLabel(value: string) {
-  if (value === "missing-pty") return "Orphaned terminal"
-  if (value === "dead-port") return "Port not listening"
-  if (value === "bad-state") return "Unhealthy state"
-  if (value === "long-running") return "Running 7+ days"
-  return value
-}
-
-function kindLabel(value: Process.DiagnosticOwnerKind) {
-  if (value === "managed_process") return "Managed"
-  if (value === "mcp_server") return "MCP"
-  if (value === "leaked_server") return "Stale"
-  if (value === "external") return "Other"
-  if (value === "server") return "Server"
-  if (value === "app") return "App"
-  return "Tab"
-}
-
-function kindTone(value: Process.DiagnosticOwnerKind) {
-  if (value === "mcp_server") return "bg-surface-info-base/10 text-text-on-info-base"
-  if (value === "leaked_server") return "bg-surface-critical-base/10 text-text-on-critical-base"
-  if (value === "external") return "bg-surface-warning-base/10 text-text-on-warning-base"
-  if (value === "server" || value === "app") return "bg-surface-base-hover text-text-weak"
-  return "bg-surface-info-base/10 text-text-on-info-base"
-}
-
-function groupStatus(rows: OsRow[]) {
-  return rows.some((row) => row.status === "stale")
-    ? "stale"
-    : rows.some((row) => row.status === "suspect")
-      ? "suspect"
-      : "active"
-}
-
-function externalTitle(row: OsRow) {
-  if (row.port != null) return `Server on :${row.port}`
-  return `Server ${row.pid}`
-}
-
-function buildExternal(rows: OsRow[]) {
-  const by = new Map<string, OsRow[]>()
-  for (const row of rows) {
-    if (row.owner_kind !== "external" || !row.owner_key) continue
-    if (!by.has(row.owner_key)) by.set(row.owner_key, [])
-    by.get(row.owner_key)!.push(row)
-  }
-
-  return [...by.entries()]
-    .map(([key, list]) => {
-      const children = [...list].sort((a, b) => a.depth - b.depth || b.rss_kb - a.rss_kb || b.cpu_percent - a.cpu_percent || a.pid - b.pid)
-      const row = [...children].sort((a, b) => b.rss_kb - a.rss_kb || b.cpu_percent - a.cpu_percent || a.pid - b.pid)[0]
-      const ports = [...new Set(children.flatMap((item) => (item.port != null ? [item.port] : [])))].sort((a, b) => a - b)
-      return Process.DiagnosticGroup.parse({
-        key,
-        kind: "external",
-        title: externalTitle(row),
-        status: groupStatus(children),
-        cpu_percent: children.reduce((sum, item) => sum + item.cpu_percent, 0),
-        rss_kb: children.reduce((sum, item) => sum + item.rss_kb, 0),
-        ports,
-        pid: row.pid,
-        terminal_id: row.terminal_id,
-        process_id: row.process_id,
-        tab_id: row.tab_id,
-        current: false,
-        leaked: false,
-        hidden_children: children.filter((item) => item.hidden_by_default).length,
-        problem_children: children.filter((item) => item.depth > 0 && !item.hidden_by_default).length,
-        children,
-      })
-    })
-    .sort((a, b) => groupScore(b.status) - groupScore(a.status) || b.rss_kb - a.rss_kb || b.cpu_percent - a.cpu_percent)
 }
 
 /* ─── Visual primitives ─── */

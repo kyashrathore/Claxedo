@@ -13,7 +13,7 @@
 import { Show, type Accessor, type ParentProps, createEffect, createMemo, untrack } from "solid-js"
 import { useWorkspaceQuery } from "../../shell/workspace/use-workspace-query"
 import { useSDK } from "@/context/sdk"
-import { LocalProvider } from "@/context/local"
+import { LocalProvider } from "@/context/session-selection"
 import { TerminalProvider } from "@/context/terminal"
 import { FileProvider } from "@/context/file"
 import { PromptProvider } from "@/context/prompt"

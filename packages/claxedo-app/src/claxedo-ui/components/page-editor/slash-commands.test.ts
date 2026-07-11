@@ -1,15 +1,16 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import type { Editor, Range } from "@tiptap/core"
-import { slashCommandItems, SlashCommands, type SlashCommandEditor, type SlashCommandSuggestionOptions } from "./slash-commands"
+import {
+  filterSlashCommands,
+  slashCommandItems,
+  SlashCommands,
+  type SlashCommandEditor,
+  type SlashCommandSuggestionOptions,
+} from "./slash-commands"
 
-// Replicate the extension's filter logic inline
-function filterItems(query: string) {
-  const q = query.trim().toLowerCase()
-  if (!q) return slashCommandItems
-  return slashCommandItems.filter((item) =>
-    `${item.title} ${item.description} ${item.search}`.toLowerCase().includes(q),
-  )
-}
+// Exercise the SHIPPED filter predicate (the one the extension's `items`
+// callback calls), not a re-implementation.
+const filterItems = (query: string) => filterSlashCommands(slashCommandItems, query)
 
 describe("slashCommandItems data integrity", () => {
   test("all items have required fields (id, group, title, description, icon, search, command)", () => {

@@ -112,6 +112,40 @@ export function allowedPageStatusTransitions(page: Page, statuses: PageStatus[])
   return statuses.filter((item) => current.transitions.includes(item.id))
 }
 
+/** Optimistic list transform for a status move: rewrite the page's status in place. */
+export function optimisticMovePage(pages: Page[], pageId: string, status: string): Page[] {
+  return pages.map((page) => (page.id === pageId ? { ...page, status } : page))
+}
+
+/** Optimistic list transform for a delete: drop the page from the list. */
+export function optimisticDropPage(pages: Page[], pageId: string): Page[] {
+  return pages.filter((page) => page.id !== pageId)
+}
+
+/**
+ * Apply an optimistic page-list mutation and then commit it. The list is
+ * mutated immediately from its current snapshot; if the commit rejects, the
+ * list is rolled back to that exact pre-mutation snapshot and `onError` fires.
+ * This is the shared engine behind PageIndex.movePage / PageIndex.dropPage — a
+ * commit failure must never leave the optimistic edit stuck on screen.
+ */
+export async function runOptimisticPageMutation(input: {
+  getPages: () => Page[]
+  setPages: (next: Page[]) => void
+  optimistic: (pages: Page[]) => Page[]
+  commit: () => Promise<unknown>
+  onError: (err: unknown) => void
+}): Promise<void> {
+  const prev = input.getPages()
+  input.setPages(input.optimistic(prev))
+  try {
+    await input.commit()
+  } catch (err) {
+    input.setPages(prev)
+    input.onError(err)
+  }
+}
+
 export function PageIndex(props: PageIndexProps) {
   const dialog = useDialog()
   const globalSDK = useGlobalSDK()
@@ -217,35 +251,33 @@ export function PageIndex(props: PageIndexProps) {
     }
   }
 
-  const movePage = async (pageId: string, status: string) => {
-    const prev = pages()
-    setPages((list) => list.map((page) => (page.id === pageId ? { ...page, status } : page)))
-    try {
-      await pagesApi.transitionStatus(pageId, status)
-    } catch (err) {
-      setPages(prev)
-      showToast({
-        title: "Failed to update status",
-        description: err instanceof Error ? err.message : String(err),
-        variant: "error",
-      })
-    }
-  }
+  const movePage = (pageId: string, status: string) =>
+    runOptimisticPageMutation({
+      getPages: pages,
+      setPages,
+      optimistic: (list) => optimisticMovePage(list, pageId, status),
+      commit: () => pagesApi.transitionStatus(pageId, status),
+      onError: (err) =>
+        showToast({
+          title: "Failed to update status",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "error",
+        }),
+    })
 
-  const dropPage = async (pageId: string) => {
-    const prev = pages()
-    setPages((list) => list.filter((page) => page.id !== pageId))
-    try {
-      await pagesApi.delete(pageId)
-    } catch (err) {
-      setPages(prev)
-      showToast({
-        title: "Failed to delete page",
-        description: err instanceof Error ? err.message : String(err),
-        variant: "error",
-      })
-    }
-  }
+  const dropPage = (pageId: string) =>
+    runOptimisticPageMutation({
+      getPages: pages,
+      setPages,
+      optimistic: (list) => optimisticDropPage(list, pageId),
+      commit: () => pagesApi.delete(pageId),
+      onError: (err) =>
+        showToast({
+          title: "Failed to delete page",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "error",
+        }),
+    })
 
   const toggle = (id: string) => {
     setCollapsed((prev) => {

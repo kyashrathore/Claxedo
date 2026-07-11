@@ -7,6 +7,7 @@
  */
 
 import { CodeBlock } from "@tiptap/extension-code-block"
+import { mermaidKeyAction } from "./mermaid-keyboard"
 
 // ── Lazy mermaid loader (matches pattern from @opencode-ai/ui) ──────
 
@@ -119,23 +120,40 @@ function attachPanZoom(viewport: HTMLElement, target: HTMLElement) {
     apply()
   }
 
+  // Multiply zoom by `factor`, keeping the point (cx, cy) fixed on screen.
+  function zoomAt(factor: number, cx: number, cy: number) {
+    const oldZoom = state.zoom
+    const newZoom = Math.max(0.1, Math.min(oldZoom * factor, 10))
+    state.panX = cx - (cx - state.panX) * (newZoom / oldZoom)
+    state.panY = cy - (cy - state.panY) * (newZoom / oldZoom)
+    state.zoom = newZoom
+    apply()
+  }
+
   // Wheel → zoom, centered on cursor (only with Ctrl/Meta held)
   function onWheel(e: WheelEvent) {
     if (!e.ctrlKey && !e.metaKey) return
     e.preventDefault()
     const rect = viewport.getBoundingClientRect()
-    const cx = e.clientX - rect.left
-    const cy = e.clientY - rect.top
+    zoomAt(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - rect.left, e.clientY - rect.top)
+  }
 
-    const oldZoom = state.zoom
-    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
-    const newZoom = Math.max(0.1, Math.min(oldZoom * factor, 10))
-
-    // Adjust pan so zoom centers on cursor
-    state.panX = cx - (cx - state.panX) * (newZoom / oldZoom)
-    state.panY = cy - (cy - state.panY) * (newZoom / oldZoom)
-    state.zoom = newZoom
-    apply()
+  // Keyboard equivalents for wheel-zoom and drag-pan, so the diagram is
+  // operable without a pointer. Keyboard zoom centers on the viewport middle.
+  function onKeyDown(e: KeyboardEvent) {
+    const action = mermaidKeyAction(e.key)
+    if (!action) return
+    e.preventDefault()
+    if (action.type === "zoom") {
+      const rect = viewport.getBoundingClientRect()
+      zoomAt(action.factor, rect.width / 2, rect.height / 2)
+    } else if (action.type === "reset") {
+      resetView()
+    } else {
+      state.panX += action.dx
+      state.panY += action.dy
+      apply()
+    }
   }
 
   // Mouse drag → pan (with threshold to allow click-to-select)
@@ -183,11 +201,19 @@ function attachPanZoom(viewport: HTMLElement, target: HTMLElement) {
     viewport.style.cursor = ""
   }
 
+  // Make the viewport keyboard-focusable and describe its keyboard controls.
+  if (!viewport.hasAttribute("tabindex")) viewport.tabIndex = 0
+  viewport.setAttribute(
+    "aria-label",
+    "Mermaid diagram. Press plus or minus to zoom, arrow keys to pan, 0 to reset the view.",
+  )
+
   viewport.addEventListener("wheel", onWheel, { passive: false })
   viewport.addEventListener("pointerdown", onPointerDown)
   viewport.addEventListener("pointermove", onPointerMove)
   viewport.addEventListener("pointerup", onPointerUp)
   viewport.addEventListener("pointercancel", onPointerUp)
+  viewport.addEventListener("keydown", onKeyDown)
 
   function destroy() {
     viewport.removeEventListener("wheel", onWheel)
@@ -195,6 +221,7 @@ function attachPanZoom(viewport: HTMLElement, target: HTMLElement) {
     viewport.removeEventListener("pointermove", onPointerMove)
     viewport.removeEventListener("pointerup", onPointerUp)
     viewport.removeEventListener("pointercancel", onPointerUp)
+    viewport.removeEventListener("keydown", onKeyDown)
   }
 
   return { state, setZoom, resetView, destroy }

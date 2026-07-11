@@ -13,7 +13,17 @@ import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
-import { checksum } from "@opencode-ai/core/util/encode"
+import {
+  MAX_DIFF_CHANGED_LINES,
+  diffId,
+  diffTestId,
+  diffTriggerTestId,
+  exceedsDiffLimit,
+  expandOrCollapseAll,
+  groupCommentsByFile,
+  hasDiffContent,
+  reviewDiffList,
+} from "./review-session-logic"
 import { createComputed, createEffect, createMemo, createSelector, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
@@ -24,7 +34,6 @@ import { createLineCommentController } from "../../../session-client"
 import type { LineCommentEditorProps } from "../../../session-client"
 import { normalize, text, type ViewDiff } from "../../../session-client"
 
-const MAX_DIFF_CHANGED_LINES = 500
 const REVIEW_MOUNT_MARGIN = 80
 
 export type SessionReviewDiffStyle = "unified" | "split"
@@ -85,32 +94,6 @@ type ReviewDiff = RawReviewDiff & {
   preloaded?: unknown
 }
 type Item = ViewDiff & { preloaded?: unknown }
-
-function diff(value: unknown): value is ReviewDiff {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false
-  if (!("file" in value) || typeof value.file !== "string") return false
-  if (!("additions" in value) || typeof value.additions !== "number") return false
-  if (!("deletions" in value) || typeof value.deletions !== "number") return false
-  if ("patch" in value && value.patch !== undefined && typeof value.patch !== "string") return false
-  if ("before" in value && value.before !== undefined && typeof value.before !== "string") return false
-  if ("after" in value && value.after !== undefined && typeof value.after !== "string") return false
-  if (!("status" in value) || value.status === undefined) return true
-  return value.status === "added" || value.status === "deleted" || value.status === "modified"
-}
-
-function list(value: unknown): ReviewDiff[] {
-  if (Array.isArray(value) && value.every(diff)) return value
-  if (Array.isArray(value)) return value.filter(diff)
-  if (diff(value)) return [value]
-  if (!value || typeof value !== "object") return []
-  return Object.values(value).filter(diff)
-}
-
-function hasDiffContent(diff: ReviewDiff) {
-  return typeof diff.patch === "string" ||
-    ("before" in diff && typeof diff.before === "string") ||
-    ("after" in diff && typeof diff.after === "string")
-}
 
 export interface SessionReviewProps {
   title?: JSX.Element
@@ -174,24 +157,6 @@ function ReviewCommentMenu(props: {
   )
 }
 
-function diffId(file: string): string | undefined {
-  const sum = checksum(file)
-  if (!sum) return
-  return `session-review-diff-${sum}`
-}
-
-function diffTestId(file: string): string | undefined {
-  const id = diffId(file)
-  if (!id) return
-  return `${id}-item`
-}
-
-function diffTriggerTestId(file: string): string | undefined {
-  const id = diffId(file)
-  if (!id) return
-  return `${id}-trigger`
-}
-
 type SessionReviewSelection = {
   file: string
   range: SelectedLineRange
@@ -221,20 +186,9 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const isOpenedFile = createSelector(() => store.opened?.file)
 
   const open = () => props.open ?? store.open
-  const items = createMemo<ReviewDiff[]>(() => list(props.diffs))
+  const items = createMemo<ReviewDiff[]>(() => reviewDiffList(props.diffs) as ReviewDiff[])
   const files = createMemo(() => items().map((diff) => diff.file))
-  const grouped = createMemo(() => {
-    const next = new Map<string, SessionReviewComment[]>()
-    for (const comment of props.comments ?? []) {
-      const list = next.get(comment.file)
-      if (list) {
-        list.push(comment)
-        continue
-      }
-      next.set(comment.file, [comment])
-    }
-    return next
-  })
+  const grouped = createMemo(() => groupCommentsByFile(props.comments))
   const diffStyle = () => props.diffStyle ?? (props.split ? "split" : "unified")
   const hasDiffs = () => files().length > 0
 
@@ -320,8 +274,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   }
 
   const handleExpandOrCollapseAll = () => {
-    const next = open().length > 0 ? [] : files()
-    handleChange(next)
+    handleChange(expandOrCollapseAll(open(), files()))
   }
 
   const openFileLabel = () => i18n.t("ui.sessionReview.openFile")
@@ -467,12 +420,14 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                     const mediaKind = createMemo(() => mediaKindFromPath(file))
                     const loaded = () => hasDiffContent(diff)
 
-                    const tooLarge = createMemo(() => {
-                      if (!expanded()) return false
-                      if (force()) return false
-                      if (mediaKind()) return false
-                      return changedLines() > MAX_DIFF_CHANGED_LINES
-                    })
+                    const tooLarge = createMemo(() =>
+                      exceedsDiffLimit({
+                        changedLines: changedLines(),
+                        expanded: expanded(),
+                        forced: force(),
+                        media: !!mediaKind(),
+                      }),
+                    )
 
                     const isAdded = () => diff.status === "added"
                     const isDeleted = () => diff.status === "deleted"

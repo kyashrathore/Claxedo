@@ -9,6 +9,7 @@ import {
   type ArenaWaveState,
 } from "../../../utils/pages-api"
 import { authFetch } from "../../../utils/api"
+import { createArenaSseParser } from "./arena-sse"
 
 type PageArenaDockProps = {
   pageId: string
@@ -155,20 +156,12 @@ export function PageArenaDock(props: PageArenaDockProps) {
       if (!res.body) throw new Error("Arena stream unavailable")
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      let buffer = ""
+      const parser = createArenaSseParser()
       while (!abort.signal.aborted) {
         const chunk = await reader.read()
         if (chunk.done) break
-        buffer += decoder.decode(chunk.value, { stream: true })
-        const events = buffer.split("\n\n")
-        buffer = events.pop() ?? ""
-        for (const event of events) {
-          const data = event
-            .split("\n")
-            .filter((line) => line.startsWith("data:"))
-            .map((line) => line.slice(5).trimStart())
-            .join("\n")
-          if (data) await handleArenaEvent(data)
+        for (const data of parser.push(decoder.decode(chunk.value, { stream: true }))) {
+          await handleArenaEvent(data)
         }
       }
     })().catch((err) => {

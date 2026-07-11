@@ -9,6 +9,11 @@ import {
 // The keyboard-only contract for the mermaid pan/zoom viewport.
 
 describe("mermaidKeyAction", () => {
+  test("zoom factors bracket 1: in enlarges, out shrinks", () => {
+    expect(MERMAID_ZOOM_IN_FACTOR).toBeGreaterThan(1)
+    expect(MERMAID_ZOOM_OUT_FACTOR).toBeLessThan(1)
+  })
+
   test("'+' and '=' zoom in", () => {
     expect(mermaidKeyAction("+")).toEqual({ type: "zoom", factor: MERMAID_ZOOM_IN_FACTOR })
     expect(mermaidKeyAction("=")).toEqual({ type: "zoom", factor: MERMAID_ZOOM_IN_FACTOR })

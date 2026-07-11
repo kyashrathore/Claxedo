@@ -271,6 +271,7 @@ describe("clipped", () => {
   test("collapses whitespace and clips to the max length", () => {
     expect(clipped("a   b\n c", 100)).toBe("a b c")
     expect(clipped(undefined)).toBe("")
-    expect(clipped("abcdefghij", 4).length).toBeLessThanOrEqual(5)
+    // max 4 → slice(0, 1).trimEnd() + "..." ⇒ the ellipsis dominates a tiny budget
+    expect(clipped("abcdefghij", 4)).toBe("a...")
   })
 })
