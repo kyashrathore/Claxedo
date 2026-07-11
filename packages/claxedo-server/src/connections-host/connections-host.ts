@@ -24,12 +24,27 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
 } from "../control-plane/auth"
+import { deploymentMode } from "../control-plane/deployment-mode"
+import { hostedCredentialsEnabled } from "../control-plane/worker-credentials"
 import { isLoopbackLocalRequest, stampRequestPeerAddress } from "../routes/local-only-projection"
 import type { ControlPlaneCredentials } from "../control-plane/services"
 import { createConnectionStoreAdapter, createCredentialStoreAdapter } from "./store-adapter"
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "./turn-credentials"
 
 export const CONNECTIONS_TOKEN_HEADER = "x-claxedo-connections"
+
+/**
+ * D7 (launch plan 2026-07-11-012; tenant-hardening design 015 §2 Decision 1):
+ * the hosted owner-key formats. The kit treats owner as an opaque string —
+ * THESE two functions are the host's definition of what the strings mean on
+ * a hosted deployment:
+ * - team rows:     `org:{orgId}`   (the caller's Clerk `org_id` claim)
+ * - personal rows: `user:{subject}`
+ * Self-host keeps owner-absent as the team partition and the bare subject as
+ * the personal key — byte-identical, zero migration for self-host rows.
+ */
+export const orgTeamOwnerKey = (orgId: string) => `org:${orgId}`
+export const subjectPersonalOwnerKey = (subject: string) => `user:${subject}`
 
 export type ConnectionsHostOptions = {
   credentials: ControlPlaneCredentials
@@ -42,7 +57,18 @@ export type ConnectionsHostOptions = {
 
 export function createConnectionsHost(options: ConnectionsHostOptions) {
   const env = options.env ?? process.env
-  const owners = new WeakMap<Request, string | undefined>()
+  // Hosted deployments partition every connection by org (D7): the team
+  // scope is `org:{orgId}`, the personal scope `user:{subject}`, and the
+  // owner-absent partition is REFUSED outright. Self-host is byte-identical
+  // to the pre-D7 behavior. `deploymentMode` throws on an invalid value —
+  // a typo'd deploy manifest must fail composition, not fall open (D9).
+  const hosted = deploymentMode(env) === "hosted"
+  // Launch hard gate (plan 012 D7): hosted connections stay 503 until the
+  // hosted credential surface is deliberately enabled. Org partitioning is
+  // live in this module, so the flag is the remaining rollout switch.
+  const hostedEnabled = hostedCredentialsEnabled(env)
+  type OwnerKeys = { personal?: string; team?: string }
+  const owners = new WeakMap<Request, OwnerKeys>()
   const registry = createIntegrationRegistry()
   for (const reference of [notionIntegration(), atlassianIntegration(), githubIntegration()]) {
     registry.register(reference.decl, reference.impl)
@@ -86,8 +112,19 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
       // the loopback check must see the socket peer even when these routes
       // are mounted without the parent app.
       stampRequestPeerAddress(c.req.raw, c.env)
+      // Hosted hard gate: the WHOLE surface (loopback included) answers 503
+      // until the hosted rollout flag is on. `connections_unavailable` is
+      // the kit's own closed-enum code for "this host has no surface".
+      if (hosted && !hostedEnabled) {
+        return c.json({ code: "connections_unavailable" }, 503)
+      }
       if (isLoopbackLocalRequest(c.req.raw)) {
-        owners.set(c.req.raw, undefined)
+        // Self-host: loopback IS the trusted single owner — the owner-absent
+        // team partition. Hosted: a loopback caller (internal process, SSRF)
+        // gets NO partition keys; with `ownerlessRows: "refuse"` below,
+        // nothing is readable or writable from here — token routes authorize
+        // via turn credentials instead.
+        owners.set(c.req.raw, {})
         return null
       }
       const context = await controlPlaneAuthContext(c.req.raw, {
@@ -97,7 +134,22 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
       if (context.mode === "unsigned-local") {
         return c.json({ code: "connections_loopback_required" }, 403)
       }
-      owners.set(c.req.raw, context.user.subject)
+      if (hosted) {
+        // D7 org resolution: the team partition is the caller's org, carried
+        // on the verified token (`org_id` claim -> SignedControlPlaneAuth
+        // .user.orgId). A signed principal WITHOUT an org (personal Clerk
+        // session, CLI token) has no team partition to manage — fail closed
+        // rather than fall back to any shared partition.
+        const orgId = context.user.orgId
+        if (!orgId) return c.json({ code: "connections_org_required" }, 403)
+        owners.set(c.req.raw, {
+          personal: subjectPersonalOwnerKey(context.user.subject),
+          team: orgTeamOwnerKey(orgId),
+        })
+      } else {
+        // Self-host signed mode: bare subject, exactly as before D7.
+        owners.set(c.req.raw, { personal: context.user.subject })
+      }
       return null
     } catch (err) {
       if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -116,15 +168,39 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
     return null
   }
 
+  // Token/auth-failure partition keys come from the host-minted turn
+  // credential ONLY. Self-host: absent/expired/unknown credentials fail safe
+  // to the owner-absent team partition (unchanged). Hosted: the personal key
+  // is `user:{subject}` and the team key derives from the turn's org — a
+  // turn without an org resolves NOTHING team-scoped, never a shared
+  // partition (design 015 §2 Decision 1 ride-along).
+  const resolveTurn = (c: Context) => options.turnCredentials?.resolve(c.req.header(CONNECTION_TURN_HEADER))
+  const tokenOwner = (c: Context) => {
+    const subject = resolveTurn(c)?.subject
+    if (subject === undefined) return undefined
+    return hosted ? subjectPersonalOwnerKey(subject) : subject
+  }
+  const tokenTeamOwner = (c: Context) => {
+    const orgId = resolveTurn(c)?.orgId
+    return orgId ? orgTeamOwnerKey(orgId) : undefined
+  }
+
   return {
     service: service as ConnectionsService,
     routes: createIntegrationsRoutes(service, {
       gate,
       tokenGate,
-      owner: (c) => owners.get(c.req.raw),
-      // Absent, expired, or unknown credentials resolve team-only. The host
-      // minted credential is the sole input that unlocks personal rows.
-      tokenOwner: (c) => options.turnCredentials?.resolve(c.req.header(CONNECTION_TURN_HEADER))?.subject,
+      owner: (c) => owners.get(c.req.raw)?.personal,
+      tokenOwner,
+      ...(hosted
+        ? {
+            teamOwner: (c: Context) => owners.get(c.req.raw)?.team,
+            tokenTeamOwner,
+            // The hosted invariant: the owner-absent partition does not
+            // exist — refuse it on every read and write surface.
+            ownerlessRows: "refuse" as const,
+          }
+        : {}),
     }),
     dispose: () => service.dispose(),
   }

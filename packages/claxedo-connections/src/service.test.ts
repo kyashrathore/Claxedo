@@ -255,4 +255,58 @@ describe("connections service", () => {
     expect(await service.handleCallback(state, "code-2")).toEqual({ ok: false })
     expect(await credentials.readSecret("integration:connection-1")).toBe(JSON.stringify({ access: "at-code-1", refresh: "rt-1" }))
   })
+
+  test("teamOwner partitions the team scope by an opaque key (hosted org partition)", async () => {
+    const { service, connections } = harness()
+    // One deployment, two tenant partitions plus a legacy owner-absent row.
+    await connections.upsert({ id: "org-a-row", integrationId: "fake", owner: "org:org-a", grantedCapabilities: ["docs"], fields: {}, createdAt: 1, updatedAt: 1 })
+    await connections.upsert({ id: "org-b-row", integrationId: "fake", owner: "org:org-b", grantedCapabilities: ["docs"], fields: {}, createdAt: 1, updatedAt: 1 })
+    await connections.upsert({ id: "ownerless-row", integrationId: "fake", grantedCapabilities: ["docs"], fields: {}, createdAt: 1, updatedAt: 1 })
+    await connections.upsert({ id: "alice-row", integrationId: "fake", owner: "user:alice", grantedCapabilities: ["docs"], fields: {}, createdAt: 1, updatedAt: 1 })
+
+    // Team partition = the opaque key: org A never sees org B or the
+    // owner-absent partition, and its rows classify as scope "team".
+    const orgATeam = await service.list({ teamOwner: "org:org-a", scope: "team" })
+    expect(orgATeam.map((row) => row.id)).toEqual(["org-a-row"])
+    expect(orgATeam[0]).toMatchObject({ scope: "team" })
+
+    const orgAMixed = await service.list({ teamOwner: "org:org-a", owner: "user:alice" })
+    expect(orgAMixed.map((row) => row.id).sort()).toEqual(["alice-row", "org-a-row"])
+    expect(orgAMixed.find((row) => row.id === "alice-row")).toMatchObject({ scope: "personal" })
+
+    // Without teamOwner the owner-absent partition remains the team —
+    // self-host semantics unchanged.
+    expect((await service.list({ scope: "team" })).map((row) => row.id)).toEqual(["ownerless-row"])
+
+    // Capability resolution honors the same partition; personal wins over
+    // the org team row for the same integration.
+    const teamOnly = await service.resolveForCapability("docs", { teamOwner: "org:org-a", scope: "team" })
+    expect(teamOnly.map((handle) => handle.id)).toEqual(["org-a-row"])
+    expect(teamOnly[0]).toMatchObject({ scope: "team" })
+    const preferred = await service.resolveForCapability("docs", { teamOwner: "org:org-a", owner: "user:alice" })
+    expect(preferred.map((handle) => handle.id)).toEqual(["alice-row"])
+    expect(preferred[0]).toMatchObject({ scope: "personal" })
+  })
+
+  test("connectOAuth attempt scope derives from teamOwner (org team rows are not 'personal')", async () => {
+    const registry = createIntegrationRegistry()
+    registry.register(
+      { id: "oauthy", name: "OAuthy", methods: ["oauth"], capabilities: ["docs"] },
+      {
+        authorize: (state) => new URL(`https://provider.example/auth?state=${state}`),
+        callback: async (code) => ({ accessToken: `at-${code}` }),
+      },
+    )
+    const service = createConnectionsService({
+      registry,
+      credentials: createMemoryCredentialStore(),
+      connections: createMemoryConnectionStore(),
+      attempts: createAttempts({ sweepIntervalMs: 0 }),
+      newId: () => "connection-1",
+    })
+    const started = await service.connectOAuth({ integrationId: "oauthy", owner: "org:org-a", teamOwner: "org:org-a" })
+    expect(started.ok).toBe(true)
+    const state = (started as { attemptId: string }).attemptId
+    expect(service.attemptStatus(state)).toMatchObject({ scope: "team" })
+  })
 })

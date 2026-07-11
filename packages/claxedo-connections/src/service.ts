@@ -4,6 +4,7 @@ import { ConnectionTokenError, createTokenService } from "./tokens.js"
 import {
   ConnectionsUnavailableError,
   connectionProviderId,
+  connectionScopeOf,
   type AttemptStatus,
   type ConnectionFields,
   type ConnectionRow,
@@ -27,6 +28,11 @@ function requirePersonalOwner(input: { owner?: string; scope?: ConnectionScope }
     throw new Error("personal connection scope requires an owner")
   }
 }
+
+// Callers that partition the team scope by an opaque key (e.g. a hosted
+// deployment's `org:{orgId}`) pass it as `teamOwner`; absent means the
+// owner-absent partition is the team — the self-host default, byte-identical.
+type PartitionInput = { owner?: string; scope?: ConnectionScope; teamOwner?: string }
 
 export type ConnectResult =
   | { ok: true }
@@ -60,7 +66,7 @@ export function createConnectionsService(deps: {
   const attempts = deps.attempts ?? createAttempts({ now })
   const tokens = createTokenService({ registry: deps.registry, credentials: deps.credentials, now })
 
-  async function summarize(row: ConnectionRow): Promise<ConnectionSummary> {
+  async function summarize(row: ConnectionRow, teamOwner?: string): Promise<ConnectionSummary> {
     let status: ConnectionSummary["status"] = "broken"
     try {
       const credential = await deps.credentials.get(connectionProviderId(row.id))
@@ -71,7 +77,7 @@ export function createConnectionsService(deps: {
     return {
       id: row.id,
       integrationId: row.integrationId,
-      scope: row.owner === undefined ? "team" : "personal",
+      scope: connectionScopeOf(row.owner, teamOwner),
       ...(row.accountLabel !== undefined ? { accountLabel: row.accountLabel } : {}),
       grantedCapabilities: row.grantedCapabilities,
       fields: row.fields,
@@ -81,14 +87,17 @@ export function createConnectionsService(deps: {
     }
   }
 
-  async function rowsFor(input: { owner?: string; scope?: ConnectionScope } = {}) {
+  async function rowsFor(input: PartitionInput = {}) {
     requirePersonalOwner(input)
-    if (input.scope === "team" || input.owner === undefined) return deps.connections.list({ owner: null })
+    // The team partition: the caller-resolved opaque key when present,
+    // otherwise the owner-absent partition (self-host default).
+    const teamRows = () =>
+      input.teamOwner !== undefined
+        ? deps.connections.list({ owner: input.teamOwner })
+        : deps.connections.list({ owner: null })
+    if (input.scope === "team" || input.owner === undefined) return teamRows()
     if (input.scope === "personal") return deps.connections.list({ owner: input.owner })
-    return [
-      ...(await deps.connections.list({ owner: null })),
-      ...(await deps.connections.list({ owner: input.owner })),
-    ]
+    return [...(await teamRows()), ...(await deps.connections.list({ owner: input.owner }))]
   }
 
   async function storeConnection(input: {
@@ -121,11 +130,11 @@ export function createConnectionsService(deps: {
     })
   }
 
-  function capabilityHandle(row: ConnectionRow, capability: IntegrationCapability): CapabilityHandle {
+  function capabilityHandle(row: ConnectionRow, capability: IntegrationCapability, teamOwner?: string): CapabilityHandle {
     return {
       id: row.id,
       integrationId: row.integrationId,
-      scope: row.owner === undefined ? "team" : "personal",
+      scope: connectionScopeOf(row.owner, teamOwner),
       ...(row.accountLabel !== undefined ? { accountLabel: row.accountLabel } : {}),
       fields: row.fields,
       async getToken() {
@@ -166,7 +175,7 @@ export function createConnectionsService(deps: {
 
   async function resolveForCapability(
     capability: IntegrationCapability,
-    options: { integration?: string; owner?: string; scope?: ConnectionScope } = {},
+    options: PartitionInput & { integration?: string } = {},
   ): Promise<CapabilityHandle[]> {
     requirePersonalOwner(options)
     const selected = new Map<string, ConnectionRow>()
@@ -174,9 +183,13 @@ export function createConnectionsService(deps: {
       if (!row.grantedCapabilities.includes(capability)) continue
       if (options.integration && row.integrationId !== options.integration) continue
       const current = selected.get(row.integrationId)
-      if (!current || (row.owner !== undefined && current.owner === undefined)) selected.set(row.integrationId, row)
+      const personalOverTeam =
+        current !== undefined &&
+        connectionScopeOf(row.owner, options.teamOwner) === "personal" &&
+        connectionScopeOf(current.owner, options.teamOwner) === "team"
+      if (!current || personalOverTeam) selected.set(row.integrationId, row)
     }
-    return [...selected.values()].map((row) => capabilityHandle(row, capability))
+    return [...selected.values()].map((row) => capabilityHandle(row, capability, options.teamOwner))
   }
 
   return {
@@ -184,8 +197,8 @@ export function createConnectionsService(deps: {
       return deps.registry.list()
     },
 
-    async list(options: { owner?: string; scope?: ConnectionScope } = {}): Promise<ConnectionSummary[]> {
-      return Promise.all((await rowsFor(options)).map(summarize))
+    async list(options: PartitionInput = {}): Promise<ConnectionSummary[]> {
+      return Promise.all((await rowsFor(options)).map((row) => summarize(row, options.teamOwner)))
     },
 
     getById(id: string) {
@@ -222,6 +235,7 @@ export function createConnectionsService(deps: {
     async connectOAuth(input: {
       integrationId: string
       owner?: string
+      teamOwner?: string
       confirmReplace?: boolean
     }): Promise<{ ok: true; url: string; attemptId: string } | { ok: false; code: "unknown_integration" | "connection_exists" }> {
       const entry = deps.registry.byId(input.integrationId)
@@ -233,7 +247,7 @@ export function createConnectionsService(deps: {
       const attempt = attempts.create({
         integrationId: input.integrationId,
         ...(input.owner !== undefined ? { owner: input.owner } : {}),
-        scope: input.owner === undefined ? "team" : "personal",
+        scope: connectionScopeOf(input.owner, input.teamOwner),
       })
       const url = await entry.impl.authorize(attempt.state, attempt.verifier)
       return { ok: true, url: url.toString(), attemptId: attempt.state }

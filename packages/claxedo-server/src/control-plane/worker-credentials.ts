@@ -16,18 +16,23 @@
  * so no future call site can reach KV unencrypted.
  *
  * Enabling is gated behind CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1 (default
- * OFF). Even when enabled, the credential CRUD surface keeps failing closed:
- * hosted credential *metadata* requires the org-partitioned store from the
- * D7 follow-up (Decision 1 in design 015), which is not in this wave. What
- * the flag changes today is the boot posture: with the flag on, composition
- * FAILS CLOSED AT CONSTRUCTION TIME unless the envelope KEK
- * (CLAXEDO_CREDENTIALS_KEK, optional CLAXEDO_CREDENTIALS_KEK_NEXT rotation
- * slot) and the KV config (CLAXEDO_CF_KV_URL / CLAXEDO_CF_KV_TOKEN) are all
- * present — a hosted deployment that cannot encrypt must be down, not open.
+ * OFF). With the flag on, composition FAILS CLOSED AT CONSTRUCTION TIME
+ * unless the envelope KEK (CLAXEDO_CREDENTIALS_KEK, optional
+ * CLAXEDO_CREDENTIALS_KEK_NEXT rotation slot) and the KV config
+ * (CLAXEDO_CF_KV_URL / CLAXEDO_CF_KV_TOKEN) are all present — a hosted
+ * deployment that cannot encrypt must be down, not open.
+ *
+ * D7 (Decision 1 in design 015): the org-partitioned credential surface is
+ * `hostedOrgCredentials(orgId, env)` — a per-org `ControlPlaneCredentials`
+ * composed over `createHostedOrgSecretBackend(orgId)`. It exists ONLY for a
+ * request whose org resolution succeeded (the caller passes the verified
+ * orgId); the org-AGNOSTIC `workerCredentials` surface stays fail-closed
+ * forever, because a credential without a tenant is exactly the bug D7
+ * eliminates.
  */
 
 import type { ControlPlaneCredentials } from "./services"
-import type { SecretBackend } from "../credentials/types"
+import type { CredentialMetadata, CredentialWrite, SecretBackend } from "../credentials/types"
 import { createEncryptedCloudflareBackend } from "../credentials/cloudflare"
 import { envelopeKeyProviderFromEnv } from "../credentials/envelope"
 
@@ -83,15 +88,15 @@ export function workerCredentials(env: WorkerCredentialEnv = process.env): Contr
   }
 
   // Flag on: prove the encrypted store CAN be composed, at boot, or refuse to
-  // start. The CRUD surface below still fails closed pending org-partitioned
-  // credential metadata (Decision 1) — that wave replaces `gated` with real
-  // implementations built on `createHostedOrgSecretBackend(orgId)`.
+  // start. The org-AGNOSTIC CRUD surface below stays fail-closed by design —
+  // hosted credential access happens exclusively through the per-org
+  // `hostedOrgCredentials(orgId)` surface, after org resolution succeeded.
   assertHostedCredentialConfig(env)
 
   const gated = (): never => {
     throw new Error(
-      "Hosted credential management is gated on org-partitioned credential metadata (launch-plan D10 + D7 follow-up); " +
-        "the envelope-encrypted KV backend is composed and verified, but no org-agnostic credential surface exists by design",
+      "Hosted credential management is org-partitioned (launch-plan D7 + D10); " +
+        "no org-agnostic credential surface exists by design — resolve the caller's org and use hostedOrgCredentials(orgId)",
     )
   }
   return {
@@ -102,6 +107,126 @@ export function workerCredentials(env: WorkerCredentialEnv = process.env): Contr
     deleteCredential: async () => gated(),
     deleteCredentialsByProvider: async () => gated(),
     updateCredentialStatus: async () => gated(),
+    syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+  }
+}
+
+/**
+ * D7: the org-partitioned hosted credential surface. One instance serves ONE
+ * org; construct it per request (or cache per org) only after the caller's
+ * org resolution succeeded — the verified `org_id` claim, never a
+ * client-supplied value.
+ *
+ * Fail-closed properties:
+ * - throws unless CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1 (the default-off flag
+ *   stays the rollout gate);
+ * - throws on a blank orgId (org resolution must have succeeded);
+ * - throws when the KEK or KV config is missing (same boot posture as
+ *   `workerCredentials`);
+ * - every byte goes through `createHostedOrgSecretBackend` — envelope
+ *   encryption with a per-org HKDF subkey, so org A ciphertext never decrypts
+ *   under org B even if a key were somehow shared.
+ *
+ * Storage shape: one encrypted KV value per provider id, holding
+ * `{ meta, secret }`. Backend ids are org-prefixed
+ * (`org/{orgId}/credential/{providerId}`) so two orgs writing the same
+ * provider id can never collide on the underlying KV key — the HKDF
+ * partition makes cross-org DECRYPTION impossible; the prefix makes
+ * cross-org OVERWRITES impossible too. `listCredentials` intentionally
+ * returns [] (KV has no sanctioned enumeration; the connections kit reads by
+ * provider id only), and metadata ids equal provider ids (one auth
+ * credential per provider, the host-store invariant).
+ */
+export function hostedOrgCredentials(
+  orgId: string,
+  env: WorkerCredentialEnv = process.env,
+  opts: { now?: () => number } = {},
+): ControlPlaneCredentials {
+  if (!hostedCredentialsEnabled(env)) {
+    throw new Error(`${HOSTED_CREDENTIALS_FLAG} is not enabled — hosted credential access stays fail-closed`)
+  }
+  const org = orgId?.trim()
+  if (!org) {
+    throw new Error("hostedOrgCredentials requires a non-empty orgId — org resolution must succeed before any credential access")
+  }
+  assertHostedCredentialConfig(env)
+  const backend = createHostedOrgSecretBackend(org, env)
+  const now = opts.now ?? Date.now
+
+  type StoredCredential = { meta: CredentialMetadata; secret: string }
+  const idFor = (providerId: string) => `org/${org}/credential/${providerId}`
+  // The KV byte store's ref scheme is deterministic (`cf:{id}`, see
+  // credentials/cloudflare.ts) — a metadata-keyed read needs get-by-provider,
+  // so the ref is reconstructed here. The write path asserts the scheme on
+  // every put, so drift fails loudly instead of silently missing reads.
+  const refFor = (providerId: string) => `cf:${idFor(providerId)}`
+
+  const read = async (providerId: string): Promise<StoredCredential | undefined> => {
+    const raw = await backend.get(refFor(providerId))
+    if (raw === null) return undefined
+    return JSON.parse(raw) as StoredCredential
+  }
+  const write = async (record: StoredCredential): Promise<void> => {
+    const ref = await backend.put(idFor(record.meta.provider_id), JSON.stringify(record))
+    if (ref !== refFor(record.meta.provider_id)) {
+      throw new Error("hosted credential backend ref scheme drifted — the read path would miss this write; refusing")
+    }
+  }
+
+  return {
+    // No KV enumeration by design: empty, never another org's rows.
+    listCredentials: async () => [],
+    getCredentialByProvider: async (providerId) => (await read(providerId))?.meta,
+    // Available-status-only, mirroring credentials/registry.ts resolveSecret.
+    resolveCredentialSecret: async (providerId) => {
+      const record = await read(providerId)
+      if (!record || record.meta.status !== "available") return null
+      return record.secret
+    },
+    putCredential: async (input: CredentialWrite) => {
+      const existing = await read(input.provider_id)
+      const timestamp = now()
+      const meta: CredentialMetadata = {
+        // One credential per provider in this per-org store: the metadata id
+        // IS the provider id (updateCredentialStatus receives it back).
+        id: input.provider_id,
+        provider_id: input.provider_id,
+        kind: input.kind,
+        source: input.source,
+        label: input.label ?? null,
+        account_id: input.account_id ?? null,
+        secure_ref: refFor(input.provider_id),
+        status: "available",
+        expires_at: input.expires_at ?? null,
+        last_validated_at: null,
+        last_error: null,
+        created_at: existing?.meta.created_at ?? timestamp,
+        updated_at: timestamp,
+      }
+      await write({ meta, secret: input.secret })
+      return meta
+    },
+    deleteCredential: async (id) => {
+      const record = await read(id)
+      if (!record) return false
+      await backend.delete(refFor(id))
+      return true
+    },
+    deleteCredentialsByProvider: async (providerId) => {
+      const record = await read(providerId)
+      if (!record) return 0
+      await backend.delete(refFor(providerId))
+      return 1
+    },
+    updateCredentialStatus: async (id, status, error) => {
+      const record = await read(id)
+      if (!record) return
+      record.meta.status = status
+      record.meta.last_error = error ?? null
+      record.meta.updated_at = now()
+      await write(record)
+    },
+    // No local credential stores exist on a hosted worker.
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
   }
 }

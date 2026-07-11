@@ -6,12 +6,17 @@ export const CONNECTION_TURN_HEADER = "x-claxedo-connection-turn"
 type TurnRecord = {
   sessionId: string
   subject?: string
+  // Tenant the turn belongs to (hosted org partition, design 015 §2
+  // Decision 1): token resolution derives the team partition from THIS org,
+  // never from the deployment-wide null partition, so a turn credential can
+  // never unlock another org's team rows — even if a subject id collides.
+  orgId?: string
   expiresAt: number
 }
 
 export type ConnectionTurnCredentials = {
-  mint(input: { sessionId: string; subject?: string }): string
-  resolve(credential: string | undefined): { sessionId: string; subject?: string } | undefined
+  mint(input: { sessionId: string; subject?: string; orgId?: string }): string
+  resolve(credential: string | undefined): { sessionId: string; subject?: string; orgId?: string } | undefined
   current(): string | undefined
   run<T>(credential: string, fn: () => T): T
   dispose(): void
@@ -39,7 +44,13 @@ export function createConnectionTurnCredentials(input: {
     if (!credential) return undefined
     const record = records.get(credential)
     if (!record) return undefined
-    if (record.expiresAt > now()) return { sessionId: record.sessionId, ...(record.subject ? { subject: record.subject } : {}) }
+    if (record.expiresAt > now()) {
+      return {
+        sessionId: record.sessionId,
+        ...(record.subject ? { subject: record.subject } : {}),
+        ...(record.orgId ? { orgId: record.orgId } : {}),
+      }
+    }
     records.delete(credential)
     return undefined
   }
@@ -51,6 +62,7 @@ export function createConnectionTurnCredentials(input: {
       records.set(credential, {
         sessionId: turn.sessionId,
         ...(turn.subject ? { subject: turn.subject } : {}),
+        ...(turn.orgId ? { orgId: turn.orgId } : {}),
         expiresAt: now() + ttlMs,
       })
       return credential

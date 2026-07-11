@@ -20,6 +20,17 @@ describe("connection turn credentials", () => {
     credentials.dispose()
   })
 
+  test("carries the turn's org through mint/resolve (hosted D7 partition input)", () => {
+    let next = 0
+    const credentials = createConnectionTurnCredentials({ random: () => `credential-${++next}` })
+    const orgTurn = credentials.mint({ sessionId: "session-1", subject: "user-a", orgId: "org-a" })
+    expect(credentials.resolve(orgTurn)).toEqual({ sessionId: "session-1", subject: "user-a", orgId: "org-a" })
+    // Org-less turns stay org-less: nothing invents a tenant.
+    const plain = credentials.mint({ sessionId: "session-1", subject: "user-a" })
+    expect(credentials.resolve(plain)).toEqual({ sessionId: "session-1", subject: "user-a" })
+    credentials.dispose()
+  })
+
   test("keeps concurrent turn context isolated", async () => {
     const credentials = createConnectionTurnCredentials({ random: (() => {
       let next = 0

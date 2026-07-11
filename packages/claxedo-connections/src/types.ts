@@ -27,6 +27,13 @@ export type IntegrationDeclaration = {
 export type ConnectionFields = Record<string, string>
 export type ConnectionScope = "team" | "personal"
 
+// Scope derivation with an optional host-defined team partition key. The
+// default (no teamOwner) keeps owner-absent as the team partition; a host
+// that partitions its team scope (e.g. hosted `org:{orgId}`) passes the
+// resolved key and rows carrying it classify as team.
+export const connectionScopeOf = (owner: string | undefined, teamOwner?: string): ConnectionScope =>
+  owner === undefined || owner === teamOwner ? "team" : "personal"
+
 export type VerifyResult =
   | { ok: true; accountLabel?: string }
   // Closed enum: verify failures never carry provider error messages or

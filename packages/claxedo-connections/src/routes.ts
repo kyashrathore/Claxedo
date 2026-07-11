@@ -15,6 +15,21 @@ export type IntegrationsRouteOptions = {
   // Token callers prove their turn separately from management callers. An
   // omitted resolver safely grants team rows only.
   tokenOwner?: RouteOwnerResolver
+  // Hosts that partition the team scope by an opaque key (e.g. a hosted
+  // deployment's `org:{orgId}`) resolve it here per request. Absent resolver
+  // (or an undefined result) keeps owner-absent as the team partition — the
+  // self-host semantics, byte-identical.
+  teamOwner?: RouteOwnerResolver
+  // Team partition key for token/auth-failure callers (resolved from the
+  // turn credential's tenant, never from the management principal).
+  tokenTeamOwner?: RouteOwnerResolver
+  // "team" (default): owner-absent rows are the deployment-wide team
+  // partition, visible to every gated caller. "refuse": owner-absent rows
+  // are never readable or writable through these routes — the hosted
+  // invariant (tenant-hardening design 015 §2 Decision 1): a hosted host
+  // must derive its team partition from the caller's org and refuse the
+  // null partition outright.
+  ownerlessRows?: "team" | "refuse"
 }
 
 const CAPABILITIES: IntegrationCapability[] = ["docs", "work-source", "channel", "code-host"]
@@ -33,6 +48,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   const app = new Hono()
   const gate: RouteGate = options.gate ?? (() => null)
   const tokenGate: RouteGate = options.tokenGate ?? (() => null)
+  const refuseOwnerless = options.ownerlessRows === "refuse"
 
   const gated = async (c: Context, extra?: RouteGate) => {
     const denied = await gate(c)
@@ -41,27 +57,63 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     return extra(c)
   }
 
-  const visibleConnection = async (id: string, owner: string | undefined) => {
+  type PartitionKeys = { personal?: string; team?: string }
+  const managementKeys = (c: Context): PartitionKeys => ({
+    personal: options.owner?.(c),
+    team: options.teamOwner?.(c),
+  })
+  const tokenKeys = (c: Context): PartitionKeys => ({
+    personal: options.tokenOwner?.(c),
+    team: options.tokenTeamOwner?.(c),
+  })
+
+  // A row is visible when it belongs to the caller's team partition or the
+  // caller's personal partition. Owner-absent rows are the team partition
+  // ONLY while no team key is defined and the host has not refused the null
+  // partition — a partitioned host must never surface them.
+  const visibleConnection = async (id: string, keys: PartitionKeys) => {
     const row = await service.getById(id)
-    if (!row || (row.owner !== undefined && row.owner !== owner)) return undefined
-    return row
+    if (!row) return undefined
+    if (row.owner === undefined) {
+      if (refuseOwnerless || keys.team !== undefined) return undefined
+      return row
+    }
+    return row.owner === keys.team || row.owner === keys.personal ? row : undefined
   }
 
   const connectOwner = (c: Context, scope: ConnectionScope) => {
-    if (scope === "team") return { ok: true as const }
+    if (scope === "team") {
+      const team = options.teamOwner?.(c)
+      if (team !== undefined) return { ok: true as const, owner: team }
+      // A host that refuses ownerless rows cannot accept a team write
+      // without a resolved team partition key.
+      if (refuseOwnerless) return { ok: false as const, code: "team_scope_requires_team_partition" as const }
+      return { ok: true as const }
+    }
     const owner = options.owner?.(c)
-    if (owner === undefined) return { ok: false as const }
+    if (owner === undefined) return { ok: false as const, code: "personal_scope_requires_signed_subject" as const }
     return { ok: true as const, owner }
   }
 
   app.get("/", async (c) => {
     const denied = await gated(c)
     if (denied) return denied
-    const owner = options.owner?.(c)
+    const keys = managementKeys(c)
+    // Refusing hosts without a resolved team key list personal rows only —
+    // never the owner-absent partition.
+    const connections =
+      refuseOwnerless && keys.team === undefined
+        ? keys.personal !== undefined
+          ? await service.list({ owner: keys.personal, scope: "personal" })
+          : []
+        : await service.list({
+            ...(keys.personal !== undefined ? { owner: keys.personal } : {}),
+            ...(keys.team !== undefined ? { teamOwner: keys.team } : {}),
+          })
     return c.json({
       integrations: service.listIntegrations(),
-      connections: await service.list({ owner }),
-      personalScopeEnabled: owner !== undefined,
+      connections,
+      personalScopeEnabled: keys.personal !== undefined,
     })
   })
 
@@ -79,11 +131,13 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     const scope = scopeFrom(body)
     if (!scope) return c.json({ ok: false, code: "invalid_connection_scope" }, 422)
     const owner = connectOwner(c, scope)
-    if (!owner.ok) return c.json({ ok: false, code: "personal_scope_requires_signed_subject" }, 422)
+    if (!owner.ok) return c.json({ ok: false, code: owner.code }, 422)
+    const teamKey = options.teamOwner?.(c)
     if (body.method === "oauth") {
       const result = await service.connectOAuth({
         integrationId,
         ...(owner.owner !== undefined ? { owner: owner.owner } : {}),
+        ...(teamKey !== undefined ? { teamOwner: teamKey } : {}),
         ...(body.confirmReplace !== undefined ? { confirmReplace: body.confirmReplace } : {}),
       })
       if (!result.ok) return c.json(result, result.code === "connection_exists" ? 409 : 404)
@@ -124,7 +178,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   app.delete("/connections/:id", async (c) => {
     const denied = await gated(c)
     if (denied) return denied
-    const row = await visibleConnection(c.req.param("id"), options.owner?.(c))
+    const row = await visibleConnection(c.req.param("id"), managementKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     await service.remove(row.id)
     return c.json({ ok: true })
@@ -133,7 +187,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   app.post("/connections/:id/reverify", async (c) => {
     const denied = await gated(c)
     if (denied) return denied
-    const row = await visibleConnection(c.req.param("id"), options.owner?.(c))
+    const row = await visibleConnection(c.req.param("id"), managementKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     const result = await service.reverify(row.id)
     return c.json(result, result.ok ? 200 : 422)
@@ -142,7 +196,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   app.post("/connections/:id/auth-failure", async (c) => {
     const denied = await gated(c, tokenGate)
     if (denied) return denied
-    const row = await visibleConnection(c.req.param("id"), options.tokenOwner?.(c))
+    const row = await visibleConnection(c.req.param("id"), tokenKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     const body = (await c.req.json().catch(() => ({}))) as { reason?: string }
     await service.reportAuthFailure(row.id, typeof body.reason === "string" ? body.reason : "unspecified")
@@ -152,7 +206,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   app.get("/connections/:id/token", async (c) => {
     const denied = await gated(c, tokenGate)
     if (denied) return denied
-    const row = await visibleConnection(c.req.param("id"), options.tokenOwner?.(c))
+    const row = await visibleConnection(c.req.param("id"), tokenKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     const capabilityRaw = c.req.query("capability")
     const capability = CAPABILITIES.includes(capabilityRaw as IntegrationCapability)

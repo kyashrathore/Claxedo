@@ -253,6 +253,235 @@ describe("connections host", () => {
     }
   })
 
+  // ── D7: hosted org partition (launch plan 012; design 015 §2 Decision 1) ──
+  // Bearer convention for the fake verifier: "subject@org" carries an org
+  // claim; a bare subject is an org-less signed principal.
+  const HOSTED_ENV = {
+    CLAXEDO_DEPLOYMENT_MODE: "hosted",
+    CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
+  }
+  const hostedHost = (extra: Parameters<typeof createConnectionsHost>[0] extends infer T ? Partial<T> : never = {}) =>
+    createConnectionsHost({
+      credentials: credentialsPort(),
+      env: { ...HOSTED_ENV },
+      authConfig: { enabled: true, issuer: "https://issuer.example", jwksUrl: "https://issuer.example/jwks" },
+      verifier: async (token) => {
+        const [subject, orgId] = token.split("@")
+        return {
+          mode: "signed",
+          user: {
+            subject: subject!,
+            tokenIdentifier: token,
+            issuer: "https://issuer.example",
+            ...(orgId ? { orgId } : {}),
+          },
+        }
+      },
+      ...extra,
+    })
+
+  const seedRow = async (row: { id: string; owner?: string }) => {
+    const connections = createConnectionStoreAdapter()
+    await connections.upsert({
+      id: row.id,
+      integrationId: "notion",
+      ...(row.owner !== undefined ? { owner: row.owner } : {}),
+      grantedCapabilities: ["docs"],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+  }
+
+  test("hosted D7: org A team rows are invisible and inaccessible to org B on every route surface", async () => {
+    const host = hostedHost()
+    await seedRow({ id: "team-org-a", owner: "org:org-a" })
+    await seedRow({ id: "team-org-b", owner: "org:org-b" })
+    await seedRow({ id: "personal-alice", owner: "user:alice" })
+    await seedRow({ id: "personal-bob", owner: "user:bob" })
+
+    const as = (bearer: string, path = "/", init: RequestInit = {}) =>
+      host.routes.request(`http://cp.example${path}`, {
+        ...init,
+        headers: { authorization: `Bearer ${bearer}`, ...(init.headers ?? {}) },
+      })
+
+    // List: each org member sees exactly their org team partition + own personal rows.
+    const aliceList = (await (await as("alice@org-a")).json()) as { connections: Array<{ id: string; scope: string }> }
+    expect(aliceList.connections.map((c) => c.id).sort()).toEqual(["personal-alice", "team-org-a"])
+    expect(aliceList.connections.find((c) => c.id === "team-org-a")).toMatchObject({ scope: "team" })
+    expect(aliceList.connections.find((c) => c.id === "personal-alice")).toMatchObject({ scope: "personal" })
+
+    const bobList = (await (await as("bob@org-b")).json()) as { connections: Array<{ id: string }> }
+    expect(bobList.connections.map((c) => c.id).sort()).toEqual(["personal-bob", "team-org-b"])
+
+    // Delete / reverify / token / auth-failure: org B against org A's team row → 404 everywhere.
+    expect((await as("bob@org-b", "/connections/team-org-a", { method: "DELETE" })).status).toBe(404)
+    expect((await as("bob@org-b", "/connections/team-org-a/reverify", { method: "POST" })).status).toBe(404)
+    // Personal rows stay invisible across subjects, org membership notwithstanding.
+    expect((await as("bob@org-a", "/connections/personal-alice", { method: "DELETE" })).status).toBe(404)
+    expect((await as("bob@org-a", "/connections/personal-alice/reverify", { method: "POST" })).status).toBe(404)
+
+    // Org A retains full management of its own partition.
+    expect((await as("alice@org-a", "/connections/team-org-a", { method: "DELETE" })).status).toBe(200)
+    host.dispose()
+  })
+
+  test("hosted D7: team connect writes the org partition key, never owner-absent", async () => {
+    // Notion's verify hits the network; stub it to succeed so the write path runs.
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ name: "Org A Bot" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch
+    try {
+      const host = hostedHost()
+      const res = await host.routes.request("http://cp.example/notion/connect", {
+        method: "POST",
+        headers: { authorization: "Bearer alice@org-a" },
+        body: JSON.stringify({ fields: {}, secret: "ntn-team-secret" }),
+      })
+      expect(res.status).toBe(200)
+      const connections = createConnectionStoreAdapter()
+      const rows = await connections.list()
+      expect(rows).toHaveLength(1)
+      expect(rows[0]!.owner).toBe("org:org-a")
+      // The self-host (owner-absent) partition stays empty on hosted.
+      expect(await connections.list({ owner: null })).toEqual([])
+      host.dispose()
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("hosted D7: owner-absent rows are refused — invisible, undeletable, untokenable", async () => {
+    const host = hostedHost()
+    await seedRow({ id: "legacy-ownerless" })
+    const as = (bearer: string, path = "/", init: RequestInit = {}) =>
+      host.routes.request(`http://cp.example${path}`, {
+        ...init,
+        headers: { authorization: `Bearer ${bearer}`, ...(init.headers ?? {}) },
+      })
+    const listing = (await (await as("alice@org-a")).json()) as { connections: unknown[] }
+    expect(listing.connections).toEqual([])
+    expect((await as("alice@org-a", "/connections/legacy-ownerless", { method: "DELETE" })).status).toBe(404)
+    expect((await as("alice@org-a", "/connections/legacy-ownerless/reverify", { method: "POST" })).status).toBe(404)
+    // Loopback token path (header + no turn credential) cannot reach it either.
+    const token = await host.routes.request("http://127.0.0.1/connections/legacy-ownerless/token?capability=docs", {
+      headers: { [CONNECTIONS_TOKEN_HEADER]: "1" },
+    })
+    expect(token.status).toBe(404)
+    host.dispose()
+  })
+
+  test("hosted D7: signed principal without an org gets 403 connections_org_required", async () => {
+    const host = hostedHost()
+    const res = await host.routes.request("http://cp.example/", {
+      headers: { authorization: "Bearer alice" },
+    })
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ code: "connections_org_required" })
+    host.dispose()
+  })
+
+  test("hosted D7: loopback gets no partition keys — nothing to read, nothing to write", async () => {
+    const host = hostedHost()
+    await seedRow({ id: "team-org-a", owner: "org:org-a" })
+    await seedRow({ id: "legacy-ownerless" })
+    const listing = await host.routes.request("http://127.0.0.1/")
+    expect(listing.status).toBe(200)
+    expect(((await listing.json()) as { connections: unknown[] }).connections).toEqual([])
+    const connect = await host.routes.request("http://127.0.0.1/notion/connect", {
+      method: "POST",
+      body: JSON.stringify({ fields: {}, secret: "ntn-x" }),
+    })
+    expect(connect.status).toBe(422)
+    expect(await connect.json()).toEqual({ ok: false, code: "team_scope_requires_team_partition" })
+    host.dispose()
+  })
+
+  test("hosted D7: token resolution derives the team partition from the turn's org only", async () => {
+    const turns = createConnectionTurnCredentials()
+    const host = hostedHost({ turnCredentials: turns })
+    const connections = createConnectionStoreAdapter()
+    const credentials = createCredentialStoreAdapter(credentialsPort())
+    await connections.upsert({
+      id: "team-org-a",
+      integrationId: "notion",
+      owner: "org:org-a",
+      grantedCapabilities: ["docs"],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await connections.upsert({
+      id: "personal-alice",
+      integrationId: "notion",
+      owner: "user:alice",
+      grantedCapabilities: ["docs"],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await credentials.put({ providerId: "integration:team-org-a", kind: "api_key", secret: "org-a-team-token" })
+    await credentials.put({ providerId: "integration:personal-alice", kind: "api_key", secret: "alice-token" })
+
+    const token = async (id: string, turn?: string) =>
+      host.routes.request(`http://127.0.0.1/connections/${id}/token?capability=docs`, {
+        headers: {
+          [CONNECTIONS_TOKEN_HEADER]: "1",
+          ...(turn ? { [CONNECTION_TURN_HEADER]: turn } : {}),
+        },
+      })
+
+    const orgATurn = turns.mint({ sessionId: "s1", subject: "alice", orgId: "org-a" })
+    const orgBTurn = turns.mint({ sessionId: "s2", subject: "mallory", orgId: "org-b" })
+    const orglessTurn = turns.mint({ sessionId: "s3", subject: "alice" })
+
+    expect(await (await token("team-org-a", orgATurn)).json()).toMatchObject({ token: "org-a-team-token" })
+    expect(await (await token("personal-alice", orgATurn)).json()).toMatchObject({ token: "alice-token" })
+    // Org B's turn cannot resolve org A's team row; an org-less turn cannot either.
+    expect((await token("team-org-a", orgBTurn)).status).toBe(404)
+    expect((await token("team-org-a", orglessTurn)).status).toBe(404)
+    // No turn credential at all resolves nothing on hosted.
+    expect((await token("team-org-a")).status).toBe(404)
+    expect((await token("personal-alice")).status).toBe(404)
+    host.dispose()
+    turns.dispose()
+  })
+
+  test("hosted D7 hard gate: flag off → 503 on every surface, loopback included", async () => {
+    const host = createConnectionsHost({
+      credentials: credentialsPort(),
+      env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
+      authConfig: { enabled: true, issuer: "https://issuer.example", jwksUrl: "https://issuer.example/jwks" },
+      verifier: async (token) => ({
+        mode: "signed",
+        user: { subject: token, tokenIdentifier: token, issuer: "https://issuer.example", orgId: "org-a" },
+      }),
+    })
+    for (const [path, init] of [
+      ["/", {}],
+      ["/notion/connect", { method: "POST", body: "{}" }],
+      ["/attempts/x", {}],
+      ["/connections/x", { method: "DELETE" }],
+      ["/connections/x/reverify", { method: "POST" }],
+      ["/connections/x/token?capability=docs", { headers: { [CONNECTIONS_TOKEN_HEADER]: "1" } }],
+      ["/connections/x/auth-failure", { method: "POST", body: "{}", headers: { [CONNECTIONS_TOKEN_HEADER]: "1" } }],
+    ] as const) {
+      const signed = await host.routes.request(`http://cp.example${path}`, {
+        ...init,
+        headers: { authorization: "Bearer alice", ...("headers" in init ? init.headers : {}) },
+      })
+      expect(signed.status).toBe(503)
+      expect(await signed.json()).toEqual({ code: "connections_unavailable" })
+      const loopback = await host.routes.request(`http://127.0.0.1${path}`, { ...init })
+      expect(loopback.status).toBe(503)
+    }
+    host.dispose()
+  })
+
   test("google integration registers only when host env provides client credentials", () => {
     const without = createConnectionsHost({ credentials: credentialsPort(), env: {} })
     expect(without.service.listIntegrations().map((i) => i.id)).not.toContain("google")
