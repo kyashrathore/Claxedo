@@ -1,4 +1,5 @@
 import {
+  internalMutationGeneric,
   mutationGeneric,
   queryGeneric,
   type GenericDatabaseReader,
@@ -317,6 +318,11 @@ export async function userByClerkSubject(db: Db, clerkSubject: string) {
 //   (`packages/claxedo-server/src/control-plane/adapters/convex/`).
 // - `publicQuery`/`publicMutation`: explicitly unauthenticated. Adding one is
 //   a reviewed decision, not a default.
+// - `cronMutation`: a deployment-internal function for `convex/crons.ts`
+//   handlers (D13 reaper). Internal visibility means it is NOT callable by any
+//   client at all — only the Convex scheduler/crons — which is a strictly
+//   stronger stance than a service token, and the reason the guard permits
+//   `internalMutationGeneric` here.
 // ---------------------------------------------------------------------------
 
 type Identity = NonNullable<Awaited<ReturnType<IdentityCtx["auth"]["getUserIdentity"]>>>
@@ -385,6 +391,13 @@ export function serviceMutation<Args extends PropertyValidators, Output>(spec: {
       return spec.handler(ctx, args)
     },
   })
+}
+
+export function cronMutation<Args extends PropertyValidators, Output>(spec: {
+  args: Args
+  handler: (ctx: MutationCtx, args: ObjectType<Args>) => Output
+}) {
+  return internalMutationGeneric(spec)
 }
 
 export function publicQuery<Args extends PropertyValidators, Output>(spec: {

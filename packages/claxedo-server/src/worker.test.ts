@@ -4,6 +4,11 @@ import { describe, expect, test, vi } from "vitest"
  * Worker entrypoint behavior: the ExecutionContext must be passed through to
  * the Hono app (`app.fetch(request, env, ctx)`), otherwise `waitUntil`-backed
  * background work (telemetry, lifecycle touch) is cancelled after the response.
+ *
+ * D12: the entrypoint is wrapped with @sentry/cloudflare's `withSentry`,
+ * which proxies the ExecutionContext to instrument `waitUntil`. The contract
+ * under test is therefore behavioral — `waitUntil` calls made on the ctx the
+ * app receives must reach the runtime's real ctx — not object identity.
  */
 
 const appFetch = vi.fn(async () => new Response("ok"))
@@ -30,6 +35,20 @@ describe("worker entrypoint", () => {
 
     const res = await worker.fetch(request, env, ctx as never)
     expect(await res.text()).toBe("ok")
-    expect(appFetch).toHaveBeenCalledWith(request, env, ctx)
+    expect(appFetch).toHaveBeenCalledTimes(1)
+    const [gotRequest, gotEnv, gotCtx] = appFetch.mock.calls[0] as unknown as [
+      Request,
+      Record<string, string>,
+      { waitUntil: (p: Promise<unknown>) => void },
+    ]
+    expect(gotRequest).toBe(request)
+    // withSentry proxies env as well; the bindings must pass through intact.
+    expect(gotEnv).toEqual(env)
+    // withSentry proxies ctx (and wraps the tracked promise; the SDK itself
+    // may also register waitUntil work): assert a waitUntil call on the ctx
+    // the app received reaches the runtime's ctx.
+    const callsBefore = ctx.waitUntil.mock.calls.length
+    gotCtx.waitUntil(Promise.resolve())
+    expect(ctx.waitUntil.mock.calls.length).toBe(callsBefore + 1)
   })
 })

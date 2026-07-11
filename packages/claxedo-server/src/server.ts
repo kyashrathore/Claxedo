@@ -2,12 +2,15 @@ import fs from "node:fs"
 import path from "node:path"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
+import { HTTPException } from "hono/http-exception"
 import { serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { createNodeWebSocket } from "@hono/node-ws"
 import { z } from "zod"
 import { setupAgentHooks } from "@claxedo/workspace-runtime/host"
 import { capture, initPostHog, shutdownPostHog } from "./posthog"
+import { initNodeObservability } from "./observability/node"
+import { reportError } from "./observability/report"
 import { configureAgentConfig } from "./agent-config"
 import { eventsHandler } from "./routes/events"
 import { peerAddressStamp } from "./routes/local-only-projection"
@@ -170,6 +173,20 @@ export function createApp(services: ControlPlaneServices, options: {
   // @hono/node-ws upgrades, whose Requests lack the node-server internals)
   // so loopback gates verify the socket, not the spoofable Host header.
   app.use(peerAddressStamp())
+  // D12 (ops floor ADR 2026-07-11-016 §4): top-level error handler. Hono's
+  // default onError swallows route exceptions into bare 500s; this keeps that
+  // exact response behavior (HTTPException responses pass through) while
+  // reporting server exceptions through the observability seam — a no-op
+  // unless Sentry was initialized (CLAXEDO_SENTRY_DSN set).
+  app.onError((err, c) => {
+    if (err instanceof HTTPException) return err.getResponse()
+    reportError(err, {
+      tags: { source: "server_route" },
+      extra: { path: c.req.path, method: c.req.method },
+    })
+    console.error(err)
+    return c.text("Internal Server Error", 500)
+  })
   const runtimeProxyOptions = {
     ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
     ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
@@ -590,6 +607,10 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
     configureOpenCodeEngine({ embedded: true })
   }
   initPostHog()
+  // D12: Sentry on the Node server — no-op unless CLAXEDO_SENTRY_DSN is set
+  // (release = git SHA via CLAXEDO_RELEASE/GIT_SHA; events tagged unit=server
+  // + deployment_mode). See observability/node.ts.
+  initNodeObservability(process.env)
   mirrorProcessEvents()
   configureOpencodeMcpSync({ enabled: opencodeCompat })
   configureEmbeddedWorkspaceRuntime({

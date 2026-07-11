@@ -1,5 +1,5 @@
 import { v } from "convex/values"
-import { serviceMutation, serviceQuery } from "./model"
+import { cronMutation, serviceMutation, serviceQuery } from "./model"
 
 const workspaceId = { workspace_id: v.string() }
 const status = v.union(
@@ -74,11 +74,13 @@ function normalizeLease(row: Record<string, unknown>) {
   }
 }
 
-function hasLegacyLeaseFields(row: Record<string, unknown>) {
+// Exported for convex/migrations.ts: migration #001 retro-registers the
+// legacy-field backfill under the @convex-dev/migrations ledger (D14).
+export function hasLegacyLeaseFields(row: Record<string, unknown>) {
   return "provider" in row || "provider_runtime_id" in row
 }
 
-function legacyLeaseDocument(row: Record<string, unknown>) {
+export function legacyLeaseDocument(row: Record<string, unknown>) {
   const leaseDriver = optionalString(row, "driver") ?? optionalString(row, "provider")
   const resourceId = optionalString(row, "driver_resource_id") ?? optionalString(row, "provider_runtime_id")
   return canonicalLeaseDocument({
@@ -231,6 +233,95 @@ export const list = serviceQuery({
   },
 })
 
+// ---------------------------------------------------------------------------
+// D13 lease reaper — Convex-side half of the two-way reconciliation
+// (launch plan 2026-07-11-012 §1 / ADR 016 §4 Decision 3).
+//
+// The split, per the ADR: driver-side convergence (list driver resources,
+// destroy orphans) lives in `sandboxManager.garbageCollect()` and is driven by
+// a Cloudflare Cron Trigger on the control-plane Worker — Convex has no driver
+// credentials and must never grow them. What Convex CAN keep honest is the
+// lease table itself, level-triggered from current state:
+//
+// - an `acquiring` lease that has made no progress far past any legitimate
+//   cold-start is a dead in-flight provision (crash between driver-create and
+//   lease-write, redeploy mid-acquire). Mark it `unavailable` so the next
+//   ensure re-acquires on a fresh epoch; the driver-side sweep destroys
+//   whatever the dead epoch created.
+// - a `ready` lease whose heartbeat went silent far past the runtime's
+//   heartbeat cadence is a lease-table lie (runtime dead, or provider
+//   auto-stopped it). Mark it `stopped` — the explicit persistent-resume state
+//   — which KEEPS the driver identity (sandbox_id/host_id/driver_resource_id)
+//   so a resume-capable driver can pick it back up, while the driver-side
+//   sweep reclaims the resource if it is actually orphaned.
+//
+// Both transitions are idempotent (the predicate no longer matches after the
+// write), never touch fresh leases, and honor in-flight state via generous
+// grace periods configured in convex/crons.ts. Note: sandbox HOLDS are not a
+// Convex concept (they exist only in the local sqlite lease-store shape), so
+// there is no hold cleanup here by design.
+export const sweepStaleLeases = cronMutation({
+  args: {
+    acquiring_stale_after_ms: v.number(),
+    ready_heartbeat_stale_after_ms: v.number(),
+    now: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = args.now ?? Date.now()
+    const rows = await ctx.db.query("runtime_leases").collect()
+    let markedUnavailable = 0
+    let markedStopped = 0
+    for (const row of rows) {
+      if (row.status === "acquiring" && now - row.updated_at >= args.acquiring_stale_after_ms) {
+        await ctx.db.replace(row._id, canonicalLeaseDocument({
+          ...row,
+          status: "unavailable",
+          last_error: `reaper: acquiring lease made no progress for ${now - row.updated_at}ms`,
+          updated_at: now,
+        }))
+        markedUnavailable += 1
+        continue
+      }
+      if (row.status === "ready") {
+        const lastSeen = row.last_heartbeat_at ?? row.updated_at
+        if (now - lastSeen >= args.ready_heartbeat_stale_after_ms) {
+          await ctx.db.replace(row._id, canonicalLeaseDocument({
+            ...row,
+            status: "stopped",
+            last_error: `reaper: ready lease heartbeat silent for ${now - lastSeen}ms`,
+            updated_at: now,
+          }))
+          markedStopped += 1
+        }
+      }
+    }
+    return { scanned: rows.length, marked_unavailable: markedUnavailable, marked_stopped: markedStopped }
+  },
+})
+
+// Leases that CLAIM a driver resource but are no longer serving: the
+// lease→driver direction of the two-way sweep. The control plane (manual GC
+// admin route today, CF-cron-driven `scheduled` handler on the Worker, both
+// via `sandboxManager.garbageCollect()`) consumes this to verify/destroy
+// driver-side resources — driver calls cannot run inside Convex.
+export const listNeedingDriverReconciliation = serviceQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("runtime_leases").collect()
+    return rows
+      .filter((row) => row.status === "unavailable" || row.status === "stopped" || row.status === "destroyed")
+      .filter((row) => Boolean(row.driver_resource_id || row.sandbox_id))
+      .map(normalizeLease)
+  },
+})
+
+// RETIRED as a hand-rolled backfill (D14): superseded by migration #001 in
+// convex/migrations.ts, which runs the same normalization under the
+// @convex-dev/migrations ledger. The export remains ONLY because the
+// break-glass maintenance script
+// (packages/claxedo-server/scripts/maintenance/normalize-convex-sandbox-leases.ts)
+// still calls it; do not add new callers — new backfills go through
+// convex/migrations.ts.
 export const normalizeLegacyFields = serviceMutation({
   args: {},
   handler: async (ctx) => {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import * as Sentry from "@sentry/bun"
 import {
   createRemoteJWKSet,
   exportJWK,
@@ -49,6 +50,80 @@ function requireEnv(name: string) {
     process.exit(2)
   }
   return value
+}
+
+/**
+ * D12 observability: Sentry on the relay (ops floor ADR
+ * docs/plans/2026-07-11-016-wp-ops-floor-design.md §4).
+ *
+ * Gated on `CLAXEDO_RELAY_SENTRY_DSN` (the relay's OWN DSN env — separate
+ * Sentry project from the control plane). Absent DSN → `Sentry.init` is never
+ * called: zero SDK overhead, zero network — the documented no-op posture, safe
+ * before the Sentry account exists. Release = git SHA passed by the D11
+ * deploy workflow (`CLAXEDO_RELEASE`; `GIT_SHA` accepted as alias); events are
+ * tagged unit=relay + deployment_mode (absent → "self-host", mirroring D9's
+ * default). Tracing stays off (ADR: it is where Sentry gets expensive).
+ *
+ * The relay is a Bun process (`Bun.serve`), so this uses `@sentry/bun` —
+ * Sentry's Bun-native SDK with the same init-gated pattern as @sentry/node
+ * (https://docs.sentry.io/platforms/javascript/guides/bun/).
+ */
+export type RelayObservabilityEnv = {
+  CLAXEDO_RELAY_SENTRY_DSN?: string | undefined
+  CLAXEDO_RELEASE?: string | undefined
+  GIT_SHA?: string | undefined
+  CLAXEDO_DEPLOYMENT_MODE?: string | undefined
+  /** Accept process.env verbatim (extra keys are ignored). */
+  [key: string]: string | undefined
+}
+
+export type RelaySentryOptions = {
+  dsn: string
+  release?: string
+  tracesSampleRate: 0
+  initialScope: { tags: { unit: "relay"; deployment_mode: string } }
+}
+
+/**
+ * Pure env → Sentry options resolver. `undefined` = DSN absent = do NOT init
+ * (no client, no network). Exported for tests.
+ */
+export function relaySentryOptions(env: RelayObservabilityEnv): RelaySentryOptions | undefined {
+  const dsn = clean(env.CLAXEDO_RELAY_SENTRY_DSN)
+  if (!dsn) return undefined
+  const release = clean(env.CLAXEDO_RELEASE) ?? clean(env.GIT_SHA)
+  return {
+    dsn,
+    ...(release ? { release } : {}),
+    tracesSampleRate: 0,
+    initialScope: {
+      tags: {
+        unit: "relay",
+        deployment_mode: clean(env.CLAXEDO_DEPLOYMENT_MODE)?.toLowerCase() ?? "self-host",
+      },
+    },
+  }
+}
+
+export function initRelayObservability(env: RelayObservabilityEnv = process.env): { enabled: boolean } {
+  const options = relaySentryOptions(env)
+  if (!options) return { enabled: false }
+  Sentry.init(options)
+  return { enabled: true }
+}
+
+/**
+ * Capture-and-flush used by the fatal handlers and the startup catch. With no
+ * initialized client (DSN absent) both calls are documented no-ops. Never
+ * throws — observability must not preempt the exit path.
+ */
+async function reportFatalToSentry(error: unknown): Promise<void> {
+  try {
+    Sentry.captureException(error)
+    await Sentry.flush(2000)
+  } catch {
+    // Never let error reporting block shutdown.
+  }
 }
 
 /**
@@ -442,6 +517,12 @@ export type FatalProcessHandlerOptions = {
   exit?: (code?: number) => void
   log?: (message: string) => void
   register?: boolean
+  /**
+   * D12: error-tracker hook, invoked (and awaited) before teardown so a fatal
+   * crash reaches Sentry before the process exits. Failures are logged and
+   * never block the exit path. Defaults to none (tests, DSN-absent runs).
+   */
+  report?: (error: unknown, source: "uncaughtException" | "unhandledRejection") => void | Promise<void>
   stopServer?: () => Promise<void> | void
 }
 
@@ -463,6 +544,11 @@ export function installFatalProcessHandlers(options: FatalProcessHandlerOptions)
     pending = (async () => {
       const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
       log(`[workspace-relay] fatal ${source}: ${message}`)
+      try {
+        await options.report?.(error, source)
+      } catch (err) {
+        log(`[workspace-relay] fatal report failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
       options.drain.setDraining(true)
       try {
         await options.stopServer?.()
@@ -495,6 +581,14 @@ export function installFatalProcessHandlers(options: FatalProcessHandlerOptions)
 }
 
 async function main() {
+  // D12: Sentry first — everything after this (env validation exits report
+  // their reason on stderr already; runtime errors are the tracker's job).
+  // No-op unless CLAXEDO_RELAY_SENTRY_DSN is set.
+  const observability = initRelayObservability(process.env)
+  if (observability.enabled) {
+    console.log("[workspace-relay] sentry error tracking enabled")
+  }
+
   const validation = validateProductionEnv({
     NODE_ENV: process.env.NODE_ENV,
     CLAXEDO_RELAY_RESOLVER_TOKEN: process.env.CLAXEDO_RELAY_RESOLVER_TOKEN,
@@ -659,6 +753,9 @@ async function main() {
     drain: handler.drain,
     directory,
     log: (message) => console.error(message),
+    // D12: fatal crashes are exactly the events a solo operator never sees in
+    // a log buffer — flush them to Sentry (no-op when no DSN) before exiting.
+    report: (error) => reportFatalToSentry(error),
     stopServer: async () => {
       server.stop(true)
       syntheticProbe?.stop()
@@ -670,8 +767,11 @@ async function main() {
 }
 
 if (import.meta.main) {
-  main().catch((err) => {
+  main().catch(async (err) => {
     console.error("[workspace-relay] startup failed:", err)
+    // D12: startup failures past env validation (which exits itself) should
+    // reach the error tracker too. No-op without a DSN.
+    await reportFatalToSentry(err)
     process.exit(1)
   })
 }

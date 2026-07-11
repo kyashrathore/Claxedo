@@ -853,7 +853,10 @@ describe("harness-scoped resolution", () => {
     expect(convexFiles).not.toContain("runtimeLeases.ts")
     expect(convexFilesContaining("provider_" + "runtime_id")).toEqual(["sandboxLeases.ts"])
     expect(convexFilesContaining("provider_" + "snapshot_id")).toEqual([])
-    expect(convexFilesContaining("runtime_" + "leases")).toEqual(["sandboxLeases.ts", "schema.ts"])
+    // migrations.ts names the table because migration #001 (D14) is the
+    // retro-registered runtime_leases legacy-field backfill; the normalize
+    // LOGIC still lives only in sandboxLeases.ts (imported helpers).
+    expect(convexFilesContaining("runtime_" + "leases")).toEqual(["migrations.ts", "sandboxLeases.ts", "schema.ts"])
     expect(convexFilesContaining("runtime_" + "url")).toEqual(["sandboxLeases.ts", "schema.ts"])
     const convexSandboxLeases = fs.readFileSync(path.resolve(convexSrc, "sandboxLeases.ts"), "utf8")
     expect(convexSandboxLeases).toContain("export const normalizeLegacyFields")

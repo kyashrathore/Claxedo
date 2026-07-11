@@ -12,16 +12,18 @@ import type * as agentExtensionPolicies from "../agentExtensionPolicies.js";
 import type * as agentExtensions from "../agentExtensions.js";
 import type * as auditEvents from "../auditEvents.js";
 import type * as channelIdentities from "../channelIdentities.js";
+import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as localHostLinks from "../localHostLinks.js";
+import type * as migrations from "../migrations.js";
 import type * as model from "../model.js";
 import type * as orgs from "../orgs.js";
 import type * as projectMemberships from "../projectMemberships.js";
 import type * as projects from "../projects.js";
 import type * as runtimeAccessTokens from "../runtimeAccessTokens.js";
+import type * as sandboxLeases from "../sandboxLeases.js";
 import type * as sessions from "../sessions.js";
 import type * as users from "../users.js";
-import type * as sandboxLeases from "../sandboxLeases.js";
 import type * as workspaceShares from "../workspaceShares.js";
 import type * as workspaces from "../workspaces.js";
 
@@ -36,16 +38,18 @@ declare const fullApi: ApiFromModules<{
   agentExtensions: typeof agentExtensions;
   auditEvents: typeof auditEvents;
   channelIdentities: typeof channelIdentities;
+  crons: typeof crons;
   http: typeof http;
   localHostLinks: typeof localHostLinks;
+  migrations: typeof migrations;
   model: typeof model;
   orgs: typeof orgs;
   projectMemberships: typeof projectMemberships;
   projects: typeof projects;
   runtimeAccessTokens: typeof runtimeAccessTokens;
+  sandboxLeases: typeof sandboxLeases;
   sessions: typeof sessions;
   users: typeof users;
-  sandboxLeases: typeof sandboxLeases;
   workspaceShares: typeof workspaceShares;
   workspaces: typeof workspaces;
 }>;
@@ -76,4 +80,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;
+};

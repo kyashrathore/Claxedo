@@ -109,10 +109,12 @@ jobs:
           echo "fly.toml sets kill_signal=SIGTERM and kill_timeout=45s > CLAXEDO_RELAY_DRAIN_TIMEOUT_MS=30s."
 
       # Build context is the monorepo root (see fly.toml); run from repo root.
+      # D12: CLAXEDO_RELEASE = git SHA → Sentry release tagging on the relay.
       - name: Deploy relay to Fly
         run: |
           set -euo pipefail
-          flyctl deploy -c packages/workspace-relay/fly.toml -a "${FLY_APP}" --remote-only --wait-timeout 300
+          flyctl deploy -c packages/workspace-relay/fly.toml -a "${FLY_APP}" --remote-only --wait-timeout 300 \
+            --env "CLAXEDO_RELEASE=${GITHUB_SHA}"
 
       - name: Verify health
         run: |

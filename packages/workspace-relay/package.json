@@ -47,6 +47,7 @@
   },
   "dependencies": {
     "@claxedo/workspace-relay-protocol": "0.5.1",
+    "@sentry/bun": "10.64.0",
     "hono": "4.10.7",
     "jose": "6.0.11"
   },

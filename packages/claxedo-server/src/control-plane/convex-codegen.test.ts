@@ -13,7 +13,14 @@ afterAll(() => {
 describe("Convex generated API artifacts", () => {
   test("root generated API includes every Convex module and package-local generated API is not tracked", () => {
     const modules = fs.readdirSync(convexRoot)
-      .filter((file) => file.endsWith(".ts") && file !== "auth.config.ts" && file !== "env.d.ts" && file !== "schema.ts")
+      .filter((file) =>
+        file.endsWith(".ts") &&
+        file !== "auth.config.ts" &&
+        file !== "env.d.ts" &&
+        file !== "schema.ts" &&
+        // The component app definition (D14) is deployment config, not a
+        // function module: codegen never lists it in api.d.ts.
+        file !== "convex.config.ts")
       .map((file) => path.basename(file, ".ts"))
       .toSorted()
     const generated = fs.readFileSync(path.join(convexRoot, "_generated", "api.d.ts"), "utf8")
@@ -23,8 +30,10 @@ describe("Convex generated API artifacts", () => {
       "agentExtensions",
       "auditEvents",
       "channelIdentities",
+      "crons",
       "http",
       "localHostLinks",
+      "migrations",
       "model",
       "orgs",
       "projectMemberships",

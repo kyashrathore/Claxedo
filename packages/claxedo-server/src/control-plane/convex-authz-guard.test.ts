@@ -28,7 +28,22 @@ const ALLOWED_FUNCTION_BUILDERS = new Set([
   "serviceMutation",
   "publicQuery",
   "publicMutation",
+  // D13: cron handlers (convex/crons.ts targets). Wraps
+  // `internalMutationGeneric` — internal visibility means NOT callable by any
+  // client, only the Convex scheduler/crons: strictly stronger than a service
+  // token, so admitting it keeps the ratchet honest rather than loosening it.
+  "cronMutation",
 ])
+
+// D14: `convex/migrations.ts` functions are built via the
+// `@convex-dev/migrations` component (`migrations.define(...)` /
+// `migrations.runner()`). They are internal-visibility functions (component-
+// managed batching/ledger), invocable only via `npx convex run` with deploy
+// credentials or from other internal functions — never by clients — so they
+// satisfy the same bar as `cronMutation`. The export-pattern scan below does
+// not match method-call builders (`migrations.define`), which is fine: raw
+// Convex builder identifiers/imports in that file are still caught by the two
+// tests above.
 
 // `httpAction` (Svix-verified webhook surface) is the only permitted
 // non-builder function constructor, and only in convex/http.ts.
@@ -64,9 +79,15 @@ describe("Convex authz builder guard (D8)", () => {
     // generic builders are how a raw function sneaks back in under an alias.
     const importPattern = /import\s*(type\s)?\{([^}]*)\}\s*from\s*"convex\/server"/g
     const allowedValueImports = new Map<string, Set<string>>([
-      [BUILDER_MODULE, new Set(["queryGeneric", "mutationGeneric"])],
+      // internalMutationGeneric backs the cronMutation builder (D13).
+      [BUILDER_MODULE, new Set(["queryGeneric", "mutationGeneric", "internalMutationGeneric"])],
       [HTTP_MODULE, new Set(["httpRouter", "anyApi"])],
       ["schema.ts", new Set(["defineSchema", "defineTable"])],
+      // Cron registry only — cronJobs defines schedules, not functions (D13).
+      ["crons.ts", new Set(["cronJobs"])],
+      // Component app definition only — defineApp registers the migrations
+      // component, it cannot construct functions (D14).
+      ["convex.config.ts", new Set(["defineApp"])],
     ])
     const violations: string[] = []
     for (const { file, source } of convexModules()) {

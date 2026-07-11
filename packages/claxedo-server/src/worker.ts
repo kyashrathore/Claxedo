@@ -8,11 +8,38 @@
  * `docs/tech-docs/claxedo-server-worker-deployment-plan.md`.
  *
  * The local Node server lives in `server.ts` and is unaffected by this file.
+ *
+ * D12 observability (ops floor ADR 2026-07-11-016 §4): the handler is wrapped
+ * with `@sentry/cloudflare`'s `withSentry`
+ * (https://docs.sentry.io/platforms/javascript/guides/cloudflare/ — requires
+ * the `nodejs_compat` flag for AsyncLocalStorage, which wrangler.toml already
+ * sets). Options come from env bindings via sentryInitOptions: absent
+ * CLAXEDO_SENTRY_DSN → `enabled: false`, the SDK sends nothing (clean no-op
+ * until the Sentry account exists). Release = git SHA (CLAXEDO_RELEASE,
+ * passed by the D11 deploy workflow); events are tagged unit=worker +
+ * deployment_mode.
  */
 
 import type { ExecutionContext, Hono } from "hono"
+import { HTTPException } from "hono/http-exception"
+import * as Sentry from "@sentry/cloudflare"
 import { composeHostedControlPlane, HostedWorkerCompositionError, type HostedWorkerEnv } from "./control-plane/hosted-services"
 import { createHostedApp } from "./hosted-app"
+import { reportError, setErrorReporterSink } from "./observability/report"
+import { sentryInitOptions } from "./observability/sentry-config"
+
+// D12: route reportError/reportPaymentError (the payment page-class hook the
+// billing routes call) into the request's Sentry scope. withSentry runs the
+// handler inside AsyncLocalStorage context, so captureException here lands on
+// the current request's event. With no DSN the client is disabled and
+// captureException is a documented no-op — no network.
+setErrorReporterSink((error, context) => {
+  Sentry.withScope((scope) => {
+    scope.setTags(context.tags)
+    if (Object.keys(context.extra).length > 0) scope.setExtras(context.extra)
+    Sentry.captureException(error)
+  })
+})
 
 let cached: { app: Hono } | undefined
 
@@ -26,6 +53,22 @@ function buildApp(env: HostedWorkerEnv): Hono {
   if (cached) return cached.app
   const plane = composeHostedControlPlane(env)
   const app = createHostedApp(plane)
+  // D12: Hono converts route exceptions into 500s internally, so they never
+  // escape to withSentry — report them here, keeping Hono's default response
+  // behavior (HTTPException responses pass through unreported; they are
+  // deliberate 4xx/5xx, not error-tracker material). Guarded because tests
+  // stub createHostedApp with a bare { fetch } object.
+  if (typeof app.onError === "function") {
+    app.onError((err, c) => {
+      if (err instanceof HTTPException) return err.getResponse()
+      reportError(err, {
+        tags: { source: "hosted_app_route" },
+        extra: { path: new URL(c.req.url).pathname, method: c.req.method },
+      })
+      console.error(err)
+      return c.text("Internal Server Error", 500)
+    })
+  }
   cached = { app }
   return app
 }
@@ -38,17 +81,61 @@ function compositionErrorResponse(err: HostedWorkerCompositionError): Response {
   )
 }
 
-export default {
+// Minimal structural type for the Cloudflare Cron Trigger controller so the
+// Worker keeps zero new runtime dependencies (same pattern as ExecutionContext
+// above, which enters as a type only).
+type ScheduledController = { cron: string; scheduledTime: number }
+
+const handler = {
   async fetch(request: Request, env: HostedWorkerEnv, ctx?: ExecutionContext): Promise<Response> {
     let app: Hono
     try {
       app = buildApp(env)
     } catch (err) {
-      if (err instanceof HostedWorkerCompositionError) return compositionErrorResponse(err)
+      if (err instanceof HostedWorkerCompositionError) {
+        // A misconfigured hosted deploy is exactly the incident nobody sees
+        // without error tracking; Sentry groups the flood into one issue.
+        reportError(err, { tags: { source: "worker_composition" } })
+        return compositionErrorResponse(err)
+      }
       throw err
     }
     // Pass the ExecutionContext through so routes can `waitUntil` background
     // work (telemetry, lifecycle touch) past the response.
     return app.fetch(request, env, ctx)
   },
+
+  // D13 reaper, driver-side half (ops floor ADR 016 §4 Decision 3): the Cron
+  // Trigger in wrangler.toml drives the EXISTING sandbox GC path — a synthetic
+  // request to the admin route, authorized with the same admin token — so the
+  // scheduled sweep and the manual break-glass curl exercise the exact same
+  // code (`sandboxManager.garbageCollect()`, including its telemetry capture).
+  // The Convex-side half (lease-table sweep) runs in convex/crons.ts. Every
+  // failure here (missing config, missing token, non-2xx GC) THROWS so the
+  // cron invocation is recorded as failed and reaches Sentry via withSentry —
+  // a silently-dead reaper is the failure mode this design exists to avoid.
+  async scheduled(_controller: ScheduledController, env: HostedWorkerEnv, ctx?: ExecutionContext): Promise<void> {
+    const app = buildApp(env)
+    const token = env.CLAXEDO_RUNTIME_ADMIN_TOKEN?.trim()
+    if (!token) {
+      throw new Error("Sandbox reconciliation cron requires CLAXEDO_RUNTIME_ADMIN_TOKEN")
+    }
+    const response = await app.fetch(
+      new Request("https://control-plane.cron.internal/internal/sandbox-manager/gc", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+      ctx,
+    )
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "")
+      throw new Error(`Sandbox reconciliation cron failed: ${response.status} ${detail}`.trim())
+    }
+  },
 }
+
+export default Sentry.withSentry(
+  (env: HostedWorkerEnv) => sentryInitOptions(env, "worker"),
+  handler,
+)

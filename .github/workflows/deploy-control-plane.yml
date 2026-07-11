@@ -66,12 +66,13 @@ jobs:
 
       # wrangler resolves to the workspace-pinned version (4.50.0 via the
       # repo lockfile) after setup-bun's `bun install`.
+      # D12: CLAXEDO_RELEASE = git SHA → Sentry release tagging.
       - name: Deploy control-plane Worker (staging)
         working-directory: packages/claxedo-server
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: bunx wrangler deploy --env staging
+        run: bunx wrangler deploy --env staging --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
 
   smoke-staging:
     needs: deploy-staging
@@ -144,12 +145,13 @@ jobs:
         run: bunx convex deploy --typecheck disable --message "production ${GITHUB_SHA}"
 
       # Top-level wrangler env = production (name = claxedo-control-plane).
+      # D12: CLAXEDO_RELEASE = git SHA → Sentry release tagging.
       - name: Deploy control-plane Worker (production)
         working-directory: packages/claxedo-server
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: bunx wrangler deploy
+        run: bunx wrangler deploy --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
 
       - name: Behavioral smoke (production)
         env:
