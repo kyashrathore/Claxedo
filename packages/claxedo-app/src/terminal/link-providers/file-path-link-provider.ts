@@ -7,8 +7,11 @@ import {
 	type IParsedLink,
 	removeLinkSuffix,
 } from "../link-parsing";
-import type { ILink, ILinkProvider } from "@xterm/xterm";
-import type { LinkProviderTerminal } from "./multi-line-link-provider";
+import type { ILink } from "@xterm/xterm";
+import {
+	WrappedLineLinkProvider,
+	type LinkProviderTerminal,
+} from "./multi-line-link-provider";
 
 /**
  * A link provider that detects file paths in terminal output using VSCode's
@@ -23,10 +26,17 @@ import type { LinkProviderTerminal } from "./multi-line-link-provider";
  * - Git diff paths: --- a/path/file.ts, +++ b/path/file.ts
  *
  * Also handles multi-line wrapped paths spanning up to 3 terminal lines.
+ *
+ * Extends {@link WrappedLineLinkProvider} to reuse the shared line-stitching
+ * (`computeLineContext`) and wrapped-line range math (`calculateLinkRange`).
+ * It overrides `provideLinks` rather than using the regex-driven
+ * MultiLineLinkProvider path because path detection runs VSCode's structured
+ * `detectLinks` (prefix/path/suffix) plus a fallback-matcher pass, not a single
+ * regex.
  */
-export class FilePathLinkProvider implements ILinkProvider {
+export class FilePathLinkProvider extends WrappedLineLinkProvider {
 	constructor(
-		private readonly terminal: LinkProviderTerminal,
+		terminal: LinkProviderTerminal,
 		private readonly onOpen: (
 			event: MouseEvent,
 			path: string,
@@ -35,7 +45,9 @@ export class FilePathLinkProvider implements ILinkProvider {
 			lineEnd?: number,
 			columnEnd?: number,
 		) => void,
-	) {}
+	) {
+		super(terminal);
+	}
 
 	private readonly ignored =
 		/(^|[\\/])(?:node_modules|\.git|\.next|dist|build|coverage|out|vendor|target|__pycache__|\.turbo|\.cache|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.venv)([\\/]|$)/;
@@ -44,33 +56,20 @@ export class FilePathLinkProvider implements ILinkProvider {
 		bufferLineNumber: number,
 		callback: (links: ILink[] | undefined) => void,
 	): void {
-		const lineIndex = bufferLineNumber - 1;
-		const line = this.terminal.buffer.active.getLine(lineIndex);
-		if (!line) {
+		const ctx = this.computeLineContext(bufferLineNumber);
+		if (!ctx) {
 			callback(undefined);
 			return;
 		}
 
-		const lineText = line.translateToString(true);
-		const lineLength = lineText.length;
-		const isCurrentLineWrapped = line.isWrapped;
-
-		// Get previous line if current is wrapped (for handling wrapped paths)
-		const prevLine = isCurrentLineWrapped
-			? this.terminal.buffer.active.getLine(lineIndex - 1)
-			: null;
-		const prevLineText = prevLine ? prevLine.translateToString(true) : "";
-		const prevLineLength = prevLineText.length;
-
-		// Get next line if it's wrapped (for handling wrapped paths)
-		const nextLine = this.terminal.buffer.active.getLine(lineIndex + 1);
-		const nextLineIsWrapped = nextLine?.isWrapped ?? false;
-		const nextLineText =
-			nextLineIsWrapped && nextLine ? nextLine.translateToString(true) : "";
-
-		// Combine lines for multi-line path detection
-		const combinedText = prevLineText + lineText + nextLineText;
-		const currentLineOffset = prevLineLength;
+		const {
+			lineLength,
+			isCurrentLineWrapped,
+			prevLineLength,
+			nextLineIsWrapped,
+			combinedText,
+			currentLineOffset,
+		} = ctx;
 
 		// Use VSCode's link detection
 		const os = getCurrentOS();
@@ -403,51 +402,5 @@ export class FilePathLinkProvider implements ILinkProvider {
 		}
 
 		this.onOpen(event, cleanPath, fallback.line, fallback.col);
-	}
-
-	private calculateLinkRange(
-		matchIndex: number,
-		matchEnd: number,
-		prevLineLength: number,
-		lineLength: number,
-		bufferLineNumber: number,
-		isCurrentLineWrapped: boolean,
-		nextLineIsWrapped: boolean,
-	): ILink["range"] {
-		const currentLineStart = prevLineLength;
-		const currentLineEnd = prevLineLength + lineLength;
-
-		const startsInPrevLine =
-			isCurrentLineWrapped && matchIndex < currentLineStart;
-		const endsInNextLine = nextLineIsWrapped && matchEnd > currentLineEnd;
-
-		let startY: number;
-		let startX: number;
-		let endY: number;
-		let endX: number;
-
-		if (startsInPrevLine) {
-			startY = bufferLineNumber - 1;
-			startX = matchIndex + 1;
-		} else {
-			startY = bufferLineNumber;
-			startX = matchIndex - currentLineStart + 1;
-		}
-
-		if (endsInNextLine) {
-			endY = bufferLineNumber + 1;
-			endX = matchEnd - currentLineEnd + 1;
-		} else if (matchEnd <= currentLineStart) {
-			endY = bufferLineNumber - 1;
-			endX = matchEnd + 1;
-		} else {
-			endY = bufferLineNumber;
-			endX = matchEnd - currentLineStart + 1;
-		}
-
-		return {
-			start: { x: startX, y: startY },
-			end: { x: endX, y: endY },
-		};
 	}
 }

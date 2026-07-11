@@ -1,5 +1,9 @@
-import { describe, expect, test } from "bun:test"
-import { TERMINAL_OPTIONS } from "./config"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import {
+  TERMINAL_OPTIONS,
+  getScreenReaderModePreference,
+  setScreenReaderModePreference,
+} from "./config"
 
 describe("TERMINAL_OPTIONS.macOptionIsMeta", () => {
   test("should be false to allow Option+key dead-key sequences on Mac", () => {
@@ -33,14 +37,47 @@ describe("TERMINAL_OPTIONS.scrollbar", () => {
 })
 
 describe("TERMINAL_OPTIONS.screenReaderMode", () => {
-  test("should be false to avoid accessibility-mode performance penalty", () => {
+  test("defaults to false to avoid the accessibility-mode performance penalty", () => {
     // When screenReaderMode is not explicitly set xterm.js leaves the option
     // undefined, which is treated the same as true in some xterm.js versions,
     // enabling the accessibility DOM layer.  That layer serialises every cell
-    // of every line to the DOM causing significant paint overhead.  Explicitly
-    // setting it to false disables the layer unless the user activates it
-    // through the accessibility API.  The property is currently missing from
-    // the config (resolves to undefined, not false).
+    // of every line to the DOM causing significant paint overhead.  The base
+    // default is therefore an explicit false; users opt in via the persisted
+    // screen-reader preference (createTerminalInstance seeds each terminal from
+    // it) and TerminalBackend.setScreenReaderMode flips it live.
     expect(TERMINAL_OPTIONS.screenReaderMode).toBe(false)
+  })
+})
+
+describe("terminal screen-reader-mode preference", () => {
+  const KEY = "claxedo.terminal.screen-reader-mode"
+
+  beforeEach(() => {
+    localStorage.removeItem(KEY)
+  })
+  afterEach(() => {
+    localStorage.removeItem(KEY)
+  })
+
+  test("defaults to disabled when nothing is stored", () => {
+    expect(getScreenReaderModePreference()).toBe(false)
+  })
+
+  test("enabling persists the opt-in and reads back as true", () => {
+    setScreenReaderModePreference(true)
+    expect(localStorage.getItem(KEY)).toBe("1")
+    expect(getScreenReaderModePreference()).toBe(true)
+  })
+
+  test("disabling clears the stored key (so absence == off)", () => {
+    setScreenReaderModePreference(true)
+    setScreenReaderModePreference(false)
+    expect(localStorage.getItem(KEY)).toBeNull()
+    expect(getScreenReaderModePreference()).toBe(false)
+  })
+
+  test("a foreign/garbage stored value is treated as disabled", () => {
+    localStorage.setItem(KEY, "yes")
+    expect(getScreenReaderModePreference()).toBe(false)
   })
 })

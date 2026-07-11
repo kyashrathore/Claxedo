@@ -1,15 +1,10 @@
 import { SerializeAddon } from "@xterm/addon-serialize"
 import "@xterm/xterm/css/xterm.css"
 import "../terminal.css"
-import {
-  createTerminalInstance,
-  setupKeyboardHandler,
-  setupPasteHandler,
-  setupCopyHandler,
-  setupDropHandler,
-  setupResizeHandlers,
-  scrollToBottom,
-} from "../helpers"
+import { createTerminalInstance, scrollToBottom } from "./renderer"
+import { setupKeyboardHandler } from "./keyboard"
+import { setupPasteHandler, setupCopyHandler, setupDropHandler } from "./clipboard"
+import { setupResizeHandlers } from "./resize-handlers"
 import { createModeScanner } from "../mode-scan"
 import { createQuerySuppressor } from "../query-suppression"
 import type { TerminalBackend, TerminalBackendOptions, Disposable, CreateBackendFn } from "./types"
@@ -277,6 +272,10 @@ export const createBackend: CreateBackendFn = async (
 
     setCursorBlink(blink) {
       xterm.options.cursorBlink = blink
+    },
+
+    setScreenReaderMode(enabled) {
+      xterm.options.screenReaderMode = enabled
     },
 
     focus() {

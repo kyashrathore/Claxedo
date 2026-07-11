@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "bun:test"
-import { setupKeyboardHandler } from "./helpers"
+import { setupKeyboardHandler } from "./keyboard"
 
 // ---------------------------------------------------------------------------
 // Factories

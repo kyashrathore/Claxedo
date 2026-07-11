@@ -38,6 +38,8 @@ export interface TerminalBackend {
   setTheme(theme: TerminalColors): void
   setFontFamily(font: string): void
   setCursorBlink(blink: boolean): void
+  /** Toggle xterm's accessible (screen-reader) DOM layer on a live terminal. */
+  setScreenReaderMode(enabled: boolean): void
 
   // Focus
   focus(): void

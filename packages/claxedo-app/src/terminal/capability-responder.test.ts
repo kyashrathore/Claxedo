@@ -77,4 +77,14 @@ describe("terminal capability responder", () => {
     expect(r).toContain("\x1b]10;rgb:d4d4/d4d4/d4d4\x07")
     expect(r).toContain("\x1b]11;rgb:1c1c/1c1c/1c1c\x07")
   })
+
+  // NOTE (single source of truth): the dead OSC 10/11 duplicate that once lived
+  // in backend/xterm.ts (and the unused TerminalBackend.onTerminalResponse hook)
+  // was removed in Wave 1, so getCapabilityResponses is now the ONLY place these
+  // magic RGB values are produced. The structural drift guard for that ("OSC
+  // 10/11 escape handling may appear in exactly one production file") is a
+  // source-shape rule and now lives in src/architecture/scanners.ts as the named
+  // `oscColorEscapesOutsideResponder` rule, enforced by
+  // src/architecture/osc-color-responder.guard.test.ts (baseline empty) — per
+  // CONTRIBUTING tests-as-specs, not as a source-text scan in this feature spec.
 })

@@ -19,13 +19,140 @@ export interface LinkMatch {
 }
 
 /**
- * Abstract base class for terminal link providers that handles links spanning
- * up to 3 wrapped lines (previous + current + next). Links spanning 4+ wrapped
- * lines will be truncated.
+ * Stitched view of a buffer line together with its wrapped neighbours, used by
+ * every link provider so the "combine prev+current+next wrapped line and locate
+ * the current line's slice" math has a single implementation.
  */
-export abstract class MultiLineLinkProvider implements ILinkProvider {
+export interface WrappedLineContext {
+	lineText: string;
+	lineLength: number;
+	isCurrentLineWrapped: boolean;
+	prevLineText: string;
+	prevLineLength: number;
+	nextLineText: string;
+	nextLineIsWrapped: boolean;
+	/** prevLineText + lineText + nextLineText (the search window). */
+	combinedText: string;
+	/** Offset of the current line's first char within combinedText (= prevLineLength). */
+	currentLineOffset: number;
+}
+
+/**
+ * Shared geometry base for terminal link providers whose links can span up to 3
+ * wrapped lines (previous + current + next). Owns the line-stitching
+ * (`computeLineContext`) and the wrapped-line range math (`calculateLinkRange`)
+ * so subclasses never re-implement them. Links spanning 4+ wrapped lines are
+ * truncated.
+ *
+ * Two flavours extend this:
+ *  - {@link MultiLineLinkProvider} — regex-driven (UrlLinkProvider), matching a
+ *    single `getPattern()` against the combined text.
+ *  - FilePathLinkProvider — override-driven, feeding the combined text through
+ *    VSCode's structured link detector instead of one regex, then reusing the
+ *    same range math here.
+ */
+export abstract class WrappedLineLinkProvider implements ILinkProvider {
 	constructor(protected readonly terminal: LinkProviderTerminal) {}
 
+	abstract provideLinks(
+		bufferLineNumber: number,
+		callback: (links: ILink[] | undefined) => void,
+	): void;
+
+	/**
+	 * Stitch the current buffer line with its wrapped previous/next neighbours.
+	 * Returns null when the current line is absent (caller should report no links).
+	 */
+	protected computeLineContext(bufferLineNumber: number): WrappedLineContext | null {
+		const lineIndex = bufferLineNumber - 1;
+		const line = this.terminal.buffer.active.getLine(lineIndex);
+		if (!line) {
+			return null;
+		}
+
+		const lineText = line.translateToString(true);
+		const lineLength = lineText.length;
+		const isCurrentLineWrapped = line.isWrapped;
+
+		const prevLine = isCurrentLineWrapped
+			? this.terminal.buffer.active.getLine(lineIndex - 1)
+			: null;
+		const prevLineText = prevLine ? prevLine.translateToString(true) : "";
+		const prevLineLength = prevLineText.length;
+
+		const nextLine = this.terminal.buffer.active.getLine(lineIndex + 1);
+		const nextLineIsWrapped = nextLine?.isWrapped ?? false;
+		const nextLineText =
+			nextLineIsWrapped && nextLine ? nextLine.translateToString(true) : "";
+
+		const combinedText = prevLineText + lineText + nextLineText;
+
+		return {
+			lineText,
+			lineLength,
+			isCurrentLineWrapped,
+			prevLineText,
+			prevLineLength,
+			nextLineText,
+			nextLineIsWrapped,
+			combinedText,
+			currentLineOffset: prevLineLength,
+		};
+	}
+
+	protected calculateLinkRange(
+		matchIndex: number,
+		matchEnd: number,
+		prevLineLength: number,
+		lineLength: number,
+		bufferLineNumber: number,
+		isCurrentLineWrapped: boolean,
+		nextLineIsWrapped: boolean,
+	): ILink["range"] {
+		const currentLineStart = prevLineLength;
+		const currentLineEnd = prevLineLength + lineLength;
+
+		const startsInPrevLine =
+			isCurrentLineWrapped && matchIndex < currentLineStart;
+		const endsInNextLine = nextLineIsWrapped && matchEnd > currentLineEnd;
+
+		let startY: number;
+		let startX: number;
+		let endY: number;
+		let endX: number;
+
+		if (startsInPrevLine) {
+			startY = bufferLineNumber - 1;
+			startX = matchIndex + 1;
+		} else {
+			startY = bufferLineNumber;
+			startX = matchIndex - currentLineStart + 1;
+		}
+
+		if (endsInNextLine) {
+			endY = bufferLineNumber + 1;
+			endX = matchEnd - currentLineEnd + 1;
+		} else if (matchEnd <= currentLineStart) {
+			endY = bufferLineNumber - 1;
+			endX = matchEnd + 1;
+		} else {
+			endY = bufferLineNumber;
+			endX = matchEnd - currentLineStart + 1;
+		}
+
+		return {
+			start: { x: startX, y: startY },
+			end: { x: endX, y: endY },
+		};
+	}
+}
+
+/**
+ * Regex-driven link provider: matches a single {@link getPattern} against the
+ * stitched multi-line text. Subclasses supply the pattern, a skip predicate, an
+ * optional match transform, and an activation handler.
+ */
+export abstract class MultiLineLinkProvider extends WrappedLineLinkProvider {
 	protected abstract getPattern(): RegExp;
 	protected abstract shouldSkipMatch(match: LinkMatch): boolean;
 	protected abstract handleActivation(
@@ -46,30 +173,20 @@ export abstract class MultiLineLinkProvider implements ILinkProvider {
 		bufferLineNumber: number,
 		callback: (links: ILink[] | undefined) => void,
 	): void {
-		const lineIndex = bufferLineNumber - 1;
-		const line = this.terminal.buffer.active.getLine(lineIndex);
-		if (!line) {
+		const ctx = this.computeLineContext(bufferLineNumber);
+		if (!ctx) {
 			callback(undefined);
 			return;
 		}
 
-		const lineText = line.translateToString(true);
-		const lineLength = lineText.length;
-		const isCurrentLineWrapped = line.isWrapped;
-
-		const prevLine = isCurrentLineWrapped
-			? this.terminal.buffer.active.getLine(lineIndex - 1)
-			: null;
-		const prevLineText = prevLine ? prevLine.translateToString(true) : "";
-		const prevLineLength = prevLineText.length;
-
-		const nextLine = this.terminal.buffer.active.getLine(lineIndex + 1);
-		const nextLineIsWrapped = nextLine?.isWrapped ?? false;
-		const nextLineText =
-			nextLineIsWrapped && nextLine ? nextLine.translateToString(true) : "";
-
-		const combinedText = prevLineText + lineText + nextLineText;
-		const currentLineOffset = prevLineLength;
+		const {
+			lineLength,
+			isCurrentLineWrapped,
+			prevLineLength,
+			nextLineIsWrapped,
+			combinedText,
+			currentLineOffset,
+		} = ctx;
 
 		const links: ILink[] = [];
 		const regex = this.getPattern();
@@ -123,51 +240,5 @@ export abstract class MultiLineLinkProvider implements ILinkProvider {
 		}
 
 		callback(links.length > 0 ? links : undefined);
-	}
-
-	private calculateLinkRange(
-		matchIndex: number,
-		matchEnd: number,
-		prevLineLength: number,
-		lineLength: number,
-		bufferLineNumber: number,
-		isCurrentLineWrapped: boolean,
-		nextLineIsWrapped: boolean,
-	): ILink["range"] {
-		const currentLineStart = prevLineLength;
-		const currentLineEnd = prevLineLength + lineLength;
-
-		const startsInPrevLine =
-			isCurrentLineWrapped && matchIndex < currentLineStart;
-		const endsInNextLine = nextLineIsWrapped && matchEnd > currentLineEnd;
-
-		let startY: number;
-		let startX: number;
-		let endY: number;
-		let endX: number;
-
-		if (startsInPrevLine) {
-			startY = bufferLineNumber - 1;
-			startX = matchIndex + 1;
-		} else {
-			startY = bufferLineNumber;
-			startX = matchIndex - currentLineStart + 1;
-		}
-
-		if (endsInNextLine) {
-			endY = bufferLineNumber + 1;
-			endX = matchEnd - currentLineEnd + 1;
-		} else if (matchEnd <= currentLineStart) {
-			endY = bufferLineNumber - 1;
-			endX = matchEnd + 1;
-		} else {
-			endY = bufferLineNumber;
-			endX = matchEnd - currentLineStart + 1;
-		}
-
-		return {
-			start: { x: startX, y: startY },
-			end: { x: endX, y: endY },
-		};
 	}
 }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize } from "./terminal-tui"
+import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize } from "./reconnect-heuristics"
 
-describe("terminal TUI helpers", () => {
+describe("terminal reconnect/restore heuristics", () => {
   test("isLikelyTui: matches title", () => {
     expect(
       isLikelyTui({ snapshotWasAltScreen: false, title: "Codex 5", initialCommand: "" }),

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "bun:test"
-import { setupDropHandler, setupCopyHandler, setupPasteHandler } from "./helpers"
+import { setupDropHandler, setupCopyHandler, setupPasteHandler } from "./clipboard"
 
 // ---------------------------------------------------------------------------
 // Drop handler
