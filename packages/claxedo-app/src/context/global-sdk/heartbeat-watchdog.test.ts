@@ -5,6 +5,9 @@ import { createHeartbeatWatchdog } from "./heartbeat-watchdog"
 function harness() {
   let clock = 0
   let pending: { fn: () => void; at: number } | undefined
+  // Ordered log of timer operations so tests can assert that a stale timer is
+  // cleared before a replacement is armed (no leaked handle).
+  const timerLog: Array<"set" | "clear"> = []
   return {
     watchdog(timeoutMs: number, onTimeout: () => void) {
       return createHeartbeatWatchdog({
@@ -13,10 +16,13 @@ function harness() {
         now: () => clock,
         setTimer: (fn, ms) => {
           pending = { fn, at: clock + ms }
+          timerLog.push("set")
+          // as-any: fake timer returns an opaque numeric handle; the real TimerHandle is never inspected.
           return 1 as unknown as ReturnType<typeof setTimeout>
         },
         clearTimer: () => {
           pending = undefined
+          timerLog.push("clear")
         },
       })
     },
@@ -29,6 +35,9 @@ function harness() {
       }
     },
     hasTimer: () => pending !== undefined,
+    timerLog: () => timerLog,
+    setTimerCount: () => timerLog.filter((op) => op === "set").length,
+    clearTimerCount: () => timerLog.filter((op) => op === "clear").length,
   }
 }
 
@@ -53,6 +62,11 @@ describe("createHeartbeatWatchdog", () => {
     w.reset()
     h.advance(10_000)
     w.reset() // restart the window
+    // The restart must clear the first timer before arming the second, or the
+    // stale timer leaks and could still fire. Order: set, clear, set.
+    expect(h.timerLog()).toEqual(["set", "clear", "set"])
+    expect(h.setTimerCount()).toBe(2)
+    expect(h.clearTimerCount()).toBe(1)
     h.advance(10_000) // 20_000 total, but only 10_000 since last reset
     expect(fired).toBe(0)
     h.advance(5_000) // now 15_000 since last reset

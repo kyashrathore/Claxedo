@@ -29,6 +29,7 @@ function harness() {
   let clock = 0
   let pending: { fn: () => void; at: number } | undefined
   let nextHandle = 1
+  let lastArmMs: number | undefined
   const coalescer = createEventCoalescer<E>({
     emit: (directory, payload) => emitted.push({ directory, payload }),
     policy,
@@ -36,6 +37,8 @@ function harness() {
     now: () => clock,
     setTimer: (fn, ms) => {
       pending = { fn, at: clock + ms }
+      lastArmMs = ms
+      // as-any: fake timer returns an opaque numeric handle; the real TimerHandle is never inspected.
       return nextHandle++ as unknown as ReturnType<typeof setTimeout>
     },
     clearTimer: () => {
@@ -56,6 +59,7 @@ function harness() {
       }
     },
     hasTimer: () => pending !== undefined,
+    lastArmMs: () => lastArmMs,
   }
 }
 
@@ -124,5 +128,20 @@ describe("createEventCoalescer", () => {
     const h = harness()
     h.flush()
     expect(h.emitted).toEqual([])
+  })
+
+  test("re-arms with the remaining frame budget after a partial advance, not a full frame", () => {
+    const h = harness()
+    h.enqueue("d", { kind: "status", session: "s1", value: 1 })
+    expect(h.lastArmMs()).toBe(16) // first frame arms for the full budget
+
+    h.advance(16) // flush fires and records `last = now()`
+    expect(h.emitted).toHaveLength(1)
+
+    h.advance(5) // 5ms elapse with no timer pending
+    h.enqueue("d", { kind: "status", session: "s2", value: 1 })
+    // the next frame must arm for the remaining budget (frameMs - elapsed = 16 - 5),
+    // not another full frame, so bursts stay pinned to a ~16ms cadence.
+    expect(h.lastArmMs()).toBe(11)
   })
 })

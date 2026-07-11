@@ -12,7 +12,7 @@ import {
   useContext,
   type ParentProps,
 } from "solid-js"
-import { signedWorkspaceFromProjects } from "../runtime/signed-workspace"
+import { signedWorkspaceFromProjects } from "../agent-runtime/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "../utils/api"
 import type { SessionLifecycleEvent } from "../shared/data/session-lifecycle"
 import { shellRouteWorkspaceKeyFromPathname } from "../shell/identity/route"
@@ -29,6 +29,11 @@ import { queryClient } from "../shared/query/query-client"
 import { queryKeys } from "../shared/query/keys"
 import { createTransport } from "../shell/data/transport/transport"
 import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import {
+  HEARTBEAT_TIMEOUT_MS,
+  failureEscalation,
+  reconnectDelayMs,
+} from "./claxedo-events-reconnect"
 
 // ─── Event Types (must match claxedo-server/src/bus.ts) ───────────────────
 
@@ -141,29 +146,6 @@ export function useClaxedoEventsOptional() {
 }
 
 // ─── Provider ─────────────────────────────────────────────────────────────
-
-const RECONNECT_DELAY_MS = 2000
-const MAX_RECONNECT_DELAY_MS = 30000
-const HEARTBEAT_TIMEOUT_MS = 45000
-
-// While the host tunnel settles (relay→runtime 502s, mint races) the stream
-// fails a handful of times before it first opens. Those early failures are
-// expected and self-heal via backoff, so keep them on a quiet `console.debug`
-// path. Only once the failures are SUSTAINED (>= this many consecutive,
-// i.e. the tunnel genuinely is not coming up) do we escalate to
-// `console.error` so a real outage still surfaces a greppable diagnostic.
-const SUSTAINED_FAILURE_THRESHOLD = 3
-
-// Exponential backoff with jitter for the per-target event stream. A persistent
-// failure — an expired token (401) or a host that is offline/unreachable on a
-// bad network — must not retry at a fixed 2s cadence forever; it backs off up to
-// 30s and resets the moment a stream opens successfully. Jitter avoids every
-// pane reconnecting in lockstep.
-function reconnectBackoffMs(failures: number) {
-  if (failures <= 0) return RECONNECT_DELAY_MS
-  const ceiling = Math.min(MAX_RECONNECT_DELAY_MS, RECONNECT_DELAY_MS * 2 ** failures)
-  return Math.round(ceiling / 2 + Math.random() * (ceiling / 2))
-}
 
 type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
 
@@ -367,7 +349,7 @@ export function ClaxedoEventsProvider(props: ParentProps) {
         state.heartbeatTimer = null
       }
       if (state.reconnectTimer) return
-      const delay = Math.max(reconnectBackoffMs(state.failures), fastSessionSwitchAnyQuietDelay())
+      const delay = reconnectDelayMs(state.failures, fastSessionSwitchAnyQuietDelay())
       state.failures += 1
       state.reconnectTimer = setTimeout(() => {
         state.reconnectTimer = null
@@ -471,7 +453,8 @@ export function ClaxedoEventsProvider(props: ParentProps) {
         // is the count of PRIOR failures (incremented later in
         // `scheduleReconnect`), so it is 0 on the first failure.
         const diagnostic = describeEventStreamFailure(error, target)
-        if (state.failures === SUSTAINED_FAILURE_THRESHOLD) {
+        const escalation = failureEscalation(state.failures)
+        if (escalation === "escalate") {
           // Escalate exactly once when the failure run first becomes sustained,
           // so a real outage surfaces a single greppable diagnostic instead of
           // re-spamming on every backoff tick. (`state.failures` resets to 0 on
@@ -481,7 +464,7 @@ export function ClaxedoEventsProvider(props: ParentProps) {
           // `ready → reconnecting` (queries park, NO teardown) — the first-N
           // transient failures stay quiet (BUG-8) and do NOT flip readiness.
           if (target.kind === "workspace") markWorkspaceReconnecting(target.workspaceId)
-        } else if (state.failures < SUSTAINED_FAILURE_THRESHOLD) {
+        } else if (escalation === "quiet") {
           console.debug("[claxedo-events] stream failed (transient, retrying)", diagnostic)
         }
         state.abort = null

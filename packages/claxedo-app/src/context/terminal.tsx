@@ -15,6 +15,7 @@ import { sessionWorkspaceRuntimeRef } from "@claxedo/shell/workspace/session-wor
 import { createTransport } from "@claxedo/shell/data/transport/transport"
 import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
 import { terminalPtyApiPath } from "@claxedo/terminal/terminal-connection"
+import { createRefCountedResourceCache } from "@claxedo/context/live-resource-cache"
 import { parse as parseShellCommand } from "shell-quote"
 export type { LocalPTY } from "@claxedo/context/terminal-shared"
 
@@ -27,12 +28,6 @@ type TerminalSession = ReturnType<typeof createTerminalSession>
 type TerminalCacheEntry = {
   value: TerminalSession
   release: VoidFunction
-}
-
-type SharedTerminalCacheEntry = {
-  value: TerminalSession
-  dispose: VoidFunction
-  refs: number
 }
 
 const scope = scopeUrl
@@ -154,26 +149,9 @@ function terminalPersistTarget(url: string, dir: string) {
     : Persist.scoped(dir, undefined, "terminal.v2")
 }
 
-const sharedTerminalCache = new Map<string, SharedTerminalCacheEntry>()
-
-const releaseTerminalSession = (key: string) => {
-  const entry = sharedTerminalCache.get(key)
-  if (!entry) return
-  entry.refs -= 1
-  if (entry.refs > 0) return
-  entry.dispose()
-  sharedTerminalCache.delete(key)
-}
-
-const pruneTerminalCache = () => {
-  if (sharedTerminalCache.size <= MAX_TERMINAL_SESSIONS) return
-  for (const [key, entry] of sharedTerminalCache) {
-    if (entry.refs > 0) continue
-    entry.dispose()
-    sharedTerminalCache.delete(key)
-    if (sharedTerminalCache.size <= MAX_TERMINAL_SESSIONS) return
-  }
-}
+// Ref-counted so multiple provider instances scoped to the same directory
+// share one live terminal session and dispose it once, after the last releases.
+const sharedTerminalCache = createRefCountedResourceCache<TerminalSession>(MAX_TERMINAL_SESSIONS)
 
 type TerminalSessionOptions = {
   claxedoServerUrl?: string
@@ -202,32 +180,13 @@ const acquireTerminalSession = (
   sdk: ReturnType<typeof useSDK>,
   dir: string,
   options?: TerminalSessionOptions,
-): TerminalCacheEntry => {
-  const existing = sharedTerminalCache.get(key)
-  if (existing) {
-    existing.refs += 1
-    return {
-      value: existing.value,
-      release: () => releaseTerminalSession(key),
-    }
-  }
-
-  const created = createRoot((dispose) => ({
-    value: createTerminalSession(sdk, dir, options),
-    dispose,
-  }))
-
-  sharedTerminalCache.set(key, {
-    value: created.value,
-    dispose: created.dispose,
-    refs: 1,
-  })
-  pruneTerminalCache()
-  return {
-    value: created.value,
-    release: () => releaseTerminalSession(key),
-  }
-}
+): TerminalCacheEntry =>
+  sharedTerminalCache.acquire(key, () =>
+    createRoot((dispose) => ({
+      value: createTerminalSession(sdk, dir, options),
+      dispose,
+    })),
+  )
 
 export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: string, options?: TerminalSessionOptions) {
   const url = scope(sdk.url)

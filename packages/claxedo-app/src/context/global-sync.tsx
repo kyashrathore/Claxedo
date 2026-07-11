@@ -62,9 +62,9 @@ import {
   clearGlobalSyncSdkClientsForDirectory,
   clearGlobalSyncSdkClientsForOwner,
 } from "@claxedo/shell/data/global-sync-sdk-client-cache"
-import { createAgentRuntimeClient } from "../runtime/agent-runtime-client"
+import { createAgentRuntimeClient } from "../agent-runtime/agent-runtime-client"
 import { createTransport } from "@claxedo/shell/data/transport/transport"
-import { signedWorkspaceFromProjects } from "../runtime/signed-workspace"
+import { signedWorkspaceFromProjects } from "../agent-runtime/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "../utils/api"
 import { principalHasSignedAccess, usePrincipal } from "../shell/auth/identity-provider"
 import { sessionWorkspaceRuntimeRef } from "../shell/workspace/session-workspace-key"

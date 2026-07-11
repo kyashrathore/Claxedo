@@ -26,7 +26,7 @@ import {
 import { decodeSessionConfig } from "@claxedo/session-client/harness/profile"
 import { agentListQuery, configQuery } from "../shared/query/directory"
 import { useWorkspaceQuery } from "../shell/workspace/use-workspace-query"
-import { createAgentRuntimeClient } from "../runtime/agent-runtime-client"
+import { createAgentRuntimeClient } from "../agent-runtime/agent-runtime-client"
 import { queryClient } from "../shared/query/query-client"
 import { useSDK } from "@claxedo/context/sdk"
 import {

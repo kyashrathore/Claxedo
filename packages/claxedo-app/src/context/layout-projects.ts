@@ -88,6 +88,156 @@ export function projectCatalog(input: {
   }
 }
 
+/**
+ * Effect 1 (sandbox → parent resolution): given the current sidebar projects,
+ * decide which entries are sandboxes that must collapse into their root
+ * project. Returns the imperative server.projects operations to apply, in the
+ * per-project order the live effect applies them, so a sandbox worktree is
+ * always removed and its root opened/expanded exactly once.
+ */
+export function resolveSandboxRootActions(input: {
+  projects: ProjectState[]
+  rootFor: (directory: string) => string
+  valid: (directory: string) => boolean
+}): { removals: string[]; opens: string[]; expands: string[] } {
+  const removals: string[] = []
+  const opens: string[] = []
+  const expands: string[] = []
+  const seen = new Set(input.projects.map((p) => p.worktree))
+
+  for (const project of input.projects) {
+    const root = input.rootFor(project.worktree)
+    if (root === project.worktree) continue
+    removals.push(project.worktree)
+    if (!seen.has(root) && input.valid(root)) {
+      opens.push(root)
+      seen.add(root)
+    }
+    if (project.expanded) expands.push(root)
+  }
+
+  return { removals, opens, expands }
+}
+
+/**
+ * Effect 2: sidebar projects whose worktree is no longer present in the API
+ * catalog and should be removed. Callers gate this on a non-empty API list so
+ * a transient empty response never wipes the sidebar.
+ */
+export function sidebarProjectsMissingFromApi(input: {
+  sidebar: ProjectState[]
+  api: Project[]
+}): string[] {
+  const apiWorktrees = new Set(input.api.map((p) => p.worktree))
+  return input.sidebar.filter((project) => !apiWorktrees.has(project.worktree)).map((project) => project.worktree)
+}
+
+/**
+ * Reconcile the sidebar project list toward the API catalog (non-local
+ * servers): keep the sidebar entries the API still knows, then append any API
+ * worktrees not yet shown and not explicitly closed. Sandbox directories are
+ * never surfaced as their own project. Returns the next ordered worktree list,
+ * or `undefined` when nothing changed (so callers can skip the store write).
+ */
+export function syncApiProjectsToSidebar(input: {
+  api: Project[]
+  sidebar: string[]
+  isClosed: (directory: string) => boolean
+  valid: (directory: string) => boolean
+}): string[] | undefined {
+  const sandboxDirs = new Set<string>()
+  for (const project of input.api) {
+    for (const sandbox of project.sandboxes ?? []) {
+      if (sandbox !== project.worktree) sandboxDirs.add(sandbox)
+    }
+  }
+
+  const api = input.api.map((p) => p.worktree).filter((w) => input.valid(w) && !sandboxDirs.has(w))
+  if (api.length === 0) return undefined
+
+  const current = input.sidebar.filter(input.valid)
+  const apiSet = new Set(api)
+  const keep = current.filter((worktree) => apiSet.has(worktree))
+  const keepSet = new Set(keep)
+  const next = [...keep, ...api.filter((worktree) => !keepSet.has(worktree) && !input.isClosed(worktree))]
+
+  const changed = next.length !== current.length || next.some((x, i) => x !== current[i])
+  if (!changed) return undefined
+  return next
+}
+
+export type ColorableProject = {
+  worktree: string
+  id?: string
+  icon?: { color?: string }
+}
+
+export type ProjectColorPlan<C extends string = string> = {
+  /** colorRequested keys to drop because the project now carries its own color. */
+  clears: string[]
+  /** local color choices to persist via setColors. */
+  assignments: Array<{ worktree: string; color: C }>
+  /** global/signed workspaces whose color is written through project-meta. */
+  metaUpserts: Array<{ worktree: string; color: C }>
+  /** remote projects whose color must be pushed to the control plane. */
+  remoteUpdates: Array<{ worktree: string; id: string; color: C }>
+}
+
+/**
+ * Decide, for the current enriched project list, which worktrees still need a
+ * locally-assigned avatar color and where that color must be propagated
+ * (local store, project-meta for global/signed workspaces, or a remote control
+ * plane update). Mutates `colorRequested` the same way the live effect does so
+ * a color is pushed to the server at most once per value. `pick` selects an
+ * unused color (injected so tests are deterministic).
+ */
+export function planProjectColorAssignment<C extends string = string>(input: {
+  projects: ColorableProject[]
+  colors: Record<string, C>
+  colorRequested: Map<string, C>
+  pick: (used: Set<string>) => C
+  isSigned: (worktree: string) => boolean
+}): ProjectColorPlan<C> {
+  const plan: ProjectColorPlan<C> = { clears: [], assignments: [], metaUpserts: [], remoteUpdates: [] }
+
+  for (const project of input.projects) {
+    if (project.icon?.color) {
+      input.colorRequested.delete(project.worktree)
+      plan.clears.push(project.worktree)
+    }
+  }
+
+  const used = new Set<string>()
+  for (const project of input.projects) {
+    const color = project.icon?.color ?? input.colors[project.worktree]
+    if (color) used.add(color)
+  }
+
+  for (const project of input.projects) {
+    if (project.icon?.color) continue
+    const worktree = project.worktree
+    const existing = input.colors[worktree]
+    const color = existing ?? input.pick(used)
+    if (!existing) {
+      used.add(color)
+      plan.assignments.push({ worktree, color })
+    }
+    if (!project.id) continue
+
+    const requested = input.colorRequested.get(worktree)
+    if (requested === color) continue
+    input.colorRequested.set(worktree, color)
+
+    if (project.id === "global" || input.isSigned(worktree)) {
+      plan.metaUpserts.push({ worktree, color })
+      continue
+    }
+    plan.remoteUpdates.push({ worktree, id: project.id, color })
+  }
+
+  return plan
+}
+
 export function canAutoOpenProject(input: {
   api: Project[] | undefined
   list: Array<{ worktree: string; sandboxes?: string[] }> | undefined

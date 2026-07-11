@@ -4,7 +4,7 @@ import { createEffect, onCleanup, type JSX } from "solid-js"
 import {
   CommandProvider as UpstreamCommandProvider,
   useCommand as useUpstreamCommand,
-} from "./command-upstream"
+} from "./command-palette"
 import { CommandBusProvider, useCommandBus, useCommandBusOptional } from "@claxedo/shell/contributions/command-bus-provider"
 import {
   agentCommandFromEvent,
@@ -18,7 +18,7 @@ import { trustedAgentContributionBundleFromEvent } from "@claxedo/shell/contribu
 import { contentSurfaceRegistry } from "@claxedo/shell/contributions/first-party-content-surfaces"
 import { useGlobalSDK } from "@/context/global-sdk"
 
-export * from "./command-upstream"
+export * from "./command-palette"
 
 export function CommandProvider(props: { children: JSX.Element }): JSX.Element {
   return (

@@ -6,6 +6,7 @@ import type { FileSelection } from "@/context/file"
 import { Persist, persisted } from "@/utils/persist"
 import { checksum } from "@claxedo/utils/encode"
 import { useServer } from "@/context/server"
+import { createLruResourceCache } from "@/context/live-resource-cache"
 import { sessionViewKey } from "../shell/identity/session-view-key"
 
 interface PartBase {
@@ -108,12 +109,9 @@ const SERVER_SCOPED_PERSIST = import.meta.env.VITE_SERVER_SCOPED_PERSIST === "tr
 
 type PromptSession = ReturnType<typeof createPromptSession>
 
-type PromptCacheEntry = {
-  value: PromptSession
-  dispose: VoidFunction
-}
-
-const promptCache = new Map<string, PromptCacheEntry>()
+// LRU over the newest MAX_PROMPT_SESSIONS directory/session scopes; evicted
+// scopes have their reactive root disposed.
+const promptCache = createLruResourceCache<PromptSession>(MAX_PROMPT_SESSIONS)
 
 type Scope = {
   dir: string
@@ -224,39 +222,20 @@ const promptContextInput = {
   gate: false,
   init: (props: PromptProviderProps) => {
     const server = useServer()
-    const prune = () => {
-      while (promptCache.size > MAX_PROMPT_SESSIONS) {
-        const first = promptCache.keys().next().value
-        if (!first) return
-        const entry = promptCache.get(first)
-        entry?.dispose()
-        promptCache.delete(first)
-      }
-    }
-
     const owner = getOwner()
     const load = (dir: string, id: string | undefined) => {
       const key = SERVER_SCOPED_PERSIST
         ? `${server.url}:${dir}:${id ?? WORKSPACE_KEY}`
         : `${dir}:${id ?? WORKSPACE_KEY}`
-      const existing = promptCache.get(key)
-      if (existing) {
-        promptCache.delete(key)
-        promptCache.set(key, existing)
-        return existing.value
-      }
-
-      const entry = createRoot(
-        (dispose) => ({
-          value: createPromptSession(server.url, dir, id),
-          dispose,
-        }),
-        owner,
+      return promptCache.load(key, () =>
+        createRoot(
+          (dispose) => ({
+            value: createPromptSession(server.url, dir, id),
+            dispose,
+          }),
+          owner,
+        ),
       )
-
-      promptCache.set(key, entry)
-      prune()
-      return entry.value
     }
 
     const session = createMemo(() =>

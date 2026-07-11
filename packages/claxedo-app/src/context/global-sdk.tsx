@@ -20,7 +20,7 @@ import { createTransport } from "@claxedo/shell/data/transport/transport"
 import { useServer } from "@/context/server"
 import { authFetch } from "../utils/api"
 import { principalHasSignedAccess, usePrincipal } from "../shell/auth/identity-provider"
-import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../runtime/signed-workspace"
+import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../agent-runtime/signed-workspace"
 import { shellRouteWorkspaceKeyFromPathname } from "../shell/identity/route"
 import { isUserHostedWorkspaceDirectory } from "../shell/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "../shell/workspace/session-workspace-key"
@@ -31,6 +31,9 @@ import { workspaceResolveUrl } from "../utils/workspace-control-routes"
 import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
 import { createControlPlaneEventFetch, type LiveSession } from "./global-sdk-event-fetch"
 import { createGlobalSdkFetch } from "../shell/data/global-sdk-fetch"
+import { createEventCoalescer } from "./global-sdk/event-coalescer"
+import { createHeartbeatWatchdog } from "./global-sdk/heartbeat-watchdog"
+import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "./global-sdk/reconnect-backoff"
 export { createControlPlaneEventFetch } from "./global-sdk-event-fetch"
 export { createGlobalSdkFetch } from "../shell/data/global-sdk-fetch"
 
@@ -386,26 +389,8 @@ const globalSDKContextInput = {
       [key: string]: Event
     }>()
 
-    type Queued = { directory: EventDirectory; payload: Event }
     const FLUSH_FRAME_MS = 16
     const STREAM_YIELD_MS = 8
-    const RECONNECT_DELAY_MS = 250
-    const MAX_RECONNECT_DELAY_MS = 15_000
-
-    // Back off repeated stream-open failures so expired auth/network flakes do
-    // not hammer the control plane; jitter avoids tab-level reconnect herds.
-    const reconnectBackoffMs = (failures: number) => {
-      if (failures <= 0) return RECONNECT_DELAY_MS
-      const ceiling = Math.min(MAX_RECONNECT_DELAY_MS, RECONNECT_DELAY_MS * 2 ** failures)
-      return Math.round(ceiling / 2 + Math.random() * (ceiling / 2))
-    }
-
-    let queue: Queued[] = []
-    let buffer: Queued[] = []
-    const coalesced = new Map<string, number>()
-    const staleDeltas = new Set<string>()
-    let timer: ReturnType<typeof setTimeout> | undefined
-    let last = 0
     let streamReady = false
     const readyResolvers = new Set<() => void>()
 
@@ -420,59 +405,28 @@ const globalSDKContextInput = {
       }
     }
 
-    const enqueue = (directory: string, payload: Event) => {
-      const k = key(directory, payload)
-      if (k) {
-        const i = coalesced.get(k)
-        if (i !== undefined) {
-          queue[i] = { directory, payload }
-          if (partUpdateSupersedesDeltas(payload)) {
-            const part = record((payload.properties as { part?: unknown }).part)
-            if (typeof part?.messageID === "string" && typeof part.id === "string") {
-              staleDeltas.add(deltaKey(directory, part.messageID, part.id))
-            }
+    const coalescer = createEventCoalescer<Event>({
+      emit: (directory, payload) => emitter.emit(directory, payload),
+      batch,
+      frameMs: FLUSH_FRAME_MS,
+      policy: {
+        coalesceKey: key,
+        supersededDelta: (directory, payload) => {
+          if (!partUpdateSupersedesDeltas(payload)) return
+          const part = record((payload.properties as { part?: unknown }).part)
+          if (typeof part?.messageID === "string" && typeof part.id === "string") {
+            return deltaKey(directory, part.messageID, part.id)
           }
-          return
-        }
-        coalesced.set(k, queue.length)
-      }
-      queue.push({ directory, payload })
-      schedule()
-    }
-
-    const flush = () => {
-      if (timer) clearTimeout(timer)
-      timer = undefined
-
-      if (queue.length === 0) return
-
-      const events = queue
-      const skip = staleDeltas.size > 0 ? new Set(staleDeltas) : undefined
-      queue = buffer
-      buffer = events
-      queue.length = 0
-      coalesced.clear()
-      staleDeltas.clear()
-
-      last = Date.now()
-      batch(() => {
-        for (const event of events) {
-          if (skip && event.payload.type === "message.part.delta") {
-            const props = event.payload.properties
-            if (skip.has(deltaKey(event.directory, props.messageID, props.partID))) continue
-          }
-          emitter.emit(event.directory, event.payload)
-        }
-      })
-
-      buffer.length = 0
-    }
-
-    const schedule = () => {
-      if (timer) return
-      const elapsed = Date.now() - last
-      timer = setTimeout(flush, Math.max(0, FLUSH_FRAME_MS - elapsed))
-    }
+        },
+        deltaIdentity: (directory, payload) => {
+          if (payload.type !== "message.part.delta") return
+          const props = payload.properties
+          return deltaKey(directory, props.messageID, props.partID)
+        },
+      },
+    })
+    const enqueue = coalescer.enqueue
+    const flush = coalescer.flush
 
     let streamErrorLogged = false
     const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -499,21 +453,13 @@ const globalSDKContextInput = {
     let lastRuntimeEventId: string | undefined
     let liveSessionRestartTimer: ReturnType<typeof setTimeout> | undefined
     const HEARTBEAT_TIMEOUT_MS = 15_000
-    let lastEventAt = Date.now()
-    let heartbeat: ReturnType<typeof setTimeout> | undefined
-    const resetHeartbeat = () => {
-      lastEventAt = Date.now()
-      if (heartbeat) clearTimeout(heartbeat)
-      heartbeat = setTimeout(() => {
+    const heartbeat = createHeartbeatWatchdog({
+      timeoutMs: HEARTBEAT_TIMEOUT_MS,
+      onTimeout: () => {
         attempt?.abort()
         runtimeAttempt?.abort()
-      }, HEARTBEAT_TIMEOUT_MS)
-    }
-    const clearHeartbeat = () => {
-      if (!heartbeat) return
-      clearTimeout(heartbeat)
-      heartbeat = undefined
-    }
+      },
+    })
     const restartLiveSessionStreams = () => {
       if (fastSessionSwitchAnyQuietDelay() > 0) {
         scheduleLiveSessionRestart()
@@ -602,7 +548,7 @@ const globalSDKContextInput = {
                 directory: envelope.directory,
                 liveSession: eventLiveSession(),
               })
-              resetHeartbeat()
+              heartbeat.reset()
               markStreamReady()
               becameReady = true
               streamErrorLogged = false
@@ -689,13 +635,13 @@ const globalSDKContextInput = {
           }
           if (workspaceRuntimeOwnsLiveEvents()) {
             markStreamReady()
-            lastEventAt = Date.now()
+            heartbeat.touch()
             await wait(RECONNECT_DELAY_MS)
             continue
           }
           attempt = new AbortController()
           markStreamPending()
-          lastEventAt = Date.now()
+          heartbeat.touch()
           let becameReady = false
           const onAbort = () => {
             attempt?.abort()
@@ -709,11 +655,11 @@ const globalSDKContextInput = {
               headers,
             })
             let yielded = Date.now()
-            resetHeartbeat()
+            heartbeat.reset()
             for await (const item of sseJsonStream(response, attempt.signal, (id) => {
               lastGlobalEventId = id
             })) {
-              resetHeartbeat()
+              heartbeat.reset()
               markStreamReady()
               becameReady = true
               streamErrorLogged = false
@@ -742,7 +688,7 @@ const globalSDKContextInput = {
           } finally {
             abort.signal.removeEventListener("abort", onAbort)
             attempt = undefined
-            clearHeartbeat()
+            heartbeat.clear()
           }
 
           if (abort.signal.aborted || !started) return
@@ -762,7 +708,7 @@ const globalSDKContextInput = {
       started = false
       attempt?.abort()
       runtimeAttempt?.abort()
-      clearHeartbeat()
+      heartbeat.clear()
       markStreamPending()
       for (const resolve of readyResolvers) resolve()
       readyResolvers.clear()
@@ -789,7 +735,7 @@ const globalSDKContextInput = {
       const handler = () => {
         if (document.visibilityState !== "visible") return
         if (!started) return
-        if (Date.now() - lastEventAt < HEARTBEAT_TIMEOUT_MS) return
+        if (heartbeat.sinceLastEvent() < HEARTBEAT_TIMEOUT_MS) return
         attempt?.abort()
       }
       document.addEventListener("visibilitychange", handler)

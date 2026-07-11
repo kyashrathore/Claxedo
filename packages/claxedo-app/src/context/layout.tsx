@@ -9,7 +9,13 @@ import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { same } from "@/utils/same"
 import { createScrollPersistence, type SessionScroll } from "@/context/layout-scroll"
 import { validProjectRef, validWorktree } from "@claxedo/utils/worktree"
-import { projectCatalog } from "@claxedo/context/layout-projects"
+import {
+  planProjectColorAssignment,
+  projectCatalog,
+  resolveSandboxRootActions,
+  sidebarProjectsMissingFromApi,
+  syncApiProjectsToSidebar,
+} from "@claxedo/context/layout-projects"
 import { isUserHostedWorkspaceDirectory } from "../shell/identity/legacy-resolver"
 import { queryKeys } from "../shared/query/keys"
 import { queryClient } from "../shared/query/query-client"
@@ -343,19 +349,15 @@ function createLayoutContextValue() {
 
     // Effect 1: Sandbox → parent resolution (tracks server.projects.list())
     createEffect(() => {
-      const projects = sidebarProjects()
-      const seen = new Set(projects.map((p) => p.worktree))
+      const actions = resolveSandboxRootActions({
+        projects: sidebarProjects(),
+        rootFor,
+        valid: validWorktree,
+      })
       batch(() => {
-        for (const project of projects) {
-          const root = rootFor(project.worktree)
-          if (root === project.worktree) continue
-          server.projects.remove(project.worktree)
-          if (!seen.has(root) && validWorktree(root)) {
-            server.projects.open(root)
-            seen.add(root)
-          }
-          if (project.expanded) server.projects.expand(root)
-        }
+        for (const worktree of actions.removals) server.projects.remove(worktree)
+        for (const root of actions.opens) server.projects.open(root)
+        for (const root of actions.expands) server.projects.expand(root)
       })
     })
 
@@ -370,15 +372,13 @@ function createLayoutContextValue() {
         (apiProjects) => {
           if (!server.isLocal()) return
           if (apiProjects.length === 0) return
-          const apiWorktrees = new Set(apiProjects.map((p) => p.worktree))
           // server.projects.list() is read inside on() callback body → untracked
-          const projects = sidebarProjects()
+          const removals = sidebarProjectsMissingFromApi({
+            sidebar: sidebarProjects(),
+            api: apiProjects,
+          })
           batch(() => {
-            for (const project of projects) {
-              if (!apiWorktrees.has(project.worktree)) {
-                server.projects.remove(project.worktree)
-              }
-            }
+            for (const worktree of removals) server.projects.remove(worktree)
           })
         },
       ),
@@ -415,38 +415,19 @@ function createLayoutContextValue() {
       const projects = enriched()
       if (projects.length === 0) return
 
-      for (const project of projects) {
-        if (project.icon?.color) colorRequested.delete(project.worktree)
-      }
+      const plan = planProjectColorAssignment({
+        projects,
+        colors,
+        colorRequested,
+        pick: pickAvailableColor,
+        isSigned: isSignedWorkspaceDirectory,
+      })
 
-      const used = new Set<string>()
-      for (const project of projects) {
-        const color = project.icon?.color ?? colors[project.worktree]
-        if (color) used.add(color)
-      }
-
-      for (const project of projects) {
-        if (project.icon?.color) continue
-        const worktree = project.worktree
-        const existing = colors[worktree]
-        const color = existing ?? pickAvailableColor(used)
-        if (!existing) {
-          used.add(color)
-          setColors(worktree, color)
-        }
-        if (!project.id) continue
-
-        const requested = colorRequested.get(worktree)
-        if (requested === color) continue
-        colorRequested.set(worktree, color)
-
-        if (project.id === "global" || isSignedWorkspaceDirectory(worktree)) {
-          upsertProjectMeta(worktree, { icon: { color } })
-          continue
-        }
-
+      for (const { worktree, color } of plan.assignments) setColors(worktree, color)
+      for (const { worktree, color } of plan.metaUpserts) upsertProjectMeta(worktree, { icon: { color } })
+      for (const { worktree, id, color } of plan.remoteUpdates) {
         void globalSdk.client.project
-          .update({ projectID: project.id, directory: worktree, icon: { color } })
+          .update({ projectID: id, directory: worktree, icon: { color } })
           .catch(() => {
             if (colorRequested.get(worktree) === color) colorRequested.delete(worktree)
           })
@@ -464,26 +445,13 @@ function createLayoutContextValue() {
       const apiProjects = syncedProjects()
       if (!apiProjects || apiProjects.length === 0) return
 
-      // Build set of all sandbox directories so we never treat a worktree as a project
-      const sandboxDirs = new Set<string>()
-      for (const p of apiProjects) {
-        for (const s of p.sandboxes ?? []) {
-          if (s !== p.worktree) sandboxDirs.add(s)
-        }
-      }
-      const api = apiProjects.map((p) => p.worktree).filter((w) => validWorktree(w) && !sandboxDirs.has(w))
-      if (api.length === 0) return
-
-      const current = sidebarProjects()
-        .map((p) => p.worktree)
-        .filter(validWorktree)
-      const apiSet = new Set(api)
-      const keep = current.filter((worktree) => apiSet.has(worktree))
-      const keepSet = new Set(keep)
-      const next = [...keep, ...api.filter((worktree) => !keepSet.has(worktree) && !server.projects.isClosed(worktree))]
-
-      const changed = next.length !== current.length || next.some((x, i) => x !== current[i])
-      if (!changed) return
+      const next = syncApiProjectsToSidebar({
+        api: apiProjects,
+        sidebar: sidebarProjects().map((p) => p.worktree),
+        isClosed: server.projects.isClosed,
+        valid: validWorktree,
+      })
+      if (!next) return
 
       server.projects.sync(next)
       // New workspaces bootstrap on-demand when user navigates to them
