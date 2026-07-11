@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, mapArray, Match, Show, startTransition, Switch, untrack } from "solid-js"
+import { createEffect, createMemo, For, mapArray, Match, onCleanup, Show, startTransition, Switch, untrack } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useLocation, useMatch, useNavigate, useParams } from "@solidjs/router"
 import { useQuery } from "@tanstack/solid-query"
@@ -9,6 +9,11 @@ import { useTheme } from "@opencode-ai/ui/theme/context"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { ClaxedoIcon as Icon } from "../claxedo-ui/components/claxedo-icon"
+import {
+  setTitlebarCenterSlot,
+  setTitlebarLeftSlot,
+  setTitlebarRightSlot,
+} from "../claxedo-ui/components/portal-slot"
 import { TitlebarEditIcon } from "./titlebar-v2-edit-icon"
 
 import { getAvatarColors, useLayout, type LocalProject } from "@/context/layout"
@@ -614,7 +619,14 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                         </Tooltip>
                       </div>
                     </Show>
-                    <div id="opencode-titlebar-left" class="flex items-center gap-3 min-w-0 px-2" />
+                    <div
+                      ref={(el) => {
+                        setTitlebarLeftSlot(el ?? null)
+                        onCleanup(() => setTitlebarLeftSlot(null))
+                      }}
+                      data-testid="titlebar-left-slot"
+                      class="flex items-center gap-3 min-w-0 px-2"
+                    />
                     <ChannelIndicator />
                   </div>
                 </div>
@@ -623,7 +635,11 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
 
             <div class="min-w-0 flex items-center justify-center pointer-events-none">
               <div
-                id="opencode-titlebar-center"
+                ref={(el) => {
+                  setTitlebarCenterSlot(el ?? null)
+                  onCleanup(() => setTitlebarCenterSlot(null))
+                }}
+                data-testid="titlebar-center-slot"
                 class="pointer-events-auto min-w-0 flex justify-center w-fit max-w-full"
               />
             </div>
@@ -636,7 +652,14 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               data-tauri-drag-region
               onMouseDown={drag}
             >
-              <div id="opencode-titlebar-right" class="flex items-center gap-1 shrink-0 justify-end" />
+              <div
+                ref={(el) => {
+                  setTitlebarRightSlot(el ?? null)
+                  onCleanup(() => setTitlebarRightSlot(null))
+                }}
+                data-testid="titlebar-right-slot"
+                class="flex items-center gap-1 shrink-0 justify-end"
+              />
               <Show when={windows()}>
                 {!tauriApi() && <div class="shrink-0" style={{ width: windowsControlsWidth() }} />}
                 <div data-tauri-decorum-tb class="flex flex-row" />

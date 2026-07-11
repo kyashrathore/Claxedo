@@ -15,7 +15,7 @@ import {
   type BrowserNodeSelectedPayload,
 } from "../store/browser-pane-context"
 import { useBrowserHistory, type BrowserHistoryState } from "../store/browser-history"
-import { browserToolbarSlot } from "../../claxedo-ui/components/browser-toolbar-slot"
+import { browserToolbarSlot } from "../../claxedo-ui/components/portal-slot"
 import { normalizeAddressBarInput } from "./browser-url"
 
 /**

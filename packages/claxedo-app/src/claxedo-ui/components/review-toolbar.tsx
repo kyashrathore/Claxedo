@@ -20,7 +20,7 @@ import {
   REVIEW_POPOVER_MODES,
   type ReviewMode,
 } from "../workspace-panel/review-intent"
-import { reviewToolbarSlot } from "./review-toolbar-slot"
+import { reviewToolbarSlot } from "./portal-slot"
 
 export type VcsRefs = {
   branches: string[]
