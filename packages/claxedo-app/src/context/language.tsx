@@ -6,120 +6,44 @@ import { Persist, persisted } from "@/utils/persist"
 import { getExtensions } from "@claxedo/extensions"
 import { dict as en } from "@/i18n/en"
 import { dict as uiEn } from "@opencode-ai/ui/i18n/en"
+import { LOCALE_ENTRIES, type LocaleCode } from "@/i18n/locales"
 
-export type Locale =
-  | "en"
-  | "zh"
-  | "zht"
-  | "ko"
-  | "de"
-  | "es"
-  | "fr"
-  | "da"
-  | "ja"
-  | "pl"
-  | "ru"
-  | "ar"
-  | "no"
-  | "br"
-  | "th"
-  | "bs"
-  | "tr"
+export type Locale = LocaleCode
 
 type RawDictionary = typeof en & typeof uiEn
 type Dictionary = i18n.Flatten<RawDictionary>
-type Source = { dict: Record<string, string> }
 
-const LOCALES: readonly Locale[] = [
-  "en",
-  "zh",
-  "zht",
-  "ko",
-  "de",
-  "es",
-  "fr",
-  "da",
-  "ja",
-  "pl",
-  "ru",
-  "bs",
-  "ar",
-  "no",
-  "br",
-  "th",
-  "tr",
-]
+// Every one of LOCALES/INTL/LABEL_KEY/localeMatchers below is derived from
+// LOCALE_ENTRIES (src/i18n/locales.ts) — that manifest is the only place a
+// contributor edits to add a language. See src/i18n/locale-parity.test.ts for
+// the tests that keep the manifest, en.ts, and @claxedo/ui's i18n in sync.
+const ENTRY_BY_CODE = new Map(LOCALE_ENTRIES.map((entry) => [entry.code, entry]))
 
-const INTL: Record<Locale, string> = {
-  en: "en",
-  zh: "zh-Hans",
-  zht: "zh-Hant",
-  ko: "ko",
-  de: "de",
-  es: "es",
-  fr: "fr",
-  da: "da",
-  ja: "ja",
-  pl: "pl",
-  ru: "ru",
-  ar: "ar",
-  no: "nb-NO",
-  br: "pt-BR",
-  th: "th",
-  bs: "bs",
-  tr: "tr",
-}
+const LOCALES: readonly Locale[] = LOCALE_ENTRIES.map((entry) => entry.code)
 
-const LABEL_KEY: Record<Locale, keyof Dictionary> = {
-  en: "language.en",
-  zh: "language.zh",
-  zht: "language.zht",
-  ko: "language.ko",
-  de: "language.de",
-  es: "language.es",
-  fr: "language.fr",
-  da: "language.da",
-  ja: "language.ja",
-  pl: "language.pl",
-  ru: "language.ru",
-  ar: "language.ar",
-  no: "language.no",
-  br: "language.br",
-  th: "language.th",
-  bs: "language.bs",
-  tr: "language.tr",
-}
+const INTL: Record<Locale, string> = Object.fromEntries(
+  LOCALE_ENTRIES.map((entry) => [entry.code, entry.intlTag]),
+) as Record<Locale, string>
+
+const LABEL_KEY: Record<Locale, keyof Dictionary> = Object.fromEntries(
+  LOCALE_ENTRIES.map((entry) => [entry.code, entry.labelKey]),
+) as Record<Locale, keyof Dictionary>
+
+const localeMatchers: Array<{ locale: Locale; match: (language: string) => boolean }> = LOCALE_ENTRIES.map(
+  (entry) => ({ locale: entry.code, match: entry.matches }),
+)
 
 const base = i18n.flatten({ ...en, ...uiEn })
 const dicts = new Map<Locale, Dictionary>([["en", base]])
-
-const merge = (app: Promise<Source>, ui: Promise<Source>) =>
-  Promise.all([app, ui]).then(([a, b]) => ({ ...base, ...i18n.flatten({ ...a.dict, ...b.dict }) }) as Dictionary)
-
-const loaders: Record<Exclude<Locale, "en">, () => Promise<Dictionary>> = {
-  zh: () => merge(import("@/i18n/zh"), import("@opencode-ai/ui/i18n/zh")),
-  zht: () => merge(import("@/i18n/zht"), import("@opencode-ai/ui/i18n/zht")),
-  ko: () => merge(import("@/i18n/ko"), import("@opencode-ai/ui/i18n/ko")),
-  de: () => merge(import("@/i18n/de"), import("@opencode-ai/ui/i18n/de")),
-  es: () => merge(import("@/i18n/es"), import("@opencode-ai/ui/i18n/es")),
-  fr: () => merge(import("@/i18n/fr"), import("@opencode-ai/ui/i18n/fr")),
-  da: () => merge(import("@/i18n/da"), import("@opencode-ai/ui/i18n/da")),
-  ja: () => merge(import("@/i18n/ja"), import("@opencode-ai/ui/i18n/ja")),
-  pl: () => merge(import("@/i18n/pl"), import("@opencode-ai/ui/i18n/pl")),
-  ru: () => merge(import("@/i18n/ru"), import("@opencode-ai/ui/i18n/ru")),
-  ar: () => merge(import("@/i18n/ar"), import("@opencode-ai/ui/i18n/ar")),
-  no: () => merge(import("@/i18n/no"), import("@opencode-ai/ui/i18n/no")),
-  br: () => merge(import("@/i18n/br"), import("@opencode-ai/ui/i18n/br")),
-  th: () => merge(import("@/i18n/th"), import("@opencode-ai/ui/i18n/th")),
-  bs: () => merge(import("@/i18n/bs"), import("@opencode-ai/ui/i18n/bs")),
-  tr: () => merge(import("@/i18n/tr"), import("@opencode-ai/ui/i18n/tr")),
-}
 
 function loadDict(locale: Locale) {
   const hit = dicts.get(locale)
   if (hit) return Promise.resolve(hit)
   if (locale === "en") return Promise.resolve(base)
-  return loaders[locale]().then((next) => {
+  const entry = ENTRY_BY_CODE.get(locale)
+  if (!entry) return Promise.resolve(base)
+  return entry.loader().then((source) => {
+    const next = { ...base, ...i18n.flatten(source.dict) } as Dictionary
     dicts.set(locale, next)
     return next
   })
@@ -132,29 +56,6 @@ export function loadLocaleDict(locale: Locale) {
 function cookie(locale: Locale) {
   return `oc_locale=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`
 }
-
-const localeMatchers: Array<{ locale: Locale; match: (language: string) => boolean }> = [
-  { locale: "en", match: (language) => language.startsWith("en") },
-  { locale: "zht", match: (language) => language.startsWith("zh") && language.includes("hant") },
-  { locale: "zh", match: (language) => language.startsWith("zh") },
-  { locale: "ko", match: (language) => language.startsWith("ko") },
-  { locale: "de", match: (language) => language.startsWith("de") },
-  { locale: "es", match: (language) => language.startsWith("es") },
-  { locale: "fr", match: (language) => language.startsWith("fr") },
-  { locale: "da", match: (language) => language.startsWith("da") },
-  { locale: "ja", match: (language) => language.startsWith("ja") },
-  { locale: "pl", match: (language) => language.startsWith("pl") },
-  { locale: "ru", match: (language) => language.startsWith("ru") },
-  { locale: "ar", match: (language) => language.startsWith("ar") },
-  {
-    locale: "no",
-    match: (language) => language.startsWith("no") || language.startsWith("nb") || language.startsWith("nn"),
-  },
-  { locale: "br", match: (language) => language.startsWith("pt") },
-  { locale: "th", match: (language) => language.startsWith("th") },
-  { locale: "bs", match: (language) => language.startsWith("bs") },
-  { locale: "tr", match: (language) => language.startsWith("tr") },
-]
 
 export function normalizeLocale(value: string): Locale {
   return LOCALES.includes(value as Locale) ? (value as Locale) : "en"

@@ -30,7 +30,7 @@ import { dict as appPl } from "@/i18n/pl"
 import { dict as appRu } from "@/i18n/ru"
 import { dict as appAr } from "@/i18n/ar"
 import { dict as appNo } from "@/i18n/no"
-import { dict as appBr } from "@/i18n/br"
+import { dict as appBr } from "@/i18n/pt-BR"
 import { dict as appBs } from "@/i18n/bs"
 
 export type Locale =
