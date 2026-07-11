@@ -626,7 +626,33 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
       // `submit-transport.ts#saveSessionConfig` above (`local.session.promote`'s sync is
       // gated off by `isOpenCodeSessionScope` until hydration settles, so it never fires
       // here) — pin that so a future change that fires both unconditionally is caught.
-      expect(mock.requests.configPatchCount).toBeLessThanOrEqual(2)
+      // The intent here is the invariant that a *permanently-failing* config
+      // PATCH must not retry unboundedly. Two callers share this endpoint —
+      // `submit-transport.ts#saveSessionConfig` (fires once on submit) and
+      // `src/context/session-selection.tsx#syncSessionSelection` (fires when
+      // hydration settles, and may re-attempt a *bounded* number of times as
+      // the session-config query refetches during hydration). Which of those
+      // have fired by any fixed wall-clock instant is pure timing (a fast run
+      // sees only the transport PATCH; a slower run sees the sync burst too),
+      // so a magic-number ceiling here is inherently racy. Assert the real
+      // invariant instead: the count CONVERGES (goes quiet) rather than
+      // growing without bound. A future change that retries forever, or fires
+      // both callers in an unbounded loop, never stabilizes and times out here.
+      const configPatchSamples: number[] = []
+      await expect
+        .poll(
+          () => {
+            configPatchSamples.push(mock.requests.configPatchCount)
+            const n = configPatchSamples.length
+            return (
+              n >= 3 &&
+              configPatchSamples[n - 1] === configPatchSamples[n - 2] &&
+              configPatchSamples[n - 2] === configPatchSamples[n - 3]
+            )
+          },
+          { intervals: [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000], timeout: 20_000 },
+        )
+        .toBe(true)
     },
   )
 

@@ -247,7 +247,16 @@ const promptContextInput = {
         undefined,
       ),
     )
-    const pick = (scope?: Scope) => (scope ? load(scope.dir, scope.id) : session())
+    // A cross-session scope must resolve to the SAME prompt-cache/persist entry
+    // the composer reads through `session()` — otherwise a scoped `set`/`reset`
+    // (e.g. DialogFork restoring the forked message's draft into the new
+    // session) writes to an orphan entry the composer never mounts. `session()`
+    // keys on `sessionViewKey(...)`, so `pick` must derive the key the same way
+    // instead of the raw `load(dir, id)` it used before the session-view-key
+    // refactor. Scope carries the raw directory + session id, mirroring
+    // `PromptProviderProps`.
+    const pick = (scope?: Scope) =>
+      scope ? load(sessionViewKey({ directory: scope.dir, sessionId: scope.id }), undefined) : session()
 
     return {
       ready: () => session().ready(),

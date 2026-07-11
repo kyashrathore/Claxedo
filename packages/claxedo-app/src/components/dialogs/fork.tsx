@@ -49,7 +49,11 @@ export const DialogFork: Component = () => {
           return
         }
         dialog.close()
-        prompt.set(restored, undefined, { dir, id: forked.data.id })
+        // Scope carries the RAW directory + session id (see `pick` in
+        // context/prompt.tsx) so this restored draft lands in the exact
+        // prompt-session the forked route's composer will mount; `dir` (base64)
+        // is only the URL segment.
+        prompt.set(restored, undefined, { dir: sdk.directory, id: forked.data.id })
         navigate(`/${dir}/session/${forked.data.id}`)
       })
       .catch((err: unknown) => {

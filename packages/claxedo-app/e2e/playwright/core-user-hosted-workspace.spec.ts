@@ -564,7 +564,17 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(view).toHaveCount(0, { timeout: 20_000 })
   })
 
-  test("ready unlocks the composer and a send is proven by the oracle through the relay lane — behaviors 2,3", async ({ page }) => {
+  // FIXME(2026-07-11, leader-pinned): HARNESS GAP, pre-existing (A/B-verified red at
+  // dca3bfbe86 and at HEAD with identical error). The composer unlocks and the send
+  // dispatches, but the assistant reply never renders: a ready user-hosted session
+  // consumes live events via the relay /api/wr/runtime-events stream, which requires
+  // contract-v3 frames ({contractVersion:3, ..., payload: AgentRuntimeEvent}), while
+  // the mock emits opencode-SDK-shaped events onto sessionBus drained only by
+  // /global/event — a route the app never polls. Needs a contract-v3 runtime-events
+  // emitter in the user-hosted mock (assistantMessageId "${userID}_r" convention,
+  // runtimeProjectionOwnsCompat + replay-cursor gates) — owned by the e2e session's
+  // harness; building it blind risks a false-positive test.
+  test.fixme("ready unlocks the composer and a send is proven by the oracle through the relay lane — behaviors 2,3", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200] })
     await seedProject(page, { registerWorkspace: true })
