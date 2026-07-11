@@ -17,7 +17,7 @@ import {
   type OverlayState,
   type AiPanelPos,
   type AiMenuItem,
-} from "./tab-page-utils"
+} from "./page-editor-utils"
 
 export type PageEditorOverlayProps = {
   /** Position of the AI composer menu when open, else null. */

@@ -10,12 +10,12 @@ import {
   DIFF_DELETE_MARKS,
   DIFF_INSERT_MARKS,
   type OverlayState,
-} from "./tab-page-utils"
+} from "./page-editor-utils"
 
 const hasMarks = (nodes: ReturnType<typeof diffNodes>, marks: typeof DIFF_DELETE_MARKS) =>
   nodes.some((node) => node.type === "text" && JSON.stringify(node.marks || []) === JSON.stringify(marks))
 
-describe("tab-page state flow", () => {
+describe("page-editor state flow", () => {
   test("selection -> toolbar -> ai menu -> preview -> dismiss -> hidden", () => {
     const point = { x: 120, y: 260 }
     const moved = { x: 120, y: 272 }
@@ -69,7 +69,7 @@ describe("tab-page state flow", () => {
   })
 })
 
-describe("tab-page ai selection flow", () => {
+describe("page-editor ai selection flow", () => {
   const improve = AI_MENU_ITEMS.find((item) => item.key === "improve")!
   const continueItem = AI_MENU_ITEMS.find((item) => item.key === "continue")!
 
@@ -98,7 +98,7 @@ describe("tab-page ai selection flow", () => {
   })
 })
 
-describe("tab-page diff preview flow", () => {
+describe("page-editor diff preview flow", () => {
   test("streamed partial previews keep delete marks and finish with insert marks", () => {
     const oldText = "Many features here are powered by open-source Tiptap UI Components."
     const nextText = "Many features use open-source Tiptap UI Components."

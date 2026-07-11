@@ -10,7 +10,7 @@
 
 import type { Editor } from "@tiptap/core"
 import type { TiptapDeps } from "./page-editor-tiptap"
-import { getTopLevelAt, calcAnchoredPopover, type AiPanelPos, type AiSelection } from "./tab-page-utils"
+import { getTopLevelAt, calcAnchoredPopover, type AiPanelPos, type AiSelection } from "./page-editor-utils"
 
 export type PageEditorGeometryDeps = {
   /** Singleton Tiptap editor owned by PageEditorLoaded — accessor only. */

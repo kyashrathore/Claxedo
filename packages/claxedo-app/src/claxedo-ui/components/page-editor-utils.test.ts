@@ -29,8 +29,8 @@ import {
   CONVERT_MENU_ITEMS,
   AI_MENU_ITEMS,
   type PageAiAction,
-} from "./tab-page-utils"
-import type { OverlayState, DiffPart, InlineNode } from "./tab-page-utils"
+} from "./page-editor-utils"
+import type { OverlayState, DiffPart, InlineNode } from "./page-editor-utils"
 
 // ── Helpers ────────────────────────────────────────────────────────────
 

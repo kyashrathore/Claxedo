@@ -32,7 +32,7 @@ import {
   type AiPanelPos,
   type AiSelection,
   type AiDraft,
-} from "./tab-page-utils"
+} from "./page-editor-utils"
 import { buildAiRequest, type AiRequest } from "./page-editor-model"
 
 type PageSdk = ReturnType<typeof useSDK> | ReturnType<typeof useGlobalSDK>

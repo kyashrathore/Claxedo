@@ -16,7 +16,7 @@ import {
   type OverlayEvent,
   type ToolbarItem,
   type ConvertMenuItem,
-} from "./tab-page-utils"
+} from "./page-editor-utils"
 
 export type PageEditorToolbarProps = {
   /** Singleton Tiptap editor owned by PageEditorLoaded — accessor only. */

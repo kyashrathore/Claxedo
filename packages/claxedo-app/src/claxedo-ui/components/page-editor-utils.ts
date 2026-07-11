@@ -1,5 +1,5 @@
 /**
- * Pure utility functions extracted from tab-page.tsx
+ * Pure utility functions extracted from page-editor.tsx
  *
  * Overlay state machine, diff algorithm, and node builders for the
  * Notion-style page editor. All functions are pure — no DOM, no signals.
@@ -193,7 +193,7 @@ export const nodeSize = (nodes: InlineNode[]) =>
     return sum + node.text.length
   }, 0)
 
-// ── Helpers extracted from tab-page.tsx ──────────────────────────────
+// ── Helpers extracted from page-editor.tsx ──────────────────────────────
 
 export const normalizeInstruction = (value: string | undefined) => value?.trim() || ""
 

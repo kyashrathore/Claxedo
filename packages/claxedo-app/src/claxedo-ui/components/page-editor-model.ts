@@ -6,7 +6,7 @@
  */
 
 import type { Page, PageQuery, PageStatus, ArenaWaveState } from "../../utils/pages-api"
-import type { PageAiAction, AiPanelPos, AiSelection } from "./tab-page-utils"
+import type { PageAiAction, AiPanelPos, AiSelection } from "./page-editor-utils"
 
 export type TocMark = { order: number; pos: number; title: string; level: number }
 

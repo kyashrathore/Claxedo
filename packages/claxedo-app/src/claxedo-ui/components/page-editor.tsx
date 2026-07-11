@@ -9,7 +9,7 @@ import { createSignal, createEffect, createMemo, createResource, on, onCleanup, 
 import type { Transaction as PMTransaction } from "@tiptap/pm/state"
 import { SlashCommands } from "./slash-commands"
 import { MermaidCodeBlock } from "./mermaid-block"
-import "./tab-page.css"
+import "./page-editor.css"
 import {
   isPageUpdateConflict,
   pagesApi,
@@ -18,7 +18,7 @@ import {
   type PageQuery,
   type PageStatus,
 } from "../../utils/pages-api"
-import type { PageAiAction, AiPanelPos, AiSelection, AiDraft } from "./tab-page-utils"
+import type { PageAiAction, AiPanelPos, AiSelection, AiDraft } from "./page-editor-utils"
 import { useSDK } from "@/context/sdk"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@claxedo/context/language"
@@ -32,7 +32,7 @@ import {
   type OverlayState,
   type OverlayEvent,
   type InlineNode,
-} from "./tab-page-utils"
+} from "./page-editor-utils"
 
 import { loadTiptap, type TiptapDeps } from "./page-editor-tiptap"
 import {
