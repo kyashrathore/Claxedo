@@ -1,5 +1,16 @@
 # WP-D4 — Package scope rename `@opencode-ai/*` → `@claxedo/*`: pre-scoping inventory
 
+## LEADER/USER DECISION (2026-07-11) — naming scheme RESOLVED
+
+The user chose the **de-stuttered scheme**: `@claxedo/app`, `@claxedo/server`,
+`@claxedo/desktop`, `@claxedo/web`. Rationale: scope carries the brand, basename says
+what it is; kills the audit-flagged stutter, consistent with Wave 1.5's internal
+de-stuttering. Directories stay `packages/claxedo-*` (name/dir mismatch accepted as
+cosmetic). The §6 open question is closed; execute §5's recipe with these exact target
+names. The 18 vendored packages remain untouched per §1.
+
+
+
 Read-only inventory. No source edits made. Repo: `/Users/yashvardhansingh/test/opencode`,
 branch `codex/feat-connection-scoping`. LLD source of truth:
 `docs/plans/2026-07-10-002-refactor-claxedo-app-oss-quality-lld.md:504-506` (WP-D4, Wave 4,
