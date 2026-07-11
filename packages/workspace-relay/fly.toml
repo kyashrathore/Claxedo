@@ -1,0 +1,66 @@
+# Fly.io deployment for the Claxedo Workspace Relay (Bun relay, production v1).
+#
+# Modeled on packages/claxedo-server/fly.toml. From the MONOREPO ROOT:
+#   fly launch --copy-config --no-deploy -c packages/workspace-relay/fly.toml
+#   fly deploy -c packages/workspace-relay/fly.toml
+#
+# PREREQUISITE (not yet in-tree): a relay Dockerfile at
+# packages/workspace-relay/Dockerfile. The relay is a Bun process
+# (`bun run src/main.ts`, see package.json "start"); the image needs the
+# monorepo build context (like claxedo-server's Dockerfile) or a bundled
+# dist/main.mjs (`bun run build`) on an oven/bun base. Until that Dockerfile
+# exists, `fly deploy` against this config will fail at the build step.
+#
+# Required secrets (`fly secrets set`) before first deploy — the relay
+# fail-closes in production without them (src/main.ts):
+#   CLAXEDO_RELAY_RESOLVER_TOKEN        (required when NODE_ENV=production)
+#   CLAXEDO_RELAY_RESOLVER_URL          (control-plane /internal/relay resolver base URL)
+#   CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM  (required in production; ephemeral keys refused)
+#   CLAXEDO_CONTROL_PLANE_JWKS_URL or CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM
+#   CLAXEDO_RELAY_METRICS_TOKEN         (token-gates /metrics; fails closed without it)
+#
+# SINGLE INSTANCE ONLY: production relay v1 stores host presence and tunnel
+# sockets in process memory (public-docs/relay-and-deployment.md). Do not
+# scale this app above one machine without the multi-instance routing
+# milestone (sticky host routing + split-brain prevention).
+
+app = "claxedo-workspace-relay"
+primary_region = "sin"
+
+# Drain-then-deploy: the relay installs a SIGTERM/SIGINT drain handler
+# (installShutdownDrainHandler in src/main.ts) — health flips to 503 so Fly
+# stops routing, new work is rejected with 503 relay_draining, pending tunnel
+# work drains up to CLAXEDO_RELAY_DRAIN_TIMEOUT_MS (default 30s), then exit 0.
+# kill_timeout MUST exceed the drain timeout or Fly force-kills mid-drain.
+kill_signal = "SIGTERM"
+kill_timeout = "45s"
+
+[build]
+  dockerfile = "Dockerfile"
+  # Build context is the repo root; fly deploy must run from the monorepo root.
+
+[env]
+  NODE_ENV = "production"
+  CLAXEDO_WORKSPACE_RELAY_HOST = "0.0.0.0"
+  CLAXEDO_WORKSPACE_RELAY_PORT = "7777"
+  # Drain wait for in-flight tunnel work on SIGTERM (ms). Keep < kill_timeout.
+  CLAXEDO_RELAY_DRAIN_TIMEOUT_MS = "30000"
+
+[http_service]
+  internal_port = 7777
+  force_https = true
+  # Single long-lived process: host tunnels live in process memory.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

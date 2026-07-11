@@ -1,0 +1,160 @@
+name: deploy-relay
+
+# D11 / ops floor ADR (docs/plans/2026-07-11-016 §2.4 R1): drain-then-deploy
+# for the workspace relay, with a post-deploy RECONVERGENCE assertion.
+#
+# How drain actually works (verified against the tree — there is no HTTP
+# "start drain" admin endpoint):
+#   - The relay installs a SIGTERM/SIGINT drain handler at boot
+#     (installShutdownDrainHandler, packages/workspace-relay/src/main.ts):
+#     /health flips to 503 so Fly stops routing, new workspace requests and
+#     tunnel registrations get `503 relay_draining`, active host tunnels are
+#     closed so hosts reconnect promptly, pending tunnel work drains up to
+#     CLAXEDO_RELAY_DRAIN_TIMEOUT_MS (default 30s), then the process exits.
+#   - `fly deploy` stops the old machine with the configured kill signal, so
+#     THE DEPLOY ITSELF TRIGGERS THE DRAIN. packages/workspace-relay/fly.toml
+#     sets kill_signal=SIGTERM and kill_timeout=45s (> drain timeout) so Fly
+#     never force-kills mid-drain.
+#   - The control plane's per-workspace `relay_provider.drainWorkspace` seam
+#     exists (packages/claxedo-server/src/relay-provider/index.ts) but is an
+#     optional callback with no HTTP exposure today — a templated admin call
+#     is stubbed below (commented) for when such an endpoint lands.
+#
+# Reconvergence (the honest smoke for a tunnel relay): /metrics reports
+# directory.activeHostCount. We snapshot it pre-deploy and poll post-deploy
+# until the count recovers to >= 80% of the snapshot, or fail on timeout.
+#
+# NOTE: every relay deploy is a bounded tunnel outage on single-instance v1
+# (public-docs/relay-and-deployment.md). Policy (ADR §2.4 R2): batch relay
+# deploys and run tunnel-affecting ones at a published time.
+#
+# Environment-scoped secrets (same names in `staging` and `production`):
+#   FLY_API_TOKEN               — deploy token for the relay Fly app
+#   CLAXEDO_RELAY_METRICS_TOKEN — bearer token for the relay's /metrics
+# Environment-scoped variables:
+#   CLAXEDO_RELAY_FLY_APP — Fly app name (e.g. claxedo-workspace-relay-staging
+#                           on staging, claxedo-workspace-relay on production)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+concurrency:
+  group: deploy-relay-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # `production` carries required-reviewer protection — approving the
+    # environment is the human gate for prod relay deploys.
+    environment: ${{ inputs.environment }}
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      FLY_APP: ${{ vars.CLAXEDO_RELAY_FLY_APP }}
+      METRICS_TOKEN: ${{ secrets.CLAXEDO_RELAY_METRICS_TOKEN }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install flyctl
+        run: |
+          set -euo pipefail
+          curl -fsSL https://fly.io/install.sh | sh
+          echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+
+      - name: Preflight
+        run: |
+          set -euo pipefail
+          [ -n "${FLY_APP}" ] || { echo "::error::CLAXEDO_RELAY_FLY_APP variable is not set on the ${{ inputs.environment }} environment"; exit 1; }
+          [ -n "${METRICS_TOKEN}" ] || { echo "::error::CLAXEDO_RELAY_METRICS_TOKEN secret is not set — the reconvergence check cannot run"; exit 1; }
+
+      # Snapshot active host tunnels before the deploy so we can assert the
+      # fleet reconverges afterwards. /metrics fails closed without the token.
+      - name: Snapshot pre-drain tunnel count
+        id: predrain
+        run: |
+          set -euo pipefail
+          BASE="https://${FLY_APP}.fly.dev"
+          body=$(curl -fsS --max-time 15 -H "Authorization: Bearer ${METRICS_TOKEN}" "$BASE/metrics")
+          count=$(echo "$body" | jq -er '.directory.activeHostCount')
+          echo "pre-drain activeHostCount=${count}"
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+
+      # Drain step. The relay's documented drain mechanism is signal-driven:
+      # the `fly deploy` below stops the old machine with SIGTERM, which runs
+      # the in-process drain controller (see header comment). Nothing to call
+      # over HTTP today.
+      #
+      # If/when the control plane exposes an authed admin drain endpoint
+      # (wrapping relay_provider.drainWorkspace), pre-drain here instead:
+      #   # TODO(secret: CLAXEDO_RELAY_ADMIN_DRAIN_TOKEN): uncomment once the
+      #   # endpoint exists on the control plane.
+      #   # curl -fsS -X POST \
+      #   #   -H "Authorization: Bearer ${{ secrets.CLAXEDO_RELAY_ADMIN_DRAIN_TOKEN }}" \
+      #   #   "$CONTROL_PLANE_URL/internal/relay/drain"
+      - name: Drain (signal-driven via fly deploy)
+        run: |
+          echo "Relay drain is triggered by the machine-stop SIGTERM during 'fly deploy'."
+          echo "fly.toml sets kill_signal=SIGTERM and kill_timeout=45s > CLAXEDO_RELAY_DRAIN_TIMEOUT_MS=30s."
+
+      # Build context is the monorepo root (see fly.toml); run from repo root.
+      - name: Deploy relay to Fly
+        run: |
+          set -euo pipefail
+          flyctl deploy -c packages/workspace-relay/fly.toml -a "${FLY_APP}" --remote-only --wait-timeout 300
+
+      - name: Verify health
+        run: |
+          set -euo pipefail
+          BASE="https://${FLY_APP}.fly.dev"
+          ok=""
+          for attempt in $(seq 1 18); do
+            if body=$(curl -fsS --max-time 10 "$BASE/health") \
+              && echo "$body" | jq -e '.ok == true' > /dev/null; then
+              ok=1; echo "health ok: $body"; break
+            fi
+            echo "health attempt $attempt failed; retrying in 10s"; sleep 10
+          done
+          [ -n "$ok" ] || { echo "::error::relay /health did not recover after deploy — roll back: see public-docs/deploy-runbook.md"; exit 1; }
+
+      # Reconvergence per ADR §2.4: hosts reconnect on their own after the
+      # tunnel drop; assert activeHostCount recovers to >= 80% of the
+      # pre-drain snapshot within 10 minutes. Count-level tolerance only — a
+      # single wedged host is an error-tracking concern, not a deploy gate.
+      - name: Verify tunnel reconvergence
+        env:
+          PRE_COUNT: ${{ steps.predrain.outputs.count }}
+        run: |
+          set -euo pipefail
+          BASE="https://${FLY_APP}.fly.dev"
+          if [ "${PRE_COUNT}" -eq 0 ]; then
+            echo "pre-drain activeHostCount was 0 — nothing to reconverge; skipping"
+            exit 0
+          fi
+          # ceil(pre * 0.8)
+          target=$(( (PRE_COUNT * 8 + 9) / 10 ))
+          echo "waiting for activeHostCount >= ${target} (pre-drain ${PRE_COUNT})"
+          deadline=$(( $(date +%s) + 600 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            count=$(curl -fsS --max-time 10 -H "Authorization: Bearer ${METRICS_TOKEN}" "$BASE/metrics" \
+              | jq -er '.directory.activeHostCount' || echo "-1")
+            echo "activeHostCount=${count}"
+            if [ "$count" -ge "$target" ]; then
+              echo "reconverged (${count}/${PRE_COUNT})"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::relay did not reconverge within 10 minutes (needed >= ${target} of ${PRE_COUNT} hosts) — investigate before considering this deploy done"
+          exit 1

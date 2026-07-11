@@ -1,0 +1,70 @@
+name: deploy-convex
+
+# D11 / D14 (docs/plans/2026-07-11-016 §2.3, §5): standalone Convex deploy for
+# SCHEMA-ONLY changes. Convex is the unit with NO server-side rollback —
+# "rollback" means re-pushing an old git SHA, which only works if every schema
+# change was additive (expand-migrate-contract). Discipline encoded here:
+#
+#   - Schema changes ship SOLO: deploy convex/ alone via this workflow FIRST,
+#     verify, and only then ship dependent Worker/relay code via their own
+#     workflows. Never bundle a schema change with dependent code in one push.
+#   - Convex validates the schema against CURRENT DATA on every push and
+#     rejects narrowing changes over nonconforming rows — that server-side
+#     validation is the real gate. The --dry-run step below (flag verified via
+#     `convex deploy --help`, convex 1.39.1) prints the generated
+#     configuration without deploying, catching config/codegen errors before
+#     the push; it does NOT reach the server-side schema/data validation.
+#
+# Manual dispatch only — there is deliberately no auto-trigger, because a
+# schema push is the highest-stakes, least-reversible deploy in the system.
+#
+# Environment-scoped secret (same name in `staging` and `production`):
+#   CONVEX_DEPLOY_KEY — deploy key for that environment's Convex deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target Convex deployment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+concurrency:
+  group: deploy-convex-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # `production` carries required-reviewer protection — approving the
+    # environment is the human gate for prod schema pushes.
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      # Pre-flight gate: generate config + codegen + typecheck WITHOUT pushing.
+      - name: Convex dry-run (config generation gate)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex deploy --dry-run --typecheck enable
+
+      # The real push. Convex enforces schema-validates-against-data here —
+      # a narrowing schema over nonconforming rows is rejected by the server.
+      - name: Convex deploy
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex deploy --typecheck enable --message "${{ inputs.environment }} ${GITHUB_SHA}"
+
+      - name: Post-deploy note
+        run: |
+          echo "Convex is roll-forward-only. If this push was a mistake, re-push the previous" \
+               "green git SHA via this workflow — see public-docs/deploy-runbook.md."
