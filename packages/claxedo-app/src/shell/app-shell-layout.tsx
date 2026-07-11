@@ -22,7 +22,7 @@ import {
   type JSX,
 } from "solid-js"
 import { useClaxedoState, type ContentMeta } from "../claxedo-ui/state"
-import type { ProjectItem } from "../claxedo-ui/rail/rail-sidebar"
+import type { ProjectItem } from "../claxedo-ui/rail/domain-types"
 import { emitTerminalFit } from "../claxedo-ui/terminal/terminal-fit"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useOptionalTerminal } from "@/context/terminal"
@@ -116,10 +116,10 @@ export type AppShellLayoutProps = ParentProps<{
    */
   onNewSession?: (workspaceDir?: string, paneId?: string) => void
   suppressEmptyDraftSession?: boolean
-  onDeleteSession?: (session: import("../claxedo-ui/rail/rail-sidebar").SessionItem) => void
-  onArchiveSession?: (session: import("../claxedo-ui/rail/rail-sidebar").SessionItem) => boolean | Promise<boolean>
-  onDeleteWorkspace?: (workspace: import("../claxedo-ui/rail/rail-sidebar").WorkspaceItem) => void
-  onRemoveProject?: (project: import("../claxedo-ui/rail/rail-sidebar").ProjectItem) => void
+  onDeleteSession?: (session: import("../claxedo-ui/rail/domain-types").SessionItem) => void
+  onArchiveSession?: (session: import("../claxedo-ui/rail/domain-types").SessionItem) => boolean | Promise<boolean>
+  onDeleteWorkspace?: (workspace: import("../claxedo-ui/rail/domain-types").WorkspaceItem) => void
+  onRemoveProject?: (project: import("../claxedo-ui/rail/domain-types").ProjectItem) => void
 
   /**
    * Callback to create a new terminal

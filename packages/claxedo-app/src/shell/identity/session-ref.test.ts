@@ -3,14 +3,56 @@ import { centralRealToolSandboxAttachTicket, resolveWorkspaceRef } from "./resol
 import {
   centralSessionRef,
   hasBacking,
+  HARNESS_IDS,
+  isHarnessId,
   localSessionRef,
   retargetSessionRef,
   sessionKey,
   sessionHarness,
   sessionRefForWorkspaceSession,
   workspaceKey,
+  type HarnessId,
   type SessionRef,
 } from "./session-ref"
+
+describe("harness-id vocabulary (single source of truth)", () => {
+  test("HARNESS_IDS enumerates all eight canonical harness kinds", () => {
+    expect([...HARNESS_IDS]).toEqual([
+      "claude-acp",
+      "codex-acp",
+      "cursor-acp",
+      "claude-sdk",
+      "codex-app-server",
+      "cursor-sdk",
+      "opencode",
+      "pi",
+    ])
+  })
+
+  test("isHarnessId accepts every canonical kind, including pi and cursor-sdk", () => {
+    for (const id of HARNESS_IDS) expect(isHarnessId(id)).toBe(true)
+    expect(isHarnessId("pi")).toBe(true)
+    expect(isHarnessId("cursor-sdk")).toBe(true)
+  })
+
+  test("isHarnessId rejects unknown, renamed, and non-string values", () => {
+    expect(isHarnessId("not-a-harness")).toBe(false)
+    expect(isHarnessId("claude")).toBe(false)
+    expect(isHarnessId("")).toBe(false)
+    expect(isHarnessId(undefined)).toBe(false)
+    expect(isHarnessId(42)).toBe(false)
+  })
+
+  test("isHarnessId narrows an unknown string to HarnessId", () => {
+    const raw: unknown = "pi"
+    if (isHarnessId(raw)) {
+      const id: HarnessId = raw
+      expect(id).toBe("pi")
+    } else {
+      throw new Error("expected 'pi' to be a valid HarnessId")
+    }
+  })
+})
 
 describe("SessionRef", () => {
   test("loopback-local central sessions need no directory or workspace id", () => {

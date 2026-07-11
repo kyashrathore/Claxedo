@@ -90,9 +90,9 @@ describe("local selection handoff", () => {
   })
 
   test("local providers do not own provider/model handoff in private maps", async () => {
-    const claxedoLocal = await Bun.file(path.join(root, "context/local.tsx")).text()
+    const claxedoLocal = await Bun.file(path.join(root, "context/session-selection.tsx")).text()
 
-    expect(await Bun.file(path.join(root, "overrides/context/local.tsx")).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, "overrides/context/session-selection.tsx")).exists()).toBe(false)
     expect(claxedoLocal).toMatch(/localSelectionHandoffQueryKey/)
     expect(claxedoLocal).toMatch(/setLocalSelectionHandoff/)
     expect(claxedoLocal).not.toMatch(/const handoff = new Map/)

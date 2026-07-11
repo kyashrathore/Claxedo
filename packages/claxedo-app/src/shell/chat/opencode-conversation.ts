@@ -261,6 +261,19 @@ function opencodePartToChatParts(part: Part): MessagePart[] {
       metadata: { ...part.metadata, opencodePartId: part.id, opencodePart: part },
     }]
   }
+  // @-mention parts. TanStack's MessagePart union has no "agent" variant, so we
+  // carry the mention as a custom-typed part (cast, like "thinking") and stash
+  // the original AgentPart in metadata for a lossless round-trip back to
+  // OpenCode. Dropping this here silently hid mentions in the timeline.
+  if (part.type === "agent") {
+    return [{
+      type: "agent",
+      name: part.name,
+      ...(part.source ? { source: part.source } : {}),
+      metadata: { opencodePartId: part.id, opencodePart: part },
+      // as-any: MessagePart union has no "agent" variant; carry it as a custom part (like "thinking").
+    } as unknown as MessagePart]
+  }
   return []
 }
 
@@ -364,6 +377,21 @@ function chatPartToOpencodePart(message: UIMessage, part: MessagePart) {
       ...stored,
       messageID: message.id,
     }]
+  }
+  // Agent mention → OpenCode AgentPart. Reuse the stored original when present
+  // (lossless); otherwise reconstruct from the carried name/source (the path a
+  // freshly-composed optimistic user message takes before the server echoes it).
+  if ((part.type as string) === "agent") {
+    // as-any: read the custom "agent" MessagePart's carried fields (outside TanStack's union) to rebuild the AgentPart.
+    const agent = part as unknown as { name?: string; source?: { value: string; start: number; end: number } }
+    return [stored ? { ...stored, messageID: message.id } : {
+      id: metadata?.opencodePartId ?? `${message.id}:agent`,
+      sessionID: chatMessageSessionId(message),
+      messageID: message.id,
+      type: "agent",
+      name: agent.name ?? "",
+      ...(agent.source ? { source: agent.source } : {}),
+    } as Part]
   }
   return []
 }

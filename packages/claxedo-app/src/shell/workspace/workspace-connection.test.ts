@@ -144,6 +144,26 @@ describe("workspace connection authority", () => {
     })
   })
 
+  test("a second acquire on the same relay-backed workspace increments the shared ref to 2", () => {
+    // The connection AUTHORITY is not the cause of the "second pane refs stuck
+    // at 1" symptom (e2e core-panes-split-tabs behavior 19): a second acquire
+    // for the same relay-backed workspaceId fans into the one entry and bumps
+    // refs. The stuck-at-1 cause is a CONSUMER that skips WorkspaceGate for
+    // secondary surfaces (see the fixme-ready note) — no second acquire fires.
+    createRoot((dispose) => {
+      const first = acquireWorkspaceConnection({ workspaceId: "ws_two_panes", kind: "user-hosted", request: runtimeReadyFetch })
+      expect(workspaceConnection("ws_two_panes")?.refs).toBe(1)
+
+      const second = acquireWorkspaceConnection({ workspaceId: "ws_two_panes", kind: "user-hosted", request: runtimeReadyFetch })
+      expect(workspaceConnection("ws_two_panes")?.refs).toBe(2)
+
+      second.release()
+      expect(workspaceConnection("ws_two_panes")?.refs).toBe(1)
+      first.release()
+      dispose()
+    })
+  })
+
   test("re-acquire during the teardown debounce window cancels teardown", () => {
     createRoot((dispose) => {
       const first = acquireWorkspaceConnection({ workspaceId: "ws_swap", kind: "local" })

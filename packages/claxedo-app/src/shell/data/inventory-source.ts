@@ -5,7 +5,7 @@ import { insertSortedSessionItem } from "@claxedo/shell/data/global-session-iden
 import { normalizeSessionTurnOutcome } from "../../shared/data/session-types"
 import { queryClient } from "../../shared/query/query-client"
 import { queryKeys } from "../../shared/query/keys"
-import { createAgentRuntimeClient } from "../../runtime/agent-runtime-client"
+import { createAgentRuntimeClient } from "../../agent-runtime/agent-runtime-client"
 import { isFilesystemDirectory, isUserHostedWorkspaceDirectory } from "../identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "../workspace/session-workspace-key"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "../../utils/api"

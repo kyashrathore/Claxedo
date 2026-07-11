@@ -68,6 +68,38 @@ describe("WorkspaceGate", () => {
     expect(screen.queryByTestId("session-page-root")).toBeNull()
   })
 
+  test("each mounted gate over the same workspace acquires its own ref-counted handle", () => {
+    calls.connection.mockReturnValue({ status: "ready" })
+    calls.offline.mockReturnValue(undefined)
+
+    render(() => (
+      <>
+        <WorkspaceGate workspaceId="ws_split" kind="user-hosted"><div data-testid="pane-a" /></WorkspaceGate>
+        <WorkspaceGate workspaceId="ws_split" kind="user-hosted"><div data-testid="pane-b" /></WorkspaceGate>
+      </>
+    ))
+
+    // Two gates over the same workspace → two acquires; the authority
+    // ref-counts these into one shared connection with refs=2 (see
+    // workspace-connection.test.ts). A split that stays at refs=1 is therefore
+    // NOT the gate/authority — it is a consumer skipping the gate for the
+    // second surface.
+    const acquiredIds = calls.acquire.mock.calls.map(([input]) => input.workspaceId)
+    expect(acquiredIds.filter((id) => id === "ws_split")).toHaveLength(2)
+  })
+
+  // Cross-file pin (DISCOVERED-BUG rule): the "second pane refs stuck at 1"
+  // symptom (e2e core-panes-split-tabs behavior 19) is NOT in this gate or the
+  // connection authority — both ref-count correctly (proven above +
+  // workspace-connection.test.ts). Its cause is
+  // `claxedo-ui/components/session-pane-scope.tsx:38,121` — when
+  // `suppressConnectionGate` is set (the Review panel / secondary surfaces),
+  // the pane renders its child DIRECTLY with no `acquireWorkspaceConnection`,
+  // so no second ref is ever taken. Owned by WP-B1.
+  test.todo(
+    "secondary surfaces sharing a relay workspace must take a ref instead of skipping WorkspaceGate (WP-B1: session-pane-scope suppressConnectionGate)",
+  )
+
   test("reacquires when a fallback workspace kind is refined", () => {
     const firstRelease = vi.fn()
     const secondRelease = vi.fn()

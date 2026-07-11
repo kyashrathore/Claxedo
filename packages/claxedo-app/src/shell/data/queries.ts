@@ -79,6 +79,26 @@ export type SessionInventoryWorkspaceGroup<TSession> = {
 
 export type SessionInventoryWorkspaceMeta = Omit<SessionInventoryWorkspaceGroup<never>, "sessions">
 
+// Single source of truth for projecting a workspace group down to its stored
+// meta (every field except the session rows). Reused by the inventory
+// derivation below and by the query-cache writers in `inventory-writers.ts`, so
+// the meta shape lives in exactly one place instead of five inline copies.
+export function workspaceMetaFromGroup<TSession>(
+  key: string,
+  group: SessionInventoryWorkspaceGroup<TSession>,
+): SessionInventoryWorkspaceMeta {
+  return {
+    key: group.key ?? key,
+    directory: group.directory,
+    workspaceId: group.workspaceId,
+    workspaceName: group.workspaceName,
+    projectID: group.projectID,
+    hasMore: group.hasMore,
+    total: group.total,
+    nextCursor: group.nextCursor,
+  }
+}
+
 export type SessionInventoryStoredValue<TSession> = {
   sessions: TSession[]
   globalState: PageState
@@ -174,16 +194,7 @@ export function deriveSessionInventoryIndexes<TSession extends SessionInventoryI
     group.sessions = sortSessions([...group.sessions, session])
     group.total = group.hasMore ? Math.max(meta?.total ?? 0, group.sessions.length) : group.sessions.length
     byWorkspace[workspaceKey] = group
-    workspaceMeta[workspaceKey] = {
-      key: group.key ?? workspaceKey,
-      directory: group.directory,
-      workspaceId: group.workspaceId,
-      workspaceName: group.workspaceName,
-      projectID: group.projectID,
-      hasMore: group.hasMore,
-      total: group.total,
-      nextCursor: group.nextCursor,
-    }
+    workspaceMeta[workspaceKey] = workspaceMetaFromGroup(workspaceKey, group)
     if (!workspaceOrder.includes(workspaceKey)) workspaceOrder.push(workspaceKey)
   }
 
@@ -210,16 +221,7 @@ export function deriveSessionInventoryIndexes<TSession extends SessionInventoryI
       total: hasMore ? Math.max(meta.total, sessions.length) : sessions.length,
       nextCursor: state?.cursor ?? meta.nextCursor,
     }
-    workspaceMeta[workspaceKey] = {
-      key: byWorkspace[workspaceKey].key,
-      directory: byWorkspace[workspaceKey].directory,
-      workspaceId: byWorkspace[workspaceKey].workspaceId,
-      workspaceName: byWorkspace[workspaceKey].workspaceName,
-      projectID: byWorkspace[workspaceKey].projectID,
-      hasMore: byWorkspace[workspaceKey].hasMore,
-      total: byWorkspace[workspaceKey].total,
-      nextCursor: byWorkspace[workspaceKey].nextCursor,
-    }
+    workspaceMeta[workspaceKey] = workspaceMetaFromGroup(workspaceKey, byWorkspace[workspaceKey])
     if (!workspaceOrder.includes(workspaceKey)) workspaceOrder.push(workspaceKey)
   }
 
@@ -272,16 +274,7 @@ export function toSessionInventoryStore<TSession extends SessionInventoryIdentit
   if ("byWorkspace" in input) {
     for (const [key, group] of Object.entries(input.byWorkspace)) {
       if (workspaceMeta[key]) continue
-      workspaceMeta[key] = {
-        key: group.key ?? key,
-        directory: group.directory,
-        workspaceId: group.workspaceId,
-        workspaceName: group.workspaceName,
-        projectID: group.projectID,
-        hasMore: group.hasMore,
-        total: group.total,
-        nextCursor: group.nextCursor,
-      }
+      workspaceMeta[key] = workspaceMetaFromGroup(key, group)
     }
   }
   const legacyRows = "global" in input

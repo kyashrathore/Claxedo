@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
-import type { UIMessage } from "@tanstack/ai"
+import type { MessagePart, UIMessage } from "@tanstack/ai"
 import {
   applyOpencodeConversationEvent,
   mergeConversationSnapshot,
@@ -72,6 +72,17 @@ function toolPart(id: string, messageID: string, status: "running" | "completed"
   }
 }
 
+function agentPart(id: string, messageID: string, name: string): Part {
+  return {
+    id,
+    sessionID: "ses_1",
+    messageID,
+    type: "agent",
+    name,
+    source: { value: `@${name}`, start: 0, end: name.length + 1 },
+  } as Part
+}
+
 function event(type: string, properties: Record<string, unknown>): Event {
   return { type, properties } as Event
 }
@@ -122,6 +133,78 @@ describe("opencode conversation chat adapter", () => {
           { type: "tool-call", id: "call_1", name: "read", state: "complete", output: "ok" },
         ],
       },
+    ])
+  })
+
+  test("preserves @-mention agent parts through the round-trip projection", () => {
+    const snapshot = opencodeConversationSnapshot({
+      messages: [message("msg_user", "user")],
+      parts: {
+        msg_user: [
+          agentPart("part_agent", "msg_user", "reviewer"),
+          textPart("part_prompt", "msg_user", "@reviewer take a look"),
+        ],
+      },
+    })
+
+    // Part -> UIMessage keeps the agent mention (previously dropped: no
+    // `type: "agent"` case existed in either projection direction).
+    expect(snapshot[0]?.parts).toMatchObject([
+      { type: "agent", name: "reviewer", source: { value: "@reviewer", start: 0, end: 9 } },
+      { type: "text", content: "@reviewer take a look" },
+    ])
+
+    // UIMessage -> OpenCode Part restores the AgentPart intact so the timeline
+    // renderer (session-ui) can highlight the mention span.
+    const projected = opencodeConversationProjection(snapshot)
+    expect(projected.parts.msg_user).toMatchObject([
+      { id: "part_agent", type: "agent", name: "reviewer", messageID: "msg_user", source: { value: "@reviewer", start: 0, end: 9 } },
+      { id: "part_prompt", type: "text", text: "@reviewer take a look" },
+    ])
+  })
+
+  test("reconstructs an AgentPart from carried name/source when no opencodePart is stored", () => {
+    // The path a freshly-composed optimistic user message takes before the
+    // server echoes it: the agent part carries name/source but has no
+    // metadata.opencodePart, so the projection rebuilds the AgentPart from
+    // the carried fields (branch at opencode-conversation.ts:~387).
+    const optimistic: UIMessage = {
+      id: "msg_optimistic",
+      role: "user",
+      parts: [
+        {
+          type: "agent",
+          name: "reviewer",
+          source: { value: "@reviewer", start: 0, end: 9 },
+        } as MessagePart,
+      ],
+    }
+
+    const projected = opencodeConversationProjection([optimistic])
+    expect(projected.parts.msg_optimistic).toEqual([
+      {
+        id: "msg_optimistic:agent",
+        sessionID: "",
+        messageID: "msg_optimistic",
+        type: "agent",
+        name: "reviewer",
+        source: { value: "@reviewer", start: 0, end: 9 },
+      },
+    ])
+  })
+
+  test("applies a streamed agent part through message.part.updated", () => {
+    const handle = chat(opencodeConversationSnapshot({
+      messages: [message("msg_user", "user")],
+      parts: { msg_user: [textPart("part_prompt", "msg_user", "hey")] },
+    }))
+
+    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
+      part: agentPart("part_agent", "msg_user", "planner"),
+    }))).toBe(true)
+    expect(handle.messages()[0]?.parts).toMatchObject([
+      { type: "text", content: "hey" },
+      { type: "agent", name: "planner" },
     ])
   })
 

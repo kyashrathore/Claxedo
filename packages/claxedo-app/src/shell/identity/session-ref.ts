@@ -1,15 +1,32 @@
 import { isFilesystemDirectory, isLocalSessionDirectory } from "./legacy-resolver"
 
 export type SessionHost = "central" | "workspace"
-export type HarnessId =
-  | "claude-acp"
-  | "codex-acp"
-  | "cursor-acp"
-  | "claude-sdk"
-  | "codex-app-server"
-  | "cursor-sdk"
-  | "opencode"
-  | "pi"
+
+// Canonical harness-id list — the SINGLE source of truth for the set of harness
+// kinds across the app. `HarnessId` here, `HarnessKind` in
+// `../harnesses/profile.ts`, and `HARNESS_IDS` in
+// `session-client/harness/profile.ts` all derive from this one array so the
+// three definitions can never drift apart again (they had drifted: profile.ts's
+// list was missing `cursor-sdk` and `pi`, silently mis-classifying persisted
+// profiles of those kinds — see `durability/projections.ts`).
+export const HARNESS_IDS = [
+  "claude-acp",
+  "codex-acp",
+  "cursor-acp",
+  "claude-sdk",
+  "codex-app-server",
+  "cursor-sdk",
+  "opencode",
+  "pi",
+] as const
+export type HarnessId = (typeof HARNESS_IDS)[number]
+
+// Validating parse for arbitrary stored strings (persisted projections, wire
+// payloads). Prefer this over an unchecked `as HarnessId`/`as HarnessKind` cast.
+export function isHarnessId(value: unknown): value is HarnessId {
+  return typeof value === "string" && (HARNESS_IDS as readonly string[]).includes(value)
+}
+
 export type HarnessRef = { readonly id: HarnessId; readonly binary?: string }
 
 export type SandboxRef =

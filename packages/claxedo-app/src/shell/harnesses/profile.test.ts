@@ -17,10 +17,20 @@ const claudeCentral: HarnessProfile = {
 }
 
 describe("harness profiles", () => {
-  test("derives compatible hosts from runner kind", () => {
+  test("derives compatible hosts from harness kind", () => {
     expect(compatibleHosts({ kind: "opencode" })).toEqual(["workspace"])
     expect(compatibleHosts({ kind: "codex-acp" })).toEqual(["workspace"])
     expect(compatibleHosts({ kind: "claude-sdk" })).toEqual(["central", "workspace"])
+  })
+
+  test("the formerly-missing kinds (cursor-sdk, pi) resolve to central+workspace", () => {
+    // These two kinds were absent from HarnessKind before the vocabulary was
+    // unified onto HarnessId. They are SDK/virtual harnesses (not sandbox-only),
+    // so — like claude-sdk — they run centrally as well as in a workspace.
+    expect(compatibleHosts({ kind: "cursor-sdk" })).toEqual(["central", "workspace"])
+    expect(compatibleHosts({ kind: "pi" })).toEqual(["central", "workspace"])
+    expect(canSelectHarnessForHost({ kind: "pi" }, "central")).toBe(true)
+    expect(canSelectHarnessForHost({ kind: "cursor-sdk" }, "central")).toBe(true)
   })
 
   test("prevents opencode, codex, and ACP runners from central sessions", () => {

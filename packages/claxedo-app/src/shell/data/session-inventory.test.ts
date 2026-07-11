@@ -6,7 +6,9 @@ import {
   reloadSessionInventory,
   removeSessionInventorySession,
 } from "./session-inventory"
-import { normalizeSessionInventory, type SessionInventoryValue } from "./queries"
+import { emptySessionInventoryStore, normalizeSessionInventory, type SessionInventoryValue } from "./queries"
+import { mergeWorkspaceGroups, shouldUseSignedSessionInventory, workspaceGroupKey } from "./inventory-source"
+import type { WorkspaceGroup } from "@claxedo/shell/data/global-sync-types"
 
 type TestSession = {
   id: string
@@ -197,9 +199,84 @@ describe("session inventory query helpers", () => {
     ])
   })
 
-  test("loopback inventory keeps local control sessions even when signed workspaces exist", async () => {
-    const source = await Bun.file(new URL("../../context/global-sync.tsx", import.meta.url)).text()
+  test("loopback-local control sessions coexist with signed-workspace sessions in the derived inventory", () => {
+    // Replaces a former source-regex assertion against context/global-sync.tsx.
+    // The real contract: deriving the inventory when BOTH a loopback-local
+    // session (no workspaceId — keyed by its directory) and a signed-workspace
+    // session (keyed by its workspaceId) are present keeps both. A signed
+    // workspace never evicts local control sessions from the grouped output.
+    type Row = { id: string; directory: string; workspaceId?: string; projectID?: string; time?: { updated?: number } }
+    const derived = normalizeSessionInventory<Row>({
+      ...emptySessionInventoryStore<Row>(),
+      sessions: [
+        { id: "ses-local", directory: "/repo/local", projectID: "local_proj", time: { updated: 3 } },
+        { id: "ses-signed", directory: "/repo/signed", workspaceId: "ws_signed", projectID: "signed_proj", time: { updated: 2 } },
+      ],
+      loaded: true,
+    })
 
-    expect(source).toMatch(/\(signedSnapshot\.projects\.length > 0 \|\| signedWorkspaceProjects\(\)\.length > 0\) &&\s*centralTransportForServer\(globalSDK\.url\) !== "loopback"/)
+    expect(derived.sessions.map((session) => session.id).sort()).toEqual(["ses-local", "ses-signed"])
+    expect(Object.keys(derived.byWorkspace).sort()).toEqual(["/repo/local", "ws_signed"])
+    expect(derived.byWorkspace["/repo/local"].sessions.map((session) => session.id)).toEqual(["ses-local"])
+    expect(derived.byWorkspace["ws_signed"].sessions.map((session) => session.id)).toEqual(["ses-signed"])
+    expect(derived.byWorkspace["ws_signed"].workspaceId).toBe("ws_signed")
+    expect(Object.keys(derived.byProject).sort()).toEqual(["local_proj", "signed_proj"])
+  })
+
+  test("a loopback control plane keeps local control sessions through the merge path even when a signed workspace exists", () => {
+    // Merge-LAYER counterpart to the derivation test above (which only exercised
+    // normalizeSessionInventory). The former source-regex assertion against
+    // context/global-sync.tsx guarded two things about the reload merge path:
+    // (1) a loopback control plane does NOT swap the local session list for a
+    // signed-only snapshot, and (2) merging signed workspace groups in never
+    // evicts the local control sessions. Both halves are asserted here against
+    // the real inventory-source exports the reload path uses.
+    const loopbackBaseUrl = "http://127.0.0.1:4096"
+
+    // (1) In loopback, even with signed access, the inventory does not switch to
+    //     the signed-only snapshot — so the local control-session merge path runs.
+    expect(
+      shouldUseSignedSessionInventory({ hasSignedAccess: true, signedRoute: false, baseUrl: loopbackBaseUrl }),
+    ).toBe(false)
+
+    // (2) Merging a signed workspace group into the local groups keeps the local
+    //     control session and adds the signed workspace alongside it.
+    const localControl: WorkspaceGroup = {
+      key: "/repo/local",
+      directory: "/repo/local",
+      projectID: "local_proj",
+      sessions: [controlRow("ses-local", "/repo/local", "local_proj", 3)],
+      hasMore: false,
+      total: 1,
+    }
+    const signedWorkspace: WorkspaceGroup = {
+      key: "ws_signed",
+      directory: "workspace:ws_signed",
+      workspaceId: "ws_signed",
+      projectID: "signed_proj",
+      sessions: [controlRow("ses-signed", "workspace:ws_signed", "signed_proj", 2)],
+      hasMore: false,
+      total: 1,
+    }
+
+    const merged = mergeWorkspaceGroups([localControl], [signedWorkspace])
+    const byKey = Object.fromEntries(merged.map((group) => [workspaceGroupKey(group), group]))
+
+    expect(Object.keys(byKey).sort()).toEqual(["/repo/local", "ws_signed"])
+    expect(byKey["/repo/local"].sessions.map((session) => session.id)).toEqual(["ses-local"])
+    expect(byKey["ws_signed"].sessions.map((session) => session.id)).toEqual(["ses-signed"])
+    // The signed merge must not mutate the local control group in place.
+    expect(localControl.sessions.map((session) => session.id)).toEqual(["ses-local"])
   })
 })
+
+function controlRow(id: string, directory: string, projectID: string, updated: number) {
+  return {
+    id,
+    title: id,
+    directory,
+    projectID,
+    attachments: [],
+    time: { created: updated, updated },
+  }
+}

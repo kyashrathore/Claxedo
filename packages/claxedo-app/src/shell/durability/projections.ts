@@ -3,7 +3,8 @@ import type { ContentMeta } from "../../claxedo-ui/state"
 import { emptyClaxedoState } from "../../claxedo-ui/state/persistence"
 import { defaultLayoutConfig, layoutMigrate, type LayoutConfig, type LayoutTarget } from "../layout/config"
 import type { HarnessProfile } from "../harnesses/profile"
-import { harnessProfileFromLegacy, type HarnessKind } from "../harnesses/profile"
+import { harnessProfileFromLegacy } from "../harnesses/profile"
+import { isHarnessId } from "../identity/session-ref"
 import { createRehydrator, type CacheStore } from "./rehydrator"
 
 export type ProjectionScope = {
@@ -229,8 +230,13 @@ function harnessProfiles(input: unknown): HarnessProfile[] {
   if (!Array.isArray(input)) return []
   return input.flatMap((item) => {
     const raw = record(item)
-    if (!raw || typeof raw.kind !== "string" || typeof raw.model !== "string" && !record(raw.model)) return []
-    const kind = raw.kind as HarnessKind
+    // Validate the persisted kind against the canonical harness-id set instead
+    // of an unchecked `as HarnessKind` cast: a stored profile whose `kind` is
+    // not a real harness (a renamed/removed kind, corruption, a legacy pre-fork
+    // string) is dropped rather than silently mis-classified by
+    // `compatibleHosts` downstream. `pi`/`cursor-sdk` are valid and survive.
+    if (!raw || !isHarnessId(raw.kind) || (typeof raw.model !== "string" && !record(raw.model))) return []
+    const kind = raw.kind
     return [
       harnessProfileFromLegacy({
         id: typeof raw.id === "string" ? raw.id : undefined,

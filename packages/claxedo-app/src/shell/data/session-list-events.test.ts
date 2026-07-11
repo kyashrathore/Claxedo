@@ -143,6 +143,34 @@ describe("claxedo applyDirectorySessionCacheEvent", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_z", "todo"))).toEqual([{ id: "todo_z" }])
   })
 
+  test("session.created and a not-yet-present session.updated trim identically (shared insert path)", () => {
+    // Both branches feed the same splice+trim+cleanup helper, so for an
+    // identical starting cache + incoming row they must produce the same
+    // trimmed session list — guarding against the two branches re-diverging.
+    const base = () =>
+      cache({
+        session: [root("ses_z"), root("ses_y")],
+        total: 2,
+        limit: 1,
+      })
+
+    const created = applyDirectorySessionCacheEvent({
+      event: { type: "session.created", properties: { info: root("ses_a") } },
+      cache: base(),
+      push() {},
+      directory: "/tmp/ws",
+    })
+    const updated = applyDirectorySessionCacheEvent({
+      event: { type: "session.updated", properties: { info: root("ses_a") } },
+      cache: base(),
+      push() {},
+      directory: "/tmp/ws",
+    })
+
+    expect(created?.session.map((item) => item.id)).toEqual(["ses_a"])
+    expect(updated?.session.map((item) => item.id)).toEqual(created?.session.map((item) => item.id))
+  })
+
   test("claxedo session lifecycle created event inserts session without owning status", () => {
     queryClient.setQueryData<SessionStatus>(shellDataKeys.sessionId("ses_created", "status"), { type: "busy" })
 

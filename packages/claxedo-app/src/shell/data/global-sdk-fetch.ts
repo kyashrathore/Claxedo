@@ -1,6 +1,6 @@
 // target-layer: data
 import { createTransport } from "@claxedo/shell/data/transport/transport"
-import { signedWorkspaceFromProjects } from "../../runtime/signed-workspace"
+import { signedWorkspaceFromProjects } from "../../agent-runtime/signed-workspace"
 import { isFilesystemDirectory } from "../identity/legacy-resolver"
 import { authFetch } from "../../utils/api"
 import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"

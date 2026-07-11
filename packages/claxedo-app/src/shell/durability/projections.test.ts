@@ -147,6 +147,44 @@ describe("server-owned projections", () => {
     }))
   })
 
+  test("migrates persisted pi and cursor-sdk profiles instead of dropping them", () => {
+    // Regression: HarnessKind used to list only 6 of the 8 harness kinds, so a
+    // persisted `pi` / `cursor-sdk` profile slipped through the old
+    // `raw.kind as HarnessKind` cast unrecognized. They are valid kinds and must
+    // round-trip through migration unchanged.
+    const result = migrateHarnessConfigProjection({
+      scope,
+      updatedAt: 7,
+      stored: {
+        profiles: [
+          { id: "h_pi", kind: "pi", label: "Pi", model: { providerID: "pi", modelID: "virtual" }, scope: "user" },
+          { id: "h_cursor", kind: "cursor-sdk", label: "Cursor SDK", model: "cursor-fast", workspaceId: "ws_9" },
+        ],
+      },
+    })
+
+    expect(result.projection.value.profiles).toEqual([
+      { id: "h_pi", kind: "pi", label: "Pi", model: { providerID: "pi", modelID: "virtual" }, scope: "user" },
+      { id: "h_cursor", kind: "cursor-sdk", label: "Cursor SDK", model: { providerID: "cursor-sdk", modelID: "cursor-fast" }, scope: "workspace", workspaceId: "ws_9" },
+    ])
+  })
+
+  test("drops persisted profiles whose kind is not a real harness id", () => {
+    const result = migrateHarnessConfigProjection({
+      scope,
+      updatedAt: 8,
+      stored: {
+        profiles: [
+          { id: "h_ok", kind: "opencode", label: "OpenCode", model: "default" },
+          { id: "h_dead", kind: "not-a-harness", label: "Legacy", model: "default" },
+          { id: "h_typo", kind: "claude", label: "Typo", model: "sonnet" },
+        ],
+      },
+    })
+
+    expect(result.projection.value.profiles.map((profile) => profile.id)).toEqual(["h_ok"])
+  })
+
   test("harness config projection keeps credential references but drops raw secrets", () => {
     const result = migrateHarnessConfigProjection({
       scope,

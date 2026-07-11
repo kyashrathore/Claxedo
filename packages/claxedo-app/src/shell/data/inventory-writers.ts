@@ -8,9 +8,9 @@ import {
   emptySessionInventoryStore,
   sessionInventoryQueryOptions,
   toSessionInventoryStore,
+  workspaceMetaFromGroup,
   type SessionInventoryStoredValue,
   type SessionInventoryWorkspaceGroup,
-  type SessionInventoryWorkspaceMeta,
   type SessionInventoryValue,
 } from "./queries"
 
@@ -384,22 +384,6 @@ function setWorkspaceMeta(
   draft.workspaceMeta = {
     ...(draft.workspaceMeta ?? {}),
     [key]: workspaceMetaFromGroup(key, group),
-  }
-}
-
-function workspaceMetaFromGroup(
-  key: string,
-  group: SessionInventoryWorkspaceGroup<SessionInventoryRow>,
-): SessionInventoryWorkspaceMeta {
-  return {
-    key: group.key ?? key,
-    directory: group.directory,
-    workspaceId: group.workspaceId,
-    workspaceName: group.workspaceName,
-    projectID: group.projectID,
-    hasMore: group.hasMore,
-    total: group.total,
-    nextCursor: group.nextCursor,
   }
 }
 

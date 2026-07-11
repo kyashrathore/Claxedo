@@ -24,6 +24,24 @@ function permissionMapForTrim(sessions: Session[]) {
   return permission
 }
 
+// Insert `info` at `insertIndex`, re-trim to the cache limit (protecting
+// open/permission-held sessions), and evict caches for any rows that fell out.
+// Shared by the `session.created` branch and the not-yet-present
+// `session.updated` branch so the splice+trim+cleanup sequence lives once.
+function insertTrimmedSessionList(
+  cache: DirectorySessionCacheValue,
+  info: Session,
+  insertIndex: number,
+  directory: string,
+): Session[] {
+  const previous = cache.session.slice()
+  const next = previous.slice()
+  next.splice(insertIndex, 0, info)
+  const list = trimSessions(next, { limit: cache.limit, permission: permissionMapForTrim(next) })
+  cleanupDroppedSessionCaches(previous, list, directory)
+  return list
+}
+
 export function applySessionListEvent(input: {
   event: { type: string; properties?: unknown }
   cache: DirectorySessionCacheValue
@@ -38,11 +56,7 @@ export function applySessionListEvent(input: {
         session[idx.index] = info
         return { ...input.cache, session }
       }
-      const previous = input.cache.session.slice()
-      const next = previous.slice()
-      next.splice(idx.index, 0, info)
-      const list = trimSessions(next, { limit: input.cache.limit, permission: permissionMapForTrim(next) })
-      cleanupDroppedSessionCaches(previous, list, input.directory)
+      const list = insertTrimmedSessionList(input.cache, info, idx.index, input.directory)
       return {
         ...input.cache,
         total: input.cache.total + (info.parentID ? 0 : 1),
@@ -69,11 +83,7 @@ export function applySessionListEvent(input: {
         session[idx.index] = info
         return { ...input.cache, session }
       }
-      const previous = input.cache.session.slice()
-      const next = previous.slice()
-      next.splice(idx.index, 0, info)
-      const list = trimSessions(next, { limit: input.cache.limit, permission: permissionMapForTrim(next) })
-      cleanupDroppedSessionCaches(previous, list, input.directory)
+      const list = insertTrimmedSessionList(input.cache, info, idx.index, input.directory)
       return { ...input.cache, session: list }
     }
     case "session.deleted": {

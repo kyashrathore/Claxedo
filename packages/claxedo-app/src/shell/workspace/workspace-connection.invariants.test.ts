@@ -122,7 +122,8 @@ describe("workspace connection authority invariants", () => {
 
   test("the authority reuses the existing mint/health/provision code (no duplication)", async () => {
     const text = await read(authorityModule)
-    expect(text).toMatch(/from .*cloud\/runtime\/workspace-runtime-store/)
+    // Wave 1.5 flattened `cloud/runtime/` → `cloud/workspace-runtime-store.ts`.
+    expect(text).toMatch(/from .*cloud\/workspace-runtime-store/)
     expect(text).toMatch(/prepareUserHostedRuntime\b/)
     expect(text).toMatch(/prepareWorkspaceRuntime\b/)
     expect(text).toMatch(/appendWorkspaceRuntimeLog\b/)

@@ -1,13 +1,11 @@
-import type { SessionHost } from "../identity/session-ref"
+import type { HarnessId, SessionHost } from "../identity/session-ref"
 import type { ModelKey } from "../../session-client/composer/model-strategy"
 
-export type HarnessKind =
-  | "opencode"
-  | "claude-acp"
-  | "codex-acp"
-  | "cursor-acp"
-  | "claude-sdk"
-  | "codex-app-server"
+// One vocabulary for harness kinds. `HarnessKind` is exactly the canonical
+// `HarnessId` set (`../identity/session-ref.ts`) — it previously listed only 6
+// of the 8 kinds (missing `cursor-sdk` and `pi`), which let persisted profiles
+// of those kinds slip through `durability/projections.ts`'s cast unrecognized.
+export type HarnessKind = HarnessId
 
 export type HarnessScope = "user" | "workspace" | "org"
 
@@ -22,6 +20,10 @@ export type HarnessProfile = {
   workspaceId?: string
 }
 
+// Kinds that can ONLY run inside a workspace sandbox. The SDK/native kinds
+// (`claude-sdk`, `cursor-sdk`) and the virtual `pi` harness run centrally too,
+// so they are deliberately absent here → `compatibleHosts` reports
+// ["central", "workspace"] for them.
 const workspaceOnlyKinds: ReadonlySet<HarnessKind> = new Set([
   "opencode",
   "claude-acp",

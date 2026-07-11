@@ -3,7 +3,7 @@ import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } 
 import type { DirectorySessionCacheValue } from "./queries"
 import { applyGlobalProjectEvent } from "./global-event-projector"
 import { routeDirectoryEvent, type RoutableEvent } from "./event-router"
-import { scheduleSessionProjectionPull } from "../../runtime/session-projection"
+import { scheduleSessionProjectionPull } from "../../agent-runtime/session-projection"
 import { sessionWorkspaceRuntimeRef } from "../workspace/session-workspace-key"
 import { applySessionStatusSseEvent } from "../../session/store/session-status-dispatcher"
 import { shouldInvalidateBootstrapFresh } from "../../context/global-sync/bootstrap-fresh"

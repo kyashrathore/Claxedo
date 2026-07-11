@@ -1,7 +1,7 @@
 import { resolveWorkspaceRef } from "../identity/resolve-workspace-ref"
 import type { SessionRef } from "../identity/session-ref"
 import { workspaceIdFromRef } from "../identity/legacy-resolver"
-import { signedWorkspaceFromProjects } from "../../runtime/signed-workspace"
+import { signedWorkspaceFromProjects } from "../../agent-runtime/signed-workspace"
 
 // The signed project inventory (carries the real cloud-vs-user-hosted `kind` for
 // every relay-backed workspace). Threaded in so the resolver can read the kind
