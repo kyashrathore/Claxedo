@@ -270,6 +270,8 @@ export const dict = {
 
   "prompt.popover.emptyResults": "No matching results",
   "prompt.popover.emptyCommands": "No matching commands",
+  "prompt.popover.atLabel": "Mentions",
+  "prompt.popover.slashLabel": "Commands",
   "prompt.dropzone.label": "Drop images, PDFs, or text files here",
   "prompt.dropzone.file.label": "Drop to @mention file",
   "prompt.slash.badge.custom": "custom",
@@ -367,6 +369,8 @@ export const dict = {
   "dialog.releaseNotes.action.next": "Next",
   "dialog.releaseNotes.action.hideFuture": "Don't show these in the future",
   "dialog.releaseNotes.media.alt": "Release preview",
+  "dialog.releaseNotes.media.pause": "Pause video",
+  "dialog.releaseNotes.media.play": "Play video",
 
   "context.breakdown.title": "Context Breakdown",
   "context.breakdown.note": 'Approximate breakdown of input tokens. "Other" includes tool definitions and overhead.',
@@ -535,6 +539,7 @@ export const dict = {
   "home.sessions.group.yesterday": "Yesterday",
   "home.sessions.group.older": "Older",
 
+  "session.timeline.scrollToBottom": "Scroll to latest message",
   "session.tab.session": "Session",
   "session.tab.review": "Review",
   "session.tab.context": "Context",
@@ -757,6 +762,8 @@ export const dict = {
   "settings.general.row.font.description": "Customise the font used in code blocks",
   "settings.general.row.terminalFont.title": "Terminal Font",
   "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
+  "settings.general.row.screenReaderTerminal.title": "Screen reader mode",
+  "settings.general.row.screenReaderTerminal.description": "Expose an accessible screen-reader buffer in new terminals",
   "settings.general.row.uiFont.title": "UI Font",
   "settings.general.row.uiFont.description": "Customise the font used throughout the interface",
   "settings.general.row.followup.title": "Follow-up behavior",

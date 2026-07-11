@@ -111,6 +111,10 @@ const allowedNonTokenColors = new Set(["transparent", "current", "inherit", "non
 const vendoredUpstreamDebt = new Set(
   [
     ["packages/claxedo-app/src/components/file-tree.tsx", "text-icon-weak"],
+    // Video pause/play overlay: contrast is against video CONTENT, not the app theme.
+    ["packages/claxedo-app/src/components/dialogs/release-notes.tsx", "bg-black/45"],
+    ["packages/claxedo-app/src/components/dialogs/release-notes.tsx", "text-white"],
+    ["packages/claxedo-app/src/components/dialogs/release-notes.tsx", "hover:bg-black/60"],
     ["packages/claxedo-app/src/components/model-tooltip.tsx", "text-text-invert-base"],
     ["packages/claxedo-app/src/components/titlebar/titlebar.tsx", "focus-within:outline-offset-2"],
     ["packages/claxedo-app/src/components/titlebar/titlebar.tsx", "text-[#FFF]"],
