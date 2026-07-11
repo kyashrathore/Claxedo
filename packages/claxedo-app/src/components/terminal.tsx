@@ -1,6 +1,7 @@
 import type { TerminalBackend } from "@claxedo/terminal/backend/types"
 import { retry } from "@claxedo/terminal/retry"
-import { ComponentProps, createEffect, createMemo, onCleanup, onMount, splitProps } from "solid-js"
+import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, onMount, splitProps } from "solid-js"
+import { TerminalAccessoryRow } from "./terminal-accessory-row"
 import { useSDK } from "@/context/sdk"
 import { monoFontFamily, useSettings } from "@/context/settings"
 import { LocalPTY } from "@/context/terminal"
@@ -157,6 +158,11 @@ export const Terminal = (props: TerminalProps) => {
   })
 
   let backend: TerminalBackend | undefined
+  // Feeds the mobile accessory row into the terminal user-input path (assigned
+  // where the socket wiring is live); focus signal gates the row to the focused
+  // terminal so background panes don't stack their own fixed key bars.
+  let injectInput: ((data: string) => void) | undefined
+  const [terminalFocused, setTerminalFocused] = createSignal(false)
   let disposed = false
   let cleaned = false
   let isBufferRestored = !props.pty.buffer
@@ -326,6 +332,16 @@ export const Terminal = (props: TerminalProps) => {
 
       container.addEventListener("pointerdown", handlePointerDown)
       cleanups.push(() => container.removeEventListener("pointerdown", handlePointerDown))
+
+      // Focus tracking for the accessory row (focusin/focusout bubble from xterm's textarea).
+      const onFocusIn = () => setTerminalFocused(true)
+      const onFocusOut = () => setTerminalFocused(false)
+      container.addEventListener("focusin", onFocusIn)
+      container.addEventListener("focusout", onFocusOut)
+      cleanups.push(() => {
+        container.removeEventListener("focusin", onFocusIn)
+        container.removeEventListener("focusout", onFocusOut)
+      })
 
       const snapshotCursor =
         typeof local.pty.cursor === "number" && Number.isSafeInteger(local.pty.cursor) ? local.pty.cursor : undefined
@@ -549,28 +565,33 @@ export const Terminal = (props: TerminalProps) => {
         armInitial(ws, reason)
       }
 
-      // Wire I/O: user input → server
-      cleanups.push(
-        b.onData((data: string) => {
-          // Ctrl+C ("\x03") or bare Escape ("\x1b", length 1 — excludes escape sequences like "\x1b[A")
-          if (data === "\x03" || data === "\x1b") props.onAgentInterrupt?.()
+      // Single user-input path: xterm keystrokes AND the mobile accessory row
+      // (Esc/Tab/Ctrl/arrows) both flow through here (same interrupt detection,
+      // reply filtering, and socket send).
+      const handleUserInput = (data: string) => {
+        // Ctrl+C ("\x03") or bare Escape ("\x1b", length 1 — excludes escape sequences like "\x1b[A")
+        if (data === "\x03" || data === "\x1b") props.onAgentInterrupt?.()
 
-          // Shell protection: capability replies are already handled from PTY
-          // output in handleMessage() via getCapabilityResponses(). If xterm
-          // also surfaces OSC 10/11 replies on onData(), forwarding them here
-          // makes them look like typed input and pollutes the shell prompt with
-          // `rgb:...` fragments during Codex startup.
-          const filtered = stripTerminalRepliesFromInput(data)
-          if (!filtered) {
-            return
-          }
-          const sock = socketRef.current
-          if (sock && sock.readyState === WebSocket.OPEN) {
-            sock.send(filtered)
-            return
-          }
-        }).dispose,
-      )
+        // Shell protection: capability replies are already handled from PTY
+        // output in handleMessage() via getCapabilityResponses(). If xterm
+        // also surfaces OSC 10/11 replies on onData(), forwarding them here
+        // makes them look like typed input and pollutes the shell prompt with
+        // `rgb:...` fragments during Codex startup.
+        const filtered = stripTerminalRepliesFromInput(data)
+        if (!filtered) {
+          return
+        }
+        const sock = socketRef.current
+        if (sock && sock.readyState === WebSocket.OPEN) {
+          sock.send(filtered)
+          return
+        }
+      }
+      // Expose the input path to the accessory row (rendered below).
+      injectInput = handleUserInput
+
+      // Wire I/O: user input → server
+      cleanups.push(b.onData(handleUserInput).dispose)
 
       // Enter key tracking
       cleanups.push(
@@ -1151,19 +1172,23 @@ export const Terminal = (props: TerminalProps) => {
   })
 
   return (
-    <div
-      ref={container}
-      data-component="terminal"
-      data-prevent-autofocus
-      tabIndex={-1}
-      style={{ "background-color": terminalColors().background }}
-      classList={{
-        ...(local.classList ?? {}),
-        "select-text": true,
-        "h-full w-full overflow-hidden font-mono": true,
-        [local.class ?? ""]: !!local.class,
-      }}
-      {...others}
-    />
+    <>
+      <div
+        ref={container}
+        data-component="terminal"
+        data-prevent-autofocus
+        tabIndex={-1}
+        style={{ "background-color": terminalColors().background }}
+        classList={{
+          ...(local.classList ?? {}),
+          "select-text": true,
+          "h-full w-full overflow-hidden font-mono": true,
+          [local.class ?? ""]: !!local.class,
+        }}
+        {...others}
+      />
+      {/* Mobile soft-keyboard accessory bar — coarse-pointer/narrow only (hidden on desktop). */}
+      <TerminalAccessoryRow onKey={(data) => injectInput?.(data)} active={terminalFocused} />
+    </>
   )
 }

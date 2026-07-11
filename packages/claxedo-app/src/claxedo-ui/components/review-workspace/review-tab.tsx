@@ -15,6 +15,7 @@ import { createStore } from "solid-js/store"
 
 import { useLanguage } from "@claxedo/context/language"
 import { usePlatform } from "@claxedo/context/platform"
+import { BP_MD } from "@/utils/breakpoints"
 import { selectionFromLines, useFile } from "@/context/file"
 import { useComments } from "@/context/comments"
 import { usePrompt } from "@/context/prompt"
@@ -86,7 +87,7 @@ function hasDiffContent(diff: RawVcsFileDiff) {
 }
 
 function initialDiffStyle() {
-  if (typeof window !== "undefined" && window.innerWidth < 768) return "unified"
+  if (typeof window !== "undefined" && window.innerWidth < BP_MD) return "unified"
   return "split"
 }
 

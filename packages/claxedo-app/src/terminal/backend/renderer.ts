@@ -5,6 +5,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11"
 import { TERMINAL_OPTIONS, getScreenReaderModePreference } from "../config"
 import { UrlLinkProvider, FilePathLinkProvider } from "../link-providers"
 import { dispatchTerminalFitEvent } from "../fit-event"
+import { BP_MD } from "@/utils/breakpoints"
 import type { ITheme, ITerminalAddon } from "@xterm/xterm"
 
 // ============================================================================
@@ -104,7 +105,10 @@ export function shouldPreferDomRenderer(
 ): boolean {
   if (!win) return false
   if (win.matchMedia?.("(pointer: coarse)")?.matches) return true
-  return win.innerWidth <= 767
+  // Below the md boundary (BP_MD). Kept as `<= BP_MD - 1` (not `< BP_MD`) to
+  // preserve the exact original `<= 767` semantics for fractional widths — this
+  // is a safety-critical WebGL-blanking fallback, not layout polish.
+  return win.innerWidth <= BP_MD - 1
 }
 
 // Track active WebGL renderer count globally. Chromium allows ~16 contexts per

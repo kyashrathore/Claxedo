@@ -9,6 +9,24 @@
  * conditional rendering via <Show> for better performance (unmounts DOM).
  */
 
+/*
+ * Viewport breakpoint tokens — mirrors src/utils/breakpoints.ts (WP-C3).
+ * CSS custom properties CANNOT be interpolated into `@media` conditions, so the
+ * `@media` rules below keep the literal pixel number; these variables document
+ * the same values for calc()/inline-style use and are welded to the TS
+ * constants by src/architecture/breakpoint-token-parity.guard.test.ts.
+ */
+:root {
+  --bp-sm: 640px; /* BP_SM */
+  --bp-md: 768px; /* BP_MD */
+  --bp-lg: 1024px; /* BP_LG */
+  --bp-xl: 1280px; /* BP_XL */
+  --bp-2xl: 1536px; /* BP_2XL */
+  --bp-editor-wide: 1200px; /* BP_EDITOR_WIDE */
+  --bp-editor-compact: 900px; /* BP_EDITOR_COMPACT */
+  --bp-xs: 420px; /* BP_XS */
+}
+
 /* Keep modal dialogs above Claxedo's floating mobile sidebar and dropdown layers. */
 [data-component="dialog-overlay"],
 [data-component="dialog"] {
@@ -20,6 +38,7 @@
   z-index: 320;
 }
 
+/* --bp-md complement (767 = below BP_MD) + coarse-pointer touch floor. */
 @media (max-width: 767px), (pointer: coarse) {
   [data-claxedo] :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]),
   .settings-dialog :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]),
@@ -68,6 +87,7 @@
   }
 }
 
+/* --bp-md complement (767 = below BP_MD) — diagnostics dialog full-viewport. */
 @media (max-width: 767px) {
   [data-component="dialog"]:has(.claxedo-diagnostics-dialog) [data-slot="dialog-container"] {
     width: 100vw;
@@ -119,6 +139,7 @@
   transform: translate3d(0, 0, 0);
 }
 
+/* --bp-md complement (767 = below BP_MD) — mobile rail-drawer transform reset. */
 @media (max-width: 767px) {
   .claxedo-rail-sidebar-panel {
     transform: translate3d(0, 0, 0);
@@ -144,6 +165,7 @@
   display: none;
 }
 
+/* --bp-sm complement (639 = below BP_SM) — pairs with settings.tsx's innerWidth < BP_SM free-drag gate. */
 @media (max-width: 639px) {
   /* Single column on mobile */
   .settings-dialog {

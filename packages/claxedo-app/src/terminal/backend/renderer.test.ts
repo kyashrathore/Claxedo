@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "bun:test"
+import { BP_MD } from "@/utils/breakpoints"
 import {
   MAX_WEBGL_RENDERERS,
   loadRenderer,
@@ -145,8 +146,12 @@ describe("shouldPreferDomRenderer", () => {
     expect(shouldPreferDomRenderer(fakeWin({ coarse: true, innerWidth: 1920 }))).toBe(true)
   })
 
-  test("narrow viewport (<=767px) prefers the DOM renderer", () => {
-    expect(shouldPreferDomRenderer(fakeWin({ coarse: false, innerWidth: 767 }))).toBe(true)
+  test("narrow viewport (just below BP_MD) prefers the DOM renderer", () => {
+    expect(shouldPreferDomRenderer(fakeWin({ coarse: false, innerWidth: BP_MD - 1 }))).toBe(true)
+  })
+
+  test("exactly BP_MD with a fine pointer keeps WebGL (the boundary belongs to the wide side)", () => {
+    expect(shouldPreferDomRenderer(fakeWin({ coarse: false, innerWidth: BP_MD }))).toBe(false)
   })
 
   test("wide viewport with a fine pointer keeps WebGL", () => {

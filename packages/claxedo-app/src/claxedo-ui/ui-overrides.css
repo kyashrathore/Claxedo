@@ -44,11 +44,13 @@
  * Upstream narrowed from 800px/1000px to 500px/700px (commit 66d0beba6)
  * which is too narrow for Claxedo split panels.
  */
+/* --bp-md (768 = BP_MD) — re-derives Tailwind's own md breakpoint for this shim. */
 @media (min-width: 768px) {
   .md\:max-w-\[500px\].md\:mx-auto {
     max-width: 50rem; /* 800px */
   }
 }
+/* --bp-2xl (1536 = BP_2XL). */
 @media (min-width: 1536px) {
   .md\:mx-auto.\32xl\:max-w-\[700px\],
   .\32xl\:max-w-\[700px\] {

@@ -507,6 +507,7 @@
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
   }
+  /* --bp-editor-wide (1200 = BP_EDITOR_WIDE, bespoke: off the Tailwind scale). */
   @media (max-width: 1200px) {
     .notion-page-shell {
       padding: 0 42px;
@@ -515,6 +516,7 @@
       right: 42px;
     }
   }
+  /* --bp-editor-compact (900 = BP_EDITOR_COMPACT, bespoke: off the Tailwind scale). */
   @media (max-width: 900px) {
     .notion-page-shell {
       padding: 0 28px;
@@ -1457,6 +1459,7 @@
     color: var(--text-strong);
     font-weight: 600;
   }
+  /* --bp-lg (1024 = BP_LG) — side-dock collapses to a bottom sheet. */
   @media (max-width: 1024px) {
     .notion-page-shell-with-side-dock {
       width: min(100%, 920px);
@@ -1519,6 +1522,7 @@
     }
     .notion-toc-wrap { display: none; }
   }
+  /* --bp-md (768 = BP_MD) — page-editor mobile mode (same boundary as workbench collapse). */
   @media (max-width: 768px) {
     .notion-page-shell {
       width: 100%;
@@ -1643,6 +1647,7 @@
       max-width: calc(100vw - 18px);
     }
   }
+  /* --bp-xs (420 = BP_XS, bespoke: off the Tailwind scale; live at the 390px mobile-smoke viewport). */
   @media (max-width: 420px) {
     .notion-page-shell {
       padding: 0 12px;
