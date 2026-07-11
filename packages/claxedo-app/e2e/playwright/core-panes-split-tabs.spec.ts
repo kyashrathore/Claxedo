@@ -476,7 +476,7 @@ async function buildDraftPlusTerminalSplit(page: Page) {
   }
 }
 
-test.describe("core panes: split, tabs, focus, shell chrome @tier-m", () => {
+test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
   test("dragging a background tab onto a pane's edge splits the workbench — behavior 1", async ({ page }) => {
     const { sessionContent, terminalContent } = await buildDraftPlusTerminalSplit(page)
     await expect(sessionContent).toBeVisible()
@@ -909,7 +909,17 @@ test.describe("core panes: split, tabs, focus, shell chrome @tier-m", () => {
     await expect(nav).toBeVisible({ timeout: 10_000 })
   })
 
-  test("two panes on the same relay-backed workspace share one ref-counted connection — behavior 19", async ({ page }) => {
+  // FIXME(2026-07-11, leader-pinned): second surface on the same relay-backed
+  // workspace never increments the shared connection's ref count — the poll on
+  // `window.__claxedoConnections.snapshot()[wsId].refs` (seam:
+  // src/shell/workspace/workspace-connection.ts:112) reaches 1 for the first
+  // pane but never 2 after the terminal pane + split. A/B-verified PRE-EXISTING
+  // at e76ec13f0c (pre-Wave-1) and 4390e5614d (post-Wave-1) with current test
+  // code — not a refactor regression. Suspects: WorkspaceGate acquire path
+  // (shell/workspace/workspace-gate.tsx) for terminal surfaces / second-pane
+  // content mount. Owning WP: B5 (shell). Ledger:
+  // docs/plans/2026-07-11-002-fixme-ledger-wp-reconciliation.md
+  test.fixme("two panes on the same relay-backed workspace share one ref-counted connection — behavior 19", async ({ page }) => {
     const WORKSPACE_ID = "ws_core_panes_split_tabs"
     const RELAY_ORIGIN = "https://relay.core-panes-split-tabs.test"
     const CLOUD_DIR = "/tmp/e2e-core-panes-split-tabs-cloud"

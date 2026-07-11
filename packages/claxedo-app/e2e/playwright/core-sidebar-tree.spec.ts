@@ -469,7 +469,7 @@ function opacityOf(locator: ReturnType<Page["locator"]>) {
   return locator.evaluate((el) => Number(getComputedStyle(el).opacity))
 }
 
-test.describe("core sidebar tree @tier-m", () => {
+test.describe("core sidebar tree @core", () => {
   test("project-header disclosure caret toggles collapse only, never navigates — behavior 2", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "root" }) })

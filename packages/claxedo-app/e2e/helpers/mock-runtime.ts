@@ -49,7 +49,11 @@ export type MockEvent =
   | { type: "question.replied"; properties: Record<string, unknown> }
   | { type: "todo.updated"; properties: Record<string, unknown> }
   | { type: "server.connected"; properties: Record<string, unknown> }
-  | { type: string; properties?: unknown }
+  // Catch-all: covers both `{type, properties}`-wrapped OpenCode-shaped events
+  // AND flat unwrapped ClaxedoEvent payloads (e.g. `session.lifecycle`) that
+  // carry their fields at the top level instead of nested under `properties`
+  // — see emitFlat()/ClaxedoEventsProvider's flat-event parsing.
+  | ({ type: string; properties?: unknown } & Record<string, unknown>)
 
 export type MockMessageInfo = {
   id: string
@@ -101,6 +105,14 @@ export type MockRuntimeRequests = {
   configPatchBodies: ConfigPatchBody[]
   harnessOptionsCount: number
   harnessPostCount: number
+  /** `POST /workspaces/:workspaceId/session` — cloud/relay-lane session creation (see `MockRuntimeOptions.cloud`). */
+  cloudSessionCreateCount: number
+  /** `POST /workspaces/:workspaceId/session/:id/prompt_async`. */
+  cloudPromptCount: number
+  cloudPromptBodies: PromptBody[]
+  /** `GET /workspaces/:workspaceId/api/wr/harness-config-options?harness=<type>`. */
+  cloudHarnessOptionsCount: number
+  cloudHarnessOptionsHarnesses: string[]
 }
 
 export type MockRuntimeOptions = {
@@ -135,8 +147,27 @@ export type MockRuntimeOptions = {
   configPatchFailure?: boolean
   /** Stage timings, in ms, all optional — sane defaults keep specs fast. */
   timingsMs?: { busy?: number; pending?: number; delta?: number; completed?: number; idle?: number }
-  /** When set, additionally mounts the relay-origin `/api/wr/*` catch-all for cloud specs. */
-  cloud?: { workspaceId: string; relayOrigin: string }
+  /**
+   * When set, additionally mounts a full cloud/relay-lane workspace-runtime session
+   * (connection mint, `/workspaces/:workspaceId/...` session/prompt/message/config/
+   * capabilities/provider/harness-config-options, plus the relay event stream) so an
+   * oracle-verified send can be driven through the SAME shared mock used for local
+   * sessions. `relayOrigin` may be the primary origin itself or a distinct fictitious
+   * origin (`https://relay.<spec>.test`) — the connection mint's `relayUrl` response is
+   * what the app actually follows (`workspaceRelayConnection`,
+   * `src/utils/workspace-relay-connection.ts:352`: `${relayUrl}/workspaces/:id<path>`),
+   * so either works as long as `relayOrigin` is what's passed here.
+   */
+  cloud?: {
+    workspaceId: string
+    relayOrigin: string
+    /** Project row id for the cloud workspace's OWN top-level project entry. Defaults to `proj_cloud_<workspaceId>`. */
+    projectId?: string
+    /** Project row display name. Defaults to `cloud-<workspaceId>`. */
+    projectName?: string
+    /** Harness the cloud session is created/locked with. Defaults to "opencode" — independent of the local lane's `options.harness`. */
+    harness?: Harness
+  }
 }
 
 export type MockRuntimeHandles = {
@@ -194,78 +225,96 @@ type PendingEvent = { directory: string; payload: MockEvent; flat?: boolean }
 // core-docks' flaky `permission.replied` delivery (proven via a monkey-patched
 // `JSON.parse` stack trace: the event's frame pointed at the wrong consumer).
 //
-// Fix (ported from the reference `ClaxedoEventBus` in
-// `e2e/playwright/core-terminal.spec.ts:184-231`, its own writeup of the same
-// class of bug): every event is broadcast to a small set of PERSISTENT
-// per-connection "slots", not to one shared queue and not to ephemeral
-// per-request channels either — Playwright's `route.fulfill()` can't drip a
-// body over time, so each SSE "connection" here is a brand-new HTTP request
-// per reconnect, and a channel torn down between two of a reader's OWN
-// reconnects would silently drop anything emitted during that gap. `drain()`
-// instead claims whichever existing slot is currently idle (or creates a new
-// one if every existing slot is mid-drain), so a slot's unclaimed backlog
-// survives across its own reader's reconnects while still giving each
-// independent concurrent reader its own copy of every event — real
-// multi-client SSE fan-out semantics.
-type EventSlot = { pending: PendingEvent[]; waiters: Array<() => void>; busy: boolean }
+// Fix: real multi-client SSE broadcast semantics, implemented the way an
+// actual SSE server implements them — an append-only per-channel EVENT LOG
+// with monotonic sequence ids written as SSE `id:` lines, resumed
+// per-connection from the client's own `Last-Event-ID` header. This follows
+// the INTENT of the reference `ClaxedoEventBus` in
+// `e2e/playwright/core-terminal.spec.ts:184-231` (each independent reader
+// gets its own copy of every event, and a reader's backlog survives its own
+// reconnect gap) but keys reader continuity on the client's own cursor
+// instead of the reference's heuristic idle-slot claiming. The slot port was
+// tried first and empirically still flaked in core-docks: with readers on
+// very different reconnect cadences (global-sdk's compat loop ~250ms vs
+// ClaxedoEventsProvider ~2s) their connections rarely overlap, so both
+// readers ping-pong on one slot while a copy broadcast into the other slot
+// strands past the assertion window (observed as the Deny test's
+// permission.replied never clearing the dock); claiming backlogged slots
+// first un-strands but REORDERS (a stale permission.asked redelivered after
+// its permission.replied re-opens the dock). Cursor resume has neither
+// failure mode: no loss, no duplication, no reordering, per reader.
+//
+// Reader inventory for the cursor split (verified in source):
+// - global-sdk's compat loop AND its runtime-events loop
+//   (`src/context/global-sdk.tsx:561,706`) both parse `id:` lines via
+//   `sseJsonStream` and send `Last-Event-ID` on every reconnect — they get
+//   exact per-reader resume (`seq > cursor`).
+// - `ClaxedoEventsProvider` (`src/providers/claxedo-events.tsx`, its inline
+//   reader loop) ignores `id:` lines and never sends `Last-Event-ID` — a
+//   cursor-less connection is served the FULL wrapped log every time. That
+//   is safe precisely because of what this consumer does with frames: its
+//   `isClaxedoEvent` guard requires a top-level `.type`, so every
+//   `{directory, payload}`-wrapped frame is silently dropped; the only
+//   frames it consumes are FLAT ones, which the `/api/wr/events` handler
+//   serves through the separate idempotent replay-window mechanism
+//   (`flatWrReplay`) — full-log redelivery of wrapped frames to this reader
+//   is a no-op by construction. An id-tracking reader's FIRST connection is
+//   also cursor-less and gets the full log once — correct: a fresh page has
+//   applied nothing yet.
+type LoggedEvent = { seq: number; directory: string; payload: MockEvent; flat?: boolean }
 
 class EventBus {
-  private slots: EventSlot[] = []
+  private log: LoggedEvent[] = []
+  private seq = 0
+  private waiters: Array<() => void> = []
 
-  private broadcast(event: PendingEvent) {
-    for (const slot of this.slots) {
-      slot.pending.push(event)
-      const waiters = slot.waiters
-      slot.waiters = []
-      for (const resolve of waiters) resolve()
-    }
+  private append(event: PendingEvent) {
+    this.seq += 1
+    this.log.push({ seq: this.seq, ...event })
+    const waiters = this.waiters
+    this.waiters = []
+    for (const resolve of waiters) resolve()
   }
 
   emit(directory: string, payload: MockEvent) {
-    this.broadcast({ directory, payload })
+    this.append({ directory, payload })
   }
 
-  /** See `MockRuntimeHandles.emitFlat` — broadcasts an unwrapped SSE frame. */
+  /** See `MockRuntimeHandles.emitFlat` — appends an unwrapped SSE frame. */
   emitFlat(payload: MockEvent) {
-    this.broadcast({ directory: "", payload, flat: true })
+    this.append({ directory: "", payload, flat: true })
   }
 
-  /** One call = one HTTP connection: claims an idle slot (or makes a new one), drains only that slot's queue. */
-  async drain(idleTimeoutMs: number) {
-    const slot =
-      this.slots.find((s) => !s.busy) ??
-      (() => {
-        const created: EventSlot = { pending: [], waiters: [], busy: false }
-        this.slots.push(created)
-        return created
-      })()
-    slot.busy = true
-    try {
-      if (slot.pending.length === 0) {
-        await Promise.race([
-          new Promise<void>((resolve) => slot.waiters.push(resolve)),
-          wait(idleTimeoutMs),
-        ])
-      }
-      const batch = slot.pending
-      slot.pending = []
-      return batch
-    } finally {
-      slot.busy = false
+  /**
+   * One call = one HTTP connection. `lastEventId` is the connection's own
+   * SSE `Last-Event-ID` header (the client's cursor): serve every event with
+   * `seq > lastEventId`, blocking until one exists or `idleTimeoutMs`
+   * elapses (heartbeat). Cursor-less connections (`undefined`) are served
+   * from seq 0 — the full log — see the reader-inventory comment above.
+   */
+  async drain(idleTimeoutMs: number, lastEventId?: number): Promise<LoggedEvent[]> {
+    const cursor = Number.isFinite(lastEventId) ? (lastEventId as number) : 0
+    if (!this.log.some((entry) => entry.seq > cursor)) {
+      await Promise.race([
+        new Promise<void>((resolve) => this.waiters.push(resolve)),
+        wait(idleTimeoutMs),
+      ])
     }
+    return this.log.filter((entry) => entry.seq > cursor)
   }
 }
 
 // The app can hold several SSE consumers at once (/global/event for the global
 // store, /api/wr/events for workspace-routed sessions, the relay origin for
 // cloud). Each ROUTE GROUP gets its own `EventBus` channel here (so, e.g.,
-// events meant for `/api/wr/events` never leak into `/global/event`), and
-// emit()/emitFlat() fan out to every channel. Within a single channel/route,
-// the slot-broadcast semantics on `EventBus` itself (see above) additionally
-// handle the case where that ONE route is polled by several independent
-// concurrent readers at once (e.g. `/api/wr/events` is read by both
-// `ClaxedoEventsProvider` and global-sdk's compat stream) — each reader gets
-// its own copy of every event instead of racing to steal a shared queue.
+// events meant for `/api/wr/events` never leak into `/global/event`, and a
+// `Last-Event-ID` cursor from one route is only ever resumed against that
+// same route's log), and emit()/emitFlat() fan out to every channel. Within a
+// single channel/route, the cursor-resume semantics on `EventBus` itself (see
+// above) handle the case where that ONE route is polled by several
+// independent concurrent readers at once (e.g. `/api/wr/events` is read by
+// both `ClaxedoEventsProvider` and global-sdk's compat stream) — each reader
+// resumes from its own cursor instead of racing to steal a shared queue.
 class FanoutBus {
   private channels: EventBus[] = []
 
@@ -284,10 +333,20 @@ class FanoutBus {
   }
 }
 
-function sseBody(batch: PendingEvent[]) {
+/** The connection's own cursor, from its SSE `Last-Event-ID` request header (Playwright lowercases header names). */
+function lastEventIdOf(route: Route): number | undefined {
+  const raw = route.request().headers()["last-event-id"]
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+// Every event frame carries its sequence as an SSE `id:` line so id-tracking
+// readers (global-sdk's sseJsonStream) build the cursor they resume with.
+function sseBody(batch: LoggedEvent[]) {
   if (batch.length === 0) return ": heartbeat\n\n"
   return batch
-    .map(({ directory, payload, flat }) => `data: ${JSON.stringify(flat ? payload : { directory, payload })}\n\n`)
+    .map(({ seq, directory, payload, flat }) => `id: ${seq}\ndata: ${JSON.stringify(flat ? payload : { directory, payload })}\n\n`)
     .join("")
 }
 
@@ -382,6 +441,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     configPatchBodies: [],
     harnessOptionsCount: 0,
     harnessPostCount: 0,
+    cloudSessionCreateCount: 0,
+    cloudPromptCount: 0,
+    cloudPromptBodies: [],
+    cloudHarnessOptionsCount: 0,
+    cloudHarnessOptionsHarnesses: [],
   }
 
   const fanout = new FanoutBus()
@@ -634,6 +698,204 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   }
 
   // ------------------------------------------------------------------------
+  // Cloud/relay-lane state and turn driver — independent of the local lane
+  // above (separate session id, harness, and message list), only mounted
+  // when `options.cloud` is set. Mirrors `driveTurn`/`userMessage`/
+  // `assistantMessagePending` above rather than generalizing them: those are
+  // exercised by every local-lane spec in this suite, and threading a
+  // sessionID/directory parameter through them for the cloud lane's benefit
+  // is a needless risk to that already-proven surface.
+  // ------------------------------------------------------------------------
+  const cloud = options.cloud
+  const CLOUD_WORKSPACE_ID = cloud?.workspaceId ?? ""
+  const CLOUD_PROJECT_ID = cloud?.projectId ?? `proj_cloud_${CLOUD_WORKSPACE_ID}`
+  const CLOUD_PROJECT_NAME = cloud?.projectName ?? `cloud-${CLOUD_WORKSPACE_ID}`
+  const CLOUD_SESSION_ID = `ses_cloud_${CLOUD_WORKSPACE_ID}`
+  let cloudHarness: Harness = cloud?.harness ?? "opencode"
+  let cloudMessages: MockMessageRow[] = []
+  let cloudSessionCreated = false
+
+  function cloudHarnessModel() {
+    return harnessModels[cloudHarness]?.[0] ?? BIG_PICKLE
+  }
+
+  // Cloud/user-hosted drafts never touch the local readiness POST/polling
+  // endpoint (`STATE MODEL` in core-harness-ownership-cloud.spec.ts) — status
+  // is unconditionally "ready" the instant a harness is picked, so there is
+  // no draft-time "applying"/"error" state to model here.
+  function cloudSessionConfig() {
+    const model = cloudHarnessModel()
+    if (cloudHarness === "opencode") {
+      return {
+        harness: { type: "opencode", model: model.id, status: "ready", ready: true },
+        model: { providerID: "opencode", modelID: model.id },
+        provider: { id: "opencode", model: model.id },
+        agent: "build",
+      }
+    }
+    return {
+      harness: { type: cloudHarness, model: model.id, status: "ready", ready: true },
+      model: { providerID: providerIdFor(cloudHarness), modelID: model.id },
+      provider: { id: providerIdFor(cloudHarness), model: model.id },
+      agent: "build",
+    }
+  }
+
+  function cloudProviderResponse() {
+    const activeProviderID = providerIdFor(cloudHarness)
+    const activeModels = harnessModels[cloudHarness] ?? [cloudHarnessModel()]
+    return {
+      all: [
+        {
+          id: activeProviderID,
+          name: cloudHarness,
+          env: [],
+          models: Object.fromEntries(
+            activeModels.map((m) => [
+              m.id,
+              {
+                id: m.id,
+                name: m.name,
+                release_date: "2026-01-01",
+                attachment: true,
+                reasoning: true,
+                temperature: true,
+                tool_call: true,
+                limit: { context: 200000, output: 8192 },
+                cost: { input: 0, output: 0 },
+                options: {},
+              },
+            ]),
+          ),
+        },
+      ],
+      default: { [activeProviderID]: cloudHarnessModel().id },
+      connected: [activeProviderID],
+    }
+  }
+
+  function cloudSessionRow() {
+    return {
+      id: CLOUD_SESSION_ID,
+      slug: CLOUD_SESSION_ID,
+      projectID: CLOUD_PROJECT_ID,
+      directory: CLOUD_WORKSPACE_ID,
+      title: textOf(cloudMessages[0]?.parts) || "",
+      version: "2",
+      time: { created: Date.now(), updated: Date.now() },
+      summary: { additions: 0, deletions: 0, files: 0 },
+      config: cloudSessionConfig(),
+    }
+  }
+
+  /** The cloud workspace's OWN top-level project row (self-referencing `workspaces` map)
+   * so the empty-draft header's project `<Select>` can navigate local <-> cloud
+   * client-side (core-harness-ownership-cloud behavior 5's same-pane leak-guard test). */
+  function cloudProjectRow() {
+    return {
+      id: CLOUD_PROJECT_ID,
+      worktree: CLOUD_WORKSPACE_ID,
+      name: CLOUD_PROJECT_NAME,
+      sandboxes: [CLOUD_WORKSPACE_ID],
+      workspaces: { [CLOUD_WORKSPACE_ID]: { id: CLOUD_WORKSPACE_ID, kind: "cloud" as const, workspace_name: "main", directory: CLOUD_WORKSPACE_ID, available: true } },
+      time: { created: Date.now(), updated: Date.now() },
+    }
+  }
+
+  function cloudUserMessage(input: { id: string; text: string; agent: string; providerID: string; modelID: string }): MockMessageRow {
+    return {
+      info: {
+        id: input.id,
+        sessionID: CLOUD_SESSION_ID,
+        role: "user",
+        time: { created: Date.now() },
+        agent: input.agent,
+        model: { providerID: input.providerID, modelID: input.modelID },
+      },
+      parts: [textPart(CLOUD_SESSION_ID, input.id, input.text)],
+    }
+  }
+
+  function cloudAssistantMessagePending(input: { id: string; parentID: string; agent: string; providerID: string; modelID: string }): MockMessageRow {
+    return {
+      info: {
+        id: input.id,
+        sessionID: CLOUD_SESSION_ID,
+        role: "assistant",
+        time: { created: Date.now() },
+        parentID: input.parentID,
+        agent: input.agent,
+        providerID: input.providerID,
+        modelID: input.modelID,
+        mode: "code",
+        path: { cwd: CLOUD_WORKSPACE_ID, root: CLOUD_WORKSPACE_ID },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
+      parts: [],
+    }
+  }
+
+  // Same "busy -> pending message -> deltas -> completed -> idle" staged sequence as
+  // `driveTurn`, over the same real ticks, but for the cloud lane's session/messages.
+  // Reply text convention (`cloud ack <n>: <text>`) matches
+  // `core-cloud-provisioning.spec.ts`'s own proven `installCloudRuntimeMock` — kept
+  // identical so specs asserting on it (this file's cloud lane included) share one
+  // vocabulary. Delivered via the SAME `emit()` as the local lane: `emit()` fans out
+  // through `FanoutBus` to every channel, `busRelay` included, so whichever concrete SSE
+  // route ends up mattering for a given app code path already carries the event.
+  async function driveCloudTurn(input: { userID: string; assistantID: string; text: string; agent: string; providerID: string; modelID: string; turn: number }) {
+    // Every `emit()` call below passes `CLOUD_WORKSPACE_ID` explicitly as the SSE
+    // envelope's `directory` — `emit()` defaults that param to the LOCAL lane's `DIR`,
+    // which is wrong here and matters: the proven reference mock
+    // (`core-cloud-provisioning.spec.ts`'s `installCloudRuntimeMock`) always emits cloud
+    // session events with `directory: WORKSPACE_ID`, and the client's
+    // `eventDirectoryForLiveSession`/live-session routing keys off this field.
+    await wait(timings.busy)
+    emit({ type: "session.status", properties: { sessionID: CLOUD_SESSION_ID, status: { type: "busy" } } }, CLOUD_WORKSPACE_ID)
+
+    await wait(timings.pending)
+    const assistantRow = cloudAssistantMessagePending({
+      id: input.assistantID,
+      parentID: input.userID,
+      agent: input.agent,
+      providerID: input.providerID,
+      modelID: input.modelID,
+    })
+    cloudMessages = [...cloudMessages, assistantRow]
+    emit({ type: "message.updated", properties: { sessionID: CLOUD_SESSION_ID, info: assistantRow.info } }, CLOUD_WORKSPACE_ID)
+
+    const fullText = `cloud ack ${input.turn}: ${input.text}`
+    const midpoint = Math.max(1, Math.floor(fullText.length / 2))
+    const chunks = [fullText.slice(0, midpoint), fullText.slice(midpoint)]
+    const partID = `${input.assistantID}_text`
+    let accumulated = ""
+    for (const chunk of chunks) {
+      await wait(timings.delta / chunks.length)
+      accumulated += chunk
+      emit({
+        type: "message.part.delta",
+        properties: { sessionID: CLOUD_SESSION_ID, messageID: input.assistantID, partID, field: "text", delta: chunk },
+      }, CLOUD_WORKSPACE_ID)
+    }
+    const finalPart = textPart(CLOUD_SESSION_ID, input.assistantID, accumulated)
+    cloudMessages = cloudMessages.map((row) => (row.info.id === input.assistantID ? { ...row, parts: [finalPart] } : row))
+    emit({ type: "message.part.updated", properties: { sessionID: CLOUD_SESSION_ID, part: finalPart, time: Date.now() } }, CLOUD_WORKSPACE_ID)
+
+    await wait(timings.completed)
+    cloudMessages = cloudMessages.map((row) =>
+      row.info.id === input.assistantID ? { ...row, info: { ...row.info, time: { ...row.info.time, completed: Date.now() } } } : row,
+    )
+    emit({
+      type: "message.updated",
+      properties: { sessionID: CLOUD_SESSION_ID, info: cloudMessages.find((row) => row.info.id === input.assistantID)!.info },
+    }, CLOUD_WORKSPACE_ID)
+
+    await wait(timings.idle)
+    emit({ type: "session.idle", properties: { sessionID: CLOUD_SESSION_ID } }, CLOUD_WORKSPACE_ID)
+  }
+
+  // ------------------------------------------------------------------------
   // Route registration
   // ------------------------------------------------------------------------
 
@@ -645,7 +907,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
           healthy: true,
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
-          project: [{ id: PROJECT_ID, worktree: DIR, name: PROJECT_NAME, time: { created: Date.now(), updated: Date.now() } }],
+          project: [
+            { id: PROJECT_ID, worktree: DIR, name: PROJECT_NAME, time: { created: Date.now(), updated: Date.now() } },
+            ...(cloud ? [cloudProjectRow()] : []),
+          ],
           provider: providerResponse(),
           provider_auth: { [providerIdFor(harness)]: [{ type: "api", label: "API key" }] },
           config: { provider: { id: providerIdFor(harness), model: harnessModel().id }, agent: { id: "build" } },
@@ -658,7 +923,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (!api(route)) return route.continue()
     const url = new URL(route.request().url())
     if (url.pathname !== "/global/event" && url.pathname !== "/event") return route.fallback()
-    const batch = await busGlobal.drain(sseIdleTimeoutMs)
+    const batch = await busGlobal.drain(sseIdleTimeoutMs, lastEventIdOf(route))
     await route.fulfill({ status: 200, contentType: "text/event-stream", body: sseBody(batch) }).catch(() => {})
   }
   await page.route("**/global/event?**", eventStreamHandler)
@@ -692,22 +957,43 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // upserts by id) and the compat consumer drops flat frames entirely.
   const wrEventsHandler = async (route: Route) => {
     if (!api(route)) return route.continue()
-    const batch = await busWrEvents.drain(sseIdleTimeoutMs)
+    const batch = await busWrEvents.drain(sseIdleTimeoutMs, lastEventIdOf(route))
     const now = Date.now()
     const replays = flatWrReplay.filter((entry) => entry.until > now)
-    // Queue-delivered flat copies are dropped in favor of the replay list so
-    // the drain-winner does not see the same frame twice in one body.
+    // Log-delivered flat copies are dropped in favor of the replay list so a
+    // reader does not see the same frame twice in one body. Replay frames
+    // deliberately carry NO `id:` line — they must not advance an
+    // id-tracking reader's cursor.
     const body = sseBody(batch.filter((entry) => !entry.flat)) +
       replays.map((entry) => `data: ${JSON.stringify(entry.payload)}\n\n`).join("")
     await route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
   }
   const wrRuntimeEventsHandler = async (route: Route) => {
     if (!api(route)) return route.continue()
-    const batch = await busWrRuntime.drain(sseIdleTimeoutMs)
+    const batch = await busWrRuntime.drain(sseIdleTimeoutMs, lastEventIdOf(route))
     await route.fulfill({ status: 200, contentType: "text/event-stream", body: sseBody(batch) }).catch(() => {})
   }
   await page.route("**/api/wr/events**", wrEventsHandler)
   await page.route("**/api/wr/runtime-events**", wrRuntimeEventsHandler)
+
+  // GET /api/control/session-list (`src/utils/workspace-control-routes.ts`
+  // `controlSessionNavigationListUrl`) backs the rail sidebar's session list
+  // (`rail-sidebar.tsx`'s `globalSessionList` query) — a claxedo-server-native
+  // endpoint entirely distinct from the OpenCode `/session` API this file mocks
+  // above. Without a default here the sidebar shows "Could not load sessions."
+  // for every spec that never registers its own override. Default to an empty,
+  // well-shaped list (safe: specs that need rows register a page.route AFTER
+  // calling installMockRuntime, which wins per Playwright's last-registered-first
+  // matching — see core-boot-deep-links-home.spec.ts's installSessionListMock,
+  // the pattern this default is modeled on).
+  await page.route("**/api/control/session-list**", (route) => {
+    if (!api(route)) return route.continue()
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], totalKnown: 0 }),
+    })
+  })
 
   await page.route("**/path**", (r) => {
     if (!api(r)) return r.continue()
@@ -733,7 +1019,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/project**", (r) => {
     if (!api(r)) return r.continue()
     if (!["/project", "/experimental/project"].includes(new URL(r.request().url()).pathname)) return r.fallback()
-    return json(r, [{ id: PROJECT_ID, worktree: DIR, name: PROJECT_NAME, time: { created: Date.now(), updated: Date.now() } }])
+    return json(r, [
+      { id: PROJECT_ID, worktree: DIR, name: PROJECT_NAME, time: { created: Date.now(), updated: Date.now() } },
+      ...(cloud ? [cloudProjectRow()] : []),
+    ])
   })
 
   await page.route("**/mcp**", (r) => {
@@ -968,12 +1257,181 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   })
 
   // --------------------------------------------------------------------
-  // Cloud: mount the same handlers again under the relay-origin catch-all.
-  // Best-effort scaffolding for specs 11-14 — the relay envelope (auth
-  // headers, workspaceId scoping) is not yet fully modeled; refine there.
+  // Cloud: mount a full relay-lane workspace-runtime session (connection
+  // mint + `/workspaces/:workspaceId/...` session/prompt/message/config/
+  // capabilities/provider/harness-config-options + event streams), proven
+  // against `core-cloud-provisioning.spec.ts`'s own spec-local
+  // `installCloudRuntimeMock` (oracle-verified send through this exact
+  // route shape). The real app follows the connection MINT's `relayUrl`
+  // (`workspaceRelayConnection`, `src/utils/workspace-relay-connection.ts`:
+  // `${relayUrl}/workspaces/${workspaceId}${path}`) — the routes below are
+  // registered at exactly that shape, so `relayOrigin` may be the primary
+  // origin or a distinct fictitious origin and either resolves correctly.
+  // The bare (un-prefixed) `${relayOrigin}/api/wr/*` routes further below
+  // are kept for existing callers that relied on them directly.
   // --------------------------------------------------------------------
-  if (options.cloud) {
-    const { workspaceId, relayOrigin } = options.cloud
+  if (cloud) {
+    const { workspaceId, relayOrigin } = cloud
+    const base = `${relayOrigin}/workspaces/${workspaceId}`
+
+    // Connection mint — `GET /api/workspace/:id/connection[/refresh]` on the PRIMARY
+    // origin (never relay-prefixed: the client doesn't know the relay origin until
+    // this resolves). Always reports the workspace ready/minted — the 4-step
+    // provisioning pipeline itself is `core-cloud-provisioning.spec.ts`'s own concern,
+    // out of scope here.
+    await page.route(`**/api/workspace/${workspaceId}/connection**`, (r) =>
+      api(r)
+        ? json(r, {
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId,
+            role: "owner",
+            relayUrl: relayOrigin,
+            runtimeAccessToken: `rat_${workspaceId}`,
+            tokenExpiresAt: Date.now() + 120_000,
+          })
+        : r.continue(),
+    )
+
+    // Resolve must discriminate by workspaceId/directory — a blanket catch-all here
+    // would also answer the LOCAL directory's own resolve (mounted earlier, above)
+    // with cloud info, breaking any spec exercising both lanes in one page (e.g. the
+    // same-pane local -> cloud draft navigation in core-harness-ownership-cloud
+    // behavior 5).
+    await page.route(`**/api/workspace/resolve**`, (r) => {
+      if (!api(r)) return r.continue()
+      const url = new URL(r.request().url())
+      const q = url.searchParams.get("workspaceId") ?? url.searchParams.get("directory") ?? ""
+      if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()
+      return json(r, { workspaceId, projectID: CLOUD_PROJECT_ID, projectId: CLOUD_PROJECT_ID, directory: workspaceId, kind: "cloud", status: "ready" })
+    })
+
+    await page.route(`${base}/vcs**`, (r) => json(r, {}))
+    await page.route(`${base}/mcp**`, (r) => json(r, {}))
+    await page.route(`${base}/lsp**`, (r) => json(r, []))
+    await page.route(`${base}/agent**`, (r) => json(r, [{ id: "build", name: "build", description: "Build agent", mode: "primary" }]))
+    await page.route(`${base}/app/agents**`, (r) => json(r, [{ id: "build", name: "build", description: "Build agent" }]))
+    await page.route(`${base}/command**`, (r) => json(r, [{ name: "build", description: "Build command" }]))
+    await page.route(`${base}/permission**`, (r) => json(r, []))
+    await page.route(`${base}/question**`, (r) => json(r, []))
+    await page.route(`${base}/provider`, (r) => json(r, cloudProviderResponse()))
+    await page.route(`${base}/provider/auth`, (r) => json(r, {}))
+    await page.route(`${base}/api/wr/health`, (r) => json(r, { healthy: true }))
+    await page.route(`${base}/api/wr/harness-config-options**`, (r) => {
+      const url = new URL(r.request().url())
+      const type = (url.searchParams.get("harness") as Harness | null) ?? cloudHarness
+      requests.cloudHarnessOptionsCount += 1
+      requests.cloudHarnessOptionsHarnesses.push(type)
+      const model = harnessModels[type]?.[0] ?? BIG_PICKLE
+      return json(r, {
+        source: "runner",
+        stale: false,
+        options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: model.id, selectOptions: harnessModels[type] ?? [model] }],
+      })
+    })
+    await page.route(`${base}/api/wr/diff/**`, (r) => {
+      const pathname = new URL(r.request().url()).pathname
+      const body = pathname.endsWith("/refs") ? { branches: [], tags: [], recent: [] } : pathname.endsWith("/targets") ? {} : []
+      return json(r, body)
+    })
+
+    const relayEventHandler = async (route: Route) => {
+      const batch = await busRelay.drain(sseIdleTimeoutMs, lastEventIdOf(route))
+      await route.fulfill({ status: 200, contentType: "text/event-stream", body: sseBody(batch) }).catch(() => {})
+    }
+    // `/api/wr/events` + `/api/wr/runtime-events` are the primary channel
+    // (`ClaxedoEventsProvider`'s workspace target, `claxedo-events.tsx`); `/global/event`
+    // + `/event` are mounted too as a defensive fallback for `global-sdk.tsx`'s classic
+    // loop, matching `core-cloud-provisioning.spec.ts`'s proven mock — all four drain
+    // the SAME `busRelay` channel, which (post slot-broadcast fix above) safely
+    // broadcasts one copy to each concurrently-connected reader.
+    await page.route(`${base}/api/wr/events**`, relayEventHandler)
+    await page.route(`${base}/api/wr/runtime-events**`, relayEventHandler)
+    await page.route(`${base}/global/event**`, relayEventHandler)
+    await page.route(`${base}/event**`, relayEventHandler)
+
+    await page.route(`${base}/session/status**`, (r) => json(r, cloudSessionCreated ? { [CLOUD_SESSION_ID]: { type: "idle" } } : {}))
+
+    const handleCloudSessionList = async (route: Route) => {
+      if (!api(route)) return route.continue()
+      if (route.request().method() === "POST") {
+        requests.cloudSessionCreateCount += 1
+        const sessionHarness = new URL(route.request().url()).searchParams.get("harness")
+        if (sessionHarness && sessionHarness in harnessModels) cloudHarness = sessionHarness as Harness
+        cloudSessionCreated = true
+        cloudMessages = []
+        return json(route, cloudSessionRow())
+      }
+      return json(route, cloudSessionCreated ? [cloudSessionRow()] : [])
+    }
+    await page.route(`${base}/session`, handleCloudSessionList)
+    await page.route(`${base}/session?**`, handleCloudSessionList)
+
+    await page.route(`${base}/session/*/config**`, async (route) => {
+      if (!api(route)) return route.continue()
+      if (route.request().method() === "PATCH") return json(route, { ok: true })
+      return json(route, cloudSessionConfig())
+    })
+    await page.route(`${base}/session/*/capabilities**`, (r) =>
+      json(r, {
+        transport: cloudHarness,
+        abort: true,
+        reconnect: true,
+        replay: true,
+        permissions: true,
+        questions: true,
+        todos: true,
+        commands: true,
+        fork: true,
+        revert: true,
+        unrevert: true,
+        configOptions: cloudHarness !== "opencode" && cloudHarness !== "pi",
+      }),
+    )
+    await page.route(`${base}/session/*/todo**`, (r) => json(r, []))
+    await page.route(`${base}/session/*/message**`, (r) => json(r, cloudMessages))
+    await page.route(`${base}/session/*/prompt_async**`, async (route) => {
+      if (!api(route)) return route.continue()
+      requests.cloudPromptCount += 1
+      const body = route.request().postDataJSON() as {
+        messageID?: string
+        parts?: unknown
+        agent?: string
+        model?: { providerID?: string; modelID?: string }
+        variant?: string
+      }
+      const text = textOf(body?.parts) || `cloud message ${requests.cloudPromptCount}`
+      const userID = body?.messageID || `msg_cloud_user_${requests.cloudPromptCount}`
+      const providerID = body?.model?.providerID || providerIdFor(cloudHarness)
+      const modelID = body?.model?.modelID || cloudHarnessModel().id
+      const agent = body?.agent || "build"
+      const assistantID = `${userID}_r`
+      requests.cloudPromptBodies.push({
+        messageID: body?.messageID,
+        assistantID,
+        text,
+        agent: body?.agent,
+        providerID: body?.model?.providerID,
+        modelID: body?.model?.modelID,
+        variant: body?.variant,
+      })
+
+      cloudMessages = [...cloudMessages, cloudUserMessage({ id: userID, text, agent, providerID, modelID })]
+      await route.fulfill({ status: 204, body: "" })
+
+      void driveCloudTurn({ userID, assistantID, text, agent, providerID, modelID, turn: requests.cloudPromptCount })
+    })
+    // Single `*` (not `**`) matches exactly one path segment, so this never collides
+    // with the `/session/*/config|capabilities|todo|message|prompt_async` routes
+    // above (those have an extra `/`-delimited segment) — same convention as the
+    // local lane's own `"**/session/*"` catch-all.
+    await page.route(`${base}/session/*`, (r) => (api(r) ? json(r, cloudSessionRow()) : r.continue()))
+    await page.route(`${base}/file**`, (r) => json(r, []))
+    await page.route(`${base}/find**`, (r) => json(r, []))
+
+    // Bare (un-prefixed) relay routes kept for existing callers that mount `cloud`
+    // without exercising the full session lane above (e.g. specs asserting only on
+    // `/api/wr/events` delivery to a workspace-scoped pane).
     await page.route(`${relayOrigin}/api/wr/health`, (r) => json(r, { healthy: true }))
     await page.route(`${relayOrigin}/api/wr/harness-config-options`, (r) => {
       const model = harnessModel()
@@ -988,15 +1446,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       const body = pathname.endsWith("/refs") ? { branches: [], tags: [], recent: [] } : pathname.endsWith("/targets") ? {} : []
       return json(r, body)
     })
-    const relayEventHandler = async (route: Route) => {
-      const batch = await busRelay.drain(sseIdleTimeoutMs)
-      await route.fulfill({ status: 200, contentType: "text/event-stream", body: sseBody(batch) }).catch(() => {})
-    }
     await page.route(`${relayOrigin}/api/wr/events`, relayEventHandler)
     await page.route(`${relayOrigin}/api/wr/runtime-events`, relayEventHandler)
-    await page.route(`**/api/workspace/resolve**`, (r) =>
-      json(r, { workspaceId, directory: DIR, kind: "cloud", relayUrl: relayOrigin, status: "ready" }),
-    )
   }
 
   return {

@@ -55,7 +55,7 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
+import { createAgentEventRuntime, type HarnessEventAdapter } from "@claxedo/agent-event-runtime"
 import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/opencode-compat"
 import { createAcpEventTranslator } from "@claxedo/agent-event-runtime/harnesses/acp"
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
@@ -80,9 +80,9 @@ function identity(harness: string) {
   }
 }
 
-function runAdapter(input: {
+function runAdapter<State>(input: {
   harness: string
-  adapter: Parameters<typeof createAgentEventRuntime>[0]["adapter"]
+  adapter: HarnessEventAdapter<State>
   raw: RawEvent[]
 }): CompatEnvelope[] {
   const { sessionId, directory, assistantMessageId } = identity(input.harness)

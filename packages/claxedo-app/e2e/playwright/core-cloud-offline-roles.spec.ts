@@ -552,7 +552,7 @@ async function openWorkspaceNavigator(page: Page, navigator: "Files" | "Changes"
 
 const toasts = (page: Page) => page.locator('[data-component="toast"]')
 
-test.describe("core cloud offline & roles @tier-m", () => {
+test.describe("core cloud offline & roles @core", () => {
   // This shared box runs several sibling e2e suites concurrently; page loads and
   // reactive updates can lag well beyond a quiet-machine budget (matches the
   // documented pattern in core-busy-abort-errors.spec.ts). Every assertion below is

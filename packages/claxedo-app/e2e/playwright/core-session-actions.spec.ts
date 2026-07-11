@@ -459,7 +459,7 @@ function trackSessionMutations(page: Page) {
   }
 }
 
-test.describe("core session actions: rename @tier-m", () => {
+test.describe("core session actions: rename @core", () => {
   test("double-click opens the inline editor prefilled with the current title — behavior 1", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
     await sendFirstPrompt(page, mock, "rename dblclick original title")
@@ -550,7 +550,7 @@ test.describe("core session actions: rename @tier-m", () => {
   })
 })
 
-test.describe("core session actions: fork @tier-m", () => {
+test.describe("core session actions: fork @core", () => {
   test("forking a message creates a new session and restores its draft — behavior 6", async ({ page }) => {
     test.fixme(
       true,
@@ -662,7 +662,7 @@ test.describe("core session actions: fork @tier-m", () => {
   })
 })
 
-test.describe("core session actions: revert / unrevert @tier-m", () => {
+test.describe("core session actions: revert / unrevert @core", () => {
   async function sessionRowWithRevert(mock: MockRuntimeHandles, revertMessageID?: string) {
     return {
       id: mock.session.id,
@@ -777,7 +777,7 @@ test.describe("core session actions: revert / unrevert @tier-m", () => {
   })
 })
 
-test.describe("core session actions: archive / delete @tier-m", () => {
+test.describe("core session actions: archive / delete @core", () => {
   test("archive sends the archived timestamp and navigates away — behavior 10", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME })
     const mutations = trackSessionMutations(page)
@@ -821,7 +821,7 @@ test.describe("core session actions: archive / delete @tier-m", () => {
   })
 })
 
-test.describe("core session actions: subagent (child session) @tier-m", () => {
+test.describe("core session actions: subagent (child session) @core", () => {
   const PARENT_ID = "ses_core_session_actions_parent"
   const CHILD_ID = "ses_core_session_actions_child"
   const PARENT_TITLE = "Core session actions parent"
@@ -1115,7 +1115,7 @@ test.describe("core session actions: subagent (child session) @tier-m", () => {
   })
 })
 
-test.describe("core session actions: unreachable UI @tier-m", () => {
+test.describe("core session actions: unreachable UI @core", () => {
   test("title syncs to a second open pane's tab label without reload", async () => {
     test.fixme(
       true,

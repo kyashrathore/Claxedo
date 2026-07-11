@@ -524,7 +524,7 @@ function workspaceRoute(sessionId?: string) {
   return sessionId ? `/w/${encodeURIComponent(WORKSPACE_ID)}/session/${sessionId}` : `/w/${encodeURIComponent(WORKSPACE_ID)}/session`
 }
 
-test.describe("core user-hosted workspace @tier-m", () => {
+test.describe("core user-hosted workspace @core", () => {
   test("landing on an unready user-hosted workspace renders the distinct 3-step pipeline — behavior 1", async ({ page }) => {
     // Pad well beyond the suite's 60s default: this is the FIRST navigation
     // of the file, which pays for cold dev-server compile on a shared server

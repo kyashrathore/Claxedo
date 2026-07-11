@@ -362,7 +362,7 @@ function nonClerkBadResponses(entries: string[]) {
   return entries.filter((item) => !item.includes(".clerk.accounts.dev") && !fromUnmockedCentralOrigin(item))
 }
 
-test.describe("core boot, deep links, and home @tier-m", () => {
+test.describe("core boot, deep links, and home @core", () => {
   test("cold boot with zero projects paints a clean shell and the Home empty state — behaviors 1,2", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     // NOTE: the global SDK's central event-stream connection (zero-workspace context)

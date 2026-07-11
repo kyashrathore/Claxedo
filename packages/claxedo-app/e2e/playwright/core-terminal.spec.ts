@@ -735,7 +735,7 @@ function contentIdFor(page: Page, ptyId: string) {
   )
 }
 
-test.describe("core terminal panel @tier-m", () => {
+test.describe("core terminal panel @core", () => {
   test("New Terminal creates a plain terminal with a default numbered title — behaviors 1", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-plain"
     await installAppBootMock(page, DIR)

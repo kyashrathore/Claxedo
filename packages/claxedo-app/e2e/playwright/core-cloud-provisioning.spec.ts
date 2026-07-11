@@ -550,7 +550,7 @@ function workspaceRoute(sessionId?: string) {
   return sessionId ? `/w/${encodeURIComponent(WORKSPACE_ID)}/session/${sessionId}` : `/w/${encodeURIComponent(WORKSPACE_ID)}/session`
 }
 
-test.describe("core cloud provisioning @tier-m", () => {
+test.describe("core cloud provisioning @core", () => {
   test("cloud workspace mid-provisioning renders the pipeline, unlocks on ready, and a send is proven by the oracle — behaviors 1,2,3,4", async ({ page }) => {
     // Shared dev server can be under heavy concurrent load from other agents'
     // spec runs; a cold cloud-workspace route transforms many ESM modules the

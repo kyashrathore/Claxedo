@@ -747,7 +747,7 @@ function mockSandboxProviders(page: Page, initial: { default_provider: string; p
   }
 }
 
-test.describe("core settings + auth @tier-m", () => {
+test.describe("core settings + auth @core", () => {
   test.describe("settings dialog: tabs, gating, mobile nav", () => {
     test("General is active by default; switching tabs shows exactly one panel — behavior 1", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })

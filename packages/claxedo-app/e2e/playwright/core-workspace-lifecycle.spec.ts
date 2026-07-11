@@ -451,7 +451,7 @@ function toastTitle(page: Page) {
   return page.locator('[data-slot="toast-title"]')
 }
 
-test.describe("core workspace lifecycle @tier-m", () => {
+test.describe("core workspace lifecycle @core", () => {
   test.beforeEach(async ({ page }) => {
     page.on("console", (message) => {
       if (message.type() === "error") {

@@ -769,7 +769,7 @@ async function openProcessPanel(page: Page, overlay: Locator, name: string): Pro
 // Tests
 // ---------------------------------------------------------------------------
 
-test.describe("core processes @tier-m", () => {
+test.describe("core processes @core", () => {
   test.beforeEach(async ({ page }) => {
     await fakePtyWebSocket(page)
   })

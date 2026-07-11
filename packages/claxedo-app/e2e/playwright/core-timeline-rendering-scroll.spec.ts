@@ -656,7 +656,7 @@ function jumpToBottomButton(page: Page) {
   return page.locator('use[href="#opencode-icon-arrow-down-to-line"]').locator("xpath=ancestor::button[1]")
 }
 
-test.describe("core timeline rendering & scroll (local) @tier-m", () => {
+test.describe("core timeline rendering & scroll (local) @core", () => {
   // This spec's seeded-session scenarios each cost a full navigation (or a
   // navigation + reload for the busy→settle transition), which on a loaded
   // shared runner can outrun the default per-test timeout well before
