@@ -119,6 +119,15 @@ fix-specific test body mirroring a proven sibling test in the same file; bodies 
 | #11 | core-panes-split-tabs "ref-counted connection — behavior 19" | NOT fixed in the named files: `workspace-gate.tsx` and `workspace-connection.ts` are byte-identical to HEAD (only their test files changed). Real locus `session-pane-scope.tsx` is also unmodified. Fix has not landed. |
 | #12 | core-processes "crash after launch lights attention dot — behavior 10" | Fixes appear present (stale-snapshot guard + removal of unconditional `onCleanup setCrashed(false)`) but a faithful crash-after-launch → reconcile drive is complex; left for the e2e owner to author + run. |
 
+## Wave 2 gate dispositions (leader, appended post-flip)
+
+| Item | Finding | Disposition |
+|---|---|---|
+| fork flip failure | LONGSTANDING production bug (since hard-fork reset): `context/prompt.tsx` `pick(scope)` keyed the prompt cache with raw `load(dir,id)` while `session()` used `sessionViewKey` — scoped draft writes (incl. fork restore) went to an orphan key the composer never reads | FIXED at gate (prompt.tsx pick → sessionViewKey; fork.tsx passes raw directory); fork e2e 3/3. Found because a flipped fixme failed honest. |
+| behavior 8 flake | Pre-existing timing-racy magic-number guard (`configPatchCount <= 2`; failed 4/5 at baseline). Also documents real behavior: session-selection re-PATCHes on hydration toggles when a config PATCH permanently fails — bounded, converges at 5 | Guard reconciled to a convergence assertion (4/4). Bounded-retry behavior noted for WP-B6/B9 review. |
+| user-hosted behaviors 2,3 | Mock harness lacks the contract-v3 `/api/wr/runtime-events` channel — assistant replies emitted onto a bus the app never drains; NOT an app bug (A/B: red at baseline, identical error) | PINNED `test.fixme` (leader); harness capability owned by the e2e session. |
+| C2 pre-scope discoveries | macOS Electron menu dispatches Cmd+W/Cmd+B/Cmd+\\/Option-arrows/Cmd+O to command ids that do not exist in the renderer registry (silent no-ops on real desktop); `terminal.toggle` referenced by 3 call sites but never registered | Recorded for WP-C2 (inventory doc `2026-07-11-006` §5 has the resolution sequence). |
+
 ## Orphans and leader dispositions (2026-07-11)
 
 **In-scope, previously unowned — leader assignments (reflected in LLD dependency notes):**
