@@ -107,8 +107,8 @@ export function hostedBootRequirementFailures(
   }
   if (flagEnabled(env.CLAXEDO_EMBEDDED_AUTH)) {
     // The embedded Better Auth issuer is a SELF-HOST affordance (signed mode
-    // without Convex/Clerk). In hosted mode it would silently displace the
-    // hosted issuer (the composition prefers it), so it is a hard conflict.
+    // with no hosted storage backend or IdP). In hosted mode it would silently
+    // displace the hosted issuer (the composition prefers it): hard conflict.
     failures.push("embedded self-host auth is enabled (unset CLAXEDO_EMBEDDED_AUTH; hosted mode requires the hosted issuer)")
   }
   return failures
