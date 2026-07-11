@@ -28,7 +28,7 @@ import { centralTransportForServer } from "@claxedo/shell/data/transport/transpo
 import {
   createAgentRuntimeClient,
   DEFAULT_AGENT_RUNTIME_CAPABILITIES,
-} from "../../runtime/agent-runtime-client"
+} from "../../agent-runtime/agent-runtime-client"
 
 export const DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES = DEFAULT_AGENT_RUNTIME_CAPABILITIES
 

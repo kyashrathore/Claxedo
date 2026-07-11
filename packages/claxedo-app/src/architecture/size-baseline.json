@@ -2,11 +2,11 @@
   "browser/components/browser-pane.tsx": 969,
   "claxedo-ui/components/dialog-process-diagnostics.tsx": 1051,
   "claxedo-ui/components/page-editor/page-editor.tsx": 1006,
-  "claxedo-ui/context/process-pane.tsx": 1042,
+  "claxedo-ui/context/process-pane.tsx": 842,
   "claxedo-ui/rail/rail-sidebar.tsx": 2689,
   "components/terminal.tsx": 1195,
-  "context/global-sdk.tsx": 900,
-  "context/layout.tsx": 966,
+  "context/global-sdk.tsx": 824,
+  "context/layout.tsx": 933,
   "demo/handlers.ts": 1002,
   "i18n/ar.ts": 848,
   "i18n/bs.ts": 937,
@@ -27,6 +27,5 @@
   "i18n/zht.ts": 918,
   "pages/session.tsx": 1551,
   "pages/session/message-timeline.tsx": 1748,
-  "session/store/session-controller.ts": 1107,
-  "terminal/helpers.ts": 908
+  "session/store/session-controller.ts": 1107
 }

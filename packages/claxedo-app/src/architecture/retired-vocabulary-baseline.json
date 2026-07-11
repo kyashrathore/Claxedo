@@ -1,6 +1,6 @@
 [
   "claxedo-ui/components/agent-harness-selector.vitest.tsx",
-  "claxedo-ui/harness/harness-config.test.ts",
+  "claxedo-ui/harness/harness-config-store.test.ts",
   "claxedo-ui/harness/harness-preferences.test.ts",
   "claxedo-ui/harness/harness-preferences.ts",
   "claxedo-ui/harness/harness-store.test.ts",
@@ -11,8 +11,8 @@
   "claxedo-ui/state/route-session-harness.ts",
   "components/prompt-input/selector-visibility.test.ts",
   "components/prompt-input/submit-create-session.test.ts",
-  "components/prompt-input/submit.test.ts",
   "context/global-sync/bootstrap.test.ts",
+  "marketplace/install-flow.test.ts",
   "marketplace/install-flow.ts",
   "pages/session/use-session-commands.tsx",
   "pane/store/pane-preferences.test.ts",

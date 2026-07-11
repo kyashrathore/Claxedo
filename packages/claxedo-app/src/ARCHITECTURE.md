@@ -10,9 +10,10 @@ list differs from reality, that is called out explicitly below.
 others: `app.tsx`, `main.tsx`, `desktop-menu.ts`, `index.tsx`, `index.css`,
 `env.d.ts`, and `custom-elements.d.ts` (a symlink to
 `../../ui/src/custom-elements.d.ts`, not a real file). The 21 directories are
-`architecture, assets, browser, claxedo-ui, cloud, components, context, demo,
-extensions, i18n, marketplace, pages, pane, process, runtime, session,
-session-client, shared, shell, terminal, utils`. The Wave 1.5 reorg deleted
+`agent-runtime, architecture, assets, browser, claxedo-ui, cloud, components,
+context, demo, extensions, i18n, marketplace, pages, pane, process, session,
+session-client, shared, shell, terminal, utils` (WP-B10 renamed `runtime/` →
+`agent-runtime/`). The Wave 1.5 reorg deleted
 eight top-level directories that earlier revisions of this doc charter'd —
 `providers/`, `analytics/`, `constants/`, `hooks/`, `vite-shims/`,
 `overrides/`, `src/e2e/`, and `cloud/runtime/` (flattened) — merging their
@@ -241,20 +242,24 @@ Genuinely well-tested per the audit (descriptive names, real edge cases:
 caps, dedup, persistence round-trips). **Add here:** browser-tab-specific
 UI or state.
 
-### `runtime/` (5 files)
-Agent runtime client and session projection: `agent-runtime-client.ts`,
-`session-projection.ts`, `signed-workspace.ts` (signed-workspace request
-handling — "workspace" here is sense 2/5, control-plane/server, not a
-directory). **Add here:** agent-runtime request/response shaping that isn't
-harness-specific enough to live in `session-client/`.
+### `agent-runtime/` (6 files, was `runtime/`)
+Agent runtime client, session-routing placement table, and session
+projection: `agent-runtime-client.ts`, `placement-table.ts` (the pure,
+tested routing decision — which transport a session read/write goes to),
+`workspace-kind.ts` (the single `WorkspaceKind` union), `session-projection.ts`,
+`signed-workspace.ts` (signed-workspace request handling — "workspace" here is
+sense 2/5, control-plane/server, not a directory). Renamed from `runtime/` in
+WP-B10 to break the collision with `cloud/` (the former `cloud/runtime/`).
+**Add here:** agent-runtime request/response shaping and session-routing
+decisions that aren't harness-specific enough to live in `session-client/`.
 
 ### `cloud/` (flat)
 Cloud-hosted workspace runtime store: `cloud/workspace-runtime-store.ts`
 and its browser test (Wave 1.5 flattened the former `cloud/runtime/`
-subdirectory). Distinct from the top-level `runtime/` directory above —
-`cloud/` is specifically the cloud-hosted-workspace variant.
+subdirectory). Distinct from the top-level `agent-runtime/` directory above —
+`cloud/` is specifically the cloud-hosted-workspace provisioning/startup store.
 **Add here:** cloud-workspace-runtime-specific state, not general
-agent-runtime logic (that goes in `runtime/`).
+agent-runtime logic (that goes in `agent-runtime/`).
 
 ### `process/` (4 files)
 Process/PTY client relay: `client.ts`, `client.relay.test.ts`, `process.ts`.

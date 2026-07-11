@@ -12,7 +12,22 @@ type AgentsContract = {
 
 const appRoot = path.resolve(import.meta.dir, "../..")
 const srcRoot = path.join(appRoot, "src")
-const requiredDirs = ["shell/identity", "shell/auth", "shell/data", "shell/layout", "architecture"]
+const requiredDirs = [
+  "shell/identity",
+  "shell/auth",
+  "shell/data",
+  "shell/layout",
+  "architecture",
+  // WP-B10 platform dirs — ownership contracts for the feature/platform slice.
+  "agent-runtime",
+  "browser",
+  "cloud",
+  "process",
+  "pane",
+  "extensions",
+  "marketplace",
+  "demo",
+]
 const writerFamilies = new Set((writers as { families: Array<{ family: string }> }).families.map((family) => family.family))
 const importPattern = /(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g
 

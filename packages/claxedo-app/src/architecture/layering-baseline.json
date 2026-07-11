@@ -1,4 +1,7 @@
 [
+  "agent-runtime<->session",
+  "agent-runtime<->shared",
+  "agent-runtime<->shell",
   "browser<->claxedo-ui",
   "claxedo-ui<->components",
   "claxedo-ui<->pages",
@@ -18,9 +21,6 @@
   "context<->shell",
   "context<->terminal",
   "context<->utils",
-  "runtime<->session",
-  "runtime<->shared",
-  "runtime<->shell",
   "session<->shell",
   "shared<->shell",
   "shared<->utils",

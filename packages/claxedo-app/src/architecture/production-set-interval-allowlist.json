@@ -1,9 +1,9 @@
 [
   {
-    "file": "claxedo-ui/context/process-pane.tsx",
+    "file": "claxedo-ui/context/process-pane-scheduling.ts",
     "count": 1,
     "owner": "process pane",
-    "reason": "Sleep-detection timer watches wall-clock gaps."
+    "reason": "Sleep-detection timer watches wall-clock gaps (createWakeDetector)."
   },
   {
     "file": "claxedo-ui/rail/rail-sidebar.tsx",

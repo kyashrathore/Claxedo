@@ -135,6 +135,84 @@ export const metrics: readonly Metric[] = [
   runtimeGatewayOutsideTransportMetric(),
 ]
 
+// ---------------------------------------------------------------------------
+// Standalone drift guard: OSC 10/11 escape handling has a single owner.
+//
+// The terminal foreground/background color queries (OSC 10 / OSC 11) and their
+// magic RGB response literals must live in exactly ONE production module. A dead
+// duplicate used to live in backend/xterm.ts; if either the query detection or
+// the response literals drift back into another file, the two copies silently
+// disagree. This is a source-shape rule (per CONTRIBUTING it belongs here as a
+// named scanner rule, not as a text-scan inside capability-responder.test.ts).
+// Baseline: empty — capability-responder.ts is the only allowed owner.
+// ---------------------------------------------------------------------------
+export const CAPABILITY_RESPONDER_FILE = "terminal/capability-responder.ts"
+
+// Matches an OSC 10 or OSC 11 escape marker (`ESC ] 10 ;` / `ESC ] 11 ;`) in
+// source, in both string-literal (`\x1b]10;`) and regex-literal (`\x1b\]10;`)
+// forms, across the ESC spellings the codebase might use (\x1b, , \033).
+const oscColorEscapeRe = /(?:\\x1b|\\u001b|\\033)\\?\]1[01];/g
+
+export function oscColorEscapesOutsideResponder(files: SourceFile[]): Finding[] {
+  return files
+    .filter((file) => file.path !== CAPABILITY_RESPONDER_FILE)
+    .flatMap((file) => findMatches(file, oscColorEscapeRe))
+}
+
+// Standalone drift guard: the app.tsx route spine, ordering, and negatives.
+//
+// override-batch-contract.test.ts (retired as snapshot theater) encoded ONE
+// invariant worth keeping: app.tsx composes the upstream route spine, in the
+// right order, without retired constructs. The router routes are JSX (there is
+// no exported route table to assert against), so per CONTRIBUTING this stays a
+// named source-shape rule here — not a Bun.file+toContain grep scattered in a
+// pages/*.test.ts. Baseline: empty — app.tsx must satisfy every marker.
+// ---------------------------------------------------------------------------
+export const APP_ROOT_ROUTE_FILE = "app.tsx"
+
+// Provider + route markers that must be present in app.tsx's route spine.
+const APP_ROUTE_SPINE_REQUIRED = [
+  "<ServerProvider",
+  "<GlobalSyncProvider>",
+  'path="/:dir"',
+  'path="/s/:sessionId"',
+  'path="/w/:workspaceId"',
+  'path="/permissions"',
+  'path="/config"',
+] as const
+
+// Retired upstream constructs that must NOT reappear in app.tsx.
+const APP_ROUTE_SPINE_FORBIDDEN = ["ServerKey"] as const
+
+// The specific "/marketplace" route must be registered BEFORE the catch-all
+// "/:dir" directory route; otherwise SolidJS router matches "/:dir" first and
+// "/marketplace" becomes dead.
+export function appRouteSpineViolations(source: string): Finding[] {
+  const findings: Finding[] = []
+  for (const token of APP_ROUTE_SPINE_REQUIRED) {
+    if (!source.includes(token)) {
+      findings.push({ file: APP_ROOT_ROUTE_FILE, line: 1, match: `missing route-spine marker: ${token}` })
+    }
+  }
+  const marketplace = source.indexOf('path="/marketplace"')
+  const dir = source.indexOf('path="/:dir"')
+  if (marketplace === -1) {
+    findings.push({ file: APP_ROOT_ROUTE_FILE, line: 1, match: `missing route-spine marker: path="/marketplace"` })
+  } else if (dir !== -1 && marketplace > dir) {
+    findings.push({
+      file: APP_ROOT_ROUTE_FILE,
+      line: lineForOffset(source, dir),
+      match: `route path="/marketplace" must precede catch-all path="/:dir"`,
+    })
+  }
+  for (const token of APP_ROUTE_SPINE_FORBIDDEN) {
+    for (let idx = source.indexOf(token); idx !== -1; idx = source.indexOf(token, idx + 1)) {
+      findings.push({ file: APP_ROOT_ROUTE_FILE, line: lineForOffset(source, idx), match: `forbidden marker: ${token}` })
+    }
+  }
+  return findings
+}
+
 function regexMetric(name: MetricName, description: string, pattern: RegExp): Metric {
   return {
     name,
