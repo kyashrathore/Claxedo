@@ -87,6 +87,38 @@ Paths relative to `packages/claxedo-app` unless prefixed `packages/`.
 
 | Wave 1.5 gate | Second pane on same relay-backed workspace never increments shared connection refs (seam workspace-connection.ts:112 stuck at 1) | PINNED: `test.fixme` core-panes-split-tabs behavior 19 (leader-flipped; A/B-proven pre-existing at e76ec13f0c AND 4390e5614d — not a Wave 1/1.5 regression; e2e session's earlier "13P" panes figure not reproducible in leader env) | owning WP-B5; suspects: workspace-gate.tsx acquire path for terminal/second surfaces |
 
+| WP-03b (mobile bring-up) | `route-intent.ts` workspaceBrowse auto-opens the workspace review panel on every `/:dir/session` boot; at mobile width it covers the ENTIRE screen incl. composer | PINNED in mobile-smoke.spec.ts helper comments + here; owning WP-B11 (route-intent) / WP-C3 (mobile behavior decision) | discovered building the mobile smoke suite |
+| WP-03b (suite audit) | `CLAXEDO_E2E_SUITE=happy` (the DEFAULT suite) matches ZERO specs — every core spec is @core-only; default `test:e2e` runs nothing | reported; owning: e2e session / leader (suite-tagging decision needed) | pre-existing gap |
+
+### Wave 2 fixme flips (2026-07-11, fixme-flip worker — FLIPPED, awaiting leader gate run)
+
+Each row below was flipped from `test.fixme` to a live `test` only after the cited
+fix was verified **present in the live source** (citations updated to post-refactor
+paths). Bodies marked *(authored)* had comment-only stubs and were given a real,
+fix-specific test body mirroring a proven sibling test in the same file; bodies marked
+*(pre-written)* already had a full drivable body under the fixme.
+
+| Candidate | Spec (title) | Fix verified in source | Disposition |
+|---|---|---|---|
+| #1 | core-sidebar-tree "load-more done notice replaces button — behavior 6" | `mergeSessionListResponses` append advances to page's own `nextCursor` (`src/shared/query/session-list.ts:71-73`) | FLIPPED *(authored)* — awaiting gate |
+| #2 | core-sidebar-tree "project-header body click selects primary workspace — behavior 2" | `openOrCreateSession` excludes `"new"` sentinel (`src/claxedo-ui/layout-actions/workspace-actions.ts:53`) | FLIPPED *(authored)* — awaiting gate |
+| #3 | core-panes-split-tabs "mod+\\ splits focused pane — behavior 7" | keyboard split reveals `mruHiddenContent()` (`src/claxedo-ui/workbench/workbench.tsx:162-175`) | FLIPPED *(authored)* — awaiting gate |
+| #6 | core-session-actions "forking a message creates session + restores draft — behavior 6" | `resolveForkSessionId` returns `params.sessionId ?? params.id` (`src/components/dialogs/fork-messages.ts:42-47`) | FLIPPED *(pre-written body)* — awaiting gate |
+| #7 | core-cloud-provisioning "cloud create failure: one toast — behavior 6" | `creationRejected` flag + early `return` after `.catch()` toast (`src/components/prompt-input/submit-directory.ts:130-139`) | FLIPPED *(pre-written body)* — awaiting gate |
+| #8 | core-harness-ownership-local "Connecting pill while polling — behavior 6" | `harnessStatusPatch` maps `applying`→`polling` via `settled` flag (`src/session-client/harness/store-state.ts:86-90`) | FLIPPED *(authored)* — awaiting gate |
+| #13 | core-terminal "externally exited PTY clears tracked agent status — behaviors 7" | `reconcilePtyExit` batches `setAgentStatus(idle)` + `clearSeen` (`src/claxedo-ui/state/agent-status-listener.ts:328-340`) | FLIPPED *(pre-written body)* — awaiting gate |
+
+**Skipped (verified but NOT flipped, with reason):**
+
+| Candidate | Spec | Reason not flipped |
+|---|---|---|
+| #4 | core-panes-split-tabs "closing sole draft suppresses auto-reopen — behavior 15" | Fix present (reactive `blockedUntil` signal, `rail-empty-draft-controller.ts:50-55`) but the only faithful proof needs a 10ms-granularity in-browser timing sampler — inherently flake-prone; left for the e2e owner to author + run. |
+| #5 | core-workspace-lifecycle "direct local-worktree creation hangs — behavior 9" | Hang fix present (`WorktreeState.ready(created)` before the `.wait()`, `project-actions.tsx:238`) but the UI trigger (behavior 8 `handleNewWorkspace`) is still dead — not drivable from the web tier. |
+| #9 | core-harness-ownership-local "unavailable harness red dot — behavior 5" | Already a live `test()` (flipped earlier, carries a "FIXED:" note) — no action needed. |
+| #10 | core-settings-auth "InitError variants render formatted chain — behavior" | The `/__e2e/error-page?variant=` crash-injection route DOES exist (`src/app.tsx:438` → `error-page-harness.tsx`), but a faithful body must assert `formatError`/i18n output — best authored by the e2e owner who can run it. |
+| #11 | core-panes-split-tabs "ref-counted connection — behavior 19" | NOT fixed in the named files: `workspace-gate.tsx` and `workspace-connection.ts` are byte-identical to HEAD (only their test files changed). Real locus `session-pane-scope.tsx` is also unmodified. Fix has not landed. |
+| #12 | core-processes "crash after launch lights attention dot — behavior 10" | Fixes appear present (stale-snapshot guard + removal of unconditional `onCleanup setCrashed(false)`) but a faithful crash-after-launch → reconcile drive is complex; left for the e2e owner to author + run. |
+
 ## Orphans and leader dispositions (2026-07-11)
 
 **In-scope, previously unowned — leader assignments (reflected in LLD dependency notes):**

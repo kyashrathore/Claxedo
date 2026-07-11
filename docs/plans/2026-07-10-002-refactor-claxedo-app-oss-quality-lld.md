@@ -513,6 +513,31 @@ design note before execution; do not improvise this one.
 
 ---
 
+## Wave 2 written waivers (leader, 2026-07-11 — per goal DoD "fixed or waived in writing")
+
+Low-severity review findings waived after live-tree verification (full triage table in the
+session record; verdicts re-checked against the post-fix-up tree):
+- W1. resolveSandboxRootActions idempotence: adversarial non-idempotent `rootFor` case
+  untested; catalog's rootFor is single-level by construction — latent-risk note only.
+- W2. loadRenderer WebGL ceiling/dispose internals + screenReaderMode seed untestable
+  without module mocking; decision table covered; perf harness gates regressions.
+- W3. size-baseline pins 8/1 lines above actual for two files — ceilings, not pins; passes.
+- W4. useQueryOptions/useShellQueryOptions dual definition — deliberate deferral to
+  D2/D3; the split is itself enforced by the route-audit suite.
+- W5. window.prompt in slash-commands — deferred to WP-C1 dialog work.
+- W6. add-process-dialog / review-session CRUD DOM tests — heavy Solid-mount cost;
+  pure logic covered.
+- W7. file-tree DOM keyboard adapter untested (pure resolveTreeKeyAction covered) —
+  integration-mount effort, not a quick fix.
+- W8. rail-width vitest re-implements the inline derivation — real fix requires extracting
+  the binding from app-shell-layout.tsx first (D-wave scale).
+- W9. desktop last-pane Quit keyboard reachability — handed to WP-C2 with the registry
+  consolidation; palette path exists.
+- W10. route-bridge.tsx component-internal wiring untested (resolution logic + deep-links
+  covered in extracted modules) — Solid-mount integration test deferred.
+- W11. review finding "history-window 2 failures" — FALSE POSITIVE (reviewer ran bun
+  test without --conditions=browser; suite is 186/0 with correct flags).
+
 ## Dependency notes
 - **Leader re-scope 2026-07-11 (Wave 0 dispatch):** the live e2e session (separate
   thread) owns `e2e/**`, helpers, perf-harness, `.github/workflows/test.yml`, and the

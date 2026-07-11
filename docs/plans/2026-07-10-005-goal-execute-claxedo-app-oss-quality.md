@@ -148,7 +148,10 @@ the public docs don't enumerate them).
 **Probed 2026-07-11 (leader):** CLI upgraded 0.143.0 → 0.144.1 (older CLI rejects the
 account's default model). Verified working ids: `gpt-5.6-sol`, `gpt-5.6-luna`
 (bare `luna`/`sol` are rejected); CLI default resolves to GPT-5.3-Codex. Use
-`--model gpt-5.6-sol --config model_reasoning_effort="high"` for worker runs. Best fit: mechanical waves (WP-A*, WP-ORG-*) and
+`-m gpt-5.6-sol -c model_reasoning_effort="high"` (0.144 dropped `--ask-for-approval`).
+**HARD LESSON (Wave 2):** TWO CONCURRENT `codex exec` sessions on this account hang
+indefinitely (2h42m at 0% CPU, zero output; a single session with identical flags works).
+Run AT MOST ONE Codex worker at a time; anything wider goes to Opus/Sonnet agents. Best fit: mechanical waves (WP-A*, WP-ORG-*) and
 single-file refactors — NOT wave gates, NOT shared-helper/e2e-infra edits.
 
 How to dispatch (non-interactive, per the official CLI docs):
