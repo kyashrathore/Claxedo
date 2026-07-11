@@ -7,7 +7,7 @@ import {
   legacyCommandTriggerType,
   serverCommandTriggerFromEvent,
   type LegacyCommandTriggerCommand,
-} from "./legacy-command"
+} from "./compat-command-trigger"
 
 describe("legacy command bus bridge", () => {
   test("maps palette and keybind triggers to typed ui command sources", () => {

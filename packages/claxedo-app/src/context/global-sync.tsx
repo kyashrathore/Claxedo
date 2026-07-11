@@ -26,7 +26,7 @@ function workspaceRuntimeRef(directory: string) {
   return sessionWorkspaceRuntimeRef({ directory })
 }
 
-import { createShellDirectoryCacheManager } from "@claxedo/shell/data/directory-cache-manager"
+import { createDirectoryCacheManager } from "@claxedo/shell/data/directory-cache-manager"
 import { wasRolledBackDraft } from "../session/submit/rolled-back-drafts"
 import type { GlobalBootstrapState } from "@claxedo/shell/data/bootstrap"
 import { clearSessionPrefetchDirectory } from "@claxedo/shell/data/session-prefetch"
@@ -596,7 +596,7 @@ function createGlobalSync() {
     bootstrapInstance,
   })
 
-  const children = createShellDirectoryCacheManager({
+  const children = createDirectoryCacheManager({
     isBooting: (directory) =>
       queryClient.getQueryCache().findAll({ queryKey: bootstrapRequestPrefix(directory) }).length > 0,
     isLoadingSessions: (directory) => !!queryClient.getQueryData(sessionLoadRequestKey(directory)),

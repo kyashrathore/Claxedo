@@ -12,7 +12,7 @@ import { getAuthToken } from "../utils/auth-client"
 import { authFetch, getDefaultBaseUrl, normalizeUrl } from "../utils/api"
 import type { SessionTransportCapabilities } from "../shared/data/types"
 import type { SessionRef } from "../shell/identity/session-ref"
-import { usesScopedSessionTransport, workspaceIdFromLegacyScope } from "../shell/identity/legacy-resolver"
+import { usesScopedSessionTransport, workspaceIdFromRef } from "../shell/identity/legacy-resolver"
 import { queryClient } from "../shared/query/query-client"
 import { fastSessionSwitchAnyNetworkQuiet } from "../session/store/fast-session-switch"
 import type { ClaxedoSession } from "../shared/data/session-types"
@@ -233,7 +233,7 @@ export function createAgentRuntimeClient(options: {
     }
     if (options.sessionRef?.workspaceId) return knownKindTarget(options.sessionRef.workspaceId)
     if (options.workspaceId) return knownKindTarget(options.workspaceId)
-    const directoryWorkspaceId = workspaceIdFromLegacyScope(directory)
+    const directoryWorkspaceId = workspaceIdFromRef(directory)
     if (directoryWorkspaceId) {
       // A `ws_`/`workspace:ws_` directory-ref tells us the workspace is
       // relay-backed, but NOT whether it is cloud or user-hosted (the ref shape
@@ -345,7 +345,7 @@ export function createAgentRuntimeClient(options: {
         sessionRef: options.sessionRef,
       }).fetch(`${url.pathname}${url.search}`, init)
     }
-    if (!signed && workspaceIdFromLegacyScope(directory)) {
+    if (!signed && workspaceIdFromRef(directory)) {
       const target = await workspaceTarget(directory)
       return await runtimeTransport({
         directory,
@@ -364,7 +364,7 @@ export function createAgentRuntimeClient(options: {
   }) {
     const init = await signedControlPlaneInit(input.init)
     const target = signed ? await workspaceTarget(input.directory) : undefined
-    const directoryWorkspaceId = workspaceIdFromLegacyScope(input.directory)
+    const directoryWorkspaceId = workspaceIdFromRef(input.directory)
     const targetKind = workspaceKind(target?.workspace?.kind)
     const runtimeUrl = sessionResourceUrl({
       serverUrl: serverUrl(),
@@ -434,7 +434,7 @@ export function createAgentRuntimeClient(options: {
   async function fetchRuntimePath(input: { directory: AgentRuntimeDirectory; path: string; init?: RequestInit }) {
     const init = await signedControlPlaneInit(input.init)
     const method = init?.method?.toUpperCase() ?? "GET"
-    const target = signed || options.sessionRef?.toolSandbox?.kind === "workspace" || options.sessionRef?.workspaceId || options.workspaceId || workspaceIdFromLegacyScope(input.directory)
+    const target = signed || options.sessionRef?.toolSandbox?.kind === "workspace" || options.sessionRef?.workspaceId || options.workspaceId || workspaceIdFromRef(input.directory)
       ? await workspaceTarget(input.directory, { forceResolve: method !== "GET" && method !== "HEAD" })
       : undefined
     const sessionRef = signed && target?.workspaceId ? undefined : options.sessionRef

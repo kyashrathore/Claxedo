@@ -218,5 +218,3 @@ export function createDirectoryCacheManager(input: {
     unpin,
   }
 }
-
-export const createShellDirectoryCacheManager = createDirectoryCacheManager

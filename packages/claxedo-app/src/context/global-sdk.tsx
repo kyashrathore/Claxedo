@@ -22,7 +22,7 @@ import { authFetch } from "../utils/api"
 import { principalHasSignedAccess, usePrincipal } from "../shell/auth/identity-provider"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../runtime/signed-workspace"
 import { shellRouteWorkspaceKeyFromPathname } from "../shell/identity/route"
-import { isUserHostedWorkspaceScope } from "../shell/identity/legacy-resolver"
+import { isUserHostedWorkspaceDirectory } from "../shell/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "../shell/workspace/session-workspace-key"
 import { fastSessionSwitchAnyNetworkQuiet, fastSessionSwitchAnyQuietDelay } from "../session/store/fast-session-switch"
 import { queryClient } from "../shared/query/query-client"
@@ -136,7 +136,7 @@ function shouldUseSignedEventAccess(input: {
   if (!directory && input.liveSession?.workspaceId) return true
   if (!directory) return true
   return !!(directory && sessionWorkspaceRuntimeRef({ directory })) ||
-    isUserHostedWorkspaceScope(directory)
+    isUserHostedWorkspaceDirectory(directory)
 }
 
 function authEnabledRuntime() {

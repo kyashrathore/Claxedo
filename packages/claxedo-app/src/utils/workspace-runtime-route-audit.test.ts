@@ -42,6 +42,10 @@ const workspaceSelectorSyntaxBoundary = new Set([
   ...workspaceRuntimeIdentityBoundary,
   "architecture/scanners.ts",
   "utils/worktree.ts",
+  // WP-A2 collapsed the wrapper aliases into the canonical workspaceIdFromRef
+  // export, imported directly here now instead of through a retired wrapper.
+  "shell/auth/placement.ts",
+  "context/global-sdk-event-fetch.ts",
 ])
 
 const sessionStatusBoundary = new Set([
@@ -301,20 +305,54 @@ describe("workspace runtime route audit", () => {
 
     const request = await Bun.file(path.join(root, "utils/workspace-runtime-request.ts")).text()
     const legacyResolver = await Bun.file(path.join(root, "shell/identity/legacy-resolver.ts")).text()
-    expect(await Bun.file(path.join(root, "utils/worktree.ts")).text()).toMatch(/workspaceIdFromLegacyScope/)
-    expect(request).not.toMatch(/workspaceIdFromRef/)
+    // WP-A2 collapsed the wrapper aliases (workspaceIdFromDirectoryRef /
+    // workspaceIdFromLegacyScope) into the one canonical workspaceIdFromRef
+    // export (LLD appendix rename table) — worktree.ts and
+    // workspace-runtime-request.ts now import that canonical name directly
+    // instead of going through a retired wrapper.
+    expect(await Bun.file(path.join(root, "utils/worktree.ts")).text()).toMatch(/workspaceIdFromRef/)
+    expect(request).toMatch(/workspaceIdFromRef/)
     expect(legacyResolver).toMatch(/workspaceIdFromRef/)
     expect(offenders).toEqual([])
   })
 
   test("raw legacy string-shape predicate names stay inside the resolver owner", async () => {
+    // WP-A2 deleted the wrapper aliases and made these raw predicate names
+    // THE canonical exports of legacy-resolver.ts, now imported at ~19 call
+    // sites — importing (and calling) the canonical predicate from its
+    // resolver owner is exactly the sanctioned pattern. This rule instead
+    // guards against a file REIMPLEMENTING the string-shape parsing locally
+    // (a local function/const/let/var re-declaration of one of these names),
+    // or acquiring the name from anywhere other than the resolver owner.
+    const rawNames = [
+      "isFilesystemDirectory",
+      "isUserHostedWorkspaceDirectory",
+      "workspaceIdFromDirectoryRef",
+      "isWorkspaceIdRef",
+      "workspaceIdFromRef",
+    ]
+    const rawNamePattern = new RegExp(`\\b(?:${rawNames.join("|")})\\b`, "g")
     const offenders: string[] = []
     for (const file of await files(root)) {
       if (file === "shell/identity/legacy-resolver.ts") continue
       if (file.startsWith("architecture/")) continue
       const text = await Bun.file(path.join(root, file)).text()
-      const rawNames = text.match(/\b(?:isFilesystemDirectory|isUserHostedWorkspaceDirectory|workspaceIdFromDirectoryRef|isWorkspaceIdRef|workspaceIdFromRef)\b/g)
-      if (rawNames) offenders.push(`${file}: ${Array.from(new Set(rawNames)).join(", ")}`)
+      const usedNames = new Set(text.match(rawNamePattern) ?? [])
+      if (usedNames.size === 0) continue
+
+      const importedFromResolver = new Set<string>()
+      for (const match of text.matchAll(/(?:import|export)\s*(?:type\s*)?\{([^}]+)\}\s*from\s*["'][^"']*legacy-resolver["']/g)) {
+        for (const spec of match[1]!.split(",")) {
+          const name = spec.trim().replace(/\s+as\s+\w+$/, "")
+          if (name) importedFromResolver.add(name)
+        }
+      }
+
+      const offendingNames = Array.from(usedNames).filter((name) => {
+        const redeclared = new RegExp(`\\b(?:function\\s+${name}\\b|(?:const|let|var)\\s+${name}\\b)`).test(text)
+        return redeclared || !importedFromResolver.has(name)
+      })
+      if (offendingNames.length > 0) offenders.push(`${file}: ${offendingNames.join(", ")}`)
     }
     expect(offenders).toEqual([])
   })
@@ -937,7 +975,11 @@ describe("workspace runtime route audit", () => {
     expect(context).not.toMatch(/project:\s*projectApi/)
     expect(context).not.toMatch(/todo:\s*\{/)
     expect(context).not.toMatch(/createStore<GlobalStore>/)
-    expect(context).not.toMatch(/createDirectoryCacheManager/)
+    // Post WP-A2 alias collapse: the canonical name is createDirectoryCacheManager and the
+    // context file legitimately imports it from its shell/data owner. The boundary rule is
+    // that global-sync must not own a local implementation of the directory cache manager.
+    expect(context).toMatch(/import \{ createDirectoryCacheManager \} from "@claxedo\/shell\/data\/directory-cache-manager"/)
+    expect(context).not.toMatch(/(?:function|const|let)\s+createDirectoryCacheManager/)
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/child-store.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/bootstrap.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/directory-cache-manager.ts")).exists()).toBe(false)

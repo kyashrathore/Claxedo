@@ -3,7 +3,7 @@ import type { SessionRef } from "../identity/session-ref"
 import { hasBacking } from "../identity/session-ref"
 import {
   requiresSignedLegacyDirectory,
-  workspaceIdFromLegacyScope,
+  workspaceIdFromRef,
 } from "../identity/legacy-resolver"
 import { centralTransportForServer, isLocalPersonalScope } from "@claxedo/shell/data/transport/transport"
 
@@ -68,7 +68,7 @@ export function placementFor(input: {
     return { hosting: "workspace", transport: "loopback" }
   }
 
-  const legacyWorkspaceId = input.legacy?.workspaceId ?? workspaceIdFromLegacyScope(input.legacy?.directory)
+  const legacyWorkspaceId = input.legacy?.workspaceId ?? workspaceIdFromRef(input.legacy?.directory)
   if (input.legacy?.workspaceKind === "cloud" || input.legacy?.workspaceKind === "user-hosted") {
     if (legacyWorkspaceId) {
       return {

@@ -289,8 +289,6 @@ export async function bootstrapGlobal(input: {
   input.setGlobalState({ ready: true })
 }
 
-export const runShellGlobalBootstrap = bootstrapGlobal
-
 export async function bootstrapDirectory(input: {
   directory: BootstrapDirectory
   sdk: DirectoryBootstrapSdk
@@ -544,5 +542,3 @@ export async function bootstrapDirectory(input: {
     })
   })
 }
-
-export const runShellDirectoryBootstrap = bootstrapDirectory

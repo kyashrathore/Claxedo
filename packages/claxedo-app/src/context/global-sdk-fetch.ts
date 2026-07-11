@@ -1,7 +1,7 @@
 // target-layer: data
 import { createTransport } from "@claxedo/shell/data/transport/transport"
 import { signedWorkspaceFromProjects } from "../runtime/signed-workspace"
-import { isLocalFilesystemDirectory } from "../shell/identity/legacy-resolver"
+import { isFilesystemDirectory } from "../shell/identity/legacy-resolver"
 import { authFetch } from "../utils/api"
 import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
 
@@ -17,7 +17,7 @@ export function createGlobalSdkFetch(input: {
       url.pathname === "/session"
     ) {
       const directory = url.searchParams.get("directory") ?? undefined
-      if (directory && isLocalFilesystemDirectory(directory)) {
+      if (directory && isFilesystemDirectory(directory)) {
         const workspace = signedWorkspaceFromProjects(input.projectInventory(), directory)
         if (!workspace) return Response.json([])
         const request = input.request ?? authFetch

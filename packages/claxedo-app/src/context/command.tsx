@@ -11,9 +11,9 @@ import {
   legacyCommandTrigger,
   legacyCommandTriggerType,
   serverCommandTriggerFromEvent,
-  type LegacyCommandSource,
+  type CommandTriggerCompatSource,
   type LegacyCommandTriggerCommand,
-} from "@claxedo/shell/contributions/legacy-command"
+} from "@claxedo/shell/contributions/compat-command-trigger"
 import { trustedAgentContributionBundleFromEvent } from "@claxedo/shell/contributions/registry"
 import { contentSurfaceRegistry } from "@claxedo/shell/contributions/first-party-content-surfaces"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -42,7 +42,7 @@ export function useCommand() {
   return new Proxy(command, {
     get(target, property, receiver) {
       if (property !== "trigger") return Reflect.get(target, property, receiver)
-      return (id: string, source?: LegacyCommandSource) => {
+      return (id: string, source?: CommandTriggerCompatSource) => {
         if (!bus) {
           target.trigger(id, source)
           return

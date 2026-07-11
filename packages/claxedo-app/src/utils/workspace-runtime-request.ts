@@ -2,8 +2,8 @@ import { createWorkspaceRelayConnection, openWorkspaceConnection } from "./works
 import { authFetch } from "./api"
 import { hasBacking, type SessionRef } from "../shell/identity/session-ref"
 import {
-  isLocalFilesystemDirectory,
-  workspaceIdFromLegacyScope,
+  isFilesystemDirectory,
+  workspaceIdFromRef,
 } from "../shell/identity/legacy-resolver"
 import { queryClient } from "../shared/query/query-client"
 
@@ -51,7 +51,7 @@ export function isLoopbackHttpUrl(input: string | undefined) {
 // True only for Local Personal Mode: loopback server plus a real local
 // workspace directory. Cloud workspaces pass workspaceId separately.
 export function isLocalPersonalScope(input: { serverUrl?: string; directory?: string }) {
-  return isLoopbackHttpUrl(input.serverUrl) && isLocalFilesystemDirectory(input.directory)
+  return isLoopbackHttpUrl(input.serverUrl) && isFilesystemDirectory(input.directory)
 }
 
 export function centralTransportForServer(serverUrl: string | undefined) {
@@ -187,7 +187,7 @@ export async function resolveRuntimeTarget(options: WorkspaceRuntimeRequestOptio
   }
   const explicitWorkspace = workspaceRuntimeTarget(options.workspace)
   if (explicitWorkspace) return explicitWorkspace
-  const directoryWorkspaceId = workspaceIdFromLegacyScope(options.directory)
+  const directoryWorkspaceId = workspaceIdFromRef(options.directory)
   if (options.sessionResource && options.workspaceId) {
     // Session content for relay-backed workspaces is runtime-native, even when
     // the caller is otherwise in a signed control-plane flow. A confirmed cloud

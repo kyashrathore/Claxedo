@@ -1,4 +1,4 @@
-import { workspaceIdFromLegacyScope } from "../shell/identity/legacy-resolver"
+import { workspaceIdFromRef } from "../shell/identity/legacy-resolver"
 import { getDefaultBaseUrl, normalizeUrl } from "./api"
 
 function controlPlaneBaseUrl(baseUrl?: string) {
@@ -31,7 +31,7 @@ export function workspaceResolveUrl(input: {
   create?: boolean
 }) {
   const url = new URL("/api/workspace/resolve", controlPlaneBaseUrl(input.baseUrl))
-  const workspaceId = input.workspaceId ?? workspaceIdFromLegacyScope(input.scope)
+  const workspaceId = input.workspaceId ?? workspaceIdFromRef(input.scope)
   if (input.scope && !workspaceId) url.searchParams.set("directory", input.scope)
   if (workspaceId) url.searchParams.set("workspaceId", workspaceId)
   if (input.create) url.searchParams.set("create", "true")

@@ -1,6 +1,6 @@
 import { resolveWorkspaceRef } from "../identity/resolve-workspace-ref"
 import type { SessionRef } from "../identity/session-ref"
-import { workspaceIdFromLegacyScope } from "../identity/legacy-resolver"
+import { workspaceIdFromRef } from "../identity/legacy-resolver"
 import { signedWorkspaceFromProjects } from "../../runtime/signed-workspace"
 
 // The signed project inventory (carries the real cloud-vs-user-hosted `kind` for
@@ -34,7 +34,7 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
     // directory/inventory resolution below instead of concluding local here.
     if (backing.kind !== "local") return undefined
   }
-  const workspaceId = workspaceIdFromLegacyScope(input.directory)
+  const workspaceId = workspaceIdFromRef(input.directory)
   if (!workspaceId) {
     // Not a `ws_`/`workspace:` ref — but the directory may still be a
     // relay-backed workspace's FILESYSTEM worktree (the registration-stored

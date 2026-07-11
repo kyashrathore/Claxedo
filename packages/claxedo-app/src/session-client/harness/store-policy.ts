@@ -5,7 +5,7 @@ import {
   isDraftPaneScope,
   panePreferenceScope,
 } from "../../pane/store/pane-preferences"
-import { isLocalFilesystemDirectory } from "../../shell/identity/legacy-resolver"
+import { isFilesystemDirectory } from "../../shell/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"
 import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
 import {
@@ -172,5 +172,5 @@ export function shouldUseLocalHarnessConfigApi(input: {
   workspaceKind?: HarnessWorkspaceKind | null
 }) {
   if (input.workspaceKind === "cloud" || input.workspaceKind === "user-hosted") return false
-  return centralTransportForServer(input.baseUrl) === "loopback" && isLocalFilesystemDirectory(input.directory)
+  return centralTransportForServer(input.baseUrl) === "loopback" && isFilesystemDirectory(input.directory)
 }

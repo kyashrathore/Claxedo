@@ -6,7 +6,7 @@ import { formatServerError } from "../../utils/server-errors"
 import { createAgentRuntimeClient } from "../../runtime/agent-runtime-client"
 import { authFetch } from "../../utils/api"
 import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
-import { isLocalFilesystemDirectory } from "../../shell/identity/legacy-resolver"
+import { isFilesystemDirectory } from "../../shell/identity/legacy-resolver"
 import { queryClient } from "../../shared/query/query-client"
 import { queryKeys } from "../../shared/query/keys"
 import { shellDataKeys } from "../../shell/data/keys"
@@ -15,7 +15,7 @@ import { projectListQuery, providerAuthQuery, providerListQuery } from "../../sh
 import { mapInventoryToSessions } from "../../shared/query/inventory"
 import { cleanupDroppedSessionCaches } from "../../shell/data/session-cache-cleanup"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "../../shell/data/session-load"
-import { runShellDirectoryBootstrap, runShellGlobalBootstrap, type GlobalBootstrapState } from "../../shell/data/bootstrap"
+import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "../../shell/data/bootstrap"
 import type { SessionCacheValue, SessionInventoryRow, WorkspaceGroup } from "../../shell/data/global-sync-types"
 import { SESSION_RECENT_LIMIT } from "../../shell/data/global-sync-types"
 import type { SignedWorkspaceInfo } from "../../runtime/signed-workspace"
@@ -157,18 +157,18 @@ function isLoopbackServer(baseUrl: string) {
 }
 
 function shouldUseLocalSessionListClient(input: { baseUrl: string; directory: DirectoryRef }) {
-  return isLoopbackServer(input.baseUrl) && isLocalFilesystemDirectory(input.directory)
+  return isLoopbackServer(input.baseUrl) && isFilesystemDirectory(input.directory)
 }
 
 function shouldSkipCentralSessionList(input: { baseUrl: string; directory: DirectoryRef }) {
   const loopback = isLoopbackServer(input.baseUrl)
-  const filesystemDirectory = isLocalFilesystemDirectory(input.directory)
+  const filesystemDirectory = isFilesystemDirectory(input.directory)
   return loopback ? !filesystemDirectory : filesystemDirectory
 }
 
 export function createBootstrapOrchestrator(input: {
   baseUrl: () => string
-  globalSDK: () => QueryOptionsClient & SessionListClient & Parameters<typeof runShellGlobalBootstrap>[0]["globalSDK"]
+  globalSDK: () => QueryOptionsClient & SessionListClient & Parameters<typeof bootstrapGlobal>[0]["globalSDK"]
   children: DirectoryChildren
   translate: Translate
   platformFetch: () => typeof fetch | undefined
@@ -185,7 +185,7 @@ export function createBootstrapOrchestrator(input: {
   inventoryRow: (session: InventoryGlobalSession) => SessionInventoryRow
   cacheSessions: (directory: DirectoryRef, value: Omit<SessionCacheValue, "at">) => void
   sessionCacheLimit: (directory: DirectoryRef, fallback: number) => number
-  sdkFor: (directory: DirectoryRef) => QueryOptionsClient & Parameters<typeof runShellDirectoryBootstrap>[0]["sdk"]
+  sdkFor: (directory: DirectoryRef) => QueryOptionsClient & Parameters<typeof bootstrapDirectory>[0]["sdk"]
   localSessionListClient: (directory: DirectoryRef) => SessionListClient
   setSessionLoadMeta: (directory: DirectoryRef, value: { limit: number }) => void
   markGlobalBootstrapFresh: (baseUrl: string, harnessType?: string) => void
@@ -371,7 +371,7 @@ export function createBootstrapOrchestrator(input: {
       queryKey: requestKey,
       queryFn: async () => {
         input.children.pin(directory)
-        await runShellDirectoryBootstrap({
+        await bootstrapDirectory({
           directory,
           sdk: input.sdkFor(directory),
           loadSessions,
@@ -409,7 +409,7 @@ export function createBootstrapOrchestrator(input: {
     await queryClient.fetchQuery({
       queryKey: requestKey,
       queryFn: async () => {
-        await runShellGlobalBootstrap({
+        await bootstrapGlobal({
           baseUrl: input.baseUrl(),
           globalSDK: input.globalSDK(),
           fetch: signedRoute || shouldUseSignedControlPlaneInventory({

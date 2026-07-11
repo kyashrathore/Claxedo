@@ -1,5 +1,5 @@
 import { workspaceRoute } from "../shell/identity/route"
-import { isLocalFilesystemDirectory } from "../shell/identity/legacy-resolver"
+import { isFilesystemDirectory } from "../shell/identity/legacy-resolver"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "./api"
 
 type ProjectWorkspace = {
@@ -31,7 +31,7 @@ export function localWorkspaceShareTarget(input: {
     rows.find((item) => item.id === input.directory || item.workspace_id === input.directory)
   const directory = row?.directory ?? (input.directory === input.project.worktree ? input.project.worktree : undefined)
   const workspaceId = row?.id ?? row?.workspace_id ?? (input.directory === input.project.worktree ? input.project.id : undefined)
-  if (!workspaceId || !directory || !isLocalFilesystemDirectory(directory)) return
+  if (!workspaceId || !directory || !isFilesystemDirectory(directory)) return
   if (row?.kind === "cloud") return
   return { workspaceId, directory }
 }

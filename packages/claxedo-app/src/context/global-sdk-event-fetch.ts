@@ -1,6 +1,6 @@
 import { createTransport } from "@claxedo/shell/data/transport/transport"
 import { queryClient } from "../shared/query/query-client"
-import { workspaceIdFromLegacyScope } from "../shell/identity/legacy-resolver"
+import { workspaceIdFromRef } from "../shell/identity/legacy-resolver"
 import { workspaceResolveUrl } from "../utils/workspace-control-routes"
 import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
 
@@ -33,7 +33,7 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
       }
     }
     if (!session.directory) return
-    const directoryWorkspaceId = workspaceIdFromLegacyScope(session.directory)
+    const directoryWorkspaceId = workspaceIdFromRef(session.directory)
     if (directoryWorkspaceId) return { workspaceId: directoryWorkspaceId, kind: "cloud" }
     return await queryClient.fetchQuery({
       queryKey: ["shell", "control-plane-event-workspace", requestUrl.replace(/\/+$/, ""), session.directory] as const,

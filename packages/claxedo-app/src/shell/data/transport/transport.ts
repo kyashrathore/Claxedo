@@ -1,6 +1,6 @@
 // target-layer: data
 import type { Placement } from "../../auth/placement"
-import { workspaceIdFromLegacyScope } from "../../identity/legacy-resolver"
+import { workspaceIdFromRef } from "../../identity/legacy-resolver"
 import {
   centralTransportForServer,
   createWorkspaceRuntimeRequest,
@@ -33,7 +33,7 @@ export function submitTransportForPlacement(input: {
   workspaceKind?: "local" | "cloud" | "user-hosted" | null
 }) {
   const loopbackWorkspaceBridge = isLocalPersonalScope(input)
-  const directoryWorkspaceId = workspaceIdFromLegacyScope(input.directory)
+  const directoryWorkspaceId = workspaceIdFromRef(input.directory)
   const controlPlaneSession = !!input.signedControlPlane ||
     !!directoryWorkspaceId ||
     (!!input.workspaceId && !loopbackWorkspaceBridge)

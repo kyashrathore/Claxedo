@@ -1,4 +1,4 @@
-import { isLocalFilesystemDirectory, isLocalSessionDirectory } from "./legacy-resolver"
+import { isFilesystemDirectory, isLocalSessionDirectory } from "./legacy-resolver"
 
 export type SessionHost = "central" | "workspace"
 export type HarnessId =
@@ -92,7 +92,7 @@ export function localSessionRef(input: {
 }): SessionRef | undefined {
   const sessionId = input.sessionId?.trim()
   const cwd = input.cwd
-  if (!sessionId || !cwd || !isLocalFilesystemDirectory(cwd)) return undefined
+  if (!sessionId || !cwd || !isFilesystemDirectory(cwd)) return undefined
   return {
     sessionId,
     host: "workspace",

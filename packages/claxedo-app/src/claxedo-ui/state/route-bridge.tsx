@@ -15,7 +15,7 @@ import { authFetch, getClaxedoServerUrl, normalizeUrl } from "../../utils/api"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../../runtime/signed-workspace"
 import { wasRolledBackDraft } from "../../session/submit/rolled-back-drafts"
 import { suppressedByFastSessionSwitch } from "../../session/store/fast-session-switch"
-import { workspaceIdFromLegacyScope } from "../../shell/identity/legacy-resolver"
+import { workspaceIdFromRef } from "../../shell/identity/legacy-resolver"
 import {
   directorySessionCacheQueryOptions,
   emptySessionInventory,
@@ -511,7 +511,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     if (routed && routed !== "/workspace") return routed
     const active = activeSurface()?.directory
     if (active && active !== "/workspace") return active
-    return directories.find((directory) => !!workspaceIdFromLegacyScope(directory)) ?? directories[0]
+    return directories.find((directory) => !!workspaceIdFromRef(directory)) ?? directories[0]
   }
 
   const resolveRouteSessionFromMeta = (sessionId: string, directories: string[]) => {

@@ -5,10 +5,6 @@ export function isFilesystemDirectory(input: string | undefined) {
   return !!input && (input.startsWith("/") || /^[A-Za-z]:[\\/]/.test(input))
 }
 
-export function isLocalFilesystemDirectory(input: string | undefined) {
-  return isFilesystemDirectory(input)
-}
-
 export function isWorkspaceIdRef(input: string | undefined) {
   return !!input && /^ws_[A-Za-z0-9_-]+$/.test(input.trim())
 }
@@ -19,29 +15,17 @@ export function workspaceIdFromRef(input: string | undefined) {
   return isWorkspaceIdRef(input) ? input?.trim() : undefined
 }
 
-export function workspaceIdFromDirectoryRef(directory: string | undefined) {
-  return workspaceIdFromRef(directory)
-}
-
-export function workspaceIdFromLegacyScope(scope: string | undefined) {
-  return workspaceIdFromDirectoryRef(scope)
-}
-
 export function usesScopedSessionTransport(sessionID: string | undefined, directory?: string) {
   return !!sessionID && (
     requiresSignedLegacyDirectory(directory) ||
     !sessionID.startsWith("ses") ||
-    !!workspaceIdFromDirectoryRef(directory)
+    !!workspaceIdFromRef(directory)
   )
 }
 
 export function isUserHostedWorkspaceDirectory(input: string | undefined) {
   if (!input) return false
   return /(?:^|[/\\])\.claxedo[/\\]user-hosted[/\\]workspaces[/\\][^/\\]+/.test(input)
-}
-
-export function isUserHostedWorkspaceScope(input: string | undefined) {
-  return isUserHostedWorkspaceDirectory(input)
 }
 
 export function requiresSignedLegacyDirectory(input: string | undefined) {

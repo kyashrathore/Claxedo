@@ -10,7 +10,7 @@ import { same } from "@/utils/same"
 import { createScrollPersistence, type SessionScroll } from "@/context/layout-scroll"
 import { validProjectRef, validWorktree } from "@claxedo/utils/worktree"
 import { projectCatalog } from "@claxedo/context/layout-projects"
-import { isUserHostedWorkspaceScope } from "../shell/identity/legacy-resolver"
+import { isUserHostedWorkspaceDirectory } from "../shell/identity/legacy-resolver"
 import { queryKeys } from "../shared/query/keys"
 import { queryClient } from "../shared/query/query-client"
 import { setProjectIcon, upsertProjectMeta } from "../shared/query/project-meta"
@@ -63,7 +63,7 @@ export type LocalProject = Partial<Project> & { worktree: string; expanded: bool
 export type ReviewDiffStyle = "unified" | "split"
 
 function isSignedWorkspaceDirectory(input: string | undefined) {
-  return !!(input && sessionWorkspaceRuntimeRef({ directory: input })) || isUserHostedWorkspaceScope(input)
+  return !!(input && sessionWorkspaceRuntimeRef({ directory: input })) || isUserHostedWorkspaceDirectory(input)
 }
 
 function createLayoutContextValue() {

@@ -18,7 +18,7 @@ import { DialogCreateCloudProject } from "@claxedo/components/dialog-create-clou
 import { useConfigOptional } from "@claxedo/context/config"
 import { ensureLocalProject } from "../shared/query/project-ensure"
 import { workspaceRoute } from "../shell/identity/route"
-import { isLocalFilesystemDirectory } from "../shell/identity/legacy-resolver"
+import { isFilesystemDirectory } from "../shell/identity/legacy-resolver"
 import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
 
 export default function Home() {
@@ -41,7 +41,7 @@ export default function Home() {
   })
 
   async function openProject(directory: string) {
-    if ((server.isLocal() || centralTransportForServer(server.url) === "loopback") && isLocalFilesystemDirectory(directory)) {
+    if ((server.isLocal() || centralTransportForServer(server.url) === "loopback") && isFilesystemDirectory(directory)) {
       await ensureLocalProject({
         baseUrl: globalSDK.url,
         request: platform.fetch,

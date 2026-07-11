@@ -6,7 +6,7 @@ import { normalizeSessionTurnOutcome } from "../../shared/data/session-types"
 import { queryClient } from "../../shared/query/query-client"
 import { queryKeys } from "../../shared/query/keys"
 import { createAgentRuntimeClient } from "../../runtime/agent-runtime-client"
-import { isLocalFilesystemDirectory, isUserHostedWorkspaceScope } from "../../shell/identity/legacy-resolver"
+import { isFilesystemDirectory, isUserHostedWorkspaceDirectory } from "../../shell/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "../../utils/api"
 import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
@@ -634,8 +634,8 @@ export function shouldUseSignedControlPlaneInventory(input: {
   if (!input.hasSignedAccess) return false
   if (input.workspaceId) return true
   if (cachedSignedWorkspaceDirectory(input.baseUrl, input.directory)) return true
-  if (input.directory && !isLocalFilesystemDirectory(input.directory)) return true
-  if (isUserHostedWorkspaceScope(input.directory)) return true
+  if (input.directory && !isFilesystemDirectory(input.directory)) return true
+  if (isUserHostedWorkspaceDirectory(input.directory)) return true
   if (!usesLocalControlTransport(input.baseUrl)) return true
   return false
 }
