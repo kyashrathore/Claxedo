@@ -2,10 +2,30 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "claxedo-app",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "packages/claxedo-app",
+      "port": 4444
+    },
+    {
+      "name": "claxedo-server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "packages/claxedo-server",
+      "port": 3001
+    },
+    {
       "name": "claxedo-web-local",
       "runtimeExecutable": "bun",
       "runtimeArgs": ["run", "web:dev:local"],
       "port": 4444
+    },
+    {
+      "name": "opencode-engine",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
+      "port": 4096
     },
     {
       "name": "claxedo-web-astro",
