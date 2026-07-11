@@ -78,7 +78,7 @@ const FIRST_PARTY_OWNERS: Array<[string, string]> = [
   ["@/context/sdk", "./src/context/sdk.tsx"],
   ["@/context/server", "./src/context/server.tsx"],
   ["@/context/terminal", "./src/context/terminal.tsx"],
-  ["@/hooks/use-providers", "./src/hooks/use-providers.ts"],
+  ["@/context/use-providers", "./src/context/use-providers.ts"],
   ["@/pages/directory-layout", "./src/pages/directory-layout.tsx"],
   ["@/pages/error", "./src/pages/error.tsx"],
   ["@/pages/home", "./src/pages/home.tsx"],
