@@ -47,8 +47,10 @@
  *      scrim-closes, and closes on session select — behavior 14 (dead code)"); this
  *      spec's copy exists so the `mobile` Playwright project also carries a citation of
  *      the same gap, not to duplicate the desktop project's assertion.
- *   2. The workspace side panel (opened via the "Open Processes" toolbar toggle, the
- *      same entry point `core-processes.spec.ts` uses) renders at full viewport width
+ *   2. The workspace side panel (opened via the header `workspace-panel-toggle`
+ *      button — the narrow-width entry point, since the L2 "Open Processes" toggle
+ *      `core-processes.spec.ts` uses at desktop is not rendered until a review/process
+ *      context is up, which WP-C3 §3.2 no longer auto-opens here) renders at full width
  *      (`style.width === "100%"`, bounding-box width within a few px of the viewport)
  *      below the 640px `isMobile()` threshold, and its desktop-only pointer resize
  *      handle (`role="separator"`) is entirely absent from the DOM — matching the a11y
@@ -118,47 +120,32 @@ async function seedOneProject(page: Page, dir: string) {
   }, dir)
 }
 
-/** FINDING (verified by reading source, worked around locally — this is a real,
- * previously-undocumented mobile UX gap, not a test bug): `route-intent.ts`'s
- * `workspaceBrowse` branch (~line 489) unconditionally auto-opens the workspace panel
- * in "review" mode (`state.workspacePanel.open("review", {workspaceDir})`) whenever a
- * `/:dir/session`-shaped boot resolves to a bare workspace-browse intent (no
- * sessionId/pageId/terminalId yet) — the exact same route shape every desktop core-*
- * spec's `openWorkbench` uses. At desktop viewport this is harmless (the panel takes
- * ~70% width, leaving the draft composer visible alongside it), but at this project's
- * mobile viewport `isMobile()` (workspace-panel.tsx:31) forces `panelStyleWidth()` to
- * "100%" (line 105), so the auto-opened review panel covers the ENTIRE screen —
- * including the composer underneath — with no user action taken. Closed here via the
- * panel's own in-header toggle (`[data-testid="workspace-panel-toggle"]`, rendered
- * inside `WorkspacePanelHeader` so it stays reachable even while the panel is
- * full-width) before any test interacts with the composer. */
-async function closeWorkspacePanelIfOpen(page: Page) {
-  const panel = page.locator('[data-testid="workspace-panel-shell"]')
-  if ((await panel.getAttribute("data-open").catch(() => null)) !== "true") return
-  const closeToggle = page.locator('[data-testid="workspace-panel-toggle"][aria-label="Close workspace panel"]')
-  if (!(await closeToggle.isVisible().catch(() => false))) return
-  await closeToggle.click()
-  await expect(panel).toHaveAttribute("data-open", "false", { timeout: 5_000 })
-}
-
 async function openWorkbench(page: Page, dir: string) {
   await page.goto(`/${slug(dir)}/session`)
   await page.waitForLoadState("domcontentloaded")
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-  await closeWorkspacePanelIfOpen(page)
+  // WP-C3 §3.2: the workspace review panel no longer auto-opens at narrow width
+  // (`route-intent.ts` narrow guard), so the full-screen-panel-over-composer
+  // workaround this spec used to need (`closeWorkspacePanelIfOpen`) is gone. The
+  // panel must be closed on a bare narrow boot — asserted in behavior 2b.
   if (!(await page.getByRole("textbox", { name: /Ask anything/i }).isVisible().catch(() => false))) {
     await page.getByRole("button", { name: "New Session" }).first().click()
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toBeVisible({ timeout: 10_000 })
   }
 }
 
-/** Same "Open Processes" toolbar toggle `core-processes.spec.ts` uses to open the
- * workspace side panel — reused here only to get `workspace-panel-shell` open+mounted
- * at a narrow viewport; this spec asserts nothing about the Processes feature itself. */
+/** Open the workspace side panel via the header `workspace-panel-toggle` button —
+ * the entry point that is genuinely present at a NARROW boot. (behavior 2b / WP-C3
+ * §3.2 suppresses the review-panel auto-open at phone width, so the L2 "Open
+ * Processes" toolbar toggle `core-processes.spec.ts` uses at desktop is not rendered
+ * here — it only appears once a review/process context is already up. The
+ * always-present `workspace-panel-toggle`, `aria-label="Open workspace panel"`, is
+ * the correct narrow-viewport opener.) This spec asserts nothing about which
+ * navigator the panel shows — only that the shell opens+mounts full-width. */
 async function openWorkspacePanel(page: Page) {
-  const toggle = page.locator('button[aria-label="Open Processes"], button[aria-label="Close Processes"]').first()
+  const toggle = page.locator('[data-testid="workspace-panel-toggle"]').first()
   await expect(toggle).toBeVisible({ timeout: 10_000 })
-  if ((await toggle.getAttribute("aria-label")) === "Close Processes") return
+  if ((await toggle.getAttribute("aria-label")) === "Close workspace panel") return
   await toggle.click()
   await expect(page.locator('[data-testid="workspace-panel-shell"]')).toHaveAttribute("data-open", "true", {
     timeout: 10_000,
@@ -182,18 +169,33 @@ function timelineScroller(page: Page) {
 }
 
 test.describe("mobile smoke @happy", () => {
-  test.fixme(
-    "mobile sidebar drawer opens on entry, scrim-closes, and closes on session select — behavior 1 (dead code)",
-    async () => {
-      // REAL APP BUG, not a test gap — see this file's BEHAVIORS #1 and the identical
-      // citation in core-sidebar-tree.spec.ts:947-967. `mobileSidebarOpen`
-      // (src/claxedo-ui/rail/rail-shell-chrome-state.ts:18) has no production call site
-      // that ever sets it `true`; `closeMobileSidebar` (line 61) is the only setter
-      // anywhere, and it can only set it to `false`. There is no tap/swipe/hot-zone
-      // entry point that opens the drawer on a mobile viewport today, so this behavior
-      // cannot be exercised until the app wires one.
-    },
-  )
+  test("mobile sidebar drawer opens via the opener and scrim-closes — behavior 1", async ({ page }) => {
+    // WP-C3 §3.1 flipped this from dead code: `openMobileSidebar`
+    // (rail-shell-chrome-state.ts) is now a real setter, reachable on a phone via
+    // the `md:hidden` opener button in rail-sidebar-shell.tsx. The desktop header
+    // "Show Sidebar" button stays `md:flex hidden`, so the phone needs its own
+    // affordance — this test exercises exactly that entry point + the scrim close.
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await seedOneProject(page, DIR)
+    await openWorkbench(page, DIR)
+
+    const opener = page.locator('[data-testid="mobile-sidebar-opener"]')
+    const scrim = page.locator('[data-testid="mobile-sidebar-scrim"]')
+
+    // Closed on entry: the opener is visible, the scrim/drawer are not.
+    await expect(opener).toBeVisible({ timeout: 10_000 })
+    await expect(scrim).toHaveCount(0)
+
+    // Opener opens the drawer (scrim appears; opener hides while open).
+    await opener.click()
+    await expect(scrim).toBeVisible({ timeout: 5_000 })
+    await expect(opener).toBeHidden()
+
+    // Tapping the scrim (right of the 280px drawer) closes it and restores the opener.
+    await scrim.click({ position: { x: 340, y: 400 } })
+    await expect(scrim).toHaveCount(0)
+    await expect(opener).toBeVisible()
+  })
 
   test("workspace panel renders full-width with no resize handle below 640px — behavior 2", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
@@ -225,6 +227,27 @@ test.describe("mobile smoke @happy", () => {
     await expect(panel.locator('[role="separator"][aria-label="Resize workspace panel"]')).toHaveCount(0)
   })
 
+  test("workspace review panel does NOT auto-open at narrow boot — behavior 2b", async ({ page }) => {
+    // WP-C3 §3.2: `route-intent.ts`'s `workspaceBrowse` branch used to
+    // unconditionally `workspacePanel.open("review", …)`, which at phone width
+    // (`isMobile()` → 100% panel) buried the composer with no user action. The
+    // narrow guard suppresses it; the draft composer is the boot surface. This is
+    // why `openWorkbench` no longer needs the old `closeWorkspacePanelIfOpen`.
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await seedOneProject(page, DIR)
+    await page.goto(`/${slug(DIR)}/session`)
+    await page.waitForLoadState("domcontentloaded")
+    await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+
+    const panel = page.locator('[data-testid="workspace-panel-shell"]')
+    // Either absent, or present-but-closed — never auto-opened full-screen.
+    if ((await panel.count()) > 0) {
+      await expect(panel).toHaveAttribute("data-open", "false", { timeout: 10_000 })
+    }
+    // The composer is reachable without dismissing any panel.
+    await expect(page.getByRole("textbox", { name: /Ask anything/i })).toBeVisible({ timeout: 10_000 })
+  })
+
   test("seeded session timeline scrolls at a narrow viewport — behavior 3", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedOneProject(page, DIR)
@@ -249,20 +272,46 @@ test.describe("mobile smoke @happy", () => {
   })
 
   test.fixme(
-    "multipane split and pane/tab/session drag-reorder have a touch equivalent — behavior 4 (no implementation)",
+    "multipane split and pane/tab/session drag-reorder have a touch equivalent — behavior 4",
     async () => {
-      // REAL APP GAP, not a test gap — see this file's BEHAVIORS #4 and the responsive
-      // appendix (docs/plans/2026-07-10-003-claxedo-app-audit-findings-appendix.md,
-      // "responsive" section, lines 1048-1053): every pane/tab/session reorder
-      // affordance (src/claxedo-ui/layout/workbench.tsx,
-      // src/claxedo-ui/navigation-islands/session-navigation-list.tsx,
-      // src/claxedo-ui/navigation-islands/terminal-surface-navigation.tsx,
-      // src/components/file-tree.tsx, src/claxedo-ui/compact-switcher/CompactSwitcher.tsx)
-      // is wired exclusively through native HTML5 draggable/dragstart/drop, which does
-      // not fire on touch devices, and workbench.tsx has no narrow-viewport collapse
-      // strategy (percentage-rect absolute positioning only, no width threshold). There
-      // is no touch-fallback UI (long-press menu, move up/down buttons) anywhere in
-      // source to assert against yet — this test cannot be written until one exists.
+      // ENGINE: shipped and UNIT-PROVEN. WP-C3 replaced native HTML5 DnD with a
+      // hand-rolled pointer-events engine (mouse + touch + pen) —
+      // `src/claxedo-ui/workbench/pointer-drag.ts` (`workbenchDrag` +
+      // `useDragSource`), adopted by the pane grip (workbench.tsx), the tab strip
+      // (compact-switcher.tsx), and sidebar rows (navigation-row.tsx). WP-C3a fixed
+      // its real-input defects: contentId resolution is deferred to drag-begin (no
+      // session side effect on tap), `touch-action` is per-surface (pan-y/pan-x, not
+      // a scroll-killing `none`), and the pane-drag source now lives on a
+      // pointer-events:auto grip (it was on a pointer-events:none overlay — dead).
+      // All proven by `pointer-drag.vitest.tsx` + `tests/H-drag-drop.vitest.tsx`
+      // (incl. a real-input guard that the grip, not its wrapper, receives input).
+      //
+      // WHY STILL fixme (WP-C3a, evidence-based — not the stale native-DnD reason):
+      // an ENFORCED end-to-end touch assertion has no assertable surface AT PHONE
+      // WIDTH in this harness. Verified empirically on iPhone 13 (390px) against the
+      // default mock runtime, after driving a real turn:
+      //   (a) Split geometry is UNOBSERVABLE below BP_MD (768):
+      //       `workbench/collapse-projection.ts` (`isCollapsedWidth`,
+      //       `collapsePaneRects`) renders exactly ONE full-bleed pane and hides the
+      //       rest — a 2-pane split is preserved-but-hidden, so `drop-target-*` /
+      //       split rects can't be asserted at any phone viewport. Flipping THIS
+      //       assertion needs a canvas width >= 768 (a tablet project), not a phone.
+      //   (b) The compact-switcher tab strip renders ZERO tabs at phone width with a
+      //       single session (`[data-testid="switcher-title-button"]`.count() === 0),
+      //       so there is no tab to touch-drag.
+      //   (c) The sidebar drawer lists ZERO session rows
+      //       (`[data-testid="rail-sidebar-session-row"]`.count() === 0) — the mock
+      //       runtime's session list is empty, so there is no row to touch-drag.
+      // (CDP `Input.dispatchTouchEvent` touch dispatch itself works and DOES drive
+      // the pointer engine — the block is surface availability/seed, not touch input.)
+      //
+      // TO FLIP: a tablet-width (>= BP_MD 768) project plus a pre-seeded multi-surface
+      // fixture (2 panes, or 2+ switcher tabs) whose SHAPE — `claxedo.state.v5`
+      // localStorage vs a driven gesture — the design note §7 reserves to the
+      // fixture-convention owner. Then CDP touch long-press on a tab/grip +
+      // touchMove across a pane, asserting `drop-target-*` then the split geometry.
+      // File-tree→prompt attach (a different drop target) intentionally stays on
+      // native DnD — a separate split-out per the DnD decision note §5/§8.
     },
   )
 })

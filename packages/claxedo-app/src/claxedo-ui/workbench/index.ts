@@ -24,3 +24,8 @@ export type { WorkbenchProviderProps, UseWorkbench } from "./provider"
 
 export { Workbench } from "./workbench"
 export type { WorkbenchProps, PaneCtx } from "./workbench"
+
+export { BP_MD, collapsePaneRects, isCollapsedWidth, isNarrowViewport } from "./collapse-projection"
+
+export { workbenchDrag, useDragSource } from "./pointer-drag"
+export type { DragSourceKind, DragSourceOptions, DropZone } from "./pointer-drag"

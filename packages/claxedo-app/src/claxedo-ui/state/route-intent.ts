@@ -33,6 +33,7 @@ import { sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBa
 import type { ClaxedoStateApi } from "./provider"
 import type { ContentMeta } from "./types"
 import { routeSessionHarness } from "./route-session-harness"
+import { isNarrowViewport } from "../workbench"
 
 type Badge = {
   additions: number
@@ -515,6 +516,13 @@ export function createRouteIntentAdapter(input: {
           ((focused.type === "session" || focused.type === "context") && contentDirectory(focused) === workspaceId)
         )
       ) return
+      // At narrow (collapsed) width the review panel forces full-width
+      // (`workspace-panel.tsx` `isMobile()`), so this unconditional auto-open
+      // would cover the entire phone screen — composer included — with no user
+      // action. Suppress it there; the draft composer is the boot surface. The
+      // desktop side-by-side rationale for the auto-open does not exist at phone
+      // width, and desktop behavior is byte-for-byte unchanged. (WP-C3 §3.2)
+      if (isNarrowViewport()) return
       state.workspacePanel.open("review", { workspaceDir: workspaceId })
       return
     }

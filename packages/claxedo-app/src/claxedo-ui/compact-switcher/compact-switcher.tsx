@@ -1,6 +1,6 @@
 import { For, Show, createEffect, onCleanup } from "solid-js"
 import type { SwitcherItem } from "./switcher-items"
-import { WORKBENCH_DRAG_MIME } from "../workbench"
+import { useDragSource } from "../workbench"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "../components/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 
@@ -268,19 +268,28 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                   aria-label={item.title}
                   data-testid="switcher-title-button"
                   aria-current={item.active ? "page" : undefined}
-                  draggable={canDrag(item)}
+                  ref={(el) => {
+                    // Pointer-driven surface drag (mouse + touch + pen), replacing
+                    // native HTML5 `draggable` so tabs can be dragged onto a pane
+                    // on touch devices too (WP-C3). `canDrag` still gates kind.
+                    const dispose = useDragSource(el, {
+                      contentId: () => (canDrag(item) ? item.contentId : undefined),
+                      sourceKind: "tab",
+                      label: () => item.title,
+                      enabled: () => canDrag(item),
+                      // Horizontal strip (`overflow-x-auto`): let the browser pan
+                      // the tab row by touch; drag is gated behind a long-press.
+                      touchAction: "pan-x",
+                      onBegin: () => props.onDragStart?.(item.contentId),
+                      onEnd: () => props.onDragEnd?.(),
+                    })
+                    onCleanup(dispose)
+                  }}
                   onClick={(event) => select(event, item)}
                   onAuxClick={(event) => {
                     if (event.button !== 1 || !item.closable) return
                     close(event, item)
                   }}
-                  onDragStart={(event) => {
-                    if (!canDrag(item)) return
-                    event.dataTransfer?.setData(WORKBENCH_DRAG_MIME, item.contentId)
-                    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move"
-                    props.onDragStart?.(item.contentId)
-                  }}
-                  onDragEnd={() => props.onDragEnd?.()}
                   class="ml-1 flex h-full min-w-0 flex-1 items-center border-none bg-transparent p-0 text-left text-[12px] leading-none text-inherit outline-none"
                 >
                   <span

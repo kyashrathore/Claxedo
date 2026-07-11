@@ -2,9 +2,24 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { CompactSwitcher } from "./compact-switcher"
 import type { SwitcherItem } from "./switcher-items"
-import { WORKBENCH_DRAG_MIME } from "../workbench"
+import { workbenchDrag } from "../workbench"
+
+function dispatchPointer(
+  target: EventTarget,
+  type: string,
+  init: { clientX?: number; clientY?: number; pointerId?: number; pointerType?: string; button?: number },
+) {
+  const ev = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(ev, "clientX", { value: init.clientX ?? 0 })
+  Object.defineProperty(ev, "clientY", { value: init.clientY ?? 0 })
+  Object.defineProperty(ev, "pointerId", { value: init.pointerId ?? 1 })
+  Object.defineProperty(ev, "pointerType", { value: init.pointerType ?? "mouse" })
+  Object.defineProperty(ev, "button", { value: init.button ?? 0 })
+  target.dispatchEvent(ev)
+}
 
 afterEach(() => {
+  workbenchDrag.cancel()
   cleanup()
 })
 
@@ -123,23 +138,20 @@ describe("CompactSwitcher", () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 
-  test("allows sessions and terminals to start a surface drag", () => {
+  test("a pointer drag past threshold starts a surface drag carrying the contentId", () => {
     const onDragStart = vi.fn()
     render(() => <CompactSwitcher items={items} onDragStart={onDragStart} />)
 
-    const data = new Map<string, string>()
     const row = screen.getByRole("button", { name: "Build fix" })
-    fireEvent.dragStart(row, {
-      dataTransfer: {
-        setData: (type: string, value: string) => data.set(type, value),
-        effectAllowed: "copy",
-      },
-    })
+    dispatchPointer(row, "pointerdown", { clientX: 0, clientY: 0 })
+    dispatchPointer(window, "pointermove", { clientX: 20, clientY: 0 })
 
-    expect(row).toHaveAttribute("draggable", "true")
-    expect(data.get(WORKBENCH_DRAG_MIME)).toBe("content-session")
-    expect(data.get("text/plain")).toBeUndefined()
+    expect(workbenchDrag.active()).toBe(true)
+    expect(workbenchDrag.contentId()).toBe("content-session")
     expect(onDragStart).toHaveBeenCalledWith("content-session")
+
+    dispatchPointer(window, "pointerup", { clientX: 20, clientY: 0 })
+    expect(workbenchDrag.active()).toBe(false)
   })
 
   test("renders no placeholder text for an empty list", () => {

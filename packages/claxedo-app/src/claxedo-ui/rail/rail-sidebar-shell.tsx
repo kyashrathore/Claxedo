@@ -18,6 +18,7 @@ export type RailSidebarShellProps = {
   headerTitle: Accessor<string>
   homedir?: string
   mobileSidebarOpen: Accessor<boolean>
+  openMobileSidebar: () => void
   onArchiveSession?: (session: SessionItem) => boolean | Promise<boolean>
   onDeleteSession?: (session: SessionItem) => void
   onDeleteWorkspace?: (workspace: WorkspaceItem) => void
@@ -96,8 +97,29 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
 
   return (
     <Show when={props.sidebarEligible()}>
+      {/* Narrow-viewport drawer opener. The workbench header's "Show Sidebar"
+          button is `md:flex hidden` (desktop-only), so a phone needs its own
+          affordance to open the drawer — this is the missing entry point that
+          makes `openMobileSidebar` reachable (WP-C3 collapse design §3.1). */}
+      <Show when={!props.mobileSidebarOpen()}>
+        <button
+          type="button"
+          data-testid="mobile-sidebar-opener"
+          aria-label="Open navigation sidebar"
+          class="md:hidden fixed left-2 top-2 z-[95] flex size-9 items-center justify-center rounded-md border border-border-weaker-base bg-background-base/90 text-icon-weak-base backdrop-blur-sm transition-colors hover:text-icon-base"
+          onClick={() => props.openMobileSidebar()}
+        >
+          <span class="flex flex-col gap-[3px]" aria-hidden="true">
+            <span class="block h-0.5 w-4 rounded bg-current" />
+            <span class="block h-0.5 w-4 rounded bg-current" />
+            <span class="block h-0.5 w-4 rounded bg-current" />
+          </span>
+        </button>
+      </Show>
+
       <Show when={props.mobileSidebarOpen()}>
         <div
+          data-testid="mobile-sidebar-scrim"
           class="fixed inset-0 bg-background-stronger/70 z-[90] md:hidden"
           onClick={props.closeMobileSidebar}
         />

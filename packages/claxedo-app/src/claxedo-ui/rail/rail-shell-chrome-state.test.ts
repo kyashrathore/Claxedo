@@ -43,6 +43,35 @@ describe("useRailShellChromeState", () => {
     }
   })
 
+  test("mobile drawer can be opened, toggled, and closed (opener was previously dead code)", () => {
+    const state = createRoot((dispose) => ({
+      dispose,
+      chrome: useRailShellChromeState({
+        isMac: false,
+        paneCount: () => 0,
+        splitRoot: () => undefined,
+      }),
+    }))
+
+    try {
+      // Starts closed. Before this WP there was no setter that could open it.
+      expect(state.chrome.mobileSidebarOpen()).toBe(false)
+      state.chrome.openMobileSidebar()
+      expect(state.chrome.mobileSidebarOpen()).toBe(true)
+      // Opening again is idempotent.
+      state.chrome.openMobileSidebar()
+      expect(state.chrome.mobileSidebarOpen()).toBe(true)
+      state.chrome.closeMobileSidebar()
+      expect(state.chrome.mobileSidebarOpen()).toBe(false)
+      state.chrome.toggleMobileSidebar()
+      expect(state.chrome.mobileSidebarOpen()).toBe(true)
+      state.chrome.toggleMobileSidebar()
+      expect(state.chrome.mobileSidebarOpen()).toBe(false)
+    } finally {
+      state.dispose()
+    }
+  })
+
   test("requests terminal fit after pane topology changes", async () => {
     const [paneCount, setPaneCount] = createSignal(1)
     const [splitRoot, setSplitRoot] = createSignal("root-a")

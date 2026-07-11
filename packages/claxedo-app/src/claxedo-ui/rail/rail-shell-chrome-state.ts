@@ -58,6 +58,13 @@ export function useRailShellChromeState(props: {
   return {
     trafficLightPad: () => props.isMac && !macFullscreen(),
     mobileSidebarOpen,
+    // The narrow-viewport drawer previously had `closeMobileSidebar` as its only
+    // setter (hard-wired to `false`), so nothing could ever open it — a dead-code
+    // path pinned by mobile-smoke behavior 1. `openMobileSidebar` is that missing
+    // opener; the workbench header (narrow) and the drawer's own opener button
+    // call it. See WP-C3 collapse design note §3.1.
+    openMobileSidebar: () => setMobileSidebarOpen(true),
+    toggleMobileSidebar: () => setMobileSidebarOpen((open) => !open),
     closeMobileSidebar: () => setMobileSidebarOpen(false),
   }
 }

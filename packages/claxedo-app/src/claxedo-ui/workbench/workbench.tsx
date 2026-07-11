@@ -1,9 +1,10 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type JSX } from "solid-js"
 import type { Pane, PaneRect, WorkbenchState } from "./types"
-import { WORKBENCH_DRAG_MIME } from "./types"
 import { useWorkbench, useWorkbenchContext } from "./provider"
 import { computePaneRects } from "./reducers/tree-helpers"
 import { computeDropEdge } from "./drag-drop"
+import { collapsePaneRects, isCollapsedWidth } from "./collapse-projection"
+import { useDragSource, workbenchDrag } from "./pointer-drag"
 import { matchKey, resolveKeyMap, eventTargetIsEditable } from "./keyboard"
 import type { Edge, KeyMap } from "./types"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -65,6 +66,13 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     }
   })
 
+  // -- narrow-viewport collapse: below BP_MD the workbench shows exactly one
+  //    full-bleed pane and hides the rest. Pure VIEW projection over unchanged
+  //    WorkbenchState — splits are preserved-but-hidden, not flattened (see the
+  //    WP-C3 collapse design note §1/§4). Measured against our OWN canvas width,
+  //    not window.innerWidth, so it composes with the rail/panel insets.
+  const collapsed = createMemo(() => isCollapsedWidth(containerSize().w))
+
   // -- focus change callback
   let lastFocus: { paneId: string | null; contentId: string | null } = { paneId: null, contentId: null }
   createEffect(() => {
@@ -104,7 +112,12 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   })
 
   // -- onPaneResize: throttle via RAF.
+  // rectMemo = the TRUE split geometry (kept for resize divider math + arrow
+  // focus). displayRects = what the DOM actually paints: the true geometry when
+  // expanded, the single-pane collapse projection when narrow. Everything the
+  // view positions (pane rects, content slots, resize emits) reads displayRects.
   const rectMemo = createMemo(() => computePaneRects(ctx.getState().split.root))
+  const displayRects = createMemo(() => (collapsed() ? collapsePaneRects(ctx.getState()) : rectMemo()))
   let pendingFrame: number | null = null
   let lastEmittedRects: Map<string, PaneRect> = new Map()
   const scheduleResizeEmit = () => {
@@ -118,7 +131,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
           }
     pendingFrame = raf(() => {
       pendingFrame = null
-      const rects = rectMemo()
+      const rects = displayRects()
       const cs = containerSize()
       for (const [pid, rf] of rects) {
         const abs: PaneRect = {
@@ -143,7 +156,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   }
   createEffect(
     on(
-      () => [rectMemo(), containerSize()] as const,
+      () => [displayRects(), containerSize()] as const,
       () => scheduleResizeEmit(),
     ),
   )
@@ -199,31 +212,39 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     }
   })
 
-  // -- ESC during drag-over cancels next drop
-  const [dragSuppressed, setDragSuppressed] = createSignal(false)
+  // -- Drop target: driven by the pointer-drag controller (mouse + touch + pen).
+  //    The controller feeds us the live pointer position; we hit-test our panes
+  //    with elementFromPoint, drive the edge overlay, and commit the split.
   const [dropTarget, setDropTarget] = createSignal<DropTarget | null>(null)
   const clearDropTarget = () => setDropTarget(null)
+  onMount(() => {
+    const dispose = workbenchDrag.registerDropZone({
+      onMove: (_contentId, x, y) => setDropTarget(hitTestPaneAt(x, y)),
+      onDrop: (contentId, x, y) => {
+        const target = hitTestPaneAt(x, y)
+        clearDropTarget()
+        if (target) commitDrop(target.paneId, target.edge, contentId)
+      },
+      onCancel: clearDropTarget,
+    })
+    onCleanup(dispose)
+  })
+  // Escape aborts an in-flight pointer drag (matches the old dragend/drop guard).
   const onWindowKey = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return
-    setDragSuppressed(true)
-    clearDropTarget()
+    workbenchDrag.cancel()
   }
   onMount(() => {
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", onWindowKey)
-      window.addEventListener("dragend", clearDropTarget)
-      window.addEventListener("drop", clearDropTarget)
-      onCleanup(() => {
-        window.removeEventListener("keydown", onWindowKey)
-        window.removeEventListener("dragend", clearDropTarget)
-        window.removeEventListener("drop", clearDropTarget)
-      })
+      onCleanup(() => window.removeEventListener("keydown", onWindowKey))
     }
   })
 
-  // -- Per-pane CSS rect (positioned absolutely inside root)
+  // -- Per-pane CSS rect (positioned absolutely inside root). Reads displayRects
+  //    so collapsed mode hides non-focused panes (absent from the map → display:none).
   const paneRectStyle = (paneId: string) => {
-    const rects = rectMemo()
+    const rects = displayRects()
     const r = rects.get(paneId)
     if (!r) return { display: "none" }
     return {
@@ -272,47 +293,27 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     return ids.filter((id) => isVisibleContent(id))
   }
 
-  // -- DnD pane handlers
-  const dropEdgeForEvent = (paneId: string, e: DragEvent) => {
-    let el: HTMLElement | null = (e.currentTarget as HTMLElement) ?? (e.target as HTMLElement)
-    while (el && el.dataset?.paneId !== paneId) el = el.parentElement
-    const target = el ?? (e.currentTarget as HTMLElement) ?? (e.target as HTMLElement)
-    const rect = target.getBoundingClientRect()
+  // -- DnD hit-testing (pointer-driven). `elementFromPoint` finds the pane under
+  //    the cursor; the ghost is `pointer-events:none` so it never occludes it.
+  const hitTestPaneAt = (x: number, y: number): DropTarget | null => {
+    if (typeof document === "undefined" || !document.elementFromPoint) return null
+    let el: HTMLElement | null = document.elementFromPoint(x, y) as HTMLElement | null
+    while (el && !el.dataset?.paneId) el = el.parentElement
+    const paneId = el?.dataset?.paneId
+    if (!paneId) return null
+    const rect = el!.getBoundingClientRect()
     const edge = computeDropEdge(
       { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-      e.clientX,
-      e.clientY,
+      x,
+      y,
     )
-    return edge
+    return { paneId, edge }
   }
-  const onPaneDragOver = (paneId: string, e: DragEvent) => {
-    if (!e.dataTransfer || ![...e.dataTransfer.types].includes(WORKBENCH_DRAG_MIME)) return
-    e.preventDefault()
-    e.stopPropagation()
-    setDropTarget({ paneId, edge: dropEdgeForEvent(paneId, e) })
-  }
-  const onPaneDrop = (paneId: string, e: DragEvent) => {
-    if (!e.dataTransfer) return
-    if (dragSuppressed()) {
-      setDragSuppressed(false)
-      clearDropTarget()
-      return
-    }
-    const cid = e.dataTransfer.getData(WORKBENCH_DRAG_MIME)
-    if (!cid) return
-    const edge = dropEdgeForEvent(paneId, e)
-    const s = ctx.getState()
-    if (!s.contentIds.includes(cid)) return // reject external unknowns
-    e.preventDefault()
-    e.stopPropagation()
-    clearDropTarget()
-    wb.split.split(paneId, edge, cid)
-  }
-
-  const handleDragStart = (e: DragEvent, contentId: string) => {
-    if (!e.dataTransfer) return
-    e.dataTransfer.setData(WORKBENCH_DRAG_MIME, contentId)
-    e.dataTransfer.effectAllowed = "move"
+  const commitDrop = (paneId: string, edge: Edge, contentId: string) => {
+    // Reject ids we don't own (external/stale). Self-drop onto the same pane is
+    // a no-op inside the split reducer's own guard, preserved unchanged.
+    if (!ctx.getState().contentIds.includes(contentId)) return
+    wb.split.split(paneId, edge, contentId)
   }
 
   // -- Resize divider (top-level only for now; nested splits could use path "a"|"b")
@@ -364,11 +365,6 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                   "box-sizing": "border-box",
                 }}
                 class="bg-background-base/10"
-                onDragOver={(e) => onPaneDragOver(pane.id, e)}
-                onDrop={(e) => onPaneDrop(pane.id, e)}
-                onDragLeave={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) clearDropTarget()
-                }}
                 onMouseDown={() => wb.split.focus(pane.id)}
               >
                 <Show when={!pane.contentId}>{renderEmptyForPane()}</Show>
@@ -377,8 +373,10 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
           }}
         </For>
 
-        {/* Top-level resize divider, if root is a split */}
-        <Show when={rootSplit()}>
+        {/* Top-level resize divider, if root is a split. Absent in collapsed
+            (single-pane) mode — there is nothing to resize when only one pane
+            is visible, matching the panel's own !isMobile()-gated separator. */}
+        <Show when={!collapsed() && rootSplit()}>
           {(rs) => {
             const onPointerDown = (e: PointerEvent) => {
               const startRect = rootEl?.getBoundingClientRect()
@@ -489,7 +487,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
 	                  overflow: "hidden",
                 }
               }
-              const rect = rectMemo().get(pid)
+              const rect = displayRects().get(pid)
               if (!rect) return { display: "none" }
               return {
                 position: "absolute",
@@ -517,31 +515,12 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 if (pid) wb.split.focus(pid)
               },
             }
+            // `data-pane-id` on the slot lets hit-testing route a drop over
+            // rendered content up to its owning pane (elementFromPoint → slot).
             return (
               <div
                 data-workbench-content={contentId}
                 data-pane-id={paneId() ?? undefined}
-                ref={(el) => {
-                  const onSlotDragOver = (event: DragEvent) => {
-                    const pid = paneId()
-                    if (pid) onPaneDragOver(pid, event)
-                  }
-                  const onSlotDrop = (event: DragEvent) => {
-                    const pid = paneId()
-                    if (pid) onPaneDrop(pid, event)
-                  }
-                  const onSlotDragLeave = (event: DragEvent) => {
-                    if (!el.contains(event.relatedTarget as Node | null)) clearDropTarget()
-                  }
-                  el.addEventListener("dragover", onSlotDragOver, true)
-                  el.addEventListener("drop", onSlotDrop, true)
-                  el.addEventListener("dragleave", onSlotDragLeave, true)
-                  onCleanup(() => {
-                    el.removeEventListener("dragover", onSlotDragOver, true)
-                    el.removeEventListener("drop", onSlotDrop, true)
-                    el.removeEventListener("dragleave", onSlotDragLeave, true)
-                  })
-                }}
                 style={slotStyle()}
                 class="transition-[opacity,filter] duration-100"
                 classList={{
@@ -565,16 +544,42 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               <Show when={pane.contentId}>
                 {(cid) => (
                   <div
-                    data-testid={`pane-handle-${pane.id}`}
-                    draggable
-                    onDragStart={(event) => handleDragStart(event, cid())}
+                    data-testid={`pane-handle-zone-${pane.id}`}
                     style={{
                       ...paneRectStyle(pane.id),
                       display: paneRectStyle(pane.id).display === "none" ? "none" : "block",
+                      // Positioning wrapper only — MUST stay pointer-events:none so
+                      // the pane's rendered content underneath keeps receiving clicks.
                       "pointer-events": "none",
                       "z-index": "35",
                     }}
-                  />
+                  >
+                    {/* The REAL pane-drag input surface. WP-C3a fix: the drag source
+                        used to be attached to the pointer-events:none wrapper above,
+                        so it could NEVER receive a pointerdown — the desktop
+                        pane-drag path was entirely dead. Attaching it to this small
+                        grip (pointer-events:auto) is what actually receives input; a
+                        user grabs it and drops the pane onto another pane's edge to
+                        split. Hover-revealed to keep the visual/hit footprint tiny. */}
+                    <div
+                      data-testid={`pane-handle-${pane.id}`}
+                      aria-hidden="true"
+                      title="Drag to move pane"
+                      ref={(el) => {
+                        const dispose = useDragSource(el, {
+                          contentId: () => cid(),
+                          sourceKind: "workbench-pane",
+                          // Dedicated grip, never a scroll surface.
+                          touchAction: "none",
+                        })
+                        onCleanup(dispose)
+                      }}
+                      class="absolute left-2 top-2 flex size-5 cursor-grab items-center justify-center rounded border border-border-weak-base/35 bg-background-base/55 text-icon-weak-base opacity-0 backdrop-blur-sm transition-opacity duration-100 hover:opacity-100 active:cursor-grabbing"
+                      style={{ "pointer-events": "auto" }}
+                    >
+                      <Icon name="dot-grid" size="small" />
+                    </div>
+                  </div>
                 )}
               </Show>
               <Show when={ctx.getState().panes.length > 1 && pane.contentId}>

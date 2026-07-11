@@ -455,6 +455,28 @@ describe("state route intent", () => {
     expect(harness.focused()).toBe("existing-session")
   })
 
+  test("workspace browse route does NOT auto-open the review panel at narrow (collapsed) width — WP-C3 §3.2", () => {
+    const original = Object.getOwnPropertyDescriptor(window, "innerWidth")
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 })
+    try {
+      const harness = createHarness({ focused: "existing-session" })
+
+      harness.receive({
+        workspaceId: "ws_cloud_1",
+        workspaceBrowse: true,
+      })
+
+      // At phone width the review panel is full-screen; auto-opening it would
+      // bury the composer. The guard suppresses it — no panel, no surface.
+      expect(harness.workspacePanelCalls).toEqual([])
+      expect(harness.opened).toEqual([])
+      expect(harness.focused()).toBe("existing-session")
+    } finally {
+      if (original) Object.defineProperty(window, "innerWidth", original)
+      else delete (window as { innerWidth?: number }).innerWidth
+    }
+  })
+
   test("session route without workspace opens a central session surface", () => {
     const harness = createHarness()
 
