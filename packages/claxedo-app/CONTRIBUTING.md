@@ -160,10 +160,17 @@ where they are centrally tracked — not scattered per feature test file.
 re-implement the feature in another language? If the test would pass against
 a hand-copied shadow re-implementation of the function under test, it is not
 a test — it must import and exercise the real production export (as
-`claxedo-ui/rail/workspace-project-integrity.test.ts` now does, importing the
-real `projectCatalog`/`canAutoOpenProject` from `context/layout-projects`
-rather than a hand-maintained copy). A test that re-declares the logic it
-claims to verify tests nothing; do not do that.
+`context/layout-projects.test.ts` does, importing the real
+`projectCatalog`/`canAutoOpenProject` from `context/layout-projects`, and
+`claxedo-ui/utils/workspace-display.test.ts` /
+`claxedo-ui/rail/rail-git-remote.test.ts` do for the workspace-name and
+owner/repo derivations, rather than a hand-maintained copy). A test that
+re-declares the logic it claims to verify tests nothing; do not do that. The
+former `claxedo-ui/rail/workspace-project-integrity.test.ts` was exactly this
+anti-pattern — a 1186-line hand-copied shadow that had already drifted from the
+shipped logic (it derived the project label from `sessions[].git.remote`, while
+production reads `workspaces[].repo_url`) — and was deleted once every genuine
+invariant it specified moved to a real-import spec beside its subject.
 
 ### Template: pure-logic spec (default — bun:test)
 
@@ -248,14 +255,15 @@ documenting it here):
 
 **Known, not-yet-fixed violations** (do not copy these; they are tracked
 debt per the org-review appendix, not conventions):
-`src/claxedo-ui/rail/workspace-project-integrity.test.ts` tests a subject that
-lives in `src/context/` (`context/layout-projects`), not in `rail/` where the
-test file sits; `src/extensions/server.test.ts` imports from `vitest` despite
+`src/extensions/server.test.ts` imports from `vitest` despite
 the `.test.ts` (bun:test-signaling) suffix. (Wave 1.5 fixed several formerly
 listed here: the `claxedo-ui/state/tests/` subfolder was flattened;
 `review-mount-retention.vitest.tsx` moved to `shell/review/` alongside its
 `review-region-policy` subject; and `navigation-islands/session-navigation`'s
-test was renamed to the `.vitest.ts` suffix that matches its runner.)
+test was renamed to the `.vitest.ts` suffix that matches its runner. Wave 2
+deleted `claxedo-ui/rail/workspace-project-integrity.test.ts` — a mislocated
+hand-copied shadow whose subject lived in `context/layout-projects` — moving
+every real invariant it specified to a real-import spec beside its subject.)
 
 **Shared test fakes:** `src/utils/test-support/` is the sanctioned location
 for fakes reused by 2+ unrelated test suites. It now exists (created per LLD
