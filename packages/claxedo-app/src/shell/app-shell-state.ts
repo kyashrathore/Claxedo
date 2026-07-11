@@ -11,11 +11,11 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"
 
 import { useNotification } from "@/context/notification"
-import { capture as phCapture } from "../analytics/posthog"
+import { capture as phCapture } from "../utils/analytics"
 import { realDirectory, useClaxedoState } from "../claxedo-ui/state"
 import { projectToProjectItem } from "../claxedo-ui/state/route-bridge"
 import { resolveActiveWorkspaceId } from "../claxedo-ui/utils/active-workspace"
-import { openWorkspaceScopeIds } from "../claxedo-ui/workspace-scope-ids"
+import { openWorkspaceScopeIds } from "../claxedo-ui/utils/workspace-scope-ids"
 import { useConfigOptional } from "../context/config"
 import type { SessionInventoryRow } from "../shared/query/types"
 import { canAutoOpenProject } from "@claxedo/context/layout-projects"
@@ -29,7 +29,7 @@ import {
   sessionInventoryQueryOptions,
 } from "./data/queries"
 import { parseShellRoute, shellRouteWorkspaceKey } from "./identity/route"
-import { useShellAppStateSnapshot } from "./chrome/app-state-snapshot"
+import { useShellAppStateSnapshot } from "./app-state-snapshot"
 
 export type AppShellState = ReturnType<typeof useAppShellState>
 

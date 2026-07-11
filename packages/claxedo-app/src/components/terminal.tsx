@@ -29,7 +29,7 @@ import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize
 import { stripTerminalRepliesFromInput } from "@claxedo/terminal/input-reply-filter"
 import { getCapabilityResponses } from "@claxedo/terminal/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "../utils/api"
-import { resolveWorkspaceRuntime } from "../cloud/runtime/workspace-runtime-store"
+import { resolveWorkspaceRuntime } from "../cloud/workspace-runtime-store"
 import { parse as parseShellCommand } from "shell-quote"
 import { resolveTerminalReloadFlag, terminalReloadStorageKey } from "./terminal-pty-key-migration"
 

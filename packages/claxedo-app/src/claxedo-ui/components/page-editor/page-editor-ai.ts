@@ -11,7 +11,7 @@
 import type { Editor } from "@tiptap/core"
 import type { useSDK } from "@/context/sdk"
 import type { useGlobalSDK } from "@/context/global-sdk"
-import type { useClaxedoState } from "../state"
+import type { useClaxedoState } from "../../state"
 import {
   diffNodes,
   plainNodes,

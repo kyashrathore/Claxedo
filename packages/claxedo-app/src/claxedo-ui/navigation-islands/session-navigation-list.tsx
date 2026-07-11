@@ -1,6 +1,6 @@
 import { For, Show, createMemo } from "solid-js"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "../components/claxedo-icon"
-import { WORKBENCH_DRAG_MIME } from "../layout"
+import { WORKBENCH_DRAG_MIME } from "../workbench"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import {
   navigationDragPayload,

@@ -47,7 +47,7 @@ mock.module("@/context/layout", () => ({
 }))
 
 describe("upstream contract", async () => {
-  const { useSessionKey } = await import("@claxedo/pages/session/session-layout")
+  const { useSessionKey } = await import("@claxedo/session/session-layout")
 
   beforeEach(() => {
     paneParams = undefined
@@ -74,7 +74,7 @@ describe("upstream contract", async () => {
 })
 
 describe("Claxedo behavior", async () => {
-  const { useSessionLayout } = await import("@claxedo/pages/session/session-layout")
+  const { useSessionLayout } = await import("@claxedo/session/session-layout")
 
   beforeEach(() => {
     paneParams = {

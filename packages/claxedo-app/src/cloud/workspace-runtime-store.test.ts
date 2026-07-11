@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
-import type { ClaxedoEvent } from "../../providers/claxedo-events"
+import type { ClaxedoEvent } from "../context/claxedo-events"
 import {
   appendWorkspaceRuntimeLog,
   prepareUserHostedRuntime,
@@ -9,7 +9,7 @@ import {
   workspaceRuntimeEnsureQueryKey,
   workspaceRuntimeBlocksBootstrap,
 } from "./workspace-runtime-store"
-import { queryClient } from "../../shared/query/query-client"
+import { queryClient } from "../shared/query/query-client"
 
 afterEach(() => {
   queryClient.clear()

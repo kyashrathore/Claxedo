@@ -6,7 +6,7 @@
     "reason": "Sleep-detection timer watches wall-clock gaps."
   },
   {
-    "file": "claxedo-ui/layouts/rail-sidebar.tsx",
+    "file": "claxedo-ui/rail/rail-sidebar.tsx",
     "count": 1,
     "owner": "rail sidebar clock",
     "reason": "Visible clock tick."

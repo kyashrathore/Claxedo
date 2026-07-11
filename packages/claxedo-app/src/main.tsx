@@ -12,10 +12,10 @@ import { PlatformProvider, type Platform } from "@opencode-ai/claxedo-app"
 import { initClaxedo, getDefaultConfig } from "./index"
 import { getAuthToken } from "./utils/auth-client"
 import { authFetch } from "./utils/api"
-import { initPostHog, capture as phCapture } from "./analytics/posthog"
+import { initPostHog, capture as phCapture } from "./utils/analytics"
 import { isDemoMode, isEmbedMode } from "./utils/api"
 import { ConfigProvider } from "./context/config"
-import { ClaxedoEventsProvider } from "./providers/claxedo-events"
+import { ClaxedoEventsProvider } from "./context/claxedo-events"
 import { Persist, resetDemoPersisted, setPersisted } from "./utils/persist"
 
 // Initialize cloud extensions before rendering

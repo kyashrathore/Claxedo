@@ -44,7 +44,7 @@ export const [reviewToolbarSlot, setReviewToolbarSlot] = createPortalSlot("revie
 
 export const [reviewTabHeaderSlot, setReviewTabHeaderSlot] = createPortalSlot("review-tab-header")
 
-// components/titlebar.tsx (legacy titlebar) claims these three mount points
+// components/titlebar/titlebar.tsx (legacy titlebar) claims these three mount points
 // on render; components/session/session-header.tsx portals its search
 // button and open-in-app controls into the center/right slots. This
 // replaces a getElementById-based DOM-id string contract (left/center/right

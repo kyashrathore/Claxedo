@@ -1,6 +1,6 @@
 import type { VcsFileDiff } from "@opencode-ai/sdk/v2"
 import type { VcsRefs } from "./review-toolbar"
-import { queryClient } from "../../shared/query/query-client"
+import { queryClient } from "../../../shared/query/query-client"
 
 type ReviewVcsDiffInput = {
   directory: string

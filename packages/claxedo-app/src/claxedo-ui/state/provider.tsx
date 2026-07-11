@@ -14,7 +14,7 @@ import {
   type SplitNode,
   type SplitTree,
   type WorkbenchState,
-} from "../layout"
+} from "../workbench"
 import type {
   WorkspacePanelState,
   WorkspacePanelTarget,
@@ -24,7 +24,7 @@ import { createTerminalSlice, type TerminalSliceApi } from "./terminal"
 import { createWorkspaceSlice, type WorkspaceSliceApi } from "./workspace"
 import { createRailSlice, type RailSliceApi } from "./rail"
 import { createWorkspacePanelSlice, type WorkspacePanelSliceApi } from "./workspace-panel"
-import { createProcessPaneSlice, type ProcessPaneSliceApi } from "./process-pane"
+import { createProcessPaneSlice, type ProcessPaneSliceApi } from "./process-pane-slice"
 import { createLayoutOrchestration, type LayoutOrchestrationApi } from "./orchestration"
 import { emptyClaxedoState, validate } from "./persistence"
 import type { ClaxedoState } from "./types"

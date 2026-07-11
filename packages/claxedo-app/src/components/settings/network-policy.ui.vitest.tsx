@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { NetworkPolicySettings } from "./network-policy-settings"
+import { NetworkPolicySettings } from "./network-policy"
 
 const calls: Array<{ method: string; url: string; body?: unknown }> = []
 let workspaceRole: "owner" | "admin" | "editor" | "viewer" = "admin"

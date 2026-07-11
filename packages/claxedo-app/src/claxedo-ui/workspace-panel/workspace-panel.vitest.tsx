@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { createSignal, onCleanup, onMount } from "solid-js"
-import { WorkspacePanel } from "./WorkspacePanel"
+import { WorkspacePanel } from "./workspace-panel"
 import type { WorkspacePanelState } from "./workspace-panel-state"
 
 afterEach(() => {

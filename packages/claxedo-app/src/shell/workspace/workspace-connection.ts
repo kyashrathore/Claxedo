@@ -1,12 +1,12 @@
 import { createStore, produce, type SetStoreFunction } from "solid-js/store"
 import type { CloudLog } from "@claxedo/components/session/cloud-startup-view"
 import { isForbiddenConnectionError } from "@claxedo/components/session/cloud-startup-view"
-import type { useClaxedoEventsOptional } from "../../providers/claxedo-events"
+import type { useClaxedoEventsOptional } from "../../context/claxedo-events"
 import {
   appendWorkspaceRuntimeLog,
   prepareUserHostedRuntime,
   prepareWorkspaceRuntime,
-} from "../../cloud/runtime/workspace-runtime-store"
+} from "../../cloud/workspace-runtime-store"
 import {
   forgetWorkspaceConnection,
   openWorkspaceConnection,
@@ -22,7 +22,7 @@ import {
   transitionConnectionPlacement,
   type ConnectionPlacementEvent,
   type ConnectionPlacementState,
-} from "../state/connection-placement"
+} from "../connection/connection-placement"
 
 // One connection authority keyed by `workspaceId`. Every consumer — every
 // session pane, the Review panel, the model/agent/messages/diff queries, the
@@ -532,7 +532,7 @@ export function retryWorkspaceConnection(workspaceId: string | undefined) {
 
 // A sustained workspace event-stream failure nudges ready → reconnecting
 // (queries park, NO teardown); recovery flips reconnecting → ready. Exposed so
-// `providers/claxedo-events.tsx` can feed its per-target reconnect outcome to
+// `context/claxedo-events.tsx` can feed its per-target reconnect outcome to
 // the authority instead of inferring readiness independently.
 export function markWorkspaceReconnecting(workspaceId: string | undefined) {
   if (!workspaceId) return

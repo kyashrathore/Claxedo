@@ -1,4 +1,4 @@
-import type { VcsRefs } from "../components/review-toolbar"
+import type { VcsRefs } from "../components/review-workspace/review-toolbar"
 import { createTransport } from "../../shell/data/transport/transport"
 import {
   centralTransportForServer,

@@ -1,7 +1,7 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { ClaxedoSessionReview } from "./claxedo-session-review"
+import { ClaxedoSessionReview } from "./review-session"
 
 describe("ClaxedoSessionReview", () => {
   beforeEach(() => {

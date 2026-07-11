@@ -1,7 +1,7 @@
 import type { Navigator, Params } from "@solidjs/router"
 
-import { createClaxedoLayoutActions } from "../claxedo-ui/claxedo-layout-actions"
-import { useClaxedoEventsOptional } from "../providers/claxedo-events"
+import { createClaxedoLayoutActions } from "../claxedo-ui/layout-actions"
+import { useClaxedoEventsOptional } from "../context/claxedo-events"
 import { marketplaceRoute } from "./identity/route"
 import type { AppShellState } from "./app-shell-state"
 

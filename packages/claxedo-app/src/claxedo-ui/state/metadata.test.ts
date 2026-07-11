@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
-import { emptyClaxedoState } from "../persistence"
-import { createMetadataSlice } from "../metadata"
+import { emptyClaxedoState } from "./persistence"
+import { createMetadataSlice } from "./metadata"
 
 describe("state/metadata", () => {
   test("notifies observers after metadata changes", () => {

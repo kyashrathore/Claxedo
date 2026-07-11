@@ -6,7 +6,7 @@ import {
   type ProviderListResponse,
   createOpencodeClient,
 } from "@opencode-ai/sdk/v2/client"
-import type { NormalizedProviderListResponse } from "@claxedo/session-client/session-ui.barrel"
+import type { NormalizedProviderListResponse } from "@claxedo/session-client"
 import { retry } from "@claxedo/utils/retry"
 import { getFilename } from "@claxedo/utils/path"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -17,7 +17,7 @@ import { normalizeProjectList, providerAuthQuery, projectListQuery, providerList
 import { commandListQuery } from "../../shared/query/shell"
 import { agentListQuery, configQuery, pathQuery, projectCurrentQuery, workspaceResolveQuery } from "../../shared/query/directory"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "../../shared/query/runtime"
-import { workspaceRuntimeBlocksBootstrap } from "../../cloud/runtime/workspace-runtime-store"
+import { workspaceRuntimeBlocksBootstrap } from "../../cloud/workspace-runtime-store"
 import { normalizeProviderList } from "../../shared/query/utils"
 import { sessionWorkspaceRuntimeRef } from "../workspace/session-workspace-key"
 import { fastSessionSwitchAnyNetworkQuiet } from "../../session/store/fast-session-switch"

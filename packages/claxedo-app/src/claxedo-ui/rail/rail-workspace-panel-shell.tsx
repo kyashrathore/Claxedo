@@ -1,6 +1,6 @@
 import type { Accessor } from "solid-js"
 
-import { WorkspacePanel } from "../workspace-panel/WorkspacePanel"
+import { WorkspacePanel } from "../workspace-panel/workspace-panel"
 import type {
   WorkspacePanelNavigator,
   WorkspacePanelPaneTarget,

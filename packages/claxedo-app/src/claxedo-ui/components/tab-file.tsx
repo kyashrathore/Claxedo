@@ -16,12 +16,12 @@ import { useComments } from "@/context/comments"
 import { selectionFromLines, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@claxedo/context/language"
 import { usePrompt } from "@/context/prompt"
-import { File, type TextFileProps } from "@claxedo/session-client/session-ui.barrel"
+import { File, type TextFileProps } from "@claxedo/session-client"
 import {
   createLineCommentController,
   type LineCommentAnnotationMeta,
-} from "@claxedo/session-client/session-ui.barrel"
-import { Markdown } from "@claxedo/session-client/session-ui.barrel"
+} from "@claxedo/session-client"
+import { Markdown } from "@claxedo/session-client"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { ClaxedoIconButton as IconButton } from "./claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"

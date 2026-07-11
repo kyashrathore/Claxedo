@@ -9,7 +9,7 @@ import { Extension, type Editor, type Range } from "@tiptap/core"
 import Suggestion, { type SuggestionOptions, type SuggestionProps, type SuggestionKeyDownProps } from "@tiptap/suggestion"
 import { createSignal, createEffect, For, Show } from "solid-js"
 import { render as solidRender } from "solid-js/web"
-import { capture as phCapture } from "../../analytics/posthog"
+import { capture as phCapture } from "../../../utils/analytics"
 
 // ── Command items ──────────────────────────────────────────────────────
 

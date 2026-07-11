@@ -5,7 +5,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { persisted } from "@/utils/persist"
-import { DialogReleaseNotes, type Highlight } from "@/components/dialog-release-notes"
+import { DialogReleaseNotes, type Highlight } from "@/components/dialogs/release-notes"
 
 const CHANGELOG_URL = "https://opencode.ai/changelog.json"
 

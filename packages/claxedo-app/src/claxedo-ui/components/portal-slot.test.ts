@@ -54,7 +54,7 @@ describe("createPortalSlot", () => {
   // teardown with `onCleanup()` from inside the callback; returning a
   // cleanup closure (a common React-ref habit) is silently a no-op. These
   // two tests pin that contrast so a regression to the return-based pattern
-  // (as happened in components/titlebar.tsx) is caught here rather than by
+  // (as happened in components/titlebar/titlebar.tsx) is caught here rather than by
   // observing a stale slot in the app.
   test("onCleanup registered inside a ref callback clears the slot when the owning root disposes", () => {
     const [slot, setSlot] = createPortalSlot("test-slot")

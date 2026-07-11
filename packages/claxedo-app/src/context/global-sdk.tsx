@@ -30,9 +30,9 @@ import { queryKeys } from "../shared/query/keys"
 import { workspaceResolveUrl } from "../utils/workspace-control-routes"
 import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
 import { createControlPlaneEventFetch, type LiveSession } from "./global-sdk-event-fetch"
-import { createGlobalSdkFetch } from "./global-sdk-fetch"
+import { createGlobalSdkFetch } from "../shell/data/global-sdk-fetch"
 export { createControlPlaneEventFetch } from "./global-sdk-event-fetch"
-export { createGlobalSdkFetch } from "./global-sdk-fetch"
+export { createGlobalSdkFetch } from "../shell/data/global-sdk-fetch"
 
 export type GlobalSdkEvent = OpenCodeEvent | CompatEvent
 type Event = GlobalSdkEvent

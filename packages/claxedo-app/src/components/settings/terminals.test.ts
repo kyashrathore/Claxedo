@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import { getTerminalCommands } from "./settings-terminals"
+import { getTerminalCommands } from "./terminals"
 
 const key = "claxedo.terminalCommands"
 

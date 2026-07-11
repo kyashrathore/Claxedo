@@ -4,7 +4,7 @@ import {
   CloudStartupView,
   WorkspaceAccessDeniedView,
 } from "@claxedo/components/session/cloud-startup-view"
-import { useClaxedoEventsOptional } from "../../providers/claxedo-events"
+import { useClaxedoEventsOptional } from "../../context/claxedo-events"
 import {
   acquireWorkspaceConnection,
   retryWorkspaceConnection,

@@ -16,7 +16,7 @@ import {
   claxedoBootstrapUrl,
   workspaceRuntimeFilePath,
   workspaceRuntimeFindFilePath,
-} from "./dialog-select-directory-routes"
+} from "../../utils/dialog-select-directory-routes"
 
 interface DialogSelectDirectoryProps {
   title?: string

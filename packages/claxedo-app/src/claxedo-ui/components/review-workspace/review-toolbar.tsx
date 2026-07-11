@@ -19,8 +19,8 @@ import { useLanguage } from "@claxedo/context/language"
 import {
   REVIEW_POPOVER_MODES,
   type ReviewMode,
-} from "../workspace-panel/review-intent"
-import { reviewToolbarSlot } from "./portal-slot"
+} from "../../workspace-panel/review-intent"
+import { reviewToolbarSlot } from "../portal-slot"
 
 export type VcsRefs = {
   branches: string[]

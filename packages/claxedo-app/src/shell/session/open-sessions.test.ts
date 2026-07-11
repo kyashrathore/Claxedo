@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { clearOpenSessions, hasOpenSession, openSessionRefsFromMetas, setOpenSessions } from "../../shell/session/open-sessions"
+import { clearOpenSessions, hasOpenSession, openSessionRefsFromMetas, setOpenSessions } from "./open-sessions"
 
 afterEach(() => {
   clearOpenSessions()

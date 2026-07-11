@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
-import { reducers, selectors as pureSelectors, validate as validateWb } from "../../layout"
-import type { Edge, UseWorkbench, WorkbenchState } from "../../layout"
-import type { ClaxedoState } from "../types"
-import { emptyClaxedoState } from "../persistence"
-import { createMetadataSlice } from "../metadata"
-import { createTerminalSlice } from "../terminal"
-import { createLayoutOrchestration } from "../orchestration"
+import { reducers, selectors as pureSelectors, validate as validateWb } from "../workbench"
+import type { Edge, UseWorkbench, WorkbenchState } from "../workbench"
+import type { ClaxedoState } from "./types"
+import { emptyClaxedoState } from "./persistence"
+import { createMetadataSlice } from "./metadata"
+import { createTerminalSlice } from "./terminal"
+import { createLayoutOrchestration } from "./orchestration"
 
 /**
  * Build a minimal fake `UseWorkbench` over a SolidJS store that mirrors the

@@ -111,10 +111,10 @@ Four distinct concepts, do not use them interchangeably and do not fuse two
 into one component name:
 
 - **pane** — a split region of the workbench layout engine. Reducer-level
-  concept: `src/claxedo-ui/layout/reducers/panes.ts`. Also the name of the
+  concept: `src/claxedo-ui/workbench/reducers/panes.ts`. Also the name of the
   generic (non-workbench) split-pane store at `src/pane/store/`.
 - **tab** — a selectable content surface routed inside a pane
-  (`src/claxedo-ui/components/tab-page.tsx`).
+  (`src/claxedo-ui/components/page-editor/page-editor.tsx`, the PageEditor surface).
 - **panel** — a docked auxiliary surface, e.g. the workspace side-dock
   (`src/claxedo-ui/workspace-panel/WorkspacePanel.tsx`).
 - **group** — reserved for session groups only (rail grouping), never a

@@ -5,7 +5,7 @@ import {
   isOAuthOnly,
   type ConnectionsRequest,
   type IntegrationInfo,
-} from "./settings-connections-core"
+} from "./connections-logic"
 
 type RecordedRequest = { path: string; method: string; body: unknown }
 

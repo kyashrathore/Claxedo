@@ -18,11 +18,11 @@ import { createComputed, createEffect, createMemo, createSelector, For, Match, o
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import type { SelectedLineRange } from "@/context/file"
-import { mediaKindFromPath } from "../../session-client/session-ui.barrel"
-import { cloneSelectedLineRange, previewSelectedLines } from "../../session-client/session-ui.barrel"
-import { createLineCommentController } from "../../session-client/session-ui.barrel"
-import type { LineCommentEditorProps } from "../../session-client/session-ui.barrel"
-import { normalize, text, type ViewDiff } from "../../session-client/session-ui.barrel"
+import { mediaKindFromPath } from "../../../session-client"
+import { cloneSelectedLineRange, previewSelectedLines } from "../../../session-client"
+import { createLineCommentController } from "../../../session-client"
+import type { LineCommentEditorProps } from "../../../session-client"
+import { normalize, text, type ViewDiff } from "../../../session-client"
 
 const MAX_DIFF_CHANGED_LINES = 500
 const REVIEW_MOUNT_MARGIN = 80

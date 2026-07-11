@@ -8,14 +8,14 @@ import { Button } from "@opencode-ai/ui/button"
 import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { authFetch, getClaxedoServerUrl } from "../utils/api"
-import { DialogConnectIntegration } from "./dialog-connect-integration"
+import { authFetch, getClaxedoServerUrl } from "../../utils/api"
+import { DialogConnectIntegration } from "../dialogs/connect-integration"
 import {
   createConnectionsStore,
   type ConnectionInfo,
   type ConnectionsRequest,
   type IntegrationInfo,
-} from "./settings-connections-core"
+} from "./connections-logic"
 
 /** All UI traffic goes through the authenticated fetch helper, same-origin to the control plane. */
 const integrationsRequest: ConnectionsRequest = (path, init) =>

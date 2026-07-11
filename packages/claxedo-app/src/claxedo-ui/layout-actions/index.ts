@@ -1,10 +1,10 @@
-import type { ActionProps } from "./claxedo-layout-actions/shared"
-import { createProjectActions } from "./claxedo-layout-actions/project-actions"
-import { createSessionActions } from "./claxedo-layout-actions/session-actions"
-import { createOpenSurfaceActions } from "./claxedo-layout-actions/open-surface-actions-ui"
-import { createTerminalActions } from "./claxedo-layout-actions/terminal-actions"
-import { createWorkspaceActions } from "./claxedo-layout-actions/workspace-actions"
-import { createPageActions } from "./claxedo-layout-actions/page-actions"
+import type { ActionProps } from "./shared"
+import { createProjectActions } from "./project-actions"
+import { createSessionActions } from "./session-actions"
+import { createOpenSurfaceActions } from "./open-surface-actions-ui"
+import { createTerminalActions } from "./terminal-actions"
+import { createWorkspaceActions } from "./workspace-actions"
+import { createPageActions } from "./page-actions"
 
 export function createClaxedoLayoutActions(props: ActionProps) {
   const nav = (path: string, reason: string, details?: Record<string, unknown>) => {

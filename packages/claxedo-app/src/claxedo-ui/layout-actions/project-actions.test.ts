@@ -3,7 +3,7 @@ import { queryClient } from "../../shared/query/query-client"
 import { shellDataKeys } from "../../shell/data/keys"
 import { directorySessionCacheQueryOptions, setSessionStatusQueryData } from "../../shell/data/queries"
 import { workspaceSessionRoute } from "../../shell/identity/route"
-import type { ClaxedoEvent } from "../../providers/claxedo-events"
+import type { ClaxedoEvent } from "../../context/claxedo-events"
 import type { ProjectItem, WorkspaceItem } from "../rail/rail-sidebar"
 import type { ProjectActionProps } from "./project-actions"
 
@@ -42,7 +42,7 @@ type PendingWorkspaceStatus = {
 }
 
 beforeAll(async () => {
-  mock.module("@/components/dialog-settings", () => ({
+  mock.module("@/components/dialogs/settings", () => ({
     DialogSettings: () => null,
   }))
 
@@ -82,15 +82,15 @@ beforeAll(async () => {
     validWorktree: () => true,
   }))
 
-  mock.module("@/components/dialog-select-directory", () => ({
+  mock.module("@/components/dialogs/select-directory", () => ({
     DialogSelectDirectory: () => null,
   }))
 
-  mock.module("../../components/dialog-create-cloud-workspace", () => ({
+  mock.module("../../components/dialogs/create-cloud-workspace", () => ({
     DialogCreateCloudWorkspace: () => null,
   }))
 
-  mock.module("../../components/dialog-new-project", () => ({
+  mock.module("../../components/dialogs/new-project", () => ({
     DialogNewProject: () => null,
   }))
 

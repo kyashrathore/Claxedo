@@ -15,19 +15,19 @@ import { usePlatform } from "@opencode-ai/claxedo-app"
 import { useClaxedoState } from "../state"
 import { SessionPaneScope } from "../components/session-pane-scope"
 import { ProcessPaneProvider } from "../context/process-pane"
-import { WorkspaceFilesNavigator } from "../workspace-panel/WorkspaceFilesNavigator"
-import { WorkspaceProcessesNavigator } from "../workspace-panel/WorkspaceProcessesNavigator"
+import { WorkspaceFilesNavigator } from "../workspace-panel/workspace-files-navigator"
+import { WorkspaceProcessesNavigator } from "../workspace-panel/workspace-processes-navigator"
 import type { WorkspacePanelMode, WorkspacePanelState } from "../workspace-panel/workspace-panel-state"
 import { loadTerminalSessionPreview } from "../utils/terminal-session-preview"
 import { getClaxedoServerUrl } from "../../utils/api"
-import { reviewRegionPolicy } from "../../shell/chrome/review-region-policy"
+import { reviewRegionPolicy } from "../../shell/review/review-region-policy"
 import { isWorkspaceReady, workspaceOffline } from "../../shell/workspace/workspace-connection"
 import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"
-import { resolveWorkspaceRuntime } from "../../cloud/runtime/workspace-runtime-store"
+import { resolveWorkspaceRuntime } from "../../cloud/workspace-runtime-store"
 
 const PANEL_NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1)"
 const ReviewWorkspace = lazy(() =>
-  import("../components/review-workspace").then((m) => ({ default: m.ReviewWorkspace })),
+  import("../components/review-workspace/review-workspace").then((m) => ({ default: m.ReviewWorkspace })),
 )
 
 export function WorkspacePanelBody(props: {

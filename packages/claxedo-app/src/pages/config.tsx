@@ -5,7 +5,7 @@
  * Accessible via /config route.
  */
 
-import { SettingsGeneral } from "@/components/settings-general"
+import { SettingsGeneral } from "@/components/settings/general"
 
 export default function ConfigPage() {
   return (

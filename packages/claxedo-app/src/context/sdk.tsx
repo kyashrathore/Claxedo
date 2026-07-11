@@ -13,7 +13,7 @@ import { authFetch, getClaxedoServerUrl } from "../utils/api"
 import { queryClient } from "../shared/query/query-client"
 import { fastSessionSwitchAnyNetworkQuiet } from "../session/store/fast-session-switch"
 import { workspaceResolveUrl } from "../utils/workspace-control-routes"
-import { workspaceRuntimeFilePath, workspaceRuntimeFindFilePath } from "../components/dialog-select-directory-routes"
+import { workspaceRuntimeFilePath, workspaceRuntimeFindFilePath } from "../utils/dialog-select-directory-routes"
 import { centralTransportForServer, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeSnapshotLike } from "@claxedo/shell/data/transport/transport"
 
 type SDKEventMap = {

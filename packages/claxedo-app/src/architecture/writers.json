@@ -27,7 +27,7 @@
     },
     {
       "family": "harness-config query cache",
-      "writer": "claxedo-ui/context/harness-query-cache.ts",
+      "writer": "claxedo-ui/harness/harness-query-cache.ts",
       "status": "live"
     },
     {
@@ -42,15 +42,15 @@
     }
   ],
   "grandfathered": [
-    "claxedo-ui/claxedo-layout-actions/project-actions.tsx",
-    "claxedo-ui/components/review-vcs-cache.ts",
+    "claxedo-ui/layout-actions/project-actions.tsx",
+    "claxedo-ui/components/review-workspace/review-vcs-cache.ts",
     "claxedo-ui/components/usage-limits-popover.tsx",
     "claxedo-ui/terminal/pane-terminal-recovery.ts",
     "claxedo-ui/utils/terminal-log-summary.ts",
     "claxedo-ui/utils/terminal-session-preview.ts",
-    "components/dialog-connect-provider.tsx",
-    "components/dialog-custom-provider.tsx",
-    "components/settings-providers.tsx",
+    "components/dialogs/connect-provider.tsx",
+    "components/dialogs/custom-provider.tsx",
+    "components/settings/providers.tsx",
     "context/global-sync.tsx",
     "context/global-sync/queue.ts",
     "context/local.tsx",
@@ -58,7 +58,7 @@
     "context/sdk.tsx",
     "context/server.tsx",
     "pages/session/composer/session-question-cache.ts",
-    "pages/session/handoff.ts",
+    "pages/session/prompt-preview-handoff.ts",
     "session-client/composer/composer.tsx",
     "session/store/session-status-telemetry.ts",
     "session/submit/rolled-back-drafts.ts",

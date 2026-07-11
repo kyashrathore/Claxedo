@@ -7,8 +7,8 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import { type Component, For, Show } from "solid-js"
 import { useLanguage } from "@claxedo/context/language"
 import { useModels } from "@/context/models"
-import { popularProviders } from "@/hooks/use-providers"
-import { SettingsList } from "./settings-list"
+import { popularProviders } from "@/context/use-providers"
+import { SettingsList } from "./list"
 
 type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
 

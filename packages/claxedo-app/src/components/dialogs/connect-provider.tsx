@@ -12,14 +12,14 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { createMemo, Match, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
-import type { NormalizedProviderListResponse } from "@claxedo/session-client/session-ui.barrel"
+import type { NormalizedProviderListResponse } from "@claxedo/session-client"
 import { Link } from "@/components/link"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useShellQueryOptions as useQueryOptions } from "@claxedo/shell/data/query-options"
 import { useLanguage } from "@claxedo/context/language"
-import { useProviders } from "@claxedo/hooks/use-providers"
-import { claxedoCredentialRequest } from "../utils/credential-request"
-import { queryClient } from "../shared/query/query-client"
+import { useProviders } from "@claxedo/context/use-providers"
+import { claxedoCredentialRequest } from "../../utils/credential-request"
+import { queryClient } from "../../shared/query/query-client"
 
 export function DialogConnectProvider(props: { provider: string }) {
   const dialog = useDialog()

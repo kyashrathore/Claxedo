@@ -15,7 +15,7 @@ import { MemoryRouter } from "@solidjs/router"
 import { useTheme } from "@opencode-ai/ui/theme"
 
 import { desktopApi, hasDesktopApi } from "./api"
-import { initPostHog, capture as phCapture } from "@claxedo/analytics/posthog"
+import { initPostHog, capture as phCapture } from "@claxedo/utils/analytics"
 import { ConfigProvider } from "@claxedo/context"
 import { getAuthToken, getDefaultConfig, initClaxedo } from "@opencode-ai/claxedo-app"
 import { configureApiRuntime } from "@claxedo/utils/api"

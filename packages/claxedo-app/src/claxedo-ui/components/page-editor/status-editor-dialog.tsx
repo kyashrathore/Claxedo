@@ -9,7 +9,7 @@ import { createSignal, For, Show } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
-import type { PageStatus } from "../../utils/pages-api"
+import type { PageStatus } from "../../../utils/pages-api"
 
 export const STATUS_PRESET_COLORS = [
   "#6b7280",

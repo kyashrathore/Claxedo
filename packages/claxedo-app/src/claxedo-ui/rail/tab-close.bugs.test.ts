@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
-import { reducers, selectors as pureSelectors, validate as validateWb } from "../layout"
-import type { UseWorkbench, WorkbenchState } from "../layout"
+import { reducers, selectors as pureSelectors, validate as validateWb } from "../workbench"
+import type { UseWorkbench, WorkbenchState } from "../workbench"
 import { emptyClaxedoState } from "../state/persistence"
 import { createMetadataSlice } from "../state/metadata"
 import { createTerminalSlice } from "../state/terminal"
 import { createWorkspaceSlice } from "../state/workspace"
 import { createRailSlice } from "../state/rail"
 import { createWorkspacePanelSlice } from "../state/workspace-panel"
-import { createProcessPaneSlice } from "../state/process-pane"
+import { createProcessPaneSlice } from "../state/process-pane-slice"
 import { createLayoutOrchestration } from "../state/orchestration"
 import type { ClaxedoState } from "../state/types"
 import type { ClaxedoStateApi } from "../state/provider"
@@ -166,7 +166,7 @@ describe("tab close — route adapter resurrection", () => {
   })
 })
 
-// Faithful replica of rail-layout.closeHeaderSurface + ClaxedoLayout.onTabClose,
+// Faithful replica of rail-sidebar.closeHeaderSurface + ClaxedoLayout.onTabClose,
 // wired to the REAL route adapter — the integration that actually runs when you
 // click a tab's close button while the sidebar is hidden.
 function closeFocusedSurface(

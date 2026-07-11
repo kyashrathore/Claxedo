@@ -1,5 +1,5 @@
 import type { ActionProps } from "./shared"
-import { capture as phCapture } from "../../analytics/posthog"
+import { capture as phCapture } from "../../utils/analytics"
 import { surfaceRoute } from "../state/surface-route"
 
 export type PageActionProps = Pick<ActionProps, "activeWorkspaceId" | "navigate" | "projects"> & {

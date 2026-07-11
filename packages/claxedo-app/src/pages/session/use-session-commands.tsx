@@ -12,10 +12,10 @@ import { usePermission } from "@/context/permission"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { DialogSelectFile } from "@/components/dialog-select-file"
-import { DialogSelectModel, type PickerState } from "@claxedo/components/dialog-select-model"
-import { DialogSelectMcp } from "@claxedo/components/dialog-select-mcp"
-import { DialogFork } from "@/components/dialog-fork"
+import { DialogSelectFile } from "@/components/dialogs/select-file"
+import { DialogSelectModel, type PickerState } from "@claxedo/components/dialogs/select-model"
+import { DialogSelectMcp } from "@claxedo/components/dialogs/select-mcp"
+import { DialogFork } from "@/components/dialogs/fork"
 import { showToast } from "@opencode-ai/ui/toast"
 import { findLast } from "@claxedo/utils/array"
 import { extractPromptFromParts } from "@/utils/prompt"
@@ -32,7 +32,7 @@ const canAddSelectionContext = (input: {
   return input.selectedLines(path) != null
 }
 import { useClaxedoState } from "@claxedo/claxedo-ui/state"
-import { capture as phCapture } from "@claxedo/analytics/posthog"
+import { capture as phCapture } from "@claxedo/utils/analytics"
 import type { SessionTransportCapabilities } from "../../session/store/session-transport"
 import {
   registeredConversationSnapshot,

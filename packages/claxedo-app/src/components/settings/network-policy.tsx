@@ -11,9 +11,9 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { usePlatform } from "@opencode-ai/claxedo-app"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { can } from "../shell/auth/role"
-import { placementFromWorkspaceConnection } from "../shell/auth/placement"
-import { openWorkspaceConnection } from "../utils/workspace-relay-connection"
+import { can } from "../../shell/auth/role"
+import { placementFromWorkspaceConnection } from "../../shell/auth/placement"
+import { openWorkspaceConnection } from "../../utils/workspace-relay-connection"
 import {
   networkPolicyCreateBody,
   networkPolicyGroupsUrl,
@@ -26,7 +26,7 @@ import {
   shouldUseNetworkPolicyRows,
   type NetworkPolicyGroups,
   type PolicyKind,
-} from "./network-policy-settings-helpers"
+} from "./network-policy-helpers"
 
 /**
  * Inline fixed overlay — NOT a Portal, so it stays inside Kobalte's

@@ -3,13 +3,13 @@
 `packages/claxedo-app` is a hard fork (single-commit history reset
 `00a533c2fb`) of OpenCode's web UI. **There is no `packages/app` in this
 monorepo and no upstream override system** — an earlier revision of this
-file, and `src/overrides/README.md` before its rewrite, described a
-`packages/app` + override-scanner setup that predates the fork and no longer
-exists (verified: `ls packages/` at the repo root has no `app`; see
-`src/overrides/README.md` for the full verification). All Claxedo-owned code
-lives directly under `packages/claxedo-app/src/**`; `@/...` and `@claxedo/...`
-both resolve to `./src/*` (`tsconfig.json:21-25`) and are interchangeable —
-there is no "overridden vs. upstream" import distinction to get right.
+file described a `packages/app` + override-scanner setup that predates the
+fork and no longer exists (verified: `ls packages/` at the repo root has no
+`app`; see "History: the override system" below for the full verification).
+All Claxedo-owned code lives directly under `packages/claxedo-app/src/**`;
+`@/...` and `@claxedo/...` both resolve to `./src/*` (`tsconfig.json:21-25`)
+and are interchangeable — there is no "overridden vs. upstream" import
+distinction to get right.
 
 See `src/ARCHITECTURE.md` for directory charters and import rules, and
 `src/VOCABULARY.md` for the canonical noun list (read this before naming
@@ -49,13 +49,62 @@ The Electron renderer source lives in `packages/claxedo-desktop/src/renderer`.
 1. Put Claxedo-owned files under `packages/claxedo-app/src/**`, in the
    directory whose charter (`src/ARCHITECTURE.md`) matches what you're
    adding.
-2. Do not add production `.ts` or `.tsx` files under `src/overrides`; that
-   directory is only a tombstone documenting the retired pre-fork override
-   scanner (see `src/overrides/README.md`).
+2. There is no `src/overrides` directory and no override-resolution scanner
+   to hook into; put the file directly at its real charter'd location (see
+   "History: the override system" below if you find stale docs elsewhere
+   still describing one).
 3. Use the vocabulary in `src/VOCABULARY.md` for session/host/toolSandbox/
    harness/workspace/directory/project/pane/tab/panel/group. Do not
    introduce a new sense of "workspace" or reintroduce "runner"/"runnerHost"
    outside the one documented compat site (`src/utils/session-url.ts`).
+
+## History: the override system
+
+`src/overrides/` used to exist as a tombstone directory (no production
+`.ts`/`.tsx` files, `README.md` only) documenting a retired pre-fork
+mechanism. This section preserves that history now that the directory itself
+has been deleted (it added nothing beyond this explanation).
+
+Before the hard fork (commit `00a533c2fb`, see the `project_hardfork_completion`
+project memory), Claxedo was layered on top of a separate `packages/app`
+package that vendored upstream OpenCode's web UI. `src/overrides/` used to
+hold first-party replacement files for individual upstream `@/...` modules,
+resolved by a dynamic override-scanning system, and its README used to
+document each mapped override plus a `@opencode-ai/app` vs
+`@opencode-ai/claxedo-app` import-resolution contract.
+
+**That system no longer exists.** Verified at the time of the README's last
+rewrite:
+
+- `packages/app` does not exist anywhere in this monorepo (`ls packages/` at
+  the repo root lists `claxedo-app`, `claxedo-server`, `claxedo-desktop`,
+  `claxedo-web`, and the `@claxedo/*` internal packages — no `app`).
+- `tsconfig.json`'s path map resolves **both** `"@/*"` and `"@claxedo/*"` to
+  `["./src/*"]` (`packages/claxedo-app/tsconfig.json:21-25`) — there is no
+  fallback to any `packages/app/src/*` location, and never a distinction
+  between "overridden" vs "upstream" import paths.
+- `vite.cloud.config.ts` aliases `@claxedo/` and `@/` to this package's own
+  `./src/` directory directly (post-divorce plan 006).
+- `packages/claxedo-desktop/vite.renderer.ts` states explicitly:
+  "Post-divorce (plan 006): the renderer resolves `@/` against claxedo-app,
+  not packages/app."
+
+In other words: every module this app imports via `@/...` or `@claxedo/...`
+resolves directly into `packages/claxedo-app/src/**`. There is nothing left
+to "override" — the entire app is first-party, single-source-of-truth source
+code. There is no more upstream-diffing workflow
+(`git diff upstream/dev -- packages/app/src/...`) — that command no longer
+has a target.
+
+If you are trying to change behavior that used to live in an "override" per
+old documentation you found elsewhere (an old `CONTRIBUTING.md` revision, or
+a two-level "App scope vs Directory scope" context architecture, or a
+`@opencode-ai/app` vs `@opencode-ai/claxedo-app` import distinction), that
+behavior is not overridden anymore — it is simply implemented directly at
+`src/app.tsx`, `src/pages/layout.tsx`, `src/context/global-sync.tsx`, and so
+on. Edit those files directly, and use plain `@/...` or `@claxedo/...`
+imports (they are equivalent, both resolve to `./src/*`) — there is no
+"wrong" scope to accidentally import from anymore.
 
 ## Writing tests: the tests-as-specs standard
 
@@ -63,8 +112,8 @@ This is the merge bar for every test file in `packages/claxedo-app`. It is
 distilled from the suite's own best files
 (`src/shell/identity/session-ref.test.ts`,
 `src/session/submit/dispatch.test.ts`,
-`src/terminal/terminal-focus-switch.test.ts`, the lettered
-`src/claxedo-ui/layout/tests/A..N` suite).
+`src/terminal/integration/terminal-focus-switch.test.ts`, the lettered
+`src/claxedo-ui/workbench/tests/A..N` suite).
 
 **Runners — one file, one runner, never mixed:**
 - `<subject>.test.ts` — **bun:test**, the default. Use for pure logic with
@@ -95,9 +144,10 @@ objects, DOM attributes, or ordered side-effect calls WITH their payloads.
 Never bare "was called N times" with no payload/ordering check.
 
 **Mock only true I/O boundaries** — fetch, SDK client, timers/rAF, storage —
-injected as parameters (see `terminal-focus-switch.test.ts`'s injected
-`requestFrame`/`write`/`onOverload`, or `dialog-select-mcp.test.tsx`'s
-`fakeFetch`). Never mock the unit under test or a pure in-repo collaborator.
+injected as parameters (see `terminal/integration/terminal-focus-switch.test.ts`'s
+injected `requestFrame`/`write`/`onOverload`, or
+`components/dialogs/select-mcp.test.tsx`'s `fakeFetch`). Never mock the unit
+under test or a pure in-repo collaborator.
 
 **Never assert against a source file's raw text**
 (`Bun.file(new URL(...)).text()` + `.toContain`/`.not.toContain`). This
@@ -109,9 +159,11 @@ where they are centrally tracked — not scattered per feature test file.
 **The falsifiability test:** could an agent holding only this test file
 re-implement the feature in another language? If the test would pass against
 a hand-copied shadow re-implementation of the function under test, it is not
-a test (this happened for real: `layouts/workspace-project-integrity.test.ts`
-tests a hand-maintained copy of production logic, not the production code —
-do not repeat that pattern).
+a test — it must import and exercise the real production export (as
+`claxedo-ui/rail/workspace-project-integrity.test.ts` now does, importing the
+real `projectCatalog`/`canAutoOpenProject` from `context/layout-projects`
+rather than a hand-maintained copy). A test that re-declares the logic it
+claims to verify tests nothing; do not do that.
 
 ### Template: pure-logic spec (default — bun:test)
 
@@ -175,7 +227,7 @@ keep it accurate):
   `.integration.test.ts` (drives a real, wider pipeline end-to-end —
   use a dot before "integration", not a hyphen, so a `**/*.integration.test.ts`
   glob finds it) or `.bugs.vitest.tsx` (regression tests narrating a specific
-  race condition or bug, e.g. `CompactSwitcher.bugs.vitest.tsx`).
+  race condition or bug, e.g. `compact-switcher.bugs.vitest.tsx`).
 - `.live.spec.ts` — Playwright specs that require live credentials and are
   excluded from the default e2e run (see `e2e/playwright/`, not owned by
   this package's WP).
@@ -188,30 +240,33 @@ documenting it here):
   correct home for boundary/source-text-shaped checks — see "never assert
   against a source file's raw text" above.
 - Per-feature ordered spec suites that document a cross-file behavioral
-  sequence, e.g. `src/claxedo-ui/layout/tests/` (currently lettered A–N;
-  the letters themselves are a known naming defect being cleaned up — the
-  *pattern* of a dedicated ordered-suite folder for a workbench-engine-wide
-  behavior is sanctioned, opaque lettering is not).
+  sequence, e.g. `src/claxedo-ui/workbench/tests/` (renamed from the old
+  `claxedo-ui/layout/tests/` in Wave 1.5; currently lettered A–N; the letters
+  themselves are a known naming defect being cleaned up — the *pattern* of a
+  dedicated ordered-suite folder for a workbench-engine-wide behavior is
+  sanctioned, opaque lettering is not).
 
 **Known, not-yet-fixed violations** (do not copy these; they are tracked
 debt per the org-review appendix, not conventions):
-`src/claxedo-ui/state/tests/` pulls 3 of 11 sibling tests into a subfolder
-with no documented reason; `src/claxedo-ui/layouts/review-mount-retention.vitest.tsx`
-and `workspace-project-integrity.test.ts` test subjects that live in
-`src/shell/chrome/` and `src/context/` respectively, not in `layouts/`
-where the test files sit; `src/extensions/server.test.ts` and
-`src/claxedo-ui/navigation-islands/session-navigation.test.ts` import from
-`vitest` despite the `.test.ts` (bun:test-signaling) suffix.
+`src/claxedo-ui/rail/workspace-project-integrity.test.ts` tests a subject that
+lives in `src/context/` (`context/layout-projects`), not in `rail/` where the
+test file sits; `src/extensions/server.test.ts` imports from `vitest` despite
+the `.test.ts` (bun:test-signaling) suffix. (Wave 1.5 fixed several formerly
+listed here: the `claxedo-ui/state/tests/` subfolder was flattened;
+`review-mount-retention.vitest.tsx` moved to `shell/review/` alongside its
+`review-region-policy` subject; and `navigation-islands/session-navigation`'s
+test was renamed to the `.vitest.ts` suffix that matches its runner.)
 
 **Shared test fakes:** `src/utils/test-support/` is the sanctioned location
-for fakes reused by 2+ unrelated test suites (not yet created as of this
-writing — see LLD WP-03, which adds `mock-api.ts` there to replace the
-hand-copied `mock.module("./api")` boilerplate duplicated across
+for fakes reused by 2+ unrelated test suites. It now exists (created per LLD
+WP-03) and holds `mock-api.ts` (with its own `mock-api.test.ts`), intended to
+replace the hand-copied `mock.module("./api")` boilerplate duplicated across
 `src/utils/api.test.ts`, `living-apps-api.test.ts`, `pages-api.test.ts`, and
-`persist.test.ts`). Do not create a locally-scoped test-support module for
-something only one suite uses — keep single-use fakes colocated with their
-test file. `test-fixtures/` at the repo root (outside `src/`) is the correct
-home for binary/visual Playwright baselines — never put those under `src/`.
+`persist.test.ts` — note those callers have not all been migrated onto it yet.
+Do not create a locally-scoped test-support module for something only one
+suite uses — keep single-use fakes colocated with their test file.
+`test-fixtures/` at the repo root (outside `src/`) is the correct home for
+binary/visual Playwright baselines — never put those under `src/`.
 
 ## Verification
 

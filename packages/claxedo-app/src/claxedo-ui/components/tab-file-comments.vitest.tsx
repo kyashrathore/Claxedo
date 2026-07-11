@@ -61,7 +61,7 @@ vi.mock("@/context/prompt", () => ({
   }),
 }))
 
-vi.mock("@claxedo/session-client/session-ui.barrel", () => ({
+vi.mock("@claxedo/session-client", () => ({
   createLineCommentController: (input: typeof h.controllerInput) => {
     h.controllerInput = input
     return {

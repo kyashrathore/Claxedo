@@ -1,9 +1,9 @@
 [
   "claxedo-ui/components/agent-harness-selector.vitest.tsx",
-  "claxedo-ui/context/harness-config.test.ts",
-  "claxedo-ui/context/harness-preferences.test.ts",
-  "claxedo-ui/context/harness-preferences.ts",
-  "claxedo-ui/context/harness-store.test.ts",
+  "claxedo-ui/harness/harness-config.test.ts",
+  "claxedo-ui/harness/harness-preferences.test.ts",
+  "claxedo-ui/harness/harness-preferences.ts",
+  "claxedo-ui/harness/harness-store.test.ts",
   "claxedo-ui/state/route-bridge.tsx",
   "claxedo-ui/state/route-intent.test.ts",
   "claxedo-ui/state/route-intent.ts",
@@ -13,7 +13,7 @@
   "components/prompt-input/submit-create-session.test.ts",
   "components/prompt-input/submit.test.ts",
   "context/global-sync/bootstrap.test.ts",
-  "marketplace/marketplace-panel.tsx",
+  "marketplace/install-flow.ts",
   "pages/session/use-session-commands.tsx",
   "pane/store/pane-preferences.test.ts",
   "session-client/composer/model-strategy.test.ts",
@@ -29,6 +29,6 @@
   "shell/data/bootstrap.ts",
   "shell/durability/projections.test.ts",
   "shell/durability/projections.ts",
-  "shell/harnesses/profile.test.tsx",
+  "shell/harnesses/profile.test.ts",
   "utils/workspace-runtime-route-audit.test.ts"
 ]

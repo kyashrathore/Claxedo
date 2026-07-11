@@ -4,7 +4,7 @@ import {
   workspaceDefaultProviderUrl,
   workspaceProviderAuthUrl,
   workspaceProvidersUrl,
-} from "./settings-sandbox-section-helpers"
+} from "./sandbox-section-logic"
 
 describe("sandbox settings section", () => {
   test("keeps sandbox provider credential mutations on the local control plane", () => {

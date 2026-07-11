@@ -7,7 +7,7 @@
 // display/identity information (type, directory, sessionId, terminalId, title,
 // etc.) plus the live payload needed by renderers.
 
-import type { WorkbenchState } from "../layout"
+import type { WorkbenchState } from "../workbench"
 import type {
   WorkspacePanelState,
 } from "../workspace-panel/workspace-panel-state"

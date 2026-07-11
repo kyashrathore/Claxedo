@@ -1,7 +1,7 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test } from "vitest"
 import { createMemo, createSignal, type Accessor } from "solid-js"
-import { reviewRegionPolicy } from "../../shell/chrome/review-region-policy"
+import { reviewRegionPolicy } from "./review-region-policy"
 
 afterEach(() => cleanup())
 

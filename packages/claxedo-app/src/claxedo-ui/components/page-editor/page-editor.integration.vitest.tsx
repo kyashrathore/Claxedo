@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { QueryClientProvider } from "@tanstack/solid-query"
-import { queryClient } from "../../shared/query/query-client"
+import { queryClient } from "../../../shared/query/query-client"
 
 const h = vi.hoisted(() => {
   class MockTextSelection {
@@ -122,7 +122,7 @@ vi.mock("./slash-commands", () => ({
   SlashCommands: {},
 }))
 
-vi.mock("../../utils/pages-api", () => ({
+vi.mock("../../../utils/pages-api", () => ({
   pagesApi: h.api,
 }))
 
@@ -149,7 +149,7 @@ vi.mock("@/context/global-sdk", () => ({
   }),
 }))
 
-vi.mock("../../context/global-sdk", () => ({
+vi.mock("../../../context/global-sdk", () => ({
   useGlobalSDK: () => ({
     client: {
       session: {
@@ -178,7 +178,7 @@ vi.mock("@/context/sdk", () => ({
   }),
 }))
 
-vi.mock("../../context/sdk", () => ({
+vi.mock("../../../context/sdk", () => ({
   useSDK: () => ({
     client: {
       permission: {
@@ -188,7 +188,7 @@ vi.mock("../../context/sdk", () => ({
   }),
 }))
 
-vi.mock("@claxedo/session-client/session-ui.barrel", () => ({
+vi.mock("@claxedo/session-client", () => ({
   SessionTurn: () => <div data-testid="session-turn" />,
 }))
 

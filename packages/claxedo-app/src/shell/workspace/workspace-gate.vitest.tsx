@@ -10,7 +10,7 @@ const calls = vi.hoisted(() => ({
   retry: vi.fn(),
 }))
 
-vi.mock("../../providers/claxedo-events", () => ({
+vi.mock("../../context/claxedo-events", () => ({
   useClaxedoEventsOptional: () => undefined,
 }))
 

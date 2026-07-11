@@ -1,4 +1,4 @@
-import { resolveWorkspaceRuntime as defaultResolveWorkspaceRuntime } from "../../cloud/runtime/workspace-runtime-store"
+import { resolveWorkspaceRuntime as defaultResolveWorkspaceRuntime } from "../../cloud/workspace-runtime-store"
 import { createTransport as defaultCreateTransport } from "../../shell/data/transport/transport"
 import { authFetch } from "../../utils/api"
 import { centralTransportForServer, unsignedLocalFetch as defaultUnsignedLocalFetch } from "@claxedo/shell/data/transport/transport"

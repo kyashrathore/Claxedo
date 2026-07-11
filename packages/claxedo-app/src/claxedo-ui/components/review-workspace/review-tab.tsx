@@ -25,17 +25,17 @@ import {
   type SessionReviewCommentDelete,
   type SessionReviewCommentUpdate,
   type SessionReviewLineComment,
-} from "./claxedo-session-review"
+} from "./review-session"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoLogo as Mark } from "@claxedo/claxedo-ui/components/claxedo-logo"
 import type { FileContent, VcsFileDiff } from "@opencode-ai/sdk/v2"
-import { createPanePreferences, reviewModePreferenceScope } from "../../pane/store/pane-preferences"
-import { queryClient } from "../../shared/query/query-client"
-import { workspaceVcsQuery } from "../../shared/query/runtime"
-import { resolveWorkspaceRuntime } from "../../cloud/runtime/workspace-runtime-store"
-import { getClaxedoServerUrl } from "../../utils/api"
-import { createWorkspaceDiffClient } from "../utils/workspace-diff-client"
-import { type ReviewMode } from "../workspace-panel/review-intent"
+import { createPanePreferences, reviewModePreferenceScope } from "../../../pane/store/pane-preferences"
+import { queryClient } from "../../../shared/query/query-client"
+import { workspaceVcsQuery } from "../../../shared/query/runtime"
+import { resolveWorkspaceRuntime } from "../../../cloud/workspace-runtime-store"
+import { getClaxedoServerUrl } from "../../../utils/api"
+import { createWorkspaceDiffClient } from "../../utils/workspace-diff-client"
+import { type ReviewMode } from "../../workspace-panel/review-intent"
 import { ReviewToolbar, type VcsRefs } from "./review-toolbar"
 import {
   cachedReviewVcsDiff,
@@ -46,7 +46,7 @@ import {
 } from "./review-vcs-cache"
 import { INITIAL_REVIEW_OPEN_DIFF_LIMIT, REVIEW_OPEN_DIFF_BATCH, expandReviewOpenDiffsForScroll, initialReviewOpenDiffs } from "./review-open-diffs"
 import { reviewDiffsReady, reviewShouldShowLoadingPane } from "./review-loading-state"
-import { fastSessionSwitchAnyQuietDelay } from "../../session/store/fast-session-switch"
+import { fastSessionSwitchAnyQuietDelay } from "../../../session/store/fast-session-switch"
 
 type RawVcsFileDiff = Omit<VcsFileDiff, "status" | "patch"> & {
   before?: string

@@ -2,7 +2,7 @@ import { Show, Suspense, createMemo, lazy, type Accessor } from "solid-js"
 
 import { Button } from "@opencode-ai/ui/button"
 
-import { Workbench } from "../layout"
+import { Workbench } from "../workbench"
 import { ContentRenderer } from "../content-renderers"
 import type { ContentMeta } from "../state"
 import { emitTerminalFit } from "../terminal/terminal-fit"

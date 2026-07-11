@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { constructWorkbenchState } from "../layout"
+import { constructWorkbenchState } from "../workbench"
 import { createWorkspacePanel } from "../workspace-panel/workspace-panel-state"
 import { initialStateForPath, routeOwnsInitialSurface } from "./provider"
 import { emptyClaxedoState } from "./persistence"

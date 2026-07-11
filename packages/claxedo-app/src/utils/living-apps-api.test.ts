@@ -35,7 +35,7 @@ mock.module("./api", () => ({
   // Include the `api: {}` shim so this mock — which leaks
   // into other test files via the bun module cache — doesn't strip
   // the `api` named export and break consumers like
-  // claxedo-layout-actions/project-actions.tsx.
+  // layout-actions/project-actions.tsx.
   api: {},
 }))
 

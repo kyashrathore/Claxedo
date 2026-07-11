@@ -1,5 +1,5 @@
 import { terminalSurfaceStatus } from "../compact-switcher/surface-status"
-import type { WORKBENCH_DRAG_MIME } from "../layout"
+import type { WORKBENCH_DRAG_MIME } from "../workbench"
 import type { ContentMeta, TerminalAgentStatus, TerminalLifecycleState } from "../state/types"
 
 export type RowActivity = "idle" | "working" | "needs_input" | "done"

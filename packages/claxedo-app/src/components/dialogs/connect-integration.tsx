@@ -15,7 +15,7 @@ import {
   isOAuthOnly,
   type ConnectionsRequest,
   type IntegrationInfo,
-} from "./settings-connections-core"
+} from "../settings/connections-logic"
 
 export function DialogConnectIntegration(props: {
   integration: IntegrationInfo

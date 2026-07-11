@@ -24,11 +24,11 @@ import {
 } from "@/context/settings"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { requestNotificationPermission } from "@/utils/notification-permission"
-import { capture as phCapture } from "@claxedo/analytics/posthog"
-import { AccountSettingsSection } from "@claxedo/components/settings-account-section"
-import { Can } from "../shell/auth/role"
+import { capture as phCapture } from "@claxedo/utils/analytics"
+import { AccountSettingsSection } from "@claxedo/components/settings/account-section"
+import { Can } from "../../shell/auth/role"
 import { Link } from "@/components/link"
-import { SettingsList } from "@/components/settings-list"
+import { SettingsList } from "@/components/settings/list"
 
 type ThemeOption = {
   id: string

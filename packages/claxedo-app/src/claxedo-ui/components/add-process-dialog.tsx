@@ -22,8 +22,8 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { usePlatform } from "@claxedo/context/platform"
 import { createProcessClient } from "@claxedo/process/client"
 import type { Process } from "@claxedo/process/process"
-import { capture as phCapture } from "../../analytics/posthog"
-import { resolveWorkspaceRuntime } from "../../cloud/runtime/workspace-runtime-store"
+import { capture as phCapture } from "../../utils/analytics"
+import { resolveWorkspaceRuntime } from "../../cloud/workspace-runtime-store"
 import { getClaxedoServerUrl } from "../../utils/api"
 
 type ProcessConfig = Process.ProcessConfig

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createProcessPaneToggleCommand } from "../claxedo-layout-commands"
+import { createProcessPaneToggleCommand } from "./layout-commands"
 import { createRailKeyboardCommands, type RailKeyboardCommandActions } from "./rail-keyboard-commands"
 
 describe("P4 keyboard command parity", () => {

@@ -202,7 +202,7 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     items: [
       // Claxedo does not yet have a dedicated docs site (tracked separately);
       // point at the project repo, matching the URL WP-A8 chose for the same
-      // gap (claxedo-ui/claxedo-layout-actions/project-actions.tsx handleHelp).
+      // gap (claxedo-ui/layout-actions/project-actions.tsx handleHelp).
       { type: "item", label: "Claxedo Documentation", href: "https://github.com/kyashrathore/Claxedo" },
       { type: "item", label: "Support Forum", href: "https://discord.gg/jSyhEQyT" },
       { type: "item", label: "Export Logs...", command: "logs.export" },

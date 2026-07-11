@@ -11,7 +11,7 @@ const liveTypeContracts = [
   "shared/query/types.ts",
   "session-client/composer/prompt-input-props.ts",
   "terminal/backend/types.ts",
-  "vite-shims/lru-map-default.ts",
+  "utils/lru-map.ts",
 ]
 
 describe("import graph orphan guard", () => {

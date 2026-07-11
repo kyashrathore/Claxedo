@@ -7,19 +7,19 @@ const files = {
   home: "pages/home.tsx",
   directoryLayout: "pages/directory-layout.tsx",
   session: "pages/session.tsx",
-  sessionLayout: "pages/session/session-layout.ts",
+  sessionLayout: "session/session-layout.ts",
   sessionHeader: "components/session/session-header.tsx",
   sessionContextTab: "components/session/session-context-tab.tsx",
   sessionNewView: "components/session/session-new-view.tsx",
   commands: "pages/session/use-session-commands.tsx",
   error: "pages/error.tsx",
-  settingsGeneral: "components/settings-general.tsx",
-  dialogConnectProvider: "components/dialog-connect-provider.tsx",
-  dialogSelectDirectory: "components/dialog-select-directory.tsx",
-  dialogSelectFile: "components/dialog-select-file.tsx",
+  settingsGeneral: "components/settings/general.tsx",
+  dialogConnectProvider: "components/dialogs/connect-provider.tsx",
+  dialogSelectDirectory: "components/dialogs/select-directory.tsx",
+  dialogSelectFile: "components/dialogs/select-file.tsx",
   extensionsApp: "extensions/app.tsx",
   extensionsTypes: "extensions/types.ts",
-  settingsAccount: "components/settings-account-section.tsx",
+  settingsAccount: "components/settings/account-section.tsx",
   promptInput: "session-client/composer/composer.tsx",
   promptSubmit: "components/prompt-input/submit.ts",
   sessionComposerRegion: "pages/session/composer/session-composer-region.tsx",
@@ -230,7 +230,7 @@ describe("Claxedo behavior", () => {
 
     expect(await Bun.file(new URL("overrides/components/dialog-select-directory.tsx", root)).exists()).toBe(false)
     expect(await Bun.file(new URL("overrides/components/dialog-select-file.tsx", root)).exists()).toBe(false)
-    expect(directory).toContain("./dialog-select-directory-routes")
+    expect(directory).toContain("../../utils/dialog-select-directory-routes")
     expect(directory).not.toContain("RuntimeGateway")
     expect(directory).toContain("useQueryOptions")
     expect(file).toContain("sessionViewKey")
@@ -274,7 +274,7 @@ describe("Claxedo behavior", () => {
     expect(terminal).toContain("getClaxedoServerUrl")
     expect(terminal).toContain("@claxedo/context/platform")
     expect(terminal).not.toContain("../../utils/api")
-    expect(terminal).not.toContain("../../cloud/runtime/workspace-runtime-store")
+    expect(terminal).not.toContain("../../cloud/workspace-runtime-store")
   })
 
   test("new-session empty view is first-party, not override-owned", async () => {

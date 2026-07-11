@@ -38,7 +38,7 @@ vi.mock("../../shell/workspace/workspace-connection", () => ({
   workspacePlacement: () => undefined,
 }))
 
-vi.mock("../../components/settings-terminals", () => ({
+vi.mock("../../components/settings/terminals", () => ({
   getTerminalCommands: () => ({ claude: "claude", codex: "codex", custom: [] }),
 }))
 

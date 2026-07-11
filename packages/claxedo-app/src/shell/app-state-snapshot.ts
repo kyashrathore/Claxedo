@@ -1,8 +1,8 @@
 import { onCleanup, type Accessor } from "solid-js"
 import type { Platform } from "@claxedo/context/platform"
 import type { LocalProject } from "@opencode-ai/claxedo-app"
-import type { ClaxedoStateApi } from "../../claxedo-ui/state"
-import { capture as phCapture } from "../../analytics/posthog"
+import type { ClaxedoStateApi } from "../claxedo-ui/state"
+import { capture as phCapture } from "../utils/analytics"
 
 export function useShellAppStateSnapshot(input: {
   layoutProjects: Accessor<readonly LocalProject[]>

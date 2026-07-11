@@ -5,7 +5,7 @@ import type { JSX } from "solid-js"
 import { ClaxedoStateProvider } from "../state"
 import { emptyClaxedoState } from "../state/persistence"
 import type { ClaxedoState, ContentMeta } from "../state/types"
-import { setReviewWorkspaceActiveTab } from "../components/review-workspace-active-tab"
+import { setReviewWorkspaceActiveTab } from "../components/review-workspace/review-workspace-active-tab"
 import { AppShellLayout } from "../../shell/app-shell-layout"
 import type { ProjectItem } from "./rail-sidebar"
 
@@ -29,15 +29,15 @@ vi.mock("../context/process-pane", () => ({
   ProcessPaneProvider: (props: { children: JSX.Element }) => <>{props.children}</>,
 }))
 
-vi.mock("../components/review-workspace", () => ({
+vi.mock("../components/review-workspace/review-workspace", () => ({
   ReviewWorkspace: () => <div data-testid="review-workspace" />,
 }))
 
-vi.mock("../workspace-panel/WorkspaceFilesNavigator", () => ({
+vi.mock("../workspace-panel/workspace-files-navigator", () => ({
   WorkspaceFilesNavigator: () => <div data-testid="workspace-files-navigator" />,
 }))
 
-vi.mock("../workspace-panel/WorkspaceProcessesNavigator", () => ({
+vi.mock("../workspace-panel/workspace-processes-navigator", () => ({
   WorkspaceProcessesNavigator: () => <div data-testid="workspace-processes-navigator" />,
 }))
 
@@ -76,7 +76,7 @@ vi.mock("../../shell/workspace/workspace-connection", () => ({
   workspaceOffline: () => undefined,
 }))
 
-vi.mock("../../components/settings-terminals", () => ({
+vi.mock("../../components/settings/terminals", () => ({
   getTerminalCommands: () => ({ claude: "claude", codex: "codex", custom: [] }),
 }))
 

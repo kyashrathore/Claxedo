@@ -2,8 +2,8 @@
 import { createMemo } from "solid-js"
 import { useLayout } from "@/context/layout"
 import { useSessionParams } from "@claxedo/claxedo-ui/context/session-params"
-import { sessionRoute } from "../../shell/identity/route"
-import { sessionViewKey } from "../../shell/identity/session-view-key"
+import { sessionRoute } from "../shell/identity/route"
+import { sessionViewKey } from "../shell/identity/session-view-key"
 
 export const useSessionKey = () => {
   const sessionParams = useSessionParams()

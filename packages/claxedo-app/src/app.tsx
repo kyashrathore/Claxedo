@@ -1,6 +1,6 @@
 // Claxedo owns the app shell here so auth, hosted routes, query persistence, and the Workbench layout are mounted directly.
 import "@/index.css"
-import "@claxedo/claxedo-ui/styles.css"
+import "@claxedo/claxedo-ui/ui-overrides.css"
 import { I18nProvider } from "@opencode-ai/ui/context"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
@@ -63,7 +63,7 @@ installSessionStatusTelemetryDevtools()
 // surfaces, so load it lazily; the Suspense wrapper keeps useFileComponent
 // consumers unchanged. NOTE: this is only effective together with the lazy
 // ReviewWorkspace edge in rail-layout — both are eager roots into pierre/shiki.
-const LazyFile = lazy(() => import("@claxedo/session-client/session-ui.barrel").then((m) => ({ default: m.File as Component<any> })))
+const LazyFile = lazy(() => import("@claxedo/session-client").then((m) => ({ default: m.File as Component<any> })))
 const File: Component<any> = (props) => (
   <Suspense fallback={null}>
     <LazyFile {...props} />
@@ -116,7 +116,7 @@ const PermissionsPage = lazy(() => import("@claxedo/pages/permissions"))
 const ConfigPage = lazy(() => import("@claxedo/pages/config"))
 const LoginPage = lazy(() => import("@claxedo/pages/login"))
 const CliLoginPage = lazy(() => import("@claxedo/pages/cli-login"))
-const DialogMatrixHarness = lazy(() => import("@claxedo/e2e/dialog-matrix-harness"))
+const DialogMatrixHarness = lazy(() => import("@claxedo/pages/dialog-matrix-harness"))
 const Loading = () => <div class="size-full" />
 const HiddenRouteOutlet = () => <div class="hidden" />
 

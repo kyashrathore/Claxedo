@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js"
-import { capture as phCapture } from "../../analytics/posthog"
+import { capture as phCapture } from "../../utils/analytics"
 import { setPromptSessionStatus, takePendingPrompt } from "../../session/submit"
 import { dispatchSessionRequestsEvent, dispatchSessionTodoEvent } from "../../session/store/session-status-dispatcher"
 import type { PermissionRequest, QuestionRequest, SessionRequestsQueryData, SessionStatus } from "../../shell/data/queries"

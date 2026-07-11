@@ -113,21 +113,21 @@ mock.module("@opencode-ai/ui/context/dialog", () => ({
   }),
 }))
 
-mock.module("@/components/dialog-select-file", () => ({
+mock.module("@/components/dialogs/select-file", () => ({
   DialogSelectFile: () => undefined,
 }))
 
-mock.module("@claxedo/components/dialog-select-model", () => ({
+mock.module("@claxedo/components/dialogs/select-model", () => ({
   DialogSelectModel: (props: { model?: CapturedPicker }) => {
     modelDialogProps.push(props)
   },
 }))
 
-mock.module("@claxedo/components/dialog-select-mcp", () => ({
+mock.module("@claxedo/components/dialogs/select-mcp", () => ({
   DialogSelectMcp: () => undefined,
 }))
 
-mock.module("@/components/dialog-fork", () => ({
+mock.module("@/components/dialogs/fork", () => ({
   DialogFork: () => undefined,
 }))
 
@@ -272,7 +272,7 @@ mock.module("@claxedo/claxedo-ui/state", () => ({
   },
 }))
 
-mock.module("@claxedo/analytics/posthog", () => ({
+mock.module("@claxedo/utils/analytics", () => ({
   capture: () => undefined,
 }))
 

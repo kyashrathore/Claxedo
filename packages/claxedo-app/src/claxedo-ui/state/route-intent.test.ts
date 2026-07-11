@@ -8,8 +8,8 @@ import {
   type RouteIntent,
 } from "./route-intent"
 import { workspaceSessionRoute } from "../../shell/identity/route"
-import { reducers, selectors as pureSelectors, validate as validateWb } from "../layout"
-import type { UseWorkbench, WorkbenchState } from "../layout"
+import { reducers, selectors as pureSelectors, validate as validateWb } from "../workbench"
+import type { UseWorkbench, WorkbenchState } from "../workbench"
 import { createLayoutOrchestration, type OpenSessionOptions } from "./orchestration"
 import { createMetadataSlice } from "./metadata"
 import { emptyClaxedoState } from "./persistence"

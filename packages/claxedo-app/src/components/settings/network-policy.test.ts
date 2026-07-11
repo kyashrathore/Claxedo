@@ -9,7 +9,7 @@ import {
   policyEntryLabel,
   policyKindFromValue,
   shouldUseNetworkPolicyRows,
-} from "./network-policy-settings-helpers"
+} from "./network-policy-helpers"
 
 describe("network policy settings", () => {
   test("loads policy rows for local control plane or explicit workspace scope", () => {

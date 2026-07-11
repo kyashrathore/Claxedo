@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Terminal as HeadlessTerminal } from "@xterm/headless"
 import { SerializeAddon } from "@xterm/addon-serialize"
-import { createModeScanner } from "./mode-scan"
+import { createModeScanner } from "../mode-scan"
 
 type Snapshot = {
   snapshotAnsi: string

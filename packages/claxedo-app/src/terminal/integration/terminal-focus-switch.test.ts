@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createTerminalRuntimeQueue } from "./terminal-runtime-queue"
+import { createTerminalRuntimeQueue } from "../terminal-runtime-queue"
 
 // ---------------------------------------------------------------------------
 // Layer 2: Runtime queue tests for focus-switch scenarios

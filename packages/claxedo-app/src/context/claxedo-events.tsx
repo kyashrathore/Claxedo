@@ -24,7 +24,7 @@ import {
   transitionStreamSyncLifecycle,
   type StreamSyncLifecycleEvent,
   type StreamSyncLifecycleState,
-} from "../shell/state/stream-sync-lifecycle"
+} from "../shell/connection/stream-sync-lifecycle"
 import { queryClient } from "../shared/query/query-client"
 import { queryKeys } from "../shared/query/keys"
 import { createTransport } from "../shell/data/transport/transport"

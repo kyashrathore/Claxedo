@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { emptyClaxedoState, validate } from "../persistence"
+import { emptyClaxedoState, validate } from "./persistence"
 
 const localSessionRef = (sessionId: string) => ({
   sessionId,

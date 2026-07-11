@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import path from "node:path"
 import type { VcsFileDiff } from "@opencode-ai/sdk/v2"
-import { queryClient } from "../../shared/query/query-client"
+import { queryClient } from "../../../shared/query/query-client"
 import {
   cachedReviewVcsDiff,
   cachedReviewVcsFile,
@@ -13,7 +13,7 @@ import {
   updateCachedReviewVcsDiff,
 } from "./review-vcs-cache"
 
-const root = path.resolve(import.meta.dir, "../..")
+const root = path.resolve(import.meta.dir, "../../..")
 
 describe("review VCS cache", () => {
   afterEach(() => {
@@ -134,7 +134,7 @@ describe("review VCS cache", () => {
   })
 
   test("ReviewTab does not own VCS payloads in private maps", async () => {
-    const text = await Bun.file(path.join(root, "claxedo-ui/components/review-tab.tsx")).text()
+    const text = await Bun.file(path.join(root, "claxedo-ui/components/review-workspace/review-tab.tsx")).text()
 
     expect(text).toMatch(/cachedReviewVcsDiff/)
     expect(text).toMatch(/cachedReviewVcsFile/)

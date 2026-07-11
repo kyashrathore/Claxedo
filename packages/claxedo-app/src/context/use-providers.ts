@@ -2,7 +2,7 @@ import { useSDK } from "@/context/sdk"
 import { createMemo } from "solid-js"
 import { useShellQueryOptions as useQueryOptions } from "@claxedo/shell/data/query-options"
 import { useWorkspaceQuery } from "../shell/workspace/use-workspace-query"
-import type { NormalizedProviderListResponse } from "@claxedo/session-client/session-ui.barrel"
+import type { NormalizedProviderListResponse } from "@claxedo/session-client"
 
 type ProviderList = NormalizedProviderListResponse
 type ProviderMap = ProviderList["all"]

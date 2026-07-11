@@ -18,7 +18,7 @@ const typeContractCandidates = new Set([
   "terminal/backend/types.ts",
 ])
 const configAliasTargets = new Map([
-  ["lru_map", "vite-shims/lru-map-default.ts"],
+  ["lru_map", "utils/lru-map.ts"],
 ])
 
 export function orphanModules(appRoot: string) {

@@ -11,7 +11,7 @@ import { collapse, clip, formatMB, formatCPU, errorText } from "../utils/text"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Icon } from "@opencode-ai/ui/icon"
 import { createProcessClient } from "../../process/client"
-import { resolveWorkspaceRuntime } from "../../cloud/runtime/workspace-runtime-store"
+import { resolveWorkspaceRuntime } from "../../cloud/workspace-runtime-store"
 
 type Snapshot = Process.DiagnosticSnapshot
 type OsRow = Process.DiagnosticOsProcess

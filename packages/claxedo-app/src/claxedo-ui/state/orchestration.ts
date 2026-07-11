@@ -10,7 +10,7 @@
 // and lives in `state.meta`.
 
 import type { ContentMeta, ContentPayload, ContentType } from "./types"
-import type { Edge, UseWorkbench } from "../layout"
+import type { Edge, UseWorkbench } from "../workbench"
 import type { MetadataSliceApi } from "./metadata"
 import type { TerminalSliceApi } from "./terminal"
 import {

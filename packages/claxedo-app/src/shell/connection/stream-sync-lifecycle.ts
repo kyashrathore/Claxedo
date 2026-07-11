@@ -1,6 +1,6 @@
 /**
  * Streaming connection lifecycle for the live event stream
- * (`providers/claxedo-events.tsx`). The alphabet matches the real flow: a fetch
+ * (`context/claxedo-events.tsx`). The alphabet matches the real flow: a fetch
  * attempt (`connecting`), an open stream with a heartbeat armed (`live`), a
  * scheduled retry after timeout/error (`reconnect-scheduled`), and teardown
  * (`stopped`).

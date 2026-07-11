@@ -12,7 +12,7 @@ import { Show, For, createEffect, createMemo, onCleanup } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { PageArenaDock } from "./page-arena-dock"
-import { pagesApi, type ArenaState, type ArenaWaveState } from "../../utils/pages-api"
+import { pagesApi, type ArenaState, type ArenaWaveState } from "../../../utils/pages-api"
 import {
   clampDockWidth as clampDockWidthFor,
   visibleArenaWavesOf,

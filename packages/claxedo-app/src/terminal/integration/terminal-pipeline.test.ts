@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { Terminal } from "@xterm/headless"
 import { SerializeAddon } from "@xterm/addon-serialize"
-import { createTerminalRuntimeQueue } from "./terminal-runtime-queue"
-import { preparePersistBuffer, prepareRestoreBuffer } from "./terminal-buffer"
+import { createTerminalRuntimeQueue } from "../terminal-runtime-queue"
+import { preparePersistBuffer, prepareRestoreBuffer } from "../terminal-buffer"
 import { createModeScanner } from "@claxedo/terminal/mode-scan"
 import { createQuerySuppressor } from "@claxedo/terminal/query-suppression"
-import { sigwinchToggleSize } from "./terminal-connection"
+import { sigwinchToggleSize } from "../terminal-connection"
 import { getCapabilityResponses } from "@claxedo/terminal/capability-responder"
 
 // ---------------------------------------------------------------------------

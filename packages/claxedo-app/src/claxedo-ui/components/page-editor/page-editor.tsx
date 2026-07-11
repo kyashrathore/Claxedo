@@ -17,14 +17,14 @@ import {
   type Page,
   type PageQuery,
   type PageStatus,
-} from "../../utils/pages-api"
+} from "../../../utils/pages-api"
 import type { PageAiAction, AiPanelPos, AiSelection, AiDraft } from "./page-editor-utils"
 import { useSDK } from "@/context/sdk"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@claxedo/context/language"
-import { useSessionSyncOptional } from "../context/session-sync"
-import { useClaxedoState } from "../state"
-import { markdownPathFromHref } from "../utils/open-markdown-page-tab"
+import { useSessionSyncOptional } from "../../context/session-sync"
+import { useClaxedoState } from "../../state"
+import { markdownPathFromHref } from "../../utils/open-markdown-page-tab"
 import {
   reduceOverlay,
   nodeSize,

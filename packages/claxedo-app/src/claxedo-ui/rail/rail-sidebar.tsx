@@ -31,7 +31,7 @@ import { UsageLimitsButton } from "../components/usage-limits-popover"
 import { getFilename } from "@claxedo/utils/path"
 import type { SessionInventoryRow } from "../../shared/query/types"
 import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../utils/workspace-display"
-import { getTerminalCommands } from "../../components/settings-terminals"
+import { getTerminalCommands } from "../../components/settings/terminals"
 import {
   activateDisclosureFromKeyboard,
   isRootWorktreeRef,

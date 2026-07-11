@@ -22,13 +22,13 @@ const runtimeGatewayBoundary = new Set([
   "utils/server-health.ts",
   "utils/share-workspace.ts",
   "utils/workspace-control-routes.ts",
-  "components/dialog-select-directory-routes.ts",
+  "utils/dialog-select-directory-routes.ts",
   "claxedo-ui/state/route-bridge.tsx",
-  "context/global-sync/inventory-source.ts",
+  "shell/data/inventory-source.ts",
   "shell/data/transport/transport.ts",
   "shell/data/bootstrap.ts",
   "components/prompt-input/submit-transport.ts",
-  "claxedo-ui/context/harness-config-runtime.ts",
+  "claxedo-ui/harness/harness-config-runtime.ts",
 ])
 
 const workspaceRuntimeIdentityBoundary = new Set([
@@ -61,8 +61,8 @@ const routeParamBoundary = new Set([
   "shell/app-shell.tsx", // route-to-Workbench bridge and URL mirroring
   "pages/directory-layout.tsx", // route entry resolves directory provider scope
   "claxedo-ui/state/route-bridge.tsx", // route-to-state bridge owns params
-  "components/dialog-fork.tsx",
-  "components/titlebar.tsx",
+  "components/dialogs/fork.tsx",
+  "components/titlebar/titlebar.tsx",
   "context/comments.tsx",
   "context/permission.tsx",
 ])
@@ -72,16 +72,16 @@ const routeParamBoundary = new Set([
 // divorce those aliases resolve to the same claxedo-owned context modules, so
 // these imports are correct; new claxedo code should still use relative paths.
 const vendoredCommandAliasBoundary = new Set([
-  "components/titlebar.tsx",
-  "components/settings-keybinds.tsx",
+  "components/titlebar/titlebar.tsx",
+  "components/settings/keybinds.tsx",
   "components/windows-app-menu.tsx",
 ])
 
 const vendoredPlatformAliasBoundary = new Set([
   "components/link.tsx",
-  "components/titlebar.tsx",
+  "components/titlebar/titlebar.tsx",
   "components/windows-app-menu.tsx",
-  "components/dialog-select-server.tsx",
+  "components/dialogs/select-server.tsx",
   "context/highlights.tsx",
 ])
 
@@ -103,7 +103,7 @@ const syncContext = "overrides/context/sync.tsx"
 const sdkContext = "context/sdk.tsx"
 const languageContext = "context/language.tsx"
 const homePage = "pages/home.tsx"
-const pageIndex = "claxedo-ui/components/page-index.tsx"
+const pageIndex = "claxedo-ui/components/page-editor/page-index.tsx"
 const sessionPage = "pages/session.tsx"
 const sessionTimeline = "pages/session/message-timeline.tsx"
 const sessionController = "session/store/session-controller.ts"
@@ -120,8 +120,8 @@ const globalEventProjector = "shell/data/global-event-projector.ts"
 const sessionCache = "shell/data/session-cache-cleanup.ts"
 const sessionListEvents = "shell/data/session-list-events.ts"
 const directoryScope = "claxedo-ui/components/directory-scope.tsx"
-const dialogSelectDirectory = "components/dialog-select-directory.tsx"
-const dialogSelectFile = "components/dialog-select-file.tsx"
+const dialogSelectDirectory = "components/dialogs/select-directory.tsx"
+const dialogSelectFile = "components/dialogs/select-file.tsx"
 const sessionNewDesignView = "components/session/session-new-design-view.tsx"
 const sessionHeader = "components/session/session-header.tsx"
 const promptInput = "session-client/composer/composer.tsx"
@@ -132,10 +132,10 @@ const promptSubmitTypes = "session/submit/types.ts"
 const promptContext = "context/prompt.tsx"
 const terminalComponent = "components/terminal.tsx"
 const terminalContext = "context/terminal.tsx"
-const pageEditor = "claxedo-ui/components/page-editor.tsx"
-const reviewTab = "claxedo-ui/components/review-tab.tsx"
-const harnessConfigStore = "claxedo-ui/context/harness-config-store.ts"
-const harnessConfigRuntime = "claxedo-ui/context/harness-config-runtime.ts"
+const pageEditor = "claxedo-ui/components/page-editor/page-editor.tsx"
+const reviewTab = "claxedo-ui/components/review-workspace/review-tab.tsx"
+const harnessConfigStore = "claxedo-ui/harness/harness-config-store.ts"
+const harnessConfigRuntime = "claxedo-ui/harness/harness-config-runtime.ts"
 const harnessStorePolicy = "session-client/harness/store-policy.ts"
 const appShellLayout = "shell/app-shell-layout.tsx"
 const railSidebarShell = "claxedo-ui/rail/rail-sidebar-shell.tsx"
@@ -146,26 +146,26 @@ const dialogEditProject = "claxedo-ui/components/dialog-edit-project.tsx"
 const appShell = "shell/app-shell.tsx"
 const appShellState = "shell/app-shell-state.ts"
 const appShellRouteSync = "shell/app-shell-route-sync.ts"
-const claxedoSessionActions = "claxedo-ui/claxedo-layout-actions/session-actions.tsx"
-const claxedoProjectActions = "claxedo-ui/claxedo-layout-actions/project-actions.tsx"
-const claxedoWorkspaceActions = "claxedo-ui/claxedo-layout-actions/workspace-actions.ts"
-const claxedoWorkspaceRecovery = "claxedo-ui/claxedo-layout-actions/workspace-recovery.tsx"
-const claxedoActionShared = "claxedo-ui/claxedo-layout-actions/shared.ts"
+const claxedoSessionActions = "claxedo-ui/layout-actions/session-actions.tsx"
+const claxedoProjectActions = "claxedo-ui/layout-actions/project-actions.tsx"
+const claxedoWorkspaceActions = "claxedo-ui/layout-actions/workspace-actions.ts"
+const claxedoWorkspaceRecovery = "claxedo-ui/layout-actions/workspace-recovery.tsx"
+const claxedoActionShared = "claxedo-ui/layout-actions/shared.ts"
 const directorySessionCache = "shell/data/directory-session-cache.ts"
 const notificationContext = "context/notification.tsx"
-const providerHook = "hooks/use-providers.ts"
+const providerHook = "context/use-providers.ts"
 const localContextOwner = "context/local.tsx"
-const dialogSettings = "components/dialog-settings.tsx"
-const settingsGeneral = "components/settings-general.tsx"
-const settingsProviders = "components/settings-providers.tsx"
-const settingsSandboxSection = "components/settings-sandbox-section.tsx"
-const networkPolicySettings = "components/network-policy-settings.tsx"
-const dialogConnectProvider = "components/dialog-connect-provider.tsx"
-const dialogCustomProvider = "components/dialog-custom-provider.tsx"
-const dialogSelectProvider = "components/dialog-select-provider.tsx"
-const dialogManageModels = "components/dialog-manage-models.tsx"
-const dialogSelectModel = "components/dialog-select-model.tsx"
-const dialogSelectModelUnpaid = "components/dialog-select-model-unpaid.tsx"
+const dialogSettings = "components/dialogs/settings.tsx"
+const settingsGeneral = "components/settings/general.tsx"
+const settingsProviders = "components/settings/providers.tsx"
+const settingsSandboxSection = "components/settings/sandbox-section.tsx"
+const networkPolicySettings = "components/settings/network-policy.tsx"
+const dialogConnectProvider = "components/dialogs/connect-provider.tsx"
+const dialogCustomProvider = "components/dialogs/custom-provider.tsx"
+const dialogSelectProvider = "components/dialogs/select-provider.tsx"
+const dialogManageModels = "components/dialogs/manage-models.tsx"
+const dialogSelectModel = "components/dialogs/select-model.tsx"
+const dialogSelectModelUnpaid = "components/dialogs/select-model-unpaid.tsx"
 const promptModelStrategy = "session-client/composer/model-strategy.ts"
 const promptToolbarState = "session-client/composer/toolbar-state.ts"
 const routeIntent = "claxedo-ui/state/route-intent.ts"
@@ -246,7 +246,7 @@ describe("workspace runtime route audit", () => {
         if (unsafe.length > 0) offenders.push(`${file}: imports/exports ${unsafe.join(", ")} from workspace-runtime-request`)
       }
     }
-    const runtimeStore = await Bun.file(path.join(root, "cloud/runtime/workspace-runtime-store.ts")).text()
+    const runtimeStore = await Bun.file(path.join(root, "cloud/workspace-runtime-store.ts")).text()
     const agentRuntimeClient = await Bun.file(path.join(root, "runtime/agent-runtime-client.ts")).text()
     const httpBackend = await Bun.file(path.join(root, "shared/data/http-backend.ts")).text()
     const globalSync = await Bun.file(path.join(root, globalSyncContext)).text()
@@ -581,7 +581,7 @@ describe("workspace runtime route audit", () => {
         offenders.push(file)
       }
     }
-    const events = await Bun.file(path.join(root, "providers/claxedo-events.tsx")).text()
+    const events = await Bun.file(path.join(root, "context/claxedo-events.tsx")).text()
     expect(events).toMatch(/sessionWorkspaceRuntimeRef/)
     expect(events).not.toMatch(/workspaceIdFromDirectoryRef/)
     expect(offenders).toEqual([])
@@ -865,8 +865,8 @@ describe("workspace runtime route audit", () => {
     expect(hook).not.toMatch(/useGlobalSync/)
     expect(hook).not.toMatch(/globalSync\.data\.provider/)
     for (const text of providerConsumers) {
-      expect(text).toMatch(/@claxedo\/hooks\/use-providers/)
-      expect(text).not.toMatch(/@\/hooks\/use-providers/)
+      expect(text).toMatch(/@claxedo\/context\/use-providers/)
+      expect(text).not.toMatch(/@\/hooks\/use-providers|@claxedo\/hooks\/use-providers/)
       expect(text).not.toMatch(/["']\/hooks\/use-providers["']/)
     }
     expect(settings).toMatch(/queryOptions\.globalConfig\(\)/)
@@ -877,13 +877,13 @@ describe("workspace runtime route audit", () => {
     expect(settings).not.toMatch(/globalSync\.updateConfig/)
     expect(settings).not.toMatch(/globalSync\.data\.(?:provider|config)/)
     expect(settings).not.toMatch(/globalSync\.set\("(?:provider|config)"/)
-    expect(settingsDialog).toMatch(/@claxedo\/components\/settings-general/)
-    expect(settingsDialog).toMatch(/@claxedo\/components\/settings-providers/)
-    expect(settingsDialog).toMatch(/@claxedo\/components\/settings-terminals/)
-    expect(settingsDialog).toMatch(/@claxedo\/components\/settings-sandbox-section/)
+    expect(settingsDialog).toMatch(/@claxedo\/components\/settings\/general/)
+    expect(settingsDialog).toMatch(/@claxedo\/components\/settings\/providers/)
+    expect(settingsDialog).toMatch(/@claxedo\/components\/settings\/terminals/)
+    expect(settingsDialog).toMatch(/@claxedo\/components\/settings\/sandbox-section/)
     expect(settingsDialog).toMatch(/@claxedo\/context\/config/)
     expect(general).toMatch(/AccountSettingsSection/)
-    expect(general).toMatch(/@claxedo\/components\/settings-account-section/)
+    expect(general).toMatch(/@claxedo\/components\/settings\/account-section/)
     expect(general).not.toMatch(/@claxedo\/context\/config/)
     expect(connect).toMatch(/queryOptions\.providerAuth\(\)/)
     expect(connect).toMatch(/queryOptions\.providers\(null\)/)
@@ -894,7 +894,7 @@ describe("workspace runtime route audit", () => {
     expect(custom).toMatch(/queryOptions\.providers\(null\)/)
     expect(custom).toMatch(/claxedoCredentialRequest/)
     expect(custom).toMatch(/globalSDK\.client\.global\.config[\s\S]{0,80}\.update/)
-    expect(custom).toMatch(/@claxedo\/components\/dialog-select-provider/)
+    expect(custom).toMatch(/@claxedo\/components\/dialogs\/select-provider/)
     expect(custom).not.toMatch(/\.\/dialog-select-provider/)
     expect(custom).not.toMatch(/globalSDK\.client\.auth\.set/)
     expect(custom).not.toMatch(/auth:\s*\{[\s\S]{0,120}key:/)
@@ -912,32 +912,32 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, dialogSelectModel)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, dialogSelectModelUnpaid)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, dialogSelectProvider)).exists()).toBe(true)
-    expect(settings).toMatch(/@claxedo\/components\/dialog-connect-provider/)
+    expect(settings).toMatch(/@claxedo\/components\/dialogs\/connect-provider/)
     expect(settings).not.toMatch(/\.\/dialog-connect-provider/)
-    expect(settings).toMatch(/@claxedo\/components\/dialog-custom-provider/)
+    expect(settings).toMatch(/@claxedo\/components\/dialogs\/custom-provider/)
     expect(settings).not.toMatch(/@\/components\/dialog-custom-provider/)
-    expect(select).toMatch(/@claxedo\/hooks\/use-providers/)
+    expect(select).toMatch(/@claxedo\/context\/use-providers/)
     expect(select).toMatch(/@claxedo\/context\/language/)
-    expect(select).toMatch(/@claxedo\/components\/dialog-connect-provider/)
+    expect(select).toMatch(/@claxedo\/components\/dialogs\/connect-provider/)
     expect(select).not.toMatch(/@\/components\/dialog-connect-provider/)
-    expect(select).toMatch(/@claxedo\/components\/dialog-custom-provider/)
+    expect(select).toMatch(/@claxedo\/components\/dialogs\/custom-provider/)
     expect(select).not.toMatch(/@\/components\/dialog-custom-provider/)
     expect(select).not.toMatch(/\.\/dialog-connect-provider/)
     expect(select).not.toMatch(/\.\/dialog-custom-provider/)
-    expect(manageModels).toMatch(/@claxedo\/components\/dialog-select-provider/)
+    expect(manageModels).toMatch(/@claxedo\/components\/dialogs\/select-provider/)
     expect(manageModels).not.toMatch(/@\/components\/dialog-select-provider/)
-    expect(selectModel).toMatch(/@claxedo\/components\/dialog-select-provider/)
-    expect(selectModel).toMatch(/@claxedo\/components\/dialog-manage-models/)
+    expect(selectModel).toMatch(/@claxedo\/components\/dialogs\/select-provider/)
+    expect(selectModel).toMatch(/@claxedo\/components\/dialogs\/manage-models/)
     expect(selectModel).not.toMatch(/@\/components\/dialog-manage-models/)
     expect(selectModel).not.toMatch(/@\/components\/dialog-select-provider/)
     expect(selectModel).not.toMatch(/\.\/dialog-select-provider/)
     expect(selectModel).not.toMatch(/\.\/dialog-manage-models/)
-    expect(commands).toMatch(/@claxedo\/components\/dialog-select-model/)
+    expect(commands).toMatch(/@claxedo\/components\/dialogs\/select-model/)
     expect(commands).not.toMatch(/@\/components\/dialog-select-model/)
-    expect(prompt).toMatch(/@claxedo\/components\/dialog-select-model/)
+    expect(prompt).toMatch(/@claxedo\/components\/dialogs\/select-model/)
     expect(prompt).not.toMatch(/@\/components\/dialog-select-model/)
-    expect(selectModelUnpaid).toMatch(/@claxedo\/components\/dialog-connect-provider/)
-    expect(selectModelUnpaid).toMatch(/@claxedo\/components\/dialog-select-provider/)
+    expect(selectModelUnpaid).toMatch(/@claxedo\/components\/dialogs\/connect-provider/)
+    expect(selectModelUnpaid).toMatch(/@claxedo\/components\/dialogs\/select-provider/)
     expect(selectModelUnpaid).not.toMatch(/@\/components\/dialog-connect-provider/)
     expect(selectModelUnpaid).not.toMatch(/@\/components\/dialog-select-provider/)
     expect(selectModelUnpaid).not.toMatch(/\.\/dialog-connect-provider/)
@@ -1009,7 +1009,7 @@ describe("workspace runtime route audit", () => {
     const routeIntentText = await Bun.file(path.join(root, routeIntent)).text()
     const appShellStateText = await Bun.file(path.join(root, appShellState)).text()
     const routeBridgeText = await Bun.file(path.join(root, "claxedo-ui/state/route-bridge.tsx")).text()
-    const sessionTitleSyncText = await Bun.file(path.join(root, "claxedo-ui/session-title-sync.ts")).text()
+    const sessionTitleSyncText = await Bun.file(path.join(root, "claxedo-ui/utils/session-title-sync.ts")).text()
 
     expect(routeIntentText).toMatch(/inventory\?: Accessor/)
     expect(routeIntentText).toMatch(/sessionRefForWorkspaceSession/)
@@ -1136,8 +1136,8 @@ describe("workspace runtime route audit", () => {
     const allowedBase64Owners = new Set([
       "shell/identity/route.ts",
       "utils/encode.ts",
-      "components/dialog-fork.tsx",
-      "components/titlebar.tsx",
+      "components/dialogs/fork.tsx",
+      "components/titlebar/titlebar.tsx",
       "utils/base64.ts",
       "context/permission-auto-respond.ts",
     ])
@@ -1153,8 +1153,8 @@ describe("workspace runtime route audit", () => {
 
   test("surface route matching uses decoded route workspace keys, not base64 route strings", async () => {
     const text = await Bun.file(path.join(root, "claxedo-ui/state/surface-route.ts")).text()
-    const actions = await Bun.file(path.join(root, "claxedo-ui/claxedo-layout-actions/open-surface-actions-ui.ts")).text()
-    const shared = await Bun.file(path.join(root, "claxedo-ui/claxedo-layout-actions/shared.ts")).text()
+    const actions = await Bun.file(path.join(root, "claxedo-ui/layout-actions/open-surface-actions-ui.ts")).text()
+    const shared = await Bun.file(path.join(root, "claxedo-ui/layout-actions/shared.ts")).text()
 
     expect(text).not.toMatch(/base64Encode/)
     expect(text).toMatch(/routeWorkspaceKey/)
@@ -1854,8 +1854,8 @@ describe("workspace runtime route audit", () => {
 
   test("page surface routes use typed workspace page routes", async () => {
     const migrated = [
-      "claxedo-ui/claxedo-layout-actions/page-actions.ts",
-      "claxedo-ui/claxedo-layout-actions/open-surface-actions-ui.ts",
+      "claxedo-ui/layout-actions/page-actions.ts",
+      "claxedo-ui/layout-actions/open-surface-actions-ui.ts",
       "claxedo-ui/state/surface-route.ts",
     ]
 
@@ -1876,7 +1876,7 @@ describe("workspace runtime route audit", () => {
 
   test("terminal surface routes use typed workspace terminal routes", async () => {
     const migrated = [
-      "claxedo-ui/claxedo-layout-actions/terminal-actions.ts",
+      "claxedo-ui/layout-actions/terminal-actions.ts",
       "claxedo-ui/content-renderers/terminal-content.tsx",
       "claxedo-ui/state/surface-route.ts",
     ]
@@ -1894,9 +1894,9 @@ describe("workspace runtime route audit", () => {
 
   test("migrated draft-session action surfaces use typed workspace session routes", async () => {
     const migrated = [
-      "claxedo-ui/claxedo-layout-actions/session-actions.tsx",
-      "claxedo-ui/claxedo-layout-actions/workspace-actions.ts",
-      "claxedo-ui/claxedo-layout-actions/project-actions.tsx",
+      "claxedo-ui/layout-actions/session-actions.tsx",
+      "claxedo-ui/layout-actions/workspace-actions.ts",
+      "claxedo-ui/layout-actions/project-actions.tsx",
       "components/session/session-new-design-view.tsx",
       "claxedo-ui/state/route-intent.ts",
       sessionCommandsHook,
@@ -1922,11 +1922,11 @@ describe("workspace runtime route audit", () => {
 
   test("migrated session view consumers use shell session view keys", async () => {
     const migrated = [
-      "pages/session/session-layout.ts",
+      "session/session-layout.ts",
       sessionCommandsHook,
       "pages/session.tsx",
       "components/session/session-context-tab.tsx",
-      "components/dialog-select-file.tsx",
+      "components/dialogs/select-file.tsx",
       "context/prompt.tsx",
       "session/submit/handoff.ts",
     ]
@@ -1954,7 +1954,7 @@ describe("workspace runtime route audit", () => {
   })
 
   test("session layout does not expose route-shaped directory params", async () => {
-    const text = await Bun.file(path.join(root, "pages/session/session-layout.ts")).text()
+    const text = await Bun.file(path.join(root, "session/session-layout.ts")).text()
     const commands = await Bun.file(path.join(root, sessionCommandsHook)).text()
 
     expect(await Bun.file(path.join(root, "overrides/pages/session/use-session-commands.tsx")).exists()).toBe(false)
@@ -2031,7 +2031,7 @@ describe("workspace runtime route audit", () => {
     const listEvents = await Bun.file(path.join(root, sessionListEvents)).text()
     const cache = await Bun.file(path.join(root, sessionCache)).text()
     const context = await Bun.file(path.join(root, globalSyncContext)).text()
-    const eventIngress = await Bun.file(path.join(root, "context/global-sync/event-ingress.ts")).text()
+    const eventIngress = await Bun.file(path.join(root, "shell/data/event-ingress.ts")).text()
     const eventRouter = await Bun.file(path.join(root, "shell/data/event-router.ts")).text()
     const bootstrap = await Bun.file(path.join(root, "shell/data/bootstrap.ts")).text()
     const projector = await Bun.file(path.join(root, directoryEventProjector)).text()
@@ -2437,7 +2437,7 @@ describe("workspace runtime route audit", () => {
 
   test("upstream SessionComposerRegion reads session parent rows from directory cache", async () => {
     const text = await Bun.file(path.join(root, upstreamSessionComposerRegion)).text()
-    const handoff = await Bun.file(path.join(root, "pages/session/handoff.ts")).text()
+    const handoff = await Bun.file(path.join(root, "pages/session/prompt-preview-handoff.ts")).text()
 
     expect(text).toMatch(/directorySessions\(sessionDirectory\(\)\)\.find\(\(session\) => session\.id === sessionID\(\)\)/)
     expect(text).toMatch(/const sessionID = createMemo\(\(\) => props\.sessionID \?\? route\.params\.id\)/)
@@ -2472,7 +2472,7 @@ describe("workspace runtime route audit", () => {
   })
 
   test("upstream titlebar tab enrichment reads session rows from directory cache", async () => {
-    const text = await Bun.file(path.join(root, "components/titlebar.tsx")).text()
+    const text = await Bun.file(path.join(root, "components/titlebar/titlebar.tsx")).text()
 
     expect(text).toMatch(/useQuery\(\(\) => directorySessionCacheQuery\(tab\.dir\)\)/)
     expect(text).toMatch(/sessionsQuery\.data\?\.session\.find\(\(session\) => session\.id === tab\.sessionId\)/)
@@ -2502,8 +2502,8 @@ describe("workspace runtime route audit", () => {
   })
 
   test("upstream MCP status surfaces read MCP, LSP, and plugin state from query caches", async () => {
-    const claxedoDialog = await Bun.file(path.join(root, "components/dialog-select-mcp.tsx")).text()
-    const claxedoLogic = await Bun.file(path.join(root, "components/dialog-select-mcp-logic.ts")).text()
+    const claxedoDialog = await Bun.file(path.join(root, "components/dialogs/select-mcp.tsx")).text()
+    const claxedoLogic = await Bun.file(path.join(root, "components/dialogs/select-mcp-logic.ts")).text()
     const claxedoStatus = await Bun.file(path.join(root, "components/status-popover.tsx")).text()
     const claxedoSessionHeader = await Bun.file(path.join(root, sessionHeader)).text()
     const backend = await Bun.file(path.join(root, "shared/data/http-backend.ts")).text()
@@ -2511,7 +2511,7 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp-logic.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/status-popover.tsx")).exists()).toBe(false)
-    expect(claxedoDialog).toMatch(/@claxedo\/components\/dialog-select-mcp-logic/)
+    expect(claxedoDialog).toMatch(/@claxedo\/components\/dialogs\/select-mcp-logic/)
     expect(claxedoLogic).toMatch(/function mcpExtensionUrl/)
     expect(claxedoLogic).not.toMatch(/RuntimeGateway\./)
     expect(claxedoStatus).toMatch(/return null/)
@@ -2547,7 +2547,7 @@ describe("workspace runtime route audit", () => {
   test("DialogSelectFile receives session identity from its caller", async () => {
     const text = await Bun.file(path.join(root, dialogSelectFile)).text()
     const commands = await Bun.file(path.join(root, sessionCommandsHook)).text()
-    const reviewWorkspace = await Bun.file(path.join(root, "claxedo-ui/components/review-workspace.tsx")).text()
+    const reviewWorkspace = await Bun.file(path.join(root, "claxedo-ui/components/review-workspace/review-workspace.tsx")).text()
 
     expect(text).not.toMatch(/\buseParams\b/)
     expect(text).not.toMatch(/\bdecode64\b/)
@@ -2645,7 +2645,7 @@ describe("workspace runtime route audit", () => {
     const text = await Bun.file(path.join(root, promptContext)).text()
     const directoryLayout = await Bun.file(path.join(root, "pages/directory-layout.tsx")).text()
     const directoryScopeText = await Bun.file(path.join(root, directoryScope)).text()
-    const reviewWorkspace = await Bun.file(path.join(root, "claxedo-ui/components/review-workspace.tsx")).text()
+    const reviewWorkspace = await Bun.file(path.join(root, "claxedo-ui/components/review-workspace/review-workspace.tsx")).text()
 
     expect(await Bun.file(path.join(root, "overrides/context/prompt.tsx")).exists()).toBe(false)
     expect(text).not.toMatch(/@solidjs\/router/)
@@ -2685,7 +2685,7 @@ describe("workspace runtime route audit", () => {
     const terminalConsumers = [
       "index.tsx",
       "claxedo-ui/content-renderers/terminal-content.tsx",
-      "claxedo-ui/workspace-panel/ProcessPanePanel.tsx",
+      "claxedo-ui/workspace-panel/process-pane-panel.tsx",
     ]
 
     expect(await Bun.file(path.join(root, "overrides/components/terminal.tsx")).exists()).toBe(false)
@@ -2773,7 +2773,7 @@ describe("workspace runtime route audit", () => {
 
   test("ReviewTab keeps VCS payloads query-owned without mount-time status fetches", async () => {
     const text = await Bun.file(path.join(root, reviewTab)).text()
-    const cache = await Bun.file(path.join(root, "claxedo-ui/components/review-vcs-cache.ts")).text()
+    const cache = await Bun.file(path.join(root, "claxedo-ui/components/review-workspace/review-vcs-cache.ts")).text()
 
     expect(text).toMatch(/cachedReviewVcsDiff/)
     expect(text).toMatch(/cachedReviewVcsFile/)
@@ -2800,7 +2800,7 @@ describe("workspace runtime route audit", () => {
   })
 
   test("workspace changed-file navigator exposes stable row selectors for browser performance", async () => {
-    const navigator = await Bun.file(path.join(root, "claxedo-ui/workspace-panel/WorkspaceFilesNavigator.tsx")).text()
+    const navigator = await Bun.file(path.join(root, "claxedo-ui/workspace-panel/workspace-files-navigator.tsx")).text()
     const fileTree = await Bun.file(path.join(root, "components/file-tree.tsx")).text()
 
     expect(navigator).toMatch(/data-testid="workspace-files-navigator"/)
@@ -3012,7 +3012,7 @@ describe("workspace runtime route audit", () => {
   })
 
   test("upstream directory picker ranks recent projects from directory session cache", async () => {
-    const text = await Bun.file(path.join(root, "components/dialog-select-directory.tsx")).text()
+    const text = await Bun.file(path.join(root, "components/dialogs/select-directory.tsx")).text()
 
     expect(text).toMatch(/cachedDirectoryChildrenRequest/)
     expect(text).toMatch(/const recentProjects = createMemo/)
@@ -3162,7 +3162,7 @@ describe("workspace runtime route audit", () => {
   })
 
   test("upstream DialogFork reads conversation data from registered chat projection", async () => {
-    const text = await Bun.file(path.join(root, "components/dialog-fork.tsx")).text()
+    const text = await Bun.file(path.join(root, "components/dialogs/fork.tsx")).text()
 
     expect(text).toMatch(/registeredConversationSnapshot\(params\.id\)/)
     expect(text).toMatch(/conversation\(\)\.messages/)

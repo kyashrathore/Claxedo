@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { createHarnessConfigStore } from "../../claxedo-ui/context/harness-config-store"
+import { createHarnessConfigStore } from "../../claxedo-ui/harness/harness-config-store"
 import {
   createHarnessSelectionController,
   createHarnessSubmitController,

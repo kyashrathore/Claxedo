@@ -1,7 +1,7 @@
 import { For, Show, createMemo } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { WORKBENCH_DRAG_MIME } from "../layout"
+import { WORKBENCH_DRAG_MIME } from "../workbench"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import { terminalSurfaceTitle } from "./terminal-surface-title"
 import {

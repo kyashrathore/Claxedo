@@ -94,7 +94,9 @@ Start here before making a nontrivial change in this package:
   "where do I add X" for the five commonest contribution types.
 - `src/components/README.md` — the `components/` vs `claxedo-ui/components/`
   layering question specifically (they are layers, not duplicates).
-- `src/overrides/README.md` — why this directory is an intentionally empty
-  tombstone post-hard-fork (no `packages/app`, no override scanner).
+- `CONTRIBUTING.md`'s "History: the override system" section — why there is
+  no `packages/app` and no override scanner post-hard-fork (the former
+  `src/overrides/` tombstone directory was deleted; that history now lives
+  in CONTRIBUTING.md, not in a standalone README).
 - `CONTRIBUTING.md` — the tests-as-specs merge bar, bun:test vs vitest
   runner convention, test-location/colocation standard, and PR checklist.

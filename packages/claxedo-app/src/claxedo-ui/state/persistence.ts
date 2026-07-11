@@ -1,7 +1,7 @@
 // Persistence — v5 validator/defaults.
 
-import { constructWorkbenchState, validate as validateWorkbench } from "../layout"
-import type { WorkbenchState } from "../layout"
+import { constructWorkbenchState, validate as validateWorkbench } from "../workbench"
+import type { WorkbenchState } from "../workbench"
 import { createWorkspacePanel, type WorkspacePanelState } from "../workspace-panel/workspace-panel-state"
 import { CONTENT_TYPES } from "./types"
 import type {

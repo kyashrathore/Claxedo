@@ -21,7 +21,7 @@ const centralSessionRef = (sessionId: string) => ({
 // Rubric T2: per-phase tests for handoff.ts. Focused on the decision tree
 // (which callbacks fire under which conditions), not on the deep Workbench
 // state plumbing — that's covered by the orchestration tests in
-// `claxedo-ui/state/tests/orchestration.test.ts`.
+// `claxedo-ui/state/orchestration.test.ts`.
 
 describe("applyCreatedSessionTargetEffects", () => {
   test("returns an empty object when created=false (no side effects)", () => {

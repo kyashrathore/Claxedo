@@ -7,9 +7,9 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { usePlatform } from "@claxedo/context/platform"
 import { useShellQueryOptions as useQueryOptions } from "@claxedo/shell/data/query-options"
 import { queryClient } from "@claxedo/shared/query/query-client"
-import { useGlobalSDK } from "../../context/global-sdk"
-import { ensureLocalProject } from "../../shared/query/project-ensure"
-import { pagesApi, type Page, type PageQuery, type PageStatus } from "../../utils/pages-api"
+import { useGlobalSDK } from "../../../context/global-sdk"
+import { ensureLocalProject } from "../../../shared/query/project-ensure"
+import { pagesApi, type Page, type PageQuery, type PageStatus } from "../../../utils/pages-api"
 import { StatusEditorDialog } from "./status-editor-dialog"
 
 type Project = {

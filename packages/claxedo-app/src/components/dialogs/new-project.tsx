@@ -9,7 +9,7 @@ import { Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
-import { useConfigOptional } from "../context/config"
+import { useConfigOptional } from "../../context/config"
 
 export interface DialogNewProjectProps {
   onLocal: () => void

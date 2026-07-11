@@ -7,7 +7,7 @@ import {
   mcpExtensionUrl,
   mcpPrimaryAction,
   type CatalogEntry,
-} from "./dialog-select-mcp-logic"
+} from "./select-mcp-logic"
 
 const calls: Array<{ method: string; url: string; body?: unknown; fetch: "unsigned" }> = []
 let installedMachine = false
@@ -146,8 +146,8 @@ describe("DialogSelectMcp", () => {
       "https://control.example/api/claxedo/agent-config/extensions/pkg/enable?scope=workspace&workspaceId=ws_123",
     )
 
-    const logic = await Bun.file(new URL("./dialog-select-mcp-logic.ts", import.meta.url)).text()
-    const dialog = await Bun.file(new URL("./dialog-select-mcp.tsx", import.meta.url)).text()
+    const logic = await Bun.file(new URL("./select-mcp-logic.ts", import.meta.url)).text()
+    const dialog = await Bun.file(new URL("./select-mcp.tsx", import.meta.url)).text()
 
     expect(logic).not.toContain("RuntimeGateway")
     expect(dialog).not.toContain("RuntimeGateway")

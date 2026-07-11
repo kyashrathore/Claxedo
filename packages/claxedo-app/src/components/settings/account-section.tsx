@@ -1,7 +1,7 @@
 import { type Component, type JSX, Show, createMemo } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { Button } from "@opencode-ai/ui/button"
-import { useAuthSession } from "../shell/auth/auth-session"
+import { useAuthSession } from "../../shell/auth/auth-session"
 
 // Clerk's User object is loosely typed here; read the bits we render defensively.
 type SignedInUser = {

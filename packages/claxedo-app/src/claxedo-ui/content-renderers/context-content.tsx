@@ -1,6 +1,6 @@
 import { Show } from "solid-js"
 import type { ContentMeta } from "../state"
-import type { PaneCtx } from "../layout"
+import type { PaneCtx } from "../workbench"
 import { SessionPaneScope } from "../components/session-pane-scope"
 import { SessionConversationOwner } from "../../shell/chat/session-conversation-owner"
 import { SessionContextTab } from "@claxedo/components/session"

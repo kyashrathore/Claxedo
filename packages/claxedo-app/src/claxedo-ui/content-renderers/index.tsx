@@ -2,7 +2,7 @@
 // per-type workspace panel wrapper.
 
 import { Show, createMemo, type JSX } from "solid-js"
-import type { PaneCtx } from "../layout"
+import type { PaneCtx } from "../workbench"
 import { useClaxedoState } from "../state"
 import { contentSurface } from "../../shell/contributions/first-party-content-surfaces"
 import { principalHasSignedAccess, usePrincipal } from "../../shell/auth/identity-provider"

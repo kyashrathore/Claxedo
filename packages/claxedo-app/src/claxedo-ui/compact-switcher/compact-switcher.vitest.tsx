@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
-import { CompactSwitcher } from "./CompactSwitcher"
+import { CompactSwitcher } from "./compact-switcher"
 import type { SwitcherItem } from "./switcher-items"
-import { WORKBENCH_DRAG_MIME } from "../layout"
+import { WORKBENCH_DRAG_MIME } from "../workbench"
 
 afterEach(() => {
   cleanup()

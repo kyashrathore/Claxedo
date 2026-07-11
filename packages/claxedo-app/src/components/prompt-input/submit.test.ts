@@ -702,7 +702,7 @@ beforeAll(async () => {
   savedSessionConfigQueryKey = mod.savedSessionConfigQueryKey
   const testQueryClient = (await import("../../shared/query/query-client")).queryClient
   clearRuntimeQueries = () => testQueryClient.clear()
-  resetRuntimeEnsureCache = (await import("../../cloud/runtime/workspace-runtime-store")).resetWorkspaceRuntimeEnsureCache
+  resetRuntimeEnsureCache = (await import("../../cloud/workspace-runtime-store")).resetWorkspaceRuntimeEnsureCache
 })
 
 beforeEach(() => {

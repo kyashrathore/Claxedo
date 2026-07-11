@@ -1,9 +1,9 @@
 import { Show } from "solid-js"
 import type { ContentMeta } from "../state"
 import { useClaxedoState } from "../state"
-import type { PaneCtx } from "../layout"
+import type { PaneCtx } from "../workbench"
 import { SessionPaneScope } from "../components/session-pane-scope"
-import { TabPage } from "../components/tab-page"
+import { TabPage } from "../components/page-editor/tab-page"
 import { retargetSessionRef } from "../../shell/identity/session-ref"
 
 export function PageContent(props: { meta: ContentMeta; ctx: PaneCtx }) {

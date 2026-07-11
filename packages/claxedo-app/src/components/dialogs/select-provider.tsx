@@ -1,14 +1,14 @@
 // Claxedo routes provider selection to Claxedo-owned connect/custom dialogs instead of upstream global-sync store dialogs.
 import { type Component, Show } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { popularProviders, useProviders } from "@claxedo/hooks/use-providers"
+import { popularProviders, useProviders } from "@claxedo/context/use-providers"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { List } from "@opencode-ai/ui/list"
 import { Tag } from "@opencode-ai/ui/tag"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { DialogConnectProvider } from "@claxedo/components/dialog-connect-provider"
+import { DialogConnectProvider } from "@claxedo/components/dialogs/connect-provider"
 import { useLanguage } from "@claxedo/context/language"
-import { DialogCustomProvider } from "@claxedo/components/dialog-custom-provider"
+import { DialogCustomProvider } from "@claxedo/components/dialogs/custom-provider"
 
 const CUSTOM_ID = "_custom"
 

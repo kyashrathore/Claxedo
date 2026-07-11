@@ -110,7 +110,7 @@ vi.mock("../../shared/query/shell", () => ({
   commandListQuery: () => ({ queryKey: ["commands"], queryFn: async () => [] }),
 }))
 
-vi.mock("@claxedo/hooks/use-providers", () => ({
+vi.mock("@claxedo/context/use-providers", () => ({
   useProviders: () => ({
     connected: () => [{ id: "opencode", models: [{ id: "big-pickle", name: "Big Pickle" }] }],
     default: () => ({ opencode: "big-pickle" }),

@@ -20,7 +20,7 @@ const context = vi.hoisted(() => ({
   usePlatform: () => ({}),
 }))
 
-vi.mock("../../utils/pages-api", () => ({
+vi.mock("../../../utils/pages-api", () => ({
   pagesApi: {
     list: api.list,
     listStatuses: api.listStatuses,
@@ -53,7 +53,7 @@ vi.mock("@claxedo/shared/query/query-client", () => ({
   },
 }))
 
-vi.mock("../../shared/query/project-ensure", () => ({
+vi.mock("../../../shared/query/project-ensure", () => ({
   ensureLocalProject: api.ensureLocalProject,
 }))
 
@@ -61,7 +61,7 @@ vi.mock("@/context/global-sdk", () => ({
   useGlobalSDK: context.useGlobalSDK,
 }))
 
-vi.mock("../../context/global-sdk", () => ({
+vi.mock("../../../context/global-sdk", () => ({
   useGlobalSDK: context.useGlobalSDK,
 }))
 

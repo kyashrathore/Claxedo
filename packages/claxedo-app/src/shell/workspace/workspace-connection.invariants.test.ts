@@ -33,7 +33,7 @@ const connectingUiAllowlist = new Set([
   // startup gate (CloudStartupView + resolveWorkspaceRuntime + provision
   // listener) was collapsed — the connecting UI is owned by WorkspaceGate now.
   "pages/session.tsx",
-  "claxedo-ui/claxedo-layout-actions/session-actions.tsx",
+  "claxedo-ui/layout-actions/session-actions.tsx",
 ])
 
 async function files(): Promise<string[]> {

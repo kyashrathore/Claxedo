@@ -2,7 +2,7 @@
  * Workspace Icon Rendering Tests (DOM)
  *
  * Uses real bootstrap API data to verify cloud workspaces render cloud icons.
- * Test helpers mirror the CURRENT production code in rail-layout.tsx:676-711
+ * Test helpers mirror the CURRENT production code in rail-sidebar.tsx
  * (allWorkspaceItems) which is what the workspace selector dropdown uses.
  *
  * Pattern: packages/app/src/components/prompt-input/editor-dom.test.ts
@@ -47,10 +47,10 @@ const REAL_PROJECT: ProjectItem = {
 // server.isLocal() = true on user's machine
 const IS_SERVER_LOCAL = true
 
-// ── Production logic mirror: rail-layout.tsx:676-711 (allWorkspaceItems) ──
+// ── Production logic mirror: rail-sidebar.tsx (allWorkspaceItems) ──
 // This is the ACTUAL code path that builds items for the workspace selector dropdown.
 //
-// DRIFT RISK: If rail-layout.tsx allWorkspaceItems() changes its cloud/label
+// DRIFT RISK: If rail-sidebar.tsx allWorkspaceItems() changes its cloud/label
 // logic, this mirror must be updated. Grep for "allWorkspaceItems" across tests.
 
 type WorkspaceSelectorItem = {
@@ -97,7 +97,7 @@ function allWorkspaceItems(projects: ProjectItem[], isServerLocal: boolean): Wor
   return list
 }
 
-// ── DOM rendering (matches rail-layout.tsx:378-391) ──
+// ── DOM rendering (matches rail-sidebar.tsx) ──
 
 function renderDropdown(items: WorkspaceSelectorItem[]): HTMLDivElement {
   const container = document.createElement("div")

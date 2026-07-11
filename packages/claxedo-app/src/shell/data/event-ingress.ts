@@ -1,14 +1,14 @@
 // target-layer: data
 import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@claxedo/shell/data/session-list-events"
-import type { DirectorySessionCacheValue } from "../../shell/data/queries"
-import { applyGlobalProjectEvent } from "../../shell/data/global-event-projector"
-import { routeDirectoryEvent, type RoutableEvent } from "../../shell/data/event-router"
+import type { DirectorySessionCacheValue } from "./queries"
+import { applyGlobalProjectEvent } from "./global-event-projector"
+import { routeDirectoryEvent, type RoutableEvent } from "./event-router"
 import { scheduleSessionProjectionPull } from "../../runtime/session-projection"
-import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"
+import { sessionWorkspaceRuntimeRef } from "../workspace/session-workspace-key"
 import { applySessionStatusSseEvent } from "../../session/store/session-status-dispatcher"
-import { shouldInvalidateBootstrapFresh } from "./bootstrap-fresh"
-import { shouldRefreshChildrenForGlobalEvent } from "./global-event-refresh-policy"
-import type { ClaxedoEvent } from "../../providers/claxedo-events"
+import { shouldInvalidateBootstrapFresh } from "../../context/global-sync/bootstrap-fresh"
+import { shouldRefreshChildrenForGlobalEvent } from "../../context/global-sync/global-event-refresh-policy"
+import type { ClaxedoEvent } from "../../context/claxedo-events"
 
 type GlobalEventSource = {
   listen: (handler: (event: { name: string; details: RoutableEvent }) => void) => () => void

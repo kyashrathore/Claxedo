@@ -56,7 +56,7 @@ import { shellRouteWorkspaceKeyFromPathname } from "../shell/identity/route"
 import { removeSessionIdentity } from "@claxedo/shell/data/global-session-identity"
 import { mergeSignedInventoryProjects } from "../shared/query/inventory"
 import { projectListQuery } from "../shared/query/control-plane"
-import { resolveWorkspaceRuntime } from "../cloud/runtime/workspace-runtime-store"
+import { resolveWorkspaceRuntime } from "../cloud/workspace-runtime-store"
 import {
   cachedGlobalSyncSdkClient,
   clearGlobalSyncSdkClientsForDirectory,
@@ -70,9 +70,9 @@ import { principalHasSignedAccess, usePrincipal } from "../shell/auth/identity-p
 import { sessionWorkspaceRuntimeRef } from "../shell/workspace/session-workspace-key"
 import { centralTransportForServer, unsignedLocalFetch } from "@claxedo/shell/data/transport/transport"
 import { setDirectorySessionCache } from "../shell/data/directory-session-cache"
-import { useClaxedoEventsOptional } from "../providers/claxedo-events"
-import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadMetaKey, sessionLoadRequestKey, type QueryOptionsApi } from "./global-sync/bootstrap-orchestrator"
-import { createGlobalSyncEventIngress } from "./global-sync/event-ingress"
+import { useClaxedoEventsOptional } from "./claxedo-events"
+import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadMetaKey, sessionLoadRequestKey, type QueryOptionsApi } from "../shell/data/bootstrap-orchestrator"
+import { createGlobalSyncEventIngress } from "../shell/data/event-ingress"
 import {
   createInventoryPageSource,
   createSignedInventorySource,
@@ -83,9 +83,9 @@ import {
   shouldUseSignedSessionInventory,
   toSessionInventoryRow,
   workspaceGroupKey,
-} from "./global-sync/inventory-source"
+} from "../shell/data/inventory-source"
 
-export { shouldUseSignedControlPlaneInventory, shouldUseSignedProjectSessionInventory, shouldUseSignedSessionInventory } from "./global-sync/inventory-source"
+export { shouldUseSignedControlPlaneInventory, shouldUseSignedProjectSessionInventory, shouldUseSignedSessionInventory } from "../shell/data/inventory-source"
 
 const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"

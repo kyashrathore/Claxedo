@@ -8,30 +8,30 @@ import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { ClaxedoIcon as Icon } from "../claxedo-ui/components/claxedo-icon"
+import { ClaxedoIcon as Icon } from "../../claxedo-ui/components/claxedo-icon"
 import {
   setTitlebarCenterSlot,
   setTitlebarLeftSlot,
   setTitlebarRightSlot,
-} from "../claxedo-ui/components/portal-slot"
-import { TitlebarEditIcon } from "./titlebar-v2-edit-icon"
+} from "../../claxedo-ui/components/portal-slot"
+import { TitlebarEditIcon } from "./v2-edit-icon"
 
 import { getAvatarColors, useLayout, type LocalProject } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@claxedo/context/language"
 import { useSettings } from "@/context/settings"
-import { WindowsAppMenu } from "./windows-app-menu"
-import { applyPath, backPath, forwardPath } from "./titlebar-history"
+import { WindowsAppMenu } from "../windows-app-menu"
+import { applyPath, backPath, forwardPath } from "./history"
 import { decodeDirectory } from "@/pages/directory-layout"
 import { iife } from "@opencode-ai/core/util/iife"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Avatar as AvatarV2 } from "@opencode-ai/ui/v2/avatar-v2"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { StatusPopover } from "./status-popover"
+import { StatusPopover } from "../status-popover"
 import { SDKProvider } from "@/context/sdk"
 import { directorySessionCacheQuery } from "@/shell/data/directory-session-cache"
-import { displayName, getProjectAvatarSource, projectForSession } from "./titlebar-project"
+import { displayName, getProjectAvatarSource, projectForSession } from "./project"
 
 type TauriDesktopWindow = {
   startDragging?: () => Promise<void>

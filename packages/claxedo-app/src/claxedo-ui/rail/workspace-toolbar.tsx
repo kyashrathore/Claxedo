@@ -3,7 +3,7 @@ import { ClaxedoIcon as Icon } from "../components/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { useTheme } from "@opencode-ai/ui/theme"
-import { getTerminalCommands } from "../../components/settings-terminals"
+import { getTerminalCommands } from "../../components/settings/terminals"
 
 export type WorkspaceBarItem = {
   id: string

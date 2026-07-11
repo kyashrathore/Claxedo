@@ -1,6 +1,6 @@
 import { cleanup, render } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test } from "vitest"
-import { TitlebarEditIcon } from "./titlebar-v2-edit-icon"
+import { TitlebarEditIcon } from "./v2-edit-icon"
 
 afterEach(() => cleanup())
 

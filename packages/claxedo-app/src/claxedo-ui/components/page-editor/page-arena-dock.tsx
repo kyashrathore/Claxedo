@@ -7,8 +7,8 @@ import {
   type ArenaControlRequest,
   type ArenaMessage,
   type ArenaWaveState,
-} from "../../utils/pages-api"
-import { authFetch } from "../../utils/api"
+} from "../../../utils/pages-api"
+import { authFetch } from "../../../utils/api"
 
 type PageArenaDockProps = {
   pageId: string

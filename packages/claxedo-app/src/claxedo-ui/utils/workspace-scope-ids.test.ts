@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { openWorkspaceScopeIds } from "./workspace-scope-ids"
-import type { ContentMeta } from "./state"
+import type { ContentMeta } from "../state"
 
 describe("openWorkspaceScopeIds", () => {
   test("limits workspace scopes to the active workspace and visible panes", () => {

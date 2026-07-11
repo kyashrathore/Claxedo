@@ -20,7 +20,7 @@ import type { SessionCacheValue, SessionInventoryRow, WorkspaceGroup } from "../
 import { SESSION_RECENT_LIMIT } from "../../shell/data/global-sync-types"
 import type { SignedWorkspaceInfo } from "../../runtime/signed-workspace"
 import type { Config } from "@opencode-ai/sdk/v2/client"
-import { trimSessions } from "./session-trim"
+import { trimSessions } from "../../context/global-sync/session-trim"
 import { shouldUseSignedControlPlaneInventory, type InventoryGlobalSession } from "./inventory-source"
 
 type DirectoryRef = string

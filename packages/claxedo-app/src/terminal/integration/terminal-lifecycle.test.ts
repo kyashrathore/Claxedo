@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { Terminal } from "@xterm/headless"
 import { SerializeAddon } from "@xterm/addon-serialize"
-import { createTerminalRuntimeQueue } from "./terminal-runtime-queue"
-import { preparePersistBuffer, prepareRestoreBuffer } from "./terminal-buffer"
-import { shouldSendResize, shouldRecoverDesync } from "./terminal-geometry"
-import { sigwinchToggleSize } from "./terminal-connection"
+import { createTerminalRuntimeQueue } from "../terminal-runtime-queue"
+import { preparePersistBuffer, prepareRestoreBuffer } from "../terminal-buffer"
+import { shouldSendResize, shouldRecoverDesync } from "../terminal-geometry"
+import { sigwinchToggleSize } from "../terminal-connection"
 import { retry } from "@claxedo/terminal/retry"
 
 // ---------------------------------------------------------------------------

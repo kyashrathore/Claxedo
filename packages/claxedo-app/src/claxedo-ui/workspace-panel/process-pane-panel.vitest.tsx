@@ -35,7 +35,7 @@ vi.mock("@opencode-ai/ui/tooltip", () => ({
   Tooltip: (props: any) => <>{props.children}</>,
 }))
 
-import { ProcessPanePanel, type ProcessPanePanelProps } from "./ProcessPanePanel"
+import { ProcessPanePanel, type ProcessPanePanelProps } from "./process-pane-panel"
 
 afterEach(() => {
   cleanup()

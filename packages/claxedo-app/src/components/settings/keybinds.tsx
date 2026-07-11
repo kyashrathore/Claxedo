@@ -10,7 +10,7 @@ import fuzzysort from "fuzzysort"
 import { formatKeybind, parseKeybind, useCommand } from "@/context/command"
 import { useLanguage } from "@claxedo/context/language"
 import { useSettings } from "@/context/settings"
-import { SettingsList } from "./settings-list"
+import { SettingsList } from "./list"
 
 const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
 const PALETTE_ID = "command.palette"

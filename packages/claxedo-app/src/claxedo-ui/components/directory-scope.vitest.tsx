@@ -111,7 +111,7 @@ vi.mock("@/context/comments", () => ({
   CommentsProvider: (props: any) => <>{props.children}</>,
 }))
 
-vi.mock("@claxedo/session-client/session-ui.barrel", () => ({
+vi.mock("@claxedo/session-client", () => ({
   DataProvider: (props: any) => {
     state.dataProviderProps = props
     return <>{props.children}</>

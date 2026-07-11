@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
-import { CompactSwitcher } from "./CompactSwitcher"
+import { CompactSwitcher } from "./compact-switcher"
 import type { SwitcherItem } from "./switcher-items"
 
 afterEach(() => {

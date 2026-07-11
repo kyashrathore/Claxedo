@@ -1,4 +1,4 @@
-// target-layer: session-client/session-ui.barrel
+// target-layer: session-client/index
 // Centralized upstream session-ui imports. App code imports this file so an
 // upstream package reshuffle is localized to one boundary.
 export * from "@opencode-ai/session-ui/basic-tool"

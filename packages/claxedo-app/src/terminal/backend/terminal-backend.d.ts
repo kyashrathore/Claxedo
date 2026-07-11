@@ -1,4 +1,4 @@
 declare module "#terminal-backend" {
-  import type { CreateBackendFn } from "./backend/types"
+  import type { CreateBackendFn } from "./types"
   export const createBackend: CreateBackendFn
 }

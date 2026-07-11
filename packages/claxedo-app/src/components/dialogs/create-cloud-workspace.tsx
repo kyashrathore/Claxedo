@@ -3,9 +3,9 @@ import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { api, getDefaultBaseUrl } from "../utils/api"
-import { type ClaxedoEvent, useClaxedoEventsOptional } from "../providers/claxedo-events"
-import { workspaceCreateUrl, workspaceProvidersUrl, workspaceResolveUrl } from "../utils/workspace-control-routes"
+import { api, getDefaultBaseUrl } from "../../utils/api"
+import { type ClaxedoEvent, useClaxedoEventsOptional } from "../../context/claxedo-events"
+import { workspaceCreateUrl, workspaceProvidersUrl, workspaceResolveUrl } from "../../utils/workspace-control-routes"
 
 type Provider = {
   id: string

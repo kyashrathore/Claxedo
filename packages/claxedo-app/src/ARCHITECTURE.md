@@ -5,19 +5,22 @@ verified against the source tree (not the refactor plan docs, which predate
 some of this and are occasionally stale). Where the plan's own directory
 list differs from reality, that is called out explicitly below.
 
-`src/` currently has 37 top-level entries: 28 directories, and 9 loose
+`src/` currently has 30 top-level entries: 21 directories, and 9 loose
 (non-directory) entries — this doc and `VOCABULARY.md` themselves, plus 7
 others: `app.tsx`, `main.tsx`, `desktop-menu.ts`, `index.tsx`, `index.css`,
 `env.d.ts`, and `custom-elements.d.ts` (a symlink to
-`../../ui/src/custom-elements.d.ts`, not a real file). The refactor plan
-(`docs/plans/2026-07-10-002-...lld.md` WP-01 step 2) names 20 of these
-(`components, claxedo-ui, shell, context, session, session-client, pages,
-terminal, shared, utils, pane, browser, runtime, cloud, process, providers,
-extensions, marketplace, i18n, architecture`); it omits `analytics`, `assets`,
-`constants`, `demo`, `e2e` (the `src/e2e/` one — not the root `e2e/`
-Playwright dir), `hooks`, `overrides`, and `vite-shims`. All 28 directories
-are charter'd below since an honest architecture doc can't skip real
-directories just because the plan forgot them.
+`../../ui/src/custom-elements.d.ts`, not a real file). The 21 directories are
+`architecture, assets, browser, claxedo-ui, cloud, components, context, demo,
+extensions, i18n, marketplace, pages, pane, process, runtime, session,
+session-client, shared, shell, terminal, utils`. The Wave 1.5 reorg deleted
+eight top-level directories that earlier revisions of this doc charter'd —
+`providers/`, `analytics/`, `constants/`, `hooks/`, `vite-shims/`,
+`overrides/`, `src/e2e/`, and `cloud/runtime/` (flattened) — merging their
+contents into `context/`, `utils/`, `pages/`, and `cloud/` respectively; those
+charters are gone below. The refactor plan
+(`docs/plans/2026-07-10-002-...lld.md` WP-01 step 2) predates this reorg and
+still names some now-deleted directories — trust the live tree (`ls src/`),
+not the plan. All 21 directories are charter'd below.
 
 ## Import direction: current reality (guard now exists, baseline is legacy debt)
 
@@ -40,57 +43,88 @@ target state itself.
 
 Two confirmed cycles, verified live:
 
-- **`context/` ↔ `shell/`**: `src/context/prompt.tsx`, `global-sync.tsx`,
-  `local.tsx`, `layout.tsx`, `permission.tsx`, `global-sdk.tsx`,
-  `notification.tsx`, `global-sdk-fetch.ts`, `global-sdk-event-fetch.ts`, and
-  four files under `context/global-sync/` all import from `@/shell/...`
-  (e.g. `shell/data/query-options`, `shell/data/directory-cache-manager`,
+- **`context/` ↔ `shell/`**: numerous files under `src/context/`
+  (`global-sync.tsx`, `local.tsx`, `layout.tsx`, `permission.tsx`,
+  `global-sdk.tsx`, `sdk.tsx`, `command.tsx`, `terminal.tsx`,
+  `claxedo-events.tsx`, `global-sdk-event-fetch.ts`, `use-providers.ts`, and
+  files under `context/global-sync/`) import from `@/shell/...` (e.g.
+  `shell/data/query-options`, `shell/data/directory-cache-manager`,
   `shell/data/bootstrap`). In the other direction,
-  `src/shell/app-shell-layout.tsx` and `src/shell/app-shell-state.ts` (plus
-  7 more files under `shell/`) import from `@/context/...`. Neither
-  directory can be read or changed in isolation today.
+  `src/shell/app-shell-layout.tsx`, `app-shell-state.ts`, `app-shell-commands.ts`,
+  and `app-state-snapshot.ts` import from `@/context/...`. Neither
+  directory can be read or changed in isolation today. (Note: as of Wave 1.5,
+  the global-sync data plumbing — `global-sdk-fetch.ts` and the
+  `bootstrap-orchestrator`/`event-ingress`/`inventory-source` modules — moved
+  out of `context/` into `shell/data/`; `context/global-sync/` retains the
+  session-filter/pagination/trim logic.)
 - **`components/` ↔ `claxedo-ui/components/`**: `src/claxedo-ui/components/`
-  imports from `src/components/` (e.g. `review-workspace.tsx` imports
+  imports from `src/components/` (e.g.
+  `review-workspace/review-workspace.tsx` imports
   `@/components/session/session-context-tab` and
-  `@/components/dialog-select-file`; `claxedo-layout-actions/project-actions.tsx`
-  imports `@/components/dialog-select-directory` and
-  `@/components/dialog-settings`). In the other direction, `src/components/`
+  `@/components/dialogs/select-file`; `layout-actions/project-actions.tsx`
+  imports `@/components/dialogs/select-directory` and
+  `@/components/dialogs/settings`). In the other direction, `src/components/`
   imports from `src/claxedo-ui/` via the `@claxedo/claxedo-ui/*` alias (e.g.
-  `dialog-select-file.tsx` → `@claxedo/claxedo-ui/state`;
+  `dialogs/select-file.tsx` → `@claxedo/claxedo-ui/state`;
   `prompt-input/frame.tsx`, `submit-control.tsx`, `toolbar-controls.tsx` →
   `@claxedo/claxedo-ui/components/...`; `session/session-header.tsx`,
-  `titlebar.tsx` → relative imports of `claxedo-ui/components/claxedo-icon`).
+  `titlebar/titlebar.tsx` → relative imports of
+  `claxedo-ui/components/claxedo-icon`).
   See `src/components/README.md` for the intended (not yet enforced) layering.
 
 ## Directory charters
 
-### `components/` (59 top-level files; 125 files total including the
-`prompt-input/`, `session/`, and `server/` subdirectories)
-Fork-era first-party component library: dialogs (`dialog-*.tsx`), the prompt
-input subsystem (`prompt-input/`), session UI (`session/`), the titlebar, and
-generic app chrome. This is where most upstream-derived UI concepts were
-first ported after the hard fork. Currently imports from and is imported by
-`claxedo-ui/` (see cycle above) — see `src/components/README.md` for the
-layering this refactor is working toward. **Add here:** a new dialog, a
-prompt-input feature, or anything that is a direct port/extension of an
-upstream component surface.
+### `components/` (loose top-level files + `dialogs/`, `prompt-input/`,
+`session/`, `settings/`, `titlebar/` subdirectories)
+Fork-era first-party component library: dialogs (`dialogs/`), the prompt
+input subsystem (`prompt-input/`), session UI (`session/`), settings panels
+(`settings/`), the titlebar (`titlebar/`), and generic app chrome. This is
+where most upstream-derived UI concepts were first ported after the hard fork.
+Wave 1.5 folderized what used to be flat files: `dialog-*.tsx` → `dialogs/*`,
+settings panels → `settings/*`, titlebar files → `titlebar/*`, and the old
+`server/` subdirectory was flattened into top-level files (e.g.
+`server-row.tsx`). Currently imports from and is imported by `claxedo-ui/`
+(see cycle above) — see `src/components/README.md` for the layering this
+refactor is working toward. **Add here:** a new dialog (in `dialogs/`), a
+prompt-input feature, a settings panel (in `settings/`), or anything that is a
+direct port/extension of an upstream component surface.
 
-### `claxedo-ui/` (8 top-level files + `claxedo-layout-actions/`,
-`compact-switcher/`, `components/`, `content-renderers/`, `context/`,
-`layout/`, `layouts/`, `navigation-islands/`, `state/`)
+### `claxedo-ui/` (two `.css` files — `app-shell.css`, `ui-overrides.css` —
+plus `compact-switcher/`, `components/`, `content-renderers/`, `context/`,
+`harness/`, `layout-actions/`, `navigation-islands/`, `rail/`, `state/`,
+`terminal/`, `utils/`, `workbench/`, `workspace-panel/`)
 The rail/tab/pane app-shell layer — the multipane workbench, the rail
 sidebar, layout persistence, and workspace-panel chrome that did not exist
-upstream. `layout/` (the workbench split/drag/keyboard engine, with its own
-`layout/tests/` lettered suite) and `layouts/` (rail sidebar, review-mount
-retention, etc. — differ from `layout/` by one letter, a known naming
-collision per the org-review appendix) are separate directories with
-separate concerns. **Add here:** anything that is Claxedo-native workbench
-UI (new pane type, rail feature, workspace-panel widget) with no upstream
-equivalent.
+upstream. Wave 1.5 renamed the two collision-prone directories and pulled
+several concerns into named homes:
+- `workbench/` (was `layout/`) — the workbench split/drag/keyboard engine,
+  with its own `workbench/tests/` lettered suite (A–N).
+- `rail/` (was `layouts/`) — the rail sidebar, workspace-panel shell,
+  review-mount retention, etc. The old `layout/` vs `layouts/` one-letter
+  naming collision is now resolved.
+- `harness/` — the 20-odd `harness-*` config/store/runtime modules that used
+  to sit loose under `claxedo-ui/context/`.
+- `layout-actions/` (was `claxedo-layout-actions/`) — page/project/session/
+  workspace/terminal action wiring.
+- `utils/` — Claxedo-UI-scoped strays (active-workspace, workspace-display,
+  session-title-sync, terminal-log-summary, etc.) collected out of the old
+  top-level.
+- `context/` — now holds exactly the five real UI providers (`pane-id`,
+  `process-ownership`, `process-pane`, `session-params`, `session-sync`).
+- `terminal/` — the centralized terminal-fit event and pane-terminal-recovery.
+- `workspace-panel/`, `components/`, `content-renderers/`,
+  `navigation-islands/`, `compact-switcher/`, `state/` (its `state/tests/`
+  subfolder was flattened in Wave 1.5).
 
-### `shell/` (6 top-level files + `auth/`, `chat/`, `chrome/`,
+**Add here:** anything that is Claxedo-native workbench UI (new pane type,
+rail feature, workspace-panel widget) with no upstream equivalent.
+
+### `shell/` (top-level `app-shell*` files + `auth/`, `chat/`, `connection/`,
 `contributions/`, `data/`, `durability/`, `harnesses/`, `identity/`,
-`layout/`, `session/`, `state/`, `workspace/` — 12 subdomains)
+`layout/`, `review/`, `session/`, `workspace/` — 12 subdomains; Wave 1.5
+renamed `chrome/`→`review/` and `state/`→`connection/`, and moved the
+global-sync data plumbing — `global-sdk-fetch.ts`, `bootstrap-orchestrator`,
+`event-ingress`, `inventory-source` — into `data/`)
 App-shell composition and bootstrap: `app-shell*.ts(x)` files own top-level
 route/command/state wiring. But the directory has grown well past an
 "app shell" charter into a catch-all: `shell/data/` (bootstrap, directory
@@ -108,51 +142,60 @@ Session config/state logic has no single obvious home yet; check `session/`
 and `session-client/` first (see those charters below) before adding to
 `shell/session/`.
 
-### `context/` (48 files + `file/`, `global-sync/`)
+### `context/` (loose provider files + `file/`, `global-sync/`)
 SolidJS provider layer: the established home for every top-level app
 provider (`command.tsx`, `config.tsx`, `file.tsx`, `layout.tsx`,
-`notification.tsx`, `permission.tsx`, `server.tsx`, `terminal.tsx`, etc. —
-`ServerConnection`/server context lives here, see VOCABULARY.md sense 5 of
-"workspace"). Imports from `shell/data/*` for query primitives (part of the
-cycle documented above). `providers/` (below) duplicates this directory's
-charter for exactly one provider and should have been added here instead.
-**Add here:** a new SolidJS context/provider for app-wide state.
+`notification.tsx`, `permission.tsx`, `server.tsx`, `terminal.tsx`,
+`claxedo-events.tsx` — the SSE event bus, etc. — `ServerConnection`/server
+context lives here, see VOCABULARY.md sense 5 of "workspace"). Imports from
+`shell/data/*` for query primitives (part of the cycle documented above).
+Wave 1.5 merged the former top-level `providers/` and `hooks/` directories
+into here (`claxedo-events.tsx`, `use-providers.ts`). **Add here:** a new
+SolidJS context/provider for app-wide state.
 
-### `session/` (`store/`, `submit/`)
-Session store (`session-store.ts`, `session-controller.ts` — a grandfathered
-1079-line god file, see `src/architecture/size-allowlist.json`) and the
-submit pipeline (`submit/dispatch.ts`, `create-with-lifecycle.ts`). One of
-the four session-domain directories (see `shell/` charter above for the
-overlap). **Add here:** session lifecycle (create/switch/status) or submit
-pipeline logic that is not harness-specific.
+### `session/` (`helpers.ts`, `session-layout.ts`, `store/`, `submit/`)
+Session store (`store/session-store.ts`, `store/session-controller.ts` — a
+grandfathered god file, see `src/architecture/size-allowlist.json`) and the
+submit pipeline (`submit/dispatch.ts`, `submit/create-with-lifecycle.ts`).
+Wave 1.5 moved `session-layout.ts` and `helpers.ts` here from the old
+`pages/session/`. One of the four session-domain directories (see `shell/`
+charter above for the overlap). **Add here:** session lifecycle
+(create/switch/status) or submit pipeline logic that is not harness-specific.
 
-### `session-client/` (`commands/`, `composer/`, `harness/`,
-`session-ui.barrel.ts`)
+### `session-client/` (`commands/`, `composer/`, `harness/`, `index.ts`)
 Harness-facing session client: model/harness selection (`commands/`), the
-composer (`composer/composer.tsx` — a grandfathered 777-line file — plus
+composer (`composer/composer.tsx` — a grandfathered god file — plus
 `mode.ts`, `model-strategy.ts`, `role-gate.ts`), and harness resolution
-(`harness/`). `session-ui.barrel.ts` is a deliberate, documented
-upstream-import boundary. **Add here:** harness selection, composer
-behavior, or prompt-machine logic.
+(`harness/`). `index.ts` (renamed from `session-ui.barrel.ts` in Wave 1.5) is
+a deliberate, documented upstream-import boundary. **Add here:** harness
+selection, composer behavior, or prompt-machine logic.
 
-### `pages/` (11 top-level files + `session/`)
+### `pages/` (route files + `session/`)
 Route-level page components: `home.tsx`, `login.tsx`, `cli-login.tsx`,
-`config.tsx`, `permissions.tsx`, `error.tsx`, `session.tsx` (1547 lines,
-grandfathered), and `directory-layout*`. `pages/session/` holds the
-route-level composer/timeline/view-state split out of `session.tsx`
-(`message-timeline.tsx` at 1725 lines is the largest file in the package
-family of god files). **Add here:** a new top-level route.
+`config.tsx`, `permissions.tsx`, `error.tsx`, `session.tsx` (a grandfathered
+god file), and `directory-layout*`. Also holds `dialog-matrix-harness.tsx` —
+a production-bundled debug harness (`app.tsx` lazy-imports it at the
+`/__e2e/dialog-matrix` route, driven by `e2e/playwright/dialog-matrix.spec.ts`)
+that Wave 1.5 moved here from the deleted `src/e2e/` directory; despite the
+name it is application code, not a test fixture, so it stays in `pages/`.
+`pages/session/` holds the route-level composer/timeline/view-state split out
+of `session.tsx` (`message-timeline.tsx` is the largest file in the package's
+family of god files); Wave 1.5 moved its `session-layout.ts`/`helpers.ts` out
+to the top-level `session/` directory. **Add here:** a new top-level route.
 
-### `terminal/` (44 files + `backend/`, `link-parsing/`, `link-providers/`)
+### `terminal/` (core files + `backend/`, `integration/`, `link-parsing/`,
+`link-providers/`)
 The terminal core: resize/geometry/stream/buffer coordination, xterm backend
 (`backend/xterm.ts`), keyboard/capability handling. Exceptionally
 well-tested at the pure-module level (`resize-coordinator.test.ts`,
-`terminal-connection.test.ts`, etc.); `helpers.ts` (907 lines, grandfathered)
-is the DOM-facing glue with no direct tests. **Add here:** terminal
-lifecycle, rendering, or protocol logic. `src/components/terminal.tsx`
-(1194 lines, zero tests) is the top-level component that composes this
-directory's modules — it is NOT part of `terminal/` itself, it lives in
-`components/`.
+`terminal-connection.test.ts`, etc.); `helpers.ts` (grandfathered) is the
+DOM-facing glue with no direct tests. Wave 1.5 added `integration/`, the home
+for the wider end-to-end terminal specs (`terminal-focus-switch.test.ts`,
+`terminal-lifecycle.test.ts`, the headless-emulator pipeline, etc.).
+**Add here:** terminal lifecycle, rendering, or protocol logic.
+`src/components/terminal.tsx` (grandfathered, zero tests) is the top-level
+component that composes this directory's modules — it is NOT part of
+`terminal/` itself, it lives in `components/`.
 
 ### `shared/` (`data/`, `query/`)
 Cross-cutting types and query-key/utility helpers with no SolidJS
@@ -162,25 +205,34 @@ VOCABULARY.md sense 2 of "workspace"), `shared/query/keys.ts`. **Add here:**
 a pure type or query-key helper reused by 2+ directories with no framework
 dependency.
 
-### `utils/` (71 files — the largest flat directory in `src/`)
-A 4-tier dumping ground per the audit: URL/API helpers (`api.ts`,
+### `utils/` (the largest flat directory in `src/`, plus `test-support/`)
+A multi-tier dumping ground per the audit: URL/API helpers (`api.ts`,
 `worktree.ts`), auth (`auth-client.ts`), persistence (`persist.ts`), and the
-3220-line `workspace-runtime-route-audit.test.ts` import-boundary linter
-that is not itself a unit test. Genuinely dead files exist here
+`workspace-runtime-route-audit.test.ts` import-boundary linter that is not
+itself a unit test. The genuinely dead files earlier docs listed here
 (`agent-cache.ts`, `aim.ts`, `runtime-adapters.ts`, `terminal-writer.ts`,
-`local-selection-handoff.ts`, `project-meta-cache.ts`, `index.ts` — targeted
-for deletion by LLD WP-A1, not yet deleted as of this writing). `utils/`
-dissolution into named homes is LLD WP-D3, not yet done. **Add here:** only
-as a last resort — prefer a named home (`shared/`, the relevant feature
-directory) over adding a 72nd file to `utils/`. `utils/test-support/` (a new
-subdirectory, not yet created as of this writing — see LLD WP-03) will be
-the sanctioned location for cross-suite test fakes; see CONTRIBUTING.md.
+`local-selection-handoff.ts`, `project-meta-cache.ts`, `index.ts`) were
+deleted by WP-A1 and are gone. `utils/` also absorbed the former top-level
+`analytics/`, `constants/`, and `vite-shims/` directories in Wave 1.5
+(`analytics.ts`, `file-picker.ts`, `lru-map.ts`). Full dissolution into named
+homes is LLD WP-D3, not yet done. **Add here:** only as a last resort —
+prefer a named home (`shared/`, the relevant feature directory) over adding
+another file to `utils/`. `utils/test-support/` now exists (created per LLD
+WP-03) as the sanctioned location for cross-suite test fakes; see
+CONTRIBUTING.md.
 
 ### `pane/` (`store/`)
 The generic (non-workbench) split-pane preferences store
-(`pane-preferences.ts`) — distinct from `claxedo-ui/layout/`'s workbench pane
-reducer. See VOCABULARY.md's pane/tab/panel/group section for the
-disambiguation between this and the workbench's pane concept.
+(`store/pane-preferences.ts`) — distinct from `claxedo-ui/workbench/`'s
+workbench pane reducer. See VOCABULARY.md's pane/tab/panel/group section for
+the disambiguation between this and the workbench's pane concept.
+**Known dependency knot (deferred):** Wave 1.5 considered folding
+`pane-preferences` into `claxedo-ui/`, but that move would create a new
+`shared/` ↔ `claxedo-ui/` layering cycle (the preferences store is consumed
+from the shared/generic side, and `claxedo-ui/` already imports it), so the
+directory was deliberately left standalone. Resolving this belongs to the
+`utils/`-dissolution-scale work (LLD WP-D3), not to a Wave 1.5 move. Do not
+relocate this store without first untangling that cycle.
 
 ### `browser/` (`components/`, `store/`)
 The in-app browser tab: `browser-pane.tsx`, `browser-url.ts`,
@@ -196,25 +248,19 @@ handling — "workspace" here is sense 2/5, control-plane/server, not a
 directory). **Add here:** agent-runtime request/response shaping that isn't
 harness-specific enough to live in `session-client/`.
 
-### `cloud/` (`runtime/`)
-Cloud-hosted workspace runtime store: `cloud/runtime/workspace-runtime-store.ts`
-and its browser test. Distinct from the top-level `runtime/` directory above
-— `cloud/runtime/` is specifically the cloud-hosted-workspace variant.
+### `cloud/` (flat)
+Cloud-hosted workspace runtime store: `cloud/workspace-runtime-store.ts`
+and its browser test (Wave 1.5 flattened the former `cloud/runtime/`
+subdirectory). Distinct from the top-level `runtime/` directory above —
+`cloud/` is specifically the cloud-hosted-workspace variant.
 **Add here:** cloud-workspace-runtime-specific state, not general
 agent-runtime logic (that goes in `runtime/`).
 
 ### `process/` (4 files)
 Process/PTY client relay: `client.ts`, `client.relay.test.ts`, `process.ts`.
-Backs `ProcessPanePanel.tsx` (see VOCABULARY.md's pane/panel note) and the
-process-diagnostics dialog. **Add here:** process lifecycle/relay logic.
-
-### `providers/` (3 files: `claxedo-events.tsx`, `index.ts`, its test)
-Exactly one real SolidJS provider (`ClaxedoEventsProvider`, the SSE event
-bus from claxedo-server) in a directory of its own. This duplicates
-`context/`'s established charter for a single file — verified no other
-provider lives here. **Do not add here.** New providers belong in
-`context/`; this directory should eventually be merged away (LLD /
-naming-vocab appendix refactor step), not grown.
+Backs `claxedo-ui/workspace-panel/process-pane-panel.tsx` (kebab-cased in
+Wave 1.5; see VOCABULARY.md's pane/panel note) and the process-diagnostics
+dialog. **Add here:** process lifecycle/relay logic.
 
 ### `extensions/` (5 files: `app.tsx`, `index.ts`, `server.tsx`,
 `server.test.ts`, `types.ts`)
@@ -225,22 +271,22 @@ wiring only. Note: `extensions/server.test.ts` imports from `vitest` but
 keeps the `.test.ts` (bun:test-signaling) suffix — a known
 extension/runner-naming mismatch per the org-review appendix, not yet fixed.
 
-### `marketplace/` (1 file: `marketplace-panel.tsx`, 1074/1075 lines,
-grandfathered)
-The MCP/extension marketplace panel UI. Single god file, no split-out
-modules yet. **Add here:** marketplace-panel features, ideally by first
-extracting pure logic into a sibling module rather than growing the one
-file further.
+### `marketplace/` (`panel.tsx`, `cards.tsx`, `filters.tsx`, `install-flow.ts`)
+The MCP/extension marketplace panel UI. Wave 1.5 split the former
+single-god-file `marketplace-panel.tsx` into `panel.tsx` (the shell),
+`cards.tsx`, `filters.tsx`, and the `install-flow.ts` logic module.
+**Add here:** marketplace-panel features, continuing the pattern of extracting
+pure logic into a sibling module rather than regrowing `panel.tsx`.
 
-### `i18n/` (18 files: locale dicts `ar.ts`...`th.ts`, `cloud-strings.ts`,
-plus `en.ts`)
-Hand-edited locale dictionaries. Zero test coverage anywhere in this
-directory as of this writing (verified: no `*.test.ts`/`*.vitest.ts*` file
-exists under `src/i18n/`) — no parity check between locale key sets, no
-placeholder-token check, confirmed dead keys (e.g. a `uk` key with no `uk.ts`
-locale file). LLD WP-A6 adds a `locales.ts` manifest + parity test; not done
-yet. **Add here:** new locale strings, keeping `en.ts` as the source of
-truth for key sets.
+### `i18n/` (locale dicts `ar.ts`...`zht.ts`, `cloud-strings.ts`, `en.ts`,
+plus the `locales.ts` manifest, `locale-parity.test.ts`, and
+`missing-keys-baseline.json`)
+Hand-edited locale dictionaries. The WP-A6 work has landed: `locales.ts` is
+the locale manifest, `locale-parity.test.ts` enforces key-set parity against
+`en.ts` (with `missing-keys-baseline.json` recording the currently-tolerated
+gaps, shrink-only), and the earlier dead `br` locale was renamed to `pt-BR.ts`.
+**Add here:** new locale strings, keeping `en.ts` as the source of truth for
+key sets and registering any new locale in `locales.ts`.
 
 ### `architecture/` (`AGENTS.md` plus a growing set of scanner rules)
 The structural-fitness-function suite: orphan-module detection, god-file
@@ -267,34 +313,28 @@ CONTRIBUTING.md's tests-as-specs standard).
 ### Single-file / small top-level directories with no stated policy
 These exist with no documented charter (a real gap the audit calls out —
 "no policy" is accurate, not an oversight in this doc):
-- `analytics/` (`posthog.ts`) — PostHog client wrapper.
 - `assets/` (`ios.mp3`) — one static audio asset (terminal bell sound).
-- `constants/` (`file-picker.ts`) — accepted MIME-type lists for file
-  pickers.
 - `demo/` (`browser.ts`, `fixtures.ts`, `handlers.ts`, `tour-controller.tsx`)
   — demo-mode tour controller and fixtures, gated behind demo mode.
-- `hooks/` (`use-providers.ts`) — one SolidJS hook composing `context/sdk`
-  and `shell/workspace` queries.
-- `vite-shims/` (`lru-map-default.ts`) — a build-time shim module.
-These are all legitimately small today; do not treat "single-file top-level
+These two are legitimately small today; do not treat "single-file top-level
 directory" as an invitation to create more of them — prefer adding to an
 existing directory with a real charter unless the new concept is genuinely
-orthogonal to all of them.
+orthogonal to all of them. (Wave 1.5 removed the other formerly-tiny
+top-level directories: `analytics/` → `utils/analytics.ts`, `constants/` →
+`utils/file-picker.ts`, `hooks/` → `context/use-providers.ts`, and
+`vite-shims/` → `utils/lru-map.ts`.)
 
-### `overrides/` (`README.md` only — no production files)
-Tombstone directory. See `src/overrides/README.md` for what it used to be
-and why it is now empty (the answer: post-hard-fork, `packages/app` no
-longer exists in this monorepo — verified via `ls packages/` at repo root —
-so the override-resolution system this directory documented is gone too).
-
-### `src/e2e/` (1 file: `dialog-matrix-harness.tsx`) — NOT the root `e2e/`
-Playwright directory
-A real, production-bundled debug harness component (`app.tsx` lazy-imports
-it) driven by `e2e/playwright/dialog-matrix.spec.ts`. Despite the name, this
-is application code, not a test fixture — do not move it into
-`utils/test-support/`. The name collision with the root `e2e/` (Playwright
-specs) directory is a known confusion point (org-review appendix,
-`support-dirs-org` section) with no rename landed yet.
+### Deleted directories worth knowing about
+Two directories that older documentation and stale citations still reference
+no longer exist:
+- `overrides/` — was a tombstone directory holding only a `README.md`
+  documenting the retired pre-fork override-resolution system. Wave 1.5
+  deleted it (the README added nothing beyond its own explanation); that
+  history now lives in CONTRIBUTING.md's "History: the override system"
+  section. There is no `src/overrides/README.md` to link anymore.
+- `src/e2e/` — held one file, `dialog-matrix-harness.tsx`, now moved into
+  `pages/` (see the `pages/` charter above). The old `src/e2e/` vs root
+  `e2e/` name collision is resolved.
 
 ## "Where do I add X" — the five commonest contribution types
 
@@ -316,8 +356,9 @@ specs) directory is a known confusion point (org-review appendix,
    `src/terminal/`; the top-level composing component is
    `src/components/terminal.tsx`.
 5. **A new SolidJS provider/context** → `src/context/`. Do not create a new
-   single-purpose top-level directory the way `src/providers/` did — that
-   pattern is flagged as a naming-vocab finding, not a template to repeat.
+   single-purpose top-level directory for one provider — the old `providers/`
+   directory that did exactly that was flagged as a naming-vocab finding and
+   folded back into `context/` in Wave 1.5, not a template to repeat.
 
 ## See also
 

@@ -61,7 +61,7 @@ describe("architecture scanners", () => {
     const metric = metrics.find((item) => item.name === "deepSessionUiImports")!
 
     expect(metric.scan([
-      source("session-client/session-ui.barrel.ts", `export * from "@opencode-ai/session-ui/context"`),
+      source("session-client/index.ts", `export * from "@opencode-ai/session-ui/context"`),
       source("components/file.tsx", `import { File } from "@opencode-ai/session-ui/file"`),
     ])).toEqual([
       {

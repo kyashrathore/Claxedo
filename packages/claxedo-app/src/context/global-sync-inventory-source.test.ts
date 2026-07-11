@@ -3,13 +3,13 @@ import {
   globalBootstrapFetch,
   shouldUseSignedRouteBootstrap,
   workspaceScopedCacheKey,
-} from "@/context/global-sync/bootstrap-orchestrator"
+} from "@/shell/data/bootstrap-orchestrator"
 import {
   shouldUseSignedControlPlaneInventory,
   shouldUseSignedSessionInventory,
   shouldUseSignedProjectSessionInventory,
 } from "@/context/global-sync"
-import { normalizeClaxedoSessionLifecycleEvent } from "@/context/global-sync/event-ingress"
+import { normalizeClaxedoSessionLifecycleEvent } from "@/shell/data/event-ingress"
 import { queryClient } from "../shared/query/query-client"
 import { queryKeys } from "../shared/query/keys"
 

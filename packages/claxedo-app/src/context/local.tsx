@@ -3,7 +3,7 @@ import { batch, createEffect, createMemo, createSignal, onCleanup, startTransiti
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { useModels } from "@/context/models"
-import { useProviders } from "@claxedo/hooks/use-providers"
+import { useProviders } from "@claxedo/context/use-providers"
 import { usePlatform } from "@claxedo/context/platform"
 import { Persist, persisted } from "@/utils/persist"
 import {

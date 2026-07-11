@@ -1,7 +1,7 @@
 import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import type { ContentMeta } from "../state"
 import { useClaxedoState } from "../state"
-import type { PaneCtx } from "../layout"
+import type { PaneCtx } from "../workbench"
 import { SessionPaneScope } from "../components/session-pane-scope"
 import SessionPage from "../../pages/session"
 import { hasBacking, localSessionRefForDirectory, retargetSessionRef } from "../../shell/identity/session-ref"

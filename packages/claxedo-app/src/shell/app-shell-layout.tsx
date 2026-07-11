@@ -45,7 +45,7 @@ import {
   workspacePanelFullWidthCommand,
 } from "./layout/commands"
 import { createShellLayoutState } from "./layout/state"
-import "../claxedo-ui/styles.css"
+import "../claxedo-ui/ui-overrides.css"
 
 export type AppShellLayoutProps = ParentProps<{
   /**

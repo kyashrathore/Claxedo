@@ -9,7 +9,7 @@
  * coordinated via claxedo layout state and rendered through multi-pane leaves.
  */
 
-import "../claxedo-ui/claxedo-layout.css"
+import "../claxedo-ui/app-shell.css"
 import { createEffect, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { Toast } from "@opencode-ai/ui/toast"

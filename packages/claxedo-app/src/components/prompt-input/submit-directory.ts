@@ -2,7 +2,7 @@ import {
   appendWorkspaceRuntimeLog,
   prepareUserHostedRuntime,
   prepareWorkspaceRuntime,
-} from "../../cloud/runtime/workspace-runtime-store"
+} from "../../cloud/workspace-runtime-store"
 import type { SubmitDirectory } from "../../session/submit"
 import { resolveSubmitDirectory } from "../../session/submit"
 import {

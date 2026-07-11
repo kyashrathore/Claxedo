@@ -3,9 +3,9 @@ import { describe, expect, test } from "bun:test"
 describe("global sync state ownership", () => {
   test("keeps request dedupe and session load metadata in Query", async () => {
     const source = await Bun.file(new URL("../global-sync.tsx", import.meta.url)).text()
-    const bootstrapSource = await Bun.file(new URL("./bootstrap-orchestrator.ts", import.meta.url)).text()
-    const inventorySource = await Bun.file(new URL("./inventory-source.ts", import.meta.url)).text()
-    const eventIngress = await Bun.file(new URL("./event-ingress.ts", import.meta.url)).text()
+    const bootstrapSource = await Bun.file(new URL("../../shell/data/bootstrap-orchestrator.ts", import.meta.url)).text()
+    const inventorySource = await Bun.file(new URL("../../shell/data/inventory-source.ts", import.meta.url)).text()
+    const eventIngress = await Bun.file(new URL("../../shell/data/event-ingress.ts", import.meta.url)).text()
 
     expect(await Bun.file(new URL("../../overrides/context/global-sync.tsx", import.meta.url)).exists()).toBe(false)
     expect(source).not.toContain("workspaceGroupedInflight")
@@ -35,7 +35,7 @@ describe("global sync state ownership", () => {
   })
 
   test("speculative directory session loads can stay quiet at the source", async () => {
-    const source = await Bun.file(new URL("./bootstrap-orchestrator.ts", import.meta.url)).text()
+    const source = await Bun.file(new URL("../../shell/data/bootstrap-orchestrator.ts", import.meta.url)).text()
     const bootstrap = await Bun.file(new URL("../../shell/data/bootstrap.ts", import.meta.url)).text()
 
     expect(source).toMatch(/async function loadSessions\(directory: DirectoryRef, opts: \{ force\?: boolean; quiet\?: boolean \} = \{\}\)/)

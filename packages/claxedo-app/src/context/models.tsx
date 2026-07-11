@@ -2,7 +2,7 @@ import { createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { useProviders } from "@/hooks/use-providers"
+import { useProviders } from "@/context/use-providers"
 import { Persist, persisted } from "@/utils/persist"
 import type { ModelKey } from "@claxedo/session-client/composer/model-strategy"
 

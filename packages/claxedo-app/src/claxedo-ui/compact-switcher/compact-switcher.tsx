@@ -1,6 +1,6 @@
 import { For, Show, createEffect, onCleanup } from "solid-js"
 import type { SwitcherItem } from "./switcher-items"
-import { WORKBENCH_DRAG_MIME } from "../layout"
+import { WORKBENCH_DRAG_MIME } from "../workbench"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "../components/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 

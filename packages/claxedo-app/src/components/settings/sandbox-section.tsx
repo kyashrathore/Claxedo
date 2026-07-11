@@ -2,14 +2,14 @@ import { createEffect, createMemo, createSignal, For, Show, type Component, type
 import { Button } from "@opencode-ai/ui/button"
 import { Select } from "@opencode-ai/ui/select"
 import { showToast } from "@opencode-ai/ui/toast"
-import { api, getDefaultBaseUrl } from "../utils/api"
-import { NetworkPolicySettings } from "./network-policy-settings"
+import { api, getDefaultBaseUrl } from "../../utils/api"
+import { NetworkPolicySettings } from "./network-policy"
 import {
   shouldUseSandboxDriverMutations,
   workspaceDefaultProviderUrl,
   workspaceProviderAuthUrl,
   workspaceProvidersUrl,
-} from "./settings-sandbox-section-helpers"
+} from "./sandbox-section-logic"
 
 type Field = {
   key: string

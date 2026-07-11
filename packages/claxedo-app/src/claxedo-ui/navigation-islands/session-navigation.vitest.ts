@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { WORKBENCH_DRAG_MIME } from "../layout"
+import { WORKBENCH_DRAG_MIME } from "../workbench"
 import {
   deriveTerminalSurfaceRows,
   navigationDragPayload,

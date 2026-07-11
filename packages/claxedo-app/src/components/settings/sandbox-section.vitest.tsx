@@ -65,7 +65,7 @@ vi.mock("@opencode-ai/ui/toast", () => ({
   showToast: (...args: unknown[]) => mocks.toast(...args),
 }))
 
-vi.mock("../utils/api", () => ({
+vi.mock("../../utils/api", () => ({
   api: {
     delete: (...args: unknown[]) => mocks.apiDelete(...args),
     get: (...args: unknown[]) => mocks.apiGet(...args),
@@ -76,7 +76,7 @@ vi.mock("../utils/api", () => ({
   normalizeUrl: (url: string | undefined) => url?.trim().replace(/\/+$/, "") || undefined,
 }))
 
-vi.mock("./network-policy-settings", () => ({
+vi.mock("./network-policy", () => ({
   NetworkPolicySettings: () => <div data-testid="network-policy" />,
 }))
 
@@ -99,7 +99,7 @@ describe("SandboxSettingsSection", () => {
       .mockResolvedValueOnce({ default_provider: "daytona", providers: [provider(false)] })
     mocks.apiDelete.mockResolvedValue({ ok: true })
 
-    const { SandboxSettingsSection } = await import("./settings-sandbox-section")
+    const { SandboxSettingsSection } = await import("./sandbox-section")
     render(() => <SandboxSettingsSection />)
 
     await waitFor(() => expect(screen.getByText(/Credentials configured/)).toBeInTheDocument())
@@ -116,7 +116,7 @@ describe("SandboxSettingsSection", () => {
     mocks.baseUrl = "https://claxedo.example.test"
     mocks.apiGet.mockResolvedValue({ default_provider: "daytona", providers: [provider(true)] })
 
-    const { SandboxSettingsSection } = await import("./settings-sandbox-section")
+    const { SandboxSettingsSection } = await import("./sandbox-section")
     render(() => <SandboxSettingsSection />)
 
     await waitFor(() => expect(screen.getByText(/Credentials configured/)).toBeInTheDocument())
