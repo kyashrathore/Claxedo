@@ -134,7 +134,7 @@ const dialogSelectDirectory = "components/dialogs/select-directory.tsx"
 const dialogSelectFile = "components/dialogs/select-file.tsx"
 const sessionNewDesignView = "components/session/session-new-design-view.tsx"
 const sessionHeader = "components/session/session-header.tsx"
-const promptInput = "session-client/composer/composer.tsx"
+const promptInput = "session/composer/composer.tsx"
 const promptSubmit = "components/prompt-input/submit.ts"
 const promptSubmitPending = "session/submit/pending.ts"
 const promptSubmitSend = "session/submit/send.ts"
@@ -152,7 +152,7 @@ const pageEditor = "claxedo-ui/components/page-editor/page-editor.tsx"
 const reviewTab = "claxedo-ui/components/review-workspace/review-tab.tsx"
 const harnessConfigStore = "claxedo-ui/harness/harness-config-store.ts"
 const harnessConfigRuntime = "claxedo-ui/harness/harness-config-runtime.ts"
-const harnessStorePolicy = "session-client/harness/store-policy.ts"
+const harnessStorePolicy = "session/harness/store-policy.ts"
 const appShellLayout = "shell/app-shell-layout.tsx"
 const railSidebarShell = "claxedo-ui/rail/rail-sidebar-shell.tsx"
 const railWorkbenchShell = "claxedo-ui/rail/rail-workbench-shell.tsx"
@@ -184,8 +184,8 @@ const dialogSelectProvider = "components/dialogs/select-provider.tsx"
 const dialogManageModels = "components/dialogs/manage-models.tsx"
 const dialogSelectModel = "components/dialogs/select-model.tsx"
 const dialogSelectModelUnpaid = "components/dialogs/select-model-unpaid.tsx"
-const promptModelStrategy = "session-client/composer/model-strategy.ts"
-const promptToolbarState = "session-client/composer/toolbar-state.ts"
+const promptModelStrategy = "session/composer/model-strategy.ts"
+const promptToolbarState = "session/composer/toolbar-state.ts"
 const routeIntent = "claxedo-ui/state/route-intent.ts"
 const contentRenderers = [
   "claxedo-ui/content-renderers/context-content.tsx",
@@ -197,7 +197,7 @@ const projectInventoryContentRenderers = [
   "claxedo-ui/content-renderers/pages-index-content.tsx",
 ]
 const sessionPaneScope = "claxedo-ui/components/session-pane-scope.tsx"
-const openSessionsRegistry = "shell/session/open-sessions.ts"
+const openSessionsRegistry = "session/store/open-sessions.ts"
 const panePreferences = "pane/store/pane-preferences.ts"
 
 async function files(dir: string): Promise<string[]> {
@@ -1321,7 +1321,7 @@ describe("workspace runtime route audit", () => {
 
   test("directory-scoped Local and File providers do not depend on SyncProvider or child-store mirrors", async () => {
     const local = await Bun.file(path.join(root, localContextOwner)).text()
-    const localHandoff = await Bun.file(path.join(root, "shell/session/local-selection-handoff.ts")).text()
+    const localHandoff = await Bun.file(path.join(root, "session/store/local-selection-handoff.ts")).text()
     const file = await Bun.file(path.join(root, "context/file.tsx")).text()
     const viewCache = await Bun.file(path.join(root, "context/file/view-cache.ts")).text()
     const treeStore = await Bun.file(path.join(root, "context/file/tree-store.ts")).text()
@@ -2633,10 +2633,10 @@ describe("workspace runtime route audit", () => {
   test("PromptInput resolves session identity without router params", async () => {
     const text = await Bun.file(path.join(root, promptInput)).text()
     const submit = await Bun.file(path.join(root, promptSubmit)).text()
-    const props = await Bun.file(path.join(root, "session-client/composer/prompt-input-props.ts")).text()
+    const props = await Bun.file(path.join(root, "session/composer/prompt-input-props.ts")).text()
     const toolbar = await Bun.file(path.join(root, promptToolbarState)).text()
     const submitCreate = await Bun.file(path.join(root, "components/prompt-input/submit-create-session.ts")).text()
-    const workspaceResolver = await Bun.file(path.join(root, "session-client/composer/workspace-resolver.ts")).text()
+    const workspaceResolver = await Bun.file(path.join(root, "session/composer/workspace-resolver.ts")).text()
 
     expect(text).not.toMatch(/@solidjs\/router/)
     expect(text).not.toMatch(/\buseParams\b/)
@@ -3214,11 +3214,11 @@ describe("workspace runtime route audit", () => {
   })
 
   test("upstream PromptInput checks review membership from shell diff queries", async () => {
-    const text = await Bun.file(path.join(root, "session-client/composer/composer.tsx")).text()
+    const text = await Bun.file(path.join(root, "session/composer/composer.tsx")).text()
     const submit = await Bun.file(path.join(root, "components/prompt-input/submit.ts")).text()
     const globalSync = await Bun.file(path.join(root, globalSyncContext)).text()
     const shellQuery = await Bun.file(path.join(root, "shared/query/shell.ts")).text()
-    const workspaceResolver = await Bun.file(path.join(root, "session-client/composer/workspace-resolver.ts")).text()
+    const workspaceResolver = await Bun.file(path.join(root, "session/composer/workspace-resolver.ts")).text()
 
     expect(text).toMatch(/agentListQuery\(/)
     expect(text).toMatch(/commandListQuery\(/)

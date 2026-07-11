@@ -1,5 +1,5 @@
-// target-layer: session-client
-import type { ModelKey } from "../composer/model-strategy"
+// target-layer: session
+import type { ModelKey } from "@/session/composer/model-strategy"
 import type { HarnessReadiness } from "./selection"
 import type { HarnessType } from "./profile"
 

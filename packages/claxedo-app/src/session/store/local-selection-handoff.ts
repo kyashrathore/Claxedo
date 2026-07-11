@@ -1,6 +1,6 @@
 import { queryClient } from "../../shared/query/query-client"
-import { shellDataKeys } from "../data/keys"
-import type { ModelKey } from "../../session-client/composer/model-strategy"
+import { shellDataKeys } from "@/shell/data/keys"
+import type { ModelKey } from "../../session/composer/model-strategy"
 
 export type LocalSelectionState = {
   agent?: string

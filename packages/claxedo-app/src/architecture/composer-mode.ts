@@ -1,7 +1,7 @@
 import type { SourceFile } from "./scanners"
 
 /** The one file allowed to mount PromptInput without an explicit mode prop: its own definition. */
-export const COMPOSER_MODE_OWNER_FILE = "session-client/composer/composer.tsx"
+export const COMPOSER_MODE_OWNER_FILE = "session/composer/composer.tsx"
 
 const MOUNTS_PROMPT_INPUT = /<PromptInput\b/g
 const HAS_EXPLICIT_MODE = /\bmode=/

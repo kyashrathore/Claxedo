@@ -4,7 +4,7 @@ import {
   hardFailedHarness,
   type HarnessState,
   type HarnessType,
-} from "../../session-client/harness/profile"
+} from "../../session/harness/profile"
 import {
   harnessStatusPatch,
   readyHarnessFallbackPatch,
@@ -12,12 +12,12 @@ import {
   workspaceDraftHarnessResetPatch,
   type HarnessStorePatch,
   type HarnessStoreState,
-} from "../../session-client/harness/store-state"
+} from "../../session/harness/store-state"
 import {
   shouldFetchConfigOptionsForScope,
   shouldRefreshDirectoryAfterHarnessStatus,
   type HarnessScopeInput,
-} from "../../session-client/harness/store-policy"
+} from "../../session/harness/store-policy"
 
 type PreferenceKey = "harness" | "model" | "agent"
 type HarnessDirectory = NonNullable<HarnessScopeInput["directory"]>

@@ -3,7 +3,7 @@ import type { FollowupDraft } from "@/components/prompt-input/submit"
 import type { SessionStatusStage as SessionStatusStageValue } from "@claxedo/claxedo-ui/components/session-status-stage"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { CloudLog } from "@claxedo/components/session/cloud-startup-view"
-import type { HarnessSelectionController, HarnessSubmitController } from "@claxedo/session-client/harness/controller"
+import type { HarnessSelectionController, HarnessSubmitController } from "@/session/harness/controller"
 import type { SessionRef } from "../../shell/identity/session-ref"
 import type { ComposerMode } from "./mode"
 

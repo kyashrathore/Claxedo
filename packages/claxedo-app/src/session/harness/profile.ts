@@ -1,4 +1,4 @@
-// target-layer: session-client
+// target-layer: session
 import type { HarnessId } from "../../shell/identity/session-ref"
 
 export type HarnessType = HarnessId

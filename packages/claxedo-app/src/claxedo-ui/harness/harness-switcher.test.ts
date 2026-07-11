@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { createHarnessSwitcher, type HarnessSwitcherCache } from "./harness-switcher"
 import type { WorkspaceBoot } from "./harness-config-runtime"
 import { harnessConfigUrl } from "./harness-config-routes"
-import { effectiveHarnessModel, type HarnessType } from "../../session-client/harness/profile"
-import type { HarnessStorePatch } from "../../session-client/harness/store-state"
+import { effectiveHarnessModel, type HarnessType } from "../../session/harness/profile"
+import type { HarnessStorePatch } from "../../session/harness/store-state"
 
 const scope = "draft:/repo:route"
 

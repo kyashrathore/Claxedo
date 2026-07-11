@@ -47,8 +47,8 @@ import { registerPromptModeCommands } from "@/components/prompt-input/mode-comma
 import { createPromptEditLoader, createPromptExampleRotation, promptCaretState } from "@/components/prompt-input/lifecycle"
 import { PromptInputFrame } from "@/components/prompt-input/frame"
 import { promptPlaceholder } from "@/components/prompt-input/placeholder"
-import { promptDesignPlaceholder, submitBlockedByWorkspaceRole } from "@/session-client/composer/role-gate"
-import { createHarnessSubmitController } from "@claxedo/session-client/harness/controller"
+import { promptDesignPlaceholder, submitBlockedByWorkspaceRole } from "@/session/composer/role-gate"
+import { createHarnessSubmitController } from "@/session/harness/controller"
 import { promptHarnessDirectory } from "@claxedo/components/prompt-input/harness-directory"
 import { createPanePreferences } from "../../pane/store/pane-preferences"
 import { queryClient } from "../../shared/query/query-client"
@@ -69,7 +69,7 @@ import type { PromptInputProps } from "./prompt-input-props"
 import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { createPromptToolbarState } from "./toolbar-state"
 import { knownWorkspaceKind, signedWorkspaceForDirectory, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
-import { createModelSelectionPicker } from "../commands/model-selection"
+import { createModelSelectionPicker } from "@/session/commands/model-selection"
 
 const idleSessionStatus = { type: "idle" as const }
 

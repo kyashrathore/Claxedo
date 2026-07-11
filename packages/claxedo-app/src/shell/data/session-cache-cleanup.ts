@@ -1,5 +1,5 @@
 import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { hasOpenSession } from "../session/open-sessions"
+import { hasOpenSession } from "@/session/store/open-sessions"
 import { queryClient } from "../../shared/query/query-client"
 import { queryKeys } from "../../shared/query/keys"
 import { shellDataKeys } from "./keys"

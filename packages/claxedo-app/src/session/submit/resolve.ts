@@ -45,7 +45,7 @@ export async function resolveSubmitSessionTarget(
 // worktree; explicit worktreeSelection → use it; else → default) and turns each
 // branch into a side effect (callbacks). The remote branch delegates the
 // sub-decision (prepare existing vs provision cloud vs missing) to
-// `resolveWorkspaceSubmitPlan` (session-client/composer/workspace-resolver.ts)
+// `resolveWorkspaceSubmitPlan` (session/composer/workspace-resolver.ts)
 // via the `resolveCloudSessionDirectory` callback. Those two functions encode
 // the SAME shared top-level tree independently, so `resolve-workspace-plan-agreement.test.ts`
 // pins that they never diverge on shared inputs.

@@ -2,7 +2,7 @@ import { harnessConfigUrl } from "./harness-config-routes"
 import {
   sessionModelSyncKey,
   type HarnessScopeInput,
-} from "../../session-client/harness/store-policy"
+} from "../../session/harness/store-policy"
 
 export type SessionModelSyncState = {
   desired?: string

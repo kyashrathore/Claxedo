@@ -35,8 +35,8 @@ import type { Prompt } from "@/context/prompt"
 import { createMockApi } from "@/utils/test-support/mock-api"
 import { queryClient } from "../../shared/query/query-client"
 import { shellDataKeys } from "../../shell/data/keys"
-import type { HarnessSubmitController } from "../../session-client/harness/controller"
-import type { HarnessType } from "../../session-client/harness/profile"
+import type { HarnessSubmitController } from "../../session/harness/controller"
+import type { HarnessType } from "../../session/harness/profile"
 
 /** Structural view of `bun:test`'s `mock`, so this file needs no bun:test value type. */
 type ModuleMocker = { module: (specifier: string, factory: () => unknown) => void }

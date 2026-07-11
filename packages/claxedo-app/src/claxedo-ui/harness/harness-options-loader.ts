@@ -1,5 +1,5 @@
-import { applyHarnessOptionsResponse, type HarnessOptionsStatePatch } from "../../session-client/harness/options-state"
-import { optionsResponse, type HarnessType, type OptionsResponse } from "../../session-client/harness/profile"
+import { applyHarnessOptionsResponse, type HarnessOptionsStatePatch } from "../../session/harness/options-state"
+import { optionsResponse, type HarnessType, type OptionsResponse } from "../../session/harness/profile"
 
 export type HarnessOptionsLoaderCache = {
   nextSeq(scope: string): number

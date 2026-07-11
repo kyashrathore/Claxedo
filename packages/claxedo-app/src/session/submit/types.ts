@@ -12,7 +12,7 @@ import type {
 } from "@opencode-ai/sdk/v2/client"
 import type { ContextItem } from "@/context/prompt"
 import type { useClaxedoState } from "../../claxedo-ui/state"
-import type { ModelKey } from "../../session-client/composer/model-strategy"
+import type { ModelKey } from "../../session/composer/model-strategy"
 import type { SessionRef } from "../../shell/identity/session-ref"
 
 export type PromptRequestPart = (TextPartInput | FilePartInput | AgentPartInput) & { id: string }

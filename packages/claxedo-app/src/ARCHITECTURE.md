@@ -122,7 +122,7 @@ rail feature, workspace-panel widget) with no upstream equivalent.
 
 ### `shell/` (top-level `app-shell*` files + `auth/`, `chat/`, `connection/`,
 `contributions/`, `data/`, `durability/`, `harnesses/`, `identity/`,
-`layout/`, `review/`, `session/`, `workspace/` — 12 subdomains; Wave 1.5
+`layout/`, `review/`, `workspace/` — 11 subdomains; Wave 1.5
 renamed `chrome/`→`review/` and `state/`→`connection/`, and moved the
 global-sync data plumbing — `global-sdk-fetch.ts`, `bootstrap-orchestrator`,
 `event-ingress`, `inventory-source` — into `data/`)
@@ -131,17 +131,17 @@ route/command/state wiring. But the directory has grown well past an
 "app shell" charter into a catch-all: `shell/data/` (bootstrap, directory
 cache, query options — the actual query-cache writer for
 `directory.path`/`directory.project`, see `shell/data/bootstrap.ts:172-195`),
-`shell/identity/` (canonical `session-ref.ts`, see VOCABULARY.md), `shell/chat/`
-(conversation registry), and `shell/session/` (session config selection,
-local-selection-handoff) each have real, load-bearing logic that overlaps
-with the separately-named top-level `session/`, `session-client/`, and
-`context/` directories. This 4-way session-domain split (`session/`,
-`session-client/`, `shell/session/`, session-shaped providers in `context/`)
-is a known, unresolved ownership gap (LLD WP-D1 consolidates it later — not
-yet done). **Add here today:** app-shell bootstrap/composition/routing only.
-Session config/state logic has no single obvious home yet; check `session/`
-and `session-client/` first (see those charters below) before adding to
-`shell/session/`.
+`shell/identity/` (canonical `session-ref.ts`, see VOCABULARY.md), and
+`shell/chat/` (conversation registry) each have real, load-bearing logic that
+overlaps with the separately-named top-level `session/` and `context/`
+directories. WP-D1 (Wave 4) closed most of this session-domain split:
+`shell/session/` (session config selection, local-selection-handoff) moved
+into `session/store/`, and the `session-client/{composer,harness,commands}`
+subsystem moved into `session/`. What remains is a 2-way split — `session/`
+plus the session-shaped providers in `context/` — and the residual
+`session-client/index.ts` upstream-import barrel (WP-D2 formalizes that
+boundary). **Add here today:** app-shell bootstrap/composition/routing only.
+Session config/state logic now belongs in `session/` (see its charter below).
 
 ### `context/` (loose provider files + `file/`, `global-sdk/`, `global-sync/`)
 SolidJS provider layer: the established home for every top-level app
@@ -157,22 +157,28 @@ into here (`claxedo-events.tsx`, `use-providers.ts`). Wave 2 renamed the old
 `heartbeat-watchdog`, `reconnect-backoff`), and added `live-resource-cache.ts`.
 **Add here:** a new SolidJS context/provider for app-wide state.
 
-### `session/` (`helpers.ts`, `session-layout.ts`, `store/`, `submit/`)
+### `session/` (`helpers.ts`, `session-layout.ts`, `store/`, `submit/`, `composer/`, `harness/`, `commands/`)
 Session store (`store/session-store.ts`, `store/session-controller.ts` — a
 grandfathered god file, see `src/architecture/size-baseline.json`) and the
 submit pipeline (`submit/dispatch.ts`, `submit/create-with-lifecycle.ts`).
 Wave 1.5 moved `session-layout.ts` and `helpers.ts` here from the old
-`pages/session/`. One of the four session-domain directories (see `shell/`
-charter above for the overlap). **Add here:** session lifecycle
-(create/switch/status) or submit pipeline logic that is not harness-specific.
+`pages/session/`. WP-D1 (Wave 4) consolidated the rest of the session domain
+here: `store/` also holds the former `shell/session/` config-selection state
+(`local-selection-handoff.ts`, `open-sessions.ts`, `session-config-selection.ts`),
+and the harness-facing composer subsystem moved in from `session-client/` as
+`composer/` (`composer/composer.tsx` — a grandfathered god file — plus
+`mode.ts`, `model-strategy.ts` — the canonical `ModelKey` home — `role-gate.ts`),
+`harness/` (harness resolution/store), and `commands/` (model/harness selection,
+prompt-machine). **Add here:** session lifecycle (create/switch/status), submit
+pipeline, harness selection, composer behavior, or prompt-machine logic.
 
-### `session-client/` (`commands/`, `composer/`, `harness/`, `index.ts`)
-Harness-facing session client: model/harness selection (`commands/`), the
-composer (`composer/composer.tsx` — a grandfathered god file — plus
-`mode.ts`, `model-strategy.ts`, `role-gate.ts`), and harness resolution
-(`harness/`). `index.ts` (renamed from `session-ui.barrel.ts` in Wave 1.5) is
-a deliberate, documented upstream-import boundary. **Add here:** harness
-selection, composer behavior, or prompt-machine logic.
+### `session-client/` (`index.ts` only)
+The `index.ts` barrel (renamed from `session-ui.barrel.ts` in Wave 1.5) is a
+deliberate, documented upstream `@opencode-ai/session-ui/*` re-export boundary
+— the sole remaining file here after WP-D1 moved `composer/`, `harness/`, and
+`commands/` into `session/`. WP-D2 formalizes this barrel as the real
+session-client boundary. **Do not add here:** composer/harness/commands logic
+now lives in `session/` (see its charter above).
 
 ### `pages/` (route files + `session/`)
 Route-level page components: `home.tsx`, `login.tsx`, `cli-login.tsx`,
@@ -362,11 +368,11 @@ no longer exist:
    other, see the cycle above).
 2. **A new locale string** → add the key to `src/i18n/en.ts` first (source
    of truth for key sets), then to every other locale file in `src/i18n/`.
-3. **A new session-lifecycle or submit-pipeline behavior** → `src/session/`
-   (store/submit) for harness-agnostic logic, `src/session-client/` for
-   harness/composer-facing logic. Do not add to `src/shell/session/` — it is
-   a narrower, older slice pending consolidation into one of the two above
-   (LLD WP-D1).
+3. **A new session-lifecycle or submit-pipeline behavior** → `src/session/`:
+   `store/`+`submit/` for harness-agnostic lifecycle, and `composer/`+`harness/`
+   +`commands/` for harness/composer-facing logic (WP-D1 consolidated these
+   here from the former `session-client/` and `shell/session/`). Do not add to
+   `src/session-client/` — it is now just the upstream-import barrel.
 4. **A new terminal feature** → pure logic/protocol handling goes in
    `src/terminal/`; the top-level composing component is
    `src/components/terminal.tsx`.

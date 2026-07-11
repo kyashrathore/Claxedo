@@ -29,7 +29,7 @@ import { createLayoutOrchestration, type LayoutOrchestrationApi } from "./orches
 import { emptyClaxedoState, validate } from "./persistence"
 import type { ClaxedoState } from "./types"
 import { parseShellRoute } from "../../shell/identity/route"
-import { clearOpenSessions, openSessionRefsFromMetas, setOpenSessions } from "../../shell/session/open-sessions"
+import { clearOpenSessions, openSessionRefsFromMetas, setOpenSessions } from "../../session/store/open-sessions"
 
 const STORAGE_KEY_V5 = "claxedo.state.v5"
 type IdleWindow = Window & {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { shellDataKeys } from "../data/keys"
+import { shellDataKeys } from "@/shell/data/keys"
 import {
   localSelectionStateFromSessionConfig,
   sessionConfigPatchFromLocalSelection,

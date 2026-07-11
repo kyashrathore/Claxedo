@@ -5,16 +5,16 @@ import {
   harnessHasConfigOptions,
   type HarnessState,
   type HarnessType,
-} from "../../session-client/harness/profile"
+} from "../../session/harness/profile"
 import {
   harnessStatusPatch,
   harnessSwitchStartPatch,
   type HarnessStorePatch,
-} from "../../session-client/harness/store-state"
+} from "../../session/harness/store-state"
 import {
   harnessChangeKey,
   type HarnessScopeInput,
-} from "../../session-client/harness/store-policy"
+} from "../../session/harness/store-policy"
 import { harnessConfigUrl } from "./harness-config-routes"
 import type { WorkspaceBoot } from "./harness-config-runtime"
 

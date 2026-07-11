@@ -5,7 +5,7 @@ export type SessionHost = "central" | "workspace"
 // Canonical harness-id list — the SINGLE source of truth for the set of harness
 // kinds across the app. `HarnessId` here, `HarnessKind` in
 // `../harnesses/profile.ts`, and `HARNESS_IDS` in
-// `session-client/harness/profile.ts` all derive from this one array so the
+// `session/harness/profile.ts` all derive from this one array so the
 // three definitions can never drift apart again (they had drifted: profile.ts's
 // list was missing `cursor-sdk` and `pi`, silently mis-classifying persisted
 // profiles of those kinds — see `durability/projections.ts`).

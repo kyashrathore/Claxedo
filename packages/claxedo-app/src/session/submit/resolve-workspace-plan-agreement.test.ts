@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { resolveSubmitDirectory } from "./resolve"
 import type { ResolveSubmitDirectoryContext } from "./types"
-import { resolveWorkspaceSubmitPlan } from "../../session-client/composer/workspace-resolver"
+import { resolveWorkspaceSubmitPlan } from "../../session/composer/workspace-resolver"
 
 // resolveSubmitDirectory (orchestrator, imperative + callbacks) and
 // resolveWorkspaceSubmitPlan (pure sub-decision) independently encode the SAME

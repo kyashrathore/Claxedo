@@ -1,7 +1,7 @@
 import { cleanup, render } from "@solidjs/testing-library"
 import { createMemo, onMount } from "solid-js"
 import { afterEach, describe, expect, test } from "vitest"
-import { submitBlockedByRole } from "../../session-client/composer/role-gate"
+import { submitBlockedByRole } from "../../session/composer/role-gate"
 import {
   __workspaceConnectionInternals as internals,
   acquireWorkspaceConnection,

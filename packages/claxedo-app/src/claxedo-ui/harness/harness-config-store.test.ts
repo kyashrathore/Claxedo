@@ -10,7 +10,7 @@ import {
   failedHarness,
   pickHarness,
   type HarnessType,
-} from "../../session-client/harness/profile"
+} from "../../session/harness/profile"
 import {
   harnessChangeKey,
   harnessChangeRequestKey,
@@ -38,7 +38,7 @@ import {
   shouldRetryModelOptions,
   shouldShowModelOptionsStaleWarning,
   shouldUseLocalHarnessConfigApi,
-} from "../../session-client/harness/store-policy"
+} from "../../session/harness/store-policy"
 import { syncHarnessSessionModel } from "./harness-query-cache"
 import { createHarnessConfigStore } from "./harness-config-store"
 

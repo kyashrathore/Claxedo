@@ -1,4 +1,4 @@
-import { shellDataKeys } from "../data/keys"
+import { shellDataKeys } from "@/shell/data/keys"
 import type { LocalSelectionState } from "./local-selection-handoff"
 
 const sessionConfigSelectionPart = "config-selection"

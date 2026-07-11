@@ -101,8 +101,8 @@ vi.mock("@opencode-ai/ui/v2/tooltip-v2", () => ({
 }))
 
 import { AgentHarnessSelector } from "./agent-harness-selector"
-import { harnessStatusPatch } from "@claxedo/session-client/harness/store-state"
-import type { HarnessSelectionController } from "@claxedo/session-client/harness/controller"
+import { harnessStatusPatch } from "@/session/harness/store-state"
+import type { HarnessSelectionController } from "@/session/harness/controller"
 
 function harnessController(): HarnessSelectionController {
   return {

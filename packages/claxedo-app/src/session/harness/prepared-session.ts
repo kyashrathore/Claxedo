@@ -1,4 +1,4 @@
-// target-layer: session-client
+// target-layer: session
 import { fixedHarnessModel, type HarnessType } from "./profile"
 
 export type PreparedSessionDirectory = string

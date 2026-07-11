@@ -1,4 +1,4 @@
-import { selectRuntimeModel } from "@claxedo/session-client/composer/model-strategy"
+import { selectRuntimeModel } from "@/session/composer/model-strategy"
 import { shellDataKeys } from "../../shell/data/keys"
 import { createTransport } from "../../shell/data/transport/transport"
 import { harnessQueryFetch } from "../../shell/data/transport/harness-query-fetch"

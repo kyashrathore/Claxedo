@@ -1,4 +1,4 @@
-// target-layer: session-client
+// target-layer: session
 //
 // The default model a signed control-plane (cloud / user-hosted) workspace
 // session falls back to when the server has not yet reported a concrete model

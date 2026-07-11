@@ -1,4 +1,4 @@
-// target-layer: session-client
+// target-layer: session
 import {
   effectiveHarnessModel,
   extractModelsFromConfigOptions,

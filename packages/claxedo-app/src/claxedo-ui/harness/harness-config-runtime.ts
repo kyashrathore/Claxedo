@@ -10,8 +10,8 @@ import {
   harnessWorkspaceRuntimeRef,
   shouldUseLocalHarnessConfigApi,
   type HarnessScopeInput,
-} from "../../session-client/harness/store-policy"
-import type { HarnessType, OptionsResponse } from "../../session-client/harness/profile"
+} from "../../session/harness/store-policy"
+import type { HarnessType, OptionsResponse } from "../../session/harness/profile"
 
 export type WorkspaceBoot = {
   kind?: "local" | "cloud" | "user-hosted" | null

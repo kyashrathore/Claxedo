@@ -2,7 +2,7 @@ import type { PanePreferenceStorage } from "../../pane/store/pane-preferences"
 import {
   initialHarnessStoreState,
   type HarnessStoreState,
-} from "../../session-client/harness/store-state"
+} from "../../session/harness/store-state"
 
 const LEGACY_MODEL_KEY = "claxedo:acp-model"
 const LEGACY_RUNNER_KEY = "claxedo:runner"

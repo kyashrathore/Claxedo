@@ -3,8 +3,8 @@ import {
   type PreparedHarnessSessionState,
   type PreparedRuntimeSession,
   type PreparedSessionDirectory,
-} from "../../session-client/harness/prepared-session"
-import type { HarnessType } from "../../session-client/harness/profile"
+} from "../../session/harness/prepared-session"
+import type { HarnessType } from "../../session/harness/profile"
 
 export type PreparedRuntimeSessionPending = {
   seq: number

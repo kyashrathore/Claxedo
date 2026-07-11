@@ -33,7 +33,7 @@ import { useShellQueryOptions as useQueryOptions } from "@claxedo/shell/data/que
 import { showToast } from "@opencode-ai/ui/toast"
 import { NewSessionDesignView, SessionHeader, type NewSessionWorkspaceKind } from "@claxedo/components/session"
 import { createNewSessionWorkspaceState, type ProjectWorkspace } from "../components/session/session-new-workspace-options"
-import { PromptInput } from "@/session-client/composer/composer"
+import { PromptInput } from "@/session/composer/composer"
 import { same } from "@/utils/same"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { createSessionHistoryWindow, emptyUserMessages } from "./session/history-window"

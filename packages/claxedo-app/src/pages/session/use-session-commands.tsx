@@ -43,7 +43,7 @@ import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } fr
 import { configQuery } from "../../shared/query/directory"
 import { workspaceSessionRoute, workspaceTerminalRoute } from "../../shell/identity/route"
 import { sessionViewKey } from "../../shell/identity/session-view-key"
-import { createModelSelectionPicker } from "../../session-client/commands/model-selection"
+import { createModelSelectionPicker } from "../../session/commands/model-selection"
 import { focusComposerWhenReady } from "../../components/prompt-input/composer-focus"
 
 export type SessionCommandContext = {

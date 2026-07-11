@@ -1,6 +1,6 @@
 import { queryClient } from "../../shared/query/query-client"
-import { sessionConfigRawQueryKey } from "../../shell/session/session-config-selection"
-import type { PreparedRuntimeSession } from "../../session-client/harness/prepared-session"
+import { sessionConfigRawQueryKey } from "../../session/store/session-config-selection"
+import type { PreparedRuntimeSession } from "../../session/harness/prepared-session"
 import {
   harnessChangeRequestKey,
   harnessHydrateRequestKey,
@@ -13,7 +13,7 @@ import {
   sessionModelSyncRequestKey,
   sessionModelSyncStateKey,
   type HarnessScopeInput,
-} from "../../session-client/harness/store-policy"
+} from "../../session/harness/store-policy"
 import type { HarnessHydratorCache } from "./harness-hydrator"
 import {
   syncHarnessSessionModel as syncHarnessSessionModelWithCache,

@@ -24,11 +24,11 @@ import { fastSessionSwitchNetworkQuiet } from "../../session/store/fast-session-
 import {
   harnessWorkspaceRuntimeRef,
   type HarnessScopeInput,
-} from "../../session-client/harness/store-policy"
+} from "../../session/harness/store-policy"
 import type {
   HarnessType,
   OptionsResponse,
-} from "../../session-client/harness/profile"
+} from "../../session/harness/profile"
 
 type ScopeInput = HarnessScopeInput
 

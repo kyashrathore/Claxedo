@@ -4,8 +4,8 @@ import {
   type PreparedRuntimeSessionCache,
   type PreparedRuntimeSessionPending,
 } from "./harness-prepared-runtime-session"
-import type { PreparedRuntimeSession } from "../../session-client/harness/prepared-session"
-import type { HarnessType } from "../../session-client/harness/profile"
+import type { PreparedRuntimeSession } from "../../session/harness/prepared-session"
+import type { HarnessType } from "../../session/harness/profile"
 
 const scope = "draft:/repo:route"
 const prepared = {

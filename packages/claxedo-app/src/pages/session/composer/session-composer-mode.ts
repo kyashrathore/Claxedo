@@ -1,7 +1,7 @@
 import { createMemo, type Accessor } from "solid-js"
 import { centralSessionRef, localSessionRefForDirectory, type SessionRef } from "@/shell/identity/session-ref"
-import type { ComposerMode, DraftWorkspaceKind } from "@/session-client/composer/mode"
-import type { WorkspaceDirectory } from "@/session-client/composer/workspace-resolver"
+import type { ComposerMode, DraftWorkspaceKind } from "@/session/composer/mode"
+import type { WorkspaceDirectory } from "@/session/composer/workspace-resolver"
 
 export function createSessionComposerModes(input: {
   directory: Accessor<WorkspaceDirectory>

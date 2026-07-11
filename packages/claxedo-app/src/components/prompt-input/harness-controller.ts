@@ -5,7 +5,7 @@ import {
   createHarnessSubmitController,
   type HarnessSelectionController,
   type HarnessSubmitController,
-} from "../../session-client/harness/controller"
+} from "../../session/harness/controller"
 
 export type PromptHarnessControllers = {
   submit: HarnessSubmitController

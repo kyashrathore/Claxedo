@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { createHarnessOptionsLoader, type HarnessOptionsLoaderCache } from "./harness-options-loader"
-import type { HarnessOptionsStatePatch } from "../../session-client/harness/options-state"
-import type { HarnessType, OptionsResponse } from "../../session-client/harness/profile"
+import type { HarnessOptionsStatePatch } from "../../session/harness/options-state"
+import type { HarnessType, OptionsResponse } from "../../session/harness/profile"
 
 const scope = "draft:/repo:route"
 

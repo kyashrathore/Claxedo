@@ -14,7 +14,7 @@ const typeContractCandidates = new Set([
   "shared/data/session-lifecycle.ts",
   "shared/data/types.ts",
   "shared/query/types.ts",
-  "session-client/composer/prompt-input-props.ts",
+  "session/composer/prompt-input-props.ts",
   "terminal/backend/types.ts",
 ])
 const configAliasTargets = new Map([

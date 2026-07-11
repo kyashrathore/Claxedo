@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test"
 import { workspaceSessionRoute } from "../../shell/identity/route"
-import { getLocalSelectionHandoff, localDraftSelectionHandoffID, resetLocalSelectionHandoffForTest } from "../../shell/session/local-selection-handoff"
-import { sessionConfigSelectionQueryKey } from "../../shell/session/session-config-selection"
+import { getLocalSelectionHandoff, localDraftSelectionHandoffID, resetLocalSelectionHandoffForTest } from "../../session/store/local-selection-handoff"
+import { sessionConfigSelectionQueryKey } from "../../session/store/session-config-selection"
 import { queryClient } from "../../shared/query/query-client"
 
 let createSessionActions: typeof import("./session-actions").createSessionActions

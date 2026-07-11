@@ -29,8 +29,8 @@ import {
   addRegisteredConversationMessage,
   removeRegisteredConversationMessage,
 } from "../../shell/chat/conversation-registry"
-import { harnessProfile, pickHarness } from "@claxedo/session-client/harness/profile"
-import { createHarnessSubmitController, type HarnessSubmitController } from "@claxedo/session-client/harness/controller"
+import { harnessProfile, pickHarness } from "@/session/harness/profile"
+import { createHarnessSubmitController, type HarnessSubmitController } from "@/session/harness/controller"
 import { useConfigOptional } from "../../context/config"
 import { workspaceCreateUrl } from "../../utils/workspace-control-routes"
 import {
@@ -43,9 +43,9 @@ import {
   type ResolvedSubmitMode,
   type SubmitMode,
 } from "../../session/submit"
-import { type ProjectCatalogItem } from "../../session-client/composer/workspace-resolver"
-import { admitPromptSubmission } from "../../session-client/commands/prompt-machine"
-import { composerHarnessId, isComposerHarnessMode, type ComposerMode } from "../../session-client/composer/mode"
+import { type ProjectCatalogItem } from "../../session/composer/workspace-resolver"
+import { admitPromptSubmission } from "../../session/commands/prompt-machine"
+import { composerHarnessId, isComposerHarnessMode, type ComposerMode } from "../../session/composer/mode"
 import { dispatchCommandPromptSubmit } from "./submit-command-prompt"
 import { createPromptAbort } from "./submit-abort"
 import { acquireSubmitSessionTarget, createCloudStartupController, finalizeSubmitSessionTarget, patchExistingSubmitSessionRef, type CloudStartupState } from "./submit-create-session"

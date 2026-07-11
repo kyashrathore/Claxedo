@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import type { HarnessType } from "../../session-client/harness/profile"
+import type { HarnessType } from "../../session/harness/profile"
 import type {
   HarnessStorePatch,
   HarnessStoreState,
-} from "../../session-client/harness/store-state"
+} from "../../session/harness/store-state"
 import { createHarnessStatusActions } from "./harness-status-actions"
 
 const scope = "draft:/repo:route"

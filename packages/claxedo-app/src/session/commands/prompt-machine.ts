@@ -1,9 +1,9 @@
-// target-layer: session-client
+// target-layer: session
 import {
   canStartSubmit,
   harnessBridge,
   type ComposerMode,
-} from "../composer/mode"
+} from "@/session/composer/mode"
 
 export type PromptSnapshot = {
   readonly bodyMd: string

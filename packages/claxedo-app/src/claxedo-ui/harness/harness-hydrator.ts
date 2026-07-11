@@ -5,8 +5,8 @@ import {
   harnessHasConfigOptions,
   type HarnessState,
   type HarnessType,
-} from "../../session-client/harness/profile"
-import type { HarnessStoreState } from "../../session-client/harness/store-state"
+} from "../../session/harness/profile"
+import type { HarnessStoreState } from "../../session/harness/store-state"
 import {
   harnessStateFromSessionConfig,
   refreshHarnessTypeForScope,
@@ -15,7 +15,7 @@ import {
   shouldRefreshDirectoryAfterHarnessStatus,
   shouldResetWorkspaceDraftHarness,
   type HarnessScopeInput,
-} from "../../session-client/harness/store-policy"
+} from "../../session/harness/store-policy"
 import {
   harnessConfigUrl,
   sessionResourceUrl,

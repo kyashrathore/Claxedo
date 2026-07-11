@@ -1,18 +1,18 @@
 import { batch } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PanePreferenceStorage } from "../../pane/store/pane-preferences"
-import { effectiveHarnessModel } from "../../session-client/harness/profile"
+import { effectiveHarnessModel } from "../../session/harness/profile"
 import {
   harnessDisplayName,
   harnessModelKeyForSubmit,
   harnessModelNameForSubmit,
   harnessModels,
   harnessReadyForSubmit,
-} from "../../session-client/harness/selection"
+} from "../../session/harness/selection"
 import type {
   HarnessStorePatch,
   HarnessStoreState,
-} from "../../session-client/harness/store-state"
+} from "../../session/harness/store-state"
 import { createHarnessPreferences } from "./harness-preferences"
 
 type PreferenceKey = "harness" | "model" | "agent"

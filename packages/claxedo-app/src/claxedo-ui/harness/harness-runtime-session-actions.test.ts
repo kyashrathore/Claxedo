@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createHarnessRuntimeSessionActions } from "./harness-runtime-session-actions"
-import type { HarnessScopeInput } from "../../session-client/harness/store-policy"
+import type { HarnessScopeInput } from "../../session/harness/store-policy"
 
 describe("harness runtime session actions", () => {
   test("creates prepared sessions through SDK fetch with harness routing", async () => {

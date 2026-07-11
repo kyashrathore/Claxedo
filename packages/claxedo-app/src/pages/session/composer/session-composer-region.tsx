@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { useLayout } from "@/context/layout"
-import { PromptInput } from "@/session-client/composer/composer"
+import { PromptInput } from "@/session/composer/composer"
 import { useLanguage } from "@claxedo/context/language"
 import { usePrompt } from "@/context/prompt"
 import { getSessionHandoff, setSessionHandoff } from "../prompt-preview-handoff"
@@ -19,7 +19,7 @@ import type { FollowupDraft } from "@/components/prompt-input/submit"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { directorySessions } from "@/shell/data/directory-session-cache"
 import type { SessionRef } from "@/shell/identity/session-ref"
-import type { ComposerMode } from "@/session-client/composer/mode"
+import type { ComposerMode } from "@/session/composer/mode"
 import { usePromptHarnessControllersOptional } from "@/components/prompt-input/harness-controller"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 
@@ -83,7 +83,7 @@ export function SessionComposerRegion(props: {
   /**
    * Session status/active-turn supplied by the session owner (`sessionController`).
    * Without these the composer's `working()`/`busy()` derivation
-   * (`session-client/composer/composer.tsx:324-328`) falls back to its
+   * (`session/composer/composer.tsx:324-328`) falls back to its
    * "embedded context" default of always-idle, which permanently hides the
    * busy/stop icon and the escalation-ladder status banner for this — the
    * primary — session composer.

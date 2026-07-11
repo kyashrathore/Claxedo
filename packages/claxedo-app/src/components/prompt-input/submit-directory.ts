@@ -10,7 +10,7 @@ import {
   resolveWorkspaceSubmitPlan,
   type ProjectCatalogItem,
   type RuntimeWorkspaceRef,
-} from "../../session-client/composer/workspace-resolver"
+} from "../../session/composer/workspace-resolver"
 import type { CloudStartupState } from "./submit-create-session"
 
 type RuntimeEvents = Parameters<typeof prepareWorkspaceRuntime>[0]["events"]

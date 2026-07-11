@@ -1,4 +1,4 @@
-import { pickHarness } from "../../session-client/harness/profile"
+import { pickHarness } from "../../session/harness/profile"
 import type { HarnessRef } from "../../shell/identity/session-ref"
 
 export function routeSessionHarness(input: unknown): HarnessRef | undefined {

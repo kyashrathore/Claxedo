@@ -5,7 +5,7 @@ import { queryKeys } from "../../shared/query/keys"
 import { queryClient } from "../../shared/query/query-client"
 import { shellDataKeys } from "./keys"
 import { setSessionStatusQueryData } from "./queries"
-import { clearOpenSessions, setOpenSessions } from "../session/open-sessions"
+import { clearOpenSessions, setOpenSessions } from "@/session/store/open-sessions"
 import { cleanupDroppedSessionCaches, cleanupSessionCaches, droppedSessionIDs } from "./session-cache-cleanup"
 
 const root = (id: string, time = 1) =>

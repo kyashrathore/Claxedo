@@ -1,4 +1,4 @@
-import { pickHarness, type HarnessType } from "@claxedo/session-client/harness/profile"
+import { pickHarness, type HarnessType } from "@/session/harness/profile"
 
 export type ExistingSessionConfig = {
   harnessType: HarnessType

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import type { PermissionRequest, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { applyClaxedoSessionLifecycleEvent, applyDirectorySessionCacheEvent } from "./session-list-events"
-import { clearOpenSessions, setOpenSessions } from "../session/open-sessions"
+import { clearOpenSessions, setOpenSessions } from "@/session/store/open-sessions"
 import { conversationEventTypes } from "../chat/conversation-event"
 import { queryClient } from "../../shared/query/query-client"
 import { shellDataKeys } from "./keys"

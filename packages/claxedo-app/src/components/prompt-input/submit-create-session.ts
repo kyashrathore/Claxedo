@@ -17,7 +17,7 @@ import {
   sessionRefForSubmitTarget,
   type ProjectCatalogItem,
   type RuntimeWorkspaceRef,
-} from "../../session-client/composer/workspace-resolver"
+} from "../../session/composer/workspace-resolver"
 
 export type SubmitProjectionScheduler = typeof scheduleSessionProjectionPull
 

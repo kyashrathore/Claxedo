@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "../../shared/query/query-client"
-import type { PreparedRuntimeSession } from "../../session-client/harness/prepared-session"
+import type { PreparedRuntimeSession } from "../../session/harness/prepared-session"
 import {
   harnessChangeRequestKey,
   harnessHydrateRequestKey,
@@ -12,7 +12,7 @@ import {
   harnessPreparingSessionKey,
   sessionModelSyncRequestKey,
   sessionModelSyncStateKey,
-} from "../../session-client/harness/store-policy"
+} from "../../session/harness/store-policy"
 import {
   clearHarnessOptionsTries,
   createHarnessHydratorQueryCache,

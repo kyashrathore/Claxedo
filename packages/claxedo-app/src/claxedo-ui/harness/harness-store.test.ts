@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { unwrap } from "solid-js/store"
 import type { PanePreferenceStorage } from "../../pane/store/pane-preferences"
-import { DEFAULT_HARNESS_MODEL } from "../../session-client/harness/profile"
+import { DEFAULT_HARNESS_MODEL } from "../../session/harness/profile"
 import { createHarnessStore } from "./harness-store"
 
 let storage: MemoryStorage

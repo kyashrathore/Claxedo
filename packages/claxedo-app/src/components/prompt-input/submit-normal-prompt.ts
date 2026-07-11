@@ -20,7 +20,7 @@ import {
 import { requestAcceptedPromptRefresh } from "../../session/store/accepted-prompt-refresh"
 import type { SessionRef } from "../../shell/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"
-import type { PromptSnapshot } from "../../session-client/commands/prompt-machine"
+import type { PromptSnapshot } from "../../session/commands/prompt-machine"
 
 type PromptContextItem = Parameters<typeof preparePromptRequest>[0]["contextItems"][number]
 type PromptClient = Parameters<typeof sendPromptRequest>[0]["client"]

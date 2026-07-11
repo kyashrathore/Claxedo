@@ -19,7 +19,7 @@ import {
 import { PromptSubmitControl } from "@/components/prompt-input/submit-control"
 import { PromptToolbarControls } from "@/components/prompt-input/toolbar-controls"
 import type { SessionStatusStage as SessionStatusStageValue } from "@claxedo/claxedo-ui/components/session-status-stage"
-import type { HarnessSelectionController } from "@claxedo/session-client/harness/controller"
+import type { HarnessSelectionController } from "@/session/harness/controller"
 
 type PromptInputMode = "normal" | "shell"
 type PromptDraggingType = "image" | "@mention" | null

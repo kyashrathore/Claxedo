@@ -1,4 +1,4 @@
-// target-layer: session-client
+// target-layer: session
 import {
   SIGNED_WORKSPACE_DEFAULT_MODEL_ID,
   SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER,

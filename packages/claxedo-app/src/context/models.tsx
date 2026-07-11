@@ -4,7 +4,7 @@ import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } fro
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useProviders } from "@/context/use-providers"
 import { Persist, persisted } from "@/utils/persist"
-import type { ModelKey } from "@claxedo/session-client/composer/model-strategy"
+import type { ModelKey } from "@/session/composer/model-strategy"
 
 // luxon's DateTime.diffNow().as("months") uses a 30-day "casual" month (2,592,000,000 ms).
 // Replicated here so the "released within 6 months" filter stays byte-identical without luxon.

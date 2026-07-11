@@ -4,7 +4,7 @@ import { Select } from "@opencode-ai/ui/select"
 import { TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import type { PickerState } from "@claxedo/components/dialogs/select-model"
 import { AgentHarnessSelector } from "@claxedo/claxedo-ui/components/agent-harness-selector"
-import type { HarnessSelectionController } from "@claxedo/session-client/harness/controller"
+import type { HarnessSelectionController } from "@/session/harness/controller"
 import { PromptModelControl } from "@/components/prompt-input/model-control"
 
 export function PromptToolbarControls(props: {

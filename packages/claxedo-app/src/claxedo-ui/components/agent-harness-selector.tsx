@@ -5,11 +5,11 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Select } from "@opencode-ai/ui/select"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { ModelSelectorPopover, type PickerItem, type PickerState } from "@claxedo/components/dialogs/select-model"
-import { HARNESS_DISPLAY_NAMES, type HarnessType } from "@claxedo/session-client/harness/profile"
-import type { HarnessSelectionController } from "@claxedo/session-client/harness/controller"
+import { HARNESS_DISPLAY_NAMES, type HarnessType } from "@/session/harness/profile"
+import type { HarnessSelectionController } from "@/session/harness/controller"
 import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
 import { panePreferenceScope } from "../../pane/store/pane-preferences"
-import { createModelSelectionController, modelKeyFromPickerSelection } from "../../session-client/commands/model-selection"
+import { createModelSelectionController, modelKeyFromPickerSelection } from "../../session/commands/model-selection"
 const HARNESS_OPTIONS: HarnessType[] = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]
 const HARNESS_OPTION_LABELS: Partial<Record<HarnessType, string>> = {
   "claude-sdk": "Claude",

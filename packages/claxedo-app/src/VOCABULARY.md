@@ -96,9 +96,9 @@ to rename) are sanctioned.
   (eight ids: `claude-acp`, `codex-acp`, `cursor-acp`, `claude-sdk`,
   `codex-app-server`, `cursor-sdk`, `opencode`, `pi`). Both
   `src/shell/harnesses/profile.ts`'s `HarnessKind` (`profile.ts:8`) and
-  `src/session-client/harness/profile.ts`'s `HarnessType` (`profile.ts:4`)
+  `src/session/harness/profile.ts`'s `HarnessType` (`profile.ts:4`)
   now derive from it via `= HarnessId`, so the type sets can no longer drift.
-  Residual drift to be aware of: `src/session-client/harness/profile.ts:15`
+  Residual drift to be aware of: `src/session/harness/profile.ts:15`
   still hand-maintains a *runtime* duplicate of the id array (only the type is
   derived), and `src/shared/data/types.ts:18`'s
   `TransportCapabilities.transport` union is a separate transport-flavor list
@@ -111,7 +111,7 @@ to rename) are sanctioned.
   string `LEGACY_RUNNER_KEY = "claxedo:runner"` in
   `src/claxedo-ui/harness/harness-preferences.ts:8` (an explicit,
   labeled localStorage-migration compat key) and in
-  `src/session-client/harness/profile.test.ts`'s tests for that legacy-key
+  `src/session/harness/profile.test.ts`'s tests for that legacy-key
   decode path. WP-A8 has landed: `src/components/prompt-input/submit.test.ts`
   no longer contains the word "runner" at all (the ~30 `runnerSetCalls`/
   `runnerSubmitModel`-style test identifiers it once had are now

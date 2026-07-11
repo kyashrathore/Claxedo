@@ -74,7 +74,7 @@
     "shell/data/directory-cache-manager.ts",
     "shell/data/global-sync-sdk-client-cache.ts",
     "shell/data/session-prefetch.ts",
-    "shell/session/local-selection-handoff.ts",
+    "session/store/local-selection-handoff.ts",
     "utils/server-health.ts",
     "utils/workspace-relay-connection.ts",
     "utils/workspace-runtime-request.ts",

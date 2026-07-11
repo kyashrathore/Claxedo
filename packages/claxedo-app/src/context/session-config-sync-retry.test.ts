@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { LocalSelectionState } from "../shell/session/local-selection-handoff"
+import type { LocalSelectionState } from "../session/store/local-selection-handoff"
 import { createSessionSyncRetry, type SessionSyncRetryDeps } from "./session-config-sync-retry"
 
 // Deterministic fake clock: the scheduler's backoff timers are captured here and only fire

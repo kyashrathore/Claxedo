@@ -1,4 +1,4 @@
-import { cloneLocalSelectionState, type LocalSelectionState } from "../shell/session/local-selection-handoff"
+import { cloneLocalSelectionState, type LocalSelectionState } from "../session/store/local-selection-handoff"
 
 /**
  * Bounded, deliberate retry policy for the session-config selection PATCH.

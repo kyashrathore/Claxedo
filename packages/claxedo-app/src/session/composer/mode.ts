@@ -1,4 +1,4 @@
-// target-layer: session-client
+// target-layer: session
 import { sessionHarness, type HarnessRef, type SessionRef } from "../../shell/identity/session-ref"
 
 export type DraftWorkspaceKind = "local" | "cloud" | "user-hosted"

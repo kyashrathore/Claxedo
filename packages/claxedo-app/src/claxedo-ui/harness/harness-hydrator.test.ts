@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createHarnessHydrator, type HarnessHydratorCache } from "./harness-hydrator"
-import type { HarnessStoreState } from "../../session-client/harness/store-state"
-import type { HarnessScopeInput } from "../../session-client/harness/store-policy"
+import type { HarnessStoreState } from "../../session/harness/store-state"
+import type { HarnessScopeInput } from "../../session/harness/store-policy"
 
 type ScopeInput = HarnessScopeInput
 

@@ -161,7 +161,7 @@ export { usePrompt, PromptProvider } from "@/context/prompt"
 export { Persist, persisted } from "@/utils/persist"
 
 // Re-export components
-export { PromptInput } from "@/session-client/composer/composer"
+export { PromptInput } from "@/session/composer/composer"
 export { Terminal } from "@/components/terminal"
 export { Titlebar } from "@/components/titlebar/titlebar"
 export { DialogSettings } from "@/components/dialogs/settings"

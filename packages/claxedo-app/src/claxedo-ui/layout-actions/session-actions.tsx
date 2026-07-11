@@ -18,8 +18,8 @@ import { removeSessionInventoryQueryData } from "../../shell/data/session-invent
 import { queryClient } from "../../shared/query/query-client"
 import { reconcileArchivedSessionListQueryData } from "../../shared/query/session-list"
 import { removeDirectorySession } from "../../shell/data/directory-session-cache"
-import { cloneLocalSelectionState, getLocalSelectionHandoff, localDraftSelectionHandoffID, setLocalSelectionHandoff, type LocalSelectionState } from "../../shell/session/local-selection-handoff"
-import { sessionConfigSelectionQueryKey } from "../../shell/session/session-config-selection"
+import { cloneLocalSelectionState, getLocalSelectionHandoff, localDraftSelectionHandoffID, setLocalSelectionHandoff, type LocalSelectionState } from "../../session/store/local-selection-handoff"
+import { sessionConfigSelectionQueryKey } from "../../session/store/session-config-selection"
 
 const directorySessionCacheEnsureTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const DIRECTORY_SESSION_CACHE_ENSURE_DELAY_MS = 8_000

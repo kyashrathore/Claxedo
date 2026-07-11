@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import path from "node:path"
 import { queryClient } from "../../shared/query/query-client"
-import { shellDataKeys } from "../data/keys"
+import { shellDataKeys } from "@/shell/data/keys"
 import {
   clearLocalSelectionHandoff,
   getLocalSelectionHandoff,

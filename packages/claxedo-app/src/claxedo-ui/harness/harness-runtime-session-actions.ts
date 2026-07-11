@@ -1,10 +1,10 @@
 import { createOpencodeClient as defaultCreateOpencodeClient } from "@opencode-ai/sdk/v2/client"
-import { harnessWorkspaceRuntimeRef, type HarnessScopeInput } from "../../session-client/harness/store-policy"
+import { harnessWorkspaceRuntimeRef, type HarnessScopeInput } from "../../session/harness/store-policy"
 import type {
   PreparedRuntimeSession,
   PreparedSessionDirectory,
-} from "../../session-client/harness/prepared-session"
-import type { HarnessType } from "../../session-client/harness/profile"
+} from "../../session/harness/prepared-session"
+import type { HarnessType } from "../../session/harness/profile"
 import { harnessQueryFetch } from "../../shell/data/transport/harness-query-fetch"
 
 type HarnessRuntimeSessionClient = {

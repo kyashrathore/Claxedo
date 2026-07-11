@@ -2,8 +2,8 @@ import { createEffect, on, onCleanup, type Accessor } from "solid-js"
 import type { usePrompt } from "@/context/prompt"
 import { getCursorPosition, setCursorPosition } from "@/components/prompt-input/editor-dom"
 import { promptLength, type PromptHistoryEntry } from "@/components/prompt-input/history"
-import { PROMPT_EXAMPLES } from "@/session-client/composer/examples"
-import type { PromptInputProps } from "@/session-client/composer/prompt-input-props"
+import { PROMPT_EXAMPLES } from "@/session/composer/examples"
+import type { PromptInputProps } from "@/session/composer/prompt-input-props"
 
 type PromptController = ReturnType<typeof usePrompt>
 type PromptMode = "normal" | "shell"

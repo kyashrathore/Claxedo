@@ -14,16 +14,16 @@ import {
   localSelectionHandoffQueryKey,
   setLocalSelectionHandoff,
   type LocalSelectionState,
-} from "@claxedo/shell/session/local-selection-handoff"
+} from "@/session/store/local-selection-handoff"
 import {
   localSelectionStateFromSessionConfig,
   sessionConfigRawQueryKey,
   sessionConfigPatchFromLocalSelection,
   sessionConfigSelectionQueryKey,
   shouldExposeDefaultLocalModelFallback,
-} from "@claxedo/shell/session/session-config-selection"
+} from "@/session/store/session-config-selection"
 import { createSessionSyncRetry } from "./session-config-sync-retry"
-import { decodeSessionConfig } from "@claxedo/session-client/harness/profile"
+import { decodeSessionConfig } from "@/session/harness/profile"
 import { agentListQuery, configQuery } from "../shared/query/directory"
 import { useWorkspaceQuery } from "../shell/workspace/use-workspace-query"
 import { createAgentRuntimeClient } from "../agent-runtime/agent-runtime-client"
@@ -36,7 +36,7 @@ import {
   getConfiguredAgentVariant,
   resolveModelVariant,
   type ModelKey,
-} from "@claxedo/session-client/composer/model-strategy"
+} from "@/session/composer/model-strategy"
 
 type State = LocalSelectionState
 type ModelSource = "selected" | "agent" | "fallback"

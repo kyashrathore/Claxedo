@@ -1,5 +1,5 @@
 import type { HarnessId, SessionHost } from "../identity/session-ref"
-import type { ModelKey } from "../../session-client/composer/model-strategy"
+import type { ModelKey } from "../../session/composer/model-strategy"
 
 // One vocabulary for harness kinds. `HarnessKind` is exactly the canonical
 // `HarnessId` set (`../identity/session-ref.ts`) — it previously listed only 6
