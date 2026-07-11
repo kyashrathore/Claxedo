@@ -19,7 +19,7 @@ import { useBrowserComments } from "../../browser/store/browser-comments"
 import { BrowserPane, type BrowserPaneCommentPayload } from "../../browser/components/browser-pane"
 import { usePrompt, type ImageAttachmentPart } from "@/context/prompt"
 
-function buildScreenshotAttachment(payload: BrowserPaneCommentPayload): ImageAttachmentPart | undefined {
+export function buildScreenshotAttachment(payload: BrowserPaneCommentPayload): ImageAttachmentPart | undefined {
   const dataUrl = payload.screenshotDataUrl
   if (!dataUrl || !dataUrl.startsWith("data:image/")) return undefined
   // Mime is between "data:" and the first ";" — fall back to image/png if missing.

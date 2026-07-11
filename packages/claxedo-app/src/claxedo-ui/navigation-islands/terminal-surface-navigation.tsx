@@ -1,12 +1,10 @@
 import { For, Show, createMemo } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { WORKBENCH_DRAG_MIME } from "../workbench"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
+import { NavigationRow, NavigationStatusDot } from "./navigation-row"
 import { terminalSurfaceTitle } from "./terminal-surface-title"
 import {
-  navigationDragPayload,
-  setWorkbenchDragMime,
   type NavigationDragStart,
   type RowActivityDetail,
   type TerminalSurfaceRow,
@@ -58,44 +56,25 @@ function TerminalSurfaceNavigationRow(props: {
   const activate = () => props.onActivate(props.row)
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      data-testid="rail-sidebar-terminal-row"
-      data-terminal-id={props.row.terminalId}
-      data-pane-id={props.row.contentId}
-      data-content-id={props.row.contentId}
-      data-active={props.row.active ? "true" : "false"}
-      data-pending={props.row.pending ? "true" : "false"}
-      ref={(el) => el.setAttribute("draggable", "true")}
-      class="group/terminal relative flex items-center gap-2 min-h-8 py-1 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,color] duration-100"
+    <NavigationRow
+      class="group/terminal"
+      data={{
+        "data-testid": "rail-sidebar-terminal-row",
+        "data-terminal-id": props.row.terminalId,
+        "data-pane-id": props.row.contentId,
+        "data-content-id": props.row.contentId,
+        "data-active": props.row.active ? "true" : "false",
+        "data-pending": props.row.pending ? "true" : "false",
+      }}
       classList={{
         "bg-surface-base-hover": props.row.active,
         "pl-9": !!props.nested,
         "pl-3": !props.nested,
       }}
-      onClick={activate}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") return
-        event.preventDefault()
-        activate()
-      }}
-      onDragStart={(event) => {
-        const setWorkbenchDragData = (contentId: string) => {
-          setWorkbenchDragMime({
-            dataTransfer: event.dataTransfer ?? undefined,
-            mime: WORKBENCH_DRAG_MIME,
-            contentId,
-          })
-        }
-        setWorkbenchDragData(props.row.contentId)
-        props.onDragStart?.({
-          event,
-          row: props.row,
-          payload: navigationDragPayload(props.row),
-          setWorkbenchDragData,
-        })
-      }}
+      onActivate={activate}
+      dragRow={props.row}
+      prepareContentId={() => props.row.contentId}
+      onDragStart={props.onDragStart}
     >
       <span
         aria-hidden="true"
@@ -108,7 +87,7 @@ function TerminalSurfaceNavigationRow(props: {
         &gt;
       </span>
       <Show when={status() !== "idle"}>
-        <SidebarStatusDot status={status()} active={props.row.active} />
+        <NavigationStatusDot status={status()} active={props.row.active} />
       </Show>
       <span
         class="font-mono text-[12px] leading-tight truncate flex-1 min-w-0"
@@ -139,36 +118,6 @@ function TerminalSurfaceNavigationRow(props: {
           <Icon name="close" size="small" />
         </span>
       </Tooltip>
-    </div>
-  )
-}
-
-function SidebarStatusDot(props: { status: SwitcherStatus; active?: boolean }) {
-  if (props.status === "working") {
-    return (
-      <span
-        aria-hidden="true"
-        data-sidebar-status={props.status}
-        class="relative size-2.5 shrink-0 rounded-full border border-border-interactive-base/40"
-        classList={{
-          "border-border-interactive-base": props.active,
-          "border-border-interactive-base/40": !props.active,
-        }}
-      >
-        <span class="absolute inset-0.5 rounded-full bg-icon-warning-base animate-pulse" />
-      </span>
-    )
-  }
-  return (
-    <span
-      aria-hidden="true"
-      data-sidebar-status={props.status}
-      class="size-2.5 shrink-0 rounded-full"
-      classList={{
-        "bg-icon-warning-base": props.status === "permission",
-        "bg-icon-success-base": props.status === "done",
-        "bg-text-weaker": props.status === "idle",
-      }}
-    />
+    </NavigationRow>
   )
 }

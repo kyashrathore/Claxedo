@@ -10,12 +10,6 @@ export const clip = (value: string, max: number) => {
   return `${value.slice(0, Math.max(0, max - 3)).trimEnd()}...`
 }
 
-/** Format RSS kilobytes as MB (0 decimals above 1 GB, 1 decimal below). */
-export const formatMB = (rssKb: number) => `${(rssKb / 1024).toFixed(rssKb >= 1024 * 1024 ? 0 : 1)} MB`
-
-/** Format a CPU percentage (0 decimals at 10%+, 1 decimal below). */
-export const formatCPU = (value: number) => `${value.toFixed(value >= 10 ? 0 : 1)}%`
-
 /** Extract a human-readable error message from an unknown error value. */
 export const errorText = (error: unknown) => {
   if (error instanceof Error) return error.message

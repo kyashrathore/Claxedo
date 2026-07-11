@@ -1,10 +1,8 @@
 import { For, Show, createMemo } from "solid-js"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "../components/claxedo-icon"
-import { WORKBENCH_DRAG_MIME } from "../workbench"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
+import { NavigationRow, NavigationStatusDot } from "./navigation-row"
 import {
-  navigationDragPayload,
-  setWorkbenchDragMime,
   type NavigationDragStart,
   type SessionNavigationRow,
 } from "./session-navigation"
@@ -59,44 +57,23 @@ function SessionNavigationItem(props: {
 
   return (
     <div class="group/session">
-      <div
-        role="button"
-        tabIndex={0}
-        data-testid="rail-sidebar-session-row"
-        data-session-id={props.row.source.sessionId}
-        data-session-ref={props.row.source.sessionRef}
-        data-workspace-dir={props.row.directory}
-        data-active={props.row.active ? "true" : "false"}
-        ref={(el) => el.setAttribute("draggable", "true")}
-        class="relative flex items-center gap-2 min-h-8 py-1 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,color] duration-100"
+      <NavigationRow
+        data={{
+          "data-testid": "rail-sidebar-session-row",
+          "data-session-id": props.row.source.sessionId,
+          "data-session-ref": props.row.source.sessionRef,
+          "data-workspace-dir": props.row.directory,
+          "data-active": props.row.active ? "true" : "false",
+        }}
         classList={{
           "bg-surface-base-hover": props.row.active,
           "pl-9": !!props.row.nested,
           "pl-3": !props.row.nested,
         }}
-        onClick={activate}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return
-          event.preventDefault()
-          activate()
-        }}
-        onDragStart={(event) => {
-          const contentId = props.onPrepareDrag(props.row)
-          const setWorkbenchDragData = (id: string) => {
-            setWorkbenchDragMime({
-              dataTransfer: event.dataTransfer ?? undefined,
-              mime: WORKBENCH_DRAG_MIME,
-              contentId: id,
-            })
-          }
-          if (contentId) setWorkbenchDragData(contentId)
-          props.onDragStart?.({
-            event,
-            row: props.row.source,
-            payload: navigationDragPayload(props.row.source),
-            setWorkbenchDragData,
-          })
-        }}
+        onActivate={activate}
+        dragRow={props.row.source}
+        prepareContentId={() => props.onPrepareDrag(props.row)}
+        onDragStart={props.onDragStart}
       >
         <div class="flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
           <span
@@ -148,38 +125,7 @@ function SessionNavigationItem(props: {
             </span>
           </button>
         </div>
-      </div>
+      </NavigationRow>
     </div>
-  )
-}
-
-function NavigationStatusDot(props: { status: SwitcherStatus; active?: boolean }) {
-  if (props.status === "working") {
-    return (
-      <span
-        aria-hidden="true"
-        data-sidebar-status={props.status}
-        class="relative size-2.5 shrink-0 rounded-full border border-border-interactive-base/40"
-        classList={{
-          "border-border-interactive-base": props.active,
-          "border-border-interactive-base/40": !props.active,
-        }}
-      >
-        <span class="absolute inset-0.5 rounded-full bg-icon-warning-base animate-pulse" />
-      </span>
-    )
-  }
-
-  return (
-    <span
-      aria-hidden="true"
-      data-sidebar-status={props.status}
-      class="size-2.5 shrink-0 rounded-full"
-      classList={{
-        "bg-icon-warning-base": props.status === "permission",
-        "bg-icon-success-base": props.status === "done",
-        "bg-text-weaker": props.status === "idle",
-      }}
-    />
   )
 }

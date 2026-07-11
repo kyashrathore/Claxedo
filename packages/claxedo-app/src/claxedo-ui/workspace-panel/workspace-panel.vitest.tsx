@@ -350,6 +350,33 @@ describe("WorkspacePanel", () => {
     expect(panel).toHaveStyle({ width: "1107px" })
   })
 
+  test("exposes ARIA splitter value range and resizes via the keyboard", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 })
+    renderPanel(openState)
+
+    const panel = screen.getByRole("complementary", { name: "Workspace panel" })
+    const handle = screen.getByRole("separator", { name: "Resize workspace panel" })
+
+    expect(handle).toHaveAttribute("aria-valuemin", "360")
+    expect(handle).toHaveAttribute("aria-valuemax", "1140")
+    expect(handle).toHaveAttribute("aria-valuenow", "1007")
+
+    // ArrowLeft widens the right-anchored panel by one step.
+    fireEvent.keyDown(handle, { key: "ArrowLeft" })
+    expect(panel).toHaveStyle({ width: "1031px" })
+    expect(handle).toHaveAttribute("aria-valuenow", "1031")
+
+    // ArrowRight narrows it back.
+    fireEvent.keyDown(handle, { key: "ArrowRight" })
+    expect(panel).toHaveStyle({ width: "1007px" })
+
+    // Home / End jump to the min / max width.
+    fireEvent.keyDown(handle, { key: "Home" })
+    expect(panel).toHaveStyle({ width: "360px" })
+    fireEvent.keyDown(handle, { key: "End" })
+    expect(panel).toHaveStyle({ width: "1140px" })
+  })
+
   test("uses a full-width sheet without a resize handle on mobile", () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 })
 

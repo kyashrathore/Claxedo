@@ -6,28 +6,9 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { Process } from "@claxedo/process/process"
 import { AddProcessDialog } from "../components/add-process-dialog"
 import { useProcessPane } from "../context/process-pane"
+import { PROCESS_STATUS_COLORS, PROCESS_STATUS_LABELS } from "./process-status-display"
 
 type ProcessStatus = Process.Status
-
-const STATUS_LABELS: Record<ProcessStatus, string> = {
-  idle: "Idle",
-  starting: "Starting",
-  running: "Running",
-  stopping: "Stopping",
-  stopped: "Stopped",
-  crashed: "Crashed",
-  restarting: "Restarting",
-}
-
-const STATUS_COLORS: Record<ProcessStatus, string> = {
-  idle: "var(--icon-base)",
-  starting: "var(--surface-success-strong)",
-  running: "var(--surface-success-strong)",
-  stopping: "var(--icon-base)",
-  stopped: "var(--icon-base)",
-  crashed: "var(--surface-critical-strong)",
-  restarting: "var(--surface-success-strong)",
-}
 
 function statusFor(process: Process.ManagedProcess | undefined): ProcessStatus {
   return process?.status ?? "idle"
@@ -41,17 +22,17 @@ function ProcessStatusDot(props: { status: ProcessStatus }) {
   const isPulsing = () =>
     props.status === "running" || props.status === "starting" || props.status === "restarting"
   return (
-    <Tooltip value={STATUS_LABELS[props.status] ?? props.status}>
+    <Tooltip value={PROCESS_STATUS_LABELS[props.status] ?? props.status}>
       <span class="relative flex size-2 shrink-0 items-center justify-center">
         <Show when={isPulsing()}>
           <span
             class="absolute inline-flex size-2 animate-ping rounded-full opacity-40"
-            style={{ "background-color": STATUS_COLORS[props.status] ?? "var(--icon-base)" }}
+            style={{ "background-color": PROCESS_STATUS_COLORS[props.status] ?? "var(--icon-base)" }}
           />
         </Show>
         <span
           class="relative inline-flex size-2 rounded-full"
-          style={{ "background-color": STATUS_COLORS[props.status] ?? "var(--icon-base)" }}
+          style={{ "background-color": PROCESS_STATUS_COLORS[props.status] ?? "var(--icon-base)" }}
         />
       </span>
     </Tooltip>

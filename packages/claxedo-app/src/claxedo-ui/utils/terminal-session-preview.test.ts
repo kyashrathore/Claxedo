@@ -43,16 +43,29 @@ describe("terminal session preview aliases", () => {
     expect(calls).toBe(1)
   })
 
-  test("keeps preview response cache and in-flight request state in Query", async () => {
-    const source = await Bun.file(new URL("./terminal-session-preview.ts", import.meta.url)).text()
+  test("serves the second load from the Query response cache without refetching", async () => {
+    // The response cache lives in the shared Query client (not a module Map):
+    // once loaded, a subsequent load for the same target returns the cached
+    // value with no new request, and the synchronous cache reader agrees.
+    let calls = 0
+    const request = (() => {
+      calls += 1
+      return Promise.resolve(
+        new Response(JSON.stringify({
+          success: true,
+          terminalId: "pty-cached",
+          session: { terminalId: "pty-cached", sessionId: "sess-cached", updatedAt: Date.now() },
+        })),
+      )
+    }) as typeof fetch
 
-    expect(source).not.toContain("const cache = new Map")
-    expect(source).not.toContain("const inflight = new Map")
-    expect(source).not.toContain("workspaceRuntimeRequest")
-    expect(source).not.toContain("RuntimeGateway")
-    expect(source).toContain("createTransport")
-    expect(source).toContain("terminal-session-preview")
-    expect(source).toContain("queryClient.setQueryData(requestKey, next)")
+    const loaded = await loadTerminalSessionPreview("http://localhost:3020", "pty-cached", request)
+    expect(loaded?.sessionId).toBe("sess-cached")
+
+    const again = await loadTerminalSessionPreview("http://localhost:3020", "pty-cached", request)
+    expect(again?.sessionId).toBe("sess-cached")
+    expect(cachedTerminalSessionPreview("http://localhost:3020", "pty-cached")?.sessionId).toBe("sess-cached")
+    expect(calls).toBe(1)
   })
 
   test("loadTerminalSessionPreview follows replacement terminal ids", async () => {

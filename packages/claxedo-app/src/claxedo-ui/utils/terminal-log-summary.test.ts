@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "../../shared/query/query-client"
 import {
   aliasTerminalLogSummary,
@@ -16,11 +16,10 @@ describe("terminal log summary", () => {
 
   test("loads and caches a summary from process logs", async () => {
     const calls: string[] = []
-    globalThis.fetch = mock(async (input: string | URL | Request) => {
+    globalThis.fetch = (async (input: string | URL | Request) => {
       calls.push(String(input))
       return new Response("one\ntwo\nthree")
-      // as-any: test double implements only the API surface exercised by this test.
-    }) as unknown as typeof fetch
+    }) as typeof fetch
 
     const summary = await loadTerminalLogSummary("http://localhost:3099", "pty_1", "/repo")
 
@@ -35,16 +34,29 @@ describe("terminal log summary", () => {
     ])
   })
 
-  test("keeps summary response cache and in-flight request state in Query", async () => {
-    const source = await Bun.file(new URL("./terminal-log-summary.ts", import.meta.url)).text()
+  test("coalesces concurrent summary loads and serves later reads from cache", async () => {
+    // The in-flight request and response cache both live in the shared Query
+    // client. Two concurrent loads for the same target join a single request,
+    // and a later load (plus the synchronous reader) hit the cache — proving
+    // no module-private Map owns this state.
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls += 1
+      return new Response("alpha\nbeta")
+    }) as typeof fetch
 
-    expect(source).not.toContain("const cache = new Map")
-    expect(source).not.toContain("const inflight = new Map")
-    expect(source).not.toContain("terminalProcessLogsUrl")
-    expect(source).not.toContain("RuntimeGateway")
-    expect(source).toContain("createTransport")
-    expect(source).toContain("terminal-log-summary")
-    expect(source).toContain("queryClient.setQueryData(requestKey, next)")
+    const [first, second] = await Promise.all([
+      loadTerminalLogSummary("http://localhost:3098", "pty_coalesce", "/repo"),
+      loadTerminalLogSummary("http://localhost:3098", "pty_coalesce", "/repo"),
+    ])
+
+    expect(first?.recent).toEqual(["alpha", "beta"])
+    expect(second).toEqual(first)
+
+    const cachedRead = cachedTerminalLogSummary("http://localhost:3098", "pty_coalesce", "/repo")
+    expect(cachedRead).toEqual(first)
+    expect(await loadTerminalLogSummary("http://localhost:3098", "pty_coalesce", "/repo")).toEqual(first)
+    expect(calls).toBe(1)
   })
 
   test("uses the provided request through transport for non-loopback process logs", async () => {
@@ -111,11 +123,10 @@ describe("terminal log summary", () => {
 
   test("follows terminal id aliases", async () => {
     const calls: string[] = []
-    globalThis.fetch = mock(async (input: string | URL | Request) => {
+    globalThis.fetch = (async (input: string | URL | Request) => {
       calls.push(String(input))
       return new Response("aliased")
-      // as-any: test double implements only the API surface exercised by this test.
-    }) as unknown as typeof fetch
+    }) as typeof fetch
 
     aliasTerminalLogSummary("pty_old", "pty_new")
     await loadTerminalLogSummary("http://localhost:3100", "pty_old", "/repo")

@@ -41,12 +41,32 @@ describe("pane terminal recovery", () => {
     expect(pendingRecovery("pty-old")).toBeUndefined()
   })
 
-  test("terminal renderers do not own private recovery inflight maps", async () => {
-    const content = await Bun.file(new URL("../content-renderers/terminal-content.tsx", import.meta.url)).text()
-    const recovery = await Bun.file(new URL("./pane-terminal-recovery.ts", import.meta.url)).text()
+  test("shares one in-flight recovery promise across separate consumers of the same stale id", async () => {
+    // Two independent consumers (distinct alias maps, as two renderer
+    // instances would be) request recovery of the same terminal id. The
+    // in-flight promise must live in the shared Query cache — not a private
+    // per-consumer map — so the second consumer joins the first request
+    // instead of opening a duplicate clone.
+    const aliasA = new Map<string, { id: string; at: number }>()
+    const aliasB = new Map<string, { id: string; at: number }>()
+    let calls = 0
+    let release: (id: string) => void
+    const run = () => {
+      calls += 1
+      return new Promise<string>((resolve) => {
+        release = resolve
+      })
+    }
 
-    expect(content).not.toContain("recoveryInflight")
-    expect(recovery).not.toContain("inflight: Map")
-    expect(recovery).toContain('["shell", "terminal-recovery", id]')
+    const first = trackRecovery(aliasA, "pty-stale", run)
+    const second = trackRecovery(aliasB, "pty-stale", run)
+
+    expect(second).toBe(first)
+    expect(calls).toBe(1)
+
+    release!("pty-fresh")
+    await expect(first).resolves.toBe("pty-fresh")
+    await expect(second).resolves.toBe("pty-fresh")
+    expect(pendingRecovery("pty-stale")).toBeUndefined()
   })
 })

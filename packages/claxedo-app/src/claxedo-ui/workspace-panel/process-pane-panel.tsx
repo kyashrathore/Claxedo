@@ -15,6 +15,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import type { LocalPTY } from "@/context/terminal"
 import type { Process } from "@claxedo/process/process"
+import { PROCESS_STATUS_COLORS, PROCESS_STATUS_LABELS } from "./process-status-display"
 
 type ProcessStatus = Process.Status
 
@@ -31,32 +32,12 @@ export type ProcessPanePanelProps = {
   onEdit?: () => void
 }
 
-const STATUS_COLORS: Record<ProcessStatus, string> = {
-  idle: "var(--icon-base)",
-  starting: "var(--surface-success-strong)",
-  running: "var(--surface-success-strong)",
-  stopping: "var(--icon-base)",
-  stopped: "var(--icon-base)",
-  crashed: "var(--surface-critical-strong)",
-  restarting: "var(--surface-success-strong)",
-}
-
-const STATUS_LABELS: Record<ProcessStatus, string> = {
-  idle: "Idle",
-  starting: "Starting",
-  running: "Running",
-  stopping: "Stopping",
-  stopped: "Stopped",
-  crashed: "Crashed",
-  restarting: "Restarting",
-}
-
 function StatusDot(props: { status: ProcessStatus }) {
-  const color = () => STATUS_COLORS[props.status] ?? "#6b7280"
+  const color = () => PROCESS_STATUS_COLORS[props.status] ?? "#6b7280"
   const isPulsing = () => props.status === "running" || props.status === "restarting" || props.status === "starting"
 
   return (
-    <Tooltip value={STATUS_LABELS[props.status] ?? props.status}>
+    <Tooltip value={PROCESS_STATUS_LABELS[props.status] ?? props.status}>
       <span class="relative flex shrink-0" style={{ width: "8px", height: "8px" }}>
         <Show when={isPulsing()}>
           <span
@@ -226,7 +207,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                 fallback={
                   <div class="flex flex-col items-center gap-4 text-text-weak max-w-md w-full">
                     <span class="text-[18px] animate-pulse tracking-widest">…</span>
-                    <span class="text-[12px]">{live() ? STATUS_LABELS[status()] : "Inactive"}</span>
+                    <span class="text-[12px]">{live() ? PROCESS_STATUS_LABELS[status()] : "Inactive"}</span>
                     <Show when={live() && commandLine()}>
                       <code class="px-3 py-1.5 rounded bg-surface-base-hover text-[11px] font-mono text-text-weaker truncate max-w-full">
                         {commandLine()}

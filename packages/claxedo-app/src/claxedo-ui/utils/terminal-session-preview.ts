@@ -1,8 +1,14 @@
 import { legacyDirectoryFromRouteKey } from "@claxedo/shell/identity/route"
 import { resolveRecovery, rememberRecovery } from "../terminal/pane-terminal-recovery"
-import { queryClient } from "../../shared/query/query-client"
 import { createTransport } from "../../shell/data/transport/transport"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import {
+  loadCachedEntry,
+  normalizeText,
+  originOf,
+  readCachedEntry,
+  terminalScopedPlacement,
+  type CacheTtl,
+} from "./terminal-scoped-cache"
 
 export type TerminalSessionPreview = {
   terminalId: string
@@ -18,23 +24,14 @@ export type TerminalSessionPreview = {
   updatedAt: number
 }
 
-type CacheEntry = {
-  value: TerminalSessionPreview | null
-  at: number
-}
-
 type PreviewRequest = (url: string, init?: RequestInit) => Promise<Response>
 
-const HIT_TTL_MS = 20_000
-const MISS_TTL_MS = 3_000
+const PREVIEW_TTL: CacheTtl = { hit: 20_000, miss: 3_000 }
 const ALIAS_TTL_MS = 30_000
 
 const alias = new Map<string, { id: string; at: number }>()
 
-const text = (value: unknown) => {
-  if (typeof value !== "string") return ""
-  return value.trim()
-}
+const text = normalizeText
 
 const optional = (value: unknown) => {
   const next = text(value)
@@ -54,15 +51,6 @@ const record = (value: unknown) => {
   return value as Record<string, unknown>
 }
 
-const origin = (url: string) => {
-  try {
-    return new URL(url).origin
-  } catch {
-    if (typeof window !== "undefined") return window.location.origin
-    return ""
-  }
-}
-
 const workspace = (value: unknown) => {
   const next = optional(value)
   if (!next) return undefined
@@ -72,7 +60,7 @@ const workspace = (value: unknown) => {
 }
 
 const target = (sdkUrl: string, terminalId: string) => {
-  const site = origin(sdkUrl)
+  const site = originOf(sdkUrl)
   if (!site) return
   const id = resolve(text(terminalId))
   if (!id) return
@@ -105,12 +93,6 @@ const pruneCache = () => {
   }
 }
 
-const stale = (entry: CacheEntry | undefined) => {
-  if (!entry) return true
-  const ttl = entry.value ? HIT_TTL_MS : MISS_TTL_MS
-  return Date.now() - entry.at > ttl
-}
-
 const resolve = (terminalId: string) => resolveRecovery(alias, terminalId, ALIAS_TTL_MS)
 
 export const cachedTerminalSessionPreview = (
@@ -120,13 +102,7 @@ export const cachedTerminalSessionPreview = (
   pruneCache()
   const nextTarget = target(sdkUrl, terminalId)
   if (!nextTarget) return undefined
-  const key = previewCacheKey(nextTarget.cacheKey)
-  const existing = queryClient.getQueryData<CacheEntry>(key)
-  if (stale(existing)) {
-    queryClient.removeQueries({ queryKey: key })
-    return undefined
-  }
-  return existing?.value ?? null
+  return readCachedEntry<TerminalSessionPreview>(previewCacheKey(nextTarget.cacheKey), PREVIEW_TTL)
 }
 
 export const aliasTerminalSessionPreview = (oldId: string, newId: string) => {
@@ -182,16 +158,7 @@ const previewTransport = (
   request: typeof fetch,
   workspace?: Awaited<ReturnType<NonNullable<TerminalSessionPreviewOptions["resolveWorkspaceRuntime"]>>>,
 ) => createTransport({
-  placement: workspace?.kind && workspace.kind !== "local" && workspace.workspaceId
-    ? {
-        workspaceId: workspace.workspaceId,
-        hosting: "workspace",
-        transport: centralTransportForServer(site) === "loopback" ? "loopback" : "workspace-relay",
-      }
-    : {
-        hosting: "workspace",
-        transport: centralTransportForServer(site),
-      },
+  placement: terminalScopedPlacement(site, workspace),
   serverUrl: site,
   directory: dir,
   request,
@@ -213,19 +180,6 @@ export const loadTerminalSessionPreview = (
   const nextTarget = target(sdkUrl, terminalId)
   if (!nextTarget) return Promise.resolve(null)
 
-  const cacheKey = previewCacheKey(nextTarget.cacheKey)
-  const existing = queryClient.getQueryData<CacheEntry>(cacheKey)
-  if (!stale(existing)) {
-    return Promise.resolve(existing?.value ?? null)
-  }
-  queryClient.removeQueries({ queryKey: cacheKey })
-
-  const requestKey = previewRequestKey(nextTarget.cacheKey)
-  const running = queryClient.getQueryData<Promise<TerminalSessionPreview | null>>(requestKey)
-  if (running) {
-    return running
-  }
-
   // Discriminate the union: a TerminalSessionPreviewOptions object has
   // a `request` (or `directory`) property; the legacy callers pass the
   // fetch function directly.
@@ -238,33 +192,28 @@ export const loadTerminalSessionPreview = (
     : { request: requestOrOptions as typeof fetch }
   const request = opts.request ?? fetch
 
-  const next = (async () => {
-    if (opts.directory && opts.resolveWorkspaceRuntime) {
-      const resolved = await opts.resolveWorkspaceRuntime({ directory: opts.directory }).catch(() => null)
-      if ((resolved?.kind === "cloud" || resolved?.kind === "user-hosted") && resolved.workspaceId) {
+  return loadCachedEntry<TerminalSessionPreview>({
+    cacheKey: previewCacheKey(nextTarget.cacheKey),
+    requestKey: previewRequestKey(nextTarget.cacheKey),
+    ttl: PREVIEW_TTL,
+    run: async () => {
+      if (opts.directory && opts.resolveWorkspaceRuntime) {
+        const resolved = await opts.resolveWorkspaceRuntime({ directory: opts.directory }).catch(() => null)
+        if ((resolved?.kind === "cloud" || resolved?.kind === "user-hosted") && resolved.workspaceId) {
+          return fetchPreviewBody(
+            previewPath(nextTarget.id),
+            previewTransport(nextTarget.site, opts.directory, request, resolved).fetch,
+          )
+        }
         return fetchPreviewBody(
-          previewPath(nextTarget.id),
+          previewPath(nextTarget.id, opts.directory),
           previewTransport(nextTarget.site, opts.directory, request, resolved).fetch,
         )
       }
       return fetchPreviewBody(
-        previewPath(nextTarget.id, opts.directory),
-        previewTransport(nextTarget.site, opts.directory, request, resolved).fetch,
+        new URL(previewPath(nextTarget.id), nextTarget.site).toString(),
+        request,
       )
-    }
-    return fetchPreviewBody(
-      new URL(previewPath(nextTarget.id), nextTarget.site).toString(),
-      request,
-    )
-  })()
-    .then((value) => {
-      queryClient.setQueryData(cacheKey, { value, at: Date.now() })
-      return value
-    })
-    .finally(() => {
-      queryClient.removeQueries({ queryKey: requestKey })
-    })
-
-  queryClient.setQueryData(requestKey, next)
-  return next
+    },
+  })
 }

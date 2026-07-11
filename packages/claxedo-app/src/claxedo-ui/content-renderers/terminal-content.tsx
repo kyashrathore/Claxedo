@@ -65,6 +65,32 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
   const [realPtyId, setRealPtyId] = createSignal(
     terminalId()?.startsWith("pending-") ? undefined : terminalId(),
   )
+
+  /**
+   * Adopt a replacement pty id after a recovery/clone: point the live signal,
+   * carry the session-preview + log-summary caches forward under the new id,
+   * rewrite the terminal id in workbench state + meta, swap the route, and
+   * refit. Shared by the recovered-alias branch, the pending-recovery
+   * resolution, and the 1008-close reconnect path so the swap stays identical.
+   */
+  const adoptTerminalId = (oldId: string, newId: string, dir: string) => {
+    setRealPtyId(newId)
+    aliasTerminalSessionPreview(oldId, newId)
+    aliasTerminalLogSummary(oldId, newId)
+    state.terminal.replaceId(oldId, newId)
+    state.meta.patch(props.meta.id, {
+      terminalId: newId,
+      content: {
+        ...props.meta.content,
+        type: "terminal",
+        directory: dir,
+        terminalId: newId,
+        title: title(),
+      },
+    })
+    replaceTerminalRoute(oldId, newId, dir)
+    requestTerminalFitOnPaneChange()
+  }
   const [createError, setCreateError] = createSignal<string | undefined>()
   const [retryNonce, setRetryNonce] = createSignal(0)
   const [activated, setActivated] = createSignal(false)
@@ -95,44 +121,14 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
     if (!tid.startsWith("pending-")) {
       const recovered = resolveRecovery(recoveryAlias, tid)
       if (recovered !== tid) {
-        setRealPtyId(recovered)
-        aliasTerminalSessionPreview(tid, recovered)
-        aliasTerminalLogSummary(tid, recovered)
-        state.terminal.replaceId(tid, recovered)
-        state.meta.patch(props.meta.id, {
-          terminalId: recovered,
-          content: {
-            ...props.meta.content,
-            type: "terminal",
-            directory: dir,
-            terminalId: recovered,
-            title: title(),
-          },
-        })
-        replaceTerminalRoute(tid, recovered, dir)
-        requestTerminalFitOnPaneChange()
+        adoptTerminalId(tid, recovered, dir)
         return
       }
       const pending = pendingRecovery(tid)
       if (pending) {
         void pending.then((newId) => {
           if (!newId || disposed) return
-          setRealPtyId(newId)
-          aliasTerminalSessionPreview(tid, newId)
-          aliasTerminalLogSummary(tid, newId)
-          state.terminal.replaceId(tid, newId)
-          state.meta.patch(props.meta.id, {
-            terminalId: newId,
-            content: {
-              ...props.meta.content,
-              type: "terminal",
-              directory: dir,
-              terminalId: newId,
-              title: title(),
-            },
-          })
-          replaceTerminalRoute(tid, newId, dir)
-          requestTerminalFitOnPaneChange()
+          adoptTerminalId(tid, newId, dir)
         })
         return
       }
@@ -256,22 +252,7 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
       }
       const dir = directory()
       if (!newId || disposed || !dir) return
-      setRealPtyId(newId)
-      aliasTerminalSessionPreview(id, newId)
-      aliasTerminalLogSummary(id, newId)
-      state.terminal.replaceId(id, newId)
-      state.meta.patch(props.meta.id, {
-        terminalId: newId,
-        content: {
-          ...props.meta.content,
-          type: "terminal",
-          directory: dir,
-          terminalId: newId,
-          title: title(),
-        },
-      })
-      replaceTerminalRoute(id, newId, dir)
-      requestTerminalFitOnPaneChange()
+      adoptTerminalId(id, newId, dir)
     }
   }
 

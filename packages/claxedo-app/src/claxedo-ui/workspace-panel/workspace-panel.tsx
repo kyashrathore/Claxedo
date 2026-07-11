@@ -138,6 +138,34 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
 
   const clampWidth = (w: number) => Math.max(minWidth, Math.min(maxWidth(), w))
 
+  // Keyboard resize for the ARIA window-splitter separator. The panel is
+  // anchored right, so ArrowLeft widens it (mirrors dragging the left handle
+  // leftward) and ArrowRight narrows it; Home/End jump to the min/max width.
+  const RESIZE_KEY_STEP = 24
+  const resizeByKeyboard = (event: KeyboardEvent) => {
+    const current = restingPanelWidth()
+    let next: number
+    switch (event.key) {
+      case "ArrowLeft":
+        next = current + RESIZE_KEY_STEP
+        break
+      case "ArrowRight":
+        next = current - RESIZE_KEY_STEP
+        break
+      case "Home":
+        next = minWidth
+        break
+      case "End":
+        next = maxWidth()
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+    setWidth(clampWidth(next))
+    emitTerminalFit()
+  }
+
   onMount(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth)
     window.addEventListener("resize", updateViewportWidth)
@@ -233,10 +261,15 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       <Show when={open() && props.state.mode && !isMobile()}>
         <div
           role="separator"
+          tabIndex={0}
           aria-orientation="vertical"
           aria-label="Resize workspace panel"
-          class="absolute bottom-0 left-0 top-0 z-10 w-1 cursor-col-resize transition-colors hover:bg-border-weak-base/25 active:bg-border-weak-base/45"
+          aria-valuenow={Math.round(restingPanelWidth())}
+          aria-valuemin={minWidth}
+          aria-valuemax={Math.round(maxWidth())}
+          class="absolute bottom-0 left-0 top-0 z-10 w-1 cursor-col-resize outline-none transition-colors hover:bg-border-weak-base/25 focus-visible:bg-border-interactive-base/60 active:bg-border-weak-base/45"
           onPointerDown={resize}
+          onKeyDown={resizeByKeyboard}
         />
       </Show>
       <div
