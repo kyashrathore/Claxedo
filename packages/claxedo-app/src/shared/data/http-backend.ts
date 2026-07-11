@@ -8,7 +8,7 @@ import type {
   Todo,
   VcsInfo,
 } from "@opencode-ai/sdk/v2/client"
-import { authFetch, getDefaultBaseUrl } from "../../utils/api"
+import { authFetch, getDefaultBaseUrl, normalizeUrl } from "../../utils/api"
 import { workspaceResolveUrl } from "../../utils/workspace-control-routes"
 import { PANE_PREFERENCE_KEYS, type PanePreferenceKind, type PanePreferenceStorage } from "../../pane/store/pane-preferences"
 import type {
@@ -31,12 +31,6 @@ import {
 } from "../../runtime/agent-runtime-client"
 
 export const DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES = DEFAULT_AGENT_RUNTIME_CAPABILITIES
-
-function normalized(url: string | undefined): string | undefined {
-  const trimmed = url?.trim()
-  if (!trimmed) return undefined
-  return trimmed.replace(/\/+$/, "")
-}
 
 async function readJson<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error((await res.text()) || `Request failed: ${res.status}`)
@@ -140,7 +134,7 @@ export function createHttpWorkspaceRuntimeBackend(input: {
    */
   signedControlPlane?: boolean
 }): WorkspaceRuntimeBackend {
-  const baseUrl = normalized(input.baseUrl) ?? getDefaultBaseUrl()
+  const baseUrl = normalizeUrl(input.baseUrl) ?? getDefaultBaseUrl()
   const request = input.request ?? authFetch
   const strictSignedRuntime = input.signedControlPlane === true
 
@@ -260,7 +254,7 @@ export function createHttpSessionBackend(input: {
   const signed = input.signedControlPlane === true
   const runtimeFor = (sessionRef?: SessionRef) => createAgentRuntimeClient({
     request,
-    serverUrl: normalized(input.claxedoServerUrl),
+    serverUrl: normalizeUrl(input.claxedoServerUrl),
     signedControlPlane: signed,
     sessionRef: sessionRef ?? input.sessionRef,
     workspaceId: input.workspaceId,

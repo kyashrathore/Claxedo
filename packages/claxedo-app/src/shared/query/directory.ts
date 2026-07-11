@@ -3,13 +3,8 @@ import { queryKeys } from "./keys"
 import { workspaceResolveQuery as runtimeWorkspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "./runtime"
 import { signedWorkspaceFromProjects } from "../../runtime/signed-workspace"
 import { queryClient } from "./query-client"
-import { createTransport } from "../../shell/data/transport/transport"
-import {
-  agentConfigRequest,
-  agentConfigUrl,
-  workspaceRuntimeAgentConfigPath,
-  workspaceTransportForBaseUrl,
-} from "./agent-config-routes"
+import { normalizeUrl } from "../../utils/api"
+import { workspaceScopedResourceList, workspaceTransportForBaseUrl } from "./agent-config-routes"
 
 type ProjectClient = {
   project: {
@@ -106,7 +101,7 @@ export function agentListQuery(input: {
     queryFn: async () => {
       if (!harnessUsesAgentProfiles(input.harnessType)) return []
       if (input.request && input.baseUrl) {
-        const baseUrl = input.baseUrl.replace(/\/+$/, "")
+        const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
         const workspace = input.workspace !== undefined
           ? input.workspace
           : (workspaceTransportForBaseUrl(baseUrl) !== "loopback"
@@ -116,40 +111,15 @@ export function agentListQuery(input: {
               )
               : undefined) ??
             await runtimeWorkspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }).queryFn()
-        if (workspace?.kind !== "cloud" && workspace?.kind !== "user-hosted") {
-          // Rubric Q4: declare auth intent at the call site. Loopback Claxedo
-          // server bypasses the bearer (`unsignedLocalFetch`); cloud /
-          // user-hosted control plane uses the signed fetch.
-          const claxedoFetch = agentConfigRequest({ baseUrl, request: input.request })
-          const res = await claxedoFetch(
-            agentConfigUrl({
-              baseUrl,
-              resource: "agents",
-              scope: input.directory,
-              harnessType: input.harnessType,
-            }),
-          )
-          if (!res.ok) return []
-          return agentListFromUnknown(await res.json().catch(() => []))
-        }
-        if (!workspace.workspaceId) return []
-        const res = await createTransport({
-          placement: {
-            workspaceId: workspace.workspaceId,
-            hosting: "workspace",
-            transport: workspaceTransportForBaseUrl(baseUrl),
-          },
-          serverUrl: baseUrl,
+        return workspaceScopedResourceList({
+          baseUrl,
           directory: input.directory,
+          harnessType: input.harnessType,
           request: input.request,
-        }).fetch(workspaceRuntimeAgentConfigPath({
-          resource: "agent",
-          scope: input.directory,
-          ...(input.harnessType ? { harnessType: input.harnessType } : {}),
-        })).catch(() => undefined)
-        if (!res) return []
-        if (!res.ok) return []
-        return agentListFromUnknown(await res.json().catch(() => []))
+          workspace,
+          resource: { plural: "agents", singular: "agent", scopeCentralUrl: true },
+          parse: agentListFromUnknown,
+        })
       }
       return (await input.client.app.agents({ directory: input.directory })).data ?? []
     },

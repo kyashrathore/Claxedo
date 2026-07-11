@@ -1,7 +1,7 @@
+import { normalizeUrl } from "../../utils/api"
+
 function normalized(url: string | undefined) {
-  const trimmed = url?.trim()
-  if (!trimmed) return "default"
-  return trimmed.replace(/\/+$/, "")
+  return normalizeUrl(url) ?? "default"
 }
 
 export const queryKeys = {

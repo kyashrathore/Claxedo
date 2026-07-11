@@ -24,14 +24,9 @@ type ProviderAuthClient = {
 export function normalizeProjectList(data: Project[] | undefined) {
   return (data ?? [])
     .filter((item) => !!item?.id)
-    .filter((item) => !!item.worktree && !isScratchProjectWorktree(item.worktree))
+    .filter((item) => !!item.worktree)
     .slice()
     .sort((a, b) => cmp(a.id, b.id))
-}
-
-function isScratchProjectWorktree(worktree: string) {
-  return worktree.includes("opencode-test") ||
-    worktree.includes("claxedo-signed-browser-relay-")
 }
 
 export function projectListQuery(input: {

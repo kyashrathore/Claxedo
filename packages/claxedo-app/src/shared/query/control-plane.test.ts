@@ -12,14 +12,23 @@ function project(id: string, worktree: string): Project {
 }
 
 describe("control-plane query helpers", () => {
-  test("normalizeProjectList filters junk and sorts by id", async () => {
+  test("normalizeProjectList filters entries missing an id or worktree and sorts the rest by id", async () => {
     expect(normalizeProjectList([
       project("z", "/tmp/z"),
       project("a", "/tmp/a"),
+      project("", "/tmp/blank"),
+      project("no-worktree", ""),
+    ]).map((item) => item.id)).toEqual(["a", "z"])
+  })
+
+  test("normalizeProjectList keeps projects whose worktree path happens to contain historical E2E-fixture substrings", async () => {
+    // Production project filtering must never depend on internal E2E naming
+    // conventions — a real user's worktree could legitimately contain either
+    // substring (e.g. a directory literally named "opencode-test").
+    expect(normalizeProjectList([
       project("skip", "/tmp/opencode-test-skip"),
       project("relay", "/private/var/folders/t2/relay/T/claxedo-signed-browser-relay-vMkcgb/workspace"),
-      project("", "/tmp/blank"),
-    ]).map((item) => item.id)).toEqual(["a", "z"])
+    ]).map((item) => item.id)).toEqual(["relay", "skip"])
   })
 
   test("projectListQuery normalizes results", async () => {

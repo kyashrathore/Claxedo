@@ -8,12 +8,7 @@
 import type { ServerExtensions } from "./types"
 import type { ClaxedoConfig } from "../index"
 import { resolveSessionUrl } from "../utils/session-url"
-
-function normalizeUrl(url: string | undefined): string | undefined {
-  const txt = url?.trim()
-  if (!txt) return undefined
-  return txt.replace(/\/+$/, "")
-}
+import { normalizeUrl } from "../utils/api"
 
 /**
  * Create server extensions for Claxedo cloud mode.

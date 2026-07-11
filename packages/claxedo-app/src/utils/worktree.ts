@@ -1,5 +1,6 @@
 import { queryClient } from "../shared/query/query-client"
-import { workspaceIdFromLegacyScope } from "../shell/identity/legacy-resolver"
+import { workspaceIdFromRef } from "../shell/identity/legacy-resolver"
+import { same } from "./same"
 
 const normalize = (directory: string) => directory.replace(/[\\/]+$/, "")
 
@@ -68,7 +69,7 @@ function waitForWorktreeState(key: string) {
     }
 
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-      if (!sameQueryKey(event.query.queryKey, worktreeStateKey(key))) return
+      if (!same(event.query.queryKey, worktreeStateKey(key))) return
       const next = readWorktreeState(key)
       if (!next || next.status === "pending") return
       unsubscribe()
@@ -83,10 +84,6 @@ function worktreeStateKey(key: string) {
 
 function worktreeWaitKey(key: string) {
   return ["shell", "worktree", key, "wait"] as const
-}
-
-function sameQueryKey(a: readonly unknown[], b: readonly unknown[]) {
-  return a.length === b.length && a.every((value, index) => value === b[index])
 }
 
 export function validWorktree(input: string | undefined) {
@@ -111,6 +108,6 @@ export function validWorktree(input: string | undefined) {
 export function validProjectRef(input: string | undefined) {
   if (!input) return false
   const value = input.trim()
-  if (workspaceIdFromLegacyScope(value)) return true
+  if (workspaceIdFromRef(value)) return true
   return validWorktree(input)
 }

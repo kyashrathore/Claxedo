@@ -1,6 +1,5 @@
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
-
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+import { cmp } from "../../shared/query/utils"
 
 export const idleSessionStatus = { type: "idle" as const }
 

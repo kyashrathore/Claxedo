@@ -249,6 +249,57 @@ describe("session list query cache", () => {
       .toEqual(["ses_1", "ses_2", "ses_3"])
   })
 
+  test("appending a loaded page replaces the stale first-page nextCursor with that page's own cursor", () => {
+    // Regression for the "Load more" button never disappearing: merging in a
+    // later page must advance the cache's nextCursor to the newly fetched
+    // page's cursor, not keep repeating the very first page's cursor.
+    const query = {
+      scope: "workspace" as const,
+      workspaceId: "ws_1",
+      directory: "/repo",
+      limit: 2,
+    }
+    const key = queryKeys.shell.sessionList(undefined, query)
+    queryClient.setQueryData(key, response()) // nextCursor: "cursor_after_ses_2"
+
+    const next = appendSessionListPageQueryData({
+      query,
+      page: {
+        ...response(),
+        items: [row("ses_3", 1)],
+        nextCursor: "cursor_after_ses_3",
+        totalKnown: 3,
+      },
+    })
+
+    expect(next.nextCursor).toBe("cursor_after_ses_3")
+    expect(queryClient.getQueryData<SessionListResponse>(key)?.nextCursor).toBe("cursor_after_ses_3")
+  })
+
+  test("appending the final page clears nextCursor so Load more stops showing once pages are exhausted", () => {
+    const query = {
+      scope: "workspace" as const,
+      workspaceId: "ws_1",
+      directory: "/repo",
+      limit: 2,
+    }
+    const key = queryKeys.shell.sessionList(undefined, query)
+    queryClient.setQueryData(key, response()) // nextCursor: "cursor_after_ses_2"
+
+    const next = appendSessionListPageQueryData({
+      query,
+      page: {
+        ...response(),
+        items: [row("ses_3", 1)],
+        nextCursor: undefined,
+        totalKnown: 3,
+      },
+    })
+
+    expect(next.nextCursor).toBeUndefined()
+    expect(queryClient.getQueryData<SessionListResponse>(key)?.nextCursor).toBeUndefined()
+  })
+
   test("does not merge workspace cursor pages into project cache entries", () => {
     const workspaceQuery = {
       scope: "workspace" as const,

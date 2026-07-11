@@ -1,5 +1,5 @@
 import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import { cmp } from "./utils"
+import { cmp } from "../../shared/query/utils"
 import { SESSION_RECENT_LIMIT, SESSION_RECENT_WINDOW } from "./types"
 
 export function sessionUpdatedAt(session: Session) {

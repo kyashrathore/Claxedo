@@ -60,7 +60,17 @@ function mergeSessionListResponses(input: {
   return {
     ...input.page,
     items,
-    nextCursor: items.length > input.page.items.length ? input.current.nextCursor : input.page.nextCursor,
+    // Appending a freshly loaded page ("Load more") always advances to that
+    // page's own cursor — including `undefined` once the server reports no
+    // further pages — otherwise the cache would keep repeating the first
+    // page's stale cursor forever and "Load more" would never disappear. A
+    // base refetch (append=false) instead preserves the deeper cursor from
+    // `current` when the merge kept an already-loaded tail beyond what this
+    // fresh page covers, so refetching page one doesn't collapse pagination
+    // state the user already scrolled past.
+    nextCursor: input.append
+      ? input.page.nextCursor
+      : items.length > input.page.items.length ? input.current.nextCursor : input.page.nextCursor,
     totalKnown: Math.max(input.current.totalKnown ?? 0, input.page.totalKnown ?? 0, items.length),
   }
 }
@@ -217,7 +227,5 @@ function isSessionListQueryKey(key: readonly unknown[], base: string) {
 }
 
 function normalizedBase(url: string | undefined) {
-  const trimmed = url?.trim()
-  if (!trimmed) return "default"
-  return trimmed.replace(/\/+$/, "")
+  return normalizeUrl(url) ?? "default"
 }

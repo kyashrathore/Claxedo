@@ -1,4 +1,4 @@
-import { authFetch, getClaxedoServerUrl } from "./api"
+import { authFetch, getClaxedoServerUrl, normalizeUrl } from "./api"
 import { controlSessionUrl } from "./workspace-control-routes"
 
 type ResolveSessionUrlOptions = {
@@ -6,12 +6,6 @@ type ResolveSessionUrlOptions = {
   claxedoServerUrl?: string
   gatewayUrl?: string
   fetch?: typeof globalThis.fetch
-}
-
-function normalizeUrl(url: string | undefined): string | undefined {
-  const text = url?.trim()
-  if (!text) return undefined
-  return text.replace(/\/+$/, "")
 }
 
 function gatewayBody(input: unknown): { gatewayUrl?: unknown; harnessHost?: unknown } {
