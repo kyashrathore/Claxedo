@@ -16,6 +16,12 @@ import { createHostedApp } from "./hosted-app"
 
 let cached: { app: Hono } | undefined
 
+// D9 fail-closed hosted boot: `composeHostedControlPlane` asserts every
+// hosted dependency/secret per-piece, and `createHostedApp` asserts the
+// explicit deployment mode (CLAXEDO_DEPLOYMENT_MODE=hosted is REQUIRED) plus
+// signed-auth/authority presence. Both throw HostedWorkerCompositionError,
+// which `fetch` below maps to a 503 for EVERY request — the Worker is down,
+// not open, when hosted config is missing.
 function buildApp(env: HostedWorkerEnv): Hono {
   if (cached) return cached.app
   const plane = composeHostedControlPlane(env)

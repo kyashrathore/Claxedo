@@ -552,12 +552,16 @@ describe("control-plane services", () => {
         error: { code: "relay_resolver_unauthorized" },
       })
 
+      // D9: the global unsigned-local guard is now the PRIMARY gate for
+      // non-loopback unsigned requests; the per-route local-only projection
+      // (previously `local_only_projection_route` here) is demoted to
+      // defense-in-depth behind it.
       const bootstrap = await built.app.request("https://control.example.test/api/claxedo/bootstrap", {
         headers: { authorization: "Bearer unsigned-local-test" },
       })
       expect(bootstrap.status).toBe(403)
       await expect(bootstrap.json()).resolves.toMatchObject({
-        error: { code: "local_only_projection_route" },
+        error: { code: "unsigned_local_loopback_required" },
       })
 
       const track = await built.app.request("/api/claxedo/track", {
@@ -787,11 +791,15 @@ describe("control-plane services", () => {
     const { createApp } = await import("../server")
     const built = createApp(createControlPlaneServices(fakePorts(), { authority: null }))
 
+    // D9: in an unsigned-local deployment a REMOTE caller is now denied by
+    // the global unsigned-local guard before the per-route bearer gate
+    // (previously 401 missing_bearer_token from the route) — the per-route
+    // gate remains as defense-in-depth behind it.
     const missing = await built.app.request("https://control.example.test/api/wr/runtime-events")
 
-    expect(missing.status).toBe(401)
+    expect(missing.status).toBe(403)
     await expect(missing.json()).resolves.toMatchObject({
-      error: { code: "missing_bearer_token" },
+      error: { code: "unsigned_local_loopback_required" },
     })
   })
 

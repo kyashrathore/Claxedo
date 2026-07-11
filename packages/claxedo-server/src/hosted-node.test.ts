@@ -16,6 +16,8 @@ const previous = {
 
 function env(overrides: Record<string, string | undefined> = {}) {
   return {
+    // D9: hosted compositions must declare the deployment mode explicitly.
+    CLAXEDO_DEPLOYMENT_MODE: "hosted",
     CLAXEDO_SIGNED_CLOUD_AUTH: "true",
     CLERK_JWT_ISSUER: "https://clerk.test",
     CLERK_JWKS_URL: "https://clerk.test/jwks",
@@ -47,6 +49,12 @@ describe("hosted Node entrypoint", () => {
       mode: "hosted-control-plane",
       localExecution: false,
     })
+  })
+
+  test("D9: refuses to compose when CLAXEDO_DEPLOYMENT_MODE=hosted is not declared", () => {
+    expect(() => createHostedNodeApp(env({ CLAXEDO_DEPLOYMENT_MODE: undefined }))).toThrowError(
+      /CLAXEDO_DEPLOYMENT_MODE=hosted/,
+    )
   })
 
   test("uses hosted app composition with central runtime and does not mount the local server entrypoint", () => {

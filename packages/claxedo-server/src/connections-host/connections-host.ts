@@ -71,9 +71,12 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
   })
 
   // Every route: control-plane auth, with unsigned-local accepted ONLY from
-  // loopback. Stricter than routes/events.ts: in unsigned mode
-  // controlPlaneAuthContext is a pass-through, so the loopback check is the
-  // effective gate — never copy the ungated credential/provider-auth mounts.
+  // loopback. D9 NOTE: the PRIMARY unsigned-local gate is now the global
+  // `unsignedLocalRequestGuard` mounted at the app-composition root
+  // (control-plane/deployment-mode.ts) — it rejects non-loopback unsigned
+  // requests before any route handler runs. The loopback check below is
+  // retained as defense-in-depth (these routes may be mounted without the
+  // parent app), no longer the sole effective gate.
   //
   // Note: GET /callback is NOT behind this gate by design — it arrives via
   // the provider redirect; single-use TTL attempt state guards it (routes.ts).

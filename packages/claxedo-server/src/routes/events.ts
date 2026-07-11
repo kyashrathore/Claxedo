@@ -23,6 +23,10 @@ export function eventsHandler(options: EventsHandlerOptions = {}) {
     // connection (even from another origin if CORS allows) would tap the
     // global event bus and observe every user's session/workspace activity
     // events. In local/unsigned-local mode the gate is a pass-through.
+    // D9 NOTE: the global `unsignedLocalRequestGuard` at the app-composition
+    // root is now the PRIMARY unsigned-local gate (non-loopback unsigned is
+    // rejected before this handler runs); the loopback check below stays as
+    // defense-in-depth for compositions that mount this handler directly.
     try {
       if (options.allowLoopbackLocal && isLoopbackLocalRequest(c.req.raw)) return streamClaxedoEvents(c)
       await controlPlaneAuthContext(c.req.raw, {

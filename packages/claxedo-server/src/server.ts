@@ -48,6 +48,7 @@ import { ProviderAuthRoutes } from "./routes/provider-auth"
 import { NetworkPolicyRoutes } from "./routes/network-policy"
 import { ControlPlaneCompositionError, createControlPlaneServices, type ControlPlaneRelay, type ControlPlaneServices } from "./control-plane/services"
 import { betterAuthAdapter, clerkAuthAdapter, signedCloudAuthRequested } from "./control-plane/auth"
+import { assertHostedBootRequirements, deploymentMode, unsignedLocalRequestGuard } from "./control-plane/deployment-mode"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./control-plane/adapters/convex/convex-authority"
 import { createSqliteWorkspaceAuthority } from "./control-plane/adapters/sqlite/workspace-authority"
@@ -205,6 +206,20 @@ export function createApp(services: ControlPlaneServices, options: {
         return undefined
       },
       maxAge: 86400,
+    }),
+  )
+
+  // D9: the ONE global unsigned-local gate. In unsigned self-host mode this
+  // is the PRIMARY gate — non-loopback requests are denied by default with an
+  // explicit allowlist of machine-token/callback exceptions (see
+  // control-plane/deployment-mode.ts). The per-route loopback checks further
+  // down (connections gate, events allowLoopbackLocal, local-only
+  // projections) are hereby demoted to defense-in-depth. In signed mode the
+  // guard passes through and per-route bearer verification stays the gate.
+  app.use(
+    unsignedLocalRequestGuard({
+      mode: deploymentMode(process.env),
+      authConfig: services.auth.config,
     }),
   )
 
@@ -474,6 +489,14 @@ export function createDefaultLocalControlPlaneServices() {
   // legacy aliases); the composition only threads the resolved presence.
   const authorityUrl = convexAuthorityUrlFromEnv(process.env)
   const embeddedAuth = embeddedAuthEnabled(process.env)
+  if (deploymentMode(process.env) === "hosted") {
+    // D9 fail-closed hosted boot: CLAXEDO_DEPLOYMENT_MODE=hosted REFUSES to
+    // start unless signed auth is fully configured and a workspace authority
+    // is resolved — one thrown error naming every missing piece. A hosted
+    // deployment that cannot authenticate must be down, not open; absent
+    // mode (self-host) keeps the zero-config boot below bit-for-bit.
+    assertHostedBootRequirements(process.env, { authorityConfigured: !!authorityUrl })
+  }
   if (signedCloudAuthRequested(process.env) && !authorityUrl && !embeddedAuth) {
     // Fail closed at BOOT (mirror of the hosted requiredHostedDependency rule):
     // signed auth without a workspace authority would otherwise answer 503 on

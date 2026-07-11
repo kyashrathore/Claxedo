@@ -98,7 +98,9 @@ function fakePlane(
       telemetry: services.telemetry,
     }),
     ...(input.deviceAuthProvider ? { deviceAuthProvider: input.deviceAuthProvider } : {}),
-    env: {}, // No JWKS keys configured → /.well-known/jwks.json returns 503.
+    // D9: hosted apps must declare their mode explicitly. No JWKS keys
+    // configured → /.well-known/jwks.json returns 503.
+    env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
   }
 }
 
@@ -125,6 +127,7 @@ describe("hosted app", () => {
   test("CORS allows deployment-configured app origins (exact and suffix) and denies unknown ones", async () => {
     const plane = fakePlane()
     plane.env = {
+      CLAXEDO_DEPLOYMENT_MODE: "hosted",
       CLAXEDO_APP_ORIGINS: "https://claxedo-app-staging.pages.dev, https://*.claxedo-app-staging.pages.dev",
     }
     const app = createHostedApp(plane)
@@ -168,6 +171,7 @@ describe("hosted app", () => {
     const app = createHostedApp({
       ...fakePlane(),
       env: {
+        CLAXEDO_DEPLOYMENT_MODE: "hosted",
         CLAXEDO_CENTRAL_VERSION: "central-1",
         CLAXEDO_EXPECTED_CENTRAL_VERSION: "central-1",
         CLAXEDO_APP_VERSION: "app-1",
@@ -216,6 +220,7 @@ describe("hosted app", () => {
     const keys = await ed25519Pair()
     const plane = fakePlane()
     plane.env = {
+      CLAXEDO_DEPLOYMENT_MODE: "hosted",
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: keys.privatePem,
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: keys.publicPem,
       CLAXEDO_CLI_ACCESS_TOKEN_TTL_SECONDS: "600",
@@ -1005,7 +1010,7 @@ describe("hosted app", () => {
     } as unknown as SandboxManager
     const plane = {
       ...fakePlane({ sandboxManager }),
-      env: { CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin-token" },
+      env: { CLAXEDO_DEPLOYMENT_MODE: "hosted", CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin-token" },
     }
     const app = createHostedApp(plane)
     const res = await app.fetch(
@@ -1167,5 +1172,60 @@ describe("hosted shell boot surface", () => {
     const first = await reader.read()
     expect(new TextDecoder().decode(first.value)).toBe(`data: ${JSON.stringify({ type: "heartbeat" })}\n\n`)
     await reader.cancel()
+  })
+
+  // D9 fail-closed hosted boot: the hosted app refuses to compose unless the
+  // deployment declares CLAXEDO_DEPLOYMENT_MODE=hosted AND signed auth plus a
+  // workspace authority are composed. worker.ts maps the thrown
+  // HostedWorkerCompositionError to a 503 for every request (down, not open).
+  test("refuses to compose when CLAXEDO_DEPLOYMENT_MODE is absent", () => {
+    const plane = fakePlane()
+    plane.env = {}
+    expect(() => createHostedApp(plane)).toThrowError(/CLAXEDO_DEPLOYMENT_MODE=hosted/)
+  })
+
+  test("refuses to compose when CLAXEDO_DEPLOYMENT_MODE is self-host or invalid", () => {
+    const selfHost = fakePlane()
+    selfHost.env = { CLAXEDO_DEPLOYMENT_MODE: "self-host" }
+    expect(() => createHostedApp(selfHost)).toThrowError(/CLAXEDO_DEPLOYMENT_MODE=hosted/)
+
+    const typo = fakePlane()
+    typo.env = { CLAXEDO_DEPLOYMENT_MODE: "production" }
+    expect(() => createHostedApp(typo)).toThrowError(/must be "self-host" or "hosted"/)
+  })
+
+  test("refuses to compose without signed auth or a workspace authority, naming every missing piece", () => {
+    const plane = fakePlane()
+    ;(plane.services.auth as { config: unknown }).config = {
+      enabled: false,
+      mode: "local-only",
+      reason: "signed/cloud auth is disabled",
+    }
+    ;(plane.services as { authority?: unknown }).authority = undefined
+    let thrown: Error | undefined
+    try {
+      createHostedApp(plane)
+    } catch (err) {
+      thrown = err as Error
+    }
+    expect(thrown?.message).toMatch(/signed auth is not enabled/)
+    expect(thrown?.message).toMatch(/no workspace authority/)
+  })
+
+  test("unsigned requests never fall through as unsigned-local even if a disabled config reached serving", async () => {
+    // Defense-in-depth for the global guard: bypass the boot assertion by
+    // constructing the app first, then flipping the config object the routes
+    // captured — the guard must still answer 503, not serve unsigned-local.
+    const plane = fakePlane()
+    const config = plane.services.auth.config as { enabled: boolean; mode?: string; reason?: string }
+    const app = createHostedApp(plane)
+    config.enabled = false
+    config.mode = "local-only"
+    config.reason = "signed/cloud auth is disabled"
+    for (const url of ["http://cp.test/api/claxedo/health", "http://127.0.0.1/api/claxedo/health"]) {
+      const res = await app.fetch(new Request(url))
+      expect(res.status).toBe(503)
+      expect(await res.json()).toMatchObject({ error: { code: "hosted_unsigned_rejected" } })
+    }
   })
 })

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import { createServer, type Server } from "node:http"
 import { once } from "node:events"
 import { exportJWK, generateKeyPair, SignJWT } from "jose"
+import { Hono } from "hono"
 import {
   ControlPlaneAuthError,
   bearerToken,
@@ -14,6 +15,11 @@ import {
   localOnlyAuthAdapter,
   signedCloudAuthRequested,
 } from "./auth"
+import {
+  assertHostedBootRequirements,
+  deploymentMode,
+  unsignedLocalRequestGuard,
+} from "./deployment-mode"
 
 const enabledConfig = {
   enabled: true,
@@ -312,5 +318,98 @@ describe("control plane auth", () => {
         orgId: "org_1",
       },
     })
+  })
+})
+
+// D9 deployment-mode matrix: CLAXEDO_DEPLOYMENT_MODE=hosted must be
+// fail-closed at boot (every missing piece named); absent mode must keep the
+// self-host zero-config posture byte-for-byte; and the global unsigned-local
+// guard is the PRIMARY gate over the per-route loopback checks.
+describe("deployment mode matrix (D9)", () => {
+  const hostedEnv = {
+    CLAXEDO_DEPLOYMENT_MODE: "hosted",
+    CLAXEDO_SIGNED_CLOUD_AUTH: "true",
+    CLERK_JWT_ISSUER: "https://clerk.example.test",
+    CLERK_JWKS_URL: "https://clerk.example.test/.well-known/jwks.json",
+  }
+
+  test("hosted + complete config boots with signed auth enabled and unsigned-local unreachable", async () => {
+    expect(() => assertHostedBootRequirements(hostedEnv, { authorityConfigured: true })).not.toThrow()
+    const config = controlPlaneAuthConfig(hostedEnv, { authorityConfigured: true })
+    expect(config).toEqual(enabledConfig)
+    // With the booted config, a bearer-less request can NEVER be served as
+    // unsigned-local — it is a 401, not a pass-through.
+    await expect(controlPlaneAuthContext(new Request("http://localhost"), { config })).rejects.toMatchObject({
+      status: 401,
+      code: "missing_bearer_token",
+    } satisfies Partial<ControlPlaneAuthError>)
+  })
+
+  test.each([
+    ["CLAXEDO_SIGNED_CLOUD_AUTH", /CLAXEDO_SIGNED_CLOUD_AUTH=true/],
+    ["CLERK_JWT_ISSUER", /CLERK_JWT_ISSUER/],
+    ["CLERK_JWKS_URL", /CLERK_JWKS_URL/],
+  ] as const)("hosted missing %s refuses to boot naming the piece", (key, named) => {
+    expect(() =>
+      assertHostedBootRequirements({ ...hostedEnv, [key]: undefined }, { authorityConfigured: true }),
+    ).toThrowError(named)
+  })
+
+  test("hosted without a workspace authority refuses to boot naming the piece", () => {
+    expect(() => assertHostedBootRequirements(hostedEnv, { authorityConfigured: false })).toThrowError(
+      /CLAXEDO_WORKSPACE_AUTHORITY_URL/,
+    )
+  })
+
+  test("absent mode = self-host: auth config resolution is byte-for-byte today's behavior", async () => {
+    expect(deploymentMode({})).toBe("self-host")
+    // Zero-config env resolves the exact same unsigned-local pass-through.
+    const config = controlPlaneAuthConfig({})
+    expect(config).toEqual({
+      enabled: false,
+      mode: "local-only",
+      reason: "signed/cloud auth is disabled",
+    })
+    await expect(controlPlaneAuthContext(new Request("http://localhost"), { config })).resolves.toEqual({
+      mode: "unsigned-local",
+      reason: "signed/cloud auth is disabled",
+    })
+  })
+
+  function guardedApp(mode: "self-host" | "hosted", authConfig: Parameters<typeof unsignedLocalRequestGuard>[0]["authConfig"]) {
+    const app = new Hono()
+    app.use(unsignedLocalRequestGuard({ mode, authConfig }))
+    app.all("*", (c) => c.json({ served: true }))
+    return app
+  }
+
+  test("global guard rejects non-loopback unsigned in self-host; loopback keeps working", async () => {
+    const app = guardedApp("self-host", {
+      enabled: false,
+      mode: "local-only",
+      reason: "signed/cloud auth is disabled",
+    })
+    expect((await app.request("http://127.0.0.1/api/control/sessions")).status).toBe(200)
+    const remote = await app.request("http://cp.example.test/api/control/sessions")
+    expect(remote.status).toBe(403)
+    expect(await remote.json()).toMatchObject({ error: { code: "unsigned_local_loopback_required" } })
+  })
+
+  test("global guard rejects EVERYTHING unsigned in hosted, loopback included", async () => {
+    const app = guardedApp("hosted", {
+      enabled: false,
+      mode: "local-only",
+      reason: "signed/cloud auth is disabled",
+    })
+    for (const url of ["http://127.0.0.1/api/control/sessions", "http://cp.example.test/api/control/sessions"]) {
+      const res = await app.request(url)
+      expect(res.status, url).toBe(503)
+      expect(await res.json()).toMatchObject({ error: { code: "hosted_unsigned_rejected" } })
+    }
+  })
+
+  test("global guard passes signed deployments through to per-route bearer verification", async () => {
+    const app = guardedApp("hosted", enabledConfig)
+    expect((await app.request("http://cp.example.test/api/control/sessions")).status).toBe(200)
   })
 })

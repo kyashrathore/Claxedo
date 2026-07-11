@@ -39,9 +39,10 @@ import { HostedDeviceAuthRoutes } from "./routes/hosted-device-auth"
 import { HostedShellRoutes } from "./routes/hosted-shell"
 import { HostedSandboxAdminRoutes } from "./routes/hosted-sandbox-admin"
 import { HostedControlRoutes } from "./routes/hosted-control"
-import { type HostedControlPlane } from "./control-plane/hosted-services"
+import { HostedWorkerCompositionError, type HostedControlPlane } from "./control-plane/hosted-services"
 import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
 import { deploymentCompatibilityReport } from "./deployment-compatibility"
+import { DEPLOYMENT_MODE_ENV, DeploymentModeError, deploymentMode, unsignedLocalRequestGuard } from "./control-plane/deployment-mode"
 
 export type HostedAppOverrides = {
   /** Hosted relay target lookup. Omitted → the plane's composed lookup is used. */
@@ -83,7 +84,46 @@ function corsMiddleware(appOriginAllowed: (origin: string) => boolean, originPat
   })
 }
 
+/**
+ * D9 fail-closed hosted boot assertion (runs for BOTH hosted entrypoints —
+ * the Cloudflare Worker `worker.ts` and the Node container `hosted-node.ts`).
+ * `composeHostedControlPlane` already fails closed per-piece on missing env
+ * (auth, authority, relay, resolver, signing key); this asserts the parts the
+ * hosted app itself must never serve without, aggregated into ONE error
+ * naming every missing piece:
+ *   1. CLAXEDO_DEPLOYMENT_MODE=hosted is EXPLICIT — a hosted deploy manifest
+ *      that lost the flag must be a visible outage, not an inferred posture;
+ *   2. signed auth resolved enabled (unsigned-local is impossible);
+ *   3. a workspace authority is composed.
+ * Thrown as HostedWorkerCompositionError so `worker.ts` keeps mapping it to
+ * a fail-closed 503.
+ */
+function assertHostedAppBootConfig(plane: HostedControlPlane) {
+  const failures: string[] = []
+  try {
+    if (deploymentMode(plane.env) !== "hosted") {
+      failures.push(`deployment mode is not hosted (set ${DEPLOYMENT_MODE_ENV}=hosted in the hosted deploy manifest)`)
+    }
+  } catch (err) {
+    if (!(err instanceof DeploymentModeError)) throw err
+    failures.push(err.message)
+  }
+  if (!plane.services.auth.config.enabled) {
+    failures.push("signed auth is not enabled (CLAXEDO_SIGNED_CLOUD_AUTH + CLERK_JWT_ISSUER + CLERK_JWKS_URL)")
+  }
+  if (!plane.services.authority) {
+    failures.push("no workspace authority is composed (CLAXEDO_WORKSPACE_AUTHORITY_URL)")
+  }
+  if (failures.length > 0) {
+    throw new HostedWorkerCompositionError(
+      "hosted_deployment_mode_required",
+      `Hosted control plane refuses to start: ${failures.join("; ")}`,
+    )
+  }
+}
+
 export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppOverrides = {}) {
+  assertHostedAppBootConfig(plane)
   const { services } = plane
   const app = new Hono()
 
@@ -92,6 +132,16 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       configuredAppOrigins(plane.env.CLAXEDO_APP_ORIGINS),
       allowedOriginPatterns(plane.env.CLAXEDO_ALLOWED_ORIGIN_SUFFIXES),
     ),
+  )
+
+  // D9: global unsigned-local gate, defense-in-depth here — the boot
+  // assertion above guarantees signed auth, so this only fires if a hosted
+  // composition somehow reaches serving unsigned (then: down, not open).
+  app.use(
+    unsignedLocalRequestGuard({
+      mode: "hosted",
+      authConfig: services.auth.config,
+    }),
   )
 
   const workspaceOptions: HostedWorkspaceRouteOptions = {
