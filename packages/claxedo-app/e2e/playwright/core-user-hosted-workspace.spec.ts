@@ -170,8 +170,22 @@ import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../hel
 
 const PROJECT_ID = "proj_core_user_hosted_workspace"
 const WORKSPACE_ID = "ws_core_user_hosted_workspace"
-const SESSION_ID = "ses_core_user_hosted_workspace"
+// Runtime-native session id (NOT `ses_`-prefixed): the relay `/api/wr/runtime-events`
+// lane is consumed by global-sdk's runtime loop, which gates every frame on
+// `runtimeProjectionOwnsCompat` → `runtimeOwnsOpencodeCompatProjection`
+// (`packages/agent-event-runtime/.../opencode-compat/ownership.ts`), and that
+// returns `false` for any `ses_`-prefixed id (those are OpenCode-legacy sessions
+// whose compat frames arrive on the classic `/global/event` loop instead). A
+// `ses_` id here would make the runtime consumer `continue` past every frame, so
+// the contract-v3 lane below could never render. Real user-hosted runtime
+// sessions are runtime-native, so this matches production, not just the gate.
+const SESSION_ID = "run_core_user_hosted_workspace"
 const DIR = "/tmp/e2e-core-user-hosted-workspace"
+// The AgentRuntimeEvent contract version the consumer requires verbatim
+// (`AGENT_RUNTIME_EVENT_CONTRACT_VERSION` in
+// `packages/agent-event-runtime/src/contracts/agent-runtime-event.ts`); a frame
+// with any other value is dropped by `runtimeEnvelope` (src/context/global-sdk.tsx).
+const RUNTIME_EVENT_CONTRACT_VERSION = 3
 const BIG_PICKLE = { id: "big-pickle", name: "Big Pickle" }
 
 const USER_HOSTED_STEP_SUMMARY = {
@@ -286,6 +300,18 @@ async function installUserHostedRuntimeMock(
 ) {
   const provisioningBus = new Bus<Record<string, unknown>>()
   const sessionBus = new Bus<Record<string, unknown>>()
+  // The contract-v3 runtime-events lane. A ready user-hosted (workspace-relay)
+  // session consumes live turn events ONLY through global-sdk's runtime loop
+  // (`startRuntimeEvents`, src/context/global-sdk.tsx), which fetches
+  // `${relayUrl}/workspaces/:id/api/wr/runtime-events` and reads each frame with
+  // `runtimeEnvelope` — a `{contractVersion, directory, sessionId,
+  // assistantMessageId?, payload: AgentRuntimeEvent}` shape run through
+  // `createOpencodeCompatProjection`. For a workspace-routed session the classic
+  // `/global/event` loop short-circuits (`workspaceRuntimeOwnsLiveEvents()` →
+  // idle), so this lane is the ONLY channel that drives the turn. Frames go here,
+  // NOT on `sessionBus` (whose `/global/event` route the app never polls for this
+  // route shape — the exact gap the fixme pinned).
+  const runtimeBus = new Bus<Record<string, unknown>>()
   let sessionCreated = false
   let messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> = []
   let promptCount = 0
@@ -295,6 +321,10 @@ async function installUserHostedRuntimeMock(
     promptCount: 0,
     healthProbeCount: 0,
     mintCount: 0,
+    /** GETs of `/workspaces/:id/api/wr/runtime-events` — proof the emitter is actually consumed. */
+    runtimeEventsPollCount: 0,
+    /** Contract-v3 frames actually pushed onto `runtimeBus`. */
+    runtimeFramesEmitted: [] as Array<Record<string, unknown>>,
     relayHits: [] as string[],
     bareHitsDuringReady: [] as string[],
   }
@@ -427,7 +457,24 @@ async function installUserHostedRuntimeMock(
       if (runtimePath === "/api/wr/harness-config-options") {
         return json(route, { source: "runner", stale: false, options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: BIG_PICKLE.id, selectOptions: [BIG_PICKLE] }] })
       }
-      if (runtimePath === "/api/wr/events" || runtimePath === "/api/claxedo/runtime-events" || runtimePath === "/api/wr/runtime-events") {
+      // The contract-v3 turn lane (see `runtimeBus` above). Each GET blocks until
+      // a frame is pending (or idles out with a heartbeat), then fulfills with the
+      // queued batch and ends — the runtime loop reconnects for the next batch,
+      // exactly like the `/global/event` delivery mechanism documented in
+      // e2e/helpers/mock-runtime.ts. Frames are already the full
+      // `{contractVersion, directory, sessionId, assistantMessageId, payload}`
+      // envelope the consumer expects, so they go on the wire verbatim.
+      if (runtimePath === "/api/wr/runtime-events") {
+        requests.runtimeEventsPollCount += 1
+        const batch = await runtimeBus.drain(4000)
+        const body = batch.length === 0
+          ? ": heartbeat\n\n"
+          : batch.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("")
+        return route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
+      }
+      // ClaxedoEventsProvider's central stream + the legacy runtime-events alias:
+      // neither carries this spec's turn, so a bare heartbeat is correct.
+      if (runtimePath === "/api/wr/events" || runtimePath === "/api/claxedo/runtime-events") {
         return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
       }
       if (runtimePath === "/global/event" || runtimePath === "/event") {
@@ -469,35 +516,61 @@ async function installUserHostedRuntimeMock(
         const body = request.postDataJSON() as { messageID?: string; parts?: unknown; agent?: string; model?: { providerID?: string; modelID?: string } }
         const text = textOf(body?.parts) || `user-hosted message ${promptCount}`
         const userID = body?.messageID || `msg_uh_user_${promptCount}`
-        const assistantID = `msg_uh_assistant_${promptCount}`
+        // Production convention (`mkAssistantId`, workspace-runtime/src/session/
+        // service.ts): the assistant reply's id is `${userMessageId}_r`. The app's
+        // settle-triggered REST reconciliation (`syncSessionHistory` in
+        // session-controller.ts, fired when the turn goes busy→idle) and its
+        // `assistantMessageIdForUserMessage` matching (src/shared/data/
+        // session-types.ts) both key on EXACTLY this id — so this id is what makes
+        // the re-fetched message list render as the reply. The runtime frames
+        // below carry the SAME id as their `assistantMessageId` so the compat
+        // projection's streamed parts target the same message.
+        const assistantID = `${userID}_r`
         messages = [
           ...messages,
           { info: { id: userID, sessionID: SESSION_ID, role: "user", time: { created: Date.now() }, model: { providerID: "opencode", modelID: BIG_PICKLE.id } }, parts: [{ id: `${userID}_text`, sessionID: SESSION_ID, messageID: userID, type: "text", text }] },
         ]
         await route.fulfill({ status: 204, body: "" })
 
+        // Fire-and-forget: emit the turn as CONTRACT-V3 AgentRuntimeEvent frames on
+        // the runtime-events lane. Each frame is the exact envelope `runtimeEnvelope`
+        // (src/context/global-sdk.tsx) validates — `contractVersion` === 3,
+        // `directory`, `sessionId`, `assistantMessageId`, and a `payload` that is one
+        // `AgentRuntimeEvent` variant — then handed to `createOpencodeCompatProjection`.
+        // The `session-status: busy` → `finish` pair drives the app's turn
+        // busy→settled transition, and the settle re-fetches the message list over
+        // the relay lane (which now carries the `${userID}_r` assistant row), which
+        // is what renders the reply through the real projection path.
+        const emitFrame = (payload: Record<string, unknown>) => {
+          const frame = {
+            contractVersion: RUNTIME_EVENT_CONTRACT_VERSION,
+            directory: WORKSPACE_ID,
+            sessionId: SESSION_ID,
+            assistantMessageId: assistantID,
+            payload,
+          }
+          requests.runtimeFramesEmitted.push(frame)
+          runtimeBus.emit(frame)
+        }
+
         void (async () => {
           await wait(20)
-          sessionBus.emit({ directory: WORKSPACE_ID, payload: { type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } } })
-          await wait(40)
-          const pendingInfo = { id: assistantID, sessionID: SESSION_ID, role: "assistant", time: { created: Date.now() }, parentID: userID, agent: "build", providerID: "opencode", modelID: BIG_PICKLE.id, mode: "code", path: { cwd: WORKSPACE_ID, root: WORKSPACE_ID }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }
-          messages = [...messages, { info: pendingInfo, parts: [] }]
-          sessionBus.emit({ directory: WORKSPACE_ID, payload: { type: "message.updated", properties: { sessionID: SESSION_ID, info: pendingInfo } } })
+          emitFrame({ type: "session-status", status: "busy" })
           const fullText = `user-hosted ack ${promptCount}: ${text}`
           const midpoint = Math.max(1, Math.floor(fullText.length / 2))
           for (const chunk of [fullText.slice(0, midpoint), fullText.slice(midpoint)]) {
             await wait(20)
-            sessionBus.emit({ directory: WORKSPACE_ID, payload: { type: "message.part.delta", properties: { sessionID: SESSION_ID, messageID: assistantID, partID: `${assistantID}_text`, field: "text", delta: chunk } } })
+            emitFrame({ type: "text-delta", delta: chunk })
           }
+          // Land the completed assistant row in the REST message list BEFORE the
+          // `finish` frame, so the settle-triggered `syncSessionHistory` re-fetch
+          // returns the reply. Mirrors the shape the local lane's driveTurn produces.
+          const completedInfo = { id: assistantID, sessionID: SESSION_ID, role: "assistant", time: { created: Date.now(), completed: Date.now() }, parentID: userID, agent: "build", providerID: "opencode", modelID: BIG_PICKLE.id, mode: "code", path: { cwd: WORKSPACE_ID, root: WORKSPACE_ID }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }
           const finalPart = { id: `${assistantID}_text`, sessionID: SESSION_ID, messageID: assistantID, type: "text", text: fullText }
-          messages = messages.map((row) => (row.info.id === assistantID ? { ...row, parts: [finalPart] } : row))
-          sessionBus.emit({ directory: WORKSPACE_ID, payload: { type: "message.part.updated", properties: { sessionID: SESSION_ID, part: finalPart, time: Date.now() } } })
+          messages = [...messages, { info: completedInfo, parts: [finalPart] }]
           await wait(40)
-          const completedInfo = { ...pendingInfo, time: { ...pendingInfo.time, completed: Date.now() } }
-          messages = messages.map((row) => (row.info.id === assistantID ? { ...row, info: completedInfo } : row))
-          sessionBus.emit({ directory: WORKSPACE_ID, payload: { type: "message.updated", properties: { sessionID: SESSION_ID, info: completedInfo } } })
-          await wait(30)
-          sessionBus.emit({ directory: WORKSPACE_ID, payload: { type: "session.idle", properties: { sessionID: SESSION_ID } } })
+          // `finish` projects to `message.completed` + `session.idle`, settling the turn.
+          emitFrame({ type: "finish", sessionId: SESSION_ID })
         })()
         return
       }
@@ -564,17 +637,17 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(view).toHaveCount(0, { timeout: 20_000 })
   })
 
-  // FIXME(2026-07-11, leader-pinned): HARNESS GAP, pre-existing (A/B-verified red at
-  // dca3bfbe86 and at HEAD with identical error). The composer unlocks and the send
-  // dispatches, but the assistant reply never renders: a ready user-hosted session
-  // consumes live events via the relay /api/wr/runtime-events stream, which requires
-  // contract-v3 frames ({contractVersion:3, ..., payload: AgentRuntimeEvent}), while
-  // the mock emits opencode-SDK-shaped events onto sessionBus drained only by
-  // /global/event — a route the app never polls. Needs a contract-v3 runtime-events
-  // emitter in the user-hosted mock (assistantMessageId "${userID}_r" convention,
-  // runtimeProjectionOwnsCompat + replay-cursor gates) — owned by the e2e session's
-  // harness; building it blind risks a false-positive test.
-  test.fixme("ready unlocks the composer and a send is proven by the oracle through the relay lane — behaviors 2,3", async ({ page }) => {
+  // The reply renders through the real projection path: the mock emits the turn as
+  // CONTRACT-V3 AgentRuntimeEvent frames on the relay `/api/wr/runtime-events` lane
+  // (`{contractVersion:3, directory, sessionId, assistantMessageId, payload}`), which
+  // global-sdk's runtime loop reads via `runtimeEnvelope` and runs through
+  // `createOpencodeCompatProjection`. The `session-status: busy` → `finish` pair
+  // settles the turn, and the settle re-fetches the message list over the relay lane
+  // (now carrying the `${userID}_r` assistant row) — see `installUserHostedRuntimeMock`
+  // above. The runtime-native session id (`SESSION_ID` = `run_...`, not `ses_...`) is
+  // what lets the frames pass `runtimeProjectionOwnsCompat`. Un-pinned from the
+  // leader's `test.fixme` once the contract-v3 lane above was built.
+  test("ready unlocks the composer and a send is proven by the oracle through the relay lane — behaviors 2,3", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200] })
     await seedProject(page, { registerWorkspace: true })
@@ -602,6 +675,24 @@ test.describe("core user-hosted workspace @core", () => {
     expect(mock.requests.relayHits.some((h) => h.includes("/prompt_async"))).toBe(true)
     expect(mock.requests.relayHits.some((h) => h.includes("/session") && h.startsWith("POST"))).toBe(true)
     expect(mock.requests.bareHitsDuringReady).toEqual([])
+
+    // Consumption proof: the contract-v3 emitter is actually drained by the app —
+    // the relay `/api/wr/runtime-events` stream was polled (> 0), and the frames the
+    // reply was reconstructed from were really pushed onto that lane.
+    expect(mock.requests.runtimeEventsPollCount).toBeGreaterThan(0)
+    expect(mock.requests.relayHits.some((h) => h.includes("/api/wr/runtime-events"))).toBe(true)
+    expect(mock.requests.runtimeFramesEmitted.map((f) => (f.payload as { type: string }).type)).toEqual([
+      "session-status",
+      "text-delta",
+      "text-delta",
+      "finish",
+    ])
+    for (const frame of mock.requests.runtimeFramesEmitted) {
+      expect(frame.contractVersion).toBe(3)
+      expect(frame.sessionId).toBe(SESSION_ID)
+      // `${userID}_r` convention (Tier-M reconciliation rule, e2e/INVARIANTS.md).
+      expect(String(frame.assistantMessageId).endsWith("_r")).toBe(true)
+    }
   })
 
   test("a persistently offline host renders the terminal offline view with the exact claxedo-up copy — behavior 4", async ({ page }) => {

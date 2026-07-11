@@ -922,17 +922,25 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect(nav).toBeVisible({ timeout: 10_000 })
   })
 
-  // FIXME(2026-07-11, leader-pinned): second surface on the same relay-backed
-  // workspace never increments the shared connection's ref count — the poll on
-  // `window.__claxedoConnections.snapshot()[wsId].refs` (seam:
-  // src/shell/workspace/workspace-connection.ts:112) reaches 1 for the first
-  // pane but never 2 after the terminal pane + split. A/B-verified PRE-EXISTING
-  // at e76ec13f0c (pre-Wave-1) and 4390e5614d (post-Wave-1) with current test
-  // code — not a refactor regression. Suspects: WorkspaceGate acquire path
-  // (shell/workspace/workspace-gate.tsx) for terminal surfaces / second-pane
-  // content mount. Owning WP: B5 (shell). Ledger:
+  // Un-pinned 2026-07-11 (WP-B5). The prior "second surface never increments
+  // refs" symptom was NOT an app bug in the gate / connection authority (both
+  // ref-count correctly — see workspace-connection.test.ts and
+  // workspace-gate.vitest.tsx). Root cause was a MOCK-FIDELITY GAP: the default
+  // `/api/workspace/resolve` in mock-runtime.ts answers `local-${sessionId}`
+  // (kind:"local") for EVERY directory, which contradicts the cloud inventory
+  // this test registers. The app stamps the resolve result into the route key,
+  // so `activeWorkspaceId` — which a NEW terminal inherits as its directory
+  // (rail-header-actions.ts → rail-sidebar-selection.ts `sidebarDir`) — became
+  // that `local-…` id instead of `WORKSPACE_ID`. The terminal's SessionPaneScope
+  // then resolved `local` (no relay backing) and its WorkspaceGate was a no-op,
+  // so no second ref was taken. The session pane resolved cloud only because it
+  // has a sessionRef/directory the signed inventory matches directly. In
+  // production the resolve endpoint returns the SAME cloud id the inventory
+  // carries, so the two paths agree and the terminal shares the connection; the
+  // fix below restores that fidelity in the harness. Assertion strength (refs
+  // 1→2→3→2) is unchanged. Ledger:
   // docs/plans/2026-07-11-002-fixme-ledger-wp-reconciliation.md
-  test.fixme("two panes on the same relay-backed workspace share one ref-counted connection — behavior 19", async ({ page }) => {
+  test("two panes on the same relay-backed workspace share one ref-counted connection — behavior 19", async ({ page }) => {
     const WORKSPACE_ID = "ws_core_panes_split_tabs"
     const RELAY_ORIGIN = "https://relay.core-panes-split-tabs.test"
     const CLOUD_DIR = "/tmp/e2e-core-panes-split-tabs-cloud"
@@ -981,6 +989,24 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
       const type = route.request().resourceType()
       if (type !== "fetch" && type !== "xhr") return route.continue()
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(projectPayload) })
+    })
+    // The default mock `/api/workspace/resolve` (mock-runtime.ts) answers
+    // `local-${sessionId}` for EVERY directory — correct for the local lane, but
+    // it contradicts the cloud inventory this test registers above. The app
+    // stamps the resolve result into the route key, so `activeWorkspaceId`
+    // (which new terminals/sessions inherit as their directory) becomes that
+    // `local-…` id instead of the relay-backed `WORKSPACE_ID`. A secondary
+    // surface then resolves `local` and never joins the shared connection. In
+    // production the resolve endpoint returns the SAME cloud id the inventory
+    // carries; mirror that fidelity so the route key agrees with the inventory.
+    await page.route("**/api/workspace/resolve**", async (route) => {
+      const type = route.request().resourceType()
+      if (type !== "fetch" && type !== "xhr") return route.continue()
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workspaceId: WORKSPACE_ID, directory: CLOUD_DIR, kind: "cloud", status: "ready" }),
+      })
     })
     await page.route(`**/api/workspace/${WORKSPACE_ID}/connection**`, async (route) => {
       await route.fulfill({

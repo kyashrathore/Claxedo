@@ -609,7 +609,16 @@ test.describe("core session actions: fork @core", () => {
       return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
     })
 
-    const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    // NOT a role+name locator: typing "/fork" opens the slash popover, at which
+    // point the composer becomes a WAI-ARIA combobox — its role flips from
+    // "textbox" to "combobox" (WP-C1, src/components/prompt-input/frame.tsx) so a
+    // `role="textbox"` locator captured before the popover opens stops matching
+    // and the `Enter` selection below hangs. `data-component="prompt-input"` is on
+    // the same contenteditable node regardless of the combobox/textbox role, so it
+    // stays valid across the popover open — the same rationale the sibling
+    // core-turns spec's `composer()` helper documents for the shell-mode aria-label
+    // flip.
+    const input = page.locator('[data-component="prompt-input"]').last()
     await input.click()
     await input.fill("/fork")
     await expect(page.locator('button[data-slash-id="session.fork"]')).toBeVisible({ timeout: 10_000 })

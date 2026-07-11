@@ -156,8 +156,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test"
 import sharp from "sharp"
 
-const WORKBENCH_DRAG_MIME = "application/x-workbench-content"
-
 function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
@@ -689,44 +687,30 @@ async function emitClaxedoEvent(page: Page, event: Record<string, unknown>) {
   bus!.emit(event)
 }
 
-async function visiblePaneCount(page: Page) {
-  return page.locator("[data-pane-id]").evaluateAll(
-    (nodes) =>
-      new Set(
-        nodes
-          .filter((node) => {
-            const el = node as HTMLElement
-            const style = window.getComputedStyle(el)
-            const rect = el.getBoundingClientRect()
-            return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0
-          })
-          .map((node) => (node as HTMLElement).dataset.paneId)
-          .filter(Boolean),
-      ).size,
-  )
-}
-
 /** Drags `contentId` onto the right edge of the pane currently hosting `hostPtyId`. */
-async function splitTerminalPaneWith(page: Page, hostPtyId: string, contentId: string) {
-  await terminalPane(page, hostPtyId).evaluate(
-    (node, input) => {
-      const slot = node.closest("[data-workbench-content]") as HTMLElement | null
-      const paneId = slot?.dataset.paneId
-      const pane = paneId ? document.querySelector(`[data-testid="pane-${paneId}"]`) : undefined
-      if (!pane) throw new Error("host pane not found")
-      const rect = pane.getBoundingClientRect()
-      const data = new DataTransfer()
-      data.setData(input.mime, input.contentId)
-      pane.dispatchEvent(
-        new DragEvent("dragover", { bubbles: true, cancelable: true, clientX: rect.right - 4, clientY: rect.top + rect.height / 2, dataTransfer: data }),
-      )
-      pane.dispatchEvent(
-        new DragEvent("drop", { bubbles: true, cancelable: true, clientX: rect.right - 4, clientY: rect.top + rect.height / 2, dataTransfer: data }),
-      )
-    },
-    { contentId, mime: WORKBENCH_DRAG_MIME },
-  )
-  await expect.poll(() => visiblePaneCount(page), { timeout: 10_000 }).toBeGreaterThan(1)
+async function splitTerminalPaneWith(page: Page, hostPtyId: string, sourcePtyId: string) {
+  // The workbench DnD is pointer-driven (WP-C3 touch-DnD rewrite,
+  // src/claxedo-ui/workbench/pointer-drag.ts): native HTML5 DragEvents are no
+  // longer listened for at all (the old `onDragOver`/`onDrop` pane handlers and
+  // the `WORKBENCH_DRAG_MIME` DataTransfer payload were removed), so a synthetic
+  // `DragEvent` drop is now a silent no-op and never creates a split. Drive the
+  // split with REAL pointer input instead: drag the SOURCE terminal's sidebar row
+  // — a `useDragSource` "navigation-row" that resolves that terminal's workbench
+  // content id via `prepareContentId` (src/claxedo-ui/navigation-islands/
+  // navigation-row.tsx) — onto the HOST pane's right edge. This is exactly what a
+  // user does and mirrors the sibling core-panes-split-tabs spec's
+  // `dragTabOntoRightEdge`.
+  const target = terminalPane(page, hostPtyId)
+  const box = await target.boundingBox()
+  if (!box) throw new Error("host terminal pane has no bounding box")
+  await sidebarTerminalRow(page, sourcePtyId).dragTo(target, {
+    targetPosition: { x: Math.max(1, box.width - 6), y: box.height / 2 },
+  })
+  // The real split signal is the resize divider appearing (`rootSplit()` becomes
+  // truthy). `visiblePaneCount` is unreliable as a gate here — it counts every
+  // `[data-pane-id]`-bearing content slot, several of which exist (hidden
+  // background tabs) even with a single pane, so it reads > 1 without a split.
+  await expect(page.locator('[data-testid="workbench-divider"]')).toBeVisible({ timeout: 10_000 })
 }
 
 function contentIdFor(page: Page, ptyId: string) {
@@ -875,14 +859,14 @@ test.describe("core terminal panel @core", () => {
     expect(beforeBox, "terminal 1 has no bounding box before the split").not.toBeNull()
 
     const id2 = await createPlainTerminal(page, api)
-    const content2 = await contentIdFor(page, id2)
-    expect(content2).not.toBe("")
+    // Terminal 2 mounted (its content slot has a resolvable workbench content id).
+    expect(await contentIdFor(page, id2)).not.toBe("")
 
-    // Switch back to terminal 1 so it's the pane we split, then drag terminal 2's
-    // content onto its right edge.
+    // Switch back to terminal 1 so it's the pane we split, then drag terminal 2
+    // (via its sidebar row) onto terminal 1's pane right edge.
     await sidebarTerminalRow(page, id1).click()
     await expect(terminalPane(page, id1)).toBeVisible({ timeout: 10_000 })
-    await splitTerminalPaneWith(page, id1, content2)
+    await splitTerminalPaneWith(page, id1, id2)
 
     await expect(terminalPane(page, id1)).toBeVisible({ timeout: 10_000 })
     await expect(terminalPane(page, id2)).toBeVisible({ timeout: 10_000 })

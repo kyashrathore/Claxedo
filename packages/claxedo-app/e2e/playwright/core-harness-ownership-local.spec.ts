@@ -551,7 +551,22 @@ test.describe("core harness ownership (local) @core", () => {
       })
 
       await seedOneProject(page, DIR)
-      const input = await openDraftPrompt(page, DIR)
+      // While the harness is polling, the composer is intentionally FADED and
+      // non-editable — `harnessPending()` (true exactly when
+      // `harnessReadiness(scope) === "polling"`,
+      // src/session-client/composer/composer.tsx:204-208) drives
+      // `contenteditable="false"` / `aria-disabled="true"` on the editor
+      // (src/components/prompt-input/frame.tsx:222-223) and a 0.45 opacity fade.
+      // That non-editable fade IS the contract this behavior asserts, so it must
+      // NOT be opened via the shared `openDraftPrompt` helper — that helper
+      // encodes the READY-harness contract (`contenteditable="true"`) and would
+      // (correctly) reject the faded composer. Navigate inline and assert the
+      // faded/disabled state directly instead.
+      await page.goto(`/${slug(DIR)}/session`)
+      await page.waitForLoadState("domcontentloaded")
+      await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+      const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+      await expect(input).toBeVisible({ timeout: 20_000 })
 
       // Auto-hydrates onto the configured (still-connecting) harness.
       await expectHarnessAutoHydrated(page, /^Claude$/)
@@ -561,8 +576,11 @@ test.describe("core harness ownership (local) @core", () => {
       await expect(page.locator('[title="Connecting to agent runtime..."]')).toBeVisible({ timeout: 20_000 })
       await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
 
-      // Submit stays disabled while the harness is still connecting.
-      await composePrompt(page, input, "core harness polling attempt")
+      // Composer fade: the editor is dimmed and non-editable while connecting, so
+      // the user cannot compose at all — a strictly stronger guarantee than
+      // "typed text is rejected". Submit stays disabled on top of that.
+      await expect(input).toHaveAttribute("contenteditable", "false")
+      await expect(input).toHaveAttribute("aria-disabled", "true")
       await expect(page.locator(SELECTORS.submitControl).last()).toBeDisabled()
 
       // Never silently falls back to plain OpenCode, and no requests are sent.
