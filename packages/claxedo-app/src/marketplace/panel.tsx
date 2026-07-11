@@ -2,7 +2,9 @@
 import { Component, createMemo, createResource, createSignal, For, onMount, Show } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useSDK } from "@/context/sdk"
+import { requestMarketplaceConfirm } from "./confirm-dialog"
 import { mcpExtensionUrl } from "../components/dialogs/select-mcp-logic"
 import { getClaxedoServerUrl } from "../utils/api"
 import { centralTransportForServer, unsignedLocalFetch } from "@claxedo/shell/data/transport/transport"
@@ -29,6 +31,7 @@ import { DiscoveredSection, ExtensionCard, MachineSection } from "./cards"
 
 export const MarketplacePanel: Component = () => {
   const platform = usePlatform()
+  const dialog = useDialog()
   let sdkRef: ReturnType<typeof useSDK> | undefined
   try {
     sdkRef = useSDK()
@@ -249,7 +252,12 @@ export const MarketplacePanel: Component = () => {
       showToast({ title: `Not installed (no record found)`, variant: "default", duration: 3000 })
       return
     }
-    if (!confirm(`Uninstall ${entry.name}? This removes its config and materialized files.`)) return
+    const confirmed = await requestMarketplaceConfirm(dialog, {
+      title: `Uninstall ${entry.name}?`,
+      body: "This removes its config and materialized files.",
+      confirmLabel: "Uninstall",
+    })
+    if (!confirmed) return
     setStatus(entry.id, "uninstalling")
     try {
       const url = extensionUrl(`/${encodeURIComponent(record.id)}`, {
@@ -275,7 +283,12 @@ export const MarketplacePanel: Component = () => {
   const deleteMachineItem = async (item: MachineDiscoveredItem) => {
     const key = `${item.harness}/${item.kind}/${item.name}`
     if (machineDeleting()[key]) return
-    if (!confirm(`Delete ${item.path}?\n\nThis permanently removes the folder from disk.`)) return
+    const confirmed = await requestMarketplaceConfirm(dialog, {
+      title: `Delete ${item.name}?`,
+      body: `This permanently removes ${item.path} from disk.`,
+      confirmLabel: "Delete",
+    })
+    if (!confirmed) return
     setMachineDeleting((prev) => ({ ...prev, [key]: true }))
     try {
       const url = extensionUrl(

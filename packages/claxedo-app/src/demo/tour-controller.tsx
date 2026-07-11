@@ -6,6 +6,7 @@
  */
 import { onMount, onCleanup } from "solid-js"
 import { useClaxedoState } from "../claxedo-ui/state"
+import { isTrustedTourOrigin } from "./tour-origin"
 
 // Content IDs from pre-seeded state in main.tsx
 const TAB_PAGE = "tab-page-demo-001"
@@ -40,6 +41,10 @@ export function DemoTourController() {
 
   onMount(() => {
     function handleMessage(e: MessageEvent) {
+      // Reject messages from untrusted frames: the tour dispatches navigation
+      // from `e.data` alone, so an unchecked listener lets any embedding page
+      // drive this UI.
+      if (!isTrustedTourOrigin(e.origin, window.location.origin)) return
       if (!isTourStepMessage(e.data)) return
       const action = e.data.action
 

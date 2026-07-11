@@ -11,11 +11,16 @@ import {
 } from "./workspace-runtime-store"
 import { queryClient } from "../shared/query/query-client"
 
+// happy-dom's preloaded window must survive this suite: deleting it without
+// restoring poisons whichever test file shares the process afterwards
+// (e.g. agent-runtime-client.test.ts hits "window is not defined").
+const preloadedWindow = (globalThis as typeof globalThis & { window?: unknown }).window
+
 afterEach(() => {
   queryClient.clear()
   resetWorkspaceRuntimeEnsureCache()
   delete (globalThis as typeof globalThis & { __claxedoFastSessionSwitch?: unknown }).__claxedoFastSessionSwitch
-  delete (globalThis as typeof globalThis & { window?: unknown }).window
+  ;(globalThis as typeof globalThis & { window?: unknown }).window = preloadedWindow
 })
 
 function requestUrl(input: Parameters<typeof fetch>[0]) {
