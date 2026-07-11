@@ -23,6 +23,7 @@ import {
 } from "solid-js"
 import { useClaxedoState, type ContentMeta } from "../claxedo-ui/state"
 import type { ProjectItem } from "../claxedo-ui/layouts/rail-sidebar"
+import { emitTerminalFit } from "../claxedo-ui/terminal/terminal-fit"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useOptionalTerminal } from "@/context/terminal"
 import { usePermission } from "@/context/permission"
@@ -239,7 +240,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     const fullWidth = next.regions.workspacePanel.size.unit === "percent" &&
       next.regions.workspacePanel.size.value === 100
     shellLayout.dispatch("workspacePanelSize", fullWidth ? command : undefined)
-    window.dispatchEvent(new Event("opencode:terminal-fit"))
+    emitTerminalFit()
   }
   const toggleWorkspacePanel = (button: HTMLButtonElement) => {
     if (workspacePanelFullWidth() && workspacePanelOpen()) {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 
+import { FIT_EVENT } from "../terminal/terminal-fit"
 import { useRailShellChromeState } from "./rail-shell-chrome-state"
 
 describe("useRailShellChromeState", () => {
@@ -49,7 +50,7 @@ describe("useRailShellChromeState", () => {
     const countFit = () => {
       fitEvents += 1
     }
-    window.addEventListener("opencode:terminal-fit", countFit)
+    window.addEventListener(FIT_EVENT, countFit)
 
     const dispose = createRoot((rootDispose) => {
       useRailShellChromeState({
@@ -70,7 +71,7 @@ describe("useRailShellChromeState", () => {
       expect(fitEvents).toBeGreaterThan(beforeSplitChange)
     } finally {
       dispose()
-      window.removeEventListener("opencode:terminal-fit", countFit)
+      window.removeEventListener(FIT_EVENT, countFit)
     }
   })
 })

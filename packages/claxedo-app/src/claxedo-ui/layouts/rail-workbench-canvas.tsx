@@ -5,6 +5,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Workbench } from "../layout"
 import { ContentRenderer } from "../content-renderers"
 import type { ContentMeta } from "../state"
+import { emitTerminalFit } from "../terminal/terminal-fit"
 
 const SessionContent = lazy(() =>
   import("../content-renderers/session-content").then((m) => ({ default: m.SessionContent })),
@@ -60,7 +61,7 @@ export function RailWorkbenchCanvas(props: {
           </Show>
         )}
         onPaneResize={() => {
-          window.dispatchEvent(new Event("opencode:terminal-fit"))
+          emitTerminalFit()
         }}
         onContentClose={(id, reason) => {
           props.state.layout._cleanupOnClose(id, reason === "stale" ? "panic" : "user")

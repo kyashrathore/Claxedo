@@ -1,4 +1,5 @@
 import { Show, createEffect, createMemo, createRoot, createSignal, getOwner, onCleanup, onMount, runWithOwner, untrack, type JSX } from "solid-js"
+import { emitTerminalFit } from "../terminal/terminal-fit"
 import type { WorkspacePanelMode, WorkspacePanelState } from "./workspace-panel-state"
 
 const SHELL_MOTION_MS = 120
@@ -192,7 +193,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       window.removeEventListener("pointermove", onMove)
       window.removeEventListener("pointerup", onUp)
       handle.releasePointerCapture?.(event.pointerId)
-      window.dispatchEvent(new Event("opencode:terminal-fit"))
+      emitTerminalFit()
     }
 
     window.addEventListener("pointermove", onMove)

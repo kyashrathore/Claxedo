@@ -5,6 +5,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11"
 import { TERMINAL_OPTIONS, MIN_CONTAINER_PX } from "./config"
 import { UrlLinkProvider, FilePathLinkProvider } from "./link-providers"
 import { createResizeCoordinator, type ResizeCoordinator } from "./resize-coordinator"
+import { dispatchTerminalFitEvent, onTerminalFitEvent } from "./fit-event"
 import type { ITheme, ITerminalAddon } from "@xterm/xterm"
 
 // ============================================================================
@@ -261,7 +262,7 @@ export function createTerminalInstance(
     try {
       xterm.refresh(0, xterm.rows - 1)
     } catch {}
-    window.dispatchEvent(new Event("opencode:terminal-fit"))
+    dispatchTerminalFitEvent()
   })
 
   // The ligatures addon deregisters character joiners during dispose, which
@@ -293,7 +294,7 @@ export function createTerminalInstance(
     void document.fonts.ready
       .then(() => {
         if (isDisposed) return
-        window.dispatchEvent(new Event("opencode:terminal-fit"))
+        dispatchTerminalFitEvent()
       })
       .catch(() => {})
   }
@@ -770,9 +771,7 @@ export function setupResizeHandlers(
         xterm.write("\x1b[0m\x1b[H\x1b[2J")
       } catch {}
     },
-    notify: (cols, rows) => {
-      onResize(cols, rows)
-    },
+    notify: (cols, rows) => onResize(cols, rows),
     clock: {
       setTimeout: (fn: () => void, ms: number) => window.setTimeout(fn, ms),
       clearTimeout: (id: number) => window.clearTimeout(id),
@@ -852,11 +851,10 @@ export function setupResizeHandlers(
   resizeObserver.observe(container)
   window.addEventListener("resize", handleResize)
 
-  const handleFit = () => {
+  const removeFitListener = onTerminalFitEvent(window, () => {
     checkSuspension()
     coordinator.request("fit-event")
-  }
-  window.addEventListener("opencode:terminal-fit", handleFit)
+  })
 
   // Visibility change: request fit when tab becomes visible
   const handleVisibilityChange = () => {
@@ -894,7 +892,7 @@ export function setupResizeHandlers(
     coordinator,
     cleanup: () => {
       window.removeEventListener("resize", handleResize)
-      window.removeEventListener("opencode:terminal-fit", handleFit)
+      removeFitListener()
       document.removeEventListener("visibilitychange", handleVisibilityChange)
       window.removeEventListener("focus", handleWindowFocus)
       resizeObserver.disconnect()

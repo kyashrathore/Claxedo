@@ -1,6 +1,7 @@
 import { Show, onCleanup, type Accessor } from "solid-js"
 
 import type { ContentMeta } from "../state"
+import { emitTerminalFit } from "../terminal/terminal-fit"
 import {
   RailSidebar,
   type ProjectItem,
@@ -68,7 +69,7 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
     props.onSidebarResizeEnd()
     document.body.style.cursor = ""
     document.body.style.userSelect = ""
-    window.dispatchEvent(new Event("opencode:terminal-fit"))
+    emitTerminalFit()
     window.removeEventListener("pointermove", handleResizeMove)
     window.removeEventListener("pointerup", finishResize)
     window.removeEventListener("pointercancel", finishResize)
@@ -77,7 +78,7 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
   const handleResizeMove = (event: PointerEvent) => {
     if (!resizing) return
     props.onSidebarResize(startWidth + event.clientX - startX)
-    window.dispatchEvent(new Event("opencode:terminal-fit"))
+    emitTerminalFit()
   }
 
   const startResize = (event: PointerEvent) => {
