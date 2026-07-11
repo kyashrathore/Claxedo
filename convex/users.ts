@@ -1,8 +1,7 @@
-import { mutationGeneric } from "convex/server"
-import { upsertUser } from "./model"
+import { authedMutation, upsertUser } from "./model"
 import { personalOrgForUser } from "./orgs"
 
-export const me = mutationGeneric({
+export const me = authedMutation({
   args: {},
   handler: async (ctx) => {
     const user = await upsertUser(ctx)

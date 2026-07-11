@@ -1,6 +1,5 @@
-import { queryGeneric } from "convex/server"
 import { v } from "convex/values"
-import { authorizeProject, projectByPublicId, projectRole } from "./model"
+import { authedQuery, authorizeProject, projectByPublicId, projectRole } from "./model"
 
 const projectArgs = {
   project_id: v.string(),
@@ -17,7 +16,7 @@ function authResult(project: any, role: string | undefined, requestedOrgId?: str
   }
 }
 
-export const role = queryGeneric({
+export const role = authedQuery({
   args: projectArgs,
   handler: async (ctx, args) => {
     const project = await projectByPublicId(ctx.db, args.project_id)
@@ -26,7 +25,7 @@ export const role = queryGeneric({
   },
 })
 
-export const authorize = queryGeneric({
+export const authorize = authedQuery({
   args: {
     ...projectArgs,
     action: v.union(v.literal("read"), v.literal("write"), v.literal("admin"), v.literal("owner")),

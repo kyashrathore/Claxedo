@@ -1,6 +1,5 @@
-import { mutationGeneric, queryGeneric } from "convex/server"
 import { v } from "convex/values"
-import { orgByClerkOrgId, readUser, upsertUser } from "./model"
+import { authedMutation, authedQuery, orgByClerkOrgId, publicMutation, readUser, upsertUser } from "./model"
 
 export async function personalOrgForUser(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
   const existing = (await ctx.db
@@ -27,7 +26,7 @@ export async function personalOrgForUser(ctx: any, user: { _id: unknown; name?: 
   return await ctx.db.get(orgId)
 }
 
-export const listForMe = queryGeneric({
+export const listForMe = authedQuery({
   args: {},
   handler: async (ctx) => {
     const user = await readUser(ctx)
@@ -49,7 +48,7 @@ export const listForMe = queryGeneric({
   },
 })
 
-export const ensurePersonalOrg = mutationGeneric({
+export const ensurePersonalOrg = authedMutation({
   args: {},
   handler: async (ctx) => {
     const user = await upsertUser(ctx)
@@ -62,7 +61,7 @@ export const ensurePersonalOrg = mutationGeneric({
   },
 })
 
-export const resolveForMe = mutationGeneric({
+export const resolveForMe = authedMutation({
   args: {
     clerk_org_id: v.optional(v.string()),
   },
@@ -82,7 +81,7 @@ export const resolveForMe = mutationGeneric({
   },
 })
 
-export const setActive = queryGeneric({
+export const setActive = authedQuery({
   args: {
     clerk_org_id: v.string(),
   },
@@ -220,7 +219,13 @@ async function deleteClerkMembership(ctx: any, data: Record<string, any>) {
   if (membership) await ctx.db.delete(membership._id)
 }
 
-export const applyClerkWebhook = mutationGeneric({
+// Applier for the Svix-verified Clerk webhook http action (convex/http.ts),
+// which invokes it via `ctx.runMutation`. PUBLIC ON PURPOSE-shaped hole with a
+// known ceiling: as a public mutation it is also directly callable by any
+// Convex client without authentication, which pre-dates D8 and is preserved
+// byte-identical here. Closing it (internal mutation, or a service-token arg
+// threaded from the http action) is a flagged follow-up, not a D8 change.
+export const applyClerkWebhook = publicMutation({
   args: {
     type: v.string(),
     data: v.any(),

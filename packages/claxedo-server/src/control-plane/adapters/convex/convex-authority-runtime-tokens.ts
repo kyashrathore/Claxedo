@@ -1,6 +1,6 @@
 import type { SignedControlPlaneAuth } from "../../auth"
 import { convexApi } from "./convex-authority-api"
-import { requireExecutor } from "./convex-authority-executor"
+import { requireExecutor, requireServiceToken } from "./convex-authority-executor"
 import type { ConvexAuthorityInput } from "./convex-authority-types"
 
 export function runtimeTokenAuthority(input: ConvexAuthorityInput) {
@@ -23,7 +23,11 @@ export function runtimeTokenAuthority(input: ConvexAuthorityInput) {
       workspaceId: string
       hostId: string
     }) {
+      // Machine path with no end-user JWT: the executor stays unsigned, and the
+      // verified principal is the control-plane service token (D8). Convex
+      // rejects the call without it.
       return requireExecutor(input, undefined, { allowUnsigned: true }).query(convexApi.runtimeAccessTokens.active, {
+        service_token: requireServiceToken(input),
         jti: args.jti,
         workspace_id: args.workspaceId,
         host_id: args.hostId,

@@ -1,6 +1,6 @@
-import { mutationGeneric } from "convex/server"
 import { v } from "convex/values"
 import {
+  authedMutation,
   authorizeWorkspace,
   upsertUser,
   userByClerkSubject,
@@ -50,7 +50,7 @@ async function orgUserIds(ctx: any, orgId: unknown) {
     .map((membership: any) => membership.user_id)
 }
 
-export const grant = mutationGeneric({
+export const grant = authedMutation({
   args: {
     workspace_id: v.string(),
     role: shareRole,
@@ -76,7 +76,7 @@ export const grant = mutationGeneric({
   },
 })
 
-export const revoke = mutationGeneric({
+export const revoke = authedMutation({
   args: {
     workspace_id: v.string(),
     grant_id: v.optional(v.id("workspace_share_grants")),

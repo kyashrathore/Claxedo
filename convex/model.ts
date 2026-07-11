@@ -1,4 +1,12 @@
-import type { GenericDatabaseReader, GenericDatabaseWriter } from "convex/server"
+import {
+  mutationGeneric,
+  queryGeneric,
+  type GenericDatabaseReader,
+  type GenericDatabaseWriter,
+  type GenericMutationCtx,
+  type GenericQueryCtx,
+} from "convex/server"
+import { v, type ObjectType, type PropertyValidators } from "convex/values"
 
 type Db = GenericDatabaseReader<any> | GenericDatabaseWriter<any>
 type IdentityCtx = {
@@ -287,4 +295,108 @@ export async function userByClerkSubject(db: Db, clerkSubject: string) {
     .query("users")
     .withIndex("by_clerk_subject", (q) => q.eq("clerk_subject", clerkSubject))
     .unique()
+}
+
+// ---------------------------------------------------------------------------
+// Mandatory function builders (launch plan D8 / ADR 015 §3).
+//
+// Every exported Convex function MUST be built from one of these — never from
+// raw `queryGeneric`/`mutationGeneric`. The architecture guard in
+// `packages/claxedo-server/src/control-plane/convex-authz-guard.test.ts`
+// ratchets raw builder usage outside this module to zero.
+//
+// - `authedQuery`/`authedMutation`: a verified end-user identity is resolved
+//   BEFORE the handler runs (same `requireIdentity` semantics the handlers
+//   used inline); the handler receives it as `ctx.identity`. User-row
+//   resolution (`readUser` vs `upsertUser`) intentionally stays inside each
+//   handler because read-vs-upsert is per-function write behavior.
+// - `serviceQuery`/`serviceMutation`: a verified machine principal. The
+//   builder appends a required `service_token` arg and validates it against
+//   the deployment-held `CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN` secret — the
+//   exact calling convention of the control-plane executor
+//   (`packages/claxedo-server/src/control-plane/adapters/convex/`).
+// - `publicQuery`/`publicMutation`: explicitly unauthenticated. Adding one is
+//   a reviewed decision, not a default.
+// ---------------------------------------------------------------------------
+
+type Identity = NonNullable<Awaited<ReturnType<IdentityCtx["auth"]["getUserIdentity"]>>>
+// Mirrors what raw `queryGeneric`/`mutationGeneric` provide: they are
+// `QueryBuilder<any, "public">`, i.e. document types are `any`.
+type QueryCtx = GenericQueryCtx<any>
+type MutationCtx = GenericMutationCtx<any>
+
+function controlPlaneServiceToken() {
+  const value = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
+  return value ? value : undefined
+}
+
+export function requireControlPlaneService(token: string) {
+  const expected = controlPlaneServiceToken()
+  if (!expected || token !== expected) throw new Error("Unauthenticated")
+}
+
+export function authedQuery<Args extends PropertyValidators, Output>(spec: {
+  args: Args
+  handler: (ctx: QueryCtx & { identity: Identity }, args: ObjectType<Args>) => Output
+}) {
+  return queryGeneric({
+    args: spec.args,
+    handler: async (ctx, args: any) => {
+      const identity: Identity = await requireIdentity(ctx)
+      return spec.handler({ ...ctx, identity }, args)
+    },
+  })
+}
+
+export function authedMutation<Args extends PropertyValidators, Output>(spec: {
+  args: Args
+  handler: (ctx: MutationCtx & { identity: Identity }, args: ObjectType<Args>) => Output
+}) {
+  return mutationGeneric({
+    args: spec.args,
+    handler: async (ctx, args: any) => {
+      const identity: Identity = await requireIdentity(ctx)
+      return spec.handler({ ...ctx, identity }, args)
+    },
+  })
+}
+
+export function serviceQuery<Args extends PropertyValidators, Output>(spec: {
+  args: Args
+  handler: (ctx: QueryCtx, args: ObjectType<Args> & { service_token: string }) => Output
+}) {
+  return queryGeneric({
+    args: { ...spec.args, service_token: v.string() },
+    handler: async (ctx, args: any) => {
+      requireControlPlaneService(args.service_token)
+      return spec.handler(ctx, args)
+    },
+  })
+}
+
+export function serviceMutation<Args extends PropertyValidators, Output>(spec: {
+  args: Args
+  handler: (ctx: MutationCtx, args: ObjectType<Args> & { service_token: string }) => Output
+}) {
+  return mutationGeneric({
+    args: { ...spec.args, service_token: v.string() },
+    handler: async (ctx, args: any) => {
+      requireControlPlaneService(args.service_token)
+      return spec.handler(ctx, args)
+    },
+  })
+}
+
+export function publicQuery<Args extends PropertyValidators, Output>(spec: {
+  args: Args
+  handler: (ctx: QueryCtx, args: ObjectType<Args>) => Output
+}) {
+  return queryGeneric(spec)
+}
+
+export function publicMutation<Args extends PropertyValidators, Output>(spec: {
+  args: Args
+  handler: (ctx: MutationCtx, args: ObjectType<Args>) => Output
+}) {
+  return mutationGeneric(spec)
 }

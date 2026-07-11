@@ -1,6 +1,14 @@
-import { mutationGeneric, queryGeneric } from "convex/server"
 import { v } from "convex/values"
-import { authorizeWorkspace, readUser, roleAllows, upsertUser, workspaceByPublicId, workspaceRole } from "./model"
+import {
+  authedMutation,
+  authedQuery,
+  authorizeWorkspace,
+  readUser,
+  roleAllows,
+  upsertUser,
+  workspaceByPublicId,
+  workspaceRole,
+} from "./model"
 
 const workspaceId = { workspace_id: v.string() }
 
@@ -80,7 +88,7 @@ function defaultProjectId(workspaceId: string) {
   return `prj_${workspaceId}`
 }
 
-export const open = queryGeneric({
+export const open = authedQuery({
   args: workspaceId,
   handler: async (ctx, args) => {
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
@@ -106,7 +114,7 @@ export const open = queryGeneric({
   },
 })
 
-export const list = queryGeneric({
+export const list = authedQuery({
   args: {},
   handler: async (ctx) => {
     const user = await readUser(ctx)
@@ -168,7 +176,7 @@ export const list = queryGeneric({
   },
 })
 
-export const createCloud = mutationGeneric({
+export const createCloud = authedMutation({
   args: {
     workspace_id: v.string(),
     project_id: v.optional(v.string()),
@@ -214,7 +222,7 @@ export const createCloud = mutationGeneric({
   },
 })
 
-export const registerLocalForSharing = mutationGeneric({
+export const registerLocalForSharing = authedMutation({
   args: {
     workspace_id: v.string(),
     display_name: v.string(),
@@ -291,7 +299,7 @@ export const registerLocalForSharing = mutationGeneric({
   },
 })
 
-export const remove = mutationGeneric({
+export const remove = authedMutation({
   args: workspaceId,
   handler: async (ctx, args) => {
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)

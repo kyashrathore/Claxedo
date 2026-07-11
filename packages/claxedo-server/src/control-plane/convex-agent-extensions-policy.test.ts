@@ -93,6 +93,12 @@ function db(role: "viewer" | "editor" | "admin" | "owner") {
       rows[table].push({ _id: id, ...row })
       return id
     },
+    async get(id: string) {
+      for (const table of Object.keys(rows)) {
+        const row = rows[table]!.find((row) => row._id === id)
+        if (row) return row
+      }
+    },
     async patch(id: string, patch: Record<string, unknown>) {
       for (const table of Object.keys(rows)) {
         const index = rows[table]!.findIndex((row) => row._id === id)

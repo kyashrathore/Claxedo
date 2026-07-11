@@ -1,6 +1,6 @@
-import { mutationGeneric, queryGeneric, type GenericDatabaseReader, type GenericDatabaseWriter } from "convex/server"
+import type { GenericDatabaseReader, GenericDatabaseWriter } from "convex/server"
 import { v, type GenericId } from "convex/values"
-import { authorizeWorkspace, workspaceByPublicId } from "./model"
+import { authedMutation, authedQuery, authorizeWorkspace, serviceQuery, workspaceByPublicId } from "./model"
 
 const workspaceId = { workspace_id: v.string() }
 type Db = GenericDatabaseReader<any> | GenericDatabaseWriter<any>
@@ -22,11 +22,6 @@ function sourceKey(input: unknown) {
   const source = object(input)
   if (!source) return
   return JSON.stringify(Object.fromEntries(Object.entries(source).sort(([a], [b]) => a.localeCompare(b))))
-}
-
-function serviceToken() {
-  const value = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
-  return value ? value : undefined
 }
 
 async function workspaceAgentExtensions(ctx: { db: Db }, workspaceId: string) {
@@ -54,7 +49,7 @@ async function workspaceExtensionInstall(ctx: { db: Db }, workspaceId: unknown, 
     .find((item) => item.extension_id === extensionId)
 }
 
-export const list = queryGeneric({
+export const list = authedQuery({
   args: workspaceId,
   handler: async (ctx, args) => {
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
@@ -63,19 +58,14 @@ export const list = queryGeneric({
   },
 })
 
-export const listForRuntime = queryGeneric({
-  args: {
-    ...workspaceId,
-    service_token: v.string(),
-  },
+export const listForRuntime = serviceQuery({
+  args: workspaceId,
   handler: async (ctx, args) => {
-    const expected = serviceToken()
-    if (!expected || args.service_token !== expected) throw new Error("Unauthenticated")
     return workspaceAgentExtensions(ctx, args.workspace_id)
   },
 })
 
-export const authorizeAdmin = queryGeneric({
+export const authorizeAdmin = authedQuery({
   args: workspaceId,
   handler: async (ctx, args) => {
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
@@ -84,7 +74,7 @@ export const authorizeAdmin = queryGeneric({
   },
 })
 
-export const upsert = mutationGeneric({
+export const upsert = authedMutation({
   args: {
     workspace_id: v.string(),
     extension_id: v.string(),
@@ -124,7 +114,7 @@ export const upsert = mutationGeneric({
   },
 })
 
-export const setEnabled = mutationGeneric({
+export const setEnabled = authedMutation({
   args: {
     workspace_id: v.string(),
     extension_id: v.string(),
@@ -148,7 +138,7 @@ export const setEnabled = mutationGeneric({
   },
 })
 
-export const remove = mutationGeneric({
+export const remove = authedMutation({
   args: {
     workspace_id: v.string(),
     extension_id: v.string(),

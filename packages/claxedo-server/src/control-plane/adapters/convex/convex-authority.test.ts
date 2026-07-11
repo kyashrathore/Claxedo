@@ -458,6 +458,7 @@ describe("convex authority", () => {
         query,
         mutation,
       },
+      serviceToken: "svc_secret",
     })
 
     await authority.recordRuntimeAccessToken(auth, {
@@ -493,6 +494,7 @@ describe("convex authority", () => {
       expires_at: 123,
     })
     expect(query).toHaveBeenCalledWith(expect.anything(), {
+      service_token: "svc_secret",
       jti: "jti_1",
       workspace_id: "ws_1",
       host_id: "host_1",

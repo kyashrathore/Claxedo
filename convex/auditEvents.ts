@@ -1,8 +1,7 @@
-import { mutationGeneric } from "convex/server"
 import { v } from "convex/values"
-import { upsertUser } from "./model"
+import { authedMutation, upsertUser } from "./model"
 
-export const record = mutationGeneric({
+export const record = authedMutation({
   args: {
     action: v.string(),
     result: v.union(v.literal("allow"), v.literal("deny")),

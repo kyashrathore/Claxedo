@@ -1,8 +1,11 @@
-import { mutationGeneric, queryGeneric } from "convex/server"
 import { v } from "convex/values"
 import {
+  authedMutation,
+  authedQuery,
   authorizeWorkspace,
   authorizeWorkspaceForUser,
+  serviceMutation,
+  serviceQuery,
   upsertServiceUser,
   upsertUser,
   workspaceByPublicId,
@@ -17,16 +20,6 @@ const serviceUser = v.object({
   name: v.optional(v.string()),
   image_url: v.optional(v.string()),
 })
-
-function controlPlaneServiceToken() {
-  const value = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
-  return value ? value : undefined
-}
-
-function requireControlPlaneService(token: string) {
-  const expected = controlPlaneServiceToken()
-  if (!expected || token !== expected) throw new Error("Unauthenticated")
-}
 
 const DEFAULT_TTL_MS = 60_000
 const MAX_TTL_MS = 5 * 60_000
@@ -109,7 +102,7 @@ function refuseCloudWorkspace(workspace: { backing?: unknown; access?: unknown }
   }
 }
 
-async function createChallengeForUser(ctx: any, user: Record<string, unknown>, args: {
+async function createChallengeForUser(ctx: any, user: { _id: unknown }, args: {
   workspace_id: string
   host_id: string
 }) {
@@ -119,7 +112,7 @@ async function createChallengeForUser(ctx: any, user: Record<string, unknown>, a
   // (after host proof) where the doc is created. When the doc EXISTS, every
   // ownership/backing check still applies.
   if (workspace) {
-    if (!await authorizeWorkspaceForUser(ctx, user, workspace, "admin")) throw new Error("Workspace not found")
+    if (!await authorizeWorkspaceForUser(ctx, workspace, user, "admin")) throw new Error("Workspace not found")
     refuseCloudWorkspace(workspace)
   }
   const now = Date.now()
@@ -143,7 +136,7 @@ async function createChallengeForUser(ctx: any, user: Record<string, unknown>, a
   }
 }
 
-async function registerForUser(ctx: any, user: Record<string, unknown>, args: {
+async function registerForUser(ctx: any, user: { _id: unknown }, args: {
   workspace_id: string
   host_id: string
   public_key: string
@@ -154,7 +147,7 @@ async function registerForUser(ctx: any, user: Record<string, unknown>, args: {
 }) {
   const existing_workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
   if (existing_workspace) {
-    if (!await authorizeWorkspaceForUser(ctx, user, existing_workspace, "admin")) throw new Error("Workspace not found")
+    if (!await authorizeWorkspaceForUser(ctx, existing_workspace, user, "admin")) throw new Error("Workspace not found")
     refuseCloudWorkspace(existing_workspace)
   }
   const now = Date.now()
@@ -256,14 +249,14 @@ async function registerForUser(ctx: any, user: Record<string, unknown>, args: {
   }
 }
 
-async function heartbeatForUser(ctx: any, user: Record<string, unknown>, args: {
+async function heartbeatForUser(ctx: any, user: { _id: unknown }, args: {
   workspace_id: string
   host_id: string
   signature: string
   ttl_ms?: number
 }) {
   const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
-  if (!workspace || !await authorizeWorkspaceForUser(ctx, user, workspace, "admin")) throw new Error("Workspace not found")
+  if (!workspace || !await authorizeWorkspaceForUser(ctx, workspace, user, "admin")) throw new Error("Workspace not found")
   // Look up by (workspace, host_id) — NOT `by_host_id`.unique(), which throws
   // when the same host_id was ever registered for another workspace (a real
   // case when a CLI re-runs `claxedo up` across workspaces). Among any links
@@ -301,13 +294,13 @@ async function heartbeatForUser(ctx: any, user: Record<string, unknown>, args: {
   }
 }
 
-async function pauseForUser(ctx: any, user: Record<string, unknown>, args: {
+async function pauseForUser(ctx: any, user: { _id: unknown }, args: {
   workspace_id: string
   host_id?: string
   paused: boolean
 }) {
   const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
-  if (!workspace || !await authorizeWorkspaceForUser(ctx, user, workspace, "admin")) throw new Error("Workspace not found")
+  if (!workspace || !await authorizeWorkspaceForUser(ctx, workspace, user, "admin")) throw new Error("Workspace not found")
   const links = await ctx.db
     .query("local_host_links")
     .withIndex("by_workspace", (q: any) => q.eq("workspace_id", workspace._id))
@@ -329,7 +322,7 @@ async function pauseForUser(ctx: any, user: Record<string, unknown>, args: {
   }
 }
 
-export const createChallenge = mutationGeneric({
+export const createChallenge = authedMutation({
   args: {
     ...workspaceId,
     host_id: v.string(),
@@ -339,7 +332,7 @@ export const createChallenge = mutationGeneric({
   },
 })
 
-export const register = mutationGeneric({
+export const register = authedMutation({
   args: {
     ...workspaceId,
     host_id: v.string(),
@@ -354,22 +347,19 @@ export const register = mutationGeneric({
   },
 })
 
-export const createChallengeForService = mutationGeneric({
+export const createChallengeForService = serviceMutation({
   args: {
-    service_token: v.string(),
     user: serviceUser,
     ...workspaceId,
     host_id: v.string(),
   },
   handler: async (ctx, args) => {
-    requireControlPlaneService(args.service_token)
     return createChallengeForUser(ctx, await upsertServiceUser(ctx, args.user), args)
   },
 })
 
-export const registerForService = mutationGeneric({
+export const registerForService = serviceMutation({
   args: {
-    service_token: v.string(),
     user: serviceUser,
     ...workspaceId,
     host_id: v.string(),
@@ -380,12 +370,11 @@ export const registerForService = mutationGeneric({
     ttl_ms: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    requireControlPlaneService(args.service_token)
     return registerForUser(ctx, await upsertServiceUser(ctx, args.user), args)
   },
 })
 
-export const heartbeat = mutationGeneric({
+export const heartbeat = authedMutation({
   args: {
     ...workspaceId,
     host_id: v.string(),
@@ -397,9 +386,8 @@ export const heartbeat = mutationGeneric({
   },
 })
 
-export const heartbeatForService = mutationGeneric({
+export const heartbeatForService = serviceMutation({
   args: {
-    service_token: v.string(),
     user: serviceUser,
     ...workspaceId,
     host_id: v.string(),
@@ -407,12 +395,11 @@ export const heartbeatForService = mutationGeneric({
     ttl_ms: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    requireControlPlaneService(args.service_token)
     return heartbeatForUser(ctx, await upsertServiceUser(ctx, args.user), args)
   },
 })
 
-export const pause = mutationGeneric({
+export const pause = authedMutation({
   args: {
     ...workspaceId,
     host_id: v.optional(v.string()),
@@ -423,21 +410,19 @@ export const pause = mutationGeneric({
   },
 })
 
-export const pauseForService = mutationGeneric({
+export const pauseForService = serviceMutation({
   args: {
-    service_token: v.string(),
     user: serviceUser,
     ...workspaceId,
     host_id: v.optional(v.string()),
     paused: v.boolean(),
   },
   handler: async (ctx, args) => {
-    requireControlPlaneService(args.service_token)
     return pauseForUser(ctx, await upsertServiceUser(ctx, args.user), args)
   },
 })
 
-export const active = queryGeneric({
+export const active = authedQuery({
   args: workspaceId,
   handler: async (ctx, args) => {
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
@@ -467,10 +452,9 @@ export const active = queryGeneric({
 // signed workspace-read authorization). Returns the current user-hosted host
 // for a workspace so the relay can route a browser/client connection to the
 // host tunnel that dialed out.
-export const activeForRelay = queryGeneric({
-  args: { service_token: v.string(), ...workspaceId },
+export const activeForRelay = serviceQuery({
+  args: workspaceId,
   handler: async (ctx, args) => {
-    requireControlPlaneService(args.service_token)
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
     if (!workspace) return { active: false }
     const now = Date.now()

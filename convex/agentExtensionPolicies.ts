@@ -1,6 +1,6 @@
-import { mutationGeneric, queryGeneric, type GenericDatabaseReader, type GenericDatabaseWriter } from "convex/server"
+import type { GenericDatabaseReader, GenericDatabaseWriter } from "convex/server"
 import { v, type GenericId } from "convex/values"
-import { authorizeWorkspace, readUser, workspaceByPublicId } from "./model"
+import { authedMutation, authedQuery, authorizeWorkspace, readUser, serviceQuery, workspaceByPublicId } from "./model"
 
 const workspaceId = { workspace_id: v.string() }
 const policyScope = v.union(v.literal("org"), v.literal("user"), v.literal("workspace"))
@@ -17,11 +17,6 @@ type PolicyRow = {
   enabled: boolean
   reason?: string
   deleted_at?: number
-}
-
-function serviceToken() {
-  const value = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
-  return value ? value : undefined
 }
 
 function policy(row: PolicyRow) {
@@ -84,7 +79,7 @@ function scopedPatch(input: {
   return { workspace_id: input.workspace._id }
 }
 
-export const list = queryGeneric({
+export const list = authedQuery({
   args: workspaceId,
   handler: async (ctx, args) => {
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
@@ -97,14 +92,9 @@ export const list = queryGeneric({
   },
 })
 
-export const listForRuntime = queryGeneric({
-  args: {
-    ...workspaceId,
-    service_token: v.string(),
-  },
+export const listForRuntime = serviceQuery({
+  args: workspaceId,
   handler: async (ctx, args) => {
-    const expected = serviceToken()
-    if (!expected || args.service_token !== expected) throw new Error("Unauthenticated")
     return policyRows(ctx, {
       workspaceId: args.workspace_id,
       includeUser: false,
@@ -112,7 +102,7 @@ export const listForRuntime = queryGeneric({
   },
 })
 
-export const set = mutationGeneric({
+export const set = authedMutation({
   args: {
     ...workspaceId,
     extension_id: v.string(),
@@ -152,7 +142,7 @@ export const set = mutationGeneric({
   },
 })
 
-export const remove = mutationGeneric({
+export const remove = authedMutation({
   args: {
     ...workspaceId,
     extension_id: v.string(),

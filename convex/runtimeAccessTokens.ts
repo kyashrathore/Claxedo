@@ -1,8 +1,7 @@
-import { mutationGeneric, queryGeneric } from "convex/server"
 import { v } from "convex/values"
-import { authorizeWorkspace, upsertUser, workspaceByPublicId } from "./model"
+import { authedMutation, authorizeWorkspace, serviceQuery, upsertUser, workspaceByPublicId } from "./model"
 
-export const recordMint = mutationGeneric({
+export const recordMint = authedMutation({
   args: {
     jti: v.string(),
     workspace_id: v.string(),
@@ -30,7 +29,11 @@ export const recordMint = mutationGeneric({
   },
 })
 
-export const active = queryGeneric({
+// Revocation-check for the relay/runtime service path. Before D8 this query
+// was entirely unauthenticated (the executor called it with
+// `allowUnsigned: true` and no credential); it now requires the control-plane
+// service token like every other machine path.
+export const active = serviceQuery({
   args: {
     jti: v.string(),
     workspace_id: v.string(),
@@ -81,7 +84,7 @@ export const active = queryGeneric({
   },
 })
 
-export const revoke = mutationGeneric({
+export const revoke = authedMutation({
   args: {
     jti: v.string(),
     workspace_id: v.string(),
@@ -102,7 +105,7 @@ export const revoke = mutationGeneric({
   },
 })
 
-export const revokeForWorkspaceUser = mutationGeneric({
+export const revokeForWorkspaceUser = authedMutation({
   args: {
     workspace_id: v.string(),
   },

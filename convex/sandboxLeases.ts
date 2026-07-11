@@ -1,8 +1,7 @@
-import { mutationGeneric, queryGeneric } from "convex/server"
 import { v } from "convex/values"
+import { serviceMutation, serviceQuery } from "./model"
 
 const workspaceId = { workspace_id: v.string() }
-const serviceTokenArg = { service_token: v.string() }
 const status = v.union(
   v.literal("acquiring"),
   v.literal("ready"),
@@ -25,16 +24,6 @@ const leasePatch = v.object({
   last_activity_at: v.optional(v.number()),
   labels: v.optional(v.any()),
 })
-
-function serviceToken() {
-  const value = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
-  return value ? value : undefined
-}
-
-function requireService(token: string) {
-  const expected = serviceToken()
-  if (!expected || token !== expected) throw new Error("Unauthenticated")
-}
 
 function optionalString(row: Record<string, unknown>, key: string) {
   return typeof row[key] === "string" ? row[key] : undefined
@@ -99,9 +88,8 @@ function legacyLeaseDocument(row: Record<string, unknown>) {
   })
 }
 
-export const acquire = mutationGeneric({
+export const acquire = serviceMutation({
   args: {
-    ...serviceTokenArg,
     workspace_id: v.string(),
     home_region: v.string(),
     driver: v.string(),
@@ -109,7 +97,6 @@ export const acquire = mutationGeneric({
     now: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    requireService(args.service_token)
     const now = args.now ?? Date.now()
     const current = await ctx.db
       .query("runtime_leases")
@@ -157,15 +144,13 @@ export const acquire = mutationGeneric({
   },
 })
 
-export const update = mutationGeneric({
+export const update = serviceMutation({
   args: {
-    ...serviceTokenArg,
     workspace_id: v.string(),
     expected_epoch: v.number(),
     patch: leasePatch,
   },
   handler: async (ctx, args) => {
-    requireService(args.service_token)
     const current = await ctx.db
       .query("runtime_leases")
       .withIndex("by_workspace_id", (q) => q.eq("workspace_id", args.workspace_id))
@@ -185,16 +170,14 @@ export const update = mutationGeneric({
   },
 })
 
-export const recordFailure = mutationGeneric({
+export const recordFailure = serviceMutation({
   args: {
-    ...serviceTokenArg,
     workspace_id: v.string(),
     expected_epoch: v.number(),
     error: v.string(),
     next_retry_at: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    requireService(args.service_token)
     const current = await ctx.db
       .query("runtime_leases")
       .withIndex("by_workspace_id", (q) => q.eq("workspace_id", args.workspace_id))
@@ -213,13 +196,11 @@ export const recordFailure = mutationGeneric({
   },
 })
 
-export const release = mutationGeneric({
+export const release = serviceMutation({
   args: {
-    ...serviceTokenArg,
     ...workspaceId,
   },
   handler: async (ctx, args) => {
-    requireService(args.service_token)
     const current = await ctx.db
       .query("runtime_leases")
       .withIndex("by_workspace_id", (q) => q.eq("workspace_id", args.workspace_id))
@@ -230,13 +211,11 @@ export const release = mutationGeneric({
   },
 })
 
-export const get = queryGeneric({
+export const get = serviceQuery({
   args: {
-    ...serviceTokenArg,
     ...workspaceId,
   },
   handler: async (ctx, args) => {
-    requireService(args.service_token)
     const current = await ctx.db
       .query("runtime_leases")
       .withIndex("by_workspace_id", (q) => q.eq("workspace_id", args.workspace_id))
@@ -245,18 +224,16 @@ export const get = queryGeneric({
   },
 })
 
-export const list = queryGeneric({
-  args: serviceTokenArg,
-  handler: async (ctx, args) => {
-    requireService(args.service_token)
+export const list = serviceQuery({
+  args: {},
+  handler: async (ctx) => {
     return (await ctx.db.query("runtime_leases").collect()).map(normalizeLease)
   },
 })
 
-export const normalizeLegacyFields = mutationGeneric({
-  args: serviceTokenArg,
-  handler: async (ctx, args) => {
-    requireService(args.service_token)
+export const normalizeLegacyFields = serviceMutation({
+  args: {},
+  handler: async (ctx) => {
     const rows = await ctx.db.query("runtime_leases").collect()
     const legacy = rows.filter(hasLegacyLeaseFields)
     await Promise.all(legacy.map((row) => ctx.db.replace(row._id, legacyLeaseDocument(row))))

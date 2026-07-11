@@ -1,6 +1,15 @@
-import { mutationGeneric, queryGeneric } from "convex/server"
 import { v } from "convex/values"
-import { authorizeWorkspace, authorizeWorkspaceForUser, projectByPublicId, upsertServiceUser, upsertUser, workspaceByPublicId } from "./model"
+import {
+  authedMutation,
+  authedQuery,
+  authorizeWorkspace,
+  authorizeWorkspaceForUser,
+  projectByPublicId,
+  serviceMutation,
+  upsertServiceUser,
+  upsertUser,
+  workspaceByPublicId,
+} from "./model"
 
 const sessionVisibility = v.object({
   session_id: v.string(),
@@ -21,16 +30,6 @@ const serviceUser = v.object({
 
 function rec(input: unknown): Record<string, unknown> | undefined {
   return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
-}
-
-function controlPlaneServiceToken() {
-  const value = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
-  return value ? value : undefined
-}
-
-function requireControlPlaneService(token: string) {
-  const expected = controlPlaneServiceToken()
-  if (!expected || token !== expected) throw new Error("Unauthenticated")
 }
 
 function directoryHint(input: string | undefined) {
@@ -56,9 +55,9 @@ async function writableWorkspace(ctx: any, workspaceId: string) {
   return { user, workspace }
 }
 
-async function writableWorkspaceForUser(ctx: any, user: Record<string, unknown>, workspaceId: string) {
+async function writableWorkspaceForUser(ctx: any, user: { _id: unknown }, workspaceId: string) {
   const workspace = await workspaceByPublicId(ctx.db, workspaceId)
-  if (!workspace || !await authorizeWorkspaceForUser(ctx, user, workspace, "write")) throw new Error("Workspace not found")
+  if (!workspace || !await authorizeWorkspaceForUser(ctx, workspace, user, "write")) throw new Error("Workspace not found")
   return { user, workspace }
 }
 
@@ -258,7 +257,7 @@ async function authorizeReadSession(ctx: any, args: {
   return role ? { allowed: true, role, workspace } as const : { allowed: false } as const
 }
 
-export const authorizeRead = queryGeneric({
+export const authorizeRead = authedQuery({
   args: {
     session_id: v.string(),
     workspace_id: v.string(),
@@ -268,7 +267,7 @@ export const authorizeRead = queryGeneric({
   },
 })
 
-export const list = queryGeneric({
+export const list = authedQuery({
   args: {
     workspace_id: v.string(),
   },
@@ -295,7 +294,7 @@ export const list = queryGeneric({
   },
 })
 
-export const readMessages = queryGeneric({
+export const readMessages = authedQuery({
   args: {
     session_id: v.string(),
     workspace_id: v.string(),
@@ -318,7 +317,7 @@ export const readMessages = queryGeneric({
   },
 })
 
-export const syncMessages = mutationGeneric({
+export const syncMessages = authedMutation({
   args: {
     workspace_id: v.string(),
     session_id: v.string(),
@@ -334,16 +333,14 @@ export const syncMessages = mutationGeneric({
   },
 })
 
-export const syncMessagesForService = mutationGeneric({
+export const syncMessagesForService = serviceMutation({
   args: {
-    service_token: v.string(),
     user: serviceUser,
     workspace_id: v.string(),
     session_id: v.string(),
     messages: v.array(v.any()),
   },
   handler: async (ctx, args) => {
-    requireControlPlaneService(args.service_token)
     await syncMessageRows(ctx, {
       ...(await writableWorkspaceForUser(ctx, await upsertServiceUser(ctx, args.user), args.workspace_id)),
       session_id: args.session_id,
@@ -353,7 +350,7 @@ export const syncMessagesForService = mutationGeneric({
   },
 })
 
-export const upsertVisibility = mutationGeneric({
+export const upsertVisibility = authedMutation({
   args: {
     workspace_id: v.string(),
     sessions: v.array(sessionVisibility),
@@ -368,15 +365,13 @@ export const upsertVisibility = mutationGeneric({
   },
 })
 
-export const upsertVisibilityForService = mutationGeneric({
+export const upsertVisibilityForService = serviceMutation({
   args: {
-    service_token: v.string(),
     user: serviceUser,
     workspace_id: v.string(),
     sessions: v.array(sessionVisibility),
   },
   handler: async (ctx, args) => {
-    requireControlPlaneService(args.service_token)
     await upsertVisibilityRows(ctx, {
       ...(await writableWorkspaceForUser(ctx, await upsertServiceUser(ctx, args.user), args.workspace_id)),
       sessions: args.sessions,
@@ -385,7 +380,7 @@ export const upsertVisibilityForService = mutationGeneric({
   },
 })
 
-export const replaceVisibility = mutationGeneric({
+export const replaceVisibility = authedMutation({
   args: {
     workspace_id: v.string(),
     sessions: v.array(sessionVisibility),
@@ -413,15 +408,13 @@ export const replaceVisibility = mutationGeneric({
   },
 })
 
-export const replaceVisibilityForService = mutationGeneric({
+export const replaceVisibilityForService = serviceMutation({
   args: {
-    service_token: v.string(),
     user: serviceUser,
     workspace_id: v.string(),
     sessions: v.array(sessionVisibility),
   },
   handler: async (ctx, args) => {
-    requireControlPlaneService(args.service_token)
     const access = await writableWorkspaceForUser(ctx, await upsertServiceUser(ctx, args.user), args.workspace_id)
     await upsertVisibilityRows(ctx, {
       ...access,
@@ -444,7 +437,7 @@ export const replaceVisibilityForService = mutationGeneric({
   },
 })
 
-export const deleteVisibility = mutationGeneric({
+export const deleteVisibility = authedMutation({
   args: {
     workspace_id: v.string(),
     session_id: v.string(),
@@ -465,15 +458,13 @@ export const deleteVisibility = mutationGeneric({
   },
 })
 
-export const deleteVisibilityForService = mutationGeneric({
+export const deleteVisibilityForService = serviceMutation({
   args: {
-    service_token: v.string(),
     user: serviceUser,
     workspace_id: v.string(),
     session_id: v.string(),
   },
   handler: async (ctx, args) => {
-    requireControlPlaneService(args.service_token)
     const access = await writableWorkspaceForUser(ctx, await upsertServiceUser(ctx, args.user), args.workspace_id)
     const session = await ctx.db
       .query("session_history")

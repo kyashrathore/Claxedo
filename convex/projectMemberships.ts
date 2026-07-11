@@ -1,6 +1,5 @@
-import { mutationGeneric } from "convex/server"
 import { v } from "convex/values"
-import { authorizeProject, projectByPublicId, upsertUser, userByClerkSubject, userByTokenIdentifier } from "./model"
+import { authedMutation, authorizeProject, projectByPublicId, upsertUser, userByClerkSubject, userByTokenIdentifier } from "./model"
 
 const roleValue = v.union(v.literal("viewer"), v.literal("editor"), v.literal("admin"))
 
@@ -32,7 +31,7 @@ const targetArgs = {
   clerk_subject: v.optional(v.string()),
 }
 
-export const add = mutationGeneric({
+export const add = authedMutation({
   args: {
     ...targetArgs,
     role: roleValue,
@@ -59,7 +58,7 @@ export const add = mutationGeneric({
   },
 })
 
-export const setRole = mutationGeneric({
+export const setRole = authedMutation({
   args: {
     ...targetArgs,
     role: roleValue,
@@ -75,7 +74,7 @@ export const setRole = mutationGeneric({
   },
 })
 
-export const remove = mutationGeneric({
+export const remove = authedMutation({
   args: targetArgs,
   handler: async (ctx, args) => {
     const project = await editableProject(ctx, args.project_id)
