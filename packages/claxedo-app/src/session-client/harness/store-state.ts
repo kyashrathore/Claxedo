@@ -2,7 +2,7 @@
 import {
   desiredHarness,
   effectiveHarnessModel,
-  failedHarness,
+  hardFailedHarness,
   harnessHasConfigOptions,
   type HarnessState,
   type HarnessType,
@@ -70,15 +70,31 @@ export function workspaceDraftHarnessResetPatch(): HarnessStorePatch {
 export function harnessStatusPatch(input: {
   data: HarnessState
   current?: HarnessStoreState
+  // A COMPLETED switch response (harness-switcher applyPostedStatus), as opposed
+  // to a startup/in-flight hydration probe. A completed response is definitive:
+  // ready:false means the switch finished and the harness is unavailable, so it
+  // is an "error", not "polling". Default (probe) keeps the connecting semantics.
+  settled?: boolean
 }): HarnessStorePatch {
   const want = desiredHarness(input.data) ?? input.current?.harness ?? "opencode"
+  // A non-opencode harness that reports ready:false without a hard failure
+  // (status "error" or an error message) is still CONNECTING during a startup or
+  // in-flight probe — surface that as "polling" so the selector renders a
+  // "Connecting" pill instead of a red "Unavailable". OpenCode is the
+  // always-available local default and never polls. A hard failure — or a
+  // ready:false carried by a *settled* completed switch response — is "error".
+  const readiness: HarnessStoreState["readiness"] = hardFailedHarness(input.data)
+    ? "error"
+    : want !== "opencode" && input.data.ready === false
+      ? (input.settled ? "error" : "polling")
+      : "ready"
   return {
     harnessMode: harnessMode(want),
     harnessBinary: input.data.activeBinary ?? input.data.binary ?? "",
     harness: want,
     selectedModel: input.data.model ?? (want === "opencode" ? "" : (input.current?.selectedModel ?? "")),
     ...(want === "opencode" ? emptyOptionsPatch() : {}),
-    readiness: failedHarness(input.data) ? "error" : "ready",
+    readiness,
     configError: input.data.error ?? undefined,
     workspaceId: input.data.workspaceId ?? input.current?.workspaceId,
   }

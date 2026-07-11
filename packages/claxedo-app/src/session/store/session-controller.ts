@@ -34,10 +34,11 @@ import { shellDataKeys } from "../../shell/data/keys"
 import { queryClient } from "../../shared/query/query-client"
 import { isWorkspaceReady } from "../../shell/workspace/workspace-connection"
 import { useWorkspaceQuery } from "../../shell/workspace/use-workspace-query"
-import { scheduleSessionProjectionPull } from "../../runtime/session-projection"
+import { scheduleSessionProjectionPull } from "../../agent-runtime/session-projection"
 import { removeDirectorySession, upsertDirectorySession } from "../../shell/data/directory-session-cache"
 import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, fastSessionSwitchQuietDelay, fastSessionSwitchNetworkQuiet, suppressedByFastSessionSwitch } from "./fast-session-switch"
 import { assistantMessageIdForUserMessage } from "../../shared/data/session-types"
+import { backfillFailedCursor, createHistoryMetaState, historyHasMore, historyIsLoading } from "./history-pagination"
 
 export {
   FAST_SESSION_SWITCH_NETWORK_QUIET_MS,
@@ -124,13 +125,6 @@ type MetaPayload = {
   permissions?: PermissionRequest[]
   questions?: QuestionRequest[]
 }
-type HistoryMeta = {
-  limit: Record<string, number | undefined>
-  cursor: Record<string, string | undefined>
-  failedCursor: Record<string, string | undefined>
-  complete: Record<string, boolean | undefined>
-  loading: Record<string, boolean | undefined>
-}
 const HYDRATE_FRESH_MS = 15_000
 export const ACTIVE_SESSION_STATUS_POLL_DELAY_MS = 60_000
 export const ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS = 5_000
@@ -196,7 +190,7 @@ export function activeSessionStatusPollingDecision(input: {
   }
 }
 
-export async function fetchCompatTransportSession<TSession, TMessages>(input: {
+export async function fetchTransportSession<TSession, TMessages>(input: {
   shouldFetchSession: boolean
   fetchSession: () => Promise<TSession>
   fetchMessages: () => Promise<TMessages>
@@ -465,24 +459,8 @@ export function createSessionController(input: {
   const globalSDK = useGlobalSDK()
   const sessionInventoryActions = useSessionInventoryActions()
   const directorySessionCacheActions = useDirectorySessionCacheActions()
-  const [historyMeta, setHistoryMeta] = createSignal<HistoryMeta>({
-    limit: {} as Record<string, number | undefined>,
-    cursor: {} as Record<string, string | undefined>,
-    failedCursor: {} as Record<string, string | undefined>,
-    complete: {} as Record<string, boolean | undefined>,
-    loading: {} as Record<string, boolean | undefined>,
-  })
+  const { meta: historyMeta, setValue: setHistoryMetaValue } = createHistoryMetaState()
   const [missingSessions, setMissingSessions] = createSignal<Record<string, boolean | undefined>>({})
-  const setHistoryMetaValue = <T extends keyof HistoryMeta>(field: T, key: string, value: HistoryMeta[T][string]) =>
-    setHistoryMeta((meta) => meta[field][key] === value
-      ? meta
-      : {
-        ...meta,
-        [field]: {
-          ...meta[field],
-          [key]: value,
-        },
-      })
   const statusQuery = useQuery(() => {
     const sessionID = input.sessionID()
     return {
@@ -616,17 +594,13 @@ export function createSessionController(input: {
   const historyMore = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return false
-    const meta = historyMeta()
-    const key = sessionHistoryKey({ sessionID, directory: input.directory() })
-    return !!meta.cursor[key] &&
-      meta.cursor[key] !== meta.failedCursor[key] &&
-      meta.complete[key] !== true
+    return historyHasMore(historyMeta(), sessionHistoryKey({ sessionID, directory: input.directory() }))
   })
 
   const historyLoading = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return false
-    return historyMeta().loading[sessionHistoryKey({ sessionID, directory: input.directory() })] === true
+    return historyIsLoading(historyMeta(), sessionHistoryKey({ sessionID, directory: input.directory() }))
   })
 
   const seedFirstFoldFromPrefetch = (sessionID: string) => {
@@ -660,7 +634,7 @@ export function createSessionController(input: {
     return true
   }
 
-  const syncCompatSession = async (
+  const syncSessionHistory = async (
     sessionID: string,
     opts?: { force?: boolean; before?: string; mode?: "replace" | "prepend"; bypassQuiet?: boolean; silent?: boolean },
   ) => {
@@ -692,7 +666,7 @@ export function createSessionController(input: {
     const limit = opts?.before ? 200 : 80
     const shouldFetchSession = !opts?.before &&
       (!hasSession || opts?.force === true || !cachedSession?.title || cachedSession.title === "New Session")
-    const transportRequest = () => fetchCompatTransportSession({
+    const transportRequest = () => fetchTransportSession({
       shouldFetchSession,
       fetchSession: () => fetchSessionByTransport({
         client: sdk.client.session,
@@ -761,9 +735,11 @@ export function createSessionController(input: {
         return true
       })
       .catch((error) => {
-        if (!isSessionNotFoundError(error)) {
-          if (opts?.before) {
-            setHistoryMetaValue("failedCursor", key, opts.before)
+        const sessionNotFound = isSessionNotFoundError(error)
+        if (!sessionNotFound) {
+          const failedCursor = backfillFailedCursor({ before: opts?.before, sessionNotFound })
+          if (failedCursor !== undefined) {
+            setHistoryMetaValue("failedCursor", key, failedCursor)
             return false
           }
           throw error
@@ -813,7 +789,7 @@ export function createSessionController(input: {
           for (const delay of ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS) {
             if (delay > 0) await promptRefreshDelay(delay)
             if (cancelled) return
-            const synced = await syncCompatSession(request.sessionID, { force: true, silent: true })
+            const synced = await syncSessionHistory(request.sessionID, { force: true, silent: true })
             if (cancelled) return
             const assistantMessageId = assistantMessageIdForUserMessage(request.messageID)
             if (synced && conversationHasAssistantMessage(request.sessionID, assistantMessageId)) {
@@ -829,7 +805,7 @@ export function createSessionController(input: {
     ),
   )
 
-  const syncCompatTodo = async (sessionID: string, opts?: { force?: boolean }) => {
+  const syncSessionTodo = async (sessionID: string, opts?: { force?: boolean }) => {
     if (suppressedByFastSessionSwitch(sessionID)) return false
     const cached = queryClient.getQueryData(shellDataKeys.sessionId(sessionID, "todo")) !== undefined
     if (cached && !opts?.force) return true
@@ -854,7 +830,7 @@ export function createSessionController(input: {
     })
   }
 
-  const syncCompatCapabilities = async (sessionID: string, opts?: { force?: boolean }) => {
+  const syncSessionCapabilities = async (sessionID: string, opts?: { force?: boolean }) => {
     if (suppressedByFastSessionSwitch(sessionID)) return false
     const directory = input.directory()
     const key = sessionCapabilitiesKey(sessionID)
@@ -992,10 +968,10 @@ export function createSessionController(input: {
           // scope workspaceId so the runtime stream relays for relay-backed
           // workspaces whose `directory` is a non-ref filesystem path.
           markLiveSession(globalSDK.event, id, directory, signedControlPlane ? input.workspaceId?.() : undefined)
-          void syncCompatCapabilities(id)
-          void syncCompatSession(id, { bypassQuiet: true }).then((synced) =>
+          void syncSessionCapabilities(id)
+          void syncSessionHistory(id, { bypassQuiet: true }).then((synced) =>
             sessionHydrationDebug("sync-session-complete", { directory, sessionID: id, synced }))
-          void syncCompatTodo(id)
+          void syncSessionTodo(id)
         }, hydrateDelay)
         const cancelMeta = scheduleDelayedTask(() => {
           if (input.directory() !== directory || input.sessionID() !== id || input.active?.() === false) return
@@ -1033,8 +1009,8 @@ export function createSessionController(input: {
             sessionId: sessionID,
             idempotencyKey: `active-turn-settled:${workspaceId ?? ""}:${sessionID}:${Date.now()}`,
           })
-          void syncCompatSession(sessionID, { force: true })
-          void syncCompatTodo(sessionID, { force: true })
+          void syncSessionHistory(sessionID, { force: true })
+          void syncSessionTodo(sessionID, { force: true })
           void directorySessionCacheActions.refresh({
             directory,
           })
@@ -1073,7 +1049,7 @@ export function createSessionController(input: {
     loadMore: async (sessionID: string) => {
       const before = historyMeta().cursor[sessionHistoryKey({ sessionID, directory: input.directory() })]
       if (!before) return
-      await syncCompatSession(sessionID, { before, mode: "prepend" })
+      await syncSessionHistory(sessionID, { before, mode: "prepend" })
     },
   }
 }

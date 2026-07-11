@@ -11,7 +11,7 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
-import { useLocal } from "@/context/local"
+import { useLocal } from "@/context/session-selection"
 import { useFile } from "@/context/file"
 import {
   usePrompt,
@@ -328,8 +328,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (activeTurn !== undefined) return activeTurn
     return status()?.type === "busy" || status()?.type === "retry"
   })
-  // status-meta is written with plain setQueryData/removeQueries (no query
-  // observer), so promptSessionStatusStage alone is a non-reactive snapshot —
+  // status-meta is written directly into the query cache by the status
+  // dispatcher (session/store/session-status-dispatcher.ts) with no query
+  // observer, so promptSessionStatusStage alone is a non-reactive snapshot —
   // without this cache subscription the escalation stages ("pending"/"long"/
   // "failed") would never re-render after their timers fire.
   const [statusMetaVersion, setStatusMetaVersion] = createSignal(0)

@@ -14,11 +14,15 @@ afterEach(() => {
 })
 
 describe("rolled-back-drafts", () => {
-  test("keeps rollback suppression query-owned", async () => {
-    const source = await Bun.file(new URL("./rolled-back-drafts.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("new Map")
-    expect(source).not.toContain("expiries")
+  test("keeps rollback suppression query-owned with no shadow module state", () => {
+    // Behavioral proof of single-source-of-truth: the query cache is the ONLY
+    // store. Marking a draft, then clearing the query client, must forget it —
+    // which cannot hold if the module kept a private Map/expiries table.
+    markRolledBackDraft("draft-owned")
+    expect(wasRolledBackDraft("draft-owned")).toBe(true)
+    expect(queryClient.getQueryData<number>(rolledBackDraftKey("draft-owned"))).toBeGreaterThan(Date.now())
+    queryClient.clear()
+    expect(wasRolledBackDraft("draft-owned")).toBe(false)
   })
 
   test("unmarked draft is not registered", () => {

@@ -1,4 +1,5 @@
 import { submitTransportForPlacement } from "../../shell/data/transport/transport"
+import { SIGNED_WORKSPACE_DEFAULT_MODEL } from "./signed-workspace-model"
 
 export function createSignedWorkspaceRuntimeFallback(input: {
   serverUrl: () => string
@@ -19,11 +20,7 @@ export function createSignedWorkspaceRuntimeFallback(input: {
   return {
     model: () => {
       if (!active(input.directory())) return undefined
-      return {
-        id: "big-pickle",
-        name: "Big Pickle",
-        provider: { id: "opencode" },
-      }
+      return { ...SIGNED_WORKSPACE_DEFAULT_MODEL }
     },
     agent: () => active(input.directory()) ? { name: "build" } : undefined,
   }

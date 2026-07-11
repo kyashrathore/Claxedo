@@ -1,4 +1,9 @@
 // target-layer: session-client
+import {
+  SIGNED_WORKSPACE_DEFAULT_MODEL_ID,
+  SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER,
+} from "./signed-workspace-model"
+
 export type ModelKey = { providerID: string; modelID: string; variant?: string }
 
 type AgentModel = {
@@ -35,8 +40,12 @@ type RuntimeModelProvider = {
 }
 
 const preferredProviderOrder = ["opencode", "google", "openai"]
+// The hosted default model is a placeholder the server may still list as a
+// provider default before real models load; skip it so a signed-workspace user
+// is never stuck on the placeholder once concrete models exist. Sourced from the
+// single SIGNED_WORKSPACE_DEFAULT_MODEL definition so both call sites stay in sync.
 const staleProviderDefaults: Record<string, Set<string>> = {
-  opencode: new Set(["big-pickle"]),
+  [SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER]: new Set([SIGNED_WORKSPACE_DEFAULT_MODEL_ID]),
 }
 
 export function firstConnectedModel(input: {

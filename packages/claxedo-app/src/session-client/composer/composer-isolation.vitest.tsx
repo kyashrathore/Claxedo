@@ -129,7 +129,7 @@ vi.mock("@/context/sdk", () => ({
   }),
 }))
 
-vi.mock("@/context/local", () => ({
+vi.mock("@/context/session-selection", () => ({
   useLocal: () => ({
     agent: {
       list: () => [{ name: "build" }],

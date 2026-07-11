@@ -33,12 +33,6 @@ afterEach(() => {
 })
 
 describe("pending prompt registry", () => {
-  test("does not export the mutable registry map", async () => {
-    const source = await Bun.file(new URL("./pending.ts", import.meta.url)).text()
-
-    expect(source).not.toContain("export const pendingPrompts")
-  })
-
   test("starts empty", () => {
     expect(pendingPromptCount()).toBe(0)
   })

@@ -1,5 +1,5 @@
 // target-layer: session-client
-import { sameWorkspaceDirectory } from "../../runtime/signed-workspace"
+import { sameWorkspaceDirectory } from "../../agent-runtime/signed-workspace"
 import {
   sessionRefForWorkspaceSession,
   type HarnessRef,
@@ -172,6 +172,12 @@ export function existingRemoteWorkspaceDirectory(input: {
   )?.[0]
 }
 
+// `resolveWorkspaceSubmitPlan` is the pure SUB-DECISION used by the orchestrator
+// `resolveSubmitDirectory` (session/submit/resolve.ts). It encodes the same
+// shared top-level admission tree (see resolve.ts) and additionally resolves the
+// remote branch into a concrete plan (prepare-remote / provision-cloud /
+// missing-workspace) using the project catalog. The shared branches must agree
+// with the orchestrator — `resolve-workspace-plan-agreement.test.ts` proves it.
 export function resolveWorkspaceSubmitPlan(input: ResolveWorkspaceSubmitPlanInput): WorkspaceSubmitPlan {
   const sessionDirectory = input.projectDirectory ?? input.fallbackDirectory
 

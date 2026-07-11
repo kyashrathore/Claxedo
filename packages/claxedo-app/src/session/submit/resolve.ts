@@ -39,6 +39,16 @@ export async function resolveSubmitSessionTarget(
   return { session, replaceSession, created: false }
 }
 
+// `resolveSubmitDirectory` is the imperative ORCHESTRATOR: it owns the shared
+// top-level admission tree (not-new → reuse; draft+"main"+no projectDirectory →
+// missing-workspace; cloud/user-hosted → remote handling; "create" → local
+// worktree; explicit worktreeSelection → use it; else → default) and turns each
+// branch into a side effect (callbacks). The remote branch delegates the
+// sub-decision (prepare existing vs provision cloud vs missing) to
+// `resolveWorkspaceSubmitPlan` (session-client/composer/workspace-resolver.ts)
+// via the `resolveCloudSessionDirectory` callback. Those two functions encode
+// the SAME shared top-level tree independently, so `resolve-workspace-plan-agreement.test.ts`
+// pins that they never diverge on shared inputs.
 export async function resolveSubmitDirectory(
   input: ResolveSubmitDirectoryContext,
 ): Promise<SubmitDirectoryResult | undefined> {

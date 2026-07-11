@@ -7,7 +7,7 @@ import {
   activeSessionStatusPollingDecision,
   activeTurnTransition,
   conversationHasAssistantMessage,
-  fetchCompatTransportSession,
+  fetchTransportSession,
   FAST_SESSION_SWITCH_NETWORK_QUIET_MS,
   FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS,
   FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS,
@@ -26,6 +26,7 @@ import {
   syncSessionMeta,
   waitForFirstActiveSessionStatusPoll,
 } from "./session-controller"
+import { backfillFailedCursor, createHistoryMetaState, historyHasMore } from "./history-pagination"
 import {
   SESSION_STATUS_TELEMETRY_CONFIG,
   observeSessionStatusEvent,
@@ -132,12 +133,47 @@ describe("session controller helpers", () => {
     )
   })
 
-  test("failed older-history cursors are dampened instead of refetched in a loop", async () => {
-    const source = await Bun.file(new URL("./session-controller.ts", import.meta.url)).text()
+  test("failed older-history cursors are dampened instead of refetched in a loop", () => {
+    // Behavior (dampening derivation now lives in history-pagination.ts and is
+    // unit-tested there): a session with a next cursor offers "more" history;
+    // once that same cursor's backfill fails and is recorded in failedCursor,
+    // it is no longer offered, so the controller cannot refetch it in a loop.
+    const base = { limit: {}, cursor: { k: "cur" }, failedCursor: {}, complete: {}, loading: {} }
+    expect(historyHasMore(base, "k")).toBe(true)
+    expect(historyHasMore({ ...base, failedCursor: { k: "cur" } }, "k")).toBe(false)
+  })
 
-    expect(source).toContain("failedCursor")
-    expect(source).toMatch(/meta\.cursor\[key\] !== meta\.failedCursor\[key\]/)
-    expect(source).toMatch(/if \(opts\?\.before\) \{[\s\S]{0,120}setHistoryMetaValue\("failedCursor", key, opts\.before\)/)
+  test("the controller records the attempted older-page cursor when its backfill fails", () => {
+    // WRITE side of the dampening loop-break. `syncSessionHistory`'s failure
+    // handler delegates the "which cursor to record as failed" decision to
+    // backfillFailedCursor (the real export it imports); an older-page backfill
+    // carries a `before` cursor, and a plain (non-not-found) rejection records
+    // exactly that cursor so historyHasMore() stops offering it.
+    expect(backfillFailedCursor({ before: "cur_older", sessionNotFound: false })).toBe("cur_older")
+  })
+
+  test("a not-found backfill failure records no failed cursor (the session is being removed instead)", () => {
+    expect(backfillFailedCursor({ before: "cur_older", sessionNotFound: true })).toBeUndefined()
+  })
+
+  test("a foreground load (no before cursor) records no failed cursor and surfaces the error", () => {
+    expect(backfillFailedCursor({ before: undefined, sessionNotFound: false })).toBeUndefined()
+  })
+
+  test("recording the failed cursor through the real history state dampens historyHasMore for that key", () => {
+    // End-to-end of the write→read contract using the real state setter the
+    // controller uses: seed a next cursor, then record that same cursor as
+    // failed (as the controller does on a failed backfill) and confirm the key
+    // no longer offers more history — the refetch loop is broken.
+    const { meta, setValue } = createHistoryMetaState()
+    const key = "/repo/main\nses_1"
+    setValue("cursor", key, "cur_older")
+    expect(historyHasMore(meta(), key)).toBe(true)
+
+    const recorded = backfillFailedCursor({ before: "cur_older", sessionNotFound: false })
+    expect(recorded).toBe("cur_older")
+    setValue("failedCursor", key, recorded)
+    expect(historyHasMore(meta(), key)).toBe(false)
   })
 
   test("identifies missing session transport errors", () => {
@@ -779,9 +815,9 @@ describe("session controller helpers", () => {
     ).toEqual(["msg_1", "msg_2"])
   })
 
-  test("fetchCompatTransportSession fetches session before messages", async () => {
+  test("fetchTransportSession fetches session before messages", async () => {
     const order: string[] = []
-    const result = await fetchCompatTransportSession({
+    const result = await fetchTransportSession({
       shouldFetchSession: true,
       fetchSession: async () => {
         order.push("session")
@@ -798,9 +834,9 @@ describe("session controller helpers", () => {
     expect(result.messages.maxEventOrdinal).toBe(12)
   })
 
-  test("fetchCompatTransportSession skips session fetch for cached or paged loads", async () => {
+  test("fetchTransportSession skips session fetch for cached or paged loads", async () => {
     const order: string[] = []
-    const result = await fetchCompatTransportSession({
+    const result = await fetchTransportSession({
       shouldFetchSession: false,
       fetchSession: async () => {
         order.push("session")
