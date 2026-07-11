@@ -590,6 +590,78 @@ test.describe("core harness ownership (local) @core", () => {
     },
   )
 
+  test(
+    "a slow harness that starts polling settles under the bounded re-probe loop: Connecting pill clears, composer unlocks, submit enables — behavior 6b",
+    async ({ page }) => {
+      // The polling readiness used to be a DEAD-END: hydration is one-shot
+      // (src/claxedo-ui/harness/harness-hydrator.ts stamps a per-scope "seen" key
+      // and early-returns forever), and nothing re-applied harness status, so a
+      // harness that first answered `ready:false` (backend `status:"applying"`)
+      // stayed on the "Connecting" pill with a faded, non-editable composer
+      // FOREVER. The fix (src/claxedo-ui/harness/harness-reprobe.ts +
+      // AgentHarnessSelector's `watchHarnessReprobe` wiring) drives a bounded
+      // re-probe while readiness is "polling": it clears the seen stamp and
+      // re-hydrates on an interval until the harness settles (or, after a hard
+      // cap, transitions to "Unavailable" — never infinite, never silent).
+      //
+      // `harnessGetPollSettleAfter` makes the mock's harness-status GET flip to
+      // ready after N GET probes — modelling exactly that slow-then-ready
+      // harness. Behavior 6 (which omits this knob) stays permanently polling.
+      const mock = await installMockRuntime(page, {
+        dir: DIR,
+        sessionId: "ses_core_harness_polling_settles",
+        harness: "claude-acp",
+        harnessReadiness: "polling",
+        // Never settles via POST (there is no switch POST in this draft flow);
+        // the ONLY settle path is the client's bounded GET re-probe loop.
+        harnessPollingTurns: 1000,
+        // Initial hydrate GET keeps it polling; a couple of re-probe GETs later
+        // it flips to ready — proving the loop drives the harness to settle.
+        harnessGetPollSettleAfter: 3,
+      })
+
+      await seedOneProject(page, DIR)
+
+      // Same faded/non-editable draft entry as behavior 6 — the READY-harness
+      // `openDraftPrompt` helper would (correctly) reject the faded composer, so
+      // navigate inline and assert the polling contract directly first.
+      await page.goto(`/${slug(DIR)}/session`)
+      await page.waitForLoadState("domcontentloaded")
+      await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+      const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+      await expect(input).toBeVisible({ timeout: 20_000 })
+
+      await expectHarnessAutoHydrated(page, /^Claude$/)
+
+      // Phase 1 — still connecting: pill shown, composer faded/non-editable,
+      // never the red "Unavailable" dot.
+      await expect(page.locator('[title="Connecting to agent runtime..."]')).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
+      await expect(input).toHaveAttribute("contenteditable", "false")
+
+      // Phase 2 — the bounded re-probe loop drives the harness to settle: the
+      // "Connecting" pill clears on its own (no user action, no reload), the
+      // composer becomes editable, and it never degrades to "Unavailable".
+      await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0, { timeout: 30_000 })
+      await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
+      await expect(input).toHaveAttribute("contenteditable", "true", { timeout: 10_000 })
+
+      // The harness model resolves and submit unlocks once the user types.
+      await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
+      await composePrompt(page, input, "core harness polling settled turn")
+      await expect(page.locator(SELECTORS.submitControl).last()).toBeEnabled({ timeout: 10_000 })
+
+      // And it actually sends on the now-settled harness.
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
+      expect(mock.requests.promptBodies[0]).toMatchObject({
+        text: "core harness polling settled turn",
+        providerID: "claude-acp",
+        modelID: "claude-sonnet-4-6",
+      })
+    },
+  )
+
   test("session busy with abort capability false disables submit while the composer is blank — behavior 7", async ({
     page,
   }) => {

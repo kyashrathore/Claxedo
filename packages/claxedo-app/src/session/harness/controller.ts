@@ -10,6 +10,10 @@ export type HarnessScopeInput = {
 
 export type HarnessSelectionControllerStore = {
   hydrate(scope: string, input?: HarnessScopeInput): void | Promise<void>
+  /** Re-run a hydration probe for a scope still stuck in "polling". */
+  reprobe(scope: string, input?: HarnessScopeInput): void | Promise<void>
+  /** Transition a never-settling harness to the terminal "error" readiness. */
+  markUnavailable(scope: string): void
   setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string): void | Promise<void>
   setModel(scope: string, model: string, input?: HarnessScopeInput): void | Promise<void>
   harness(scope: string): HarnessType
@@ -55,6 +59,8 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
       }
     },
     hydrate: (scope: string, input?: HarnessScopeInput) => store.hydrate(scope, input),
+    reprobe: (scope: string, input?: HarnessScopeInput) => store.reprobe(scope, input),
+    markUnavailable: (scope: string) => store.markUnavailable(scope),
     setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string) =>
       store.setHarness(scope, type, input, binary),
     setModel: (scope: string, model: string, input?: HarnessScopeInput) => store.setModel(scope, model, input),

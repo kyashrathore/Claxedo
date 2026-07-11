@@ -24,6 +24,7 @@ import {
 export type HarnessHydratorCache<ScopeInput extends HarnessScopeInput> = {
   getSeen(scope: string): string | undefined
   setSeen(scope: string, key: string): void
+  clearSeen(scope: string): void
   getPending(scope: string): Promise<void> | undefined
   setPending(scope: string, value: Promise<void>): void
   removePending(scope: string, value: Promise<void>): void
@@ -159,8 +160,19 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     input.cache.setSeen(scope, key)
   }
 
+  // Re-run a single hydration probe for a scope that is still "polling". Hydrate
+  // is one-shot (guarded by the per-scope "seen" stamp), so a bounded re-probe
+  // must first CLEAR that stamp; otherwise hydrate early-returns and the harness
+  // stays Connecting forever. Any probe already in flight is deduped by the
+  // pending guard inside `hydrate`, so re-probing never stacks requests.
+  const reprobe = async (scope: string, params?: ScopeInput) => {
+    input.cache.clearSeen(scope)
+    return hydrate(scope, params)
+  }
+
   return {
     hydrate,
+    reprobe,
     status,
   }
 }

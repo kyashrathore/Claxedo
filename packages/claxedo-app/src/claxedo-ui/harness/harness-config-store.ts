@@ -177,6 +177,11 @@ export function createHarnessConfigStore() {
 
   return {
     hydrate: hydrator.hydrate,
+    reprobe: hydrator.reprobe,
+    // Give up on a harness that never left "polling": surface the terminal
+    // "error" readiness so the selector shows the "Unavailable" affordance and
+    // submit stays blocked (harnessReadyForSubmit is false for "error").
+    markUnavailable: (scope: string) => harnessStore.setReadiness(scope, "error"),
     claimSession,
     promote: harnessStore.promote,
     setModel,

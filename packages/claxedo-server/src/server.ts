@@ -96,7 +96,16 @@ function globalBusOpencodeEvents(): OpencodeEventsHandle {
   }
 }
 
-async function projectLocalSessionMetaFromEvent(services: ControlPlaneServices, event: OpencodeEvent) {
+// Exported (not just used internally) so both wiring sites — the legacy
+// single-instance `upstreamEvents` bridge below and the embedded per-workspace
+// `onSessionMetaEvent` tap wired through `configureEmbeddedWorkspaceRuntime`
+// — share one write path into the control plane's session projection, and so
+// it can be exercised directly in tests without constructing a full `Hono`
+// app. `Pick` keeps it decoupled from the rest of `ControlPlaneServices`.
+export async function projectLocalSessionMetaFromEvent(
+  services: Pick<ControlPlaneServices, "projectionStore">,
+  event: OpencodeEvent,
+) {
   try {
     const raw = event.payload.properties?.info
     const info = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined
@@ -552,6 +561,17 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
   configureEmbeddedWorkspaceRuntime({
     opencodeRequest,
     opencodeCompat,
+    // See `projectLocalSessionMetaFromEvent` above: a harness session's
+    // async auto-title (opencode's own LLM rename, or an ACP harness's
+    // post-turn `maybeEmitTitle`) is published only over that workspace's
+    // own `/global/event` SSE stream, never an HTTP `PATCH /session/:id` the
+    // response-sniffing tap below would observe. Without this, titles revert
+    // to "Untitled" after a restart.
+    onSessionMetaEvent: (event) => {
+      if (event.payload.type === "session.created" || event.payload.type === "session.updated") {
+        void projectLocalSessionMetaFromEvent(services, event)
+      }
+    },
   })
   configureAgentConfig({
     ...(process.env.CLAXEDO_ACP_DIR ? { acpDir: process.env.CLAXEDO_ACP_DIR } : {}),

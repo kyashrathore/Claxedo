@@ -87,6 +87,7 @@ export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeI
   return {
     getSeen: (scope) => queryClient.getQueryData<string>(harnessHydrateSeenKey(scope)),
     setSeen: (scope, key) => queryClient.setQueryData(harnessHydrateSeenKey(scope), key),
+    clearSeen: (scope) => queryClient.removeQueries({ queryKey: harnessHydrateSeenKey(scope), exact: true }),
     getPending: (scope) => queryClient.getQueryData<Promise<void>>(harnessHydrateRequestKey(scope)),
     setPending: (scope, value) => queryClient.setQueryData(harnessHydrateRequestKey(scope), value),
     removePending: (scope, value) => {

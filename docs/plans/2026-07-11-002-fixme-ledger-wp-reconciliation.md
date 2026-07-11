@@ -128,6 +128,17 @@ fix-specific test body mirroring a proven sibling test in the same file; bodies 
 | user-hosted behaviors 2,3 | Mock harness lacks the contract-v3 `/api/wr/runtime-events` channel — assistant replies emitted onto a bus the app never drains; NOT an app bug (A/B: red at baseline, identical error) | PINNED `test.fixme` (leader); harness capability owned by the e2e session. |
 | C2 pre-scope discoveries | macOS Electron menu dispatches Cmd+W/Cmd+B/Cmd+\\/Option-arrows/Cmd+O to command ids that do not exist in the renderer registry (silent no-ops on real desktop); `terminal.toggle` referenced by 3 call sites but never registered | Recorded for WP-C2 (inventory doc `2026-07-11-006` §5 has the resolution sequence). |
 
+| Wave 4 gate (dry-run) | Contributor dry-run found `pages/session.tsx:512-553` carries a duplicate copy of the title-edit handlers that appears unused in its own JSX (possible dead code post-B8 dedup) | recorded; verify + delete in the final sweep | dry-run agent, out-of-scope flag |
+
+## Wave 4 gate dispositions (leader)
+
+| Item | Finding | Disposition |
+|---|---|---|
+| USER-REPORTED stuck "Connecting" | PRE-EXISTING (since Wave 2's polling state): harness readiness "polling" is a dead-end — hydrate is one-shot (seen-keyed), no re-probe interval/SSE/loop exists; a slow harness reporting ready:false once is gated forever. Wave 4 proven byte-identical on every harness file. | FIX IN FLIGHT: bounded re-probe while polling (capped → error), + mock GET-settle knob + e2e proof. User repro relayed live. |
+| ownership-cloud behaviors 3/4/5 | ENVIRONMENTAL, fail identically at pre-Wave-4 baseline: the mock pins the fictitious relay origin, but with a loopback central base the transport picks the local-proxy path so the mock never sees the request; env-sensitive coupling between mock and transport selection | queued: make the mock intercept both origins (after the re-probe fix lands — same files) |
+| ownership-local:294 | did NOT reproduce (12/12 green isolated + in-file) — transient in the full-suite run | no action |
+| Wave 4 harness-regression hypothesis | DISPROVEN: every harness logic file byte-identical baseline↔HEAD modulo import strings; D5 route change is a zero-runtime brand cast | recorded |
+
 ## Orphans and leader dispositions (2026-07-11)
 
 **In-scope, previously unowned — leader assignments (reflected in LLD dependency notes):**

@@ -37,6 +37,7 @@ import { PromptInput } from "@/session/composer/composer"
 import { same } from "@/utils/same"
 import { extractPromptFromParts } from "@/shared/data/prompt"
 import { createSessionHistoryWindow, emptyUserMessages } from "./session/history-window"
+import { groupNavigateUrlSync } from "./session/group-navigate-route"
 import { setSessionHandoff, setTerminalHandoff } from "./session/prompt-preview-handoff"
 import { terminalTabLabel } from "./session/terminal-label"
 import { MessageTimeline } from "./session/message-timeline"
@@ -350,6 +351,20 @@ export default function SessionPage() {
     setGate("err", undefined)
   })
 
+  // Cloud: group-aware navigation helper.
+  //
+  // In-pane retargets (openSession) keep the pane mounted, but the reverse
+  // surface→URL sync refuses to touch session/workspace-kind routes, so a switch
+  // into a DIFFERENT workspace/directory would leave the URL pinned to the prior
+  // workspace (a reload would then restore the wrong surface). Sync the URL to the
+  // target ONLY when its directory differs from the current URL — a replace nav
+  // that route-intent resolves back onto the already-open pane, never a remount.
+  const syncGroupNavigateUrl = (path: string) => {
+    if ((window as unknown as { __NOSYNC__?: boolean }).__NOSYNC__) return
+    const sync = groupNavigateUrlSync({ targetPath: path, currentPathname: location.pathname })
+    if (sync) navigate(sync, { replace: true })
+  }
+
   // Cloud: group-aware navigation helper
   const groupNavigate = (path: string) => {
     const gid = sessionParams.paneId() ?? paneId
@@ -372,8 +387,10 @@ export default function SessionPage() {
             source: activeSessionRef(),
           }),
         })
+        syncGroupNavigateUrl(path)
       } else if (route.kind === "legacy-directory" || route.kind === "workspace-session") {
         claxedoState.layout.openSession(dir, "new", "New Session")
+        syncGroupNavigateUrl(path)
       } else {
         navigate(path)
       }

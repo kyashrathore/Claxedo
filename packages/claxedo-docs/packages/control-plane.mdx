@@ -6,7 +6,7 @@ description: "Claxedo's control-plane / gateway server: a Node-only Hono app tha
 The control-plane is Claxedo's gateway server — a Node-only Hono app. It owns the runnable **host composition** for the workspace runtime, the **sandbox image** build, hosted control-plane composition, auth adapters, relay resolver endpoints, telemetry, and storage. Where `@claxedo/workspace-runtime` ships primitives and an env-driven composition seam, this package composes them into its own runnable entrypoint so local, embedded, and in-sandbox launches cannot drift.
 
 <Warning>
-**Private and not published.** The control plane ships in-repo as `@opencode-ai/claxedo-server` with `private: true` — deliberately unpublished while the public control-plane contract is split out from the product server surface. A rename to **`@claxedo/control-plane`** (a thin wrapper with explicit stable exports) is planned but not published under that scope. Do not treat the root exports as a stable public framework API.
+**Private and not published.** The control plane ships in-repo as `@claxedo/server` with `private: true` — deliberately unpublished while the public control-plane contract is split out from the product server surface. A rename to **`@claxedo/control-plane`** (a thin wrapper with explicit stable exports) is planned but not published under that scope. Do not treat the root exports as a stable public framework API.
 </Warning>
 
 ## Availability

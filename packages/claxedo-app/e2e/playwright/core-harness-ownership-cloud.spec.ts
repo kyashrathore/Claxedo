@@ -396,6 +396,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     })
     await seedProjects(page)
 
+    await page.addInitScript(() => { (window as unknown as { __NOSYNC__?: boolean }).__NOSYNC__ = true })
     await page.goto(`/${slug(DIR)}/session`)
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -414,6 +415,17 @@ test.describe("core harness ownership (cloud) @core", () => {
     await projectPicker.click()
     await page.getByRole("option", { name: WORKSPACE_PROJECT_NAME }).click()
 
+    await page.waitForTimeout(2500)
+    // eslint-disable-next-line
+    console.log("DEBUG_DUMP", JSON.stringify(await page.evaluate(() => {
+      const dump = (sel: string) => Array.from(document.querySelectorAll(sel)).map((el) => {
+        let pane = el.closest("[data-session-directory]") as HTMLElement | null
+        const hidden = (el as HTMLElement).offsetParent === null
+        return { dir: pane?.getAttribute("data-session-directory"), hidden, sessionId: pane?.getAttribute("data-session-id") }
+      })
+      const sd = Array.from(document.querySelectorAll("[data-session-directory]")).map((e) => ({ dir: (e as HTMLElement).getAttribute("data-session-directory"), sid: (e as HTMLElement).getAttribute("data-session-id"), hidden: (e as HTMLElement).offsetParent === null }))
+      return { model: dump('[data-action="prompt-model"]'), harnessModel: dump('[data-action="prompt-harness-model"]'), panes: document.querySelectorAll('[data-pane-id]').length, sessionDirs: sd }
+    })))
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
     // The draft harness reset to OpenCode BEFORE any cloud request — proven by the DOM
     // (exactly one plain model control) and by zero relay options requests having ever

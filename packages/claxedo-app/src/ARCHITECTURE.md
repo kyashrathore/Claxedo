@@ -193,7 +193,13 @@ of `session.tsx` (`message-timeline.tsx`, ~1700 lines, is the largest file
 under `pages/session/` and one of the package's remaining god files, though
 `claxedo-ui/rail/rail-sidebar.tsx` is larger still); Wave 1.5 moved its
 `session-layout.ts`/`helpers.ts` out
-to the top-level `session/` directory. **Add here:** a new top-level route.
+to the top-level `session/` directory. Behavior owners a contributor will
+look for by the wrong name: inline session-title RENAME lives in
+`pages/session/session-title-editor.ts` (rendered by message-timeline.tsx) —
+NOT in `components/session/session-header.tsx` (that file is titlebar chrome:
+search box, open-in-app, terminal/review toggles) and NOT in
+`shared/data/session-title.ts` (display-formatting helper only).
+**Add here:** a new top-level route.
 
 ### `terminal/` (core files + `backend/`, `integration/`, `link-parsing/`,
 `link-providers/`)

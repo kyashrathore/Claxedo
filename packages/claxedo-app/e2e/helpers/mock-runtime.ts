@@ -133,6 +133,14 @@ export type MockRuntimeOptions = {
    * "Connecting" pill / composer-fade-while-polling window.
    */
   harnessPollingTurns?: number
+  /**
+   * Number of GET probes of `/api/claxedo/agent-config/harness` after which a
+   * `harnessReadiness: "polling"` harness FLIPS to ready — models a slow harness
+   * that finally settles under the client's bounded re-probe loop (as opposed to
+   * `harnessPollingTurns`, which only advances on POST switches). Absent (default)
+   * = GET probes never settle it, preserving every existing spec's behavior.
+   */
+  harnessGetPollSettleAfter?: number
   /** Assistant reply text builder. Defaults to `ack <n>: <prompt text>` (legacy vocabulary). */
   replyText?: (turn: number, promptText: string) => string
   /** Message is marked `time.completed` but `session.idle` is never sent. */
@@ -467,6 +475,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   let messages: MockMessageRow[] = []
   let sessionCreated = false
   let harnessPollCount = 0
+  let harnessGetPollCount = 0
 
   page.on("console", (message) => {
     if (message.type() === "error" || message.type() === "warning") {
@@ -507,6 +516,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       return { status: "error" as const, ready: false, error: options.harnessReadinessError ?? "harness unavailable" }
     }
     if (options.harnessReadiness === "polling") {
+      // A slow harness that settles once the client's bounded re-probe loop has
+      // GET-polled it enough times. Absent knob = never settles via GET.
+      if (options.harnessGetPollSettleAfter !== undefined && harnessGetPollCount >= options.harnessGetPollSettleAfter) {
+        return { status: "ready" as const, ready: true }
+      }
       const pollingTurns = options.harnessPollingTurns ?? 2
       const applying = harnessPollCount < pollingTurns
       return applying ? { status: "applying" as const, ready: false } : { status: "ready" as const, ready: true }
@@ -1107,6 +1121,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         body = undefined
       }
       if (body?.type && body.type in harnessModels) harness = body.type as Harness
+    } else {
+      // Count GET probes so `harnessGetPollSettleAfter` can settle a slow
+      // polling harness under the client's bounded re-probe loop.
+      harnessGetPollCount += 1
     }
     const model = harnessModel()
     const status = harnessStatusPayload()
@@ -1262,17 +1280,40 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // capabilities/provider/harness-config-options + event streams), proven
   // against `core-cloud-provisioning.spec.ts`'s own spec-local
   // `installCloudRuntimeMock` (oracle-verified send through this exact
-  // route shape). The real app follows the connection MINT's `relayUrl`
-  // (`workspaceRelayConnection`, `src/utils/workspace-relay-connection.ts`:
-  // `${relayUrl}/workspaces/${workspaceId}${path}`) — the routes below are
-  // registered at exactly that shape, so `relayOrigin` may be the primary
-  // origin or a distinct fictitious origin and either resolves correctly.
+  // route shape).
+  //
+  // DUAL-ORIGIN routing — a relay-backed workspace's requests reach the
+  // runtime via TWO different origins depending on which transport the
+  // environment resolves, and BOTH must be intercepted identically:
+  //   1. RELAY origin (`${relayUrl}/workspaces/:id<path>`,
+  //      `workspaceRelayConnection`, `src/utils/workspace-relay-connection.ts`)
+  //      — used by the post-send session controller and by any environment
+  //      whose central base is NOT loopback.
+  //   2. LOOPBACK local-proxy form (`${serverUrl}/workspaces/:id<path>`,
+  //      `createWorkspaceRuntimeRequest`, `workspace-runtime-request.ts:223`)
+  //      — used by the DRAFT-time harness-config transport
+  //      (`workspaceHarnessTransport` picks `transport: "loopback"` whenever
+  //      `centralTransportForServer(base) === "loopback"`,
+  //      `harness-config-runtime.ts:89`, and `preferRelayOnLoopback` stays
+  //      false) and by the workspace event subscription, whenever the central
+  //      base is loopback (e.g. `http://127.0.0.1:3001` in local CI). The
+  //      draft never knows `relayOrigin` at all — it proxies through the
+  //      loopback server's own `/workspaces/:id/...` path prefix.
+  // The `base` glob below therefore matches ANY origin (`**/workspaces/:id`),
+  // so the SAME handler counts/serves whichever origin actually receives the
+  // traffic — the recorded counters are the SUM across both lanes, which is
+  // exactly what the ownership assertions require (they must hold regardless
+  // of the environment's transport choice). `relayOrigin` is a distinct
+  // fictitious origin or the primary origin; either matches this glob.
   // The bare (un-prefixed) `${relayOrigin}/api/wr/*` routes further below
   // are kept for existing callers that relied on them directly.
   // --------------------------------------------------------------------
   if (cloud) {
     const { workspaceId, relayOrigin } = cloud
-    const base = `${relayOrigin}/workspaces/${workspaceId}`
+    // Origin-agnostic prefix: matches both the relay origin
+    // (`${relayOrigin}/workspaces/:id/...`) and the loopback local-proxy form
+    // (`${serverUrl}/workspaces/:id/...`) — see DUAL-ORIGIN note above.
+    const base = `**/workspaces/${workspaceId}`
 
     // Connection mint — `GET /api/workspace/:id/connection[/refresh]` on the PRIMARY
     // origin (never relay-prefixed: the client doesn't know the relay origin until

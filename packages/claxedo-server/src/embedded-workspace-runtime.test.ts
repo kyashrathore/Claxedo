@@ -8,6 +8,8 @@ import {
   shutdownEmbeddedWorkspaceRuntimes,
   syncEmbeddedWorkspaceRuntimeAgentExtensions,
 } from "./embedded-workspace-runtime"
+import type { OpencodeEvent } from "./opencode-events"
+import type { OpenCodeRequestFn } from "./opencode-engine"
 import type { Workspace } from "./workspace-store"
 
 async function makeWorkspaceRoot(prefix: string) {
@@ -205,6 +207,85 @@ describe("embedded workspace runtime", () => {
       const rebuilt = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       expect(rebuilt).not.toBe(first)
     } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  // ── Regression: a harness session's async auto-title (e.g. an ACP
+  //    harness's post-turn `maybeEmitTitle`, or opencode's own LLM-driven
+  //    rename) is published ONLY as an SSE event on this runtime's own
+  //    `/global/event` stream (`RuntimeEventHub.publishGlobal`), never an
+  //    HTTP `PATCH /session/:id`. Before this fix nothing tapped that
+  //    per-workspace stream, so `services.projectionStore` never learned the
+  //    title and it reverted to "Untitled" after a restart. This proves the
+  //    tap itself: a `session.updated` event on `/global/event` reaches the
+  //    `onSessionMetaEvent` callback claxedo-server wires to
+  //    `projectLocalSessionMetaFromEvent` (see `session-meta-bridge.test.ts`
+  //    for that write path proven against the real SQLite projection store).
+  test("propagates a harness's SSE-only session.updated title event to onSessionMetaEvent", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    process.env.CLAXEDO_AGENT_TYPE = "opencode"
+    process.env.OPENCODE_URL = "http://opencode.test"
+
+    try {
+      const events: OpencodeEvent[] = []
+      let resolveSeen: (() => void) | undefined
+      const seen = new Promise<void>((resolve) => {
+        resolveSeen = resolve
+      })
+
+      // Stands in for the real opencode process: claxedo-server rides this
+      // injected transport in embedded mode (see `configureEmbeddedWorkspaceRuntime`
+      // in `server.ts`), so the workspace runtime's `/global/event` route
+      // proxies straight through it — exactly as it would a real opencode
+      // subprocess's own SSE stream.
+      const fakeOpencodeRequest: OpenCodeRequestFn = async (req) => {
+        const url = new URL(req.url)
+        if (url.pathname !== "/global/event") return new Response(null, { status: 404 })
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const envelope = {
+              directory: project,
+              payload: {
+                id: "session.updated:s_auto_title",
+                type: "session.updated",
+                properties: {
+                  sessionID: "s_auto_title",
+                  info: { id: "s_auto_title", title: "Auto-generated title", directory: project },
+                },
+              },
+            }
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(envelope)}\n\n`))
+            // Deliberately never closed: closing would trigger the SSE
+            // client's reconnect-with-backoff loop, which would otherwise
+            // keep firing after this test's assertions complete.
+          },
+        })
+        return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } })
+      }
+
+      configureEmbeddedWorkspaceRuntime({
+        opencodeRequest: fakeOpencodeRequest,
+        onSessionMetaEvent: (event) => {
+          events.push(event)
+          resolveSeen?.()
+        },
+      })
+
+      await ensureEmbeddedWorkspaceRuntime(workspace("ws_title", project), { config: "skip" })
+      await seen
+
+      expect(events).toHaveLength(1)
+      const [event] = events
+      expect(event?.payload.type).toBe("session.updated")
+      const info = event?.payload.properties?.info as { id?: string; title?: string } | undefined
+      expect(info?.id).toBe("s_auto_title")
+      expect(info?.title).toBe("Auto-generated title")
+    } finally {
+      // Reset the module singleton so later tests in this file don't inherit
+      // this test's callback or fake transport.
+      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
       await fs.rm(root, { recursive: true, force: true })
     }
   })

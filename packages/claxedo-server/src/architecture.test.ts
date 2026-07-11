@@ -129,7 +129,7 @@ describe("harness-scoped resolution", () => {
 
   test("keeps workspace-runtime from importing claxedo-server", () => {
     const workspaceRuntimeSrc = path.resolve(import.meta.dirname, "../../workspace-runtime/src")
-    const forbidden = ["@opencode-ai/claxedo-server", "@claxedo/claxedo-server", "claxedo-server"]
+    const forbidden = ["@claxedo/server", "@opencode-ai/claxedo-server", "@claxedo/claxedo-server", "claxedo-server"]
     const offenders = walk(workspaceRuntimeSrc)
       .filter((file) => file.endsWith(".ts"))
       .filter((file) => !file.endsWith(".test.ts"))

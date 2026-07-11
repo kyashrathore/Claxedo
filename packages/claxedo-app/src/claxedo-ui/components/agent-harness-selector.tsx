@@ -8,6 +8,7 @@ import { ModelSelectorPopover, type PickerItem, type PickerState } from "@/compo
 import { HARNESS_DISPLAY_NAMES, type HarnessType } from "@/session/harness/profile"
 import type { HarnessSelectionController } from "@/session/harness/controller"
 import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
+import { watchHarnessReprobe } from "../harness/harness-reprobe"
 import { panePreferenceScope } from "../../pane/store/pane-preferences"
 import { createModelSelectionController, modelKeyFromPickerSelection } from "../../session/commands/model-selection"
 const HARNESS_OPTIONS: HarnessType[] = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]
@@ -123,8 +124,39 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const harness = createMemo(() => {
     return selection().harness
   })
-  const isPolling = () => selection().readiness === "polling"
+  // A coarse boolean memo: only notifies when the polling boundary is crossed,
+  // never on unrelated store writes. The re-probe effect below depends on this
+  // (not a raw `selection().readiness` read) so a re-probe that re-applies the
+  // SAME "polling" status cannot re-run the effect and reset the attempt cap.
+  const isPolling = createMemo(() => selection().readiness === "polling")
   const isError = () => selection().readiness === "error"
+
+  // Bounded re-probe for a harness stuck Connecting. Hydration is one-shot, so
+  // without this a genuinely slow harness (`ready:false`/`status:"applying"`)
+  // would poll forever. While polling, re-probe on an interval; if it never
+  // settles, transition to the terminal "Unavailable" state. onCleanup cancels
+  // the loop on settle or scope/route change.
+  watchHarnessReprobe({
+    active: () => {
+      if (props.active === false) return false
+      // Track scope/directory/session so a route change restarts with a fresh cap.
+      const nextScope = scope()
+      const nextDirectory = directory()
+      sessionId()
+      return !!nextScope && !!nextDirectory && isPolling()
+    },
+    // reprobe/onExhausted fire from the loop's timer callback, outside any
+    // reactive computation, so these reads create no tracked dependencies.
+    reprobe: () => {
+      const nextDirectory = directory()
+      if (!nextDirectory) return
+      void props.harnessController.reprobe(scope(), {
+        directory: nextDirectory,
+        sessionId: sessionId(),
+      })
+    },
+    onExhausted: () => props.harnessController.markUnavailable(scope()),
+  })
   const isStale = () => selection().optionsStale
   const optionsLoading = () => selection().optionsLoading
   const [switchingHarness, setSwitchingHarness] = createSignal<HarnessType | undefined>()

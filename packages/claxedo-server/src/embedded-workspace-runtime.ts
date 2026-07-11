@@ -11,10 +11,17 @@ import { createClaxedoRuntimeExposure } from "./workspace-runtime-integration/ex
 import { claxedoCorsOrigin } from "./workspace-runtime-integration/runtime-boot"
 import { createClaxedoAppliedRuntimeConfig } from "./workspace-runtime-integration/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "./workspace-runtime-integration/target"
+import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "./opencode-events"
 
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
   applying?: Promise<void>
+  /**
+   * Tap on this runtime's own `/global/event` SSE stream, forwarding
+   * `session.created`/`session.updated` events to the host-configured
+   * `onSessionMetaEvent` callback. See `configureEmbeddedWorkspaceRuntime`.
+   */
+  sessionEvents?: OpencodeEventsHandle
 }
 
 export type EmbeddedWorkspaceRuntimeConfigMode = "skip" | "sync"
@@ -33,10 +40,28 @@ const hosts = new Map<string, EmbeddedRuntime>()
 // external-URL mode it rewrites onto the configured URL.
 let configuredOpencodeRequest: OpenCodeRequestFn = defaultOpencodeRequest
 let configuredOpencodeCompat = true
+// Host-supplied sink for a harness session's async auto-title (and any other
+// session.created/session.updated event). A harness session's title is
+// re-emitted asynchronously — e.g. a post-turn ACP auto-title
+// (`maybeEmitTitle` in `packages/agent-sdk-runtime/src/runtime.ts`) or
+// opencode's own LLM-driven rename — and that update is published ONLY as an
+// SSE event on THIS runtime's own `/global/event` stream
+// (`RuntimeEventHub.publishGlobal`), never as an HTTP `PATCH /session/:id`.
+// Nothing else in claxedo-server observes that per-workspace stream, so
+// without this sink a harness session's title reverts to "Untitled" after a
+// server restart (the control plane's `services.projectionStore` never
+// learns the new title — see `ensureEmbeddedWorkspaceRuntime` below, which
+// taps it via `createOpencodeEvents`).
+let configuredOnSessionMetaEvent: ((event: OpencodeEvent) => void) | undefined
 
-export function configureEmbeddedWorkspaceRuntime(input: { opencodeRequest: OpenCodeRequestFn; opencodeCompat?: boolean }) {
+export function configureEmbeddedWorkspaceRuntime(input: {
+  opencodeRequest: OpenCodeRequestFn
+  opencodeCompat?: boolean
+  onSessionMetaEvent?: (event: OpencodeEvent) => void
+}) {
   configuredOpencodeRequest = input.opencodeRequest
   configuredOpencodeCompat = input.opencodeCompat ?? true
+  configuredOnSessionMetaEvent = input.onSessionMetaEvent
 }
 
 function storeRoot(ws: Workspace) {
@@ -74,6 +99,11 @@ function configure(runtime: EmbeddedRuntime) {
   return runtime.applying
 }
 
+function disposeRuntime(runtime: EmbeddedRuntime) {
+  runtime.sessionEvents?.close()
+  runtime.host.dispose()
+}
+
 export async function ensureEmbeddedWorkspaceRuntime(
   ws: Workspace,
   input: { config?: EmbeddedWorkspaceRuntimeConfigMode } = {},
@@ -82,7 +112,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
   const hit = hosts.get(ws.id)
   if (hit) {
     if (hit.workspace.directory !== ws.directory) {
-      hit.host.dispose()
+      disposeRuntime(hit)
       hosts.delete(ws.id)
     } else {
       if (config === "sync") await configure(hit)
@@ -90,11 +120,21 @@ export async function ensureEmbeddedWorkspaceRuntime(
     }
   }
 
-  const runtime = {
+  const runtime: EmbeddedRuntime = {
     ...createWorkspaceRuntimeApp(options(ws, configuredOpencodeRequest)),
     workspace: ws,
   }
   hosts.set(ws.id, runtime)
+  if (configuredOnSessionMetaEvent) {
+    // Ride the same battle-tested SSE client used for the legacy
+    // non-embedded `/global/event` bridge (`createOpencodeEvents`,
+    // `server.ts`) instead of duplicating SSE-parsing/reconnect logic — just
+    // pointed at THIS runtime's own in-process app (an ordinary in-memory
+    // `fetch`, never a real socket) instead of a real network URL.
+    const sessionEvents = createOpencodeEvents(async (req) => await runtime.app.fetch(req))
+    sessionEvents.on(configuredOnSessionMetaEvent)
+    runtime.sessionEvents = sessionEvents
+  }
   if (config === "sync") await configure(runtime)
   return runtime
 }
@@ -146,6 +186,6 @@ export async function syncEmbeddedWorkspaceRuntimeAgentExtensions(
 }
 
 export function shutdownEmbeddedWorkspaceRuntimes() {
-  for (const runtime of hosts.values()) runtime.host.dispose()
+  for (const runtime of hosts.values()) disposeRuntime(runtime)
   hosts.clear()
 }
