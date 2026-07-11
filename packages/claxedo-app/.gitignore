@@ -1,7 +1,8 @@
-# Build output
+# Build output (dist-desktop/dist-opencode were retired: neither is produced
+# by any script in this repo; see root .gitignore's dist-* wildcard for the
+# rest of the build-target family)
 dist/
 dist-demo/
-dist-desktop/
 
 # Dependencies (handled by root)
 node_modules/

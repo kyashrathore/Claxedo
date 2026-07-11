@@ -63,7 +63,6 @@ logs/
 # Claxedo development artifacts
 **/.dev-docs/
 packages/claxedo-app/dev-docs/
-packages/claxedo-app/dist-opencode/
 
 # Auto-generated schema (derived from code, regenerated on boot)
 .opencode/processes.schema.json

@@ -22,13 +22,15 @@ function requestUrl(input: RequestInfo | URL) {
 
 class FakeWebSocket {
   static urls: string[] = []
+  static connections: Array<{ url: string; protocols?: string | string[] }> = []
   url: string
   binaryType = ""
   readyState = 0
 
-  constructor(url: string | URL) {
+  constructor(url: string | URL, protocols?: string | string[]) {
     this.url = String(url)
     FakeWebSocket.urls.push(String(url))
+    FakeWebSocket.connections.push({ url: String(url), protocols })
   }
 
   close() {}
@@ -50,6 +52,12 @@ describe("sigwinchToggleSize", () => {
     const [firstB, secondB] = sigwinchToggleSize(1, 24)
     expect(firstB.cols).toBeGreaterThanOrEqual(2)
     expect(secondB.cols).toBeGreaterThanOrEqual(2)
+  })
+
+  test("rows pass through unchanged for both sizes regardless of column value", () => {
+    const [first, second] = sigwinchToggleSize(120, 50)
+    expect(first.rows).toBe(50)
+    expect(second.rows).toBe(50)
   })
 })
 
@@ -146,12 +154,62 @@ describe("existing exports still work", () => {
     expect(err.code).toBe(1006)
     expect(err.reason).toBe("abnormal")
     expect(err.name).toBe("WebSocketCloseError")
+    expect(err.message).toContain("1006")
     expect(err).toBeInstanceOf(Error)
+    expect(err).toBeInstanceOf(WebSocketCloseError)
   })
 
   test("socketCloseIsError returns true for non-1000 codes", () => {
     expect(socketCloseIsError(1006)).toBe(true)
     expect(socketCloseIsError(1000)).toBe(false)
+  })
+})
+
+describe("openTerminalWebSocket direct vs relay", () => {
+  test("opens a direct local PTY socket (no workspaceId) without going through Workspace Relay", async () => {
+    FakeWebSocket.connections = []
+
+    await openTerminalWebSocket({
+      serverUrl: "http://127.0.0.1:3001",
+      ptyId: "pty_1",
+      cursor: 7,
+      // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- test double implements only the API surface exercised by this test.
+      webSocket: FakeWebSocket as typeof WebSocket,
+    })
+
+    expect(FakeWebSocket.connections).toEqual([{
+      url: "ws://127.0.0.1:3001/api/wr/pty/pty_1/connect?cursor=7",
+      protocols: undefined,
+    }])
+  })
+
+  test("opens a cloud PTY socket through Workspace Relay with the Runtime Access Token as the WebSocket protocol", async () => {
+    FakeWebSocket.connections = []
+
+    await openTerminalWebSocket({
+      serverUrl: "http://server.test",
+      workspaceId: "ws_socket",
+      directory: "workspace:ws_socket",
+      ptyId: "pty_1",
+      cursor: 7,
+      // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- test double implements only the API surface exercised by this test.
+      webSocket: FakeWebSocket as typeof WebSocket,
+      request: (async () =>
+        Response.json({
+          access: "cloud",
+          backing: "cloud-vm",
+          workspaceId: "ws_socket",
+          role: "owner",
+          relayUrl: "https://relay.example.test",
+          runtimeAccessToken: "rat_1",
+          tokenExpiresAt: Date.now() + 120_000,
+        })) as typeof fetch,
+    })
+
+    expect(FakeWebSocket.connections).toEqual([{
+      url: "wss://relay.example.test/workspaces/ws_socket/api/wr/pty/pty_1/connect?cursor=7&workspaceId=ws_socket&directory=workspace%3Aws_socket",
+      protocols: ["claxedo-rat.rat_1"],
+    }])
   })
 })
 

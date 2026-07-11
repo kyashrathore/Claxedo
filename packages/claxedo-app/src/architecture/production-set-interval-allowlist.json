@@ -1,11 +1,5 @@
 [
   {
-    "file": "components/debug-bar.tsx",
-    "count": 1,
-    "owner": "dev perf HUD",
-    "reason": "Development-only performance sampler."
-  },
-  {
     "file": "claxedo-ui/context/process-pane.tsx",
     "count": 1,
     "owner": "process pane",

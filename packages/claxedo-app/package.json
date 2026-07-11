@@ -6,10 +6,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.tsx",
+    "./context": "./src/context/index.ts",
     "./extensions": "./src/extensions/index.ts",
     "./extensions/*": "./src/extensions/*.tsx",
     "./i18n": "./src/i18n/cloud-strings.ts",
-    "./utils": "./src/utils/index.ts",
     "./utils/*": "./src/utils/*.ts",
     "./components": "./src/components/index.ts",
     "./components/*": "./src/components/*.tsx",

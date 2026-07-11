@@ -31,8 +31,6 @@ export interface TerminalBackend {
   // I/O
   write(data: string, callback?: () => void): void
   onData(fn: (data: string) => void): Disposable
-  /** Terminal protocol responses (OSC queries, etc.) — bypasses input filters. */
-  onTerminalResponse(fn: (data: string) => void): Disposable
   onKey(fn: (e: { key: string }) => void): Disposable
   onResize(fn: (size: { cols: number; rows: number }) => void): Disposable
 

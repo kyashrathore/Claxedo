@@ -130,7 +130,7 @@ export {
   useConfig,
   useConfigOptional,
   type ConfigProviderProps,
-} from "./context"
+} from "./context/config"
 
 // Re-export overridden contexts (use these instead of @opencode-ai/app versions)
 export {

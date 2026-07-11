@@ -130,9 +130,9 @@ export function serverName(conn?: ServerConnection.Any, ignoreDisplayName = fals
   return conn.http.url.replace(/^https?:\/\//, "").replace(/\/+$/, "")
 }
 
-// Compatibility namespace matching upstream's typed server connections.
-// In our cloud/web app all connections are HTTP, but upstream components
-// import these types so we must export them.
+// Web app connections are HTTP; the desktop app (claxedo-desktop
+// src/renderer/index.tsx) additionally constructs a "sidecar" connection for
+// its embedded server, so the Sidecar variant is load-bearing cross-package.
 export namespace ServerConnection {
   type Base = { displayName?: string }
 
@@ -144,9 +144,8 @@ export namespace ServerConnection {
 
   export type Http = { type: "http"; http: HttpBase } & Base
   export type Sidecar = { type: "sidecar"; http: HttpBase } & ({ variant: "base" } | { variant: "wsl"; distro: string }) & Base
-  export type Ssh = { type: "ssh"; host: string; http: HttpBase } & Base
 
-  export type Any = Http | Sidecar | Ssh
+  export type Any = Http | Sidecar
 
   export const key = (conn: Any): Key => {
     switch (conn.type) {
@@ -155,8 +154,6 @@ export namespace ServerConnection {
       case "sidecar":
         // as-any: WSL sidecar distro is carried only on the variant-specific connection shape.
         return Key.make(conn.variant === "wsl" ? `wsl:${(conn as any).distro}` : "sidecar")
-      case "ssh":
-        return Key.make(`ssh:${conn.host}`)
     }
   }
 
