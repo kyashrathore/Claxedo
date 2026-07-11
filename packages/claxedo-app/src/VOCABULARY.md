@@ -27,21 +27,25 @@ given `workspace`/`workspaceId` identifier means from its file, not its name.
    others are renamed.
 3. **A `toolSandbox.kind` enum value**, distinguishing where a session's
    tools execute from `"local"`/`"virtual"`. `SandboxRef` in
-   `src/shell/identity/session-ref.ts:17` declares
+   `src/shell/identity/session-ref.ts:34` declares
    `{ kind: "workspace"; workspaceId: string; hosting: ...; hostId?: string }`;
-   `session-ref.ts:40,44,150` switch on this literal (`kind === "workspace"`)
-   and `session-ref.ts:79` constructs it. Do not confuse this with
-   `session-ref.ts:98,153`, which set the unrelated `SessionHost` field to
+   `session-ref.ts:57,61,167` switch on this literal (`kind === "workspace"`)
+   and `session-ref.ts:96` constructs it. Do not confuse this with
+   `session-ref.ts:93,115,170`, which set the unrelated `SessionHost` field to
    `host: "workspace"` — a different literal on the same type-adjacent
    object, not one of the five senses below, but a near-collision in the
    same file that is itself worth knowing about when reading this code.
 4. **A project's sub-worktree map.** `LocalProject` in
-   `src/context/layout.tsx:61` is `Partial<Project> & { worktree, expanded }`;
+   `src/context/layout.tsx:67` is `Partial<Project> & { worktree, expanded }`;
    the surrounding store additionally tracks per-project
    `sidebar.workspaces`/`workspacesDefault` UI-expansion state
-   (`src/context/layout.tsx:92-139,560-561`) and per-project sub-worktrees
-   via `p.sandboxes` (`src/context/layout.tsx:470`) — a project can have
-   multiple of these, each informally called a "workspace".
+   (declared `src/context/layout.tsx:98-145`, toggled via the
+   `workspaces`/`setWorkspaces`/`toggleWorkspaces` accessors at
+   `src/context/layout.tsx:528-537`) and per-project sub-worktrees via
+   `project.sandboxes` — a `string[]` on the server `Project` type read in
+   `src/context/layout-projects.ts:16,150` and `src/context/global-sync.tsx:143`
+   (Wave 2 extracted the project-list logic into `layout-projects.ts`) — a
+   project can have multiple of these, each informally called a "workspace".
 5. **A server the app connects to** (the target vocabulary's own aspirational
    sense — HLD §4: "workspace — a server the app connects to, identified by
    an opaque control-plane workspaceId. NEVER a directory path."). This sense
@@ -65,18 +69,20 @@ to rename) are sanctioned.
   relative to a session. Canonical: `src/shell/identity/session-ref.ts`.
 - **host** — where the agent process runs (`SessionHost = "central" |
   "workspace"`). **toolSandbox** — where that session's tools execute
-  (`local` / `virtual` / `workspace`, each with its own ref shape). Both
-  defined in `src/shell/identity/session-ref.ts:3,10-20`.
+  (`local` / `virtual` / `workspace`, each with its own ref shape).
+  `SessionHost` is defined at `src/shell/identity/session-ref.ts:3`; the
+  `SandboxRef`/`SessionRef` types (the `toolSandbox` field lives on the latter
+  at line 41) at `src/shell/identity/session-ref.ts:32-44`.
   `runnerHost` is the retired predecessor name; it survives in exactly one
   documented backward-compat fallback for old server responses in
-  `src/utils/session-url.ts:17-24` (`harnessHost` preferred, `runnerHost`
+  `src/utils/session-url.ts:15-19` (`harnessHost` preferred, `runnerHost`
   read only if `harnessHost` is absent). It must not appear anywhere else.
 - **directory** — a filesystem path scoping sessions/tools for one project
   worktree. UI/layout code that currently calls a directory path a
   "workspace(Id)" (sense 1 above) is migrating to `activeDirectory` /
   `directoryRef`.
 - **project** — the user-facing grouping shown in the rail. Canonical type:
-  `LocalProject` in `src/context/layout.tsx:61`. A second, differently-shaped
+  `LocalProject` in `src/context/layout.tsx:67`. A second, differently-shaped
   `LocalProject` type is independently declared in
   `src/claxedo-ui/components/dialog-edit-project.tsx:17` — this is a known
   duplicate-type bug (naming-vocab appendix, [high]), not a second legitimate
@@ -85,22 +91,34 @@ to rename) are sanctioned.
 ## Harness / runtime
 
 - **harness** — the agent runtime flavor (claude / codex / opencode / ...).
-  One kind-enum is the intended source of truth; today it is implemented
-  separately in at least `src/session-client/harness/`,
-  `src/claxedo-ui/context/harness-preferences.ts`, and
-  `src/shared/data/types.ts`'s `TransportCapabilities.transport` union — this
-  is known drift (LLD WP-B5 fixes it), not three sanctioned homes.
+  The single source of truth for the harness-kind set now exists:
+  `HARNESS_IDS` / `HarnessId` in `src/shell/identity/session-ref.ts:12-22`
+  (eight ids: `claude-acp`, `codex-acp`, `cursor-acp`, `claude-sdk`,
+  `codex-app-server`, `cursor-sdk`, `opencode`, `pi`). Both
+  `src/shell/harnesses/profile.ts`'s `HarnessKind` (`profile.ts:8`) and
+  `src/session-client/harness/profile.ts`'s `HarnessType` (`profile.ts:4`)
+  now derive from it via `= HarnessId`, so the type sets can no longer drift.
+  Residual drift to be aware of: `src/session-client/harness/profile.ts:15`
+  still hand-maintains a *runtime* duplicate of the id array (only the type is
+  derived), and `src/shared/data/types.ts:18`'s
+  `TransportCapabilities.transport` union is a separate transport-flavor list
+  (six values, no `cursor-sdk`/`pi`) — not a competing harness-kind home.
+  Note: `src/claxedo-ui/harness/harness-preferences.ts` (moved from
+  `claxedo-ui/context/` in Wave 2) is a per-harness *preference* store, not a
+  definition of the kind enum (`HarnessPreferenceKind` there is
+  `"harness" | "model" | "agent"`).
   `"runner"` is the retired predecessor term. It survives as the literal
   string `LEGACY_RUNNER_KEY = "claxedo:runner"` in
-  `src/claxedo-ui/context/harness-preferences.ts:8` (an explicit,
+  `src/claxedo-ui/harness/harness-preferences.ts:8` (an explicit,
   labeled localStorage-migration compat key) and in
   `src/session-client/harness/profile.test.ts`'s tests for that legacy-key
-  decode path. It must not appear as the live name for the concept anywhere
-  else — in particular, `src/components/prompt-input/submit.test.ts` still
-  names ~30 test cases with "runner" (e.g. `runnerSetCalls`,
-  `runnerSubmitModel` at lines 25, 105) even though the code under test is
-  the harness-named production path; those names are stale and should read
-  "harness", not "runner" (tracked in LLD WP-A8 / naming-vocab appendix).
+  decode path. WP-A8 has landed: `src/components/prompt-input/submit.test.ts`
+  no longer contains the word "runner" at all (the ~30 `runnerSetCalls`/
+  `runnerSubmitModel`-style test identifiers it once had are now
+  harness-named). A few sibling test files still use "runner" as descriptive
+  prose in test titles (e.g. `selector-visibility.test.ts`,
+  `submit-create-session.test.ts`); the term must not reappear as the live
+  name for the concept in production code or new identifiers.
 - **conversation** — the message timeline of a session. Canonical:
   `src/shell/chat/` (e.g. `opencode-conversation.ts`'s
   `applyOpencodeConversationEvent` / `opencodeConversationSnapshot`).
@@ -116,13 +134,13 @@ into one component name:
 - **tab** — a selectable content surface routed inside a pane
   (`src/claxedo-ui/components/page-editor/page-editor.tsx`, the PageEditor surface).
 - **panel** — a docked auxiliary surface, e.g. the workspace side-dock
-  (`src/claxedo-ui/workspace-panel/WorkspacePanel.tsx`).
+  (`src/claxedo-ui/workspace-panel/workspace-panel.tsx`).
 - **group** — reserved for session groups only (rail grouping), never a
   synonym for pane/panel.
-- Known violation: `src/claxedo-ui/workspace-panel/ProcessPanePanel.tsx`
+- Known violation: `src/claxedo-ui/workspace-panel/process-pane-panel.tsx`
   fuses "pane" and "panel" into one name even though its own doc comment
   opens with "Individual process panel within the workspace process side
-  panel" — it should be `ProcessPanel.tsx` (or `ProcessPanelRow.tsx`). Do
+  panel" — it should be `process-panel.tsx` (or `process-panel-row.tsx`). Do
   not copy this pattern in new code.
 
 ## "opencode" (lowercase)

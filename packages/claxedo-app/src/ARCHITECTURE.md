@@ -45,7 +45,7 @@ target state itself.
 Two confirmed cycles, verified live:
 
 - **`context/` ↔ `shell/`**: numerous files under `src/context/`
-  (`global-sync.tsx`, `local.tsx`, `layout.tsx`, `permission.tsx`,
+  (`global-sync.tsx`, `session-selection.tsx`, `layout.tsx`, `permission.tsx`,
   `global-sdk.tsx`, `sdk.tsx`, `command.tsx`, `terminal.tsx`,
   `claxedo-events.tsx`, `global-sdk-event-fetch.ts`, `use-providers.ts`, and
   files under `context/global-sync/`) import from `@/shell/...` (e.g.
@@ -143,7 +143,7 @@ Session config/state logic has no single obvious home yet; check `session/`
 and `session-client/` first (see those charters below) before adding to
 `shell/session/`.
 
-### `context/` (loose provider files + `file/`, `global-sync/`)
+### `context/` (loose provider files + `file/`, `global-sdk/`, `global-sync/`)
 SolidJS provider layer: the established home for every top-level app
 provider (`command.tsx`, `config.tsx`, `file.tsx`, `layout.tsx`,
 `notification.tsx`, `permission.tsx`, `server.tsx`, `terminal.tsx`,
@@ -151,8 +151,11 @@ provider (`command.tsx`, `config.tsx`, `file.tsx`, `layout.tsx`,
 context lives here, see VOCABULARY.md sense 5 of "workspace"). Imports from
 `shell/data/*` for query primitives (part of the cycle documented above).
 Wave 1.5 merged the former top-level `providers/` and `hooks/` directories
-into here (`claxedo-events.tsx`, `use-providers.ts`). **Add here:** a new
-SolidJS context/provider for app-wide state.
+into here (`claxedo-events.tsx`, `use-providers.ts`). Wave 2 renamed the old
+`local.tsx`/`command-upstream.tsx` providers to `session-selection.tsx`/
+`command-palette.tsx`, added the `global-sdk/` subdir (`event-coalescer`,
+`heartbeat-watchdog`, `reconnect-backoff`), and added `live-resource-cache.ts`.
+**Add here:** a new SolidJS context/provider for app-wide state.
 
 ### `session/` (`helpers.ts`, `session-layout.ts`, `store/`, `submit/`)
 Session store (`store/session-store.ts`, `store/session-controller.ts` — a
@@ -180,8 +183,10 @@ a production-bundled debug harness (`app.tsx` lazy-imports it at the
 that Wave 1.5 moved here from the deleted `src/e2e/` directory; despite the
 name it is application code, not a test fixture, so it stays in `pages/`.
 `pages/session/` holds the route-level composer/timeline/view-state split out
-of `session.tsx` (`message-timeline.tsx` is the largest file in the package's
-family of god files); Wave 1.5 moved its `session-layout.ts`/`helpers.ts` out
+of `session.tsx` (`message-timeline.tsx`, ~1700 lines, is the largest file
+under `pages/session/` and one of the package's remaining god files, though
+`claxedo-ui/rail/rail-sidebar.tsx` is larger still); Wave 1.5 moved its
+`session-layout.ts`/`helpers.ts` out
 to the top-level `session/` directory. **Add here:** a new top-level route.
 
 ### `terminal/` (core files + `backend/`, `integration/`, `link-parsing/`,
@@ -189,8 +194,11 @@ to the top-level `session/` directory. **Add here:** a new top-level route.
 The terminal core: resize/geometry/stream/buffer coordination, xterm backend
 (`backend/xterm.ts`), keyboard/capability handling. Exceptionally
 well-tested at the pure-module level (`resize-coordinator.test.ts`,
-`terminal-connection.test.ts`, etc.); `helpers.ts` (grandfathered) is the
-DOM-facing glue with no direct tests. Wave 1.5 added `integration/`, the home
+`terminal-connection.test.ts`, etc.). Wave 2 dissolved the old grandfathered
+`helpers.ts` DOM-facing glue into named `backend/` modules
+(`backend/renderer.ts`, `backend/keyboard.ts`, `backend/clipboard.ts`,
+`backend/resize-handlers.ts`), each now with its own colocated test. Wave 1.5
+added `integration/`, the home
 for the wider end-to-end terminal specs (`terminal-focus-switch.test.ts`,
 `terminal-lifecycle.test.ts`, the headless-emulator pipeline, etc.).
 **Add here:** terminal lifecycle, rendering, or protocol logic.
@@ -242,7 +250,7 @@ Genuinely well-tested per the audit (descriptive names, real edge cases:
 caps, dedup, persistence round-trips). **Add here:** browser-tab-specific
 UI or state.
 
-### `agent-runtime/` (6 files, was `runtime/`)
+### `agent-runtime/` (5 source modules + tests + `AGENTS.md`, was `runtime/`)
 Agent runtime client, session-routing placement table, and session
 projection: `agent-runtime-client.ts`, `placement-table.ts` (the pure,
 tested routing decision — which transport a session read/write goes to),
@@ -276,10 +284,12 @@ wiring only. Note: `extensions/server.test.ts` imports from `vitest` but
 keeps the `.test.ts` (bun:test-signaling) suffix — a known
 extension/runner-naming mismatch per the org-review appendix, not yet fixed.
 
-### `marketplace/` (`panel.tsx`, `cards.tsx`, `filters.tsx`, `install-flow.ts`)
+### `marketplace/` (`panel.tsx`, `cards.tsx`, `filters.tsx`, `install-flow.ts`,
+`confirm-dialog.tsx`, plus `AGENTS.md`)
 The MCP/extension marketplace panel UI. Wave 1.5 split the former
 single-god-file `marketplace-panel.tsx` into `panel.tsx` (the shell),
-`cards.tsx`, `filters.tsx`, and the `install-flow.ts` logic module.
+`cards.tsx`, `filters.tsx`, and the `install-flow.ts` logic module; Wave 2
+carved out the `confirm-dialog.tsx` install-confirmation surface.
 **Add here:** marketplace-panel features, continuing the pattern of extracting
 pure logic into a sibling module rather than regrowing `panel.tsx`.
 

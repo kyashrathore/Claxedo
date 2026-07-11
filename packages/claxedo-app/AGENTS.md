@@ -100,3 +100,9 @@ Start here before making a nontrivial change in this package:
   in CONTRIBUTING.md, not in a standalone README).
 - `CONTRIBUTING.md` — the tests-as-specs merge bar, bun:test vs vitest
   runner convention, test-location/colocation standard, and PR checklist.
+- Per-directory `AGENTS.md` notes — several source directories carry their
+  own scoped `AGENTS.md` with local rules (`src/architecture/`,
+  `src/agent-runtime/`, `src/browser/`, `src/cloud/`, `src/demo/`,
+  `src/extensions/`, `src/marketplace/`, `src/pane/`, `src/process/`, and
+  `src/shell/{auth,data,identity,layout}/`). Read the one covering the
+  directory you are editing before changing files there.

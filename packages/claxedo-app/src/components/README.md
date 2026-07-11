@@ -3,8 +3,9 @@
 Two directories are both literally named "components" (`src/components/`,
 loose top-level files plus the `dialogs/`, `prompt-input/`, `session/`,
 `settings/`, and `titlebar/` subdirectories; and `src/claxedo-ui/components/`,
-top-level files plus the `dialogs/`, `page-editor/`, and `review-workspace/`
-subdirectories) with no charter distinguishing them anywhere in the codebase
+top-level files plus the `dialogs/`, `page-editor/`, `process-diagnostics/`,
+and `review-workspace/` subdirectories) with no charter distinguishing them
+anywhere in the codebase
 before this document — a first-time contributor asking "where do I add a UI
 component" gets two equally plausible, cross-wired answers. This file is that
 charter. (Both directories were folderized in Wave 1.5: `src/components/`'s
