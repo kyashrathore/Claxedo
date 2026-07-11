@@ -113,6 +113,16 @@ d. Leader gate (Fable, personally — never delegated): I1–I6 as applicable, p
 
 ## Operating rules
 
+- **Discovered-bug rule (user directive, 2026-07-11):** bugs discovered during any wave
+  do not get waved past. Disposition, in preference order: (1) fix in-wave when small and
+  inside the discovering WP's ownership (with a test written first); (2) fix via a
+  leader-dispatched fix-up worker when cross-cutting but cheap; (3) otherwise PIN it —
+  a colocated `test.fixme`/`test.todo` unit/vitest test in src (never silently in e2e/**,
+  which the live e2e session owns) that reproduces the bug, cites file:line of the
+  suspected cause, and names the owning WP — plus a row appended to
+  `2026-07-11-002-fixme-ledger-wp-reconciliation.md`. A pinned bug is closed only by
+  flipping its test green. Out-of-scope-package bugs additionally get a task chip.
+
 - Workers are **Sonnet** (`model: 'sonnet'` in every Workflow agent call) or **Codex CLI
   background workers** (below); the leader stays Fable and never delegates gate
   verification.
@@ -173,4 +183,6 @@ codex exec \
 |---|---|---|---|
 | 2026-07-11 | Wave −1 | E2e suite + 10 app bug-fixes landed by user in one commit (`6d4a661e8e`) together with connection-scoping/usage-limits/web work; separation analysis preserved in `2026-07-11-001-wave-minus1-commit-plan.md`. Fixme-ledger↔audit reconciliation NOT yet done — carry into Wave 0/1 prep. | DONE (single-commit variant) |
 | 2026-07-11 | Wave −1 carry-over: fixme↔audit reconciliation | Done: `2026-07-11-002-fixme-ledger-wp-reconciliation.md` — 56 fixmes mapped (≈24 real bugs), per-WP evidence channels named; LLD ownership patched (app/main/index.tsx→WP-B8, shared/query/session-list.ts→WP-A7); out-of-scope orphans (agent-event-runtime projection, claxedo-mcp, session-ui renderers) spun off as separate-session chips. | DONE |
+| 2026-07-11 | Wave 0 | Commits `2bed5a9796`(WP-01) `b835735740`(WP-02) `57c13ba54b`(WP-03a) `a27a9bc3bd`(theme-token fix) `e76ec13f0c`(leader docs). Gate run personally: architecture suite 87P/6F (the 6 = pre-existing e2e-session-owned), tsgo -b clean, lint:theme-tokens green (after popover token fix), test:performance 23P, mock-api fixture 14P. Docs truthfulness: 3 reviewers (14 findings) + 2 fix-up workers + leader spot-checks (37-entry count, 29-cycle baseline, bootstrap.ts writer lines, 5 workspace senses — all verified by hand). I3 e2e skipped: Wave 0 changed no runtime code (docs+guards+fixture only) and e2e session held the Playwright slots. Deferred, documented in LLD: WP-02 step 3 renames, WP-03b mobile+axe (gate item transfers to WP-03b dispatch). | DONE |
+| 2026-07-11 | Wave 1 | Commits `0364e0bd01`(A1) `18307e31c9`(A2) `66de34c2b4`(A3) `f101eb8ee6`(A4) `05ac903a47`(A5) `5fca64a28b`(A6) `8917ee5505`(A7) `8ec29dcdc7`(A8) `4390e5614d`(baselines). 8 workers + 3 adversarial reviewers (14 findings) + 2 fix-up workers + leader fixes. Gate: full `bun run typecheck` GREEN (architecture 93P/0F — first fully-green state; incl. reconciled debt pins, grandfathered composer/usage-limits writers, process-pane ceiling 1042); route-audit exactly at pre-wave baseline 137P/7F (one stale alias-era string-pin rewritten); I3 per-spec: core-terminal 10P/2fixme, core-sidebar-tree 13P/7fixme (both = pinned baselines); I4: desktop tsgo+79 unit+3 contract green + Electron boot screenshot leader-viewed — CAUGHT that ServerConnection.Sidecar + context barrel were live in desktop (A1 partially reverted; ./context now a declared export; ./utils stale export dropped); I5: perf harness fails IDENTICALLY at pre-wave commit (A/B in isolated worktree; p95 81.5→73.7 post-wave) ⇒ pre-existing environmental+flow breakage, chip filed, no wave regression. NOTE for e2e session: A7 fixed mergeSessionListResponses — fixme core-sidebar-tree:671 is ready to flip. zh-TW→Simplified pinned, product decision pending. | DONE |
 | 2026-07-11 | I3 basis (e2e suite) | Tier-M: 21/21 specs green+visually verified as of 01:40 (each verified individually; e.g. settings-auth 34P/6fixme, processes 18P/3fixme, panes 13P/6fixme, terminal 10P/2fixme, cloud-offline-roles 8P/1fixme). ~25 real app bugs pinned as source-cited `test.fixme`s = ready-made WP evidence. IN FLIGHT by the e2e session (separate thread; owns `e2e/**`, helpers, perf-harness, workflows/test.yml — treat as foreign territory): shared-mock broadcast-bus upgrade + ownership-cloud fixme flips; ONE full-suite serialized baseline run; follow-up commit incl. debt-ratchet baseline bump (current commit is test:architecture-red on 7 counts from B1+usage-limits — known, owned); Tier-L live specs + CI wiring. Until the baseline lands, wave gates should run per-spec e2e (green individually) rather than the full suite. | Tier-M READY; baseline+CI pending |

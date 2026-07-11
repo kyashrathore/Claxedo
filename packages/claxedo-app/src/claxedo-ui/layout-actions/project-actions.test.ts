@@ -4,7 +4,7 @@ import { shellDataKeys } from "../../shell/data/keys"
 import { directorySessionCacheQueryOptions, setSessionStatusQueryData } from "../../shell/data/queries"
 import { workspaceSessionRoute } from "../../shell/identity/route"
 import type { ClaxedoEvent } from "../../providers/claxedo-events"
-import type { ProjectItem, WorkspaceItem } from "../layouts/rail-sidebar"
+import type { ProjectItem, WorkspaceItem } from "../rail/rail-sidebar"
 import type { ProjectActionProps } from "./project-actions"
 
 let createProjectActions: typeof import("./project-actions").createProjectActions

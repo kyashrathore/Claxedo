@@ -216,96 +216,102 @@ const faq = [
     <section class="section section--ruled">
       <div class="section-head">
         <span class="section-tag">// the architecture</span>
-        <h2 class="section-title">Traced from the source — drag to pan, scroll to zoom.</h2>
+        <h2 class="section-title">Local, cloud, or split. Pick per session.</h2>
         <p class="section-lead">
-          Two transports, chosen per session. <strong>Local</strong> talks to the runtime
-          directly — no relay. <strong>Hosted</strong> resolves a token from the control
-          plane once, then the client talks to the relay directly. Events stream back
-          through the translation layer.
+          <strong>Local</strong> talks to the runtime directly over loopback — no relay,
+          no token. <strong>Cloud</strong> resolves a token from your control plane once,
+          then talks to the relay directly; loop and tools both run in the sandbox VM.
+          <strong>Split</strong> keeps the loop on the control plane while the tools
+          execute in the sandbox VM — brain central, hands next to the code. Flip the
+          modes — the wires show who talks to whom.
         </p>
       </div>
 
-      <div class="canvas" id="arch-canvas">
-        <div class="canvas-toolbar">
-          <button class="canvas-btn" data-act="in" aria-label="Zoom in">+</button>
-          <button class="canvas-btn" data-act="out" aria-label="Zoom out">&#8722;</button>
-          <button class="canvas-btn" data-act="reset" aria-label="Reset view">&#10227;</button>
-          <button class="canvas-btn" data-act="fs" aria-label="Fullscreen">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M16 21h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-          </button>
+      <figure class="flow is-local" id="arch-flow" data-mode="local">
+        <div class="flow-tabs" role="tablist" aria-label="Session placement">
+          <button class="flow-tab" role="tab" data-mode="local" aria-selected="true">Local</button>
+          <button class="flow-tab" role="tab" data-mode="cloud" aria-selected="false" tabindex="-1">Cloud</button>
+          <button class="flow-tab" role="tab" data-mode="split" aria-selected="false" tabindex="-1">Split</button>
         </div>
-        <div class="canvas-hint">drag to pan · scroll to zoom</div>
 
-        <svg class="canvas-svg" viewBox="0 0 1440 660" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Grounded Claxedo architecture diagram.">
-          <defs>
-            <marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"></path></marker>
-            <marker id="ahr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead-ret" d="M0,0 L10,5 L0,10 z"></path></marker>
-          </defs>
+        <div class="diagram-wrap">
+          <svg class="flow-svg diagram-svg" viewBox="0 0 1080 440" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Claxedo placement diagram: where the agent loop and its tools run in local, cloud, and split modes.">
+            <defs>
+              <marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"></path></marker>
+              <marker id="ahr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead-ret" d="M0,0 L10,5 L0,10 z"></path></marker>
+            </defs>
 
-          <g class="diagram-svg diagram-svg-inner" id="viewport">
             <!-- host group -->
-            <rect class="grp" x="620" y="64" width="790" height="540"></rect>
-            <text class="grp-lbl" x="638" y="88">HOST — your machine · cloud VM · or a teammate's laptop</text>
+            <g class="nd m-local m-cloud m-split">
+              <rect class="grp" x="650" y="36" width="402" height="372"></rect>
+              <text class="grp-lbl only-local" x="666" y="60">HOST — your laptop</text>
+              <text class="grp-lbl only-cloud" x="666" y="60">HOST — sandbox VM · a teammate's laptop</text>
+              <text class="grp-lbl only-split" x="666" y="60">HOST — sandbox VM · tools only</text>
+            </g>
 
             <!-- nodes -->
-            <g><rect class="box" x="40" y="292" width="190" height="96"></rect><text class="ttl" x="56" y="334">Claxedo app</text><text class="role" x="56" y="354">your client</text></g>
-            <g><rect class="box" x="330" y="108" width="220" height="84"></rect><text class="ttl" x="346" y="142">Control plane</text><text class="role" x="346" y="162">resolve · auth · mint RAT</text></g>
-            <g><rect class="box" x="330" y="300" width="220" height="84"></rect><text class="ttl" x="346" y="334">workspace-relay</text><text class="role" x="346" y="354">hosted only · verify RAT</text></g>
+            <g class="nd m-local m-cloud m-split"><rect class="box" x="28" y="180" width="200" height="92"></rect><text class="ttl" x="44" y="220">Claxedo app</text><text class="role" x="44" y="242">desktop · web · phone</text></g>
+            <g class="nd m-cloud m-split"><rect class="box" x="330" y="56" width="236" height="88"></rect><text class="ttl" x="346" y="94">control plane</text><text class="role" x="346" y="116">claxedo-server · mints tokens</text></g>
+            <g class="nd m-cloud m-split"><rect class="box" x="330" y="272" width="236" height="88"></rect><text class="ttl" x="346" y="310">workspace-relay</text><text class="role" x="346" y="332">verifies · forwards</text></g>
 
-            <g><rect class="box" x="650" y="120" width="210" height="84"></rect><text class="ttl" x="666" y="154">workspace-runtime</text><text class="role" x="666" y="174">HTTP/WS · sessions</text></g>
-            <g><rect class="box-key" x="900" y="120" width="200" height="84"></rect><text class="ttl" x="916" y="154">agent loop</text><text class="role" x="916" y="174">turn driver · AgentAdapter</text></g>
-            <g><rect class="box" x="1150" y="120" width="240" height="84"></rect><text class="ttl" x="1166" y="154">runner adapters</text><text class="role" x="1166" y="174">ACP · Native · OpenCode · Pi</text></g>
-            <g><rect class="box" x="650" y="252" width="210" height="84"></rect><text class="ttl" x="666" y="286">agent-extensions</text><text class="role" x="666" y="306">skills · plugins · MCP</text></g>
-            <g><rect class="box" x="1150" y="252" width="240" height="84"></rect><text class="ttl" x="1166" y="286">model / provider</text><text class="role" x="1166" y="306">query() or spawn</text></g>
-            <g><rect class="box-key" x="650" y="470" width="740" height="96"></rect><text class="ttl" x="666" y="508">agent-event-runtime — event translation</text><text class="role" x="666" y="530">vendor frames → AgentRuntimeEvent → OpenCode-compat</text></g>
+            <g class="nd m-local m-cloud m-split"><rect class="box" x="686" y="84" width="330" height="76"></rect><text class="ttl" x="702" y="116">workspace-runtime</text><text class="role" x="702" y="138">sessions · files · git · PTY</text></g>
+            <g class="nd m-local m-cloud"><rect class="box-key" x="686" y="196" width="330" height="76"></rect><text class="ttl" x="702" y="228">agent loop + harness</text><text class="role" x="702" y="250">Claude Code · Codex · ACP · pi</text></g>
+            <g class="nd m-local m-cloud m-split"><rect class="box" x="686" y="308" width="330" height="68"></rect><text class="ttl" x="702" y="338">agent-event-runtime</text><text class="role" x="702" y="358">vendor frames → one contract</text></g>
 
-            <!-- forward edges -->
-            <line class="wire-dashed" x1="230" y1="316" x2="330" y2="156" marker-end="url(#ah)"></line>
-            <g><rect class="clbl-bg" x="236" y="206" width="120" height="15"></rect><text class="clbl" x="296" y="217" text-anchor="middle">① resolve relayUrl + RAT</text></g>
+            <!-- internal wires -->
+            <g class="fw m-local m-cloud">
+              <line class="wire" x1="851" y1="160" x2="851" y2="194" marker-end="url(#ah)"></line>
+              <line class="wire" x1="851" y1="272" x2="851" y2="306" marker-end="url(#ah)"></line>
+            </g>
 
-            <line class="wire-accent" x1="230" y1="346" x2="330" y2="332" marker-end="url(#ah)"></line>
-            <g><rect class="clbl-bg" x="234" y="356" width="118" height="15"></rect><text class="clbl" x="293" y="367" text-anchor="middle">② data · Bearer RAT (direct)</text></g>
+            <!-- LOCAL: loopback -->
+            <g class="fw m-local">
+              <path class="wire-hot draw" pathLength="1" d="M 228,206 C 340,160 540,130 682,120" marker-end="url(#ah)"></path>
+              <text class="lbl" x="356" y="162">loopback — no relay, no token</text>
+            </g>
 
-            <line class="wire-dotted" x1="230" y1="334" x2="648" y2="168" marker-end="url(#ah)"></line>
-            <g><rect class="clbl-bg" x="372" y="232" width="146" height="15"></rect><text class="clbl" x="445" y="243" text-anchor="middle">local · loopback (no relay)</text></g>
+            <!-- CLOUD: resolve, bearer, forward — loop + tools in the VM -->
+            <g class="fw m-cloud">
+              <path class="wire-dashed" d="M 228,196 C 268,162 296,134 326,110" marker-end="url(#ah)"></path>
+              <text class="lbl" x="118" y="158">① resolve relayUrl + token</text>
+            </g>
+            <g class="fw m-cloud">
+              <path class="wire-hot draw" pathLength="1" d="M 228,248 C 268,278 296,296 326,308" marker-end="url(#ah)"></path>
+              <text class="lbl" x="236" y="264">② Bearer token — direct</text>
+            </g>
+            <g class="fw m-cloud">
+              <path class="wire-hot draw" pathLength="1" d="M 566,300 C 616,272 640,190 682,136" marker-end="url(#ah)"></path>
+              <text class="lbl" x="556" y="186">③ forward — VM or reverse tunnel</text>
+            </g>
 
-            <line class="wire-dashed" x1="440" y1="300" x2="440" y2="194" marker-end="url(#ah)"></line>
-            <g><rect class="clbl-bg" x="452" y="240" width="58" height="15"></rect><text class="clbl" x="481" y="251" text-anchor="middle">verify RAT</text></g>
+            <!-- SPLIT: loop central, tools in the VM -->
+            <g class="fw m-split">
+              <path class="wire-hot draw" pathLength="1" d="M 228,204 C 268,168 296,138 326,112" marker-end="url(#ah)"></path>
+              <text class="lbl" x="336" y="176">the loop runs here — pi</text>
+            </g>
+            <g class="fw m-split">
+              <path class="wire-hot draw" pathLength="1" d="M 448,144 L 448,268" marker-end="url(#ah)"></path>
+              <text class="lbl" x="462" y="212">drives the tools</text>
+            </g>
+            <g class="fw m-split">
+              <path class="wire-hot draw" pathLength="1" d="M 566,300 C 616,272 640,190 682,136" marker-end="url(#ah)"></path>
+              <text class="lbl" x="556" y="173">into the sandbox VM</text>
+            </g>
 
-            <line class="wire-accent" x1="550" y1="330" x2="648" y2="178" marker-end="url(#ah)"></line>
-            <g><rect class="clbl-bg" x="556" y="248" width="120" height="15"></rect><text class="clbl" x="616" y="259" text-anchor="middle">forward · VM / laptop</text></g>
+            <!-- RETURN -->
+            <g class="fw m-local m-cloud m-split">
+              <path class="wire-ret" d="M 682,342 C 440,352 240,330 134,278" marker-end="url(#ahr)"></path>
+              <text class="lbl" x="330" y="386">events back — translated to one contract (SSE)</text>
+            </g>
+          </svg>
+        </div>
 
-            <line class="wire" x1="860" y1="162" x2="898" y2="162" marker-end="url(#ah)"></line>
-            <g><rect class="clbl-bg" x="858" y="120" width="44" height="15"></rect><text class="clbl" x="880" y="131" text-anchor="middle">runs</text></g>
-
-            <line class="wire" x1="1100" y1="162" x2="1148" y2="162" marker-end="url(#ah)"></line>
-            <g><rect class="clbl-bg" x="1098" y="120" width="68" height="15"></rect><text class="clbl" x="1132" y="131" text-anchor="middle">sendMessage</text></g>
-
-            <line class="wire" x1="1270" y1="204" x2="1270" y2="250" marker-end="url(#ah)"></line>
-            <g><rect class="clbl-bg" x="1286" y="220" width="86" height="15"></rect><text class="clbl" x="1329" y="231" text-anchor="middle">query · spawn</text></g>
-
-            <line class="wire" x1="810" y1="252" x2="950" y2="206" marker-end="url(#ah)"></line>
-            <g><rect class="clbl-bg" x="846" y="224" width="74" height="15"></rect><text class="clbl" x="883" y="235" text-anchor="middle">feed the loop</text></g>
-
-            <!-- return edges -->
-            <polyline class="wire-ret" points="1390,200 1404,200 1404,500 1392,500" marker-end="url(#ahr)"></polyline>
-            <g><rect class="clbl-bg" x="1330" y="214" width="86" height="15"></rect><text class="clbl" x="1373" y="225" text-anchor="middle">vendor frames →</text></g>
-
-            <polyline class="wire-ret" points="648,518 300,518 135,518 135,390" marker-end="url(#ahr)"></polyline>
-            <g><rect class="clbl-bg" x="300" y="510" width="330" height="15"></rect><text class="clbl" x="465" y="521" text-anchor="middle">AgentRuntimeEvent → OpenCode-compat → client (SSE)</text></g>
-
-            <!-- central footnote -->
-            <text class="clbl" x="40" y="600">host: central → the loop runs on the control plane (PiAdapter) — no workspace backing.</text>
-          </g>
-        </svg>
-      </div>
-
-      <div class="canvas-legend">
-        <span class="lg"><svg viewBox="0 0 28 8"><line x1="1" y1="4" x2="27" y2="4" class="wire-accent"></line></svg> hosted data path</span>
-        <span class="lg"><svg viewBox="0 0 28 8"><line x1="1" y1="4" x2="27" y2="4" class="wire-dotted"></line></svg> local (loopback)</span>
-        <span class="lg"><svg viewBox="0 0 28 8"><line x1="1" y1="4" x2="27" y2="4" class="wire-dashed"></line></svg> resolve / verify</span>
-        <span class="lg"><svg viewBox="0 0 28 8"><line x1="1" y1="4" x2="27" y2="4" class="wire-ret"></line></svg> events back (translated)</span>
-      </div>
+        <figcaption class="flow-cap">
+          <p class="flow-note" data-for="local">One hop. The client calls <code>workspace-runtime</code> on your machine over loopback — the relay and control plane aren't in the path at all.</p>
+          <p class="flow-note" data-for="cloud">Three hops, one of them once: resolve a workspace-scoped token from your control plane, then talk to the relay directly. The relay forwards to the sandbox VM — or down the reverse tunnel a laptop opened outbound. Loop and tools both live in the host.</p>
+          <p class="flow-note" data-for="split">Brain central, hands in the VM. The loop runs on the control plane (pi) and drives tools in the sandbox VM through the relay — same session, no laptop required, and the hands are swappable without touching the loop.</p>
+        </figcaption>
+      </figure>
     </section>
 
     <section class="section section--ruled">
@@ -453,85 +459,30 @@ const faq = [
 </Layout>
 
 <script>
-  const canvas = document.getElementById("arch-canvas")
-  const svg = canvas?.querySelector<SVGSVGElement>(".canvas-svg")
-  const vp = canvas?.querySelector<SVGGElement>("#viewport")
+  const flow = document.getElementById("arch-flow")
+  const tabs = Array.from(flow?.querySelectorAll<HTMLButtonElement>(".flow-tab") ?? [])
 
-  if (canvas && svg && vp) {
-    let scale = 1
-    let tx = 0
-    let ty = 0
-
-    const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
-    const apply = () => vp.setAttribute("transform", `translate(${tx} ${ty}) scale(${scale})`)
-
-    const toRoot = (clientX: number, clientY: number) => {
-      const ctm = svg.getScreenCTM()
-      if (!ctm) return { x: 0, y: 0 }
-      const pt = svg.createSVGPoint()
-      pt.x = clientX
-      pt.y = clientY
-      const p = pt.matrixTransform(ctm.inverse())
-      return { x: p.x, y: p.y }
+  if (flow && tabs.length) {
+    const select = (tab: HTMLButtonElement, focus = false) => {
+      flow.dataset.mode = tab.dataset.mode
+      flow.classList.remove("is-local", "is-cloud", "is-split")
+      flow.classList.add(`is-${tab.dataset.mode}`)
+      tabs.forEach((t) => {
+        const active = t === tab
+        t.setAttribute("aria-selected", String(active))
+        t.tabIndex = active ? 0 : -1
+      })
+      if (focus) tab.focus()
     }
 
-    const zoomAt = (clientX: number, clientY: number, factor: number) => {
-      const next = clamp(scale * factor, 0.4, 4)
-      const f = next / scale
-      const p = toRoot(clientX, clientY)
-      tx = p.x - f * (p.x - tx)
-      ty = p.y - f * (p.y - ty)
-      scale = next
-      apply()
-    }
-
-    svg.addEventListener("wheel", (e) => {
-      e.preventDefault()
-      zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12)
-    }, { passive: false })
-
-    let dragging = false
-    let lastX = 0
-    let lastY = 0
-    canvas.addEventListener("pointerdown", (e) => {
-      if ((e.target as HTMLElement).closest(".canvas-btn")) return
-      dragging = true
-      lastX = e.clientX
-      lastY = e.clientY
-      canvas.setPointerCapture(e.pointerId)
+    tabs.forEach((tab, i) => {
+      tab.addEventListener("click", () => select(tab))
+      tab.addEventListener("keydown", (e) => {
+        const dir = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0
+        if (!dir) return
+        e.preventDefault()
+        select(tabs[(i + dir + tabs.length) % tabs.length], true)
+      })
     })
-    canvas.addEventListener("pointermove", (e) => {
-      if (!dragging) return
-      const ctm = svg.getScreenCTM()
-      const k = ctm ? ctm.a : 1
-      tx += (e.clientX - lastX) / k
-      ty += (e.clientY - lastY) / k
-      lastX = e.clientX
-      lastY = e.clientY
-      apply()
-    })
-    const stop = () => { dragging = false }
-    canvas.addEventListener("pointerup", stop)
-    canvas.addEventListener("pointercancel", stop)
-    canvas.addEventListener("pointerleave", stop)
-
-    // toolbar buttons (zoom about canvas center)
-    canvas.querySelectorAll<HTMLButtonElement>(".canvas-btn").forEach((btn) => {
-      btn.onclick = () => {
-        const r = svg.getBoundingClientRect()
-        const cx = r.left + r.width / 2
-        const cy = r.top + r.height / 2
-        const act = btn.dataset.act
-        if (act === "in") zoomAt(cx, cy, 1.2)
-        else if (act === "out") zoomAt(cx, cy, 1 / 1.2)
-        else if (act === "reset") { scale = 1; tx = 0; ty = 0; apply() }
-        else if (act === "fs") {
-          if (document.fullscreenElement) document.exitFullscreen()
-          else canvas.requestFullscreen?.()
-        }
-      }
-    })
-
-    apply()
   }
 </script>

@@ -1,7 +1,7 @@
 ---
 title: "feat: self-host = hosted parity + full channel→pi→PR loop"
 type: feature
-status: retained active test plan (re-grounded 2026-07-09; keep for self-host/channel loop testing)
+status: retained active test plan (re-grounded 2026-07-09; PROOF-TIERS CORRECTED 2026-07-08 after adversarial review — earlier "DONE/✓/landed" markers overstated). Headline honest truth: NO real credentialed model turn has ever completed on the deployed box; the acceptance loop is UNPROVEN; the only real-cred model turn (codex) was laptop-only; the deploy/CLI/channel surface has ZERO automated tests. See "Proof-tier status" below.
 date: 2026-07-07
 related: acceptance rubric lives in this document
 ---
@@ -53,6 +53,47 @@ What already shipped before this plan: container deploy, SQLite
 WorkspaceAuthority (unsigned default), `claxedo deploy` CLI, and de-hardcoded
 origins. Live test deployment context was `claxedo-selfhost-test.fly.dev`. That
 was the **skeleton**; this plan makes it the product.
+
+## Proof-tier status (corrected 2026-07-08 — the honest ledger)
+
+The `[x]` / "DONE" markers throughout were overstating. "Done" repeatedly meant
+*local*, *mock*, *echo*, or *unit-stub* — NOT *real credential on the deployed
+box*. Each item is re-tagged with WHAT ACTUALLY PROVED IT. Legend:
+
+- **[BOX]** — verified on the deployed Fly box with real creds/live services.
+- **[LOCAL-REAL]** — real creds + live service, but LAPTOP-ONLY (not the box).
+- **[BOX-PLUMBING]** — ran on the box but with echo/mock/no-creds; proves wiring,
+  NOT a real model turn.
+- **[MOCK]** — tested against a fake substitute (temp-dir "sandbox", unit stub),
+  not the real service.
+- **[CODE]** — code written; NO automated test AND not live-verified.
+- **[UNIT]** — has passing unit tests, but no live/end-to-end proof.
+
+| Item | Tier | What actually proved it (and what did NOT) |
+| --- | --- | --- |
+| B1 engine dep (`@lydell/node-pty`) | **[BOX]** | node-pty load error gone from the box's logs. |
+| B3 engine OOM | **[BOX]** | machine was 2GB (not 4GB); scaled → /provider 200 on box. Isolation guard itself = [CODE]. |
+| B2 channels state adapter | **[BOX-PLUMBING]** | Telegram round-trip reached the box + created a session, but the reply was the ECHO FALLBACK (no model creds). NO real model reply on the box. Native-streaming fix = [CODE], echo-path only. |
+| W1 embedded auth | **[UNIT]** | 7/7 backend tests. NO login UI exists → no real login flow ever exercised end-to-end. |
+| W2 serve UI | **[BOX] deploy / [LOCAL] function** | bundle deployed to the box; functional check was LOCAL, and auth was OFF in that build. |
+| W3 pi-on-codex | **[LOCAL-REAL]** | real ChatGPT-sub model turn (gpt-5.5) + tool exec — on the LAPTOP. The box has never run it (waits on creds sync). |
+| W3b creds-sync CLI | **[CODE]** | built, zero tests, owner must run it; never executed. |
+| W4 extensions→sandbox | **[MOCK]** | red/green test against a TEMP-DIR sandbox. Live Daytona proof pending. |
+| W5 spawn_session + placement | **[CODE]** | dispatch/placement code; GitHub PR loop absent; no live run. |
+| Demo C fanout | **[UNIT]** | a unit test resolves two creds together; NO live two-sandbox run. |
+| `claxedo deploy` templates | **[BOX] Fly only** | 1 template (Fly). Railway/Render = disabled placeholders, no files; CF/Vercel disabled. |
+
+**Test coverage reality:** `claxedo deploy`, `claxedo creds`, channels-control-plane,
+and the B2 state adapter have **ZERO** automated tests — the entire deploy/CLI/
+channel surface is manual, one-box, one-time verification. Only embedded-auth (2)
+and central-session-runtime (2) have unit tests (they run in CI via
+`turbo test:ci`). There is NO test for "fresh clone → deploy → working instance",
+the auth tiers, or the channel loop end-to-end.
+
+**The single honest headline:** NO real credentialed model turn has ever
+completed on the deployed box. The one real-cred success (codex) was laptop-only.
+Until the owner-run creds sync lands, every green channel/loop claim is
+echo/mock/local.
 
 ## Acceptance scenario (owner's words, verbatim — the whole system under test)
 
@@ -148,6 +189,9 @@ exports at a GITIGNORED dist — the Dockerfile now builds them in-image and the
 context excludes their dist, so a fresh clone doesn't ship a stale local dist.
 
 ### B2. Chat-SDK channels crash on first webhook — NO StateAdapter passed
+**[BOX-PLUMBING] — the crash fix is real and the Telegram round-trip reached the
+box, but the reply was the ECHO FALLBACK (no model creds). NO real model reply
+has happened on the box.**
 `createChatSdkBot` (chat-sdk-adapters.ts:56-60) only sets `state` if truthy;
 none is ever passed. The `chat` SDK's first webhook calls
 `this._stateAdapter.connect()` → `Cannot read properties of undefined (reading
@@ -216,7 +260,8 @@ specific. Suspicious on a FRESH boot with no sessions — may be a runaway
 ## Workstreams
 
 ### W1 — Embedded auth (the reframe's core): signed mode without Convex/Clerk
-**LANDED 2026-07-07 (commit 4a29685acf)** — better-auth@1.6.23 embedded:
+**[UNIT] — backend landed 2026-07-07 (commit 4a29685acf), 7/7 tests; NO login UI
+so no real login flow ever exercised end-to-end** — better-auth@1.6.23 embedded:
 - [x] `embedded-auth.ts`: email+password + bearer() plugin; users/sessions in
       `<dataDir>/embedded-auth.sqlite` (better-sqlite3; in-process migrations
       via better-auth getMigrations — no CLI step). Fetch handler mounted at
@@ -349,6 +394,8 @@ independent env-gated add-ons hanging off the auth-config endpoint.
       real subjects need no schema change.
 
 ### W2 — UI parity: serve the web app from the box
+**[BOX] deploy / [LOCAL] function — the bundle was deployed to the box, but the
+functional check was LOCAL and auth was OFF in that build.**
 - [x] INVESTIGATION DONE (parity scout, 2026-07-07): claxedo-server serves NO
       static files (no serveStatic anywhere; API-only). claxedo-app plain-web
       build = `vite build --config vite.cloud.config.ts` → `dist/`
@@ -370,6 +417,8 @@ independent env-gated add-ons hanging off the auth-config endpoint.
       implementation rides W1.
 
 ### W3 — Real pi central harness on the Codex subscription (REFRAMED 2026-07-07)
+**[LOCAL-REAL] — real codex model turn proven on the LAPTOP only; the deployed
+box has NEVER run it (waits on the owner creds sync).**
 Direction (owner): the central session runs REAL pi with the Codex subscription
 as its model backend — see the Demo A reframe above for the full seam map.
 `CodexHarnessAdapter`/codex-acp stays the SANDBOX harness (Demo C), not central.
@@ -518,7 +567,8 @@ Remaining work (Codex pipeline exists; this is the delta):
       decision on existing behavior.
 
 ### W4 — Agent-extensions materialize INTO sandboxes (owner wants verified)
-**ROOT CAUSE FOUND + FIXED (2026-07-07, commit 76e9e233f0).** The premise was
+**[MOCK] — root cause fixed (commit 76e9e233f0) and proven against a TEMP-DIR
+sandbox; live Daytona proof still pending.** The premise was
 half wrong: the IN-SANDBOX apply path already existed (every sandbox runs
 workspace-runtime; POST /api/wr/config → applyAgentExtensionsSnapshot →
 materialize into the sandbox's own FS, tested at runtime.test.ts:1417). The
@@ -545,6 +595,8 @@ EMPTY install set. Hosted-with-Convex was the only working mode.
       materialization_failed.
 
 ### W5 — The loop's back half + dispatch/placement surfaces (currently absent)
+**[CODE] — spawn_session + placement code exists; NO live run; the GitHub PR loop
+(creation + outbound reply) is still ABSENT.**
 Session-dispatch primitives (precise seams from scout):
 - [x] DONE (2026-07-07): `spawn_session` exists TWICE by design: (1) a
       claxedo-mcp tool (server.ts, gated off in read-only mode) that POSTs

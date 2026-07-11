@@ -44,8 +44,8 @@ describe("import graph orphan guard", () => {
 
   test("keeps test-support helpers outside the production import graph", () => {
     const testSupport = [
-      "claxedo-ui/layout/tests/dom-helpers.tsx",
-      "claxedo-ui/layout/tests/state-harness.ts",
+      "claxedo-ui/workbench/tests/dom-helpers.tsx",
+      "claxedo-ui/workbench/tests/state-harness.ts",
       "context/terminal-test-helpers.ts",
     ]
     const reachable = reachableModules(appRoot)

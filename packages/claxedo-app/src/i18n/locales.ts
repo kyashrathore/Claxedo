@@ -59,6 +59,18 @@ function loadMerged(app: Promise<LocaleSource>, ui: Promise<LocaleSource>): Prom
   return Promise.all([app, ui]).then(([a, b]) => ({ dict: { ...a.dict, ...b.dict } }))
 }
 
+/**
+ * A lowercased navigator-language entry denotes Traditional Chinese when it
+ * carries the Hant script token, or a region subtag (TW/HK/MO) whose default
+ * script is Traditional. Bug fix 2026-07-11: previously only "hant" was
+ * checked, so zh-TW/zh-HK users silently got Simplified Chinese.
+ */
+function isTraditionalChinese(language: string): boolean {
+  if (language.includes("hant")) return true
+  const subtags = language.split("-").slice(1)
+  return subtags.some((tag) => tag === "tw" || tag === "hk" || tag === "mo")
+}
+
 export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
   {
     code: "en",
@@ -72,16 +84,18 @@ export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
     loader: () => loadMerged(import("./zh").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/zh")),
     intlTag: "zh-Hans",
     labelKey: "language.zh",
-    // Excludes Hant explicitly so this and zht's matcher stay mutually
+    // Excludes the Traditional-script signals (hant script token, and the
+    // TW/HK/MO region subtags whose default script is Traditional) so this and
+    // zht's matcher stay mutually
     // exclusive regardless of manifest order.
-    matches: (language) => language.startsWith("zh") && !language.includes("hant"),
+    matches: (language) => language.startsWith("zh") && !isTraditionalChinese(language),
   },
   {
     code: "zht",
     loader: () => loadMerged(import("./zht").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/zht")),
     intlTag: "zh-Hant",
     labelKey: "language.zht",
-    matches: (language) => language.startsWith("zh") && language.includes("hant"),
+    matches: (language) => language.startsWith("zh") && isTraditionalChinese(language),
   },
   {
     code: "ko",

@@ -75,6 +75,16 @@ Paths relative to `packages/claxedo-app` unless prefixed `packages/`.
 | live-claxedo-mcp-tools:547 | process tool add/update/remove 404 wrong path — b5 | packages/claxedo-mcp/src/process-handler.ts:275,299,311 vs server.ts:43; process-handler.test.ts:290-291,367-368,400-401 | REAL BUG: posts to bare `/process` not `/api/wr/process` → 404; unit test asserts the wrong path, masking it | ORPHAN (packages/claxedo-mcp) | not-in-audit |
 | live-claxedo-mcp-tools:739 | summarize_logs surfaces LLM error not JSON crash — b10b | packages/claxedo-mcp/src/server.ts:66-67,637-645 | REAL BUG: httpRequest JSON.parses before res.ok check; fallback hits nonexistent route → cryptic SyntaxError | ORPHAN (packages/claxedo-mcp) | not-in-audit |
 
+## Bugs discovered during execution (discovered-bug rule ledger)
+
+| Found | Bug | Disposition | Evidence |
+|---|---|---|---|
+| Wave 1 (WP-A6 review) | zh-TW/zh-HK/zh-MO resolved to Simplified `zh` — matcher keyed on `hant` script token only | FIXED 2026-07-11 (leader, in-tree): `isTraditionalChinese()` in `src/i18n/locales.ts` treats TW/HK/MO region subtags as Traditional | `locale-parity.test.ts` rows flipped from pinned-wrong to correct; i18n suite 103P |
+| Wave 1 (I4 gate) | A1 deleted ServerConnection.Sidecar + context barrel while claxedo-desktop consumed both | FIXED in `0364e0bd01` (restore + declared `./context` export) | desktop tsgo + boot screenshot |
+| Wave 1 (WP-A7) | `mergeSessionListResponses` stale first-page nextCursor → "Load more" never disappears | FIXED in `8917ee5505`; e2e fixme core-sidebar-tree:671 ready to flip (e2e session owns the flip) | unit test written first |
+| Wave 1 (WP-A4 review) | Solid ref-callback returned-closure cleanup silently ignored → titlebar slots never cleared | FIXED in `f101eb8ee6` (onCleanup pattern + factory test pinning the discard semantics) | portal-slot.test.ts 7P |
+| Wave 1 (I5 gate) | perf-harness launch-project flow functionally broken (0/20 seeded sessions visible) — pre-existing | CHIP task_7f4fd469 (perf-harness owner) | identical failure at pre-wave commit |
+
 ## Orphans and leader dispositions (2026-07-11)
 
 **In-scope, previously unowned — leader assignments (reflected in LLD dependency notes):**

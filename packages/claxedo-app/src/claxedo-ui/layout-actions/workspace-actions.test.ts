@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test"
 import { workspaceSessionRoute } from "../../shell/identity/route"
-import type { ProjectItem } from "../layouts/rail-sidebar"
+import type { ProjectItem } from "../rail/rail-sidebar"
 import type { WorkspaceActionProps } from "./workspace-actions"
 
 let createWorkspaceActions: typeof import("./workspace-actions").createWorkspaceActions

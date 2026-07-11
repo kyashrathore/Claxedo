@@ -1,8 +1,8 @@
 import { getFilename } from "@claxedo/utils/path"
 import { showToast } from "@opencode-ai/ui/toast"
 import { DialogRecoverWorkspace } from "../components/dialogs"
-import type { ProjectItem } from "../layouts/rail-sidebar"
-import type { WorkspaceBarItem } from "../layouts/workspace-toolbar"
+import type { ProjectItem } from "../rail/rail-sidebar"
+import type { WorkspaceBarItem } from "../rail/workspace-toolbar"
 import type { ActionProps } from "./shared"
 import { ensureDirectorySessionCache, findProjectForWorkspace, message, missingLocalWorkspace } from "./shared"
 

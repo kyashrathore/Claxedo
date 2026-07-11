@@ -158,12 +158,20 @@ describe("locale-parity: LocaleEntry.matches navigator-language resolution", () 
     expect(matchingCodes("eo")).toEqual([])
   })
 
-  test('"zh-TW" and "zh-HK" (region subtag, no script subtag) currently resolve to "zh" — the zh/zht split keys on the "hant" script token only', () => {
-    // Pins today's behavior. If zh-TW/zh-HK should imply Traditional
-    // (zht), that is a deliberate matcher change in locales.ts and this
-    // expectation must be updated with it.
-    expect(matchingCodes("zh-TW")).toEqual(["zh"])
-    expect(matchingCodes("zh-HK")).toEqual(["zh"])
+  test('"zh-TW", "zh-HK", "zh-MO" (Traditional-default regions, no script subtag) resolve to "zht"', () => {
+    // Bug fixed 2026-07-11: the zh/zht split previously keyed on the "hant"
+    // script token only, silently serving Simplified to Taiwan/Hong Kong/
+    // Macau users. Region subtags whose default script is Traditional now
+    // imply zht.
+    expect(matchingCodes("zh-TW")).toEqual(["zht"])
+    expect(matchingCodes("zh-HK")).toEqual(["zht"])
+    expect(matchingCodes("zh-MO")).toEqual(["zht"])
+  })
+
+  test('"zh-CN", "zh-SG", and bare "zh" still resolve to Simplified "zh" after the Traditional-region fix', () => {
+    expect(matchingCodes("zh-CN")).toEqual(["zh"])
+    expect(matchingCodes("zh-SG")).toEqual(["zh"])
+    expect(matchingCodes("zh")).toEqual(["zh"])
   })
 })
 

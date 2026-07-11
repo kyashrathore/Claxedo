@@ -3,41 +3,30 @@ import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
 import DownloadMenu from "../components/DownloadMenu.astro"
-import { previewSrc, docs } from "../config"
 
 const harnesses = ["Claude Code", "Codex", "Gemini CLI"]
-
-const hero = { src: "/screenshots/hero-attached-review.png", alt: "Claxedo review workspace preview" }
 
 const proof = [
   {
     tag: "Every agent, as itself",
     title: "Run it in a terminal — or in chat",
     desc: "Drive an agent straight from a terminal with keyboard shortcuts, or talk to it in chat — both work on the same session, and Claxedo manages its status, hooks, and lifecycle either way. Model-agnostic isn't enough: Claude Code, Codex, and Gemini CLI run as themselves, not flattened into one loop.",
-    src: "/screenshots/all-coding-agent-dark.png",
-    alt: "Claxedo running multiple coding agents",
   },
   {
     tag: "One session",
     title: "Local, cloud, or split",
     desc: "Run the whole loop on your machine. Or in the cloud. Or split it — brain central, hands local — so reasoning runs hosted while tools execute right next to your code, where they're fast. Same session, your call, on your own sandbox provider.",
-    src: "/screenshots/multi-group-dark.png",
-    alt: "Claxedo multi-group workspace",
   },
   {
     tag: "Feedback loop",
     title: "It runs what it builds",
-    desc: "The agent doesn't just write code — it runs it and watches what happens. It manages your processes and reads their output, and tests what it built in an in-app browser at Codex's level, feeding results straight back into the loop.",
-    src: "/screenshots/long-running-process-dark.png",
-    alt: "Claxedo process management",
+    desc: "The agent doesn't just write code — it runs it and watches what happens. It manages your processes and reads their output, and tests what it built in an in-app browser, feeding results straight back into the loop.",
     tags: ["process management — now", "in-app browser testing — at release"],
   },
   {
     tag: "Review",
     title: "Inspect diffs before anything lands",
     desc: "Open a dedicated review surface for changed files, session diffs, and comments before you decide what ships — built for multi-agent work.",
-    src: "/screenshots/review-workspace-dark.png",
-    alt: "Claxedo review workspace",
   },
 ]
 
@@ -50,12 +39,12 @@ const everything = [
   { h: "Panes, tabs & groups", p: "Many workspaces open at once; split into side-by-side panes on demand." },
 ]
 
-const trust = ["MIT licensed", "BYO harness + model", "No lock-in", "Cloud is the only paid tier"]
+const trust = ["MIT licensed", "BYO harness + model", "Your backend or ours", "Hosting is the only paid tier"]
 
 const faq = [
   { q: "Isn't this just another Codex clone?", a: "No — Codex runs only OpenAI models. Claxedo runs Claude Code, Codex, and Gemini CLI, each as itself, and the whole app is MIT-licensed and open." },
-  { q: "Another open app that's slow?", a: "Performance is the point — the app is built to stay responsive as sessions, panes, and diffs pile up. Try the browser preview above and judge the feel yourself." },
-  { q: "What does it cost?", a: "The app is free and open source. You pay your model provider directly. Managed cloud is the only paid tier." },
+  { q: "Another open app that's slow?", a: "Performance is the point — the app is built to stay responsive as sessions, panes, and diffs pile up. Download it and judge the feel yourself; it's free." },
+  { q: "What does it cost?", a: "The app is free and open source. You pay your model provider directly. Managed hosting is the only paid tier." },
   { q: "Which agents are supported?", a: "Any CLI coding agent — Claude Code, Codex, Gemini CLI, and more — each in its own managed terminal, with status and hooks handled for you." },
   { q: "What if my vendor starts metering my automation?", a: "That's exactly why Claxedo is harness-neutral. Switch harness or model without losing your skills, plugins, or setup." },
   { q: "What platforms?", a: "macOS, Linux, and Windows." },
@@ -77,7 +66,7 @@ const faq = [
         </p>
         <div class="hero-actions" data-reveal="4">
           <DownloadMenu />
-          <a class="btn-secondary" href="#preview">See it in the browser ↓</a>
+          <a class="btn-secondary" href="#tour">See the workspace ↓</a>
         </div>
         <p class="hero-note" data-reveal="5">macOS · Windows · Linux — free and open source.</p>
       </div>
@@ -113,30 +102,75 @@ const faq = [
       </div>
     </section>
 
-    <section id="preview" class="preview-block section--ruled">
-      <div class="section preview-intro">
-        <span class="section-tag">// Browser preview</span>
-        <h2 class="section-title">See the workspace before you download.</h2>
-        <p class="section-lead">Backed by demo data and mocked services — explore the layout, navigation, and review flow.</p>
+    <section id="tour" class="section section--ruled">
+      <div class="section-head">
+        <span class="section-tag">// The workspace</span>
+        <h2 class="section-title">Two agents, one workspace, your phone in the loop.</h2>
+        <p class="section-lead">
+          Sessions live in tabs and split panes. Each harness runs as itself in a real
+          terminal, the same skills loaded in every one — and any session, including the
+          ones on your laptop, is reachable from the web or your phone.
+        </p>
       </div>
-      <div class="preview">
-        <div class="preview-sticky" id="preview-sticky">
-          <div class="preview-perspective">
-            <div class="preview-frame" id="hero-frame">
-              <div class="preview-shell" id="preview-shell">
-                <div class="preview-poster-frame">
-                  <img id="demo-poster" src={hero.src} alt={hero.alt} class="preview-poster" width="3024" height="1654" loading="eager" decoding="async" fetchpriority="high" />
-                </div>
-                <iframe id="demo-frame" class="preview-app" title="Claxedo browser preview" loading="lazy" tabindex="-1" data-src={previewSrc}></iframe>
-                <div class="preview-banner" id="preview-banner" role="status" aria-live="polite">
-                  <span class="preview-dot" aria-hidden="true"></span>
-                  <span id="preview-banner-text">Loading browser preview...</span>
-                </div>
+
+      <div class="stage" aria-label="Illustration of the Claxedo workspace: two agent sessions side by side with a phone following one of them.">
+        <div class="frame" role="img" aria-hidden="true">
+          <div class="frame-bar">
+            <span class="frame-dots"><i></i><i></i><i></i></span>
+            <span class="frame-tab is-on">api-server</span>
+            <span class="frame-tab">web-app</span>
+            <span class="frame-tab frame-tab--plus">+</span>
+            <span class="frame-sync"><span class="dot"></span>skills synced</span>
+          </div>
+          <div class="frame-body">
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-agent">claude code</span>
+                <span class="pane-place">local</span>
               </div>
+              <div class="pane-term">
+                <p><span class="t-dim">$</span> claude <span class="t-dim">— fix the failing session test</span></p>
+                <p><span class="t-ok">✓</span> read workspace-runtime/src/session.test.ts</p>
+                <p><span class="t-ok">✓</span> bun test — 14 passing, 1 fixed</p>
+                <p><span class="t-dim">tokens 12.4k · turn 3</span></p>
+                <p class="t-cursor"><span class="t-dim">›</span> <span class="caret"></span></p>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="pane-head">
+                <span class="pane-agent">codex</span>
+                <span class="pane-place pane-place--cloud">cloud · box-1</span>
+              </div>
+              <div class="pane-term">
+                <p><span class="t-dim">$</span> codex <span class="t-dim">— refactor auth middleware</span></p>
+                <p><span class="t-run">▸</span> editing src/auth/session.ts</p>
+                <p><span class="t-dim">staged diff</span> <span class="t-add">+42</span> <span class="t-del">−17</span></p>
+                <p><span class="t-dim">same skills, same MCP — synced by the backend</span></p>
+                <p class="t-cursor"><span class="t-dim">›</span> <span class="caret"></span></p>
+              </div>
+            </div>
+          </div>
+          <div class="frame-status">
+            <span>2 sessions · 1 local · 1 cloud</span>
+            <span class="t-dim">relay: connected — no inbound ports</span>
+          </div>
+        </div>
+
+        <div class="phone" aria-hidden="true">
+          <div class="phone-bar"><i></i></div>
+          <div class="phone-body">
+            <p class="phone-title">api-server<span class="t-dim"> · claude code</span></p>
+            <p class="t-ok">✓ 14 passing, 1 fixed</p>
+            <p class="t-dim">waiting on approval:</p>
+            <p class="phone-tool">run: git push origin fix/session</p>
+            <div class="phone-actions">
+              <span class="phone-btn phone-btn--yes">Approve</span>
+              <span class="phone-btn">Deny</span>
             </div>
           </div>
         </div>
       </div>
+      <p class="stage-caption">An illustration, not a screenshot — download the real thing and judge it yourself.</p>
     </section>
 
     <section class="section section--ruled">
@@ -144,29 +178,17 @@ const faq = [
         <span class="section-tag">// What it does</span>
         <h2 class="section-title">Built for real coding sessions.</h2>
       </div>
-      <div class="proof-grid">
+      <div class="cards cards--two">
         {proof.map((item) => (
-          <article class="proof-card">
-            <div class="proof-shot">
-              <button type="button" class="proof-open" data-src={item.src} data-alt={item.alt} aria-label={`Open full screenshot for ${item.title}`}>
-                <img src={item.src} alt={item.alt} width="3024" height="1964" loading="lazy" decoding="async" />
-                <span class="proof-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M8 4H4v4"></path><path d="M16 4h4v4"></path><path d="M20 16v4h-4"></path><path d="M8 20H4v-4"></path>
-                  </svg>
-                </span>
-              </button>
-            </div>
-            <div class="proof-copy">
-              <span class="proof-tag">{item.tag}</span>
-              <h3>{item.title}</h3>
-              <p>{item.desc}</p>
-              {item.tags && (
-                <div class="chips" style="margin-top:1rem">
-                  {item.tags.map((t) => <span class="tag">{t}</span>)}
-                </div>
-              )}
-            </div>
+          <article class="card">
+            <span class="proof-tag">{item.tag}</span>
+            <div class="card-head"><h3>{item.title}</h3></div>
+            <p>{item.desc}</p>
+            {item.tags && (
+              <div class="chips" style="margin-top:1rem">
+                {item.tags.map((t) => <span class="tag">{t}</span>)}
+              </div>
+            )}
           </article>
         ))}
       </div>
@@ -233,328 +255,197 @@ const faq = [
     </section>
 
     <Footer />
-
-    <dialog id="zoom" class="zoom" aria-label="Expanded screenshot viewer">
-      <div class="zoom-shell">
-        <button type="button" class="zoom-close" aria-label="Close screenshot viewer">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6 18 18"></path><path d="M18 6 6 18"></path></svg>
-        </button>
-        <img id="zoom-img" class="zoom-img" src="" alt="" />
-      </div>
-    </dialog>
   </div>
 </Layout>
 
 <style>
-  .preview-block { border-top: var(--bw) solid var(--border); }
-  .preview-intro { padding-bottom: 0; }
-
-  .preview {
+  /* ---- Workspace stage (crafted illustration, no screenshots) ---- */
+  .stage {
     position: relative;
-    height: 260vh;
+    max-width: 62rem;
   }
 
-  .preview-sticky {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    z-index: 25;
-  }
-
-  .preview-perspective {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    perspective: 1200px;
-    overflow: clip;
-    width: 100%;
-    height: 100%;
-  }
-
-  .preview-frame {
-    width: 100%;
-    height: 100%;
+  .frame {
     border: var(--bw) solid var(--border);
-    overflow: hidden;
-    will-change: transform, opacity;
-    transform: translateY(28px) scale(0.965) rotateX(1.6deg);
-    opacity: 0.76;
-    transition: transform 0.1s linear, opacity 0.1s linear;
-  }
-
-  .preview-shell {
-    --poster-zoom: 1.02;
-    position: relative;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
     background: hsl(0, 9%, 7%);
-  }
-
-  .preview-poster-frame,
-  .preview-poster,
-  .preview-app { position: absolute; inset: 0; }
-
-  .preview-poster {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: top left;
-    transform: scale(var(--poster-zoom));
-    transform-origin: top left;
-    background: hsl(0, 9%, 7%);
-    transition: opacity 0.45s ease, transform 0.45s ease, filter 0.45s ease;
-  }
-
-  .preview-app {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    opacity: 0;
-    transform: scale(1.015);
-    transition: opacity 0.45s ease, transform 0.45s ease;
-    background: hsl(0, 9%, 7%);
-    pointer-events: none;
-  }
-
-  .preview-banner {
-    position: absolute;
-    left: 16px;
-    bottom: 16px;
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 14px;
-    border: var(--bw) solid hsl(0, 4%, 23%);
-    background: hsl(0, 9%, 7%);
-    color: hsl(0, 4%, 71%);
+    color: hsl(0, 4%, 78%);
+    font-family: var(--font-mono);
     font-size: 13px;
-    transition: opacity 0.3s ease, transform 0.3s ease;
+    line-height: 1.75;
+    box-shadow: 0 24px 70px color-mix(in srgb, var(--text-strong) 16%, transparent);
   }
 
-  .preview-dot {
-    width: 8px;
-    height: 8px;
-    background: var(--accent);
-    animation: pulse 1.6s ease-in-out infinite;
+  .frame-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: var(--bw) solid hsl(0, 4%, 18%);
   }
 
-  .preview-shell.is-live .preview-poster {
-    opacity: 0;
-    transform: scale(calc(var(--poster-zoom) + 0.02));
-    filter: blur(10px);
+  .frame-dots { display: inline-flex; gap: 6px; margin-right: 6px; }
+  .frame-dots i { width: 10px; height: 10px; border-radius: 999px; background: hsl(0, 4%, 24%); }
+
+  .frame-tab {
+    padding: 3px 12px;
+    font-size: 12px;
+    color: hsl(0, 3%, 55%);
+    border: 1px solid hsl(0, 4%, 20%);
   }
+  .frame-tab.is-on { color: hsl(62, 60%, 82%); border-color: hsl(62, 30%, 34%); background: hsl(62, 24%, 12%); }
+  .frame-tab--plus { border-style: dashed; }
 
-  .preview-shell.is-live .preview-app { opacity: 1; transform: none; pointer-events: auto; }
-  .preview-shell.is-live .preview-banner { opacity: 0; transform: translateY(12px); pointer-events: none; }
-
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-
-  /* zoomable screenshots */
-  .proof-open {
-    position: relative;
-    width: 100%;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    cursor: zoom-in;
-  }
-
-  .proof-open img { transition: transform 0.22s ease, box-shadow 0.22s ease; }
-
-  .proof-open:hover img,
-  .proof-open:focus-visible img {
-    transform: scale(1.01);
-    box-shadow: 0 20px 50px color-mix(in srgb, var(--text-strong) 20%, transparent);
-  }
-
-  .proof-open:focus-visible { outline: none; }
-
-  .proof-icon {
-    position: absolute;
-    right: 16px;
-    bottom: 16px;
+  .frame-sync {
+    margin-left: auto;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 2.6rem;
-    height: 2.6rem;
-    border: var(--bw) solid var(--border);
-    background: color-mix(in srgb, var(--bg) 86%, transparent);
-    color: var(--text-strong);
-    border-radius: 999px;
-    backdrop-filter: blur(12px);
-    transition: transform 0.2s ease, background 0.2s ease;
+    gap: 7px;
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: hsl(0, 3%, 55%);
   }
+  .frame-sync .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--accent); }
 
-  .proof-icon svg { width: 1rem; height: 1rem; }
-
-  .proof-open:hover .proof-icon,
-  .proof-open:focus-visible .proof-icon {
-    transform: translateY(-2px);
-    background: color-mix(in srgb, var(--bg) 94%, transparent);
-  }
-
-  .zoom {
-    inset: 0;
-    width: 100vw;
-    height: 100dvh;
-    max-width: none;
-    max-height: none;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    overflow: hidden;
-  }
-
-  .zoom[open] { display: grid; place-items: center; }
-
-  .zoom::backdrop {
-    background: color-mix(in srgb, var(--bg-strong) 82%, transparent);
-    backdrop-filter: blur(14px);
-  }
-
-  .zoom-shell {
-    position: relative;
+  .frame-body {
     display: grid;
-    place-items: center;
-    width: min(94vw, 88rem);
-    max-height: calc(100dvh - 2rem);
-    padding: 1rem;
+    grid-template-columns: 1fr 1fr;
   }
 
-  .zoom-close {
+  .pane + .pane { border-left: var(--bw) solid hsl(0, 4%, 18%); }
+
+  .pane-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 9px 16px;
+    border-bottom: 1px solid hsl(0, 4%, 16%);
+  }
+
+  .pane-agent {
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 11.5px;
+    color: hsl(0, 4%, 86%);
+  }
+
+  .pane-place {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: hsl(0, 3%, 52%);
+    border: 1px solid hsl(0, 4%, 22%);
+    padding: 1px 8px;
+  }
+  .pane-place--cloud { color: hsl(62, 50%, 74%); border-color: hsl(62, 26%, 30%); }
+
+  .pane-term { padding: 14px 16px 16px; min-height: 11.5rem; }
+  .pane-term p { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .t-dim { color: hsl(0, 3%, 48%); }
+  .t-ok { color: hsl(140, 42%, 62%); }
+  .t-run { color: hsl(62, 60%, 72%); }
+  .t-add { color: hsl(140, 42%, 62%); }
+  .t-del { color: hsl(4, 60%, 66%); }
+
+  .t-cursor { margin-top: 0.5rem; }
+  .caret {
+    display: inline-block;
+    width: 8px;
+    height: 15px;
+    vertical-align: -2px;
+    background: hsl(62, 60%, 72%);
+    animation: caret-blink 1.1s steps(1) infinite;
+  }
+  @keyframes caret-blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
+
+  .frame-status {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 8px 16px;
+    border-top: var(--bw) solid hsl(0, 4%, 18%);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    color: hsl(0, 3%, 58%);
+  }
+
+  /* phone follows the same session — overlapped composition */
+  .phone {
     position: absolute;
-    top: 1.5rem;
-    right: 1.5rem;
-    z-index: 2;
-    display: grid;
-    place-items: center;
-    width: 2.75rem;
-    height: 2.75rem;
+    right: -1rem;
+    bottom: -2.4rem;
+    width: 15.5rem;
     border: var(--bw) solid var(--border);
-    background: color-mix(in srgb, var(--bg) 82%, transparent);
-    color: var(--text-strong);
-    border-radius: 999px;
-    backdrop-filter: blur(14px);
+    background: hsl(0, 9%, 9%);
+    color: hsl(0, 4%, 78%);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.7;
+    box-shadow: 0 18px 50px color-mix(in srgb, var(--text-strong) 22%, transparent);
   }
 
-  .zoom-close svg { width: 1rem; height: 1rem; }
+  .phone-bar { display: grid; place-items: center; padding: 7px 0 2px; }
+  .phone-bar i { width: 4rem; height: 4px; border-radius: 999px; background: hsl(0, 4%, 24%); }
 
-  .zoom-img {
-    width: auto;
-    height: auto;
-    max-width: 100%;
-    max-height: calc(100dvh - 2rem);
-    object-fit: contain;
-    border: var(--bw) solid var(--border);
-    background: hsl(0, 9%, 7%);
-    box-shadow: 0 24px 80px color-mix(in srgb, var(--text-strong) 22%, transparent);
+  .phone-body { padding: 10px 14px 14px; }
+  .phone-body p { margin: 0 0 2px; }
+  .phone-title { color: hsl(0, 4%, 88%); font-weight: 500; }
+
+  .phone-tool {
+    margin-top: 4px;
+    padding: 6px 9px;
+    border: 1px solid hsl(0, 4%, 22%);
+    background: hsl(0, 8%, 12%);
+    color: hsl(0, 4%, 82%);
+    font-size: 11.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  @media (max-width: 40rem) {
-    .preview { height: auto; padding: 0 var(--padding) var(--padding); }
-    .preview-sticky { position: static; height: auto; padding: 0; }
-    .preview-perspective { perspective: none; overflow: visible; height: auto; }
-    .preview-frame { height: auto; aspect-ratio: 1.45 / 1; transform: none; opacity: 1; }
-    .zoom-close { top: 1rem; right: 1rem; }
+  .phone-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .phone-btn {
+    flex: 1;
+    text-align: center;
+    padding: 6px 0;
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 1px solid hsl(0, 4%, 26%);
+    color: hsl(0, 3%, 62%);
+  }
+  .phone-btn--yes { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+
+  .stage-caption {
+    margin-top: 3.4rem;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: var(--text-weak);
+  }
+
+  .proof-tag {
+    display: inline-block;
+    margin-bottom: 0.6rem;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-weak);
+  }
+
+  @media (max-width: 52rem) {
+    .frame-body { grid-template-columns: 1fr; }
+    .pane + .pane { border-left: none; border-top: var(--bw) solid hsl(0, 4%, 18%); }
+    .phone {
+      position: static;
+      width: 100%;
+      max-width: 20rem;
+      margin: 1rem 0 0 auto;
+    }
+    .stage-caption { margin-top: 1.25rem; }
   }
 </style>
-
-<script>
-  const shell = document.getElementById("preview-shell")
-  const frame = document.getElementById("demo-frame") as HTMLIFrameElement | null
-  const text = document.getElementById("preview-banner-text")
-  let boot = false
-  let live = false
-  let wait = 0
-
-  function start() {
-    if (boot || !shell || !frame) return
-    const next = frame.dataset.src
-    if (!next) return
-    boot = true
-    if (text) text.textContent = "Loading browser preview..."
-    wait = window.setTimeout(() => {
-      if (!live && text) text.textContent = "Still loading the browser preview..."
-    }, 3200)
-    frame.src = next
-  }
-
-  function ready() {
-    live = true
-    window.clearTimeout(wait)
-    shell?.classList.add("is-live")
-    if (text) text.textContent = "Browser preview ready"
-  }
-
-  frame?.addEventListener("load", ready, { once: true })
-
-  if (shell && frame) {
-    if ("IntersectionObserver" in window) {
-      const io = new IntersectionObserver((entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return
-        start()
-        io.disconnect()
-      }, { rootMargin: "280px 0px" })
-      io.observe(shell)
-    }
-    if ("requestIdleCallback" in window) {
-      window.requestIdleCallback(() => start(), { timeout: 1600 })
-    } else {
-      window.setTimeout(() => start(), 900)
-    }
-  }
-
-  const heroFrame = document.getElementById("hero-frame")
-  const previewSection = document.querySelector<HTMLElement>(".preview")
-  const previewSticky = document.getElementById("preview-sticky")
-  const small = window.matchMedia("(max-width: 40rem)")
-
-  if (heroFrame && previewSection && previewSticky && !small.matches) {
-    const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
-
-    const handleScroll = () => {
-      const rect = previewSection.getBoundingClientRect()
-      const windowH = window.innerHeight
-      const scrollable = Math.max(previewSection.offsetHeight - windowH, 1)
-      const scrolled = Math.min(Math.max(-rect.top, 0), scrollable)
-      const progress = scrolled / scrollable
-      const intro = ease(Math.min(progress / 0.3, 1))
-      const translateY = 28 * (1 - intro)
-      const scale = 0.965 + 0.035 * intro
-      const rotateX = 1.6 * (1 - intro)
-      const opacity = 0.76 + 0.24 * intro
-      heroFrame.style.transform = `translateY(${translateY}px) scale(${scale}) rotateX(${rotateX}deg)`
-      heroFrame.style.opacity = String(opacity)
-    }
-
-    window.addEventListener("scroll", handleScroll, { passive: true })
-    handleScroll()
-  }
-
-  const zoom = document.getElementById("zoom") as HTMLDialogElement | null
-  const shot = document.getElementById("zoom-img") as HTMLImageElement | null
-  const shut = document.querySelector<HTMLButtonElement>(".zoom-close")
-  const opens = document.querySelectorAll<HTMLButtonElement>(".proof-open")
-
-  function show(node: HTMLButtonElement) {
-    const src = node.dataset.src
-    if (!zoom || !shot || !src) return
-    shot.src = src
-    shot.alt = node.dataset.alt ?? ""
-    if (zoom.open) return
-    zoom.showModal()
-  }
-
-  opens.forEach((node) => node.addEventListener("click", () => show(node)))
-  shut?.addEventListener("click", () => zoom?.close())
-  zoom?.addEventListener("click", (event) => { if (event.target === zoom) zoom.close() })
-  zoom?.addEventListener("close", () => { if (shot) { shot.src = ""; shot.alt = "" } })
-</script>

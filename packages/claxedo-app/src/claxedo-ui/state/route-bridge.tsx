@@ -49,7 +49,7 @@ import {
   drainPendingDeepLinks,
   newSessionDeepLinkRoute,
 } from "./route-deep-links"
-import type { ProjectItem } from "../layouts/rail-sidebar"
+import type { ProjectItem } from "../rail/rail-sidebar"
 
 export function projectToProjectItem(project: LocalProject): ProjectItem {
   return {

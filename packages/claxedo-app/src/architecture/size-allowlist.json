@@ -3,7 +3,7 @@
   "claxedo-ui/components/dialog-process-diagnostics.tsx": 1051,
   "claxedo-ui/components/page-editor.tsx": 1006,
   "claxedo-ui/context/process-pane.tsx": 1042,
-  "claxedo-ui/layouts/rail-sidebar.tsx": 2689,
+  "claxedo-ui/rail/rail-sidebar.tsx": 2689,
   "components/terminal.tsx": 1195,
   "context/global-sdk.tsx": 900,
   "context/layout.tsx": 966,

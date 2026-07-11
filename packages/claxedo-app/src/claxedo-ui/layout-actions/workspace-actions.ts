@@ -13,7 +13,7 @@
 // - Hands off to `recoverMissingWorkspace` when the workspace was
 //   deleted on disk; honours the recovery callback's directory.
 
-import type { ProjectItem } from "../layouts/rail-sidebar"
+import type { ProjectItem } from "../rail/rail-sidebar"
 import { sessionRoute as canonicalSessionRoute, workspaceSessionRoute } from "../../shell/identity/route"
 import type { ActionProps, Nav } from "./shared"
 import { ensureDirectorySessionCache, sessionRefForActionWorkspace } from "./shared"

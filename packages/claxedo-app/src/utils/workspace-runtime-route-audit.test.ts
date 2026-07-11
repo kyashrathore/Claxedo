@@ -138,9 +138,9 @@ const harnessConfigStore = "claxedo-ui/context/harness-config-store.ts"
 const harnessConfigRuntime = "claxedo-ui/context/harness-config-runtime.ts"
 const harnessStorePolicy = "session-client/harness/store-policy.ts"
 const appShellLayout = "shell/app-shell-layout.tsx"
-const railSidebarShell = "claxedo-ui/layouts/rail-sidebar-shell.tsx"
-const railWorkbenchShell = "claxedo-ui/layouts/rail-workbench-shell.tsx"
-const railSidebar = "claxedo-ui/layouts/rail-sidebar.tsx"
+const railSidebarShell = "claxedo-ui/rail/rail-sidebar-shell.tsx"
+const railWorkbenchShell = "claxedo-ui/rail/rail-workbench-shell.tsx"
+const railSidebar = "claxedo-ui/rail/rail-sidebar.tsx"
 const layoutContext = "context/layout.tsx"
 const dialogEditProject = "claxedo-ui/components/dialog-edit-project.tsx"
 const appShell = "shell/app-shell.tsx"
@@ -2815,10 +2815,10 @@ describe("workspace runtime route audit", () => {
   test("workspace chrome keeps sidebar and navigator controls in stable layout lanes", async () => {
     const sidebarShell = await Bun.file(path.join(root, railSidebarShell)).text()
     const workbenchShell = await Bun.file(path.join(root, railWorkbenchShell)).text()
-    const header = await Bun.file(path.join(root, "claxedo-ui/layouts/workbench-shell-header.tsx")).text()
-    const panelVisual = await Bun.file(path.join(root, "claxedo-ui/layouts/workspace-panel-visual-state.ts")).text()
-    const panelMotion = await Bun.file(path.join(root, "claxedo-ui/layouts/workspace-panel-motion-state.ts")).text()
-    const keyboardController = await Bun.file(path.join(root, "claxedo-ui/layouts/rail-keyboard-controller.tsx")).text()
+    const header = await Bun.file(path.join(root, "claxedo-ui/rail/workbench-shell-header.tsx")).text()
+    const panelVisual = await Bun.file(path.join(root, "claxedo-ui/rail/workspace-panel-visual-state.ts")).text()
+    const panelMotion = await Bun.file(path.join(root, "claxedo-ui/rail/workspace-panel-motion-state.ts")).text()
+    const keyboardController = await Bun.file(path.join(root, "claxedo-ui/rail/rail-keyboard-controller.tsx")).text()
     const floatingChromeMarkup = header.match(/data-testid="workspace-panel-floating-chrome"[\s\S]*?<WorkspacePanelChrome/)?.[0] ?? ""
     const floatingDomBlock = panelMotion.match(/if \(floatingChrome\) \{[\s\S]*?floatingChrome\.style\.pointerEvents = "auto"[\s\S]*?\n    \}/)?.[0] ?? ""
 
@@ -2857,8 +2857,8 @@ describe("workspace runtime route audit", () => {
   test("RailSidebar composes session-list and terminal islands with decoration-only status hydration", async () => {
     const text = await Bun.file(path.join(root, railSidebar)).text()
     const layout = await Bun.file(path.join(root, appShellLayout)).text()
-    const headerSurfaces = await Bun.file(path.join(root, "claxedo-ui/layouts/rail-header-surfaces.ts")).text()
-    const projectSessionInfo = await Bun.file(path.join(root, "claxedo-ui/layouts/rail-project-session-info.ts")).text()
+    const headerSurfaces = await Bun.file(path.join(root, "claxedo-ui/rail/rail-header-surfaces.ts")).text()
+    const projectSessionInfo = await Bun.file(path.join(root, "claxedo-ui/rail/rail-project-session-info.ts")).text()
     const sessionStatusDispatcher = await Bun.file(path.join(root, "session/store/session-status-dispatcher.ts")).text()
     const sidebarDataPlane = `${text}\n${headerSurfaces}\n${projectSessionInfo}`
 
@@ -2925,8 +2925,8 @@ describe("workspace runtime route audit", () => {
 
   test("empty workbench opens the real draft-session composer path", async () => {
     const text = await Bun.file(path.join(root, appShellLayout)).text()
-    const canvas = await Bun.file(path.join(root, "claxedo-ui/layouts/rail-workbench-canvas.tsx")).text()
-    const controller = await Bun.file(path.join(root, "claxedo-ui/layouts/rail-empty-draft-controller.ts")).text()
+    const canvas = await Bun.file(path.join(root, "claxedo-ui/rail/rail-workbench-canvas.tsx")).text()
+    const controller = await Bun.file(path.join(root, "claxedo-ui/rail/rail-empty-draft-controller.ts")).text()
 
     expect(controller).toMatch(/renderableSurfaceIds/)
     expect(controller).toMatch(/visibleRenderableSurfaceIds/)
@@ -2987,7 +2987,7 @@ describe("workspace runtime route audit", () => {
   test("upstream workspace sidebar reads session inventory from directory cache queries", async () => {
     const text = await Bun.file(path.join(root, railSidebar)).text()
     const helper = await Bun.file(path.join(root, directorySessionCache)).text()
-    const projectInfo = await Bun.file(path.join(root, "claxedo-ui/layouts/rail-project-session-info.ts")).text()
+    const projectInfo = await Bun.file(path.join(root, "claxedo-ui/rail/rail-project-session-info.ts")).text()
     const globalSync = await Bun.file(path.join(root, globalSyncContext)).text()
 
     expect(helper).toMatch(/directorySessionCacheQuery\(directory: string\)/)
@@ -3235,7 +3235,7 @@ describe("workspace runtime route audit", () => {
 
   test("upstream branch labels read runtime VCS queries", async () => {
     const sessionNewView = await Bun.file(path.join(root, "components/session/session-new-view.tsx")).text()
-    const projectInfo = await Bun.file(path.join(root, "claxedo-ui/layouts/rail-project-session-info.ts")).text()
+    const projectInfo = await Bun.file(path.join(root, "claxedo-ui/rail/rail-project-session-info.ts")).text()
     const helper = await Bun.file(path.join(root, "shared/query/runtime.ts")).text()
 
     expect(helper).toMatch(/queryKeys\.runtime\.vcs/)

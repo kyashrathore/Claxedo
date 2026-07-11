@@ -127,7 +127,7 @@ describe("layout architecture guard", () => {
     ])
     expect(isPagesLayoutImport(path.join(srcRoot, "components/titlebar.tsx"), "@/pages/layout/fixture")).toBe(true)
     expect(isPagesLayoutImport(
-      path.join(srcRoot, "claxedo-ui/layouts/rail-sidebar.tsx"),
+      path.join(srcRoot, "claxedo-ui/rail/rail-sidebar.tsx"),
       "../../pages/layout/prefetch-policy",
     )).toBe(true)
     expect(isPagesLayoutImport(path.join(srcRoot, "pages/session.tsx"), "./session/session-layout")).toBe(false)

@@ -922,72 +922,130 @@
 .diagram-svg .grp { fill: none; stroke: var(--border); stroke-width: 2; stroke-dasharray: 4 4; }
 .diagram-svg .grp-lbl { fill: var(--text-weak); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; }
 
-/* ---- Pan/zoom canvas ---- */
-.canvas {
-  position: relative;
+/* ---- Transport flow (mode-switched diagram) ---- */
+.flow {
+  margin: 0;
   border: var(--bw) solid var(--border);
   background:
-    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-weak) 26%, transparent) 1px, transparent 0) 0 0 / 26px 26px,
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-weak) 22%, transparent) 1px, transparent 0) 0 0 / 26px 26px,
     var(--bg-weak);
-  height: 520px;
-  overflow: hidden;
-  touch-action: none;
-  cursor: grab;
 }
-.canvas:active { cursor: grabbing; }
-.canvas:fullscreen { height: 100vh; width: 100vw; background-color: var(--bg); }
-.canvas .canvas-svg { display: block; width: 100%; height: 100%; }
-.canvas .canvas-svg .diagram-svg-inner { /* group transformed by JS */ }
 
-.canvas-toolbar {
-  position: absolute;
-  top: 12px;
-  right: 12px;
+.flow-tabs {
   display: flex;
-  gap: 6px;
-  z-index: 2;
+  border-bottom: var(--bw) solid var(--border);
+  background: var(--bg);
 }
-.canvas-btn {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: var(--bw) solid var(--border);
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  color: var(--text-strong);
-  font-family: var(--font-mono);
-  font-size: 15px;
-  line-height: 1;
-  backdrop-filter: blur(8px);
-  transition: background 0.12s, transform 0.12s;
-}
-.canvas-btn:hover { background: var(--bg); }
-.canvas-btn:active { transform: scale(0.94); }
-.canvas-btn svg { width: 15px; height: 15px; }
 
-.canvas-hint {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
-  z-index: 2;
+.flow-tab {
+  flex: 1;
+  min-height: 44px;
+  padding: 10px 18px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--text-weak);
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  backdrop-filter: blur(8px);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition-property: background-color, color, transform;
+  transition-duration: 0.2s;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.flow-tab + .flow-tab { border-left: var(--bw) solid var(--border); }
+.flow-tab:hover { color: var(--text-strong); background: var(--bg-weak); }
+.flow-tab:active { transform: scale(0.96); }
+.flow-tab[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.flow-tab:focus-visible { outline: 2px solid var(--text-strong); outline-offset: -4px; }
+
+.flow .diagram-wrap { padding: 8px 0 0; }
+.flow-svg { min-width: 720px; }
+
+/* node + wire mode states — interruptible, opacity/stroke only */
+.flow-svg .nd,
+.flow-svg .fw,
+.flow-svg .only-local,
+.flow-svg .only-cloud,
+.flow-svg .only-split {
+  transition: opacity 0.35s cubic-bezier(0.2, 0, 0, 1);
+}
+.flow.is-local .flow-svg :is(.nd, .fw):not(.m-local),
+.flow.is-cloud .flow-svg :is(.nd, .fw):not(.m-cloud),
+.flow.is-split .flow-svg :is(.nd, .fw):not(.m-split) { opacity: 0.13; }
+
+.flow-svg .only-local, .flow-svg .only-cloud, .flow-svg .only-split { opacity: 0; }
+.flow.is-local .flow-svg .only-local { opacity: 1; }
+.flow.is-cloud .flow-svg .only-cloud { opacity: 1; }
+.flow.is-split .flow-svg .only-split { opacity: 1; }
+
+/* active wires draw themselves in */
+.flow-svg .draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 0.55s cubic-bezier(0.2, 0, 0, 1) 0.08s, opacity 0.3s cubic-bezier(0.2, 0, 0, 1);
+}
+.flow.is-local .flow-svg .m-local .draw,
+.flow.is-cloud .flow-svg .m-cloud .draw,
+.flow.is-split .flow-svg .m-split .draw { stroke-dashoffset: 0; }
+
+.flow-svg .wire-hot { stroke: var(--text-strong); stroke-width: 2.5; fill: none; }
+.flow-svg .lbl {
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  paint-order: stroke;
+  stroke: var(--bg-weak);
+  stroke-width: 5px;
+  stroke-linejoin: round;
 }
 
-.canvas-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 12px;
+.flow-cap {
+  border-top: var(--bw) solid var(--border);
+  background: var(--bg);
+  padding: 14px 18px;
+  display: grid;
+  min-height: 4.6rem;
+  align-items: center;
 }
-.canvas-legend .lg { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--text-weak); }
-.canvas-legend .lg svg { width: 28px; height: 8px; flex: none; }
+.flow-note {
+  grid-area: 1 / 1;
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--text);
+  text-wrap: pretty;
+  opacity: 0;
+  translate: 0 4px;
+  visibility: hidden;
+  transition: opacity 0.3s cubic-bezier(0.2, 0, 0, 1), translate 0.3s cubic-bezier(0.2, 0, 0, 1), visibility 0s 0.3s;
+}
+.flow.is-local .flow-note[data-for="local"],
+.flow.is-cloud .flow-note[data-for="cloud"],
+.flow.is-split .flow-note[data-for="split"] {
+  opacity: 1;
+  translate: 0 0;
+  visibility: visible;
+  transition: opacity 0.3s cubic-bezier(0.2, 0, 0, 1) 0.08s, translate 0.3s cubic-bezier(0.2, 0, 0, 1) 0.08s, visibility 0s;
+}
+.flow-note code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--bg-weak);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-svg .nd, .flow-svg .fw, .flow-svg .draw, .flow-note,
+  .flow-svg .only-local, .flow-svg .only-cloud, .flow-svg .only-split { transition-duration: 0.01ms; }
+  .flow-svg .draw { stroke-dashoffset: 0; }
+}
 .diagram-svg .chip { fill: var(--bg); stroke: var(--border); stroke-width: 1; }
 .diagram-svg .chiptxt { fill: var(--text); font-family: var(--font-mono); font-size: 11px; }
 .diagram-svg .arrowhead { fill: var(--text-weak); }

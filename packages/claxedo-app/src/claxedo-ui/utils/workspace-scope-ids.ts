@@ -1,4 +1,4 @@
-import type { Pane } from "./layout"
+import type { Pane } from "./workbench"
 import { realDirectory, type ContentMeta } from "./state"
 import { sessionPaneWorkspaceKey, type SessionWorkspaceRuntimeInput } from "../shell/workspace/session-workspace-key"
 

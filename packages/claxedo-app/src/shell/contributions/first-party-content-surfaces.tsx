@@ -1,5 +1,5 @@
 import { type JSX, lazy, Suspense } from "solid-js"
-import type { PaneCtx } from "../../claxedo-ui/layout"
+import type { PaneCtx } from "../../claxedo-ui/workbench"
 import type { ContentMeta, ContentType } from "../../claxedo-ui/state"
 import { SessionContent } from "../../claxedo-ui/content-renderers/session-content"
 import { createContributionRegistry, type ContributionGateContext, type SurfaceContribution } from "./registry"

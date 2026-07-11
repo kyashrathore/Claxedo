@@ -20,7 +20,7 @@ import { createSqliteCentralStore } from "./control-plane/adapters/sqlite/centra
 import { configureWorkspaceSupervisor, createWorkspaceSupervisorSandboxManager, injectRuntime, shutdownWorkspaceSupervisor } from "./workspace-supervisor.ts"
 import { recordSupervisorSandboxLeaseReady } from "./sandbox-manager-adapters/stores/sqlite-supervisor-state.ts"
 import { ensureWorkspace, updateWorkspace } from "./workspace-store.ts"
-import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels } from "./user-hosted-tunnel.ts"
+import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels, stopUserHostedWorkspaceTunnel } from "./user-hosted-tunnel.ts"
 
 const execFileAsync = promisify(execFile)
 const workspaceId = process.env.CLAXEDO_E2E_WORKSPACE_ID?.trim() || "ws_signed_browser_relay"
@@ -32,6 +32,11 @@ const role = requestedRole === "viewer" || requestedRole === "editor" || request
   ? requestedRole
   : "editor"
 const backendPort = Number(process.env.CLAXEDO_E2E_BACKEND_PORT || 0)
+// Overridable so live-user-hosted-relay.spec.ts's token-refresh scenario can
+// force `tokenExpiresAt` inside `refreshWindowMs` (default 60s, see
+// `src/utils/workspace-relay-connection.ts`'s `ensureFresh`) almost
+// immediately after mint, without waiting out a real 120s TTL.
+const tokenTtlSeconds = Number(process.env.CLAXEDO_E2E_RELAY_FIXTURE_TOKEN_TTL_SECONDS || 120)
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-signed-browser-relay-"))
 const dataDir = path.join(root, "data")
 const workspaceDir = path.join(root, "workspace")
@@ -291,6 +296,12 @@ const workspaceRow = {
   project_id: projectId,
   backing: access === "cloud" ? "cloud-vm" : "local-worktree",
   access,
+  // Real filesystem directory the embedded workspace-runtime actually serves —
+  // `routes/bootstrap.ts`'s `signedBootstrapProjects()` reads `remote_directory` (falling
+  // back to a fake "/workspace" placeholder when absent), and the client's
+  // `sessionWorkspaceRuntimeRef` inventory match needs this to agree with the real
+  // directory for the workspace to resolve consistently across the app.
+  remote_directory: workspaceDir,
   display_name: access === "cloud" ? "Signed Cloud Relay" : "Signed Browser Relay",
   repo_name: "opencode",
   git_branch: "main",
@@ -313,14 +324,14 @@ const runtimeAccessTokenSigner = async (input) => {
   const jti = `jti_${now}`
   return {
     jti,
-    tokenExpiresAt: now + 120_000,
+    tokenExpiresAt: now + tokenTtlSeconds * 1_000,
     runtimeAccessToken: await mintRuntimeAccessToken({
       subject: input.subject,
       orgId: input.orgId,
       workspaceId: input.workspaceId,
       hostId: input.hostId,
       role: input.role,
-      ttlSeconds: 120,
+      ttlSeconds: tokenTtlSeconds,
       jti,
       now,
     }, runtime.privateKey, "EdDSA"),
@@ -463,6 +474,52 @@ services.authority = {
 
 const built = createApp(services)
 built.app.get("/__fixture/opencode-requests", (c) => c.json({ requests: opencodeRequests }))
+
+// Debug-only surface for live-user-hosted-relay.spec.ts (Tier L). NOT part of
+// the product API — these routes exist so the spec can drive real host-tunnel
+// lifecycle events (pause/resume) and mint an arbitrary-role token against
+// the SAME already-running workspace/relay/tunnel, without spinning up a
+// second full fixture process per role. Real @claxedo/workspace-relay JWT
+// minting and the real user-hosted tunnel lifecycle
+// (start/stopUserHostedWorkspaceTunnel) are exercised either way — this is
+// test orchestration, not a mocked response.
+built.app.get("/__fixture/mint", async (c) => {
+  const role = c.req.query("role")
+  if (role !== "viewer" && role !== "editor" && role !== "owner" && role !== "admin") {
+    return c.json({ error: "role must be one of viewer|editor|owner|admin" }, 400)
+  }
+  const now = Date.now()
+  const token = await mintRuntimeAccessToken({
+    subject: "user_browser",
+    orgId: "personal",
+    workspaceId,
+    hostId,
+    role,
+    ttlSeconds: tokenTtlSeconds,
+    jti: `fixture_mint_${now}`,
+    now,
+  }, runtime.privateKey, "EdDSA")
+  return c.json({ role, runtimeAccessToken: token, relayUrl, tokenExpiresAt: now + tokenTtlSeconds * 1_000 })
+})
+if (access !== "cloud") {
+  built.app.post("/__fixture/tunnel/pause", async (c) => {
+    const stopped = stopUserHostedWorkspaceTunnel({ workspaceId, hostId })
+    return c.json({ paused: stopped })
+  })
+  built.app.post("/__fixture/tunnel/resume", async (c) => {
+    const result = await startUserHostedWorkspaceTunnel({
+      workspaceId,
+      hostId,
+      relayUrl,
+      hostTunnelToken: await mintHostTunnelToken({
+        subject: "user_host",
+        hostId,
+        workspaceIds: [workspaceId],
+      }, runtime.privateKey, "EdDSA"),
+    })
+    return c.json({ resumed: true, reused: result.reused })
+  })
+}
 
 const server = serve({
   fetch: built.app.fetch,

@@ -1,4 +1,4 @@
-import type { WorkbenchState } from "../../claxedo-ui/layout"
+import type { WorkbenchState } from "../../claxedo-ui/workbench"
 import type { ContentMeta } from "../../claxedo-ui/state"
 import { emptyClaxedoState } from "../../claxedo-ui/state/persistence"
 import { defaultLayoutConfig, layoutMigrate, type LayoutConfig, type LayoutTarget } from "../layout/config"

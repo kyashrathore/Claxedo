@@ -22,24 +22,24 @@ import {
   type JSX,
 } from "solid-js"
 import { useClaxedoState, type ContentMeta } from "../claxedo-ui/state"
-import type { ProjectItem } from "../claxedo-ui/layouts/rail-sidebar"
+import type { ProjectItem } from "../claxedo-ui/rail/rail-sidebar"
 import { emitTerminalFit } from "../claxedo-ui/terminal/terminal-fit"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useOptionalTerminal } from "@/context/terminal"
 import { usePermission } from "@/context/permission"
 import { useCommand, useServer, usePlatform } from "@opencode-ai/claxedo-app"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { useRailKeyboardController } from "../claxedo-ui/layouts/rail-keyboard-controller"
-import { useRailEmptyDraftController } from "../claxedo-ui/layouts/rail-empty-draft-controller"
-import { useRailShellChromeState } from "../claxedo-ui/layouts/rail-shell-chrome-state"
-import { RailSidebarShell } from "../claxedo-ui/layouts/rail-sidebar-shell"
-import { RailWorkbenchShell } from "../claxedo-ui/layouts/rail-workbench-shell"
-import { useRailWorkbenchController } from "../claxedo-ui/layouts/rail-workbench-controller"
+import { useRailKeyboardController } from "../claxedo-ui/rail/rail-keyboard-controller"
+import { useRailEmptyDraftController } from "../claxedo-ui/rail/rail-empty-draft-controller"
+import { useRailShellChromeState } from "../claxedo-ui/rail/rail-shell-chrome-state"
+import { RailSidebarShell } from "../claxedo-ui/rail/rail-sidebar-shell"
+import { RailWorkbenchShell } from "../claxedo-ui/rail/rail-workbench-shell"
+import { useRailWorkbenchController } from "../claxedo-ui/rail/rail-workbench-controller"
 import { terminalBlockedByRole } from "../terminal/terminal-role-gate"
 import { workspacePlacement } from "./workspace/workspace-connection"
 import { sessionWorkspaceRuntimeRef } from "./workspace/session-workspace-key"
-import { useRailSidebarSelection } from "../claxedo-ui/layouts/rail-sidebar-selection"
-import { useRailProjectSessionInfo } from "../claxedo-ui/layouts/rail-project-session-info"
+import { useRailSidebarSelection } from "../claxedo-ui/rail/rail-sidebar-selection"
+import { useRailProjectSessionInfo } from "../claxedo-ui/rail/rail-project-session-info"
 import {
   applyLayoutCommand,
   workspacePanelFullWidthCommand,
@@ -93,7 +93,7 @@ export type AppShellLayoutProps = ParentProps<{
   /**
    * Callback to create a new worktree in a project
    */
-  onNewWorkspace?: (project: ProjectItem) => Promise<import("../claxedo-ui/layouts/workspace-toolbar").WorkspaceBarItem | undefined>
+  onNewWorkspace?: (project: ProjectItem) => Promise<import("../claxedo-ui/rail/workspace-toolbar").WorkspaceBarItem | undefined>
 
   /**
    * Callback to open settings
@@ -116,10 +116,10 @@ export type AppShellLayoutProps = ParentProps<{
    */
   onNewSession?: (workspaceDir?: string, paneId?: string) => void
   suppressEmptyDraftSession?: boolean
-  onDeleteSession?: (session: import("../claxedo-ui/layouts/rail-sidebar").SessionItem) => void
-  onArchiveSession?: (session: import("../claxedo-ui/layouts/rail-sidebar").SessionItem) => boolean | Promise<boolean>
-  onDeleteWorkspace?: (workspace: import("../claxedo-ui/layouts/rail-sidebar").WorkspaceItem) => void
-  onRemoveProject?: (project: import("../claxedo-ui/layouts/rail-sidebar").ProjectItem) => void
+  onDeleteSession?: (session: import("../claxedo-ui/rail/rail-sidebar").SessionItem) => void
+  onArchiveSession?: (session: import("../claxedo-ui/rail/rail-sidebar").SessionItem) => boolean | Promise<boolean>
+  onDeleteWorkspace?: (workspace: import("../claxedo-ui/rail/rail-sidebar").WorkspaceItem) => void
+  onRemoveProject?: (project: import("../claxedo-ui/rail/rail-sidebar").ProjectItem) => void
 
   /**
    * Callback to create a new terminal

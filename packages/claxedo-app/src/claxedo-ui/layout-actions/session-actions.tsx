@@ -3,7 +3,7 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createStore } from "solid-js/store"
 
-import type { SessionItem } from "../layouts/rail-sidebar"
+import type { SessionItem } from "../rail/rail-sidebar"
 import { DialogDeleteSession } from "../components/dialogs"
 import type { ActionProps, Nav } from "./shared"
 import { ensureDirectorySessionCache as ensureActionDirectorySessionCache, findProjectForWorkspace, findWorkspaceForDirectory, message, sessionRefForActionWorkspace } from "./shared"
