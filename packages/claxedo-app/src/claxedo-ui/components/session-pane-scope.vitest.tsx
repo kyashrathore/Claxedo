@@ -50,7 +50,7 @@ vi.mock("../../context/global-sdk", () => ({
   }),
 }))
 
-vi.mock("@claxedo/context/platform", () => ({
+vi.mock("@/context/platform", () => ({
   usePlatform: () => ({ fetch }),
 }))
 
@@ -63,7 +63,7 @@ vi.mock("@tanstack/solid-query", async (importOriginal) => ({
   }),
 }))
 
-vi.mock("@claxedo/shell/data/query-options", () => ({
+vi.mock("@/shell/data/query-options", () => ({
   useShellQueryOptions: () => ({
     projects: () => ({ queryKey: ["projects"], queryFn: async () => calls.projects }),
   }),

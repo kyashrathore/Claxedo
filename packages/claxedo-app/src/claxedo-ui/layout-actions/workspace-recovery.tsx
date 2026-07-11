@@ -1,4 +1,4 @@
-import { getFilename } from "@claxedo/utils/path"
+import { getFilename } from "@/utils/path"
 import { showToast } from "@opencode-ai/ui/toast"
 import { DialogRecoverWorkspace } from "../components/dialogs"
 import type { ProjectItem } from "../rail/domain-types"

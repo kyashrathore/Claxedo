@@ -1,4 +1,4 @@
-import { legacyDirectoryFromRouteKey } from "@claxedo/shell/identity/route"
+import { legacyDirectoryFromRouteKey } from "@/shell/identity/route"
 import { resolveRecovery, rememberRecovery } from "../terminal/pane-terminal-recovery"
 import { createTransport } from "../../shell/data/transport/transport"
 import {

@@ -1,5 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
-import { getFilename } from "@claxedo/utils/path"
+import { getFilename } from "@/utils/path"
 
 import type { ContentMeta } from "../state"
 import type { ProjectItem } from "./domain-types"

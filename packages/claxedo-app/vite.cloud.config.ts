@@ -99,8 +99,6 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
           find: "@claxedo/agent-event-runtime",
           replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/index.ts", import.meta.url))),
         },
-        // Resolve claxedo-specific paths
-        { find: "@claxedo/", replacement: normalizePath(fileURLToPath(new URL("./src/", import.meta.url))) },
         {
           find: /^@shikijs\/themes\/(.+)$/,
           replacement: `${shikiThemesDist}$1.mjs`,

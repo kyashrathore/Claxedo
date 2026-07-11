@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 import type { Session } from "@opencode-ai/sdk/v2"
 
 export interface DialogDeleteSessionProps {

@@ -144,17 +144,17 @@ export {
 export { useLayout, LayoutProvider, LayoutContext, getAvatarColors, type LocalProject } from "@/context/layout"
 export { useServer, ServerProvider } from "@/context/server"
 export { ServerConnection, normalizeServerUrl, serverName } from "@/context/server"
-export { usePlatform, PlatformProvider, type Platform } from "@claxedo/context/platform"
+export { usePlatform, PlatformProvider, type Platform } from "@/context/platform"
 export { useTerminal, TerminalProvider, type LocalPTY } from "@/context/terminal"
 export { useSettings, SettingsProvider } from "@/context/settings"
-export { useCommand, CommandProvider } from "@claxedo/context/command"
+export { useCommand, CommandProvider } from "@/context/command"
 export {
   useLanguage,
   LanguageProvider,
   loadLocaleDict,
   normalizeLocale,
   type Locale,
-} from "@claxedo/context/language"
+} from "@/context/language"
 export { useFile, FileProvider } from "@/context/file"
 export { useComments, CommentsProvider } from "@/context/comments"
 export { usePrompt, PromptProvider } from "@/context/prompt"

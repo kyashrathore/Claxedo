@@ -3,7 +3,7 @@ import { createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
 
 // persisted() depends on usePlatform(); mock it to a web platform so it uses localStorage.
-mock.module("@claxedo/context/platform", () => ({
+mock.module("@/context/platform", () => ({
   usePlatform: () => ({ platform: "web" }),
 }))
 

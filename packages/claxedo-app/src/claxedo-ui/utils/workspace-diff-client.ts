@@ -4,7 +4,7 @@ import {
   centralTransportForServer,
   type WorkspaceRuntimeRequestOptions,
   type WorkspaceRuntimeSnapshotLike,
-} from "@claxedo/shell/data/transport/transport"
+} from "@/shell/data/transport/transport"
 
 type RawVcsFileDiff = {
   file: string

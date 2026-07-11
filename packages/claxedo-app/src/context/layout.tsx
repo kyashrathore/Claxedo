@@ -1,21 +1,21 @@
 import { createStore, produce } from "solid-js/store"
 import { batch, createContext, createEffect, createMemo, on, onCleanup, onMount, useContext, type Accessor, type ParentProps } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useShellQueryOptions as useQueryOptions } from "@claxedo/shell/data/query-options"
+import { useShellQueryOptions as useQueryOptions } from "@/shell/data/query-options"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useServer } from "@/context/server"
 import { Project } from "@opencode-ai/sdk/v2"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { same } from "@/utils/same"
 import { createScrollPersistence, type SessionScroll } from "@/context/layout-scroll"
-import { validProjectRef, validWorktree } from "@claxedo/utils/worktree"
+import { validProjectRef, validWorktree } from "@/utils/worktree"
 import {
   planProjectColorAssignment,
   projectCatalog,
   resolveSandboxRootActions,
   sidebarProjectsMissingFromApi,
   syncApiProjectsToSidebar,
-} from "@claxedo/context/layout-projects"
+} from "@/context/layout-projects"
 import { isUserHostedWorkspaceDirectory } from "../shell/identity/legacy-resolver"
 import { queryKeys } from "../shared/query/keys"
 import { queryClient } from "../shared/query/query-client"

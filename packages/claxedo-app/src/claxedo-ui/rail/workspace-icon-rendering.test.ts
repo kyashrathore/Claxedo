@@ -8,7 +8,7 @@
  * Pattern: packages/app/src/components/prompt-input/editor-dom.test.ts
  */
 import { describe, expect, test, afterEach } from "bun:test"
-import { getFilename } from "@claxedo/utils/path"
+import { getFilename } from "@/utils/path"
 
 // ── Types (match rail-sidebar.tsx) ──
 

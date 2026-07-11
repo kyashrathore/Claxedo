@@ -1,4 +1,4 @@
-import { queryClient } from "@claxedo/shared/query/query-client"
+import { queryClient } from "@/shared/query/query-client"
 
 type QueueInput = {
   paused: () => boolean

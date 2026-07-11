@@ -2,7 +2,7 @@ import { type Accessor, type JSX, Show } from "solid-js"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { SessionStatusStage, type SessionStatusStage as SessionStatusStageValue } from "@claxedo/claxedo-ui/components/session-status-stage"
+import { SessionStatusStage, type SessionStatusStage as SessionStatusStageValue } from "@/claxedo-ui/components/session-status-stage"
 
 export function PromptSubmitControl(props: {
   stage: Accessor<SessionStatusStageValue>

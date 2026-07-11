@@ -33,7 +33,6 @@ export default defineConfig({
         find: "@claxedo/agent-event-runtime",
         replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/index.ts", import.meta.url))),
       },
-      { find: "@claxedo/", replacement: normalizePath(fileURLToPath(new URL("./src/", import.meta.url))) },
       { find: "@/", replacement: normalizePath(fileURLToPath(new URL("./src/", import.meta.url))) },
     ],
   },

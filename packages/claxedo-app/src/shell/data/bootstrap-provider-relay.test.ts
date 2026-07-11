@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "../../shared/query/query-client"
 import { queryKeys } from "../../shared/query/keys"
 import { bootstrapDirectory, type DirectoryBootstrapSdk } from "./bootstrap"
-import type { NormalizedProviderListResponse } from "@claxedo/session-client"
+import type { NormalizedProviderListResponse } from "@/session-client"
 
 /**
  * Provider catalog routing for signed workspaces (hosted central).

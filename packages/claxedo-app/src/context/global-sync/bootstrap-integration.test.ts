@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { queryClient } from "@claxedo/shared/query/query-client"
-import { queryKeys } from "@claxedo/shared/query/keys"
-import { createDirectoryCacheManager } from "@claxedo/shell/data/directory-cache-manager"
-import { bootstrapDirectory } from "@claxedo/shell/data/bootstrap"
+import { queryClient } from "@/shared/query/query-client"
+import { queryKeys } from "@/shared/query/keys"
+import { createDirectoryCacheManager } from "@/shell/data/directory-cache-manager"
+import { bootstrapDirectory } from "@/shell/data/bootstrap"
 
 type DirectorySdk = Parameters<typeof bootstrapDirectory>[0]["sdk"]
 

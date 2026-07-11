@@ -170,13 +170,17 @@ brand-specific at all.
 Verified as of this writing: `packages/claxedo-app`, `packages/claxedo-server`,
 `packages/claxedo-desktop`, and `packages/claxedo-web` all still declare
 `"name": "@opencode-ai/..."` in their `package.json` (e.g.
-`packages/claxedo-app/package.json:2` is `"@opencode-ai/claxedo-app"`), while
-every internal Claxedo package this app imports by convention uses
-`@claxedo/*` (see `tsconfig.json`'s path map:
-`@claxedo/*` → `./src/*`, plus explicit entries for
-`@claxedo/agent-event-runtime` and its subpaths). The rename of the four
-product packages to `@claxedo/*` scope is tracked as LLD WP-D4 and has NOT
-happened yet — do not assume the scope name reflects package identity.
+`packages/claxedo-app/package.json:2` is `"@opencode-ai/claxedo-app"`).
+
+Intra-app imports use a single alias: `@/*` → `./src/*` (see `tsconfig.json`'s
+path map). WP-D2 retired the former `@claxedo/*` → `./src/*` duplicate alias —
+that scope no longer maps to this app's own `src`, so `@/context/...`,
+`@/shell/...`, etc. are now the one canonical form. The only surviving
+`@claxedo/*` entries are the real workspace package `@claxedo/agent-event-runtime`
+and its subpaths. Freeing the `@claxedo/*` scope from the src-alias duplication
+is what lets WP-D4 rename the four product packages into `@claxedo/*` without a
+collision; that rename is tracked as LLD WP-D4 and has NOT happened yet — do not
+assume the scope name reflects package identity.
 Design-system/shared packages this app also imports (`@opencode-ai/ui`,
 `@opencode-ai/session-ui`) are a separate, intentionally-unrenamed case (they
 are shared upstream-lineage UI kits, not one of the four product packages)

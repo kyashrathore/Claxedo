@@ -130,7 +130,7 @@ describe("createMockApi defaults", () => {
 })
 
 describe("pure export mirrors match the real ../api.ts implementation", () => {
-  // Bypass any mock.module("./api"/"@claxedo/utils/api") registered by
+  // Bypass any mock.module("./api"/"@/utils/api") registered by
   // other files in this test run — same cache-busting-query technique
   // api.test.ts uses — so this always evaluates the genuine module.
   test("isDemoPath, fixDir, normalizeUrl, isHostedAppHostname, isEmbedMode agree with the real module across a fixed input table", async () => {
@@ -172,7 +172,7 @@ describe("mock.module(...register) registers the fixture against the shared alia
   let calls: Array<{ url: string; init?: RequestInit }>
 
   beforeEach(() => {
-    // mockApiRegistration's default specifier ("@claxedo/utils/api") resolves,
+    // mockApiRegistration's default specifier ("@/utils/api") resolves,
     // via tsconfig paths, to the same absolute module every consumer's
     // "./api" / "../../utils/api" specifiers do — this test proves that
     // redirection works, standing in for a real consumer file wiring the
@@ -182,8 +182,8 @@ describe("mock.module(...register) registers the fixture against the shared alia
     calls = fixture.calls
   })
 
-  test("a module imported after registration sees the mocked @claxedo/utils/api", async () => {
-    const { api } = await import("@claxedo/utils/api")
+  test("a module imported after registration sees the mocked @/utils/api", async () => {
+    const { api } = await import("@/utils/api")
 
     const result = await api.get("/probe")
 

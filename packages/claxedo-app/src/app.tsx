@@ -1,6 +1,6 @@
 // Claxedo owns the app shell here so auth, hosted routes, query persistence, and the Workbench layout are mounted directly.
 import "@/index.css"
-import "@claxedo/claxedo-ui/ui-overrides.css"
+import "@/claxedo-ui/ui-overrides.css"
 import { I18nProvider } from "@opencode-ai/ui/context"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
@@ -30,19 +30,19 @@ import { normalizeServerUrl, ServerConnection, ServerProvider, serverName, useSe
 import { SettingsProvider } from "@/context/settings"
 import { NotificationProvider } from "@/context/notification"
 import { ModelsProvider } from "@/context/models"
-import { CommandProvider } from "@claxedo/context/command"
-import { LanguageProvider, useLanguage } from "@claxedo/context/language"
-import { usePlatform } from "@claxedo/context/platform"
+import { CommandProvider } from "@/context/command"
+import { LanguageProvider, useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { HighlightsProvider } from "@/context/highlights"
-import DirectoryLayout from "@claxedo/pages/directory-layout"
+import DirectoryLayout from "@/pages/directory-layout"
 import { ErrorPage } from "@/pages/error"
-import { getClaxedoServerUrl, isDemoMode, isHostedAppHostname } from "@claxedo/utils/api"
+import { getClaxedoServerUrl, isDemoMode, isHostedAppHostname } from "@/utils/api"
 import { QueryClientProvider } from "@tanstack/solid-query"
-import { useCheckServerHealth } from "@claxedo/utils/server-health"
-import { ClaxedoSplash } from "@claxedo/claxedo-ui/components/claxedo-logo"
-import { CloudAutoSwitch } from "@claxedo/components/cloud-auto-switch"
-import { useConfigOptional } from "@claxedo/context/config"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import { useCheckServerHealth } from "@/utils/server-health"
+import { ClaxedoSplash } from "@/claxedo-ui/components/claxedo-logo"
+import { CloudAutoSwitch } from "@/components/cloud-auto-switch"
+import { useConfigOptional } from "@/context/config"
+import { centralTransportForServer } from "@/shell/data/transport/transport"
 import { useAuthSession } from "./shell/auth/auth-session"
 import { PrincipalProvider } from "./shell/auth/principal-provider"
 import { queryClient } from "./shared/query/query-client"
@@ -63,7 +63,7 @@ installSessionStatusTelemetryDevtools()
 // surfaces, so load it lazily; the Suspense wrapper keeps useFileComponent
 // consumers unchanged. NOTE: this is only effective together with the lazy
 // ReviewWorkspace edge in rail-layout — both are eager roots into pierre/shiki.
-const LazyFile = lazy(() => import("@claxedo/session-client").then((m) => ({ default: m.File as Component<any> })))
+const LazyFile = lazy(() => import("@/session-client").then((m) => ({ default: m.File as Component<any> })))
 const File: Component<any> = (props) => (
   <Suspense fallback={null}>
     <LazyFile {...props} />
@@ -83,7 +83,7 @@ const [claxedoAppShellPainted, setClaxedoAppShellPainted] = createSignal(false)
 let claxedoAppShellLoad: Promise<ClaxedoAppShellComponent> | undefined
 
 const preloadClaxedoAppShell = () => {
-  claxedoAppShellLoad ??= import("@claxedo/shell/app-shell").then((m) => {
+  claxedoAppShellLoad ??= import("@/shell/app-shell").then((m) => {
     setClaxedoAppShell(() => m.ClaxedoAppShell)
     return m.ClaxedoAppShell
   })
@@ -112,12 +112,12 @@ function waitForLayoutRevealFrame() {
 }
 
 const Home = lazy(() => import("@/pages/home"))
-const PermissionsPage = lazy(() => import("@claxedo/pages/permissions"))
-const ConfigPage = lazy(() => import("@claxedo/pages/config"))
-const LoginPage = lazy(() => import("@claxedo/pages/login"))
-const CliLoginPage = lazy(() => import("@claxedo/pages/cli-login"))
-const DialogMatrixHarness = lazy(() => import("@claxedo/pages/dialog-matrix-harness"))
-const ErrorPageHarness = lazy(() => import("@claxedo/pages/error-page-harness"))
+const PermissionsPage = lazy(() => import("@/pages/permissions"))
+const ConfigPage = lazy(() => import("@/pages/config"))
+const LoginPage = lazy(() => import("@/pages/login"))
+const CliLoginPage = lazy(() => import("@/pages/cli-login"))
+const DialogMatrixHarness = lazy(() => import("@/pages/dialog-matrix-harness"))
+const ErrorPageHarness = lazy(() => import("@/pages/error-page-harness"))
 const Loading = () => <div class="size-full" />
 const HiddenRouteOutlet = () => <div class="hidden" />
 

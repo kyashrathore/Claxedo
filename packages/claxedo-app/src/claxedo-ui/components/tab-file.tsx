@@ -14,19 +14,19 @@ import { Match, Show, Switch, createEffect, createMemo, createSignal, on } from 
 import { useSDK } from "@/context/sdk"
 import { useComments } from "@/context/comments"
 import { selectionFromLines, type FileSelection, type SelectedLineRange } from "@/context/file"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
-import { File, type TextFileProps } from "@claxedo/session-client"
+import { File, type TextFileProps } from "@/session-client"
 import {
   createLineCommentController,
   type LineCommentAnnotationMeta,
-} from "@claxedo/session-client"
-import { Markdown } from "@claxedo/session-client"
+} from "@/session-client"
+import { Markdown } from "@/session-client"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { ClaxedoIconButton as IconButton } from "./claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { getFilename } from "@claxedo/utils/path"
-import { checksum } from "@claxedo/utils/encode"
+import { getFilename } from "@/utils/path"
+import { checksum } from "@/utils/encode"
 import type { LineComment } from "@/context/comments"
 
 // Module-level signal tracking which file paths are in preview mode.

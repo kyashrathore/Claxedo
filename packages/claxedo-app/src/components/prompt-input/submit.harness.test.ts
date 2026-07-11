@@ -18,7 +18,7 @@
  * matters — they are the same copy. Per-test isolation comes from
  * `resetSubmitHarness()` in each file's `beforeEach`.
  *
- * The `@claxedo/utils/api` boundary is built from the shared `createMockApi`
+ * The `@/utils/api` boundary is built from the shared `createMockApi`
  * fixture (per-route responses via its `authFetch` override; the pure surface —
  * `isDemoPath`/`isEmbedMode`/`normalizeUrl`/… — is inherited so it can't drift).
  *
@@ -353,7 +353,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     },
   }))
 
-  mock.module("@claxedo/utils/encode", () => ({
+  mock.module("@/utils/encode", () => ({
     base64Decode: (value: string) => new TextDecoder().decode(Uint8Array.from(
       atob(value.replace(/-/g, "+").replace(/_/g, "/")),
       (char) => char.charCodeAt(0),
@@ -366,7 +366,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     sampledChecksum: (value: string) => value || undefined,
   }))
 
-  mock.module("@claxedo/utils/session-url", () => ({
+  mock.module("@/utils/session-url", () => ({
     resolveSessionUrl: async (sessionID: string) => (state.demoMode ? null : `http://runtime.example.com/${sessionID}`),
   }))
 
@@ -454,7 +454,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     isDemoMode: () => state.demoMode,
     fixDir: (input) => input,
   })
-  mock.module("@claxedo/utils/api", () => apiFixture.module)
+  mock.module("@/utils/api", () => apiFixture.module)
 
   mock.module("../../shell/data/transport/transport", () => ({
     centralTransportForServer: (serverUrl?: string) => {
@@ -744,13 +744,13 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     }),
   }))
 
-  mock.module("@claxedo/context/language", () => ({
+  mock.module("@/context/language", () => ({
     useLanguage: () => ({
       t: (key: string) => key,
     }),
   }))
 
-  mock.module("@claxedo/context/platform", () => ({
+  mock.module("@/context/platform", () => ({
     usePlatform: () => ({
       fetch: globalThis.fetch,
     }),

@@ -1,6 +1,6 @@
 import { createStore, produce, type SetStoreFunction } from "solid-js/store"
-import type { CloudLog } from "@claxedo/components/session/cloud-startup-view"
-import { isForbiddenConnectionError } from "@claxedo/components/session/cloud-startup-view"
+import type { CloudLog } from "@/components/session/cloud-startup-view"
+import { isForbiddenConnectionError } from "@/components/session/cloud-startup-view"
 import type { useClaxedoEventsOptional } from "../../context/claxedo-events"
 import {
   appendWorkspaceRuntimeLog,

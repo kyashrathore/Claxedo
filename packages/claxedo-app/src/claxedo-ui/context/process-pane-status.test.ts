@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Process } from "@claxedo/process/process"
+import type { Process } from "@/process/process"
 import { createProcessPaneSync, deriveProcessPaneStatus, isStaleProcessSnapshot } from "./process-pane-status"
 
 type ManagedProcess = Process.ManagedProcess

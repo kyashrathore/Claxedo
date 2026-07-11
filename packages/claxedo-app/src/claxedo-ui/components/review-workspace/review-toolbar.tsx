@@ -15,7 +15,7 @@ import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { Spinner } from "@opencode-ai/ui/spinner"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 import {
   REVIEW_POPOVER_MODES,
   type ReviewMode,

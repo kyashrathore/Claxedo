@@ -2,10 +2,10 @@
 import { createMemo } from "solid-js"
 import type { Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import { useCommand, type CommandOption } from "@claxedo/context/command"
+import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useFile, selectionFromLines, type FileSelection, type SelectedLineRange } from "@/context/file"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/session-selection"
 import { usePermission } from "@/context/permission"
@@ -13,11 +13,11 @@ import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { DialogSelectFile } from "@/components/dialogs/select-file"
-import { DialogSelectModel, type PickerState } from "@claxedo/components/dialogs/select-model"
-import { DialogSelectMcp } from "@claxedo/components/dialogs/select-mcp"
+import { DialogSelectModel, type PickerState } from "@/components/dialogs/select-model"
+import { DialogSelectMcp } from "@/components/dialogs/select-mcp"
 import { DialogFork } from "@/components/dialogs/fork"
 import { showToast } from "@opencode-ai/ui/toast"
-import { findLast } from "@claxedo/utils/array"
+import { findLast } from "@/utils/array"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { UserMessage } from "@opencode-ai/sdk/v2"
 import type { Config, SessionStatus } from "@opencode-ai/sdk/v2/client"
@@ -31,8 +31,8 @@ const canAddSelectionContext = (input: {
   if (!path) return false
   return input.selectedLines(path) != null
 }
-import { useClaxedoState } from "@claxedo/claxedo-ui/state"
-import { capture as phCapture } from "@claxedo/utils/analytics"
+import { useClaxedoState } from "@/claxedo-ui/state"
+import { capture as phCapture } from "@/utils/analytics"
 import type { SessionTransportCapabilities } from "../../session/store/session-transport"
 import {
   registeredConversationSnapshot,

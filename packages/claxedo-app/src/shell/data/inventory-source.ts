@@ -1,7 +1,7 @@
 // target-layer: data
 import type { QueryClient } from "@tanstack/solid-query"
-import type { SessionInventoryRow, WorkspaceGroup } from "@claxedo/shell/data/global-sync-types"
-import { insertSortedSessionItem } from "@claxedo/shell/data/global-session-identity"
+import type { SessionInventoryRow, WorkspaceGroup } from "@/shell/data/global-sync-types"
+import { insertSortedSessionItem } from "@/shell/data/global-session-identity"
 import { normalizeSessionTurnOutcome } from "../../shared/data/session-types"
 import { queryClient } from "../../shared/query/query-client"
 import { queryKeys } from "../../shared/query/keys"
@@ -9,7 +9,7 @@ import { createAgentRuntimeClient } from "../../agent-runtime/agent-runtime-clie
 import { isFilesystemDirectory, isUserHostedWorkspaceDirectory } from "../identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "../workspace/session-workspace-key"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "../../utils/api"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer } from "@/shell/data/transport/transport"
 import { controlSessionListUrl } from "../../utils/workspace-control-routes"
 import { applySessionFilter, type SessionFilter } from "../../context/global-sync/session-filter"
 import { paginateSessions } from "../../context/global-sync/session-pagination"

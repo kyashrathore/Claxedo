@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { WorkspaceGroup } from "@claxedo/shell/data/global-sync-types"
+import type { WorkspaceGroup } from "@/shell/data/global-sync-types"
 import {
   controlPlaneSessionToItem,
   controlMetaToGlobalSession,

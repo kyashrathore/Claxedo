@@ -1,5 +1,5 @@
 // target-layer: data
-import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@claxedo/shell/data/session-list-events"
+import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@/shell/data/session-list-events"
 import type { DirectorySessionCacheValue } from "./queries"
 import { applyGlobalProjectEvent } from "./global-event-projector"
 import { routeDirectoryEvent, type RoutableEvent } from "./event-router"

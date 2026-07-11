@@ -1,6 +1,6 @@
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
-import type { PartGroup } from "@claxedo/session-client"
+import type { PartGroup } from "@/session-client"
 import { Data, Equal } from "effect"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }

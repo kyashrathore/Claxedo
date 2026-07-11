@@ -5,7 +5,7 @@
  * living-apps-api.test.ts) used to hand-copy a full mock of every export of
  * `./api` — and their own comments documented a real hazard: Bun's module
  * cache is process-wide across a `bun test` run, so one file's
- * `mock.module("./api", ...)` (or `mock.module("@claxedo/utils/api", ...)`,
+ * `mock.module("./api", ...)` (or `mock.module("@/utils/api", ...)`,
  * or `mock.module("../../utils/api", ...)` — all four specifier forms
  * resolve to the same absolute file and therefore the same cache slot) can
  * leak into another file and silently swap out its behavior for whatever
@@ -253,7 +253,7 @@ export function createMockApi(overrides: MockApiOverrides = {}): MockApiFixture 
  * and the `mock.module` args to register it with. Caller still owns the
  * actual `mock.module(...)` call (see file header) since that requires
  * importing `mock` from "bun:test", which this file deliberately does not.
- * `specifier` should be "@claxedo/utils/api" in new call sites — that
+ * `specifier` should be "@/utils/api" in new call sites — that
  * alias resolves, via tsconfig paths, to the same absolute file as `./api`
  * from utils/ or `../../utils/api` from a nested directory, so registering
  * it covers every current caller regardless of which directory their test
@@ -265,7 +265,7 @@ export function createMockApi(overrides: MockApiOverrides = {}): MockApiFixture 
  */
 export function mockApiRegistration(
   overrides: MockApiOverrides = {},
-  specifier = "@claxedo/utils/api",
+  specifier = "@/utils/api",
 ): { fixture: MockApiFixture; register: [string, () => ApiModuleShape] } {
   const fixture = createMockApi(overrides)
   return { fixture, register: [specifier, () => fixture.module] }

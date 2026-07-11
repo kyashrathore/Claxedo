@@ -1,4 +1,4 @@
-import { Binary } from "@claxedo/utils/binary"
+import { Binary } from "@/utils/binary"
 import type { Project } from "@opencode-ai/sdk/v2/client"
 
 type GlobalEvent = {

@@ -9,7 +9,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { render, cleanup, fireEvent } from "@solidjs/testing-library"
-import type { Process } from "@claxedo/process/process"
+import type { Process } from "@/process/process"
 
 vi.mock("@opencode-ai/ui/icon", () => ({
   Icon: (props: any) => <span data-icon={props.name} />,

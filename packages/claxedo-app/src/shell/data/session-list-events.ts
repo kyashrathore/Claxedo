@@ -1,4 +1,4 @@
-import { Binary } from "@claxedo/utils/binary"
+import { Binary } from "@/utils/binary"
 import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { trimSessions } from "../../context/global-sync/session-trim"
 import type { SessionLifecycleEvent } from "../../shared/data/session-lifecycle"

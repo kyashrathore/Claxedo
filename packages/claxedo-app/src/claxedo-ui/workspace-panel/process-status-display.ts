@@ -1,4 +1,4 @@
-import type { Process } from "@claxedo/process/process"
+import type { Process } from "@/process/process"
 
 type ProcessStatus = Process.Status
 

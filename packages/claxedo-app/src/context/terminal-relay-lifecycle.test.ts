@@ -14,7 +14,7 @@ mock.module("@/context/sdk", () => ({
   },
 }))
 
-mock.module("@claxedo/utils/api", () => ({
+mock.module("@/utils/api", () => ({
   authFetch: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
   getConfiguredClaxedoServerUrl: () => "",
   getDefaultBaseUrl: () => "http://server.test",
@@ -68,7 +68,7 @@ mock.module("@/utils/persist", () => ({
   },
 }))
 
-mock.module("@claxedo/terminal/terminal-recovery", () => ({
+mock.module("@/terminal/terminal-recovery", () => ({
   clearInitialCommandMarker: () => {},
 }))
 

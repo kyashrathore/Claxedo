@@ -3,7 +3,7 @@ import { Popover as Kobalte } from "@kobalte/core/popover"
 import { type Component, type ComponentProps, createMemo, type JSX, Show, type ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { popularProviders } from "@claxedo/context/use-providers"
+import { popularProviders } from "@/context/use-providers"
 import { Button } from "@opencode-ai/ui/button"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tag } from "@opencode-ai/ui/tag"
@@ -11,7 +11,7 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { List } from "@opencode-ai/ui/list"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ModelTooltip } from "@/components/model-tooltip"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "opencode" && (!cost || cost.input === 0)
@@ -134,14 +134,14 @@ export function ModelSelectorPopover(props: {
 
   const handleManage = () => {
     close("manage")
-    void import("@claxedo/components/dialogs/manage-models").then((x) => {
+    void import("@/components/dialogs/manage-models").then((x) => {
       dialog.show(() => <x.DialogManageModels />)
     })
   }
 
   const handleConnectProvider = () => {
     close("provider")
-    void import("@claxedo/components/dialogs/select-provider").then((x) => {
+    void import("@/components/dialogs/select-provider").then((x) => {
       dialog.show(() => <x.DialogSelectProvider />)
     })
   }
@@ -224,13 +224,13 @@ export const DialogSelectModel: Component<{ provider?: string; model: PickerStat
   const language = useLanguage()
 
   const provider = () => {
-    void import("@claxedo/components/dialogs/select-provider").then((x) => {
+    void import("@/components/dialogs/select-provider").then((x) => {
       dialog.show(() => <x.DialogSelectProvider />)
     })
   }
 
   const manage = () => {
-    void import("@claxedo/components/dialogs/manage-models").then((x) => {
+    void import("@/components/dialogs/manage-models").then((x) => {
       dialog.show(() => <x.DialogManageModels />)
     })
   }

@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import { useQueries } from "@tanstack/solid-query"
-import { getFilename } from "@claxedo/utils/path"
+import { getFilename } from "@/utils/path"
 
 import { buildSwitcherItemsFromState, type SwitcherStatus } from "../compact-switcher/switcher-items"
 import {

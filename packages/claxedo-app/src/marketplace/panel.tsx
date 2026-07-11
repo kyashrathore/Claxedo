@@ -7,8 +7,8 @@ import { useSDK } from "@/context/sdk"
 import { requestMarketplaceConfirm } from "./confirm-dialog"
 import { mcpExtensionUrl } from "../components/dialogs/select-mcp-logic"
 import { getClaxedoServerUrl } from "../utils/api"
-import { centralTransportForServer, unsignedLocalFetch } from "@claxedo/shell/data/transport/transport"
-import { usePlatform } from "@claxedo/context/platform"
+import { centralTransportForServer, unsignedLocalFetch } from "@/shell/data/transport/transport"
+import { usePlatform } from "@/context/platform"
 import {
   categoryEntries,
   catalogFromJson,

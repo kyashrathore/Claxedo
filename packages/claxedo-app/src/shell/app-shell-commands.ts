@@ -1,7 +1,7 @@
 import { createMemo, type Accessor } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
-import { useCommand } from "@claxedo/context/command"
+import { useCommand } from "@/context/command"
 import { createProcessPaneToggleCommand } from "../claxedo-ui/rail/layout-commands"
 import type { ClaxedoStateApi } from "../claxedo-ui/state"
 import { capture as phCapture } from "../utils/analytics"

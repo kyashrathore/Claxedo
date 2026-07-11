@@ -24,7 +24,7 @@ import type { SessionRef } from "../../shell/identity/session-ref"
 import { openWorkspaceConnection } from "../../utils/workspace-relay-connection"
 import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"
 import { createTransport } from "../../shell/data/transport/transport"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer } from "@/shell/data/transport/transport"
 import {
   createAgentRuntimeClient,
   DEFAULT_AGENT_RUNTIME_CAPABILITIES,

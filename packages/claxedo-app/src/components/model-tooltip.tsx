@@ -1,5 +1,5 @@
 import { Show, type Component } from "solid-js"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 
 type InputKey = "text" | "image" | "audio" | "video" | "pdf"
 type InputMap = Record<InputKey, boolean>

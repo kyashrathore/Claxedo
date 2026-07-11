@@ -15,7 +15,7 @@
 import type { SessionRef } from "../shell/identity/session-ref"
 import type { Placement } from "../shell/auth/placement"
 import { usesScopedSessionTransport, workspaceIdFromRef } from "../shell/identity/legacy-resolver"
-import { centralTransportForServer, isLocalPersonalScope } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer, isLocalPersonalScope } from "@/shell/data/transport/transport"
 import { USER_HOSTED_WORKSPACE_KIND, type WorkspaceKind } from "./workspace-kind"
 
 export { workspaceIdFromRef }

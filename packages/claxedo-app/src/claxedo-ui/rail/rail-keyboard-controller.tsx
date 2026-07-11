@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js"
-import type { CommandOption } from "@claxedo/context/command"
+import type { CommandOption } from "@/context/command"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 

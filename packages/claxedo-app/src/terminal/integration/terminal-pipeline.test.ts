@@ -3,10 +3,10 @@ import { Terminal } from "@xterm/headless"
 import { SerializeAddon } from "@xterm/addon-serialize"
 import { createTerminalRuntimeQueue } from "../terminal-runtime-queue"
 import { preparePersistBuffer, prepareRestoreBuffer } from "../terminal-buffer"
-import { createModeScanner } from "@claxedo/terminal/mode-scan"
-import { createQuerySuppressor } from "@claxedo/terminal/query-suppression"
+import { createModeScanner } from "@/terminal/mode-scan"
+import { createQuerySuppressor } from "@/terminal/query-suppression"
 import { sigwinchToggleSize } from "../terminal-connection"
-import { getCapabilityResponses } from "@claxedo/terminal/capability-responder"
+import { getCapabilityResponses } from "@/terminal/capability-responder"
 
 // ---------------------------------------------------------------------------
 // Integration Test 3: End-to-end pipeline

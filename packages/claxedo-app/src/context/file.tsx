@@ -4,8 +4,8 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/core/util/path"
-import { useSDK } from "@claxedo/context/sdk"
-import { useLanguage } from "@claxedo/context/language"
+import { useSDK } from "@/context/sdk"
+import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { createPathHelpers } from "@/context/file/path"
 import { cachedFileReadRequest, clearFileRequestCache } from "@/utils/file-request-cache"
@@ -20,7 +20,7 @@ import {
   setFileContentBytes,
   touchFileContent,
 } from "@/context/file/content-cache"
-import { createFileViewCache } from "@claxedo/context/file/view-cache"
+import { createFileViewCache } from "@/context/file/view-cache"
 import { createFileTreeStore } from "@/context/file/tree-store"
 import { invalidateFromWatcher } from "@/context/file/watcher"
 import {

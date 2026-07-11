@@ -53,7 +53,7 @@ beforeAll(async () => {
     },
   }))
 
-  mock.module("@claxedo/utils/worktree", () => ({
+  mock.module("@/utils/worktree", () => ({
     Worktree: {
       get: (directory: string) => worktreeStates.get(directory),
       pending: (directory: string) => {

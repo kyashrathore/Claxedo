@@ -38,7 +38,7 @@ vi.mock("@solidjs/router", () => ({
   useNavigate: () => h.navigate,
 }))
 
-vi.mock("@claxedo/context/platform", () => ({
+vi.mock("@/context/platform", () => ({
   usePlatform: () => ({ fetch: vi.fn() }),
 }))
 

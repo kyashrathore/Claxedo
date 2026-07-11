@@ -1,6 +1,6 @@
 import type { Config } from "@opencode-ai/sdk/v2/client"
-import { queryKeys } from "@claxedo/shared/query/keys"
-import { queryClient } from "@claxedo/shared/query/query-client"
+import { queryKeys } from "@/shared/query/keys"
+import { queryClient } from "@/shared/query/query-client"
 
 export function directoryConfigQuery(baseUrl: string | undefined, directory: string) {
   return {

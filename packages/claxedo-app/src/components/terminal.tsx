@@ -1,17 +1,17 @@
-import type { TerminalBackend } from "@claxedo/terminal/backend/types"
-import { retry } from "@claxedo/terminal/retry"
+import type { TerminalBackend } from "@/terminal/backend/types"
+import { retry } from "@/terminal/retry"
 import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, onMount, splitProps } from "solid-js"
 import { TerminalAccessoryRow } from "./terminal-accessory-row"
 import { useSDK } from "@/context/sdk"
 import { monoFontFamily, useSettings } from "@/context/settings"
 import { LocalPTY } from "@/context/terminal"
-import { usePlatform } from "@claxedo/context/platform"
+import { usePlatform } from "@/context/platform"
 import { resolveThemeVariant, useTheme, withAlpha, type HexColor } from "@opencode-ai/ui/theme"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 import { showToast } from "@opencode-ai/ui/toast"
-import { claimInitialCommand, markInitialCommandRan, releaseInitialCommandClaim } from "@claxedo/terminal/terminal-recovery"
-import { preparePersistBuffer, prepareRestoreBuffer } from "@claxedo/terminal/terminal-buffer"
-import { hostStable, shouldRecoverDesync, shouldSendResize, sizeSane } from "@claxedo/terminal/terminal-geometry"
+import { claimInitialCommand, markInitialCommandRan, releaseInitialCommandClaim } from "@/terminal/terminal-recovery"
+import { preparePersistBuffer, prepareRestoreBuffer } from "@/terminal/terminal-buffer"
+import { hostStable, shouldRecoverDesync, shouldSendResize, sizeSane } from "@/terminal/terminal-geometry"
 import {
   sigwinchToggleSize,
   WebSocketCloseError,
@@ -22,11 +22,11 @@ import {
   reconnectFailedMessage,
   createTerminalPtyClient,
   openTerminalWebSocket,
-} from "@claxedo/terminal/terminal-connection"
-import { createTerminalRuntimeQueue } from "@claxedo/terminal/terminal-runtime-queue"
-import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize } from "@claxedo/terminal/reconnect-heuristics"
-import { stripTerminalRepliesFromInput } from "@claxedo/terminal/input-reply-filter"
-import { getCapabilityResponses } from "@claxedo/terminal/capability-responder"
+} from "@/terminal/terminal-connection"
+import { createTerminalRuntimeQueue } from "@/terminal/terminal-runtime-queue"
+import { cursorPlan, filterModeSequences, initialDelay, isLikelyTui, restoreSize } from "@/terminal/reconnect-heuristics"
+import { stripTerminalRepliesFromInput } from "@/terminal/input-reply-filter"
+import { getCapabilityResponses } from "@/terminal/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "../utils/api"
 import { resolveWorkspaceRuntime } from "../cloud/workspace-runtime-store"
 import { resolveTerminalReloadFlag, terminalReloadStorageKey } from "./terminal-pty-key-migration"

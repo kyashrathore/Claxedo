@@ -1,6 +1,6 @@
-import { usePlatform } from "@claxedo/context/platform"
+import { usePlatform } from "@/context/platform"
 import type { ServerConnection } from "@/context/server"
-import { queryClient } from "@claxedo/shared/query/query-client"
+import { queryClient } from "@/shared/query/query-client"
 
 export type ServerHealth = { healthy: boolean; version?: string }
 

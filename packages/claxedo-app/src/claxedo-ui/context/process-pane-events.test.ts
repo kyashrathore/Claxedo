@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
-import type { Process } from "@claxedo/process/process"
+import type { Process } from "@/process/process"
 import { createProcessEventHandlers, type ProcessEventDeps, type ProcessPaneStore } from "./process-pane-events"
 
 type ManagedProcess = Process.ManagedProcess

@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/solid-query"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "../../utils/api"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer } from "@/shell/data/transport/transport"
 import {
   controlSessionNavigationListUrl,
   type ControlSessionNavigationListQuery,

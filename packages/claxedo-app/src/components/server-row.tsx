@@ -10,7 +10,7 @@ import {
   type ParentProps,
   Show,
 } from "solid-js"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 import { type ServerConnection, serverName } from "@/context/server"
 import type { ServerHealth } from "@/utils/server-health"
 

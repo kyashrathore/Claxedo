@@ -43,11 +43,11 @@ vi.mock("@/context/global-sync", () => ({
   useQueryOptions: context.useQueryOptions,
 }))
 
-vi.mock("@claxedo/shell/data/query-options", () => ({
+vi.mock("@/shell/data/query-options", () => ({
   useShellQueryOptions: context.useQueryOptions,
 }))
 
-vi.mock("@claxedo/shared/query/query-client", () => ({
+vi.mock("@/shared/query/query-client", () => ({
   queryClient: {
     getQueryData: vi.fn(),
   },
@@ -65,11 +65,11 @@ vi.mock("../../../context/global-sdk", () => ({
   useGlobalSDK: context.useGlobalSDK,
 }))
 
-vi.mock("@claxedo/context/platform", () => ({
+vi.mock("@/context/platform", () => ({
   usePlatform: context.usePlatform,
 }))
 
-vi.mock("@claxedo/context/platform", () => ({
+vi.mock("@/context/platform", () => ({
   usePlatform: context.usePlatform,
 }))
 

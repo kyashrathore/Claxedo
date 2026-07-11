@@ -1,5 +1,5 @@
 import { authFetch, normalizeUrl } from "../../utils/api"
-import { centralTransportForServer, unsignedLocalFetch } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer, unsignedLocalFetch } from "@/shell/data/transport/transport"
 import { createTransport } from "../../shell/data/transport/transport"
 import type { WorkspaceRuntimeSnapshot } from "./runtime"
 

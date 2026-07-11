@@ -5,10 +5,10 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createMemo, createSignal, For, onMount, Show, type Component } from "solid-js"
-import { usePlatform } from "@claxedo/context/platform"
+import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { getClaxedoServerUrl } from "../../utils/api"
-import { centralTransportForServer, unsignedLocalFetch } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer, unsignedLocalFetch } from "@/shell/data/transport/transport"
 import {
   filterMcpCatalogEntries,
   installDisabledReasonForEntry,
@@ -21,7 +21,7 @@ import {
   type CatalogEntry,
   type InstalledRecord,
   type RequestFn,
-} from "@claxedo/components/dialogs/select-mcp-logic"
+} from "@/components/dialogs/select-mcp-logic"
 
 type LoadState = "loading" | "ready" | "error"
 

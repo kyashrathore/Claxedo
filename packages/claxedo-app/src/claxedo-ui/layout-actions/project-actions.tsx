@@ -1,7 +1,7 @@
 import { DialogSettings } from "@/components/dialogs/settings"
-import { getFilename } from "@claxedo/utils/path"
+import { getFilename } from "@/utils/path"
 import { showToast } from "@opencode-ai/ui/toast"
-import { validWorktree } from "@claxedo/utils/worktree"
+import { validWorktree } from "@/utils/worktree"
 
 import { DialogSelectDirectory } from "@/components/dialogs/select-directory"
 import { DialogCreateCloudWorkspace } from "../../components/dialogs/create-cloud-workspace"

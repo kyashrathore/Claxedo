@@ -1,5 +1,5 @@
-import { workspaceResolveUrl as controlWorkspaceResolveUrl } from "@claxedo/utils/workspace-control-routes"
-export { isLocalPersonalScope } from "@claxedo/shell/data/transport/transport"
+import { workspaceResolveUrl as controlWorkspaceResolveUrl } from "@/utils/workspace-control-routes"
+export { isLocalPersonalScope } from "@/shell/data/transport/transport"
 
 export function workspaceResolveUrl(input: { serverUrl?: string; directory?: string; workspaceId?: string }) {
   return new URL(controlWorkspaceResolveUrl({

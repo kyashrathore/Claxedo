@@ -14,14 +14,14 @@ function layoutKey(key: unknown) {
   return key()
 }
 
-mock.module("@claxedo/claxedo-ui/context/session-params", () => ({
+mock.module("@/claxedo-ui/context/session-params", () => ({
   useSessionParams: () => {
     if (paneParams) return paneParams
     throw new Error("outside workbench")
   },
 }))
 
-mock.module("@claxedo/utils/encode", () => ({
+mock.module("@/utils/encode", () => ({
   base64Decode: (value: string) => value.replace(/^encoded:/, ""),
   base64Encode: (value: string) => `encoded:${value}`,
   checksum: (value: string) => value || undefined,
@@ -47,7 +47,7 @@ mock.module("@/context/layout", () => ({
 }))
 
 describe("upstream contract", async () => {
-  const { useSessionKey } = await import("@claxedo/session/session-layout")
+  const { useSessionKey } = await import("@/session/session-layout")
 
   beforeEach(() => {
     paneParams = undefined
@@ -74,7 +74,7 @@ describe("upstream contract", async () => {
 })
 
 describe("Claxedo behavior", async () => {
-  const { useSessionLayout } = await import("@claxedo/session/session-layout")
+  const { useSessionLayout } = await import("@/session/session-layout")
 
   beforeEach(() => {
     paneParams = {

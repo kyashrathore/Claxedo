@@ -5,7 +5,7 @@ import {
   requiresSignedLegacyDirectory,
   workspaceIdFromRef,
 } from "../identity/legacy-resolver"
-import { centralTransportForServer, isLocalPersonalScope } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer, isLocalPersonalScope } from "@/shell/data/transport/transport"
 
 export type RelayRole = RuntimeAccessTokenRole
 

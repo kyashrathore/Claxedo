@@ -1,4 +1,4 @@
-import type { CloudLog } from "@claxedo/components/session/cloud-startup-view"
+import type { CloudLog } from "@/components/session/cloud-startup-view"
 import type { ClaxedoEvent, useClaxedoEventsOptional } from "../context/claxedo-events"
 import { queryClient } from "../shared/query/query-client"
 import { type WorkspaceRuntimeSnapshot, workspaceResolveQuery } from "../shared/query/runtime"
@@ -8,7 +8,7 @@ import { fastSessionSwitchAnyNetworkQuiet } from "../session/store/fast-session-
 import { createTransport } from "../shell/data/transport/transport"
 import { authFetch } from "../utils/api"
 import { bypassFetchThrottle } from "../utils/fetch-throttle"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer } from "@/shell/data/transport/transport"
 
 type EventsApi = ReturnType<typeof useClaxedoEventsOptional>
 type ProvisionEvent = Extract<ClaxedoEvent, { type: "provision" }>

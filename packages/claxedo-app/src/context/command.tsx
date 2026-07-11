@@ -5,7 +5,7 @@ import {
   CommandProvider as UpstreamCommandProvider,
   useCommand as useUpstreamCommand,
 } from "./command-palette"
-import { CommandBusProvider, useCommandBus, useCommandBusOptional } from "@claxedo/shell/contributions/command-bus-provider"
+import { CommandBusProvider, useCommandBus, useCommandBusOptional } from "@/shell/contributions/command-bus-provider"
 import {
   agentCommandFromEvent,
   legacyCommandTrigger,
@@ -13,9 +13,9 @@ import {
   serverCommandTriggerFromEvent,
   type CommandTriggerCompatSource,
   type LegacyCommandTriggerCommand,
-} from "@claxedo/shell/contributions/compat-command-trigger"
-import { trustedAgentContributionBundleFromEvent } from "@claxedo/shell/contributions/registry"
-import { contentSurfaceRegistry } from "@claxedo/shell/contributions/first-party-content-surfaces"
+} from "@/shell/contributions/compat-command-trigger"
+import { trustedAgentContributionBundleFromEvent } from "@/shell/contributions/registry"
+import { contentSurfaceRegistry } from "@/shell/contributions/first-party-content-surfaces"
 import { useGlobalSDK } from "@/context/global-sdk"
 
 export * from "./command-palette"

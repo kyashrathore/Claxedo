@@ -3,7 +3,7 @@ import type { ContentMeta } from "../state"
 import type { PaneCtx } from "../workbench"
 import { SessionPaneScope } from "../components/session-pane-scope"
 import { SessionConversationOwner } from "../../shell/chat/session-conversation-owner"
-import { SessionContextTab } from "@claxedo/components/session"
+import { SessionContextTab } from "@/components/session"
 
 export function ContextContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
   const sessionRef = () => props.meta.content?.sessionRef

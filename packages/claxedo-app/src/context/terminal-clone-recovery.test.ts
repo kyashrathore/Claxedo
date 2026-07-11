@@ -22,7 +22,7 @@ mock.module("@/context/sdk", () => ({
   useSDK: () => { throw new Error("useSDK called outside test") },
 }))
 
-mock.module("@claxedo/utils/api", () => ({
+mock.module("@/utils/api", () => ({
   authFetch: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
   getClaxedoServerUrl: () => "http://127.0.0.1:3001",
   getDefaultBaseUrl: () => "http://127.0.0.1:3001",
@@ -83,7 +83,7 @@ mock.module("@solidjs/router", () => ({
   useParams: () => ({ dir: "/workspace" }),
 }))
 
-mock.module("@claxedo/terminal/terminal-recovery", () => {
+mock.module("@/terminal/terminal-recovery", () => {
   const executed = new Set<string>()
   const claimed = new Set<string>()
   const initialCommandKey = (id: string) => `opencode.pty.${id}.initial-command-ran`

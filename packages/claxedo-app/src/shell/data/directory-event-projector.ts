@@ -1,5 +1,5 @@
 import type { PermissionRequest, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
-import { Binary } from "@claxedo/utils/binary"
+import { Binary } from "@/utils/binary"
 import { diffs as list } from "@/utils/diffs"
 import { queryClient } from "../../shared/query/query-client"
 import {

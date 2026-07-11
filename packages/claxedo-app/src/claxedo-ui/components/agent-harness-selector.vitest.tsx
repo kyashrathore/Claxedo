@@ -73,7 +73,7 @@ vi.mock("@opencode-ai/ui/select", () => ({
   },
 }))
 
-vi.mock("@claxedo/components/dialogs/select-model", () => ({
+vi.mock("@/components/dialogs/select-model", () => ({
   ModelSelectorPopover: (props: any) => {
     const items = props.model?.list?.() ?? []
     return (

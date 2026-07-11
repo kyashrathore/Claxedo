@@ -1,4 +1,4 @@
-import { useShellQueryOptions as useQueryOptions } from "@claxedo/shell/data/query-options"
+import { useShellQueryOptions as useQueryOptions } from "@/shell/data/query-options"
 
 export type ProjectInventoryQueryOptions = ReturnType<ReturnType<typeof useQueryOptions>["projects"]>
 export type ProjectInventoryStorage = {

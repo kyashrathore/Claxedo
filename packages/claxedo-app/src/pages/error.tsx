@@ -1,11 +1,11 @@
 // Claxedo owns branded fallback UI without upstream Sentry reporting.
 import { TextField } from "@opencode-ai/ui/text-field"
-import { ClaxedoLogo } from "@claxedo/claxedo-ui/components/claxedo-logo"
+import { ClaxedoLogo } from "@/claxedo-ui/components/claxedo-logo"
 import { Button } from "@opencode-ai/ui/button"
 import { Component, Show } from "solid-js"
 import { createStore } from "solid-js/store"
-import { usePlatform } from "@claxedo/context/platform"
-import { useLanguage } from "@claxedo/context/language"
+import { usePlatform } from "@/context/platform"
+import { useLanguage } from "@/context/language"
 import { Icon } from "@opencode-ai/ui/icon"
 import { formatError } from "./error-format"
 

@@ -9,7 +9,7 @@ import { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { Index, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 
 const doneToken = "\u0000done\u0000"
 const totalToken = "\u0000total\u0000"

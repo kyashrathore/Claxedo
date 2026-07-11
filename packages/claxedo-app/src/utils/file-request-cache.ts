@@ -1,5 +1,5 @@
 import type { FileContent, FileNode } from "@opencode-ai/sdk/v2"
-import { queryClient } from "@claxedo/shared/query/query-client"
+import { queryClient } from "@/shared/query/query-client"
 
 export function fileReadRequestQueryKey(directory: string, file: string) {
   return ["shell", "file-read-request", directory, file] as const

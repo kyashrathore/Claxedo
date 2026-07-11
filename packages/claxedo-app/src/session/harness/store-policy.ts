@@ -7,7 +7,7 @@ import {
 } from "../../pane/store/pane-preferences"
 import { isFilesystemDirectory } from "../../shell/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer } from "@/shell/data/transport/transport"
 import {
   harnessHasConfigOptions,
   pickHarness,

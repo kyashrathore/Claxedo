@@ -1,5 +1,5 @@
 import type { SelectedLineRange } from "@/context/file"
-import { queryClient } from "@claxedo/shared/query/query-client"
+import { queryClient } from "@/shared/query/query-client"
 
 type HandoffSession = {
   prompt: string

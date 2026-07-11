@@ -10,7 +10,7 @@ import { ensureDirectorySessionCache as ensureActionDirectorySessionCache, findP
 import { capture as phCapture } from "../../utils/analytics"
 import { sessionRoute as canonicalSessionRoute, workspaceSessionRoute } from "../../shell/identity/route"
 import { recoverMissingWorkspace } from "./workspace-recovery"
-import { CloudStartupView, type CloudLog } from "@claxedo/components/session/cloud-startup-view"
+import { CloudStartupView, type CloudLog } from "@/components/session/cloud-startup-view"
 import { appendWorkspaceRuntimeLog, prepareWorkspaceRuntime } from "../../cloud/workspace-runtime-store"
 import { shouldBlockRemoteSessionHistoryAction } from "./session-actions.logic"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../../shell/data/queries"

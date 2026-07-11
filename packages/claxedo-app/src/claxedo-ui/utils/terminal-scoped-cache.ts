@@ -1,6 +1,6 @@
 import type { Placement } from "../../shell/auth/placement"
 import { queryClient } from "../../shared/query/query-client"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer } from "@/shell/data/transport/transport"
 
 /**
  * Shared caching + transport plumbing for the two terminal-scoped fetchers

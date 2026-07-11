@@ -28,7 +28,7 @@ import {
 import { queryClient } from "../shared/query/query-client"
 import { queryKeys } from "../shared/query/keys"
 import { createTransport } from "../shell/data/transport/transport"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer } from "@/shell/data/transport/transport"
 import {
   HEARTBEAT_TIMEOUT_MS,
   failureEscalation,

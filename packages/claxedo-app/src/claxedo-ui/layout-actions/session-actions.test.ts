@@ -17,7 +17,7 @@ beforeAll(async () => {
     DialogDeleteSession: () => null,
     DialogRecoverWorkspace: () => null,
   }))
-  mock.module("@claxedo/components/session/cloud-startup-view", () => ({
+  mock.module("@/components/session/cloud-startup-view", () => ({
     CloudStartupView: () => null,
     isForbiddenConnectionError: () => false,
   }))

@@ -5,7 +5,7 @@ import { createTerminalRuntimeQueue } from "../terminal-runtime-queue"
 import { preparePersistBuffer, prepareRestoreBuffer } from "../terminal-buffer"
 import { shouldSendResize, shouldRecoverDesync } from "../terminal-geometry"
 import { sigwinchToggleSize } from "../terminal-connection"
-import { retry } from "@claxedo/terminal/retry"
+import { retry } from "@/terminal/retry"
 
 // ---------------------------------------------------------------------------
 // Integration Test 1: Terminal component lifecycle with headless xterm

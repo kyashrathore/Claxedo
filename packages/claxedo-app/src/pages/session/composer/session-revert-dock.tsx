@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { DockTray } from "@opencode-ai/ui/dock-surface"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 
 export function SessionRevertDock(props: {
   items: { id: string; text: string }[]

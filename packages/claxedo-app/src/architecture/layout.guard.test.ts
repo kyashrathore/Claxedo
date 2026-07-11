@@ -58,7 +58,7 @@ function scanEntrypointHosts() {
 }
 
 function scanLayoutLazyImports() {
-  return scanImportSpecifiers((_file, specifier) => specifier === "@claxedo/shell/app-shell")
+  return scanImportSpecifiers((_file, specifier) => specifier === "@/shell/app-shell")
 }
 
 function scanPagesLayoutImports() {

@@ -12,10 +12,6 @@ const frameSnapshots = vi.hoisted(() => [] as Array<{
   modelHarnessMode: boolean
 }>)
 
-vi.mock("@opencode-ai/ui/motion-spring", () => ({
-  useSpring: (value: () => number) => value,
-}))
-
 vi.mock("@tanstack/solid-query", () => ({
   useQuery: (() => {
     let count = 0
@@ -86,16 +82,17 @@ vi.mock("@/components/prompt-input/submit", () => ({
   }),
 }))
 
-vi.mock("../../shared/query/query-client", () => ({
+vi.mock("@/shared/query/query-client", () => ({
   queryClient: {
     fetchQuery: vi.fn(async () => []),
     getQueryData: vi.fn(),
     setQueryData: vi.fn(),
     removeQueries: vi.fn(),
+    getQueryCache: () => ({ subscribe: () => () => {} }),
   },
 }))
 
-vi.mock("@claxedo/shell/data/query-options", () => ({
+vi.mock("@/shell/data/query-options", () => ({
   useShellQueryOptions: () => ({
     projects: () => ({ queryKey: ["projects"], queryFn: async () => [] }),
     providers: () => ({ queryKey: ["providers"], queryFn: async () => [] }),
@@ -104,19 +101,6 @@ vi.mock("@claxedo/shell/data/query-options", () => ({
 
 vi.mock("../../shell/workspace/use-workspace-query", () => ({
   useWorkspaceQuery: () => ({ data: [] }),
-}))
-
-vi.mock("../../shared/query/shell", () => ({
-  commandListQuery: () => ({ queryKey: ["commands"], queryFn: async () => [] }),
-}))
-
-vi.mock("@claxedo/context/use-providers", () => ({
-  useProviders: () => ({
-    connected: () => [{ id: "opencode", models: [{ id: "big-pickle", name: "Big Pickle" }] }],
-    default: () => ({ opencode: "big-pickle" }),
-    loading: () => false,
-    paid: () => [{ id: "opencode" }],
-  }),
 }))
 
 vi.mock("@/context/sdk", () => ({
@@ -206,7 +190,7 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
   }),
 }))
 
-vi.mock("@claxedo/context/command", () => ({
+vi.mock("@/context/command", () => ({
   useCommand: () => ({
     options: [],
     register: vi.fn(),
@@ -221,13 +205,13 @@ vi.mock("@/context/permission", () => ({
   }),
 }))
 
-vi.mock("@claxedo/context/language", () => ({
+vi.mock("@/context/language", () => ({
   useLanguage: () => ({
     t: (key: string, params?: { fallback?: string }) => params?.fallback ?? key,
   }),
 }))
 
-vi.mock("@claxedo/context/platform", () => ({
+vi.mock("@/context/platform", () => ({
   usePlatform: () => ({
     platform: "web",
     fetch: vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })),
@@ -245,10 +229,6 @@ vi.mock("../../claxedo-ui/context/session-params", () => ({
     surfaceId: () => "surface_1",
     active: () => true,
   }),
-}))
-
-vi.mock("../../shell/chat/conversation-registry", () => ({
-  registeredConversationHasUserMessage: () => false,
 }))
 
 afterEach(() => {

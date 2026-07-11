@@ -3,7 +3,7 @@
     "app.tsx:ClaxedoAppShellHost"
   ],
   "layoutLazyImports": [
-    "app.tsx:@claxedo/shell/app-shell"
+    "app.tsx:@/shell/app-shell"
   ],
   "pagesLayoutImports": [],
   "claxedoLayoutContextImports": [],

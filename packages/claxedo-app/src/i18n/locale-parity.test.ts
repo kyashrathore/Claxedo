@@ -7,7 +7,7 @@ import missingKeysBaseline from "./missing-keys-baseline.json"
 // This suite is the net that catches translation drift: a non-English locale
 // silently missing a key (falls back to English with no warning), a
 // mistranslated {{placeholder}}, or the locale manifest pointing at a file
-// that no longer exists in this package or in @claxedo/ui. None of that used
+// that no longer exists in this package or in @/ui. None of that used
 // to be tested (see docs/plans/2026-07-10-003 appendix, "i18n" section).
 
 const NON_EN_ENTRIES = LOCALE_ENTRIES.filter((entry) => entry.code !== "en")
@@ -77,7 +77,7 @@ describe("locale-parity: manifest/file drift", () => {
   })
 
   for (const entry of LOCALE_ENTRIES) {
-    test(`${entry.code}'s loader resolves a non-empty merged dict (backing files exist in this dir and @claxedo/ui's i18n)`, async () => {
+    test(`${entry.code}'s loader resolves a non-empty merged dict (backing files exist in this dir and @/ui's i18n)`, async () => {
       const source = await entry.loader()
       expect(Object.keys(source.dict).length).toBeGreaterThan(0)
     })

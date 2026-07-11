@@ -13,8 +13,8 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 
-import { useLanguage } from "@claxedo/context/language"
-import { usePlatform } from "@claxedo/context/platform"
+import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { BP_MD } from "@/utils/breakpoints"
 import { selectionFromLines, useFile } from "@/context/file"
 import { useComments } from "@/context/comments"
@@ -28,7 +28,7 @@ import {
   type SessionReviewLineComment,
 } from "./review-session"
 import { Spinner } from "@opencode-ai/ui/spinner"
-import { ClaxedoLogo as Mark } from "@claxedo/claxedo-ui/components/claxedo-logo"
+import { ClaxedoLogo as Mark } from "@/claxedo-ui/components/claxedo-logo"
 import type { FileContent, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import { createPanePreferences, reviewModePreferenceScope } from "../../../pane/store/pane-preferences"
 import { queryClient } from "../../../shared/query/query-client"

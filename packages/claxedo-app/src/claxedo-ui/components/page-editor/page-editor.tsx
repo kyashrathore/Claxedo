@@ -21,7 +21,7 @@ import {
 import type { PageAiAction, AiPanelPos, AiSelection, AiDraft } from "./page-editor-utils"
 import { useSDK } from "@/context/sdk"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 import { useSessionSyncOptional } from "../../context/session-sync"
 import { useClaxedoState } from "../../state"
 import { markdownPathFromHref } from "../../utils/open-markdown-page-tab"

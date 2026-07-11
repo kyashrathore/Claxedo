@@ -8,7 +8,7 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
 import fuzzysort from "fuzzysort"
 import { formatKeybind, parseKeybind, useCommand } from "@/context/command"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { SettingsList } from "./list"
 

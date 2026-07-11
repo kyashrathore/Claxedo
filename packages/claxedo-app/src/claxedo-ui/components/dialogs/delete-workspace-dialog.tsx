@@ -2,10 +2,10 @@ import { createMemo, createSignal, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { showToast } from "@opencode-ai/ui/toast"
-import { getFilename } from "@claxedo/utils/path"
+import { getFilename } from "@/utils/path"
 
 function message(err: unknown) {
   if (typeof err === "string") return err

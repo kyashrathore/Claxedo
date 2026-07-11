@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Terminal } from "@xterm/headless"
 import { SerializeAddon } from "@xterm/addon-serialize"
-import { createModeScanner } from "@claxedo/terminal/mode-scan"
+import { createModeScanner } from "@/terminal/mode-scan"
 
 // ---------------------------------------------------------------------------
 // Paste Duplication Test

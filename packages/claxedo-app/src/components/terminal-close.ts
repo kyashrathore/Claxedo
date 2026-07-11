@@ -1,4 +1,4 @@
-import { isRetriableClose, socketCloseIsError } from "@claxedo/terminal/terminal-connection"
+import { isRetriableClose, socketCloseIsError } from "@/terminal/terminal-connection"
 
 /**
  * Turns a WebSocket close code + the current reconnect attempt count into the

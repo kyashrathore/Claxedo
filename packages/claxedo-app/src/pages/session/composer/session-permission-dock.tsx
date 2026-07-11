@@ -1,9 +1,9 @@
 import { For, Show } from "solid-js"
 import type { PermissionRequest } from "@opencode-ai/sdk/v2"
 import { Button } from "@opencode-ai/ui/button"
-import { DockPrompt } from "@claxedo/session-client"
+import { DockPrompt } from "@/session-client"
 import { Icon } from "@opencode-ai/ui/icon"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 
 export function SessionPermissionDock(props: {
   request: PermissionRequest

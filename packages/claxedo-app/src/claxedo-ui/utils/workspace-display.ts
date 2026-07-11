@@ -1,4 +1,4 @@
-import { getFilename } from "@claxedo/utils/path"
+import { getFilename } from "@/utils/path"
 
 export type WorkspaceDisplayProject = {
   id: string

@@ -12,7 +12,7 @@ import {
   centralTransportForServer,
   submitTransportForPlacement,
   unsignedLocalFetch,
-} from "@claxedo/shell/data/transport/transport"
+} from "@/shell/data/transport/transport"
 import type { PromptDispatchInput, SubmitDirectory, SubmitModel, SubmitSessionGetClient } from "../../session/submit"
 
 const savedSessionConfigQueryPart = "saved-config-signature"

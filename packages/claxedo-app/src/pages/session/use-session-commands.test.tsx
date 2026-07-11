@@ -99,7 +99,7 @@ mock.module("@solidjs/router", () => ({
   useParams: () => params,
 }))
 
-mock.module("@claxedo/context/command", () => ({
+mock.module("@/context/command", () => ({
   useCommand: () => ({
     register: (_group: string, factory: () => any[]) => {
       registered.push(factory)
@@ -120,13 +120,13 @@ mock.module("@/components/dialogs/select-file", () => ({
   DialogSelectFile: () => undefined,
 }))
 
-mock.module("@claxedo/components/dialogs/select-model", () => ({
+mock.module("@/components/dialogs/select-model", () => ({
   DialogSelectModel: (props: { model?: CapturedPicker }) => {
     modelDialogProps.push(props)
   },
 }))
 
-mock.module("@claxedo/components/dialogs/select-mcp", () => ({
+mock.module("@/components/dialogs/select-mcp", () => ({
   DialogSelectMcp: () => undefined,
 }))
 
@@ -143,7 +143,7 @@ mock.module("@/context/file", () => ({
   selectionFromLines: () => ({ startLine: 1, endLine: 1 }),
 }))
 
-mock.module("@claxedo/context/language", () => ({
+mock.module("@/context/language", () => ({
   useLanguage: () => ({
     t: (key: string) => key,
   }),
@@ -267,7 +267,7 @@ mock.module("@/context/sync", () => ({
   }),
 }))
 
-mock.module("@claxedo/claxedo-ui/state", () => ({
+mock.module("@/claxedo-ui/state", () => ({
   realDirectory: (dir?: string | null) => (!dir || dir === "__process__" ? undefined : dir),
   useClaxedoState: () => {
     if (mockClaxedoState) return mockClaxedoState
@@ -275,7 +275,7 @@ mock.module("@claxedo/claxedo-ui/state", () => ({
   },
 }))
 
-mock.module("@claxedo/utils/analytics", () => ({
+mock.module("@/utils/analytics", () => ({
   capture: () => undefined,
 }))
 

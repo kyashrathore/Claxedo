@@ -3,17 +3,17 @@ import { createStore } from "solid-js/store"
 import { useQueries, useQuery } from "@tanstack/solid-query"
 import type { PermissionRequest, QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
 import { showToast } from "@opencode-ai/ui/toast"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { useSDK } from "@/context/sdk"
-import { useSessionParams } from "@claxedo/claxedo-ui/context/session-params"
-import { queryClient } from "@claxedo/shared/query/query-client"
+import { useSessionParams } from "@/claxedo-ui/context/session-params"
+import { queryClient } from "@/shared/query/query-client"
 import {
   directorySessionCacheQueryOptions,
   sessionRequestsQueryOptions,
   sessionStatusQueryOptions,
   sessionTodoQueryOptions,
-} from "@claxedo/shell/data/queries"
+} from "@/shell/data/queries"
 import { dispatchSessionTodoEvent } from "@/session/store/session-status-dispatcher"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 

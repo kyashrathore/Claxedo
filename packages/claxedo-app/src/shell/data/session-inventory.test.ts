@@ -8,7 +8,7 @@ import {
 } from "./session-inventory"
 import { emptySessionInventoryStore, normalizeSessionInventory, type SessionInventoryValue } from "./queries"
 import { mergeWorkspaceGroups, shouldUseSignedSessionInventory, workspaceGroupKey } from "./inventory-source"
-import type { WorkspaceGroup } from "@claxedo/shell/data/global-sync-types"
+import type { WorkspaceGroup } from "@/shell/data/global-sync-types"
 
 type TestSession = {
   id: string

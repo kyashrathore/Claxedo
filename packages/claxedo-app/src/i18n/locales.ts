@@ -40,7 +40,7 @@ export type LocaleEntry = {
   code: LocaleCode
   /**
    * Loads this locale's flat string dictionary, merged from BOTH this
-   * package's `src/i18n/<file>.ts` and `@claxedo/ui`'s
+   * package's `src/i18n/<file>.ts` and `@/ui`'s
    * `src/i18n/<code>.ts` (the ui package's strings win on key collision,
    * matching pre-manifest behavior).
    */

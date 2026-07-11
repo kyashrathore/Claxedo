@@ -21,8 +21,7 @@
       "@/*": ["./src/*"],
       "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
       "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],
-      "@claxedo/agent-event-runtime/opencode-compat": ["../agent-event-runtime/src/projections/opencode-compat/index.ts"],
-      "@claxedo/*": ["./src/*"]
+      "@claxedo/agent-event-runtime/opencode-compat": ["../agent-event-runtime/src/projections/opencode-compat/index.ts"]
     }
   },
   "include": ["e2e"],

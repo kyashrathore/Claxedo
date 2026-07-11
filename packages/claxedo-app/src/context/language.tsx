@@ -3,7 +3,7 @@ import { createEffect, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { Persist, persisted } from "@/utils/persist"
-import { getExtensions } from "@claxedo/extensions"
+import { getExtensions } from "@/extensions"
 import { dict as en } from "@/i18n/en"
 import { dict as uiEn } from "@opencode-ai/ui/i18n/en"
 import { LOCALE_ENTRIES, type LocaleCode } from "@/i18n/locales"
@@ -16,7 +16,7 @@ type Dictionary = i18n.Flatten<RawDictionary>
 // Every one of LOCALES/INTL/LABEL_KEY/localeMatchers below is derived from
 // LOCALE_ENTRIES (src/i18n/locales.ts) — that manifest is the only place a
 // contributor edits to add a language. See src/i18n/locale-parity.test.ts for
-// the tests that keep the manifest, en.ts, and @claxedo/ui's i18n in sync.
+// the tests that keep the manifest, en.ts, and @/ui's i18n in sync.
 const ENTRY_BY_CODE = new Map(LOCALE_ENTRIES.map((entry) => [entry.code, entry]))
 
 const LOCALES: readonly Locale[] = LOCALE_ENTRIES.map((entry) => entry.code)

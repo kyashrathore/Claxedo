@@ -8,8 +8,8 @@ import { List } from "@opencode-ai/ui/list"
 import { showToast } from "@opencode-ai/ui/toast"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { useLanguage } from "@claxedo/context/language"
-import { registeredConversationSnapshot } from "@claxedo/shell/chat/conversation-registry"
+import { useLanguage } from "@/context/language"
+import { registeredConversationSnapshot } from "@/shell/chat/conversation-registry"
 import { forkableMessages, resolveForkSessionId, type ForkableMessage } from "./fork-messages"
 
 function formatTime(date: Date): string {

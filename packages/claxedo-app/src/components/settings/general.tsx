@@ -8,8 +8,8 @@ import { Switch } from "@opencode-ai/ui/switch"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme/context"
-import { useLanguage } from "@claxedo/context/language"
-import { usePlatform } from "@claxedo/context/platform"
+import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import {
   monoDefault,
   monoFontFamily,
@@ -24,8 +24,8 @@ import {
 } from "@/context/settings"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { requestNotificationPermission } from "@/utils/notification-permission"
-import { capture as phCapture } from "@claxedo/utils/analytics"
-import { AccountSettingsSection } from "@claxedo/components/settings/account-section"
+import { capture as phCapture } from "@/utils/analytics"
+import { AccountSettingsSection } from "@/components/settings/account-section"
 import { Can } from "../../shell/auth/role"
 import { Link } from "@/components/link"
 import { SettingsList } from "@/components/settings/list"

@@ -14,7 +14,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import type { LocalPTY } from "@/context/terminal"
-import type { Process } from "@claxedo/process/process"
+import type { Process } from "@/process/process"
 import { PROCESS_STATUS_COLORS, PROCESS_STATUS_LABELS } from "./process-status-display"
 
 type ProcessStatus = Process.Status

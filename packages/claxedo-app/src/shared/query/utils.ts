@@ -1,5 +1,5 @@
 import type { ProviderListResponse } from "@opencode-ai/sdk/v2/client"
-import type { NormalizedProviderListResponse } from "@claxedo/session-client"
+import type { NormalizedProviderListResponse } from "@/session-client"
 
 export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 

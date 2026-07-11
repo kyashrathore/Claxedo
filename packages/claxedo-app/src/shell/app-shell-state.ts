@@ -6,7 +6,7 @@ import {
   useGlobalSDK,
   usePlatform,
 } from "@opencode-ai/claxedo-app"
-import { useShellQueryOptions as useQueryOptions } from "@claxedo/shell/data/query-options"
+import { useShellQueryOptions as useQueryOptions } from "@/shell/data/query-options"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"
 
@@ -18,7 +18,7 @@ import { resolveActiveWorkspaceId } from "../claxedo-ui/utils/active-workspace"
 import { openWorkspaceScopeIds } from "../claxedo-ui/utils/workspace-scope-ids"
 import { useConfigOptional } from "../context/config"
 import type { SessionInventoryRow } from "../shared/query/types"
-import { canAutoOpenProject } from "@claxedo/context/layout-projects"
+import { canAutoOpenProject } from "@/context/layout-projects"
 import { principalHasSignedAccess, usePrincipal } from "./auth/identity-provider"
 import { useDirectorySessionCacheActions } from "./data/directory-session-cache"
 import { useGlobalBootstrapActions } from "./data/global-bootstrap"

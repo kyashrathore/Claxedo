@@ -3,8 +3,8 @@ import { batch, createEffect, createMemo, createSignal, onCleanup, startTransiti
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { useModels } from "@/context/models"
-import { useProviders } from "@claxedo/context/use-providers"
-import { usePlatform } from "@claxedo/context/platform"
+import { useProviders } from "@/context/use-providers"
+import { usePlatform } from "@/context/platform"
 import { Persist, persisted } from "@/utils/persist"
 import {
   clearLocalSelectionHandoff,
@@ -28,7 +28,7 @@ import { agentListQuery, configQuery } from "../shared/query/directory"
 import { useWorkspaceQuery } from "../shell/workspace/use-workspace-query"
 import { createAgentRuntimeClient } from "../agent-runtime/agent-runtime-client"
 import { queryClient } from "../shared/query/query-client"
-import { useSDK } from "@claxedo/context/sdk"
+import { useSDK } from "@/context/sdk"
 import {
   cycleModelVariant,
   firstValidSelectionModel,

@@ -45,7 +45,7 @@ vi.mock("@/context/comments", () => ({
   }),
 }))
 
-vi.mock("@claxedo/context/language", () => ({
+vi.mock("@/context/language", () => ({
   useLanguage: () => ({
     t: (key: string) => key,
   }),
@@ -61,7 +61,7 @@ vi.mock("@/context/prompt", () => ({
   }),
 }))
 
-vi.mock("@claxedo/session-client", () => ({
+vi.mock("@/session-client", () => ({
   createLineCommentController: (input: typeof h.controllerInput) => {
     h.controllerInput = input
     return {

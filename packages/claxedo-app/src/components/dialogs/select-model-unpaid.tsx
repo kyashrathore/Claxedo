@@ -8,9 +8,9 @@ import { Tag } from "@opencode-ai/ui/tag"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { type Component, Show } from "solid-js"
 import { useLocal } from "@/context/session-selection"
-import { popularProviders, useProviders } from "@claxedo/context/use-providers"
+import { popularProviders, useProviders } from "@/context/use-providers"
 import { ModelTooltip } from "@/components/model-tooltip"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 
 type ModelState = ReturnType<typeof useLocal>["model"]
 
@@ -21,13 +21,13 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
   const language = useLanguage()
 
   const connect = (provider: string) => {
-    void import("@claxedo/components/dialogs/connect-provider").then((x) => {
+    void import("@/components/dialogs/connect-provider").then((x) => {
       dialog.show(() => <x.DialogConnectProvider provider={provider} />)
     })
   }
 
   const all = () => {
-    void import("@claxedo/components/dialogs/select-provider").then((x) => {
+    void import("@/components/dialogs/select-provider").then((x) => {
       dialog.show(() => <x.DialogSelectProvider />)
     })
   }

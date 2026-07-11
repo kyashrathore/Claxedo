@@ -55,7 +55,7 @@ vi.mock("@/context/sdk", () => ({
   }),
 }))
 
-vi.mock("@claxedo/context/platform", () => ({
+vi.mock("@/context/platform", () => ({
   usePlatform: () => ({ fetch }),
 }))
 
@@ -111,7 +111,7 @@ vi.mock("@/context/comments", () => ({
   CommentsProvider: (props: any) => <>{props.children}</>,
 }))
 
-vi.mock("@claxedo/session-client", () => ({
+vi.mock("@/session-client", () => ({
   DataProvider: (props: any) => {
     state.dataProviderProps = props
     return <>{props.children}</>
@@ -137,7 +137,7 @@ vi.mock("../../shell/data/keys", () => ({
   },
 }))
 
-vi.mock("@claxedo/utils/encode", () => ({
+vi.mock("@/utils/encode", () => ({
   base64Encode: (input: string) => input,
 }))
 

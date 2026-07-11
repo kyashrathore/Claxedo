@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "@claxedo/shell/data/bootstrap"
+import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "@/shell/data/bootstrap"
 import type { Agent, Command, Config, Path, Project, Provider, ProviderListResponse, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import type { NormalizedProviderListResponse } from "@claxedo/session-client"
-import { queryClient } from "@claxedo/shared/query/query-client"
-import { queryKeys } from "@claxedo/shared/query/keys"
-import { shellDataKeys } from "@claxedo/shell/data/keys"
-import { setSessionStatusQueryData } from "@claxedo/shell/data/queries"
+import type { NormalizedProviderListResponse } from "@/session-client"
+import { queryClient } from "@/shared/query/query-client"
+import { queryKeys } from "@/shared/query/keys"
+import { shellDataKeys } from "@/shell/data/keys"
+import { setSessionStatusQueryData } from "@/shell/data/queries"
 
 type GlobalSdk = Parameters<typeof bootstrapGlobal>[0]["globalSDK"]
 type DirectorySdk = Parameters<typeof bootstrapDirectory>[0]["sdk"]

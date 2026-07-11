@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { getFilename } from "@claxedo/utils/path"
+import { getFilename } from "@/utils/path"
 import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../utils/workspace-display"
 import {
   directorySessionCacheQueryOptions,

@@ -8,7 +8,7 @@
 
 import { batch } from "solid-js"
 import { reconcile, type SetStoreFunction } from "solid-js/store"
-import { Process } from "@claxedo/process/process"
+import { Process } from "@/process/process"
 import { decodeProcessConfigs, decodeProcessStatus } from "./process-pane-decode"
 
 type ManagedProcess = Process.ManagedProcess

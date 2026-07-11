@@ -160,7 +160,7 @@ vi.mock("../../../context/global-sdk", () => ({
   }),
 }))
 
-vi.mock("@claxedo/context/language", () => ({
+vi.mock("@/context/language", () => ({
   useLanguage: () => ({ t: (key: string) => key }),
 }))
 
@@ -188,7 +188,7 @@ vi.mock("../../../context/sdk", () => ({
   }),
 }))
 
-vi.mock("@claxedo/session-client", () => ({
+vi.mock("@/session-client", () => ({
   SessionTurn: () => <div data-testid="session-turn" />,
 }))
 

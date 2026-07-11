@@ -6,10 +6,10 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Button } from "@opencode-ai/ui/button"
 import type { Component } from "solid-js"
 import { useLocal } from "@/context/session-selection"
-import { popularProviders } from "@claxedo/context/use-providers"
-import { useLanguage } from "@claxedo/context/language"
+import { popularProviders } from "@/context/use-providers"
+import { useLanguage } from "@/context/language"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { DialogSelectProvider } from "@claxedo/components/dialogs/select-provider"
+import { DialogSelectProvider } from "@/components/dialogs/select-provider"
 
 export const DialogManageModels: Component = () => {
   const local = useLocal()

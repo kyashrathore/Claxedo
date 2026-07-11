@@ -3,7 +3,7 @@ import { createTransport } from "../shell/data/transport/transport"
 import {
   centralTransportForServer,
   type WorkspaceRuntimeSnapshotLike,
-} from "@claxedo/shell/data/transport/transport"
+} from "@/shell/data/transport/transport"
 
 type Fetch = typeof globalThis.fetch
 

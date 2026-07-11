@@ -2,7 +2,7 @@
 // process-pane.tsx so they are importable by the SSE handler module and
 // unit-testable on their own.
 
-import { Process } from "@claxedo/process/process"
+import { Process } from "@/process/process"
 
 export function decodeProcessStatus(value: string): Process.Status | undefined {
   const status = Process.Status.safeParse(value)

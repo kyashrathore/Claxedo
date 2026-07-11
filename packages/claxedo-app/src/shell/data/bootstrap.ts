@@ -6,9 +6,9 @@ import {
   type ProviderListResponse,
   createOpencodeClient,
 } from "@opencode-ai/sdk/v2/client"
-import type { NormalizedProviderListResponse } from "@claxedo/session-client"
-import { retry } from "@claxedo/utils/retry"
-import { getFilename } from "@claxedo/utils/path"
+import type { NormalizedProviderListResponse } from "@/session-client"
+import { retry } from "@/utils/retry"
+import { getFilename } from "@/utils/path"
 import { showToast } from "@opencode-ai/ui/toast"
 import { formatServerError } from "@/utils/server-errors"
 import { queryClient } from "../../shared/query/query-client"
@@ -24,7 +24,7 @@ import { fastSessionSwitchAnyNetworkQuiet } from "../../session/store/fast-sessi
 import { createTransport } from "./transport/transport"
 import { harnessQueryFetch } from "./transport/harness-query-fetch"
 import { getClaxedoServerUrl, normalizeUrl } from "../../utils/api"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer } from "@/shell/data/transport/transport"
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>
 export type GlobalBootstrapSdk = Pick<OpencodeClient, "global" | "path" | "project" | "provider">

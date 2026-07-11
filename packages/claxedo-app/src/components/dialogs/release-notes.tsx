@@ -2,7 +2,7 @@ import { createSignal, Show } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { useLanguage } from "@claxedo/context/language"
+import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { prefersReducedMotion } from "@/utils/reduced-motion"
 

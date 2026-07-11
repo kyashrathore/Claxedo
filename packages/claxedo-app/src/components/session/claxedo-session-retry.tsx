@@ -1,7 +1,7 @@
 import { Show } from "solid-js"
 import { Card } from "@opencode-ai/ui/card"
 import { Spinner } from "@opencode-ai/ui/spinner"
-import { SessionRetry as UpstreamSessionRetry } from "@claxedo/session-client"
+import { SessionRetry as UpstreamSessionRetry } from "@/session-client"
 
 type SdkSessionStatus =
   | { type: "idle" }

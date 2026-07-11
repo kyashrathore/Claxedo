@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Process } from "@claxedo/process/process"
+import { Process } from "@/process/process"
 import {
   buildExternal,
   clipped,

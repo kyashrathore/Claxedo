@@ -1,8 +1,8 @@
-import { createTransport } from "@claxedo/shell/data/transport/transport"
+import { createTransport } from "@/shell/data/transport/transport"
 import { queryClient } from "../shared/query/query-client"
 import { workspaceIdFromRef } from "../shell/identity/legacy-resolver"
 import { workspaceResolveUrl } from "../utils/workspace-control-routes"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer } from "@/shell/data/transport/transport"
 
 const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
 

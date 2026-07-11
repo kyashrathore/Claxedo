@@ -1,6 +1,6 @@
 // Shared message-page normalization for the compat-session controller and
 // DirectoryScope DataProvider hydration fallback.
-import { Binary } from "@claxedo/utils/binary"
+import { Binary } from "@/utils/binary"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { message as clean } from "@/utils/diffs"
 

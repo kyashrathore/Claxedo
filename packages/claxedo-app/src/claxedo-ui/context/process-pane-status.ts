@@ -12,7 +12,7 @@
 //   2. The provider's onCleanup unconditionally reset `crashed` to false (see
 //      process-pane.tsx) — handled at that call site by no longer clearing it.
 
-import type { Process } from "@claxedo/process/process"
+import type { Process } from "@/process/process"
 
 type ManagedProcess = Process.ManagedProcess
 

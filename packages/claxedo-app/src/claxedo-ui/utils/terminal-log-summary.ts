@@ -1,7 +1,7 @@
 import { collapse, clip } from "./text"
 import { resolveRecovery, rememberRecovery } from "../terminal/pane-terminal-recovery"
 import { createTransport } from "../../shell/data/transport/transport"
-import type { WorkspaceRuntimeRequestOptions } from "@claxedo/shell/data/transport/transport"
+import type { WorkspaceRuntimeRequestOptions } from "@/shell/data/transport/transport"
 import {
   loadCachedEntry,
   normalizeText,

@@ -1,11 +1,11 @@
 // target-layer: data
 import { queryOptions, skipToken } from "@tanstack/solid-query"
 import { showToast } from "@opencode-ai/ui/toast"
-import { getFilename } from "@claxedo/utils/path"
+import { getFilename } from "@/utils/path"
 import { formatServerError } from "../../utils/server-errors"
 import { createAgentRuntimeClient } from "../../agent-runtime/agent-runtime-client"
 import { authFetch } from "../../utils/api"
-import { centralTransportForServer } from "@claxedo/shell/data/transport/transport"
+import { centralTransportForServer } from "@/shell/data/transport/transport"
 import { isFilesystemDirectory } from "../../shell/identity/legacy-resolver"
 import { queryClient } from "../../shared/query/query-client"
 import { queryKeys } from "../../shared/query/keys"

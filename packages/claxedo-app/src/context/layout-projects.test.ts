@@ -9,7 +9,7 @@ import {
   sidebarProjectsMissingFromApi,
   syncApiProjectsToSidebar,
 } from "./layout-projects"
-import { validProjectRef } from "@claxedo/utils/worktree"
+import { validProjectRef } from "@/utils/worktree"
 import type { Project } from "@opencode-ai/sdk/v2"
 
 function project(input: Pick<Project, "id" | "worktree"> & Partial<Project>): Project {

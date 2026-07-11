@@ -4,7 +4,7 @@ import type { ProjectMeta } from "../../shared/query/types"
 import { queryClient } from "../../shared/query/query-client"
 import { queryKeys } from "../../shared/query/keys"
 
-mock.module("@claxedo/context/platform", () => ({
+mock.module("@/context/platform", () => ({
   usePlatform: () => ({ platform: "web" }),
 }))
 

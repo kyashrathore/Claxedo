@@ -1,4 +1,4 @@
-import type { CommandOption } from "@claxedo/context/command"
+import type { CommandOption } from "@/context/command"
 
 export function createProcessPaneToggleCommand(onSelect: () => void): CommandOption {
   return {

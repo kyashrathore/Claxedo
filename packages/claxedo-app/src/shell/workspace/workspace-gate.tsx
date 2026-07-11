@@ -3,7 +3,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import {
   CloudStartupView,
   WorkspaceAccessDeniedView,
-} from "@claxedo/components/session/cloud-startup-view"
+} from "@/components/session/cloud-startup-view"
 import { useClaxedoEventsOptional } from "../../context/claxedo-events"
 import {
   acquireWorkspaceConnection,

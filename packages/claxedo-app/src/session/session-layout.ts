@@ -1,7 +1,7 @@
 // Claxedo session rendering is Workbench-canonical: panes provide session identity.
 import { createMemo } from "solid-js"
 import { useLayout } from "@/context/layout"
-import { useSessionParams } from "@claxedo/claxedo-ui/context/session-params"
+import { useSessionParams } from "@/claxedo-ui/context/session-params"
 import { sessionRoute } from "../shell/identity/route"
 import { sessionViewKey } from "../shell/identity/session-view-key"
 

@@ -1,4 +1,4 @@
-import { getFilename } from "@claxedo/utils/path"
+import { getFilename } from "@/utils/path"
 import { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem } from "./domain-types"
 

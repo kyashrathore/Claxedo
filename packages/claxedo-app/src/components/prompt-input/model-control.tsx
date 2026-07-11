@@ -3,7 +3,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { TooltipKeybind } from "@opencode-ai/ui/tooltip"
-import { ModelSelectorPopover, type PickerState } from "@claxedo/components/dialogs/select-model"
+import { ModelSelectorPopover, type PickerState } from "@/components/dialogs/select-model"
 
 export function PromptModelControl(props: {
   harnessMode: Accessor<boolean>

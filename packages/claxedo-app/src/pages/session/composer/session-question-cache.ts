@@ -1,5 +1,5 @@
 import type { QuestionAnswer } from "@opencode-ai/sdk/v2"
-import { queryClient } from "@claxedo/shared/query/query-client"
+import { queryClient } from "@/shared/query/query-client"
 
 export const sessionQuestionDockQueryRoot = ["shell", "session-question-dock"] as const
 

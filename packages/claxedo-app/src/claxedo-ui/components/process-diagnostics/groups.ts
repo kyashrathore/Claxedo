@@ -1,4 +1,4 @@
-import { Process } from "@claxedo/process/process"
+import { Process } from "@/process/process"
 import { collapse, clip } from "../../utils/text"
 
 // Pure aggregation, scoring, and labelling logic for the Process Diagnostics
