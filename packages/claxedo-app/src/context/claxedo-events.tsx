@@ -15,7 +15,7 @@ import {
 import { signedWorkspaceFromProjects } from "../agent-runtime/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/shared/data/api"
 import type { SessionLifecycleEvent } from "../shared/data/session-lifecycle"
-import { shellRouteWorkspaceKeyFromPathname } from "../shell/identity/route"
+import { shellRouteDirectoryFromPathname } from "../shell/identity/route"
 import { sessionWorkspaceRuntimeRef } from "../shell/workspace/session-workspace-key"
 import { markWorkspaceReconnected, markWorkspaceReconnecting } from "../shell/workspace/workspace-connection"
 import { fastSessionSwitchAnyQuietDelay } from "../session/store/fast-session-switch"
@@ -171,9 +171,9 @@ export function claxedoEventStreamTargets(input: {
     kind: "central",
     url: new URL("/api/wr/events", serverUrl),
   }
-  const routeWorkspaceId = input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory })?.workspaceId : undefined
-  const workspaceId = routeWorkspaceId
-    ? routeWorkspaceId
+  const routeDirectory = input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory })?.workspaceId : undefined
+  const workspaceId = routeDirectory
+    ? routeDirectory
     : signedWorkspaceFromProjects(input.projects ?? [], input.directory)?.workspaceId
 
   if (!workspaceId) return [central]
@@ -273,7 +273,7 @@ function initialRouteDirectory() {
     __OPENCODE__?: { activeDirectory?: string }
   }).__OPENCODE__?.activeDirectory
   if (configured) return configured
-  return shellRouteWorkspaceKeyFromPathname(window.location.pathname)
+  return shellRouteDirectoryFromPathname(window.location.pathname)
 }
 
 export function ClaxedoEventsProvider(props: ParentProps) {

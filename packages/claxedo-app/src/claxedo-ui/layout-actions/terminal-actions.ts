@@ -31,7 +31,7 @@ export function createTerminalActions(props: ActionProps, nav: Nav) {
       command,
       title,
       requestedPaneId: groupId,
-      routeDir: props.activeWorkspaceId(),
+      routeDir: props.activeDirectory(),
       routeSession: props.params.id,
       focusedPane: props.state.wb.state.focusedPaneId,
     })

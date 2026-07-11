@@ -1,25 +1,25 @@
 import { describe, expect, test } from "bun:test"
-import { resolveActiveWorkspaceId } from "./active-workspace"
+import { resolveActiveDirectory } from "./active-workspace"
 
-describe("resolveActiveWorkspaceId", () => {
+describe("resolveActiveDirectory", () => {
   test("uses the route workspace over a stale focused surface", () => {
-    expect(resolveActiveWorkspaceId({
+    expect(resolveActiveDirectory({
       routeDir: "workspace:ws_local_image_codex",
       surfaceDir: "workspace:ws_mpc6zdii",
     })).toBe("workspace:ws_local_image_codex")
   })
 
   test("falls back to the focused surface when there is no workspace route", () => {
-    expect(resolveActiveWorkspaceId({ surfaceDir: "workspace:ws_mpc6zdii" })).toBe("workspace:ws_mpc6zdii")
+    expect(resolveActiveDirectory({ surfaceDir: "workspace:ws_mpc6zdii" })).toBe("workspace:ws_mpc6zdii")
   })
 
   test("uses the route workspace when no surface is focused", () => {
-    expect(resolveActiveWorkspaceId({ routeDir: "workspace:ws_local_image_codex" })).toBe(
+    expect(resolveActiveDirectory({ routeDir: "workspace:ws_local_image_codex" })).toBe(
       "workspace:ws_local_image_codex",
     )
   })
 
   test("returns undefined when neither source names a workspace", () => {
-    expect(resolveActiveWorkspaceId({})).toBeUndefined()
+    expect(resolveActiveDirectory({})).toBeUndefined()
   })
 })

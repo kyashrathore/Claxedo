@@ -94,7 +94,7 @@ describe("WorkspaceGate", () => {
   // workspace-connection.test.ts). The earlier `suppressConnectionGate`
   // hypothesis was WRONG: a terminal surface does NOT set that flag. The real
   // cause was workspace RESOLUTION divergence — a newly opened terminal inherits
-  // `activeWorkspaceId` (the route key) as its directory, and when that route key
+  // `activeDirectory` (the route key) as its directory, and when that route key
   // disagrees with the signed inventory (a mock `/api/workspace/resolve` that
   // answers `local-<sessionId>` for a directory the inventory calls cloud) the
   // terminal's SessionPaneScope resolves `local` and its gate is a no-op, so no

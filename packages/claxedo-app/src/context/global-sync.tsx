@@ -52,7 +52,7 @@ import {
   updateSessionInventoryQueryData,
 } from "../shell/data/inventory-writers"
 import { migrateLegacyProjectInventoryToQueryCache } from "../shell/data/project-inventory"
-import { shellRouteWorkspaceKeyFromPathname } from "../shell/identity/route"
+import { shellRouteDirectoryFromPathname } from "../shell/identity/route"
 import { removeSessionIdentity } from "@/shell/data/global-session-identity"
 import { mergeSignedInventoryProjects } from "../shared/query/inventory"
 import { projectListQuery } from "../shared/query/control-plane"
@@ -97,7 +97,7 @@ function initialRouteDirectory() {
     __OPENCODE__?: { activeDirectory?: string }
   }).__OPENCODE__?.activeDirectory
   if (configured) return configured
-  return shellRouteWorkspaceKeyFromPathname(window.location.pathname)
+  return shellRouteDirectoryFromPathname(window.location.pathname)
 }
 
 function createGlobalSync() {

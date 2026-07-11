@@ -11,7 +11,7 @@ import { useWorkspacePanelVisualState } from "./workspace-panel-visual-state"
 type HeaderSurfaceInput = Parameters<typeof useRailHeaderSurfaces>[0]
 
 export function useRailWorkbenchController(input: {
-  activeWorkspaceId: Accessor<string | undefined>
+  activeDirectory: Accessor<string | undefined>
   autoResponds: HeaderSurfaceInput["autoResponds"]
   canUsePages: Accessor<boolean>
   client: HeaderSurfaceInput["client"]
@@ -32,7 +32,7 @@ export function useRailWorkbenchController(input: {
 }) {
   const panelTarget = useRailWorkspacePanelTarget({
     state: input.state,
-    activeWorkspaceId: input.activeWorkspaceId,
+    activeDirectory: input.activeDirectory,
   })
   const terminalBlocked = () => panelTarget.focusedSurfaceWorkspaceToolsBlocked() || input.roleBlocksTerminal?.() === true
   const headerSurfaces = useRailHeaderSurfaces({
@@ -59,7 +59,7 @@ export function useRailWorkbenchController(input: {
     focusedPanelTarget: panelTarget.focusedPanelTarget,
     focusedSplitPaneId: panelTarget.focusedSplitPaneId,
     focusedSurfaceWorkspaceToolsBlocked: panelTarget.focusedSurfaceWorkspaceToolsBlocked,
-    activeWorkspaceId: input.activeWorkspaceId,
+    activeDirectory: input.activeDirectory,
     emptyDraftDirectory: input.emptyDraftDirectory,
     onWorkspacePanelVisibilityChange: input.onWorkspacePanelVisibilityChange,
     workspacePanelWidth: input.workspacePanelWidth,

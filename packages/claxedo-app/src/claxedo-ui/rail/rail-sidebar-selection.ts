@@ -32,12 +32,12 @@ export function useRailSidebarSelection(input: {
   state: RailSidebarSelectionState
   projects: Accessor<ProjectItem[]>
   activeProjectId: Accessor<string | undefined>
-  activeWorkspaceId: Accessor<string | undefined>
+  activeDirectory: Accessor<string | undefined>
   projectCaption: (project: ProjectItem) => string
   worktreeInfo: (workspaceDir: string) => RailWorktreeInfo | undefined
 }) {
   const sidebarDir = createMemo(() => {
-    if (input.activeWorkspaceId()) return input.activeWorkspaceId()
+    if (input.activeDirectory()) return input.activeDirectory()
     const focusedId = input.state.wb.state.focusedPaneId
     if (!focusedId) return undefined
     const contentId = input.state.wb.selectors.focusedContent()
@@ -78,7 +78,7 @@ export function useRailSidebarSelection(input: {
     const workspaceDir = wt.default
     if (workspaceDir && workspaceDir !== "__process__") return workspaceDir
 
-    return input.activeWorkspaceId()
+    return input.activeDirectory()
   }
 
   const sidebarProjectName = createMemo(() => {

@@ -13,18 +13,18 @@ import {
 
 export function useAppShellRouteSync(input: {
   activeSurface: Accessor<ContentMeta | undefined>
-  activeWorkspaceId: Accessor<string | undefined>
+  activeDirectory: Accessor<string | undefined>
   findSurface: (predicate: (surface: ContentMeta) => boolean) => ContentMeta | undefined
   navigate: Navigator
   params: Params
   pathname: Accessor<string>
-  routeWorkspaceId: Accessor<string | undefined>
+  routeDirectory: Accessor<string | undefined>
   sessionInventory: Accessor<RuntimeRouteSessionInventory>
   shellRouteKind: Accessor<ShellRoute["kind"]>
 }) {
   createEffect(() => {
     const sessionId = input.params.sessionId ?? input.params.id
-    if (input.routeWorkspaceId() === "/workspace" && sessionId) {
+    if (input.routeDirectory() === "/workspace" && sessionId) {
       const meta = input.findSurface(
         (item) =>
           (item.type === "session" || item.type === "context") &&
@@ -39,7 +39,7 @@ export function useAppShellRouteSync(input: {
       }
     }
     const target = recoverWorkspaceRuntimeRoute({
-      routeDir: input.routeWorkspaceId(),
+      routeDir: input.routeDirectory(),
       sessionId,
       byWorkspace: input.sessionInventory().byWorkspace,
       byProject: input.sessionInventory().byProject,
@@ -51,7 +51,7 @@ export function useAppShellRouteSync(input: {
     if (input.pathname() !== "/") return
     const surface = input.activeSurface()
     if (!surface) return
-    const dir = realDirectory(surface.directory) ?? input.activeWorkspaceId()
+    const dir = realDirectory(surface.directory) ?? input.activeDirectory()
     if (!dir) return
     input.navigate(surfaceRoute(dir, surface) ?? workspaceRoute(dir), { replace: true })
   })
@@ -72,8 +72,8 @@ export function useAppShellRouteSync(input: {
             marketplace: input.shellRouteKind() === "marketplace",
           },
           surface,
-          routeWorkspaceKey: input.routeWorkspaceId(),
-          activeDirectory: input.activeWorkspaceId(),
+          routeWorkspaceKey: input.routeDirectory(),
+          activeDirectory: input.activeDirectory(),
         })
         if (target && input.pathname() !== target) input.navigate(target, { replace: true })
       },
@@ -94,13 +94,13 @@ export function useAppShellRouteSync(input: {
       sessionId: closedSurface.sessionId,
     })
     if (nextSurface) {
-      const dir = realDirectory(nextSurface.directory) ?? input.activeWorkspaceId() ?? input.routeWorkspaceId() ?? ""
+      const dir = realDirectory(nextSurface.directory) ?? input.activeDirectory() ?? input.routeDirectory() ?? ""
       const route = surfaceRoute(dir, nextSurface)
       if (!route) return
       input.navigate(route, { replace: true })
       return
     }
-    const fallbackDir = realDirectory(closedSurface.directory) ?? input.activeWorkspaceId() ?? input.routeWorkspaceId()
+    const fallbackDir = realDirectory(closedSurface.directory) ?? input.activeDirectory() ?? input.routeDirectory()
     if (fallbackDir) {
       markRouteIntentClosed({ workspaceId: fallbackDir })
       input.navigate(workspaceRoute(fallbackDir), { replace: true })

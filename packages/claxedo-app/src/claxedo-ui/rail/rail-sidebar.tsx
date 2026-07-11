@@ -147,7 +147,7 @@ type RailTrackPosition = (clientX: number, clientY: number, railRect: { top: num
 export type RailSidebarProps = {
   projects: ProjectItem[]
   activeProjectId?: string
-  activeWorkspaceId?: string
+  activeDirectory?: string
   activeSessionId?: string
   activeGlobal?: boolean
   globalChatEnabled?: boolean
@@ -708,8 +708,8 @@ export function RailSidebar(props: RailSidebarProps) {
 
   const dirs = (project: ProjectItem) => {
     const all = new Set<string>(projectWorkspaceDirectories(project))
-    if (projectMatches(project) && props.activeWorkspaceId) {
-      all.add(projectWorkspaceInfo(project, props.activeWorkspaceId)?.directory ?? props.activeWorkspaceId)
+    if (projectMatches(project) && props.activeDirectory) {
+      all.add(projectWorkspaceInfo(project, props.activeDirectory)?.directory ?? props.activeDirectory)
     }
     return [...all]
   }
@@ -1029,7 +1029,7 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const activeDirectory = createMemo(() => {
-    if (props.activeWorkspaceId) return props.activeWorkspaceId
+    if (props.activeDirectory) return props.activeDirectory
     const activeProject = props.projects.find((project) => projectMatches(project))
     return activeProject?.worktree ?? props.projects[0]?.worktree
   })
@@ -1156,7 +1156,7 @@ export function RailSidebar(props: RailSidebarProps) {
       directory: sessionDirectory(session),
       active: !!input?.active ||
         !!session.active ||
-        (props.activeWorkspaceId === sessionDirectory(session) && props.activeSessionId === session.id),
+        (props.activeDirectory === sessionDirectory(session) && props.activeSessionId === session.id),
       ...(input?.nested ? { nested: true } : {}),
       status: sessionStatus(session),
       ...(session.time ? { timeLabel: relativeTime(session.time) } : {}),
@@ -1300,7 +1300,7 @@ export function RailSidebar(props: RailSidebarProps) {
   const sessionInventoryReloadSignature = createMemo(() => JSON.stringify({
     filter: sessionFilter(),
     activeSessionId: props.activeSessionId,
-    activeWorkspaceId: props.activeWorkspaceId,
+    activeDirectory: props.activeDirectory,
     activeProjectId: props.activeProjectId,
     projects: props.projects.map((project) => ({
       id: project.id,
@@ -1839,7 +1839,7 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const WorkspaceBlock = (section: Section) => {
-    const active = createMemo(() => props.activeWorkspaceId === section.workspaceDir)
+    const active = createMemo(() => props.activeDirectory === section.workspaceDir)
     const runtime = createMemo(() => workspaceRuntimeKind(section.project, section.workspaceDir, sectionCloud(section.project, section.workspaceDir)))
     const workspaceItem = createMemo(() => workspace(section.project, section.workspaceDir))
     const workspaceMeta = createMemo(() => {
@@ -2185,10 +2185,10 @@ export function RailSidebar(props: RailSidebarProps) {
     const [open, setOpen] = createSignal(section.rows.length > 0 || terminalItems().length > 0 || projectMatches(section.project))
     const active = createMemo(() => projectMatches(section.project))
     const projectActionDirectory = createMemo(() => {
-      if (props.activeWorkspaceId && directories().some((directory) =>
-        directory === props.activeWorkspaceId ||
-        projectWorkspaceInfo(section.project, directory)?.workspaceId === props.activeWorkspaceId
-      )) return props.activeWorkspaceId
+      if (props.activeDirectory && directories().some((directory) =>
+        directory === props.activeDirectory ||
+        projectWorkspaceInfo(section.project, directory)?.workspaceId === props.activeDirectory
+      )) return props.activeDirectory
       return directories()[0] ?? section.project.worktree
     })
     const projectActionLabel = createMemo(() => workspaceName(projectActionDirectory(), section.project))

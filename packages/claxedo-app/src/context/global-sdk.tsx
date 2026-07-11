@@ -21,7 +21,7 @@ import { useServer } from "@/context/server"
 import { authFetch } from "@/shared/data/api"
 import { principalHasSignedAccess, usePrincipal } from "../shell/auth/identity-provider"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../agent-runtime/signed-workspace"
-import { shellRouteWorkspaceKeyFromPathname } from "../shell/identity/route"
+import { shellRouteDirectoryFromPathname } from "../shell/identity/route"
 import { isUserHostedWorkspaceDirectory } from "../shell/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "../shell/workspace/session-workspace-key"
 import { fastSessionSwitchAnyNetworkQuiet, fastSessionSwitchAnyQuietDelay } from "../session/store/fast-session-switch"
@@ -86,7 +86,7 @@ export function eventDirectoryForLiveSession(input: {
 
 function initialRouteDirectory() {
   if (typeof window === "undefined") return
-  return shellRouteWorkspaceKeyFromPathname(window.location.pathname)
+  return shellRouteDirectoryFromPathname(window.location.pathname)
 }
 
 function cachedProjectInventory(baseUrl?: string) {

@@ -28,7 +28,7 @@ type RailWorkspacePanelTargetState = {
 
 export function useRailWorkspacePanelTarget(input: {
   state: RailWorkspacePanelTargetState
-  activeWorkspaceId: Accessor<string | undefined>
+  activeDirectory: Accessor<string | undefined>
 }) {
   const visiblePanes = createMemo(() => input.state.wb.selectors.visiblePanes())
 
@@ -39,10 +39,10 @@ export function useRailWorkspacePanelTarget(input: {
     if (contentTarget) return contentTarget
     if (workspaceToolsBlockedForContent(active)) return undefined
 
-    const activeWorkspaceId = input.activeWorkspaceId()
-    if (activeWorkspaceId) {
+    const activeDirectory = input.activeDirectory()
+    if (activeDirectory) {
       return {
-        workspaceDir: activeWorkspaceId,
+        workspaceDir: activeDirectory,
         targetPaneId: paneId,
       }
     }

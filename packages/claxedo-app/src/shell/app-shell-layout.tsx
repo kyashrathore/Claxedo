@@ -63,7 +63,7 @@ export type AppShellLayoutProps = ParentProps<{
   /**
    * Currently active worktree directory (route)
    */
-  activeWorkspaceId?: string
+  activeDirectory?: string
 
   /**
    * Currently active session ID
@@ -176,7 +176,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const emptyDraft = useRailEmptyDraftController({
     state: claxedoState,
     projects: () => props.projects,
-    activeWorkspaceId: () => props.activeWorkspaceId,
+    activeDirectory: () => props.activeDirectory,
     autoOpenDisabled: () => props.suppressEmptyDraftSession,
     onNewSession: props.onNewSession,
   })
@@ -185,7 +185,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     state: claxedoState,
     projects: () => props.projects,
     activeProjectId: () => props.activeProjectId,
-    activeWorkspaceId: () => props.activeWorkspaceId,
+    activeDirectory: () => props.activeDirectory,
     projectCaption: projectSessionInfo.projectCaption,
     worktreeInfo: projectSessionInfo.worktreeInfo,
   })
@@ -205,7 +205,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     },
   })
   const workbenchController = useRailWorkbenchController({
-    activeWorkspaceId: () => props.activeWorkspaceId,
+    activeDirectory: () => props.activeDirectory,
     autoResponds: (request, workspaceDir) => permission.autoResponds(request, workspaceDir),
     canUsePages: () => props.canUsePages === true,
     client: globalSDK.client,
@@ -219,7 +219,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     onTabSelect: props.onTabSelect,
     onWorkspacePanelVisibilityChange: shellLayout.setWorkspacePanelOpen,
     roleBlocksTerminal: () => terminalBlockedByRole(workspacePlacement(
-      props.activeWorkspaceId ? sessionWorkspaceRuntimeRef({ directory: props.activeWorkspaceId })?.workspaceId : undefined,
+      props.activeDirectory ? sessionWorkspaceRuntimeRef({ directory: props.activeDirectory })?.workspaceId : undefined,
     )),
     sidebarDir: sidebarSelection.sidebarDir,
     state: claxedoState,
@@ -313,7 +313,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           activeGlobal={emptyDraft.activeGlobal}
           activeProjectId={props.activeProjectId}
           activeSessionId={props.activeSessionId}
-          activeWorkspaceId={props.activeWorkspaceId}
+          activeDirectory={props.activeDirectory}
           closeMobileSidebar={chrome.closeMobileSidebar}
           globalChatEnabled={props.globalChatEnabled}
           hasOpenSurfaces={emptyDraft.hasOpenSurfaces}

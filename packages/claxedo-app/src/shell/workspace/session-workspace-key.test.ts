@@ -122,7 +122,7 @@ describe("session workspace key", () => {
     // resolver by DIFFERENT directory shapes:
     //   - the session pane carries the workspace's filesystem worktree (its
     //     sessionRef cwd / meta.directory), and
-    //   - a newly opened terminal inherits `activeWorkspaceId` — the relay-backed
+    //   - a newly opened terminal inherits `activeDirectory` — the relay-backed
     //     workspace id itself (route key).
     // Both MUST resolve the SAME workspaceId+kind, otherwise the second surface
     // opens (or skips) a different connection entry and refs never reaches 2.

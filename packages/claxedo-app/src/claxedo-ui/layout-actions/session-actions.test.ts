@@ -35,7 +35,7 @@ function makeProps() {
   const props = {
     flowLog: () => undefined,
     params: {},
-    activeWorkspaceId: () => "/workspace/main",
+    activeDirectory: () => "/workspace/main",
     activeProjectId: () => "p1",
     projects: () => [{ id: "p1", worktree: "/workspace/main" }],
     navigate: () => undefined,

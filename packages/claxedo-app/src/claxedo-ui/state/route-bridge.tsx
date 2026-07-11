@@ -25,7 +25,7 @@ import {
 import { useDirectorySessionCacheActions } from "../../shell/data/directory-session-cache"
 import {
   parseShellRoute,
-  shellRouteWorkspaceKey,
+  shellRouteDirectory,
   workspaceSessionRoute,
   workspaceRoute,
 } from "../../shell/identity/route"
@@ -217,7 +217,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   })
 
   const shellRoute = createMemo(() => parseShellRoute(location.pathname))
-  const workspaceId = createMemo(() => shellRouteWorkspaceKey(shellRoute()))
+  const workspaceId = createMemo(() => shellRouteDirectory(shellRoute()))
   const routeSessionId = createMemo(() => {
     const route = shellRoute()
     if (route.kind === "session") return route.sessionId

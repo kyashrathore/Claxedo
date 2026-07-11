@@ -30,7 +30,7 @@ describe("openWorkspaceScopeIds", () => {
     ])
 
     expect(openWorkspaceScopeIds({
-      activeWorkspaceId: "/repo/main",
+      activeDirectory: "/repo/main",
       visiblePanes: [{ id: "pane-1", contentId: "visible-session" }],
       meta: (id) => meta.get(id),
     })).toEqual(["/repo/main"])

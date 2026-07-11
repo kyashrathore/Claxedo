@@ -8,7 +8,7 @@ import { capture as phCapture } from "../utils/analytics"
 
 export function useClaxedoAppShellCommands(input: {
   state: ClaxedoStateApi
-  activeWorkspaceId: Accessor<string | undefined>
+  activeDirectory: Accessor<string | undefined>
 }) {
   const command = useCommand()
   const theme = useTheme()
@@ -44,7 +44,7 @@ export function useClaxedoAppShellCommands(input: {
     createProcessPaneToggleCommand(() => {
       phCapture("process_pane_toggled")
       input.state.workspacePanel.toggle("processes", {
-        workspaceDir: input.activeWorkspaceId(),
+        workspaceDir: input.activeDirectory(),
         navigator: "processes",
       })
     }),

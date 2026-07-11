@@ -1,6 +1,5 @@
 import { sessionKey, workspaceKey, type SessionRef } from "../identity/session-ref"
-
-type Brand<T, Name extends string> = T & { readonly __scope: Name }
+import type { Brand } from "../identity/brand"
 
 export type SessionScopedQueryKey = Brand<readonly ["shell", "session", string, ...ReadonlyArray<unknown>], "session">
 export type WorkspaceScopedQueryKey = Brand<readonly ["shell", "workspace", string, ...ReadonlyArray<unknown>], "workspace">

@@ -21,7 +21,7 @@ import { recoverMissingWorkspace, type LocalWorkspaceProps } from "./workspace-r
 
 export type WorkspaceActionProps = LocalWorkspaceProps & Pick<
   ActionProps,
-  "activeWorkspaceId" | "directorySessionCacheActions" | "flowLog" | "params" | "projects"
+  "activeDirectory" | "directorySessionCacheActions" | "flowLog" | "params" | "projects"
 > & {
   state: LocalWorkspaceProps["state"] & {
     layout: Pick<ActionProps["state"]["layout"], "openSession">
@@ -68,7 +68,7 @@ export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
     props.flowLog("workspace select", {
       projectId: project.id,
       workspaceDir,
-      routeDir: props.activeWorkspaceId(),
+      routeDir: props.activeDirectory(),
       routeSession: props.params.id,
       focusedPaneId: focusedPaneId(),
     })

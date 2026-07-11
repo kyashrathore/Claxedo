@@ -15,7 +15,7 @@ function makeProps() {
 
     const props: PageActionProps & { canUsePages?: () => boolean } = {
       navigate: (path: string) => navigateCalls.push(path),
-      activeWorkspaceId: () => "/workspace/main",
+      activeDirectory: () => "/workspace/main",
       projects: () => [{ id: "p1", worktree: "/workspace/main" }],
       canUsePages: () => true,
       state: {
@@ -42,7 +42,7 @@ describe("createPageActions", () => {
 
   test("handleNewPage falls back to first project when no active workspace", () => {
     const { props, openPagesIndexCalls } = makeProps()
-    props.activeWorkspaceId = () => undefined
+    props.activeDirectory = () => undefined
     const actions = createPageActions(props)
     actions.handleNewPage()
     expect(openPagesIndexCalls).toEqual(["/workspace/main"])
@@ -50,7 +50,7 @@ describe("createPageActions", () => {
 
   test("handleNewPage skips navigation when no workspace dir is available", () => {
     const { props, navigateCalls, openPagesIndexCalls } = makeProps()
-    props.activeWorkspaceId = () => undefined
+    props.activeDirectory = () => undefined
     props.projects = () => []
     const actions = createPageActions(props)
     actions.handleNewPage()

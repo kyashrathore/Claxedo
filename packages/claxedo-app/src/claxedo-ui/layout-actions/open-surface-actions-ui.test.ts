@@ -7,8 +7,8 @@ function makeProps(dir?: string) {
   const props: Parameters<typeof createOpenSurfaceActions>[0] & { routeWorkspace?: string } = {
     routeWorkspace: dir,
     flowLog: () => undefined,
-    routeWorkspaceId: () => props.routeWorkspace,
-    activeWorkspaceId: () => dir,
+    routeDirectory: () => props.routeWorkspace,
+    activeDirectory: () => dir,
     params: { id: "session-1" },
     state: {
       wb: {

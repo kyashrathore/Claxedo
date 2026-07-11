@@ -117,7 +117,7 @@ function renderRail(surface: ContentMeta) {
         <AppShellLayout
           projects={[project]}
           activeProjectId={project.id}
-          activeWorkspaceId={project.worktree}
+          activeDirectory={project.worktree}
           suppressEmptyDraftSession
         />
       </ClaxedoStateProvider>

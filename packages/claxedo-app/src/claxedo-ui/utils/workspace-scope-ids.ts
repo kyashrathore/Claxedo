@@ -3,13 +3,13 @@ import { realDirectory, type ContentMeta } from "../state"
 import { sessionPaneWorkspaceKey, type SessionWorkspaceRuntimeInput } from "../../shell/workspace/session-workspace-key"
 
 export function openWorkspaceScopeIds(input: {
-  activeWorkspaceId?: string
+  activeDirectory?: string
   visiblePanes: readonly Pane[]
   meta: (id: string) => ContentMeta | undefined
   projects?: SessionWorkspaceRuntimeInput["projects"]
 }) {
   return [
-    input.activeWorkspaceId,
+    input.activeDirectory,
     ...input.visiblePanes.flatMap((pane) => {
       if (!pane.contentId) return []
       const meta = input.meta(pane.contentId)

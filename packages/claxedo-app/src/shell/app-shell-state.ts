@@ -14,7 +14,7 @@ import { useNotification } from "@/context/notification"
 import { capture as phCapture } from "../utils/analytics"
 import { realDirectory, useClaxedoState } from "../claxedo-ui/state"
 import { projectToProjectItem } from "../claxedo-ui/state/route-bridge"
-import { resolveActiveWorkspaceId } from "../claxedo-ui/utils/active-workspace"
+import { resolveActiveDirectory } from "../claxedo-ui/utils/active-workspace"
 import { openWorkspaceScopeIds } from "../claxedo-ui/utils/workspace-scope-ids"
 import { useConfigOptional } from "../context/config"
 import type { SessionInventoryRow } from "../shared/query/types"
@@ -28,7 +28,7 @@ import {
   emptySessionInventory,
   sessionInventoryQueryOptions,
 } from "./data/queries"
-import { parseShellRoute, shellRouteWorkspaceKey } from "./identity/route"
+import { parseShellRoute, shellRouteDirectory } from "./identity/route"
 import { useShellAppStateSnapshot } from "./app-state-snapshot"
 
 export type AppShellState = ReturnType<typeof useAppShellState>
@@ -85,24 +85,24 @@ export function useAppShellState(input: {
     return id ? state.meta.get(id) : undefined
   })
   const shellRoute = createMemo(() => parseShellRoute(input.pathname()))
-  const routeWorkspaceId = createMemo(() => shellRouteWorkspaceKey(shellRoute()))
+  const routeDirectory = createMemo(() => shellRouteDirectory(shellRoute()))
   const shellRouteKind = createMemo(() => shellRoute().kind)
-  const activeWorkspaceId = createMemo(() =>
-    resolveActiveWorkspaceId({
-      routeDir: routeWorkspaceId(),
+  const activeDirectory = createMemo(() =>
+    resolveActiveDirectory({
+      routeDir: routeDirectory(),
       surfaceDir: realDirectory(activeSurface()?.directory),
     })
   )
   const openWorkspaceIds = createMemo(() =>
     openWorkspaceScopeIds({
-      activeWorkspaceId: activeWorkspaceId(),
+      activeDirectory: activeDirectory(),
       visiblePanes: state.wb.selectors.visiblePanes(),
       meta: (id) => state.meta.get(id),
       projects: projects(),
     })
   )
   const activeProjectId = createMemo(() => {
-    const dir = activeWorkspaceId()
+    const dir = activeDirectory()
     if (!dir) return
     const project = layoutProjects().find((p) =>
       p.worktree === dir ||
@@ -123,25 +123,25 @@ export function useAppShellState(input: {
   })
 
   createEffect(() => {
-    const dir = activeWorkspaceId()
+    const dir = activeDirectory()
     if (!dir) return
     void ensureDirectorySessionCache(dir)
   })
 
   createEffect(() => {
-    directorySessionCacheActions.setFocused(activeWorkspaceId() ?? undefined)
+    directorySessionCacheActions.setFocused(activeDirectory() ?? undefined)
   })
 
   createEffect(() => {
     notification.setActiveScope({
-      directory: activeWorkspaceId(),
+      directory: activeDirectory(),
       session: activeSessionId(),
     })
   })
 
   const autoOpenActiveProject = () => {
     if (!globalReady()) return
-    const dir = activeWorkspaceId()
+    const dir = activeDirectory()
     if (!dir) return
     if (!canAutoOpenProject({
       api: projectsQuery.data ?? [],
@@ -157,7 +157,7 @@ export function useAppShellState(input: {
     activeProjectId,
     activeSessionId,
     activeSurface,
-    activeWorkspaceId,
+    activeDirectory,
     canUsePages,
     config,
     dialog,
@@ -172,7 +172,7 @@ export function useAppShellState(input: {
     platform,
     projectInventoryActions,
     projects,
-    routeWorkspaceId,
+    routeDirectory,
     sessionInventory,
     shellRouteKind,
     state,

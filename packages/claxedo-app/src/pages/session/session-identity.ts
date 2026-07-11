@@ -49,13 +49,13 @@ export function resolveSessionDirectory(input: {
 
 export function resolveSignedSessionWorkspaceId(input: {
   signedControlPlane: boolean
-  routeWorkspaceId?: string
+  routeDirectory?: string
   inventoryWorkspaceId?: string
   projectWorkspaceId?: string
   workspaceId?: string
 }) {
   if (!input.signedControlPlane) return undefined
-  return input.routeWorkspaceId ??
+  return input.routeDirectory ??
     input.inventoryWorkspaceId ??
     input.projectWorkspaceId ??
     input.workspaceId

@@ -43,8 +43,8 @@ export type ProjectActionProps = Pick<
   | "projectInventoryActions"
   | "config"
   | "projects"
-  | "routeWorkspaceId"
-  | "activeWorkspaceId"
+  | "routeDirectory"
+  | "activeDirectory"
   | "activeProjectId"
   | "flowLog"
 > & {
@@ -97,7 +97,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     const handleProjectSelected = async (workspaceDir: string) => {
       props.flowLog("new project selected", {
         workspaceDir,
-        routeDir: props.activeWorkspaceId(),
+        routeDir: props.activeDirectory(),
         routeSession: props.params.id,
       })
 
@@ -161,7 +161,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         projectId: project.id,
         created,
         name,
-        routeDir: props.activeWorkspaceId(),
+        routeDir: props.activeDirectory(),
         routeSession: props.params.id,
       })
 
@@ -491,7 +491,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       if (worktree.pinned === dir) props.state.workspace.setPaneWorktreePinned(pane.id, null)
       if (worktree.default === dir) props.state.workspace.setPaneWorktreeDefault(pane.id, projectWorktree)
     }
-    if (props.activeWorkspaceId() === dir) {
+    if (props.activeDirectory() === dir) {
       props.navigate("/")
     }
   }

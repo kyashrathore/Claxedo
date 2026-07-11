@@ -11,20 +11,39 @@ for directory charters and import rules. This file is the noun list.
 ## The five senses of "workspace" (read this first)
 
 "workspace" is the single worst naming problem in this codebase: the same
-word is used for five unrelated concepts, sometimes in the same file. Until
-the disambiguation refactor (LLD WP-D5) lands, you must infer which sense a
-given `workspace`/`workspaceId` identifier means from its file, not its name.
+word is used for five unrelated concepts, sometimes in the same file. The
+disambiguation refactor (LLD WP-D5) has **partially landed**: the sense-1/sense-2
+brands and the sense-1 conflation renames are in; the bulk `directory: string`
+relabel is still in progress (see sense 1). For any `workspace`/`workspaceId`
+identifier not yet branded, still infer the sense from its file, not its name.
 
 1. **A filesystem directory path** (no separate identity from the path
-   string). `resolveActiveWorkspaceId` in
-   `src/claxedo-ui/utils/active-workspace.ts:1` returns a path. Target name:
-   `activeDirectory` / `directoryRef`.
+   string). **Sense 1 is now branded and honestly named.** The brand is
+   `DirectoryRef` in `src/shell/identity/brand.ts` (a zero-runtime nominal
+   `string` brand; NEVER a control-plane id). The former offender
+   `resolveActiveWorkspaceId` is now `resolveActiveDirectory`
+   (`src/claxedo-ui/utils/active-workspace.ts:1`), the canonical `activeWorkspaceId`
+   memo is now `activeDirectory`, `routeWorkspaceId` is now `routeDirectory`, and
+   the route seam `shellRouteWorkspaceKey` is now `shellRouteDirectory(): DirectoryRef`
+   (`src/shell/identity/route.ts`). The retired names are CI-fenced by
+   `src/architecture/directory-named-workspace.guard.test.ts`. Directories are
+   minted as `DirectoryRef` only in the sanctioned owners (`legacy-resolver.ts`,
+   the `route.ts` parser, `decodeDirectory`); a growing set of `directory:`
+   annotations carry the brand, and the `directoryStringParams` ratchet shrinks as
+   the remaining `directory: string` params convert. Target name for any residual
+   sense-1 identifier: `activeDirectory` / `directoryRef` (typed `DirectoryRef`).
 2. **An opaque control-plane identifier**, distinct from the directory it is
    bound to. `WorkspaceRuntimeSnapshot` in `src/shared/query/runtime.ts:6-8`
    has BOTH a `workspaceId` field and a separate `directory` field on the
    same object — proof the two are not interchangeable even inside one type.
    This is the ONLY sense that should keep the name `workspaceId` once the
-   others are renamed.
+   others are renamed. Its brand `WorkspaceId` now exists in
+   `src/shell/identity/brand.ts` and is minted at the sole legal narrowing point
+   `workspaceIdFromRef` (`legacy-resolver.ts`). Threading `WorkspaceId` through
+   the `SessionRef`/`SandboxRef.workspaceId` fields is a future pass (the brand is
+   a `string` subtype, so those fields accept the minted value unchanged today);
+   `WorkspaceRuntimeSnapshot.workspaceId` stays a raw wire `string` at the schema
+   layer by design.
 3. **A `toolSandbox.kind` enum value**, distinguishing where a session's
    tools execute from `"local"`/`"virtual"`. `SandboxRef` in
    `src/shell/identity/session-ref.ts:34` declares

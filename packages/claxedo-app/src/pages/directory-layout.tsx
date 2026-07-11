@@ -10,16 +10,16 @@ import { resolveSessionUrl } from "@/shared/data/session-url"
 import { useConfigOptional } from "@/context/config"
 import { resolveLegacyRedirect } from "@/shell/identity/route"
 import { authFetch } from "@/shared/data/api"
+import { asDirectoryRef, type DirectoryRef } from "@/shell/identity/brand"
 import { isLocalPersonalScope, workspaceResolveUrl } from "./directory-layout-routes"
 
-// Nominal branded string (was Schema.String.brand("ProjectDirString") from "effect");
-// hand-rolled to keep the brand type without dragging the effect runtime into boot.
-export type ProjectDirString = string & { readonly __brand: "ProjectDirString" }
-
-export function decodeDirectory(dir: string): ProjectDirString | undefined {
+// WP-D5: the former local `ProjectDirString` brand folded into the canonical
+// `DirectoryRef` (sense 1). This decoder is a sanctioned directory mint point:
+// it turns the base64 `/:dir` route segment into a branded directory path.
+export function decodeDirectory(dir: string): DirectoryRef | undefined {
   const decoded = decode64(dir)
   if (!decoded) return
-  return decoded as ProjectDirString
+  return asDirectoryRef(decoded)
 }
 
 export default function Layout(props: ParentProps) {

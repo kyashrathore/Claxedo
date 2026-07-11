@@ -1,4 +1,4 @@
-export function resolveActiveWorkspaceId(input: {
+export function resolveActiveDirectory(input: {
   routeDir?: string
   surfaceDir?: string
 }) {

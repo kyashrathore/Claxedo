@@ -8,7 +8,7 @@ describe("useRailEmptyDraftController", () => {
   test("opens a draft session for the active workspace when the workbench is empty", async () => {
     const opened: (string | undefined)[] = []
     await withController({
-      activeWorkspaceId: "/repo/active",
+      activeDirectory: "/repo/active",
       onNewSession: (workspaceDir) => opened.push(workspaceDir),
     }, async () => {
       await settleMicrotasks()
@@ -19,7 +19,7 @@ describe("useRailEmptyDraftController", () => {
   test("does not auto-open while disabled by route state or recent last-tab close", async () => {
     const opened: (string | undefined)[] = []
     await withController({
-      activeWorkspaceId: "/repo/active",
+      activeDirectory: "/repo/active",
       autoOpenDisabled: true,
       onNewSession: (workspaceDir) => opened.push(workspaceDir),
     }, async () => {
@@ -56,7 +56,7 @@ describe("useRailEmptyDraftController", () => {
   test("does not auto-open when a visible renderable surface exists", async () => {
     const opened: (string | undefined)[] = []
     await withController({
-      activeWorkspaceId: "/repo/active",
+      activeDirectory: "/repo/active",
       contents: [sessionMeta("surface-session", "/repo/active")],
       panes: [{ contentId: "surface-session" }],
       focusedContentId: "surface-session",
@@ -96,7 +96,7 @@ describe("useRailEmptyDraftController", () => {
 async function withController(
   input: {
     projects?: readonly { worktree: string }[]
-    activeWorkspaceId?: string
+    activeDirectory?: string
     autoOpenDisabled?: boolean
     contents?: readonly ContentMeta[]
     panes?: readonly { contentId?: string }[]
@@ -111,7 +111,7 @@ async function withController(
     return useRailEmptyDraftController({
       state: fakeState(input),
       projects: () => input.projects ?? [],
-      activeWorkspaceId: () => input.activeWorkspaceId,
+      activeDirectory: () => input.activeDirectory,
       autoOpenDisabled: () => input.autoOpenDisabled,
       onNewSession: input.onNewSession,
     })
@@ -156,7 +156,7 @@ async function withSuppressibleCloseSequence(
         },
       },
       projects: () => [],
-      activeWorkspaceId: () => "/repo/active",
+      activeDirectory: () => "/repo/active",
       autoOpenDisabled: () => false,
       onNewSession,
     })

@@ -14,7 +14,7 @@ export function useWorkspacePanelVisualState(input: {
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
   focusedSplitPaneId: () => string | undefined
   focusedSurfaceWorkspaceToolsBlocked: () => boolean
-  activeWorkspaceId: Accessor<string | undefined>
+  activeDirectory: Accessor<string | undefined>
   emptyDraftDirectory: Accessor<string | undefined>
   onWorkspacePanelVisibilityChange?: (visible: boolean) => void
   workspacePanelWidth: Accessor<number>
@@ -95,7 +95,7 @@ export function useWorkspacePanelVisualState(input: {
         targetPaneId: panel.targetPaneId ?? input.focusedSplitPaneId() ?? "",
       }
     }
-    const workspaceDir = input.activeWorkspaceId() ?? input.emptyDraftDirectory()
+    const workspaceDir = input.activeDirectory() ?? input.emptyDraftDirectory()
     if (!workspaceDir) return
     return {
       workspaceDir,

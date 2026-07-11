@@ -154,7 +154,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     props.flowLog("session select", {
       workspaceDir,
       sessionId,
-      routeDir: props.activeWorkspaceId(),
+      routeDir: props.activeDirectory(),
       routeSession: props.params.id,
       focusedPane: props.state.wb.state.focusedPaneId,
     })
@@ -162,7 +162,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     if (!workspaceDir) return
     const focusedId = props.state.wb.selectors.focusedContent()
     const focused = focusedId ? props.state.meta.get(focusedId) : undefined
-    const sameWorkspace = props.activeWorkspaceId() === workspaceDir ||
+    const sameWorkspace = props.activeDirectory() === workspaceDir ||
       (focused?.type === "session" && focused.directory === workspaceDir)
     if (!sameWorkspace) props.layout.projects.open(workspaceDir)
 
@@ -187,13 +187,13 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
   const handleNewSession = async (workspaceDir?: string) => {
     props.flowLog("new session click", {
       workspaceDir: workspaceDir ?? null,
-      routeDir: props.activeWorkspaceId(),
+      routeDir: props.activeDirectory(),
       routeSession: props.params.id,
       focusedPane: props.state.wb.state.focusedPaneId,
     })
 
     if (!workspaceDir) {
-      const providerDirectory = props.activeWorkspaceId() ?? props.projects()[0]?.worktree
+      const providerDirectory = props.activeDirectory() ?? props.projects()[0]?.worktree
       if (!providerDirectory) return
       props.layout.projects.open(providerDirectory)
       const project = findProjectForWorkspace(props.projects, providerDirectory)
@@ -241,7 +241,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     if (remoteHistoryReadOnly("Review creation")) return
     props.flowLog("new review click", {
       workspaceDir,
-      routeDir: props.activeWorkspaceId(),
+      routeDir: props.activeDirectory(),
       focusedPane: props.state.wb.state.focusedPaneId,
     })
 

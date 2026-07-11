@@ -14,7 +14,7 @@ const projects: ProjectItem[] = [
 describe("useRailSidebarSelection", () => {
   test("active workspace route wins over focused surface and pane worktree fallback", () => {
     withSelection({
-      activeWorkspaceId: "/repo/active",
+      activeDirectory: "/repo/active",
       focusedContent: sessionMeta("/repo/surface"),
       pinned: "/repo/pinned",
       fallback: "/repo/default",
@@ -56,7 +56,7 @@ describe("useRailSidebarSelection", () => {
 function withSelection(
   input: {
     activeProjectId?: string
-    activeWorkspaceId?: string
+    activeDirectory?: string
     focusedContent?: ContentMeta
     pinned?: string
     fallback?: string
@@ -68,7 +68,7 @@ function withSelection(
       state: fakeState(input),
       projects: () => projects,
       activeProjectId: () => input.activeProjectId,
-      activeWorkspaceId: () => input.activeWorkspaceId,
+      activeDirectory: () => input.activeDirectory,
       projectCaption: (project) => `caption:${project.id}`,
       worktreeInfo: (workspaceDir) => ({
         name: `${workspaceDir.split("/").at(-1)}-workspace`,

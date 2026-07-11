@@ -18,7 +18,7 @@ type RailEmptyDraftState = {
 export function useRailEmptyDraftController(input: {
   state: RailEmptyDraftState
   projects: Accessor<readonly { worktree: string }[]>
-  activeWorkspaceId: Accessor<string | undefined>
+  activeDirectory: Accessor<string | undefined>
   autoOpenDisabled: Accessor<boolean | undefined>
   onNewSession?: (workspaceDir?: string) => void
 }) {
@@ -37,7 +37,7 @@ export function useRailEmptyDraftController(input: {
       ? input.state.meta.get(contentId)
       : undefined
   })
-  const emptyDraftDirectory = createMemo(() => input.activeWorkspaceId() ?? input.projects()[0]?.worktree)
+  const emptyDraftDirectory = createMemo(() => input.activeDirectory() ?? input.projects()[0]?.worktree)
   const sidebarEligible = createMemo(() => input.projects().length > 0 || hasOpenSurfaces())
 
   // The block window must be reactive: a plain `let` read inside the memo below

@@ -68,7 +68,7 @@ import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../agent-ru
 import { getClaxedoServerUrl } from "@/shared/data/api"
 import { principalHasSignedAccess, usePrincipal } from "../shell/auth/identity-provider"
 import { placementFor } from "../shell/auth/placement"
-import { parseShellRoute, sessionRoute, shellRouteWorkspaceKey, workspaceSessionRoute } from "../shell/identity/route"
+import { parseShellRoute, sessionRoute, shellRouteDirectory, workspaceSessionRoute } from "../shell/identity/route"
 import { sessionViewKey, terminalScopeKey } from "../shell/identity/session-view-key"
 import { shellDataKeys } from "../shell/data/keys"
 import { sessionWorkspaceRuntimeRef } from "../shell/workspace/session-workspace-key"
@@ -150,7 +150,7 @@ export default function SessionPage() {
   )
   const sessionID = createMemo(() => sessionIdentity().id)
   const routeDirectory = createMemo(() => sessionParams.directory())
-  const routeWorkspaceId = createMemo(() => { const route = parseShellRoute(location.pathname); return route.kind === "workspace-session" ? route.workspaceId : undefined })
+  const routeSessionDirectory = createMemo(() => { const route = parseShellRoute(location.pathname); return route.kind === "workspace-session" ? route.workspaceId : undefined })
   const terminalHandoffKey = createMemo(() => terminalScopeKey(routeDirectory()))
   const sessionInventoryQuery = useQuery(() =>
     sessionInventoryQueryOptions<SessionInventoryRow>({
@@ -236,7 +236,7 @@ export default function SessionPage() {
   const signedWorkspaceId = createMemo(() =>
     resolveSignedSessionWorkspaceId({
       signedControlPlane: signedControlPlane(),
-      routeWorkspaceId: routeWorkspaceId(),
+      routeDirectory: routeSessionDirectory(),
       inventoryWorkspaceId: inventorySession()?.workspaceId,
       projectWorkspaceId: signedProjectWorkspaceId({
         signedWorkspace: signedWorkspaceFromProjects(projects(), dir()),
@@ -356,7 +356,7 @@ export default function SessionPage() {
     const current = sessionParams.directory()
     if (gid && current && claxedoState) {
       const route = parseShellRoute(path)
-      const routeDir = shellRouteWorkspaceKey(route)
+      const routeDir = shellRouteDirectory(route)
       const dir = routeDir ?? current
       const sid = route.kind === "legacy-directory" ? route.sessionId : undefined
       const target = claxedoState.wb.state.panes.some((pane) => pane.id === gid)

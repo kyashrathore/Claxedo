@@ -7,8 +7,8 @@ import {
   parseShellRoute,
   resolveLegacyRedirect,
   sessionRoute,
-  shellRouteWorkspaceKey,
-  shellRouteWorkspaceKeyFromPathname,
+  shellRouteDirectory,
+  shellRouteDirectoryFromPathname,
   workspacePageRoute,
   workspaceRoute,
   workspaceSessionRoute,
@@ -85,16 +85,16 @@ describe("shell route identity", () => {
   })
 
   test("keeps route workspace key extraction inside the shell route boundary", () => {
-    expect(shellRouteWorkspaceKey(parseShellRoute("/s/ses_1"))).toBeUndefined()
-    expect(shellRouteWorkspaceKey(parseShellRoute("/w/ws_cloud_1/session"))).toBe("ws_cloud_1")
-    expect(shellRouteWorkspaceKey(parseShellRoute(`/${base64Encode("/repo/main")}/page/page_1`))).toBe("/repo/main")
+    expect(shellRouteDirectory(parseShellRoute("/s/ses_1"))).toBeUndefined()
+    expect(shellRouteDirectory(parseShellRoute("/w/ws_cloud_1/session"))).toBe("ws_cloud_1")
+    expect(shellRouteDirectory(parseShellRoute(`/${base64Encode("/repo/main")}/page/page_1`))).toBe("/repo/main")
   })
 
   test("extracts initial route workspace keys from canonical and legacy pathnames", () => {
-    expect(shellRouteWorkspaceKeyFromPathname("/s/ses_1")).toBeUndefined()
-    expect(shellRouteWorkspaceKeyFromPathname("/w/ws_cloud_1/session")).toBe("ws_cloud_1")
-    expect(shellRouteWorkspaceKeyFromPathname("/w/%2Frepo%2Fmain/session")).toBe("/repo/main")
-    expect(shellRouteWorkspaceKeyFromPathname(`/${base64Encode("/repo/main")}/session/ses_123`)).toBe("/repo/main")
+    expect(shellRouteDirectoryFromPathname("/s/ses_1")).toBeUndefined()
+    expect(shellRouteDirectoryFromPathname("/w/ws_cloud_1/session")).toBe("ws_cloud_1")
+    expect(shellRouteDirectoryFromPathname("/w/%2Frepo%2Fmain/session")).toBe("/repo/main")
+    expect(shellRouteDirectoryFromPathname(`/${base64Encode("/repo/main")}/session/ses_123`)).toBe("/repo/main")
   })
 
   test("recognizes legacy base64 directory session routes without making directory canonical", () => {

@@ -36,8 +36,8 @@ export type ActionProps = {
   config: ConfigApi
   events?: EventsApi
   projects: Accessor<ProjectItem[]>
-  routeWorkspaceId: Accessor<string | undefined>
-  activeWorkspaceId: Accessor<string | undefined>
+  routeDirectory: Accessor<string | undefined>
+  activeDirectory: Accessor<string | undefined>
   activeProjectId: Accessor<string | undefined>
   canUsePages?: Accessor<boolean>
   flowLog: (...args: unknown[]) => void

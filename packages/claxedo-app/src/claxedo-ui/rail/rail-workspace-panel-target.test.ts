@@ -7,7 +7,7 @@ import { useRailWorkspacePanelTarget } from "./rail-workspace-panel-target"
 describe("useRailWorkspacePanelTarget", () => {
   test("content target wins over route, pinned, and default fallbacks", () => {
     withTarget({
-      activeWorkspaceId: "/repo/route",
+      activeDirectory: "/repo/route",
       focusedPaneId: "pane-1",
       panes: [{ id: "pane-1", contentId: "surface-session" }],
       content: sessionMeta("/repo/content"),
@@ -23,7 +23,7 @@ describe("useRailWorkspacePanelTarget", () => {
 
   test("blocked virtual sessions do not fall through to route or worktree fallbacks", () => {
     withTarget({
-      activeWorkspaceId: "/repo/route",
+      activeDirectory: "/repo/route",
       focusedPaneId: "pane-1",
       panes: [{ id: "pane-1", contentId: "surface-central" }],
       content: centralVirtualSessionMeta(),
@@ -38,7 +38,7 @@ describe("useRailWorkspacePanelTarget", () => {
 
   test("active workspace route wins when no content target exists", () => {
     withTarget({
-      activeWorkspaceId: "/repo/route",
+      activeDirectory: "/repo/route",
       focusedPaneId: "pane-1",
       panes: [{ id: "pane-1" }],
       pinned: "/repo/pinned",
@@ -93,7 +93,7 @@ describe("useRailWorkspacePanelTarget", () => {
 
 function withTarget(
   input: {
-    activeWorkspaceId?: string
+    activeDirectory?: string
     focusedPaneId?: string
     panes: readonly { id: string; contentId?: string }[]
     content?: ContentMeta
@@ -105,7 +105,7 @@ function withTarget(
   createRoot((dispose) => {
     run(useRailWorkspacePanelTarget({
       state: fakeState(input),
-      activeWorkspaceId: () => input.activeWorkspaceId,
+      activeDirectory: () => input.activeDirectory,
     }))
     dispose()
   })

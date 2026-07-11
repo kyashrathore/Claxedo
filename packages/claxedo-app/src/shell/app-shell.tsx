@@ -44,17 +44,17 @@ function ClaxedoAppShellContent(props: ParentProps) {
   })
   useClaxedoAppShellCommands({
     state: shell.state,
-    activeWorkspaceId: shell.activeWorkspaceId,
+    activeDirectory: shell.activeDirectory,
   })
 
   const { handleTabClose } = useAppShellRouteSync({
     activeSurface: shell.activeSurface,
-    activeWorkspaceId: shell.activeWorkspaceId,
+    activeDirectory: shell.activeDirectory,
     findSurface: shell.state.meta.find,
     navigate,
     params,
     pathname: () => location.pathname,
-    routeWorkspaceId: shell.routeWorkspaceId,
+    routeDirectory: shell.routeDirectory,
     sessionInventory: shell.sessionInventory,
     shellRouteKind: shell.shellRouteKind,
   })
@@ -90,7 +90,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
       <AppShellLayout
         projects={shell.projects()}
         activeProjectId={shell.activeProjectId()}
-        activeWorkspaceId={shell.activeWorkspaceId()}
+        activeDirectory={shell.activeDirectory()}
         activeSessionId={shell.activeSessionId()}
         globalChatEnabled={shell.globalChat()}
         homedir={shell.pathQuery.data?.home}

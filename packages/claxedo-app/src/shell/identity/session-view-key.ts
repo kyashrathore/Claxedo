@@ -32,16 +32,22 @@ export function sessionViewKey(input: {
   draftId?: string
 }) {
   const sessionId = input.sessionId?.trim()
-  const workspaceId = input.workspaceId?.trim() || input.directory?.trim()
+  // WP-D5: this local fuses sense-2 (a real `workspaceId`) and sense-1 (a raw
+  // `directory` path) into one scope key — whichever is present wins. It is NOT a
+  // `WorkspaceId`; it is the view-scope key that the composer's prompt cache is
+  // keyed by. The `workspace:` prefix below is the cache-key namespace, not a
+  // claim that the value is a control-plane id. Behavior is unchanged from the
+  // pre-D5 form; only the name is now honest.
+  const scopeKey = input.workspaceId?.trim() || input.directory?.trim()
   if (sessionId && sessionId !== "new") {
-    if (workspaceId) return `workspace:${encodeURIComponent(workspaceId)}:session:${encodeURIComponent(sessionId)}`
+    if (scopeKey) return `workspace:${encodeURIComponent(scopeKey)}:session:${encodeURIComponent(sessionId)}`
     return `session:${encodeURIComponent(sessionId)}`
   }
 
   const draftId = input.draftId?.trim()
   if (draftId) return `draft:${draftId}`
 
-  if (workspaceId) return `workspace:${encodeURIComponent(workspaceId)}:draft`
+  if (scopeKey) return `workspace:${encodeURIComponent(scopeKey)}:draft`
 
   return "workspace:unknown:draft"
 }

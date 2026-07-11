@@ -1,4 +1,5 @@
 import { base64Decode, base64Encode } from "../../utils/encode"
+import { asDirectoryRef, type DirectoryRef } from "./brand"
 
 export type ShellRoute =
   | { kind: "home" }
@@ -8,7 +9,7 @@ export type ShellRoute =
   | { kind: "workspace-session"; workspaceId: string; sessionId?: string }
   | { kind: "workspace-page"; workspaceId: string; pageId: string }
   | { kind: "workspace-terminal"; workspaceId: string; terminalId: string }
-  | { kind: "legacy-directory"; directory: string; sessionId?: string; pageId?: string; terminalId?: string }
+  | { kind: "legacy-directory"; directory: DirectoryRef; sessionId?: string; pageId?: string; terminalId?: string }
   | { kind: "unknown" }
 
 const RESERVED_ROOTS = new Set(["config", "login", "marketplace", "permissions", "s", "w"])
@@ -66,12 +67,13 @@ export function legacyDirectoryRouteKey(directory: string) {
   return base64Encode(directory)
 }
 
-export function legacyDirectoryFromRouteKey(value: string) {
+export function legacyDirectoryFromRouteKey(value: string): DirectoryRef | undefined {
   try {
     const directory = base64Decode(value)
     if (!directory) return
     if (legacyDirectoryRouteKey(directory) !== value) return
-    return directory
+    // route.ts is a sanctioned directory mint owner (see `brand.ts`).
+    return asDirectoryRef(directory)
   } catch {
     return undefined
   }
@@ -122,27 +124,36 @@ export function parseShellRoute(pathname: string): ShellRoute {
   return { kind: "unknown" }
 }
 
-export function shellRouteWorkspaceKey(route: ShellRoute) {
+// WP-D5: the sole type-erasure seam of the route layer. It collapses the tagged
+// `ShellRoute` union into a single scope key that every consumer treats as the
+// active *directory* (`routeDir` / directory-session-cache key / worktree
+// compare). For `/w/:workspaceId` routes carrying a genuine control-plane id the
+// value is still consumed as a directory-shaped scope key pending the separate
+// server-side directory-shape routing fix (plan 2026-07-09-001); until that
+// lands the seam is honestly typed `DirectoryRef` — the sense all downstream code
+// actually uses — rather than the misleading `workspaceId` name it once carried.
+// The route parser is a sanctioned directory mint owner (see `brand.ts`).
+export function shellRouteDirectory(route: ShellRoute): DirectoryRef | undefined {
   switch (route.kind) {
     case "workspace":
     case "workspace-session":
     case "workspace-page":
     case "workspace-terminal":
-      return route.workspaceId
+      return asDirectoryRef(route.workspaceId)
     case "legacy-directory":
-      return route.directory
+      return asDirectoryRef(route.directory)
     default:
       return undefined
   }
 }
 
-export function shellRouteWorkspaceKeyFromPathname(pathname: string) {
-  return shellRouteWorkspaceKey(parseShellRoute(pathname))
+export function shellRouteDirectoryFromPathname(pathname: string): DirectoryRef | undefined {
+  return shellRouteDirectory(parseShellRoute(pathname))
 }
 
 export async function resolveLegacyRedirect(
   pathname: string,
-  resolveWorkspace: (input: { directory: string }) => Promise<{ workspaceId?: string | null } | null | undefined>,
+  resolveWorkspace: (input: { directory: DirectoryRef }) => Promise<{ workspaceId?: string | null } | null | undefined>,
 ) {
   const parsed = parseShellRoute(pathname)
   if (parsed.kind !== "legacy-directory") return

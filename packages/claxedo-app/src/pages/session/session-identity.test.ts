@@ -72,7 +72,7 @@ describe("resolveSignedSessionWorkspaceId", () => {
   test("workspace-session route ownership beats stale inventory workspace ownership", () => {
     expect(resolveSignedSessionWorkspaceId({
       signedControlPlane: true,
-      routeWorkspaceId: "ws_route",
+      routeDirectory: "ws_route",
       inventoryWorkspaceId: "ws_stale_inventory",
       projectWorkspaceId: "ws_project",
       workspaceId: "ws_runtime",
@@ -82,7 +82,7 @@ describe("resolveSignedSessionWorkspaceId", () => {
   test("returns no workspace id for loopback sessions", () => {
     expect(resolveSignedSessionWorkspaceId({
       signedControlPlane: false,
-      routeWorkspaceId: "ws_route",
+      routeDirectory: "ws_route",
     })).toBeUndefined()
   })
 })

@@ -172,8 +172,8 @@ function make(dir: string) {
   const props: ProjectActionProps = {
     flowLog: () => undefined,
     params: {},
-    routeWorkspaceId: () => "/workspace/main",
-    activeWorkspaceId: () => "/workspace/main",
+    routeDirectory: () => "/workspace/main",
+    activeDirectory: () => "/workspace/main",
     activeProjectId: () => "p1",
     projects: () => data.project,
     navigate: (path: string) => routes.push(path),
@@ -523,7 +523,7 @@ describe("createProjectActions.handleNewWorkspace", () => {
 
   test("deleting the active workspace clears pane selection and navigates away without reload", async () => {
     const { props, nav, routes, worktreeRemoves, cleaned, data, projectsQueryKey, paneWorktrees } = make("/workspace/feature")
-    props.activeWorkspaceId = () => "/workspace/feature"
+    props.activeDirectory = () => "/workspace/feature"
     paneWorktrees.g1 = { default: "/workspace/feature", pinned: "/workspace/feature" }
     data.project[0] = {
       id: "p1",

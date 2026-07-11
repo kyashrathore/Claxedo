@@ -43,7 +43,7 @@ function makeProps() {
   const props: WorkspaceActionProps = {
     flowLog: () => undefined,
     params: {},
-    activeWorkspaceId: () => "/workspace/other",
+    activeDirectory: () => "/workspace/other",
     activeProjectId: () => "p1",
     projects: () => [project({ id: "p1", worktree: "/workspace/main", sandboxes: ["/workspace/feature"] })],
     navigate: (_path: string) => undefined,
