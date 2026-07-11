@@ -17,7 +17,10 @@ import { usePlatform } from "@/context/platform"
 import { normalizeServerUrl, ServerConnection, useServer } from "@/context/server"
 import { type ServerHealth, serverHealthQueryOptions, useCheckServerHealth } from "@/utils/server-health"
 
-const DEFAULT_USERNAME = "opencode"
+// No default username is pre-filled; the field's placeholder (localized
+// "username") is enough guidance, and prefilling a real string here would
+// just be one more value the user has to notice and clear.
+const DEFAULT_USERNAME = ""
 
 interface ServerFormProps {
   value: string

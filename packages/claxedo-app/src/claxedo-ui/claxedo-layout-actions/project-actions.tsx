@@ -393,7 +393,10 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
   }
 
   const handleHelp = () => {
-    props.platform.openLink("https://opencode.ai/docs")
+    // Claxedo does not yet have a dedicated docs site (tracked separately);
+    // point at the project repo, which is also what claxedo-web's own
+    // `docs` link resolves to today (packages/claxedo-web/src/config.ts).
+    props.platform.openLink("https://github.com/kyashrathore/Claxedo")
   }
 
   const purgeWorkspaceState = (dir: string) => {

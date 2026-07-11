@@ -31,6 +31,7 @@ import { getCapabilityResponses } from "@claxedo/terminal/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "../utils/api"
 import { resolveWorkspaceRuntime } from "../cloud/runtime/workspace-runtime-store"
 import { parse as parseShellCommand } from "shell-quote"
+import { resolveTerminalReloadFlag, terminalReloadStorageKey } from "./terminal-pty-key-migration"
 
 export interface TerminalProps extends ComponentProps<"div"> {
   pty: LocalPTY
@@ -364,11 +365,8 @@ export const Terminal = (props: TerminalProps) => {
       const splitWidthChanged = typeof snapshotCols === "number" && snapshotCols > 0 && snapshotCols !== mountCols
 
       // Reload detection marker is retained for diagnostics only.
-      const reloadKey = `opencode.pty.${local.pty.id}.reload`
-      const isReload = !!localStorage.getItem(reloadKey)
-      try {
-        localStorage.removeItem(reloadKey)
-      } catch {}
+      const reloadKey = terminalReloadStorageKey(local.pty.id)
+      const isReload = resolveTerminalReloadFlag(localStorage, local.pty.id)
 
       const persistSnapshot = (reason: string) => {
         if (!backend) return

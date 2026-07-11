@@ -1008,7 +1008,7 @@ describe("prompt submit demo path", () => {
     expect(calls.async).toBe(0)
   })
 
-  test("runner draft submit reuses the prewarmed session instead of creating one on send", async () => {
+  test("harness draft submit reuses the prewarmed session instead of creating one on send", async () => {
     demoMode = false
     harnessMode = true
     const submit = createPromptSubmit({
@@ -1064,7 +1064,7 @@ describe("prompt submit demo path", () => {
     })
   })
 
-  test("runner submit uses the harness-selected model instead of stale local provider state", async () => {
+  test("harness submit uses the harness-selected model instead of stale local provider state", async () => {
     demoMode = false
     harnessMode = true
     localCurrentModel = { id: "stale-provider-model", provider: { id: "anthropic" } }
@@ -1086,7 +1086,7 @@ describe("prompt submit demo path", () => {
     })
   })
 
-  test("runner submit does not leak the OpenCode reasoning variant", async () => {
+  test("harness submit does not leak the OpenCode reasoning variant", async () => {
     demoMode = false
     harnessMode = true
 
@@ -1109,7 +1109,7 @@ describe("prompt submit demo path", () => {
     expect(JSON.parse(unsignedCalls.at(-1)?.body ?? "{}")).not.toHaveProperty("variant")
   })
 
-  test("existing runner follow-up drops a stale persisted OpenCode variant", async () => {
+  test("existing harness follow-up drops a stale persisted OpenCode variant", async () => {
     demoMode = false
 
     const submit = createSubmit({
@@ -1143,7 +1143,7 @@ describe("prompt submit demo path", () => {
     })
   })
 
-  test("runner draft submit refuses unresolved provider/model state", async () => {
+  test("harness draft submit refuses unresolved provider/model state", async () => {
     demoMode = false
     harnessMode = true
     runnerSubmitModel = undefined
@@ -1164,7 +1164,7 @@ describe("prompt submit demo path", () => {
     })
   })
 
-  test("stale runner boot callbacks do not update a newer composer scope", async () => {
+  test("stale harness boot callbacks do not update a newer composer scope", async () => {
     demoMode = false
     harnessMode = true
     let resolveClaim: (session: { id: string }) => void = () => undefined
@@ -1188,7 +1188,7 @@ describe("prompt submit demo path", () => {
     expect(calls.transportAsync).toBe(1)
   })
 
-  test("runner claim failure does not fall back to OpenCode create", async () => {
+  test("harness claim failure does not fall back to OpenCode create", async () => {
     demoMode = false
     harnessMode = true
     runnerClaimSession = undefined
@@ -1206,7 +1206,7 @@ describe("prompt submit demo path", () => {
     expect(toasts).toEqual([])
   })
 
-  test("signed runner draft submit uses Workspace Runtime transport instead of old session compatibility", async () => {
+  test("signed harness draft submit uses Workspace Runtime transport instead of old session compatibility", async () => {
     demoMode = false
     harnessMode = true
 
@@ -1349,7 +1349,7 @@ describe("prompt submit demo path", () => {
     expect(refreshCalls).toEqual([{ directory: cloudDir, runner: "opencode" }])
   })
 
-  test("non-runner submit never enters blank agent/model state when provider data is available", async () => {
+  test("non-harness submit never enters blank agent/model state when provider data is available", async () => {
     demoMode = false
     harnessMode = false
     localCurrentModel = undefined
@@ -1812,7 +1812,7 @@ describe("prompt submit demo path", () => {
     expect(JSON.parse(matches.at(-1)?.body ?? "{}").model).toEqual({ providerID: "prov", modelID: "model-b" })
   })
 
-  test("signed runner submit ignores stale shell mode and sends a chat prompt", async () => {
+  test("signed harness submit ignores stale shell mode and sends a chat prompt", async () => {
     demoMode = false
     harnessMode = true
 
@@ -1854,7 +1854,7 @@ describe("prompt submit demo path", () => {
     }))
   })
 
-  test("signed runner existing session sends even when runtime get cannot hydrate the session", async () => {
+  test("signed harness existing session sends even when runtime get cannot hydrate the session", async () => {
     demoMode = false
     harnessMode = true
     transportGetSession = false
