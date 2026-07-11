@@ -27,6 +27,9 @@ export const dict = {
 
   "command.sidebar.toggle": "Kenar çubuğunu aç/kapat",
   "command.project.open": "Proje aç",
+  "command.project.previous": "Önceki proje",
+  "command.project.next": "Sonraki proje",
+  "command.project.index": "{{index}} projesine geç",
   "command.provider.connect": "Sağlayıcı bağla",
   "command.server.switch": "Sunucu değiştir",
   "command.settings.open": "Ayarları aç",
@@ -241,6 +244,8 @@ export const dict = {
   "prompt.mode.normal": "Komut",
   "prompt.mode.shell.exit": "çıkmak için esc",
 
+  "session.child.promptDisabled": "Alt ajan oturumlarına komut gönderilemez.",
+  "session.child.backToParent": "Ana oturuma dön.",
   "prompt.example.1": "Kod tabanındaki bir TODO'yu düzelt",
   "prompt.example.2": "Bu projenin teknoloji yığını nedir?",
   "prompt.example.3": "Bozuk testleri düzelt",
@@ -294,6 +299,7 @@ export const dict = {
   "prompt.toast.promptSendFailed.title": "Komut gönderilemedi",
   "prompt.toast.promptSendFailed.description": "Oturum alınamadı",
 
+  "prompt.toast.sessionConfigSaveFailed.title": "Oturum yapılandırması kaydedilemedi",
   "dialog.mcp.title": "MCP'ler",
   "dialog.mcp.description": "{{total}} içerisinden {{enabled}} etkin",
   "dialog.mcp.empty": "Yapılandırılmış MCP yok",
@@ -455,6 +461,7 @@ export const dict = {
   "error.page.action.restart": "Yeniden Başlat",
   "error.page.action.report": "Hatayı Bildir",
   "error.page.action.reported": "Hata Bildirildi",
+  "error.page.action.exportLogs": "Günlükleri dışa aktar",
   "error.page.action.checking": "Kontrol ediliyor...",
   "error.page.action.checkUpdates": "Güncellemeleri kontrol et",
   "error.page.action.updateTo": "{{version}} sürümüne güncelle",
@@ -505,6 +512,14 @@ export const dict = {
   "home.empty.title": "Son proje yok",
   "home.empty.description": "Yerel bir proje açarak başlayın",
 
+  "home.title": "Ana Sayfa",
+  "home.projects": "Projeler",
+  "home.project.add": "Proje ekle",
+  "home.sessions.search.placeholder": "Oturum ara",
+  "home.sessions.empty": "Oturum bulunamadı",
+  "home.sessions.group.today": "Bugün",
+  "home.sessions.group.yesterday": "Dün",
+  "home.sessions.group.older": "Daha eski",
   "session.tab.session": "Oturum",
   "session.tab.review": "İnceleme",
   "session.tab.context": "Bağlam",
@@ -519,6 +534,8 @@ export const dict = {
     "Yapılandırmada anlık görüntü takibi devre dışı bırakıldı, bu nedenle oturum değişiklikleri kullanılamıyor",
   "session.review.noChanges": "Değişiklik yok",
 
+  "session.review.noUncommittedChanges": "Henüz commit edilmemiş değişiklik yok",
+  "session.review.noBranchChanges": "Henüz branch değişikliği yok",
   "session.files.selectToOpen": "Açmak için bir dosya seçin",
   "session.files.all": "Tüm dosyalar",
   "session.files.empty": "Dosya yok",
@@ -620,6 +637,8 @@ export const dict = {
   "sidebar.project.viewAllSessions": "Tüm oturumları görüntüle",
   "sidebar.project.clearNotifications": "Bildirimleri temizle",
 
+  "sidebar.empty.title": "Açık proje yok",
+  "sidebar.empty.description": "Başlamak için bir proje açın",
   "app.name.desktop": "OpenCode Masaüstü",
 
   "settings.section.desktop": "Masaüstü",
@@ -631,6 +650,7 @@ export const dict = {
   "settings.desktop.wsl.description": "OpenCode sunucusunu Windows'ta WSL içinde çalıştırın.",
 
   "settings.general.section.appearance": "Görünüm",
+  "settings.general.section.advanced": "Gelişmiş",
   "settings.general.section.notifications": "Sistem bildirimleri",
   "settings.general.section.updates": "Güncellemeler",
   "settings.general.section.sounds": "Ses efektleri",
@@ -639,6 +659,11 @@ export const dict = {
 
   "settings.general.row.language.title": "Dil",
   "settings.general.row.language.description": "OpenCode'un görünüm dilini değiştirin",
+  "settings.general.row.shell.title": "Terminal Kabuğu",
+  "settings.general.row.shell.description":
+    "Terminaliniz için kullanılacak kabuğu seçin. Uyumlu kabuklar ajan araç çağrıları için de kullanılır.",
+  "settings.general.row.shell.autoDefault": "Otomatik (Varsayılan)",
+  "settings.general.row.shell.terminalOnly": "yalnızca terminal",
   "settings.general.row.appearance.title": "Görünüm",
   "settings.general.row.appearance.description": "OpenCode'un cihazınızdaki görünümünü özelleştirin",
   "settings.general.row.colorScheme.title": "Renk şeması",
@@ -657,6 +682,21 @@ export const dict = {
     "Takip komutlarının hemen yönlendirilmesini mi yoksa sırada beklemesini mi istediğinizi seçin",
   "settings.general.row.followup.option.queue": "Sıra",
   "settings.general.row.followup.option.steer": "Yönlendir",
+  "settings.general.row.showFileTree.title": "Dosya ağacı",
+  "settings.general.row.showFileTree.description":
+    "Masaüstü oturumlarında dosya ağacı düğmesini ve panelini göster",
+  "settings.general.row.showNavigation.title": "Gezinme kontrolleri",
+  "settings.general.row.showNavigation.description":
+    "Masaüstü başlık çubuğunda ileri ve geri düğmelerini göster",
+  "settings.general.row.showSearch.title": "Komut paleti",
+  "settings.general.row.showSearch.description":
+    "Masaüstü başlık çubuğunda arama ve komut paleti düğmesini göster",
+  "settings.general.row.showTerminal.title": "Terminal",
+  "settings.general.row.showTerminal.description":
+    "Masaüstü başlık çubuğunda terminal düğmesini göster",
+  "settings.general.row.showStatus.title": "Sunucu durumu",
+  "settings.general.row.showStatus.description":
+    "Masaüstü başlık çubuğunda sunucu durumu düğmesini göster",
   "settings.general.row.reasoningSummaries.title": "Akıl yürütme özetlerini göster",
   "settings.general.row.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
   "settings.general.row.shellToolPartsExpanded.title": "Kabuk araç bileşenlerini genişlet",
@@ -670,6 +710,9 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.description":
     "Ajan çalışırken oturumun üst kısmında animasyonlu ilerleme çubuğunu göster",
 
+  "settings.general.row.pinchZoom.title": "Yakınlaştırmak için sıkıştır",
+  "settings.general.row.pinchZoom.description":
+    "Yakınlaştırmak için trackpad sıkıştırma ve Ctrl-kaydırma hareketlerine izin ver",
   "settings.general.row.wayland.title": "Yerel Wayland kullan",
   "settings.general.row.wayland.description":
     "Wayland'da X11 geri dönüşünü devre dışı bırak. Yeniden başlatma gerektirir.",
@@ -830,6 +873,7 @@ export const dict = {
   "session.delete.button": "Oturumu sil",
 
   "workspace.new": "Yeni çalışma alanı",
+  "workspace.creating": "Çalışma alanı oluşturuluyor...",
   "workspace.type.local": "yerel",
   "workspace.type.sandbox": "sandbox",
   "workspace.create.failed.title": "Çalışma alanı oluşturulamadı",

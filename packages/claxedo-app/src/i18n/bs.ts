@@ -23,6 +23,9 @@ export const dict = {
 
   "command.sidebar.toggle": "Prikaži/sakrij bočnu traku",
   "command.project.open": "Otvori projekat",
+  "command.project.previous": "Prethodni projekat",
+  "command.project.next": "Sljedeći projekat",
+  "command.project.index": "Prijeđi na projekat {{index}}",
   "command.provider.connect": "Poveži provajdera",
   "command.server.switch": "Promijeni server",
   "command.settings.open": "Otvori postavke",
@@ -237,6 +240,8 @@ export const dict = {
   "prompt.mode.normal": "Prompt",
   "prompt.mode.shell.exit": "esc za izlaz",
 
+  "session.child.promptDisabled": "Sesije podagenta se ne mogu upitati.",
+  "session.child.backToParent": "Nazad na glavnu sesiju.",
   "prompt.example.1": "Popravi TODO u bazi koda",
   "prompt.example.2": "Koji je tehnološki stack ovog projekta?",
   "prompt.example.3": "Popravi pokvarene testove",
@@ -290,6 +295,7 @@ export const dict = {
   "prompt.toast.promptSendFailed.title": "Neuspješno slanje upita",
   "prompt.toast.promptSendFailed.description": "Nije moguće dohvatiti sesiju",
 
+  "prompt.toast.sessionConfigSaveFailed.title": "Nije moguće sačuvati konfiguraciju sesije",
   "dialog.mcp.title": "MCP-ovi",
   "dialog.mcp.description": "{{enabled}} od {{total}} omogućeno",
   "dialog.mcp.empty": "Nema konfigurisnih MCP-ova",
@@ -452,6 +458,7 @@ export const dict = {
   "error.page.action.restart": "Restartuj",
   "error.page.action.report": "Prijavi grešku",
   "error.page.action.reported": "Greška prijavljena",
+  "error.page.action.exportLogs": "Izvezi zapisnike",
   "error.page.action.checking": "Provjera...",
   "error.page.action.checkUpdates": "Provjeri ažuriranja",
   "error.page.action.updateTo": "Ažuriraj na {{version}}",
@@ -500,6 +507,14 @@ export const dict = {
   "home.empty.title": "Nema nedavnih projekata",
   "home.empty.description": "Kreni tako što ćeš otvoriti lokalni projekat",
 
+  "home.title": "Početna",
+  "home.projects": "Projekti",
+  "home.project.add": "Dodaj projekat",
+  "home.sessions.search.placeholder": "Pretraži sesije",
+  "home.sessions.empty": "Nema pronađenih sesija",
+  "home.sessions.group.today": "Danas",
+  "home.sessions.group.yesterday": "Juče",
+  "home.sessions.group.older": "Starije",
   "session.tab.session": "Sesija",
   "session.tab.review": "Pregled",
   "session.tab.context": "Kontekst",
@@ -514,6 +529,8 @@ export const dict = {
     "Praćenje snimaka (snapshot) je onemogućeno u konfiguraciji, pa promjene sesije nisu dostupne",
   "session.review.noChanges": "Nema izmjena",
 
+  "session.review.noUncommittedChanges": "Još nema nepredanih izmjena",
+  "session.review.noBranchChanges": "Još nema izmjena u grani",
   "session.files.selectToOpen": "Odaberi datoteku za otvaranje",
   "session.files.all": "Sve datoteke",
   "session.files.empty": "Nema datoteka",
@@ -614,6 +631,8 @@ export const dict = {
   "sidebar.project.viewAllSessions": "Prikaži sve sesije",
   "sidebar.project.clearNotifications": "Očisti obavijesti",
 
+  "sidebar.empty.title": "Nema otvorenih projekata",
+  "sidebar.empty.description": "Otvori projekat da započneš",
   "app.name.desktop": "OpenCode Desktop",
 
   "settings.section.desktop": "Desktop",
@@ -625,6 +644,7 @@ export const dict = {
   "settings.desktop.wsl.description": "Pokreni OpenCode server unutar WSL-a na Windowsu.",
 
   "settings.general.section.appearance": "Izgled",
+  "settings.general.section.advanced": "Napredno",
   "settings.general.section.notifications": "Sistemske obavijesti",
   "settings.general.section.updates": "Ažuriranja",
   "settings.general.section.sounds": "Zvučni efekti",
@@ -633,6 +653,11 @@ export const dict = {
 
   "settings.general.row.language.title": "Jezik",
   "settings.general.row.language.description": "Promijeni jezik prikaza u OpenCode-u",
+  "settings.general.row.shell.title": "Terminal shell",
+  "settings.general.row.shell.description":
+    "Odaberi shell koji se koristi za tvoj terminal. Kompatibilni shell-ovi se također koriste za pozive agent alata.",
+  "settings.general.row.shell.autoDefault": "Automatski (podrazumijevano)",
+  "settings.general.row.shell.terminalOnly": "samo terminal",
   "settings.general.row.appearance.title": "Izgled",
   "settings.general.row.appearance.description": "Prilagodi kako OpenCode izgleda na tvom uređaju",
   "settings.general.row.colorScheme.title": "Šema boja",
@@ -649,6 +674,21 @@ export const dict = {
   "settings.general.row.followup.description": "Odaberi da li upiti nadovezivanja usmjeravaju odmah ili čekaju u redu",
   "settings.general.row.followup.option.queue": "Red čekanja",
   "settings.general.row.followup.option.steer": "Usmjeri",
+  "settings.general.row.showFileTree.title": "Stablo datoteka",
+  "settings.general.row.showFileTree.description":
+    "Prikaži prekidač i panel stabla datoteka u desktop sesijama",
+  "settings.general.row.showNavigation.title": "Kontrole navigacije",
+  "settings.general.row.showNavigation.description":
+    "Prikaži dugmad naprijed i nazad u traci naslova desktop aplikacije",
+  "settings.general.row.showSearch.title": "Paleta komandi",
+  "settings.general.row.showSearch.description":
+    "Prikaži dugme za pretragu i paletu komandi u traci naslova desktop aplikacije",
+  "settings.general.row.showTerminal.title": "Terminal",
+  "settings.general.row.showTerminal.description":
+    "Prikaži dugme terminala u traci naslova desktop aplikacije",
+  "settings.general.row.showStatus.title": "Status servera",
+  "settings.general.row.showStatus.description":
+    "Prikaži dugme statusa servera u traci naslova desktop aplikacije",
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke rasuđivanja",
   "settings.general.row.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
 
@@ -661,6 +701,9 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.title": "Prikaži traku napretka sesije",
   "settings.general.row.showSessionProgressBar.description":
     "Prikaži animiranu traku napretka na vrhu sesije kada agent radi",
+  "settings.general.row.pinchZoom.title": "Zumiranje štipanjem",
+  "settings.general.row.pinchZoom.description":
+    "Dozvoli gestove štipanja na touchpadu i Ctrl-skrolanje za zumiranje",
   "settings.general.row.wayland.title": "Koristi nativni Wayland",
   "settings.general.row.wayland.description": "Onemogući X11 fallback na Waylandu. Zahtijeva restart.",
   "settings.general.row.wayland.tooltip":
@@ -820,6 +863,7 @@ export const dict = {
   "session.delete.button": "Izbriši sesiju",
 
   "workspace.new": "Novi radni prostor",
+  "workspace.creating": "Kreiranje radnog prostora...",
   "workspace.type.local": "lokalno",
   "workspace.type.sandbox": "sandbox",
   "workspace.create.failed.title": "Neuspješno kreiranje radnog prostora",

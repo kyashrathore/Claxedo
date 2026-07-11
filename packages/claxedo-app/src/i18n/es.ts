@@ -23,6 +23,9 @@ export const dict = {
 
   "command.sidebar.toggle": "Alternar barra lateral",
   "command.project.open": "Abrir proyecto",
+  "command.project.previous": "Proyecto anterior",
+  "command.project.next": "Proyecto siguiente",
+  "command.project.index": "Cambiar al proyecto {{index}}",
   "command.provider.connect": "Conectar proveedor",
   "command.server.switch": "Cambiar servidor",
   "command.settings.open": "Abrir ajustes",
@@ -236,6 +239,8 @@ export const dict = {
   "prompt.mode.normal": "Prompt",
   "prompt.mode.shell.exit": "esc para salir",
 
+  "session.child.promptDisabled": "Las sesiones de subagente no pueden recibir prompts.",
+  "session.child.backToParent": "Volver a la sesión principal.",
   "prompt.example.1": "Arreglar un TODO en el código",
   "prompt.example.2": "¿Cuál es el stack tecnológico de este proyecto?",
   "prompt.example.3": "Arreglar pruebas rotas",
@@ -289,6 +294,7 @@ export const dict = {
   "prompt.toast.promptSendFailed.title": "Fallo al enviar prompt",
   "prompt.toast.promptSendFailed.description": "No se pudo recuperar la sesión",
 
+  "prompt.toast.sessionConfigSaveFailed.title": "No se pudo guardar la configuración de la sesión",
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} de {{total}} habilitados",
   "dialog.mcp.empty": "No hay MCPs configurados",
@@ -452,6 +458,7 @@ export const dict = {
   "error.page.action.restart": "Reiniciar",
   "error.page.action.report": "Informar error",
   "error.page.action.reported": "Error informado",
+  "error.page.action.exportLogs": "Exportar registros",
   "error.page.action.checking": "Comprobando...",
   "error.page.action.checkUpdates": "Buscar actualizaciones",
   "error.page.action.updateTo": "Actualizar a {{version}}",
@@ -501,6 +508,14 @@ export const dict = {
   "home.empty.title": "Sin proyectos recientes",
   "home.empty.description": "Empieza abriendo un proyecto local",
 
+  "home.title": "Inicio",
+  "home.projects": "Proyectos",
+  "home.project.add": "Añadir proyecto",
+  "home.sessions.search.placeholder": "Buscar sesiones",
+  "home.sessions.empty": "No se encontraron sesiones",
+  "home.sessions.group.today": "Hoy",
+  "home.sessions.group.yesterday": "Ayer",
+  "home.sessions.group.older": "Anteriores",
   "session.tab.session": "Sesión",
   "session.tab.review": "Revisión",
   "session.tab.context": "Contexto",
@@ -515,6 +530,8 @@ export const dict = {
     "El seguimiento de instantáneas está deshabilitado en la configuración, por lo que los cambios de sesión no están disponibles",
   "session.review.noChanges": "Sin cambios",
 
+  "session.review.noUncommittedChanges": "Aún no hay cambios sin confirmar",
+  "session.review.noBranchChanges": "Aún no hay cambios en la rama",
   "session.files.selectToOpen": "Selecciona un archivo para abrir",
   "session.files.all": "Todos los archivos",
   "session.files.empty": "Sin archivos",
@@ -617,6 +634,8 @@ export const dict = {
   "sidebar.project.viewAllSessions": "Ver todas las sesiones",
   "sidebar.project.clearNotifications": "Borrar notificaciones",
 
+  "sidebar.empty.title": "No hay proyectos abiertos",
+  "sidebar.empty.description": "Abre un proyecto para empezar",
   "app.name.desktop": "OpenCode Desktop",
 
   "settings.section.desktop": "Escritorio",
@@ -628,6 +647,7 @@ export const dict = {
   "settings.desktop.wsl.description": "Ejecutar el servidor OpenCode dentro de WSL en Windows.",
 
   "settings.general.section.appearance": "Apariencia",
+  "settings.general.section.advanced": "Avanzado",
   "settings.general.section.notifications": "Notificaciones del sistema",
   "settings.general.section.updates": "Actualizaciones",
   "settings.general.section.sounds": "Efectos de sonido",
@@ -636,6 +656,11 @@ export const dict = {
 
   "settings.general.row.language.title": "Idioma",
   "settings.general.row.language.description": "Cambiar el idioma de visualización para OpenCode",
+  "settings.general.row.shell.title": "Shell de terminal",
+  "settings.general.row.shell.description":
+    "Elige el shell usado para tu terminal. Los shells compatibles también se usan para las llamadas a herramientas del agente.",
+  "settings.general.row.shell.autoDefault": "Auto (Predeterminado)",
+  "settings.general.row.shell.terminalOnly": "solo terminal",
   "settings.general.row.appearance.title": "Apariencia",
   "settings.general.row.appearance.description": "Personaliza cómo se ve OpenCode en tu dispositivo",
   "settings.general.row.colorScheme.title": "Esquema de color",
@@ -653,6 +678,21 @@ export const dict = {
     "Elige si los prompts de seguimiento se dirigen inmediatamente o esperan en una cola",
   "settings.general.row.followup.option.queue": "Cola",
   "settings.general.row.followup.option.steer": "Dirigir",
+  "settings.general.row.showFileTree.title": "Árbol de archivos",
+  "settings.general.row.showFileTree.description":
+    "Mostrar el interruptor y el panel del árbol de archivos en sesiones de escritorio",
+  "settings.general.row.showNavigation.title": "Controles de navegación",
+  "settings.general.row.showNavigation.description":
+    "Mostrar los botones de retroceder y avanzar en la barra de título de escritorio",
+  "settings.general.row.showSearch.title": "Paleta de comandos",
+  "settings.general.row.showSearch.description":
+    "Mostrar el botón de búsqueda y paleta de comandos en la barra de título de escritorio",
+  "settings.general.row.showTerminal.title": "Terminal",
+  "settings.general.row.showTerminal.description":
+    "Mostrar el botón de terminal en la barra de título de escritorio",
+  "settings.general.row.showStatus.title": "Estado del servidor",
+  "settings.general.row.showStatus.description":
+    "Mostrar el botón de estado del servidor en la barra de título de escritorio",
   "settings.general.row.reasoningSummaries.title": "Mostrar resúmenes de razonamiento",
   "settings.general.row.reasoningSummaries.description":
     "Mostrar resúmenes del razonamiento del modelo en la línea de tiempo",
@@ -665,6 +705,9 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.title": "Mostrar barra de progreso de la sesión",
   "settings.general.row.showSessionProgressBar.description":
     "Mostrar la barra de progreso animada en la parte superior de la sesión cuando el agente esté trabajando",
+  "settings.general.row.pinchZoom.title": "Pellizcar para hacer zoom",
+  "settings.general.row.pinchZoom.description":
+    "Permitir gestos de pellizco en el trackpad y Ctrl-scroll para hacer zoom",
   "settings.general.row.wayland.title": "Usar Wayland nativo",
   "settings.general.row.wayland.description": "Deshabilitar fallback a X11 en Wayland. Requiere reinicio.",
   "settings.general.row.wayland.tooltip":
@@ -827,6 +870,7 @@ export const dict = {
   "session.delete.button": "Eliminar sesión",
 
   "workspace.new": "Nuevo espacio de trabajo",
+  "workspace.creating": "Creando espacio de trabajo...",
   "workspace.type.local": "local",
   "workspace.type.sandbox": "sandbox",
   "workspace.create.failed.title": "Fallo al crear espacio de trabajo",

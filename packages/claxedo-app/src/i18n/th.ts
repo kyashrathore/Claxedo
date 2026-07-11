@@ -23,6 +23,9 @@ export const dict = {
 
   "command.sidebar.toggle": "สลับแถบข้าง",
   "command.project.open": "เปิดโปรเจกต์",
+  "command.project.previous": "โปรเจกต์ก่อนหน้า",
+  "command.project.next": "โปรเจกต์ถัดไป",
+  "command.project.index": "สลับไปยังโปรเจกต์ {{index}}",
   "command.provider.connect": "เชื่อมต่อผู้ให้บริการ",
   "command.server.switch": "สลับเซิร์ฟเวอร์",
   "command.settings.open": "เปิดการตั้งค่า",
@@ -236,6 +239,8 @@ export const dict = {
   "prompt.mode.normal": "พรอมต์",
   "prompt.mode.shell.exit": "กด esc เพื่อออก",
 
+  "session.child.promptDisabled": "ไม่สามารถส่งพร้อมท์ไปยังเซสชันซับเอเจนต์ได้",
+  "session.child.backToParent": "กลับไปยังเซสชันหลัก",
   "prompt.example.1": "แก้ไข TODO ในโค้ดเบส",
   "prompt.example.2": "เทคโนโลยีของโปรเจกต์นี้คืออะไร?",
   "prompt.example.3": "แก้ไขการทดสอบที่เสีย",
@@ -289,6 +294,7 @@ export const dict = {
   "prompt.toast.promptSendFailed.title": "ไม่สามารถส่งพร้อมท์",
   "prompt.toast.promptSendFailed.description": "ไม่สามารถดึงเซสชันได้",
 
+  "prompt.toast.sessionConfigSaveFailed.title": "ไม่สามารถบันทึกการกำหนดค่าเซสชันได้",
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} จาก {{total}} ที่เปิดใช้งาน",
   "dialog.mcp.empty": "ไม่มี MCP ที่กำหนดค่า",
@@ -450,6 +456,7 @@ export const dict = {
   "error.page.action.restart": "รีสตาร์ท",
   "error.page.action.report": "รายงานข้อผิดพลาด",
   "error.page.action.reported": "รายงานข้อผิดพลาดแล้ว",
+  "error.page.action.exportLogs": "ส่งออกบันทึก",
   "error.page.action.checking": "กำลังตรวจสอบ...",
   "error.page.action.checkUpdates": "ตรวจสอบการอัปเดต",
   "error.page.action.updateTo": "อัปเดตเป็น {{version}}",
@@ -496,6 +503,14 @@ export const dict = {
   "home.empty.title": "ไม่มีโปรเจกต์ล่าสุด",
   "home.empty.description": "เริ่มต้นโดยเปิดโปรเจกต์ในเครื่อง",
 
+  "home.title": "หน้าแรก",
+  "home.projects": "โปรเจกต์",
+  "home.project.add": "เพิ่มโปรเจกต์",
+  "home.sessions.search.placeholder": "ค้นหาเซสชัน",
+  "home.sessions.empty": "ไม่พบเซสชัน",
+  "home.sessions.group.today": "วันนี้",
+  "home.sessions.group.yesterday": "เมื่อวาน",
+  "home.sessions.group.older": "เก่ากว่า",
   "session.tab.session": "เซสชัน",
   "session.tab.review": "ตรวจสอบ",
   "session.tab.context": "บริบท",
@@ -509,6 +524,8 @@ export const dict = {
   "session.review.noSnapshot": "การติดตามสแนปชอตถูกปิดใช้งานในการกำหนดค่า ดังนั้นการเปลี่ยนแปลงเซสชันจึงไม่พร้อมใช้งาน",
   "session.review.noChanges": "ไม่มีการเปลี่ยนแปลง",
 
+  "session.review.noUncommittedChanges": "ยังไม่มีการเปลี่ยนแปลงที่ยังไม่ได้คอมมิต",
+  "session.review.noBranchChanges": "ยังไม่มีการเปลี่ยนแปลงในแบรนช์",
   "session.files.selectToOpen": "เลือกไฟล์เพื่อเปิด",
   "session.files.empty": "ไม่มีไฟล์",
   "session.files.all": "ไฟล์ทั้งหมด",
@@ -608,6 +625,8 @@ export const dict = {
   "sidebar.project.viewAllSessions": "ดูเซสชันทั้งหมด",
   "sidebar.project.clearNotifications": "ล้างการแจ้งเตือน",
 
+  "sidebar.empty.title": "ไม่มีโปรเจกต์ที่เปิดอยู่",
+  "sidebar.empty.description": "เปิดโปรเจกต์เพื่อเริ่มต้น",
   "app.name.desktop": "OpenCode Desktop",
 
   "settings.section.desktop": "เดสก์ท็อป",
@@ -619,6 +638,7 @@ export const dict = {
   "settings.desktop.wsl.description": "เรียกใช้เซิร์ฟเวอร์ OpenCode ภายใน WSL บน Windows",
 
   "settings.general.section.appearance": "รูปลักษณ์",
+  "settings.general.section.advanced": "ขั้นสูง",
   "settings.general.section.notifications": "การแจ้งเตือนระบบ",
   "settings.general.section.updates": "การอัปเดต",
   "settings.general.section.sounds": "เสียงเอฟเฟกต์",
@@ -627,6 +647,11 @@ export const dict = {
 
   "settings.general.row.language.title": "ภาษา",
   "settings.general.row.language.description": "เปลี่ยนภาษาที่แสดงสำหรับ OpenCode",
+  "settings.general.row.shell.title": "เชลล์เทอร์มินัล",
+  "settings.general.row.shell.description":
+    "เลือกเชลล์ที่ใช้สำหรับเทอร์มินัลของคุณ เชลล์ที่รองรับจะถูกใช้สำหรับการเรียกเครื่องมือของเอเจนต์ด้วย",
+  "settings.general.row.shell.autoDefault": "อัตโนมัติ (ค่าเริ่มต้น)",
+  "settings.general.row.shell.terminalOnly": "เทอร์มินัลเท่านั้น",
   "settings.general.row.appearance.title": "รูปลักษณ์",
   "settings.general.row.appearance.description": "ปรับแต่งวิธีการที่ OpenCode มีลักษณะบนอุปกรณ์ของคุณ",
   "settings.general.row.colorScheme.title": "โทนสี",
@@ -643,6 +668,18 @@ export const dict = {
   "settings.general.row.followup.description": "เลือกว่าจะให้พร้อมท์ติดตามผลทำงานทันทีหรือรอในคิว",
   "settings.general.row.followup.option.queue": "คิว",
   "settings.general.row.followup.option.steer": "นำทาง",
+  "settings.general.row.showFileTree.title": "แผนผังไฟล์",
+  "settings.general.row.showFileTree.description": "แสดงตัวสลับและพาเนลแผนผังไฟล์ในเซสชันเดสก์ท็อป",
+  "settings.general.row.showNavigation.title": "ปุ่มควบคุมการนำทาง",
+  "settings.general.row.showNavigation.description":
+    "แสดงปุ่มย้อนกลับและไปข้างหน้าในแถบชื่อเรื่องเดสก์ท็อป",
+  "settings.general.row.showSearch.title": "แผงคำสั่ง",
+  "settings.general.row.showSearch.description":
+    "แสดงปุ่มค้นหาและแผงคำสั่งในแถบชื่อเรื่องเดสก์ท็อป",
+  "settings.general.row.showTerminal.title": "เทอร์มินัล",
+  "settings.general.row.showTerminal.description": "แสดงปุ่มเทอร์มินัลในแถบชื่อเรื่องเดสก์ท็อป",
+  "settings.general.row.showStatus.title": "สถานะเซิร์ฟเวอร์",
+  "settings.general.row.showStatus.description": "แสดงปุ่มสถานะเซิร์ฟเวอร์ในแถบชื่อเรื่องเดสก์ท็อป",
   "settings.general.row.reasoningSummaries.title": "แสดงสรุปการใช้เหตุผล",
   "settings.general.row.reasoningSummaries.description": "แสดงสรุปการใช้เหตุผลของโมเดลในไทม์ไลน์",
   "settings.general.row.shellToolPartsExpanded.title": "ขยายส่วนเครื่องมือ shell",
@@ -653,6 +690,9 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.title": "แสดงแถบความคืบหน้าของเซสชัน",
   "settings.general.row.showSessionProgressBar.description":
     "แสดงแถบความคืบหน้าแบบเคลื่อนไหวที่ด้านบนของเซสชันเมื่อเอเจนต์กำลังทำงาน",
+  "settings.general.row.pinchZoom.title": "บีบนิ้วเพื่อซูม",
+  "settings.general.row.pinchZoom.description":
+    "อนุญาตท่าทางบีบนิ้วบนแทร็กแพดและ Ctrl-เลื่อนเพื่อซูม",
   "settings.general.row.wayland.title": "ใช้ Wayland แบบเนทีฟ",
   "settings.general.row.wayland.description": "ปิดใช้งาน X11 fallback บน Wayland ต้องรีสตาร์ท",
   "settings.general.row.wayland.tooltip": "บน Linux ที่มีจอภาพรีเฟรชเรตแบบผสม Wayland แบบเนทีฟอาจเสถียรกว่า",
@@ -810,6 +850,7 @@ export const dict = {
   "session.delete.button": "ลบเซสชัน",
 
   "workspace.new": "พื้นที่ทำงานใหม่",
+  "workspace.creating": "กำลังสร้างพื้นที่ทำงาน...",
   "workspace.type.local": "ในเครื่อง",
   "workspace.type.sandbox": "แซนด์บ็อกซ์",
   "workspace.create.failed.title": "ไม่สามารถสร้างพื้นที่ทำงาน",

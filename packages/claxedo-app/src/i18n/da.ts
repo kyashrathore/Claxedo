@@ -23,6 +23,9 @@ export const dict = {
 
   "command.sidebar.toggle": "Skift sidebjælke",
   "command.project.open": "Åbn projekt",
+  "command.project.previous": "Forrige projekt",
+  "command.project.next": "Næste projekt",
+  "command.project.index": "Skift til projekt {{index}}",
   "command.provider.connect": "Tilslut udbyder",
   "command.server.switch": "Skift server",
   "command.settings.open": "Åbn indstillinger",
@@ -235,6 +238,8 @@ export const dict = {
   "prompt.mode.normal": "Prompt",
   "prompt.mode.shell.exit": "esc for at afslutte",
 
+  "session.child.promptDisabled": "Underagent-sessioner kan ikke prompt'es.",
+  "session.child.backToParent": "Tilbage til hovedsession.",
   "prompt.example.1": "Ret en TODO i koden",
   "prompt.example.2": "Hvad er teknologistakken for dette projekt?",
   "prompt.example.3": "Ret ødelagte tests",
@@ -288,6 +293,7 @@ export const dict = {
   "prompt.toast.promptSendFailed.title": "Kunne ikke sende forespørgsel",
   "prompt.toast.promptSendFailed.description": "Kunne ikke hente session",
 
+  "prompt.toast.sessionConfigSaveFailed.title": "Kunne ikke gemme sessionskonfiguration",
   "dialog.mcp.title": "MCP'er",
   "dialog.mcp.description": "{{enabled}} af {{total}} aktiveret",
   "dialog.mcp.empty": "Ingen MCP'er konfigureret",
@@ -449,6 +455,7 @@ export const dict = {
   "error.page.action.restart": "Genstart",
   "error.page.action.report": "Rapportér fejl",
   "error.page.action.reported": "Fejl rapporteret",
+  "error.page.action.exportLogs": "Eksportér logs",
   "error.page.action.checking": "Tjekker...",
   "error.page.action.checkUpdates": "Tjek for opdateringer",
   "error.page.action.updateTo": "Opdater til {{version}}",
@@ -497,6 +504,14 @@ export const dict = {
   "home.empty.title": "Ingen seneste projekter",
   "home.empty.description": "Kom i gang ved at åbne et lokalt projekt",
 
+  "home.title": "Hjem",
+  "home.projects": "Projekter",
+  "home.project.add": "Tilføj projekt",
+  "home.sessions.search.placeholder": "Søg sessioner",
+  "home.sessions.empty": "Ingen sessioner fundet",
+  "home.sessions.group.today": "I dag",
+  "home.sessions.group.yesterday": "I går",
+  "home.sessions.group.older": "Ældre",
   "session.tab.session": "Session",
   "session.tab.review": "Gennemgang",
   "session.tab.context": "Kontekst",
@@ -510,6 +525,8 @@ export const dict = {
   "session.review.noSnapshot":
     "Snapshot-sporing er deaktiveret i konfigurationen, så sessionsændringer er ikke tilgængelige",
   "session.review.noChanges": "Ingen ændringer",
+  "session.review.noUncommittedChanges": "Ingen ikke-committede ændringer endnu",
+  "session.review.noBranchChanges": "Ingen branch-ændringer endnu",
   "session.files.selectToOpen": "Vælg en fil at åbne",
   "session.files.all": "Alle filer",
   "session.files.empty": "Ingen filer",
@@ -610,6 +627,8 @@ export const dict = {
   "sidebar.project.viewAllSessions": "Vis alle sessioner",
   "sidebar.project.clearNotifications": "Ryd notifikationer",
 
+  "sidebar.empty.title": "Ingen projekter åbne",
+  "sidebar.empty.description": "Åbn et projekt for at komme i gang",
   "app.name.desktop": "OpenCode Desktop",
   "settings.section.desktop": "Desktop",
   "settings.section.server": "Server",
@@ -620,6 +639,7 @@ export const dict = {
   "settings.desktop.wsl.description": "Kør OpenCode-serveren inde i WSL på Windows.",
 
   "settings.general.section.appearance": "Udseende",
+  "settings.general.section.advanced": "Avanceret",
   "settings.general.section.notifications": "Systemmeddelelser",
   "settings.general.section.updates": "Opdateringer",
   "settings.general.section.sounds": "Lydeffekter",
@@ -628,6 +648,11 @@ export const dict = {
 
   "settings.general.row.language.title": "Sprog",
   "settings.general.row.language.description": "Ændr visningssproget for OpenCode",
+  "settings.general.row.shell.title": "Terminal-shell",
+  "settings.general.row.shell.description":
+    "Vælg den shell, der bruges til din terminal. Kompatible shells bruges også til agentens værktøjskald.",
+  "settings.general.row.shell.autoDefault": "Auto (standard)",
+  "settings.general.row.shell.terminalOnly": "kun terminal",
   "settings.general.row.appearance.title": "Udseende",
   "settings.general.row.appearance.description": "Tilpas hvordan OpenCode ser ud på din enhed",
   "settings.general.row.colorScheme.title": "Farveskema",
@@ -644,6 +669,19 @@ export const dict = {
   "settings.general.row.followup.description": "Vælg om opfølgende forespørgsler skal styre straks eller vente i kø",
   "settings.general.row.followup.option.queue": "Kø",
   "settings.general.row.followup.option.steer": "Styr",
+  "settings.general.row.showFileTree.title": "Filtræ",
+  "settings.general.row.showFileTree.description":
+    "Vis filtræ-knappen og panelet i desktop-sessioner",
+  "settings.general.row.showNavigation.title": "Navigationsknapper",
+  "settings.general.row.showNavigation.description":
+    "Vis frem- og tilbage-knapperne i desktop-titellinjen",
+  "settings.general.row.showSearch.title": "Kommandopalet",
+  "settings.general.row.showSearch.description":
+    "Vis søge- og kommandopalet-knappen i desktop-titellinjen",
+  "settings.general.row.showTerminal.title": "Terminal",
+  "settings.general.row.showTerminal.description": "Vis terminal-knappen i desktop-titellinjen",
+  "settings.general.row.showStatus.title": "Serverstatus",
+  "settings.general.row.showStatus.description": "Vis serverstatus-knappen i desktop-titellinjen",
   "settings.general.row.reasoningSummaries.title": "Vis tænkeoversigter",
   "settings.general.row.reasoningSummaries.description": "Vis model tænkeoversigter i tidslinjen",
 
@@ -655,6 +693,9 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.title": "Vis sessionens fremdriftslinje",
   "settings.general.row.showSessionProgressBar.description":
     "Vis den animerede fremdriftslinje øverst i sessionen, når agenten arbejder",
+  "settings.general.row.pinchZoom.title": "Klip for at zoome",
+  "settings.general.row.pinchZoom.description":
+    "Tillad pinch-bevægelser på touchpad og Ctrl-scroll til at zoome",
   "settings.general.row.wayland.title": "Brug native Wayland",
   "settings.general.row.wayland.description": "Deaktiver X11-fallback på Wayland. Kræver genstart.",
   "settings.general.row.wayland.tooltip":
@@ -814,6 +855,7 @@ export const dict = {
   "session.delete.button": "Slet session",
 
   "workspace.new": "Nyt arbejdsområde",
+  "workspace.creating": "Opretter arbejdsområde...",
   "workspace.type.local": "lokal",
   "workspace.type.sandbox": "sandkasse",
   "workspace.create.failed.title": "Kunne ikke oprette arbejdsområde",

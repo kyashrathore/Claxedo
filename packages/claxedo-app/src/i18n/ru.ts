@@ -23,6 +23,9 @@ export const dict = {
 
   "command.sidebar.toggle": "Переключить боковую панель",
   "command.project.open": "Открыть проект",
+  "command.project.previous": "Предыдущий проект",
+  "command.project.next": "Следующий проект",
+  "command.project.index": "Переключиться на проект {{index}}",
   "command.provider.connect": "Подключить провайдера",
   "command.server.switch": "Переключить сервер",
   "command.settings.open": "Открыть настройки",
@@ -236,6 +239,8 @@ export const dict = {
   "prompt.mode.normal": "Промпт",
   "prompt.mode.shell.exit": "esc для выхода",
 
+  "session.child.promptDisabled": "Сессиям субагента нельзя отправлять запросы.",
+  "session.child.backToParent": "Вернуться к основной сессии.",
   "prompt.example.1": "Исправить TODO в коде",
   "prompt.example.2": "Какой технологический стек этого проекта?",
   "prompt.example.3": "Исправить сломанные тесты",
@@ -289,6 +294,7 @@ export const dict = {
   "prompt.toast.promptSendFailed.title": "Не удалось отправить запрос",
   "prompt.toast.promptSendFailed.description": "Не удалось получить сессию",
 
+  "prompt.toast.sessionConfigSaveFailed.title": "Не удалось сохранить конфигурацию сессии",
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "{{enabled}} из {{total}} включено",
   "dialog.mcp.empty": "MCP не настроены",
@@ -451,6 +457,7 @@ export const dict = {
   "error.page.action.restart": "Перезапустить",
   "error.page.action.report": "Сообщить об ошибке",
   "error.page.action.reported": "Об ошибке сообщено",
+  "error.page.action.exportLogs": "Экспортировать логи",
   "error.page.action.checking": "Проверка...",
   "error.page.action.checkUpdates": "Проверить обновления",
   "error.page.action.updateTo": "Обновить до {{version}}",
@@ -501,6 +508,14 @@ export const dict = {
   "home.empty.title": "Нет недавних проектов",
   "home.empty.description": "Начните с открытия локального проекта",
 
+  "home.title": "Главная",
+  "home.projects": "Проекты",
+  "home.project.add": "Добавить проект",
+  "home.sessions.search.placeholder": "Поиск сессий",
+  "home.sessions.empty": "Сессии не найдены",
+  "home.sessions.group.today": "Сегодня",
+  "home.sessions.group.yesterday": "Вчера",
+  "home.sessions.group.older": "Ранее",
   "session.tab.session": "Сессия",
   "session.tab.review": "Обзор",
   "session.tab.context": "Контекст",
@@ -513,6 +528,8 @@ export const dict = {
   "session.review.noVcs": "Система контроля версий Git не обнаружена, изменения не отображаются",
   "session.review.noSnapshot": "Отслеживание снимков отключено в настройках, поэтому изменения сессии недоступны",
   "session.review.noChanges": "Нет изменений",
+  "session.review.noUncommittedChanges": "Незафиксированных изменений пока нет",
+  "session.review.noBranchChanges": "Изменений в ветке пока нет",
   "session.files.selectToOpen": "Выберите файл, чтобы открыть",
   "session.files.all": "Все файлы",
   "session.files.empty": "Нет файлов",
@@ -615,6 +632,8 @@ export const dict = {
   "sidebar.project.viewAllSessions": "Посмотреть все сессии",
   "sidebar.project.clearNotifications": "Очистить уведомления",
 
+  "sidebar.empty.title": "Нет открытых проектов",
+  "sidebar.empty.description": "Откройте проект, чтобы начать",
   "app.name.desktop": "OpenCode Desktop",
   "settings.section.desktop": "Приложение",
   "settings.section.server": "Сервер",
@@ -625,6 +644,7 @@ export const dict = {
   "settings.desktop.wsl.description": "Запускать сервер OpenCode внутри WSL на Windows.",
 
   "settings.general.section.appearance": "Внешний вид",
+  "settings.general.section.advanced": "Дополнительно",
   "settings.general.section.notifications": "Системные уведомления",
   "settings.general.section.updates": "Обновления",
   "settings.general.section.sounds": "Звуковые эффекты",
@@ -633,6 +653,11 @@ export const dict = {
 
   "settings.general.row.language.title": "Язык",
   "settings.general.row.language.description": "Изменить язык отображения OpenCode",
+  "settings.general.row.shell.title": "Оболочка терминала",
+  "settings.general.row.shell.description":
+    "Выберите оболочку, используемую для терминала. Совместимые оболочки также используются для вызовов инструментов агента.",
+  "settings.general.row.shell.autoDefault": "Авто (По умолчанию)",
+  "settings.general.row.shell.terminalOnly": "только терминал",
   "settings.general.row.appearance.title": "Внешний вид",
   "settings.general.row.appearance.description": "Настройте как OpenCode выглядит на вашем устройстве",
   "settings.general.row.colorScheme.title": "Цветовая схема",
@@ -650,6 +675,21 @@ export const dict = {
     "Выберите, отправлять ли уточняющие вопросы сразу или помещать их в очередь",
   "settings.general.row.followup.option.queue": "Очередь",
   "settings.general.row.followup.option.steer": "Направлять",
+  "settings.general.row.showFileTree.title": "Дерево файлов",
+  "settings.general.row.showFileTree.description":
+    "Показывать переключатель и панель дерева файлов в сессиях рабочего стола",
+  "settings.general.row.showNavigation.title": "Элементы навигации",
+  "settings.general.row.showNavigation.description":
+    "Показывать кнопки назад и вперёд на панели заголовка рабочего стола",
+  "settings.general.row.showSearch.title": "Палитра команд",
+  "settings.general.row.showSearch.description":
+    "Показывать кнопку поиска и палитры команд на панели заголовка рабочего стола",
+  "settings.general.row.showTerminal.title": "Терминал",
+  "settings.general.row.showTerminal.description":
+    "Показывать кнопку терминала на панели заголовка рабочего стола",
+  "settings.general.row.showStatus.title": "Статус сервера",
+  "settings.general.row.showStatus.description":
+    "Показывать кнопку статуса сервера на панели заголовка рабочего стола",
   "settings.general.row.reasoningSummaries.title": "Показывать сводки рассуждений",
   "settings.general.row.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
 
@@ -662,6 +702,9 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.title": "Показывать индикатор прогресса сессии",
   "settings.general.row.showSessionProgressBar.description":
     "Показывать анимированный индикатор прогресса вверху сессии, когда агент работает",
+  "settings.general.row.pinchZoom.title": "Масштабирование щипком",
+  "settings.general.row.pinchZoom.description":
+    "Разрешить жесты щипка на трекпаде и Ctrl-прокрутку для масштабирования",
   "settings.general.row.wayland.title": "Использовать нативный Wayland",
   "settings.general.row.wayland.description": "Отключить X11 fallback на Wayland. Требуется перезапуск.",
   "settings.general.row.wayland.tooltip":
@@ -823,6 +866,7 @@ export const dict = {
   "session.delete.button": "Удалить сессию",
 
   "workspace.new": "Новое рабочее пространство",
+  "workspace.creating": "Создание рабочего пространства...",
   "workspace.type.local": "локальное",
   "workspace.type.sandbox": "песочница",
   "workspace.create.failed.title": "Не удалось создать рабочее пространство",

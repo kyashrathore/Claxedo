@@ -26,6 +26,9 @@ export const dict = {
 
   "command.sidebar.toggle": "Veksle sidepanel",
   "command.project.open": "Åpne prosjekt",
+  "command.project.previous": "Forrige prosjekt",
+  "command.project.next": "Neste prosjekt",
+  "command.project.index": "Bytt til prosjekt {{index}}",
   "command.provider.connect": "Koble til leverandør",
   "command.server.switch": "Bytt server",
   "command.settings.open": "Åpne innstillinger",
@@ -239,6 +242,8 @@ export const dict = {
   "prompt.mode.normal": "Prompt",
   "prompt.mode.shell.exit": "ESC for å avslutte",
 
+  "session.child.promptDisabled": "Underagent-økter kan ikke få instruksjoner.",
+  "session.child.backToParent": "Tilbake til hovedøkten.",
   "prompt.example.1": "Fiks en TODO i kodebasen",
   "prompt.example.2": "Hva er teknologistabelen i dette prosjektet?",
   "prompt.example.3": "Fiks ødelagte tester",
@@ -292,6 +297,7 @@ export const dict = {
   "prompt.toast.promptSendFailed.title": "Kunne ikke sende forespørsel",
   "prompt.toast.promptSendFailed.description": "Kunne ikke hente økt",
 
+  "prompt.toast.sessionConfigSaveFailed.title": "Kunne ikke lagre øktkonfigurasjon",
   "dialog.mcp.title": "MCP-er",
   "dialog.mcp.description": "{{enabled}} av {{total}} aktivert",
   "dialog.mcp.empty": "Ingen MCP-er konfigurert",
@@ -453,6 +459,7 @@ export const dict = {
   "error.page.action.restart": "Start på nytt",
   "error.page.action.report": "Rapporter feil",
   "error.page.action.reported": "Feil rapportert",
+  "error.page.action.exportLogs": "Eksporter logger",
   "error.page.action.checking": "Sjekker...",
   "error.page.action.checkUpdates": "Se etter oppdateringer",
   "error.page.action.updateTo": "Oppdater til {{version}}",
@@ -501,6 +508,14 @@ export const dict = {
   "home.empty.title": "Ingen nylige prosjekter",
   "home.empty.description": "Kom i gang ved å åpne et lokalt prosjekt",
 
+  "home.title": "Hjem",
+  "home.projects": "Prosjekter",
+  "home.project.add": "Legg til prosjekt",
+  "home.sessions.search.placeholder": "Søk i økter",
+  "home.sessions.empty": "Ingen økter funnet",
+  "home.sessions.group.today": "I dag",
+  "home.sessions.group.yesterday": "I går",
+  "home.sessions.group.older": "Eldre",
   "session.tab.session": "Sesjon",
   "session.tab.review": "Gjennomgang",
   "session.tab.context": "Kontekst",
@@ -515,6 +530,8 @@ export const dict = {
     "Snapshot-sporing er deaktivert i konfigurasjonen, så sesjonsendringer er ikke tilgjengelige",
   "session.review.noChanges": "Ingen endringer",
 
+  "session.review.noUncommittedChanges": "Ingen ikke-committede endringer ennå",
+  "session.review.noBranchChanges": "Ingen grenendringer ennå",
   "session.files.selectToOpen": "Velg en fil å åpne",
   "session.files.all": "Alle filer",
   "session.files.empty": "Ingen filer",
@@ -617,6 +634,8 @@ export const dict = {
   "sidebar.project.viewAllSessions": "Vis alle sesjoner",
   "sidebar.project.clearNotifications": "Fjern varsler",
 
+  "sidebar.empty.title": "Ingen prosjekter åpne",
+  "sidebar.empty.description": "Åpne et prosjekt for å komme i gang",
   "app.name.desktop": "OpenCode Desktop",
 
   "settings.section.desktop": "Skrivebord",
@@ -628,6 +647,7 @@ export const dict = {
   "settings.desktop.wsl.description": "Kjør OpenCode-serveren i WSL på Windows.",
 
   "settings.general.section.appearance": "Utseende",
+  "settings.general.section.advanced": "Avansert",
   "settings.general.section.notifications": "Systemvarsler",
   "settings.general.section.updates": "Oppdateringer",
   "settings.general.section.sounds": "Lydeffekter",
@@ -636,6 +656,11 @@ export const dict = {
 
   "settings.general.row.language.title": "Språk",
   "settings.general.row.language.description": "Endre visningsspråket for OpenCode",
+  "settings.general.row.shell.title": "Terminalskall",
+  "settings.general.row.shell.description":
+    "Velg skallet som brukes for terminalen din. Kompatible skall brukes også til agentens verktøykall.",
+  "settings.general.row.shell.autoDefault": "Auto (Standard)",
+  "settings.general.row.shell.terminalOnly": "kun terminal",
   "settings.general.row.appearance.title": "Utseende",
   "settings.general.row.appearance.description": "Tilpass hvordan OpenCode ser ut på enheten din",
   "settings.general.row.colorScheme.title": "Fargevalg",
@@ -652,6 +677,21 @@ export const dict = {
   "settings.general.row.followup.description": "Velg om oppfølgingsspørsmål skal kjøres umiddelbart eller vente i kø",
   "settings.general.row.followup.option.queue": "Kø",
   "settings.general.row.followup.option.steer": "Styr",
+  "settings.general.row.showFileTree.title": "Filstruktur",
+  "settings.general.row.showFileTree.description":
+    "Vis filstruktur-bryteren og panelet i skrivebordsøkter",
+  "settings.general.row.showNavigation.title": "Navigasjonskontroller",
+  "settings.general.row.showNavigation.description":
+    "Vis frem- og tilbake-knappene i tittellinjen på skrivebordet",
+  "settings.general.row.showSearch.title": "Kommandopalett",
+  "settings.general.row.showSearch.description":
+    "Vis søk- og kommandopalett-knappen i tittellinjen på skrivebordet",
+  "settings.general.row.showTerminal.title": "Terminal",
+  "settings.general.row.showTerminal.description":
+    "Vis terminalknappen i tittellinjen på skrivebordet",
+  "settings.general.row.showStatus.title": "Serverstatus",
+  "settings.general.row.showStatus.description":
+    "Vis serverstatusknappen i tittellinjen på skrivebordet",
   "settings.general.row.reasoningSummaries.title": "Vis resonneringssammendrag",
   "settings.general.row.reasoningSummaries.description": "Vis sammendrag av modellresonnering i tidslinjen",
   "settings.general.row.shellToolPartsExpanded.title": "Utvid shell-verktøydeler",
@@ -662,6 +702,9 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.title": "Vis fremdriftslinje for sesjonen",
   "settings.general.row.showSessionProgressBar.description":
     "Vis den animerte fremdriftslinjen øverst i sesjonen når agenten jobber",
+  "settings.general.row.pinchZoom.title": "Klyp for å zoome",
+  "settings.general.row.pinchZoom.description":
+    "Tillat klype-bevegelser på styreflaten og Ctrl-rulling for å zoome",
   "settings.general.row.wayland.title": "Bruk innebygd Wayland",
   "settings.general.row.wayland.description": "Deaktiver X11-fallback på Wayland. Krever omstart.",
   "settings.general.row.wayland.tooltip":
@@ -821,6 +864,7 @@ export const dict = {
   "session.delete.button": "Slett sesjon",
 
   "workspace.new": "Nytt arbeidsområde",
+  "workspace.creating": "Oppretter arbeidsområde...",
   "workspace.type.local": "lokal",
   "workspace.type.sandbox": "sandkasse",
   "workspace.create.failed.title": "Kunne ikke opprette arbeidsområde",
