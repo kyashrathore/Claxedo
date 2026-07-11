@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { metrics, walkProdSources } from "./scanners"
-import writers from "./writers.json"
+import writers from "./query-cache-writers.json"
 
 type WritersManifest = {
   families: Array<{ family: string; writer: string; status: "live" | "planned" }>
@@ -40,7 +40,7 @@ describe("single query-cache writer guard", () => {
           .map((finding) => finding.file)
           .filter((file) => !allowed.has(file)),
       ),
-    ].map((file) => `${file}: setQueryData outside its family writer -- add a writer in writers.json or remove the direct cache write`)
+    ].map((file) => `${file}: setQueryData outside its family writer -- add a writer in query-cache-writers.json or remove the direct cache write`)
 
     expect(offenders).toEqual([])
   })
@@ -48,8 +48,8 @@ describe("single query-cache writer guard", () => {
   test("keeps grandfathered entries live and pruned", () => {
     const filesWithSetQueryData = new Set(setQueryDataMetric.scan(walkProdSources(appRoot)).map((finding) => finding.file))
     const offenders = manifest.grandfathered.flatMap((file) => {
-      if (!existsSync(path.join(srcRoot, file))) return [`${file} no longer exists -- remove it from writers.json grandfathered`]
-      if (!filesWithSetQueryData.has(file)) return [`${file} no longer calls setQueryData -- remove it from writers.json grandfathered`]
+      if (!existsSync(path.join(srcRoot, file))) return [`${file} no longer exists -- remove it from query-cache-writers.json grandfathered`]
+      if (!filesWithSetQueryData.has(file)) return [`${file} no longer calls setQueryData -- remove it from query-cache-writers.json grandfathered`]
       return []
     })
 
@@ -66,7 +66,7 @@ describe("single query-cache writer guard", () => {
       const family = phaseOneFamilyForSetQueryData(call)
       if (!family) return []
       const writer = writerByFamily.get(family)
-      if (!writer) return [`${family}: missing live writer in writers.json`]
+      if (!writer) return [`${family}: missing live writer in query-cache-writers.json`]
       if (manifest.grandfathered.includes(call.file)) return [`${call.file}:${call.line}: ${family} writer is still grandfathered`]
       if (call.file !== writer) return [`${call.file}:${call.line}: ${family} setQueryData must move to ${writer}`]
       return []
@@ -79,7 +79,7 @@ describe("single query-cache writer guard", () => {
     const offenders = manifest.families.flatMap((family) => {
       const exists = existsSync(path.join(srcRoot, family.writer))
       if (family.status === "live" && !exists) return [`${family.family}: live writer ${family.writer} does not exist`]
-      if (family.status === "planned" && exists) return [`${family.family}: planned writer ${family.writer} exists -- flip it to live in writers.json`]
+      if (family.status === "planned" && exists) return [`${family.family}: planned writer ${family.writer} exists -- flip it to live in query-cache-writers.json`]
       return []
     })
 

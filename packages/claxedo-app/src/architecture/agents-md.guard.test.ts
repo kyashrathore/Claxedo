@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { walk } from "./scanners"
-import writers from "./writers.json"
+import writers from "./query-cache-writers.json"
 
 type AgentsContract = {
   owns: string
@@ -48,13 +48,13 @@ describe("per-directory AGENTS.md contracts", () => {
     expect(offenders).toEqual([])
   })
 
-  test("writerOf entries correspond to writers.json families", () => {
+  test("writerOf entries correspond to query-cache-writers.json families", () => {
     const offenders = requiredDirs.flatMap((dir) => {
       const contract = readContract(path.join(srcRoot, dir, "AGENTS.md"))
       if (typeof contract === "string") return [`${dir}/AGENTS.md: ${contract}`]
       return contract.writerOf
         .filter((family) => !writerFamilies.has(family))
-        .map((family) => `${dir}/AGENTS.md claims writerOf ${family}, but writers.json has no such family`)
+        .map((family) => `${dir}/AGENTS.md claims writerOf ${family}, but query-cache-writers.json has no such family`)
     })
 
     expect(offenders).toEqual([])

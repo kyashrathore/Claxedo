@@ -155,7 +155,7 @@ SolidJS context/provider for app-wide state.
 
 ### `session/` (`helpers.ts`, `session-layout.ts`, `store/`, `submit/`)
 Session store (`store/session-store.ts`, `store/session-controller.ts` — a
-grandfathered god file, see `src/architecture/size-allowlist.json`) and the
+grandfathered god file, see `src/architecture/size-baseline.json`) and the
 submit pipeline (`submit/dispatch.ts`, `submit/create-with-lifecycle.ts`).
 Wave 1.5 moved `session-layout.ts` and `helpers.ts` here from the old
 `pages/session/`. One of the four session-domain directories (see `shell/`
@@ -298,7 +298,7 @@ own `*-baseline.json` or `*-allowlist.json` recording the
 currently-tolerated violations — new violations fail CI, and existing ones
 may only be removed as the underlying code gets fixed, never added back.
 Examples: `layering-baseline.json`, `orphan-baseline.json`,
-`size-allowlist.json`, `writers.json`. Deliberately not giving an exact
+`size-baseline.json`, `query-cache-writers.json`. Deliberately not giving an exact
 file/manifest count here —
 the set grows every time a new scanner rule is added, so a fixed number goes
 stale immediately; count `find src/architecture -maxdepth 1 -type f` and
