@@ -3,24 +3,30 @@
  *
  * Used for hosted or cloud-deployed Claxedo where secrets should not
  * live on disk. Requires CLAXEDO_CF_KV_URL and CLAXEDO_CF_KV_TOKEN env vars.
+ *
+ * SECURITY (launch-plan D10, invariant I-5): KV is a BYTE STORE ONLY. The raw
+ * KV backend is deliberately NOT exported — every value that reaches KV must
+ * pass through the envelope-encryption wrapper (`credentials/envelope.ts`),
+ * so a leaked KV API token yields ciphertext, never plaintext. The only
+ * construction path is `createEncryptedCloudflareBackend`, which fails closed
+ * (throws) when the KEK or KV configuration is absent.
  */
 
 import type { SecretBackend } from "./types"
 import { Log } from "../log"
+import { encryptedSecretBackend, envelopeKeyProviderFromEnv, type EnvelopeKeyProvider } from "./envelope"
 
 const log = Log.create({ service: "credentials-cloudflare" })
 
-function kvUrl() {
-  return process.env.CLAXEDO_CF_KV_URL
-}
+type EnvLike = Record<string, string | undefined>
 
-function kvToken() {
-  return process.env.CLAXEDO_CF_KV_TOKEN
-}
-
-export function createCloudflareBackend(): SecretBackend {
+/**
+ * Raw Cloudflare KV byte store. INTERNAL ON PURPOSE: it stores whatever bytes
+ * it is given, so exporting it would reopen the plaintext hole. Do not export.
+ */
+function createCloudflareKvByteStore(env: EnvLike): SecretBackend {
   function headers() {
-    const token = kvToken()
+    const token = env.CLAXEDO_CF_KV_TOKEN?.trim()
     if (!token) throw new Error("CLAXEDO_CF_KV_TOKEN not configured")
     return {
       Authorization: `Bearer ${token}`,
@@ -29,7 +35,7 @@ export function createCloudflareBackend(): SecretBackend {
   }
 
   function baseUrl() {
-    const url = kvUrl()
+    const url = env.CLAXEDO_CF_KV_URL?.trim()
     if (!url) throw new Error("CLAXEDO_CF_KV_URL not configured")
     return url.replace(/\/$/, "")
   }
@@ -91,4 +97,31 @@ export function createCloudflareBackend(): SecretBackend {
       }
     },
   }
+}
+
+/**
+ * The ONLY way to obtain a Cloudflare KV secret backend: envelope encryption
+ * composed over the raw byte store, partitioned to one org via HKDF subkey
+ * derivation.
+ *
+ * Fails closed at construction time — throws when CLAXEDO_CF_KV_URL,
+ * CLAXEDO_CF_KV_TOKEN, or the envelope KEK (CLAXEDO_CREDENTIALS_KEK, unless a
+ * custom `keyProvider` is supplied) is missing.
+ */
+export function createEncryptedCloudflareBackend(opts: {
+  /** Tenant partition — per-org HKDF subkey; org A ciphertext never decrypts under org B. */
+  orgId: string
+  /** Env source (defaults to process.env; the Worker populates it via nodejs_compat). */
+  env?: EnvLike
+  /** Override the env-sourced KEK provider (tests / future CF Secrets Store). */
+  keyProvider?: EnvelopeKeyProvider
+}): SecretBackend {
+  const env = opts.env ?? process.env
+  for (const name of ["CLAXEDO_CF_KV_URL", "CLAXEDO_CF_KV_TOKEN"] as const) {
+    if (!env[name]?.trim()) {
+      throw new Error(`${name} not configured — refusing to construct the hosted credential store`)
+    }
+  }
+  const keys = opts.keyProvider ?? envelopeKeyProviderFromEnv(env)
+  return encryptedSecretBackend(createCloudflareKvByteStore(env), keys, { orgId: opts.orgId })
 }

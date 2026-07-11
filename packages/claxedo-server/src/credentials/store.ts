@@ -1,7 +1,12 @@
 /**
  * Credential store — selects and caches the deployment-specific secret backend.
  *
- * - Hosted/cloud: Cloudflare KV (when CLAXEDO_CF_KV_URL is set)
+ * - Hosted/cloud: envelope-encrypted Cloudflare KV (when CLAXEDO_CF_KV_URL is
+ *   set). MANDATORY encryption: constructing the KV backend without a KEK
+ *   (CLAXEDO_CREDENTIALS_KEK) throws — a hosted deployment missing its
+ *   encryption key must be down, not storing plaintext (launch-plan D10/I-5).
+ *   The partition defaults to "deployment" for this single-tenant Node path;
+ *   set CLAXEDO_CREDENTIALS_ORG_ID to name it explicitly.
  * - Local desktop: encrypted file store under ~/.claxedo/credentials/
  *
  * Also provides an in-memory test backend for unit tests.
@@ -9,7 +14,7 @@
 
 import type { SecretBackend } from "./types"
 import { createLocalBackend } from "./local"
-import { createCloudflareBackend } from "./cloudflare"
+import { createEncryptedCloudflareBackend } from "./cloudflare"
 import { Log } from "../log"
 
 const log = Log.create({ service: "credentials-store" })
@@ -28,8 +33,10 @@ export function getBackend(): SecretBackend {
   if (backend) return backend
 
   if (isHosted()) {
-    log.info("Using Cloudflare KV secret backend")
-    backend = createCloudflareBackend()
+    log.info("Using envelope-encrypted Cloudflare KV secret backend")
+    backend = createEncryptedCloudflareBackend({
+      orgId: process.env.CLAXEDO_CREDENTIALS_ORG_ID?.trim() || "deployment",
+    })
   } else {
     log.info("Using local encrypted secret backend")
     backend = createLocalBackend()
