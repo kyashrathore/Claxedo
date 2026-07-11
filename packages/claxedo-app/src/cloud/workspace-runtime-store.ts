@@ -6,7 +6,7 @@ import { createHttpWorkspaceRuntimeBackend } from "../shared/data/http-backend"
 import { sessionWorkspaceRuntimeRef } from "../shell/workspace/session-workspace-key"
 import { fastSessionSwitchAnyNetworkQuiet } from "../session/store/fast-session-switch"
 import { createTransport } from "../shell/data/transport/transport"
-import { authFetch } from "../utils/api"
+import { authFetch } from "@/shared/data/api"
 import { bypassFetchThrottle } from "../utils/fetch-throttle"
 import { centralTransportForServer } from "@/shell/data/transport/transport"
 

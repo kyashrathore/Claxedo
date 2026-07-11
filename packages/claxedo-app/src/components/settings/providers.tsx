@@ -15,7 +15,7 @@ import { DialogConnectProvider } from "@/components/dialogs/connect-provider"
 import { DialogSelectProvider } from "@/components/dialogs/select-provider"
 import { DialogCustomProvider } from "@/components/dialogs/custom-provider"
 import { SettingsList } from "@/components/settings/list"
-import { claxedoCredentialRequest } from "@/utils/credential-request"
+import { claxedoCredentialRequest } from "@/shared/data/credential-request"
 import { queryClient } from "@/shared/query/query-client"
 
 type ProviderSource = "env" | "api" | "config" | "custom"

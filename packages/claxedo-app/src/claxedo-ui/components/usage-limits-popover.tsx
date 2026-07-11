@@ -15,7 +15,7 @@ import {
   type UsageLimitsSnapshot,
   type UsageProvider,
   type UsageWindow,
-} from "../../utils/usage-limits-api"
+} from "@/shared/data/usage-limits-api"
 
 type Bar = { label: string; percent: number; resetsAt: string | null }
 type Entry = { name: string; label: string; provider: UsageProvider; bars: Bar[] }

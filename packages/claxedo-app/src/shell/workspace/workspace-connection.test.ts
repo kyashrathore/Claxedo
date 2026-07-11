@@ -13,7 +13,7 @@ import {
   workspaceOffline,
   workspacePlacement,
 } from "./workspace-connection"
-import type { WorkspaceConnectionInfo } from "../../utils/workspace-relay-connection"
+import type { WorkspaceConnectionInfo } from "@/agent-runtime/workspace-relay-connection"
 
 afterEach(() => internals.reset())
 

@@ -1,5 +1,5 @@
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { cmp } from "../../shared/query/utils"
+import { cmp } from "@/shared/query/sort"
 
 export const idleSessionStatus = { type: "idle" as const }
 

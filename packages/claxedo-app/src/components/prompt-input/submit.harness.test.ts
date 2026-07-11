@@ -366,7 +366,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     sampledChecksum: (value: string) => value || undefined,
   }))
 
-  mock.module("@/utils/session-url", () => ({
+  mock.module("@/shared/data/session-url", () => ({
     resolveSessionUrl: async (sessionID: string) => (state.demoMode ? null : `http://runtime.example.com/${sessionID}`),
   }))
 
@@ -454,7 +454,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     isDemoMode: () => state.demoMode,
     fixDir: (input) => input,
   })
-  mock.module("@/utils/api", () => apiFixture.module)
+  mock.module("@/shared/data/api", () => apiFixture.module)
 
   mock.module("../../shell/data/transport/transport", () => ({
     centralTransportForServer: (serverUrl?: string) => {

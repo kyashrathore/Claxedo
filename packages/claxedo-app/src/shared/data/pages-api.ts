@@ -3,7 +3,7 @@
  *
  * Pages are served by claxedo-server routes at /pages.
  */
-import { authFetch, getClaxedoServerUrl, normalizeUrl } from "./api"
+import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/shared/data/api"
 
 export type Page = {
   id: string
@@ -40,98 +40,6 @@ export type PageStatus = {
   color: string
   position: number
   transitions: string[]
-}
-
-export type ArenaControlSignal = "continue" | "done" | "question"
-export type ArenaStatus = "idle" | "running" | "paused" | "stopping" | "completed" | "failed"
-
-export type ArenaAgentConfig = {
-  name: string
-  role: string
-  duty: string
-  model: string
-  style?: string
-  temperature?: number
-}
-
-export type ArenaConfig = {
-  max_agents?: number
-  max_rounds?: number
-  max_wave_runtime_ms?: number
-  max_turn_runtime_ms?: number
-  max_relay_chars?: number
-  recent_messages?: number
-  agents?: ArenaAgentConfig[]
-}
-
-export type ArenaMessage = {
-  id: string
-  wave_id: string
-  round: number
-  kind: "user" | "agent" | "relay" | "system"
-  source: string
-  text: string
-  signal: ArenaControlSignal
-  meta: Record<string, unknown>
-  created_at: number
-}
-
-export type ArenaAgentState = {
-  key: string
-  name: string
-  role: string
-  duty: string
-  model: string
-  status: string
-  settled: boolean
-  signal: string
-}
-
-export type ArenaWaveState = {
-  id: string
-  status: string
-  round: number
-  targets: string[]
-  termination: string
-  started_at: number
-  finished_at: number
-}
-
-export type ArenaState = {
-  arena: {
-    id: string
-    page_id: string
-    status: ArenaStatus
-    parent_session_id: string
-    current_round: number
-    stop_reason: string
-    last_error: string
-    synopsis: string
-    config: ArenaConfig
-    created_at: number
-    updated_at: number
-  } | null
-  agents: ArenaAgentState[]
-  waves: ArenaWaveState[]
-  messages: ArenaMessage[]
-}
-
-export type ArenaStartRequest = {
-  directory?: string
-  parent_session_id?: string
-  parentSessionId?: string
-  config?: ArenaConfig
-}
-
-export type ArenaMessageRequest = {
-  text: string
-  targets?: string[]
-  mentions?: string[]
-  page_context?: string
-}
-
-export type ArenaControlRequest = {
-  action: "pause" | "resume" | "stop" | "retry"
 }
 
 export type PageScope = "all" | "project" | "global"
@@ -198,7 +106,7 @@ function jsonHeaders(input?: HeadersInit) {
   return headers
 }
 
-function pagesUrl(input?: { serverUrl?: string; pageId?: string; path?: string; query?: PageQuery }) {
+export function pagesUrl(input?: { serverUrl?: string; pageId?: string; path?: string; query?: PageQuery }) {
   const segments = ["pages"]
   if (input?.pageId) segments.push(encodeURIComponent(input.pageId))
   if (input?.path) {
@@ -218,7 +126,7 @@ function pagesUrl(input?: { serverUrl?: string; pageId?: string; path?: string; 
   return url
 }
 
-async function request<T>(url: string | URL, init?: RequestInit): Promise<T> {
+export async function request<T>(url: string | URL, init?: RequestInit): Promise<T> {
   const res = await authFetch(String(url), {
     ...init,
     headers: jsonHeaders(init?.headers),
@@ -369,54 +277,4 @@ export const pagesApi = {
       body: JSON.stringify({ status }),
     })
   },
-
-  arenaStart(id: string, input: ArenaStartRequest): Promise<ArenaState> {
-    return request<ArenaState>(pagesUrl({ pageId: id, path: "arena/start" }), {
-      method: "POST",
-      body: JSON.stringify(input),
-    })
-  },
-
-  arenaState(id: string): Promise<ArenaState> {
-    return request<ArenaState>(pagesUrl({ pageId: id, path: "arena/state" }))
-  },
-
-  arenaMessage(
-    id: string,
-    input: ArenaMessageRequest,
-    signal?: AbortSignal,
-  ): Promise<{ ok: boolean; wave_id: string; state: ArenaState }> {
-    return request<{ ok: boolean; wave_id: string; state: ArenaState }>(pagesUrl({
-      pageId: id,
-      path: "arena/message",
-    }), {
-      method: "POST",
-      body: JSON.stringify(input),
-      signal,
-    })
-  },
-
-  arenaControl(id: string, input: ArenaControlRequest): Promise<{ ok: boolean; state: ArenaState }> {
-    return request<{ ok: boolean; state: ArenaState }>(pagesUrl({
-      pageId: id,
-      path: "arena/control",
-    }), {
-      method: "POST",
-      body: JSON.stringify(input),
-    })
-  },
-
-  arenaEventsUrl(id: string, directory?: string) {
-    const dir = cleanDir(directory)
-    return String(pagesUrl({
-      pageId: id,
-      path: "arena/events",
-      query: { directory: dir || undefined },
-    }))
-  },
-}
-
-function cleanDir(value: unknown) {
-  if (typeof value !== "string") return ""
-  return value.trim()
 }

@@ -1,6 +1,6 @@
 import { createStore, produce, reconcile } from "solid-js/store"
 import type { FileNode } from "@opencode-ai/sdk/v2"
-import { cachedFileTreeRequest, clearFileRequestCache } from "@/utils/file-request-cache"
+import { cachedFileTreeRequest, clearFileRequestCache } from "@/shared/query/file-request-cache"
 
 type DirectoryState = {
   expanded: boolean

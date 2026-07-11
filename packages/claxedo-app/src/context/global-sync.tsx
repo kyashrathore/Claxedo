@@ -65,7 +65,7 @@ import {
 import { createAgentRuntimeClient } from "../agent-runtime/agent-runtime-client"
 import { createTransport } from "@/shell/data/transport/transport"
 import { signedWorkspaceFromProjects } from "../agent-runtime/signed-workspace"
-import { authFetch, getClaxedoServerUrl } from "../utils/api"
+import { authFetch, getClaxedoServerUrl } from "@/shared/data/api"
 import { principalHasSignedAccess, usePrincipal } from "../shell/auth/identity-provider"
 import { sessionWorkspaceRuntimeRef } from "../shell/workspace/session-workspace-key"
 import { centralTransportForServer, unsignedLocalFetch } from "@/shell/data/transport/transport"

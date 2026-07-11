@@ -12,7 +12,7 @@ import { Show, For, createEffect, createMemo, onCleanup } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { PageArenaDock } from "./page-arena-dock"
-import { pagesApi, type ArenaState, type ArenaWaveState } from "../../../utils/pages-api"
+import { arenaApi, type ArenaState, type ArenaWaveState } from "@/shared/data/arena-api"
 import {
   clampDockWidth as clampDockWidthFor,
   visibleArenaWavesOf,
@@ -104,7 +104,7 @@ export function createPageEditorDockState(deps: PageEditorDockStateDeps) {
 
   const arenaStateQuery = useQuery(() => ({
     queryKey: ["pages", "arenaState", pageId()],
-    queryFn: () => pagesApi.arenaState(pageId()),
+    queryFn: () => arenaApi.state(pageId()),
     enabled: dockEnabled(),
     refetchInterval: dockEnabled() ? 4000 : false,
   }))

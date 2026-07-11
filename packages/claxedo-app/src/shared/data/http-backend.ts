@@ -8,8 +8,8 @@ import type {
   Todo,
   VcsInfo,
 } from "@opencode-ai/sdk/v2/client"
-import { authFetch, getDefaultBaseUrl, normalizeUrl } from "../../utils/api"
-import { workspaceResolveUrl } from "../../utils/workspace-control-routes"
+import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/shared/data/api"
+import { workspaceResolveUrl } from "@/agent-runtime/workspace-control-routes"
 import { PANE_PREFERENCE_KEYS, type PanePreferenceKind, type PanePreferenceStorage } from "../../pane/store/pane-preferences"
 import type {
   PanePrefsBackend,
@@ -21,7 +21,7 @@ import type {
 } from "./types"
 import type { WorkspaceRuntimeSnapshot } from "../query/runtime"
 import type { SessionRef } from "../../shell/identity/session-ref"
-import { openWorkspaceConnection } from "../../utils/workspace-relay-connection"
+import { openWorkspaceConnection } from "@/agent-runtime/workspace-relay-connection"
 import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"
 import { createTransport } from "../../shell/data/transport/transport"
 import { centralTransportForServer } from "@/shell/data/transport/transport"

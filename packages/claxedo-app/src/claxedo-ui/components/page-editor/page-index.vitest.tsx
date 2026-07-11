@@ -20,7 +20,7 @@ const context = vi.hoisted(() => ({
   usePlatform: () => ({}),
 }))
 
-vi.mock("../../../utils/pages-api", () => ({
+vi.mock("@/shared/data/pages-api", () => ({
   pagesApi: {
     list: api.list,
     listStatuses: api.listStatuses,

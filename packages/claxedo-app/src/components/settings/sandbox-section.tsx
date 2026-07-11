@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, Show, type Component, type
 import { Button } from "@opencode-ai/ui/button"
 import { Select } from "@opencode-ai/ui/select"
 import { showToast } from "@opencode-ai/ui/toast"
-import { api, getDefaultBaseUrl } from "../../utils/api"
+import { api, getDefaultBaseUrl } from "@/shared/data/api"
 import { NetworkPolicySettings } from "./network-policy"
 import {
   shouldUseSandboxDriverMutations,

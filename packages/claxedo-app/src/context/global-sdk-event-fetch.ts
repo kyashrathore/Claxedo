@@ -1,7 +1,7 @@
 import { createTransport } from "@/shell/data/transport/transport"
 import { queryClient } from "../shared/query/query-client"
 import { workspaceIdFromRef } from "../shell/identity/legacy-resolver"
-import { workspaceResolveUrl } from "../utils/workspace-control-routes"
+import { workspaceResolveUrl } from "@/agent-runtime/workspace-control-routes"
 import { centralTransportForServer } from "@/shell/data/transport/transport"
 
 const USER_HOSTED_WORKSPACE_KIND = "user-hosted"

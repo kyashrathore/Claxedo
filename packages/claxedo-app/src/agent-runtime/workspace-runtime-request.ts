@@ -1,5 +1,5 @@
 import { createWorkspaceRelayConnection, openWorkspaceConnection } from "./workspace-relay-connection"
-import { authFetch } from "./api"
+import { authFetch } from "@/shared/data/api"
 import { hasBacking, type SessionRef } from "../shell/identity/session-ref"
 import {
   isFilesystemDirectory,

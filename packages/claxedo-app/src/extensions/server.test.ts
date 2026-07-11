@@ -8,7 +8,7 @@ const authFetch = vi.fn()
 // normalizeUrl is re-provided with its real (pure, trim + strip-trailing-
 // slash) behavior rather than left undefined — serverExtensions().transformUrl
 // delegates to the real utils/api normalizeUrl in production.
-vi.mock("../utils/api", () => ({
+vi.mock("@/shared/data/api", () => ({
   authFetch,
   normalizeUrl: (url: string | undefined) => {
     const trimmed = url?.trim()

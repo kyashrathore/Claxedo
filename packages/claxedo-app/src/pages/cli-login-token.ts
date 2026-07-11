@@ -1,7 +1,7 @@
 // Security-boundary helpers for the CLI sign-in handoff, extracted from
 // `cli-login.tsx` so the localhost-only callback restriction, the token
 // exchange, and the form construction can be tested directly.
-import { getClaxedoServerUrl } from "../utils/api"
+import { getClaxedoServerUrl } from "@/shared/data/api"
 
 /**
  * Return a normalized callback URL only when it is an `http:` loopback

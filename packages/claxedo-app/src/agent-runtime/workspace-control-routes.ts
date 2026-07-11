@@ -1,5 +1,5 @@
 import { workspaceIdFromRef } from "../shell/identity/legacy-resolver"
-import { getDefaultBaseUrl, normalizeUrl } from "./api"
+import { getDefaultBaseUrl, normalizeUrl } from "@/shared/data/api"
 
 function controlPlaneBaseUrl(baseUrl?: string) {
   return normalizeUrl(baseUrl) ?? getDefaultBaseUrl()

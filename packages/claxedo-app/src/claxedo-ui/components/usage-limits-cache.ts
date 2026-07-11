@@ -4,7 +4,7 @@
 // key and the only setQueryData call here keeps the family's cache writes in one
 // declared place (see architecture/query-cache-writers.json).
 import type { QueryClient } from "@tanstack/solid-query"
-import type { UsageLimitsSnapshot } from "../../utils/usage-limits-api"
+import type { UsageLimitsSnapshot } from "@/shared/data/usage-limits-api"
 
 /** The single TanStack query key for the usage-limits snapshot. */
 export const USAGE_LIMITS_QUERY_KEY = ["claxedo", "usage-limits"] as const

@@ -11,7 +11,7 @@ import {
   sessionPaneWorkspaceKey,
 } from "../../shell/workspace/session-workspace-key"
 import { WorkspaceGate } from "../../shell/workspace/workspace-gate"
-import { authFetch } from "../../utils/api"
+import { authFetch } from "@/shared/data/api"
 import { PaneIdProvider } from "../context/pane-id"
 import { SessionParamsProvider } from "../context/session-params"
 import { DirectoryScope } from "./directory-scope"

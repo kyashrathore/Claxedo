@@ -5,7 +5,8 @@
  */
 
 import { describe, expect, test } from "bun:test"
-import type { PageStatus, ArenaWaveState } from "../../../utils/pages-api"
+import type { PageStatus } from "@/shared/data/pages-api"
+import type { ArenaWaveState } from "@/shared/data/arena-api"
 import {
   allowedStatusTransitions,
   derivePageQuery,

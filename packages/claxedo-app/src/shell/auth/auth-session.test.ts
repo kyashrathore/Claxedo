@@ -5,7 +5,7 @@ let signed = false
 let user: unknown
 let organization: { id?: string } | null | undefined
 
-mock.module("../../utils/auth-client", () => ({
+mock.module("@/shared/data/auth-client", () => ({
   useAuth: () => ({
     clerk: {
       get organization() {

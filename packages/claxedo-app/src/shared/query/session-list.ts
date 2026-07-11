@@ -1,10 +1,10 @@
 import { queryOptions } from "@tanstack/solid-query"
-import { authFetch, getClaxedoServerUrl, normalizeUrl } from "../../utils/api"
+import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/shared/data/api"
 import { centralTransportForServer } from "@/shell/data/transport/transport"
 import {
   controlSessionNavigationListUrl,
   type ControlSessionNavigationListQuery,
-} from "../../utils/workspace-control-routes"
+} from "@/agent-runtime/workspace-control-routes"
 import type { SessionNavigationRow } from "../../claxedo-ui/navigation-islands/session-navigation"
 import { queryKeys } from "./keys"
 import { queryClient } from "./query-client"

@@ -8,7 +8,7 @@ import type { ProjectItem, WorkspaceItem } from "../rail/domain-types"
 import type { ProjectActionProps } from "./project-actions"
 
 let createProjectActions: typeof import("./project-actions").createProjectActions
-let WorktreeState: typeof import("@/utils/worktree").Worktree
+let WorktreeState: typeof import("@/shared/data/worktree").Worktree
 let deleteDialogProps: undefined | { onDelete: (dir: string) => Promise<void> | void }
 const worktreeStates = new Map<string, { status: "pending" | "ready" } | { status: "failed"; message: string }>()
 const worktreeWaiters = new Map<string, Array<(state: { status: "pending" | "ready" } | { status: "failed"; message: string }) => void>>()
@@ -53,7 +53,7 @@ beforeAll(async () => {
     },
   }))
 
-  mock.module("@/utils/worktree", () => ({
+  mock.module("@/shared/data/worktree", () => ({
     Worktree: {
       get: (directory: string) => worktreeStates.get(directory),
       pending: (directory: string) => {
@@ -106,7 +106,7 @@ beforeAll(async () => {
 
   // Shadow `../../utils/api` with the full export shape so a mock leaked from
   // another test file in the same suite run cannot strip exports we need.
-  mock.module("../../utils/api", () => ({
+  mock.module("@/shared/data/api", () => ({
     api: mockApi,
     authFetch: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
     getClaxedoServerUrl: () => "http://test.local",
@@ -122,7 +122,7 @@ beforeAll(async () => {
 
   const mod = await import("./project-actions")
   createProjectActions = mod.createProjectActions
-  WorktreeState = (await import("@/utils/worktree")).Worktree
+  WorktreeState = (await import("@/shared/data/worktree")).Worktree
 })
 
 beforeEach(() => {

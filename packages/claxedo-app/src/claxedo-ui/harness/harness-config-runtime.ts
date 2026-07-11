@@ -1,6 +1,6 @@
 import { resolveWorkspaceRuntime as defaultResolveWorkspaceRuntime } from "../../cloud/workspace-runtime-store"
 import { createTransport as defaultCreateTransport } from "../../shell/data/transport/transport"
-import { authFetch } from "../../utils/api"
+import { authFetch } from "@/shared/data/api"
 import { centralTransportForServer, unsignedLocalFetch as defaultUnsignedLocalFetch } from "@/shell/data/transport/transport"
 import {
   harnessConfigUrl,

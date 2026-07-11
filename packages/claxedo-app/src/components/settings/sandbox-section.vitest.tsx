@@ -65,7 +65,7 @@ vi.mock("@opencode-ai/ui/toast", () => ({
   showToast: (...args: unknown[]) => mocks.toast(...args),
 }))
 
-vi.mock("../../utils/api", () => ({
+vi.mock("@/shared/data/api", () => ({
   api: {
     delete: (...args: unknown[]) => mocks.apiDelete(...args),
     get: (...args: unknown[]) => mocks.apiGet(...args),

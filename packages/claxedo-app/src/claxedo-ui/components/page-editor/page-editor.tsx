@@ -13,11 +13,11 @@ import "./page-editor.css"
 import {
   isPageUpdateConflict,
   pagesApi,
-  type ArenaWaveState,
   type Page,
   type PageQuery,
   type PageStatus,
-} from "../../../utils/pages-api"
+} from "@/shared/data/pages-api"
+import type { ArenaWaveState } from "@/shared/data/arena-api"
 import type { PageAiAction, AiPanelPos, AiSelection, AiDraft } from "./page-editor-utils"
 import { useSDK } from "@/context/sdk"
 import { useGlobalSDK } from "@/context/global-sdk"

@@ -14,7 +14,7 @@ mock.module("@/context/sdk", () => ({
   },
 }))
 
-mock.module("@/utils/api", () => ({
+mock.module("@/shared/data/api", () => ({
   authFetch: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
   getConfiguredClaxedoServerUrl: () => "",
   getDefaultBaseUrl: () => "http://server.test",

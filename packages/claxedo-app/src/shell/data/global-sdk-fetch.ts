@@ -2,7 +2,7 @@
 import { createTransport } from "@/shell/data/transport/transport"
 import { signedWorkspaceFromProjects } from "../../agent-runtime/signed-workspace"
 import { isFilesystemDirectory } from "../identity/legacy-resolver"
-import { authFetch } from "../../utils/api"
+import { authFetch } from "@/shared/data/api"
 import { centralTransportForServer } from "@/shell/data/transport/transport"
 
 export function createGlobalSdkFetch(input: {

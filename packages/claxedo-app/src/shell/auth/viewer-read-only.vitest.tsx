@@ -7,7 +7,7 @@ import {
   acquireWorkspaceConnection,
   workspacePlacement,
 } from "../workspace/workspace-connection"
-import type { WorkspaceConnectionInfo } from "../../utils/workspace-relay-connection"
+import type { WorkspaceConnectionInfo } from "@/agent-runtime/workspace-relay-connection"
 import { Can } from "./role"
 
 afterEach(() => {

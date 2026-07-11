@@ -14,9 +14,9 @@ import { usePermission } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { formatServerError } from "@/utils/server-errors"
-import { Worktree as WorktreeState } from "@/utils/worktree"
+import { Worktree as WorktreeState } from "@/shared/data/worktree"
 import { setCursorPosition } from "@/components/prompt-input/editor-dom"
-import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, isDemoMode } from "@/utils/api"
+import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, isDemoMode } from "@/shared/data/api"
 import { capture as phCapture } from "../../utils/analytics"
 import { useClaxedoState } from "../../claxedo-ui/state"
 import { panePreferenceScope } from "../../pane/store/pane-preferences"
@@ -32,7 +32,7 @@ import {
 import { harnessProfile, pickHarness } from "@/session/harness/profile"
 import { createHarnessSubmitController, type HarnessSubmitController } from "@/session/harness/controller"
 import { useConfigOptional } from "../../context/config"
-import { workspaceCreateUrl } from "../../utils/workspace-control-routes"
+import { workspaceCreateUrl } from "@/agent-runtime/workspace-control-routes"
 import {
   recordPromptSubmission,
   resolvePromptDispatchClient,

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 
 const calls: Array<{ url: string; method?: string }> = []
 
-mock.module("../../utils/api", () => ({
+mock.module("@/shared/data/api", () => ({
   authFetch: async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(String(input), init)
     calls.push({

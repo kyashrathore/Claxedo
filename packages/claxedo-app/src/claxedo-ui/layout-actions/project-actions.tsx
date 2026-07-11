@@ -1,17 +1,17 @@
 import { DialogSettings } from "@/components/dialogs/settings"
 import { getFilename } from "@/utils/path"
 import { showToast } from "@opencode-ai/ui/toast"
-import { validWorktree } from "@/utils/worktree"
+import { validWorktree } from "@/shared/data/worktree"
 
 import { DialogSelectDirectory } from "@/components/dialogs/select-directory"
 import { DialogCreateCloudWorkspace } from "../../components/dialogs/create-cloud-workspace"
 import { DialogNewProject } from "../../components/dialogs/new-project"
-import { api, getDefaultBaseUrl } from "../../utils/api"
+import { api, getDefaultBaseUrl } from "@/shared/data/api"
 import { DialogDeleteWorkspace } from "../components/dialogs"
 import type { ProjectItem, WorkspaceItem } from "../rail/domain-types"
 import type { WorkspaceBarItem } from "../rail/workspace-toolbar"
-import { getAuthToken } from "../../utils/auth-client"
-import { Worktree as WorktreeState } from "@/utils/worktree"
+import { getAuthToken } from "@/shared/data/auth-client"
+import { Worktree as WorktreeState } from "@/shared/data/worktree"
 import type { ActionProps, Nav } from "./shared"
 import { ensureDirectorySessionCache, findProjectForWorkspace, message } from "./shared"
 import { capture as phCapture } from "../../utils/analytics"
@@ -27,7 +27,7 @@ import {
   experimentalSandboxPath,
   workspaceCreateUrl,
   workspaceResolveUrl,
-} from "../../utils/workspace-control-routes"
+} from "@/agent-runtime/workspace-control-routes"
 
 type ProvisionEvent = Extract<ClaxedoEvent, { type: "provision" }>
 type WorkspaceDirectoryRef = string

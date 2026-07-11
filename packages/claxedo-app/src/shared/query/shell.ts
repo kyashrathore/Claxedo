@@ -2,8 +2,8 @@ import type { Command } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "./keys"
 import { createHttpShellBackend } from "../data/http-backend"
 import { workspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "./runtime"
-import { cmp } from "./utils"
-import { normalizeUrl } from "../../utils/api"
+import { cmp } from "./sort"
+import { normalizeUrl } from "@/shared/data/api"
 import { workspaceScopedResourceList } from "./agent-config-routes"
 
 type CommandClient = {

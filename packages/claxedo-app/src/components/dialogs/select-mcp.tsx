@@ -7,7 +7,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { createMemo, createSignal, For, onMount, Show, type Component } from "solid-js"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
-import { getClaxedoServerUrl } from "../../utils/api"
+import { getClaxedoServerUrl } from "@/shared/data/api"
 import { centralTransportForServer, unsignedLocalFetch } from "@/shell/data/transport/transport"
 import {
   filterMcpCatalogEntries,

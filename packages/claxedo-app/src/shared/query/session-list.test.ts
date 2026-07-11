@@ -8,7 +8,7 @@ import {
   sessionListQueryOptions,
   type SessionListResponse,
 } from "./session-list"
-import { authFetch } from "../../utils/api"
+import { authFetch } from "@/shared/data/api"
 
 const response = (): SessionListResponse => ({
   view: {

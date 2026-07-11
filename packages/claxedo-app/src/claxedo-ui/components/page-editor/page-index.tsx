@@ -9,7 +9,7 @@ import { useShellQueryOptions as useQueryOptions } from "@/shell/data/query-opti
 import { queryClient } from "@/shared/query/query-client"
 import { useGlobalSDK } from "../../../context/global-sdk"
 import { ensureLocalProject } from "../../../shared/query/project-ensure"
-import { pagesApi, type Page, type PageQuery, type PageStatus } from "../../../utils/pages-api"
+import { pagesApi, type Page, type PageQuery, type PageStatus } from "@/shared/data/pages-api"
 import { StatusEditorDialog } from "./status-editor-dialog"
 
 type Project = {

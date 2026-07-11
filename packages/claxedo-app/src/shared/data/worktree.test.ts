@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { queryClient } from "../shared/query/query-client"
+import { queryClient } from "@/shared/query/query-client"
 import { Worktree, type WorktreeState, validProjectRef, validWorktree } from "./worktree"
 
 const dir = (name: string) => `/tmp/opencode-worktree-${name}-${crypto.randomUUID()}`

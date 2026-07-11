@@ -7,7 +7,7 @@ import { Persist, persisted } from "@/utils/persist"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useParams } from "@solidjs/router"
 import { decode64 } from "@/utils/base64"
-import { directoryConfig, directoryConfigQuery } from "@/utils/directory-config-cache"
+import { directoryConfig, directoryConfigQuery } from "@/shared/query/directory-config-cache"
 import { directorySessions } from "@/shell/data/directory-session-cache"
 import {
   acceptKey,

@@ -1,4 +1,4 @@
-import type { RuntimeAccessTokenRole, WorkspaceConnectionInfo } from "../../utils/workspace-relay-connection"
+import type { RuntimeAccessTokenRole, WorkspaceConnectionInfo } from "@/agent-runtime/workspace-relay-connection"
 import type { SessionRef } from "../identity/session-ref"
 import { hasBacking } from "../identity/session-ref"
 import {

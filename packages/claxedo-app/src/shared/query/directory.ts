@@ -3,7 +3,7 @@ import { queryKeys } from "./keys"
 import { workspaceResolveQuery as runtimeWorkspaceResolveQuery, type WorkspaceRuntimeSnapshot } from "./runtime"
 import { signedWorkspaceFromProjects } from "../../agent-runtime/signed-workspace"
 import { queryClient } from "./query-client"
-import { normalizeUrl } from "../../utils/api"
+import { normalizeUrl } from "@/shared/data/api"
 import { workspaceScopedResourceList, workspaceTransportForBaseUrl } from "./agent-config-routes"
 
 type ProjectClient = {

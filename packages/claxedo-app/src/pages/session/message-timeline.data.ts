@@ -1,4 +1,4 @@
-import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
+import { parseCommentNote, readCommentMetadata } from "@/shared/data/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
 import type { PartGroup } from "@/session-client"
 import { Data, Equal } from "effect"

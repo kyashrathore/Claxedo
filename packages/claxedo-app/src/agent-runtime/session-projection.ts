@@ -1,4 +1,4 @@
-import { authFetch, getClaxedoServerUrl, normalizeUrl } from "../utils/api"
+import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/shared/data/api"
 
 export type SessionProjectionReason =
   | "session-created"

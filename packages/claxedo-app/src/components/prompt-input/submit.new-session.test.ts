@@ -520,7 +520,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       sessionID: "session-1",
     })
 
-    const { Worktree } = await import("@/utils/worktree")
+    const { Worktree } = await import("@/shared/data/worktree")
     Worktree.ready("/repo/main/new")
     await new Promise<void>((r) => setTimeout(r, 0))
   })

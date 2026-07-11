@@ -1,4 +1,4 @@
-import { getClaxedoServerUrl, authFetch, normalizeUrl } from "./api"
+import { getClaxedoServerUrl, authFetch, normalizeUrl } from "@/shared/data/api"
 import { queryClient } from "../shared/query/query-client"
 
 export type WorkspaceConnectionObserver = {

@@ -42,11 +42,11 @@ describe("session-client boundary guard (synthetic detection)", () => {
 
   test("ignores session-internal imports and imports into non-forbidden directories", () => {
     const files = [
-      { path: "session/store/a.ts", text: `import { b } from "./b"\nimport { u } from "@/utils/api"` },
+      { path: "session/store/a.ts", text: `import { b } from "./b"\nimport { u } from "@/shared/data/api"` },
     ]
     const resolve = (fromRelFile: string, specifier: string) => {
       if (specifier === "./b") return "session/store/b.ts"
-      if (specifier === "@/utils/api") return "utils/api.ts"
+      if (specifier === "@/shared/data/api") return "utils/api.ts"
       return null
     }
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { QueryClient } from "@tanstack/solid-query"
-import type { UsageLimitsSnapshot } from "../../utils/usage-limits-api"
+import type { UsageLimitsSnapshot } from "@/shared/data/usage-limits-api"
 import { USAGE_LIMITS_QUERY_KEY, writeUsageLimitsSnapshot } from "./usage-limits-cache"
 
 // The single sanctioned writer for the usage-limits query-cache family.

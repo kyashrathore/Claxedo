@@ -1,4 +1,4 @@
-import { normalizeUrl } from "../../utils/api"
+import { normalizeUrl } from "@/shared/data/api"
 
 function normalized(url: string | undefined) {
   return normalizeUrl(url) ?? "default"

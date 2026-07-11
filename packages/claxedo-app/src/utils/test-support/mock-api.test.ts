@@ -130,11 +130,11 @@ describe("createMockApi defaults", () => {
 })
 
 describe("pure export mirrors match the real ../api.ts implementation", () => {
-  // Bypass any mock.module("./api"/"@/utils/api") registered by
+  // Bypass any mock.module("./api"/"@/shared/data/api") registered by
   // other files in this test run — same cache-busting-query technique
   // api.test.ts uses — so this always evaluates the genuine module.
   test("isDemoPath, fixDir, normalizeUrl, isHostedAppHostname, isEmbedMode agree with the real module across a fixed input table", async () => {
-    const real = await import(`${import.meta.dir}/../api.ts?mock-api-contract`)
+    const real = await import(`${import.meta.dir}/../../shared/data/api.ts?mock-api-contract`)
     const fixture = createMockApi()
 
     const demoPathInputs = ["/", "/demo", "/demo/", "/demo/foo", "/foo/demo"]
@@ -172,9 +172,9 @@ describe("mock.module(...register) registers the fixture against the shared alia
   let calls: Array<{ url: string; init?: RequestInit }>
 
   beforeEach(() => {
-    // mockApiRegistration's default specifier ("@/utils/api") resolves,
+    // mockApiRegistration's default specifier ("@/shared/data/api") resolves,
     // via tsconfig paths, to the same absolute module every consumer's
-    // "./api" / "../../utils/api" specifiers do — this test proves that
+    // "./api" / "@/shared/data/api" specifiers do — this test proves that
     // redirection works, standing in for a real consumer file wiring the
     // fixture up the way the module header's usage example shows.
     const { fixture, register } = mockApiRegistration({ baseUrl: "http://installed.test" })
@@ -182,8 +182,8 @@ describe("mock.module(...register) registers the fixture against the shared alia
     calls = fixture.calls
   })
 
-  test("a module imported after registration sees the mocked @/utils/api", async () => {
-    const { api } = await import("@/utils/api")
+  test("a module imported after registration sees the mocked @/shared/data/api", async () => {
+    const { api } = await import("@/shared/data/api")
 
     const result = await api.get("/probe")
 

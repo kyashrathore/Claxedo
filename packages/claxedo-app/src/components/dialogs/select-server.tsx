@@ -15,7 +15,7 @@ import { ServerHealthIndicator, ServerRow } from "@/components/server-row"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { normalizeServerUrl, ServerConnection, useServer } from "@/context/server"
-import { type ServerHealth, serverHealthQueryOptions, useCheckServerHealth } from "@/utils/server-health"
+import { type ServerHealth, serverHealthQueryOptions, useCheckServerHealth } from "@/shared/data/server-health"
 
 // No default username is pre-filled; the field's placeholder (localized
 // "username") is enough guidance, and prefilling a real string here would

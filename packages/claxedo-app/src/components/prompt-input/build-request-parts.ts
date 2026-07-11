@@ -4,7 +4,7 @@ import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
 import { Identifier } from "@/utils/id"
-import { createCommentMetadata, formatCommentNote } from "@/utils/comment-note"
+import { createCommentMetadata, formatCommentNote } from "@/shared/data/comment-note"
 
 type PromptRequestPart = (TextPartInput | FilePartInput | AgentPartInput) & { id: string }
 

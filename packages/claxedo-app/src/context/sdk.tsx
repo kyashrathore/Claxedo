@@ -9,11 +9,11 @@ import { useShellQueryOptions as useQueryOptions } from "@/shell/data/query-opti
 import { createTransport, type RuntimeTransport } from "@/shell/data/transport/transport"
 import { usePlatform } from "@/context/platform"
 import { signedWorkspaceFromProjects, type SignedWorkspaceInfo } from "../agent-runtime/signed-workspace"
-import { authFetch, getClaxedoServerUrl } from "../utils/api"
+import { authFetch, getClaxedoServerUrl } from "@/shared/data/api"
 import { queryClient } from "../shared/query/query-client"
 import { fastSessionSwitchAnyNetworkQuiet } from "../session/store/fast-session-switch"
-import { workspaceResolveUrl } from "../utils/workspace-control-routes"
-import { workspaceRuntimeFilePath, workspaceRuntimeFindFilePath } from "../utils/dialog-select-directory-routes"
+import { workspaceResolveUrl } from "@/agent-runtime/workspace-control-routes"
+import { workspaceRuntimeFilePath, workspaceRuntimeFindFilePath } from "@/agent-runtime/dialog-select-directory-routes"
 import { centralTransportForServer, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeSnapshotLike } from "@/shell/data/transport/transport"
 
 type SDKEventMap = {

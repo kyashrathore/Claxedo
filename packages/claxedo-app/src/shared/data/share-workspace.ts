@@ -1,6 +1,6 @@
-import { workspaceRoute } from "../shell/identity/route"
-import { isFilesystemDirectory } from "../shell/identity/legacy-resolver"
-import { authFetch, getClaxedoServerUrl, normalizeUrl } from "./api"
+import { workspaceRoute } from "@/shell/identity/route"
+import { isFilesystemDirectory } from "@/shell/identity/legacy-resolver"
+import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/shared/data/api"
 
 type ProjectWorkspace = {
   id?: string

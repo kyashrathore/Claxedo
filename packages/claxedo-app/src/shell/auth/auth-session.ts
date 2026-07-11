@@ -1,6 +1,6 @@
-// target layer: auth — the ONLY module allowed to import utils/auth-client's useAuth
+// target layer: auth — the ONLY module allowed to import shared/data/auth-client's useAuth
 import type { Accessor } from "solid-js"
-import { useAuth } from "../../utils/auth-client"
+import { useAuth } from "@/shared/data/auth-client"
 
 export type AuthSessionStatus = "loading" | "anonymous" | "signed"
 

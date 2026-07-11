@@ -1,7 +1,7 @@
 // Send-phase glue: wait for a still-provisioning worktree, fire the dispatch,
 // and roll back if anything throws. Owns the pending prompt entry for the
 // lifetime of one send.
-import { Worktree as WorktreeState } from "@/utils/worktree"
+import { Worktree as WorktreeState } from "@/shared/data/worktree"
 import { dispatchPrompt } from "./dispatch"
 import { clearPendingPrompt, registerPendingPrompt, setPromptSessionStatus } from "./pending"
 import type {

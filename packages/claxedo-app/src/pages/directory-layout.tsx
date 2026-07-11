@@ -6,10 +6,10 @@ import { useServer } from "@/context/server"
 import { usePlatform } from "@/context/platform"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/context/language"
-import { resolveSessionUrl } from "@/utils/session-url"
+import { resolveSessionUrl } from "@/shared/data/session-url"
 import { useConfigOptional } from "@/context/config"
 import { resolveLegacyRedirect } from "@/shell/identity/route"
-import { authFetch } from "@/utils/api"
+import { authFetch } from "@/shared/data/api"
 import { isLocalPersonalScope, workspaceResolveUrl } from "./directory-layout-routes"
 
 // Nominal branded string (was Schema.String.brand("ProjectDirString") from "effect");

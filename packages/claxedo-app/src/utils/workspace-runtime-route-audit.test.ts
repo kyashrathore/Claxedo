@@ -18,14 +18,13 @@ const allowed = new Set([
 ])
 
 const runtimeGatewayBoundary = new Set([
-  "utils/workspace-relay-connection.ts",
-  "utils/workspace-runtime-request.ts",
-  "utils/credential-request.ts",
-  "utils/living-apps-api.ts",
-  "utils/server-health.ts",
-  "utils/share-workspace.ts",
-  "utils/workspace-control-routes.ts",
-  "utils/dialog-select-directory-routes.ts",
+  "agent-runtime/workspace-relay-connection.ts",
+  "agent-runtime/workspace-runtime-request.ts",
+  "shared/data/credential-request.ts",
+  "shared/data/server-health.ts",
+  "shared/data/share-workspace.ts",
+  "agent-runtime/workspace-control-routes.ts",
+  "agent-runtime/dialog-select-directory-routes.ts",
   "claxedo-ui/state/route-bridge.tsx",
   // Pure route→session resolution + session-probe URL builders split out of
   // route-bridge.tsx (Wave 2); the same route-boundary role, now unit-testable.
@@ -51,7 +50,7 @@ const workspaceRuntimeIdentityBoundary = new Set([
 const workspaceSelectorSyntaxBoundary = new Set([
   ...workspaceRuntimeIdentityBoundary,
   "architecture/scanners.ts",
-  "utils/worktree.ts",
+  "shared/data/worktree.ts",
   // WP-A2 collapsed the wrapper aliases into the canonical workspaceIdFromRef
   // export, imported directly here now instead of through a retired wrapper.
   "shell/auth/placement.ts",
@@ -294,7 +293,7 @@ describe("workspace runtime route audit", () => {
       if (/\bshouldUse(?:WorkspaceRelay|SignedControlPlaneSession|WorkspaceRuntimeSession|LoopbackWorkspaceBridge)\b/.test(text)) {
         offenders.push(`${file}: reintroduced a legacy RuntimeGateway predicate`)
       }
-      if (file !== "utils/workspace-relay-connection.ts" && /\bfunction\s+runtimeKind\s*\(/.test(text)) {
+      if (file !== "agent-runtime/workspace-relay-connection.ts" && /\bfunction\s+runtimeKind\s*\(/.test(text)) {
         offenders.push(`${file}: reintroduced a private runtimeKind decision`)
       }
     }
@@ -321,14 +320,14 @@ describe("workspace runtime route audit", () => {
       }
     }
 
-    const request = await Bun.file(path.join(root, "utils/workspace-runtime-request.ts")).text()
+    const request = await Bun.file(path.join(root, "agent-runtime/workspace-runtime-request.ts")).text()
     const legacyResolver = await Bun.file(path.join(root, "shell/identity/legacy-resolver.ts")).text()
     // WP-A2 collapsed the wrapper aliases (workspaceIdFromDirectoryRef /
     // workspaceIdFromLegacyScope) into the one canonical workspaceIdFromRef
     // export (LLD appendix rename table) — worktree.ts and
     // workspace-runtime-request.ts now import that canonical name directly
     // instead of going through a retired wrapper.
-    expect(await Bun.file(path.join(root, "utils/worktree.ts")).text()).toMatch(/workspaceIdFromRef/)
+    expect(await Bun.file(path.join(root, "shared/data/worktree.ts")).text()).toMatch(/workspaceIdFromRef/)
     expect(request).toMatch(/workspaceIdFromRef/)
     expect(legacyResolver).toMatch(/workspaceIdFromRef/)
     expect(offenders).toEqual([])
@@ -378,7 +377,7 @@ describe("workspace runtime route audit", () => {
   test("test fixtures mock RuntimeGateway instead of workspace runtime internals outside helper tests", async () => {
     const offenders: string[] = []
     const allowed = new Set([
-      "utils/workspace-runtime-request.test.ts",
+      "agent-runtime/workspace-runtime-request.test.ts",
     ])
     for (const entry of await Array.fromAsync(new Bun.Glob("**/*.{test,vitest}.{ts,tsx}").scan({ cwd: root }))) {
       if (allowed.has(entry)) continue
@@ -484,13 +483,13 @@ describe("workspace runtime route audit", () => {
       }
     }
     const app = await Bun.file(path.join(root, "app.tsx")).text()
-    const health = await Bun.file(path.join(root, "utils/server-health.ts")).text()
+    const health = await Bun.file(path.join(root, "shared/data/server-health.ts")).text()
 
     expect(app).toMatch(/@claxedo\/utils\/server-health/)
     expect(app).not.toMatch(/@\/utils\/server-health/)
-    expect(await Bun.file(path.join(root, "overrides/utils/server-health.ts")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "overrides/utils/server-health.test.ts")).exists()).toBe(false)
-    expect(await Bun.file(path.join(root, "utils/server-health.ts")).exists()).toBe(true)
+    expect(await Bun.file(path.join(root, "overrides/shared/data/server-health.ts")).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, "overrides/shared/data/server-health.test.ts")).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, "shared/data/server-health.ts")).exists()).toBe(true)
     expect(health).toMatch(/queryClient/)
     expect(health).not.toMatch(/createSdkForServer/)
     expect(offenders).toEqual([])
@@ -749,7 +748,7 @@ describe("workspace runtime route audit", () => {
 
   test("DialogSelectDirectory reads path inventory through query options", async () => {
     const text = await Bun.file(path.join(root, dialogSelectDirectory)).text()
-    const cache = await upstreamAppText("utils/directory-search-cache.ts")
+    const cache = await upstreamAppText("shared/query/directory-search-cache.ts")
 
     expect(text).toMatch(/useQueryOptions/)
     expect(text).toMatch(/queryOptions\.path\(null\)/)
@@ -1325,7 +1324,7 @@ describe("workspace runtime route audit", () => {
     const file = await Bun.file(path.join(root, "context/file.tsx")).text()
     const viewCache = await Bun.file(path.join(root, "context/file/view-cache.ts")).text()
     const treeStore = await Bun.file(path.join(root, "context/file/tree-store.ts")).text()
-    const fileRequestCache = await Bun.file(path.join(root, "utils/file-request-cache.ts")).text()
+    const fileRequestCache = await Bun.file(path.join(root, "shared/query/file-request-cache.ts")).text()
 
     expect(await Bun.file(path.join(root, "overrides/context/local.tsx")).exists()).toBe(false)
     expect(local).toMatch(/agentListQuery/)
@@ -1782,7 +1781,7 @@ describe("workspace runtime route audit", () => {
   })
 
   test("generic auth fetch does not own workspace session transport routing", async () => {
-    const api = await Bun.file(path.join(root, "utils/api.ts")).text()
+    const api = await Bun.file(path.join(root, "shared/data/api.ts")).text()
     const globalSdk = await Bun.file(path.join(root, "context/global-sdk.tsx")).text()
 
     expect(api).not.toMatch(/workspaceRuntimeSessionFetch/)
@@ -3130,7 +3129,7 @@ describe("workspace runtime route audit", () => {
   test("upstream permission auto-respond checks session lineage from directory cache", async () => {
     const text = await Bun.file(path.join(root, "context/permission.tsx")).text()
     const autoResponseCache = await Bun.file(path.join(root, "context/permission-auto-response-cache.ts")).text()
-    const configHelper = await Bun.file(path.join(root, "utils/directory-config-cache.ts")).text()
+    const configHelper = await Bun.file(path.join(root, "shared/query/directory-config-cache.ts")).text()
 
     expect(configHelper).toMatch(/queryKeys\.directory\.config\(baseUrl, directory\)/)
     // as-any: regex asserts upstream text still contains this compatibility cast.

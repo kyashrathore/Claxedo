@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/solid-query"
 import { useShellQueryOptions as useQueryOptions } from "@/shell/data/query-options"
-import { authFetch, getClaxedoServerUrl } from "../../utils/api"
+import { authFetch, getClaxedoServerUrl } from "@/shared/data/api"
 import { createHarnessConfigRuntime } from "./harness-config-runtime"
 import { createPreparedRuntimeSessionStore } from "./harness-prepared-runtime-session"
 import { createHarnessRuntimeSessionActions } from "./harness-runtime-session-actions"

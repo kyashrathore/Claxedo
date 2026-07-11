@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test"
-import type { PageStatus } from "../../../utils/pages-api"
+import type { PageStatus } from "@/shared/data/pages-api"
 import {
   STATUS_PRESET_COLORS,
   addStatusItem,

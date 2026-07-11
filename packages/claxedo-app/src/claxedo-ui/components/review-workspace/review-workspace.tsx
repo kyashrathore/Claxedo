@@ -42,7 +42,7 @@ import { ReviewTab } from "./review-tab"
 import { isMarkdownPath, TabFile } from "../tab-file"
 import { retainMountedTabsPolicy } from "../retain-mounted-tabs-policy"
 import { useClaxedoState } from "../../state"
-import { pagesApi } from "../../../utils/pages-api"
+import { pagesApi } from "@/shared/data/pages-api"
 import {
   BROWSER_TAB_ID,
   CONTEXT_TAB_ID,

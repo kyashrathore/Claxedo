@@ -2,7 +2,7 @@
 // builders, split out of route-bridge.tsx so they are unit-testable without
 // mounting the reactive route bridge.
 
-import { authFetch, getClaxedoServerUrl, normalizeUrl } from "../../utils/api"
+import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/shared/data/api"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "../../agent-runtime/signed-workspace"
 import { routeSessionHarness } from "./route-session-harness"
 

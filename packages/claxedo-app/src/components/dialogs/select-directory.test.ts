@@ -4,7 +4,7 @@ import {
   claxedoBootstrapUrl,
   workspaceRuntimeFilePath,
   workspaceRuntimeFindFilePath,
-} from "../../utils/dialog-select-directory-routes"
+} from "@/agent-runtime/dialog-select-directory-routes"
 
 describe("dialog select directory route helpers", () => {
   test("builds bootstrap and workspace runtime paths locally", () => {

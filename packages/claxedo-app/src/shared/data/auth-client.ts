@@ -1,5 +1,5 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
-import { isProjectionCacheKey } from "../shell/durability/projections";
+import { isProjectionCacheKey } from "@/shell/durability/projections";
 
 /**
  * Clerk client instance for Claxedo cloud mode.

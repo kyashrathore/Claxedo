@@ -1,5 +1,5 @@
 import { createEffect, createSignal, Match, on, Switch } from "solid-js"
-import { pagesApi, type Page } from "../../../utils/pages-api"
+import { pagesApi, type Page } from "@/shared/data/pages-api"
 import PageEditor, { loadTiptap, type PageEditorProps } from "./page-editor"
 
 export type TabPageProps = {

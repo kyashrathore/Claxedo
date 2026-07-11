@@ -1,6 +1,6 @@
-import { queryClient } from "../shared/query/query-client"
-import { workspaceIdFromRef } from "../shell/identity/legacy-resolver"
-import { same } from "./same"
+import { queryClient } from "@/shared/query/query-client"
+import { workspaceIdFromRef } from "@/shell/identity/legacy-resolver"
+import { same } from "@/utils/same"
 
 const normalize = (directory: string) => directory.replace(/[\\/]+$/, "")
 

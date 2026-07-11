@@ -12,7 +12,7 @@ import {
   openWorkspaceConnection,
   setWorkspaceConnectionObserver,
   type WorkspaceConnectionInfo,
-} from "../../utils/workspace-relay-connection"
+} from "@/agent-runtime/workspace-relay-connection"
 import {
   placementFromWorkspaceConnection,
   type Placement,

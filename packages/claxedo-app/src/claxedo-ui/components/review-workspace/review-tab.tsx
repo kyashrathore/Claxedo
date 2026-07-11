@@ -34,7 +34,7 @@ import { createPanePreferences, reviewModePreferenceScope } from "../../../pane/
 import { queryClient } from "../../../shared/query/query-client"
 import { workspaceVcsQuery } from "../../../shared/query/runtime"
 import { resolveWorkspaceRuntime } from "../../../cloud/workspace-runtime-store"
-import { getClaxedoServerUrl } from "../../../utils/api"
+import { getClaxedoServerUrl } from "@/shared/data/api"
 import { createWorkspaceDiffClient } from "../../utils/workspace-diff-client"
 import { type ReviewMode } from "../../workspace-panel/review-intent"
 import { ReviewToolbar, type VcsRefs } from "./review-toolbar"

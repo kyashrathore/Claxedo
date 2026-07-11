@@ -65,7 +65,7 @@ vi.mock("../terminal/pane-terminal-recovery", () => ({
   trackRecovery: vi.fn(),
 }))
 
-vi.mock("../../utils/api", () => ({
+vi.mock("@/shared/data/api", () => ({
   getClaxedoServerUrl: () => "http://localhost:3001",
   normalizeUrl: (value: string) => value.replace(/\/+$/, ""),
 }))

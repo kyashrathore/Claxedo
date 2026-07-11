@@ -8,7 +8,7 @@ import { Project } from "@opencode-ai/sdk/v2"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { same } from "@/utils/same"
 import { createScrollPersistence, type SessionScroll } from "@/context/layout-scroll"
-import { validProjectRef, validWorktree } from "@/utils/worktree"
+import { validProjectRef, validWorktree } from "@/shared/data/worktree"
 import {
   planProjectColorAssignment,
   projectCatalog,

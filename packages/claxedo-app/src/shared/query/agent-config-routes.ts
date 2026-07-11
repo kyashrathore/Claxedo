@@ -1,4 +1,4 @@
-import { authFetch, normalizeUrl } from "../../utils/api"
+import { authFetch, normalizeUrl } from "@/shared/data/api"
 import { centralTransportForServer, unsignedLocalFetch } from "@/shell/data/transport/transport"
 import { createTransport } from "../../shell/data/transport/transport"
 import type { WorkspaceRuntimeSnapshot } from "./runtime"

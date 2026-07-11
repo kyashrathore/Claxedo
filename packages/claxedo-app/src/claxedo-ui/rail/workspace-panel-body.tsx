@@ -19,7 +19,7 @@ import { WorkspaceFilesNavigator } from "../workspace-panel/workspace-files-navi
 import { WorkspaceProcessesNavigator } from "../workspace-panel/workspace-processes-navigator"
 import type { WorkspacePanelMode, WorkspacePanelState } from "../workspace-panel/workspace-panel-state"
 import { loadTerminalSessionPreview } from "../utils/terminal-session-preview"
-import { getClaxedoServerUrl } from "../../utils/api"
+import { getClaxedoServerUrl } from "@/shared/data/api"
 import { reviewRegionPolicy } from "../../shell/review/review-region-policy"
 import { isWorkspaceReady, workspaceOffline } from "../../shell/workspace/workspace-connection"
 import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-workspace-key"

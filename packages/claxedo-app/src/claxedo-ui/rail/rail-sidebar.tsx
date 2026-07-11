@@ -54,7 +54,7 @@ import { shellDataKeys } from "../../shell/data/keys"
 import {
   useSessionInventoryActions,
 } from "../../shell/data/session-inventory"
-import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareUrl } from "../../utils/share-workspace"
+import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareUrl } from "@/shared/data/share-workspace"
 import { Can, can } from "../../shell/auth/role"
 import { workspacePlacement } from "../../shell/workspace/workspace-connection"
 import { getSessionPrefetch, runSessionPrefetch, sameWorkspaceSessionPrefetchIds, SESSION_PREFETCH_TTL, setSessionPrefetch } from "../../shell/data/session-prefetch"

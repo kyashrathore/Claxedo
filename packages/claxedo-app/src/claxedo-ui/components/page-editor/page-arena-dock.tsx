@@ -1,14 +1,15 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import {
-  pagesApi,
+  arenaApi,
   type ArenaAgentConfig,
   type ArenaState,
   type ArenaControlRequest,
   type ArenaMessage,
   type ArenaWaveState,
-} from "../../../utils/pages-api"
-import { authFetch } from "../../../utils/api"
+} from "@/shared/data/arena-api"
+import { pagesApi } from "@/shared/data/pages-api"
+import { authFetch } from "@/shared/data/api"
 import { createArenaSseParser } from "./arena-sse"
 
 type PageArenaDockProps = {
@@ -111,7 +112,7 @@ export function PageArenaDock(props: PageArenaDockProps) {
   const refresh = async (showLoading = true) => {
     if (showLoading) setLoading(true)
     try {
-      const next = await pagesApi.arenaState(props.pageId)
+      const next = await arenaApi.state(props.pageId)
       applyState(next)
       setError("")
     } catch (err) {
@@ -148,7 +149,7 @@ export function PageArenaDock(props: PageArenaDockProps) {
     const abort = new AbortController()
     streamAbort = abort
     void (async () => {
-      const res = await authFetch(pagesApi.arenaEventsUrl(props.pageId, props.directory), {
+      const res = await authFetch(arenaApi.eventsUrl(props.pageId, props.directory), {
         headers: { Accept: "text/event-stream" },
         signal: abort.signal,
       })
@@ -200,7 +201,7 @@ export function PageArenaDock(props: PageArenaDockProps) {
     setStarting(true)
     setError("")
     try {
-      const next = await pagesApi.arenaStart(props.pageId, {
+      const next = await arenaApi.start(props.pageId, {
         directory: props.directory,
         parent_session_id: props.parentSessionId,
         config: {
@@ -223,7 +224,7 @@ export function PageArenaDock(props: PageArenaDockProps) {
     setError("")
     sendAbort?.abort()
     try {
-      const res = await pagesApi.arenaControl(props.pageId, { action: "stop" })
+      const res = await arenaApi.control(props.pageId, { action: "stop" })
       applyState(res.state)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -246,7 +247,7 @@ export function PageArenaDock(props: PageArenaDockProps) {
         .then((page) => (page.content || "").trim())
         .then((value) => (value.length <= pageContextMax ? value : `${value.slice(0, pageContextMax - 1)}…`))
         .catch(() => "")
-      const res = await pagesApi.arenaMessage(
+      const res = await arenaApi.message(
         props.pageId,
         {
           text,
@@ -275,7 +276,7 @@ export function PageArenaDock(props: PageArenaDockProps) {
     }
     setError("")
     try {
-      const res = await pagesApi.arenaControl(props.pageId, { action })
+      const res = await arenaApi.control(props.pageId, { action })
       applyState(res.state)
       if (action === "retry") {
         const first = res.state.waves[0]?.id

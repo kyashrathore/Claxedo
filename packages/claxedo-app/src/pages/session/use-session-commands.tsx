@@ -18,7 +18,7 @@ import { DialogSelectMcp } from "@/components/dialogs/select-mcp"
 import { DialogFork } from "@/components/dialogs/fork"
 import { showToast } from "@opencode-ai/ui/toast"
 import { findLast } from "@/utils/array"
-import { extractPromptFromParts } from "@/utils/prompt"
+import { extractPromptFromParts } from "@/shared/data/prompt"
 import { UserMessage } from "@opencode-ai/sdk/v2"
 import type { Config, SessionStatus } from "@opencode-ai/sdk/v2/client"
 const canAddSelectionContext = (input: {

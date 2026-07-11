@@ -22,7 +22,7 @@ mock.module("@/context/sdk", () => ({
   useSDK: () => { throw new Error("useSDK called outside test") },
 }))
 
-mock.module("@/utils/api", () => ({
+mock.module("@/shared/data/api", () => ({
   authFetch: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
   getClaxedoServerUrl: () => "http://127.0.0.1:3001",
   getDefaultBaseUrl: () => "http://127.0.0.1:3001",

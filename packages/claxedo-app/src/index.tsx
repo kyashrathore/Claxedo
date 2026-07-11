@@ -7,7 +7,7 @@
 import { setExtensions } from "./extensions"
 import { appExtensions } from "./extensions/app"
 import { serverExtensions } from "./extensions/server"
-import { initializeClerk } from "./utils/auth-client"
+import { initializeClerk } from "@/shared/data/auth-client"
 
 /**
  * Configuration for initializing Claxedo cloud extensions.
@@ -98,7 +98,7 @@ export function getDefaultConfig(): ClaxedoConfig {
 }
 
 // Re-export utilities and types for direct use
-export { clerk as authClient, waitForClerk, initializeClerk, getAuthToken } from "./utils/auth-client"
+export { clerk as authClient, waitForClerk, initializeClerk, getAuthToken } from "@/shared/data/auth-client"
 export { useAuthSession } from "./shell/auth/auth-session"
 export type { AuthSession, AuthSessionStatus } from "./shell/auth/auth-session"
 export { PrincipalProvider } from "./shell/auth/principal-provider"

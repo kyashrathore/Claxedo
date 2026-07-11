@@ -7,7 +7,7 @@ let failText = "Request failed"
 let okContentType = "application/json"
 let okText = "{}"
 
-mock.module("./api", () => ({
+mock.module("@/shared/data/api", () => ({
   authFetch: async (url: string, init?: RequestInit) => {
     calls.push({ url, init })
     if (shouldFail) {
@@ -197,54 +197,6 @@ describe("pagesApi", () => {
     expect(calls[0].init?.body).toBe(JSON.stringify({ message: "docs: update" }))
   })
 
-  test("arenaStart(id, input) calls POST /:id/arena/start", async () => {
-    const input = {
-      directory: "/repo",
-      parent_session_id: "ses-parent",
-      config: {
-        max_rounds: 2,
-        agents: [{ name: "builder", role: "implementer", duty: "build", model: "opencode/big-pickle" }],
-      },
-    }
-    await pagesApi.arenaStart("p1", input)
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/pages/p1/arena/start")
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify(input))
-  })
-
-  test("arenaState(id) calls GET /:id/arena/state", async () => {
-    await pagesApi.arenaState("p1")
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/pages/p1/arena/state")
-    expect(calls[0].init?.method).toBeUndefined()
-  })
-
-  test("arenaMessage(id, input) calls POST /:id/arena/message", async () => {
-    const input = { text: "hello", targets: ["builder"] }
-    await pagesApi.arenaMessage("p1", input)
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/pages/p1/arena/message")
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify(input))
-  })
-
-  test("arenaControl(id, input) calls POST /:id/arena/control", async () => {
-    const input = { action: "pause" as const }
-    await pagesApi.arenaControl("p1", input)
-    expect(calls).toHaveLength(1)
-    expect(calls[0].url).toBe("http://test.local/pages/p1/arena/control")
-    expect(calls[0].init?.method).toBe("POST")
-    expect(calls[0].init?.body).toBe(JSON.stringify(input))
-  })
-
-  test("arenaEventsUrl(id, directory?) builds expected SSE URL", () => {
-    expect(pagesApi.arenaEventsUrl("p1")).toBe("http://test.local/pages/p1/arena/events")
-    expect(pagesApi.arenaEventsUrl("p1", "/tmp/repo a")).toBe(
-      "http://test.local/pages/p1/arena/events?directory=%2Ftmp%2Frepo%20a",
-    )
-  })
-
   test("all methods include Content-Type: application/json header", async () => {
     await pagesApi.list()
     await pagesApi.get("x")
@@ -252,12 +204,8 @@ describe("pagesApi", () => {
     await pagesApi.update("x", { title: "t" })
     await pagesApi.delete("x")
     await pagesApi.commitToGit("x")
-    await pagesApi.arenaStart("x", { config: { agents: [{ name: "a", role: "r", duty: "d", model: "p/m" }] } })
-    await pagesApi.arenaState("x")
-    await pagesApi.arenaMessage("x", { text: "hello" })
-    await pagesApi.arenaControl("x", { action: "pause" })
 
-    expect(calls).toHaveLength(10)
+    expect(calls).toHaveLength(6)
     for (const call of calls) {
       const headers = new Headers(call.init?.headers)
       expect(headers).toBeDefined()

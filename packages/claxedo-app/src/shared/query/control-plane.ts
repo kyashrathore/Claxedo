@@ -1,7 +1,8 @@
 import type { Project, ProviderAuthResponse, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { createHttpShellBackend } from "../data/http-backend"
 import { queryKeys } from "./keys"
-import { cmp, normalizeProviderList } from "./utils"
+import { cmp } from "./sort"
+import { normalizeProviderList } from "./provider-list"
 
 type ProjectClient = {
   project: {

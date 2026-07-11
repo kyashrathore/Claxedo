@@ -1,4 +1,4 @@
-import { getClaxedoServerUrl, normalizeUrl } from "./api"
+import { getClaxedoServerUrl, normalizeUrl } from "@/shared/data/api"
 
 export async function claxedoCredentialRequest(input?: { serverUrl?: string; providerId?: string }, init?: RequestInit) {
   const headers = new Headers(init?.headers)

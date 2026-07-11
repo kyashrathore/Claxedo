@@ -4,7 +4,7 @@ import { checksum } from "@/utils/encode"
 import { scopeUrl } from "@/utils/url"
 import { createSignal, type Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
-import { isDemoMode } from "./api"
+import { isDemoMode } from "@/shared/data/api"
 
 type InitType = Promise<string> | string | null
 type PersistedWithReady<T> = [Store<T>, SetStoreFunction<T>, InitType, Accessor<boolean>]

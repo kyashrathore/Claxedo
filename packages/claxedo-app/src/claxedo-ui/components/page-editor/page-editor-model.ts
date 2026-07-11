@@ -5,7 +5,8 @@
  * no DOM. Extracted from page-editor.tsx (Plan 005); behavior-preserving.
  */
 
-import type { Page, PageQuery, PageStatus, ArenaWaveState } from "../../../utils/pages-api"
+import type { Page, PageQuery, PageStatus } from "@/shared/data/pages-api"
+import type { ArenaWaveState } from "@/shared/data/arena-api"
 import type { PageAiAction, AiPanelPos, AiSelection } from "./page-editor-utils"
 
 export type TocMark = { order: number; pos: number; title: string; level: number }

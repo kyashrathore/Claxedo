@@ -8,8 +8,8 @@ import type {
   AgentPartInput,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
-import { getAuthToken } from "../utils/auth-client"
-import { authFetch, getDefaultBaseUrl, normalizeUrl } from "../utils/api"
+import { getAuthToken } from "@/shared/data/auth-client"
+import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/shared/data/api"
 import type { SessionTransportCapabilities } from "../shared/data/types"
 import type { SessionRef } from "../shell/identity/session-ref"
 import { usesScopedSessionTransport, workspaceIdFromRef } from "../shell/identity/legacy-resolver"
@@ -20,7 +20,7 @@ import {
   controlSessionListUrl,
   controlSessionUrl,
   workspaceResolveUrl,
-} from "../utils/workspace-control-routes"
+} from "@/agent-runtime/workspace-control-routes"
 import { createTransport } from "../shell/data/transport/transport"
 import { centralTransportForServer } from "@/shell/data/transport/transport"
 import { workspaceKind } from "./workspace-kind"

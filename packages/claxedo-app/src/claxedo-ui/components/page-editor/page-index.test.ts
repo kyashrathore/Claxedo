@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal, createMemo } from "solid-js"
-import type { Page, PageStatus } from "../../../utils/pages-api"
+import type { Page, PageStatus } from "@/shared/data/pages-api"
 import {
   allowedPageStatusTransitions,
   groupPagesByStatus,

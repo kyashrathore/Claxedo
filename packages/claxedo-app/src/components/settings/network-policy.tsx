@@ -13,7 +13,7 @@ import { usePlatform } from "@opencode-ai/claxedo-app"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { can } from "../../shell/auth/role"
 import { placementFromWorkspaceConnection } from "../../shell/auth/placement"
-import { openWorkspaceConnection } from "../../utils/workspace-relay-connection"
+import { openWorkspaceConnection } from "@/agent-runtime/workspace-relay-connection"
 import {
   networkPolicyCreateBody,
   networkPolicyGroupsUrl,

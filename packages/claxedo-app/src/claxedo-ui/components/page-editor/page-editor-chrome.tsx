@@ -9,7 +9,7 @@
 
 import { Show, For } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
-import type { PageStatus } from "../../../utils/pages-api"
+import type { PageStatus } from "@/shared/data/pages-api"
 
 export type PageEditorChromeProps = {
   onBackToIndex?: () => void

@@ -6,7 +6,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useSDK } from "@/context/sdk"
 import { requestMarketplaceConfirm } from "./confirm-dialog"
 import { mcpExtensionUrl } from "../components/dialogs/select-mcp-logic"
-import { getClaxedoServerUrl } from "../utils/api"
+import { getClaxedoServerUrl } from "@/shared/data/api"
 import { centralTransportForServer, unsignedLocalFetch } from "@/shell/data/transport/transport"
 import { usePlatform } from "@/context/platform"
 import {

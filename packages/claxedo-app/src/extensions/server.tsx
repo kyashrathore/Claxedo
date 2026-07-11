@@ -7,8 +7,8 @@
 
 import type { ServerExtensions } from "./types"
 import type { ClaxedoConfig } from "../index"
-import { resolveSessionUrl } from "../utils/session-url"
-import { normalizeUrl } from "../utils/api"
+import { resolveSessionUrl } from "@/shared/data/session-url"
+import { normalizeUrl } from "@/shared/data/api"
 
 /**
  * Create server extensions for Claxedo cloud mode.

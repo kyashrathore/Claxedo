@@ -3,7 +3,7 @@ export {
   workspaceDefaultProviderUrl,
   workspaceProviderAuthUrl,
   workspaceProvidersUrl,
-} from "../../utils/workspace-control-routes"
+} from "@/agent-runtime/workspace-control-routes"
 
 export function shouldUseSandboxDriverMutations(input: { baseUrl?: string }) {
   if (!input.baseUrl) return true

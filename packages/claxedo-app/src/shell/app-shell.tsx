@@ -17,7 +17,7 @@ import { Toast } from "@opencode-ai/ui/toast"
 import { AppShellLayout } from "./app-shell-layout"
 import { ClaxedoStateProvider } from "../claxedo-ui/state"
 
-import { isDemoMode } from "../utils/api"
+import { isDemoMode } from "@/shared/data/api"
 import { lazy } from "solid-js"
 import { PromptHarnessControllersProvider } from "../components/prompt-input/harness-controller"
 import { WorkspaceScopeHost } from "./workspace/workspace-scope"

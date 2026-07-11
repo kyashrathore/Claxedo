@@ -8,8 +8,8 @@ import {
   unsignedLocalFetch,
   type WorkspaceRuntimeRequestOptions,
   type WorkspaceRuntimeSnapshotLike,
-} from "../../../utils/workspace-runtime-request"
-import { authFetch, getClaxedoServerUrl, normalizeUrl } from "../../../utils/api"
+} from "@/agent-runtime/workspace-runtime-request"
+import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/shared/data/api"
 
 export {
   centralTransportForServer,

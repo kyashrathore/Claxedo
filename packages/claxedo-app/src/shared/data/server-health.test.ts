@@ -100,7 +100,7 @@ describe("checkServerHealth", () => {
 describe("source ownership", () => {
   test("keeps server health cache state in the query client", async () => {
     const source = await Bun.file(new URL("./server-health.ts", import.meta.url)).text()
-    const dialogSource = await Bun.file(new URL("../components/dialogs/select-server.tsx", import.meta.url)).text()
+    const dialogSource = await Bun.file(new URL("../../components/dialogs/select-server.tsx", import.meta.url)).text()
 
     expect(source).not.toContain("healthCache = new Map")
     expect(source).not.toContain("const healthCache")

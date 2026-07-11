@@ -6,8 +6,8 @@ import { sessionWorkspaceRuntimeRef } from "../../shell/workspace/session-worksp
 import type { SessionRef } from "../../shell/identity/session-ref"
 import { queryClient } from "../../shared/query/query-client"
 import { createAgentRuntimeClient } from "../../agent-runtime/agent-runtime-client"
-import { resolveSessionUrl } from "../../utils/session-url"
-import { workspaceResolveUrl } from "../../utils/workspace-control-routes"
+import { resolveSessionUrl } from "@/shared/data/session-url"
+import { workspaceResolveUrl } from "@/agent-runtime/workspace-control-routes"
 import {
   centralTransportForServer,
   submitTransportForPlacement,

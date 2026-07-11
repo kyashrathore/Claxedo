@@ -24,7 +24,7 @@ import { createProcessClient } from "@/process/client"
 import type { Process } from "@/process/process"
 import { capture as phCapture } from "../../utils/analytics"
 import { resolveWorkspaceRuntime } from "../../cloud/workspace-runtime-store"
-import { getClaxedoServerUrl } from "../../utils/api"
+import { getClaxedoServerUrl } from "@/shared/data/api"
 
 type ProcessConfig = Process.ProcessConfig
 

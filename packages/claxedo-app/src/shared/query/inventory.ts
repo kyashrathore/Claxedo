@@ -1,7 +1,7 @@
 import type { Project } from "@opencode-ai/sdk/v2/client"
 import type { GlobalSessionItem } from "./types"
 import { normalizeSessionTurnOutcome, type ClaxedoSession } from "../data/session-types"
-import { cmp } from "./utils"
+import { cmp } from "./sort"
 
 function rec(input: unknown) {
   return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined

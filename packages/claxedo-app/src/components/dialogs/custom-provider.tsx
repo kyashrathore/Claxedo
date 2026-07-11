@@ -17,7 +17,7 @@ import { useProviders } from "@/context/use-providers"
 import { useShellQueryOptions as useQueryOptions } from "@/shell/data/query-options"
 import { type FormState, headerRow, modelRow, validateCustomProvider } from "./custom-provider-logic"
 import { DialogSelectProvider } from "@/components/dialogs/select-provider"
-import { claxedoCredentialRequest } from "../../utils/credential-request"
+import { claxedoCredentialRequest } from "@/shared/data/credential-request"
 import { queryClient } from "../../shared/query/query-client"
 
 type Props = {

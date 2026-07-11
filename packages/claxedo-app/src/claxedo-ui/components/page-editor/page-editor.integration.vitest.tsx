@@ -122,7 +122,7 @@ vi.mock("./slash-commands", () => ({
   SlashCommands: {},
 }))
 
-vi.mock("../../../utils/pages-api", () => ({
+vi.mock("@/shared/data/pages-api", () => ({
   pagesApi: h.api,
 }))
 

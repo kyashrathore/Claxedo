@@ -16,12 +16,12 @@
   "shell/chat/session-conversation-owner.test.ts",
   "shell/data/directory-session-cache.test.ts",
   "shell/data/inventory-source.test.ts",
-  "utils/server-health.test.ts",
-  "utils/session-url.test.ts",
-  "utils/share-workspace.test.ts",
-  "utils/workspace-control-routes.test.ts",
-  "utils/workspace-relay-connection.test.ts",
-  "utils/workspace-runtime-request.test.ts",
+  "shared/data/server-health.test.ts",
+  "shared/data/session-url.test.ts",
+  "shared/data/share-workspace.test.ts",
+  "agent-runtime/workspace-control-routes.test.ts",
+  "agent-runtime/workspace-relay-connection.test.ts",
+  "agent-runtime/workspace-runtime-request.test.ts",
   "utils/workspace-runtime-route-audit.test.ts",
-  "utils/worktree.test.ts"
+  "shared/data/worktree.test.ts"
 ]

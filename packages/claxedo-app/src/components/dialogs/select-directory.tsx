@@ -11,12 +11,12 @@ import { useShellQueryOptions as useQueryOptions } from "@/shell/data/query-opti
 import { useLayout } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
-import { cachedDirectoryChildrenRequest } from "@/utils/directory-search-cache"
+import { cachedDirectoryChildrenRequest } from "@/shared/query/directory-search-cache"
 import {
   claxedoBootstrapUrl,
   workspaceRuntimeFilePath,
   workspaceRuntimeFindFilePath,
-} from "../../utils/dialog-select-directory-routes"
+} from "@/agent-runtime/dialog-select-directory-routes"
 
 interface DialogSelectDirectoryProps {
   title?: string

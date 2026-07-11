@@ -1,5 +1,5 @@
-import { authFetch, getClaxedoServerUrl, normalizeUrl } from "./api"
-import { controlSessionUrl } from "./workspace-control-routes"
+import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/shared/data/api"
+import { controlSessionUrl } from "@/agent-runtime/workspace-control-routes"
 
 type ResolveSessionUrlOptions = {
   cloudAutoSwitch?: boolean

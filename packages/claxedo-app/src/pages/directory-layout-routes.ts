@@ -1,4 +1,4 @@
-import { workspaceResolveUrl as controlWorkspaceResolveUrl } from "@/utils/workspace-control-routes"
+import { workspaceResolveUrl as controlWorkspaceResolveUrl } from "@/agent-runtime/workspace-control-routes"
 export { isLocalPersonalScope } from "@/shell/data/transport/transport"
 
 export function workspaceResolveUrl(input: { serverUrl?: string; directory?: string; workspaceId?: string }) {

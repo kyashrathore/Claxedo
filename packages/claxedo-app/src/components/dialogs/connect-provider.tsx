@@ -18,7 +18,7 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useShellQueryOptions as useQueryOptions } from "@/shell/data/query-options"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/context/use-providers"
-import { claxedoCredentialRequest } from "../../utils/credential-request"
+import { claxedoCredentialRequest } from "@/shared/data/credential-request"
 import { queryClient } from "../../shared/query/query-client"
 
 export function DialogConnectProvider(props: { provider: string }) {

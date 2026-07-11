@@ -75,9 +75,9 @@
     "shell/data/global-sync-sdk-client-cache.ts",
     "shell/data/session-prefetch.ts",
     "session/store/local-selection-handoff.ts",
-    "utils/server-health.ts",
-    "utils/workspace-relay-connection.ts",
-    "utils/workspace-runtime-request.ts",
-    "utils/worktree.ts"
+    "shared/data/server-health.ts",
+    "agent-runtime/workspace-relay-connection.ts",
+    "agent-runtime/workspace-runtime-request.ts",
+    "shared/data/worktree.ts"
   ]
 }

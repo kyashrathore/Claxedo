@@ -12,7 +12,7 @@ import {
 } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { type ServerConnection, serverName } from "@/context/server"
-import type { ServerHealth } from "@/utils/server-health"
+import type { ServerHealth } from "@/shared/data/server-health"
 
 interface ServerRowProps extends ParentProps {
   conn: ServerConnection.Any

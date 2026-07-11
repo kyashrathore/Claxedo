@@ -69,7 +69,7 @@ import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { useSDK } from "@/context/sdk"
 import { messageAgentColor } from "@/utils/agent"
-import { sessionTitle } from "@/utils/session-title"
+import { sessionTitle } from "@/shared/data/session-title"
 import { makeTimer } from "@solid-primitives/timer"
 import {
   assistantMessageSettled,

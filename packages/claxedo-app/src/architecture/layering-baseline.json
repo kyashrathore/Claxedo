@@ -15,12 +15,12 @@
   "components<->shell",
   "components<->terminal",
   "context<->session",
+  "context<->shared",
   "context<->shell",
   "context<->terminal",
   "context<->utils",
   "session<->shell",
   "shared<->shell",
   "shared<->utils",
-  "shell<->terminal",
-  "shell<->utils"
+  "shell<->terminal"
 ]

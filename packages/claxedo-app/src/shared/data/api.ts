@@ -1,8 +1,8 @@
 /**
  * Shared API helpers for web and desktop.
  */
-import { getAuthToken } from "./auth-client";
-import { throttledFetch } from "./fetch-throttle";
+import { getAuthToken } from "@/shared/data/auth-client";
+import { throttledFetch } from "@/utils/fetch-throttle";
 
 const cfg = {
   base: undefined as string | undefined,
@@ -163,7 +163,7 @@ function apiFetchStack() {
     ?.split("\n")
     .slice(2, 8)
     .map((line) => line.trim())
-    .filter((line) => line && !line.includes("/src/utils/api.ts"))
+    .filter((line) => line && !line.includes("/src/shared/data/api.ts"))
 }
 
 function beginApiFetchDebug(input: string | URL | Request) {

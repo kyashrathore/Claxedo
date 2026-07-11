@@ -13,7 +13,7 @@ import {
   type ParentProps,
 } from "solid-js"
 import { signedWorkspaceFromProjects } from "../agent-runtime/signed-workspace"
-import { authFetch, getClaxedoServerUrl } from "../utils/api"
+import { authFetch, getClaxedoServerUrl } from "@/shared/data/api"
 import type { SessionLifecycleEvent } from "../shared/data/session-lifecycle"
 import { shellRouteWorkspaceKeyFromPathname } from "../shell/identity/route"
 import { sessionWorkspaceRuntimeRef } from "../shell/workspace/session-workspace-key"

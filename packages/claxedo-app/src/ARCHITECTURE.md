@@ -213,28 +213,62 @@ component that composes this directory's modules — it is NOT part of
 `terminal/` itself, it lives in `components/`.
 
 ### `shared/` (`data/`, `query/`)
-Cross-cutting types and query-key/utility helpers with no SolidJS
-dependency: `shared/data/types.ts` (harness/transport capability types, see
-VOCABULARY.md), `shared/query/runtime.ts` (`WorkspaceRuntimeSnapshot`, see
-VOCABULARY.md sense 2 of "workspace"), `shared/query/keys.ts`. **Add here:**
-a pure type or query-key helper reused by 2+ directories with no framework
-dependency.
+Cross-cutting wire shapes, backend transport clients, and query helpers with no
+SolidJS dependency. **Charter (post-WP-D3):**
+- **`shared/data/` = wire shapes + transport.** The backend/service HTTP clients
+  and the domain wire types they carry: the base HTTP client (`api.ts`),
+  backend/service clients (`auth-client.ts`, `credential-request.ts`,
+  `server.ts`, `server-health.ts`, `share-workspace.ts`), session/workspace
+  domain logic (`session-url.ts`, `comment-note.ts`, `session-title.ts`,
+  `worktree.ts`, `prompt.ts`), product clients (`pages-api.ts` Pages CRUD,
+  `arena-api.ts` Arena swarm — split out of the former combined `pages-api.ts`),
+  plus the capability types in `types.ts` (see VOCABULARY.md). These are the
+  files WP-D3 pulled out of `utils/`. One documented exception to the
+  "no-framework" rule: `server-health.ts` exposes a thin `useCheckServerHealth`
+  Solid hook, which is why the layering baseline carries `context<->shared` (see
+  `architecture/layering-baseline.json` and WP-D3 move-map §4).
+- **`shared/query/` = TanStack-Query wrappers.** Query-key registries (`keys.ts`),
+  query-client accessors, cache-accessor helpers (`directory-config-cache.ts`,
+  `directory-search-cache.ts`, `file-request-cache.ts`), the `WorkspaceRuntimeSnapshot`
+  runtime helpers, and the small sort/normalize primitives (`sort.ts` `cmp`,
+  `provider-list.ts` `normalizeProviderList`, split out of the former
+  `query/utils.ts`).
 
-### `utils/` (the largest flat directory in `src/`, plus `test-support/`)
-A multi-tier dumping ground per the audit: URL/API helpers (`api.ts`,
-`worktree.ts`), auth (`auth-client.ts`), persistence (`persist.ts`), and the
-`workspace-runtime-route-audit.test.ts` import-boundary linter that is not
-itself a unit test. The genuinely dead files earlier docs listed here
+**Add here:** a backend wire client / wire type (`data/`) or a TanStack-Query
+key/cache helper (`query/`) reused by 2+ directories with no framework dependency.
+
+### `utils/` (slim dependency-free primitives, plus `test-support/`)
+WP-D3 dissolved the former multi-tier dumping ground. What remains is meant to
+be **dependency-free primitives only** — no cross-directory value imports:
+string/array/id/encode/binary helpers (`array.ts`, `base64.ts`, `binary.ts`,
+`encode.ts`, `id.ts`, `uuid.ts`, `path.ts`, `path-key.ts`, `same.ts`, `time.ts`,
+`url.ts`, `iife.ts`, `retry.ts`, `debug.ts`, `agent.ts`, `fetch-throttle.ts`,
+`scoped-cache.ts`, `server-errors.ts`, `diffs.ts`, `sound.ts`, `notification-click.ts`,
+`notification-permission.ts`, `breakpoints.ts`, `reduced-motion.ts`), plus the
+Wave-1.5 absorbees `analytics.ts`, `file-picker.ts`, `lru-map.ts` (from the former
+top-level `analytics/`, `constants/`, `vite-shims/`). The transport/backend/
+domain/product clients that used to live here moved to `shared/data`,
+`shared/query`, and `agent-runtime` in WP-D3; the dead files earlier docs listed
 (`agent-cache.ts`, `aim.ts`, `runtime-adapters.ts`, `terminal-writer.ts`,
-`local-selection-handoff.ts`, `project-meta-cache.ts`, `index.ts`) were
-deleted by WP-A1 and are gone. `utils/` also absorbed the former top-level
-`analytics/`, `constants/`, and `vite-shims/` directories in Wave 1.5
-(`analytics.ts`, `file-picker.ts`, `lru-map.ts`). Full dissolution into named
-homes is LLD WP-D3, not yet done. **Add here:** only as a last resort —
-prefer a named home (`shared/`, the relevant feature directory) over adding
-another file to `utils/`. `utils/test-support/` now exists (created per LLD
-WP-03) as the sanctioned location for cross-suite test fakes; see
-CONTRIBUTING.md.
+`local-selection-handoff.ts`, `project-meta-cache.ts`, `index.ts`) were deleted
+by WP-A1; `convex-client.ts` and `living-apps-api.ts` (prod-dead) were deleted by
+WP-D3.
+
+**Two documented residents that are NOT dependency-free** (deliberately kept per
+WP-D3 move-map §7):
+- `persist.ts` (+test) value-imports `@/context/platform`, so it sustains the
+  `context<->utils` cycle in `architecture/layering-baseline.json`. Rehoming it
+  would force a different cycle; it stays here with this note.
+- `workspace-runtime-route-audit.test.ts` — the 193KB import-boundary linter (not
+  a unit test). WP-D3 deferred its relocation to `architecture/` + scanner rewrite
+  because it carries pre-existing `@claxedo/*`→`@/*` alias drift (~16 failing
+  assertions predating WP-D3, from the WP-D2 alias consolidation) that a mechanical
+  move would newly surface in the `test:architecture` gate. Tracked as a follow-up.
+
+**Add here:** only genuinely dependency-free primitives, as a last resort — prefer
+a named home (`shared/`, `agent-runtime/`, the relevant feature directory) first.
+`utils/test-support/` is the sanctioned location for cross-suite test fakes (see
+CONTRIBUTING.md).
 
 ### `pane/` (`store/`)
 The generic (non-workbench) split-pane preferences store
@@ -256,16 +290,21 @@ Genuinely well-tested per the audit (descriptive names, real edge cases:
 caps, dedup, persistence round-trips). **Add here:** browser-tab-specific
 UI or state.
 
-### `agent-runtime/` (5 source modules + tests + `AGENTS.md`, was `runtime/`)
+### `agent-runtime/` (core runtime modules + transport trio + tests + `AGENTS.md`, was `runtime/`)
 Agent runtime client, session-routing placement table, and session
 projection: `agent-runtime-client.ts`, `placement-table.ts` (the pure,
 tested routing decision — which transport a session read/write goes to),
 `workspace-kind.ts` (the single `WorkspaceKind` union), `session-projection.ts`,
 `signed-workspace.ts` (signed-workspace request handling — "workspace" here is
-sense 2/5, control-plane/server, not a directory). Renamed from `runtime/` in
-WP-B10 to break the collision with `cloud/` (the former `cloud/runtime/`).
-**Add here:** agent-runtime request/response shaping and session-routing
-decisions that aren't harness-specific enough to live in `session-client/`.
+sense 2/5, control-plane/server, not a directory). WP-D3 moved the core
+transport/routing modules here out of `utils/`: `workspace-relay-connection.ts`,
+`workspace-runtime-request.ts`, `workspace-control-routes.ts` (the highest-fan-in
+route builders), and `dialog-select-directory-routes.ts` (sibling URL builders).
+Renamed from `runtime/` in WP-B10 to break the collision with `cloud/` (the
+former `cloud/runtime/`).
+**Add here:** agent-runtime request/response shaping, workspace-runtime route
+builders, and session-routing decisions that aren't harness-specific enough to
+live in `session-client/`.
 
 ### `cloud/` (flat)
 Cloud-hosted workspace runtime store: `cloud/workspace-runtime-store.ts`

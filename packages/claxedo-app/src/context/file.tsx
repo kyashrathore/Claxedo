@@ -8,7 +8,7 @@ import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { createPathHelpers } from "@/context/file/path"
-import { cachedFileReadRequest, clearFileRequestCache } from "@/utils/file-request-cache"
+import { cachedFileReadRequest, clearFileRequestCache } from "@/shared/query/file-request-cache"
 import {
   approxBytes,
   evictContentLru,

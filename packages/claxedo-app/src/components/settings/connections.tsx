@@ -8,7 +8,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { authFetch, getClaxedoServerUrl } from "../../utils/api"
+import { authFetch, getClaxedoServerUrl } from "@/shared/data/api"
 import { DialogConnectIntegration } from "../dialogs/connect-integration"
 import {
   createConnectionsStore,

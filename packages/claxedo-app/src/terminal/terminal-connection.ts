@@ -1,5 +1,5 @@
-import { authFetch } from "../utils/api"
-import { createWorkspaceRelayConnection, openWorkspaceConnection } from "../utils/workspace-relay-connection"
+import { authFetch } from "@/shared/data/api"
+import { createWorkspaceRelayConnection, openWorkspaceConnection } from "@/agent-runtime/workspace-relay-connection"
 
 export class WebSocketCloseError extends Error {
   public readonly code: number

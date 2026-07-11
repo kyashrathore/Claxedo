@@ -241,7 +241,7 @@ function timerDrivenDataPollMetric(): Metric {
 function isSignedInGateMetric(): Metric {
   const allowed = new Set([
     "shell/auth/auth-session.ts",
-    "utils/auth-client.ts",
+    "shared/data/auth-client.ts",
   ])
   return {
     name: "isSignedInGates",
