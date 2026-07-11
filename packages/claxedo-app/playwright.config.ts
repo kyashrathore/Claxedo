@@ -40,7 +40,24 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      // Mobile smoke specs opt into the `mobile` project below (`--project=mobile`);
+      // they must never also run at desktop viewport as part of the default/@core
+      // suite here.
+      testIgnore: ["**/mobile-*.spec.ts"],
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      // `devices["iPhone 13"]` per LLD WP-03 step 1 / appendix responsive refactor
+      // step ("Add a `devices['iPhone 13']`-style mobile project to
+      // playwright.config.ts"). Only `mobile-*.spec.ts` files run here — never
+      // selected implicitly by the default `testMatch`, only via `--project=mobile`.
+      // `devices["iPhone 13"]` defaults to WebKit (`defaultBrowserType`), but only
+      // Chromium is provisioned in this environment (and by every other project here)
+      // — override `browserName` so the mobile project gets the same viewport/touch/
+      // UA emulation on the browser this repo actually installs.
+      name: "mobile",
+      testMatch: ["**/mobile-*.spec.ts"],
+      use: { ...devices["iPhone 13"], browserName: "chromium" },
     },
   ],
 })
