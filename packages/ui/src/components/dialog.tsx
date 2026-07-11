@@ -12,6 +12,15 @@ export interface DialogProps extends ParentProps {
   classList?: ComponentProps<"div">["classList"]
   fit?: boolean
   transition?: boolean
+  /**
+   * Accessible name for the dialog when it renders no `<Kobalte.Title>` (i.e.
+   * a header-less dialog). Kobalte's `Dialog.Content` only sets
+   * `aria-labelledby` from a mounted `<Kobalte.Title>`, so a title-less dialog
+   * would otherwise expose no accessible name (axe `aria-dialog-name`). When a
+   * `title` IS provided that title already names the dialog, so this is ignored
+   * to avoid two competing name sources.
+   */
+  "aria-label"?: string
 }
 
 export function Dialog(props: DialogProps) {
@@ -26,6 +35,7 @@ export function Dialog(props: DialogProps) {
       <div data-slot="dialog-container">
         <Kobalte.Content
           data-slot="dialog-content"
+          aria-label={props.title ? undefined : props["aria-label"]}
           data-no-header={!props.title && !props.action ? "" : undefined}
           classList={{
             ...props.classList,

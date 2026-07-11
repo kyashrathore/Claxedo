@@ -1,4 +1,5 @@
 import { Show, createEffect, createMemo, createRoot, createSignal, getOwner, onCleanup, onMount, runWithOwner, untrack, type JSX } from "solid-js"
+import { BP_SM } from "@/utils/breakpoints"
 import { emitTerminalFit } from "../terminal/terminal-fit"
 import type { WorkspacePanelMode, WorkspacePanelState } from "./workspace-panel-state"
 
@@ -28,7 +29,11 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
   const [viewportWidth, setViewportWidth] = createSignal(typeof window === "undefined" ? 1024 : window.innerWidth)
   const stateOpen = () => props.state.open && !!props.state.mode
   const open = () => props.visualOpen?.() ?? stateOpen()
-  const isMobile = () => viewportWidth() < 640
+  // Open question (WP-C3 inventory §5.1 / collapse design note §5 Q1): whether
+  // this full-width/hide-resize-handle boundary stays at BP_SM (640) or migrates
+  // up to BP_MD (768) to match the workbench collapse is a product decision the
+  // leader has NOT yet made. Kept at BP_SM (the zero-behavior-change default).
+  const isMobile = () => viewportWidth() < BP_SM
   const availableWidth = () => parentWidth() || viewportWidth()
   const readablePanelLimit = () => Math.max(minWidth, availableWidth() - Math.min(minReadableContentWidth, Math.max(0, availableWidth() - minWidth)))
   const defaultWidth = () => Math.min(Math.max(minWidth, Math.floor(availableWidth() * 0.7)), readablePanelLimit())

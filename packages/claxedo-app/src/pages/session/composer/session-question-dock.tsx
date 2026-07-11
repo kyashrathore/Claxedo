@@ -1,4 +1,4 @@
-import { For, Show, createMemo, onCleanup, onMount, type Component } from "solid-js"
+import { For, Show, createMemo, createUniqueId, onCleanup, onMount, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useMutation } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
@@ -42,6 +42,7 @@ function Option(props: {
   label: string
   description?: string
   disabled: boolean
+  focused: boolean
   ref?: (el: HTMLButtonElement) => void
   onFocus?: VoidFunction
   onClick: VoidFunction
@@ -54,6 +55,10 @@ function Option(props: {
       data-picked={props.picked}
       role={props.multi ? "checkbox" : "radio"}
       aria-checked={props.picked}
+      // Roving tabindex: only the focused option is in the Tab order; arrow keys
+      // move focus within the group (see `nav`/`move`). One Tab stop for the
+      // whole radiogroup/group, matching the WAI-ARIA radio-group pattern.
+      tabindex={props.focused ? 0 : -1}
       disabled={props.disabled}
       onFocus={props.onFocus}
       onClick={props.onClick}
@@ -72,6 +77,7 @@ function Option(props: {
 export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit: () => void }> = (props) => {
   const sdk = useSDK()
   const language = useLanguage()
+  const questionTextId = createUniqueId()
 
   const questions = createMemo(() => props.request.questions)
   const total = createMemo(() => questions().length)
@@ -468,13 +474,20 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
         </>
       }
     >
-      <div data-slot="question-text" class="overflow-auto">
+      <div id={questionTextId} data-slot="question-text" class="overflow-auto">
         {question()?.question}
       </div>
       <Show when={multi()} fallback={<div data-slot="question-hint">{language.t("ui.question.singleHint")}</div>}>
         <div data-slot="question-hint">{language.t("ui.question.multiHint")}</div>
       </Show>
-      <div data-slot="question-options">
+      {/* Group the option controls and name them with the question so AT
+          announces "<question>, radio group" (single) / group (multi) instead
+          of a bare list of radios/checkboxes. */}
+      <div
+        data-slot="question-options"
+        role={multi() ? "group" : "radiogroup"}
+        aria-labelledby={questionTextId}
+      >
         <For each={options()}>
           {(opt, i) => (
             <Option
@@ -483,6 +496,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
               label={opt.label}
               description={opt.description}
               disabled={sending()}
+              focused={store.focus === i()}
               ref={(el) => (optsRef[i()] = el)}
               onFocus={() => setStore("focus", i())}
               onClick={() => selectOption(i())}
@@ -501,6 +515,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
               data-picked={on()}
               role={multi() ? "checkbox" : "radio"}
               aria-checked={on()}
+              tabindex={store.focus === options().length ? 0 : -1}
               disabled={sending()}
               onFocus={() => setStore("focus", options().length)}
               onClick={customOpen}

@@ -71,6 +71,8 @@ function TerminalSurfaceNavigationRow(props: {
         "pl-9": !!props.nested,
         "pl-3": !props.nested,
       }}
+      label={terminalSurfaceTitle(props.row.title, status())}
+      active={props.row.active}
       onActivate={activate}
       dragRow={props.row}
       prepareContentId={() => props.row.contentId}
@@ -99,24 +101,20 @@ function TerminalSurfaceNavigationRow(props: {
         {terminalSurfaceTitle(props.row.title, status())}
       </span>
       <Tooltip placement="top" value="Close terminal">
-        <span
-          role="button"
-          tabIndex={0}
+        {/* Native button (Enter/Space handled by the platform). `relative z-10`
+            keeps it above NavigationRow's absolute activate overlay so it stays
+            clickable and is a sibling of — not nested inside — that button. */}
+        <button
+          type="button"
           aria-label={`Close terminal: ${props.row.title}`}
-          class="shrink-0 text-icon-base hover:text-icon-strong-base transition-colors cursor-pointer opacity-0 group-hover/terminal:opacity-100 focus:opacity-100"
+          class="relative z-10 shrink-0 border-none bg-transparent p-0 text-icon-base hover:text-icon-strong-base transition-colors cursor-pointer opacity-0 group-hover/terminal:opacity-100 focus:opacity-100"
           onClick={(event) => {
-            event.stopPropagation()
-            props.onClose(props.row)
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" && event.key !== " ") return
-            event.preventDefault()
             event.stopPropagation()
             props.onClose(props.row)
           }}
         >
           <Icon name="close" size="small" />
-        </span>
+        </button>
       </Tooltip>
     </NavigationRow>
   )

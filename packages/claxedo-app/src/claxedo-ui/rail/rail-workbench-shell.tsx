@@ -56,7 +56,15 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
   onCleanup(() => props.onWorkspacePanelWorkbenchColumnRef(undefined))
 
   return (
-    <div class="relative flex flex-1 min-w-0 min-h-0 overflow-hidden bg-background-stronger md:rounded-tl-[12px] transition-[background-color,border-color] duration-200 ease-out">
+    // `role="main"` makes this pane column the page's single `main` landmark
+    // (axe `landmark-one-main`/`region`): the app shell renders the sidebar and
+    // this workbench as sibling <div>s with no landmark roles, so nothing was
+    // exposed as the primary content region until here. Paired with the
+    // `role="navigation"` wrapper the shell puts around the sidebar.
+    <div
+      role="main"
+      class="relative flex flex-1 min-w-0 min-h-0 overflow-hidden bg-background-stronger md:rounded-tl-[12px] transition-[background-color,border-color] duration-200 ease-out"
+    >
       <div
         ref={props.onWorkspacePanelWorkbenchColumnRef}
         data-testid="workbench-column"

@@ -449,7 +449,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           type="button"
           class="flex h-full min-w-0 flex-1 items-center px-2.5 leading-none"
           classList={{ "pr-7": tab.kind !== "review" }}
-          aria-selected={selected()}
+          aria-current={selected() ? "true" : undefined}
           onClick={() => setActiveTab(tab.id)}
           onAuxClick={(event) => {
             if (event.button !== 1 || tab.kind === "review") return

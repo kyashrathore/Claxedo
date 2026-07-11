@@ -70,6 +70,8 @@ function SessionNavigationItem(props: {
           "pl-9": !!props.row.nested,
           "pl-3": !props.row.nested,
         }}
+        label={props.row.title}
+        active={props.row.active}
         onActivate={activate}
         dragRow={props.row.source}
         prepareContentId={() => props.onPrepareDrag(props.row)}
@@ -99,7 +101,9 @@ function SessionNavigationItem(props: {
           </Show>
         </div>
 
-        <div class="shrink-0 relative flex items-center justify-end self-stretch min-w-7">
+        {/* z-10: sit above NavigationRow's absolute activate overlay so the
+            archive button stays clickable and isn't a nested interactive. */}
+        <div class="shrink-0 relative z-10 flex items-center justify-end self-stretch min-w-7">
           <span
             class="flex items-center justify-end text-[11px] tabular-nums group-hover/session:opacity-0 transition-opacity duration-100"
             classList={{

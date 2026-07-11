@@ -17,6 +17,18 @@ export interface SlashCommand {
   source?: "command" | "mcp" | "skill"
 }
 
+/**
+ * Stable id the composer's `role="combobox"` points its `aria-controls` at and
+ * the popover container carries as its `role="listbox"` id. Shared so the two
+ * halves of the combobox/listbox relationship can't drift.
+ */
+export const PROMPT_POPOVER_LISTBOX_ID = "prompt-popover-listbox"
+
+/** `aria-activedescendant` id for an @-mention option. */
+export const promptAtOptionId = (key: string) => `prompt-at-option-${key}`
+/** `aria-activedescendant` id for a slash-command option. */
+export const promptSlashOptionId = (id: string) => `prompt-slash-option-${id}`
+
 type PromptPopoverProps = {
   popover: "at" | "slash" | null
   setSlashPopoverRef: (el: HTMLDivElement) => void
@@ -40,6 +52,9 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
         ref={(el) => {
           if (props.popover === "slash") props.setSlashPopoverRef(el)
         }}
+        role="listbox"
+        id={PROMPT_POPOVER_LISTBOX_ID}
+        aria-label={props.t(props.popover === "at" ? "prompt.popover.atLabel" : "prompt.popover.slashLabel")}
         class="absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10
                  overflow-auto no-scrollbar flex flex-col p-2 rounded-[12px]
                  bg-surface-raised-stronger-non-alpha shadow-[var(--shadow-lg-border-base)]"
@@ -58,6 +73,9 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                   if (item.type === "agent") {
                     return (
                       <button
+                        role="option"
+                        id={promptAtOptionId(key)}
+                        aria-selected={props.atActive === key}
                         class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
                         classList={{ "bg-surface-raised-base-hover": props.atActive === key }}
                         onClick={() => props.onAtSelect(item)}
@@ -75,6 +93,9 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
 
                   return (
                     <button
+                      role="option"
+                      id={promptAtOptionId(key)}
+                      aria-selected={props.atActive === key}
                       class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
                       classList={{ "bg-surface-raised-base-hover": props.atActive === key }}
                       onClick={() => props.onAtSelect(item)}
@@ -102,6 +123,9 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                 {(cmd) => (
                   <button
                     data-slash-id={cmd.id}
+                    role="option"
+                    id={promptSlashOptionId(cmd.id)}
+                    aria-selected={props.slashActive === cmd.id}
                     classList={{
                       "w-full flex items-center justify-between gap-4 rounded-md px-2 py-1": true,
                       "bg-surface-raised-base-hover": props.slashActive === cmd.id,

@@ -1,9 +1,10 @@
-import { createSignal } from "solid-js"
+import { createSignal, Show } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@claxedo/context/language"
 import { useSettings } from "@/context/settings"
+import { prefersReducedMotion } from "@/utils/reduced-motion"
 
 export type Highlight = {
   title: string
@@ -20,6 +21,24 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
   const language = useLanguage()
   const settings = useSettings()
   const [index, setIndex] = createSignal(0)
+
+  const reduceMotion = prefersReducedMotion()
+  const [videoEl, setVideoEl] = createSignal<HTMLVideoElement>()
+  // Start paused when the user prefers reduced motion (autoplay is suppressed
+  // there); otherwise the muted loop autoplays.
+  const [videoPaused, setVideoPaused] = createSignal(reduceMotion)
+
+  function toggleVideo() {
+    const el = videoEl()
+    if (!el) return
+    if (el.paused) {
+      void el.play()
+      setVideoPaused(false)
+    } else {
+      el.pause()
+      setVideoPaused(true)
+    }
+  }
 
   const total = () => props.highlights.length
   const last = () => Math.max(0, total() - 1)
@@ -134,7 +153,42 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
                 class="w-full h-full object-cover"
               />
             ) : (
-              <video src={feature()!.media!.src} autoplay loop muted playsinline class="w-full h-full object-cover" />
+              <div class="relative w-full h-full">
+                <video
+                  ref={setVideoEl}
+                  src={feature()!.media!.src}
+                  autoplay={!reduceMotion}
+                  loop
+                  muted
+                  playsinline
+                  aria-label={feature()!.media!.alt ?? feature()?.title ?? language.t("dialog.releaseNotes.media.alt")}
+                  class="w-full h-full object-cover"
+                />
+                {/* WCAG 2.2.2 (Pause, Stop, Hide): the release-notes clip is an
+                    auto-playing loop, so it needs a control to stop it. */}
+                <button
+                  type="button"
+                  onClick={toggleVideo}
+                  aria-label={language.t(
+                    videoPaused() ? "dialog.releaseNotes.media.play" : "dialog.releaseNotes.media.pause",
+                  )}
+                  class="absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-md border-none bg-black/45 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
+                >
+                  <Show
+                    when={videoPaused()}
+                    fallback={
+                      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" fill="currentColor">
+                        <rect x="2" y="1.5" width="3" height="9" rx="0.75" />
+                        <rect x="7" y="1.5" width="3" height="9" rx="0.75" />
+                      </svg>
+                    }
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" fill="currentColor">
+                      <path d="M2.5 1.6c0-.5.53-.8.95-.54l7 4.4a.64.64 0 0 1 0 1.08l-7 4.4a.64.64 0 0 1-.95-.54V1.6Z" />
+                    </svg>
+                  </Show>
+                </button>
+              </div>
             )}
           </div>
         )}

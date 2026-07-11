@@ -8,7 +8,14 @@ import type { ImageAttachmentPart } from "@/context/prompt"
 import { PromptContextItems } from "@/components/prompt-input/context-items"
 import { PromptDragOverlay } from "@/components/prompt-input/drag-overlay"
 import { PromptImageAttachments } from "@/components/prompt-input/image-attachments"
-import { PromptPopover, type AtOption, type SlashCommand } from "@/components/prompt-input/slash-popover"
+import {
+  PromptPopover,
+  PROMPT_POPOVER_LISTBOX_ID,
+  promptAtOptionId,
+  promptSlashOptionId,
+  type AtOption,
+  type SlashCommand,
+} from "@/components/prompt-input/slash-popover"
 import { PromptSubmitControl } from "@/components/prompt-input/submit-control"
 import { PromptToolbarControls } from "@/components/prompt-input/toolbar-controls"
 import type { SessionStatusStage as SessionStatusStageValue } from "@claxedo/claxedo-ui/components/session-status-stage"
@@ -101,6 +108,14 @@ export const PromptInputFrame: Component<{
   t: (key: string) => string
   showDialog: (content: () => JSX.Element) => void
 }> = (props) => {
+  // `aria-activedescendant` target: the currently-highlighted option in the open
+  // popover, or undefined when nothing is active / the popover is closed.
+  const activeDescendant = () => {
+    if (props.popover === "at" && props.atActive) return promptAtOptionId(props.atActive)
+    if (props.popover === "slash" && props.slashActive) return promptSlashOptionId(props.slashActive)
+    return undefined
+  }
+
   const submitTip = () => {
     if (props.booting()) {
       return (
@@ -190,8 +205,19 @@ export const PromptInputFrame: Component<{
             data-component="prompt-input"
             ref={props.editorRef}
             onFocus={props.onEditorFocus}
-            role="textbox"
-            aria-multiline="true"
+            // WAI-ARIA "combobox with list autocomplete": while an @-mention /
+            // slash popover is open the editor is a `combobox` controlling the
+            // `role="listbox"` in `PromptPopover` (axe requires `aria-expanded`
+            // AND `aria-controls` together on `combobox`, so both are present
+            // only when open). When closed it stays a plain multi-line
+            // `textbox` — `combobox` does not allow `aria-multiline`, and a
+            // `combobox` missing `aria-controls` would trip `aria-required-attr`.
+            role={props.popover !== null ? "combobox" : "textbox"}
+            aria-multiline={props.popover === null ? "true" : undefined}
+            aria-expanded={props.popover !== null ? true : undefined}
+            aria-controls={props.popover !== null ? PROMPT_POPOVER_LISTBOX_ID : undefined}
+            aria-autocomplete={props.popover !== null ? "list" : undefined}
+            aria-activedescendant={activeDescendant()}
             aria-label={props.designPlaceholder()}
             aria-disabled={props.harnessPending()}
             contenteditable={props.harnessPending() ? "false" : "true"}

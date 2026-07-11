@@ -1,6 +1,6 @@
 // Claxedo keeps this general settings override for analytics events and hosted account controls.
 
-import { Component, createMemo, createUniqueId, onMount, Show, type JSX } from "solid-js"
+import { Component, createMemo, createSignal, createUniqueId, onMount, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Select } from "@opencode-ai/ui/select"
@@ -29,6 +29,7 @@ import { AccountSettingsSection } from "@claxedo/components/settings/account-sec
 import { Can } from "../../shell/auth/role"
 import { Link } from "@/components/link"
 import { SettingsList } from "@/components/settings/list"
+import { getScreenReaderModePreference, setScreenReaderModePreference } from "@/terminal/config"
 
 type ThemeOption = {
   id: string
@@ -158,6 +159,12 @@ export const SettingsGeneral: Component = () => {
   const sans = () => sansInput(settings.appearance.uiFont())
   const terminal = () => terminalInput(settings.appearance.terminalFont())
 
+  // Terminal screen-reader mode is a persisted preference (WP-B7) that had no
+  // Settings surface — the only way to set it was poking localStorage. This
+  // signal mirrors that preference so the toggle reflects/writes it; new
+  // terminals seed `screenReaderMode` from it in `createTerminalInstance`.
+  const [screenReaderTerminal, setScreenReaderTerminal] = createSignal(getScreenReaderModePreference())
+
   return (
     <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-raised-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
@@ -178,6 +185,7 @@ export const SettingsGeneral: Component = () => {
             >
               <Select
                 data-action="settings-language"
+                placeholder={language.t("settings.general.row.language.title")}
                 options={languageOptions()}
                 current={languageOptions().find((o) => o.value === language.locale())}
                 value={(o) => o.value}
@@ -203,12 +211,15 @@ export const SettingsGeneral: Component = () => {
             >
               <div data-action="settings-feed-reasoning-summaries">
                 <Switch
+                  hideLabel
                   checked={settings.general.showReasoningSummaries()}
                   onChange={(checked) => {
                     phCapture("setting_changed", { setting: "show_reasoning_summaries", value: checked })
                     settings.general.setShowReasoningSummaries(checked)
                   }}
-                />
+                >
+                  {language.t("settings.general.row.reasoningSummaries.title")}
+                </Switch>
               </div>
             </SettingsRow>
 
@@ -218,12 +229,15 @@ export const SettingsGeneral: Component = () => {
             >
               <div data-action="settings-feed-shell-tool-parts-expanded">
                 <Switch
+                  hideLabel
                   checked={settings.general.shellToolPartsExpanded()}
                   onChange={(checked) => {
                     phCapture("setting_changed", { setting: "shell_tool_parts_expanded", value: checked })
                     settings.general.setShellToolPartsExpanded(checked)
                   }}
-                />
+                >
+                  {language.t("settings.general.row.shellToolPartsExpanded.title")}
+                </Switch>
               </div>
             </SettingsRow>
 
@@ -233,12 +247,15 @@ export const SettingsGeneral: Component = () => {
             >
               <div data-action="settings-feed-edit-tool-parts-expanded">
                 <Switch
+                  hideLabel
                   checked={settings.general.editToolPartsExpanded()}
                   onChange={(checked) => {
                     phCapture("setting_changed", { setting: "edit_tool_parts_expanded", value: checked })
                     settings.general.setEditToolPartsExpanded(checked)
                   }}
-                />
+                >
+                  {language.t("settings.general.row.editToolPartsExpanded.title")}
+                </Switch>
               </div>
             </SettingsRow>
 
@@ -248,6 +265,7 @@ export const SettingsGeneral: Component = () => {
             >
               <Select
                 data-action="settings-followup"
+                placeholder={language.t("settings.general.row.followup.title")}
                 options={followupOptions()}
                 current={followupOptions().find((o) => o.value === settings.general.followup())}
                 value={(o) => o.value}
@@ -276,6 +294,7 @@ export const SettingsGeneral: Component = () => {
             >
               <Select
                 data-action="settings-color-scheme"
+                placeholder={language.t("settings.general.row.colorScheme.title")}
                 options={colorSchemeOptions()}
                 current={colorSchemeOptions().find((o) => o.value === theme.colorScheme())}
                 value={(o) => o.value}
@@ -304,6 +323,7 @@ export const SettingsGeneral: Component = () => {
             >
               <Select
                 data-action="settings-theme"
+                placeholder={language.t("settings.general.row.theme.title")}
                 options={themeOptions()}
                 current={themeOptions().find((o) => o.id === theme.themeId())}
                 value={(o) => o.id}
@@ -391,6 +411,25 @@ export const SettingsGeneral: Component = () => {
                 />
               </div>
             </SettingsRow>
+
+            <SettingsRow
+              title={language.t("settings.general.row.screenReaderTerminal.title")}
+              description={language.t("settings.general.row.screenReaderTerminal.description")}
+            >
+              <div data-action="settings-terminal-screen-reader">
+                <Switch
+                  hideLabel
+                  checked={screenReaderTerminal()}
+                  onChange={(checked) => {
+                    setScreenReaderModePreference(checked)
+                    setScreenReaderTerminal(checked)
+                    phCapture("setting_changed", { setting: "terminal_screen_reader_mode", value: checked })
+                  }}
+                >
+                  {language.t("settings.general.row.screenReaderTerminal.title")}
+                </Switch>
+              </div>
+            </SettingsRow>
           </SettingsList>
         </div>
 
@@ -405,6 +444,7 @@ export const SettingsGeneral: Component = () => {
             >
               <div data-action="settings-notifications-agent">
                 <Switch
+                  hideLabel
                   checked={settings.notifications.agent()}
                   onChange={(checked) => {
                     phCapture("setting_changed", { setting: "notification_agent", value: checked })
@@ -415,7 +455,9 @@ export const SettingsGeneral: Component = () => {
                     // user has already granted/denied it.
                     if (checked) void requestNotificationPermission()
                   }}
-                />
+                >
+                  {language.t("settings.general.notifications.agent.title")}
+                </Switch>
               </div>
             </SettingsRow>
 
@@ -425,12 +467,15 @@ export const SettingsGeneral: Component = () => {
             >
               <div data-action="settings-notifications-permissions">
                 <Switch
+                  hideLabel
                   checked={settings.notifications.permissions()}
                   onChange={(checked) => {
                     phCapture("setting_changed", { setting: "notification_permissions", value: checked })
                     settings.notifications.setPermissions(checked)
                   }}
-                />
+                >
+                  {language.t("settings.general.notifications.permissions.title")}
+                </Switch>
               </div>
             </SettingsRow>
 
@@ -440,6 +485,7 @@ export const SettingsGeneral: Component = () => {
             >
               <div data-action="settings-notifications-errors">
                 <Switch
+                  hideLabel
                   checked={settings.notifications.errors()}
                   onChange={(checked) => {
                     phCapture("setting_changed", { setting: "notification_errors", value: checked })
@@ -447,7 +493,9 @@ export const SettingsGeneral: Component = () => {
                     // See settings-notifications-agent above.
                     if (checked) void requestNotificationPermission()
                   }}
-                />
+                >
+                  {language.t("settings.general.notifications.errors.title")}
+                </Switch>
               </div>
             </SettingsRow>
           </div>
@@ -464,6 +512,7 @@ export const SettingsGeneral: Component = () => {
             >
               <Select
                 data-action="settings-sounds-agent"
+                placeholder={language.t("settings.general.sounds.agent.title")}
                 options={soundOptions}
                 current={soundOptions.find((o) => o.id === settings.sounds.agent())}
                 value={(o) => o.id}
@@ -490,6 +539,7 @@ export const SettingsGeneral: Component = () => {
             >
               <Select
                 data-action="settings-sounds-permissions"
+                placeholder={language.t("settings.general.sounds.permissions.title")}
                 options={soundOptions}
                 current={soundOptions.find((o) => o.id === settings.sounds.permissions())}
                 value={(o) => o.id}
@@ -516,6 +566,7 @@ export const SettingsGeneral: Component = () => {
             >
               <Select
                 data-action="settings-sounds-errors"
+                placeholder={language.t("settings.general.sounds.errors.title")}
                 options={soundOptions}
                 current={soundOptions.find((o) => o.id === settings.sounds.errors())}
                 value={(o) => o.id}
@@ -549,10 +600,13 @@ export const SettingsGeneral: Component = () => {
             >
               <div data-action="settings-updates-startup">
                 <Switch
+                  hideLabel
                   checked={settings.updates.startup()}
                   disabled={!platform.checkUpdate}
                   onChange={(checked) => settings.updates.setStartup(checked)}
-                />
+                >
+                  {language.t("settings.updates.row.startup.title")}
+                </Switch>
               </div>
             </SettingsRow>
 
@@ -562,9 +616,12 @@ export const SettingsGeneral: Component = () => {
             >
               <div data-action="settings-release-notes">
                 <Switch
+                  hideLabel
                   checked={settings.general.releaseNotes()}
                   onChange={(checked) => settings.general.setReleaseNotes(checked)}
-                />
+                >
+                  {language.t("settings.general.row.releaseNotes.title")}
+                </Switch>
               </div>
             </SettingsRow>
 

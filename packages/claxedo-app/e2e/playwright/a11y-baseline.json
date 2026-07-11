@@ -1,7 +1,19 @@
 {
-  "home": ["color-contrast", "landmark-one-main", "page-has-heading-one", "region"],
-  "session-page": ["aria-allowed-attr", "button-name", "color-contrast", "landmark-one-main", "region"],
-  "settings-dialog": ["aria-dialog-name", "button-name", "color-contrast", "label"],
-  "command-palette": ["aria-dialog-name", "color-contrast"],
-  "prompt-input-focused": ["aria-allowed-attr", "button-name", "color-contrast", "landmark-one-main", "region"]
+  "home": [
+    "color-contrast"
+  ],
+  "session-page": [
+    "button-name",
+    "color-contrast"
+  ],
+  "settings-dialog": [
+    "color-contrast"
+  ],
+  "command-palette": [
+    "color-contrast"
+  ],
+  "prompt-input-focused": [
+    "button-name",
+    "color-contrast"
+  ]
 }

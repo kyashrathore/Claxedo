@@ -1,10 +1,24 @@
 import { cleanup, fireEvent, render } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { WORKBENCH_DRAG_MIME } from "../workbench"
+import { workbenchDrag } from "../workbench"
 import { SessionNavigation, type SessionNavigationDisplayRow } from "./session-navigation-list"
 import { TerminalSurfaceNavigation } from "./terminal-surface-navigation"
 import type { TerminalSurfaceRow } from "./session-navigation"
+
+function dispatchPointer(
+  target: EventTarget,
+  type: string,
+  init: { clientX?: number; clientY?: number; pointerId?: number; pointerType?: string; button?: number },
+) {
+  const ev = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(ev, "clientX", { value: init.clientX ?? 0 })
+  Object.defineProperty(ev, "clientY", { value: init.clientY ?? 0 })
+  Object.defineProperty(ev, "pointerId", { value: init.pointerId ?? 1 })
+  Object.defineProperty(ev, "pointerType", { value: init.pointerType ?? "mouse" })
+  Object.defineProperty(ev, "button", { value: init.button ?? 0 })
+  target.dispatchEvent(ev)
+}
 
 const row = (input: Partial<SessionNavigationDisplayRow> = {}): SessionNavigationDisplayRow => ({
   source: {
@@ -37,6 +51,7 @@ const terminalRow = (index: number, input: Partial<TerminalSurfaceRow> = {}): Te
 })
 
 afterEach(() => {
+  workbenchDrag.cancel()
   cleanup()
 })
 
@@ -53,24 +68,26 @@ describe("SessionNavigation", () => {
       />
     ))
 
-    fireEvent.click(view.getByTestId("rail-sidebar-session-row"))
-    fireEvent.keyDown(view.getByTestId("rail-sidebar-session-row"), { key: "Enter" })
+    // WP-C1: the row activates through its native <button> (named after the row
+    // title) and the archive control is a sibling button — both inside the row
+    // container. Enter/Space activation is the platform's job now, so this drives
+    // the click path rather than a synthesized keydown jsdom won't turn into one.
+    fireEvent.click(view.getByRole("button", { name: "Build sidebar" }))
     fireEvent.click(view.getByRole("button", { name: "Archive Build sidebar" }))
 
-    expect(onActivate).toHaveBeenCalledTimes(2)
+    expect(onActivate).toHaveBeenCalledTimes(1)
     expect(onArchive).toHaveBeenCalledTimes(1)
     expect(onArchive).toHaveBeenCalledWith(expect.objectContaining({
       source: expect.objectContaining({ sessionRef: "local:/repo:session:ses_1" }),
     }))
   })
 
-  test("prepares internal drag data and exposes the typed drag payload", () => {
+  test("prepares the workbench drag payload from a pointer drag", () => {
+    // WP-C3 replaced native HTML5 DnD with the pointer-drag engine
+    // (`useDragSource`), so drags begin on a pointerdown+move past threshold and
+    // the payload lives in the in-memory `workbenchDrag` controller — there is no
+    // `DataTransfer` to seed anymore.
     const onDragStart = vi.fn()
-    const data = new Map<string, string>()
-    const transfer = {
-      effectAllowed: "none",
-      setData: (type: string, value: string) => data.set(type, value),
-    }
     const view = render(() => (
       <SessionNavigation
         rows={[row()]}
@@ -79,13 +96,12 @@ describe("SessionNavigation", () => {
         onDragStart={onDragStart}
       />
     ))
-    const event = new Event("dragstart", { bubbles: true }) as DragEvent
-    Object.defineProperty(event, "dataTransfer", { value: transfer })
+    const rowEl = view.getByTestId("rail-sidebar-session-row")
+    dispatchPointer(rowEl, "pointerdown", { clientX: 0, clientY: 0 })
+    dispatchPointer(window, "pointermove", { clientX: 20, clientY: 0 })
 
-    view.getByTestId("rail-sidebar-session-row").dispatchEvent(event)
-
-    expect(data.get(WORKBENCH_DRAG_MIME)).toBe("content_session")
-    expect(transfer.effectAllowed).toBe("copy")
+    expect(workbenchDrag.active()).toBe(true)
+    expect(workbenchDrag.contentId()).toBe("content_session")
     expect(onDragStart).toHaveBeenCalledWith(expect.objectContaining({
       row: expect.objectContaining({ sessionId: "ses_1" }),
       payload: {

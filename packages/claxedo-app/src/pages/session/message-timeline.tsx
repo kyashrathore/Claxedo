@@ -1390,6 +1390,7 @@ export function MessageTimeline(props: {
       >
         <button
           class="pointer-events-auto flex items-center justify-center w-10 h-8 bg-transparent border-none cursor-pointer p-0 group"
+          aria-label={language.t("session.timeline.scrollToBottom")}
           onClick={props.onResumeScroll}
         >
           <div

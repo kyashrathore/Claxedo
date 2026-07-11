@@ -13,6 +13,7 @@ import { SettingsTerminals } from "@claxedo/components/settings/terminals"
 import { SettingsConnections } from "@claxedo/components/settings/connections"
 import { SandboxSettingsSection } from "@claxedo/components/settings/sandbox-section"
 import { useConfigOptional } from "@claxedo/context/config"
+import { BP_SM } from "@/utils/breakpoints"
 import claxedoPkg from "../../../package.json"
 
 export const DialogSettings: Component = () => {
@@ -35,7 +36,7 @@ export const DialogSettings: Component = () => {
   }
 
   const drag = (event: PointerEvent) => {
-    if (window.innerWidth < 640) return
+    if (window.innerWidth < BP_SM) return
     if (!box) return
     const ox = event.clientX - x
     const oy = event.clientY - y
@@ -65,7 +66,7 @@ export const DialogSettings: Component = () => {
   })
 
   return (
-    <Dialog size="x-large" transition class="flex-1">
+    <Dialog size="x-large" transition class="flex-1" aria-label={language.t("sidebar.settings")}>
       <div ref={root} class="flex flex-col h-full min-h-0">
         <div class="flex items-center justify-center h-8 shrink-0 border-b border-border-weak-base/60 max-sm:hidden">
           <button
