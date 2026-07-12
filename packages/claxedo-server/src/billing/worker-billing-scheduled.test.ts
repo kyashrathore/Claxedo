@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
  */
 
 const appFetch = vi.fn(async () => new Response("ok"))
-const runScheduledBillingReconciliation = vi.fn(async () => undefined)
+const runScheduledBillingReconciliation = vi.fn(async (_env: unknown) => undefined)
 
 vi.mock("../control-plane/hosted-services", () => ({
   composeHostedControlPlane: vi.fn(() => ({})),

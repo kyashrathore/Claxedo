@@ -456,7 +456,7 @@ describe("connections host", () => {
       credentials: credentialsPort(),
       env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
       authConfig: { enabled: true, issuer: "https://issuer.example", jwksUrl: "https://issuer.example/jwks" },
-      verifier: async (token) => ({
+      verifier: async (token: string) => ({
         mode: "signed",
         user: { subject: token, tokenIdentifier: token, issuer: "https://issuer.example", orgId: "org-a" },
       }),
@@ -536,7 +536,7 @@ describe("connections host", () => {
       credentials: credentialsPort(),
       env: {},
       authConfig: { enabled: true, issuer: "https://issuer.example", jwksUrl: "https://issuer.example/jwks" },
-      verifier: async (token) => ({
+      verifier: async (token: string) => ({
         mode: "signed",
         user: { subject: token, tokenIdentifier: token, issuer: "https://issuer.example", orgId: "org-a" },
       }),
@@ -641,7 +641,7 @@ describe("connections host", () => {
       credentials: credentialsPort(),
       env: {},
       authConfig: { enabled: true, issuer: "https://issuer.example", jwksUrl: "https://issuer.example/jwks" },
-      verifier: async (token) => ({
+      verifier: async (token: string) => ({
         mode: "signed",
         user: { subject: token, tokenIdentifier: token, issuer: "https://issuer.example", orgId: "org-a" },
       }),
