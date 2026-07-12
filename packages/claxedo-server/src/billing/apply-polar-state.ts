@@ -190,6 +190,18 @@ export type PolarWebhookEvent = { type?: unknown; data?: unknown }
  * billing-state-bearing (order.*, benefit.*, checkout.* …: the subscription
  * lifecycle + customer state cover the mirror; everything else is noise here).
  */
+/**
+ * True when the event type is one we DO translate into billing state. Lets the
+ * route distinguish a harmless order/benefit event (silent ack) from a
+ * subscription or customer-state event we failed to attribute to an org (F7:
+ * ack so Polar stops retrying, but page — a charge may have no entitlement).
+ */
+export function isBillingRelevantEventType(event: PolarWebhookEvent): boolean {
+  const type = str(event.type)
+  if (!type) return false
+  return type === "customer.state_changed" || type.startsWith("subscription.")
+}
+
 export function webhookEventToApplyArgs(event: PolarWebhookEvent, config: PolarProductConfig): ApplyPolarStateArgs | undefined {
   const type = str(event.type)
   if (!type) return undefined

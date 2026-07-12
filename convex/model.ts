@@ -336,9 +336,21 @@ function controlPlaneServiceToken() {
   return value ? value : undefined
 }
 
+// Constant-time string compare — the service token is a shared secret, so
+// match the timing-safe posture the webhook/web-crypto verifiers use rather
+// than a short-circuiting `!==` (F15). Self-contained because the convex
+// bundle cannot import from packages/claxedo-server.
+function timingSafeEqual(a: string, b: string): boolean {
+  let diff = a.length ^ b.length
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i % b.length)
+  }
+  return diff === 0
+}
+
 export function requireControlPlaneService(token: string) {
   const expected = controlPlaneServiceToken()
-  if (!expected || token !== expected) throw new Error("Unauthenticated")
+  if (!expected || !timingSafeEqual(token, expected)) throw new Error("Unauthenticated")
 }
 
 export function authedQuery<Args extends PropertyValidators, Output>(spec: {

@@ -33,7 +33,7 @@ import {
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../control-plane/rate-limit"
 import { reportPaymentError } from "../observability/report"
 import { createBillingStore, type BillingStore, type CheckoutContext } from "./billing-store"
-import { webhookEventToApplyArgs, type PolarProductConfig } from "./apply-polar-state"
+import { webhookEventToApplyArgs, isBillingRelevantEventType, type PolarProductConfig } from "./apply-polar-state"
 import { verifyStandardWebhook, WebhookSignatureError } from "./standard-webhooks"
 
 export type BillingEnv = Record<string, string | undefined>
@@ -210,11 +210,22 @@ export function BillingRoutes(options: BillingRouteOptions) {
         } catch {
           return c.json({ error: { code: "invalid_webhook_payload", message: "Body is not JSON" } }, 400)
         }
-        const applyArgs = webhookEventToApplyArgs(event as { type?: unknown; data?: unknown }, products)
-        // Not billing-state-bearing (order.*, benefit.*, unattributable
-        // subscription…) → acknowledged, nothing to apply. Polar must not
-        // retry these.
-        if (!applyArgs) return c.json({ received: true, applied: false }, 202)
+        const typedEvent = event as { type?: unknown; data?: unknown }
+        const applyArgs = webhookEventToApplyArgs(typedEvent, products)
+        if (!applyArgs) {
+          // A billing-relevant event we could not translate to an org (missing
+          // metadata.org_id / customer id) means a charge may exist with no
+          // entitlement — page. A retry cannot fix attribution, so still ack
+          // (202) to protect Polar's 10-delivery budget (F7). Harmless event
+          // types (order.*, benefit.*) ack silently.
+          if (isBillingRelevantEventType(typedEvent)) {
+            reportPaymentError(new Error("Unattributable Polar billing event — acked without applying"), {
+              tags: { source: "billing_webhook", reason: "unattributable_event" },
+              extra: { type: typedEvent.type },
+            })
+          }
+          return c.json({ received: true, applied: false }, 202)
+        }
 
         try {
           const result = await store().applyPolarState(applyArgs)

@@ -161,6 +161,42 @@ describe("applyPolarState (D5 single writer)", () => {
     expect(store.rows.orgs![0]).toMatchObject({ plan: "pro", subscription_status: "active" })
   })
 
+  test("F6: a reconciliation confirming unchanged state clears the flag and advances billing_synced_at", async () => {
+    const store = db({ orgs: [orgSeed()] })
+    await apply(store, {
+      polar_customer_id: "cus_1",
+      source_ts: 2000,
+      source: "customer_state",
+      org_states: [{ org_id: "org_1", state: PRO_STATE }],
+    })
+    // Simulate the cron having flagged the org for reconciliation, and time moving on.
+    store.rows.orgs![0].billing_reconcile_flagged_at = 9999
+    store.rows.orgs![0].billing_synced_at = 2000
+    // The sweep re-fetches Polar and gets the SAME modified_at (2000) — equal, not newer.
+    const swept = await apply(store, {
+      polar_customer_id: "cus_1",
+      source_ts: 2000,
+      source: "reconciliation",
+      org_states: [{ org_id: "org_1", state: PRO_STATE }],
+    })
+    // Subscription state untouched (nothing changed) but the flag MUST clear,
+    // else the org is re-fetched every sweep forever.
+    expect(swept.results[0]).toMatchObject({ applied: false, reason: "stale_source_reconcile_confirmed" })
+    expect(store.rows.orgs![0].billing_reconcile_flagged_at).toBeUndefined()
+    expect(store.rows.orgs![0].billing_synced_at).toBeGreaterThan(2000)
+    expect(store.rows.orgs![0]).toMatchObject({ plan: "pro", subscription_status: "active" })
+    // The same equal-timestamp payload from a NON-reconciliation source stays a plain no-op (no flag semantics).
+    store.rows.orgs![0].billing_reconcile_flagged_at = 8888
+    const dupe = await apply(store, {
+      polar_customer_id: "cus_1",
+      source_ts: 2000,
+      source: "customer_state",
+      org_states: [{ org_id: "org_1", state: PRO_STATE }],
+    })
+    expect(dupe.results[0]).toMatchObject({ applied: false, reason: "stale_source" })
+    expect(store.rows.orgs![0].billing_reconcile_flagged_at).toBe(8888)
+  })
+
   test("full-state payload downgrades a previously mirrored org absent from it; a newer subscription event re-upgrades", async () => {
     const store = db({ orgs: [orgSeed({ polar_customer_id: "cus_1", plan: "pro", subscription_status: "active", polar_state_modified_at: 1000, seats_licensed: 3 })] })
     const result = await apply(store, {

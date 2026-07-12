@@ -101,6 +101,20 @@ async function applyStateToOrg(ctx: any, org: any, input: {
   state: OrgBillingState
 }) {
   if (org.polar_state_modified_at !== undefined && input.source_ts <= org.polar_state_modified_at) {
+    // The reconciliation sweep re-sends Polar's EXISTING modified_at, so an
+    // unchanged subscription always lands here. Subscription state is
+    // untouched (correctly — nothing changed), but the "we successfully
+    // checked" bookkeeping must still advance, or the org stays permanently
+    // reconcile-flagged and is re-fetched every sweep forever (F6).
+    if (input.source === "reconciliation") {
+      const now = Date.now()
+      await ctx.db.patch(org._id, {
+        billing_synced_at: now,
+        billing_reconcile_flagged_at: undefined,
+        updated_at: now,
+      })
+      return { applied: false, reason: "stale_source_reconcile_confirmed" }
+    }
     return { applied: false, reason: "stale_source" }
   }
   const now = Date.now()
