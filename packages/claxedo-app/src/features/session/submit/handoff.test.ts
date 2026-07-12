@@ -1,8 +1,11 @@
-import { describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "bun:test"
 import {
   applyCreatedSessionTargetEffects,
   applyOptimisticPromptHandoff,
 } from "./handoff"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+
+beforeEach(() => configureAppPortsForTest())
 
 const localSessionRef = (sessionId: string) => ({
   sessionId,

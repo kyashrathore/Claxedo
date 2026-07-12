@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver } from "./sdk-runtime-adapter"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { createCodexAppServerDriver } from "../codex/driver"
+import { createMemoryRuntimeStore } from "../../stores/memory"
 
 function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
   return {
@@ -21,7 +22,46 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
   }
 }
 
-describe("SdkRuntimeAdapter Codex cleanup", () => {
+describe("SdkRuntimeAdapter", () => {
+  test.each(["claude", "codex", "cursor"] as const)("%s native generates and persists a title after the first turn", async (type) => {
+    const store = createMemoryRuntimeStore()
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        type,
+        createRuntime: () => ({
+          ingest: () => ({
+            events: [{ type: "finish", sessionId: "agent-session-1" }],
+            snapshot: { harness: type, threadId: "agent-session-1", adapterState: {} },
+          }),
+          snapshot: () => ({ harness: type, threadId: "agent-session-1", adapterState: {} }),
+        }) as never,
+        runTurn: async (input) => {
+          input.ingest({ type: "completed" } as never, { dir: "in", method: "test", frame: {} })
+        },
+      }),
+    })
+    const session = await adapter.createSession("/repo")
+    const events = []
+
+    for await (const event of adapter.sendMessage(session.id, {
+      parts: [{ type: "text", text: `Please fix ${type} native title` }],
+      assistantMessageId: "assistant-1",
+      agent: "build",
+      model: { providerID: `${type}-native`, modelID: "test" },
+    }, "/repo")) events.push(event)
+
+    expect(store.getSession(session.id)).toMatchObject({ title: `fix ${type} native title` })
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "session.updated",
+      properties: expect.objectContaining({
+        info: expect.objectContaining({ title: `fix ${type} native title` }),
+      }),
+    }))
+    adapter.dispose()
+  })
+
   test("requires a workspace directory at cwd-dependent boundaries", async () => {
     const item = Object.create(SdkRuntimeAdapter.prototype) as SdkRuntimeAdapter & {
       pendingPermissions: Map<string, unknown>

@@ -1,4 +1,3 @@
-// target-layer: session-client/components — OWNED fork of session-ui SessionReview.
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"

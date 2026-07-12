@@ -134,7 +134,7 @@ describe("review VCS cache", () => {
   })
 
   test("ReviewTab does not own VCS payloads in private maps", async () => {
-    const text = await Bun.file(path.join(root, "claxedo-ui/components/review-workspace/review-tab.tsx")).text()
+    const text = await Bun.file(path.join(root, "features/review/ui/review-tab.tsx")).text()
 
     expect(text).toMatch(/cachedReviewVcsDiff/)
     expect(text).toMatch(/cachedReviewVcsFile/)

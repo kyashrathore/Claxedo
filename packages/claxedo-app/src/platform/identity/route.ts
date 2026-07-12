@@ -63,6 +63,13 @@ export function workspaceTerminalRoute(workspaceId: string, terminalId: string) 
   return `${workspaceRoute(workspaceId)}/terminal/${encodeURIComponent(terminalId)}`
 }
 
+export function workspaceRouteWithId(route: ShellRoute, workspaceId: string) {
+  if (route.kind === "workspace") return workspaceRoute(workspaceId)
+  if (route.kind === "workspace-session") return workspaceSessionRoute(workspaceId, route.sessionId)
+  if (route.kind === "workspace-page") return workspacePageRoute(workspaceId, route.pageId)
+  if (route.kind === "workspace-terminal") return workspaceTerminalRoute(workspaceId, route.terminalId)
+}
+
 export function legacyDirectoryRouteKey(directory: string) {
   return base64Encode(directory)
 }

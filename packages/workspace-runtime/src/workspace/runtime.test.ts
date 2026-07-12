@@ -845,6 +845,47 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
+  test("lists persisted sessions before their owning harness adapter is instantiated after restart", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-persisted-session-list-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    const seed = new RuntimeStore(storeRoot)
+    seed.bindSession({
+      sessionId: "s-claude-title",
+      directory: dir,
+      title: "Generated before restart",
+      agentSessionId: "a-claude-title",
+      createdAt: 1,
+    })
+    seed.updateSessionConfig("s-claude-title", {
+      runner: { type: "claude-sdk" },
+      model: { providerID: "claude-sdk", modelID: "sonnet" },
+    })
+    seed.close()
+    const registry: WorkspaceHarnessRegistry = [{
+      match: () => true,
+      create: () => ({
+        listSessions: async () => [],
+        dispose() {},
+      }) as unknown as AgentHarnessAdapter,
+    }]
+    const app = new Hono()
+    mountTestHost(app, {
+      harness: { id: "opencode", access: "native" },
+      harnesses: registry,
+      storeRoot,
+    })
+
+    const res = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`)
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject([{
+      id: "s-claude-title",
+      title: "Generated before restart",
+    }])
+  })
+
   test("serves journaled replay messages before adapter fallback", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-journal-replay-"))
     tempDirs.push(dir)
@@ -2529,6 +2570,56 @@ describe("workspace host harness registry seam (Unit 3)", () => {
     } finally {
       PiHarnessAdapter.prototype.listSessions = originalPiList
     }
+  })
+
+  test("forwards the host Pi model backend to the built-in Pi adapter", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-registry-pi-backend-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    const resolved: unknown[] = []
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "pi", access: "native" },
+      storeRoot,
+      piModelBackend: (input) => {
+        resolved.push(input)
+        return undefined
+      },
+    })
+
+    const created = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Pi model" }),
+    })
+    const session = await created.json() as { id: string }
+    const configured = await app.request(
+      `http://localhost/session/${session.id}/config?directory=${encodeURIComponent(dir)}&runner=pi`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: { providerID: "openai-codex", modelID: "gpt-5.5" } }),
+      },
+    )
+
+    const response = await app.request(`http://localhost/session/${session.id}/message?directory=${encodeURIComponent(dir)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "hello" }],
+        model: { providerID: "openai-codex", modelID: "gpt-5.5" },
+      }),
+    })
+
+    expect(created.status).toBe(201)
+    expect(configured.status).toBe(200)
+    expect(response.status).toBe(200)
+    expect(resolved).toEqual([{
+      sessionId: session.id,
+      model: { providerID: "openai-codex", modelID: "gpt-5.5" },
+    }])
+    host.dispose()
   })
 
   test("a host registry with no matching entry throws for an unhandled runner", async () => {

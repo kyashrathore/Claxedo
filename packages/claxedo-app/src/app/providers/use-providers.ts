@@ -39,7 +39,7 @@ function connectedIds(input: unknown) {
 
 const popularProviderSet = new Set(popularProviders)
 
-export function useProviders() {
+export function useProviders(harnessType?: string | (() => string | undefined)) {
   const queryOptions = useQueryOptions()
   let sdk: ReturnType<typeof useSDK> | undefined
   try {
@@ -58,13 +58,14 @@ export function useProviders() {
     if (workspaceId) return `workspace:${workspaceId}`
     return sdk?.directory || ""
   })
+  const harness = createMemo(() => typeof harnessType === "function" ? harnessType() : harnessType)
   // The provider/model catalog routes through the relay for a workspace-backed
   // scope (`workspace:<id>` ref above) — gate it on the WorkspaceConnection
   // authority so the model picker cannot fire-and-fail against an offline
   // workspace (the old "Select model" flicker / 403 source). Local/central
   // scopes have no relay workspaceId → no-op gate (always ready).
   const providerQuery = useWorkspaceQuery(() => ({
-    ...queryOptions.providers(dir() || null),
+    ...queryOptions.providers(dir() || null, harness()),
     workspaceId: sdk?.workspaceId,
   }))
   const state = (): NormalizedProviderListResponse => providerQuery.data ?? {
@@ -77,6 +78,8 @@ export function useProviders() {
   return {
     state,
     loading: () => providerQuery.isLoading || providerQuery.isFetching,
+    error: () => providerQuery.error instanceof Error ? providerQuery.error.message : undefined,
+    refresh: () => providerQuery.refetch(),
     all,
     default: () => state().default,
     popular: () => [...all().values()].filter((p) => popularProviderSet.has(p.id)),

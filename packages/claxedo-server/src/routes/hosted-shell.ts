@@ -46,6 +46,9 @@ export type HostedShellRouteOptions = {
   listWorkspaces?: (auth: SignedControlPlaneAuth) => Promise<unknown>
   /** Heartbeat cadence for the events stream (tests shrink this). */
   heartbeatMs?: number
+  piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<unknown>
+  putPiCredential?: (auth: SignedControlPlaneAuth, providerID: string, key: string) => Promise<void>
+  deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
 }
 
 function rec(input: unknown) {
@@ -104,6 +107,13 @@ function emptyConfigProviders() {
   return {
     providers: [],
     default: {},
+  }
+}
+
+function piProviderAuth() {
+  return {
+    anthropic: [{ type: "api", label: "API Key" }],
+    openai: [{ type: "api", label: "API Key" }],
   }
 }
 
@@ -283,8 +293,42 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     })
     .get("/project/current", (c) => c.json(hostedProject(directoryInput(c))))
     .get("/path", (c) => c.json(hostedPath(directoryInput(c))))
-    .get("/provider", (c) => c.json(emptyProvider()))
-    .get("/provider/auth", (c) => c.json({}))
+    .get("/provider", async (c) => {
+      if (c.req.query("harness") !== "pi") return c.json(emptyProvider())
+      if (!options.piProviderCatalog) return c.json(emptyProvider())
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        return c.json(await options.piProviderCatalog(auth) as never)
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
+    .get("/provider/auth", (c) => c.json(c.req.query("harness") === "pi" ? piProviderAuth() : {}))
+    .put("/auth/:providerID", async (c) => {
+      if (c.req.query("harness") !== "pi" || !options.putPiCredential) return c.json({ error: { code: "pi_credentials_unavailable", message: "Pi credential storage is unavailable" } }, 503)
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        const body = await c.req.json().catch(() => undefined) as { auth?: { key?: string } } | undefined
+        if (!body?.auth?.key) return c.json({ error: { code: "pi_auth_key_required", message: "auth.key is required" } }, 400)
+        await options.putPiCredential(auth, c.req.param("providerID"), body.auth.key)
+        return c.json({})
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
+    .delete("/auth/:providerID", async (c) => {
+      if (c.req.query("harness") !== "pi" || !options.deletePiCredential) return c.json({ error: { code: "pi_credentials_unavailable", message: "Pi credential storage is unavailable" } }, 503)
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        await options.deletePiCredential(auth, c.req.param("providerID"))
+        return c.json({})
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
     // Marketplace catalog — the curated extension list is a static, machine-
     // independent registry, so the hosted central serves it directly (the
     // module is pure: no fs/Node imports). The app reads this at

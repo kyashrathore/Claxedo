@@ -12,9 +12,9 @@ import { DialogCustomProvider } from "@/app/dialogs/custom-provider"
 
 const CUSTOM_ID = "_custom"
 
-export const DialogSelectProvider: Component = () => {
+export const DialogSelectProvider: Component<{ harness?: string }> = (props) => {
   const dialog = useDialog()
-  const providers = useProviders()
+  const providers = useProviders(props.harness)
   const language = useLanguage()
 
   const popularGroup = () => language.t("dialog.provider.group.popular")
@@ -36,7 +36,7 @@ export const DialogSelectProvider: Component = () => {
         key={(x) => x?.id}
         items={() => {
           language.locale()
-          return [{ id: CUSTOM_ID, name: customLabel() }, ...providers.all().values()]
+          return [...(props.harness ? [] : [{ id: CUSTOM_ID, name: customLabel() }]), ...providers.all().values()]
         }}
         filterKeys={["id", "name"]}
         groupBy={(x) => (popularProviders.includes(x.id) ? popularGroup() : otherGroup())}
@@ -59,7 +59,7 @@ export const DialogSelectProvider: Component = () => {
             dialog.show(() => <DialogCustomProvider back="providers" />)
             return
           }
-          dialog.show(() => <DialogConnectProvider provider={x.id} />)
+          dialog.show(() => <DialogConnectProvider provider={x.id} harness={props.harness} />)
         }}
       >
         {(i) => (

@@ -187,11 +187,10 @@ describe("harness profile", () => {
     })
   })
 
-  test("profiles pi as a fixed virtual harness", () => {
+  test("profiles Pi as a catalog-backed harness", () => {
     expect(harnessProfile("pi")).toEqual({
       displayName: "Pi",
       hasConfigOptions: false,
-      fixedModel: { id: "virtual", name: "Virtual", provider: { id: "pi" } },
     })
   })
 

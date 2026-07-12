@@ -1,4 +1,3 @@
-// target-layer: session
 import {
   canStartSubmit,
   harnessBridge,

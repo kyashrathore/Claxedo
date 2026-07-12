@@ -1,8 +1,11 @@
-import { afterEach, beforeAll, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { getLocalSelectionHandoff, localDraftSelectionHandoffID, resetLocalSelectionHandoffForTest } from "../store/local-selection-handoff"
 import { sessionConfigSelectionQueryKey } from "../store/session-config-selection"
 import { queryClient } from "@/platform/query/query-client"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+
+beforeEach(() => configureAppPortsForTest())
 
 let createSessionActions: typeof import("./session-actions").createSessionActions
 

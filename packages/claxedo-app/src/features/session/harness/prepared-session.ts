@@ -1,5 +1,4 @@
-// target-layer: session
-import { fixedHarnessModel, type HarnessType } from "./profile"
+import type { HarnessType } from "./profile"
 
 export type PreparedSessionDirectory = string
 
@@ -30,7 +29,7 @@ export type PreparedHarnessSessionPlan =
 
 export function preparedHarnessSessionModel(state: PreparedHarnessSessionState) {
   if (state.harness === "opencode") return undefined
-  return fixedHarnessModel(state.harness)?.id ?? state.selectedModel
+  return state.selectedModel
 }
 
 export function planPreparedHarnessSession(input: {

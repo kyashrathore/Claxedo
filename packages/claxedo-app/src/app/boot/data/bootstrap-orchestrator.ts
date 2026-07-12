@@ -1,4 +1,3 @@
-// target-layer: data
 import { queryOptions, skipToken } from "@tanstack/solid-query"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@/lib/path"
@@ -105,12 +104,20 @@ export function createQueryOptionsApi(input: {
         queryFn: async () => (await input.globalSDK().global.config.get()).data ?? ({} as GlobalConfig),
       }),
     projects: () => projectListQuery({ baseUrl: input.baseUrl, client: input.globalSDK() }),
-    providers: (directory: DirectoryRef | null) =>
+    providers: (directory: DirectoryRef | null, harnessType?: string) =>
       providerListQuery({
         baseUrl: input.baseUrl,
         client: directory === null ? input.globalSDK() : input.sdkFor(directory),
+        directory,
+        harnessType,
+        request: input.request,
       }),
-    providerAuth: () => providerAuthQuery({ baseUrl: input.baseUrl, client: input.globalSDK() }),
+    providerAuth: (harnessType?: string) => providerAuthQuery({
+      baseUrl: input.baseUrl,
+      client: input.globalSDK(),
+      harnessType,
+      request: input.request,
+    }),
     path: (directory: DirectoryRef | null) =>
       pathQuery({
         baseUrl: input.baseUrl,
@@ -443,7 +450,7 @@ export function createBootstrapOrchestrator(input: {
       globalSDK: input.globalSDK,
       sdkFor: input.sdkFor,
       baseUrl: input.baseUrl(),
-      request: input.platformFetch(),
+      request: input.platformFetch() ?? authFetch,
     }),
     refreshDirectory(directory: DirectoryRef, harnessType?: string, opts?: { quiet?: boolean }) {
       if (!directory) return Promise.resolve()

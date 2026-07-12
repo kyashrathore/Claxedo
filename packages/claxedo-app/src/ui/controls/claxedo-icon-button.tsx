@@ -1,4 +1,4 @@
-// target-layer: claxedo-ui/components - Claxedo-only v1 icon button wrapper.
+// Claxedo-only v1 icon button wrapper.
 import { Button as Kobalte } from "@kobalte/core/button"
 import { type ComponentProps, splitProps } from "solid-js"
 import { ClaxedoIcon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"

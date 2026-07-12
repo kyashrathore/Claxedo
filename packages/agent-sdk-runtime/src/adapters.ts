@@ -59,13 +59,25 @@ export type { PiAdapterOptions, PiSessionPlacement } from "./harnesses/pi"
 export {
   createPiAgent,
   DEFAULT_PI_SYSTEM_PROMPT,
+  piApiKeyBackendResolver,
+  PiModelResolutionError,
+  requirePiModel,
   refreshPiAgent,
   runPiModelTurn,
   sessionEnvBashTool,
 } from "./harnesses/pi/model-backend"
-export type { PiModelBackend, PiModelBackendResolver, PiModelTurnResult } from "./harnesses/pi/model-backend"
+export type {
+  PiModelBackend,
+  PiModelBackendResolver,
+  PiModelBackendResolverInput,
+  PiApiKeyBackendOptions,
+  PiModelResolutionErrorCode,
+  PiModelTurnResult,
+} from "./harnesses/pi/model-backend"
+export { piModelCatalog } from "./harnesses/pi/catalog"
+export type { PiModelCatalogModel, PiModelCatalogProvider } from "./harnesses/pi/catalog"
 export type { AgentTool as PiAgentTool } from "@mariozechner/pi-agent-core"
-export { localPiModelBackendResolver } from "./harnesses/pi/local-auth"
+export { localPiCredentialProviders, localPiModelBackendResolver } from "./harnesses/pi/local-auth"
 export type { LocalPiAuthOptions } from "./harnesses/pi/local-auth"
 export { codexBundlePiBackendResolver, codexBundleToOAuth, firstPiModelBackend } from "./harnesses/pi/bundle-auth"
 export type { CodexBundleBackendOptions } from "./harnesses/pi/bundle-auth"

@@ -8,7 +8,7 @@ import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/pro
 describe("agent-event-runtime browser consumption", () => {
   test("imports and replays a small ACP projection under browser conditions", () => {
     const runtime = createAgentEventRuntime({
-      provider: "codex-acp",
+      harness: "codex-acp",
       threadId: "thread-1",
       adapter: createAcpEventTranslator({ client: "codex-acp" }),
       clock: () => 100,

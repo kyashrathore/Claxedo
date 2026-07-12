@@ -3,6 +3,7 @@ import {
   initialHarnessStoreState,
   type HarnessStoreState,
 } from "./store-state"
+import { createDraftDefaultPreferences } from "./draft-defaults"
 
 const LEGACY_MODEL_KEY = "claxedo:acp-model"
 const LEGACY_RUNNER_KEY = "claxedo:runner"
@@ -41,6 +42,7 @@ function readOnlyMaps(storage: PanePreferenceStorage) {
 export function createHarnessPreferences(storage: PanePreferenceStorage) {
   const maps = readOnlyMaps(storage)
   return {
+    draftDefaults: createDraftDefaultPreferences(storage),
     initialState(scope: string): HarnessStoreState {
       return initialHarnessStoreState({
         scope,

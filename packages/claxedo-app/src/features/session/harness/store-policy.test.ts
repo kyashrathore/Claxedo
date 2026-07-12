@@ -16,6 +16,7 @@ import {
   refreshHarnessTypeForScope,
   sessionModelSyncKey,
   shouldFetchConfigOptionsForScope,
+  shouldHydrateDraftFromHarnessStatus,
   shouldRefreshDirectoryAfterHarnessStatus,
   shouldRetryModelOptions,
   shouldShowModelOptionsStaleWarning,
@@ -101,6 +102,21 @@ describe("harness store policy", () => {
     expect(isDraftScope("draft:/tmp/proj:route")).toBe(true)
     expect(shouldRefreshDirectoryAfterHarnessStatus({ directory: "/tmp/project", sessionId: "ses_1" })).toBe(false)
     expect(shouldRefreshDirectoryAfterHarnessStatus({ directory: "/tmp/project" })).toBe(true)
+    expect(shouldHydrateDraftFromHarnessStatus({
+      useLocalHarnessConfig: true,
+      workspaceRuntime: true,
+      workspaceKind: "local",
+    })).toBe(true)
+    expect(shouldHydrateDraftFromHarnessStatus({
+      useLocalHarnessConfig: true,
+      workspaceRuntime: true,
+      workspaceKind: "cloud",
+    })).toBe(false)
+    expect(shouldHydrateDraftFromHarnessStatus({
+      useLocalHarnessConfig: false,
+      workspaceRuntime: false,
+      workspaceKind: "local",
+    })).toBe(false)
     expect(refreshHarnessTypeForScope({ directory: "workspace:ws_1", harness: "opencode" })).toBe("opencode")
     expect(refreshHarnessTypeForScope({ directory: "/tmp/project", harness: "opencode" })).toBeUndefined()
     expect(refreshHarnessTypeForScope({ directory: "/tmp/project", harness: "claude-acp" })).toBe("claude-acp")

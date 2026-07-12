@@ -33,9 +33,13 @@ Application composition and product chrome:
 - `routes/`: URL ownership and route-level gates
 - `providers/`: app-wide composition contexts
 - `integrations/`: feature ports, commands, events, and surface registration
+- `boot/`: bootstrap orchestration for the global data plane
 - `connection/`: server selection and health UI
 - `workbench/`: panes, rail, titlebar, layout state, navigation, and content assembly
+- `layout/`: layout configuration and chrome primitives consumed by the workbench
+- `review/`: review region policy and mount-retention rules for workbench panes
 - `dialogs/`, `controls/`, `styles/`, and `demo/`: app-owned presentation and alternate boot support
+- root `app-shell*.ts(x)` and `app-state-snapshot.ts`: the shell component itself — its layout composition, actions, commands, route sync, and state snapshot
 
 Add a route in `app/routes`. Add a provider here only when it composes multiple owners or its lifetime is the entire application.
 

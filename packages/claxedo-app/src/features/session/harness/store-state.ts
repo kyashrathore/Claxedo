@@ -1,4 +1,3 @@
-// target-layer: session
 import {
   desiredHarness,
   effectiveHarnessModel,
@@ -10,12 +9,15 @@ import {
 } from "./profile"
 import { harnessMode, type HarnessReadiness } from "./selection"
 import { initialHarness, initialValue } from "./store-policy"
+import type { DraftDefault } from "./draft-defaults"
+import type { DraftDefaultAuthority, DraftDefaultResult } from "./draft-default-policy"
 
 export type HarnessStoreState = {
   harnessMode: "opencode" | "harness" | "unknown"
   harnessBinary: string
   harness: HarnessType
   selectedModel: string
+  selectedModelProvider?: string
   selectedAgent: string
   dynamicModels: { id: string; name: string }[] | null
   readiness: HarnessReadiness
@@ -24,6 +26,13 @@ export type HarnessStoreState = {
   optionsLoading: boolean
   configError?: string
   workspaceId?: string
+  draftDefaultAuthority?: DraftDefaultAuthority
+  draftDefaultRevision?: number
+  draftDefaultServerUrl?: string
+  draftDefaultWorkspaceKey?: string
+  draftDefault?: DraftDefault
+  draftDefaultState?: DraftDefaultResult["state"]
+  draftDefaultWritePending?: boolean
 }
 
 export type HarnessStorePatch = Partial<HarnessStoreState>
@@ -38,11 +47,14 @@ export function initialHarnessStoreState(input: {
   legacyAgent?: string | null
 }): HarnessStoreState {
   const type = initialHarness(input.scope, input.savedHarness, input.legacyHarness)
+  const saved = savedModelKey(input.savedModel)
+  const model = saved?.modelID ?? initialValue(input.scope, input.savedModel, input.legacyModel)
   return {
     harnessMode: harnessMode(type),
     harnessBinary: "",
     harness: type,
-    selectedModel: effectiveHarnessModel(type, initialValue(input.scope, input.savedModel, input.legacyModel)),
+    selectedModel: effectiveHarnessModel(type, model),
+    selectedModelProvider: saved?.providerID ?? (type === "pi" ? undefined : type),
     selectedAgent: initialValue(input.scope, input.savedAgent, input.legacyAgent),
     dynamicModels: null,
     readiness: "ready",
@@ -50,6 +62,24 @@ export function initialHarnessStoreState(input: {
     optionsStale: false,
     optionsLoading: false,
     configError: undefined,
+    draftDefaultAuthority: scopeAuthority(input.scope),
+    draftDefaultRevision: 0,
+    draftDefaultWritePending: false,
+  }
+}
+
+function scopeAuthority(scope: string): DraftDefaultAuthority {
+  return scope.startsWith("session:") ? "server" : "unresolved"
+}
+
+function savedModelKey(input?: string) {
+  if (!input?.startsWith("{")) return
+  try {
+    const value = JSON.parse(input) as { providerID?: unknown; modelID?: unknown }
+    if (typeof value.providerID !== "string" || typeof value.modelID !== "string") return
+    return { providerID: value.providerID, modelID: value.modelID }
+  } catch {
+    return
   }
 }
 
@@ -58,6 +88,7 @@ export function workspaceDraftHarnessResetPatch(): HarnessStorePatch {
     harness: "opencode",
     harnessMode: "opencode",
     selectedModel: "",
+    selectedModelProvider: undefined,
     dynamicModels: null,
     readiness: "ready",
     optionsSource: "empty",
@@ -93,6 +124,7 @@ export function harnessStatusPatch(input: {
     harnessBinary: input.data.activeBinary ?? input.data.binary ?? "",
     harness: want,
     selectedModel: input.data.model ?? (want === "opencode" ? "" : (input.current?.selectedModel ?? "")),
+    selectedModelProvider: input.data.modelProviderID ?? (want === "opencode" ? undefined : input.current?.selectedModelProvider),
     ...(want === "opencode" ? emptyOptionsPatch() : {}),
     readiness,
     configError: input.data.error ?? undefined,
@@ -123,6 +155,7 @@ export function harnessSwitchStartPatch(input: {
     harness: input.type,
     harnessMode: harnessMode(input.type),
     selectedModel: effectiveHarnessModel(input.type),
+    selectedModelProvider: undefined,
     dynamicModels: null,
     configError: undefined,
     readiness: "ready",

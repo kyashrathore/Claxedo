@@ -30,7 +30,14 @@ import { createMemoryRunStore } from "../../session-env"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type { Agent, AgentTool } from "@mariozechner/pi-agent-core"
-import { createPiAgent, refreshPiAgent, runPiModelTurn, sessionEnvBashTool, type PiModelBackendResolver } from "./model-backend"
+import {
+  createPiAgent,
+  PiModelResolutionError,
+  refreshPiAgent,
+  runPiModelTurn,
+  sessionEnvBashTool,
+  type PiModelBackendResolver,
+} from "./model-backend"
 
 type PiSession = {
   id: string
@@ -161,23 +168,45 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     this.modelBackend = options.modelBackend
   }
 
-  /** Resolve the model backend and (re)build the session's live Agent, or undefined. */
+  /** Resolve the exact selected model and (re)build the session's live Agent. */
   private async resolveModelAgent(session: PiSession): Promise<Agent | undefined> {
-    if (!this.modelBackend) return undefined
-    try {
-      const backend = await this.modelBackend({ sessionId: session.id })
-      if (!backend) return undefined
-      if (session.agent) {
-        refreshPiAgent(session.agent, backend)
-      } else {
-        session.agent = createPiAgent({ sessionId: session.id, backend, env: session.env })
-        session.agentExtraTools = backend.extraTools ?? []
+    const configured = session.config.model
+    const model = configured?.providerID === "pi" && configured.modelID === "virtual" ? undefined : configured
+    if (!this.modelBackend) {
+      if (model) {
+        throw new PiModelResolutionError(
+          "unavailable",
+          `Pi model ${model.providerID}/${model.modelID} is unavailable because no model backend is configured`,
+          model,
+        )
       }
-      return session.agent
-    } catch (cause) {
-      console.error("[pi-adapter] WARN model backend resolution failed:", cause)
       return undefined
     }
+    const backend = await this.modelBackend({ sessionId: session.id, ...(model ? { model } : {}) })
+    if (!backend) {
+      if (model) {
+        throw new PiModelResolutionError(
+          "missing_credentials",
+          `Pi model ${model.providerID}/${model.modelID} has no available credentials`,
+          model,
+        )
+      }
+      return undefined
+    }
+    if (model && (backend.model.provider !== model.providerID || backend.model.id !== model.modelID)) {
+      throw new PiModelResolutionError(
+        "unsupported_model",
+        `Pi selected ${model.providerID}/${model.modelID}, but the backend resolved ${backend.model.provider}/${backend.model.id}`,
+        model,
+      )
+    }
+    if (session.agent) {
+      refreshPiAgent(session.agent, backend)
+    } else {
+      session.agent = createPiAgent({ sessionId: session.id, backend, env: session.env })
+      session.agentExtraTools = backend.extraTools ?? []
+    }
+    return session.agent
   }
 
   async listSessions(_directory: RuntimeDirectory) {
@@ -253,6 +282,9 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   async updateSessionConfig(id: string, update: SessionConfigUpdate, _directory: RuntimeDirectory) {
     const session = this.sessions.get(id)
     if (!session) return defaultConfig()
+    if (update.model !== undefined && session.active) {
+      throw new Error("Start a new Pi session to use another model")
+    }
     session.config = {
       harness: update.harness ?? session.config.harness,
       ...(update.model === undefined
@@ -409,8 +441,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
             yield emit(next.value)
           }
         } else {
-          assistantText = executable
-          yield emit({ type: "text-delta", delta: executable })
+          throw new Error("This legacy Pi session has no configured model. Start a new Pi session and choose a model.")
         }
       }
       yield emit({ type: "session-status", status: "idle" })

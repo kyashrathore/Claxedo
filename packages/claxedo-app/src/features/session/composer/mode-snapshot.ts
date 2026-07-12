@@ -1,4 +1,3 @@
-// target-layer: session
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import type { ComposerMode } from "./mode"

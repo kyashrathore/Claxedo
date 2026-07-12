@@ -1,4 +1,3 @@
-// target-layer: session
 import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
 import {
   sessionRefForWorkspaceSession,

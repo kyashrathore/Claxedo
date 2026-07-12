@@ -77,6 +77,7 @@ export const PromptInputFrame: Component<{
   active: Accessor<boolean>
   controlStyle: Accessor<JSX.CSSProperties>
   sessionLocked: Accessor<boolean>
+  modelLocked: Accessor<boolean>
   showAgentSelector: Accessor<boolean>
   agentNames: Accessor<string[]>
   currentAgentName: Accessor<string>
@@ -280,6 +281,7 @@ export const PromptInputFrame: Component<{
           active={props.active}
           controlStyle={props.controlStyle}
           sessionLocked={props.sessionLocked}
+          modelLocked={props.modelLocked}
           showAgentSelector={props.showAgentSelector}
           agentTitle={props.t("command.agent.cycle")}
           agentKeybind={props.commandKeybind("agent.cycle") ?? ""}
@@ -295,7 +297,7 @@ export const PromptInputFrame: Component<{
           model={props.model}
           modelTitle={props.t("command.model.choose")}
           modelKeybind={props.commandKeybind("model.choose") ?? ""}
-          onUnpaidModelClick={() => props.showDialog(() => <DialogSelectModelUnpaid />)}
+          onUnpaidModelClick={() => props.showDialog(() => <DialogSelectModelUnpaid model={props.model()} />)}
           onModelClose={props.onModelClose}
           showVariantSelector={props.showVariantSelector}
           variantTitle={props.t("command.model.variant.cycle")}

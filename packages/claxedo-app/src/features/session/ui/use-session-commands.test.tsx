@@ -10,6 +10,9 @@ import { directorySessionCacheQueryOptions } from "../data/sync/queries"
 import { configQuery } from "../data/query/directory"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { composerFocus } from "../composer/ui/composer-focus"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+
+beforeEach(() => configureAppPortsForTest())
 
 const testGlobal = globalThis as typeof globalThis & {
   React?: { createElement: (component: unknown, props: unknown) => unknown }
@@ -187,7 +190,12 @@ mock.module("@/features/session/providers/permission", () => ({
   }),
 }))
 
+// Spread the real module: `mock.module` replaces the module PROCESS-WIDE, so
+// later test files that import the pure exports (DEFAULT_PROMPT,
+// isPromptEqual, …) would otherwise crash with "Export not found".
+const realPrompt = await import("@/features/session/providers/prompt")
 mock.module("@/features/session/providers/prompt", () => ({
+  ...realPrompt,
   usePrompt: () => ({
     set: (value: unknown) => {
       promptSets.push(value)

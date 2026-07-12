@@ -35,6 +35,7 @@ import { localAgentConfigAllowed } from "./agent-config-local-auth"
 import type { AgentConfigRouteOptions } from "./agent-config-extension-support"
 import type { SandboxFetchOptions } from "../sandbox-target-fetch"
 import { isLoopbackLocalRequest } from "./local-only-projection"
+import { validatePiPromptModel } from "../pi-provider-catalog"
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
@@ -205,13 +206,32 @@ async function updateHarnessModelResponse(c: Context, options: AgentConfigRouteO
     label: "Local harness configuration",
   })
   if (localOnly) return localOnly
-  const body = await c.req.json()
-  if (typeof body?.model !== "string" || body.model.length === 0) {
+  const body = await c.req.json().catch(() => null) as Record<string, unknown> | null
+  const requestedModel = promptModel(body?.model)
+  if (!body || !requestedModel) {
     return c.json(errorBody("agent_config_harness_model_required", "model is required"), 400)
   }
-  const sessionId = body.sessionId || c.req.query("sessionId") || c.req.header("x-session-id")
-  const directory = body.directory || c.req.query("directory") || c.req.header("x-opencode-directory")
-  const workspaceId = body.workspaceId || c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id")
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId : c.req.query("sessionId") || c.req.header("x-session-id")
+  const directory = typeof body.directory === "string" ? body.directory : c.req.query("directory") || c.req.header("x-opencode-directory")
+  const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id")
+  const meta = sessionId ? await sessionMeta(sessionId) : undefined
+  if (sessionId && meta?.host === "central") {
+    if (typeof body.model === "string") {
+      return c.json(errorBody("agent_config_harness_model_identity_required", "Pi model selection requires providerID and modelID"), 400)
+    }
+    if (options.services?.projectionStore.read_session_messages(sessionId).length) {
+      return c.json(errorBody("agent_config_session_model_locked", "Start a new Pi session to use another model"), 409)
+    }
+    const invalid = validatePiPromptModel(requestedModel)
+    if (invalid) return c.json(errorBody(invalid.code, invalid.message), invalid.code.endsWith("credentials_missing") ? 409 : 400)
+    await options.services?.projectionStore.put_session_meta(sessionId, { model: requestedModel })
+    try {
+      await options.updateCentralSessionModel?.(sessionId, requestedModel)
+    } catch {
+      options.invalidateCentralSession?.(sessionId)
+    }
+    return c.json({ ok: true, model: requestedModel })
+  }
   const ws = sessionId
     ? await resolveWorkspace({
         workspaceId,
@@ -232,26 +252,36 @@ async function updateHarnessModelResponse(c: Context, options: AgentConfigRouteO
     }
     const current = await getSessionHarness(ws.id, sessionId)
       ?? defaultHarness(await loadUserConfig())
-    const unsupported = validateHarnessModel(current, body.model)
+    const unsupported = validateHarnessModel(current, requestedModel.modelID)
     if (unsupported) return c.json(unsupported, 400)
     await setSessionConfig(ws.id, sessionId, {
       harness: current,
       model: {
-        providerID: current.id,
-        modelID: body.model,
+        providerID: typeof body.model === "string" ? current.id : requestedModel.providerID,
+        modelID: requestedModel.modelID,
       },
     })
     return c.json({ ok: true })
   }
   const config = await loadUserConfig()
   const current = defaultHarness(config)
-  const unsupported = validateHarnessModel(current, body.model)
+  const unsupported = validateHarnessModel(current, requestedModel.modelID)
   if (unsupported) return c.json(unsupported, 400)
   config.harness = current
-  config.model = body.model
+  config.model = requestedModel.modelID
   await saveUserConfig(config)
   await fanOutConfig().catch(() => {})
   return c.json({ ok: true })
+}
+
+function promptModel(input: unknown): { providerID: string; modelID: string } | undefined {
+  if (typeof input === "string" && input.trim()) return { providerID: "", modelID: input.trim() }
+  if (!input || typeof input !== "object" || Array.isArray(input)) return
+  const row = input as Record<string, unknown>
+  const providerID = typeof row.providerID === "string" ? row.providerID.trim() : ""
+  const modelID = typeof row.modelID === "string" ? row.modelID.trim() : ""
+  if (!providerID || !modelID) return
+  return { providerID, modelID }
 }
 
 async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptions) {

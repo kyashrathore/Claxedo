@@ -26,6 +26,7 @@ const {
 
 // Force DB initialization
 const { ClaxedoDB } = await import("../storage/db")
+const { piCredentialProviderIDs, piRegistryCredentialProvider, piRegistryProviderConnected } = await import("../pi-credentials")
 ClaxedoDB.Drizzle() // ensure initialized
 
 describe("credential registry", () => {
@@ -63,6 +64,37 @@ describe("credential registry", () => {
     // Secret is in the backend, not in the metadata
     const raw = await backend.get(cred.secure_ref!)
     expect(raw).toBe("sk-test-12345")
+  })
+
+  test("Pi credential mapping validates aliases, status, and credential kind", async () => {
+    const stale = await putCredential({
+      provider_id: "codex-app-server",
+      kind: "api_key",
+      source: "managed",
+      secret: "wrong-kind",
+    })
+    updateCredentialStatus(stale.id, "expired")
+    await putCredential({
+      provider_id: "codex-acp",
+      kind: "oauth_token",
+      source: "managed",
+      secret: "valid-oauth",
+    })
+    await putCredential({
+      provider_id: "anthropic",
+      kind: "api_key",
+      source: "managed",
+      secret: "valid-api-key",
+    })
+
+    expect(piCredentialProviderIDs("openai-codex")).toEqual(["codex-app-server", "codex-acp"])
+    expect(piRegistryCredentialProvider("openai-codex")).toBe("codex-acp")
+    expect(piRegistryCredentialProvider("anthropic")).toBe("anthropic")
+    expect(piRegistryProviderConnected("openai-codex")).toBe(true)
+    expect(piRegistryProviderConnected("unknown")).toBe(false)
+    await deleteCredentialsByProvider("codex-app-server")
+    await deleteCredentialsByProvider("codex-acp")
+    await deleteCredentialsByProvider("anthropic")
   })
 
   test("putCredential updates existing credential for same provider+kind", async () => {

@@ -1,4 +1,3 @@
-/* target-layer: surfaces (marketplace) */
 import { type Component, Show } from "solid-js"
 import type { Catalog, CatalogCategoryId } from "./install-flow"
 

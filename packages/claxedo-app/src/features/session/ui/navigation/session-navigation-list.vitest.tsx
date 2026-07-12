@@ -100,6 +100,63 @@ describe("SessionNavigation", () => {
     }))
   })
 
+  test("keeps the archive control stable while the archive request is pending", async () => {
+    let resolveArchive!: () => void
+    const onArchive = vi.fn(() => new Promise<void>((resolve) => {
+      resolveArchive = resolve
+    }))
+    const view = render(() => (
+      <SessionNavigation
+        rows={[row()]}
+        onActivate={() => {}}
+        onArchive={onArchive}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const archive = view.getByRole("button", { name: "Archive Build sidebar" })
+
+    fireEvent.click(archive)
+    fireEvent.click(archive)
+
+    expect(onArchive).toHaveBeenCalledTimes(1)
+    expect(archive).toBeDisabled()
+
+    resolveArchive()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(archive).not.toBeDisabled()
+  })
+
+  test("keeps hovered row controls mounted when the active session changes", () => {
+    const [active, setActive] = createSignal("ses_1")
+    const sessions = ["ses_1", "ses_2"]
+    const view = render(() => (
+      <SessionNavigation
+        rows={sessions.map((sessionId) => row({
+          source: {
+            ...row().source,
+            sessionRef: `local:/repo:session:${sessionId}`,
+            sessionId,
+            title: `Session ${sessionId.at(-1)}`,
+          },
+          title: `Session ${sessionId.at(-1)}`,
+          active: active() === sessionId,
+        }))}
+        onActivate={(item) => setActive(item.source.sessionId)}
+        onArchive={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const firstRow = view.getAllByTestId("rail-sidebar-session-row")[0]
+    const firstArchive = view.getByRole("button", { name: "Archive Session 1" })
+
+    fireEvent.click(view.getByRole("button", { name: "Session 2" }))
+
+    expect(view.getAllByTestId("rail-sidebar-session-row")[0]).toBe(firstRow)
+    expect(view.getByRole("button", { name: "Archive Session 1" })).toBe(firstArchive)
+  })
+
   test("prepares the workbench drag payload from a pointer drag", () => {
     // WP-C3 replaced native HTML5 DnD with the pointer-drag engine
     // (`useDragSource`), so drags begin on a pointerdown+move past threshold and

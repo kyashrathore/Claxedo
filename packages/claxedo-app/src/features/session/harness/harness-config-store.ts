@@ -29,6 +29,10 @@ import type {
   HarnessType,
   OptionsResponse,
 } from "./profile"
+import type { DraftDefaultLabels } from "./draft-defaults"
+import type { ModelKey } from "@/features/session/composer/model-strategy"
+import type { ResolveDraftDefaultInput } from "./draft-default-policy"
+import { sessionPaneWorkspaceKey } from "@/platform/runtime/session-workspace"
 
 type ScopeInput = HarnessScopeInput
 
@@ -79,9 +83,13 @@ export function createHarnessConfigStore() {
     fetch: harnessRuntime.configOptionsFetch,
     currentHarness: (scope) => harnessStore.state(scope)?.harness,
     selectedModel: (scope) => harnessStore.state(scope)?.selectedModel,
+    preserveSelectedModel: harnessStore.protectDraftModel,
     seed: harnessStore.seed,
     applyPatch: harnessStore.applyPatch,
     saveModel: (scope, model) => harnessStore.save(scope, "model", model),
+    draftDefaultApplication: harnessStore.draftDefaultApplication,
+    resolveDraftDefault: harnessStore.applyDraftDefault,
+    completeRememberedHarness: harnessStore.completeRememberedHarness,
     setOptionsLoading: harnessStore.setOptionsLoading,
     errorMessage,
     cache: createHarnessOptionsQueryCache(),
@@ -121,6 +129,12 @@ export function createHarnessConfigStore() {
     base,
     seed: harnessStore.seed,
     state: harnessStore.state,
+    beginDraftDefault: (scope, input) => {
+      const identity = draftDefaultIdentity(input)
+      if (!identity) return undefined
+      return harnessStore.beginDraftDefault(scope, identity)
+    },
+    markServer: harnessStore.markServer,
     resetWorkspaceDraftHarness: statusActions.resetWorkspaceDraftHarness,
     applyStatus: statusActions.applyStatus,
     setReadyHydration: statusActions.setReadyHydration,
@@ -138,10 +152,14 @@ export function createHarnessConfigStore() {
   const modelWriter = createHarnessModelWriter<ScopeInput>({
     base,
     seed: harnessStore.seed,
+    acceptsDraftModel: harnessStore.acceptsDraftModel,
     setSelectedModel: harnessStore.setSelectedModel,
     setSelectedAgent: harnessStore.setSelectedAgent,
     saveModel: (scope, model) => harnessStore.save(scope, "model", model),
     saveAgent: (scope, name) => harnessStore.save(scope, "agent", name),
+    rememberDraftModel: (scope, model, input, labels) => {
+      rememberDraftModel(scope, model, input, labels)
+    },
     dropPrepared: (scope) => {
       void preparedRuntimeSessions.drop(scope)
     },
@@ -160,6 +178,13 @@ export function createHarnessConfigStore() {
     applyPatch: harnessStore.applyPatch,
     saveHarness: (scope, type) => harnessStore.save(scope, "harness", type),
     saveModel: (scope, model) => harnessStore.save(scope, "model", model),
+    beginDraftHarnessChoice: (scope, type, input) => {
+      const identity = draftDefaultIdentity(input)
+      if (identity) harnessStore.beginDraftHarnessChoice(scope, identity, type)
+    },
+    rememberDraftHarness: (scope, type, input) => {
+      rememberDraftHarness(scope, type, input)
+    },
     refresh: statusActions.refresh,
     fetchConfigOptions: (scope, type, input) => {
       void fetchConfigOptions(scope, type, input)
@@ -175,6 +200,42 @@ export function createHarnessConfigStore() {
 
   const claimSession = preparedRuntimeSessions.claim
 
+  function draftDefaultIdentity(input?: ScopeInput) {
+    if (!input?.directory || (input.sessionId && input.sessionId !== "new")) return undefined
+    const workspaceKey = sessionPaneWorkspaceKey({
+      directory: input.directory,
+      projects: projectsQuery.data ?? [],
+    })
+    return {
+      serverUrl: base,
+      workspaceKey,
+      ...(workspaceKey !== input.directory ? { fallbackWorkspaceKey: input.directory } : {}),
+    }
+  }
+
+  const rememberDraftHarness = (scope: string, type: HarnessType, input?: ScopeInput) => {
+    const identity = draftDefaultIdentity(input)
+    if (!identity) return false
+    return harnessStore.rememberDraftHarness(scope, identity, type)
+  }
+
+  const rememberDraftModel = (scope: string, model: ModelKey, input?: ScopeInput, labels?: DraftDefaultLabels) => {
+    const identity = draftDefaultIdentity(input)
+    if (!identity) return false
+    return harnessStore.rememberDraftModel(scope, identity, model, labels)
+  }
+
+  const resolveCurrentDraftDefault = (
+    scope: string,
+    input: Omit<ResolveDraftDefaultInput, "saved">,
+  ) => {
+    const type = harnessStore.state(scope)?.draftDefault?.harness
+    if (!type) return false
+    const application = harnessStore.draftDefaultApplication(scope, type)
+    if (!application) return false
+    return harnessStore.applyDraftDefault(application, input)
+  }
+
   return {
     hydrate: hydrator.hydrate,
     reprobe: hydrator.reprobe,
@@ -184,12 +245,15 @@ export function createHarnessConfigStore() {
     markUnavailable: (scope: string) => harnessStore.setReadiness(scope, "error"),
     claimSession,
     promote: harnessStore.promote,
+    rememberDraftModel,
+    resolveDraftDefault: resolveCurrentDraftDefault,
     setModel,
     setHarness,
     setAgent,
     harnessMode: harnessStore.harnessMode,
     harnessBinary: harnessStore.harnessBinary,
     selectedModel: harnessStore.selectedModel,
+    selectedModelKey: harnessStore.selectedModelKey,
     harness: harnessStore.harness,
     selectedAgent: harnessStore.selectedAgent,
     models: harnessStore.models,
@@ -200,6 +264,9 @@ export function createHarnessConfigStore() {
     optionsStale: harnessStore.optionsStale,
     optionsLoading: harnessStore.optionsLoading,
     configError: harnessStore.configError,
+    draftDefaultState: harnessStore.draftDefaultState,
+    draftDefaultLabels: harnessStore.draftDefaultLabels,
+    draftDefaultModel: harnessStore.draftDefaultModel,
     harnessModelKeyForSubmit: harnessStore.harnessModelKeyForSubmit,
     harnessModelNameForSubmit: harnessStore.harnessModelNameForSubmit,
     harnessReadyForSubmit: harnessStore.harnessReadyForSubmit,

@@ -72,6 +72,8 @@ describe("claxedo schema", () => {
     expect(hasColumn(sqlite, "claxedo_page", "directory")).toBe(true)
     expect(hasColumn(sqlite, "claxedo_session_meta", "host")).toBe(true)
     expect(column(sqlite, "claxedo_session_meta", "directory")?.notnull).toBe(0)
+    expect(hasColumn(sqlite, "claxedo_session_meta", "model_provider_id")).toBe(true)
+    expect(hasColumn(sqlite, "claxedo_session_meta", "model_id")).toBe(true)
     expect(hasColumn(sqlite, "claxedo_workspace_lease", "driver")).toBe(true)
     expect(hasColumn(sqlite, "claxedo_workspace_lease", "driver_resource_id")).toBe(true)
     expect(hasColumn(sqlite, "claxedo_workspace_lease", "driver_snapshot_id")).toBe(true)

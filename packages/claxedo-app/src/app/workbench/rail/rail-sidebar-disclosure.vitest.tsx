@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
+import { createSignal } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
@@ -107,6 +108,41 @@ function renderSidebar(input?: {
 }
 
 describe("RailSidebar disclosure controls", () => {
+  test("keeps workspace sections mounted when navigation refreshes project objects", () => {
+    localStorage.setItem("claxedo.session-view.v1", JSON.stringify({
+      group: "workspace",
+      status: [],
+      environment: [],
+      git: [],
+      archived: "active",
+    }))
+    const [activeSessionId, setActiveSessionId] = createSignal("ses_1")
+    render(() => (
+      <QueryClientProvider client={new QueryClient()}>
+        <ClaxedoStateProvider initialState={emptyClaxedoState()}>
+          <RailSidebar
+            projects={activeSessionId() ? [{ ...project }] : []}
+            activeSessionId={activeSessionId()}
+            onRailCancelCollapse={() => undefined}
+            onRailLockChange={() => undefined}
+            onRailMouseLeave={() => undefined}
+            onRailTrackPosition={() => undefined}
+            onToggleSidebar={() => undefined}
+            railDocked
+            railExpanded
+            railWidth={260}
+          />
+        </ClaxedoStateProvider>
+      </QueryClientProvider>
+    ))
+    fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
+    const workspaceHeader = screen.getByTestId("workspace-header")
+
+    setActiveSessionId("ses_2")
+
+    expect(screen.getByTestId("workspace-header")).toBe(workspaceHeader)
+  })
+
   test("shows the sidebar toggle while docked", () => {
     const onToggleSidebar = vi.fn()
     renderSidebar({ onToggleSidebar })

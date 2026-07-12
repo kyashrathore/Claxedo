@@ -6,6 +6,9 @@ import { workspaceSessionRoute } from "@/platform/identity/route"
 import type { ClaxedoEvent } from "../../../app/integrations/claxedo-events"
 import type { ProjectItem, WorkspaceItem } from "../../../app/workbench/rail/domain-types"
 import type { ProjectActionProps } from "./project-actions"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+
+beforeEach(() => configureAppPortsForTest())
 
 let createProjectActions: typeof import("./project-actions").createProjectActions
 let WorktreeState: typeof import("@/platform/sync/worktree").Worktree

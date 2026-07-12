@@ -35,18 +35,13 @@ describe("prepared harness session planning", () => {
     })).toEqual({ status: "no-model" })
   })
 
-  test("uses fixed harness models without selected-model state", () => {
-    expect(preparedHarnessSessionModel({ harness: "pi" })).toBe("virtual")
+  test("requires a selected Pi model before preparing a session", () => {
+    expect(preparedHarnessSessionModel({ harness: "pi" })).toBeUndefined()
     expect(planPreparedHarnessSession({
       enabled: true,
       directory: "/repo",
       state: { harness: "pi" },
-    })).toEqual({
-      status: "create",
-      directory: "/repo",
-      harness: "pi",
-      model: "virtual",
-    })
+    })).toEqual({ status: "no-model" })
   })
 
   test("reuses prepared sessions only when directory harness and model match", () => {

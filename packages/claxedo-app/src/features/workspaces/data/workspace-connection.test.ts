@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 import {
   __workspaceConnectionInternals as internals,
   acquireWorkspaceConnection,
@@ -15,6 +16,7 @@ import {
 } from "./workspace-connection"
 import type { WorkspaceConnectionInfo } from "@/platform/runtime/agent/workspace-relay-connection"
 
+beforeEach(() => configureAppPortsForTest())
 afterEach(() => internals.reset())
 
 describe("workspace connection authority", () => {

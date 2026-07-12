@@ -73,6 +73,7 @@ export async function putSessionMeta(
     directory?: string | null
     host?: "central" | "workspace"
     toolSandbox?: SessionToolSandbox | null
+    model?: { providerID: string; modelID: string } | null
     title?: string | null
     parentID?: string | null
     archived?: number | null
@@ -98,6 +99,8 @@ export async function putSessionMeta(
     const toolSandbox = input.toolSandbox === undefined
       ? prev?.tool_sandbox ?? null
       : serializeToolSandbox(input.toolSandbox)
+    const modelProviderID = input.model === undefined ? prev?.model_provider_id ?? null : input.model?.providerID ?? null
+    const modelID = input.model === undefined ? prev?.model_id ?? null : input.model?.modelID ?? null
     db.insert(ClaxedoSessionMetaTable).values({
       session_ref: sessionRef,
       session_id: sessionID,
@@ -106,6 +109,8 @@ export async function putSessionMeta(
       host: hostValue,
       directory,
       tool_sandbox: toolSandbox,
+      model_provider_id: modelProviderID,
+      model_id: modelID,
       title: input.title === undefined ? prev?.title ?? null : input.title,
       parent_session_id: input.parentID === undefined ? prev?.parent_session_id ?? null : input.parentID,
       archived_at: input.archived === undefined ? prev?.archived_at ?? null : input.archived,
@@ -120,6 +125,8 @@ export async function putSessionMeta(
         host: hostValue,
         directory,
         tool_sandbox: toolSandbox,
+        model_provider_id: modelProviderID,
+        model_id: modelID,
         title: input.title === undefined ? prev?.title ?? null : input.title,
         parent_session_id: input.parentID === undefined ? prev?.parent_session_id ?? null : input.parentID,
         archived_at: input.archived === undefined ? prev?.archived_at ?? null : input.archived,
@@ -351,6 +358,8 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
         host: item.host ?? host(prev?.host) ?? "workspace",
         directory: item.directory ?? prev?.directory ?? null,
         tool_sandbox: item.tool_sandbox ?? prev?.tool_sandbox ?? null,
+        model_provider_id: item.model_provider_id ?? prev?.model_provider_id ?? null,
+        model_id: item.model_id ?? prev?.model_id ?? null,
         title: item.title ?? prev?.title ?? null,
         parent_session_id: item.parent_session_id ?? prev?.parent_session_id ?? null,
         archived_at: item.archived_at,
@@ -365,6 +374,8 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
           host: item.host ?? host(prev?.host) ?? "workspace",
           directory: item.directory ?? prev?.directory ?? null,
           tool_sandbox: item.tool_sandbox ?? prev?.tool_sandbox ?? null,
+          model_provider_id: item.model_provider_id ?? prev?.model_provider_id ?? null,
+          model_id: item.model_id ?? prev?.model_id ?? null,
           title: item.title ?? prev?.title ?? null,
           parent_session_id: item.parent_session_id ?? prev?.parent_session_id ?? null,
           archived_at: item.archived_at,

@@ -14,9 +14,9 @@ import path from "node:path"
 // pre-gate consumer is deleted it is removed from the allowlist, and the final
 // state is `{ workspace-gate.tsx }` only.
 
-const root = path.resolve(import.meta.dir, "../..")
+const root = path.resolve(import.meta.dir, "../../..")
 
-const moduleDir = "shell/workspace"
+const moduleDir = "features/workspaces/data"
 const authorityModule = `${moduleDir}/workspace-connection.ts`
 const gateModule = `${moduleDir}/workspace-gate.tsx`
 const wrapperModule = `${moduleDir}/use-workspace-query.ts`
@@ -27,13 +27,13 @@ const wrapperModule = `${moduleDir}/use-workspace-query.ts`
 // pre-migration importers (tracked shrink-list — must only ever decrease):
 const connectingUiAllowlist = new Set([
   gateModule,
-  "components/session/cloud-startup-view.tsx", // the definition module
+  "features/session/ui/components/cloud-startup-view.tsx", // the definition module
   // ── pre-gate consumers (delete during migration Steps 2–3) ──
   // directory-scope.tsx was removed from this list in Step 3: its parallel
   // startup gate (CloudStartupView + resolveWorkspaceRuntime + provision
   // listener) was collapsed — the connecting UI is owned by WorkspaceGate now.
-  "pages/session.tsx",
-  "claxedo-ui/layout-actions/session-actions.tsx",
+  "features/session/ui/session-screen.tsx",
+  "features/session/actions/session-actions.tsx",
 ])
 
 async function files(): Promise<string[]> {

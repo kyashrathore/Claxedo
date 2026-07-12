@@ -1,6 +1,9 @@
-import { describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "bun:test"
 import { openWorkspaceScopeIds } from "./workspace-scope-ids"
 import type { ContentMeta } from "../../../app/workbench/state/index"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+
+beforeEach(() => configureAppPortsForTest())
 
 describe("openWorkspaceScopeIds", () => {
   test("limits workspace scopes to the active workspace and visible panes", () => {

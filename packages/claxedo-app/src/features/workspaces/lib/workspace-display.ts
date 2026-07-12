@@ -37,6 +37,17 @@ function projectWorkspace(project: WorkspaceDisplayProject, directory: string) {
     )
 }
 
+export function workspaceRouteIdentity(projects: WorkspaceDisplayProject[], routeKey: string | undefined) {
+  if (!routeKey) return
+  return projects
+    .flatMap((project) => Object.entries(project.workspaces ?? {}))
+    .map(([key, workspace]) => ({
+      routeId: workspace.id ?? workspace.workspaceId ?? key,
+      directory: workspace.directory ?? key,
+    }))
+    .find((workspace) => routeKey === workspace.routeId || routeKey === workspace.directory)
+}
+
 export function workspaceIsCloud(
   project: WorkspaceDisplayProject,
   directory: string,

@@ -1,5 +1,19 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+
+beforeEach(() => configureAppPortsForTest())
+
+// `mock.module` is process-wide and permanent; snapshot the real modules this
+// file stubs and re-register them after the suite so the fakes (notably the
+// reversible `encoded:` base64) do not leak into later test files.
+const realModules = new Map<string, Record<string, unknown>>()
+for (const specifier of ["@/features/session/providers/session-params", "@/lib/encode", "@/app/providers/layout"]) {
+  realModules.set(specifier, { ...(await import(specifier)) })
+}
+afterAll(() => {
+  for (const [specifier, exports] of realModules) mock.module(specifier, () => exports)
+})
 
 let paneParams:
   | {

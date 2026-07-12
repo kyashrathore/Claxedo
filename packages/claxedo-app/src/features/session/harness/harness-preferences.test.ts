@@ -59,6 +59,25 @@ describe("harness preferences", () => {
     expect(storage.getItem("claxedo:review-mode-map")).toBeNull()
   })
 
+  test("exposes atomic workspace defaults without writing legacy pane maps", () => {
+    const preferences = createHarnessPreferences(storage)
+    expect(preferences.draftDefaults.save(
+      { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
+      { harness: "opencode", model: { providerID: "anthropic", modelID: "opus" } },
+    )).toBe(true)
+
+    expect(createHarnessPreferences(storage).draftDefaults.read({
+      serverUrl: "http://localhost:4096",
+      workspaceKey: "ws_1",
+    })).toEqual({
+      version: 1,
+      harness: "opencode",
+      model: { providerID: "anthropic", modelID: "opus" },
+    })
+    expect(storage.getItem("claxedo:harness-map")).toBeNull()
+    expect(storage.getItem("claxedo:acp-model-map")).toBeNull()
+  })
+
 })
 
 class MemoryStorage implements PanePreferenceStorage {
@@ -70,5 +89,9 @@ class MemoryStorage implements PanePreferenceStorage {
 
   setItem(key: string, value: string) {
     this.values[key] = value
+  }
+
+  removeItem(key: string) {
+    delete this.values[key]
   }
 }

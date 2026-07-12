@@ -1,6 +1,9 @@
-import { beforeAll, describe, expect, test } from "bun:test"
+import { beforeAll, beforeEach, describe, expect, test } from "bun:test"
 import { workspacePageRoute } from "@/platform/identity/route"
 import type { PageActionProps } from "./page-actions"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+
+beforeEach(() => configureAppPortsForTest())
 
 let createPageActions: typeof import("./page-actions").createPageActions
 

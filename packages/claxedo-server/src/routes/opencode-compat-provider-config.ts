@@ -1,6 +1,7 @@
 import { defaultHarness, loadUserConfig } from "../agent-config"
 import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../opencode-engine"
 import { opencodeCompatDisabled, type OpenCodeCompatRouteOptions } from "./opencode-compat-proxy"
+import { piProviderCatalog } from "../pi-provider-catalog"
 
 export async function resolveHarnessId(override?: string) {
   if (override) return override
@@ -26,6 +27,7 @@ export function emptyConfigProviders() {
 
 export async function providerBody(harnessOverride: string | undefined, options: OpenCodeCompatRouteOptions) {
   const harnessId = await resolveHarnessId(harnessOverride)
+  if (harnessId === "pi") return piProviderCatalog(options.env ?? process.env)
   if (harnessId !== "opencode" || opencodeCompatDisabled(options)) return localProviderCatalog(harnessId, options)
   return safe("provider", () => localProviderCatalog(harnessId, options), async () => {
     const res = await opencodeRequest(new Request(new URL("/provider", OPENCODE_INTERNAL_BASE), {
@@ -40,6 +42,12 @@ export async function providerBody(harnessOverride: string | undefined, options:
 }
 
 export async function providerAuthBody(harnessOverride?: string) {
+  if (harnessOverride === "pi") {
+    return {
+      anthropic: [{ type: "api", label: "API Key" }],
+      openai: [{ type: "api", label: "API Key" }],
+    }
+  }
   if (harnessOverride !== "opencode") {
     return {
       "claude-acp": [{ type: "api", label: "API Key" }],

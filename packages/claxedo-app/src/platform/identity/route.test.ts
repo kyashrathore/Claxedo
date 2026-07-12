@@ -11,6 +11,7 @@ import {
   shellRouteDirectoryFromPathname,
   workspacePageRoute,
   workspaceRoute,
+  workspaceRouteWithId,
   workspaceSessionRoute,
   workspaceTerminalRoute,
 } from "./route"
@@ -64,6 +65,16 @@ describe("shell route identity", () => {
       workspaceId: "/repo/main",
       terminalId: "pty/with slash",
     })
+  })
+
+  test("rewrites directory-shaped workspace routes with an opaque workspace id", () => {
+    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain"), "ws_local")).toBe("/w/ws_local")
+    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/session/ses_1"), "ws_local"))
+      .toBe("/w/ws_local/session/ses_1")
+    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/page/page_1"), "ws_local"))
+      .toBe("/w/ws_local/page/page_1")
+    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/terminal/pty_1"), "ws_local"))
+      .toBe("/w/ws_local/terminal/pty_1")
   })
 
   test("recovers decoded absolute workspace routes", () => {

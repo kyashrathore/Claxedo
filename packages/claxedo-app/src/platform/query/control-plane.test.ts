@@ -91,4 +91,22 @@ describe("control-plane query helpers", () => {
     expect(query.staleTime).toBe(0)
     expect((await query.queryFn()).openai?.[0]?.authenticated).toBe(true)
   })
+
+  test("Pi provider queries use a harness- and scope-qualified cache key and raw route", async () => {
+    const calls: string[] = []
+    const query = providerListQuery({
+      baseUrl: "http://example.test",
+      directory: "workspace:ws_1",
+      harnessType: "pi",
+      request: async (url) => {
+        calls.push(String(url))
+        return Response.json({ all: [], connected: [], default: {} })
+      },
+      client: { provider: { list: async () => { throw new Error("SDK route must not be used") } } },
+    })
+
+    expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers", "workspace:ws_1", "pi"])
+    await query.queryFn()
+    expect(calls).toEqual(["http://example.test/provider?harness=pi&directory=workspace%3Aws_1"])
+  })
 })

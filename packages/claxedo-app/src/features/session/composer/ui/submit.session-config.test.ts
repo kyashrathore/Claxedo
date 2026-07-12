@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import * as h from "./submit.harness.test"
 
@@ -16,6 +16,7 @@ beforeAll(async () => {
   await h.installSubmitMocks(mock)
 })
 beforeEach(() => h.resetSubmitHarness())
+afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("Existing-session config persistence (rubric C1 dedupe)", () => {
   test("existing sessions persist submitted model and agent config", async () => {

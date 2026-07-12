@@ -74,9 +74,9 @@ describe("workspace control routes", () => {
   })
 
   test("workspace create surfaces do not import RuntimeGateway for stable route helpers", async () => {
-    expect(await Bun.file(new URL("../../../components/dialogs/create-cloud-workspace.tsx", import.meta.url)).text())
+    expect(await Bun.file(new URL("../../../features/workspaces/ui/dialogs/create-cloud-workspace.tsx", import.meta.url)).text())
       .not.toContain("RuntimeGateway")
-    expect(await Bun.file(new URL("../../../claxedo-ui/layout-actions/project-actions.tsx", import.meta.url)).text())
+    expect(await Bun.file(new URL("../../../features/workspaces/actions/project-actions.tsx", import.meta.url)).text())
       .not.toContain("RuntimeGateway")
   })
 })

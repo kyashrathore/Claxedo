@@ -222,7 +222,9 @@ async function files(dir: string): Promise<string[]> {
   const out: string[] = []
   for (const entry of await Array.fromAsync(new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: dir }))) {
     if (entry.endsWith(".d.ts")) continue
-    if (entry.includes(".test.") || entry.includes(".vitest.") || entry.startsWith("demo/")) continue
+    // Demo-only msw fixtures moved from src/demo/ to src/app/demo/ in the
+    // app/features/platform reorg; they legitimately spell route strings.
+    if (entry.includes(".test.") || entry.includes(".vitest.") || entry.startsWith("demo/") || entry.startsWith("app/demo/")) continue
     out.push(entry)
   }
   return out
@@ -504,7 +506,8 @@ describe("workspace runtime route audit", () => {
     const app = await Bun.file(path.join(root, "app/entry/app.tsx")).text()
     const health = await Bun.file(path.join(root, "app/connection/server-health.ts")).text()
 
-    expect(app).toMatch(/@\/shared\/data\/server-health/)
+    expect(app).toMatch(/@\/app\/connection\/server-health/)
+    expect(app).not.toMatch(/@\/shared\/data\/server-health/)
     expect(app).not.toMatch(/@\/utils\/server-health/)
     expect(await Bun.file(path.join(root, "overrides/app/connection/server-health.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/app/connection/server-health.test.ts")).exists()).toBe(false)
@@ -910,8 +913,17 @@ describe("workspace runtime route audit", () => {
     expect(hook).toMatch(/useShellQueryOptions as useQueryOptions/)
     expect(hook).not.toMatch(/useGlobalSync/)
     expect(hook).not.toMatch(/globalSync\.data\.provider/)
+    // Post-reorg the canonical provider-inventory hook lives at
+    // app/providers/use-providers; feature-owned consumers acquire it (and the
+    // provider dialogs) through their feature app-ports module, whose types are
+    // pinned to the canonical owners below — same single-owner invariant.
+    const settingsPorts = await Bun.file(path.join(root, "features/settings/app-ports.ts")).text()
+    const sessionPorts = await Bun.file(path.join(root, "features/session/app-ports.ts")).text()
+    expect(settingsPorts).toMatch(/import type \* as Providers from "@\/app\/providers\/use-providers"/)
+    expect(sessionPorts).toMatch(/import type \* as Providers from "@\/app\/providers\/use-providers"/)
     for (const text of providerConsumers) {
-      expect(text).toMatch(/@\/context\/use-providers/)
+      expect(text).toMatch(/@\/app\/providers\/use-providers|@\/features\/(?:settings|session)\/app-ports/)
+      expect(text).not.toMatch(/@\/context\/use-providers/)
       expect(text).not.toMatch(/@\/hooks\/use-providers|@claxedo\/hooks\/use-providers/)
       expect(text).not.toMatch(/["']\/hooks\/use-providers["']/)
     }
@@ -923,13 +935,16 @@ describe("workspace runtime route audit", () => {
     expect(settings).not.toMatch(/globalSync\.updateConfig/)
     expect(settings).not.toMatch(/globalSync\.data\.(?:provider|config)/)
     expect(settings).not.toMatch(/globalSync\.set\("(?:provider|config)"/)
-    expect(settingsDialog).toMatch(/@\/components\/settings\/general/)
-    expect(settingsDialog).toMatch(/@\/components\/settings\/providers/)
-    expect(settingsDialog).toMatch(/@\/components\/settings\/terminals/)
-    expect(settingsDialog).toMatch(/@\/components\/settings\/sandbox-section/)
-    expect(settingsDialog).toMatch(/@\/context\/config/)
+    expect(settingsDialog).toMatch(/@\/features\/settings\/ui\/general/)
+    expect(settingsDialog).toMatch(/@\/features\/settings\/ui\/providers/)
+    expect(settingsDialog).toMatch(/@\/features\/settings\/ui\/terminals/)
+    expect(settingsDialog).toMatch(/@\/features\/settings\/ui\/sandbox-section/)
+    expect(settingsDialog).toMatch(/@\/app\/providers\/config/)
+    expect(settingsDialog).not.toMatch(/@\/components\/settings\//)
+    expect(settingsDialog).not.toMatch(/@\/context\/config/)
     expect(general).toMatch(/AccountSettingsSection/)
-    expect(general).toMatch(/@\/components\/settings\/account-section/)
+    expect(general).toMatch(/@\/features\/settings\/ui\/account-section/)
+    expect(general).not.toMatch(/@\/components\/settings\/account-section/)
     expect(general).not.toMatch(/@claxedo\/context\/config/)
     expect(connect).toMatch(/queryOptions\.providerAuth\(\)/)
     expect(connect).toMatch(/queryOptions\.providers\(null\)/)
@@ -940,7 +955,8 @@ describe("workspace runtime route audit", () => {
     expect(custom).toMatch(/queryOptions\.providers\(null\)/)
     expect(custom).toMatch(/claxedoCredentialRequest/)
     expect(custom).toMatch(/globalSDK\.client\.global\.config[\s\S]{0,80}\.update/)
-    expect(custom).toMatch(/@\/components\/dialogs\/select-provider/)
+    expect(custom).toMatch(/@\/app\/dialogs\/select-provider/)
+    expect(custom).not.toMatch(/@\/components\/dialogs\/select-provider/)
     expect(custom).not.toMatch(/\.\/dialog-select-provider/)
     expect(custom).not.toMatch(/globalSDK\.client\.auth\.set/)
     expect(custom).not.toMatch(/auth:\s*\{[\s\S]{0,120}key:/)
@@ -958,32 +974,49 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, dialogSelectModel)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, dialogSelectModelUnpaid)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, dialogSelectProvider)).exists()).toBe(true)
-    expect(settings).toMatch(/@\/components\/dialogs\/connect-provider/)
+    // The settings feature reaches the app-owned provider dialogs through its
+    // app-ports module (pinned above to @/app/dialogs/*), never via relative
+    // or legacy component paths.
+    expect(settings).toMatch(/DialogConnectProvider/)
+    expect(settings).toMatch(/DialogCustomProvider/)
+    expect(settings).toMatch(/@\/features\/settings\/app-ports/)
+    expect(settingsPorts).toMatch(/import type \* as ConnectProvider from "@\/app\/dialogs\/connect-provider"/)
+    expect(settingsPorts).toMatch(/import type \* as CustomProvider from "@\/app\/dialogs\/custom-provider"/)
+    expect(settingsPorts).toMatch(/import type \* as SelectProvider from "@\/app\/dialogs\/select-provider"/)
+    expect(settings).not.toMatch(/@\/components\/dialogs\/(?:connect|custom)-provider/)
     expect(settings).not.toMatch(/\.\/dialog-connect-provider/)
-    expect(settings).toMatch(/@\/components\/dialogs\/custom-provider/)
     expect(settings).not.toMatch(/@\/components\/dialog-custom-provider/)
-    expect(select).toMatch(/@\/context\/use-providers/)
+    expect(select).toMatch(/@\/app\/providers\/use-providers/)
+    expect(select).not.toMatch(/@\/context\/use-providers/)
     expect(select).toMatch(/@\/platform\/i18n\/provider/)
-    expect(select).toMatch(/@\/components\/dialogs\/connect-provider/)
-    expect(select).not.toMatch(/@\/components\/dialog-connect-provider/)
-    expect(select).toMatch(/@\/components\/dialogs\/custom-provider/)
-    expect(select).not.toMatch(/@\/components\/dialog-custom-provider/)
+    expect(select).toMatch(/@\/app\/dialogs\/connect-provider/)
+    expect(select).not.toMatch(/@\/components\/dialogs?\/connect-provider|@\/components\/dialog-connect-provider/)
+    expect(select).toMatch(/@\/app\/dialogs\/custom-provider/)
+    expect(select).not.toMatch(/@\/components\/dialogs?\/custom-provider|@\/components\/dialog-custom-provider/)
     expect(select).not.toMatch(/\.\/dialog-connect-provider/)
     expect(select).not.toMatch(/\.\/dialog-custom-provider/)
-    expect(manageModels).toMatch(/@\/components\/dialogs\/select-provider/)
-    expect(manageModels).not.toMatch(/@\/components\/dialog-select-provider/)
-    expect(selectModel).toMatch(/@\/components\/dialogs\/select-provider/)
-    expect(selectModel).toMatch(/@\/components\/dialogs\/manage-models/)
+    expect(manageModels).toMatch(/@\/app\/dialogs\/select-provider/)
+    expect(manageModels).not.toMatch(/@\/components\/dialogs?\/select-provider|@\/components\/dialog-select-provider/)
+    // The session feature's model picker lazy-loads the app-owned dialogs
+    // through session app-ports loaders, whose types are pinned to
+    // @/app/dialogs/* — same canonical-owner invariant, boundary-shaped.
+    expect(selectModel).toMatch(/loadSelectProviderDialog/)
+    expect(selectModel).toMatch(/loadManageModelsDialog/)
+    expect(selectModel).toMatch(/@\/features\/session\/app-ports/)
+    expect(sessionPorts).toMatch(/import type \* as ManageModels from "@\/app\/dialogs\/manage-models"/)
+    expect(sessionPorts).toMatch(/import type \* as SelectProvider from "@\/app\/dialogs\/select-provider"/)
+    expect(sessionPorts).toMatch(/import type \* as ConnectProvider from "@\/app\/dialogs\/connect-provider"/)
     expect(selectModel).not.toMatch(/@\/components\/dialog-manage-models/)
     expect(selectModel).not.toMatch(/@\/components\/dialog-select-provider/)
     expect(selectModel).not.toMatch(/\.\/dialog-select-provider/)
     expect(selectModel).not.toMatch(/\.\/dialog-manage-models/)
-    expect(commands).toMatch(/@\/components\/dialogs\/select-model/)
-    expect(commands).not.toMatch(/@\/components\/dialog-select-model/)
-    expect(prompt).toMatch(/@\/components\/dialogs\/select-model/)
-    expect(prompt).not.toMatch(/@\/components\/dialog-select-model/)
-    expect(selectModelUnpaid).toMatch(/@\/components\/dialogs\/connect-provider/)
-    expect(selectModelUnpaid).toMatch(/@\/components\/dialogs\/select-provider/)
+    expect(commands).toMatch(/@\/features\/session\/ui\/model\/select-model/)
+    expect(commands).not.toMatch(/@\/components\/dialogs?\/select-model|@\/components\/dialog-select-model/)
+    expect(prompt).toMatch(/@\/features\/session\/ui\/model\/select-model/)
+    expect(prompt).not.toMatch(/@\/components\/dialogs?\/select-model|@\/components\/dialog-select-model/)
+    expect(selectModelUnpaid).toMatch(/loadConnectProviderDialog/)
+    expect(selectModelUnpaid).toMatch(/loadSelectProviderDialog/)
+    expect(selectModelUnpaid).toMatch(/@\/features\/session\/app-ports/)
     expect(selectModelUnpaid).not.toMatch(/@\/components\/dialog-connect-provider/)
     expect(selectModelUnpaid).not.toMatch(/@\/components\/dialog-select-provider/)
     expect(selectModelUnpaid).not.toMatch(/\.\/dialog-connect-provider/)
@@ -1007,7 +1040,8 @@ describe("workspace runtime route audit", () => {
     expect(context).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
     expect(context).toMatch(/cachedGlobalSyncSdkClient/)
     expect(context).toMatch(/clearGlobalSyncSdkClientsForDirectory/)
-    expect(context).toMatch(/@\/shell\/data\/global-sync-types/)
+    expect(context).toMatch(/@\/features\/session\/data\/sync\/global-sync-types/)
+    expect(context).not.toMatch(/@\/shell\/data\/global-sync-types/)
     expect(context).not.toMatch(/@\/context\/global-sync\/types/)
     expect(context).not.toMatch(/sdkCache = new Map/)
     expect(context).not.toMatch(/sdkCache\.(?:get|set|delete|keys)/)
@@ -1186,7 +1220,7 @@ describe("workspace runtime route audit", () => {
       "features/session/ui/dialogs/fork.tsx",
       "app/workbench/titlebar/titlebar.tsx",
       "lib/base64.ts",
-      "context/permission-auto-respond.ts",
+      "features/session/providers/permission-auto-respond.ts",
     ])
     const offenders: string[] = []
     for (const file of await files(root)) {
@@ -1453,7 +1487,7 @@ describe("workspace runtime route audit", () => {
     expect(submit).not.toMatch(/harnessModel:\s*/)
     expect(submit).not.toMatch(/submitModelFromModelKey/)
 
-    expect(submitTypes).toMatch(/import type \{ ModelKey \} from "\.\.\/\.\.\/session\/composer\/model-strategy"/)
+    expect(submitTypes).toMatch(/import type \{ ModelKey \} from "\.\.\/composer\/model-strategy"/)
     expect(submitTypes).toMatch(/harnessModelKey\?: ModelKey/)
     expect(submitTypes).not.toMatch(/harnessModel\?: SubmitModel/)
 
@@ -1552,7 +1586,13 @@ describe("workspace runtime route audit", () => {
     expect(platform).toMatch(/getAuthToken\?\(\): Promise<string \| null>/)
     expect(platform).toMatch(/recordFatalRendererError\?/)
     expect(platform).toMatch(/runDesktopMenuAction\?/)
-    expect(platform).toMatch(/from "\.\.\/desktop-menu"/)
+    // The reorg inverted the dependency: the platform context now DEFINES
+    // DesktopMenuAction itself, and app/entry/desktop-menu re-exports it from
+    // here — strictly stronger ownership than the old import from ../desktop-menu.
+    expect(platform).toMatch(/export type DesktopMenuAction =/)
+    expect(platform).not.toMatch(/from "[^"]*desktop-menu"/)
+    const desktopMenu = await Bun.file(path.join(root, "app/entry/desktop-menu.ts")).text()
+    expect(desktopMenu).toMatch(/export type \{ DesktopMenuAction \} from "@\/platform\/runtime\/platform-provider"/)
     expect(platform).not.toMatch(/\.\.\/\.\.\/\.\.\/app\/src\/desktop-menu/)
     expect(platform).not.toMatch(/getWslEnabled/)
   })
@@ -1968,11 +2008,13 @@ describe("workspace runtime route audit", () => {
     const sessionPage = await Bun.file(path.join(root, "features/session/ui/session-screen.tsx")).text()
     const timeline = await Bun.file(path.join(root, "features/session/ui/message-timeline.tsx")).text()
     expect(await Bun.file(path.join(root, "overrides/features/session/ui/message-timeline.tsx")).exists()).toBe(false)
-    // session.tsx imports the first-party message-timeline as a relative
-    // sibling (Wave 2), never through the @/ (formerly override) alias.
-    expect(sessionPage).toMatch(/from "\.\/session\/message-timeline"/)
+    // session-screen imports the first-party message-timeline from its
+    // canonical features/session/ui home, never through the retired
+    // @/pages override alias; the row model is vendored as a colocated
+    // sibling (packages/app was deleted in 007 Tier E).
+    expect(sessionPage).toMatch(/@\/features\/session\/ui\/message-timeline/)
     expect(sessionPage).not.toMatch(/@\/pages\/session\/message-timeline/)
-    expect(timeline).toMatch(/\.\.\/\.\.\/\.\.\/\.\.\/app\/src\/pages\/session\/message-timeline\.data/)
+    expect(timeline).toMatch(/from "\.\/message-timeline\.data"/)
     expect(timeline).not.toMatch(/@\/pages\/session\/message-timeline\.data/)
   })
 
@@ -2482,13 +2524,15 @@ describe("workspace runtime route audit", () => {
     // re-declaring it and never reaching for the @/ package alias.
     expect(region).toMatch(/from "\.\/session-composer-state"/)
     expect(region).not.toMatch(/@\/pages\/session\/composer\/session-composer-state/)
-    // session.tsx imports the first-party composer as a relative sibling
-    // (Wave 2), never through the @/ (formerly override) alias.
-    expect(sessionPageText).toMatch(/from "\.\/session\/composer"/)
+    // session-screen imports the first-party composer from its canonical
+    // features/session/ui home, never through the retired @/pages alias.
+    expect(sessionPageText).toMatch(/@\/features\/session\/ui\/composer/)
     expect(sessionPageText).not.toMatch(/@\/pages\/session\/composer/)
     expect(text).toMatch(/useSessionParams/)
-    expect(text).toMatch(/@\/claxedo-ui\/context\/session-params/)
-    expect(text).toMatch(/@\/shell\/data\/queries/)
+    expect(text).toMatch(/@\/features\/session\/providers\/session-params/)
+    expect(text).not.toMatch(/@\/claxedo-ui\/context\/session-params/)
+    expect(text).toMatch(/@\/features\/session\/data\/sync\/queries/)
+    expect(text).not.toMatch(/@\/shell\/data\/queries/)
     expect(text).toMatch(/directorySessionCacheQueryOptions/)
     expect(text).toMatch(/sessionStatusQueryOptions/)
     expect(text).toMatch(/sessionTodoQueryOptions/)
@@ -2582,11 +2626,21 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp-logic.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/app/connection/status-popover.tsx")).exists()).toBe(false)
-    expect(claxedoDialog).toMatch(/@\/features\/extensions\/marketplace\/api/)
+    // The select-mcp dialog (session feature) reaches the marketplace API
+    // through session app-ports, whose types are pinned to the canonical
+    // @/features/extensions/marketplace/api owner — same-owner invariant.
+    const sessionPortsText = await Bun.file(path.join(root, "features/session/app-ports.ts")).text()
+    expect(claxedoDialog).toMatch(/loadMcpDialogData/)
+    expect(claxedoDialog).toMatch(/@\/features\/session\/app-ports/)
+    expect(sessionPortsText).toMatch(/import type \* as Marketplace from "@\/features\/extensions\/marketplace\/api"/)
     expect(claxedoLogic).toMatch(/function mcpExtensionUrl/)
     expect(claxedoLogic).not.toMatch(/RuntimeGateway\./)
     expect(claxedoStatus).toMatch(/return null/)
-    expect(claxedoSessionHeader).toMatch(/@\/components\/status-popover/)
+    // SessionHeader mounts StatusPopover through session app-ports, pinned to
+    // the app-owned @/app/connection/status-popover — never a relative copy.
+    expect(claxedoSessionHeader).toMatch(/StatusPopover/)
+    expect(claxedoSessionHeader).toMatch(/@\/features\/session\/app-ports/)
+    expect(sessionPortsText).toMatch(/import type \* as StatusPopoverModule from "@\/app\/connection\/status-popover"/)
     expect(claxedoSessionHeader).not.toMatch(/\.\.\/status-popover/)
     expect(backend).toMatch(/getMcpStatus: async/)
     expect(backend).toMatch(/getLspStatus: async/)
@@ -2618,7 +2672,7 @@ describe("workspace runtime route audit", () => {
   test("DialogSelectFile receives session identity from its caller", async () => {
     const text = await Bun.file(path.join(root, dialogSelectFile)).text()
     const commands = await Bun.file(path.join(root, sessionCommandsHook)).text()
-    const reviewWorkspace = await Bun.file(path.join(root, "features/review/ui/review-workspace.tsx")).text()
+    const reviewWorkspace = await Bun.file(path.join(root, "app/workbench/review/review-workspace.tsx")).text()
 
     expect(text).not.toMatch(/\buseParams\b/)
     expect(text).not.toMatch(/\bdecode64\b/)
@@ -2717,7 +2771,7 @@ describe("workspace runtime route audit", () => {
     const cacheModule = await Bun.file(path.join(root, liveResourceCache)).text()
     const directoryLayout = await Bun.file(path.join(root, "app/routes/directory-layout.tsx")).text()
     const directoryScopeText = await Bun.file(path.join(root, directoryScope)).text()
-    const reviewWorkspace = await Bun.file(path.join(root, "features/review/ui/review-workspace.tsx")).text()
+    const reviewWorkspace = await Bun.file(path.join(root, "app/workbench/review/review-workspace.tsx")).text()
 
     expect(await Bun.file(path.join(root, "overrides/features/session/providers/prompt.tsx")).exists()).toBe(false)
     expect(text).not.toMatch(/@solidjs\/router/)
@@ -2778,7 +2832,8 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, terminalComponent)).exists()).toBe(true)
     expect(text).toMatch(/createTerminalPtyClient/)
     expect(text).toMatch(/resolveWorkspaceRuntime/)
-    expect(text).toMatch(/@\/context\/platform/)
+    expect(text).toMatch(/@\/platform\/runtime\/platform-provider/)
+    expect(text).not.toMatch(/@\/context\/platform/)
     expect(text).toMatch(/@\/platform\/i18n\/provider/)
     expect(text).not.toMatch(/\.\.\/\.\.\/utils\/api/)
     expect(text).not.toMatch(/\.\.\/\.\.\/cloud\/runtime\/workspace-runtime-store/)
@@ -2786,17 +2841,17 @@ describe("workspace runtime route audit", () => {
     // consumers now mount it through the first-party RoleGuardedTerminal
     // wrapper (role-gated terminal). Either path resolves to the first-party
     // @/features/terminal/ui/terminal, never an override.
-    expect(await Bun.file(path.join(root, "app/entry/index.tsx")).text()).toMatch(/@\/components\/terminal/)
+    expect(await Bun.file(path.join(root, "app/entry/index.tsx")).text()).toMatch(/@\/features\/terminal\/ui\/terminal/)
     expect(await Bun.file(path.join(root, "features/terminal/ui/content/terminal-content.tsx")).text())
       .toMatch(/role-guarded-terminal/)
     const processPanel = await Bun.file(path.join(root, "features/processes/ui/workspace-panel/process-pane-panel.tsx")).text()
-    const reviewWorkspace = await Bun.file(path.join(root, "features/review/ui/review-workspace.tsx")).text()
+    const reviewWorkspace = await Bun.file(path.join(root, "app/workbench/review/review-workspace.tsx")).text()
     expect(processPanel).toMatch(/renderTerminal\?:/)
     expect(processPanel).not.toMatch(/role-guarded-terminal/)
     expect(reviewWorkspace).toMatch(/RoleGuardedTerminal/)
     expect(reviewWorkspace).toMatch(/renderTerminal=/)
     const roleGuard = await Bun.file(path.join(root, roleGuardedTerminal)).text()
-    expect(roleGuard).toMatch(/import \{[^}]*\bTerminal\b[^}]*\} from "\.\.\/components\/terminal"/)
+    expect(roleGuard).toMatch(/import \{[^}]*\bTerminal\b[^}]*\} from "\.\.\/ui\/terminal"/)
     expect(await Bun.file(path.join(root, "overrides/features/terminal/core/role-guarded-terminal.tsx")).exists()).toBe(false)
   })
 
@@ -2804,7 +2859,8 @@ describe("workspace runtime route audit", () => {
     const directoryLayout = await Bun.file(path.join(root, "app/routes/directory-layout.tsx")).text()
     const app = await Bun.file(path.join(root, "app/entry/app.tsx")).text()
 
-    expect(app).toMatch(/@\/pages\/directory-layout/)
+    expect(app).toMatch(/@\/app\/routes\/directory-layout/)
+    expect(app).not.toMatch(/@\/pages\/directory-layout/)
     expect(await Bun.file(path.join(root, "overrides/app/routes/directory-layout.tsx")).exists()).toBe(false)
     // These providers are owned by Workbench DirectoryScope. Re-mounting
     // them at the route level around the hidden outlet wastes lifecycle

@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import * as h from "./submit.harness.test"
 
@@ -16,6 +16,7 @@ beforeAll(async () => {
   await h.installSubmitMocks(mock)
 })
 beforeEach(() => h.resetSubmitHarness())
+afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("Comment routing, shell, and slash command dispatch", () => {
   test("prepares prompt request parts without treating page comments as file attachments", async () => {

@@ -69,7 +69,7 @@ via `./happydom.ts` for the DOM environment.
 To run a single file, pass the same flags:
 
 ```sh
-bun test --conditions=browser --preload ./happydom.ts ./src/terminal/terminal-stream.test.ts
+bun test --conditions=browser --preload ./happydom.ts ./src/features/terminal/core/terminal-stream.test.ts
 ```
 
 A small number of tests need Vitest features and run there instead:
@@ -128,8 +128,8 @@ retired-vocabulary guard all live here. Run them with `bun run test:architecture
   anything "workspace" — it has five distinct meanings in this codebase.
 - **`CONTRIBUTING.md`** — the tests-as-specs standard, test-location
   conventions, and fork history.
-- **`src/components/README.md`** — the `components/` vs `claxedo-ui/components/`
-  layering question in depth.
+- **`src/ui/controls/README.md`** — the admission rule for reusable UI
+  primitives (`ui/`) vs feature-owned widgets.
 
 ## License
 

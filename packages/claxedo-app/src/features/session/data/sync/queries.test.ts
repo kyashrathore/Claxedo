@@ -100,7 +100,10 @@ describe("shell data query factories", () => {
     setSessionStatusQueryData({
       queryClient: {
         setQueryData: (queryKey, value) => {
-          writes.push({ queryKey, value })
+          writes.push({
+            queryKey,
+            value: typeof value === "function" ? value(undefined) : value,
+          })
         },
       },
       sessionId: "ses_shell",
@@ -111,6 +114,22 @@ describe("shell data query factories", () => {
       queryKey: ["shell", "session", "ses_shell", "status"],
       value: { type: "busy" },
     }])
+  })
+
+  test("setSessionStatusQueryData preserves the previous object for identical replayed status", () => {
+    const previous = { type: "busy" as const }
+    const writes: unknown[] = []
+    setSessionStatusQueryData({
+      queryClient: {
+        setQueryData: (_queryKey, value) => {
+          writes.push(typeof value === "function" ? value(previous) : value)
+        },
+      },
+      sessionId: "ses_shell",
+      status: { type: "busy" },
+    })
+
+    expect(writes[0]).toBe(previous)
   })
 
   test("sessionRequestsQueryOptions filters permission and question lists by session id", async () => {
@@ -184,20 +203,40 @@ describe("shell data query factories", () => {
 
   test("setSessionTodoQueryData writes through the session-scoped todo key", () => {
     const writes: Array<{ queryKey: readonly unknown[]; value: unknown }> = []
+    const todos = [{ id: "todo_1", sessionID: "ses_shell", messageID: "msg_1", content: "Check", status: "pending" }]
     setSessionTodoQueryData({
       queryClient: {
         setQueryData: (queryKey, value) => {
-          writes.push({ queryKey, value })
+          writes.push({
+            queryKey,
+            value: typeof value === "function" ? value(undefined) : value,
+          })
+        },
+      },
+      sessionId: "ses_shell",
+      todos,
+    })
+
+    expect(writes).toEqual([{
+      queryKey: ["shell", "session", "ses_shell", "todo"],
+      value: todos,
+    }])
+  })
+
+  test("setSessionTodoQueryData preserves the previous array for identical replayed todos", () => {
+    const previous = [{ id: "todo_1", sessionID: "ses_shell", messageID: "msg_1", content: "Check", status: "pending" }]
+    const writes: unknown[] = []
+    setSessionTodoQueryData({
+      queryClient: {
+        setQueryData: (_queryKey, value) => {
+          writes.push(typeof value === "function" ? value(previous) : value)
         },
       },
       sessionId: "ses_shell",
       todos: [{ id: "todo_1", sessionID: "ses_shell", messageID: "msg_1", content: "Check", status: "pending" }],
     })
 
-    expect(writes).toEqual([{
-      queryKey: ["shell", "session", "ses_shell", "todo"],
-      value: [{ id: "todo_1", sessionID: "ses_shell", messageID: "msg_1", content: "Check", status: "pending" }],
-    }])
+    expect(writes[0]).toBe(previous)
   })
 
   test("sessionDiffQueryOptions scopes by session id and falls back to an empty list", async () => {

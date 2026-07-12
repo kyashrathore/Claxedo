@@ -12,10 +12,10 @@
  * picked up without rebinding sessions.
  */
 import { Agent, type AgentEvent, type AgentTool, type StreamFn } from "@mariozechner/pi-agent-core"
-import type { Api, Model } from "@mariozechner/pi-ai"
+import { getModel, type Api, type Model } from "@mariozechner/pi-ai"
 import { Type } from "@sinclair/typebox"
 import type { SessionEnv } from "../../session-env"
-import type { AgentRuntimeStreamEvent } from "../../index"
+import type { AgentRuntimeStreamEvent, PromptModel } from "../../index"
 
 export type PiModelBackend = {
   /** Resolved pi-ai model, e.g. `getModel("openai-codex", "gpt-5.1-codex-mini")`. */
@@ -37,9 +37,70 @@ export type PiModelBackend = {
   extraTools?: AgentTool[]
 }
 
-export type PiModelBackendResolver = (input: {
+export type PiModelBackendResolverInput = {
   sessionId: string
-}) => Promise<PiModelBackend | undefined> | PiModelBackend | undefined
+  model?: PromptModel
+}
+
+export type PiModelResolutionErrorCode =
+  | "missing_model"
+  | "unsupported_model"
+  | "missing_credentials"
+  | "unavailable"
+
+export class PiModelResolutionError extends Error {
+  readonly code: PiModelResolutionErrorCode
+  readonly model: PromptModel | undefined
+
+  constructor(code: PiModelResolutionErrorCode, message: string, model?: PromptModel) {
+    super(message)
+    this.name = "PiModelResolutionError"
+    this.code = code
+    this.model = model
+  }
+}
+
+export type PiModelBackendResolver = (
+  input: PiModelBackendResolverInput,
+) => Promise<PiModelBackend | undefined> | PiModelBackend | undefined
+
+export function requirePiModel(model: PromptModel): Model<Api> {
+  const resolved = getModel(
+    model.providerID as Parameters<typeof getModel>[0],
+    model.modelID as never,
+  ) as Model<Api> | undefined
+  if (resolved) return resolved
+  throw new PiModelResolutionError(
+    "unsupported_model",
+    `Pi does not support model ${model.providerID}/${model.modelID}`,
+    model,
+  )
+}
+
+export type PiApiKeyBackendOptions = {
+  loadApiKey: (input: {
+    sessionId: string
+    providerID: string
+  }) => Promise<string | undefined> | string | undefined
+  systemPrompt?: string
+}
+
+/** Exact-model resolver for credential owners that expose provider API keys. */
+export function piApiKeyBackendResolver(options: PiApiKeyBackendOptions): PiModelBackendResolver {
+  return async (input) => {
+    if (!input.model) return undefined
+    const model = requirePiModel(input.model)
+    const apiKey = await options.loadApiKey({ sessionId: input.sessionId, providerID: input.model.providerID })
+    if (!apiKey) return undefined
+    return {
+      model,
+      getApiKey: (provider) => provider === input.model?.providerID
+        ? options.loadApiKey({ sessionId: input.sessionId, providerID: provider })
+        : undefined,
+      ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+    }
+  }
+}
 
 export const DEFAULT_PI_SYSTEM_PROMPT = [
   "You are Claxedo's central assistant session.",

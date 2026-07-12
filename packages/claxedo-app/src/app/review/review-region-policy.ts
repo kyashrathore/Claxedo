@@ -1,4 +1,3 @@
-// target-layer: shell/review
 
 export type ReviewRegionPolicyState = {
   key?: string

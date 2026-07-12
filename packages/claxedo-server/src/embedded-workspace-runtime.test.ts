@@ -211,6 +211,54 @@ describe("embedded workspace runtime", () => {
     }
   })
 
+  test("passes the configured Pi model backend into embedded workspace sessions", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-pi-backend-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+
+    try {
+      const resolved: unknown[] = []
+      configureEmbeddedWorkspaceRuntime({
+        opencodeRequest: async () => new Response(null, { status: 404 }),
+        piModelBackend: (input) => {
+          resolved.push(input)
+          return undefined
+        },
+      })
+      const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_pi_backend", project), { config: "skip" })
+      const query = `directory=${encodeURIComponent(project)}&runner=pi`
+      const created = await runtime.app.request(`http://localhost/session?${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Pi backend" }),
+      })
+      const session = await created.json() as { id: string }
+      const configured = await runtime.app.request(`http://localhost/session/${session.id}/config?${query}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: { providerID: "openai-codex", modelID: "gpt-5.5" } }),
+      })
+      const sent = await runtime.app.request(`http://localhost/session/${session.id}/message?${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ type: "text", text: "hello" }],
+          model: { providerID: "openai-codex", modelID: "gpt-5.5" },
+        }),
+      })
+
+      expect(created.status).toBe(201)
+      expect(configured.status).toBe(200)
+      expect(sent.status).toBe(200)
+      expect(resolved).toEqual([{
+        sessionId: session.id,
+        model: { providerID: "openai-codex", modelID: "gpt-5.5" },
+      }])
+    } finally {
+      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
   // ── Regression: a harness session's async auto-title (e.g. an ACP
   //    harness's post-turn `maybeEmitTitle`, or opencode's own LLM-driven
   //    rename) is published ONLY as an SSE event on this runtime's own
@@ -285,6 +333,51 @@ describe("embedded workspace runtime", () => {
     } finally {
       // Reset the module singleton so later tests in this file don't inherit
       // this test's callback or fake transport.
+      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("reconciles persisted runtime titles when rebuilding a workspace after restart", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-reconcile-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    process.env.CLAXEDO_AGENT_TYPE = "opencode"
+    process.env.OPENCODE_URL = "http://opencode.test"
+
+    try {
+      const snapshots: unknown[][] = []
+      configureEmbeddedWorkspaceRuntime({
+        opencodeRequest: async (req: Request) => {
+          const url = new URL(req.url)
+          if (url.pathname === "/session") {
+            return Response.json([{
+              id: "s_existing_title",
+              title: "Title generated before restart",
+              directory: project,
+              time: { created: 1, updated: 2 },
+            }])
+          }
+          if (url.pathname === "/global/event") {
+            return new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+              headers: { "content-type": "text/event-stream" },
+            })
+          }
+          return new Response(null, { status: 404 })
+        },
+        onSessionMetaSnapshot: (_workspace: Workspace, sessions: unknown[]) => {
+          snapshots.push(sessions)
+        },
+      } as never)
+
+      await ensureEmbeddedWorkspaceRuntime(workspace("ws_title_reconcile", project), { config: "skip" })
+
+      expect(snapshots).toEqual([[
+        expect.objectContaining({
+          id: "s_existing_title",
+          title: "Title generated before restart",
+        }),
+      ]])
+    } finally {
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
       await fs.rm(root, { recursive: true, force: true })
     }

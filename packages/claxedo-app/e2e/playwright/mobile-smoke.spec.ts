@@ -191,6 +191,18 @@ test.describe("mobile smoke @happy", () => {
     await expect(scrim).toBeVisible({ timeout: 5_000 })
     await expect(opener).toBeHidden()
 
+    const accountTrigger = page.getByTestId("rail-account-trigger")
+    await expect(accountTrigger).toBeVisible()
+    await accountTrigger.click()
+    const accountMenu = page.getByRole("menu")
+    await expect(accountMenu).toBeVisible()
+    const menuBox = await accountMenu.boundingBox()
+    expect(menuBox).not.toBeNull()
+    expect(menuBox!.x).toBeGreaterThanOrEqual(0)
+    expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+    await page.keyboard.press("Escape")
+    await expect(accountMenu).toHaveCount(0)
+
     // Tapping the scrim (right of the 280px drawer) closes it and restores the opener.
     await scrim.click({ position: { x: 340, y: 400 } })
     await expect(scrim).toHaveCount(0)

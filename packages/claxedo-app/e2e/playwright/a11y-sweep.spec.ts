@@ -177,7 +177,8 @@ async function modKey(page: Page): Promise<"Meta" | "Control"> {
 }
 
 async function openSettings(page: Page) {
-  await page.getByRole("button", { name: "Settings", exact: true }).last().click()
+  await page.getByTestId("rail-account-trigger").click()
+  await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
   const dialog = page.locator('[data-slot="dialog-container"]').last()
   await expect(dialog).toBeVisible({ timeout: 10_000 })
   return dialog

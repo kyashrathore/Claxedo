@@ -19,7 +19,7 @@ export default defineConfig({
       },
       {
         find: "@opencode-ai/app-shared",
-        replacement: normalizePath(fileURLToPath(new URL("./src/extensions/index.ts", import.meta.url))),
+        replacement: normalizePath(fileURLToPath(new URL("./src/features/extensions/data/index.ts", import.meta.url))),
       },
       {
         find: "@claxedo/agent-event-runtime/contracts",

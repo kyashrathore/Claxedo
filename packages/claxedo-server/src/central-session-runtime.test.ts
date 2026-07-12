@@ -7,6 +7,7 @@ import { createVirtualSessionEnv, type SessionEnv, type SessionEnvFactoryInput }
 import { createCentralSessionRuntime } from "./central-session-runtime"
 import { createCentralControlApp } from "./central-runtime"
 import { createConnectionTurnCredentials } from "./connections-host/turn-credentials"
+import { piProviderCatalog } from "./pi-provider-catalog"
 
 function services(): ControlPlaneServices {
   return {
@@ -82,6 +83,120 @@ async function eventually(fn: () => void) {
 }
 
 describe("createCentralSessionRuntime", () => {
+  test("rejects a malformed explicit deployment model instead of auto-selecting", async () => {
+    const priorModel = process.env.CLAXEDO_PI_MODEL
+    process.env.CLAXEDO_PI_MODEL = "anthropic"
+    try {
+      await expect(createCentralSessionRuntime(services()).createHybridSession({
+        title: "Malformed default",
+        requireModel: true,
+      })).rejects.toThrow("provider/model syntax")
+    } finally {
+      if (priorModel === undefined) delete process.env.CLAXEDO_PI_MODEL
+      else process.env.CLAXEDO_PI_MODEL = priorModel
+    }
+  })
+
+  test("persists the resolved deployment default for a root non-UI session", async () => {
+    const priorModel = process.env.CLAXEDO_PI_MODEL
+    const priorKey = process.env.ANTHROPIC_API_KEY
+    const modelID = Object.keys(piProviderCatalog().all.find((provider) => provider.id === "anthropic")!.models)[0]!
+    process.env.CLAXEDO_PI_MODEL = `anthropic/${modelID}`
+    process.env.ANTHROPIC_API_KEY = "test-key"
+    try {
+      const svc = services()
+      const runtime = createCentralSessionRuntime(svc)
+      const session = await runtime.createHybridSession({ title: "Defaulted" })
+
+      expect(svc.projectionStore.put_session_meta).toHaveBeenLastCalledWith(session.id, expect.objectContaining({
+        model: { providerID: "anthropic", modelID },
+      }))
+      const config = await runtime.routes.request(`http://127.0.0.1/session/${session.id}/config`)
+      await expect(config.json()).resolves.toMatchObject({ model: { providerID: "anthropic", modelID } })
+    } finally {
+      if (priorModel === undefined) delete process.env.CLAXEDO_PI_MODEL
+      else process.env.CLAXEDO_PI_MODEL = priorModel
+      if (priorKey === undefined) delete process.env.ANTHROPIC_API_KEY
+      else process.env.ANTHROPIC_API_KEY = priorKey
+    }
+  })
+
+  test("inherits the source Pi model for dispatched child sessions", async () => {
+    const priorEnabled = process.env.CLAXEDO_PI_MODEL_BACKEND
+    const priorKey = process.env.ANTHROPIC_API_KEY
+    process.env.CLAXEDO_PI_MODEL_BACKEND = "1"
+    process.env.ANTHROPIC_API_KEY = "test-key"
+    try {
+      const svc = services()
+      const runtime = createCentralSessionRuntime(svc)
+      const modelID = Object.keys(piProviderCatalog().all.find((provider) => provider.id === "anthropic")!.models)[0]!
+      const source = await runtime.createHybridSession({
+        title: "Source",
+        model: { providerID: "anthropic", modelID },
+      })
+      const child = await runtime.createDispatchedSession(source.id, { title: "Child", workspaceId: "ws_child" })
+
+      expect(svc.projectionStore.put_session_meta).toHaveBeenLastCalledWith(child.id, expect.objectContaining({
+        workspaceID: "ws_child",
+        model: { providerID: "anthropic", modelID },
+      }))
+      const config = await runtime.routes.request(`http://127.0.0.1/session/${child.id}/config`)
+      await expect(config.json()).resolves.toMatchObject({ model: { providerID: "anthropic", modelID } })
+    } finally {
+      if (priorEnabled === undefined) delete process.env.CLAXEDO_PI_MODEL_BACKEND
+      else process.env.CLAXEDO_PI_MODEL_BACKEND = priorEnabled
+      if (priorKey === undefined) delete process.env.ANTHROPIC_API_KEY
+      else process.env.ANTHROPIC_API_KEY = priorKey
+    }
+  })
+
+  test("persists config PATCH model selection and restores it after runtime reconstruction", async () => {
+    const priorEnabled = process.env.CLAXEDO_PI_MODEL_BACKEND
+    const priorKey = process.env.ANTHROPIC_API_KEY
+    process.env.CLAXEDO_PI_MODEL_BACKEND = "1"
+    process.env.ANTHROPIC_API_KEY = "test-key"
+    try {
+      const svc = services()
+      let meta: Awaited<ReturnType<typeof svc.projectionStore.session_meta>>
+      const sessionMetaMock = svc.projectionStore.session_meta as ReturnType<typeof vi.fn>
+      const putSessionMetaMock = svc.projectionStore.put_session_meta as ReturnType<typeof vi.fn>
+      sessionMetaMock.mockImplementation(async () => meta)
+      putSessionMetaMock.mockImplementation(async (sessionID, input) => {
+        meta = {
+          sessionID,
+          host: "central",
+          createdAt: meta?.createdAt ?? 1,
+          updatedAt: 2,
+          tags: [],
+          attachments: [],
+          ...(meta ?? {}),
+          ...(input.model ? { model: input.model } : {}),
+        }
+      })
+      const first = createCentralSessionRuntime(svc)
+      const session = await first.createHybridSession({ title: "Durable model" })
+      const modelID = Object.keys(piProviderCatalog().all.find((provider) => provider.id === "anthropic")!.models)[0]!
+
+      const patch = await first.routes.request(`http://127.0.0.1/session/${session.id}/config`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: { providerID: "anthropic", modelID } }),
+      })
+      expect(patch.status).toBe(200)
+      expect(meta?.model).toEqual({ providerID: "anthropic", modelID })
+
+      const reconstructed = createCentralSessionRuntime(svc)
+      const config = await reconstructed.routes.request(`http://127.0.0.1/session/${session.id}/config`)
+      expect(config.status).toBe(200)
+      await expect(config.json()).resolves.toMatchObject({ model: { providerID: "anthropic", modelID } })
+    } finally {
+      if (priorEnabled === undefined) delete process.env.CLAXEDO_PI_MODEL_BACKEND
+      else process.env.CLAXEDO_PI_MODEL_BACKEND = priorEnabled
+      if (priorKey === undefined) delete process.env.ANTHROPIC_API_KEY
+      else process.env.ANTHROPIC_API_KEY = priorKey
+    }
+  })
+
   test("binds hybrid sessions to shared session routes and publishes runtime events", async () => {
     const svc = services()
     const runtime = createCentralSessionRuntime(svc)

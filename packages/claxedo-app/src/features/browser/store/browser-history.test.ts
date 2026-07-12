@@ -39,8 +39,13 @@ mock.module("@opencode-ai/ui/context", () => ({
   },
 }))
 
+// Spread the real Persist: `mock.module` replaces the module PROCESS-WIDE, so
+// a partial Persist would break later files that call e.g. Persist.serverWorkspace.
+const realPersist = await import("@/platform/persistence/persist")
 mock.module("@/platform/persistence/persist", () => ({
+  ...realPersist,
   Persist: {
+    ...realPersist.Persist,
     global: (key: string) => {
       storageKey = key
       return { storage: "test", key }

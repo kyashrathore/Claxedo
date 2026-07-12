@@ -1,4 +1,3 @@
-/* target-layer: surfaces (marketplace) */
 import { Component, createMemo, createResource, createSignal, For, onMount, Show } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"

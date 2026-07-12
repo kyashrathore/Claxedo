@@ -3,9 +3,11 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Select } from "@opencode-ai/ui/select"
 import { TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import type { PickerState } from "@/features/session/ui/model/select-model"
+import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { AgentHarnessSelector } from "@/features/session/ui/controls/agent-harness-selector"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import { PromptModelControl } from "@/features/session/composer/ui/model-control"
+import { openCodeDraftLabels } from "@/features/session/composer/open-code-draft-default"
 
 export function PromptToolbarControls(props: {
   fileAttachmentInput: () => JSX.Element
@@ -23,6 +25,7 @@ export function PromptToolbarControls(props: {
   active: Accessor<boolean>
   controlStyle: Accessor<JSX.CSSProperties>
   sessionLocked: Accessor<boolean>
+  modelLocked: Accessor<boolean>
   showAgentSelector: Accessor<boolean>
   agentTitle: string
   agentKeybind: string
@@ -80,6 +83,23 @@ export function PromptToolbarControls(props: {
             active={props.active()}
             triggerStyle={props.controlStyle()}
             sessionLocked={props.sessionLocked()}
+            modelLocked={props.modelLocked()}
+            openCodeModel={() => {
+              const current = props.model().current()
+              const variant = props.currentVariant()
+              return current ? {
+                providerID: current.provider.id,
+                modelID: current.id,
+                ...(variant && variant !== "default" ? { variant } : {}),
+              } satisfies ModelKey : undefined
+            }}
+            openCodeModelLabels={() => {
+              const current = props.model().current()
+              return openCodeDraftLabels(
+                current ? { providerID: current.provider.id, modelID: current.id } : undefined,
+                props.model().list(),
+              )
+            }}
           />
         )}
       </Show>
@@ -95,7 +115,13 @@ export function PromptToolbarControls(props: {
             options={props.agentNames()}
             current={props.currentAgentName()}
             onSelect={(value) => {
-              if (value !== undefined) props.onAgentSelect(value)
+              // Kobalte's Select re-fires onChange with the CURRENT value when
+              // its options collection changes identity (an internal
+              // selection-sync effect, not a user pick). Propagating that
+              // no-op would spuriously re-set the agent and yank focus into
+              // the composer (`restoreFocus`), closing whatever menu the user
+              // has open. Only forward actual changes.
+              if (value !== undefined && value !== props.currentAgentName()) props.onAgentSelect(value)
             }}
             classList={{
               "capitalize max-w-[160px] max-md:shrink-0": true,
@@ -136,7 +162,12 @@ export function PromptToolbarControls(props: {
             current={props.currentVariant() ?? "default"}
             label={props.variantLabel}
             onSelect={(value) => {
-              if (value !== undefined) props.onVariantSelect(value)
+              // Same no-op guard as the agent Select above: Kobalte re-fires
+              // onChange with the unchanged value when the variants list
+              // settles after load; forwarding it would call `restoreFocus()`
+              // and steal focus from any open menu (proven cause of the
+              // sidebar view-options submenu collapsing mid-interaction).
+              if (value !== undefined && value !== (props.currentVariant() ?? "default")) props.onVariantSelect(value)
             }}
             class="capitalize max-w-[160px] max-md:hidden"
             valueClass="truncate text-[13px] font-[440] leading-4 text-v2-text-text-faint"

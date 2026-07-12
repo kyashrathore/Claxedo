@@ -6,24 +6,27 @@ import {
   type AgentRuntimeStore,
   type AgentSessionRow,
   type SandboxRef,
+  type SessionConfigUpdate,
   type SessionEnvFactory,
 } from "@claxedo/agent-sdk-runtime"
 import {
   codexBundlePiBackendResolver,
   firstPiModelBackend,
   localPiModelBackendResolver,
+  piApiKeyBackendResolver,
   PiHarnessAdapter,
   type AgentRuntimeStoreWithRecovery,
   type PiAgentTool,
   type PiModelBackendResolver,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { Type } from "@sinclair/typebox"
-import { getCredentialByProvider, putCredential, resolveSecret } from "./credentials/registry"
+import { putCredential, resolveSecret } from "./credentials/registry"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { eventSessionId } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
 import { Hono } from "hono"
+import { HTTPException } from "hono/http-exception"
 import {
   createWakes,
   createScheduler,
@@ -37,6 +40,8 @@ import { createSessionRoutes, runtimeEventsHandler, type RuntimeSessionBusEvent 
 import type { ControlPlaneServices } from "./control-plane/services"
 import type { SessionMeta } from "./session-meta"
 import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "./connections-host/turn-credentials"
+import { piRegistryCredentialProvider } from "./pi-credentials"
+import { piProviderCatalog, validatePiPromptModel } from "./pi-provider-catalog"
 
 type SourceChannel = "github" | "slack" | "telegram" | "discord" | "whatsapp"
 
@@ -56,6 +61,12 @@ function createSessionBus(): SessionBus {
       return () => subscribers.delete(fn)
     },
   }
+}
+
+function sessionConfigError(status: 400 | 409, code: string, message: string) {
+  return new HTTPException(status, {
+    res: Response.json({ error: { code, message } }, { status }),
+  })
 }
 
 function virtualToolSandbox(input: SandboxRef | undefined): SandboxRef {
@@ -112,9 +123,6 @@ type CentralSessionRuntimeOptions = {
   turnCredentials?: ConnectionTurnCredentials
 }
 
-/** Registry providers that may carry a codex auth bundle, preferred first. */
-const CODEX_BUNDLE_PROVIDERS = ["codex-app-server", "codex-acp"] as const
-
 /**
  * Registry-backed codex backend: the bundle arrives via the consent-gated
  * credential sync flow (`claxedo creds sync` → PUT /credentials), so a
@@ -122,7 +130,7 @@ const CODEX_BUNDLE_PROVIDERS = ["codex-app-server", "codex-acp"] as const
  * persisted back onto the same registry credential.
  */
 function registryCodexBackend(modelId?: string): PiModelBackendResolver {
-  const providerFor = () => CODEX_BUNDLE_PROVIDERS.find((provider) => getCredentialByProvider(provider))
+  const providerFor = () => piRegistryCredentialProvider("openai-codex")
   return codexBundlePiBackendResolver({
     loadBundle: async () => {
       const provider = providerFor()
@@ -178,18 +186,26 @@ function registryCodexBackend(modelId?: string): PiModelBackendResolver {
  * Resolution order per turn: the credential REGISTRY (deployed-box path,
  * populated by consented sync) first, then local home-dir auth stores (dev).
  */
-function centralModelBackend(): { modelBackend: PiModelBackendResolver } | undefined {
+export function centralModelBackend(): { modelBackend: PiModelBackendResolver } {
   const model = process.env.CLAXEDO_PI_MODEL?.trim()
   const enabled = (model && model.length > 0) || process.env.CLAXEDO_PI_MODEL_BACKEND === "1"
-  if (!enabled) return undefined
   const override = model && model !== "auto" ? model : undefined
   const codexModelId = override?.startsWith("openai-codex/") ? override.slice("openai-codex/".length) : undefined
   return {
     modelBackend: firstPiModelBackend(
-      registryCodexBackend(codexModelId),
-      localPiModelBackendResolver({
-        ...(override ? { modelOverride: override } : {}),
+      async (input) => !input.model || input.model.providerID === "openai-codex"
+        ? registryCodexBackend(codexModelId)(input)
+        : undefined,
+      piApiKeyBackendResolver({
+        loadApiKey: async ({ providerID }) => {
+          if (providerID !== "anthropic" && providerID !== "openai") return undefined
+          const credentialProvider = piRegistryCredentialProvider(providerID)
+          return credentialProvider ? await resolveSecret(credentialProvider) ?? undefined : undefined
+        },
       }),
+      ...(enabled ? [localPiModelBackendResolver({
+        ...(override ? { modelOverride: override } : {}),
+      })] : []),
     ),
   }
 }
@@ -253,19 +269,18 @@ function buildWakeTools(wakes: Wakes, sessionId: string, workspaceId: string): P
 export function createCentralSessionRuntime(services: ControlPlaneServices, options: CentralSessionRuntimeOptions = {}) {
   const eventHub = createRuntimeEventHub()
   const turnCredentials = options.turnCredentials ?? createConnectionTurnCredentials()
-  // Late-bound dispatch tools: the spawn_session tool needs createHybridSession
-  // + the message routes, which are built AFTER the adapter. The wrapped
-  // resolver reads this array per turn, so pushing after construction is safe.
-  const dispatchTools: PiAgentTool[] = []
+  // Late-bound because spawn_session needs createHybridSession + the message
+  // routes, which are built after the adapter. The factory captures the source
+  // session so child sessions inherit its concrete model.
+  let dispatchToolsForSession = (_sessionId: string): PiAgentTool[] => []
   // Assigned below (needs placementRoutes + createHybridSession); captured here
   // so each turn gets session-scoped wake tools. Opt-in via CLAXEDO_WAKES=1.
   let wakes: Wakes | undefined
   const baseModelBackend = centralModelBackend()
-  const modelBackend: PiModelBackendResolver | undefined = baseModelBackend
-    ? async (input) => {
+  const modelBackend: PiModelBackendResolver = async (input) => {
         const backend = await baseModelBackend.modelBackend(input)
         if (!backend) return undefined
-        const extraTools = [...(backend.extraTools ?? []), ...dispatchTools]
+        const extraTools = [...(backend.extraTools ?? []), ...dispatchToolsForSession(input.sessionId)]
         if (wakes) {
           const meta = await services.projectionStore.session_meta(input.sessionId)
           const workspaceId = (meta?.workspaceID as string | undefined) ?? input.sessionId
@@ -273,7 +288,6 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         }
         return { ...backend, extraTools }
       }
-    : undefined
   const adapter = new PiHarnessAdapter({
     eventHub,
     defaultPlacement: {
@@ -286,7 +300,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     // OPT-IN ONLY — reading local credential stores must never be a silent
     // default (consent model), and tests stay hermetic. Enable with
     // CLAXEDO_PI_MODEL=provider/modelId (or "auto"), or CLAXEDO_PI_MODEL_BACKEND=1.
-    ...(modelBackend ? { modelBackend } : {}),
+    modelBackend,
     ...(options.createEnv ? { createEnv: options.createEnv } : {}),
   })
   const runtimeStore = createMemoryRuntimeStore() as unknown as AgentRuntimeStoreWithRecovery
@@ -303,7 +317,33 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     const credential = turnCredentials.mint(input)
     return turnCredentials.run(credential, fn)
   }
-  function bindRuntimeSession(input: { id: string; title?: string | null }) {
+  async function deploymentDefaultModel(sessionId: string) {
+    const configured = process.env.CLAXEDO_PI_MODEL?.trim()
+    const enabled = !!configured || process.env.CLAXEDO_PI_MODEL_BACKEND === "1"
+    if (!enabled) return
+    const explicit = configured && configured !== "auto"
+      ? (() => {
+          const slash = configured.indexOf("/")
+          if (slash <= 0 || slash === configured.length - 1) {
+            throw new Error("CLAXEDO_PI_MODEL must use provider/model syntax or be 'auto'")
+          }
+          return { providerID: configured.slice(0, slash), modelID: configured.slice(slash + 1) }
+        })()
+      : undefined
+    const catalog = piProviderCatalog()
+    const candidates = explicit
+      ? [explicit]
+      : catalog.connected.flatMap((providerID) => {
+          const modelID = catalog.default[providerID]
+          return modelID ? [{ providerID, modelID }] : []
+        })
+    for (const model of candidates) {
+      const backend = await baseModelBackend.modelBackend({ sessionId, model })
+      if (backend) return { providerID: backend.model.provider, modelID: backend.model.id }
+    }
+  }
+  function bindRuntimeSession(input: { id: string; title?: string | null; model?: { providerID: string; modelID: string } }) {
+    const currentModel = runtimeStore.getSessionConfig(input.id)?.model
     runtimeStore.bindSession({
       sessionId: input.id,
       directory: input.id,
@@ -312,7 +352,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     })
     runtimeStore.updateSessionConfig(input.id, {
       harness: { id: "pi", access: "native" },
-      model: { providerID: "pi", modelID: "virtual" },
+      model: input.model ?? currentModel ?? { providerID: "pi", modelID: "virtual" },
       variant: null,
       agent: null,
     })
@@ -331,7 +371,8 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         toolSandbox: toolSandboxFromMeta(meta),
       },
     })
-    bindRuntimeSession({ id: sessionId, title: meta.title ?? null })
+    if (meta.model) await adapter.updateSessionConfig(sessionId, { model: meta.model }, undefined)
+    bindRuntimeSession({ id: sessionId, title: meta.title ?? null, ...(meta.model ? { model: meta.model } : {}) })
     return true
   }
   const routes = createSessionRoutes({
@@ -362,6 +403,42 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       return {
         messages: messages.filter(messageRow),
         maxEventOrdinal: services.projectionStore.read_session_max_event_ordinal(sessionId),
+      }
+    },
+    getSessionConfig: async (_c, directory, sessionId) => {
+      const meta = await services.projectionStore.session_meta(sessionId)
+      const config = await adapter.getSessionConfig(sessionId, directory)
+      return meta?.model ? { ...config, model: meta.model } : config
+    },
+    updateSessionConfig: async (_c, directory, sessionId, update: SessionConfigUpdate) => {
+      const meta = await services.projectionStore.session_meta(sessionId)
+      if (meta?.host !== "central") throw new Error(`No central session ${sessionId}`)
+      if (update.model !== undefined) {
+        if (!update.model) throw sessionConfigError(400, "pi_model_required", "Pi sessions require a provider and model")
+        const invalid = update.model.providerID === "pi" && update.model.modelID === "virtual"
+          ? undefined
+          : validatePiPromptModel(update.model)
+        if (invalid) throw sessionConfigError(400, invalid.code, invalid.message)
+        const current = meta.model
+        const changing = !current || current.providerID !== update.model.providerID || current.modelID !== update.model.modelID
+        if (changing && services.projectionStore.read_session_messages(sessionId).length) {
+          throw sessionConfigError(409, "pi_model_locked", "Start a new Pi session to use another model")
+        }
+        await services.projectionStore.put_session_meta(sessionId, { model: update.model })
+      }
+      try {
+        const config = await adapter.updateSessionConfig(sessionId, update, directory)
+        runtimeStore.updateSessionConfig(sessionId, config)
+        return config
+      } catch (cause) {
+        if (update.model !== undefined) {
+          await services.projectionStore.put_session_meta(sessionId, { model: meta.model ?? null })
+        }
+        runtimeStore.deleteSession(sessionId)
+        if (cause instanceof Error && cause.message.includes("Start a new Pi session")) {
+          throw sessionConfigError(409, "pi_model_locked", cause.message)
+        }
+        throw cause
       }
     },
     afterCreateSession: async (_c, _directory, session) => {
@@ -495,7 +572,13 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     sourceThreadKey?: string
     /** Harness id; only "pi" is dispatchable centrally today (route-validated). */
     harness?: string
+    model?: { providerID: string; modelID: string }
+    requireModel?: boolean
   }) {
+    if (input.model) {
+      const invalid = validatePiPromptModel(input.model)
+      if (invalid) throw new Error(invalid.message)
+    }
     const toolSandbox = virtualToolSandbox(input.toolSandbox)
     const workspaceId = input.workspaceId
       ?? (toolSandbox.kind === "workspace-runtime" ? toolSandbox.workspaceId : undefined)
@@ -509,7 +592,13 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         toolSandbox,
       },
     })
-    bindRuntimeSession({ id: session.id, title: input.title ?? "Hybrid Session" })
+    const model = input.model ?? await deploymentDefaultModel(session.id)
+    if (input.requireModel && !model) {
+      await adapter.deleteSession(session.id, undefined)
+      throw new Error("Pi model is not configured; select a model or configure CLAXEDO_PI_MODEL")
+    }
+    if (model) await adapter.updateSessionConfig(session.id, { model }, undefined)
+    bindRuntimeSession({ id: session.id, title: input.title ?? "Hybrid Session", ...(model ? { model } : {}) })
     const tags = [
       ...(input.sourceChannel ? [`source-channel:${input.sourceChannel}`] : []),
       ...(input.sourceThreadKey ? [`source-thread:${input.sourceThreadKey}`] : []),
@@ -532,6 +621,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       directory: null,
       ...(storedToolSandbox ? { toolSandbox: storedToolSandbox } : {}),
       title: input.title ?? "Hybrid Session",
+      ...(model ? { model } : {}),
       ...(tags.length > 0 ? { tags } : {}),
     })
     return session
@@ -549,7 +639,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       // services.authority for per-workspace resolver checks in a follow-up.
       authorize: () => true,
       spawnTurn: async (sessionId, result) => {
-        const target = sessionId ?? (await createHybridSession({ title: "Scheduled Session" })).id
+        const target = sessionId ?? (await createHybridSession({ title: "Scheduled Session", requireModel: true })).id
         await runTurn({ sessionId: target }, () =>
           placementRoutes.request(`http://127.0.0.1/session/${encodeURIComponent(target)}/message`, {
             method: "POST",
@@ -564,46 +654,62 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     }).start()
   }
 
+  async function createDispatchedSession(sourceSessionId: string, input: {
+    title?: string
+    workspaceId?: string
+  }) {
+    const source = await adapter.getSessionConfig(sourceSessionId, undefined)
+    const sourceModel = source.model?.providerID === "pi" && source.model.modelID === "virtual"
+      ? undefined
+      : source.model
+    return createHybridSession({
+      title: input.title?.trim() || "Background Session",
+      ...(sourceModel ? { model: sourceModel } : {}),
+      requireModel: true,
+      ...(input.workspaceId ? {
+        workspaceId: input.workspaceId,
+        toolSandbox: { kind: "workspace-runtime", workspaceId: input.workspaceId },
+      } : {}),
+    })
+  }
+
   // The central Agent's dispatch tool (acceptance loop: "creates a background
   // session via claxedo-mcp"): in-process equivalent of the claxedo-mcp
   // spawn_session tool — no MCP hop needed for the pi central harness. The
   // initial prompt is fired WITHOUT awaiting the turn (message route runs the
   // whole turn before responding).
-  dispatchTools.push({
-    name: "spawn_session",
-    label: "spawn_session",
-    description:
-      "Spawn a background Claxedo work session. Model turns run centrally; tool side-effects run in the " +
-      "given workspace's runtime (workspace_id) or a virtual sandbox. The initial prompt is dispatched " +
-      "fire-and-forget; returns the new session id and app URL.",
-    parameters: Type.Object({
-      title: Type.Optional(Type.String({ description: "Session title shown in the app." })),
-      prompt: Type.String({ description: "Initial prompt for the background session." }),
-      workspace_id: Type.Optional(Type.String({ description: "Workspace whose runtime hosts the session's tools." })),
-    }),
-    execute: async (_toolCallId, params) => {
-      const args = params as { title?: string; prompt: string; workspace_id?: string }
-      const workspaceId = args.workspace_id?.trim()
-      const session = await createHybridSession({
-        title: args.title?.trim() || "Background Session",
-        ...(workspaceId ? {
-          workspaceId,
-          toolSandbox: { kind: "workspace-runtime", workspaceId },
-        } : {}),
-      })
-      void Promise.resolve(runTurn({ sessionId: session.id }, () =>
-        placementRoutes.request(`http://127.0.0.1/session/${encodeURIComponent(session.id)}/message`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ parts: [{ type: "text", text: args.prompt }] }),
-        }),
-      )).catch((err: unknown) => {
-        console.error(`[central-runtime] spawn_session initial prompt failed for ${session.id}:`, err)
-      })
-      const result = { session_id: session.id, app_url: `/s/${encodeURIComponent(session.id)}`, workspace_id: workspaceId ?? null }
-      return { content: [{ type: "text", text: JSON.stringify(result) }], details: result }
-    },
-  } as PiAgentTool)
+  dispatchToolsForSession = (sourceSessionId) => [{
+      name: "spawn_session",
+      label: "spawn_session",
+      description:
+        "Spawn a background Claxedo work session. Model turns run centrally; tool side-effects run in the " +
+        "given workspace's runtime (workspace_id) or a virtual sandbox. The initial prompt is dispatched " +
+        "fire-and-forget; returns the new session id and app URL.",
+      parameters: Type.Object({
+        title: Type.Optional(Type.String({ description: "Session title shown in the app." })),
+        prompt: Type.String({ description: "Initial prompt for the background session." }),
+        workspace_id: Type.Optional(Type.String({ description: "Workspace whose runtime hosts the session's tools." })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const args = params as { title?: string; prompt: string; workspace_id?: string }
+        const workspaceId = args.workspace_id?.trim()
+        const session = await createDispatchedSession(sourceSessionId, {
+          title: args.title?.trim() || "Background Session",
+          ...(workspaceId ? { workspaceId } : {}),
+        })
+        void Promise.resolve(runTurn({ sessionId: session.id }, () =>
+          placementRoutes.request(`http://127.0.0.1/session/${encodeURIComponent(session.id)}/message`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ parts: [{ type: "text", text: args.prompt }] }),
+          }),
+        )).catch((err: unknown) => {
+          console.error(`[central-runtime] spawn_session initial prompt failed for ${session.id}:`, err)
+        })
+        const result = { session_id: session.id, app_url: `/s/${encodeURIComponent(session.id)}`, workspace_id: workspaceId ?? null }
+        return { content: [{ type: "text", text: JSON.stringify(result) }], details: result }
+      },
+    } as PiAgentTool]
 
   return {
     routes: placementRoutes,
@@ -612,6 +718,20 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     sourceChannelSessionCountsByWeek: (input?: { channel?: string; includeHidden?: boolean }) =>
       services.projectionStore.source_channel_session_counts_by_week?.(input) ?? Promise.resolve([]),
     createHybridSession,
+    createDispatchedSession,
+    updateSessionModel: async (sessionId: string, model: { providerID: string; modelID: string }) => {
+      if (!(await ensureCentralRuntimeSession(sessionId))) throw new Error(`No central session ${sessionId}`)
+      const session = runtimeStore.getSession(sessionId)
+      if (!session) throw new Error(`No central session ${sessionId}`)
+      await adapter.updateSessionConfig(sessionId, { model }, undefined)
+      runtimeStore.updateSessionConfig(sessionId, {
+        harness: { id: "pi", access: "native" },
+        model,
+        variant: null,
+        agent: null,
+      })
+    },
+    invalidateSession: (sessionId: string) => runtimeStore.deleteSession(sessionId),
     turnCredentials,
     runTurn,
     /** Present when CLAXEDO_WAKES=1. The channels/webhook layer calls deliverEvent/resolve. */

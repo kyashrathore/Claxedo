@@ -69,6 +69,8 @@ export type AgentConfigRouteOptions = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   homeDir?: string
+  updateCentralSessionModel?: (sessionId: string, model: { providerID: string; modelID: string }) => Promise<void>
+  invalidateCentralSession?: (sessionId: string) => void
 }
 
 function errorResponse(status: number, code: string, message: string, details?: Record<string, unknown>) {

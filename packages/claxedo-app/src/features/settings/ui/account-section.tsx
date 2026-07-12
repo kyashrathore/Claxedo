@@ -2,23 +2,9 @@ import { type Component, type JSX, Show, createMemo } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { Button } from "@opencode-ai/ui/button"
 import { useAuthSession } from "@/platform/auth/auth-session"
+import { authDisplayEmail, type AuthDisplayUser } from "@/platform/auth/auth-display"
 
-// Clerk's User object is loosely typed here; read the bits we render defensively.
-type SignedInUser = {
-  fullName?: string | null
-  username?: string | null
-  primaryEmailAddress?: { emailAddress?: string | null } | null
-  emailAddresses?: ReadonlyArray<{ emailAddress?: string | null }> | null
-  externalAccounts?: ReadonlyArray<{ provider?: string | null }> | null
-}
-
-function readEmail(user: SignedInUser | null): string | undefined {
-  return user?.primaryEmailAddress?.emailAddress
-    ?? user?.emailAddresses?.find((entry) => entry.emailAddress)?.emailAddress
-    ?? undefined
-}
-
-function readMethod(user: SignedInUser | null): string {
+function readMethod(user: AuthDisplayUser | null): string {
   const provider = user?.externalAccounts?.find((account) => account.provider)?.provider
   if (!provider) return "Email code"
   // Clerk provider ids look like "oauth_google" → "Google".
@@ -51,8 +37,8 @@ export const AccountSettingsSection: Component<AccountSettingsSectionProps> = (p
   const navigate = useNavigate()
 
   const identity = createMemo(() => {
-    const current = auth.user() as SignedInUser | null
-    const email = readEmail(current)
+    const current = auth.user() as AuthDisplayUser | null
+    const email = authDisplayEmail(current)
     if (!email && !current) return undefined
     return { email, name: current?.fullName ?? current?.username ?? undefined, method: readMethod(current) }
   })

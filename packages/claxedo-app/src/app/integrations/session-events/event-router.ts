@@ -1,4 +1,3 @@
-// target-layer: data
 import { applyRegisteredConversationEvent } from "../../../features/session/conversation/conversation-registry"
 import { isConversationEventType } from "../../../features/session/conversation/conversation-event"
 import { applySessionStatusSseEvent } from "../../../features/session/store/session-status-dispatcher"

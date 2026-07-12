@@ -106,6 +106,14 @@ export function serializeToolSandbox(input: SessionToolSandbox | null | undefine
   })
 }
 
+export function sessionModel(input: unknown): { providerID: string; modelID: string } | undefined {
+  const row = rec(input)
+  const providerID = txt(row?.providerID) ?? txt(row?.provider_id)
+  const modelID = txt(row?.modelID) ?? txt(row?.model_id)
+  if (!providerID || !modelID) return undefined
+  return { providerID, modelID }
+}
+
 export function storedSessionRef(input: {
   session_id: string
   workspace_id?: string | null
@@ -133,6 +141,8 @@ export function sessionMetaSyncRow(input: unknown, ws?: Workspace) {
     host: hostValue,
     directory,
     tool_sandbox: serializeToolSandbox(toolSandbox(item?.toolSandbox)),
+    model_provider_id: sessionModel(item?.model)?.providerID ?? null,
+    model_id: sessionModel(item?.model)?.modelID ?? null,
     title: txt(item?.title) ?? txt(item?.slug) ?? null,
     parent_session_id: txt(item?.parentID),
     archived_at: time.archived ?? null,

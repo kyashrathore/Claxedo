@@ -13,6 +13,7 @@ import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, fi
 import { configBody, configProvidersBody, globalConfigBody, providerAuthBody, providerBody, resolveHarnessId } from "./opencode-compat-provider-config"
 import { maybeProxy, opencodeCompatDisabled, proxyUpstream, type OpenCodeCompatRouteOptions } from "./opencode-compat-proxy"
 import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree } from "./opencode-compat-worktree-routes"
+import { PI_LAUNCH_PROVIDERS } from "../pi-credentials"
 
 // Back-compat: local callers/tests configure the compat transport by URL; this
 // maps onto the engine transport as an explicit external-URL opt-in.
@@ -147,12 +148,19 @@ export function OpenCodeCompatRoutes(options: OpenCodeCompatRouteOptions = {}) {
     })
     .put("/auth/:providerID", async (c) => {
       const id = c.req.param("providerID")
+      const harnessId = await resolveHarnessId(requestHarnessId(c))
+      if (harnessId === "pi" && !PI_LAUNCH_PROVIDERS.includes(id as (typeof PI_LAUNCH_PROVIDERS)[number])) {
+        return c.json(errorBody("pi_provider_unsupported", `${id} is not a supported Pi provider`), 400)
+      }
+      if (harnessId === "pi" && id === "openai-codex") {
+        return c.json(errorBody("pi_codex_sync_required", "Connect Codex through the credential sync flow"), 400)
+      }
       const body = await c.req.json<{ auth?: { key?: string } }>().catch(() => null)
       const key = body?.auth?.key
       if (!key) return c.json(errorBody("opencode_auth_key_required", "auth.key is required"), 400)
       const user = await loadUserConfig()
       const runner = defaultHarness(user)
-      if (runner.id === "opencode" && !id.endsWith("-acp")) return proxyUpstream(c, `/auth/${encodeURIComponent(id)}`, options)
+      if (harnessId === "opencode" && runner.id === "opencode" && !id.endsWith("-acp")) return proxyUpstream(c, `/auth/${encodeURIComponent(id)}`, options)
       // Store through the credential registry instead of plaintext config
       try {
         await putCredential({
@@ -162,7 +170,10 @@ export function OpenCodeCompatRoutes(options: OpenCodeCompatRouteOptions = {}) {
           label: `API key for ${id}`,
           secret: key,
         })
-      } catch {
+      } catch (cause) {
+        if (harnessId === "pi") {
+          return c.json(errorBody("pi_credential_store_unavailable", cause instanceof Error ? cause.message : String(cause)), 503)
+        }
         // Fallback to legacy config if backend is unavailable
         user.auth = { ...user.auth, [id]: key }
         await saveUserConfig(user)
@@ -172,9 +183,13 @@ export function OpenCodeCompatRoutes(options: OpenCodeCompatRouteOptions = {}) {
     })
     .delete("/auth/:providerID", async (c) => {
       const id = c.req.param("providerID")
+      const harnessId = await resolveHarnessId(requestHarnessId(c))
+      if (harnessId === "pi" && !PI_LAUNCH_PROVIDERS.includes(id as (typeof PI_LAUNCH_PROVIDERS)[number])) {
+        return c.json(errorBody("pi_provider_unsupported", `${id} is not a supported Pi provider`), 400)
+      }
       const user = await loadUserConfig()
       const runner = defaultHarness(user)
-      if (runner.id === "opencode" && !id.endsWith("-acp")) return proxyUpstream(c, `/auth/${encodeURIComponent(id)}`, options)
+      if (harnessId === "opencode" && runner.id === "opencode" && !id.endsWith("-acp")) return proxyUpstream(c, `/auth/${encodeURIComponent(id)}`, options)
       // Delete from credential registry
       await deleteCredentialsByProvider(id).catch(() => {})
       // Also clean up legacy config if present

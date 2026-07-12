@@ -1,10 +1,10 @@
 {
   "state": "applied",
-  "revision": 22,
-  "acceptedAt": "2026-07-11T17:20:25.173Z",
-  "updatedAt": "2026-07-11T17:20:25.184Z",
+  "revision": 3,
+  "acceptedAt": "2026-07-12T12:06:16.075Z",
+  "updatedAt": "2026-07-12T12:06:16.078Z",
   "harness": {
-    "id": "codex",
+    "id": "pi",
     "access": "native"
   }
 }

@@ -32,6 +32,8 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   applyPatch(scope: string, patch: HarnessStorePatch): void
   saveHarness(scope: string, type: HarnessType): void
   saveModel(scope: string, model: string): void
+  beginDraftHarnessChoice?(scope: string, type: HarnessType, params?: ScopeInput): void
+  rememberDraftHarness(scope: string, type: HarnessType, params?: ScopeInput): void
   refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
   errorMessage(res: Response, fallback: string): Promise<string>
@@ -42,27 +44,43 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   }
   cache: HarnessSwitcherCache
 }) {
+  const revisions = new Map<string, number>()
+  let nextRevision = 0
+
   const setHarness = (scope: string, type: HarnessType, params?: ScopeInput, binary?: string) => {
     const key = harnessChangeKey(scope, type, binary)
     const pending = input.cache.getPending(key)
     if (pending) return pending
 
-    const run = setHarnessOnce(scope, type, params, binary)
+    const revision = ++nextRevision
+    revisions.set(scope, revision)
+    const run = setHarnessOnce(scope, type, params, binary, () => revisions.get(scope) === revision)
     input.cache.setPending(key, run)
-    return run.finally(() => input.cache.removePending(key, run))
+    return run.finally(() => {
+      input.cache.removePending(key, run)
+      if (revisions.get(scope) === revision) revisions.delete(scope)
+    })
   }
 
-  const setHarnessOnce = async (scope: string, type: HarnessType, params?: ScopeInput, binary?: string) => {
+  const setHarnessOnce = async (
+    scope: string,
+    type: HarnessType,
+    params: ScopeInput | undefined,
+    binary: string | undefined,
+    active: () => boolean,
+  ) => {
     const useLocalHarnessConfig = input.runtime.useLocalHarnessConfig(params)
     input.seed(scope)
     input.dropPrepared(scope)
+    if (!params?.sessionId || params.sessionId === "new") input.beginDraftHarnessChoice?.(scope, type, params)
     input.applyPatch(scope, harnessSwitchStartPatch({ type }))
     input.cache.clearOptionsTries(scope)
     input.saveHarness(scope, type)
     input.saveModel(scope, effectiveHarnessModel(type))
 
     if (!params?.sessionId || params.sessionId === "new") {
-      await switchDraftHarness(scope, type, params, binary, useLocalHarnessConfig)
+      const accepted = await switchDraftHarness(scope, type, params, binary, useLocalHarnessConfig, active)
+      if (accepted && active()) input.rememberDraftHarness(scope, type, params)
       return
     }
 
@@ -71,7 +89,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
       return
     }
 
-    await switchExistingLocalHarness(scope, type, params, binary)
+    await switchExistingLocalHarness(scope, type, params, binary, active)
   }
 
   const switchDraftHarness = async (
@@ -80,21 +98,26 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     params: ScopeInput | undefined,
     binary: string | undefined,
     useLocalHarnessConfig: boolean,
+    active: () => boolean,
   ) => {
     const workspace = await input.runtime.workspace(params).catch(() => undefined)
+    if (!active()) return false
     const status = useLocalHarnessConfig && workspace?.kind !== "cloud" && workspace?.kind !== "user-hosted"
-      ? await postHarnessConfig(scope, type, params, binary)
+      ? await postHarnessConfig(scope, type, params, binary, undefined, active)
       : true
-    if (!status) return
+    if (!status || !active()) return false
     if (!harnessHasConfigOptions(type)) {
       input.applyPatch(scope, { harnessBinary: "" })
       await input.refresh(params?.directory, type, { draft: true })
+      if (!active()) return false
       applyPostedStatus(scope, status)
-      return
+      return true
     }
     input.fetchConfigOptions(scope, type, params)
     await input.refresh(params?.directory, type, { draft: true })
+    if (!active()) return false
     applyPostedStatus(scope, status)
+    return true
   }
 
   const switchExistingLocalHarness = async (
@@ -102,14 +125,16 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     type: HarnessType,
     params: ScopeInput,
     binary?: string,
+    active: () => boolean = () => true,
   ) => {
     const status = await postHarnessConfig(scope, type, params, binary, {
       sessionId: params.sessionId,
       directory: params.directory,
-    })
-    if (!status) return
+    }, active)
+    if (!status || !active()) return
     if (binary) input.applyPatch(scope, { harnessBinary: binary })
     await input.refresh(params.directory, type)
+    if (!active()) return
     applyPostedStatus(scope, status)
     if (!harnessHasConfigOptions(type)) {
       input.applyPatch(scope, {
@@ -129,6 +154,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     params: ScopeInput | undefined,
     binary: string | undefined,
     session?: { sessionId?: string; directory?: string },
+    active: () => boolean = () => true,
   ) => {
     try {
       const res = await input.runtime.localHarnessConfigFetch(params)(
@@ -144,9 +170,14 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
           }),
         },
       )
-      if (res.ok) return decodeHarnessState(await res.json().catch(() => undefined)) ?? await fetchHarnessStatus(params, session) ?? true
+      if (!active()) return false
+      if (res.ok) {
+        const data = decodeHarnessState(await res.json().catch(() => undefined)) ?? await fetchHarnessStatus(params, session) ?? true
+        return active() ? data : false
+      }
       throw new Error(await input.errorMessage(res, `Failed to switch to ${type}`))
     } catch (err) {
+      if (!active()) return false
       input.applyPatch(scope, {
         configError: err instanceof Error ? err.message : "Failed to switch harness",
         readiness: "error",

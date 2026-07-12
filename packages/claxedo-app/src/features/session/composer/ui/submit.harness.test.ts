@@ -31,6 +31,7 @@
  */
 import { expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 import type { Prompt } from "@/features/session/providers/prompt"
 import { createMockApi } from "@/architecture/test-support/mock-api"
 import { queryClient } from "@/platform/query/query-client"
@@ -286,11 +287,69 @@ export function createSubmit(
 }
 
 /**
+ * Every specifier `installSubmitMocks` registers. `mock.module` is PROCESS-WIDE
+ * and permanent, so without restoration these stubs leak into every test file
+ * that runs after a submit suite (editor-actions, data/query factories, …).
+ * `installSubmitMocks` snapshots the real exports on first install, and
+ * `restoreSubmitMocks` re-registers them; carved files call it in `afterAll`.
+ */
+const mockedSpecifiers = [
+  "@solidjs/router",
+  "@opencode-ai/ui/toast",
+  "@/lib/encode",
+  "@/platform/runtime/session-url",
+  "@opencode-ai/sdk/v2/client",
+  "@/platform/api/api",
+  "@/platform/runtime/transport",
+  "@/features/session/providers/session-selection",
+  "@/features/session/providers/permission",
+  "@/features/session/providers/prompt",
+  "@/app/providers/layout",
+  "@/app/providers/sdk/sdk",
+  "@/context/sync",
+  "../../conversation/conversation-registry",
+  "@/app/providers/global-sync/provider",
+  "@/platform/i18n/provider",
+  "@/platform/runtime/platform-provider",
+  "@/features/session/composer/ui/build-request-parts",
+  "@/features/session/composer/ui/editor-dom",
+  "@/features/session/providers/session-params",
+  "@/app/workbench/state",
+  "@/features/session/preferences/pane",
+  "@/pane/store/pane-preferences",
+]
+let capturedReals: Map<string, Record<string, unknown>> | undefined
+let originalFetch: typeof globalThis.fetch | undefined
+
+async function captureRealModules() {
+  if (capturedReals) return
+  const captured = new Map<string, Record<string, unknown>>()
+  for (const specifier of mockedSpecifiers) {
+    try {
+      captured.set(specifier, { ...(await import(specifier)) })
+    } catch {
+      // Mock-only (phantom) specifier — there is no real module to restore.
+    }
+  }
+  capturedReals = captured
+}
+
+/** Re-register the real modules so submit stubs do not leak into later files. */
+export function restoreSubmitMocks(mock: ModuleMocker) {
+  if (originalFetch) globalThis.fetch = originalFetch
+  for (const [specifier, exports] of capturedReals ?? []) {
+    mock.module(specifier, () => exports)
+  }
+}
+
+/**
  * Registers every `mock.module` the submit orchestrator depends on and loads
  * `./submit`. Idempotent across carved files: they all register the identical
  * closures over the shared `state`, so repeat registration is a no-op in effect.
  */
 export async function installSubmitMocks(mock: ModuleMocker) {
+  await captureRealModules()
+  originalFetch ??= globalThis.fetch
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(String(input), init)
     const url = new URL(request.url)
@@ -570,7 +629,12 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     }),
   }))
 
+  // Spread the real module: `mock.module` replaces the module PROCESS-WIDE, so
+  // later test files that import the pure exports (DEFAULT_PROMPT,
+  // isPromptEqual, …) would otherwise crash with "Export not found".
+  const realPrompt = await import("@/features/session/providers/prompt")
   mock.module("@/features/session/providers/prompt", () => ({
+    ...realPrompt,
     usePrompt: () => ({
       current: () => promptValue,
       reset: (scope?: unknown) => {
@@ -811,6 +875,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
 
 /** Restore every mutable state field + observable sink to its per-test default. */
 export function resetSubmitHarness() {
+  configureAppPortsForTest()
   promptValue.splice(0, promptValue.length, { type: "text", content: "hello", start: 0, end: 5 })
   calls.prompt = 0
   calls.async = 0

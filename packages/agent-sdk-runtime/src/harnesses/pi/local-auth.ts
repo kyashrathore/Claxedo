@@ -23,9 +23,9 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { getEnvApiKey, getModel } from "@mariozechner/pi-ai"
+import { getEnvApiKey, getProviders } from "@mariozechner/pi-ai"
 import { getOAuthApiKey, type OAuthCredentials } from "@mariozechner/pi-ai/oauth"
-import type { PiModelBackend, PiModelBackendResolver } from "./model-backend"
+import { requirePiModel, type PiModelBackend, type PiModelBackendResolver } from "./model-backend"
 
 const DEFAULT_MODELS: Record<string, string> = {
   // ChatGPT-account Codex accepts only a moving subset of registry models
@@ -128,6 +128,11 @@ function hasUsableCredentials(options: LocalPiAuthOptions, provider: string): bo
   return typeof getEnvApiKey(provider) === "string"
 }
 
+/** Secret-free availability signal for the same local sources used by the resolver. */
+export function localPiCredentialProviders(options: LocalPiAuthOptions = {}): string[] {
+  return getProviders().filter((provider) => hasUsableCredentials(options, provider))
+}
+
 /**
  * The model the Codex CLI itself is configured to use (`model = "..."` in
  * ~/.codex/config.toml). ChatGPT-account Codex serves a moving subset of
@@ -193,8 +198,10 @@ function makeGetApiKey(options: LocalPiAuthOptions): PiModelBackend["getApiKey"]
 export function localPiModelBackendResolver(options: LocalPiAuthOptions = {}): PiModelBackendResolver {
   let warnedNoBackend = false
   let warnedBadModel: string | undefined
-  return () => {
-    const selection = selectProviderModel(options)
+  return (input) => {
+    const selection = input.model
+      ? { provider: input.model.providerID, modelId: input.model.modelID }
+      : selectProviderModel(options)
     if (!selection) {
       if (!warnedNoBackend) {
         warnedNoBackend = true
@@ -204,12 +211,20 @@ export function localPiModelBackendResolver(options: LocalPiAuthOptions = {}): P
       }
       return undefined
     }
+    if (input.model) {
+      if (!hasUsableCredentials(options, selection.provider)) return undefined
+      return {
+        model: requirePiModel(input.model),
+        getApiKey: makeGetApiKey(options),
+        ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+      }
+    }
     const candidates = [selection.modelId, DEFAULT_MODELS[selection.provider]]
       .filter((id): id is string => typeof id === "string")
       .filter((id, index, all) => all.indexOf(id) === index)
     for (const modelId of candidates) {
       try {
-        const model = getModel(selection.provider as Parameters<typeof getModel>[0], modelId as never)
+        const model = requirePiModel({ providerID: selection.provider, modelID: modelId })
         return {
           model,
           getApiKey: makeGetApiKey(options),

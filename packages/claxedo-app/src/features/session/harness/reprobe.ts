@@ -1,4 +1,3 @@
-// target-layer: session
 //
 // Bounded re-probe loop for a harness stuck in the "polling" (Connecting)
 // readiness. Harness hydration (`harness-hydrator.ts`) is one-shot: it stamps a

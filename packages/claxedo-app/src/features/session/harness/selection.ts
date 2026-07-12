@@ -1,10 +1,8 @@
-// target-layer: session
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import {
   DEFAULT_HARNESS_MODEL,
   HARNESS_DISPLAY_NAMES,
   effectiveHarnessModel,
-  fixedHarnessModel,
   type HarnessType,
 } from "./profile"
 
@@ -14,7 +12,8 @@ export type HarnessSelectionState = {
   readonly harness: HarnessType
   readonly harnessBinary?: string
   readonly selectedModel?: string
-  readonly dynamicModels?: readonly { id: string; name: string }[] | null
+  readonly selectedModelProvider?: string
+  readonly dynamicModels?: readonly { id: string; name: string; providerID?: string }[] | null
   readonly readiness: HarnessReadiness
   readonly optionsLoading: boolean
   readonly configError?: string
@@ -31,41 +30,42 @@ export function harnessDisplayName(state: Pick<HarnessSelectionState, "harness" 
   return HARNESS_DISPLAY_NAMES[key] ?? key
 }
 
-export function harnessModels(state: Pick<HarnessSelectionState, "harness" | "selectedModel" | "dynamicModels">) {
+export function harnessModels(state: Pick<HarnessSelectionState, "harness" | "selectedModel" | "selectedModelProvider" | "dynamicModels">) {
   const selected = effectiveHarnessModel(state.harness, state.selectedModel)
   if (state.dynamicModels?.length) {
     if (!selected || state.dynamicModels.some((item) => item.id === selected)) return [...state.dynamicModels]
     return [
-      { id: selected, name: selected === DEFAULT_HARNESS_MODEL.id ? DEFAULT_HARNESS_MODEL.name : selected },
+      { id: selected, name: selected === DEFAULT_HARNESS_MODEL.id ? DEFAULT_HARNESS_MODEL.name : selected, providerID: state.selectedModelProvider },
       ...state.dynamicModels,
     ]
   }
   if (!selected) return []
-  return [{ id: selected, name: selected === DEFAULT_HARNESS_MODEL.id ? DEFAULT_HARNESS_MODEL.name : selected }]
+  return [{ id: selected, name: selected === DEFAULT_HARNESS_MODEL.id ? DEFAULT_HARNESS_MODEL.name : selected, providerID: state.selectedModelProvider }]
 }
 
 export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey | undefined {
   if (state.harness === "opencode") return undefined
-  const fixed = fixedHarnessModel(state.harness)
-  if (fixed) return { providerID: fixed.provider.id, modelID: fixed.id }
   const selected = effectiveHarnessModel(state.harness, state.selectedModel)
   if (!selected) return undefined
-  if (!harnessModels(state).some((item) => item.id === selected)) return undefined
-  return { providerID: state.harness, modelID: selected }
+  const match = harnessModels(state).find((item) => item.id === selected && (!state.selectedModelProvider || !item.providerID || item.providerID === state.selectedModelProvider))
+  if (!match) return undefined
+  const providerID = state.harness === "pi" ? state.selectedModelProvider : state.harness
+  if (!providerID) return undefined
+  return {
+    providerID,
+    modelID: selected,
+  }
 }
 
 export function harnessModelNameForSubmit(state: HarnessSelectionState) {
   const model = harnessModelKeyForSubmit(state)
   if (!model) return undefined
-  const fixed = fixedHarnessModel(state.harness)
-  if (fixed?.id === model.modelID) return fixed.name
-  return harnessModels(state).find((item) => item.id === model.modelID)?.name
+  return harnessModels(state).find((item) => item.id === model.modelID && (!item.providerID || item.providerID === model.providerID))?.name
 }
 
 export function harnessReadyForSubmit(state: HarnessSelectionState) {
   if (state.harness === "opencode") return true
   if (state.configError || state.readiness === "error" || state.optionsLoading) return false
-  if (fixedHarnessModel(state.harness)) return true
   return !!harnessModelKeyForSubmit(state)
 }
 

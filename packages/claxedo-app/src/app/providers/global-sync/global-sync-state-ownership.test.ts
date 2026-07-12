@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test"
 
 describe("global sync state ownership", () => {
   test("keeps request dedupe and session load metadata in Query", async () => {
-    const source = await Bun.file(new URL("../global-sync.tsx", import.meta.url)).text()
-    const bootstrapSource = await Bun.file(new URL("../../shell/data/bootstrap-orchestrator.ts", import.meta.url)).text()
-    const inventorySource = await Bun.file(new URL("../../shell/data/inventory-source.ts", import.meta.url)).text()
-    const eventIngress = await Bun.file(new URL("../../shell/data/event-ingress.ts", import.meta.url)).text()
+    const source = await Bun.file(new URL("./provider.tsx", import.meta.url)).text()
+    const bootstrapSource = await Bun.file(new URL("../../boot/data/bootstrap-orchestrator.ts", import.meta.url)).text()
+    const inventorySource = await Bun.file(new URL("../../../features/session/data/sync/inventory-source.ts", import.meta.url)).text()
+    const eventIngress = await Bun.file(new URL("../../integrations/session-events/event-ingress.ts", import.meta.url)).text()
 
-    expect(await Bun.file(new URL("../../overrides/context/global-sync.tsx", import.meta.url)).exists()).toBe(false)
+    expect(await Bun.file(new URL("../../../overrides/context/global-sync.tsx", import.meta.url)).exists()).toBe(false)
     expect(source).not.toContain("workspaceGroupedInflight")
     expect(source).not.toContain("const booting = new Map")
     expect(source).not.toContain("const sessionLoads = new Map")
@@ -35,13 +35,13 @@ describe("global sync state ownership", () => {
   })
 
   test("speculative directory session loads can stay quiet at the source", async () => {
-    const source = await Bun.file(new URL("../../shell/data/bootstrap-orchestrator.ts", import.meta.url)).text()
-    const bootstrap = await Bun.file(new URL("../../shell/data/bootstrap.ts", import.meta.url)).text()
+    const source = await Bun.file(new URL("../../boot/data/bootstrap-orchestrator.ts", import.meta.url)).text()
+    const bootstrap = await Bun.file(new URL("../../boot/data/bootstrap.ts", import.meta.url)).text()
 
     expect(source).toMatch(/async function loadSessions\(directory: DirectoryRef, opts: \{ force\?: boolean; quiet\?: boolean \} = \{\}\)/)
     expect(source).toMatch(/if \(opts\.quiet\) return[\s\S]{0,120}showToast/)
     expect(source).toMatch(/refreshDirectory\(directory: DirectoryRef, harnessType\?: string, opts\?: \{ quiet\?: boolean \}\)/)
-    expect(bootstrap).toMatch(/loadSessions: \(directory: string, opts\?: \{ quiet\?: boolean \}\)/)
+    expect(bootstrap).toMatch(/loadSessions: \(directory: BootstrapDirectory, opts\?: \{ quiet\?: boolean \}\)/)
     expect(bootstrap).toMatch(/quiet: input\.quiet/)
     expect(bootstrap).toMatch(/if \(!input\.quiet\) \{[\s\S]{0,180}showToast/)
   })

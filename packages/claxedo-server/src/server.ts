@@ -34,7 +34,11 @@ import {
   createWorkspaceSupervisorSandboxManager,
   shutdownWorkspaceSupervisor,
 } from "./workspace-supervisor"
-import { configureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "./embedded-workspace-runtime"
+import {
+  configureEmbeddedWorkspaceRuntime,
+  ensureEmbeddedWorkspaceRuntime,
+  shutdownEmbeddedWorkspaceRuntimes,
+} from "./embedded-workspace-runtime"
 import { configureOpenCodeAuth, opencodeHeaders } from "./opencode-auth"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "./architecture"
 import { createSqliteCentralStore } from "./control-plane/adapters/sqlite/central-store"
@@ -56,13 +60,14 @@ import { BootstrapRoutes } from "./routes/bootstrap"
 import { LivingAppsRoutes } from "./routes/living-apps"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "./control-plane/runtime-access-token"
 import { createControlPlaneRelayProvider } from "./relay-provider"
-import { resolveWorkspace } from "./workspace-store"
+import { listProjects, resolveWorkspace } from "./workspace-store"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "./region"
 import { mountControlPlaneChannels } from "./channels-control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
 import { createClaxedoSessionEnvFactory } from "./workspace-runtime-integration/session-env"
 import { loadWorkGraphApp, mountLazyLocalOnlyWorkGraph } from "./server-workgraph"
 import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
+import { centralModelBackend } from "./central-session-runtime"
 
 export { mountLazyLocalOnlyWorkGraph, mountLocalOnlyWorkGraph } from "./server-workgraph"
 
@@ -155,7 +160,10 @@ export function isConnectionsCredentialPath(path: string): boolean {
   return CONNECTIONS_CREDENTIAL_PATH.test(path)
 }
 
-export function createApp(services: ControlPlaneServices, options: { onOpencodeAccess?: () => void } = {}) {
+export function createApp(services: ControlPlaneServices, options: {
+  onOpencodeAccess?: () => void
+  beforeLocalSessionList?: () => Promise<void>
+} = {}) {
   const app = new Hono()
   // Record the transport peer address for every request (including
   // @hono/node-ws upgrades, whose Requests lack the node-server internals)
@@ -174,6 +182,7 @@ export function createApp(services: ControlPlaneServices, options: { onOpencodeA
     // /api/wr/session-env/* when toolSandbox.kind === "workspace-runtime".
     createEnv: createClaxedoSessionEnvFactory({ fetchOptions: runtimeProxyOptions, turnCredentials }),
     turnCredentials,
+    ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
   })
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
   const workspaceRuntimeProxy = createWorkspaceRuntimeProxy(runtimeProxyOptions)
@@ -359,6 +368,8 @@ export function createApp(services: ControlPlaneServices, options: { onOpencodeA
     "/api/claxedo/agent-config",
     AgentConfigRoutes({
       services,
+      updateCentralSessionModel: centralControl.runtime.updateSessionModel,
+      invalidateCentralSession: centralControl.runtime.invalidateSession,
       ...authRouteOptions(services),
       agentExtensionPolicyOverrides: services.extensionPolicy.agentExtensionPolicyOverrides,
     }),
@@ -561,6 +572,7 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
   configureEmbeddedWorkspaceRuntime({
     opencodeRequest,
     opencodeCompat,
+    piModelBackend: centralModelBackend().modelBackend,
     // See `projectLocalSessionMetaFromEvent` above: a harness session's
     // async auto-title (opencode's own LLM rename, or an ACP harness's
     // post-turn `maybeEmitTitle`) is published only over that workspace's
@@ -572,7 +584,17 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
         void projectLocalSessionMetaFromEvent(services, event)
       }
     },
+    onSessionMetaSnapshot: async (workspace, sessions) => {
+      await Promise.all(sessions.map((session) => services.projectionStore.sync_session_meta(workspace, session)))
+    },
   })
+  async function refreshLocalSessionProjection() {
+    await Promise.allSettled(
+      (await listProjects()).flatMap((project) => Object.values(project.workspaces))
+        .filter((workspace) => workspace.kind !== "cloud" && workspace.available !== false)
+        .map((workspace) => ensureEmbeddedWorkspaceRuntime(workspace, { config: "skip" })),
+    )
+  }
   configureAgentConfig({
     ...(process.env.CLAXEDO_ACP_DIR ? { acpDir: process.env.CLAXEDO_ACP_DIR } : {}),
   })
@@ -616,8 +638,13 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
     })
   })
 
+  let localSessionProjectionReady: Promise<void> | undefined
   const built = createApp(services, {
     onOpencodeAccess: () => upstreamEvents?.start(),
+    beforeLocalSessionList: () => {
+      localSessionProjectionReady ??= refreshLocalSessionProjection()
+      return localSessionProjectionReady
+    },
   })
   mountLazyLocalOnlyWorkGraph(built.app, authRouteOptions(services), async () =>
     loadWorkGraphApp({ opencodeRequest, opencodeEvents, connections: built.connections }).catch((err) => {

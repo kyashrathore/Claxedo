@@ -71,24 +71,48 @@ export function projectListQuery(input: {
 export function providerListQuery(input: {
   baseUrl?: string
   client: ProviderClient
+  directory?: string | null
+  harnessType?: string
+  request?: typeof fetch
 }) {
   const backend = createHttpShellBackend({
     client: input.client,
   })
   return {
-    queryKey: queryKeys.controlPlane.providers(input.baseUrl),
+    queryKey: queryKeys.controlPlane.providers(input.baseUrl, input.directory ?? undefined, input.harnessType),
     staleTime: 5 * 60 * 1000,
-    queryFn: async () => normalizeProviderList((await backend.listProviders()) ?? { all: [], connected: [], default: {} }),
+    queryFn: async () => {
+      if (!input.harnessType) {
+        return normalizeProviderList((await backend.listProviders()) ?? { all: [], connected: [], default: {} })
+      }
+      if (!input.baseUrl || !input.request) throw new Error("Harness provider query requires an authenticated request")
+      const url = new URL("/provider", input.baseUrl)
+      url.searchParams.set("harness", input.harnessType)
+      if (input.directory) url.searchParams.set("directory", input.directory)
+      const response = await input.request(url, { headers: { Accept: "application/json" } })
+      if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.harnessType} models`)
+      return normalizeProviderList(await response.json() as ProviderListResponse)
+    },
   }
 }
 
 export function providerAuthQuery(input: {
   baseUrl?: string
   client: ProviderAuthClient
+  harnessType?: string
+  request?: typeof fetch
 }) {
   return {
-    queryKey: queryKeys.controlPlane.providerAuth(input.baseUrl),
+    queryKey: queryKeys.controlPlane.providerAuth(input.baseUrl, input.harnessType),
     staleTime: 0,
-    queryFn: async () => (await input.client.provider.auth()).data ?? {},
+    queryFn: async () => {
+      if (!input.harnessType) return (await input.client.provider.auth()).data ?? {}
+      if (!input.baseUrl || !input.request) throw new Error("Harness provider auth query requires an authenticated request")
+      const url = new URL("/provider/auth", input.baseUrl)
+      url.searchParams.set("harness", input.harnessType)
+      const response = await input.request(url, { headers: { Accept: "application/json" } })
+      if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.harnessType} provider authentication`)
+      return await response.json() as ProviderAuthResponse
+    },
   }
 }

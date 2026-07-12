@@ -549,7 +549,6 @@ test.describe("core busy / abort / errors @core", () => {
   // reported, not correctness.
   test.describe.configure({ timeout: 120_000 })
   test("Thinking renders while busy, then gives way to the visible reply — behavior 1", async ({ page }) => {
-    const bridge = await installWorkspaceRuntimeEventsBridge(page)
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -562,6 +561,7 @@ test.describe("core busy / abort / errors @core", () => {
       // this test needs a wide enough busy window to not hit.
       timingsMs: { busy: 60, pending: 150, delta: 15_000, completed: 300, idle: 150 },
     })
+    const bridge = await installWorkspaceRuntimeEventsBridge(page)
     // See neutralizeStatusPoll's doc comment: without this, the shared mock's bulk
     // /session/status route (mismatched glob, falls through to a different handler)
     // reconciles this turn to idle almost immediately after send, well before this
@@ -657,8 +657,8 @@ test.describe("core busy / abort / errors @core", () => {
 
   test("an aborted assistant message renders an Interrupted divider at its position — behavior 5", async ({ page }) => {
     const abortState = await registerAbortRoute(page)
-    const bridge = await installWorkspaceRuntimeEventsBridge(page)
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const bridge = await installWorkspaceRuntimeEventsBridge(page)
     // Registered AFTER installMockRuntime — see the note in the previous test.
     const promptState = await silencePromptAsync(page)
     // See neutralizeStatusPoll's doc comment.
@@ -717,7 +717,6 @@ test.describe("core busy / abort / errors @core", () => {
 
   test("Enter on a blank composer while busy is an intentional no-op — behavior 4", async ({ page }) => {
     const abortState = await registerAbortRoute(page)
-    const bridge = await installWorkspaceRuntimeEventsBridge(page)
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -734,6 +733,7 @@ test.describe("core busy / abort / errors @core", () => {
       // called (near the END of this test, after both "stop" icon checks).
       timingsMs: { busy: 60, pending: 150, delta: 1_500, completed: 300, idle: 150 },
     })
+    const bridge = await installWorkspaceRuntimeEventsBridge(page)
     // See neutralizeStatusPoll's doc comment.
     await neutralizeStatusPoll(page)
     await seedOneProject(page, DIR)
@@ -782,7 +782,6 @@ test.describe("core busy / abort / errors @core", () => {
   test("a retry/ACP-recovery status renders the retry banner, then the turn recovers and completes — behavior 6", async ({
     page,
   }) => {
-    const bridge = await installWorkspaceRuntimeEventsBridge(page)
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -792,6 +791,7 @@ test.describe("core busy / abort / errors @core", () => {
       // contention-induced lag before this test gets around to emitting it.
       timingsMs: { busy: 60, pending: 150, delta: 15_000, completed: 300, idle: 150 },
     })
+    const bridge = await installWorkspaceRuntimeEventsBridge(page)
     // See neutralizeStatusPoll's doc comment.
     await neutralizeStatusPoll(page)
     await seedOneProject(page, DIR)

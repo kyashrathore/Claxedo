@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import type { Prompt } from "@/features/session/providers/prompt"
 import * as h from "./submit.harness.test"
@@ -17,6 +17,7 @@ beforeAll(async () => {
   await h.installSubmitMocks(mock)
 })
 beforeEach(() => h.resetSubmitHarness())
+afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("Harness + demo dispatch and abort", () => {
   test("uses the shared demo helper to send sync prompts", async () => {

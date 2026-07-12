@@ -63,6 +63,18 @@ describe("harness store state projectors", () => {
     })
   })
 
+  test("restores the complete persisted Pi model key", () => {
+    expect(initialHarnessStoreState({
+      scope: "draft:/repo:route",
+      savedHarness: "pi",
+      savedModel: '{"providerID":"anthropic","modelID":"claude-sonnet-4-5"}',
+    })).toMatchObject({
+      harness: "pi",
+      selectedModelProvider: "anthropic",
+      selectedModel: "claude-sonnet-4-5",
+    })
+  })
+
   test("projects harness status onto current state", () => {
     expect(harnessStatusPatch({
       current: initialHarnessStoreState({

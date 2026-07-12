@@ -606,6 +606,55 @@ describe("agent lifecycle integration", () => {
     })
   })
 
+  describe.each([
+    { label: "opencode native", runner: undefined },
+    { label: "claude ACP", runner: "claude-acp" as const },
+    { label: "codex ACP", runner: "codex-acp" as const },
+    { label: "cursor ACP", runner: "cursor-acp" as const },
+  ])("$label first-turn title", ({ label, runner }) => {
+    it("generates, projects, and restores the title after the first turn", async () => {
+      if (runner) await setAcpRunner(runner)
+      const ws = await workspace(`first-turn-title-${label.replaceAll(" ", "-")}`)
+      const prompt = `Please fix ${label} first-turn title`
+      const expectedTitle = `fix ${label} first-turn title`
+
+      const createRes = await fetch(`${base()}/session?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      expect(createRes.status).toBe(201)
+      const session = await createRes.json() as { id: string }
+
+      const messageRes = await fetch(`${base()}/session/${encodeURIComponent(session.id)}/message?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: prompt }] }),
+      })
+      expect(messageRes.status).toBe(200)
+
+      await expect.poll(async () => {
+        const response = await fetch(`${base()}/session/${encodeURIComponent(session.id)}?${q(ws)}`)
+        return ((await response.json()) as { title?: string }).title
+      }, { timeout: 10_000 }).toBe(expectedTitle)
+
+      await expect.poll(async () => {
+        const response = await fetch(
+          `${base()}/api/control/session-list?scope=workspace&workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}&limit=20`,
+        )
+        const body = await response.json() as { items?: Array<{ sessionId: string; title?: string }> }
+        return body.items?.find((item) => item.sessionId === session.id)?.title
+      }, { timeout: 10_000 }).toBe(expectedTitle)
+
+      embedded.shutdownEmbeddedWorkspaceRuntimes()
+      const afterRestart = await fetch(
+        `${base()}/api/control/session-list?scope=workspace&workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}&limit=20`,
+      )
+      const body = await afterRestart.json() as { items?: Array<{ sessionId: string; title?: string }> }
+      expect(body.items?.find((item) => item.sessionId === session.id)?.title).toBe(expectedTitle)
+    })
+  })
+
   // ── Cross-runner session isolation ─────────────────────────────────────────
 
   describe("cross-runner session isolation", () => {

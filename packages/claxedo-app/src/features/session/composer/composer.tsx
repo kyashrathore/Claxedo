@@ -1,31 +1,20 @@
 // Claxedo keeps upstream's v2 composer while moving workspace-start controls into the session start surface.
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import {
-  createEffect,
-  on,
-  Component,
-  createMemo,
-  createResource,
-  createSignal,
-  onCleanup,
+  createEffect, on, Component, createMemo, createResource, createSignal, onCleanup,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
-import { useFile } from "@/features/session/app-ports"
+import { useCommand, useFile, useLayout, useProviders, useSDK, useShellQueryOptions as useQueryOptions, useWorkspaceQuery } from "@/features/session/app-ports"
 import {
   usePrompt,
   ImageAttachmentPart,
 } from "@/features/session/providers/prompt"
-import { useLayout } from "@/features/session/app-ports"
-import { useSDK } from "@/features/session/app-ports"
 import { useSessionParams } from "@/features/session/providers/session-params"
-import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
 import { useComments } from "@/platform/comments/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { PickerState } from "@/features/session/ui/model/select-model"
-import { useProviders } from "@/features/session/app-ports"
-import { useCommand } from "@/features/session/app-ports"
 import { usePermission } from "@/features/session/providers/permission"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -53,7 +42,6 @@ import { promptHarnessDirectory } from "@/features/session/composer/ui/harness-d
 import { createPanePreferences } from "@/features/session/preferences/pane"
 import { queryClient } from "@/platform/query/query-client"
 import { agentListQuery } from "../data/query/directory"
-import { useWorkspaceQuery } from "@/features/session/app-ports"
 import { commandListQuery } from "../data/query/shell"
 import { directorySessionCacheQueryOptions } from "../data/sync/queries"
 import { getClaxedoServerUrl } from "@/platform/api/api"
@@ -70,6 +58,7 @@ import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { createPromptToolbarState } from "./toolbar-state"
 import { knownWorkspaceKind, signedWorkspaceForDirectory, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
+import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
 
 const idleSessionStatus = { type: "idle" as const }
 
@@ -198,9 +187,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         key: `prompt:${scope()}`,
         current: selectedModelKey,
       }),
-      write: (model, options) => local.model.set(model, options),
+      write: (model, options) => writeOpenCodeDraftModel({
+        controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
+        newSession: isNewSessionVariant(), model, options,
+        labels: openCodeDraftLabels(model, local.model.list()),
+        write: local.model.set,
+      }),
     })
   )
+  createEffect(() => restoreOpenCodeDraftDefault({
+    controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
+    newSession: isNewSessionVariant(), ready: local.model.ready(), models: local.model.list(), write: local.model.set, writeVariant: local.model.variant.set,
+  }))
   const harnessPending = createMemo(() => {
     const nextScope = scope()
     const next = isHarnessMode(nextScope) && harnessReadiness(nextScope) === "polling"
@@ -208,6 +206,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
   const harnessSubmitBlocked = createMemo(() => {
     const nextScope = scope()
+    const draftDefaultState = harnessSelectionController?.read(nextScope).draftDefaultState
+    if (draftDefaultState === "saved-model-unavailable" || draftDefaultState === "choose-model") return true
     return isHarnessMode(nextScope) && !harnessReadyForSubmit(nextScope)
   })
   const fade = createMemo(() => (harnessPending() ? 0.45 : 1))
@@ -247,7 +247,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       workspaceId: sdk.workspace(directory)?.workspaceId,
     }
   })
-
   const openComment = createPromptCommentRouter({
     comments,
     diffFiles: () => props.diffFiles?.(),
@@ -581,10 +580,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     addPart,
     readClipboardImage: platform.readClipboardImage,
   })
-  const setScopedVariant = (value: string | undefined) => {
-    panePreferences().set("variant", scope(), value)
-    local.model.variant.set(value)
-  }
+  const setScopedVariant = (value: string | undefined) => writeOpenCodeDraftVariant({
+    controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
+    newSession: isNewSessionVariant(), variant: value, model: selectedModelKey(),
+    labels: openCodeDraftLabels(selectedModelKey(), local.model.list()),
+    write: () => { panePreferences().set("variant", scope(), value); local.model.variant.set(value) },
+  })
   const composerBootScope = createMemo(() => [
     props.variant ?? "dock",
     resolvedSessionDirectory() ?? sdk.directory,
@@ -744,6 +745,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       active={() => sessionParams.active?.() ?? true}
       controlStyle={control}
       sessionLocked={() => harnessSessionId() !== undefined && harnessSessionId() !== "new"}
+      modelLocked={hasUserPrompt}
       showAgentSelector={toolbarState.showAgentSelector}
       agentNames={toolbarState.agentNames}
       currentAgentName={() => toolbarState.currentAgent()?.name ?? ""}

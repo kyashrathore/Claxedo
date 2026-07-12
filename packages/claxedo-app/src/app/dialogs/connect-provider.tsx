@@ -21,18 +21,22 @@ import { useProviders } from "@/app/providers/use-providers"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { queryClient } from "@/platform/query/query-client"
 
-export function DialogConnectProvider(props: { provider: string }) {
+export function DialogConnectProvider(props: { provider: string; harness?: string; onConnected?: () => void | Promise<void> }) {
   const dialog = useDialog()
   const globalSDK = useGlobalSDK()
   const queryOptions = useQueryOptions()
   const language = useLanguage()
-  const providers = useProviders()
-  const providerAuthQuery = useQuery(() => queryOptions.providerAuth())
+  const providers = useProviders(props.harness)
+  const providerAuthQuery = useQuery(() => queryOptions.providerAuth(props.harness))
   const provider = createMemo(() => providers.all().get(props.provider)!)
-  const fallback = createMemo<ProviderAuthMethod[]>(() => [
-    { type: "api", label: language.t("provider.connect.method.apiKey") },
-  ])
-  const methods = createMemo(() => providerAuthQuery.data?.[props.provider] ?? fallback())
+  const codexBundleRequired = () => props.harness === "pi" && props.provider === "openai-codex"
+  const authProviderID = () => codexBundleRequired() ? "codex-acp" : props.provider
+  const fallback = createMemo<ProviderAuthMethod[]>(() => codexBundleRequired()
+    ? [{ type: "oauth", label: "ChatGPT Plus or Pro" }]
+    : [{ type: "api", label: language.t("provider.connect.method.apiKey") }])
+  const methods = createMemo(() => codexBundleRequired()
+    ? fallback()
+    : providerAuthQuery.data?.[props.provider] ?? fallback())
   const apiMethodIndex = createMemo(() => methods().findIndex((item) => item.type === "api"))
   const [store, setStore] = createStore({
     methodIndex: methods().length === 1 ? 0 : undefined as number | undefined,
@@ -47,7 +51,13 @@ export function DialogConnectProvider(props: { provider: string }) {
   const methodLabel = (value?: { type?: string; label?: string }) =>
     value?.type === "api" ? language.t("provider.connect.method.apiKey") : value?.label ?? ""
 
-  const markConnected = () => {
+  const markConnected = async () => {
+    if (props.harness) {
+      await queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[2] === "providers" && query.queryKey[4] === props.harness,
+      })
+      return
+    }
     const current = provider()
     queryClient.setQueryData<NormalizedProviderListResponse | undefined>(
       queryOptions.providers(null).queryKey,
@@ -62,10 +72,14 @@ export function DialogConnectProvider(props: { provider: string }) {
         }
       },
     )
+    await queryClient.invalidateQueries({
+      predicate: (query) => query.queryKey[2] === "providers" && query.queryKey[4] !== "pi",
+    })
   }
 
   const complete = async () => {
-    markConnected()
+    await markConnected()
+    await props.onConnected?.()
     await globalSDK.client.global.dispose().catch(() => undefined)
     dialog.close()
     showToast({
@@ -88,7 +102,7 @@ export function DialogConnectProvider(props: { provider: string }) {
     setStore("error", undefined)
     try {
       await globalSDK.client.provider.oauth.callback({
-        providerID: props.provider,
+        providerID: authProviderID(),
         method: store.methodIndex,
         ...(code ? { code } : {}),
       }, { throwOnError: true })
@@ -108,7 +122,7 @@ export function DialogConnectProvider(props: { provider: string }) {
     })
     try {
       const result = await globalSDK.client.provider.oauth.authorize({
-        providerID: props.provider,
+        providerID: authProviderID(),
         method: index,
       }, { throwOnError: true })
       const authorization = result.data ?? undefined
@@ -243,6 +257,28 @@ export function DialogConnectProvider(props: { provider: string }) {
           </Match>
           <Match when={store.state === "error"}>
             <div class="text-14-regular text-icon-critical-base">{store.error}</div>
+          </Match>
+          <Match when={codexBundleRequired()}>
+            <div class="flex flex-col items-start gap-4">
+              <div class="flex flex-col gap-1.5">
+                <div class="text-14-medium text-text-strong text-balance">
+                  Use your ChatGPT account
+                </div>
+                <div class="max-w-md text-14-regular text-text-base text-pretty">
+                  Sign in to use your ChatGPT Plus or Pro Codex access with Pi. Claxedo stores the resulting token in its credential vault.
+                </div>
+              </div>
+              <Button
+                class="w-auto transition-transform duration-150 ease-out active:scale-[0.96]"
+                type="button"
+                size="large"
+                variant="primary"
+                disabled={store.saving}
+                onClick={() => void startOAuth(0)}
+              >
+                Sign in with ChatGPT
+              </Button>
+            </div>
           </Match>
           <Match when={true}>
             <div class="text-14-regular text-text-base">

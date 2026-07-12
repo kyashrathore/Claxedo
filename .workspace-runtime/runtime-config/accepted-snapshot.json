@@ -1,10 +1,10 @@
 {
-  "revision": 22,
-  "acceptedAt": "2026-07-11T17:20:25.173Z",
+  "revision": 3,
+  "acceptedAt": "2026-07-12T12:06:16.075Z",
   "snapshot": {
     "version": 1,
     "harness": {
-      "id": "codex",
+      "id": "pi",
       "access": "native"
     },
     "mcp": {
@@ -13,7 +13,10 @@
     "auth": {
       "keys": [
         "claude-acp",
-        "claude-sdk"
+        "claude-sdk",
+        "codex-acp",
+        "codex-app-server",
+        "openai"
       ]
     },
     "agent_extensions": {

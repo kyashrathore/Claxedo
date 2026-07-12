@@ -1,4 +1,4 @@
-// target-layer: claxedo-ui/components - Claxedo-only v1 icon glyph overrides.
+// Claxedo-only v1 icon glyph overrides.
 import { onMount, splitProps, type ComponentProps } from "solid-js"
 import { Icon as UpstreamIcon, type IconProps as UpstreamIconProps } from "@opencode-ai/ui/icon"
 

@@ -197,7 +197,7 @@ function tryFile(base: string): string | null {
     `${base}.ts`,
     `${base}.tsx`,
     path.join(base, "index.ts"),
-    path.join(base, "app/entry/index.tsx"),
+    path.join(base, "index.tsx"),
   ]
   return candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile()) ?? null
 }

@@ -96,7 +96,7 @@
  *     in this harness regardless of principal (see HARNESS NOTES).
  *
  * ANATOMY —
- *   `[aria-label="Settings"]` (IconButton, rail sidebar) — opens the dialog.
+ *   `[data-testid="rail-account-trigger"]` → "Settings" menu item — opens the dialog.
  *   `[data-slot="dialog-container"]` — the settings dialog's root once open.
  *   `[role="tab"][data-value="general"|"shortcuts"|"terminals"|"providers"|
  *     "models"|"connections"|"compute"]` — tab triggers (`aria-selected`
@@ -458,7 +458,8 @@ async function openWorkbench(page: Page, dir: string) {
 }
 
 async function openSettings(page: Page) {
-  await page.getByRole("button", { name: "Settings", exact: true }).last().click()
+  await page.getByTestId("rail-account-trigger").click()
+  await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
   const dialog = page.locator('[data-slot="dialog-container"]').last()
   await expect(dialog).toBeVisible({ timeout: 10_000 })
   return dialog

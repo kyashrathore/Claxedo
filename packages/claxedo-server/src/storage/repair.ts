@@ -94,11 +94,13 @@ function dropTable(db: SqliteInstance, name: string, out: string[]) {
 
 function rebuildSessionMeta(
   db: SqliteInstance,
-  existing: { host: boolean; directory: boolean; toolSandbox: boolean },
+  existing: { host: boolean; directory: boolean; toolSandbox: boolean; model: boolean },
 ) {
   const host = existing.host ? "COALESCE(NULLIF(`host`, ''), 'workspace')" : "'workspace'"
   const directory = existing.directory ? "NULLIF(`directory`, '')" : "NULL"
   const toolSandbox = existing.toolSandbox ? "`tool_sandbox`" : "NULL"
+  const modelProviderID = existing.model ? "`model_provider_id`" : "NULL"
+  const modelID = existing.model ? "`model_id`" : "NULL"
 
   db.exec("SAVEPOINT claxedo_session_meta_repair")
   try {
@@ -112,6 +114,8 @@ function rebuildSessionMeta(
         \`host\` text NOT NULL DEFAULT 'workspace',
         \`directory\` text,
         \`tool_sandbox\` text,
+        \`model_provider_id\` text,
+        \`model_id\` text,
         \`title\` text,
         \`parent_session_id\` text,
         \`archived_at\` integer,
@@ -128,6 +132,8 @@ function rebuildSessionMeta(
         \`host\`,
         \`directory\`,
         \`tool_sandbox\`,
+        \`model_provider_id\`,
+        \`model_id\`,
         \`title\`,
         \`parent_session_id\`,
         \`archived_at\`,
@@ -146,6 +152,8 @@ function rebuildSessionMeta(
         ${host},
         ${directory},
         ${toolSandbox},
+        ${modelProviderID},
+        ${modelID},
         \`title\`,
         \`parent_session_id\`,
         \`archived_at\`,
@@ -168,6 +176,18 @@ function ensureSessionMetaToolSandboxColumn(db: SqliteInstance, out: string[]) {
   if (hasColumn(db, "claxedo_session_meta", "tool_sandbox")) return
   db.exec("ALTER TABLE `claxedo_session_meta` ADD COLUMN `tool_sandbox` text")
   out.push("claxedo_session_meta.tool_sandbox")
+}
+
+function ensureSessionMetaModelColumns(db: SqliteInstance, out: string[]) {
+  if (!hasTable(db, "claxedo_session_meta")) return
+  if (!hasColumn(db, "claxedo_session_meta", "model_provider_id")) {
+    db.exec("ALTER TABLE `claxedo_session_meta` ADD COLUMN `model_provider_id` text")
+    out.push("claxedo_session_meta.model_provider_id")
+  }
+  if (!hasColumn(db, "claxedo_session_meta", "model_id")) {
+    db.exec("ALTER TABLE `claxedo_session_meta` ADD COLUMN `model_id` text")
+    out.push("claxedo_session_meta.model_id")
+  }
 }
 
 function ensureSessionMetaIndexes(db: SqliteInstance) {
@@ -299,6 +319,9 @@ export function repair(db: SqliteInstance) {
   const sessionMetaHasHost = hasTable(db, "claxedo_session_meta") && hasColumn(db, "claxedo_session_meta", "host")
   const sessionMetaHasDirectory = hasTable(db, "claxedo_session_meta") && hasColumn(db, "claxedo_session_meta", "directory")
   const sessionMetaHasToolSandbox = hasTable(db, "claxedo_session_meta") && hasColumn(db, "claxedo_session_meta", "tool_sandbox")
+  const sessionMetaHasModel = hasTable(db, "claxedo_session_meta")
+    && hasColumn(db, "claxedo_session_meta", "model_provider_id")
+    && hasColumn(db, "claxedo_session_meta", "model_id")
   const sessionMetaHasRef = hasTable(db, "claxedo_session_meta") && hasColumn(db, "claxedo_session_meta", "session_ref")
   const sessionMetaNeedsPlacement = hasTable(db, "claxedo_session_meta")
     && (!sessionMetaHasHost || !sessionMetaHasDirectory || !sessionMetaHasRef || column(db, "claxedo_session_meta", "directory")?.notnull === 1)
@@ -314,10 +337,12 @@ export function repair(db: SqliteInstance) {
       host: sessionMetaHasHost,
       directory: sessionMetaHasDirectory,
       toolSandbox: sessionMetaHasToolSandbox,
+      model: sessionMetaHasModel,
     })
     out.push("claxedo_session_meta.placement")
   }
   ensureSessionMetaToolSandboxColumn(db, out)
+  ensureSessionMetaModelColumns(db, out)
   rebuildSessionAttachmentRefs(db)
   rebuildSessionTagRefs(db)
   ensureSessionMetaIndexes(db)

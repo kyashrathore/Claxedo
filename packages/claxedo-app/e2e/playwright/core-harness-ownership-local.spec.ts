@@ -3,8 +3,8 @@
  *
  * PURPOSE — a local session can run on one of several agent "harnesses" instead of
  * plain OpenCode: Claude and Codex each via an ACP subprocess or a native SDK
- * integration, Cursor via ACP or its native SDK, and Pi (a fixed-model, always-ready
- * harness). Whichever harness is selected must own the session's model, agent, and
+ * integration, Cursor via ACP or its native SDK, and Pi with provider-backed models.
+ * Whichever harness is selected must own the session's model, agent, and
  * submit payload end to end — a user picking "Claude" must never have their prompt
  * silently routed through plain OpenCode, and switching harnesses must never leave two
  * conflicting model pickers on screen at once.
@@ -68,12 +68,9 @@
  *     `readiness === "polling"` — but nothing in the local harness store, switcher,
  *     hydrator, or status-actions module ever assigns that value (grepped; zero hits
  *     outside the type declaration). See BEHAVIORS #6 / INVARIANTS for the consequence.
- *   - Pi is a fixed-model harness (`fixedHarnessModel("pi")` returns
- *     `{id:"virtual", name:"Virtual", provider:{id:"pi"}}`,
- *     `src/session-client/harness/profile.ts:42`); `harnessHasConfigOptions("pi")` is
- *     `false`, so switching to Pi never fetches `/harness/options`, and
- *     `harnessReadyForSubmit` (`selection.ts:65-70`) short-circuits to `true` for any
- *     harness with a fixed model — Pi is never gated on config/auth readiness.
+ *   - Pi reads provider/model choices from its Pi-scoped provider catalog. Switching
+ *     to Pi never fetches `/harness/options`; submission waits for an exact connected
+ *     provider/model pair selected by the user or the unambiguous default policy.
  *   - Abort capability — `PromptSubmitControl`'s busy icon/behavior is driven by
  *     `stoppable = working() && canAbort()` (`src/components/prompt-input/
  *     submit-ui-state.ts:18`), where `canAbort` is the session's
@@ -130,11 +127,9 @@
  *      complementary manual-switch path (a).
  *   3. Once a session exists (any message sent), the harness `<Select>` is disabled —
  *      the harness cannot be changed mid-session.
- *   4. Pi is a fixed-model harness: a workspace hydrated onto it issues zero
- *      `/api/claxedo/agent-config/harness/options` requests, its readiness resolves to
- *      ready without ever showing the "Unavailable" indicator, submission is never
- *      gated on it, and the submitted payload carries `providerID: "pi"`,
- *      `modelID: "virtual"`.
+ *   4. Pi issues zero `/api/claxedo/agent-config/harness/options` requests, resolves a
+ *      concrete model from its configured provider catalog, persists that exact pair
+ *      for the next workspace draft, and submits the selected provider/model identity.
  *   5. A workspace hydrated onto an unavailable/auth-error harness renders the red
  *      "Unavailable" indicator with its error message in a tooltip, keeps the submit
  *      control disabled, and sends zero session/prompt requests even after the user
@@ -208,11 +203,13 @@ function slug(value: string) {
 
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript((d: string) => {
-    localStorage.clear()
     ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
+    if (sessionStorage.getItem("core-harness-seeded")) return
+    sessionStorage.setItem("core-harness-seeded", "1")
+    localStorage.clear()
     localStorage.setItem(
       "opencode.global.dat:server",
       JSON.stringify({
@@ -435,18 +432,21 @@ test.describe("core harness ownership (local) @core", () => {
     })
   }
 
-  test("Pi is a fixed-model harness: zero options requests, instantly ready, payload owned by pi/virtual — behavior 4", async ({
+  test("Pi selects a configured provider model without harness options and owns the payload — behavior 4", async ({
     page,
   }) => {
     const sessionId = "ses_core_harness_pi"
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId, harness: "pi" })
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId, harness: "opencode" })
 
     await seedOneProject(page, DIR)
     const input = await openDraftPrompt(page, DIR)
 
-    // Same auto-hydration as the matrix cases — see expectHarnessAutoHydrated's doc.
-    await expectHarnessAutoHydrated(page, /^Pi$/)
-    // No polling/error indicator ever appears for a fixed-model harness.
+    await switchDraftHarness(page, /^Pi$/, 0)
+    await expect(page.getByRole("button", { name: /^Pi$/ }).last()).toBeVisible({ timeout: 20_000 })
+    await expectOnlyHarnessModelControl(page, /Virtual|virtual/i)
+    await expect.poll(() => page.evaluate(() => Object.entries(localStorage)
+      .find(([key]) => key.includes("session.draft-default.v1"))?.[1])).toContain('"harness":"pi"')
+    // Pi obtains models from its provider catalog rather than harness config options.
     await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
     await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0)
 
@@ -463,6 +463,11 @@ test.describe("core harness ownership (local) @core", () => {
     })
     await expect(page).toHaveURL(sessionUrlPattern(sessionId), { timeout: 20_000 })
     await expectAssistantReplyVisible(page, `ack 1: ${first}`)
+
+    await page.goto(`/${slug(DIR)}/session`)
+    await page.waitForLoadState("domcontentloaded")
+    await expect(page.getByRole("button", { name: /^Pi$/ }).last()).toBeVisible({ timeout: 20_000 })
+    await expectOnlyHarnessModelControl(page, /Virtual|virtual/i)
 
     // Zero config-options requests for the entire scenario — pi has no config options.
     expect(mock.requests.harnessOptionsCount).toBe(0)

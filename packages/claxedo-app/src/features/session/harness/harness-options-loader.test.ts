@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { createHarnessOptionsLoader, type HarnessOptionsLoaderCache } from "./harness-options-loader"
 import type { HarnessOptionsStatePatch } from "./options-state"
 import type { HarnessType, OptionsResponse } from "./profile"
+import type { DraftDefaultApplication, ResolveDraftDefaultInput } from "./draft-default-policy"
+import type { ModelKey } from "@/features/session/composer/model-strategy"
 
 const scope = "draft:/repo:route"
 
@@ -158,12 +160,128 @@ describe("harness options loader", () => {
     expect(patches.at(-1)?.configError).toBe("Failed to load model options")
   })
 
+  test("ignores a failed response after the draft switches to another harness", async () => {
+    let finishMessage: (value: string) => void = () => {}
+    const loader = loaderFor({
+      fetch: async () => new Response("nope", { status: 500 }),
+      errorMessage: async () => await new Promise<string>((resolve) => {
+        finishMessage = resolve
+      }),
+    })
+
+    const run = loader.load(scope, "claude-acp")
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    harness = "pi"
+    finishMessage("stale failure")
+
+    await expect(run).resolves.toBeUndefined()
+    expect(patches).toEqual([])
+  })
+
+  test("ignores a rejected request after the draft switches to another harness", async () => {
+    let rejectFetch: (reason: Error) => void = () => {}
+    const loader = loaderFor({
+      fetch: async () => await new Promise<Response>((_resolve, reject) => {
+        rejectFetch = reject
+      }),
+    })
+
+    const run = loader.load(scope, "claude-acp")
+    harness = "opencode"
+    rejectFetch(new Error("stale failure"))
+
+    await expect(run).resolves.toBeUndefined()
+    expect(patches).toEqual([])
+  })
+
+  test("publishes live config eligibility to a captured draft resolver without substituting first", async () => {
+    const captured = { scope, workspaceKey: "ws_1", revision: 2 }
+    const resolutions: Array<{
+      application: DraftDefaultApplication
+      input: Omit<ResolveDraftDefaultInput, "saved">
+    }> = []
+    const completed: Array<ModelKey | undefined> = []
+    const loader = loaderFor({
+      fetch: async () => optionsResponse({
+        source: "harness",
+        stale: false,
+        options: [{
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "sonnet",
+          selectOptions: [{ id: "sonnet", name: "Sonnet" }],
+        }],
+      }),
+      draftDefaultApplication: () => captured,
+      resolveDraftDefault: (application, input) => {
+        resolutions.push({ application, input })
+        return true
+      },
+      completeRememberedHarness: (_scope, _type, model) => {
+        completed.push(model)
+        return true
+      },
+    })
+
+    await loader.load(scope, "claude-acp")
+
+    expect(patches.at(-1)).toEqual({
+      optionsSource: "harness",
+      optionsStale: false,
+      optionsLoading: false,
+      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+    })
+    expect(savedModels).toEqual([])
+    expect(resolutions).toEqual([{
+      application: captured,
+      input: {
+        supportedHarnesses: ["opencode", "claude-acp"],
+        eligibleModels: [{ providerID: "claude-acp", modelID: "sonnet" }],
+        declaredDefaultModel: { providerID: "claude-acp", modelID: "sonnet" },
+      },
+    }])
+    expect(completed).toEqual([{ providerID: "claude-acp", modelID: "sonnet" }])
+  })
+
+  test("keeps a captured default unresolved while options are stale", async () => {
+    const resolutions: unknown[] = []
+    const loader = loaderFor({
+      fetch: async () => optionsResponse({
+        source: "catalog",
+        stale: true,
+        options: [],
+      }),
+      delay: () => {},
+      draftDefaultApplication: () => ({ scope, workspaceKey: "ws_1", revision: 2 }),
+      resolveDraftDefault: (_application, input) => {
+        resolutions.push(input)
+        return true
+      },
+    })
+
+    await loader.load(scope, "claude-acp")
+
+    expect(resolutions).toEqual([])
+    expect(patches.at(-1)).toMatchObject({
+      optionsLoading: true,
+      configError: "Loading model options...",
+    })
+  })
+
 })
 
 function loaderFor(input: {
   fetch: (type: HarnessType, request?: { name?: string }) => Promise<Response>
   errorMessage?: (res: Response, fallback: string) => Promise<string>
   delay?: (run: () => void) => void
+  draftDefaultApplication?: () => DraftDefaultApplication | undefined
+  resolveDraftDefault?: (
+    application: DraftDefaultApplication,
+    input: Omit<ResolveDraftDefaultInput, "saved">,
+  ) => boolean
+  completeRememberedHarness?: (scope: string, type: HarnessType, model?: ModelKey) => boolean
 }) {
   return createHarnessOptionsLoader<{ name?: string }>({
     fetch: input.fetch,
@@ -172,6 +290,9 @@ function loaderFor(input: {
     seed: () => {},
     applyPatch: (_scope, patch) => patches.push(patch),
     saveModel: (_scope, model) => savedModels.push(model),
+    draftDefaultApplication: input.draftDefaultApplication,
+    resolveDraftDefault: input.resolveDraftDefault,
+    completeRememberedHarness: input.completeRememberedHarness,
     setOptionsLoading: (_scope, value) => loading.push(value),
     errorMessage: input.errorMessage ?? (async (_res, fallback) => fallback),
     scheduleRetry: input.delay,

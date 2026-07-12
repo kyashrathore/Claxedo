@@ -78,7 +78,7 @@
  *     network call; on `platform !== "web"` a failed `ensureLocalProject()` (not a git
  *     repo) → toast "Not a git repository"; otherwise the project opens and a new
  *     session draft is navigated to.
- *   `[aria-label="View options"]` → dropdown with a "Group by" radio (`Project` /
+ *   rail account menu → "View options" submenu with a "Group by" radio (`Project` /
  *     `Workspace`). "Project" (default) renders one row per project
  *     (`[data-testid="project-header"]`, always the MAIN worktree). "Workspace" renders
  *     one row per workspace directory (`[data-testid="workspace-header"][data-workspace-
@@ -440,8 +440,10 @@ async function openApp(page: Page, dir: string = DIR) {
  * "Expand project" disclosure toggle to reach them.
  */
 async function groupByWorkspace(page: Page) {
-  await page.getByRole("button", { name: "View options" }).click()
+  await page.getByTestId("rail-account-trigger").click()
+  await page.getByRole("menuitem", { name: "View options" }).hover()
   await page.getByRole("menuitemradio", { name: "Workspace" }).click()
+  await page.keyboard.press("Escape")
   await page.keyboard.press("Escape")
   const expandToggle = page.getByRole("button", { name: "Expand project" })
   if (await expandToggle.count()) await expandToggle.click()

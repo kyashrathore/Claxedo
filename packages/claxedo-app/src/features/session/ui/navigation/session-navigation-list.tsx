@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from "solid-js"
+import { For, Show, createMemo, createSignal } from "solid-js"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
 import { NavigationRow, NavigationStatusDot, type SwitcherStatus } from "@/features/session/app-ports"
 import {
@@ -23,17 +23,19 @@ export type SessionNavigationDisplayRow = {
 export type SessionNavigationProps = {
   rows: readonly SessionNavigationDisplayRow[]
   onActivate: (row: SessionNavigationDisplayRow) => void
-  onArchive?: (row: SessionNavigationDisplayRow) => void
+  onArchive?: (row: SessionNavigationDisplayRow) => void | Promise<void>
   onPrepareDrag: (row: SessionNavigationDisplayRow) => string | undefined
   onDragStart?: (input: NavigationDragStart) => void
 }
 
 export function SessionNavigation(props: SessionNavigationProps) {
+  const rowsByRef = createMemo(() => new Map(props.rows.map((row) => [row.source.sessionRef, row])))
+
   return (
-    <For each={props.rows}>
-      {(row) => (
+    <For each={props.rows.map((row) => row.source.sessionRef)}>
+      {(sessionRef) => (
         <SessionNavigationItem
-          row={row}
+          row={rowsByRef().get(sessionRef)!}
           onActivate={props.onActivate}
           onArchive={props.onArchive}
           onPrepareDrag={props.onPrepareDrag}
@@ -47,11 +49,12 @@ export function SessionNavigation(props: SessionNavigationProps) {
 function SessionNavigationItem(props: {
   row: SessionNavigationDisplayRow
   onActivate: (row: SessionNavigationDisplayRow) => void
-  onArchive?: (row: SessionNavigationDisplayRow) => void
+  onArchive?: (row: SessionNavigationDisplayRow) => void | Promise<void>
   onPrepareDrag: (row: SessionNavigationDisplayRow) => string | undefined
   onDragStart?: (input: NavigationDragStart) => void
 }) {
   const status = createMemo(() => props.row.status)
+  const [archiving, setArchiving] = createSignal(false)
   const activate = () => props.onActivate(props.row)
 
   return (
@@ -102,7 +105,7 @@ function SessionNavigationItem(props: {
 
         {/* z-10: sit above NavigationRow's absolute activate overlay so the
             archive button stays clickable and isn't a nested interactive. */}
-        <div class="shrink-0 relative z-10 flex items-center justify-end self-stretch min-w-7">
+        <div class="size-7 shrink-0 relative z-10 flex items-center justify-end self-stretch">
           <span
             class="flex items-center justify-end text-[11px] tabular-nums group-hover/session:opacity-0 transition-opacity duration-100"
             classList={{
@@ -117,10 +120,14 @@ function SessionNavigationItem(props: {
           <button
             type="button"
             aria-label={`Archive ${props.row.title}`}
-            class="absolute inset-0 flex items-center justify-end opacity-0 group-hover/session:opacity-100 transition-opacity duration-100 border-none bg-transparent p-0"
+            disabled={archiving()}
+            class="absolute inset-0 flex items-center justify-end opacity-0 group-hover/session:opacity-100 transition-opacity duration-100 border-none bg-transparent p-0 cursor-pointer disabled:cursor-default"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()
-              props.onArchive?.(props.row)
+              if (archiving()) return
+              setArchiving(true)
+              void Promise.resolve(props.onArchive?.(props.row)).finally(() => setArchiving(false))
             }}
           >
             <span class="text-icon-weak-base hover:text-icon-base transition-colors cursor-pointer">

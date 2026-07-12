@@ -1,4 +1,3 @@
-// target-layer: data (conversation)
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { mergeStoredItems, normalizeMessageRows } from "../store/message-page"
 import { hydrateRegisteredConversationSnapshot, registeredConversationSnapshot } from "./conversation-registry"

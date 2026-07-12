@@ -1,4 +1,3 @@
-// target-layer: session
 import {
   initialPaneHarness,
   initialPaneValue,
@@ -69,8 +68,8 @@ export function shouldHydrateDraftFromHarnessStatus(input: {
   workspaceRuntime?: boolean
   workspaceKind?: HarnessWorkspaceKind | null
 }) {
-  void input.workspaceKind
-  return input.useLocalHarnessConfig && !input.workspaceRuntime
+  if (!input.useLocalHarnessConfig) return false
+  return !isRemoteHarnessWorkspaceKind(input.workspaceKind)
 }
 
 export function harnessWorkspaceRuntimeRef(input?: HarnessScopeInput) {
@@ -137,7 +136,7 @@ export function harnessPreparingSessionKey(scope: string) {
 
 export function harnessStateFromSessionConfig(input: {
   harness?: HarnessState
-  model?: { modelID?: string | null } | null
+  model?: { providerID?: string | null; modelID?: string | null } | null
 }): HarnessState | undefined {
   const harness = input.harness
   const type = pickHarness(harness?.type, harness?.binary)
@@ -146,6 +145,7 @@ export function harnessStateFromSessionConfig(input: {
     ...harness,
     type,
     model: harness.model ?? input.model?.modelID ?? undefined,
+    modelProviderID: harness.modelProviderID ?? input.model?.providerID ?? undefined,
     status: "ready",
     ready: true,
     activeType: type,
@@ -171,6 +171,10 @@ export function shouldUseLocalHarnessConfigApi(input: {
   directory?: string
   workspaceKind?: HarnessWorkspaceKind | null
 }) {
-  if (input.workspaceKind === "cloud" || input.workspaceKind === "user-hosted") return false
+  if (isRemoteHarnessWorkspaceKind(input.workspaceKind)) return false
   return centralTransportForServer(input.baseUrl) === "loopback" && isFilesystemDirectory(input.directory)
+}
+
+function isRemoteHarnessWorkspaceKind(input?: HarnessWorkspaceKind | null) {
+  return input === "cloud" || input === "user-hosted"
 }

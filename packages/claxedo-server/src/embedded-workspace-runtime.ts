@@ -12,10 +12,12 @@ import { claxedoCorsOrigin } from "./workspace-runtime-integration/runtime-boot"
 import { createClaxedoAppliedRuntimeConfig } from "./workspace-runtime-integration/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "./workspace-runtime-integration/target"
 import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "./opencode-events"
+import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
   applying?: Promise<void>
+  reconcilingSessionMetadata?: Promise<void>
   /**
    * Tap on this runtime's own `/global/event` SSE stream, forwarding
    * `session.created`/`session.updated` events to the host-configured
@@ -40,6 +42,7 @@ const hosts = new Map<string, EmbeddedRuntime>()
 // external-URL mode it rewrites onto the configured URL.
 let configuredOpencodeRequest: OpenCodeRequestFn = defaultOpencodeRequest
 let configuredOpencodeCompat = true
+let configuredPiModelBackend: PiModelBackendResolver | undefined
 // Host-supplied sink for a harness session's async auto-title (and any other
 // session.created/session.updated event). A harness session's title is
 // re-emitted asynchronously — e.g. a post-turn ACP auto-title
@@ -53,15 +56,20 @@ let configuredOpencodeCompat = true
 // learns the new title — see `ensureEmbeddedWorkspaceRuntime` below, which
 // taps it via `createOpencodeEvents`).
 let configuredOnSessionMetaEvent: ((event: OpencodeEvent) => void) | undefined
+let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 
 export function configureEmbeddedWorkspaceRuntime(input: {
   opencodeRequest: OpenCodeRequestFn
   opencodeCompat?: boolean
+  piModelBackend?: PiModelBackendResolver
   onSessionMetaEvent?: (event: OpencodeEvent) => void
+  onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
 }) {
   configuredOpencodeRequest = input.opencodeRequest
   configuredOpencodeCompat = input.opencodeCompat ?? true
+  configuredPiModelBackend = input.piModelBackend
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
+  configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
 }
 
 function storeRoot(ws: Workspace) {
@@ -75,6 +83,7 @@ function options(ws: Workspace, opencodeRequest: OpenCodeRequestFn): WorkspaceRu
 } {
   return {
     opencodeRequest,
+    ...(configuredPiModelBackend ? { piModelBackend: configuredPiModelBackend } : {}),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),
@@ -99,6 +108,22 @@ function configure(runtime: EmbeddedRuntime) {
   return runtime.applying
 }
 
+function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
+  if (!configuredOnSessionMetaSnapshot) return Promise.resolve()
+  runtime.reconcilingSessionMetadata ??= Promise.resolve(runtime.app.fetch(new Request(
+    `http://embedded-workspace-runtime.local/session?directory=${encodeURIComponent(runtime.workspace.directory)}`,
+    { headers: { "x-workspace-id": runtime.workspace.id, "x-opencode-directory": runtime.workspace.directory } },
+  ))).then(async (response) => {
+    if (!response.ok) return
+    const sessions = await response.json().catch(() => undefined)
+    if (!Array.isArray(sessions)) return
+    await configuredOnSessionMetaSnapshot?.(runtime.workspace, sessions)
+  }).catch(() => undefined).finally(() => {
+    runtime.reconcilingSessionMetadata = undefined
+  })
+  return runtime.reconcilingSessionMetadata
+}
+
 function disposeRuntime(runtime: EmbeddedRuntime) {
   runtime.sessionEvents?.close()
   runtime.host.dispose()
@@ -116,6 +141,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
       hosts.delete(ws.id)
     } else {
       if (config === "sync") await configure(hit)
+      await reconcileSessionMetadata(hit)
       return hit
     }
   }
@@ -136,6 +162,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
     runtime.sessionEvents = sessionEvents
   }
   if (config === "sync") await configure(runtime)
+  await reconcileSessionMetadata(runtime)
   return runtime
 }
 

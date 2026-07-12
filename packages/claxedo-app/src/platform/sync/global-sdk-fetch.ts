@@ -1,4 +1,3 @@
-// target-layer: data
 import { createTransport } from "@/platform/runtime/transport"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"

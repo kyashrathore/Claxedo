@@ -24,8 +24,28 @@ export type PickerItem = {
     id: string
     name: string
   }
-  cost?: { input: number }
+  cost?: { input: number; output?: number }
   latest?: boolean
+  connected?: boolean
+}
+
+export function comparePickerProviderGroups(
+  a: { items: PickerItem[] },
+  b: { items: PickerItem[] },
+) {
+  const aConnected = a.items[0]?.connected !== false
+  const bConnected = b.items[0]?.connected !== false
+  if (aConnected !== bConnected) return aConnected ? -1 : 1
+
+  const aProvider = a.items[0]?.provider.id ?? ""
+  const bProvider = b.items[0]?.provider.id ?? ""
+  const aRank = popularProviders.indexOf(aProvider)
+  const bRank = popularProviders.indexOf(bProvider)
+  const aPopular = aRank >= 0
+  const bPopular = bRank >= 0
+  if (aPopular && !bPopular) return -1
+  if (!aPopular && bPopular) return 1
+  return aRank - bRank
 }
 
 export type PickerState = {
@@ -63,13 +83,22 @@ const ModelList: Component<{
       filterKeys={["provider.name", "name", "id"]}
       sortBy={(a, b) => a.name.localeCompare(b.name)}
       groupBy={(x) => x.provider.name}
-      sortGroupsBy={(a, b) => {
-        const aProvider = a.items[0].provider.id
-        const bProvider = b.items[0].provider.id
-        if (popularProviders.includes(aProvider) && !popularProviders.includes(bProvider)) return -1
-        if (!popularProviders.includes(aProvider) && popularProviders.includes(bProvider)) return 1
-        return popularProviders.indexOf(aProvider) - popularProviders.indexOf(bProvider)
+      groupHeader={(group) => {
+        const item = group.items[0]
+        if (item.connected === undefined) return item.provider.name
+        return (
+          <div class="w-full flex items-center justify-between gap-2">
+            <span class="truncate">{item.provider.name}</span>
+            <Show when={item.connected === true}>
+              <Tag>Configured</Tag>
+            </Show>
+            <Show when={item.connected === false}>
+              <Tag>{language.t("command.provider.connect")}</Tag>
+            </Show>
+          </div>
+        )
       }}
+      sortGroupsBy={comparePickerProviderGroups}
       itemWrapper={(item, node) => props.tooltips === false
         ? node
         : (
@@ -118,6 +147,7 @@ export function ModelSelectorPopover(props: {
   onClose?: (cause: "escape" | "select") => void
   actions?: boolean
   tooltips?: boolean
+  connectHarness?: string
 }) {
   const [store, setStore] = createStore<{
     open: boolean
@@ -143,7 +173,7 @@ export function ModelSelectorPopover(props: {
   const handleConnectProvider = () => {
     close("provider")
     void loadSelectProviderDialog().then((x) => {
-      dialog.show(() => <x.DialogSelectProvider />)
+      dialog.show(() => <x.DialogSelectProvider harness={props.connectHarness} />)
     })
   }
   const language = useLanguage()

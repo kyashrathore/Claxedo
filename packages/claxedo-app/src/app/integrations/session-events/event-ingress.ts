@@ -1,10 +1,10 @@
-// target-layer: data
 import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@/features/session/data/sync/session-list-events"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { applyGlobalProjectEvent } from "@/platform/sync/global-event-projector"
 import { routeDirectoryEvent, type RoutableEvent } from "./event-router"
 import { scheduleSessionProjectionPull } from "@/platform/runtime/agent/session-projection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { applyDirectoryEventToShellQueries } from "../../../features/session/data/sync/directory-event-projector"
 import { applySessionStatusSseEvent } from "../../../features/session/store/session-status-dispatcher"
 import { shouldInvalidateBootstrapFresh } from "../../../platform/sync/global-sync/bootstrap-fresh"
 import { shouldRefreshChildrenForGlobalEvent } from "../../../platform/sync/global-sync/global-event-refresh-policy"
@@ -25,10 +25,11 @@ type LifecycleSession = {
   time: { created: number; updated: number; archived?: number }
 } & Record<string, unknown>
 
+type ClaxedoEventType = ClaxedoEvent["type"]
 type ClaxedoEventSource = {
-  on: (
-    type: "session.lifecycle",
-    handler: (event: Extract<ClaxedoEvent, { type: "session.lifecycle" }>) => void,
+  on: <T extends ClaxedoEventType>(
+    type: T,
+    handler: (event: Extract<ClaxedoEvent, { type: T }>) => void,
   ) => (() => void) | undefined
 }
 
@@ -55,6 +56,26 @@ type EventIngressInput = {
   cacheSessions: (directory: DirectoryRef, value: Omit<DirectorySessionCacheValue, "at">) => void
   sessionCacheLimit: (directory: DirectoryRef, fallback: number) => number
 }
+
+const claxedoDirectoryEventTypes = [
+  "message.updated",
+  "message.part.updated",
+  "message.part.delta",
+  "message.completed",
+  "session.idle",
+  "session.error",
+  "session.status",
+  "session.updated",
+  "session.agent",
+  "todo.updated",
+  "permission.asked",
+  "permission.replied",
+  "question.asked",
+  "question.replied",
+  "question.rejected",
+  "session.diff",
+  "session.compacted",
+] as const
 
 export function normalizeClaxedoSessionLifecycleEvent(
   event: Extract<ClaxedoEvent, { type: "session.lifecycle" }>,
@@ -100,7 +121,11 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
       }
     }
 
-    if (!input.children.has(directory)) return
+    if (!input.children.has(directory)) {
+      applyDirectoryEventToShellQueries({ event, directory })
+      applySessionStatusSseEvent({ event, directory })
+      return
+    }
     routeDirectoryEvent({
       event,
       directory,
@@ -139,11 +164,58 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     if (!lifecycleEvent) return
     applyClaxedoSessionLifecycleToSync(input, lifecycleEvent)
   })
+  const unsubscribeClaxedoDirectoryEvents = claxedoDirectoryEventTypes
+    .map((type) => input.claxedoEvents?.on(type, (event) => {
+      applyClaxedoDirectoryEventToSync(input, event)
+    }))
+    .filter((cleanup): cleanup is () => void => !!cleanup)
 
   return () => {
     unsubscribeGlobal()
     unsubscribeClaxedoLifecycle?.()
+    unsubscribeClaxedoDirectoryEvents.forEach((cleanup) => cleanup())
   }
+}
+
+function applyClaxedoDirectoryEventToSync(input: EventIngressInput, event: Extract<ClaxedoEvent, { type: typeof claxedoDirectoryEventTypes[number] }>) {
+  const directory = event.directory
+  if (!directory) return
+  if (!input.children.has(directory)) {
+    applyDirectoryEventToShellQueries({ event, directory })
+    applySessionStatusSseEvent({ event, directory })
+    return
+  }
+  routeDirectoryEvent({
+    event,
+    directory,
+    sinks: {
+      schedule: (event) => {
+        const projection = sessionProjectionEvent(event)
+        const runtimeRef = projection ? sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }) : undefined
+        if (projection && runtimeRef) {
+          void scheduleSessionProjectionPull({
+            action: projection.action,
+            reason: projection.reason,
+            workspaceId: runtimeRef.workspaceId,
+            sessionId: projection.sessionId,
+            ...(projection.expectedEventOrdinal === undefined ? {} : { expectedEventOrdinal: projection.expectedEventOrdinal }),
+            idempotencyKey: `${projection.reason}:${runtimeRef.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
+          })
+        }
+        if (shouldInvalidateBootstrapFresh(event.type)) input.push(directory)
+      },
+      mark: () => input.children.mark(directory),
+      cache: () => input.children.sessionCache(directory),
+      push: input.push,
+      cacheSessions: (next) => {
+        input.cacheSessions(directory, {
+          limit: input.sessionCacheLimit(directory, next.limit),
+          total: next.total,
+          session: next.session,
+        })
+      },
+    },
+  })
 }
 
 function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: ClaxedoSessionLifecycleEvent) {

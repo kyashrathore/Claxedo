@@ -21,6 +21,7 @@ let postResponse: Response
 let statusResponse: Response
 let postRelease: (() => void) | undefined
 let workspaceCalls: number
+let remembered: Array<{ scope: string; type: HarnessType; directory?: string }>
 
 beforeEach(() => {
   pending = {}
@@ -37,6 +38,7 @@ beforeEach(() => {
   statusResponse = Response.json({ type: "claude-acp", status: "ready", ready: true })
   postRelease = undefined
   workspaceCalls = 0
+  remembered = []
 })
 
 describe("harness switcher", () => {
@@ -61,6 +63,30 @@ describe("harness switcher", () => {
     expect(Object.values(pending).filter(Boolean)).toEqual([])
   })
 
+  test("discards completion from an older overlapping harness switch", async () => {
+    let releaseFirst: (value: WorkspaceBoot) => void = () => {}
+    let calls = 0
+    const switcher = switcherFor({
+      workspace: async () => {
+        calls += 1
+        if (calls === 1) {
+          return await new Promise<WorkspaceBoot>((resolve) => {
+            releaseFirst = resolve
+          })
+        }
+        return { kind: "cloud" }
+      },
+    })
+
+    const first = switcher.setHarness(scope, "claude-acp", { directory: "/repo", sessionId: "new" })
+    await switcher.setHarness(scope, "codex-acp", { directory: "/repo", sessionId: "new" })
+    releaseFirst({ kind: "cloud" })
+    await first
+
+    expect(remembered).toEqual([{ scope, type: "codex-acp", directory: "/repo" }])
+    expect(optionFetches).toEqual([{ scope, type: "codex-acp", directory: "/repo", sessionId: "new" }])
+  })
+
   test("switches a local draft by posting config, fetching options, and refreshing quietly", async () => {
     const switcher = switcherFor()
 
@@ -83,6 +109,7 @@ describe("harness switcher", () => {
     }])
     expect(optionFetches).toEqual([{ scope, type: "claude-acp", directory: "/repo", sessionId: "new" }])
     expect(refreshes).toEqual([{ directory: "/repo", type: "claude-acp", draft: true }])
+    expect(remembered).toEqual([{ scope, type: "claude-acp", directory: "/repo" }])
   })
 
   test("skips the local draft post for cloud and user-hosted workspace boots", async () => {
@@ -139,6 +166,7 @@ describe("harness switcher", () => {
     })
     expect(refreshes).toEqual([])
     expect(optionFetches).toEqual([])
+    expect(remembered).toEqual([])
   })
 
   test("applies unavailable status from successful local switch responses", async () => {
@@ -173,6 +201,11 @@ function switcherFor(input?: {
     applyPatch: (_scope, patch) => patches.push(patch),
     saveHarness: (_scope, type) => saved.push({ key: "harness", value: type }),
     saveModel: (_scope, model) => saved.push({ key: "model", value: model }),
+    rememberDraftHarness: (scope, type, params) => remembered.push({
+      scope,
+      type,
+      directory: params?.directory,
+    }),
     refresh: async (directory, type, opts) => {
       refreshes.push({ directory, type, draft: opts?.draft })
     },

@@ -11,14 +11,20 @@ function selectionStore(overrides: Partial<HarnessSelectionControllerStore> = {}
     hydrate: () => undefined,
     setHarness: () => undefined,
     setModel: () => undefined,
+    rememberDraftModel: () => undefined,
+    resolveDraftDefault: () => false,
     harness: () => "codex-acp",
     isHarnessMode: () => true,
     readiness: () => "ready",
     models: () => [{ id: "gpt-5.5", name: "GPT-5.5" }],
     selectedModel: () => "gpt-5.5",
+    selectedModelKey: () => ({ providerID: "codex-acp", modelID: "gpt-5.5" }),
     optionsStale: () => false,
     optionsLoading: () => false,
     configError: () => undefined,
+    draftDefaultState: () => undefined,
+    draftDefaultLabels: () => undefined,
+    draftDefaultModel: () => undefined,
     ...overrides,
   }
 }
@@ -42,9 +48,13 @@ describe("harness controller facade", () => {
       readiness: "ready",
       models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
       selectedModel: "gpt-5.5",
+      selectedModelKey: { providerID: "codex-acp", modelID: "gpt-5.5" },
       optionsStale: false,
       optionsLoading: false,
       configError: undefined,
+      draftDefaultState: undefined,
+      draftDefaultLabels: undefined,
+      draftDefaultModel: undefined,
     })
   })
 
@@ -54,16 +64,31 @@ describe("harness controller facade", () => {
       hydrate: (...args) => calls.push(["hydrate", ...args]),
       setHarness: (...args) => calls.push(["setHarness", ...args]),
       setModel: (...args) => calls.push(["setModel", ...args]),
+      rememberDraftModel: (...args) => calls.push(["rememberDraftModel", ...args]),
+      resolveDraftDefault: (...args) => {
+        calls.push(["resolveDraftDefault", ...args])
+        return true
+      },
     }))
 
     await controller.hydrate("scope", { directory: "/repo", sessionId: "new" })
     await controller.setHarness("scope", "claude-acp", { directory: "/repo" }, "claude")
-    await controller.setModel("scope", "sonnet", { sessionId: "ses_1" })
+    await controller.setModel("scope", { providerID: "anthropic", modelID: "sonnet" }, { sessionId: "ses_1" })
+    controller.rememberDraftModel("scope", { providerID: "openai", modelID: "gpt-5.5" }, { directory: "/repo" })
+    controller.resolveDraftDefault("scope", {
+      supportedHarnesses: ["opencode", "pi"],
+      eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
+    })
 
     expect(calls).toEqual([
       ["hydrate", "scope", { directory: "/repo", sessionId: "new" }],
       ["setHarness", "scope", "claude-acp", { directory: "/repo" }, "claude"],
-      ["setModel", "scope", "sonnet", { sessionId: "ses_1" }],
+      ["setModel", "scope", { providerID: "anthropic", modelID: "sonnet" }, { sessionId: "ses_1" }],
+      ["rememberDraftModel", "scope", { providerID: "openai", modelID: "gpt-5.5" }, { directory: "/repo" }],
+      ["resolveDraftDefault", "scope", {
+        supportedHarnesses: ["opencode", "pi"],
+        eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
+      }],
     ])
   })
 

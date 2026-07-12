@@ -1,4 +1,3 @@
-/* target-layer: surfaces (marketplace) */
 import type { JSX } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"

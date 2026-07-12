@@ -130,6 +130,22 @@ describe("opencode compat error model", () => {
     expect(configuredBody.all.find((item: { id: string }) => item.id === "claude-acp")?.source).toBe("env")
   })
 
+  test("serves the Pi catalog under a harness-qualified provider route", async () => {
+    const pi = new Hono()
+    pi.route("/", OpenCodeCompatRoutes({ env: {} }))
+
+    const res = await pi.request("/provider?harness=pi")
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.connected).toEqual([])
+    expect(body.all.map((provider: { id: string }) => provider.id).sort()).toEqual([
+      "anthropic",
+      "openai",
+      "openai-codex",
+    ].sort())
+    expect(Object.keys(body.all.find((provider: { id: string }) => provider.id === "anthropic").models).length).toBeGreaterThan(0)
+  })
+
   test("provider endpoints fall back when central opencode is down", async () => {
     configureOpenCodeCompat("http://127.0.0.1:1")
 

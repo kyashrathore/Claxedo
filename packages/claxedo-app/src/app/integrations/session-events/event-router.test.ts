@@ -178,4 +178,46 @@ describe("directory event router", () => {
       session: [],
     })
   })
+
+  test("projects generated titles into the live sidebar session-list cache", () => {
+    const key = queryKeys.shell.sessionList(undefined, {
+      scope: "workspace",
+      directory: "/tmp/ws",
+      limit: 10,
+    })
+    queryClient.setQueryData(key, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 10 },
+      items: [{
+        type: "session",
+        sessionRef: "local:/tmp/ws:session:ses_title",
+        sessionId: "ses_title",
+        title: "Untitled session",
+        directory: "/tmp/ws",
+        createdAt: 1,
+        updatedAt: 1,
+        tags: [],
+        attachments: [],
+      }],
+      totalKnown: 1,
+    })
+
+    routeDirectoryEvent({
+      event: {
+        type: "session.updated",
+        properties: {
+          info: {
+            id: "ses_title",
+            title: "Fix live Codex titles",
+            directory: "/tmp/ws",
+            time: { created: 1, updated: 2 },
+          },
+        },
+      },
+      directory: "/tmp/ws",
+      sinks: routerSinks(),
+    })
+
+    expect(queryClient.getQueryData<{ items: Array<{ title: string }> }>(key)?.items[0]?.title)
+      .toBe("Fix live Codex titles")
+  })
 })

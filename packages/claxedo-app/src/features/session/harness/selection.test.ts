@@ -42,12 +42,35 @@ describe("harness selection", () => {
     ])
   })
 
-  test("uses fixed model harnesses without dynamic options", () => {
+  test("requires a concrete provider/model selection for Pi", () => {
     const state = { ...base, harness: "pi" } satisfies HarnessSelectionState
 
-    expect(harnessModelKeyForSubmit(state)).toEqual({ providerID: "pi", modelID: "virtual" })
-    expect(harnessModelNameForSubmit(state)).toBe("Virtual")
+    expect(harnessModelKeyForSubmit(state)).toBeUndefined()
+    expect(harnessModelNameForSubmit(state)).toBeUndefined()
+    expect(harnessReadyForSubmit(state)).toBe(false)
+  })
+
+  test("preserves Pi's backend provider ID independently of the harness ID", () => {
+    const state = {
+      ...base,
+      harness: "pi",
+      selectedModel: "claude-sonnet-4-5",
+      selectedModelProvider: "anthropic",
+      dynamicModels: [{ id: "claude-sonnet-4-5", name: "Sonnet 4.5", providerID: "anthropic" }],
+    } satisfies HarnessSelectionState
+
+    expect(harnessModelKeyForSubmit(state)).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-4-5" })
+    expect(harnessModelNameForSubmit(state)).toBe("Sonnet 4.5")
     expect(harnessReadyForSubmit(state)).toBe(true)
+  })
+
+  test("does not submit a Pi model ID without its provider identity", () => {
+    expect(harnessModelKeyForSubmit({
+      ...base,
+      harness: "pi",
+      selectedModel: "claude-sonnet-4-5",
+      dynamicModels: [{ id: "claude-sonnet-4-5", name: "Sonnet 4.5" }],
+    })).toBeUndefined()
   })
 
   test("allows the default harness model when no dynamic options have arrived", () => {

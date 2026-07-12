@@ -84,7 +84,7 @@
  *     flips the footer to an inline confirm ("Are you sure you want to delete this
  *     process?", "Cancel" / `[data-testid="process-confirm-delete"]`).
  *   Diagnostics dialog (`dialog-process-diagnostics.tsx`, title "Process Diagnostics",
- *     opened from the sidebar footer `[aria-label="Diagnostics"]` icon button): health
+ *     opened from the sidebar account menu's "Diagnostics" item): health
  *     status line, 4-cell metrics strip (Active/Stale/External/Runtime), Overview tab
  *     (Active workloads / Stale / Other servers group lists, each row with
  *     Open/Stop/Kill actions) and Processes tab (filterable OS-process table).
@@ -1386,7 +1386,8 @@ test.describe("core processes @core", () => {
     await panel.locator('[data-process-action="start"]').click()
     await expect(panel.locator('[data-process-action="stop"]')).toBeVisible({ timeout: 10_000 })
 
-    await page.getByRole("button", { name: "Diagnostics" }).click()
+    await page.getByTestId("rail-account-trigger").click()
+    await page.getByRole("menuitem", { name: "Diagnostics" }).click()
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible({ timeout: 10_000 })
     await expect(dialog.getByText("Process Diagnostics")).toBeVisible()
@@ -1435,4 +1436,3 @@ test.describe("core processes @core", () => {
     async () => {},
   )
 })
-

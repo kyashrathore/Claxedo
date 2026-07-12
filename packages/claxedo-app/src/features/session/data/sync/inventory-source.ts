@@ -1,4 +1,3 @@
-// target-layer: data
 import type { QueryClient } from "@tanstack/solid-query"
 import type { SessionInventoryRow, WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
 import { insertSortedSessionItem } from "@/platform/sync/global-session-identity"

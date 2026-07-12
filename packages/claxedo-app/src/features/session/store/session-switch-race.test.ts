@@ -13,7 +13,10 @@ afterEach(() => {
   queryClient.clear()
   Object.defineProperty(Date, "now", { value: originalDateNow, configurable: true })
   delete (globalThis as typeof globalThis & { __claxedoFastSessionSwitch?: unknown }).__claxedoFastSessionSwitch
-  delete (globalThis as typeof globalThis & { window?: unknown }).window
+  // Clear the fast-switch carrier off the happy-dom window WITHOUT deleting the
+  // window itself — deleting `window` kills the DOM for every later test file.
+  delete (globalThis as typeof globalThis & { window?: { __claxedoFastSessionSwitch?: unknown } }).window
+    ?.__claxedoFastSessionSwitch
 })
 
 describe("fast session switch race proof", () => {

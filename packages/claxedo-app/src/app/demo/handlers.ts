@@ -1,4 +1,4 @@
-/* target-layer: app-shell/bootstrap (demo mode) */ import { http, HttpResponse, passthrough, ws } from "msw"
+import { http, HttpResponse, passthrough, ws } from "msw"
 import {
   loadFixtures,
   type DemoFixtures,

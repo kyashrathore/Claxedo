@@ -24,6 +24,7 @@ export type SessionMeta = {
   host: "central" | "workspace"
   directory?: string
   toolSandbox?: SessionToolSandbox
+  model?: { providerID: string; modelID: string }
   title?: string
   parentID?: string
   rootID?: string

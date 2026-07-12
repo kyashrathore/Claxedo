@@ -1,4 +1,3 @@
-// target-layer: data
 import type { Placement } from "@/platform/runtime/placement"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import {

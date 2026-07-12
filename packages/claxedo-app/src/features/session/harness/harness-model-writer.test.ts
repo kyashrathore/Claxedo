@@ -12,11 +12,12 @@ const scope = "draft:/repo:route"
 let state: Record<string, SessionModelSyncState | undefined>
 let pending: Record<string, Promise<void> | undefined>
 let seeds: string[]
-let selectedModels: string[]
+let selectedModels: Array<{ providerID: string; modelID: string }>
 let selectedAgents: string[]
 let saved: { key: "model" | "agent"; value: string }[]
 let dropped: string[]
 let posts: { url: string; body: unknown }[]
+let remembered: Array<{ scope: string; model: { providerID: string; modelID: string }; directory?: string }>
 let useLocal: boolean
 
 beforeEach(() => {
@@ -28,6 +29,7 @@ beforeEach(() => {
   saved = []
   dropped = []
   posts = []
+  remembered = []
   useLocal = true
 })
 
@@ -90,40 +92,41 @@ describe("harness model writer", () => {
   })
 
   test("updates draft model locally and drops prepared runtime sessions without syncing", async () => {
-    await writerFor().setModel(scope, "opus", { directory: "/repo", sessionId: "new" })
+    await writerFor().setModel(scope, { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "new" })
 
     expect(seeds).toEqual([scope])
-    expect(selectedModels).toEqual(["opus"])
-    expect(saved).toEqual([{ key: "model", value: "opus" }])
+    expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }])
+    expect(saved).toEqual([{ key: "model", value: '{"providerID":"anthropic","modelID":"opus"}' }])
     expect(dropped).toEqual([scope])
     expect(posts).toEqual([])
+    expect(remembered).toEqual([{
+      scope,
+      model: { providerID: "anthropic", modelID: "opus" },
+      directory: "/repo",
+    }])
   })
 
   test("updates existing local model before posting session config", async () => {
-    await writerFor().setModel("session:ses_1", "opus", { directory: "/repo", sessionId: "ses_1" })
+    await writerFor().setModel("session:ses_1", { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "ses_1" })
 
     expect(seeds).toEqual(["session:ses_1"])
-    expect(selectedModels).toEqual(["opus"])
-    expect(saved).toEqual([{ key: "model", value: "opus" }])
+    expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }])
+    expect(saved).toEqual([{ key: "model", value: '{"providerID":"anthropic","modelID":"opus"}' }])
     expect(dropped).toEqual([])
     expect(posts).toEqual([{
       url: harnessConfigUrl({ serverUrl: "http://server", resource: "harness/model" }),
-      body: { model: "opus", sessionId: "ses_1", directory: "/repo" },
+      body: { model: { providerID: "anthropic", modelID: "opus" }, sessionId: "ses_1", directory: "/repo" },
     }])
-    expect(state["http://server\nses_1"]).toEqual({ desired: "opus", synced: "opus" })
+    expect(remembered).toEqual([])
+    expect(state["http://server\nses_1"]).toEqual({ desired: "anthropic/opus", synced: "anthropic/opus" })
   })
 
-  test("skips model sync for existing non-local sessions and empty models", async () => {
+  test("skips model sync for existing non-local sessions", async () => {
     useLocal = false
-    await writerFor().setModel("session:ses_1", "opus", { directory: "/repo", sessionId: "ses_1" })
-    useLocal = true
-    await writerFor().setModel("session:ses_2", "", { directory: "/repo", sessionId: "ses_2" })
+    await writerFor().setModel("session:ses_1", { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "ses_1" })
 
-    expect(selectedModels).toEqual(["opus", ""])
-    expect(saved).toEqual([
-      { key: "model", value: "opus" },
-      { key: "model", value: "" },
-    ])
+    expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }])
+    expect(saved).toEqual([{ key: "model", value: '{"providerID":"anthropic","modelID":"opus"}' }])
     expect(posts).toEqual([])
   })
 
@@ -143,11 +146,17 @@ function writerFor() {
   return createHarnessModelWriter({
     base: "http://server",
     seed: (scope) => seeds.push(scope),
+    acceptsDraftModel: () => true,
     setSelectedModel: (_scope, model) => selectedModels.push(model),
     setSelectedAgent: (_scope, name) => selectedAgents.push(name),
     saveModel: (_scope, model) => saved.push({ key: "model", value: model }),
     saveAgent: (_scope, name) => saved.push({ key: "agent", value: name }),
     dropPrepared: (scope) => dropped.push(scope),
+    rememberDraftModel: (scope, model, input) => remembered.push({
+      scope,
+      model,
+      directory: input?.directory,
+    }),
     runtime: {
       useLocalHarnessConfig: () => useLocal,
       localHarnessConfigFetch: () => async (url, init) => {

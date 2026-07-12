@@ -7,8 +7,12 @@ function normalized(url: string | undefined) {
 export const queryKeys = {
   controlPlane: {
     projects: (baseUrl?: string) => ["controlPlane", normalized(baseUrl), "projects"] as const,
-    providers: (baseUrl?: string) => ["controlPlane", normalized(baseUrl), "providers"] as const,
-    providerAuth: (baseUrl?: string) => ["controlPlane", normalized(baseUrl), "providerAuth"] as const,
+    providers: (baseUrl?: string, scope?: string, harnessType?: string) => scope || harnessType
+      ? ["controlPlane", normalized(baseUrl), "providers", scope ?? "", harnessType ?? ""] as const
+      : ["controlPlane", normalized(baseUrl), "providers"] as const,
+    providerAuth: (baseUrl?: string, harnessType?: string) => harnessType
+      ? ["controlPlane", normalized(baseUrl), "providerAuth", harnessType] as const
+      : ["controlPlane", normalized(baseUrl), "providerAuth"] as const,
   },
   shell: {
     commands: (baseUrl: string | undefined, directory: string) => ["shell", normalized(baseUrl), "commands", directory] as const,

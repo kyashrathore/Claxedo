@@ -1,4 +1,3 @@
-// target-layer: data/transport
 export function harnessQueryFetch(input: {
   request?: typeof fetch
   harnessType?: string

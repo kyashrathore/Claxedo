@@ -47,6 +47,7 @@ function createSubject(input?: {
   state?: HarnessStoreState
   local?: boolean
   workspaceRuntime?: boolean
+  workspaceKind?: "local" | "cloud" | "user-hosted" | null
   quiet?: boolean
   sessionConfig?: unknown
   statusBody?: unknown
@@ -69,6 +70,7 @@ function createSubject(input?: {
     workspaceRuntime: () => input?.workspaceRuntime ?? false,
     runtime: {
       useLocalHarnessConfig: () => input?.local ?? true,
+      workspaceKind: () => input?.workspaceKind,
       harnessSessionFetch: () => async () => response(input?.sessionConfig ?? {
         harness: { type: "codex-acp" },
         model: { modelID: "gpt-5.5" },
@@ -106,6 +108,30 @@ describe("harness hydrator", () => {
       "apply:claude-acp:sonnet",
     ])
     expect(subject.cache.seen.get("scope")).toBe("/repo\nnew")
+  })
+
+  test("hydrates local workspace-runtime drafts through local harness status", async () => {
+    const subject = createSubject({ workspaceRuntime: true, workspaceKind: "local" })
+
+    await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
+
+    expect(subject.calls).toEqual([
+      "seed:scope",
+      "apply:claude-acp:sonnet",
+    ])
+  })
+
+  test("does not hydrate remote workspace-runtime drafts through local harness status", async () => {
+    const subject = createSubject({ workspaceRuntime: true, workspaceKind: "cloud" })
+
+    await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
+
+    expect(subject.calls).toEqual([
+      "seed:scope",
+      "ready:claude-acp",
+      "options:claude-acp",
+      "refresh:/repo:claude-acp:draft",
+    ])
   })
 
   test("falls back to ready hydration and options load when draft status is unavailable", async () => {
@@ -172,6 +198,146 @@ describe("harness hydrator", () => {
       "seed:scope",
       "apply",
     ])
+  })
+
+  test("starts a new hydration generation when the workspace changes under one draft scope", async () => {
+    const subject = createSubject()
+    let releaseFirst: (() => void) | undefined
+    const hydrator = createHarnessHydrator<ScopeInput>({
+      base: "http://127.0.0.1:3001",
+      seed: () => {},
+      state: (scope) => subject.state.get(scope),
+      beginDraftDefault: (_scope, params) => {
+        subject.state.set("scope", harnessState({ harness: params?.directory === "/one" ? "claude-acp" : "codex-acp" }))
+        return {
+          application: { scope: "scope", workspaceKey: params?.directory ?? "", revision: 1 },
+          saved: { version: 1, harness: params?.directory === "/one" ? "claude-acp" : "codex-acp" },
+        }
+      },
+      resetWorkspaceDraftHarness: () => {},
+      applyStatus: async () => {},
+      setReadyHydration: () => {},
+      setReadyFallback: () => {},
+      fetchConfigOptions: () => {},
+      refresh: async (directory) => {
+        if (directory !== "/one") return
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve
+        })
+      },
+      fastSessionSwitchQuiet: () => false,
+      workspaceRuntime: () => false,
+      runtime: {
+        useLocalHarnessConfig: () => true,
+        harnessSessionFetch: () => async () => response({}),
+        localHarnessConfigFetch: () => async () => response({}),
+      },
+      cache: subject.cache,
+    })
+
+    const first = hydrator.hydrate("scope", { directory: "/one", sessionId: "new" })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await hydrator.hydrate("scope", { directory: "/two", sessionId: "new" })
+    expect(subject.cache.seen.get("scope")).toBe("/two\nnew")
+
+    releaseFirst?.()
+    await first
+    expect(subject.cache.seen.get("scope")).toBe("/two\nnew")
+  })
+
+  test("hydrates a saved draft through workspace-default ownership without applying status selection", async () => {
+    const subject = createSubject()
+    const hydrator = createHarnessHydrator<ScopeInput>({
+      base: "http://127.0.0.1:3001",
+      seed: (scope) => subject.calls.push(`seed:${scope}`),
+      state: (scope) => subject.state.get(scope),
+      beginDraftDefault: () => ({
+        application: { scope: "scope", workspaceKey: "ws_1", revision: 1 },
+        saved: { version: 1, harness: "codex-acp", model: { providerID: "codex-acp", modelID: "gpt-5.5" } },
+      }),
+      resetWorkspaceDraftHarness: () => {},
+      applyStatus: async () => subject.calls.push("status-selection"),
+      setReadyHydration: (_scope, type) => subject.calls.push(`ready:${type}`),
+      setReadyFallback: () => {},
+      fetchConfigOptions: (_scope, type) => subject.calls.push(`options:${type}`),
+      refresh: async () => {},
+      fastSessionSwitchQuiet: () => false,
+      workspaceRuntime: () => false,
+      runtime: {
+        useLocalHarnessConfig: () => true,
+        harnessSessionFetch: () => async () => response({}),
+        localHarnessConfigFetch: () => async () => response({ type: "claude-acp" }),
+      },
+      cache: subject.cache,
+    })
+    subject.state.set("scope", harnessState({ harness: "codex-acp" }))
+
+    await hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
+
+    expect(subject.calls).toEqual(["seed:scope", "ready:codex-acp", "options:codex-acp"])
+  })
+
+  test("hydrates status when workspace-default ownership has no saved draft", async () => {
+    const subject = createSubject()
+    const hydrator = createHarnessHydrator<ScopeInput>({
+      base: "http://127.0.0.1:3001",
+      seed: (scope) => subject.calls.push(`seed:${scope}`),
+      state: (scope) => subject.state.get(scope),
+      beginDraftDefault: () => ({
+        application: { scope: "scope", workspaceKey: "ws_1", revision: 1 },
+        saved: undefined,
+      }),
+      resetWorkspaceDraftHarness: () => {},
+      applyStatus: async (_scope, data) => subject.calls.push(`apply:${data.type ?? ""}:${data.model ?? ""}`),
+      setReadyHydration: (_scope, type) => subject.calls.push(`ready:${type}`),
+      setReadyFallback: () => {},
+      fetchConfigOptions: (_scope, type) => subject.calls.push(`options:${type}`),
+      refresh: async (directory, harness, opts) => subject.calls.push(`refresh:${directory ?? ""}:${harness ?? ""}:${opts?.draft ? "draft" : ""}`),
+      fastSessionSwitchQuiet: () => false,
+      workspaceRuntime: () => false,
+      runtime: {
+        useLocalHarnessConfig: () => true,
+        harnessSessionFetch: () => async () => response({}),
+        localHarnessConfigFetch: () => async () => response({
+          type: "claude-acp",
+          model: "sonnet",
+          activeType: "claude-acp",
+        }),
+      },
+      cache: subject.cache,
+    })
+
+    await hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
+
+    expect(subject.calls).toEqual(["seed:scope", "apply:claude-acp:sonnet"])
+  })
+
+  test("marks existing sessions server-owned before asynchronous hydration", async () => {
+    const subject = createSubject({ quiet: true })
+    const marks: string[] = []
+    const hydrator = createHarnessHydrator<ScopeInput>({
+      base: "http://127.0.0.1:3001",
+      seed: () => {},
+      state: (scope) => subject.state.get(scope),
+      markServer: (scope) => marks.push(scope),
+      resetWorkspaceDraftHarness: () => {},
+      applyStatus: async () => {},
+      setReadyHydration: () => {},
+      setReadyFallback: () => {},
+      fetchConfigOptions: () => {},
+      refresh: async () => {},
+      fastSessionSwitchQuiet: () => true,
+      workspaceRuntime: () => false,
+      runtime: {
+        useLocalHarnessConfig: () => true,
+        harnessSessionFetch: () => async () => response({}),
+        localHarnessConfigFetch: () => async () => response({}),
+      },
+      cache: subject.cache,
+    })
+
+    await hydrator.hydrate("scope", { directory: "/repo", sessionId: "ses_1" })
+    expect(marks).toEqual(["scope"])
   })
 
 })

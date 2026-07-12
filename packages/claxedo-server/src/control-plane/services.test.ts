@@ -908,11 +908,11 @@ describe("control-plane services", () => {
   test("hosted session bootstrap exposes a real frontend gateway resolution seam", () => {
     const routeFile = path.resolve(import.meta.dirname, "./routes/control-plane-session.ts")
     const routeText = fs.readFileSync(routeFile, "utf8")
-    const extensionFile = path.resolve(import.meta.dirname, "../../../claxedo-app/src/extensions/server.tsx")
+    const extensionFile = path.resolve(import.meta.dirname, "../../../claxedo-app/src/features/extensions/data/server.tsx")
     const extensionText = fs.readFileSync(extensionFile, "utf8")
-    const sessionUrlFile = path.resolve(import.meta.dirname, "../../../claxedo-app/src/utils/session-url.ts")
+    const sessionUrlFile = path.resolve(import.meta.dirname, "../../../claxedo-app/src/platform/runtime/session-url.ts")
     const sessionUrlText = fs.readFileSync(sessionUrlFile, "utf8")
-    const layoutFile = path.resolve(import.meta.dirname, "../../../claxedo-app/src/pages/directory-layout.tsx")
+    const layoutFile = path.resolve(import.meta.dirname, "../../../claxedo-app/src/app/routes/directory-layout.tsx")
     const layoutText = fs.readFileSync(layoutFile, "utf8")
 
     expect(routeText).toContain(".get(\"/sessions/:sessionId/gateway\"")

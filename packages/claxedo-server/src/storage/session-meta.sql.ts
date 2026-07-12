@@ -10,6 +10,8 @@ export const ClaxedoSessionMetaTable = sqliteTable(
     host: text().notNull().default("workspace"),
     directory: text(),
     tool_sandbox: text(),
+    model_provider_id: text(),
+    model_id: text(),
     title: text(),
     parent_session_id: text(),
     archived_at: integer(),

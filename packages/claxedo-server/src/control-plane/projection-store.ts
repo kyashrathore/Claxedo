@@ -20,6 +20,7 @@ export type ProjectionStore = {
       directory?: string | null
       host?: "central" | "workspace"
       toolSandbox?: SessionToolSandbox | null
+      model?: { providerID: string; modelID: string } | null
       title?: string | null
       parentID?: string | null
       archived?: number | null

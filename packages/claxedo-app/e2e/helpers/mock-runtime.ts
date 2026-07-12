@@ -1022,7 +1022,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   })
 
   await page.route("**/provider", (r) => (api(r) ? json(r, providerResponse()) : r.continue()))
+  await page.route("**/provider?**", (r) => (api(r) ? json(r, providerResponse()) : r.continue()))
   await page.route("**/provider/auth", (r) => (api(r) ? json(r, {}) : r.continue()))
+  await page.route("**/provider/auth?**", (r) => (api(r) ? json(r, {}) : r.continue()))
 
   await page.route("**/config", (r) => {
     if (!api(r)) return r.continue()
@@ -1356,7 +1358,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await page.route(`${base}/permission**`, (r) => json(r, []))
     await page.route(`${base}/question**`, (r) => json(r, []))
     await page.route(`${base}/provider`, (r) => json(r, cloudProviderResponse()))
+    await page.route(`${base}/provider?**`, (r) => json(r, cloudProviderResponse()))
     await page.route(`${base}/provider/auth`, (r) => json(r, {}))
+    await page.route(`${base}/provider/auth?**`, (r) => json(r, {}))
     await page.route(`${base}/api/wr/health`, (r) => json(r, { healthy: true }))
     await page.route(`${base}/api/wr/harness-config-options**`, (r) => {
       const url = new URL(r.request().url())

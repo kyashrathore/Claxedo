@@ -27,7 +27,8 @@ import { usePermission } from "@/features/session/providers/permission"
 import { useOptionalTerminal } from "@/features/terminal/providers/provider"
 import { DialogEditProject } from "../../../features/workspaces/ui/dialog-edit-project"
 import { DialogProcessDiagnostics } from "@/features/processes/ui"
-import { UsageLimitsButton } from "../controls/usage-limits-popover"
+import { UsageLimitsPanel } from "../controls/usage-limits-popover"
+import { RailAccountMenu, RailAccountSubmenu } from "./rail-account-menu"
 import { getFilename } from "@/lib/path"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
 import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
@@ -772,12 +773,14 @@ export function RailSidebar(props: RailSidebarProps) {
       return { ...current, [key]: rows }
     })
   }
-  const clearVisibleSessionRows = (key: string) => {
-    setVisibleSessionRowsBySection((current) => {
-      if (!current[key]) return current
-      const next = { ...current }
-      delete next[key]
-      return next
+  const clearVisibleSessionRows = (key: string, rows: Row[]) => {
+    queueMicrotask(() => {
+      setVisibleSessionRowsBySection((current) => {
+        if (current[key] !== rows) return current
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
     })
   }
   const visibleSessionRows = createMemo(() => Object.values(visibleSessionRowsBySection()).flat())
@@ -1356,17 +1359,7 @@ export function RailSidebar(props: RailSidebarProps) {
 
   const FilterMenu = () => {
     return (
-      <DropdownMenu onOpenChange={handleRailMenuOpenChange}>
-        <Tooltip placement="top" value="View options">
-          <DropdownMenu.Trigger
-            aria-label="View options"
-            class="flex items-center justify-center h-7 w-7 rounded-md text-icon-base hover:text-text-base transition-colors cursor-pointer border-none bg-transparent"
-          >
-            <Icon name="sliders" size="small" />
-          </DropdownMenu.Trigger>
-        </Tooltip>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content style={{ "z-index": 220, "min-width": "200px" }}>
+      <RailAccountSubmenu icon="sliders" label="View options" contentStyle={{ "z-index": 220, "min-width": "200px" }}>
             <DropdownMenu.Group>
               <DropdownMenu.GroupLabel>Group by</DropdownMenu.GroupLabel>
               <DropdownMenu.RadioGroup value={view().group} onChange={(value) => setGroup(groupFromStorage(value))}>
@@ -1391,122 +1384,102 @@ export function RailSidebar(props: RailSidebarProps) {
               <DropdownMenu.GroupLabel>Show</DropdownMenu.GroupLabel>
 
               <Show when={statusOptions().length > 0}>
-                <DropdownMenu.Sub>
-                  <DropdownMenu.SubTrigger>
-                    <span class="flex-1">Status</span>
-                    <Icon name="chevron-right" size="small" class="opacity-30" />
-                  </DropdownMenu.SubTrigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.SubContent style={{ "z-index": 220 }}>
-                      <For each={statusOptions()}>
-                        {(item) => (
-                          <DropdownMenu.CheckboxItem
-                            checked={view().status.includes(item)}
-                            onChange={() => toggle("status", item)}
-                            closeOnSelect={false}
-                          >
-                            <span class="flex-1">{title(item)}</span>
-                            <Show when={view().status.includes(item)}>
-                              <span class="text-text-weak/50">&#10003;</span>
-                            </Show>
-                          </DropdownMenu.CheckboxItem>
-                        )}
-                      </For>
-                    </DropdownMenu.SubContent>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Sub>
+                <DropdownMenu.Group>
+                  <DropdownMenu.GroupLabel>Status</DropdownMenu.GroupLabel>
+                  <For each={statusOptions()}>
+                    {(item) => (
+                      <DropdownMenu.CheckboxItem
+                        checked={view().status.includes(item)}
+                        onChange={() => toggle("status", item)}
+                        closeOnSelect={false}
+                      >
+                        <span class="flex-1">{title(item)}</span>
+                        <Show when={view().status.includes(item)}>
+                          <span class="text-text-weak/50">&#10003;</span>
+                        </Show>
+                      </DropdownMenu.CheckboxItem>
+                    )}
+                  </For>
+                </DropdownMenu.Group>
               </Show>
 
               <Show when={environmentOptions().length > 0}>
-                <DropdownMenu.Sub>
-                  <DropdownMenu.SubTrigger>
-                    <span class="flex-1">Environment</span>
-                    <Icon name="chevron-right" size="small" class="opacity-30" />
-                  </DropdownMenu.SubTrigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.SubContent style={{ "z-index": 220 }}>
-                      <For each={environmentOptions()}>
-                        {(item) => (
-                          <DropdownMenu.CheckboxItem
-                            checked={view().environment.includes(item)}
-                            onChange={() => toggle("environment", item)}
-                            closeOnSelect={false}
-                          >
-                            <span class="flex-1">{title(item)}</span>
-                            <Show when={view().environment.includes(item)}>
-                              <span class="text-text-weak/50">&#10003;</span>
-                            </Show>
-                          </DropdownMenu.CheckboxItem>
-                        )}
-                      </For>
-                    </DropdownMenu.SubContent>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Sub>
+                <DropdownMenu.Group>
+                  <DropdownMenu.GroupLabel>Environment</DropdownMenu.GroupLabel>
+                  <For each={environmentOptions()}>
+                    {(item) => (
+                      <DropdownMenu.CheckboxItem
+                        checked={view().environment.includes(item)}
+                        onChange={() => toggle("environment", item)}
+                        closeOnSelect={false}
+                      >
+                        <span class="flex-1">{title(item)}</span>
+                        <Show when={view().environment.includes(item)}>
+                          <span class="text-text-weak/50">&#10003;</span>
+                        </Show>
+                      </DropdownMenu.CheckboxItem>
+                    )}
+                  </For>
+                </DropdownMenu.Group>
               </Show>
 
               <Show when={gitOptions().length > 0}>
-                <DropdownMenu.Sub>
-                  <DropdownMenu.SubTrigger>
-                    <span class="flex-1">Git</span>
-                    <Icon name="chevron-right" size="small" class="opacity-30" />
-                  </DropdownMenu.SubTrigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.SubContent style={{ "z-index": 220 }}>
-                      <For each={gitOptions()}>
-                        {(item) => (
-                          <DropdownMenu.CheckboxItem
-                            checked={view().git.includes(item)}
-                            onChange={() => toggle("git", item)}
-                            closeOnSelect={false}
-                          >
-                            <span class="flex-1">{title(item)}</span>
-                            <Show when={view().git.includes(item)}>
-                              <span class="text-text-weak/50">&#10003;</span>
-                            </Show>
-                          </DropdownMenu.CheckboxItem>
-                        )}
-                      </For>
-                    </DropdownMenu.SubContent>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Sub>
+                <DropdownMenu.Group>
+                  <DropdownMenu.GroupLabel>Git</DropdownMenu.GroupLabel>
+                  <For each={gitOptions()}>
+                    {(item) => (
+                      <DropdownMenu.CheckboxItem
+                        checked={view().git.includes(item)}
+                        onChange={() => toggle("git", item)}
+                        closeOnSelect={false}
+                      >
+                        <span class="flex-1">{title(item)}</span>
+                        <Show when={view().git.includes(item)}>
+                          <span class="text-text-weak/50">&#10003;</span>
+                        </Show>
+                      </DropdownMenu.CheckboxItem>
+                    )}
+                  </For>
+                </DropdownMenu.Group>
               </Show>
 
-              <DropdownMenu.Sub>
-                <DropdownMenu.SubTrigger>
-                  <span class="flex-1">Archived</span>
-                  <Icon name="chevron-right" size="small" class="opacity-30" />
-                </DropdownMenu.SubTrigger>
-                <DropdownMenu.Portal>
-                  <DropdownMenu.SubContent style={{ "z-index": 220 }}>
-                    <DropdownMenu.RadioGroup value={view().archived} onChange={(v) => setArchive(v as Archive)}>
-                      <DropdownMenu.RadioItem value="active" closeOnSelect={false}>
-                        <span class="flex-1">Active</span>
-                        <Show when={view().archived === "active"}>
-                          <span class="text-text-weak/50">&#10003;</span>
-                        </Show>
-                      </DropdownMenu.RadioItem>
-                      <DropdownMenu.RadioItem value="all" closeOnSelect={false}>
-                        <span class="flex-1">All</span>
-                        <Show when={view().archived === "all"}>
-                          <span class="text-text-weak/50">&#10003;</span>
-                        </Show>
-                      </DropdownMenu.RadioItem>
-                      <DropdownMenu.RadioItem value="archived" closeOnSelect={false}>
-                        <span class="flex-1">Archived</span>
-                        <Show when={view().archived === "archived"}>
-                          <span class="text-text-weak/50">&#10003;</span>
-                        </Show>
-                      </DropdownMenu.RadioItem>
-                    </DropdownMenu.RadioGroup>
-                  </DropdownMenu.SubContent>
-                </DropdownMenu.Portal>
-              </DropdownMenu.Sub>
+              <DropdownMenu.Group>
+                <DropdownMenu.GroupLabel>Archived</DropdownMenu.GroupLabel>
+                <DropdownMenu.RadioGroup value={view().archived} onChange={(v) => setArchive(v as Archive)}>
+                  <DropdownMenu.RadioItem value="active" closeOnSelect={false}>
+                    <span class="flex-1">Active</span>
+                    <Show when={view().archived === "active"}>
+                      <span class="text-text-weak/50">&#10003;</span>
+                    </Show>
+                  </DropdownMenu.RadioItem>
+                  <DropdownMenu.RadioItem value="all" closeOnSelect={false}>
+                    <span class="flex-1">All</span>
+                    <Show when={view().archived === "all"}>
+                      <span class="text-text-weak/50">&#10003;</span>
+                    </Show>
+                  </DropdownMenu.RadioItem>
+                  <DropdownMenu.RadioItem value="archived" closeOnSelect={false}>
+                    <span class="flex-1">Archived</span>
+                    <Show when={view().archived === "archived"}>
+                      <span class="text-text-weak/50">&#10003;</span>
+                    </Show>
+                  </DropdownMenu.RadioItem>
+                </DropdownMenu.RadioGroup>
+              </DropdownMenu.Group>
             </DropdownMenu.Group>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu>
+      </RailAccountSubmenu>
     )
   }
+
+  const UsageLimitsMenu = () => (
+    <RailAccountSubmenu
+      icon="gauge"
+      label="Usage limits"
+      contentClass="z-[220] w-[19rem] max-h-[26rem] overflow-y-auto p-2.5"
+    >
+      <UsageLimitsPanel />
+    </RailAccountSubmenu>
+  )
 
   const HeaderActions = (input: {
     project: ProjectItem
@@ -1713,8 +1686,12 @@ export function RailSidebar(props: RailSidebarProps) {
       }
       return []
     })
-    createEffect(() => registerVisibleSessionRows("global", sectionRows()))
-    onCleanup(() => clearVisibleSessionRows("global"))
+    let visibleRows = sectionRows()
+    createEffect(() => {
+      visibleRows = sectionRows()
+      registerVisibleSessionRows("global", visibleRows)
+    })
+    onCleanup(() => clearVisibleSessionRows("global", visibleRows))
     const [open, setOpen] = createSignal(true)
     const more = createMemo(() => sessionListLoaded()
       ? !!sessionListNextCursor()
@@ -1803,7 +1780,7 @@ export function RailSidebar(props: RailSidebarProps) {
             <SessionNavigation
               rows={sectionRows().map((session) => sessionDisplayRow(session))}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
-              onArchive={(item) => void archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
+              onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
               onPrepareDrag={(item) => prepareSessionDragFromRows(sectionRows(), item)}
             />
             <Show when={loadingInitial()}>
@@ -1912,8 +1889,13 @@ export function RailSidebar(props: RailSidebarProps) {
       }
       return []
     })
-    createEffect(() => registerVisibleSessionRows(`workspace:${section.workspaceDir}`, sectionRows()))
-    onCleanup(() => clearVisibleSessionRows(`workspace:${section.workspaceDir}`))
+    const visibleRowsKey = `workspace:${section.workspaceDir}`
+    let visibleRows = sectionRows()
+    createEffect(() => {
+      visibleRows = sectionRows()
+      registerVisibleSessionRows(visibleRowsKey, visibleRows)
+    })
+    onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
     const [_open, setOpen] = createSignal(section.rows.length > 0)
     const [autoOpened, setAutoOpened] = createSignal(section.rows.length > 0)
     const [manuallyToggled, setManuallyToggled] = createSignal(false)
@@ -2100,7 +2082,7 @@ export function RailSidebar(props: RailSidebarProps) {
                 active: sessionActiveInWorkbench(session, section.workspaceDir),
               }))}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
-              onArchive={(item) => void archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
+              onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
               onPrepareDrag={(item) => prepareSessionDragFromRows(sectionRows(), item)}
             />
             <Show when={loadingInitial()}>
@@ -2200,8 +2182,13 @@ export function RailSidebar(props: RailSidebarProps) {
       }
       return []
     })
-    createEffect(() => registerVisibleSessionRows(`project:${section.project.id}`, sectionRows()))
-    onCleanup(() => clearVisibleSessionRows(`project:${section.project.id}`))
+    const visibleRowsKey = `project:${section.project.id}`
+    let visibleRows = sectionRows()
+    createEffect(() => {
+      visibleRows = sectionRows()
+      registerVisibleSessionRows(visibleRowsKey, visibleRows)
+    })
+    onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
     const terminalItems = createMemo(() => terminalSurfaceRows({ directories: directories() }))
     const [open, setOpen] = createSignal(section.rows.length > 0 || terminalItems().length > 0 || projectMatches(section.project))
     const active = createMemo(() => projectMatches(section.project))
@@ -2343,7 +2330,7 @@ export function RailSidebar(props: RailSidebarProps) {
                 showMetadata: true,
               }))}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
-              onArchive={(item) => void archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
+              onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
               onPrepareDrag={(item) => prepareSessionDragFromRows(sectionRows(), item)}
             />
             <Show when={loadingInitial()}>
@@ -2453,8 +2440,8 @@ export function RailSidebar(props: RailSidebarProps) {
         </div>
         <Show when={open()}>
           <div class="flex flex-col gap-0.5 pb-1">
-            <For each={group.items}>
-              {(section) => <WorkspaceBlock {...section} />}
+            <For each={group.items.map((section) => section.id)}>
+              {(sectionId) => <WorkspaceBlock {...group.items.find((section) => section.id === sectionId)!} />}
             </For>
           </div>
         </Show>
@@ -2567,18 +2554,18 @@ export function RailSidebar(props: RailSidebarProps) {
             <div class="px-4 pt-1 pb-1 text-[11px] font-medium uppercase tracking-normal text-text-weaker">
               {view().group === "project" ? "Projects" : "Workspaces"}
             </div>
-            <For each={globals()}>
-              {(section) => <GlobalBlock {...section} />}
+            <For each={globals().map((section) => section.id)}>
+              {(sectionId) => <GlobalBlock {...globals().find((section) => section.id === sectionId)!} />}
             </For>
             <Switch>
               <Match when={view().group === "project"}>
-                <For each={projectGroups()}>
-                  {(group) => <ProjectBlock {...group} />}
+                <For each={projectGroups().map((group) => group.id)}>
+                  {(groupId) => <ProjectBlock {...projectGroups().find((group) => group.id === groupId)!} />}
                 </For>
               </Match>
               <Match when={view().group === "workspace"}>
-                <For each={groups()}>
-                  {(group) => <WorkspaceGroupBlock {...group} />}
+                <For each={groups().map((group) => group.id)}>
+                  {(groupId) => <WorkspaceGroupBlock {...groups().find((group) => group.id === groupId)!} />}
                 </For>
               </Match>
             </Switch>
@@ -2595,46 +2582,15 @@ export function RailSidebar(props: RailSidebarProps) {
 
       <div class="flex flex-col">
         <div class="px-2.5 py-2">
-          {/* Compact action bar */}
-          <div class="flex items-center px-2 py-1.5 border-t border-border-weak-base/15">
-            <div class="flex items-center gap-0.5">
-              <Tooltip placement="top" value="Diagnostics">
-                <div>
-                  <IconButton
-                    icon="warning"
-                    variant="ghost"
-                    onClick={openDiagnostics}
-                    aria-label="Diagnostics"
-                    class="h-7 w-7 rounded-md text-icon-base hover:text-text-base"
-                  />
-                </div>
-              </Tooltip>
-              <FilterMenu />
-              <UsageLimitsButton />
-              <Tooltip placement="top" value={language.t("sidebar.settings")}>
-                <div>
-                  <IconButton
-                    icon="settings-gear"
-                    variant="ghost"
-                    onClick={() => props.onSettings?.()}
-                    aria-label={language.t("sidebar.settings")}
-                    class="h-7 w-7 rounded-md text-icon-base hover:text-text-base"
-                  />
-                </div>
-              </Tooltip>
-              <Tooltip placement="top" value={language.t("sidebar.help")}>
-                <div>
-                  <IconButton
-                    icon="help"
-                    variant="ghost"
-                    onClick={() => props.onHelp?.()}
-                    aria-label={language.t("sidebar.help")}
-                    class="h-7 w-7 rounded-md text-icon-base hover:text-text-base"
-                  />
-                </div>
-              </Tooltip>
-            </div>
-            <div class="flex-1" />
+          <div class="border-t border-border-weak-base/15 pt-2">
+            <RailAccountMenu
+              railWidth={width()}
+              onRailLockChange={handleRailMenuOpenChange}
+              onDiagnostics={openDiagnostics}
+              onSettings={props.onSettings}
+              onHelp={props.onHelp}
+              utilities={() => <><FilterMenu /><UsageLimitsMenu /></>}
+            />
           </div>
         </div>
       </div>

@@ -380,4 +380,74 @@ describe("PiHarnessAdapter", () => {
     const statuses = events.filter((event) => event.type === "session-status")
     expect(statuses.at(-1)).toMatchObject({ status: "error" })
   })
+
+  test("passes each session's exact selected model to the resolver", async () => {
+    const resolved: Array<{ sessionId: string; model?: { providerID: string; modelID: string } }> = []
+    const adapter = new PiHarnessAdapter({
+      modelBackend: (input) => {
+        resolved.push(input)
+        return undefined
+      },
+    })
+    await adapter.bindSession({ id: "session-openai" })
+    await adapter.bindSession({ id: "session-anthropic" })
+    await adapter.updateSessionConfig("session-openai", {
+      model: { providerID: "openai", modelID: "gpt-4.1" },
+    }, undefined)
+    await adapter.updateSessionConfig("session-anthropic", {
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+    }, undefined)
+
+    const [openaiEvents, anthropicEvents] = await Promise.all([
+      collect(adapter.sendMessage("session-openai", prompt({ parts: [{ type: "text", text: "hello" }] }), undefined)),
+      collect(adapter.sendMessage("session-anthropic", prompt({ parts: [{ type: "text", text: "hello" }] }), undefined)),
+    ])
+
+    expect(resolved).toEqual(expect.arrayContaining([
+      { sessionId: "session-openai", model: { providerID: "openai", modelID: "gpt-4.1" } },
+      { sessionId: "session-anthropic", model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" } },
+    ]))
+    for (const events of [openaiEvents, anthropicEvents]) {
+      expect(events.some((event) => event.type === "error")).toBe(true)
+      expect(events.some((event) => event.type === "text-delta")).toBe(false)
+    }
+  })
+
+  test("legacy virtual sessions fail with new-session guidance instead of echoing the prompt", async () => {
+    const adapter = new PiHarnessAdapter({ modelBackend: () => undefined })
+    await adapter.bindSession({ id: "legacy-virtual" })
+
+    const events = await collect(adapter.sendMessage("legacy-virtual", prompt({
+      parts: [{ type: "text", text: "hello" }],
+    }), undefined))
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "error",
+      error: expect.stringContaining("Start a new Pi session"),
+    }))
+    expect(events.some((event) => event.type === "text-delta")).toBe(false)
+  })
+
+  test("rejects a backend that substitutes a different model", async () => {
+    const adapter = new PiHarnessAdapter({
+      modelBackend: () => ({
+        model: getModel("openai", "gpt-4.1"),
+        getApiKey: () => "test-key",
+      }),
+    })
+    await adapter.bindSession({ id: "session-a" })
+    await adapter.updateSessionConfig("session-a", {
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+    }, undefined)
+
+    const events = await collect(adapter.sendMessage("session-a", prompt({
+      parts: [{ type: "text", text: "hello" }],
+    }), undefined))
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "error",
+      error: expect.stringContaining("backend resolved openai/gpt-4.1"),
+    }))
+    expect(events.some((event) => event.type === "text-delta")).toBe(false)
+  })
 })

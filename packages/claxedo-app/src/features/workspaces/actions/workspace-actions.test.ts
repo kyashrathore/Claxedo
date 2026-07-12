@@ -1,7 +1,10 @@
-import { beforeAll, describe, expect, mock, test } from "bun:test"
+import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import type { ProjectItem } from "../../../app/workbench/rail/domain-types"
 import type { WorkspaceActionProps } from "./workspace-actions"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+
+beforeEach(() => configureAppPortsForTest())
 
 let createWorkspaceActions: typeof import("./workspace-actions").createWorkspaceActions
 

@@ -1,7 +1,8 @@
-// target-layer: session
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { HarnessReadiness } from "./selection"
 import type { HarnessType } from "./profile"
+import type { DraftDefaultLabels } from "./draft-defaults"
+import type { DraftDefaultResult, ResolveDraftDefaultInput } from "./draft-default-policy"
 
 export type HarnessScopeInput = {
   directory?: string
@@ -15,15 +16,21 @@ export type HarnessSelectionControllerStore = {
   /** Transition a never-settling harness to the terminal "error" readiness. */
   markUnavailable(scope: string): void
   setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string): void | Promise<void>
-  setModel(scope: string, model: string, input?: HarnessScopeInput): void | Promise<void>
+  setModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | Promise<void>
+  rememberDraftModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | boolean
+  resolveDraftDefault(scope: string, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
   harness(scope: string): HarnessType
   isHarnessMode(scope: string): boolean
   readiness(scope: string): HarnessReadiness
-  models(scope: string): { id: string; name: string }[]
+  models(scope: string): { id: string; name: string; providerID?: string }[]
   selectedModel(scope: string): string
+  selectedModelKey(scope: string): ModelKey | undefined
   optionsStale(scope: string): boolean
   optionsLoading(scope: string): boolean
   configError(scope: string): string | undefined
+  draftDefaultState(scope: string): DraftDefaultResult["state"] | undefined
+  draftDefaultLabels(scope: string): DraftDefaultLabels | undefined
+  draftDefaultModel(scope: string): ModelKey | undefined
 }
 
 export type HarnessSubmitControllerStore = HarnessSelectionControllerStore & {
@@ -37,11 +44,15 @@ export type HarnessSelectionSnapshot = {
   harness: HarnessType
   isHarnessMode: boolean
   readiness: HarnessReadiness
-  models: { id: string; name: string }[]
+  models: { id: string; name: string; providerID?: string }[]
   selectedModel: string
+  selectedModelKey?: ModelKey
   optionsStale: boolean
   optionsLoading: boolean
   configError: string | undefined
+  draftDefaultState?: DraftDefaultResult["state"]
+  draftDefaultLabels?: DraftDefaultLabels
+  draftDefaultModel?: ModelKey
 }
 
 export function createHarnessSelectionController(store: HarnessSelectionControllerStore) {
@@ -53,9 +64,13 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
         readiness: store.readiness(scope),
         models: store.models(scope),
         selectedModel: store.selectedModel(scope),
+        selectedModelKey: store.selectedModelKey(scope),
         optionsStale: store.optionsStale(scope),
         optionsLoading: store.optionsLoading(scope),
         configError: store.configError(scope),
+        draftDefaultState: store.draftDefaultState(scope),
+        draftDefaultLabels: store.draftDefaultLabels(scope),
+        draftDefaultModel: store.draftDefaultModel(scope),
       }
     },
     hydrate: (scope: string, input?: HarnessScopeInput) => store.hydrate(scope, input),
@@ -63,7 +78,12 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
     markUnavailable: (scope: string) => store.markUnavailable(scope),
     setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string) =>
       store.setHarness(scope, type, input, binary),
-    setModel: (scope: string, model: string, input?: HarnessScopeInput) => store.setModel(scope, model, input),
+    setModel: (scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
+      store.setModel(scope, model, input, labels),
+    rememberDraftModel: (scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
+      store.rememberDraftModel(scope, model, input, labels),
+    resolveDraftDefault: (scope: string, input: Omit<ResolveDraftDefaultInput, "saved">) =>
+      store.resolveDraftDefault(scope, input),
   }
 }
 

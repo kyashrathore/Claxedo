@@ -1,4 +1,3 @@
-// target-layer: app-shell/bootstrap (demo mode)
 /**
  * DemoTourController — renderless component that listens for postMessage
  * from the parent page and switches the active workspace content to match

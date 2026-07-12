@@ -6,8 +6,10 @@ import { markRouteIntentClosed } from "./workbench/state/route-intent"
 import { recoverWorkspaceRuntimeRoute, type RuntimeRouteSessionInventory } from "./workbench/state/route-runtime-recovery"
 import { focusedSurfaceRouteTarget, surfaceRoute } from "./workbench/state/surface-route"
 import {
+  parseShellRoute,
   sessionRoute as canonicalSessionRoute,
   workspaceRoute,
+  workspaceRouteWithId,
   type ShellRoute,
 } from "@/platform/identity/route"
 
@@ -17,11 +19,23 @@ export function useAppShellRouteSync(input: {
   findSurface: (predicate: (surface: ContentMeta) => boolean) => ContentMeta | undefined
   navigate: Navigator
   params: Params
+  hash: Accessor<string>
   pathname: Accessor<string>
   routeDirectory: Accessor<string | undefined>
+  routeId: Accessor<string | undefined>
+  search: Accessor<string>
   sessionInventory: Accessor<RuntimeRouteSessionInventory>
   shellRouteKind: Accessor<ShellRoute["kind"]>
 }) {
+  createEffect(() => {
+    const routeId = input.routeId()
+    if (!routeId) return
+    const route = parseShellRoute(input.pathname())
+    if (!("workspaceId" in route) || route.workspaceId === routeId) return
+    const target = workspaceRouteWithId(route, routeId)
+    if (target) input.navigate(`${target}${input.search()}${input.hash()}`, { replace: true })
+  })
+
   createEffect(() => {
     const sessionId = input.params.sessionId ?? input.params.id
     if (input.routeDirectory() === "/workspace" && sessionId) {

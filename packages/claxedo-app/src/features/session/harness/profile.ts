@@ -1,9 +1,8 @@
-// target-layer: session
 import type { HarnessId } from "@/platform/identity/session-ref"
 
 export type HarnessType = HarnessId
 export type OptionsSource = "harness" | "catalog" | "empty"
-export type HarnessState = { type?: HarnessType; binary?: string | null; model?: string | null; activeType?: HarnessType; activeBinary?: string | null; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string }
+export type HarnessState = { type?: HarnessType; binary?: string | null; model?: string | null; modelProviderID?: string | null; activeType?: HarnessType; activeBinary?: string | null; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string }
 export type HarnessConfigOption = { id: string; name: string; category?: string | null; type: "select" | "boolean"; currentValue: unknown; options?: Array<{ value: string; name: string; description?: string }>; selectOptions?: Array<{ id: string; name: string }> }
 export type OptionsResponse = { options: HarnessConfigOption[]; source: OptionsSource; stale: boolean }
 
@@ -39,18 +38,18 @@ export function pickHarness(type?: string | null, binary?: string | null, access
 
 export function harnessHasConfigOptions(type: HarnessType) { return type !== "opencode" && type !== "pi" }
 
-export function fixedHarnessModel(type: HarnessType) { return type === "pi" ? { id: "virtual", name: "Virtual", provider: { id: "pi" } } : undefined }
-
 export function harnessProfile(id: HarnessType) {
-  const fixedModel = fixedHarnessModel(id)
   return {
     displayName: HARNESS_DISPLAY_NAMES[id] ?? id,
     hasConfigOptions: harnessHasConfigOptions(id),
-    ...(fixedModel ? { fixedModel } : {}),
   }
 }
 
-export function effectiveHarnessModel(type: HarnessType, selected?: string | null) { return harnessHasConfigOptions(type) ? selected || DEFAULT_HARNESS_MODEL.id : "" }
+export function effectiveHarnessModel(type: HarnessType, selected?: string | null) {
+  if (type === "opencode") return ""
+  if (type === "pi") return selected || ""
+  return selected || DEFAULT_HARNESS_MODEL.id
+}
 
 export function desiredHarness(data: HarnessState): HarnessType | undefined { return pickHarness(data.type, data.binary) }
 
@@ -87,6 +86,7 @@ export function decodeHarnessState(value: unknown): HarnessState | undefined {
     ...(type ? { type } : {}),
     ...(binary !== undefined ? { binary } : {}),
     ...(typeof raw.model === "string" || raw.model === null ? { model: raw.model } : {}),
+    ...(typeof raw.modelProviderID === "string" || raw.modelProviderID === null ? { modelProviderID: raw.modelProviderID } : {}),
     ...(activeType ? { activeType } : {}),
     ...(activeBinary !== undefined ? { activeBinary } : {}),
     ...(status ? { status } : {}),
@@ -116,7 +116,15 @@ export function decodeSessionConfig(value: unknown) {
   const raw = record(value)
   if (!raw) return {}
   const model = record(raw.model)
-  return { harness: decodeHarnessState(raw.harness ?? raw.runner), model: model && (typeof model.modelID === "string" || model.modelID === null) ? { modelID: model.modelID } : null }
+  return {
+    harness: decodeHarnessState(raw.harness ?? raw.runner),
+    model: model && (typeof model.modelID === "string" || model.modelID === null)
+      ? {
+          modelID: model.modelID,
+          ...(typeof model.providerID === "string" || model.providerID === null ? { providerID: model.providerID } : {}),
+        }
+      : null,
+  }
 }
 
 export function optionsResponse(value: unknown): OptionsResponse {

@@ -157,7 +157,12 @@ export function SessionComposerRegion(props: {
 
   const open = createMemo(() => store.ready && props.state.dock() && !props.state.closing())
   const progress = useSpring(() => (open() ? 1 : 0), { visualDuration: 0.3, bounce: 0 })
-  const value = createMemo(() => Math.max(0, Math.min(1, progress())))
+  const value = createMemo(() => {
+    const next = Math.max(0, Math.min(1, progress()))
+    if (next > 0.995) return 1
+    if (next < 0.005) return 0
+    return next
+  })
   const dock = createMemo(() => (store.ready && props.state.dock()) || value() > 0.001)
   const rolled = createMemo(() => (props.revert?.items.length ? props.revert : undefined))
   const lift = createMemo(() => (rolled() ? 18 : 36 * value()))

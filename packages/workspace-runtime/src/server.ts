@@ -6,7 +6,7 @@ import type { UpgradeWebSocket } from "hono/ws"
 import { Pty } from "./pty/index"
 import * as ProcessManager from "./managed-processes/manager"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
-import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
+import type { OpenCodeRequestFn, PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import { createWorkspaceHost } from "./workspace"
 import { setupAgentHooks } from "./agent-hooks"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./workspace-host-service-auth"
@@ -64,6 +64,7 @@ export type WorkspaceRuntimeServerOptions = {
    * rides this handler instead of building a URL — used by embedded compositions.
    */
   opencodeRequest?: OpenCodeRequestFn
+  piModelBackend?: PiModelBackendResolver
   harness?: RuntimeRunner
   opencodeCompat?: boolean
   target?: WorkspaceTarget
@@ -372,6 +373,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.opencodeUrl ? { opencodeUrl: options.opencodeUrl } : {}),
     ...(options.opencodeHeaders ? { opencodeHeaders: options.opencodeHeaders } : {}),
     ...(options.opencodeRequest ? { opencodeRequest: options.opencodeRequest } : {}),
+    ...(options.piModelBackend ? { piModelBackend: options.piModelBackend } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.opencodeCompat !== undefined ? { opencodeCompat: options.opencodeCompat } : {}),
     ...(options.target ? { target: options.target } : {}),

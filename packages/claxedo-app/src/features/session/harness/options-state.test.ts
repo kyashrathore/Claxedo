@@ -64,6 +64,38 @@ describe("harness options state", () => {
     }).patch.selectedModel).toBe("opus")
   })
 
+  test("does not substitute a protected explicit model removed from live options", () => {
+    expect(applyHarnessOptionsResponse({
+      type: "claude-acp",
+      selectedModel: "removed",
+      preserveSelectedModel: true,
+      tries: 0,
+      payload: {
+        source: "harness",
+        stale: false,
+        options: [{
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "sonnet",
+          selectOptions: [{ id: "sonnet", name: "Sonnet" }],
+        }],
+      },
+    })).toEqual({
+      patch: {
+        optionsSource: "harness",
+        optionsStale: false,
+        optionsLoading: false,
+        dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+        selectedModel: "removed",
+        configError: "Selected model unavailable",
+      },
+      retry: false,
+      clearTries: true,
+    })
+  })
+
   test("keeps stale usable models loading for bounded retry without warning dot", () => {
     expect(applyHarnessOptionsResponse({
       type: "claude-acp",

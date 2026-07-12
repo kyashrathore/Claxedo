@@ -1,4 +1,3 @@
-// target-layer: session
 import {
   effectiveHarnessModel,
   extractModelsFromConfigOptions,
@@ -31,6 +30,7 @@ export type HarnessOptionsDecision = {
 export function applyHarnessOptionsResponse(input: {
   type: HarnessType
   selectedModel?: string
+  preserveSelectedModel?: boolean
   payload: OptionsResponse
   tries: number
 }): HarnessOptionsDecision {
@@ -65,6 +65,19 @@ export function applyHarnessOptionsResponse(input: {
   }
 
   const current = input.selectedModel ?? ""
+  if (input.preserveSelectedModel && current && !result.models.some((item) => item.id === current)) {
+    return {
+      patch: {
+        ...base,
+        dynamicModels: result.models,
+        selectedModel: current,
+        configError: "Selected model unavailable",
+        optionsLoading: false,
+      },
+      retry: false,
+      clearTries,
+    }
+  }
   const next = result.models.some((item) => item.id === current)
     ? current
     : (result.currentModel ?? result.models[0]?.id ?? "")

@@ -160,6 +160,7 @@ export function createHarnessConfigRuntime(input: {
     localHarnessConfigFetch,
     useLocalHarnessConfig,
     workspace,
+    workspaceKind,
     workspaceHarnessTransport,
     workspaceRuntimeConfigFetch,
   }

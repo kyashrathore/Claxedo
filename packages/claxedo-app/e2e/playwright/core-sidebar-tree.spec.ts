@@ -96,7 +96,7 @@
  *     per-section list-state notices; the error notice renders a "Retry"
  *     action button.
  *   A "Load more" / "Loading..." button appears while `nextCursor` is set.
- *   `[aria-label="View options"]` — sliders-icon dropdown trigger; contains a
+ *   rail account menu → "View options" submenu; contains a
  *     `Group by` radio (Project/Workspace), a `Show` group with conditional
  *     Status/Environment/Git submenus (rendered only when at least one loaded
  *     session carries that dimension) and an unconditional `Archived` radio
@@ -705,8 +705,8 @@ test.describe("core sidebar tree @core", () => {
     await expect(page.locator('[data-testid="project-header"]')).toBeVisible()
     await expect(page.locator('[data-testid="workspace-header"]')).toHaveCount(0)
 
-    const viewOptions = page.getByRole("button", { name: "View options" })
-    await viewOptions.click()
+    await page.getByTestId("rail-account-trigger").click()
+    await page.getByRole("menuitem", { name: "View options" }).hover()
     await page.getByRole("menuitemradio", { name: "Workspace" }).click()
 
     await expect(page.locator('[data-testid="workspace-project-header"]')).toBeVisible({ timeout: 10_000 })
@@ -719,9 +719,47 @@ test.describe("core sidebar tree @core", () => {
     // the "View options" trigger here would toggle it closed instead of
     // opening it, since it's already open from the "Workspace" click above.
     fixtures.sessionListRequests.length = 0
-    await page.getByText("Archived").hover()
     await page.getByRole("menuitemradio", { name: "All" }).click()
     await expect.poll(() => fixtures.sessionListRequests.some((q) => q.includes("archived=all")), { timeout: 10_000 }).toBe(true)
+  })
+
+  test("account footer exposes utilities and restores focus across nested panels", async ({ page }) => {
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "account" }) })
+    await seedProject(page, { dir: DIR })
+    await openTree(page, DIR)
+
+    const trigger = page.getByTestId("rail-account-trigger")
+    await trigger.focus()
+    await page.keyboard.press("Enter")
+    await expect(trigger).toHaveAttribute("aria-expanded", "true")
+    await expect(page.getByRole("menuitem", { name: "View options" })).toBeVisible()
+    await expect(page.getByRole("menuitem", { name: "Usage limits" })).toBeVisible()
+    await expect(page.getByRole("menuitem", { name: "Diagnostics" })).toBeVisible()
+    await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible()
+    await expect(page.getByRole("menuitem", { name: "Help" })).toBeVisible()
+
+    await page.getByRole("menuitem", { name: "View options" }).focus()
+    await page.keyboard.press("ArrowRight")
+    await expect(page.getByRole("menuitemradio", { name: "All" })).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(page.getByRole("menuitemradio", { name: "All" })).toHaveCount(0)
+    await expect(page.getByRole("menuitem", { name: "View options" })).toBeVisible()
+
+    await page.getByRole("menuitem", { name: "Usage limits" }).focus()
+    await page.keyboard.press("ArrowRight")
+    const refreshUsage = page.getByRole("menuitem", { name: "Refresh usage limits" })
+    await expect(refreshUsage).toBeVisible()
+    await expect(refreshUsage).toBeFocused()
+
+    await page.keyboard.press("Escape")
+    await expect(refreshUsage).toHaveCount(0)
+    await expect(page.getByRole("menuitem", { name: "Usage limits" })).toBeVisible()
+
+    await page.keyboard.press("Escape")
+    await expect(page.getByRole("menu")).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+    await expect(trigger).toHaveAttribute("aria-expanded", "false")
   })
 
   test("view state persists to localStorage across reload; malformed JSON falls back to defaults — behavior 8", async ({ page }) => {
@@ -730,8 +768,8 @@ test.describe("core sidebar tree @core", () => {
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
 
-    const viewOptions = page.getByRole("button", { name: "View options" })
-    await viewOptions.click()
+    await page.getByTestId("rail-account-trigger").click()
+    await page.getByRole("menuitem", { name: "View options" }).hover()
     await page.getByRole("menuitemradio", { name: "Workspace" }).click()
 
     await expect.poll(async () => {
@@ -768,12 +806,14 @@ test.describe("core sidebar tree @core", () => {
     await expect(page.locator('[data-testid="rail-sidebar-session-list-empty"]')).toBeVisible({ timeout: 15_000 })
 
     fixtures.failNextSessionList()
-    await page.getByRole("button", { name: "View options" }).click()
+    await page.getByTestId("rail-account-trigger").click()
+    await page.getByRole("menuitem", { name: "View options" }).hover()
+    await page.keyboard.press("Escape")
     await page.keyboard.press("Escape")
     // Force a refetch by flipping the archived filter, which changes the
     // query signature and re-fires the request against our failing route.
-    await page.getByRole("button", { name: "View options" }).click()
-    await page.getByText("Archived").hover()
+    await page.getByTestId("rail-account-trigger").click()
+    await page.getByRole("menuitem", { name: "View options" }).hover()
     await page.getByRole("menuitemradio", { name: "All" }).click()
     await page.keyboard.press("Escape")
     await expect(page.locator('[data-testid="rail-sidebar-session-list-error"]')).toBeVisible({ timeout: 15_000 })

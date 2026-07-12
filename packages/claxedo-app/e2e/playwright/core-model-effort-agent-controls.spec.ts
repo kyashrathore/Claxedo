@@ -83,7 +83,7 @@
  *     failed config PATCH (`prompt.toast.sessionConfigSaveFailed.title`, sourced from
  *     `src/i18n/en.ts` — see BEHAVIORS #8 / HARNESS NOTES).
  *   Settings dialog: opened via the sidebar's `Settings`-labelled icon button
- *     (`aria-label="Settings"`); `role="tab"` item named "Models"
+ *     (rail account menu item "Settings"); `role="tab"` item named "Models"
  *     (`language.t("settings.tab.models" is actually "settings.models.title")`);
  *     `SettingsModels` renders one row per model with a `role="switch"` control whose
  *     accessible name is the model's display name (`<Switch hideLabel>{item.name}</
@@ -691,7 +691,8 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await expect(page.locator('[data-slot="list-item"]', { hasText: "Haiku 3 (legacy)" })).toHaveCount(0)
     await page.keyboard.press("Escape")
 
-    await page.getByRole("button", { name: "Settings" }).click()
+    await page.getByTestId("rail-account-trigger").click()
+    await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
     const dialog = page.locator('[data-slot="dialog-container"]')
     await expect(dialog).toBeVisible({ timeout: 10_000 })
     await page.getByRole("tab", { name: "Models" }).click()

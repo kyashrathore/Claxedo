@@ -411,6 +411,7 @@ describe("control plane session routes", () => {
       workspaceId: "workspace_1",
       toolSandbox: { kind: "virtual", id: "central-pi-test" },
       harness: "pi",
+      requireModel: true,
     })
     expect(svc.projectionStore.put_session_meta).not.toHaveBeenCalled()
   })
@@ -454,6 +455,7 @@ describe("control plane session routes", () => {
       title: "Workspace runtime chat",
       toolSandbox: { kind: "workspace-runtime", workspaceId: "ws-1", directory: "sub" },
       harness: "pi",
+      requireModel: true,
     })
   })
 
@@ -690,6 +692,27 @@ describe("control plane session routes", () => {
     expect(svc.projectionStore.list_session_metas).toHaveBeenCalledWith({
       directory: "/repo",
       includeArchived: false,
+    })
+  })
+
+  test("reconciles local runtime metadata before reading the sidebar projection", async () => {
+    const svc = services()
+    let reconciled = false
+    svc.projectionStore.list_session_navigation_metas = vi.fn(async () => {
+      expect(reconciled).toBe(true)
+      return [{ ...sessionMeta({ id: "ses_titled", updatedAt: 2 }), title: "Generated after first turn" }]
+    })
+
+    const res = await ControlPlaneSessionRoutes(svc, {
+      ...signedOptions,
+      beforeLocalList: async () => {
+        reconciled = true
+      },
+    }).request("http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&limit=10")
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      items: [{ sessionId: "ses_titled", title: "Generated after first turn" }],
     })
   })
 

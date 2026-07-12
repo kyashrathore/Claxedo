@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import * as h from "./submit.harness.test"
 
@@ -24,6 +24,7 @@ beforeAll(async () => {
   await h.installSubmitMocks(mock)
 })
 beforeEach(() => h.resetSubmitHarness())
+afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("upstream contract", () => {
   test("keeps reading the latest worktree accessor value per submit", async () => {

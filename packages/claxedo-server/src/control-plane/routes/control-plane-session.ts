@@ -23,7 +23,8 @@ import {
 type Options = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
-  createHybridSession?: (input: { title?: string | null; workspaceId?: string | null; toolSandbox?: SandboxRef; harness?: string }) => Promise<{ id: string }>
+  beforeLocalList?: () => Promise<void>
+  createHybridSession?: (input: { title?: string | null; workspaceId?: string | null; toolSandbox?: SandboxRef; harness?: string; model?: { providerID: string; modelID: string }; requireModel?: boolean }) => Promise<{ id: string }>
 }
 
 async function signedAuth(req: Request, options: Options) {
@@ -160,6 +161,20 @@ function centralHybridToolSandbox(input: unknown): SandboxRef {
   return toolSandboxRef(input) ?? { kind: "virtual" as const }
 }
 
+function promptModel(input: unknown) {
+  if (input === undefined || input === null) return
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new ControlPlaneAuthError(400, "unsupported_hybrid_harness", "model must contain providerID and modelID")
+  }
+  const row = input as Record<string, unknown>
+  const providerID = optionalText(row.providerID)
+  const modelID = optionalText(row.modelID)
+  if (!providerID || !modelID) {
+    throw new ControlPlaneAuthError(400, "unsupported_hybrid_harness", "model must contain providerID and modelID")
+  }
+  return { providerID, modelID }
+}
+
 /**
  * Harnesses dispatchable on the central hybrid route today. `pi` is the
  * model-backed central harness; codex-acp/opencode sandbox harnesses join
@@ -185,6 +200,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
       try {
         const query = parseSessionListQuery(new URL(c.req.url))
         if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
+          await options.beforeLocalList?.()
           const canUseBoundedProjection = query.groupBy === "none" &&
             query.environment.length === 0 &&
             query.git.length === 0 &&
@@ -239,12 +255,15 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const toolSandbox = centralHybridToolSandbox(body.toolSandbox)
         const workspaceId = optionalText(body.workspaceId)
         const harness = hybridHarness(body.harness)
+        const model = promptModel(body.model)
         const session = options.createHybridSession
           ? await options.createHybridSession({
               title: sessionTitle,
               ...(workspaceId ? { workspaceId } : {}),
               toolSandbox,
               harness,
+              requireModel: true,
+              ...(model ? { model } : {}),
             })
           : { id: randomUUID() }
         if (!options.createHybridSession) {
@@ -253,6 +272,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
             ...(workspaceId ? { workspaceID: workspaceId } : {}),
             directory: null,
             title: sessionTitle,
+            ...(model ? { model } : {}),
           })
         }
         return c.json({

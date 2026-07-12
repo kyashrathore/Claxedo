@@ -1,4 +1,3 @@
-/* target-layer: surfaces (marketplace) */
 
 export type CatalogCategoryId =
   | "featured"

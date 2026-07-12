@@ -1,4 +1,3 @@
-// target-layer: app-shell/bootstrap (demo mode)
 import { setupWorker } from "msw/browser"
 import { createHandlers } from "./handlers"
 

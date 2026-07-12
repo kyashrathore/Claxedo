@@ -1,4 +1,3 @@
-// target-layer: surfaces/review (org doc §3c) — the ONE review surface (vcs modes are props).
 import {
   Show,
   Match,

@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { promptScopeKey } from "./submit-prompt-scope"
 import * as h from "./submit.harness.test"
@@ -17,6 +17,7 @@ beforeAll(async () => {
   await h.installSubmitMocks(mock)
 })
 beforeEach(() => h.resetSubmitHarness())
+afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("New-session creation: cloud, worktree, and tab handoff", () => {
   test("clears the visible workspace draft after creating a new session", async () => {

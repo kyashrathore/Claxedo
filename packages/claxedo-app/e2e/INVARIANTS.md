@@ -65,7 +65,15 @@ explicitly in its own SPEC block's INVARIANTS section, with a reason.
    stage of a session's life — draft, first send, mid-session change, reload, follow-up
    send. Exactly one model control exists in the DOM at a time, even mid-switch. A harness
    is locked once the session is created; nothing silently falls back to plain OpenCode.
-2. **Completed assistant content is never hidden by stale busy state.** Once an assistant
+2. **Workspace draft defaults are paired, session config is durable.** A new draft reads
+   one server/workspace-scoped `{ harness, model }` pair. An explicit harness or model
+   action atomically replaces that pair for future drafts; it never live-patches another
+   already-open draft. Restoration validates the exact provider/model identity against
+   that harness's live catalog or config options. A removed or disconnected saved model
+   stays visibly unavailable and submit-blocked instead of silently substituting another
+   model. After first-send promotion, server session config is the only authority and late
+   draft/catalog responses are ignored.
+3. **Completed assistant content is never hidden by stale busy state.** Once an assistant
    message's `time.completed` is set (or it carries an `error`), the turn is "settled" and
    its content slot must render regardless of what `session.status` is doing separately.
    (See `assistantMessageSettled` / `workingTurn` in
@@ -73,10 +81,10 @@ explicitly in its own SPEC block's INVARIANTS section, with a reason.
    settled turn is never hidden by a late/never-arriving idle event.) Corollary: the
    **stale-busy** scenario — message completed, `session.idle` never sent — is a permanent
    non-skipped test (spec 5), not a `test.skip`.
-3. **No silent fallback to OpenCode.** An unavailable/auth-error harness shows a red dot,
+4. **No silent fallback to OpenCode.** An unavailable/auth-error harness shows a red dot,
    disables submit, locks the editor, and sends **zero** requests. It never silently routes
    the turn through the default OpenCode runtime instead.
-4. **Submit gating.** The submit control is the single source of truth for "can I send
+5. **Submit gating.** The submit control is the single source of truth for "can I send
    right now": `[data-action="prompt-submit"]`'s `data-icon` is `"stop"` while busy and
    something else (`"arrow-up"` / `"arrow-undo-down"`) when ready; it is `disabled` when
    gating (missing model/agent, readonly role, readiness polling, etc.) applies. Never

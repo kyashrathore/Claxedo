@@ -3,9 +3,8 @@
 // session/weekly, ...) from claxedo-server's /api/claxedo/usage-limits, which
 // probes tokentracker-cli against the machine's local harness credentials.
 import { Index, Show, Switch, Match, createMemo, createSignal, onMount, type JSX } from "solid-js"
-import { Popover as Kobalte } from "@kobalte/core/popover"
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/solid-query"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { USAGE_LIMITS_QUERY_KEY, writeUsageLimitsSnapshot } from "./usage-limits-cache"
 import {
@@ -186,15 +185,15 @@ function SkeletonRow(props: { delay: number }): JSX.Element {
   )
 }
 
-function PopoverBody(): JSX.Element {
-  // PopoverBody only mounts while the popover is open (Kobalte portals content
-  // on open), so the query is enabled by mere presence — no `open` prop needed.
+export function UsageLimitsPanel(): JSX.Element {
+  // This panel only mounts while the account submenu is open, so the query is
+  // enabled by mere presence — no `open` prop needed.
   // keepPreviousData paints the last snapshot instantly on reopen while a
   // background revalidation refreshes it (fixes the "stale until Refresh" flash).
   const query = useQuery(() => ({
     queryKey: USAGE_LIMITS_QUERY_KEY,
     queryFn: () => fetchUsageLimits(),
-    refetchOnMount: "always" as const,
+    refetchOnMount: true,
     refetchInterval: 60_000,
     staleTime: 15_000,
     placeholderData: keepPreviousData,
@@ -253,19 +252,18 @@ function PopoverBody(): JSX.Element {
             <span class="text-2xs text-text-weaker">{formatAge(query.dataUpdatedAt)}</span>
           </Show>
         </div>
-        <button
-          type="button"
+        <DropdownMenu.Item
           aria-label="Refresh usage limits"
-          class="flex h-5 w-5 items-center justify-center rounded text-icon-base transition-colors hover:text-text-base hover:bg-surface-base-hover active:scale-90 disabled:opacity-40"
-          disabled={spinning()}
-          onClick={doRefresh}
+          closeOnSelect={false}
+          class="ml-auto !flex !h-5 !w-5 !p-0 items-center justify-center rounded text-icon-base transition-colors hover:text-text-base hover:bg-surface-base-hover active:scale-90"
+          onSelect={() => void doRefresh()}
         >
           {/* Spin the wrapper, not the Icon: ClaxedoIcon forwards `class` through a
               dynamic-key classList that doesn't reliably react to a changing value. */}
           <span class="flex" classList={{ "animate-spin": spinning() }}>
             <Icon name="reload" size="small" />
           </span>
-        </button>
+        </DropdownMenu.Item>
       </div>
 
       <Switch>
@@ -318,29 +316,5 @@ function PopoverBody(): JSX.Element {
         </Match>
       </Switch>
     </div>
-  )
-}
-
-export function UsageLimitsButton(): JSX.Element {
-  const [open, setOpen] = createSignal(false)
-  return (
-    <Kobalte open={open()} onOpenChange={setOpen} modal={false} placement="top-start" gutter={6}>
-      <Tooltip placement="top" value="Usage limits">
-        <Kobalte.Trigger
-          aria-label="Usage limits"
-          data-action="usage-limits"
-          class="h-7 w-7 flex items-center justify-center rounded-md text-icon-base transition-colors duration-150 hover:text-text-base hover:bg-surface-base-hover data-[expanded]:bg-surface-base-active data-[expanded]:text-text-base outline-none"
-        >
-          <Icon name="gauge" />
-        </Kobalte.Trigger>
-      </Tooltip>
-      <Kobalte.Portal>
-        <Kobalte.Content
-          class="w-[19rem] max-h-[26rem] overflow-y-auto flex flex-col p-2.5 rounded-lg border border-border-base bg-surface-raised-stronger-non-alpha shadow-lg z-50 outline-none animate-[fade-in_120ms_ease-out]"
-        >
-          <PopoverBody />
-        </Kobalte.Content>
-      </Kobalte.Portal>
-    </Kobalte>
   )
 }

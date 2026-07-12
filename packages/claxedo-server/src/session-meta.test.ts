@@ -208,6 +208,31 @@ describe("session meta", () => {
     expect((await sessionMeta("central"))?.workspaceID).toBeUndefined()
   })
 
+  test("persists a central Pi model and preserves it across projection sync", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await putSessionMeta("central-model", {
+      host: "central",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+    })
+
+    expect((await sessionMeta("central-model"))?.model).toEqual({
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4-5",
+    })
+
+    await putSessionMeta("central-model", { title: "Renamed" })
+    expect(await sessionMeta("central-model")).toMatchObject({
+      title: "Renamed",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+    })
+
+    ClaxedoDB.close()
+    expect((await sessionMeta("central-model"))?.model).toEqual({
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4-5",
+    })
+  })
+
   test("explicit null clears central session workspace scope", async () => {
     await fs.mkdir(root, { recursive: true })
     await putSessionMeta("central", {
@@ -432,5 +457,16 @@ describe("session meta", () => {
       "claxedo_session_meta_project_archive_updated_idx",
       "claxedo_session_meta_workspace_archive_updated_idx",
     ])
+  })
+
+  test.each([
+    ["model_provider_id", "anthropic"],
+    ["model_id", "claude-sonnet-4-5"],
+  ])("reports partial model configuration when only %s is stored", async (column, value) => {
+    await fs.mkdir(root, { recursive: true })
+    await putSessionMeta("partial-model", { host: "central" })
+    ClaxedoDB.raw().prepare(`UPDATE claxedo_session_meta SET ${column} = ? WHERE session_id = ?`).run(value, "partial-model")
+
+    await expect(sessionMeta("partial-model")).rejects.toThrow("incomplete model configuration")
   })
 })

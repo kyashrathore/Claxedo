@@ -9,7 +9,7 @@ import { describe, expect, test } from "bun:test"
 // longer exists (see CONTRIBUTING.md "History: the override system") — is kept
 // here as a lightweight fixture-presence check, with no source-text grepping.
 
-const srcRoot = new URL("../", import.meta.url)
+const srcRoot = new URL("../../", import.meta.url)
 
 describe("no upstream override system", () => {
   test("there is no src/overrides directory", async () => {
@@ -24,14 +24,14 @@ describe("no upstream override system", () => {
     // absent. Collapsed here to the canonical route pages: each real source
     // exists and no parallel override copy does.
     const routeOwners = [
-      "app.tsx",
-      "pages/session.tsx",
-      "pages/home.tsx",
-      "pages/error.tsx",
-      "pages/cli-login.tsx",
-      "pages/session/use-session-commands.tsx",
-      "pages/session/message-timeline.tsx",
-      "pages/session/composer/session-composer-region.tsx",
+      "app/entry/app.tsx",
+      "features/session/ui/session-screen.tsx",
+      "app/routes/home.tsx",
+      "app/routes/error.tsx",
+      "app/routes/cli-login.tsx",
+      "features/session/ui/use-session-commands.tsx",
+      "features/session/ui/message-timeline.tsx",
+      "features/session/ui/composer/session-composer-region.tsx",
     ]
 
     for (const relative of routeOwners) {

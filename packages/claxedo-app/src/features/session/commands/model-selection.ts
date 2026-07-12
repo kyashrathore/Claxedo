@@ -1,4 +1,3 @@
-// target-layer: session
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 
 export type ModelSelectionSource = "ui" | "agent"

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   projectDisplayName,
   projectWorkspaceDirectories,
+  workspaceRouteIdentity,
   workspaceDisplayName,
   workspaceIsCloud,
   type WorkspaceDisplayProject,
@@ -60,6 +61,17 @@ describe("workspace display helpers", () => {
       sandboxes: ["/home/worktrees/myapp/feature-1"],
     }
     expect(workspaceDisplayName(bare, "/home/worktrees/myapp/feature-1")).toBe("feature-1")
+  })
+
+  test("resolves route identity in both workspace-id and directory directions", () => {
+    expect(workspaceRouteIdentity([project], "/repo/feature")).toEqual({
+      routeId: "ws-feature",
+      directory: "/repo/feature",
+    })
+    expect(workspaceRouteIdentity([project], "ws-feature")).toEqual({
+      routeId: "ws-feature",
+      directory: "/repo/feature",
+    })
   })
 
   test("workspaceIsCloud is false for a non-main directory with no workspace metadata", () => {

@@ -33,8 +33,13 @@ mock.module("@/platform/api/api", () => ({
   normalizeUrl: (u: string | undefined) => u?.trim().replace(/\/+$/, "") || undefined,
 }))
 
+// Spread the real module: `mock.module` replaces the module PROCESS-WIDE, so a
+// partial mock would break later files that import its other exports.
+const realPersist = await import("@/platform/persistence/persist")
 mock.module("@/platform/persistence/persist", () => ({
+  ...realPersist,
   Persist: {
+    ...realPersist.Persist,
     scoped: (_dir: string, _session: string | undefined, key: string) => ({
       storage: "test.dat",
       key: `workspace:${key}`,

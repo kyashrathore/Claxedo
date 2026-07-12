@@ -53,8 +53,11 @@ function ClaxedoAppShellContent(props: ParentProps) {
     findSurface: shell.state.meta.find,
     navigate,
     params,
+    hash: () => location.hash,
     pathname: () => location.pathname,
     routeDirectory: shell.routeDirectory,
+    routeId: shell.routeId,
+    search: () => location.search,
     sessionInventory: shell.sessionInventory,
     shellRouteKind: shell.shellRouteKind,
   })

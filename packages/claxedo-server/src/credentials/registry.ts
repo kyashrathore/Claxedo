@@ -157,6 +157,18 @@ export function getCredentialByProvider(providerId: string): CredentialMetadata 
   return row ? toMetadata(row) : undefined
 }
 
+/** Credential lookup for request paths where a registry outage must remain distinguishable from an absent credential. */
+export function requireCredentialRegistryLookup(providerId: string): CredentialMetadata | undefined {
+  const row = ClaxedoDB.use((db) =>
+    db
+      .select()
+      .from(ClaxedoProviderCredentialTable)
+      .where(eq(ClaxedoProviderCredentialTable.provider_id, providerId))
+      .get(),
+  )
+  return row ? toMetadata(row) : undefined
+}
+
 /** Get credential metadata by ID. */
 export function getCredential(id: string): CredentialMetadata | undefined {
   const row = safeRead<CredentialRow | undefined>("credential read", undefined, () =>

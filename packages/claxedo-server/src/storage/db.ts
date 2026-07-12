@@ -78,7 +78,16 @@ function applyMigrations(sqlite: CompatibleSqlite, entries: { sql: string; times
   for (const entry of entries) {
     if (applied.has(entry.name)) continue
     sqlite.transaction(() => {
-      sqlite.exec(entry.sql)
+      try {
+        sqlite.exec(entry.sql)
+      } catch (error) {
+        const repairedModelColumns = entry.name === "20260712000100_session_meta_model"
+          && (sqlite.prepare("PRAGMA table_info(claxedo_session_meta)").all() as { name?: unknown }[])
+            .filter((item): item is { name: string } => typeof item.name === "string")
+            .map((item) => item.name)
+            .filter((name) => name === "model_provider_id" || name === "model_id").length === 2
+        if (!repairedModelColumns) throw error
+      }
       sqlite.prepare(`INSERT INTO __claxedo_migrations (name, applied_at) VALUES (?, ?)`).run(entry.name, Date.now())
     })()
   }

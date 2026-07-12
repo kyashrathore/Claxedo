@@ -80,6 +80,7 @@ export type ClaxedoEvent =
   | { type: "worktree.ready"; directory: string; name: string; branch: string }
   | { type: "worktree.failed"; directory: string; message: string }
   | SessionLifecycleEvent
+  | ClaxedoDirectoryEvent
   | {
       type: "provision"
       workspaceId: string
@@ -88,6 +89,29 @@ export type ClaxedoEvent =
       totalMs?: number
       ts: number
     }
+
+export type ClaxedoDirectoryEvent = {
+  type:
+    | "message.updated"
+    | "message.part.updated"
+    | "message.part.delta"
+    | "message.completed"
+    | "session.idle"
+    | "session.error"
+    | "session.status"
+    | "session.updated"
+    | "session.agent"
+    | "todo.updated"
+    | "permission.asked"
+    | "permission.replied"
+    | "question.asked"
+    | "question.replied"
+    | "question.rejected"
+    | "session.diff"
+    | "session.compacted"
+  directory?: string
+  properties?: unknown
+}
 
 type ClaxedoEventType = ClaxedoEvent["type"]
 type ClaxedoEventOf<T extends ClaxedoEventType> = Extract<ClaxedoEvent, { type: T }>
@@ -124,6 +148,20 @@ function createEventEmitter() {
 
 function isClaxedoEvent(input: unknown): input is ClaxedoEvent | { type: "heartbeat" } {
   return !!input && typeof input === "object" && "type" in input && typeof input.type === "string"
+}
+
+export function normalizeClaxedoStreamEvent(input: unknown): ClaxedoEvent | { type: "heartbeat" } | undefined {
+  if (isClaxedoEvent(input)) return input
+  const envelope = input && typeof input === "object" && !Array.isArray(input)
+    ? input as { directory?: unknown; payload?: unknown }
+    : undefined
+  const payload = envelope?.payload
+  if (!isClaxedoEvent(payload)) return
+  if (payload.type === "heartbeat") return payload
+  const directory = typeof envelope?.directory === "string" && envelope.directory ? envelope.directory : undefined
+  if (!directory) return payload
+  if ("directory" in payload && typeof payload.directory === "string" && payload.directory) return payload
+  return { ...payload, directory } as ClaxedoEvent
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────
@@ -286,8 +324,8 @@ export function ClaxedoEventsProvider(props: ParentProps) {
 
   const emitEvent = (input: string) => {
     try {
-      const event = JSON.parse(input) as unknown
-      if (!isClaxedoEvent(event) || event.type === "heartbeat") return
+      const event = normalizeClaxedoStreamEvent(JSON.parse(input) as unknown)
+      if (!event || event.type === "heartbeat") return
       emitter.emit(event)
     } catch {
       // ignore parse errors

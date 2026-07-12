@@ -1,4 +1,3 @@
-// target-layer: app-shell/bootstrap (demo mode)
 type Model = {
   id: string
   name: string

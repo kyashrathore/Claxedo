@@ -80,6 +80,8 @@ function hydrateSessionRows(
   meta: StoredSessionMeta[],
   key: (item: StoredSessionMeta) => string,
 ) {
+  const corrupt = meta.find((item) => Boolean(item.model_provider_id) !== Boolean(item.model_id))
+  if (corrupt) throw new Error(`Session ${corrupt.session_id} has incomplete model configuration`)
   const refs = ids(meta.map((item) => item.session_ref))
   const tags = safeMetaRead("session tags", [], () =>
     ClaxedoDB.use((db) =>
@@ -104,6 +106,9 @@ function hydrateSessionRows(
         host: host(item.host) ?? "workspace",
         ...(item.directory ? { directory: item.directory } : {}),
         ...(toolSandbox(item.tool_sandbox) ? { toolSandbox: toolSandbox(item.tool_sandbox) } : {}),
+        ...(item.model_provider_id && item.model_id
+          ? { model: { providerID: item.model_provider_id, modelID: item.model_id } }
+          : {}),
         ...(item.title ? { title: item.title } : {}),
         ...(item.parent_session_id ? { parentID: item.parent_session_id } : {}),
         ...(item.archived_at ? { archived: item.archived_at } : {}),

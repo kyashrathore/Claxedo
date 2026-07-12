@@ -425,7 +425,8 @@ function collapsibleContent(page: Page, partId: string) {
 }
 
 async function openSettings(page: Page) {
-  await page.getByRole("button", { name: "Settings", exact: true }).click()
+  await page.getByTestId("rail-account-trigger").click()
+  await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
   await expect(page.locator('[data-action="settings-feed-shell-tool-parts-expanded"]')).toBeVisible({ timeout: 10_000 })
 }
 

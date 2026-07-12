@@ -3,6 +3,8 @@ import {
   sessionModelSyncKey,
   type HarnessScopeInput,
 } from "./store-policy"
+import type { ModelKey } from "@/features/session/composer/model-strategy"
+import type { DraftDefaultLabels } from "./draft-defaults"
 
 export type SessionModelSyncState = {
   desired?: string
@@ -52,10 +54,12 @@ export function syncHarnessSessionModel(input: {
 export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(input: {
   base: string
   seed(scope: string): void
-  setSelectedModel(scope: string, model: string): void
+  acceptsDraftModel(scope: string, model: ModelKey): boolean
+  setSelectedModel(scope: string, model: ModelKey): void
   setSelectedAgent(scope: string, name: string): void
   saveModel(scope: string, model: string): void
   saveAgent(scope: string, name: string): void
+  rememberDraftModel(scope: string, model: ModelKey, input?: ScopeInput, labels?: DraftDefaultLabels): void
   dropPrepared(scope: string): void
   runtime: {
     useLocalHarnessConfig(params?: ScopeInput): boolean
@@ -63,13 +67,14 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
   }
   cache: HarnessSessionModelSyncCache
 }) {
-  const syncSessionModel = async (params: ScopeInput | undefined, model: string) => {
+  const syncSessionModel = async (params: ScopeInput | undefined, model: ModelKey) => {
     if (!input.runtime.useLocalHarnessConfig(params)) return
     const key = sessionModelSyncKey(input.base, params)
-    if (!key || !model) return
+    if (!key) return
+    const syncValue = `${model.providerID}/${model.modelID}`
     return syncHarnessSessionModel({
       key,
-      model,
+      model: syncValue,
       cache: input.cache,
       request: () =>
         input.runtime.localHarnessConfigFetch(params)(
@@ -86,11 +91,13 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
     })
   }
 
-  const setModel = async (scope: string, model: string, params?: ScopeInput) => {
+  const setModel = async (scope: string, model: ModelKey, params?: ScopeInput, labels?: DraftDefaultLabels) => {
     input.seed(scope)
+    if ((!params?.sessionId || params.sessionId === "new") && !input.acceptsDraftModel(scope, model)) return
     input.setSelectedModel(scope, model)
-    input.saveModel(scope, model)
+    input.saveModel(scope, JSON.stringify(model))
     if (!params?.sessionId || params.sessionId === "new") {
+      input.rememberDraftModel(scope, model, params, labels)
       input.dropPrepared(scope)
       return
     }

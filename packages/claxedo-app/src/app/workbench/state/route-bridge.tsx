@@ -37,7 +37,7 @@ import { ensureLocalProject } from "../../../features/workspaces/data/query/proj
 import { useAgentHooks } from "./agent-status-listener"
 import { createBatchAutoTabListener } from "./batch-autotab"
 import { useClaxedoState } from "./"
-import { projectWorkspaceDirectories } from "../../../features/workspaces/lib/workspace-display"
+import { projectWorkspaceDirectories, workspaceRouteIdentity } from "../../../features/workspaces/lib/workspace-display"
 import { sessionTitleFromSources, sessionTitleSignature } from "../../../features/session/lib/session-title-sync"
 import { createRouteIntentAdapter, isRouteIntentClosed, sessionInventoryTarget } from "./route-intent"
 import { routeSessionHarness } from "./route-session-harness"
@@ -217,7 +217,10 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   })
 
   const shellRoute = createMemo(() => parseShellRoute(location.pathname))
-  const workspaceId = createMemo(() => shellRouteDirectory(shellRoute()))
+  const routeWorkspaceKey = createMemo(() => shellRouteDirectory(shellRoute()))
+  const routeDirectory = createMemo(() =>
+    workspaceRouteIdentity(projectsQuery.data ?? [], routeWorkspaceKey())?.directory ?? routeWorkspaceKey()
+  )
   const routeSessionId = createMemo(() => {
     const route = shellRoute()
     if (route.kind === "session") return route.sessionId
@@ -231,11 +234,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const shellRouteKind = createMemo(() => shellRoute().kind)
   const routeSessionCacheQuery = useQuery(() =>
     directorySessionCacheQueryOptions({
-      directory: workspaceId() ?? "__claxedo_route_without_workspace__",
+      directory: routeDirectory() ?? "__claxedo_route_without_workspace__",
     }),
   )
   const routeSession = createMemo(() => {
-    const wsId = workspaceId()
+    const wsId = routeDirectory()
     const id = sessionId()
     if (!wsId || !id) return
     return routeSessionCacheQuery.data?.session.find((s) => s.id === id)
@@ -304,7 +307,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     }),
     currentSessionId: sessionId,
     resolveSession: async (id) => {
-      const routed = workspaceId()
+      const routed = routeDirectory()
       if (routed && routed !== "/workspace") {
         const harness = await routeBridgeSessionConfigHarness({
           serverUrl: getClaxedoServerUrl(),
@@ -438,7 +441,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     }
   }
   const unresolvedRouteWorkspaceTarget = (directories: string[]) => {
-    const routed = workspaceId()
+    const routed = routeDirectory()
     if (routed && routed !== "/workspace") return routed
     const active = activeSurface()?.directory
     if (active && active !== "/workspace") return active
@@ -520,7 +523,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   }
 
   const sessionInfo = createMemo((prev: { workspaceId: string; sessionId: string; title: string } | undefined) => {
-    const wsId = workspaceId()
+    const wsId = routeDirectory()
     const id = sessionId()
     if (!wsId || !id) return undefined
     const session = routeSession()
@@ -532,7 +535,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
 
   const sessionBadge = createMemo(
     (prev: { workspaceId: string; sessionId: string; badge: { additions: number; deletions: number } } | undefined) => {
-      const wsId = workspaceId()
+      const wsId = routeDirectory()
       const id = sessionId()
       if (!wsId || !id) return undefined
       const summary = routeSession()?.summary
@@ -570,7 +573,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       () =>
         [
           state.ready(),
-          workspaceId(),
+          routeDirectory(),
           sessionId(),
           pageId(),
           terminalId(),
@@ -629,7 +632,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           ? false
           : resolveRouteSessionFromMeta(sessionId, directories)
         const matchesActiveWorkspaceSurface =
-          !!workspaceId() &&
+          !!routeDirectory() &&
           surface?.type === "session" &&
           surface.sessionId === sessionId &&
           surface.directory !== "/workspace" &&

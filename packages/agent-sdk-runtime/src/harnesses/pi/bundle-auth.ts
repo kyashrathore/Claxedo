@@ -15,9 +15,8 @@
  * handed back to the injected `persist` callback so the source of truth (the
  * registry) keeps the live refresh token.
  */
-import { getModel } from "@mariozechner/pi-ai"
 import { getOAuthApiKey, type OAuthCredentials } from "@mariozechner/pi-ai/oauth"
-import type { PiModelBackend, PiModelBackendResolver } from "./model-backend"
+import { requirePiModel, type PiModelBackendResolver } from "./model-backend"
 
 const CODEX_PROVIDER = "openai-codex"
 const DEFAULT_CODEX_MODEL = "gpt-5.5"
@@ -79,21 +78,13 @@ export function codexBundleToOAuth(input: string | Record<string, unknown> | und
  * (adapter falls back to tools-only) when the source has no usable bundle.
  */
 export function codexBundlePiBackendResolver(options: CodexBundleBackendOptions): PiModelBackendResolver {
-  let warnedBadModel = false
-  return async () => {
+  return async (input) => {
+    if (input.model && input.model.providerID !== CODEX_PROVIDER) return undefined
+    const selected = input.model ?? { providerID: CODEX_PROVIDER, modelID: options.modelId ?? DEFAULT_CODEX_MODEL }
+    const model = requirePiModel(selected)
     const bundle = await options.loadBundle()
     const credentials = codexBundleToOAuth(bundle)
     if (!credentials) return undefined
-    let model: PiModelBackend["model"]
-    try {
-      model = getModel(CODEX_PROVIDER, (options.modelId ?? DEFAULT_CODEX_MODEL) as never)
-    } catch (cause) {
-      if (!warnedBadModel) {
-        warnedBadModel = true
-        console.error(`[pi-bundle-auth] WARN model not in pi registry: ${CODEX_PROVIDER}/${options.modelId}:`, cause)
-      }
-      return undefined
-    }
     return {
       model,
       getApiKey: async (provider: string) => {

@@ -1,4 +1,3 @@
-// target-layer: data
 import { queryClient } from "@/platform/query/query-client"
 import type { SessionInventoryRow } from "../query/types"
 import { insertSortedSessionItem, removeSessionIdentity } from "@/platform/sync/global-session-identity"

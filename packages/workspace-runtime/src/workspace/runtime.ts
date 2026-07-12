@@ -37,6 +37,7 @@ import {
   type AgentRuntimeStoreWithRecovery,
   type HttpProxyAdapter,
   type OpenCodeRequestFn,
+  type PiModelBackendResolver,
   type RuntimeConfigurableAdapter,
   defaultAcpBinary,
 } from "@claxedo/agent-sdk-runtime/adapters"
@@ -139,6 +140,8 @@ export type WorkspaceHostOptions = {
    * env flags into `true`/`false`.
    */
   opencodeCompat?: boolean
+  /** Host-owned credential/model resolver for concrete Pi model turns. */
+  piModelBackend?: PiModelBackendResolver
   harness?: RuntimeRunner
   target?: WorkspaceTarget
   storeRoot?: string
@@ -629,6 +632,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
       match: (runner) => runner.id === "pi",
       create: ({ options }) => new PiHarnessAdapter({
         ...(options.eventHub ? { eventHub: options.eventHub } : {}),
+        ...(options.piModelBackend ? { modelBackend: options.piModelBackend } : {}),
       }),
     },
     {
@@ -971,7 +975,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       return await listSessionsForAdapter(await ensureSessionAdapter(target), target, directory)
     }
     const rows = await Promise.all((await sessionListAdapters()).map((item) => listSessionsForAdapter(item.adapter, item.runner, directory)))
-    return mergeSessionRows(rows.flat())
+    return mergeSessionRows([
+      ...(store().listSessions(directory) as AgentSessionRow[]),
+      ...rows.flat(),
+    ])
   }
 
   async function sessionListAdapters() {

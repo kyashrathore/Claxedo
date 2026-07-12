@@ -6,8 +6,8 @@ import baseline from "./session-client-reactivity-baseline.json"
 const appRoot = path.resolve(import.meta.dir, "../..")
 
 /**
- * The composer subsystem (`session/{composer,harness,commands}/`, formerly
- * `session-client/`) is the isolated composer surface: it should stay free of
+ * The composer subsystem (`features/session/{composer,harness,commands}/`,
+ * formerly `session-client/`) is the isolated composer surface: it should stay free of
  * ad-hoc Solid write-effects, raw `props` destructuring, and suppression-flag
  * escape hatches so its reactive timing stays easy to reason about. This is a
  * live invariant (not a one-time migration pin) -- new debt here is exactly
@@ -16,7 +16,11 @@ const appRoot = path.resolve(import.meta.dir, "../..")
 const SESSION_CLIENT_METRICS = ["effectStateWrites", "propsDestructuring", "suppressionFlags"] as const
 type SessionClientMetric = (typeof SESSION_CLIENT_METRICS)[number]
 
-const COMPOSER_SUBSYSTEM_PREFIXES = ["session/composer/", "session/harness/", "session/commands/"] as const
+const COMPOSER_SUBSYSTEM_PREFIXES = [
+  "features/session/composer/",
+  "features/session/harness/",
+  "features/session/commands/",
+] as const
 
 function scanSessionClient(metric: SessionClientMetric) {
   return metrics

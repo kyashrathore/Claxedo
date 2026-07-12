@@ -27,6 +27,7 @@ export type CentralControlAppOptions = {
   verifier?: ClerkVerifier
   createEnv?: SessionEnvFactory
   turnCredentials?: ConnectionTurnCredentials
+  beforeLocalSessionList?: () => Promise<void>
 }
 
 function centralControlRequest(request: Request) {
@@ -117,6 +118,7 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
   app.route("/api/control", ControlPlaneSessionRoutes(services, {
     ...(options.authConfig ? { authConfig: options.authConfig } : {}),
     ...(options.verifier ? { verifier: options.verifier } : {}),
+    ...(options.beforeLocalSessionList ? { beforeLocalList: options.beforeLocalSessionList } : {}),
     createHybridSession: runtime.createHybridSession,
   }))
   const forwardRuntimeRequest = async (request: Request) => {
