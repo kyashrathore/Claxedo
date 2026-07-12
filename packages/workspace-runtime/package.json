@@ -130,6 +130,6 @@
     "rollup": "4.62.2",
     "rollup-plugin-dts": "6.4.1",
     "tsx": "4.22.3",
-    "typescript": "5.8.2"
+    "typescript": "catalog:"
   }
 }

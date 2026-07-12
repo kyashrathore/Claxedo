@@ -130,9 +130,9 @@ function connectRemoteWorkspacePty(
 
   return upgradeWebSocket(() => {
     let upstream: WebSocket | undefined
-    const pending: Array<string | ArrayBuffer | Uint8Array> = []
+    const pending: Array<string | ArrayBuffer | Uint8Array<ArrayBuffer>> = []
 
-    const sendUpstream = (data: string | ArrayBuffer | Uint8Array) => {
+    const sendUpstream = (data: string | ArrayBuffer | Uint8Array<ArrayBuffer>) => {
       if (!upstream || upstream.readyState !== WebSocket.OPEN) {
         pending.push(data)
         return
@@ -172,7 +172,10 @@ function connectRemoteWorkspacePty(
           return
         }
         if (typeof data === "string" || data instanceof ArrayBuffer || data instanceof Uint8Array) {
-          sendUpstream(data)
+          // A WebSocket binary message is never SharedArrayBuffer-backed, so the
+          // Uint8Array is ArrayBuffer-backed (TS7 widens the bare type to
+          // ArrayBufferLike, which WebSocket.send rejects).
+          sendUpstream(data as string | ArrayBuffer | Uint8Array<ArrayBuffer>)
         }
       },
       onClose() {

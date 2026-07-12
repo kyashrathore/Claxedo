@@ -5,7 +5,8 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "noUncheckedIndexedAccess": false,
-    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun"]
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"]

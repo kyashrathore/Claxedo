@@ -47,7 +47,7 @@ export type WorkspaceRelayHostTunnelEvent =
 
 type TunnelChannel = {
   upstream: WebSocket
-  queue: Array<string | Uint8Array>
+  queue: Array<string | Uint8Array<ArrayBuffer>>
   openTimer: ReturnType<typeof setTimeout>
   closing: boolean
 }
