@@ -11,11 +11,13 @@ export type DirEdge = {
 }
 
 /**
- * The first path segment under src/ that owns a file, e.g.
+ * The first path segment under src/ that owns a legacy file, e.g.
  * "claxedo-ui/components/foo.tsx" -> "claxedo-ui". Root-level files
- * (app.tsx, main.tsx, index.tsx, ...) have no owning directory and
+ * (app/entry/app.tsx, app/entry/main.tsx, app/entry/index.tsx, ...) have no owning directory and
  * are excluded from the layering graph -- they are entrypoints, not
- * a named module with a charter to defend.
+ * a named module with a charter to defend. Final app/features/platform/ui/lib
+ * boundaries are resolved by ownership.ts; this helper remains for the
+ * shrink-only legacy-cycle ratchet while migration-manifest.json is non-empty.
  */
 export function topLevelDir(relPath: string): string | null {
   const index = relPath.indexOf("/")

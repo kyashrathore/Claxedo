@@ -31,22 +31,22 @@ describe("session-client boundary guard", () => {
 
 describe("session-client boundary guard (synthetic detection)", () => {
   test("flags a session/** import that resolves into a forbidden directory", () => {
-    const files = [{ path: "session/store/a.ts", text: `import { x } from "@/shell/data/keys"` }]
+    const files = [{ path: "features/session/store/a.ts", text: `import { x } from "@/context/prompt"` }]
     const resolve = (fromRelFile: string, specifier: string) =>
-      fromRelFile === "session/store/a.ts" && specifier === "@/shell/data/keys" ? "shell/data/keys.ts" : null
+      fromRelFile === "features/session/store/a.ts" && specifier === "@/context/prompt" ? "context/prompt.tsx" : null
 
     expect(sessionBoundaryViolationsFromFiles(files, resolve).map(sessionBoundaryKey)).toEqual([
-      "session/store/a.ts -> shell/data/keys.ts",
+      "features/session/store/a.ts -> context/prompt.tsx",
     ])
   })
 
   test("ignores session-internal imports and imports into non-forbidden directories", () => {
     const files = [
-      { path: "session/store/a.ts", text: `import { b } from "./b"\nimport { u } from "@/shared/data/api"` },
+      { path: "session/store/a.ts", text: `import { b } from "./b"\nimport { u } from "@/platform/api/api"` },
     ]
     const resolve = (fromRelFile: string, specifier: string) => {
       if (specifier === "./b") return "session/store/b.ts"
-      if (specifier === "@/shared/data/api") return "utils/api.ts"
+      if (specifier === "@/platform/api/api") return "utils/api.ts"
       return null
     }
 
@@ -54,20 +54,20 @@ describe("session-client boundary guard (synthetic detection)", () => {
   })
 
   test("ignores imports FROM non-session files even into forbidden directories", () => {
-    const files = [{ path: "shell/data/keys.ts", text: `import { p } from "@/context/prompt"` }]
-    const resolve = () => "context/prompt.tsx"
+    const files = [{ path: "platform/sync/keys.ts", text: `import { p } from "@/features/session/providers/prompt"` }]
+    const resolve = () => "features/session/providers/prompt.tsx"
 
     expect(sessionBoundaryViolationsFromFiles(files, resolve)).toEqual([])
   })
 
   test("keys on the resolved target, not the raw specifier, so an @/ <-> relative rewrite does not churn the baseline", () => {
     const viaAlias = sessionBoundaryViolationsFromFiles(
-      [{ path: "session/store/a.ts", text: `import { x } from "@/shell/data/keys"` }],
-      () => "shell/data/keys.ts",
+      [{ path: "session/store/a.ts", text: `import { x } from "@/platform/sync/keys"` }],
+      () => "platform/sync/keys.ts",
     ).map(sessionBoundaryKey)
     const viaRelative = sessionBoundaryViolationsFromFiles(
-      [{ path: "session/store/a.ts", text: `import { x } from "../../shell/data/keys"` }],
-      () => "shell/data/keys.ts",
+      [{ path: "session/store/a.ts", text: `import { x } from "@/platform/sync/keys"` }],
+      () => "platform/sync/keys.ts",
     ).map(sessionBoundaryKey)
 
     expect(viaAlias).toEqual(viaRelative)

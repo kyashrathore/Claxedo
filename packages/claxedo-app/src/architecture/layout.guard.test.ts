@@ -58,7 +58,7 @@ function scanEntrypointHosts() {
 }
 
 function scanLayoutLazyImports() {
-  return scanImportSpecifiers((_file, specifier) => specifier === "@/shell/app-shell")
+  return scanImportSpecifiers((_file, specifier) => specifier === "@/app/app-shell")
 }
 
 function scanPagesLayoutImports() {
@@ -70,10 +70,10 @@ function scanClaxedoLayoutContextImports() {
 }
 
 function isPagesLayoutImport(file: string, specifier: string) {
-  if (specifier === "@/pages/layout" || specifier.startsWith("@/pages/layout/")) return true
+  if (specifier === "@/app/routes/layout" || specifier.startsWith("@/app/routes/layout/")) return true
   if (!specifier.startsWith(".")) return false
   const target = path.resolve(path.dirname(file), specifier)
-  const pagesLayoutRoot = path.join(srcRoot, "pages/layout")
+  const pagesLayoutRoot = path.join(srcRoot, "app/routes/layout")
   return target === pagesLayoutRoot || target.startsWith(`${pagesLayoutRoot}${path.sep}`)
 }
 
@@ -121,16 +121,16 @@ describe("layout architecture guard", () => {
   })
 
   test("scanner catches fixture violations", () => {
-    expect(importSpecifiers('import { Layout } from "@/pages/layout"')).toEqual(["@/pages/layout"])
+    expect(importSpecifiers('import { Layout } from "@/app/routes/layout"')).toEqual(["@/app/routes/layout"])
     expect(importSpecifiers('import { useClaxedoLayout } from "../context/claxedo-layout"')).toEqual([
       "../context/claxedo-layout",
     ])
-    expect(isPagesLayoutImport(path.join(srcRoot, "components/titlebar.tsx"), "@/pages/layout/fixture")).toBe(true)
+    expect(isPagesLayoutImport(path.join(srcRoot, "app/workbench/titlebar/titlebar.tsx"), "@/app/routes/layout/fixture")).toBe(true)
     expect(isPagesLayoutImport(
-      path.join(srcRoot, "claxedo-ui/rail/rail-sidebar.tsx"),
-      "../../pages/layout/prefetch-policy",
+      path.join(srcRoot, "app/workbench/rail/rail-sidebar.tsx"),
+      "../../routes/layout/prefetch-policy",
     )).toBe(true)
-    expect(isPagesLayoutImport(path.join(srcRoot, "pages/session.tsx"), "./session/session-layout")).toBe(false)
+    expect(isPagesLayoutImport(path.join(srcRoot, "features/session/ui/session-screen.tsx"), "./session/session-layout")).toBe(false)
     expect(scanHeavyShowWrappedPanelsInText("fixture.tsx", "<Show when={open()}><WorkspacePanel /></Show>"))
       .toEqual(["fixture.tsx:WorkspacePanel"])
   })

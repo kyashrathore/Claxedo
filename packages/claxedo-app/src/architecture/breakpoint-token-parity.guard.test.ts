@@ -10,10 +10,10 @@ import {
   BP_SM,
   BP_XL,
   BP_XS,
-} from "../utils/breakpoints"
+} from "../ui/controls/breakpoints"
 
 // This guard is the weld between the breakpoint TS constants
-// (src/utils/breakpoints.ts) and the pixel literals scattered across CSS
+// (src/ui/controls/breakpoints.ts) and the pixel literals scattered across CSS
 // `@media` rules and JS/TS viewport gates. CSS custom properties CANNOT be
 // interpolated into `@media` conditions, so those literals can never import the
 // token — this source-text guard is the ONLY thing that catches a future edit
@@ -30,8 +30,8 @@ const stripComments = (text: string): string =>
   text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")
 
 describe("breakpoint token parity: app-shell.css :root custom properties vs TS constants", () => {
-  test("every --bp-* custom property equals its src/utils/breakpoints.ts constant", () => {
-    const css = read("claxedo-ui/app-shell.css")
+  test("every --bp-* custom property equals its src/ui/controls/breakpoints.ts constant", () => {
+    const css = read("app/styles/app-shell.css")
     const declared: Record<string, number> = {}
     for (const m of css.matchAll(/--bp-([\w-]+):\s*(\d+)px/g)) {
       declared[m[1]] = Number(m[2])
@@ -53,18 +53,18 @@ describe("breakpoint token parity: CSS @media literals stay welded to the tokens
   // The `@media` literal must equal the token; each entry is [file, mediaCondition].
   const cases: Array<[file: string, condition: string]> = [
     // app-shell.css — max-width complements sit one below the token.
-    ["claxedo-ui/app-shell.css", `@media (max-width: ${BP_MD - 1}px), (pointer: coarse)`],
-    ["claxedo-ui/app-shell.css", `@media (max-width: ${BP_MD - 1}px)`],
-    ["claxedo-ui/app-shell.css", `@media (max-width: ${BP_SM - 1}px)`],
+    ["app/styles/app-shell.css", `@media (max-width: ${BP_MD - 1}px), (pointer: coarse)`],
+    ["app/styles/app-shell.css", `@media (max-width: ${BP_MD - 1}px)`],
+    ["app/styles/app-shell.css", `@media (max-width: ${BP_SM - 1}px)`],
     // ui-overrides.css — min-width equals the token exactly.
-    ["claxedo-ui/ui-overrides.css", `@media (min-width: ${BP_MD}px)`],
-    ["claxedo-ui/ui-overrides.css", `@media (min-width: ${BP_2XL}px)`],
+    ["app/styles/ui-overrides.css", `@media (min-width: ${BP_MD}px)`],
+    ["app/styles/ui-overrides.css", `@media (min-width: ${BP_2XL}px)`],
     // page-editor.css — cascading tier set (three bespoke, two on-scale).
-    ["claxedo-ui/components/page-editor/page-editor.css", `@media (max-width: ${BP_EDITOR_WIDE}px)`],
-    ["claxedo-ui/components/page-editor/page-editor.css", `@media (max-width: ${BP_EDITOR_COMPACT}px)`],
-    ["claxedo-ui/components/page-editor/page-editor.css", `@media (max-width: ${BP_LG}px)`],
-    ["claxedo-ui/components/page-editor/page-editor.css", `@media (max-width: ${BP_MD}px)`],
-    ["claxedo-ui/components/page-editor/page-editor.css", `@media (max-width: ${BP_XS}px)`],
+    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_EDITOR_WIDE}px)`],
+    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_EDITOR_COMPACT}px)`],
+    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_LG}px)`],
+    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_MD}px)`],
+    ["features/documents/editor/page-editor.css", `@media (max-width: ${BP_XS}px)`],
   ]
 
   for (const [file, condition] of cases) {
@@ -80,32 +80,32 @@ describe("breakpoint token parity: JS/TS viewport gates reference the token, not
   // catch a comment, so we only forbid the comparison forms (`< 640`, `<= 767`).
   const cases: Array<{ file: string; token: string; forbidden: RegExp[] }> = [
     {
-      file: "terminal/backend/renderer.ts",
+      file: "features/terminal/core/backend/renderer.ts",
       token: "BP_MD",
       forbidden: [/<=?\s*767\b/],
     },
     {
-      file: "components/dialogs/settings.tsx",
+      file: "app/dialogs/settings.tsx",
       token: "BP_SM",
       forbidden: [/<\s*640\b/],
     },
     {
-      file: "claxedo-ui/workspace-panel/workspace-panel.tsx",
+      file: "features/workspaces/ui/panel/workspace-panel.tsx",
       token: "BP_SM",
       forbidden: [/<\s*640\b/],
     },
     {
-      file: "claxedo-ui/components/review-workspace/review-tab.tsx",
+      file: "features/review/ui/review-tab.tsx",
       token: "BP_MD",
       forbidden: [/<\s*768\b/],
     },
   ]
 
   for (const { file, token, forbidden } of cases) {
-    test(`${file} uses ${token} and imports it from @/utils/breakpoints`, () => {
+    test(`${file} uses ${token} and imports it from @/ui/controls/breakpoints`, () => {
       const text = read(file)
       expect(text).toContain(token)
-      expect(text).toMatch(/from "@\/utils\/breakpoints"/)
+      expect(text).toMatch(/from "@\/ui\/controls\/breakpoints"/)
     })
 
     test(`${file} has no bare viewport literal left in a comparison`, () => {
@@ -119,12 +119,12 @@ describe("breakpoint token parity: JS/TS viewport gates reference the token, not
 
 describe("breakpoint token parity: the workbench's duplicate BP_MD is welded", () => {
   // C3a defines its own `export const BP_MD = 768` in
-  // claxedo-ui/workbench/collapse-projection.ts (workbench/** is owned by a
+  // app/workbench/workbench/collapse-projection.ts (workbench/** is owned by a
   // sibling worker, so it is not migrated to import from here). Weld the two
   // definitions so they cannot silently diverge; the follow-up is to have that
-  // module re-export from src/utils/breakpoints.ts.
-  test("collapse-projection.ts's BP_MD literal equals src/utils/breakpoints.ts BP_MD", () => {
-    const text = read("claxedo-ui/workbench/collapse-projection.ts")
+  // module re-export from src/ui/controls/breakpoints.ts.
+  test("collapse-projection.ts's BP_MD literal equals src/ui/controls/breakpoints.ts BP_MD", () => {
+    const text = read("app/workbench/workbench/collapse-projection.ts")
     const m = text.match(/export const BP_MD\s*=\s*(\d+)/)
     expect(m).not.toBeNull()
     expect(Number(m![1])).toBe(BP_MD)

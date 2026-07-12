@@ -1,8 +1,8 @@
 /**
  * GUARDRAIL (A): static import-graph check.
  *
- * Walks the STATIC import closure starting at src/main.tsx (the real boot entry —
- * index.html loads `/src/main.tsx`). An edge is followed only if it is a *static*
+ * Walks the STATIC import closure starting at src/app/entry/main.tsx (the real boot entry —
+ * index.html loads `/src/app/entry/main.tsx`). An edge is followed only if it is a *static*
  * `import ... from "x"` / `import "x"` / `export ... from "x"`. Dynamic `import("x")`
  * and `lazy(() => import("x"))` are treated as boundaries and NOT followed — that is
  * exactly the seam a heavy dep is supposed to hide behind.
@@ -28,9 +28,8 @@ const appRoot = path.resolve(here, "..")
 const repoRoot = path.resolve(appRoot, "../..")
 const appSrc = path.join(appRoot, "src")
 const uiSrc = path.resolve(appRoot, "../ui/src")
-const upstreamSrc = path.resolve(appRoot, "../app/src")
 
-const ENTRY = path.join(appSrc, "main.tsx")
+const ENTRY = path.join(appSrc, "app/entry/main.tsx")
 
 const RESOLVE_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"]
 const INDEX_FILES = RESOLVE_EXTS.map((e) => `index${e}`)
@@ -44,68 +43,12 @@ type ExactAlias = { kind: "exact"; find: string; to: string }
 type PrefixAlias = { kind: "prefix"; find: string; to: string }
 type Alias = ExactAlias | PrefixAlias
 
-const FIRST_PARTY_OWNERS: Array<[string, string]> = [
-  ["@/app", "./src/app.tsx"],
-  ["@/components/dialog-settings", "./src/components/dialog-settings.tsx"],
-  ["@/components/dialog-connect-provider", "./src/components/dialog-connect-provider.tsx"],
-  ["@/components/dialog-custom-provider", "./src/components/dialog-custom-provider.tsx"],
-  ["@/components/dialog-manage-models", "./src/components/dialog-manage-models.tsx"],
-  ["@/components/dialog-select-directory", "./src/components/dialog-select-directory.tsx"],
-  ["@/components/dialog-select-file", "./src/components/dialog-select-file.tsx"],
-  ["@/components/dialog-select-mcp", "./src/components/dialog-select-mcp.tsx"],
-  ["@/components/dialog-select-model", "./src/components/dialog-select-model.tsx"],
-  ["@/components/dialog-select-model-unpaid", "./src/components/dialog-select-model-unpaid.tsx"],
-  ["@/components/dialog-select-provider", "./src/components/dialog-select-provider.tsx"],
-  ["@/components/prompt-input", "./src/components/prompt-input.tsx"],
-  ["@/components/prompt-input/submit", "./src/components/prompt-input/submit.ts"],
-  ["@/components/terminal", "./src/components/terminal.tsx"],
-  ["@/components/session/session-context-tab", "./src/components/session/session-context-tab.tsx"],
-  ["@/components/session/session-header", "./src/components/session/session-header.tsx"],
-  ["@/components/session/session-new-view", "./src/components/session/session-new-view.tsx"],
-  ["@/components/settings-general", "./src/components/settings-general.tsx"],
-  ["@/components/settings-providers", "./src/components/settings-providers.tsx"],
-  ["@/context/command", "./src/context/command.tsx"],
-  ["@/context/file", "./src/context/file.tsx"],
-  ["@/context/file/view-cache", "./src/context/file/view-cache.ts"],
-  ["@/context/global-sdk", "./src/context/global-sdk.tsx"],
-  ["@/context/global-sync", "./src/context/global-sync.tsx"],
-  ["@/context/language", "./src/context/language.tsx"],
-  ["@/context/layout", "./src/context/layout.tsx"],
-  ["@/context/local", "./src/context/local.tsx"],
-  ["@/context/notification", "./src/context/notification.tsx"],
-  ["@/context/platform", "./src/context/platform.tsx"],
-  ["@/context/prompt", "./src/context/prompt.tsx"],
-  ["@/context/sdk", "./src/context/sdk.tsx"],
-  ["@/context/server", "./src/context/server.tsx"],
-  ["@/context/terminal", "./src/context/terminal.tsx"],
-  ["@/context/use-providers", "./src/context/use-providers.ts"],
-  ["@/pages/directory-layout", "./src/pages/directory-layout.tsx"],
-  ["@/pages/error", "./src/pages/error.tsx"],
-  ["@/pages/home", "./src/pages/home.tsx"],
-  ["@/pages/layout", "./src/pages/layout.tsx"],
-  ["@/pages/session", "./src/pages/session.tsx"],
-  ["@/pages/session/use-session-commands", "./src/pages/session/use-session-commands.tsx"],
-  ["@/pages/session/composer", "./src/pages/session/composer/index.ts"],
-  ["@/pages/session/composer/session-composer-region", "./src/pages/session/composer/session-composer-region.tsx"],
-  ["@/pages/session/composer/session-composer-state", "./src/pages/session/composer/session-composer-state.ts"],
-  ["@/utils/persist", "./src/utils/persist.ts"],
-  ["@/utils/server-health", "./src/utils/server-health.ts"],
-]
-
 const ALIASES: Alias[] = [
-  { kind: "exact", find: "#terminal-backend", to: path.join(appSrc, "terminal/backend/xterm.ts") },
-  { kind: "exact", find: "@/components/session-context-usage", to: path.join(appSrc, "components/session-context-usage.tsx") },
-  ...FIRST_PARTY_OWNERS.map(([find, rel]) => ({
-    kind: "exact" as const,
-    find,
-    to: path.resolve(appRoot, rel),
-  })),
+  { kind: "exact", find: "#terminal-backend", to: path.join(appSrc, "features/terminal/core/backend/xterm.ts") },
   { kind: "exact", find: "@claxedo/agent-event-runtime/contracts", to: path.resolve(appRoot, "../agent-event-runtime/src/contracts/index.ts") },
   { kind: "exact", find: "@claxedo/agent-event-runtime/opencode-compat", to: path.resolve(appRoot, "../agent-event-runtime/src/projections/opencode-compat/index.ts") },
   { kind: "exact", find: "@claxedo/agent-event-runtime", to: path.resolve(appRoot, "../agent-event-runtime/src/index.ts") },
-  { kind: "prefix", find: "@claxedo/", to: appSrc + path.sep },
-  // upstream @/ — lowest priority
-  { kind: "prefix", find: "@/", to: upstreamSrc + path.sep },
+  { kind: "prefix", find: "@/", to: appSrc + path.sep },
 ]
 
 // @opencode-ai/ui subpath exports -> packages/ui/src (covers the marked / file edges).
@@ -119,7 +62,7 @@ function resolveUiSubpath(spec: string): string | null {
   if (sub === "context") return path.join(uiSrc, "context/index.ts")
   if (sub === "hooks") return path.join(uiSrc, "hooks/index.ts")
   if (sub === "theme") return path.join(uiSrc, "theme/index.ts")
-  // "./*" wildcard -> ./src/components/*
+  // "./*" wildcard -> the package's exported source pattern
   return path.join(uiSrc, "components", sub)
 }
 
@@ -170,7 +113,7 @@ function resolveToFile(spec: string, fromFile: string): string | null {
   // self-package import (rare): @claxedo/app[/...]
   if (spec === CLAXEDO_APP_PKG || spec.startsWith(CLAXEDO_APP_PKG + "/")) {
     const sub = spec.slice(CLAXEDO_APP_PKG.length).replace(/^\//, "")
-    return tryFile(path.join(appSrc, sub || "index.tsx"))
+    return tryFile(path.join(appSrc, sub || "app/entry/index.tsx"))
   }
   // @opencode-ai/ui — resolve into packages/ui/src so we can keep walking
   if (UI_PKG_PREFIXES.some((p) => spec === p.replace(/\/$/, "") || spec.startsWith(p))) {

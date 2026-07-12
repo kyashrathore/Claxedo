@@ -3,7 +3,7 @@
 // This is the single test that enumerates EVERY keyboard-chord binding source
 // in claxedo-app and fails on any same-chord double-registration that does not
 // have an explicit, documented precedence decision. It supersedes the
-// two-source-only check in `claxedo-ui/rail/rail-keyboard-commands.test.ts`,
+// two-source-only check in `app/workbench/rail/rail-keyboard-commands.test.ts`,
 // which could only see the rail-registry-vs-workbench pair and was structurally
 // blind to the titlebar and session-command call sites that re-introduced the
 // exact collisions it was written to catch (see the WP-C2 binding-surface
@@ -29,10 +29,10 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { createRailKeyboardCommands } from "../claxedo-ui/rail/rail-keyboard-commands"
-import { createProcessPaneToggleCommand } from "../claxedo-ui/rail/layout-commands"
-import { resolveKeyMap } from "../claxedo-ui/workbench/keyboard"
-import { promptShellModeKey, promptNormalModeKey } from "../components/prompt-input/mode-commands"
+import { createRailKeyboardCommands } from "../app/workbench/rail/rail-keyboard-commands"
+import { createProcessPaneToggleCommand } from "../app/workbench/rail/layout-commands"
+import { resolveKeyMap } from "../app/workbench/workbench/keyboard"
+import { promptShellModeKey, promptNormalModeKey } from "../features/session/composer/ui/mode-commands"
 
 type BindingSourceId =
   | "rail-keyboard-commands"
@@ -143,7 +143,7 @@ interface DeclaredSource {
 const DECLARED_SOURCES: DeclaredSource[] = [
   {
     source: "session-commands",
-    file: "../pages/session/use-session-commands.tsx",
+    file: "../features/session/ui/use-session-commands.tsx",
     bindings: [
       { commandId: "session.new", raw: "mod+shift+s", evidence: `"mod+shift+s"` },
       { commandId: "file.open", raw: "mod+p", evidence: `"mod+p"` },
@@ -167,7 +167,7 @@ const DECLARED_SOURCES: DeclaredSource[] = [
   },
   {
     source: "titlebar-tab-bindings",
-    file: "../components/titlebar/titlebar.tsx",
+    file: "../app/workbench/titlebar/titlebar.tsx",
     bindings: [
       { commandId: "tab.prev", raw: "mod+option+ArrowLeft", evidence: "mod+option+ArrowLeft" },
       { commandId: "tab.next", raw: "mod+option+ArrowRight", evidence: "mod+option+ArrowRight" },
@@ -182,7 +182,7 @@ const DECLARED_SOURCES: DeclaredSource[] = [
   },
   {
     source: "titlebar-history",
-    file: "../components/titlebar/titlebar.tsx",
+    file: "../app/workbench/titlebar/titlebar.tsx",
     bindings: [
       { commandId: "common.goBack", raw: "mod+[", evidence: `"mod+["` },
       { commandId: "common.goForward", raw: "mod+]", evidence: `"mod+]"` },
@@ -190,7 +190,7 @@ const DECLARED_SOURCES: DeclaredSource[] = [
   },
   {
     source: "titlebar-quit-capture",
-    file: "../components/titlebar/titlebar.tsx",
+    file: "../app/workbench/titlebar/titlebar.tsx",
     // Capture-phase listener that matches Cmd/Meta+W with no other modifiers.
     // There is no literal "mod+w" string; the evidence is the match guard.
     bindings: [
@@ -199,7 +199,7 @@ const DECLARED_SOURCES: DeclaredSource[] = [
   },
   {
     source: "app-shell-commands",
-    file: "../shell/app-shell-commands.ts",
+    file: "../app/app-shell-commands.ts",
     bindings: [{ commandId: "theme.scheme.cycle", raw: "mod+shift+s", evidence: `"mod+shift+s"` }],
   },
 ]
@@ -369,13 +369,13 @@ describe("WP-C2 keyboard binding surface", () => {
   })
 
   test("prompt-input file-attach chord literal still exists (mod+u drift guard)", () => {
-    expect(readSource("../components/prompt-input/mode-commands.ts")).toContain(`"mod+u"`)
+    expect(readSource("../features/session/composer/ui/mode-commands.ts")).toContain(`"mod+u"`)
   })
 
   test("terminal.toggle ghost command is now registered with its Ctrl+` chord", () => {
     // §0.4 of the inventory: terminal.toggle was referenced by 3 call sites but
     // never registered. WP-C2 registers it in use-session-commands.tsx.
-    const session = readSource("../pages/session/use-session-commands.tsx")
+    const session = readSource("../features/session/ui/use-session-commands.tsx")
     expect(session).toContain(`id: "terminal.toggle"`)
     expect(session).toContain('"ctrl+`"')
   })

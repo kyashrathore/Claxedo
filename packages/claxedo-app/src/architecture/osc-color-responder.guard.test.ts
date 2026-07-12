@@ -21,12 +21,12 @@ describe("OSC 10/11 single-owner guard", () => {
   test("flags an OSC 10/11 escape in another module and spares the canonical owner", () => {
     expect(
       oscColorEscapesOutsideResponder([
-        { path: "terminal/backend/xterm.ts", text: `send("\\x1b]10;rgb:d4d4/d4d4/d4d4\\x07")` },
+        { path: "features/terminal/core/backend/xterm.ts", text: `send("\\x1b]10;rgb:d4d4/d4d4/d4d4\\x07")` },
         { path: CAPABILITY_RESPONDER_FILE, text: `const q = /\\x1b\\]11;\\?/` },
       ]),
     ).toEqual([
       {
-        file: "terminal/backend/xterm.ts",
+        file: "features/terminal/core/backend/xterm.ts",
         line: 1,
         match: "\\x1b]10;",
       },

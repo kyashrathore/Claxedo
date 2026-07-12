@@ -85,7 +85,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
         // Keep the terminal backend lazy-loaded without making it configurable.
         {
           find: "#terminal-backend",
-          replacement: normalizePath(fileURLToPath(new URL("./src/terminal/backend/xterm.ts", import.meta.url))),
+          replacement: normalizePath(fileURLToPath(new URL("./src/features/terminal/core/backend/xterm.ts", import.meta.url))),
         },
         {
           find: "@claxedo/agent-event-runtime/contracts",
@@ -109,7 +109,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
         },
         {
           find: "lru_map",
-          replacement: normalizePath(fileURLToPath(new URL("./src/utils/lru-map.ts", import.meta.url))),
+          replacement: normalizePath(fileURLToPath(new URL("./src/lib/lru-map.ts", import.meta.url))),
         },
         // Resolve packages only available in upstream's node_modules
         { find: "@solid-primitives/active-element", replacement: normalizePath(fileURLToPath(new URL("../app/node_modules/@solid-primitives/active-element/dist/index.js", import.meta.url))) },

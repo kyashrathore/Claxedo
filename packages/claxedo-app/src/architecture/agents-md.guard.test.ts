@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
+import { logicalOwner } from "./ownership"
+import { importSpecifiers } from "./import-graph"
 import { walk } from "./scanners"
 import writers from "./query-cache-writers.json"
 
@@ -12,24 +14,18 @@ type AgentsContract = {
 
 const appRoot = path.resolve(import.meta.dir, "../..")
 const srcRoot = path.join(appRoot, "src")
-const requiredDirs = [
-  "shell/identity",
-  "shell/auth",
-  "shell/data",
-  "shell/layout",
-  "architecture",
-  // WP-B10 platform dirs — ownership contracts for the feature/platform slice.
-  "agent-runtime",
-  "browser",
-  "cloud",
-  "process",
-  "pane",
-  "extensions",
-  "marketplace",
-  "demo",
-]
+const legacyRequiredDirs: string[] = []
+const finalOwnerDirs = [...new Set(
+  walk(srcRoot)
+    .map((file) => path.relative(srcRoot, file).split(path.sep).join("/"))
+    .flatMap((file) => {
+      const owner = logicalOwner(file)
+      if (!owner || owner === "architecture" || owner.startsWith("legacy/")) return []
+      return [owner]
+    }),
+)].sort()
+const requiredDirs = [...legacyRequiredDirs, ...finalOwnerDirs]
 const writerFamilies = new Set((writers as { families: Array<{ family: string }> }).families.map((family) => family.family))
-const importPattern = /(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g
 
 describe("per-directory AGENTS.md contracts", () => {
   test("required layer directories have parseable contracts", () => {
@@ -51,8 +47,7 @@ describe("per-directory AGENTS.md contracts", () => {
 
       return prodFiles(path.join(srcRoot, dir)).flatMap((file) => {
         const text = readFileSync(file, "utf8")
-        return Array.from(text.matchAll(importPattern)).flatMap((match) => {
-          const specifier = match[1]
+        return importSpecifiers(text).flatMap((specifier) => {
           const forbidden = contract.mustNotImport.find((glob) => matchesGlob(specifier, glob))
           if (!forbidden) return []
           return [`${path.relative(srcRoot, file)} imports ${specifier}, forbidden by ${dir}/AGENTS.md (${forbidden})`]

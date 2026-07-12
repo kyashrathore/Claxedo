@@ -51,15 +51,15 @@ export function createElectronRenderer(mode: string): UserConfig {
         },
         {
           find: "#terminal-backend",
-          replacement: normalize(path.join(claxedoAppDir, `src/terminal/backend/${terminal}.ts`)),
+          replacement: normalize(path.join(claxedoAppDir, `src/features/terminal/core/backend/${terminal}.ts`)),
         },
         {
           find: "@opencode-ai/app-shared",
-          replacement: normalize(path.join(claxedoAppDir, "src/extensions/index.ts")),
+          replacement: normalize(path.join(claxedoAppDir, "src/features/extensions/data/index.ts")),
         },
         {
           find: /^@claxedo\/app$/,
-          replacement: normalize(path.join(claxedoAppDir, "src/index.tsx")),
+          replacement: normalize(path.join(claxedoAppDir, "src/app/entry/index.tsx")),
         },
         {
           find: /^@claxedo\/agent-event-runtime$/,

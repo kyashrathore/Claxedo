@@ -15,7 +15,7 @@ const appRoot = path.resolve(import.meta.dir, "../..")
 describe("directory layering guard", () => {
   test("topLevelDir names the owning directory and treats root files as unowned", () => {
     expect(topLevelDir("claxedo-ui/components/foo.tsx")).toBe("claxedo-ui")
-    expect(topLevelDir("shell/data/bootstrap.ts")).toBe("shell")
+    expect(topLevelDir("shell/boot/data/bootstrap.ts")).toBe("shell")
     expect(topLevelDir("app.tsx")).toBeNull()
   })
 

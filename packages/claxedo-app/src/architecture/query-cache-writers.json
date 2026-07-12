@@ -2,37 +2,37 @@
   "families": [
     {
       "family": "session/workspace query cache",
-      "writer": "shell/data/writers.ts",
+      "writer": "features/session/data/sync/writers.ts",
       "status": "live"
     },
     {
       "family": "conversation messages",
-      "writer": "shell/chat/conversation-chat-client.ts",
+      "writer": "features/session/conversation/conversation-chat-client.ts",
       "status": "live"
     },
     {
       "family": "session.status-meta",
-      "writer": "session/store/session-status-dispatcher.ts",
+      "writer": "features/session/store/session-status-dispatcher.ts",
       "status": "live"
     },
     {
       "family": "session.inventory",
-      "writer": "shell/data/inventory-writers.ts",
+      "writer": "features/session/data/sync/inventory-writers.ts",
       "status": "live"
     },
     {
       "family": "directory.sessionCache",
-      "writer": "shell/data/directory-session-cache.ts",
+      "writer": "features/session/data/sync/directory-session-cache.ts",
       "status": "live"
     },
     {
       "family": "harness-config query cache",
-      "writer": "claxedo-ui/harness/harness-query-cache.ts",
+      "writer": "features/session/harness/harness-query-cache.ts",
       "status": "live"
     },
     {
       "family": "saved session config signature",
-      "writer": "components/prompt-input/submit-transport.ts",
+      "writer": "features/session/composer/ui/submit-transport.ts",
       "status": "live"
     },
     {
@@ -42,42 +42,42 @@
     },
     {
       "family": "usage-limits snapshot",
-      "writer": "claxedo-ui/components/usage-limits-cache.ts",
+      "writer": "app/workbench/controls/usage-limits-cache.ts",
       "status": "live"
     },
     {
       "family": "terminal-scoped fetch cache",
-      "writer": "claxedo-ui/utils/terminal-scoped-cache.ts",
+      "writer": "features/terminal/lib/terminal-scoped-cache.ts",
       "status": "live"
     }
   ],
   "grandfathered": [
-    "claxedo-ui/layout-actions/project-actions.tsx",
-    "claxedo-ui/components/review-workspace/review-vcs-cache.ts",
-    "claxedo-ui/terminal/pane-terminal-recovery.ts",
-    "components/dialogs/connect-provider.tsx",
-    "components/dialogs/custom-provider.tsx",
-    "components/settings/providers.tsx",
-    "context/global-sync.tsx",
-    "context/global-sync/queue.ts",
-    "context/session-selection.tsx",
-    "context/permission-auto-response-cache.ts",
-    "context/sdk.tsx",
-    "context/server.tsx",
-    "pages/session/composer/session-question-cache.ts",
-    "pages/session/prompt-preview-handoff.ts",
-    "session/store/session-status-telemetry.ts",
-    "session/submit/rolled-back-drafts.ts",
-    "shared/query/project-meta.ts",
-    "shared/query/session-list.ts",
-    "shell/data/bootstrap.ts",
-    "shell/data/directory-cache-manager.ts",
-    "shell/data/global-sync-sdk-client-cache.ts",
-    "shell/data/session-prefetch.ts",
-    "session/store/local-selection-handoff.ts",
-    "shared/data/server-health.ts",
-    "agent-runtime/workspace-relay-connection.ts",
-    "agent-runtime/workspace-runtime-request.ts",
-    "shared/data/worktree.ts"
+    "features/workspaces/actions/project-actions.tsx",
+    "features/review/ui/review-vcs-cache.ts",
+    "features/terminal/workbench/pane-terminal-recovery.ts",
+    "app/dialogs/connect-provider.tsx",
+    "app/dialogs/custom-provider.tsx",
+    "features/settings/ui/providers.tsx",
+    "app/providers/global-sync/provider.tsx",
+    "platform/sync/global-sync/queue.ts",
+    "features/session/providers/session-selection.tsx",
+    "features/session/providers/permission-auto-response-cache.ts",
+    "app/providers/sdk/sdk.tsx",
+    "app/connection/server.tsx",
+    "features/session/ui/composer/session-question-cache.ts",
+    "features/session/ui/prompt-preview-handoff.ts",
+    "features/session/store/session-status-telemetry.ts",
+    "features/session/submit/rolled-back-drafts.ts",
+    "features/workspaces/data/query/project-meta.ts",
+    "features/session/data/query/session-list.ts",
+    "app/boot/data/bootstrap.ts",
+    "platform/sync/directory-cache-manager.ts",
+    "platform/sync/global-sync-sdk-client-cache.ts",
+    "platform/sync/session-prefetch.ts",
+    "features/session/store/local-selection-handoff.ts",
+    "app/connection/server-health.ts",
+    "platform/runtime/agent/workspace-relay-connection.ts",
+    "platform/runtime/agent/workspace-runtime-request.ts",
+    "platform/sync/worktree.ts"
   ]
 }

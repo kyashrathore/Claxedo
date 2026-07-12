@@ -67,8 +67,7 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
     markers: ["xterm-", "RenderService", "CharSizeService", "BufferService"],
     estGzip: "~106 KB gz",
     fixHint:
-      "lazify src/shell/contributions/first-party-content-surfaces.tsx TerminalContent " +
-      "(lazy(() => import('../../claxedo-ui/content-renderers/terminal-content'))) — that severs the only static xterm edge.",
+      "keep TerminalContent behind the lazy surface registration in app/integrations/first-party-content-surfaces.tsx.",
   },
   {
     label: "@tiptap/* + prosemirror (page editor)",

@@ -9,7 +9,7 @@ const RAW_VIDEO_DIR = path.join(Bun.env.TMPDIR ?? "/tmp", `claxedo-p4-review-rec
 const WORKSPACE_ID = Bun.env.CLAXEDO_P4_REVIEW_RECONNECT_WORKSPACE_ID ?? "ws_p4_review_reconnect_motion"
 const baseURL = Bun.env.CLAXEDO_P4_REVIEW_RECONNECT_MOTION_URL ?? `http://localhost:4445/w/${WORKSPACE_ID}/session`
 const viewport = { width: 1280, height: 800 }
-const REVIEW_FILE = "src/components/button.tsx"
+const REVIEW_FILE = "src/app/controls/link.tsx"
 const REVIEW_DIFFS = [{
   file: REVIEW_FILE,
   before: "export function Button() {\n  return <button>Click me</button>\n}\n",

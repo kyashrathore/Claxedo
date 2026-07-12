@@ -15,7 +15,7 @@ export default defineConfig({
     alias: [
       {
         find: "#terminal-backend",
-        replacement: normalizePath(fileURLToPath(new URL("./src/terminal/backend/xterm.ts", import.meta.url))),
+        replacement: normalizePath(fileURLToPath(new URL("./src/features/terminal/core/backend/xterm.ts", import.meta.url))),
       },
       {
         find: "@opencode-ai/app-shared",

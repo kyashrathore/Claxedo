@@ -5,14 +5,14 @@ import { APP_ROOT_ROUTE_FILE, appRouteSpineViolations } from "./scanners"
 
 const appRoot = path.resolve(import.meta.dir, "../..")
 
-// Re-homes the app.tsx route-spine / route-ordering / negative-invariant
+// Re-homes the app/entry/app.tsx route-spine / route-ordering / negative-invariant
 // assertions retired with `pages/override-batch-contract.test.ts`. The router
 // routes are JSX (there is no exported route table to assert against), so per
 // CONTRIBUTING this genuine invariant lives as a named scanner rule here,
 // centrally tracked — not a Bun.file+toContain grep in a pages/*.test.ts.
 
-describe("app.tsx route spine guard", () => {
-  test("app.tsx composes the full route spine, in order, with no retired markers", () => {
+describe("app/entry/app.tsx route spine guard", () => {
+  test("app/entry/app.tsx composes the full route spine, in order, with no retired markers", () => {
     const source = readFileSync(path.join(appRoot, "src", APP_ROOT_ROUTE_FILE), "utf8")
     expect(appRouteSpineViolations(source)).toEqual([])
   })

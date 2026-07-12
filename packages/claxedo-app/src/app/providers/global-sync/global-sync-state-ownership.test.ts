@@ -1,0 +1,48 @@
+import { describe, expect, test } from "bun:test"
+
+describe("global sync state ownership", () => {
+  test("keeps request dedupe and session load metadata in Query", async () => {
+    const source = await Bun.file(new URL("../global-sync.tsx", import.meta.url)).text()
+    const bootstrapSource = await Bun.file(new URL("../../shell/data/bootstrap-orchestrator.ts", import.meta.url)).text()
+    const inventorySource = await Bun.file(new URL("../../shell/data/inventory-source.ts", import.meta.url)).text()
+    const eventIngress = await Bun.file(new URL("../../shell/data/event-ingress.ts", import.meta.url)).text()
+
+    expect(await Bun.file(new URL("../../overrides/context/global-sync.tsx", import.meta.url)).exists()).toBe(false)
+    expect(source).not.toContain("workspaceGroupedInflight")
+    expect(source).not.toContain("const booting = new Map")
+    expect(source).not.toContain("const sessionLoads = new Map")
+    expect(source).not.toContain("const sessionMeta = new Map")
+    expect(source).not.toContain("sdkCache = new Map")
+    expect(source).not.toContain("function workspaceGroupedRequestKey")
+    expect(inventorySource).toContain("workspaceGroupedRequestKey")
+    expect(inventorySource).toContain("createInventoryPageSource")
+    expect(source).not.toContain("function bootstrapRequestKey")
+    expect(source).not.toContain("function sessionLoadRequestKey")
+    expect(source).not.toContain("function sessionLoadMetaKey")
+    expect(bootstrapSource).toContain("bootstrapRequestKey")
+    expect(bootstrapSource).toContain("sessionLoadRequestKey")
+    expect(bootstrapSource).toContain("sessionLoadMetaKey")
+    expect(bootstrapSource).not.toContain("queryFn: async () => undefined")
+    expect(source).not.toContain("@/platform/sync/session-load")
+    expect(bootstrapSource).toContain("platform/sync/session-load")
+    expect(source).not.toContain("@/app/providers/global-sync/provider/session-load")
+    expect(source).toContain("@/features/session/data/sync/global-sync-types")
+    expect(source).not.toContain("@/platform/sync/global-sync/types")
+    expect(source).toContain("cachedGlobalSyncSdkClient")
+    expect(source).not.toContain("routeDirectoryEvent")
+    expect(eventIngress).toContain("createGlobalSyncEventIngress")
+    expect(eventIngress).toContain("routeDirectoryEvent")
+  })
+
+  test("speculative directory session loads can stay quiet at the source", async () => {
+    const source = await Bun.file(new URL("../../shell/data/bootstrap-orchestrator.ts", import.meta.url)).text()
+    const bootstrap = await Bun.file(new URL("../../shell/data/bootstrap.ts", import.meta.url)).text()
+
+    expect(source).toMatch(/async function loadSessions\(directory: DirectoryRef, opts: \{ force\?: boolean; quiet\?: boolean \} = \{\}\)/)
+    expect(source).toMatch(/if \(opts\.quiet\) return[\s\S]{0,120}showToast/)
+    expect(source).toMatch(/refreshDirectory\(directory: DirectoryRef, harnessType\?: string, opts\?: \{ quiet\?: boolean \}\)/)
+    expect(bootstrap).toMatch(/loadSessions: \(directory: string, opts\?: \{ quiet\?: boolean \}\)/)
+    expect(bootstrap).toMatch(/quiet: input\.quiet/)
+    expect(bootstrap).toMatch(/if \(!input\.quiet\) \{[\s\S]{0,180}showToast/)
+  })
+})

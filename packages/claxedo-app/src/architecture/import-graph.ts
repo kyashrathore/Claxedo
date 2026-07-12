@@ -6,19 +6,25 @@ const importPattern =
   /(?:^|[\s;])(import|export)\b([^'"`;()]*?)from\s*["']([^"']+)["']|(?:^|[\s;])import\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g
 const testSupportPathPatterns = [
   /(?:^|\/)_test-helper\.tsx?$/,
+  /(?:^|\/)test-support\/.*\.tsx?$/,
   /(?:^|\/)tests\/.*\.tsx?$/,
   /(?:^|\/)[^/]*test-helpers?\.tsx?$/,
 ]
 const typeContractCandidates = new Set([
-  "extensions/types.ts",
-  "shared/data/session-lifecycle.ts",
-  "shared/data/types.ts",
-  "shared/query/types.ts",
-  "session/composer/prompt-input-props.ts",
-  "terminal/backend/types.ts",
+  "features/extensions/data/types.ts",
+  "features/session/data/session-lifecycle.ts",
+  "features/session/data/backend/types.ts",
+  "features/session/data/query/types.ts",
+  "features/session/composer/prompt-input-props.ts",
+  "features/terminal/core/backend/types.ts",
+  "platform/runtime/workspace-runtime.ts",
+  "platform/runtime/capabilities.ts",
+  "platform/runtime/session.ts",
+  "platform/runtime/workspace-log.ts",
+  "platform/query/project-meta.ts",
 ])
 const configAliasTargets = new Map([
-  ["lru_map", "utils/lru-map.ts"],
+  ["lru_map", "lib/lru-map.ts"],
 ])
 
 export function orphanModules(appRoot: string) {
@@ -64,7 +70,7 @@ export function reachableModules(appRoot: string) {
 }
 
 function rootFiles(appRoot: string) {
-  const roots = ["main.tsx", "index.tsx"].filter((file) => existsSync(path.join(appRoot, "src", file)))
+  const roots = ["app/entry/main.tsx", "app/entry/index.tsx"].filter((file) => existsSync(path.join(appRoot, "src", file)))
   const pkg = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as {
     exports?: Record<string, string>
   }
@@ -87,6 +93,14 @@ function exportRoots(appRoot: string, target: string) {
 }
 
 export function importSpecifiers(text: string) {
+  return parsedImportSpecifiers(text, false)
+}
+
+export function allImportSpecifiers(text: string) {
+  return parsedImportSpecifiers(text, true)
+}
+
+function parsedImportSpecifiers(text: string, includeTypeOnly: boolean) {
   const clean = stripComments(text)
   const specs = new Set<string>()
   let match: RegExpExecArray | null
@@ -100,7 +114,8 @@ export function importSpecifiers(text: string) {
       specs.add(match[4])
       continue
     }
-    if (!match[3] || isTypeOnlyClause(match[1], (match[2] ?? "").trim())) continue
+    if (!match[3]) continue
+    if (!includeTypeOnly && isTypeOnlyClause(match[1], (match[2] ?? "").trim())) continue
     specs.add(match[3])
   }
   return [...specs]
@@ -163,12 +178,16 @@ export function resolveImport(appRoot: string, fromFile: string, specifier: stri
   if (specifier.startsWith("./") || specifier.startsWith("../")) {
     return tryFile(path.resolve(path.dirname(fromFile), specifier))
   }
-  if (specifier === "@claxedo/app") return tryFile(path.join(appRoot, "src/index.tsx"))
+  if (specifier === "@claxedo/app") return tryFile(path.join(appRoot, "src/app/entry/index.tsx"))
   if (specifier.startsWith("@claxedo/app/")) {
+    if (specifier === "@claxedo/app/i18n") return tryFile(path.join(appRoot, "src/platform/i18n/cloud-strings"))
+    if (specifier.startsWith("@claxedo/app/utils/")) {
+      return tryFile(path.join(appRoot, "src/lib", specifier.slice("@claxedo/app/utils/".length)))
+    }
     return tryFile(path.join(appRoot, "src", specifier.slice("@claxedo/app/".length)))
   }
   if (specifier.startsWith("@/")) return tryFile(path.join(appRoot, "src", specifier.slice(2)))
-  if (specifier === "#terminal-backend") return tryFile(path.join(appRoot, "src/terminal/backend/xterm"))
+  if (specifier === "#terminal-backend") return tryFile(path.join(appRoot, "src/features/terminal/core/backend/xterm"))
   return null
 }
 
@@ -178,7 +197,7 @@ function tryFile(base: string): string | null {
     `${base}.ts`,
     `${base}.tsx`,
     path.join(base, "index.ts"),
-    path.join(base, "index.tsx"),
+    path.join(base, "app/entry/index.tsx"),
   ]
   return candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile()) ?? null
 }

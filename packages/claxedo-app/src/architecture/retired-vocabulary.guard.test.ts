@@ -9,11 +9,11 @@ describe("retired vocabulary guard", () => {
   test("flags runner/runnerHost anywhere except the documented compat site", () => {
     expect(
       scanForRetiredVocabulary([
-        { path: "shared/data/session-url.ts", text: `input.runnerHost` },
-        { path: "shell/app-shell.tsx", text: `const runner = pickRunner()` },
+        { path: "platform/runtime/session-url.ts", text: `input.runnerHost` },
+        { path: "app/app-shell.tsx", text: `const runner = pickRunner()` },
         { path: "shell/other.tsx", text: `const harness = pickHarness()` },
       ]),
-    ).toEqual(["shell/app-shell.tsx"])
+    ).toEqual(["app/app-shell.tsx"])
   })
 
   test("does not introduce runner/runnerHost references beyond the current baseline", () => {
@@ -22,7 +22,7 @@ describe("retired vocabulary guard", () => {
       .filter((file) => !baselineSet.has(file))
       .map(
         (file) =>
-          `${file}: retired "runner"/"runnerHost" vocabulary -- use "harness"/"harnessHost" (see src/${"shared/data/session-url.ts"} for the one documented legacy-compat exception)`,
+          `${file}: retired "runner"/"runnerHost" vocabulary -- use "harness"/"harnessHost" (see src/${"platform/runtime/session-url.ts"} for the one documented legacy-compat exception)`,
       )
 
     expect(offenders).toEqual([])

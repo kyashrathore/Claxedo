@@ -4,9 +4,9 @@ import { walkProdSources, walkTestSources, type SourceFile } from "./scanners"
  * The one documented backward-compat site allowed to reference the
  * retired "runner"/"runnerHost" vocabulary: it falls back to an old
  * server response field name that some servers in the fleet may
- * still emit. See src/shared/data/session-url.ts for the comment.
+ * still emit. See src/platform/runtime/session-url.ts for the comment.
  */
-export const RETIRED_VOCABULARY_COMPAT_SITE = "shared/data/session-url.ts"
+export const RETIRED_VOCABULARY_COMPAT_SITE = "platform/runtime/session-url.ts"
 
 const PATTERN = /runner/i
 

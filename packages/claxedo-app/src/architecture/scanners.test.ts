@@ -47,11 +47,11 @@ describe("architecture scanners", () => {
 
   test("allows isSignedIn only inside the auth boundary", () => {
     expect(metrics.find((item) => item.name === "isSignedInGates")!.scan([
-      source("shell/auth/auth-session.ts", `auth.isSignedIn()`),
+      source("platform/auth/auth-session.ts", `auth.isSignedIn()`),
       source("utils/auth-client.ts", `isSignedIn: () => true`),
-      source("app.tsx", `auth.isSignedIn()`),
+      source("app/entry/app.tsx", `auth.isSignedIn()`),
     ])).toEqual([{
-      file: "app.tsx",
+      file: "app/entry/app.tsx",
       line: 1,
       match: "isSignedIn(",
     }])
@@ -61,7 +61,7 @@ describe("architecture scanners", () => {
     const metric = metrics.find((item) => item.name === "deepSessionUiImports")!
 
     expect(metric.scan([
-      source("session-client/index.ts", `export * from "@opencode-ai/session-ui/context"`),
+      source("ui/session-kit.ts", `export * from "@opencode-ai/session-ui/context"`),
       source("components/file.tsx", `import { File } from "@opencode-ai/session-ui/file"`),
     ])).toEqual([
       {
@@ -106,18 +106,18 @@ describe("architecture scanners", () => {
     if (!metric) throw new Error("missing timerDrivenDataPolls metric")
 
     expect(metric.scan([
-      source("demo/handlers.ts", "setInterval(work, 1000)"),
-      source("app.tsx", "const retry = () => {\n  props.onRetry?.()\n  timer = setTimeout(retry, 1000)\n}\ntimer = setTimeout(retry, 1000)"),
-      source("session/store/session-controller.ts", "const schedule = (delay: number) => {\n  timeout = timers.setTimeout(() => {\n    input.refresh()\n    schedule(5000)\n  }, delay)\n}"),
+      source("app/demo/handlers.ts", "setInterval(work, 1000)"),
+      source("app/entry/app.tsx", "const retry = () => {\n  props.onRetry?.()\n  timer = setTimeout(retry, 1000)\n}\ntimer = setTimeout(retry, 1000)"),
+      source("features/session/store/session-controller.ts", "const schedule = (delay: number) => {\n  timeout = timers.setTimeout(() => {\n    input.refresh()\n    schedule(5000)\n  }, delay)\n}"),
       source("components/live.tsx", "setInterval(work, 1000)"),
     ])).toEqual([
       {
-        file: "app.tsx",
+        file: "app/entry/app.tsx",
         line: 1,
         match: "self-rearming setTimeout(retry) data poll",
       },
       {
-        file: "session/store/session-controller.ts",
+        file: "features/session/store/session-controller.ts",
         line: 1,
         match: "self-rearming setTimeout(schedule) data poll",
       },
@@ -134,12 +134,12 @@ describe("architecture scanners", () => {
     if (!metric) throw new Error("missing conversationHydrationEntrypoints metric")
 
     expect(metric.scan([
-      source("shell/chat/conversation-hydrator.ts", "hydrateRegisteredConversationSnapshot(input)"),
-      source("shell/chat/session-conversation-owner.tsx", "hydrateRegisteredConversationSnapshot(input)"),
-      source("shell/chat/conversation-registry.ts", "export function hydrateRegisteredConversationSnapshot() {}"),
-      source("session/store/session-controller.ts", "hydrateRegisteredConversationSnapshot(input)"),
+      source("features/session/conversation/conversation-hydrator.ts", "hydrateRegisteredConversationSnapshot(input)"),
+      source("features/session/conversation/session-conversation-owner.tsx", "hydrateRegisteredConversationSnapshot(input)"),
+      source("features/session/conversation/conversation-registry.ts", "export function hydrateRegisteredConversationSnapshot() {}"),
+      source("features/session/store/session-controller.ts", "hydrateRegisteredConversationSnapshot(input)"),
     ])).toEqual([{
-      file: "session/store/session-controller.ts",
+      file: "features/session/store/session-controller.ts",
       line: 1,
       match: "hydrateRegisteredConversationSnapshot",
     }])
@@ -150,10 +150,10 @@ describe("architecture scanners", () => {
     if (!metric) throw new Error("missing runtimeGatewayOutsideTransport metric")
 
     expect(metric.scan([
-      source("shell/data/transport/transport.ts", "RuntimeGateway.workspaceRuntimeFetch(input)"),
-      source("context/sdk.tsx", "RuntimeGateway.workspaceRuntimeFetch(input)"),
+      source("platform/runtime/transport.ts", "RuntimeGateway.workspaceRuntimeFetch(input)"),
+      source("app/providers/sdk/sdk.tsx", "RuntimeGateway.workspaceRuntimeFetch(input)"),
     ])).toEqual([{
-      file: "context/sdk.tsx",
+      file: "app/providers/sdk/sdk.tsx",
       line: 1,
       match: "RuntimeGateway.",
     }])

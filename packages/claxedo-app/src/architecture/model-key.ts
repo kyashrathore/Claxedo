@@ -1,7 +1,7 @@
 import type { SourceFile } from "./scanners"
 
 /** The one production module allowed to define the ModelKey type. */
-export const CANONICAL_MODEL_KEY_FILE = "session/composer/model-strategy.ts"
+export const CANONICAL_MODEL_KEY_FILE = "features/session/composer/model-strategy.ts"
 
 /** Identifier/shape names retired by the ModelKey / harness-submit-model rename; must never reappear. */
 const BANNED_ALIAS_PATTERN =

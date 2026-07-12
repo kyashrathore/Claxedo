@@ -1,5 +1,5 @@
 {
-  "asAnyCasts": 25,
+  "asAnyCasts": 24,
   "asAnyCastsTest": 22,
   "conversationHydrationEntrypoints": 0,
   "deepSessionUiImports": 0,
@@ -11,7 +11,7 @@
   "isSignedInGates": 0,
   "isWorkspaceIdRef": 2,
   "legacyDirectoryRouteKeyRefs": 2,
-  "moduleScopeMutableState": 52,
+  "moduleScopeMutableState": 51,
   "productionTimerAllowlistTimers": 4,
   "propsDestructuring": 1,
   "queryMirrorEffects": 6,

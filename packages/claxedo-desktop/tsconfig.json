@@ -17,8 +17,8 @@
     "outDir": "node_modules/.ts-dist",
     "types": ["vite/client", "node", "electron"],
     "paths": {
-      "#terminal-backend": ["../claxedo-app/src/terminal/backend/xterm"],
-      "@claxedo/app": ["../claxedo-app/src/index.tsx"],
+      "#terminal-backend": ["../claxedo-app/src/features/terminal/core/backend/xterm"],
+      "@claxedo/app": ["../claxedo-app/src/app/entry/index.tsx"],
       "@claxedo/*": ["../claxedo-app/src/*"],
       "@/*": ["../claxedo-app/src/*"]
     }

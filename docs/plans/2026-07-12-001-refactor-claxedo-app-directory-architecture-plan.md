@@ -265,7 +265,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 
 ### Phase 1 — Enforce the destination before moving code
 
-- [ ] **Unit 1: Add logical ownership and migration ratchets**
+- [x] **Unit 1: Add logical ownership and migration ratchets**
 
 **Goal:** Make the target dependency graph and shrinking legacy surface mechanically enforceable before directory consolidation begins.
 
@@ -282,7 +282,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 - Modify: `packages/claxedo-app/src/architecture/layering.ts`
 - Modify: `packages/claxedo-app/src/architecture/layering.guard.test.ts`
 - Modify: `packages/claxedo-app/src/architecture/agents-md.guard.test.ts`
-- Modify: `packages/claxedo-app/src/architecture/orphan.guard.test.ts`
+- Modify: `packages/claxedo-app/src/architecture/import-graph.guard.test.ts` when final entry roots begin moving; the live orphan guard is implemented there
 - Modify: `packages/claxedo-app/src/ARCHITECTURE.md`
 - Modify: `packages/claxedo-app/src/VOCABULARY.md`
 
@@ -315,7 +315,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 
 ### Phase 2 — Establish foundational and already-cohesive owners
 
-- [ ] **Unit 2: Establish `lib/` and named platform capabilities**
+- [x] **Unit 2: Establish `lib/` and named platform capabilities**
 
 **Goal:** Move shared headless foundations into explicit capability homes so later features depend on stable targets.
 
@@ -333,8 +333,8 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 - Move: `packages/claxedo-app/src/agent-runtime/` to `packages/claxedo-app/src/platform/runtime/agent/`
 - Move: `packages/claxedo-app/src/cloud/` headless runtime state to `packages/claxedo-app/src/platform/runtime/cloud/`
 - Move: `packages/claxedo-app/src/i18n/` and `packages/claxedo-app/src/context/language.tsx` to `packages/claxedo-app/src/platform/i18n/`
-- Move: `packages/claxedo-app/src/context/file.tsx` and `packages/claxedo-app/src/context/file/` to `packages/claxedo-app/src/platform/files/`
-- Move: notification helpers, provider, and sound asset to `packages/claxedo-app/src/platform/notifications/`
+- Move: headless file caches, path helpers, tree state, watcher handling, and file contracts from `packages/claxedo-app/src/context/file/` to `packages/claxedo-app/src/platform/files/`; the application bridge provider remains assigned to Unit 7
+- Move: notification permission, click, sound helpers, and sound assets to `packages/claxedo-app/src/platform/notifications/`; the application notification bridge remains assigned to Unit 7
 - Test: colocated tests currently under each moved directory, including `shell/identity/*.test.ts`, `shell/auth/*.test.ts`, `agent-runtime/*.test.ts`, `shared/query/*.test.ts`, `context/file/*.test.ts`, and `i18n/locale-parity.test.ts`
 - Modify: `packages/claxedo-app/tsconfig.json`
 - Modify: `packages/claxedo-app/vite.config.ts`
@@ -346,7 +346,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 - Split `shared/data/` by ownership before moving it. Base HTTP, health, credentials, and broadly shared wire behavior become platform API services; session, document, arena, and workspace-specific clients move with their feature in later units.
 - Preserve nominal identity brands and their sanctioned minting points while changing module paths.
 - Keep API response shapes, query keys, persistence keys, and runtime route builders unchanged.
-- Move provider implementations with their service; leave only provider ordering for Unit 7.
+- Keep capability providers in platform when their initialization depends only on that capability. Providers that bind application, feature, and platform contexts are app bridge adapters owned by Unit 7.
 
 **Execution note:** Use characterization-first coverage for persistence, query-key, identity, auth-session, and runtime-route contracts.
 
@@ -367,7 +367,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 
 **Verification:** `platform/` capabilities are independently chartered, `lib/` has no feature or app imports, and the corresponding legacy roots shrink in the migration manifest.
 
-- [ ] **Unit 3: Move cohesive leaf verticals into `features/`**
+- [x] **Unit 3: Move cohesive leaf verticals into `features/`**
 
 **Goal:** Prove the vertical-feature convention on bounded domains before migrating session and terminal.
 
@@ -396,6 +396,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 - Preserve browser as a self-contained vertical and use its internal model/store/UI split as a template where useful.
 - Treat marketplace as the UI surface of extension management, with catalog/install data beneath the same feature.
 - Bring the process relay client, schemas, ownership state, diagnostics, and workbench widgets into one feature.
+- Keep the process provider's runtime, state, event, and ownership behavior in the feature. Its workbench adapter supplies SDK scope, platform fetch, terminal rendering, event subscriptions, and navigation callbacks through the feature's public contracts.
 - Export feature surface contracts for later registration by `app/integrations/`; retain current lazy-loading behavior.
 
 **Patterns to follow:**
@@ -416,7 +417,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 
 ### Phase 3 — Consolidate the large product domains
 
-- [ ] **Unit 4: Consolidate the session feature**
+- [x] **Unit 4: Consolidate the session feature**
 
 **Goal:** Give session lifecycle, conversation, composer, timeline, harness selection, and session UI one domain root while retaining a small route adapter.
 
@@ -474,7 +475,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 
 **Verification:** All session-specific behavior has one logical owner, the URL route is a small app adapter, `session-client/` is removed, and session architecture guards express feature-level boundaries.
 
-- [ ] **Unit 5: Consolidate the terminal feature**
+- [x] **Unit 5: Consolidate the terminal feature**
 
 **Goal:** Unite the terminal engine, provider state, pane integration, and UI beneath one feature root.
 
@@ -519,7 +520,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 
 **Verification:** Terminal code has one feature owner, its integration suite remains colocated, and app/workbench code depends only on the feature surface contract.
 
-- [ ] **Unit 6: Consolidate workbench content features**
+- [x] **Unit 6: Consolidate workbench content features**
 
 **Goal:** Give documents, review, workspaces, and settings explicit vertical owners before reorganizing the app workbench itself.
 
@@ -564,7 +565,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 
 ### Phase 4 — Rebuild composition and finish the topology
 
-- [ ] **Unit 7: Establish app routes, providers, demo, and integration assembly**
+- [x] **Unit 7: Establish app routes, providers, demo, and integration assembly**
 
 **Goal:** Move boot and route ownership into `app/`, colocate provider composition, and convert the contribution registry into the explicit feature assembly boundary.
 
@@ -617,7 +618,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 
 **Verification:** Root application modules live under `app/`, URL-owning files live under `app/routes/`, feature registration is centralized, and route/product behavior is unchanged.
 
-- [ ] **Unit 8: Consolidate workbench and reusable UI**
+- [x] **Unit 8: Consolidate workbench and reusable UI**
 
 **Goal:** Remove lineage-based UI ownership by moving app chrome to the workbench and retaining only proven reusable primitives under `ui/`.
 
@@ -665,7 +666,7 @@ Storage keys, serialized shapes, query keys, pane metadata, and session identity
 
 **Verification:** `components/`, `claxedo-ui/`, and `pane/` are empty; app chrome has one workbench owner; `ui/` contains only reusable primitives; all workbench behavioral suites retain their meaning.
 
-- [ ] **Unit 9: Remove legacy roots and lock the final graph**
+- [x] **Unit 9: Remove legacy roots and lock the final graph**
 
 **Goal:** Complete the cutover, remove migration scaffolding that has served its purpose, and make the final topology the enforced default.
 

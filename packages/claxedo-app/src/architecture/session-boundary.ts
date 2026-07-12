@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { importSpecifiers, resolveImport } from "./import-graph"
-import { topLevelDir } from "./layering"
 import { prodSourcePaths, type SourceFile } from "./scanners"
 
 /**
@@ -16,7 +15,7 @@ import { prodSourcePaths, type SourceFile } from "./scanners"
  * offenders (session/store descends from shell/ and still imports it). Driving
  * the baseline to empty is Wave-5+ debt work.
  */
-export const SESSION_DIR = "session"
+export const SESSION_DIR = "features/session"
 
 export const SESSION_FORBIDDEN_TARGET_DIRS = ["pane", "shell", "claxedo-ui", "context"] as const
 
@@ -40,13 +39,13 @@ export function sessionBoundaryViolationsFromFiles(
   const violations: SessionBoundaryViolation[] = []
 
   for (const file of files) {
-    if (topLevelDir(file.path) !== SESSION_DIR) continue
+    if (!file.path.startsWith(`${SESSION_DIR}/`)) continue
 
     for (const specifier of importSpecifiers(file.text)) {
       const relTarget = resolveSpecifier(file.path, specifier)
       if (!relTarget) continue
-      const toDir = topLevelDir(relTarget)
-      if (!toDir || !forbidden.has(toDir)) continue
+      const toDir = relTarget.split("/")[0]
+      if (!forbidden.has(toDir)) continue
       violations.push({ file: file.path, specifier, target: relTarget })
     }
   }

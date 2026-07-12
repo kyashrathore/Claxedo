@@ -146,7 +146,7 @@ export const metrics: readonly Metric[] = [
 // named scanner rule, not as a text-scan inside capability-responder.test.ts).
 // Baseline: empty — capability-responder.ts is the only allowed owner.
 // ---------------------------------------------------------------------------
-export const CAPABILITY_RESPONDER_FILE = "terminal/capability-responder.ts"
+export const CAPABILITY_RESPONDER_FILE = "features/terminal/core/capability-responder.ts"
 
 // Matches an OSC 10 or OSC 11 escape marker (`ESC ] 10 ;` / `ESC ] 11 ;`) in
 // source, in both string-literal (`\x1b]10;`) and regex-literal (`\x1b\]10;`)
@@ -159,18 +159,18 @@ export function oscColorEscapesOutsideResponder(files: SourceFile[]): Finding[] 
     .flatMap((file) => findMatches(file, oscColorEscapeRe))
 }
 
-// Standalone drift guard: the app.tsx route spine, ordering, and negatives.
+// Standalone drift guard: the app/entry/app.tsx route spine, ordering, and negatives.
 //
 // override-batch-contract.test.ts (retired as snapshot theater) encoded ONE
-// invariant worth keeping: app.tsx composes the upstream route spine, in the
+// invariant worth keeping: app/entry/app.tsx composes the upstream route spine, in the
 // right order, without retired constructs. The router routes are JSX (there is
 // no exported route table to assert against), so per CONTRIBUTING this stays a
 // named source-shape rule here — not a Bun.file+toContain grep scattered in a
-// pages/*.test.ts. Baseline: empty — app.tsx must satisfy every marker.
+// pages/*.test.ts. Baseline: empty — app/entry/app.tsx must satisfy every marker.
 // ---------------------------------------------------------------------------
-export const APP_ROOT_ROUTE_FILE = "app.tsx"
+export const APP_ROOT_ROUTE_FILE = "app/entry/app.tsx"
 
-// Provider + route markers that must be present in app.tsx's route spine.
+// Provider + route markers that must be present in app/entry/app.tsx's route spine.
 const APP_ROUTE_SPINE_REQUIRED = [
   "<ServerProvider",
   "<GlobalSyncProvider>",
@@ -181,7 +181,7 @@ const APP_ROUTE_SPINE_REQUIRED = [
   'path="/config"',
 ] as const
 
-// Retired upstream constructs that must NOT reappear in app.tsx.
+// Retired upstream constructs that must NOT reappear in app/entry/app.tsx.
 const APP_ROUTE_SPINE_FORBIDDEN = ["ServerKey"] as const
 
 // The specific "/marketplace" route must be registered BEFORE the catch-all
@@ -240,8 +240,8 @@ function timerDrivenDataPollMetric(): Metric {
 
 function isSignedInGateMetric(): Metric {
   const allowed = new Set([
-    "shell/auth/auth-session.ts",
-    "shared/data/auth-client.ts",
+    "platform/auth/auth-session.ts",
+    "platform/auth/auth-client.ts",
   ])
   return {
     name: "isSignedInGates",
@@ -255,9 +255,9 @@ function isSignedInGateMetric(): Metric {
 
 function conversationHydrationEntrypointMetric(): Metric {
   const allowed = new Set([
-    "shell/chat/conversation-hydrator.ts",
-    "shell/chat/session-conversation-owner.tsx",
-    "shell/chat/conversation-registry.ts",
+    "features/session/conversation/conversation-hydrator.ts",
+    "features/session/conversation/session-conversation-owner.tsx",
+    "features/session/conversation/conversation-registry.ts",
   ])
   return {
     name: "conversationHydrationEntrypoints",
@@ -271,7 +271,7 @@ function conversationHydrationEntrypointMetric(): Metric {
 
 function runtimeGatewayOutsideTransportMetric(): Metric {
   const allowed = new Set([
-    "shell/data/transport/transport.ts",
+    "platform/runtime/transport.ts",
   ])
   return {
     name: "runtimeGatewayOutsideTransport",
@@ -303,7 +303,7 @@ function deepSessionUiImportMetric(): Metric {
     description: "deep `@opencode-ai/session-ui/*` import lines outside the session-ui barrel",
     scan: (files) =>
       files
-        .filter((file) => file.path !== "session-client/index.ts")
+        .filter((file) => file.path !== "ui/session-kit.ts")
         .flatMap((file) =>
           file.text
             .split("\n")

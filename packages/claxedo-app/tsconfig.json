@@ -16,8 +16,8 @@
     "noEmit": true,
     "isolatedModules": true,
     "paths": {
-      "#terminal-backend": ["./src/terminal/backend/xterm"],
-      "@opencode-ai/app-shared": ["./src/extensions/index.ts"],
+      "#terminal-backend": ["./src/features/terminal/core/backend/xterm"],
+      "@opencode-ai/app-shared": ["./src/features/extensions/data/index.ts"],
       "@/*": ["./src/*"],
       "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
       "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],

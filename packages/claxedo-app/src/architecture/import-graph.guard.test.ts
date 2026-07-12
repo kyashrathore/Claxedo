@@ -5,13 +5,18 @@ import baseline from "./orphan-baseline.json"
 
 const appRoot = path.resolve(import.meta.dir, "../..")
 const liveTypeContracts = [
-  "extensions/types.ts",
-  "shared/data/session-lifecycle.ts",
-  "shared/data/types.ts",
-  "shared/query/types.ts",
-  "session/composer/prompt-input-props.ts",
-  "terminal/backend/types.ts",
-  "utils/lru-map.ts",
+  "features/extensions/data/types.ts",
+  "features/session/data/session-lifecycle.ts",
+  "features/session/data/backend/types.ts",
+  "features/session/data/query/types.ts",
+  "features/session/composer/prompt-input-props.ts",
+  "features/terminal/core/backend/types.ts",
+  "lib/lru-map.ts",
+  "platform/runtime/workspace-runtime.ts",
+  "platform/runtime/capabilities.ts",
+  "platform/runtime/session.ts",
+  "platform/runtime/workspace-log.ts",
+  "platform/query/project-meta.ts",
 ]
 
 describe("import graph orphan guard", () => {
@@ -38,15 +43,16 @@ describe("import graph orphan guard", () => {
   test("keeps live prompt submit modules reachable despite comment-like text", () => {
     const reachable = reachableModules(appRoot)
 
-    expect(reachable.has("components/prompt-input/build-request-parts.ts")).toBe(true)
-    expect(reachable.has("session/submit/index.ts")).toBe(true)
+    expect(reachable.has("features/session/composer/ui/build-request-parts.ts")).toBe(true)
+    expect(reachable.has("features/session/submit/index.ts")).toBe(true)
   })
 
   test("keeps test-support helpers outside the production import graph", () => {
     const testSupport = [
-      "claxedo-ui/workbench/tests/dom-helpers.tsx",
-      "claxedo-ui/workbench/tests/state-harness.ts",
-      "context/terminal-test-helpers.ts",
+      "app/workbench/workbench/tests/dom-helpers.tsx",
+      "app/workbench/workbench/tests/state-harness.ts",
+      "features/terminal/providers/test-helpers.ts",
+      "architecture/test-support/mock-api.ts",
     ]
     const reachable = reachableModules(appRoot)
     const orphans = new Set(orphanModules(appRoot))
