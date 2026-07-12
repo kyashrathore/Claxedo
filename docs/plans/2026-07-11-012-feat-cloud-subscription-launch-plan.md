@@ -77,3 +77,7 @@ Wave 3  Full staging rehearsal — signup → org → invite → subscribe (tria
 | 2026-07-12 | Wave 1 (D8/D9/D10/D11), Wave 1b (D7/D12/D13/D14), Wave 2 (billing) landed | commits dbb7896f8..01ba51a16d, each leader-gated | server-side spine complete |
 | 2026-07-12 | Adversarial review: 5 finders → 2-skeptic verify (19 verdicts, 0 refuted); doc 2026-07-12-001 | review commit | 19 confirmed findings |
 | 2026-07-12 | Review fixes F6/F7/F15 landed; F1-F5/F8-F19 tasked | review-fix commit | P0 F1-F5 open |
+| 2026-07-12 | F3/F4/F5 (mechanical P0s) landed | commit da1a1332c9 | wake-entitlement, org-delete cancel, gate wired |
+| 2026-07-12 | F8/F11/F16/F17/F19 landed (leader caught+fixed stale cross-file test) | F8-F19 commit | boot assert, grace anchor, AAD, sweep isolation, ts guard |
+| 2026-07-12 | F13/F14 doc corrections | docs commit | pricing math + ADR addendum |
+| 2026-07-12 | **BUILDABLE WORK COMPLETE.** Remaining: F1 + F2 (product decision + S2), F9/F10/F12/F18 (design/S2/deploy-config), S2 + Wave 3 (owner creds) | 14 commits total | end-to-end blocked on owner inputs |
