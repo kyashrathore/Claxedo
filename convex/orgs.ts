@@ -1,6 +1,5 @@
 import { v } from "convex/values"
-import { authedMutation, authedQuery, orgByClerkOrgId, publicMutation, readUser, upsertUser } from "./model"
-import { enforceSeatCapacity } from "./billing"
+import { authedMutation, authedQuery, orgByClerkOrgId, publicMutation, readUser, serviceQuery, upsertUser, userByClerkSubject } from "./model"
 
 export async function personalOrgForUser(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
   const existing = (await ctx.db
@@ -194,12 +193,15 @@ async function upsertClerkMembership(ctx: any, data: Record<string, any>) {
     await ctx.db.patch(existing._id, patch)
     return
   }
-  // D6 seat hard-block (ADR 014 §4): a NEW membership beyond the org's
-  // licensed seat count is refused with the typed seat_limit_reached error —
-  // no soft-allow, no true-up. The billing module owns every billing-field
-  // read/write (single-writer guard); role/metadata updates to existing
-  // members are never blocked.
-  await enforceSeatCapacity(ctx, await ctx.db.get(orgId), user._id)
+  // F1 (adversarial review): the seat hard-block used to throw here, inside the
+  // Svix-verified Clerk→Convex mirror. That was the WRONG layer: the member
+  // already exists in Clerk by the time this runs (so the throw cannot block
+  // the join), and throwing 500s the whole Svix delivery — wedging the entire
+  // mirror, including membership REVOCATIONS. The mirror must never 500 on seat
+  // count. Seat enforcement now lives at the entitlement/capability layer
+  // (src/billing/entitlement.ts: an org OVER its licensed seats is denied
+  // hosted "cloud-workspace"/"hosted-connections" access), and Clerk's
+  // membership count here is treated as advisory — it always syncs cleanly.
   await ctx.db.insert("org_memberships", {
     org_id: orgId,
     user_id: user._id,
@@ -248,5 +250,37 @@ export const applyClerkWebhook = publicMutation({
       if (org) await ctx.db.patch(org._id, { deleted_at: Date.now(), updated_at: Date.now() })
     }
     return { ok: true }
+  },
+})
+
+/**
+ * F12 (adversarial review): membership re-check for the hosted connections gate
+ * (src/connections-host/connections-host.ts). The connections host derives the
+ * team partition from the caller's verified Clerk `org_id` claim; D2 says JWT
+ * org claims must not be the sole authorization input, so the host re-checks
+ * that the subject is ACTUALLY a member of that org in Convex before granting
+ * the team partition. Service-token gated (machine principal — the Worker/host,
+ * which holds no end-user identity for the connections turn). Returns a plain
+ * membership verdict; a stale/mis-synced claim with no backing membership row
+ * resolves to `{ member: false }` and the host answers 403.
+ */
+export const membershipByClerkIds = serviceQuery({
+  args: {
+    clerk_org_id: v.string(),
+    clerk_subject: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const org = await orgByClerkOrgId(ctx.db, args.clerk_org_id)
+    if (!org || org.deleted_at) return { member: false as const }
+    const user = await userByClerkSubject(ctx.db, args.clerk_subject)
+    if (!user) return { member: false as const }
+    const memberships = await ctx.db
+      .query("org_memberships")
+      .withIndex("by_org_user", (q: any) => q.eq("org_id", org._id))
+      .collect()
+    const membership = memberships.find((item: any) => item.user_id === user._id)
+    return membership
+      ? { member: true as const, org_id: String(org._id), role: membership.role as string }
+      : { member: false as const }
   },
 })

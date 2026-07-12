@@ -8,11 +8,14 @@
  *   POST /api/billing/checkout       — Polar checkout session (admin/owner)
  *   POST /api/billing/portal         — Polar customer portal session (admin/owner)
  *
- * Customer linkage (ADR addendum): NO customer pre-creation — Polar creates
- * the customer lazily at first checkout with `external_customer_id` = the
- * verified Clerk subject; `metadata.org_id` (the Convex org doc id) rides the
- * checkout onto the subscription and is how webhook state re-attaches to the
- * org.
+ * Customer linkage (ADR addendum + F9): NO customer pre-creation — Polar
+ * creates the customer lazily at first checkout with `external_customer_id` =
+ * a STABLE ORG-scoped id (`org_{orgId}`), NOT the purchasing admin's Clerk
+ * subject. Keying on the org (not the human) means any admin of the org reaches
+ * the same Polar customer/portal, and a second admin cannot mint a second
+ * customer for the same org. `metadata.org_id` (the Convex org doc id) still
+ * rides the checkout onto the subscription and is how webhook state re-attaches
+ * to the org.
  *
  * Every failure path reports through reportPaymentError (D12 payment page
  * class). Fail-closed everywhere: missing secret/config → 503, bad signature
@@ -76,6 +79,18 @@ function clean(value?: string) {
   const trimmed = value?.trim()
   return trimmed ? trimmed : undefined
 }
+
+/**
+ * F9: the stable, org-scoped Polar `external_customer_id`. Both checkout and
+ * portal derive the customer from the org (never the purchasing admin's Clerk
+ * subject), so every admin of the org resolves the SAME Polar customer.
+ */
+function orgExternalCustomerId(orgId: string) {
+  return `org_${orgId}`
+}
+
+/** Statuses that mean a live Polar subscription already exists for the org (F2). */
+const LIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"])
 
 export function polarProductConfig(env: BillingEnv): PolarProductConfig {
   const ids = [clean(env.CLAXEDO_POLAR_PRODUCT_MONTHLY), clean(env.CLAXEDO_POLAR_PRODUCT_YEARLY)]
@@ -285,6 +300,30 @@ export function BillingRoutes(options: BillingRouteOptions) {
         if ("error" in admin) return c.json(admin.error.body as never, admin.error.status)
         const context = admin.context
 
+        // F2: refuse a SECOND checkout when the org already holds a live Polar
+        // subscription (active/trialing/past_due) — a second checkout mints a
+        // second subscription for the same org and double-bills. The mirrored
+        // status (D5 single writer) is authoritative here; direct the caller to
+        // the customer portal / seat management instead.
+        //
+        // S2-PENDING: the mid-cycle SEAT-INCREASE path (a Polar
+        // subscription-UPDATE that changes the licensed seat count on the
+        // existing subscription) is deliberately NOT implemented here — it
+        // depends on confirming Polar's seat-update semantics against the
+        // sandbox (S2). Until then "buy more seats" routes through the portal,
+        // never through a fresh /checkout.
+        if (context.subscription_status && LIVE_SUBSCRIPTION_STATUSES.has(context.subscription_status)) {
+          return c.json(
+            {
+              error: {
+                code: "billing_already_subscribed",
+                message: "This org already has an active subscription; manage seats or billing from the customer portal",
+              },
+            },
+            409,
+          )
+        }
+
         // Per-seat floor (ADR 014 §4): a subscription can never license fewer
         // seats than the org has members.
         const seats = parsed.data.seats ?? Math.max(context.member_count, 1)
@@ -307,7 +346,9 @@ export function BillingRoutes(options: BillingRouteOptions) {
             // on checkout — `seats` (Polar seat-based pricing) is the
             // pre-decided fallback and the only per-seat lever the API offers.
             seats,
-            externalCustomerId: auth.user.subject,
+            // F9: org-scoped customer id (stable across admins), not the
+            // purchasing admin's subject.
+            externalCustomerId: orgExternalCustomerId(context.org_id),
             metadata: { org_id: context.org_id },
             ...(clean(env.CLAXEDO_POLAR_CHECKOUT_SUCCESS_URL)
               ? { successUrl: clean(env.CLAXEDO_POLAR_CHECKOUT_SUCCESS_URL)! }
@@ -343,7 +384,13 @@ export function BillingRoutes(options: BillingRouteOptions) {
         if ("error" in admin) return c.json(admin.error.body as never, admin.error.status)
 
         try {
-          const session = await client.customerSessions.create({ externalCustomerId: auth.user.subject })
+          // F9: resolve the portal from the ORG-scoped customer, so a
+          // non-purchasing admin reaches the same Polar customer as whoever
+          // first checked out (previously this used auth.user.subject → 502 for
+          // every admin but the original purchaser).
+          const session = await client.customerSessions.create({
+            externalCustomerId: orgExternalCustomerId(admin.context.org_id),
+          })
           return c.json({ url: session.customerPortalUrl })
         } catch (err) {
           // Includes "no Polar customer yet" (nothing purchased): surfaced as

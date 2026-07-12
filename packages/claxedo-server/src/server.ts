@@ -16,6 +16,7 @@ import { eventsHandler } from "./routes/events"
 import { peerAddressStamp } from "./routes/local-only-projection"
 import { createConnectionsHost } from "./connections-host/connections-host"
 import { hostedConnectionsEntitlement } from "./connections-host/connections-entitlement"
+import { hostedOrgMembershipVerifier } from "./connections-host/org-membership"
 import { createConnectionTurnCredentials } from "./connections-host/turn-credentials"
 import { mirrorProcessEvents } from "./process-events"
 import { PagesRoutes } from "./routes/pages"
@@ -428,11 +429,16 @@ export function createApp(services: ControlPlaneServices, options: {
   // gated, byte-identical), a fail-closed billing gate in hosted mode so a free
   // org is denied once CLAXEDO_HOSTED_CREDENTIALS_ENABLED is flipped on.
   const requireHostedConnectionsEntitlement = hostedConnectionsEntitlement(process.env)
+  // F12: hosted re-checks org membership in Convex before granting the team
+  // partition (a Clerk `org_id` claim alone is not authorization — D2).
+  // Undefined on self-host → the gate never consults it (byte-identical).
+  const verifyOrgMembership = hostedOrgMembershipVerifier(process.env)
   const connectionsHost = createConnectionsHost({
     credentials: services.credentials,
     turnCredentials,
     ...authRouteOptions(services),
     ...(requireHostedConnectionsEntitlement ? { requireHostedConnectionsEntitlement } : {}),
+    ...(verifyOrgMembership ? { verifyOrgMembership } : {}),
   })
   app.route("/api/claxedo/integrations", connectionsHost.routes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))

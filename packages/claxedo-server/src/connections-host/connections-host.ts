@@ -68,6 +68,18 @@ export type ConnectionsHostOptions = {
   requireHostedConnectionsEntitlement?: (
     clerkOrgId: string,
   ) => Promise<{ status: 402 | 503; body: { error: { code: string; message: string } } } | undefined>
+  /**
+   * F12 (adversarial review; D2 vs D7): re-check org membership in Convex at
+   * the connections gate. The hosted team partition (`org:{orgId}`) is derived
+   * from the caller's verified Clerk `org_id` claim, but D2 forbids a JWT org
+   * claim being the SOLE authorization input — a stale/mis-synced claim would
+   * otherwise grant team-connection access with no backing membership. When
+   * supplied (hosted mode only), this verifies the subject is a real Convex
+   * member of the claimed org BEFORE the team partition is granted; a false
+   * verdict yields 403 and no partition. Absent (self-host) → never checked,
+   * D7 behavior byte-identical.
+   */
+  verifyOrgMembership?: (input: { subject: string; orgId: string }) => Promise<boolean>
 }
 
 export function createConnectionsHost(options: ConnectionsHostOptions) {
@@ -157,6 +169,15 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
         // rather than fall back to any shared partition.
         const orgId = context.user.orgId
         if (!orgId) return c.json({ code: "connections_org_required" }, 403)
+        // F12 (D2 vs D7): the org_id claim is Clerk-verified but not, by itself,
+        // proof of membership — re-check it against Convex before granting the
+        // team partition. A stale/mis-synced claim with no backing membership
+        // row is refused with 403; a verifier that throws (Convex unreachable)
+        // propagates and fails closed (500), never falls open to team access.
+        if (options.verifyOrgMembership) {
+          const isMember = await options.verifyOrgMembership({ subject: context.user.subject, orgId })
+          if (!isMember) return c.json({ code: "connections_org_membership_required" }, 403)
+        }
         // D6/B4: hosted connections are entitlement-gated (composed hook, see
         // ConnectionsHostOptions). Fail-closed by construction inside the
         // gate: free tier → 402, billing mirror unreadable → 503.

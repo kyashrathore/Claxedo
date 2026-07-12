@@ -13,6 +13,14 @@
  * the grace window (CLAXEDO_BILLING_PAST_DUE_GRACE_DAYS, default 7 — plan OQ-4),
  * anchored on the FIRST past_due transition (past_due_since, F11) — not
  * re-anchored per dunning webhook.
+ *
+ * Seat over-capacity (F1): even an otherwise-entitling subscription does NOT
+ * grant hosted access to an org that has MORE members than it has licensed
+ * seats. The Clerk webhook mirror no longer hard-blocks a join (that 500'd the
+ * whole Svix mirror), so this is where the seat ceiling is enforced: an
+ * over-seat org is denied with the typed `seat_over_capacity` error carrying
+ * the counts, and the owner is told to buy seats or remove members. A personal
+ * org (member_count 1, seats_licensed 1 or absent) is never seat-limited.
  */
 
 import { reportPaymentError } from "../observability/report"
@@ -26,9 +34,11 @@ const DAY_MS = 24 * 60 * 60 * 1000
 export class BillingEntitlementError extends Error {
   readonly status = 402
   constructor(
-    public readonly code: "billing_entitlement_required",
+    public readonly code: "billing_entitlement_required" | "seat_over_capacity",
     public readonly capability: EntitlementCapability,
     message: string,
+    /** Present for `seat_over_capacity` (F1): the counts the owner needs to act on. */
+    public readonly details?: { memberCount: number; seatsLicensed: number },
   ) {
     super(message)
     this.name = "BillingEntitlementError"
@@ -45,11 +55,13 @@ export function pastDueGraceDays(env: Record<string, string | undefined>): numbe
 export type EntitlementDecision =
   | { entitled: true; status: string }
   | { entitled: false; reason: "no_org" | "free_tier" | "grace_expired" | "not_entitling_status" }
+  | { entitled: false; reason: "seat_over_capacity"; memberCount: number; seatsLicensed: number }
 
 /**
  * Pure decision over the mirrored state. Every hosted capability maps to
  * "the org pays" today (one flat plan); the capability parameter exists so a
- * future plan split changes THIS function only.
+ * future plan split changes THIS function only. The seat over-capacity gate
+ * (F1) applies to every hosted capability identically.
  */
 export function entitlementDecision(
   state: EntitlementState,
@@ -59,23 +71,45 @@ export function entitlementDecision(
   if (!state.found) return { entitled: false, reason: "no_org" }
   if (state.plan !== "pro") return { entitled: false, reason: "free_tier" }
   const status = state.subscription_status
-  if (status === "active" || status === "trialing") return { entitled: true, status }
-  if (status === "past_due") {
-    const graceDays = options.graceDays ?? DEFAULT_PAST_DUE_GRACE_DAYS
-    // F11: grace anchors on the FIRST past_due transition (past_due_since),
-    // which applyPolarState stamps once and preserves across dunning retries —
-    // NOT on polar_state_modified_at / billing_synced_at, which each dunning
-    // webhook refreshes (that would re-extend grace for the whole dunning
-    // cycle). Fall back to the older anchors only for rows written before the
-    // field existed. Without any anchor, fail closed rather than granting an
-    // unbounded grace.
-    const anchor = state.past_due_since ?? state.polar_state_modified_at ?? state.billing_synced_at
-    if (anchor === undefined) return { entitled: false, reason: "grace_expired" }
-    const now = options.now?.() ?? Date.now()
-    if (now <= anchor + graceDays * DAY_MS) return { entitled: true, status }
-    return { entitled: false, reason: "grace_expired" }
+  const statusDecision = ((): EntitlementDecision => {
+    if (status === "active" || status === "trialing") return { entitled: true, status }
+    if (status === "past_due") {
+      const graceDays = options.graceDays ?? DEFAULT_PAST_DUE_GRACE_DAYS
+      // F11: grace anchors on the FIRST past_due transition (past_due_since),
+      // which applyPolarState stamps once and preserves across dunning retries —
+      // NOT on polar_state_modified_at / billing_synced_at, which each dunning
+      // webhook refreshes (that would re-extend grace for the whole dunning
+      // cycle). Fall back to the older anchors only for rows written before the
+      // field existed. Without any anchor, fail closed rather than granting an
+      // unbounded grace.
+      const anchor = state.past_due_since ?? state.polar_state_modified_at ?? state.billing_synced_at
+      if (anchor === undefined) return { entitled: false, reason: "grace_expired" }
+      const now = options.now?.() ?? Date.now()
+      if (now <= anchor + graceDays * DAY_MS) return { entitled: true, status }
+      return { entitled: false, reason: "grace_expired" }
+    }
+    return { entitled: false, reason: "not_entitling_status" }
+  })()
+  if (!statusDecision.entitled) return statusDecision
+  // F1 seat over-capacity: the subscription itself entitles, but an org with
+  // more members than licensed seats does not get hosted access for the
+  // over-cap members. `seats_licensed` absent (personal org, or seats not yet
+  // re-derived after a missed subscription.* webhook — F10) means there is no
+  // cap to exceed, so it stays entitled rather than fail toward blocking a
+  // paying customer.
+  if (
+    state.seats_licensed !== undefined &&
+    state.member_count !== undefined &&
+    state.member_count > state.seats_licensed
+  ) {
+    return {
+      entitled: false,
+      reason: "seat_over_capacity",
+      memberCount: state.member_count,
+      seatsLicensed: state.seats_licensed,
+    }
   }
-  return { entitled: false, reason: "not_entitling_status" }
+  return statusDecision
 }
 
 export type EntitlementReader = (ref: EntitlementStateRef) => Promise<EntitlementState>
@@ -94,6 +128,16 @@ export async function requireEntitlement(
   const state = await options.reader(ref)
   const decision = entitlementDecision(state, capability, options)
   if (decision.entitled) return
+  if (decision.reason === "seat_over_capacity") {
+    // F1: distinct typed error carrying the counts, so the app can render the
+    // "you have N members but M seats — buy more or remove members" surface.
+    throw new BillingEntitlementError(
+      "seat_over_capacity",
+      capability,
+      `Your org has ${decision.memberCount} members but only ${decision.seatsLicensed} licensed seats; add seats or remove members to use ${capability}`,
+      { memberCount: decision.memberCount, seatsLicensed: decision.seatsLicensed },
+    )
+  }
   throw new BillingEntitlementError(
     "billing_entitlement_required",
     capability,

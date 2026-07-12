@@ -210,7 +210,7 @@ describe("POST /checkout", () => {
     expect(await res.json()).toMatchObject({ error: { code: "billing_admin_required" } })
   })
 
-  test("owner checkout creates the Polar session with external_customer_id = Clerk subject and metadata.org_id", async () => {
+  test("F9: owner checkout keys external_customer_id on the ORG (org_{id}), not the admin subject; metadata.org_id rides", async () => {
     const polar = fakePolar()
     const res = await app({ polar }).request(post("alice@org_a", { plan: "yearly", seats: 5 }))
     expect(res.status).toBe(200)
@@ -219,10 +219,57 @@ describe("POST /checkout", () => {
       expect.objectContaining({
         products: ["prod_yearly"],
         seats: 5,
-        externalCustomerId: "alice",
+        externalCustomerId: "org_org_doc_1",
         metadata: { org_id: "org_doc_1" },
       }),
     )
+  })
+
+  test("F9: a second, different admin of the same org resolves the SAME org-scoped customer id", async () => {
+    const polar = fakePolar()
+    // Both admins' checkoutContext resolves the same org_doc_1 (fakeStore), so
+    // the external id must be identical regardless of which human checks out.
+    await app({ polar }).request(post("alice@org_a", { plan: "monthly" }))
+    await app({ polar }).request(post("bob@org_a", { plan: "monthly" }))
+    const externalIds = polar.checkouts.create.mock.calls.map((call) => (call[0] as { externalCustomerId: string }).externalCustomerId)
+    expect(externalIds).toEqual(["org_org_doc_1", "org_org_doc_1"])
+  })
+
+  test("F2: an org with a live subscription is blocked from a second checkout (409, no Polar call)", async () => {
+    for (const status of ["active", "trialing", "past_due"]) {
+      const polar = fakePolar()
+      const store = fakeStore({
+        checkoutContext: vi.fn(async () => ({
+          org_id: "org_doc_1",
+          clerk_org_id: "org_a",
+          role: "owner",
+          member_count: 3,
+          plan: "pro" as const,
+          subscription_status: status,
+        })),
+      })
+      const res = await app({ polar, store }).request(post("alice@org_a", { plan: "monthly" }))
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ error: { code: "billing_already_subscribed" } })
+      expect(polar.checkouts.create).not.toHaveBeenCalled()
+    }
+  })
+
+  test("F2: a free/canceled org still proceeds to checkout", async () => {
+    const polar = fakePolar()
+    const store = fakeStore({
+      checkoutContext: vi.fn(async () => ({
+        org_id: "org_doc_1",
+        clerk_org_id: "org_a",
+        role: "owner",
+        member_count: 3,
+        plan: "free" as const,
+        subscription_status: "canceled",
+      })),
+    })
+    const res = await app({ polar, store }).request(post("alice@org_a", { plan: "monthly" }))
+    expect(res.status).toBe(200)
+    expect(polar.checkouts.create).toHaveBeenCalledTimes(1)
   })
 
   test("defaults seats to the current member count; refuses below it (per-seat floor)", async () => {
@@ -269,5 +316,12 @@ describe("POST /portal", () => {
     const res = await app().request(post("alice@org_a"))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ url: "https://polar.sh/portal/cs_1" })
+  })
+
+  test("F9: portal resolves the ORG-scoped customer — a non-purchasing admin reaches the same customer", async () => {
+    const polar = fakePolar()
+    const res = await app({ polar }).request(post("bob@org_a"))
+    expect(res.status).toBe(200)
+    expect(polar.customerSessions.create).toHaveBeenCalledWith({ externalCustomerId: "org_org_doc_1" })
   })
 })

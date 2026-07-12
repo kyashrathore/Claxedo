@@ -7,7 +7,7 @@ import {
   flagStaleBillingSync,
   listReconcileFlagged,
 } from "../../../../convex/billing"
-import { applyClerkWebhook } from "../../../../convex/orgs"
+import { applyClerkWebhook, membershipByClerkIds } from "../../../../convex/orgs"
 
 /**
  * D5/D6 Convex policy (launch plan 012; ADR 014 §3/§4):
@@ -341,9 +341,22 @@ describe("entitlementState read model", () => {
     expect(await handler(entitlementState)({ db: store }, { service_token: SERVICE_TOKEN, org_id: "org_1" }))
       .toEqual({ found: false })
   })
+
+  test("F1: surfaces the current member_count so the entitlement layer can enforce seats", async () => {
+    const store = db({
+      orgs: [orgSeed({ plan: "pro", subscription_status: "active", seats_licensed: 2 })],
+      org_memberships: [
+        { _id: "m0", org_id: "org_1", user_id: "user_0", role: "owner" },
+        { _id: "m1", org_id: "org_1", user_id: "user_1", role: "member" },
+        { _id: "m2", org_id: "org_1", user_id: "user_2", role: "member" },
+      ] as Row[],
+    })
+    const state = await handler(entitlementState)({ db: store }, { service_token: SERVICE_TOKEN, org_id: "org_1" })
+    expect(state).toMatchObject({ found: true, seats_licensed: 2, member_count: 3 })
+  })
 })
 
-describe("seat hard-block (D6)", () => {
+describe("seat enforcement (D6 + F1: mirror never throws, entitlement enforces)", () => {
   const membershipEvent = (clerkSubject: string) => ({
     type: "organizationMembership.created",
     data: {
@@ -381,11 +394,15 @@ describe("seat hard-block (D6)", () => {
     expect(store.rows.org_memberships).toHaveLength(3)
   })
 
-  test("a member add AT the licensed seat count throws the typed seat_limit_reached error", async () => {
+  test("F1: a member add AT/OVER the licensed seat count STILL SYNCS — the mirror never throws", async () => {
+    // Regression for F1: enforceSeatCapacity used to throw here, 500ing the
+    // whole Svix delivery and wedging the mirror (revocations included). The
+    // over-cap join must now sync cleanly; the seat ceiling is enforced later,
+    // at the entitlement layer (see entitlement.test.ts seat_over_capacity).
     const store = seatStore({ seats: 3, members: 3 })
     await expect(handler(applyClerkWebhook)({ db: store }, membershipEvent("clerk_user_new")))
-      .rejects.toThrow(/^seat_limit_reached/)
-    expect(store.rows.org_memberships).toHaveLength(3)
+      .resolves.toEqual({ ok: true })
+    expect(store.rows.org_memberships).toHaveLength(4)
   })
 
   test("updating an EXISTING member's role is never seat-blocked", async () => {
@@ -415,6 +432,58 @@ describe("seat hard-block (D6)", () => {
     await expect(enforceSeatCapacity({ db: store } as never, personalOrg, "user_owner")).resolves.toBeUndefined()
     // …but the same personal org cannot take a SECOND member past its license.
     await expect(enforceSeatCapacity({ db: store } as never, personalOrg, "user_other")).rejects.toThrow(/^seat_limit_reached/)
+  })
+})
+
+describe("F12: membershipByClerkIds (connections-gate re-check)", () => {
+  function membershipStore() {
+    return db({
+      orgs: [orgSeed({ _id: "org_1", clerk_org_id: "clerk_org_1" })],
+      users: [
+        { _id: "user_member", clerk_subject: "clerk_member", token_identifier: "t_member" },
+        { _id: "user_outsider", clerk_subject: "clerk_outsider", token_identifier: "t_outsider" },
+      ] as Row[],
+      org_memberships: [{ _id: "m1", org_id: "org_1", user_id: "user_member", role: "admin" }] as Row[],
+    })
+  }
+  const check = (store: unknown, args: Record<string, unknown>) =>
+    handler(membershipByClerkIds)({ db: store }, { service_token: SERVICE_TOKEN, ...args })
+
+  test("a real member of the claimed org resolves member:true with the role", async () => {
+    const result = await check(membershipStore(), { clerk_org_id: "clerk_org_1", clerk_subject: "clerk_member" })
+    expect(result).toEqual({ member: true, org_id: "org_1", role: "admin" })
+  })
+
+  test("a subject with no membership in the claimed org is member:false (stale/forged claim)", async () => {
+    const result = await check(membershipStore(), { clerk_org_id: "clerk_org_1", clerk_subject: "clerk_outsider" })
+    expect(result).toEqual({ member: false })
+  })
+
+  test("unknown org id and unknown subject both fail closed (member:false)", async () => {
+    expect(await check(membershipStore(), { clerk_org_id: "clerk_ghost", clerk_subject: "clerk_member" }))
+      .toEqual({ member: false })
+    expect(await check(membershipStore(), { clerk_org_id: "clerk_org_1", clerk_subject: "clerk_nobody" }))
+      .toEqual({ member: false })
+  })
+
+  test("a deleted org never confirms membership", async () => {
+    const store = db({
+      orgs: [orgSeed({ _id: "org_1", clerk_org_id: "clerk_org_1", deleted_at: 42 })],
+      users: [{ _id: "user_member", clerk_subject: "clerk_member", token_identifier: "t_member" }] as Row[],
+      org_memberships: [{ _id: "m1", org_id: "org_1", user_id: "user_member", role: "admin" }] as Row[],
+    })
+    expect(await check(store, { clerk_org_id: "clerk_org_1", clerk_subject: "clerk_member" }))
+      .toEqual({ member: false })
+  })
+
+  test("rejects a bad service token (builder-gated)", async () => {
+    await expect(
+      handler(membershipByClerkIds)({ db: membershipStore() }, {
+        service_token: "wrong",
+        clerk_org_id: "clerk_org_1",
+        clerk_subject: "clerk_member",
+      }),
+    ).rejects.toThrow("Unauthenticated")
   })
 })
 

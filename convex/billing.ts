@@ -240,6 +240,12 @@ export const entitlementState = serviceQuery({
       plan: org.plan,
       subscription_status: org.subscription_status,
       seats_licensed: org.seats_licensed,
+      // F1 (adversarial review): the entitlement layer is now the seat
+      // enforcement point (the webhook mirror no longer hard-blocks joins). The
+      // current member count travels with the mirrored state so the pure
+      // decision (entitlement.ts) can deny an org that is OVER its licensed
+      // seats without a second Convex round-trip.
+      member_count: await orgMemberCount(ctx, org._id),
       current_period_end: org.current_period_end,
       billing_synced_at: org.billing_synced_at,
       polar_state_modified_at: org.polar_state_modified_at,
@@ -251,7 +257,7 @@ export const entitlementState = serviceQuery({
 // Personal-org resolution, duplicated on purpose from orgs.personalOrgForUser /
 // workspaces.ensureOwnerOrg (house precedent — those two are already copies of
 // each other). Importing from ./orgs here would create an orgs↔billing import
-// cycle, since orgs.ts calls enforceSeatCapacity below.
+// cycle.
 async function ensurePersonalOrg(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
   const existing = (await ctx.db
     .query("orgs")
@@ -327,16 +333,21 @@ export const checkoutContext = authedMutation({
 })
 
 /**
- * D6 seat enforcement helper — hard-block, no soft-allow (ADR 014 §4). Called
- * by every org-membership INSERT path for non-personal-owner members. Rules:
+ * D6 seat enforcement helper — hard-block, no soft-allow (ADR 014 §4).
+ *
+ * F1 (adversarial review): this is NO LONGER wired into the Clerk webhook
+ * mirror (convex/orgs.ts). Throwing inside the Svix-verified mirror was the
+ * wrong layer — it 500s the whole delivery and cannot actually block a join
+ * that Clerk already committed. Seat enforcement now lives at the entitlement
+ * layer (an over-seat org is denied hosted capabilities); this pure helper is
+ * retained for a future ADD-TIME choke point (a first-party invite/accept
+ * mutation, where throwing genuinely refuses the write) and its unit tests.
+ * Rules, when it IS called:
  * - personal-org owner membership is always allowed (the auto-created org of
  *   1 must never be blockable);
- * - no `seats_licensed` on the org = nothing licensed to exceed: free orgs
- *   accept members (free tier is identity + local workspaces; hosted
- *   capabilities are separately entitlement-gated), matching the launch
- *   rehearsal order signup → org → INVITE → subscribe;
+ * - no `seats_licensed` on the org = nothing licensed to exceed;
  * - with a license, adding beyond `seats_licensed` throws the typed
- *   `seat_limit_reached` error — the app shows the inline seat-purchase step.
+ *   `seat_limit_reached` error.
  */
 export async function enforceSeatCapacity(ctx: any, org: any, newMemberUserId: unknown) {
   if (!org) return

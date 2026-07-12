@@ -603,6 +603,66 @@ describe("connections host", () => {
     expect(hostedConnectionsEntitlement({ CLAXEDO_DEPLOYMENT_MODE: "self-host" })).toBeUndefined()
   })
 
+  // ── F12 (adversarial review; D2 vs D7): re-check org membership in Convex ──
+  // The team partition is keyed on the verified Clerk org_id claim, but a claim
+  // alone is not authorization — the host re-checks the subject is a real
+  // member of that org before granting the team partition.
+  test("F12 hosted: a verified member passes; a stale org claim with no membership gets 403", async () => {
+    const checked: Array<{ subject: string; orgId: string }> = []
+    const host = hostedHost({
+      verifyOrgMembership: async (input: { subject: string; orgId: string }) => {
+        checked.push(input)
+        return input.subject === "alice" && input.orgId === "org-a"
+      },
+    } as never)
+    await seedRow({ id: "team-org-a", owner: "org:org-a" })
+
+    const ok = await host.routes.request("http://cp.example/", { headers: { authorization: "Bearer alice@org-a" } })
+    expect(ok.status).toBe(200)
+    expect(((await ok.json()) as { connections: Array<{ id: string }> }).connections)
+      .toEqual([expect.objectContaining({ id: "team-org-a" })])
+
+    // mallory presents an org-a claim but is not a member per Convex → 403, no partition.
+    const denied = await host.routes.request("http://cp.example/", { headers: { authorization: "Bearer mallory@org-a" } })
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toEqual({ code: "connections_org_membership_required" })
+    expect(checked).toContainEqual({ subject: "alice", orgId: "org-a" })
+    host.dispose()
+  })
+
+  test("F12 self-host: builds NO membership verifier and the gate never checks (byte-identical)", async () => {
+    const { hostedOrgMembershipVerifier } = await import("./org-membership")
+    expect(hostedOrgMembershipVerifier({})).toBeUndefined()
+    expect(hostedOrgMembershipVerifier({ CLAXEDO_DEPLOYMENT_MODE: "self-host" })).toBeUndefined()
+
+    // Even if a verifier is injected, the self-host signed path never consults it.
+    const calls = { n: 0 }
+    const host = createConnectionsHost({
+      credentials: credentialsPort(),
+      env: {},
+      authConfig: { enabled: true, issuer: "https://issuer.example", jwksUrl: "https://issuer.example/jwks" },
+      verifier: async (token) => ({
+        mode: "signed",
+        user: { subject: token, tokenIdentifier: token, issuer: "https://issuer.example", orgId: "org-a" },
+      }),
+      verifyOrgMembership: async () => {
+        calls.n += 1
+        return false
+      },
+    } as never)
+    const res = await host.routes.request("http://relay.example/", { headers: { authorization: "Bearer alice" } })
+    expect(res.status).toBe(200)
+    expect(calls.n).toBe(0)
+    host.dispose()
+  })
+
+  test("F12 hosted builder: fails closed (false) when Convex config is absent — no unconfirmed grant", async () => {
+    const { hostedOrgMembershipVerifier } = await import("./org-membership")
+    const verify = hostedOrgMembershipVerifier({ CLAXEDO_DEPLOYMENT_MODE: "hosted" })
+    expect(verify).toBeTypeOf("function")
+    expect(await verify!({ subject: "alice", orgId: "org-a" })).toBe(false)
+  })
+
   test("google integration registers only when host env provides client credentials", () => {
     const without = createConnectionsHost({ credentials: credentialsPort(), env: {} })
     expect(without.service.listIntegrations().map((i) => i.id)).not.toContain("google")

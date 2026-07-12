@@ -59,10 +59,20 @@ jobs:
       # additive-only). D14 discipline: Convex SCHEMA changes ship SOLO — a
       # commit that changes convex/schema.ts should not also change Worker
       # code. Use .github/workflows/deploy-convex.yml for a schema-only push.
+      # F18 (adversarial review): run the SAME pre-flight gate deploy-convex.yml
+      # encodes before the real push — generate config + codegen + typecheck
+      # WITHOUT deploying, so a config/codegen/type error is caught before the
+      # unrollbackable Convex push (the auto-staging path previously deployed
+      # with `--typecheck disable` and no dry-run, bypassing this gate).
+      - name: Convex dry-run (config generation gate)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex deploy --dry-run --typecheck enable
+
       - name: Deploy Convex (staging deployment)
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex deploy --typecheck disable --message "staging ${GITHUB_SHA}"
+        run: bunx convex deploy --typecheck enable --message "staging ${GITHUB_SHA}"
 
       # wrangler resolves to the workspace-pinned version (4.50.0 via the
       # repo lockfile) after setup-bun's `bun install`.
@@ -139,10 +149,16 @@ jobs:
 
       # Same ADR ordering as staging: Convex before Worker. Schema changes
       # still ship solo (D14) — see deploy-convex.yml.
+      # F18: same pre-flight gate as staging / deploy-convex.yml before the push.
+      - name: Convex dry-run (config generation gate)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex deploy --dry-run --typecheck enable
+
       - name: Deploy Convex (production deployment)
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex deploy --typecheck disable --message "production ${GITHUB_SHA}"
+        run: bunx convex deploy --typecheck enable --message "production ${GITHUB_SHA}"
 
       # Top-level wrangler env = production (name = claxedo-control-plane).
       # D12: CLAXEDO_RELEASE = git SHA → Sentry release tagging.

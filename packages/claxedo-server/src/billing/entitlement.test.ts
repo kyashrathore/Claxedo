@@ -98,6 +98,68 @@ describe("entitlement matrix", () => {
     expect(entitlementDecision(state, "cloud-workspace", { graceDays: 14, now }).entitled).toBe(true)
   })
 
+  describe("F1: seat over-capacity denies an entitling subscription", () => {
+    const overSeat = (extra: Partial<EntitlementState> = {}): EntitlementState => ({
+      ...proState("active"),
+      seats_licensed: 3,
+      member_count: 5,
+      ...extra,
+    } as EntitlementState)
+
+    for (const capability of CAPABILITIES) {
+      test(`active but 5 members / 3 seats → not entitled (${capability})`, () => {
+        const decision = entitlementDecision(overSeat(), capability, { now })
+        expect(decision.entitled).toBe(false)
+        expect(decision).toMatchObject({ reason: "seat_over_capacity", memberCount: 5, seatsLicensed: 3 })
+      })
+    }
+
+    test("members == seats is within capacity (entitled)", () => {
+      expect(entitlementDecision(overSeat({ member_count: 3 }), "cloud-workspace", { now }).entitled).toBe(true)
+    })
+
+    test("F10: pro+active with seats_licensed undefined (unrecovered) has no cap → entitled", () => {
+      const noSeats = { ...proState("active"), seats_licensed: undefined, member_count: 9 } as EntitlementState
+      expect(entitlementDecision(noSeats, "cloud-workspace", { now }).entitled).toBe(true)
+    })
+
+    test("personal org (1 seat, 1 member) is never seat-blocked", () => {
+      const personal = { ...proState("active"), seats_licensed: 1, member_count: 1 } as EntitlementState
+      expect(entitlementDecision(personal, "hosted-connections", { now }).entitled).toBe(true)
+    })
+
+    test("a free/absent org is denied for free_tier BEFORE the seat check (order)", () => {
+      const free = { found: true, org_id: "o", plan: "free", seats_licensed: 1, member_count: 9 } as EntitlementState
+      expect(entitlementDecision(free, "cloud-workspace", { now })).toMatchObject({ reason: "free_tier" })
+    })
+
+    test("requireEntitlement throws the typed seat_over_capacity error carrying the counts", async () => {
+      const err = await requireEntitlement({ orgId: "org_over" }, "hosted-connections", {
+        reader: async () => overSeat(),
+        now,
+      }).catch((e) => e)
+      expect(err).toBeInstanceOf(BillingEntitlementError)
+      expect(err.code).toBe("seat_over_capacity")
+      expect(err.details).toEqual({ memberCount: 5, seatsLicensed: 3 })
+    })
+
+    test("the gate surfaces seat_over_capacity as a 402 typed denial", async () => {
+      const gate = createEntitlementGate({
+        env: {},
+        store: {
+          entitlementState: async () => overSeat(),
+          applyPolarState: async () => ({ results: [], unresolved: [] }),
+          checkoutContext: async () => ({ org_id: "x", member_count: 5 }),
+          listReconcileFlagged: async () => [],
+          listDeletedWithSubscription: async () => [],
+        },
+        now,
+      })
+      const denied = await gate({ orgId: "org_over" }, "cloud-workspace")
+      expect(denied).toMatchObject({ status: 402, body: { error: { code: "seat_over_capacity" } } })
+    })
+  })
+
   test("requireEntitlement throws the typed 402 error for a free org", async () => {
     await expect(
       requireEntitlement({ orgId: "org_doc_1" }, "cloud-workspace", {

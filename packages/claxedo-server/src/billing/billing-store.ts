@@ -62,6 +62,8 @@ export type EntitlementState =
       plan?: "free" | "pro"
       subscription_status?: string
       seats_licensed?: number
+      /** F1: current org member count — the entitlement decision denies an org over its licensed seats. */
+      member_count?: number
       current_period_end?: number
       billing_synced_at?: number
       polar_state_modified_at?: number
