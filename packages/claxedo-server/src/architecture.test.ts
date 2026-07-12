@@ -120,7 +120,16 @@ describe("harness-scoped resolution", () => {
       "CodexHarnessAdapter",
     ]
     const hits = files.flatMap((file) => {
-      const text = fs.readFileSync(path.resolve(import.meta.dirname, file), "utf-8")
+      // The boundary is about EXECUTION: the host bridge must not *run* harness
+      // adapters. `import type ... ` is erased at compile time and produces no
+      // runtime coupling, so a type-only import (e.g. a Pi backend resolver type
+      // used to shape a config field) is not a violation — strip those lines
+      // before scanning.
+      const text = fs
+        .readFileSync(path.resolve(import.meta.dirname, file), "utf-8")
+        .split("\n")
+        .filter((line) => !/^\s*import\s+type\b/.test(line))
+        .join("\n")
       return forbidden.flatMap((term) => (text.includes(term) ? [`${file}:${term}`] : []))
     })
 
