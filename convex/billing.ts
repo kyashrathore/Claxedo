@@ -377,3 +377,28 @@ export const listReconcileFlagged = serviceQuery({
       }))
   },
 })
+
+/**
+ * F4 (adversarial-review): deleted orgs that STILL carry a live Polar
+ * subscription — the "bills forever" path. Org delete (today: the Clerk
+ * `organization.deleted` webhook in convex/orgs.ts sets `deleted_at`) cannot
+ * call Polar; Convex holds no Polar credentials. So this surfaces the orgs for
+ * the Worker reconciliation sweep (src/billing/reconcile.ts) to CANCEL in Polar
+ * and then clear the local subscription id through the single writer. Note this
+ * is DELIBERATELY the deleted-org complement of `listReconcileFlagged` (which
+ * excludes deleted orgs): the stale-sync sweep must not re-fetch-and-reapply a
+ * deleted org's state, it must cancel it.
+ */
+export const listDeletedWithSubscription = serviceQuery({
+  args: {},
+  handler: async (ctx) => {
+    const orgs = await ctx.db.query("orgs").collect()
+    return orgs
+      .filter((org: any) => org.deleted_at !== undefined && org.polar_subscription_id && org.polar_customer_id)
+      .map((org: any) => ({
+        org_id: String(org._id),
+        polar_customer_id: org.polar_customer_id as string,
+        polar_subscription_id: org.polar_subscription_id as string,
+      }))
+  },
+})

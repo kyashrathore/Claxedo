@@ -25,6 +25,7 @@ type BillingApi = {
     entitlementState: FunctionReference<"query">
     checkoutContext: FunctionReference<"mutation">
     listReconcileFlagged: FunctionReference<"query">
+    listDeletedWithSubscription: FunctionReference<"query">
   }
 }
 
@@ -82,6 +83,9 @@ export type BillingStore = {
   applyPolarState(args: ApplyPolarStateArgs): Promise<ApplyPolarStateResult>
   checkoutContext(userToken: string, clerkOrgId?: string): Promise<CheckoutContext>
   listReconcileFlagged(): Promise<Array<{ org_id: string; polar_customer_id: string }>>
+  listDeletedWithSubscription(): Promise<
+    Array<{ org_id: string; polar_customer_id: string; polar_subscription_id: string }>
+  >
 }
 
 export type BillingStoreEnv = Record<string, string | undefined>
@@ -134,6 +138,11 @@ export function createBillingStore(env: BillingStoreEnv): BillingStore {
       return (await serviceClient().query(billingApi.billing.listReconcileFlagged as never, {
         service_token: serviceToken(),
       } as never)) as Array<{ org_id: string; polar_customer_id: string }>
+    },
+    async listDeletedWithSubscription() {
+      return (await serviceClient().query(billingApi.billing.listDeletedWithSubscription as never, {
+        service_token: serviceToken(),
+      } as never)) as Array<{ org_id: string; polar_customer_id: string; polar_subscription_id: string }>
     },
   }
 }

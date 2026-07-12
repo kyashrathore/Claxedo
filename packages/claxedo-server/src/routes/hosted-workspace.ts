@@ -27,7 +27,6 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthConfig,
   controlPlaneAuthErrorBody,
-  type SignedControlPlaneAuth,
 } from "../control-plane/auth"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { requireAuthority } from "../control-plane/authority"
@@ -48,20 +47,10 @@ import {
 } from "./workspace-user-hosted"
 import { normalizeClaxedoRegion } from "../region"
 
-export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
-  /**
-   * D6/B4 entitlement choke point (launch plan 2026-07-11-012; ADR 014 §5):
-   * hosted cloud-workspace creation is a paid capability. The hosted app
-   * composes this from src/billing/entitlement.ts (`createEntitlementGate` +
-   * authority org resolution); it returns a ready-to-serve denial (402 free
-   * tier / 503 mirror unreadable — both fail-closed) or undefined when
-   * entitled. Absent hook = no billing gate (route tests, future non-billing
-   * compositions); the hosted app always supplies it.
-   */
-  requireCloudWorkspaceEntitlement?: (
-    auth: SignedControlPlaneAuth,
-  ) => Promise<{ status: 400 | 401 | 402 | 403 | 503; body: unknown } | undefined>
-}
+// `requireCloudWorkspaceEntitlement` (the D6/B4 paid-capability gate for both
+// create and wake) now lives on the shared WorkspaceRouteOptions so the wake
+// choke point (workspace-hosted-connection-info.ts) reads the same hook.
+export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions
 
 const refreshConnectionBody = z
   .object({
@@ -198,7 +187,8 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       const rateLimit = await connectionRateLimitError(services, connectionRateLimiter, auth, workspaceId)
       if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
       const result = await hostedConnectionInfo(services, options, auth, workspaceId, previousJti)
-      if ("error" in result) return c.json({ error: result.error }, result.status as 400 | 403 | 409 | 503)
+      if ("error" in result)
+        return c.json({ error: result.error }, result.status as 400 | 401 | 402 | 403 | 409 | 503)
       if ("status" in result.connection && result.connection.status === "provisioning") {
         connectionRateLimiter.refund?.({ userId: auth.user.subject, workspaceId })
       }

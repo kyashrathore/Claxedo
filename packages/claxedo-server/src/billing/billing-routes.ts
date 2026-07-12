@@ -59,6 +59,17 @@ export type PolarClientLike = {
   customers: {
     getState(request: { id: string }): Promise<unknown>
   }
+  subscriptions: {
+    /**
+     * Immediate cancellation (MoR revoke). Used by the F4 deleted-org sweep:
+     * a deleted org is gone, so billing must stop now — not at period end.
+     * S2/SDK note: @polar-sh/sdk 0.48.1 exposes `subscriptions.revoke({ id })`
+     * for immediate termination; the reconciliation sweep tolerates a failure
+     * (leaves the org listed, retries next sweep) so an SDK-shape surprise
+     * degrades to bounded retry, never a lost cancel.
+     */
+    revoke(request: { id: string }): Promise<unknown>
+  }
 }
 
 function clean(value?: string) {

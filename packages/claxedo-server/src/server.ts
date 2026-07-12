@@ -15,6 +15,7 @@ import { configureAgentConfig } from "./agent-config"
 import { eventsHandler } from "./routes/events"
 import { peerAddressStamp } from "./routes/local-only-projection"
 import { createConnectionsHost } from "./connections-host/connections-host"
+import { hostedConnectionsEntitlement } from "./connections-host/connections-entitlement"
 import { createConnectionTurnCredentials } from "./connections-host/turn-credentials"
 import { mirrorProcessEvents } from "./process-events"
 import { PagesRoutes } from "./routes/pages"
@@ -423,10 +424,15 @@ export function createApp(services: ControlPlaneServices, options: {
   // Connections framework
   // (docs/plans/2026-07-03-004-feat-connections-framework-plan.md): kit routes
   // with host-injected gates — auth on every route, loopback+header on token.
+  // F5: the hosted-connections entitlement hook — undefined on self-host (never
+  // gated, byte-identical), a fail-closed billing gate in hosted mode so a free
+  // org is denied once CLAXEDO_HOSTED_CREDENTIALS_ENABLED is flipped on.
+  const requireHostedConnectionsEntitlement = hostedConnectionsEntitlement(process.env)
   const connectionsHost = createConnectionsHost({
     credentials: services.credentials,
     turnCredentials,
     ...authRouteOptions(services),
+    ...(requireHostedConnectionsEntitlement ? { requireHostedConnectionsEntitlement } : {}),
   })
   app.route("/api/claxedo/integrations", connectionsHost.routes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))

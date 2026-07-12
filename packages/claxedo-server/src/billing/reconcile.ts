@@ -67,6 +67,64 @@ export async function reconcileBillingState(input: {
   return { flagged: flagged.length, applied, failed }
 }
 
+export type CancelDeletedResult = {
+  deleted: number
+  canceled: number
+  failed: number
+}
+
+/**
+ * F4 (adversarial-review): an org deleted while it still holds a live Polar
+ * subscription is billed forever — org delete cannot reach Polar (Convex holds
+ * no Polar credentials), and the stale-sync sweep excludes deleted orgs. This
+ * sweep closes that hole: for each deleted-but-subscribed org, cancel in Polar,
+ * then clear the local subscription id through the single writer.
+ *
+ * The clear is applied as a `subscription_event` free-state write — a terminal
+ * cancellation, targeting ONLY this org (subscription_event never does the
+ * full-state sibling downgrade), so a customer that owns other live-subscribed
+ * orgs under the same Polar customer is untouched.
+ *
+ * Failure semantics mirror reconcileBillingState: a Polar/Convex error reports
+ * and LEAVES the org listed (it stays deleted-with-subscription, retried next
+ * sweep) — a transient hiccup never silently abandons the cancel.
+ */
+export async function cancelDeletedOrgSubscriptions(input: {
+  env: BillingEnv
+  store?: BillingStore
+  polar?: PolarClientLike
+}): Promise<CancelDeletedResult> {
+  const store = input.store ?? createBillingStore(input.env)
+  const polar = input.polar ?? polarClientFromEnv(input.env)
+  if (!polar) throw new Error("Polar access token is not configured (CLAXEDO_POLAR_ACCESS_TOKEN)")
+
+  const deleted = await store.listDeletedWithSubscription()
+  let canceled = 0
+  let failed = 0
+  for (const org of deleted) {
+    try {
+      await polar.subscriptions.revoke({ id: org.polar_subscription_id })
+      // Clear the local subscription id via the single writer (billing.ts
+      // applyPolarState). Terminal cancel = free plan; subscription_event
+      // source so only THIS org is touched.
+      await store.applyPolarState({
+        polar_customer_id: org.polar_customer_id,
+        source_ts: Date.now(),
+        source: "subscription_event",
+        org_states: [{ org_id: org.org_id, state: { plan: "free", subscription_status: "canceled" } }],
+      })
+      canceled += 1
+    } catch (err) {
+      failed += 1
+      reportPaymentError(err, {
+        tags: { source: "billing_reconcile", reason: "deleted_org_cancel_failed" },
+        extra: { orgId: org.org_id, polarSubscriptionId: org.polar_subscription_id },
+      })
+    }
+  }
+  return { deleted: deleted.length, canceled, failed }
+}
+
 /**
  * Cron-trigger entrypoint called from worker.ts `scheduled`. Deliberately
  * throw-free: the sandbox GC half of the shared cron must not be marked
@@ -80,5 +138,13 @@ export async function runScheduledBillingReconciliation(env: BillingEnv): Promis
     await reconcileBillingState({ env })
   } catch (err) {
     reportPaymentError(err, { tags: { source: "billing_reconcile", reason: "sweep_failed" } })
+  }
+  // Independent try/catch: a stale-sync failure must not skip the deleted-org
+  // cancel sweep (and vice versa) — the "bills forever" path is the costlier
+  // one to starve.
+  try {
+    await cancelDeletedOrgSubscriptions({ env })
+  } catch (err) {
+    reportPaymentError(err, { tags: { source: "billing_reconcile", reason: "cancel_sweep_failed" } })
   }
 }

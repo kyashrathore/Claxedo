@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { describe, expect, test, beforeEach, afterAll, vi } from "vitest"
 import { realpathSync, mkdirSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
@@ -551,6 +551,56 @@ describe("connections host", () => {
     expect(res.status).toBe(200)
     expect(gate.calls).toBe(0)
     host.dispose()
+  })
+
+  // ── F5 (adversarial-review): the PRODUCTION composition wires the hook ──
+  // `connections-entitlement.ts` (imported by server.ts) is the missing wiring
+  // the review flagged as dead code. Prove the real builder gates a free org
+  // and admits an entitled one through the full connections-host surface, and
+  // that self-host produces no hook at all (byte-identical, never gated).
+  test("F5 wiring: hosted + flag-on + free org → 402; entitled org → allowed (real builder)", async () => {
+    const { hostedConnectionsEntitlement } = await import("./connections-entitlement")
+    const entitlementState = async ({ clerkOrgId }: { orgId?: string; clerkOrgId?: string }) =>
+      clerkOrgId === "org-paid"
+        ? {
+            found: true as const,
+            org_id: "org_doc_paid",
+            plan: "pro" as const,
+            subscription_status: "active",
+          }
+        : { found: false as const }
+    const store = {
+      entitlementState: vi.fn(entitlementState),
+      applyPolarState: vi.fn(),
+      checkoutContext: vi.fn(),
+      listReconcileFlagged: vi.fn(),
+      listDeletedWithSubscription: vi.fn(),
+    } as unknown as import("../billing/billing-store").BillingStore
+
+    const requireHostedConnectionsEntitlement = hostedConnectionsEntitlement({ ...HOSTED_ENV }, { store })
+    expect(requireHostedConnectionsEntitlement).toBeTypeOf("function")
+    const host = hostedHost({ requireHostedConnectionsEntitlement } as never)
+    await seedRow({ id: "team-org-paid", owner: "org:org-paid" })
+
+    const denied = await host.routes.request("http://cp.example/", {
+      headers: { authorization: "Bearer alice@org-free" },
+    })
+    expect(denied.status).toBe(402)
+    expect(await denied.json()).toMatchObject({ error: { code: "billing_entitlement_required" } })
+
+    const allowed = await host.routes.request("http://cp.example/", {
+      headers: { authorization: "Bearer bob@org-paid" },
+    })
+    expect(allowed.status).toBe(200)
+    expect(((await allowed.json()) as { connections: Array<{ id: string }> }).connections)
+      .toEqual([expect.objectContaining({ id: "team-org-paid" })])
+    host.dispose()
+  })
+
+  test("F5 wiring: self-host builds NO hook (undefined) — never gated (I-1)", async () => {
+    const { hostedConnectionsEntitlement } = await import("./connections-entitlement")
+    expect(hostedConnectionsEntitlement({})).toBeUndefined()
+    expect(hostedConnectionsEntitlement({ CLAXEDO_DEPLOYMENT_MODE: "self-host" })).toBeUndefined()
   })
 
   test("google integration registers only when host env provides client credentials", () => {

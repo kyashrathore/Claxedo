@@ -26,6 +26,21 @@ export type WorkspaceRouteOptions = {
   hostTunnelTokenSigner?: HostTunnelTokenSigner
   connectionRateLimiter?: ConnectionRateLimiter
   controlPlaneRateLimiter?: ConnectionRateLimiter
+  /**
+   * D6/B4 entitlement choke point (launch plan 2026-07-11-012; ADR 014 §5;
+   * adversarial-review F3): hosted cloud-workspace capability is paid at BOTH
+   * create AND wake/resume — a canceled subscription must not keep an existing
+   * cloud workspace wake-able forever. The hosted app composes this from
+   * src/billing/entitlement.ts (`createEntitlementGate` + authority org
+   * resolution); it returns a ready-to-serve denial (402 free tier / 503 mirror
+   * unreadable — both fail-closed) or undefined when entitled. Absent hook = no
+   * billing gate (route tests, self-host / local compositions never supply it);
+   * the hosted app always supplies it. Only ever consulted for HOSTED cloud
+   * workspaces (the wake choke point guards on backing=cloud-vm/access=cloud).
+   */
+  requireCloudWorkspaceEntitlement?: (
+    auth: SignedControlPlaneAuth,
+  ) => Promise<{ status: 400 | 401 | 402 | 403 | 503; body: unknown } | undefined>
 }
 
 export function relayRole(input?: string): RelayRole {

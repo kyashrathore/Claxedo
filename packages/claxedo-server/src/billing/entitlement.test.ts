@@ -93,6 +93,7 @@ describe("entitlement gate composition (choke-point adapter)", () => {
         applyPolarState: async () => ({ results: [], unresolved: [] }),
         checkoutContext: async () => ({ org_id: "x", member_count: 1 }),
         listReconcileFlagged: async () => [],
+        listDeletedWithSubscription: async () => [],
       },
       now,
     })
@@ -111,6 +112,7 @@ describe("entitlement gate composition (choke-point adapter)", () => {
         applyPolarState: async () => ({ results: [], unresolved: [] }),
         checkoutContext: async () => ({ org_id: "x", member_count: 1 }),
         listReconcileFlagged: async () => [],
+        listDeletedWithSubscription: async () => [],
       },
       now,
     })

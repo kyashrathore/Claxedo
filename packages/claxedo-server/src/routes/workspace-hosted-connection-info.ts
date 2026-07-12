@@ -44,6 +44,25 @@ export async function hostedConnectionInfo(
       status: 400,
     } as const
   }
+  // F3 (adversarial-review): enforce the cloud-workspace entitlement at
+  // wake/resume, not only at create — otherwise a canceled subscription leaves
+  // existing cloud workspaces wake-able forever. Reached ONLY for HOSTED cloud
+  // workspaces (backing=cloud-vm / access=cloud, asserted above); the hook is
+  // composed exclusively in hosted-app.ts, so self-host / local never gate.
+  // Denied → the typed billing_entitlement_required (402) the frontend acts on,
+  // BEFORE any sandbox wake side effect.
+  if (options.requireCloudWorkspaceEntitlement) {
+    const denied = await options.requireCloudWorkspaceEntitlement(auth)
+    if (denied) {
+      const body = denied.body as { error?: { code: string; message: string } } | undefined
+      return {
+        error:
+          body?.error ??
+          apiError("billing_entitlement_required", "An active Claxedo Cloud subscription is required"),
+        status: denied.status,
+      } as const
+    }
+  }
   const hostManager = services?.sandbox.sandboxManager
   if (!hostManager) {
     return {

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { reconcileBillingState, runScheduledBillingReconciliation } from "./reconcile"
+import { cancelDeletedOrgSubscriptions, reconcileBillingState, runScheduledBillingReconciliation } from "./reconcile"
 import type { BillingStore } from "./billing-store"
 import type { PolarClientLike } from "./billing-routes"
 
@@ -16,21 +16,29 @@ const ENV = {
   CLAXEDO_POLAR_PRODUCT_YEARLY: "prod_yearly",
 }
 
-function fakeStore(flagged: Array<{ org_id: string; polar_customer_id: string }>) {
+function fakeStore(
+  flagged: Array<{ org_id: string; polar_customer_id: string }>,
+  deleted: Array<{ org_id: string; polar_customer_id: string; polar_subscription_id: string }> = [],
+) {
   return {
     entitlementState: vi.fn(async () => ({ found: false as const })),
     applyPolarState: vi.fn(async () => ({ results: [], unresolved: [] })),
     checkoutContext: vi.fn(),
     listReconcileFlagged: vi.fn(async () => flagged),
+    listDeletedWithSubscription: vi.fn(async () => deleted),
   } as unknown as BillingStore & { applyPolarState: ReturnType<typeof vi.fn> }
 }
 
-function fakePolar(getState: (args: { id: string }) => Promise<unknown>) {
+function fakePolar(
+  getState: (args: { id: string }) => Promise<unknown>,
+  revoke?: (args: { id: string }) => Promise<unknown>,
+) {
   return {
     checkouts: { create: vi.fn() },
     customerSessions: { create: vi.fn() },
     customers: { getState: vi.fn(getState) },
-  } as unknown as PolarClientLike
+    subscriptions: { revoke: vi.fn(revoke ?? (async () => ({}))) },
+  } as unknown as PolarClientLike & { subscriptions: { revoke: ReturnType<typeof vi.fn> } }
 }
 
 describe("reconcileBillingState", () => {
@@ -88,6 +96,59 @@ describe("reconcileBillingState", () => {
     const result = await reconcileBillingState({ env: ENV, store, polar })
     expect(result).toEqual({ flagged: 2, applied: 1, failed: 1 })
     expect(store.applyPolarState).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("cancelDeletedOrgSubscriptions (F4: deleted org billed forever)", () => {
+  test("deleted org with a live subscription is canceled in Polar and cleared locally", async () => {
+    const store = fakeStore([], [
+      { org_id: "org_doc_1", polar_customer_id: "cus_1", polar_subscription_id: "sub_1" },
+    ])
+    const polar = fakePolar(async () => ({}))
+
+    const result = await cancelDeletedOrgSubscriptions({ env: ENV, store, polar })
+    expect(result).toEqual({ deleted: 1, canceled: 1, failed: 0 })
+    expect((polar as unknown as { subscriptions: { revoke: ReturnType<typeof vi.fn> } }).subscriptions.revoke)
+      .toHaveBeenCalledWith({ id: "sub_1" })
+    // Local subscription id cleared through the single writer, targeting ONLY
+    // this org (subscription_event source → no sibling downgrade).
+    expect(store.applyPolarState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        polar_customer_id: "cus_1",
+        source: "subscription_event",
+        org_states: [{ org_id: "org_doc_1", state: { plan: "free", subscription_status: "canceled" } }],
+      }),
+    )
+  })
+
+  test("deleted org with NO subscription is never surfaced (query excludes it) → nothing canceled", async () => {
+    const store = fakeStore([], [])
+    const polar = fakePolar(async () => ({}))
+
+    const result = await cancelDeletedOrgSubscriptions({ env: ENV, store, polar })
+    expect(result).toEqual({ deleted: 0, canceled: 0, failed: 0 })
+    expect((polar as unknown as { subscriptions: { revoke: ReturnType<typeof vi.fn> } }).subscriptions.revoke)
+      .not.toHaveBeenCalled()
+    expect(store.applyPolarState).not.toHaveBeenCalled()
+  })
+
+  test("Polar cancel failure reports, leaves the org listed, clears NOTHING (retry next sweep)", async () => {
+    const store = fakeStore([], [
+      { org_id: "org_doc_1", polar_customer_id: "cus_1", polar_subscription_id: "sub_1" },
+      { org_id: "org_doc_2", polar_customer_id: "cus_2", polar_subscription_id: "sub_2" },
+    ])
+    const polar = fakePolar(async () => ({}), async ({ id }) => {
+      if (id === "sub_1") throw new Error("polar revoke failed")
+      return {}
+    })
+
+    const result = await cancelDeletedOrgSubscriptions({ env: ENV, store, polar })
+    // One failed, one succeeded — the failure does not stop the sweep.
+    expect(result).toEqual({ deleted: 2, canceled: 1, failed: 1 })
+    expect(store.applyPolarState).toHaveBeenCalledTimes(1)
+    expect(store.applyPolarState).toHaveBeenCalledWith(
+      expect.objectContaining({ org_states: [expect.objectContaining({ org_id: "org_doc_2" })] }),
+    )
   })
 })
 
