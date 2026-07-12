@@ -116,31 +116,51 @@ const handler = {
   // cron invocation is recorded as failed and reaches Sentry via withSentry —
   // a silently-dead reaper is the failure mode this design exists to avoid.
   async scheduled(_controller: ScheduledController, env: HostedWorkerEnv, ctx?: ExecutionContext): Promise<void> {
-    const app = buildApp(env)
-    const token = env.CLAXEDO_RUNTIME_ADMIN_TOKEN?.trim()
-    if (!token) {
-      throw new Error("Sandbox reconciliation cron requires CLAXEDO_RUNTIME_ADMIN_TOKEN")
-    }
-    const response = await app.fetch(
-      new Request("https://control-plane.cron.internal/internal/sandbox-manager/gc", {
-        method: "POST",
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      env,
-      ctx,
-    )
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "")
-      throw new Error(`Sandbox reconciliation cron failed: ${response.status} ${detail}`.trim())
+    // F17 (adversarial review): the sandbox GC sweep and the billing
+    // reconciliation sweep are ISOLATED — a throwing/failing GC pass must not
+    // starve the billing sweep (the downgrade-recovery + deleted-org "bills
+    // forever" paths). Each runs under its own try/catch; the GC failure is
+    // captured and RE-THROWN after billing runs so the cron invocation is still
+    // recorded as failed and reaches Sentry via withSentry (a silently-dead
+    // reaper is the money leak this design exists to avoid).
+    let gcError: unknown
+    try {
+      const app = buildApp(env)
+      const token = env.CLAXEDO_RUNTIME_ADMIN_TOKEN?.trim()
+      if (!token) {
+        throw new Error("Sandbox reconciliation cron requires CLAXEDO_RUNTIME_ADMIN_TOKEN")
+      }
+      const response = await app.fetch(
+        new Request("https://control-plane.cron.internal/internal/sandbox-manager/gc", {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}` },
+        }),
+        env,
+        ctx,
+      )
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "")
+        throw new Error(`Sandbox reconciliation cron failed: ${response.status} ${detail}`.trim())
+      }
+    } catch (err) {
+      gcError = err
     }
 
     // D5 billing reconciliation sweep (ADR 014 §3): re-fetch Polar customer
     // state for orgs the Convex cron flagged as stale and re-apply it through
-    // the single writer. Throw-free by design — a billing hiccup pages via
-    // reportPaymentError but must not mark the sandbox GC cron run failed,
-    // and the Convex-side flag persists so the next run retries. No-op when
-    // CLAXEDO_POLAR_ACCESS_TOKEN is absent (billing not deployed).
-    await runScheduledBillingReconciliation(env)
+    // the single writer. Runs INDEPENDENTLY of the GC outcome above. Already
+    // throw-free (a billing hiccup pages via reportPaymentError and the Convex
+    // flag persists for the next run); wrapped anyway so a future throw here
+    // cannot mask the GC failure. No-op when CLAXEDO_POLAR_ACCESS_TOKEN is
+    // absent (billing not deployed).
+    try {
+      await runScheduledBillingReconciliation(env)
+    } catch (err) {
+      reportError(err, { tags: { source: "worker_scheduled", reason: "billing_sweep_failed" } })
+    }
+
+    // Surface the GC failure now that billing has had its independent run.
+    if (gcError) throw gcError
   },
 }
 

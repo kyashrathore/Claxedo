@@ -111,6 +111,31 @@ export function hostedBootRequirementFailures(
     // displace the hosted issuer (the composition prefers it): hard conflict.
     failures.push("embedded self-host auth is enabled (unset CLAXEDO_EMBEDDED_AUTH; hosted mode requires the hosted issuer)")
   }
+  // F8 (adversarial review): when hosted credential storage is turned on
+  // (CLAXEDO_HOSTED_CREDENTIALS_ENABLED), the credential backend MUST resolve to
+  // the envelope-encrypted Cloudflare KV path — the store selects KV only when
+  // CLAXEDO_CF_KV_URL is set (credentials/store.ts isHosted), and the encrypted
+  // KV backend refuses to construct without the KV token and the envelope KEK
+  // (credentials/cloudflare.ts + envelope.ts). If the flag is on but any piece
+  // is missing, the store silently falls back to the LOCAL FILE backend —
+  // writing hosted org credentials to disk and bypassing D10 envelope
+  // encryption. Fail CLOSED at boot naming every missing piece, so hosted +
+  // flag-on can never serve credentials from the unencrypted local store.
+  if (flagEnabled(env.CLAXEDO_HOSTED_CREDENTIALS_ENABLED)) {
+    if (!clean(env.CLAXEDO_CF_KV_URL)) {
+      failures.push(
+        "hosted credentials are enabled but no encrypted-KV backend (set CLAXEDO_CF_KV_URL; without it the credential store falls back to the local file store, bypassing D10 envelope encryption)",
+      )
+    }
+    if (!clean(env.CLAXEDO_CF_KV_TOKEN)) {
+      failures.push("hosted credentials are enabled but the KV byte store has no token (set CLAXEDO_CF_KV_TOKEN)")
+    }
+    if (!clean(env.CLAXEDO_CREDENTIALS_KEK)) {
+      failures.push(
+        "hosted credentials are enabled but the envelope encryption key is absent (set CLAXEDO_CREDENTIALS_KEK; the encrypted KV store refuses to operate without it)",
+      )
+    }
+  }
   return failures
 }
 

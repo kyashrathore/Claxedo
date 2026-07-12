@@ -65,6 +65,8 @@ export type EntitlementState =
       current_period_end?: number
       billing_synced_at?: number
       polar_state_modified_at?: number
+      /** F11: wall-clock of the FIRST past_due transition — the grace anchor. */
+      past_due_since?: number
     }
 
 export type CheckoutContext = {

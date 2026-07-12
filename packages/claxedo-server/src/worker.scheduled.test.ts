@@ -11,6 +11,14 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
  */
 
 const appFetch = vi.fn(async () => new Response("ok"))
+const runBillingSweep = vi.fn(async (_env: unknown) => {})
+
+// F17: the billing reconciliation sweep is mocked so the test can assert it
+// runs (or not) independently of the sandbox GC pass. Env lacks a Polar token
+// anyway, so the real sweep is a no-op — this just makes the call observable.
+vi.mock("./billing/reconcile", () => ({
+  runScheduledBillingReconciliation: (env: unknown) => runBillingSweep(env),
+}))
 
 vi.mock("./control-plane/hosted-services", () => ({
   composeHostedControlPlane: vi.fn(() => ({})),
@@ -42,6 +50,8 @@ function runtimeCtx() {
 beforeEach(() => {
   appFetch.mockClear()
   appFetch.mockImplementation(async () => new Response("ok"))
+  runBillingSweep.mockClear()
+  runBillingSweep.mockImplementation(async () => {})
 })
 
 describe("worker scheduled handler", () => {
@@ -74,5 +84,28 @@ describe("worker scheduled handler", () => {
 
     await expect(worker.scheduled(controller, { CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin_secret" }, runtimeCtx()))
       .rejects.toThrow("501")
+  })
+
+  test("F17: a failing sandbox GC still runs the billing sweep, and the GC failure still throws", async () => {
+    const worker = (await import("./worker")).default as unknown as ScheduledWorker
+    appFetch.mockImplementation(async () => new Response("sandbox down", { status: 500 }))
+    const env = { CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin_secret" }
+
+    // The GC failure is still surfaced (cron recorded failed → Sentry)…
+    await expect(worker.scheduled(controller, env, runtimeCtx())).rejects.toThrow("500")
+    // …but the billing reconciliation sweep ran regardless (isolated).
+    expect(runBillingSweep).toHaveBeenCalledTimes(1)
+    expect(runBillingSweep).toHaveBeenCalledWith(env)
+  })
+
+  test("F17: a throwing billing sweep does not mask the GC failure, and does not run when GC succeeds cleanly the sweep still runs", async () => {
+    const worker = (await import("./worker")).default as unknown as ScheduledWorker
+    // GC succeeds; a throwing billing sweep is swallowed (reported), handler resolves.
+    runBillingSweep.mockImplementation(async () => {
+      throw new Error("billing convex down")
+    })
+    const env = { CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin_secret" }
+    await expect(worker.scheduled(controller, env, runtimeCtx())).resolves.toBeUndefined()
+    expect(runBillingSweep).toHaveBeenCalledTimes(1)
   })
 })

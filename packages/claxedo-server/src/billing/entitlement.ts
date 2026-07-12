@@ -11,7 +11,8 @@
  * Fail-closed (I-4): unknown org, absent fields, unknown status → free tier →
  * not entitled. `active` and `trialing` entitle; `past_due` entitles within
  * the grace window (CLAXEDO_BILLING_PAST_DUE_GRACE_DAYS, default 7 — plan OQ-4),
- * anchored on when the past_due state was applied to the mirror.
+ * anchored on the FIRST past_due transition (past_due_since, F11) — not
+ * re-anchored per dunning webhook.
  */
 
 import { reportPaymentError } from "../observability/report"
@@ -61,10 +62,14 @@ export function entitlementDecision(
   if (status === "active" || status === "trialing") return { entitled: true, status }
   if (status === "past_due") {
     const graceDays = options.graceDays ?? DEFAULT_PAST_DUE_GRACE_DAYS
-    // Grace anchored on when the past_due state landed on the mirror; without
-    // an anchor (should not happen — applyPolarState always stamps it) fail
-    // closed rather than granting an unbounded grace.
-    const anchor = state.polar_state_modified_at ?? state.billing_synced_at
+    // F11: grace anchors on the FIRST past_due transition (past_due_since),
+    // which applyPolarState stamps once and preserves across dunning retries —
+    // NOT on polar_state_modified_at / billing_synced_at, which each dunning
+    // webhook refreshes (that would re-extend grace for the whole dunning
+    // cycle). Fall back to the older anchors only for rows written before the
+    // field existed. Without any anchor, fail closed rather than granting an
+    // unbounded grace.
+    const anchor = state.past_due_since ?? state.polar_state_modified_at ?? state.billing_synced_at
     if (anchor === undefined) return { entitled: false, reason: "grace_expired" }
     const now = options.now?.() ?? Date.now()
     if (now <= anchor + graceDays * DAY_MS) return { entitled: true, status }

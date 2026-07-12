@@ -119,6 +119,23 @@ describe("envelope encryption wrapper", () => {
     await expect(backend.get(ref)).rejects.toThrow(/failed authentication/)
   })
 
+  test("F16: ciphertext is bound to its storage id — decrypting under a DIFFERENT id fails", async () => {
+    const inner = memoryBackend()
+    const backend = encryptedSecretBackend(inner, createStaticKeyProvider({ current: kek(1) }), { orgId: "org-a" })
+
+    const ref = await backend.put("cred-a", "slot-a-secret")
+    // Rightful slot still reads.
+    expect(await backend.get(ref)).toBe("slot-a-secret")
+
+    // Simulate a within-org blob relocation/rollback under the leaked-KV-token
+    // threat: copy the ciphertext verbatim into a DIFFERENT credential slot.
+    const stored = inner.values.get(ref)!
+    inner.values.set("mem:cred-b", stored)
+    // Same org key decrypts the bytes, but the GCM AAD (bound to the id) no
+    // longer matches → authentication fails, the blob is never served.
+    await expect(backend.get("mem:cred-b")).rejects.toThrow(/failed authentication/)
+  })
+
   test("refuses to serve values that are not envelopes (plaintext hole stays closed)", async () => {
     const inner = memoryBackend()
     const backend = encryptedSecretBackend(inner, createStaticKeyProvider({ current: kek(1) }), { orgId: "org-a" })

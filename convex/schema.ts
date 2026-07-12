@@ -50,6 +50,15 @@ export default defineSchema({
     polar_state_modified_at: v.optional(v.number()),
     /** Set by the crons.ts staleness sweep; cleared by the next applyPolarState. */
     billing_reconcile_flagged_at: v.optional(v.number()),
+    /**
+     * F11 (adversarial review): wall-clock when the org FIRST transitioned into
+     * `past_due`. Stamped once on the entry transition and PRESERVED across
+     * subsequent dunning webhooks (which would otherwise re-anchor the grace
+     * window every retry). Entitlement's grace window measures from here, not
+     * from billing_synced_at / the current write time. Cleared when the org
+     * leaves past_due (recovers or terminates). Additive/optional → pure EXPAND.
+     */
+    past_due_since: v.optional(v.number()),
     created_at: v.number(),
     updated_at: v.number(),
   })

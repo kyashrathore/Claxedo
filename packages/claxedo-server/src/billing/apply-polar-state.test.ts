@@ -115,6 +115,28 @@ describe("customer.state_changed translation", () => {
     })
   })
 
+  describe("F19: a payload with no usable source timestamp is rejected, never stamped now()", () => {
+    test("no customer modified_at AND no subscription timestamps → undefined (replay guard preserved)", () => {
+      const args = customerStateToApplyArgs({ id: "cus_1", active_subscriptions: [] }, PRODUCTS)
+      expect(args).toBeUndefined()
+    })
+
+    test("a subscription that carries modified_at is enough to anchor, even without a customer modified_at", () => {
+      const args = customerStateToApplyArgs(
+        { id: "cus_1", active_subscriptions: [wireSubscription()] },
+        PRODUCTS,
+      )
+      expect(args).toBeDefined()
+      expect(args!.source_ts).toBe(Date.parse("2026-07-12T10:00:00.000Z"))
+    })
+
+    test("webhook routing surfaces the timestamp-less customer.state_changed as untranslatable (route reports + acks)", () => {
+      expect(
+        webhookEventToApplyArgs({ type: "customer.state_changed", data: { id: "cus_1", active_subscriptions: [] } }, PRODUCTS),
+      ).toBeUndefined()
+    })
+  })
+
   test("multiple org subscriptions on one customer split into per-org states", () => {
     const args = customerStateToApplyArgs(
       {

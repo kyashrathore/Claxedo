@@ -131,6 +131,17 @@ async function applyStateToOrg(ctx: any, org: any, input: {
   const seats = state.plan === "pro" && state.preserve_seats && state.seats_licensed === undefined
     ? org.seats_licensed
     : state.seats_licensed
+  // F11 (adversarial review): grace anchors on the FIRST past_due transition,
+  // never re-anchoring per dunning webhook. Stamp past_due_since only when the
+  // org was NOT already past_due; preserve the existing anchor across every
+  // subsequent dunning event; clear it once the org leaves past_due.
+  const becomingPastDue = state.subscription_status === "past_due"
+  const wasPastDue = org.subscription_status === "past_due"
+  const past_due_since = becomingPastDue
+    ? wasPastDue
+      ? org.past_due_since ?? now
+      : now
+    : undefined
   await ctx.db.patch(org._id, {
     plan: state.plan,
     polar_customer_id: input.polar_customer_id,
@@ -138,6 +149,7 @@ async function applyStateToOrg(ctx: any, org: any, input: {
     seats_licensed: seats,
     subscription_status: state.subscription_status,
     current_period_end: state.current_period_end,
+    past_due_since,
     billing_synced_at: now,
     polar_state_modified_at: input.source_ts,
     billing_reconcile_flagged_at: undefined,
@@ -231,6 +243,7 @@ export const entitlementState = serviceQuery({
       current_period_end: org.current_period_end,
       billing_synced_at: org.billing_synced_at,
       polar_state_modified_at: org.polar_state_modified_at,
+      past_due_since: org.past_due_since,
     }
   },
 })

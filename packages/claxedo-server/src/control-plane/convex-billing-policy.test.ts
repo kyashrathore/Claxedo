@@ -261,6 +261,28 @@ describe("applyPolarState (D5 single writer)", () => {
     expect(store.rows.orgs![0]).toMatchObject({ plan: "free", subscription_status: "revoked" })
   })
 
+  test("F11: past_due_since anchors on the FIRST transition and is preserved across dunning retries", async () => {
+    const store = db({ orgs: [orgSeed({ polar_customer_id: "cus_1", plan: "pro", subscription_status: "active", polar_state_modified_at: 500, seats_licensed: 3 })] })
+    const pastDue = { plan: "pro" as const, subscription_status: "past_due", polar_subscription_id: "sub_1", seats_licensed: 3 }
+
+    // First past_due transition stamps the anchor.
+    await apply(store, { polar_customer_id: "cus_1", source_ts: 1000, source: "subscription_event", org_states: [{ org_id: "org_1", state: pastDue }] })
+    const anchor = store.rows.orgs![0].past_due_since
+    expect(typeof anchor).toBe("number")
+
+    // Two more dunning retries (newer source timestamps → they DO apply) must
+    // NOT re-anchor: the grace window measures from the first transition.
+    await apply(store, { polar_customer_id: "cus_1", source_ts: 2000, source: "subscription_event", org_states: [{ org_id: "org_1", state: pastDue }] })
+    await apply(store, { polar_customer_id: "cus_1", source_ts: 3000, source: "subscription_event", org_states: [{ org_id: "org_1", state: pastDue }] })
+    expect(store.rows.orgs![0].past_due_since).toBe(anchor)
+    expect(store.rows.orgs![0]).toMatchObject({ subscription_status: "past_due", polar_state_modified_at: 3000 })
+
+    // Leaving past_due (recovery) clears the anchor so a future dunning cycle re-stamps.
+    await apply(store, { polar_customer_id: "cus_1", source_ts: 4000, source: "subscription_event", org_states: [{ org_id: "org_1", state: PRO_STATE }] })
+    expect(store.rows.orgs![0].past_due_since).toBeUndefined()
+    expect(store.rows.orgs![0]).toMatchObject({ subscription_status: "active" })
+  })
+
   test("preserve_seats keeps the mirrored seat count when the payload omits seats", async () => {
     const store = db({ orgs: [orgSeed({ polar_customer_id: "cus_1", plan: "pro", subscription_status: "active", seats_licensed: 5, polar_state_modified_at: 1000 })] })
     await apply(store, {
@@ -306,6 +328,12 @@ describe("entitlementState read model", () => {
     expect(byClerk).toMatchObject({ found: true, org_id: "org_1" })
     const missing = await handler(entitlementState)({ db: store }, { service_token: SERVICE_TOKEN, org_id: "org_ghost" })
     expect(missing).toEqual({ found: false })
+  })
+
+  test("F11: entitlementState surfaces past_due_since (the grace anchor)", async () => {
+    const store = db({ orgs: [orgSeed({ plan: "pro", subscription_status: "past_due", past_due_since: 1234, polar_state_modified_at: 5000, billing_synced_at: 6000 })] })
+    const state = await handler(entitlementState)({ db: store }, { service_token: SERVICE_TOKEN, org_id: "org_1" })
+    expect(state).toMatchObject({ found: true, subscription_status: "past_due", past_due_since: 1234 })
   })
 
   test("deleted orgs read as not found (fail-closed)", async () => {

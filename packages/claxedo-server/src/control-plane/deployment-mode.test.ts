@@ -120,6 +120,50 @@ describe("hosted boot requirements (fail-closed boot)", () => {
     expect(thrown?.message).toMatch(/CLERK_JWKS_URL/)
     expect(thrown?.message).toMatch(/CLAXEDO_WORKSPACE_AUTHORITY_URL/)
   })
+
+  describe("F8: hosted credential backend must be the encrypted KV path when hosted credentials are on", () => {
+    const withCreds = {
+      ...hostedCompleteEnv,
+      CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
+      CLAXEDO_CF_KV_URL: "https://kv.example.test/ns",
+      CLAXEDO_CF_KV_TOKEN: "kv_token",
+      CLAXEDO_CREDENTIALS_KEK: "a".repeat(44),
+    }
+
+    test("flag OFF: the credential backend is NOT asserted (D9 behavior unchanged)", () => {
+      // hostedCompleteEnv carries no KV/KEK env and does not set the flag; boot
+      // must still succeed exactly as before this finding.
+      expect(hostedBootRequirementFailures(hostedCompleteEnv, { authorityConfigured: true })).toEqual([])
+    })
+
+    test("flag ON + complete encrypted-KV config boots", () => {
+      expect(hostedBootRequirementFailures(withCreds, { authorityConfigured: true })).toEqual([])
+      expect(() => assertHostedBootRequirements(withCreds, { authorityConfigured: true })).not.toThrow()
+    })
+
+    test.each([
+      ["CLAXEDO_CF_KV_URL", /no encrypted-KV backend \(set CLAXEDO_CF_KV_URL/],
+      ["CLAXEDO_CF_KV_TOKEN", /KV byte store has no token \(set CLAXEDO_CF_KV_TOKEN\)/],
+      ["CLAXEDO_CREDENTIALS_KEK", /envelope encryption key is absent \(set CLAXEDO_CREDENTIALS_KEK/],
+    ] as const)("flag ON but missing %s refuses to start (else it silently uses the local file store)", (key, message) => {
+      const env = { ...withCreds, [key]: undefined }
+      expect(() => assertHostedBootRequirements(env, { authorityConfigured: true })).toThrowError(message)
+    })
+
+    test("flag ON with no credential backend at all names all three pieces at once", () => {
+      const env = { ...hostedCompleteEnv, CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "true" }
+      let thrown: DeploymentModeError | undefined
+      try {
+        assertHostedBootRequirements(env, { authorityConfigured: true })
+      } catch (err) {
+        thrown = err as DeploymentModeError
+      }
+      expect(thrown).toBeInstanceOf(DeploymentModeError)
+      expect(thrown?.message).toMatch(/CLAXEDO_CF_KV_URL/)
+      expect(thrown?.message).toMatch(/CLAXEDO_CF_KV_TOKEN/)
+      expect(thrown?.message).toMatch(/CLAXEDO_CREDENTIALS_KEK/)
+    })
+  })
 })
 
 describe("unsignedLocalRequestGuard (the ONE global unsigned-local gate)", () => {

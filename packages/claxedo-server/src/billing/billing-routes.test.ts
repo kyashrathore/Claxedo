@@ -165,6 +165,18 @@ describe("POST /polar/webhook", () => {
     expect(store.applyPolarState).not.toHaveBeenCalled()
   })
 
+  test("F19: customer.state_changed with no usable source timestamp is acked 202 without a write", async () => {
+    const store = fakeStore()
+    // No customer modified_at and no subscription timestamps: the replay guard
+    // cannot be anchored, so the state must NOT be stamped with now() and
+    // applied. The route acks (202) so Polar stops retrying and pages instead.
+    const payload = JSON.stringify({ type: "customer.state_changed", data: { id: "cus_1", active_subscriptions: [] } })
+    const res = await app({ store }).request(await webhookRequest(payload))
+    expect(res.status).toBe(202)
+    expect(await res.json()).toMatchObject({ received: true, applied: false })
+    expect(store.applyPolarState).not.toHaveBeenCalled()
+  })
+
   test("mirror write failure → 500 so Polar retries the delivery", async () => {
     const store = fakeStore({
       applyPolarState: vi.fn(async () => {

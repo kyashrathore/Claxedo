@@ -57,14 +57,16 @@ describe("worker scheduled billing sweep", () => {
     expect(runScheduledBillingReconciliation).toHaveBeenCalledWith(env)
   })
 
-  test("a failed GC still records the cron failure; the billing sweep waits for the next run", async () => {
+  test("a failed GC still records the cron failure AND still runs the billing sweep (F17: independent sweeps)", async () => {
     const worker = (await import("../worker")).default as unknown as ScheduledWorker
     appFetch.mockImplementation(async () => new Response("nope", { status: 501 }))
 
+    // F17: a persistently-failing sandbox GC must NOT starve the billing
+    // downgrade-recovery path — the two sweeps are isolated. The GC failure is
+    // still re-thrown so the cron run records as failed (reaches Sentry).
     await expect(
       worker.scheduled(controller, { CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin_secret" }, runtimeCtx()),
     ).rejects.toThrow("501")
-    // The Convex-side flag persists, so skipping this run loses nothing.
-    expect(runScheduledBillingReconciliation).not.toHaveBeenCalled()
+    expect(runScheduledBillingReconciliation).toHaveBeenCalledTimes(1)
   })
 })

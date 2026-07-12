@@ -150,10 +150,15 @@ export function customerStateToApplyArgs(
     const existing = byOrg.get(orgId)
     if (!existing || statusRank(next) > statusRank(existing)) byOrg.set(orgId, next)
   }
-  // No usable source timestamp on the payload → treat as fresh "now".
-  // S2-PENDING: verify the sandbox always carries modified_at on customer
-  // state; the guard degrades to last-delivery-wins for such payloads.
-  if (sourceTs === 0) sourceTs = Date.now()
+  // F19 (adversarial review): a customer-state payload with NO usable source
+  // timestamp (no customer modified_at and no subscription modified_at/
+  // created_at) must NOT be stamped with Date.now() — doing so defeats the
+  // last-write-wins replay/stale guard (every such payload would read as the
+  // freshest write and could clobber a newer real state, or let a replay land).
+  // Reject the payload here; the caller (webhook route / reconcile sweep) treats
+  // the undefined result as unapplied and surfaces it via reportPaymentError,
+  // exactly as it does for an unattributable event.
+  if (sourceTs === 0) return undefined
 
   return {
     polar_customer_id: customerId,

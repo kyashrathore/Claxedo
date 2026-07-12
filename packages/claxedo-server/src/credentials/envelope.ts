@@ -24,9 +24,20 @@
  *   - iv        12 random bytes
  *   - tag       16 bytes, appended to the ciphertext by AES-GCM
  *
+ * Additional authenticated data (F16, adversarial review): the GCM tag also
+ * covers `<key-id>:<credential-id>` — the credential's storage identity — as
+ * AAD (NOT stored in the value; re-derived on read). The credential-id is the
+ * segment of the backend ref after its `<scheme>:` prefix (backends store under
+ * `cf:<id>` / `local:<id>` / …; `put` is given the raw `<id>` and `get` the
+ * full ref). This BINDS each ciphertext to its slot: a within-org relocation or
+ * rollback of a blob to a different credential id fails GCM authentication even
+ * though it decrypts under the same per-org key — closing the "leaked KV token
+ * can shuffle blobs between slots" gap D10 names.
+ *
  * Reads FAIL CLOSED: a stored value that is not a well-formed envelope, uses
  * an unknown key-id, or fails GCM authentication (tamper, wrong org
- * partition, wrong KEK) throws — it is never returned as a secret.
+ * partition, wrong KEK, or a relocated/rolled-back slot) throws — it is never
+ * returned as a secret.
  *
  * KEK sourcing (hosted): `CLAXEDO_CREDENTIALS_KEK` is the active write key;
  * `CLAXEDO_CREDENTIALS_KEK_NEXT` is an optional second accepted decrypt key
@@ -158,6 +169,23 @@ export function envelopeKeyProviderFromEnv(env: EnvLike = process.env): Envelope
   return createStaticKeyProvider({ current, previous: next ? [next] : [] })
 }
 
+/**
+ * The credential id a backend ref points at: the segment after the `<scheme>:`
+ * prefix all `SecretBackend`s use (`cf:<id>`, `local:<id>`, `test:<id>`,
+ * `mem:<id>`). `put` binds AAD to the raw `<id>` it is handed; `get` re-derives
+ * the same id by stripping the scheme, so the two match for the rightful slot
+ * and diverge (→ auth failure) if a blob is relocated to another slot.
+ */
+function credentialIdFromRef(ref: string): string {
+  const colon = ref.indexOf(":")
+  return colon >= 0 ? ref.slice(colon + 1) : ref
+}
+
+/** GCM AAD binding a ciphertext to its key-id + credential (storage) id. */
+function credentialAad(keyId: string, credentialId: string): Uint8Array {
+  return encoder.encode(`${keyId}:${credentialId}`)
+}
+
 type ParsedEnvelope = { keyId: string; iv: Uint8Array; ciphertext: Uint8Array }
 
 const ENVELOPE_RE = new RegExp(`^${FORMAT_TAG}:([0-9a-f]{${KEY_ID_HEX_LEN}}):([A-Za-z0-9+/=_-]+)$`)
@@ -225,7 +253,11 @@ export function encryptedSecretBackend(
       const key = await orgKey(keyId, kek)
       const iv = crypto.getRandomValues(new Uint8Array(IV_LEN))
       const ciphertext = new Uint8Array(
-        await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoder.encode(secret)),
+        await crypto.subtle.encrypt(
+          { name: "AES-GCM", iv, additionalData: credentialAad(keyId, id) as BufferSource },
+          key,
+          encoder.encode(secret),
+        ),
       )
       const packed = new Uint8Array(iv.length + ciphertext.length)
       packed.set(iv, 0)
@@ -247,13 +279,17 @@ export function encryptedSecretBackend(
       let plaintext: ArrayBuffer
       try {
         plaintext = await crypto.subtle.decrypt(
-          { name: "AES-GCM", iv: parsed.iv as BufferSource },
+          {
+            name: "AES-GCM",
+            iv: parsed.iv as BufferSource,
+            additionalData: credentialAad(parsed.keyId, credentialIdFromRef(ref)) as BufferSource,
+          },
           key,
           parsed.ciphertext as BufferSource,
         )
       } catch {
         throw new Error(
-          "credential envelope failed authentication — tampered ciphertext, wrong org partition, or wrong KEK",
+          "credential envelope failed authentication — tampered ciphertext, wrong org partition, wrong KEK, or a relocated/rolled-back slot",
         )
       }
       return decoder.decode(plaintext)

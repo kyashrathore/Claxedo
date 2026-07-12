@@ -58,6 +58,36 @@ describe("entitlement matrix", () => {
     }
   }
 
+  test("F11: grace anchors on past_due_since — a fresh dunning webhook does NOT re-extend it", () => {
+    // past_due FIRST landed 8 days ago (beyond the 7-day grace), but a dunning
+    // retry just refreshed polar_state_modified_at/billing_synced_at to now.
+    // Anchoring on the refreshed write time would wrongly grant access; the fix
+    // anchors on past_due_since.
+    const reAnchored: EntitlementState = {
+      found: true,
+      org_id: "org_doc_1",
+      plan: "pro",
+      subscription_status: "past_due",
+      past_due_since: NOW - 8 * DAY,
+      polar_state_modified_at: NOW,
+      billing_synced_at: NOW,
+    }
+    expect(entitlementDecision(reAnchored, "cloud-workspace", { graceDays: 7, now }).entitled).toBe(false)
+
+    // Within grace from the first transition entitles, even if the last mirror
+    // write was long ago.
+    const withinGrace: EntitlementState = {
+      found: true,
+      org_id: "org_doc_1",
+      plan: "pro",
+      subscription_status: "past_due",
+      past_due_since: NOW - 3 * DAY,
+      polar_state_modified_at: NOW - 30 * DAY,
+      billing_synced_at: NOW - 30 * DAY,
+    }
+    expect(entitlementDecision(withinGrace, "cloud-workspace", { graceDays: 7, now }).entitled).toBe(true)
+  })
+
   test("grace window length honors CLAXEDO_BILLING_PAST_DUE_GRACE_DAYS (default 7)", () => {
     expect(pastDueGraceDays({})).toBe(7)
     expect(pastDueGraceDays({ CLAXEDO_BILLING_PAST_DUE_GRACE_DAYS: "14" })).toBe(14)
