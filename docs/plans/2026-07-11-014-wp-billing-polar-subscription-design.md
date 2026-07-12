@@ -149,6 +149,8 @@ Per-seat billing with no metering is precisely the product shape where staleness
 
 **Hard-block with an inline seat-purchase step, implemented as one comparison against the §3 mirror at the single member-add path; plain subscription quantity, not Polar seat assignments; reduction floor at current membership; drift alarmed by the reconciliation sweep. Contingent on S2 confirming the quantity-update path (§6.3) — if S2 fails, the fallback is Polar's seat-based-pricing feature (accepting the dual-membership cost), not soft-allow.**
 
+> **ADDENDUM 2026-07-12 (F14, implementation reconciliation).** During Wave-2 build the SDK (`@polar-sh/sdk` 0.48.1) was found to expose **`seats`** on checkout/subscription and **no plain `quantity` field anywhere** — so the "plain subscription quantity" phrasing above is superseded: the implementation lands on Polar's **seats** field, which is the ADR's own pre-decided fallback rung, not a new decision. Marked `S2-PENDING` in `apply-polar-state.ts`/`convex/billing.ts` and confirmed by adversarial review (F14). Two adversarial-review corrections that stay OPEN against this section, tracked in `2026-07-12-001` and the task list, NOT yet implemented: **(F1)** the member-add hard-block currently lives inside the Clerk webhook mirror (`convex/orgs.ts`), which is the wrong choke point — it wedges the mirror instead of blocking the join and needs an add-time relocation (product decision on seat-buying UX pending); **(F2)** the checkout route has no already-subscribed guard and no mid-cycle seat-increase path, so a second purchase double-bills — the seat-increase must route to a Polar subscription-update, which is exactly what S2 must confirm.
+
 ---
 
 ## 5. Decision 4 — What the free tier IS, architecturally
