@@ -74,3 +74,6 @@ Wave 3  Full staging rehearsal — signup → org → invite → subscribe (tria
 | 2026-07-11 | ADRs 013–016 authored; cross-checked consistent | docs exist; grep cross-check | — |
 | 2026-07-11 | Owner review: D1 reversed to keep Clerk; 013/014 addenda; S1 cancelled; plan re-sequenced | 013/014 addenda; this rev | plan ready, S2 pending |
 | 2026-07-12 | OQ-1 resolved: annual = $89/yr | owner decision | Polar products unblocked |
+| 2026-07-12 | Wave 1 (D8/D9/D10/D11), Wave 1b (D7/D12/D13/D14), Wave 2 (billing) landed | commits dbb7896f8..01ba51a16d, each leader-gated | server-side spine complete |
+| 2026-07-12 | Adversarial review: 5 finders → 2-skeptic verify (19 verdicts, 0 refuted); doc 2026-07-12-001 | review commit | 19 confirmed findings |
+| 2026-07-12 | Review fixes F6/F7/F15 landed; F1-F5/F8-F19 tasked | review-fix commit | P0 F1-F5 open |
