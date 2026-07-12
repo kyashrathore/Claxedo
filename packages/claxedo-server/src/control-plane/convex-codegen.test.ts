@@ -29,6 +29,7 @@ describe("Convex generated API artifacts", () => {
       "agentExtensionPolicies",
       "agentExtensions",
       "auditEvents",
+      "billing",
       "channelIdentities",
       "crons",
       "http",

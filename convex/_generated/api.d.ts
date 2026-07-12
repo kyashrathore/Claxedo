@@ -11,6 +11,7 @@
 import type * as agentExtensionPolicies from "../agentExtensionPolicies.js";
 import type * as agentExtensions from "../agentExtensions.js";
 import type * as auditEvents from "../auditEvents.js";
+import type * as billing from "../billing.js";
 import type * as channelIdentities from "../channelIdentities.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   agentExtensionPolicies: typeof agentExtensionPolicies;
   agentExtensions: typeof agentExtensions;
   auditEvents: typeof auditEvents;
+  billing: typeof billing;
   channelIdentities: typeof channelIdentities;
   crons: typeof crons;
   http: typeof http;

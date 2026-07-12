@@ -31,4 +31,22 @@ crons.interval(
   },
 )
 
+// D5 billing reconciliation sweep, Convex half (launch plan 012 §1 / ADR 014
+// §3): Polar disables a webhook endpoint after 10 consecutive failed
+// deliveries, so mirror-via-webhook needs a truth-keeper. This cron FLAGS
+// orgs whose billing mirror has not been touched for 24h; the Worker's Cron
+// Trigger (src/worker.ts `scheduled` → src/billing/reconcile.ts) fetches
+// fresh customer state from Polar for flagged orgs and re-applies it via
+// billing.applyPolarState (which clears the flag). Polar credentials never
+// enter Convex — the split mirrors the D13 reaper. Failure to REACH Polar
+// never downgrades anyone: only a successfully fetched fresh state writes.
+crons.interval(
+  "flag stale billing sync",
+  { hours: 6 },
+  internal.billing.flagStaleBillingSync,
+  {
+    stale_after_ms: 24 * 60 * 60 * 1000,
+  },
+)
+
 export default crons

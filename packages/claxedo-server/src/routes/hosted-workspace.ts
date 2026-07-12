@@ -23,7 +23,12 @@
 
 import { Hono, type Context } from "hono"
 import { z } from "zod"
-import { ControlPlaneAuthError, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "../control-plane/auth"
+import {
+  ControlPlaneAuthError,
+  controlPlaneAuthConfig,
+  controlPlaneAuthErrorBody,
+  type SignedControlPlaneAuth,
+} from "../control-plane/auth"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { requireAuthority } from "../control-plane/authority"
 import { createFixedWindowConnectionRateLimiter } from "../control-plane/rate-limit"
@@ -43,7 +48,20 @@ import {
 } from "./workspace-user-hosted"
 import { normalizeClaxedoRegion } from "../region"
 
-export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions
+export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
+  /**
+   * D6/B4 entitlement choke point (launch plan 2026-07-11-012; ADR 014 §5):
+   * hosted cloud-workspace creation is a paid capability. The hosted app
+   * composes this from src/billing/entitlement.ts (`createEntitlementGate` +
+   * authority org resolution); it returns a ready-to-serve denial (402 free
+   * tier / 503 mirror unreadable — both fail-closed) or undefined when
+   * entitled. Absent hook = no billing gate (route tests, future non-billing
+   * compositions); the hosted app always supplies it.
+   */
+  requireCloudWorkspaceEntitlement?: (
+    auth: SignedControlPlaneAuth,
+  ) => Promise<{ status: 400 | 401 | 402 | 403 | 503; body: unknown } | undefined>
+}
 
 const refreshConnectionBody = z
   .object({
@@ -287,6 +305,14 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             { error: apiError("cloud_workspace_source_required", "repoUrl is required for hosted cloud workspaces") },
             400,
           )
+        }
+
+        // D6/B4 entitlement gate — BEFORE any workspace doc exists. Fail-closed:
+        // free tier → 402 (typed billing_entitlement_required), billing mirror
+        // unreadable → 503; either way nothing is created.
+        if (options.requireCloudWorkspaceEntitlement) {
+          const denied = await options.requireCloudWorkspaceEntitlement(auth)
+          if (denied) return c.json(denied.body as never, denied.status)
         }
 
         const workspaceId = `ws_${Date.now().toString(36)}`

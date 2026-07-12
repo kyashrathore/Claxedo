@@ -482,6 +482,77 @@ describe("connections host", () => {
     host.dispose()
   })
 
+  // ── D6/B4: hosted-connections entitlement (choke point #2; launch plan 012,
+  // ADR 014 §5). Composed hook, consulted after D7 org resolution — free orgs
+  // get the typed 402, entitled orgs pass through to the partition logic.
+  test("hosted D6: unentitled org gets 402 on the signed surface; entitled org passes", async () => {
+    const denials: string[] = []
+    const host = hostedHost({
+      requireHostedConnectionsEntitlement: async (clerkOrgId: string) => {
+        denials.push(clerkOrgId)
+        if (clerkOrgId === "org-paid") return undefined
+        return {
+          status: 402 as const,
+          body: { error: { code: "billing_entitlement_required", message: "subscription required" } },
+        }
+      },
+    } as never)
+    await seedRow({ id: "team-org-paid", owner: "org:org-paid" })
+
+    const denied = await host.routes.request("http://cp.example/", {
+      headers: { authorization: "Bearer alice@org-free" },
+    })
+    expect(denied.status).toBe(402)
+    expect(await denied.json()).toMatchObject({ error: { code: "billing_entitlement_required" } })
+
+    const allowed = await host.routes.request("http://cp.example/", {
+      headers: { authorization: "Bearer bob@org-paid" },
+    })
+    expect(allowed.status).toBe(200)
+    expect(((await allowed.json()) as { connections: Array<{ id: string }> }).connections)
+      .toEqual([expect.objectContaining({ id: "team-org-paid" })])
+    expect(denials).toEqual(["org-free", "org-paid"])
+    host.dispose()
+  })
+
+  test("hosted D6: billing mirror unreadable fails closed (503), never open", async () => {
+    const host = hostedHost({
+      requireHostedConnectionsEntitlement: async () => ({
+        status: 503 as const,
+        body: { error: { code: "billing_state_unavailable", message: "fail closed" } },
+      }),
+    } as never)
+    const res = await host.routes.request("http://cp.example/", {
+      headers: { authorization: "Bearer alice@org-a" },
+    })
+    expect(res.status).toBe(503)
+    expect(await res.json()).toMatchObject({ error: { code: "billing_state_unavailable" } })
+    host.dispose()
+  })
+
+  test("self-host: the entitlement hook is never consulted (I-1 — no billing on the self-host path)", async () => {
+    const gate = { calls: 0 }
+    const host = createConnectionsHost({
+      credentials: credentialsPort(),
+      env: {},
+      authConfig: { enabled: true, issuer: "https://issuer.example", jwksUrl: "https://issuer.example/jwks" },
+      verifier: async (token) => ({
+        mode: "signed",
+        user: { subject: token, tokenIdentifier: token, issuer: "https://issuer.example", orgId: "org-a" },
+      }),
+      requireHostedConnectionsEntitlement: async () => {
+        gate.calls += 1
+        return { status: 402 as const, body: { error: { code: "billing_entitlement_required", message: "x" } } }
+      },
+    })
+    const res = await host.routes.request("http://relay.example/", {
+      headers: { authorization: "Bearer alice" },
+    })
+    expect(res.status).toBe(200)
+    expect(gate.calls).toBe(0)
+    host.dispose()
+  })
+
   test("google integration registers only when host env provides client credentials", () => {
     const without = createConnectionsHost({ credentials: credentialsPort(), env: {} })
     expect(without.service.listIntegrations().map((i) => i.id)).not.toContain("google")

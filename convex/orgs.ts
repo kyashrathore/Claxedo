@@ -1,5 +1,6 @@
 import { v } from "convex/values"
 import { authedMutation, authedQuery, orgByClerkOrgId, publicMutation, readUser, upsertUser } from "./model"
+import { enforceSeatCapacity } from "./billing"
 
 export async function personalOrgForUser(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
   const existing = (await ctx.db
@@ -193,6 +194,12 @@ async function upsertClerkMembership(ctx: any, data: Record<string, any>) {
     await ctx.db.patch(existing._id, patch)
     return
   }
+  // D6 seat hard-block (ADR 014 §4): a NEW membership beyond the org's
+  // licensed seat count is refused with the typed seat_limit_reached error —
+  // no soft-allow, no true-up. The billing module owns every billing-field
+  // read/write (single-writer guard); role/metadata updates to existing
+  // members are never blocked.
+  await enforceSeatCapacity(ctx, await ctx.db.get(orgId), user._id)
   await ctx.db.insert("org_memberships", {
     org_id: orgId,
     user_id: user._id,

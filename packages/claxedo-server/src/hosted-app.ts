@@ -41,6 +41,9 @@ import { HostedSandboxAdminRoutes } from "./routes/hosted-sandbox-admin"
 import { HostedControlRoutes } from "./routes/hosted-control"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "./control-plane/hosted-services"
 import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
+import { BillingRoutes } from "./billing/billing-routes"
+import { createEntitlementGate } from "./billing/entitlement"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "./control-plane/auth"
 import { deploymentCompatibilityReport } from "./deployment-compatibility"
 import { DEPLOYMENT_MODE_ENV, DeploymentModeError, deploymentMode, unsignedLocalRequestGuard } from "./control-plane/deployment-mode"
 
@@ -144,7 +147,35 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     }),
   )
 
+  // D6/B4 — the ONE entitlement predicate behind the hosted choke points
+  // (src/billing/entitlement.ts). The org whose subscription matters is the
+  // caller's ACTIVE org (Clerk org claim if a member, else the personal org),
+  // resolved through the same authority call the rest of the control plane
+  // uses. Gate errors resolve to fail-closed denials inside the gate.
+  const entitlementGate = createEntitlementGate({ env: plane.env })
+  const requireCloudWorkspaceEntitlement = async (auth: Parameters<NonNullable<HostedWorkspaceRouteOptions["requireCloudWorkspaceEntitlement"]>>[0]) => {
+    const authority = services.authority
+    if (!authority) {
+      return {
+        status: 503 as const,
+        body: { error: { code: "workspace_authority_unavailable", message: "Workspace authority is not configured" } },
+      }
+    }
+    try {
+      const orgId = await authority.resolveOrgId(auth)
+      return await entitlementGate({ orgId }, "cloud-workspace")
+    } catch (err) {
+      // resolveOrgId failures are ordinary control-plane auth errors — keep
+      // their own status/body instead of masking them as billing denials.
+      if (err instanceof ControlPlaneAuthError) {
+        return { status: err.status, body: controlPlaneAuthErrorBody(err) }
+      }
+      throw err
+    }
+  }
+
   const workspaceOptions: HostedWorkspaceRouteOptions = {
+    requireCloudWorkspaceEntitlement,
     authConfig: services.auth.config,
     ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
     ...(services.relay.relayUrl ? { relayUrl: services.relay.relayUrl } : {}),
@@ -211,6 +242,16 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   }))
 
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
+
+  // WP-BILLING (D4, ADR 014 addendum): Polar webhook + checkout + portal live
+  // on the CF Worker; all Polar code is confined to src/billing/** (enforced
+  // by billing-architecture.test.ts). Unconfigured deployments keep the
+  // routes mounted but every surface fails closed (503) at request time.
+  app.route("/api/billing", BillingRoutes({
+    env: plane.env,
+    authConfig: services.auth.config,
+    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+  }))
 
   if (!overrides.centralSessionRuntime) {
     app.get("/api/control/sessions", async (c) => {

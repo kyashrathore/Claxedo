@@ -27,11 +27,35 @@ export default defineSchema({
     owner_user_id: v.optional(v.id("users")),
     deleted_at: v.optional(v.number()),
     clerk_updated_at: v.optional(v.number()),
+    // ── B1 billing mirror (launch plan 2026-07-11-012 D5; ADR 014 §3) ──
+    // Polar subscription state mirrored onto the org. ALL fields optional:
+    // absent = free tier (fail-closed, invariant I-4), and optional keeps this
+    // a pure EXPAND step (docs/tech-docs/convex-schema-evolution.md — no
+    // migration required, old rows stay valid). SINGLE WRITER: only
+    // convex/billing.ts (`applyPolarState`) may write these fields — enforced
+    // grep-style by packages/claxedo-server/src/billing/billing-architecture.test.ts.
+    plan: v.optional(v.union(v.literal("free"), v.literal("pro"))),
+    polar_customer_id: v.optional(v.string()),
+    polar_subscription_id: v.optional(v.string()),
+    seats_licensed: v.optional(v.number()),
+    subscription_status: v.optional(v.string()),
+    current_period_end: v.optional(v.number()),
+    /** Wall-clock of the last successful mirror write (reconciliation staleness clock). */
+    billing_synced_at: v.optional(v.number()),
+    /**
+     * Source timestamp (Polar-side modified_at) of the last APPLIED state —
+     * the ADR 014 §3 last-write-wins guard that makes webhook duplicates and
+     * reordering harmless. Distinct from billing_synced_at on purpose.
+     */
+    polar_state_modified_at: v.optional(v.number()),
+    /** Set by the crons.ts staleness sweep; cleared by the next applyPolarState. */
+    billing_reconcile_flagged_at: v.optional(v.number()),
     created_at: v.number(),
     updated_at: v.number(),
   })
     .index("by_clerk_org_id", ["clerk_org_id"])
-    .index("by_owner", ["owner_user_id"]),
+    .index("by_owner", ["owner_user_id"])
+    .index("by_polar_customer_id", ["polar_customer_id"]),
 
   org_memberships: defineTable({
     org_id: v.id("orgs"),

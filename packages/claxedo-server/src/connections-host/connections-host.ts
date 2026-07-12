@@ -53,6 +53,21 @@ export type ConnectionsHostOptions = {
   env?: Record<string, string | undefined>
   publicUrl?: string
   turnCredentials?: ConnectionTurnCredentials
+  /**
+   * D6/B4 entitlement choke point (launch plan 2026-07-11-012; ADR 014 §5):
+   * hosted connections are a paid capability. The hosted composition supplies
+   * this from src/billing/entitlement.ts (`createEntitlementGate`, capability
+   * "hosted-connections"), keyed by the caller's Clerk org id; it returns a
+   * ready-to-serve denial (402 free tier / 503 billing mirror unreadable) or
+   * undefined when entitled. Only consulted in hosted mode, after the D7 org
+   * resolution — self-host never sees it. The D7 hard gate
+   * (CLAXEDO_HOSTED_CREDENTIALS_ENABLED, 503 until flipped) remains the
+   * rollout floor beneath this; a hosted composition must wire this gate
+   * before flipping that flag.
+   */
+  requireHostedConnectionsEntitlement?: (
+    clerkOrgId: string,
+  ) => Promise<{ status: 402 | 503; body: { error: { code: string; message: string } } } | undefined>
 }
 
 export function createConnectionsHost(options: ConnectionsHostOptions) {
@@ -142,6 +157,13 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
         // rather than fall back to any shared partition.
         const orgId = context.user.orgId
         if (!orgId) return c.json({ code: "connections_org_required" }, 403)
+        // D6/B4: hosted connections are entitlement-gated (composed hook, see
+        // ConnectionsHostOptions). Fail-closed by construction inside the
+        // gate: free tier → 402, billing mirror unreadable → 503.
+        if (options.requireHostedConnectionsEntitlement) {
+          const denied = await options.requireHostedConnectionsEntitlement(orgId)
+          if (denied) return c.json(denied.body, denied.status)
+        }
         owners.set(c.req.raw, {
           personal: subjectPersonalOwnerKey(context.user.subject),
           team: orgTeamOwnerKey(orgId),

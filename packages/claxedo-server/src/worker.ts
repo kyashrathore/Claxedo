@@ -25,6 +25,7 @@ import { HTTPException } from "hono/http-exception"
 import * as Sentry from "@sentry/cloudflare"
 import { composeHostedControlPlane, HostedWorkerCompositionError, type HostedWorkerEnv } from "./control-plane/hosted-services"
 import { createHostedApp } from "./hosted-app"
+import { runScheduledBillingReconciliation } from "./billing/reconcile"
 import { reportError, setErrorReporterSink } from "./observability/report"
 import { sentryInitOptions } from "./observability/sentry-config"
 
@@ -132,6 +133,14 @@ const handler = {
       const detail = await response.text().catch(() => "")
       throw new Error(`Sandbox reconciliation cron failed: ${response.status} ${detail}`.trim())
     }
+
+    // D5 billing reconciliation sweep (ADR 014 §3): re-fetch Polar customer
+    // state for orgs the Convex cron flagged as stale and re-apply it through
+    // the single writer. Throw-free by design — a billing hiccup pages via
+    // reportPaymentError but must not mark the sandbox GC cron run failed,
+    // and the Convex-side flag persists so the next run retries. No-op when
+    // CLAXEDO_POLAR_ACCESS_TOKEN is absent (billing not deployed).
+    await runScheduledBillingReconciliation(env)
   },
 }
 

@@ -46,6 +46,27 @@ crons = ["*/15 * * * *"]
 # Release tagging (D12): CLAXEDO_RELEASE = git SHA, passed AT DEPLOY TIME by
 # the D11 deploy workflow rather than pinned here:
 #   wrangler deploy --var CLAXEDO_RELEASE:$GITHUB_SHA
+#
+# WP-BILLING (launch plan 012 D4–D6; ADR 2026-07-11-014 + addendum) — Polar
+# config, consumed ONLY by src/billing/** (confinement enforced by
+# src/billing/billing-architecture.test.ts). ABSENT = billing routes fail
+# closed (503), the reconciliation sweep no-ops, and entitlement resolves
+# every org to the free tier (I-4).
+# Secrets (`wrangler secret put`):
+#   CLAXEDO_POLAR_ACCESS_TOKEN   — Polar org access token (checkout sessions,
+#     customer portal sessions, reconciliation customer-state fetches).
+#   CLAXEDO_POLAR_WEBHOOK_SECRET — Standard-Webhooks signing secret for
+#     POST /api/billing/polar/webhook.
+# Vars:
+#   CLAXEDO_POLAR_SERVER — "sandbox" for Polar test mode (the S2 spike);
+#     unset/anything else = production api.polar.sh.
+#   CLAXEDO_POLAR_PRODUCT_MONTHLY / CLAXEDO_POLAR_PRODUCT_YEARLY — the $9/mo
+#     and $89/yr per-seat product ids; subscriptions for any other product are
+#     ignored by the state mirror.
+#   CLAXEDO_POLAR_CHECKOUT_SUCCESS_URL — optional post-checkout redirect.
+#   CLAXEDO_BILLING_PAST_DUE_GRACE_DAYS — past_due grace window in days
+#     (default 7, plan OQ-4): past_due orgs stay entitled this long after the
+#     dunning state lands on the mirror, then fall to free.
 [vars]
 CLAXEDO_SIGNED_CLOUD_AUTH = "1"
 # D9 rollout requirement: hosted deployments declare their mode EXPLICITLY —
