@@ -3,13 +3,27 @@ import { createIntegrationRegistry } from "./registry.js"
 import { createConnectionsService } from "./service.js"
 import { createAttempts } from "./attempts.js"
 import { createMemoryConnectionStore, createMemoryCredentialStore } from "./stores/memory.js"
-import type { IntegrationDeclaration, IntegrationImpl } from "./types.js"
+import {
+  ConnectionsUnavailableError,
+  connectionWebhookSigningProviderId,
+  type IntegrationDeclaration,
+  type IntegrationImpl,
+} from "./types.js"
 
 const KEY_DECL: IntegrationDeclaration = {
   id: "fake",
   name: "Fake",
   methods: ["key"],
   capabilities: ["docs"],
+  keyTokenType: "bearer",
+  prompts: [{ id: "token", label: "Token", secret: true }],
+}
+
+const GITHUB_DECL: IntegrationDeclaration = {
+  id: "github",
+  name: "GitHub",
+  methods: ["key"],
+  capabilities: ["code-host", "work-source"],
   keyTokenType: "bearer",
   prompts: [{ id: "token", label: "Token", secret: true }],
 }
@@ -84,6 +98,45 @@ describe("connections service", () => {
     expect(await service.remove("connection-1")).toBe(true)
     expect(await credentials.get("integration:connection-1")).toBeUndefined()
     expect(await service.remove("connection-1")).toBe(false)
+  })
+
+  test("webhook signing secrets have an independent lifecycle and cascade with the Connection", async () => {
+    const { service, credentials } = harness({ decl: GITHUB_DECL })
+    await expect(service.connect({ integrationId: "github", fields: {}, secret: "good" })).resolves.toEqual({ ok: true })
+
+    const oldSecret = "old-webhook-secret"
+    const configured = await service.setWebhookSigningSecret("connection-1", oldSecret)
+    expect(configured).toEqual({ ok: true })
+    expect(JSON.stringify(configured)).not.toContain(oldSecret)
+    expect(await credentials.resolveSecret(connectionWebhookSigningProviderId("connection-1"))).toBe(oldSecret)
+    expect(await credentials.resolveSecret("integration:connection-1")).toBe("good")
+    expect(await service.resolveWebhookSigningSecret("connection-1", "github")).toBe(oldSecret)
+    expect(await service.resolveWebhookSigningSecret("connection-1", "linear")).toBeUndefined()
+    expect(await service.resolveWebhookSigningSecret("missing", "github")).toBeUndefined()
+
+    await expect(service.setWebhookSigningSecret("connection-1", "new-webhook-secret")).resolves.toEqual({ ok: true })
+    expect(await service.resolveWebhookSigningSecret("connection-1", "github")).toBe("new-webhook-secret")
+    await expect(service.removeWebhookSigningSecret("connection-1")).resolves.toEqual({ ok: true })
+    expect(await service.resolveWebhookSigningSecret("connection-1", "github")).toBeUndefined()
+    expect(await credentials.resolveSecret("integration:connection-1")).toBe("good")
+
+    await service.setWebhookSigningSecret("connection-1", "delete-with-connection")
+    await service.remove("connection-1")
+    expect(await credentials.get("integration:connection-1")).toBeUndefined()
+    expect(await credentials.get(connectionWebhookSigningProviderId("connection-1"))).toBeUndefined()
+  })
+
+  test("webhook signing secrets are limited to GitHub work-source Connections", async () => {
+    const { service } = harness()
+    await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
+    await expect(service.setWebhookSigningSecret("connection-1", "secret")).resolves.toEqual({
+      ok: false,
+      code: "webhook_not_supported",
+    })
+    await expect(service.setWebhookSigningSecret("missing", "secret")).resolves.toEqual({
+      ok: false,
+      code: "webhook_not_supported",
+    })
   })
 
   test("removeOwner cascades one owner's personal rows and spares team + other owners", async () => {
@@ -178,6 +231,29 @@ describe("connections service", () => {
     expect((await service.list())[0]).toMatchObject({ status: "degraded" })
     await credentials.deleteByProvider("integration:connection-1")
     expect((await service.list())[0]).toMatchObject({ status: "broken" })
+  })
+
+  test("list propagates credential-store outages instead of substituting broken", async () => {
+    const registry = createIntegrationRegistry()
+    registry.register(KEY_DECL, {
+      verify: async () => ({ ok: true }),
+    })
+    const memoryCredentials = createMemoryCredentialStore()
+    const service = createConnectionsService({
+      registry,
+      credentials: {
+        ...memoryCredentials,
+        async get() {
+          throw new ConnectionsUnavailableError()
+        },
+      },
+      connections: createMemoryConnectionStore(),
+      attempts: createAttempts({ sweepIntervalMs: 0 }),
+      newId: () => "connection-1",
+    })
+    await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
+
+    await expect(service.list()).rejects.toBeInstanceOf(ConnectionsUnavailableError)
   })
 
   test("atlassian-style fields ride the token response", async () => {

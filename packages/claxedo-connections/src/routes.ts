@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import type { Context } from "hono"
 import type { ConnectionsService } from "./service.js"
 import type { ConnectionScope, IntegrationCapability } from "./types.js"
+import { ConnectionsUnavailableError } from "./types.js"
 
 export type RouteGate = (c: Context) => Promise<Response | null> | Response | null
 export type RouteOwnerResolver = (c: Context) => string | undefined
@@ -81,6 +82,15 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     return row.owner === keys.team || row.owner === keys.personal ? row : undefined
   }
 
+  const visibleTeamConnection = async (id: string, keys: PartitionKeys) => {
+    const row = await visibleConnection(id, keys)
+    if (!row) return { state: "missing" as const }
+    const team = keys.team === undefined
+      ? row.owner === undefined && !refuseOwnerless
+      : row.owner === keys.team
+    return team ? { state: "visible" as const, row } : { state: "personal" as const }
+  }
+
   const connectOwner = (c: Context, scope: ConnectionScope) => {
     if (scope === "team") {
       const team = options.teamOwner?.(c)
@@ -101,20 +111,25 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     const keys = managementKeys(c)
     // Refusing hosts without a resolved team key list personal rows only —
     // never the owner-absent partition.
-    const connections =
-      refuseOwnerless && keys.team === undefined
-        ? keys.personal !== undefined
-          ? await service.list({ owner: keys.personal, scope: "personal" })
-          : []
-        : await service.list({
-            ...(keys.personal !== undefined ? { owner: keys.personal } : {}),
-            ...(keys.team !== undefined ? { teamOwner: keys.team } : {}),
-          })
-    return c.json({
-      integrations: service.listIntegrations(),
-      connections,
-      personalScopeEnabled: keys.personal !== undefined,
-    })
+    try {
+      const connections =
+        refuseOwnerless && keys.team === undefined
+          ? keys.personal !== undefined
+            ? await service.list({ owner: keys.personal, scope: "personal" })
+            : []
+          : await service.list({
+              ...(keys.personal !== undefined ? { owner: keys.personal } : {}),
+              ...(keys.team !== undefined ? { teamOwner: keys.team } : {}),
+            })
+      return c.json({
+        integrations: service.listIntegrations(),
+        connections,
+        personalScopeEnabled: keys.personal !== undefined,
+      })
+    } catch (error) {
+      if (error instanceof ConnectionsUnavailableError) return c.json({ code: "connections_unavailable" }, 503)
+      throw error
+    }
   })
 
   app.post("/:id/connect", async (c) => {
@@ -191,6 +206,40 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     const result = await service.reverify(row.id)
     return c.json(result, result.ok ? 200 : 422)
+  })
+
+  app.put("/connections/:id/webhook-secret", async (c) => {
+    const denied = await gated(c)
+    if (denied) return denied
+    const selected = await visibleTeamConnection(c.req.param("id"), managementKeys(c))
+    if (selected.state === "missing") return c.json({ code: "connection_not_found" }, 404)
+    if (selected.state === "personal") return c.json({ code: "team_connection_required" }, 403)
+    const body = await c.req.json().catch(() => undefined) as { secret?: unknown } | undefined
+    if (typeof body?.secret !== "string" || !body.secret.trim()) {
+      return c.json({ ok: false, code: "invalid_webhook_secret" }, 422)
+    }
+    try {
+      const result = await service.setWebhookSigningSecret(selected.row.id, body.secret)
+      return c.json(result, result.ok ? 200 : 422)
+    } catch (error) {
+      if (error instanceof ConnectionsUnavailableError) return c.json({ ok: false, code: "connections_unavailable" }, 503)
+      throw error
+    }
+  })
+
+  app.delete("/connections/:id/webhook-secret", async (c) => {
+    const denied = await gated(c)
+    if (denied) return denied
+    const selected = await visibleTeamConnection(c.req.param("id"), managementKeys(c))
+    if (selected.state === "missing") return c.json({ code: "connection_not_found" }, 404)
+    if (selected.state === "personal") return c.json({ code: "team_connection_required" }, 403)
+    try {
+      const result = await service.removeWebhookSigningSecret(selected.row.id)
+      return c.json(result, result.ok ? 200 : 422)
+    } catch (error) {
+      if (error instanceof ConnectionsUnavailableError) return c.json({ ok: false, code: "connections_unavailable" }, 503)
+      throw error
+    }
   })
 
   app.post("/connections/:id/auth-failure", async (c) => {

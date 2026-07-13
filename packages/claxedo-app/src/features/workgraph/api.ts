@@ -1,0 +1,455 @@
+import {
+  CommandResultSchema,
+  CommandErrorCodeSchema,
+  AttentionCursorSchema,
+  AttentionPageSchema,
+  CompletionContractSchema,
+  EvidenceInputSchema,
+  EvidenceDtoSchema,
+  EvidencePageSchema,
+  EvidenceSubjectSchema,
+  AdmissionProposalDtoSchema,
+  AttemptDetailDtoSchema,
+  DecisionDtoSchema,
+  RecapDtoSchema,
+  WorkItemAttemptPageCursorSchema,
+  WorkItemAttemptPageSchema,
+  WorkItemDtoSchema,
+  AdmissionSelectionSchema,
+  AdmissionOutcomeInputSchema,
+  AdmissionWorkItemInputSchema,
+  WorkSourceRevisionRefSchema,
+  WorkSourceRevisionDtoSchema,
+  StreamDtoSchema,
+  WorkGraphChangeEnvelopeSchema,
+  WorkGraphCommandRequestSchema,
+  WorkGraphDefaultsDtoSchema,
+  WorkGraphDefaultsSchema,
+  ExecutionProfileDefaultsSchema,
+  RecapProfileDefaultsSchema,
+  WorkGraphSnapshotPageSchema,
+  WorkGraphSnapshotAggregationError,
+  collectWorkGraphSnapshotPages,
+  type ChangeCursor,
+  type AttentionCursor,
+  type CommandResult,
+  type ExecutionMode,
+  type EvidencePageCursor,
+  type WorkItemAttemptPageCursor,
+  type StreamDto,
+  type WorkGraphDefaultsDto,
+  type SnapshotResumeCursor,
+  type IntakeCandidatePageCursor,
+  WorkGraphNotificationPageSchema,
+  WorkGraphNotificationSchema,
+  CreateSourceViewInputSchema,
+  IntakeCandidateDtoSchema,
+  IntakeCandidatePageCursorSchema,
+  IntakeCandidatePageSchema,
+  SourceViewDtoSchema,
+  SourceViewListResponseSchema,
+  SourceViewRefreshResponseSchema,
+  UpdateSourceViewInputSchema,
+} from "@claxedo/workgraph/contracts"
+import z from "zod"
+import { getClaxedoServerUrl } from "@/platform/api/api"
+import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
+
+const ChangesResponseSchema = z.strictObject({
+  changes: z.array(WorkGraphChangeEnvelopeSchema),
+  cursor: z.string().trim().min(1).brand("ChangeCursor").optional(),
+  timedOut: z.boolean(),
+})
+
+const WorkGraphApiErrorCodeSchema = z.union([
+  CommandErrorCodeSchema,
+  z.literal("unauthorized"),
+  z.literal("cursor_invalid"),
+])
+
+const WorkGraphApiErrorResponseSchema = z.strictObject({
+  error: z.strictObject({
+    code: WorkGraphApiErrorCodeSchema,
+    message: z.string().trim().min(1),
+    retryable: z.boolean(),
+  }),
+})
+
+type WorkGraphApiErrorCode = z.infer<typeof WorkGraphApiErrorCodeSchema>
+type ApiErrorKind = WorkGraphApiErrorCode | "conflict" | "offline" | "invalid_response" | "request_failed"
+
+export class WorkGraphApiError extends Error {
+  constructor(
+    readonly kind: ApiErrorKind,
+    message: string,
+    readonly status?: number,
+    readonly code?: WorkGraphApiErrorCode,
+    readonly retryable?: boolean,
+  ) {
+    super(message)
+    this.name = "WorkGraphApiError"
+  }
+}
+
+export function decodeWorkGraphSnapshot(value: unknown) {
+  return WorkGraphSnapshotPageSchema.parse(value)
+}
+
+export function createWorkGraphClient(input: { baseUrl?: string; request?: typeof fetch; operationId?: () => string } = {}) {
+  const baseUrl = (input.baseUrl ?? getClaxedoServerUrl()).replace(/\/$/, "")
+  const request = input.request ?? (
+    centralTransportForServer(baseUrl) === "loopback" ? unsignedLocalFetch : globalThis.fetch
+  )
+  const url = (path: string) => `${baseUrl}/api/workgraph${path}`
+
+  const read = async <T>(path: string, parse: (value: unknown) => T, init?: RequestInit) => {
+    const response = await request(url(path), init).catch((error) => {
+      throw new WorkGraphApiError("offline", error instanceof Error ? error.message : "WorkGraph is offline")
+    })
+    if (!response.ok) throw await apiError(response)
+    const value = await response.json().catch(() => {
+      throw new WorkGraphApiError("invalid_response", "WorkGraph returned invalid JSON", response.status)
+    })
+    try {
+      return parse(value)
+    } catch (error) {
+      throw new WorkGraphApiError("invalid_response", error instanceof Error ? error.message : "Invalid WorkGraph response", response.status)
+    }
+  }
+
+  const command = async (body: z.input<typeof WorkGraphCommandRequestSchema>): Promise<CommandResult> => {
+    const response = await request(url("/commands"), {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(WorkGraphCommandRequestSchema.parse(body)),
+    }).catch((error) => {
+      throw new WorkGraphApiError("offline", error instanceof Error ? error.message : "WorkGraph is offline")
+    })
+    const value = await response.json().catch(() => {
+      throw new WorkGraphApiError("invalid_response", "WorkGraph returned invalid JSON", response.status)
+    })
+    const result = CommandResultSchema.safeParse(value)
+    if (result.success) {
+      if (response.ok || !result.data.ok) return result.data
+      throw await apiError(response, value)
+    }
+    if (!response.ok) throw await apiError(response, value)
+    throw new WorkGraphApiError("invalid_response", result.error.message, response.status)
+  }
+  const execute = (commandInput: z.input<typeof WorkGraphCommandRequestSchema>["command"]) => command({
+    operationId: input.operationId ? input.operationId() : crypto.randomUUID(),
+    command: commandInput,
+  })
+  const write = <T>(path: string, body: unknown, parse: (value: unknown) => T, method: "POST" | "PUT" | "DELETE" = "POST") => read(path, parse, {
+    method,
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  const snapshotPage = (cursor?: SnapshotResumeCursor) => {
+    const query = new URLSearchParams({ limit: "100" })
+    if (cursor) query.set("after", cursor)
+    return read(`/snapshot?${query}`, decodeWorkGraphSnapshot)
+  }
+  const snapshot = () => collectWorkGraphSnapshotPages({
+    page: snapshotPage,
+    isCursorInvalid: (error) => error instanceof WorkGraphApiError && error.kind === "cursor_invalid",
+  }).catch((error) => {
+    if (error instanceof WorkGraphSnapshotAggregationError) {
+      throw new WorkGraphApiError("invalid_response", error.message)
+    }
+    throw error
+  })
+
+  return {
+    snapshot,
+    attention: (after?: AttentionCursor, limit = 50) => {
+      const query = new URLSearchParams({ limit: String(limit) })
+      if (after) query.set("after", AttentionCursorSchema.parse(after))
+      return read(`/attention?${query}`, (value) => AttentionPageSchema.parse(value))
+    },
+    defaults: (): Promise<WorkGraphDefaultsDto> =>
+      read("/defaults", (value) => WorkGraphDefaultsDtoSchema.parse(value)),
+    changes: (cursor?: ChangeCursor) =>
+      read(`/changes${cursor ? `?after=${encodeURIComponent(cursor)}` : ""}`, (value) => ChangesResponseSchema.parse(value)),
+    stream: (streamId: string): Promise<StreamDto> =>
+      read(`/streams/${encodeURIComponent(streamId)}`, (value) => StreamDtoSchema.parse(value)),
+    proposal: (proposalId: string) =>
+      read(`/proposals/${encodeURIComponent(proposalId)}`, (value) => AdmissionProposalDtoSchema.parse(value)),
+    workItem: (workItemId: string) =>
+      read(`/work-items/${encodeURIComponent(workItemId)}`, (value) => WorkItemDtoSchema.parse(value)),
+    workItemAttempts: (
+      workItemId: string,
+      options: Readonly<{ after?: WorkItemAttemptPageCursor; limit?: number }> = {},
+    ) => {
+      const query = new URLSearchParams({ limit: String(options.limit ?? 50) })
+      if (options.after) query.set("after", WorkItemAttemptPageCursorSchema.parse(options.after))
+      return read(`/work-items/${encodeURIComponent(workItemId)}/attempts?${query}`, (value) => WorkItemAttemptPageSchema.parse(value))
+    },
+    attempt: (attemptId: string) =>
+      read(`/attempts/${encodeURIComponent(attemptId)}`, (value) => AttemptDetailDtoSchema.parse(value)),
+    decision: (decisionId: string) =>
+      read(`/decisions/${encodeURIComponent(decisionId)}`, (value) => DecisionDtoSchema.parse(value)),
+    recap: (recapId: string) =>
+      read(`/recaps/${encodeURIComponent(recapId)}`, (value) => RecapDtoSchema.parse(value)),
+    sourceRevision: (workSourceId: string, revisionId: string) =>
+      read(`/sources/${encodeURIComponent(workSourceId)}/revisions/${encodeURIComponent(revisionId)}`, (value) => WorkSourceRevisionDtoSchema.parse(value)),
+    evidence: (evidenceId: string) =>
+      read(`/evidence/${encodeURIComponent(evidenceId)}`, (value) => EvidenceDtoSchema.parse(value)),
+    evidencePage: (
+      subjectInput: z.input<typeof EvidenceSubjectSchema>,
+      options: Readonly<{ after?: EvidencePageCursor; limit?: number }> = {},
+    ) => {
+      const subject = EvidenceSubjectSchema.parse(subjectInput)
+      const query = new URLSearchParams({ subjectType: subject.type, limit: String(options.limit ?? 50) })
+      if (subject.type === "stream") query.set("streamId", subject.streamId)
+      if (subject.type === "outcome") query.set("outcomeId", subject.outcomeId)
+      if (subject.type === "work_item") query.set("workItemId", subject.workItemId)
+      if (options.after) query.set("after", options.after)
+      return read(`/evidence?${query}`, (value) => EvidencePageSchema.parse(value))
+    },
+    sourceViews: () => read("/source-views", (value) => SourceViewListResponseSchema.parse(value)),
+    createSourceView: (sourceView: z.input<typeof CreateSourceViewInputSchema>) => write("/source-views", sourceView, (value) => SourceViewDtoSchema.parse(value)),
+    updateSourceView: (sourceViewId: string, sourceView: z.input<typeof UpdateSourceViewInputSchema>) => write(`/source-views/${encodeURIComponent(sourceViewId)}`, sourceView, (value) => SourceViewDtoSchema.parse(value), "PUT"),
+    deleteSourceView: (sourceViewId: string, expectedVersion: number) => write(`/source-views/${encodeURIComponent(sourceViewId)}`, { expectedVersion }, (value) => SourceViewDtoSchema.parse(value), "DELETE"),
+    refreshSourceView: (sourceViewId: string) => write(`/source-views/${encodeURIComponent(sourceViewId)}/refresh`, {}, (value) => SourceViewRefreshResponseSchema.parse(value)),
+    intakeCandidates: (options: Readonly<{
+      sourceViewId?: string
+      after?: IntakeCandidatePageCursor
+      limit?: number
+    }> = {}) => {
+      const query = new URLSearchParams({ limit: String(options.limit ?? 50) })
+      if (options.sourceViewId) query.set("sourceViewId", options.sourceViewId)
+      if (options.after) query.set("after", IntakeCandidatePageCursorSchema.parse(options.after))
+      return read(`/intake?${query}`, (value) => IntakeCandidatePageSchema.parse(value))
+    },
+    intakeCandidate: (candidateId: string) => read(`/intake/${encodeURIComponent(candidateId)}`, (value) => IntakeCandidateDtoSchema.parse(value)),
+    notifications: (state?: "unread" | "read") => read(`/notifications${state ? `?state=${state}` : ""}`, (value) => WorkGraphNotificationPageSchema.parse(value)),
+    markNotificationRead: (notificationId: string, expectedVersion: number) => write(`/notifications/${encodeURIComponent(notificationId)}/read`, { expectedVersion }, (value) => WorkGraphNotificationSchema.parse(value)),
+    stageIntakeCandidate: (candidateId: string) => write(`/intake/${encodeURIComponent(candidateId)}/stage`, {}, (value) => IntakeCandidateDtoSchema.parse(value)),
+    dismissIntakeCandidate: (candidateId: string, expectedVersion: number) => write(`/intake/${encodeURIComponent(candidateId)}/dismiss`, { expectedVersion }, (value) => IntakeCandidateDtoSchema.parse(value)),
+    restoreIntakeCandidate: (candidateId: string, expectedVersion: number) => write(`/intake/${encodeURIComponent(candidateId)}/restore`, { expectedVersion }, (value) => IntakeCandidateDtoSchema.parse(value)),
+    command,
+    updateWorkGraphDefaults: (expectedVersion: number, defaults: z.input<typeof WorkGraphDefaultsSchema>) => execute({
+      version: 1,
+      type: "update_workgraph_defaults",
+      expectedVersion,
+      defaults,
+    }),
+    createStream: (stream: { title: string; description?: string; execution?: z.input<typeof ExecutionProfileDefaultsSchema> }) => execute({
+      version: 1,
+      type: "create_stream",
+      title: stream.title,
+      ...(stream.description?.trim() ? { description: stream.description.trim() } : {}),
+      ...(stream.execution ? { execution: stream.execution } : {}),
+    }),
+    createOutcome: (outcome: { streamId: string; title: string; description?: string; successCriteria: string[] }) => execute({
+      version: 1,
+      type: "create_outcome",
+      streamId: outcome.streamId,
+      title: outcome.title,
+      ...(outcome.description?.trim() ? { description: outcome.description.trim() } : {}),
+      successCriteria: outcome.successCriteria,
+    }),
+    createWorkItem: (item: {
+      streamId: string
+      outcomeId?: string
+      title: string
+      description?: string
+      dependencyIds?: string[]
+      completionContract: z.input<typeof CompletionContractSchema>
+    }) => execute({
+      version: 1,
+      type: "create_work_item",
+      streamId: item.streamId,
+      ...(item.outcomeId ? { outcomeId: item.outcomeId } : {}),
+      title: item.title,
+      ...(item.description?.trim() ? { description: item.description.trim() } : {}),
+      dependencyIds: item.dependencyIds ?? [],
+      completionContract: item.completionContract,
+    }),
+    setStreamLifecycle: (stream: { streamId: string; expectedVersion: number; state: "active" | "paused" | "closed" | "reopened"; reason: string }) => execute({
+      version: 1,
+      type: "set_stream_lifecycle",
+      ...stream,
+    }),
+    updateStreamSettings: (
+      streamId: string,
+      expectedVersion: number,
+      settings: Readonly<{
+        execution: z.input<typeof ExecutionProfileDefaultsSchema>
+        recap: z.input<typeof RecapProfileDefaultsSchema>
+      }>,
+    ) => execute({
+      version: 1,
+      type: "update_stream",
+      streamId,
+      expectedVersion,
+      execution: settings.execution,
+      recap: settings.recap,
+    }),
+    updateOutcomeExecution: (outcomeId: string, expectedVersion: number, execution: z.input<typeof ExecutionProfileDefaultsSchema>) => execute({
+      version: 1,
+      type: "update_outcome",
+      outcomeId,
+      expectedVersion,
+      execution,
+    }),
+    updateWorkItemExecution: (workItemId: string, expectedVersion: number, execution: z.input<typeof ExecutionProfileDefaultsSchema>) => execute({
+      version: 1,
+      type: "update_work_item",
+      workItemId,
+      expectedVersion,
+      execution,
+    }),
+    executeStream: (streamId: string, executionMode: ExecutionMode = "supervised") => execute({
+      version: 1,
+      type: "execute_stream",
+      streamId,
+      executionMode,
+    }),
+    executeWorkItem: (workItemId: string, executionMode: ExecutionMode = "supervised") => execute({
+      version: 1,
+      type: "execute_work_item",
+      workItemId,
+      executionMode,
+    }),
+    cancelAttempt: (attemptId: string, expectedVersion: number, reason: string) => execute({
+      version: 1,
+      type: "cancel_attempt",
+      attemptId,
+      expectedVersion,
+      reason,
+    }),
+    retryWorkItem: (workItemId: string, expectedVersion: number) => execute({
+      version: 1,
+      type: "retry_work_item",
+      workItemId,
+      expectedVersion,
+    }),
+    cancelWorkItem: (workItemId: string, expectedVersion: number, reason: string) => execute({
+      version: 1,
+      type: "cancel_work_item",
+      workItemId,
+      expectedVersion,
+      reason,
+    }),
+    answerDecision: (decisionId: string, expectedVersion: number, answer: { optionId?: string; answer?: string }) => execute({
+      version: 1,
+      type: "answer_decision",
+      decisionId,
+      expectedVersion,
+      ...answer,
+    }),
+    dismissDecision: (decisionId: string, expectedVersion: number, reason: string) => execute({
+      version: 1,
+      type: "dismiss_decision",
+      decisionId,
+      expectedVersion,
+      reason,
+    }),
+    proposeDecision: (decision: {
+      streamId: string
+      question: string
+      options: Array<{ id: string; label: string; description?: string }>
+      recommendationOptionId?: string
+      rationale?: string
+      affectedWorkItemIds: string[]
+    }) => execute({
+      version: 1,
+      type: "propose_decision",
+      ...decision,
+    }),
+    recordEvidence: (evidence: { subject: z.input<typeof EvidenceSubjectSchema>; requirementId?: string; sourceAttemptId?: string; evidence: z.input<typeof EvidenceInputSchema> }) => execute({
+      version: 1,
+      type: "record_evidence",
+      ...evidence,
+    }),
+    closeOutcome: (outcomeId: string, expectedVersion: number, reason: string) => execute({
+      version: 1,
+      type: "close_outcome",
+      outcomeId,
+      expectedVersion,
+      reason,
+    }),
+    closeStream: (streamId: string, expectedVersion: number, reason: string) => execute({
+      version: 1,
+      type: "close_stream",
+      streamId,
+      expectedVersion,
+      reason,
+    }),
+    deleteStream: (streamId: string, expectedVersion: number, reason: string) => execute({
+      version: 1,
+      type: "delete_stream",
+      streamId,
+      expectedVersion,
+      reason,
+    }),
+    createWorkSource: (source: { title: string; content: string }) => execute({
+      version: 1,
+      type: "create_work_source",
+      ...source,
+    }),
+    reviseWorkSource: (source: { workSourceId: string; expectedRevisionId: string; content: string; title?: string }) => execute({
+      version: 1,
+      type: "revise_work_source",
+      ...source,
+    }),
+    proposeAdmission: (source: z.input<typeof WorkSourceRevisionRefSchema>, targetStreamId?: string) => execute({
+      version: 1,
+      type: "propose_admission",
+      source,
+      ...(targetStreamId ? { targetStreamId } : {}),
+    }),
+    retryAdmissionPlanning: (proposalId: string, expectedVersion: number) => execute({
+      version: 1,
+      type: "retry_admission_planning",
+      proposalId,
+      expectedVersion,
+    }),
+    dismissAdmission: (proposalId: string, expectedVersion: number) => execute({
+      version: 1,
+      type: "dismiss_admission",
+      proposalId,
+      expectedVersion,
+    }),
+    reopenAdmission: (proposalId: string, expectedVersion: number) => execute({
+      version: 1,
+      type: "reopen_admission",
+      proposalId,
+      expectedVersion,
+    }),
+    confirmAdmission: (proposal: {
+      proposalId: string
+      expectedVersion: number
+      source: z.input<typeof WorkSourceRevisionRefSchema>
+      selection: z.input<typeof AdmissionSelectionSchema>
+      outcomes?: z.input<typeof AdmissionOutcomeInputSchema>[]
+      workItems?: z.input<typeof AdmissionWorkItemInputSchema>[]
+    }) => execute({
+      version: 1,
+      type: "confirm_admission",
+      ...proposal,
+    }),
+  }
+}
+
+async function apiError(response: Response, responseValue?: unknown) {
+  const parsed = WorkGraphApiErrorResponseSchema.safeParse(
+    responseValue === undefined ? await response.json().catch(() => undefined) : responseValue,
+  )
+  if (!parsed.success) {
+    return new WorkGraphApiError("invalid_response", "WorkGraph returned an invalid error response", response.status)
+  }
+  return new WorkGraphApiError(
+    parsed.data.error.code,
+    parsed.data.error.message,
+    response.status,
+    parsed.data.error.code,
+    parsed.data.error.retryable,
+  )
+}
+
+export type WorkGraphClient = ReturnType<typeof createWorkGraphClient>
+export type SourceView = z.infer<typeof SourceViewDtoSchema>
+export type IntakeCandidate = z.infer<typeof IntakeCandidateDtoSchema>

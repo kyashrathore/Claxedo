@@ -52,7 +52,7 @@ export function hostedDeployCommands(input: {
         args: [
           "deploy",
           "--env",
-          "staging",
+          input.staging ? "staging" : "",
           ...(input.dryRun ? ["--dry-run", "--outdir", "dist-worker"] : []),
         ],
       }]

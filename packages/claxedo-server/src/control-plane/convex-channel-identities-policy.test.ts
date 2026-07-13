@@ -1,6 +1,4 @@
-import { afterAll, afterEach, describe, expect, test } from "vitest"
-import fs from "node:fs"
-import path from "node:path"
+import { afterEach, describe, expect, test } from "vitest"
 import { authorizeProject, authorizeWorkspace } from "../../../../convex/channelIdentities"
 
 type Row = Record<string, unknown> & { _id: string }
@@ -77,10 +75,6 @@ afterEach(() => {
     return
   }
   process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = prevServiceToken
-})
-
-afterAll(() => {
-  fs.rmSync(path.resolve(process.cwd(), "convex"), { force: true, recursive: true })
 })
 
 describe("Convex channel identity policy", () => {

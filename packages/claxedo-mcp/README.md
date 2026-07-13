@@ -41,6 +41,11 @@ Read-only mode registers:
 - `browser_list_tabs`
 - `browser_screenshot`
 - `browser_get_console_logs`
+- `workgraph_list`
+- `workgraph_get`
+- `workgraph_source_views` when the embedded/HTTP host supports it
+- `workgraph_intake` when the embedded/HTTP host supports it
+- `workgraph_recap`
 
 Read-only mode omits:
 
@@ -92,3 +97,8 @@ Current tool surface:
 - `browser_get_console_logs`
 - `browser_evaluate_js`
 - `browser_navigate`
+- owner-scoped `workgraph_*` inspection, source admission, organization,
+  execution, Decisions, evidence, lifecycle, Source View, and intake tools;
+  intake staging returns the immutable source and admission proposal for review,
+  and confirmation uses the same `workgraph_admit` command as the app. See
+  `skills/workgraph/SKILL.md` for the current vocabulary.

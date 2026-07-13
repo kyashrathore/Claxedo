@@ -479,6 +479,7 @@ export function AppInterface(props: {
         />
         <Route path="/s/:sessionId" component={HiddenRouteOutlet} />
         <Route path="/marketplace" component={HiddenRouteOutlet} />
+        <Route path="/workgraph" component={HiddenRouteOutlet} />
         <Route path="/w/:workspaceId/session" component={HiddenRouteOutlet} />
         <Route path="/w/:workspaceId/session/:sessionId" component={HiddenRouteOutlet} />
         <Route path="/w/:workspaceId/page/:pageId" component={HiddenRouteOutlet} />

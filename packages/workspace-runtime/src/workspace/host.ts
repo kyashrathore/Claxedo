@@ -49,5 +49,11 @@ export type WorkspaceHost = {
     configApply: RuntimeConfigApplyStatus
   }
   capabilities: () => WorkspaceCapabilities
+  registerSessionTools: (input: {
+    sessionId: string
+    callbackUrl: string
+    tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown> }>
+  }) => Promise<void>
+  unregisterSessionTools: (sessionId: string) => Promise<void>
   dispose: () => void
 }

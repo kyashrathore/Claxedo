@@ -1047,11 +1047,11 @@ describe("harness-scoped resolution", () => {
       "NetworkPolicyRoutes(",
       "LivingAppsRoutes()",
       "eventsHandler",
-      "mountLazyLocalOnlyWorkGraph(",
+      "mountLazyEmbeddedWorkGraph(",
     ]) {
       expect(server).toContain(token)
     }
-    expect(serverWorkgraph).toContain("localOnlyProjection(")
+    expect(serverWorkgraph).not.toContain("localOnlyProjection(")
     expect(pages).toContain("authorizePage:")
     expect(pages).toContain("PageArenaRoutes(arenaOptions)")
   })
@@ -1209,9 +1209,9 @@ describe("harness-scoped resolution", () => {
 
     expect(server).not.toMatch(/from ["']@claxedo\/workgraph["']/)
     expect(server).not.toMatch(/from ["']\.\/workgraph-execution["']/)
-    expect(serverWorkgraph).not.toMatch(/from ["']@claxedo\/workgraph["']/)
+    expect(serverWorkgraph).not.toMatch(/^import (?!type\b).*from ["']@claxedo\/workgraph["']/m)
     expect(serverWorkgraph).not.toMatch(/from ["']\.\/workgraph-execution["']/)
     expect(serverWorkgraph).toContain('import("@claxedo/workgraph")')
-    expect(serverWorkgraph).toContain('import("./workgraph-execution")')
+    expect(server).toContain('import("./workgraph-session-gateway")')
   })
 })

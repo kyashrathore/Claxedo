@@ -99,7 +99,7 @@ describe("connections host", () => {
     const local = await host.routes.request("http://127.0.0.1/")
     expect(local.status).toBe(200)
     const body = (await local.json()) as { integrations: Array<{ id: string }> }
-    expect(body.integrations.map((integration) => integration.id).sort()).toEqual(["atlassian", "github", "notion"])
+    expect(body.integrations.map((integration) => integration.id).sort()).toEqual(["atlassian", "github", "linear", "notion"])
 
     // Token endpooint: loopback without header → 403; with header → 404 (no connection).
     const noHeader = await host.routes.request("http://127.0.0.1/connections/notion/token?capability=docs")

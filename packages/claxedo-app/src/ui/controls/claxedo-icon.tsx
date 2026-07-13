@@ -18,6 +18,10 @@ const claxedoIcons = {
   reload: `<path d="M16.25 6.66667C14.95 4.66667 12.65 3.33333 10 3.33333C6.31667 3.33333 3.33333 6.31667 3.33333 10C3.33333 13.6833 6.31667 16.6667 10 16.6667C13.05 16.6667 15.6 14.6167 16.4333 11.8333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.6667 2.5V6.66667H12.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>`,
   page: `<path d="M5 2.5H12.5L15.8333 5.83333V17.5H5V2.5Z" stroke="currentColor" stroke-linecap="square"/><path d="M12.5 2.5V5.83333H15.8333" stroke="currentColor" stroke-linecap="square"/><path d="M7.5 9.16667H12.9167M7.5 11.6667H12.9167M7.5 14.1667H10.8333" stroke="currentColor" stroke-linecap="square"/>`,
   gauge: `<path d="M3.33333 15C2.5 13.6111 2.08333 11.9444 2.08333 10.2778C2.08333 5.90279 5.625 2.36112 10 2.36112C14.375 2.36112 17.9167 5.90279 17.9167 10.2778C17.9167 11.9444 17.5 13.6111 16.6667 15" stroke="currentColor" stroke-linecap="round"/><path d="M10 10.2778L13.3333 6.94446" stroke="currentColor" stroke-linecap="round"/><circle cx="10" cy="10.2778" r="1.25" fill="currentColor"/>`,
+  // Open folder outline used for project headers. Two strokes: the back plate
+  // with a left tab, and the open front flap (a forward-leaning trapezoid).
+  // Both use currentColor so the icon inherits the header's active/idle color.
+  "folder-open": `<path d="M2.5 16V5.5H8L9.5 7.5H16.5V10" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 16H14.5L17.5 10H5.5L2.5 16Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>`,
 }
 
 export type ClaxedoIconName = UpstreamIconProps["name"] | keyof typeof claxedoIcons

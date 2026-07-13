@@ -100,7 +100,11 @@ function fakePlane(
     ...(input.deviceAuthProvider ? { deviceAuthProvider: input.deviceAuthProvider } : {}),
     // D9: hosted apps must declare their mode explicitly. No JWKS keys
     // configured → /.well-known/jwks.json returns 503.
-    env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
+    env: {
+      CLAXEDO_DEPLOYMENT_MODE: "hosted",
+      CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+      CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+    },
   }
 }
 
@@ -124,9 +128,16 @@ describe("hosted app", () => {
     expect(await res.json()).toMatchObject({ ok: true, mode: "hosted-control-plane", localExecution: false })
   })
 
+  test("fails hosted boot when WorkGraph Convex service configuration is missing", () => {
+    const plane = fakePlane()
+    plane.env = { CLAXEDO_DEPLOYMENT_MODE: "hosted" }
+    expect(() => createHostedApp(plane)).toThrow("Hosted WorkGraph requires Convex storage")
+  })
+
   test("CORS allows deployment-configured app origins (exact and suffix) and denies unknown ones", async () => {
     const plane = fakePlane()
     plane.env = {
+      ...plane.env,
       CLAXEDO_DEPLOYMENT_MODE: "hosted",
       CLAXEDO_APP_ORIGINS: "https://claxedo-app-staging.pages.dev, https://*.claxedo-app-staging.pages.dev",
     }
@@ -171,6 +182,8 @@ describe("hosted app", () => {
     const app = createHostedApp({
       ...fakePlane(),
       env: {
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
         CLAXEDO_DEPLOYMENT_MODE: "hosted",
         CLAXEDO_CENTRAL_VERSION: "central-1",
         CLAXEDO_EXPECTED_CENTRAL_VERSION: "central-1",
@@ -220,6 +233,7 @@ describe("hosted app", () => {
     const keys = await ed25519Pair()
     const plane = fakePlane()
     plane.env = {
+      ...plane.env,
       CLAXEDO_DEPLOYMENT_MODE: "hosted",
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: keys.privatePem,
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: keys.publicPem,
@@ -482,7 +496,7 @@ describe("hosted app", () => {
 
   test("local-only routes are absent from the hosted app", async () => {
     const app = createHostedApp(fakePlane())
-    for (const path of ["/pages", "/api/workgraph", "/api/claxedo/pty/abc/connect"]) {
+    for (const path of ["/pages", "/api/claxedo/pty/abc/connect"]) {
       const res = await app.fetch(new Request(`http://cp.test${path}`))
       expect(res.status, `${path} should not be mounted`).toBe(404)
     }
@@ -673,7 +687,7 @@ describe("hosted app", () => {
     }
     plane.services.authority = convex as never
 
-    const app = createHostedApp(plane)
+    const app = createHostedApp(plane, { entitlementGate: async () => undefined })
     const res = await app.fetch(
       new Request("http://cp.test/api/workspace/ws_1/connection", {
         method: "POST",
@@ -1010,7 +1024,10 @@ describe("hosted app", () => {
     } as unknown as SandboxManager
     const plane = {
       ...fakePlane({ sandboxManager }),
-      env: { CLAXEDO_DEPLOYMENT_MODE: "hosted", CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin-token" },
+      env: {
+        CLAXEDO_DEPLOYMENT_MODE: "hosted", CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin-token",
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+      },
     }
     const app = createHostedApp(plane)
     const res = await app.fetch(

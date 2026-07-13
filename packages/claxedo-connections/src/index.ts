@@ -8,4 +8,14 @@ export { createMemoryCredentialStore, createMemoryConnectionStore } from "./stor
 export { notionIntegration } from "./impls/notion.js"
 export { atlassianIntegration } from "./impls/atlassian.js"
 export { githubIntegration } from "./impls/github.js"
+export { linearIntegration } from "./impls/linear.js"
 export { googleIntegration } from "./impls/google.js"
+export type {
+  ConnectionWebhookRequest,
+  ConnectionWebhookVerifier,
+  VerifiedConnectionWebhookSignal,
+} from "./webhooks.js"
+export {
+  createConnectionWebhookVerifier,
+  githubConnectionWebhookVerifier,
+} from "./webhooks.js"

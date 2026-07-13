@@ -7,10 +7,12 @@ const reuse = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1"
 const suite = process.env.CLAXEDO_E2E_SUITE ?? "happy"
 const video = process.env.PLAYWRIGHT_VIDEO === "1" || suite === "core" ? "on" : "retain-on-failure"
 const grep = suite === "happy" ? /@happy/ : suite === "core" ? /@core/ : undefined
+const workGraphReal = process.env.CLAXEDO_WORKGRAPH_REAL_E2E === "1"
+const workGraphApiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
 const webServer = process.env.PLAYWRIGHT_SKIP_WEBSERVER === "1"
   ? undefined
   : {
-      command: `bun run dev -- --port ${port}`,
+      command: `${workGraphReal ? `bun --cwd ../workgraph run build && VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}bun run dev -- --port ${port}`,
       url: baseURL,
       reuseExistingServer: reuse,
       timeout: 120_000,

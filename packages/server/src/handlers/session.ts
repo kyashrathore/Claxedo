@@ -5,6 +5,7 @@ import { Api } from "../api"
 import { SessionsCursor } from "@opencode-ai/protocol/groups/session"
 import {
   ConflictError,
+  InvalidRequestError,
   InvalidCursorError,
   MessageNotFoundError,
   ServiceUnavailableError,
@@ -12,6 +13,8 @@ import {
   UnknownError,
 } from "@opencode-ai/protocol/errors"
 import { AbsolutePath } from "@opencode-ai/core/schema"
+import { Tool } from "@opencode-ai/core/tool/tool"
+import { ToolRegistry } from "@opencode-ai/core/tool/registry"
 
 const DefaultSessionsLimit = 50
 const DefaultSessionHistoryLimit = 50
@@ -72,9 +75,41 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               id: ctx.payload.id,
               agent: ctx.payload.agent,
               model: ctx.payload.model,
+              tools: ctx.payload.tools,
               location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) },
             }),
           }
+        }),
+      )
+      .handle(
+        "session.tool.register",
+        Effect.fn(function* (ctx) {
+          const callbackUrl = yield* loopbackCallbackUrl(ctx.payload.callbackUrl)
+          const registry = yield* ToolRegistry.Service
+          yield* registry.registerSession(
+            ctx.params.sessionID,
+            Object.fromEntries(ctx.payload.tools.map((item) => [
+              item.name,
+              remoteSessionTool({
+                sessionID: ctx.params.sessionID,
+                callbackUrl,
+                name: item.name,
+                description: item.description,
+                inputSchema: item.inputSchema,
+                outputSchema: item.outputSchema ?? {},
+              }),
+            ])),
+          ).pipe(
+            Effect.mapError((error) => new InvalidRequestError({ message: error.message, field: "tools" })),
+          )
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "session.tool.unregister",
+        Effect.fn(function* (ctx) {
+          yield* (yield* ToolRegistry.Service).unregisterSession(ctx.params.sessionID)
+          return HttpApiSchema.NoContent.make()
         }),
       )
       .handle(
@@ -383,3 +418,60 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       )
   }),
 )
+
+function loopbackCallbackUrl(input: string) {
+  return Effect.try({
+    try: () => {
+      const url = new URL(input)
+      const host = url.hostname.toLowerCase()
+      if (url.protocol !== "http:" || url.username || url.password || url.hash ||
+        (host !== "127.0.0.1" && host !== "localhost" && host !== "[::1]" && host !== "::1")) {
+        throw new Error("Session tool callback must be an unauthenticated loopback HTTP URL")
+      }
+      return url.toString()
+    },
+    catch: (error) => new InvalidRequestError({
+      message: error instanceof Error ? error.message : "Invalid Session tool callback URL",
+      field: "callbackUrl",
+    }),
+  })
+}
+
+function remoteSessionTool(input: {
+  sessionID: SessionV2.ID
+  callbackUrl: string
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+  outputSchema: Record<string, unknown>
+}) {
+  return Tool.makeDynamic({
+    description: input.description,
+    inputSchema: input.inputSchema as never,
+    outputSchema: input.outputSchema as never,
+    execute: (value, context) => {
+      if (context.sessionID !== input.sessionID) {
+        return Effect.fail(new Tool.Failure({ message: "Session tool binding does not match the executing Session" }))
+      }
+      return Effect.tryPromise({
+        try: async () => {
+          const response = await fetch(input.callbackUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              sessionID: context.sessionID,
+              name: input.name,
+              input: value,
+              toolCallID: context.toolCallID,
+            }),
+          })
+          if (!response.ok) throw new Error(`Session tool callback failed with status ${response.status}`)
+          return await response.json()
+        },
+        catch: (error) => new Tool.Failure({
+          message: error instanceof Error ? error.message : "Session tool callback failed",
+        }),
+      })
+    },
+  })
+}

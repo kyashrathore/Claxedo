@@ -451,7 +451,7 @@ describe("F12: membershipByClerkIds (connections-gate re-check)", () => {
 
   test("a real member of the claimed org resolves member:true with the role", async () => {
     const result = await check(membershipStore(), { clerk_org_id: "clerk_org_1", clerk_subject: "clerk_member" })
-    expect(result).toEqual({ member: true, org_id: "org_1", role: "admin" })
+    expect(result).toEqual({ member: true, org_id: "org_1", user_id: "user_member", role: "admin" })
   })
 
   test("a subject with no membership in the claimed org is member:false (stale/forged claim)", async () => {

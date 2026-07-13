@@ -2,7 +2,7 @@ import type { ClaxedoStateApi } from "../state/provider"
 import type { ContentMeta, ContentType } from "../state/types"
 
 export type SwitcherStatus = "idle" | "working" | "permission" | "done"
-export type SwitcherKind = "session" | "terminal" | "page" | "marketplace"
+export type SwitcherKind = "session" | "terminal" | "page" | "marketplace" | "workgraph"
 
 export type SwitcherItem = {
   contentId: string
@@ -25,7 +25,7 @@ export type SwitcherItemOptions = {
 }
 
 /** All SwitcherKind values mapKindFromMeta can ever return, for parity testing against ContentType. */
-export const SWITCHER_KINDS = ["session", "terminal", "page", "marketplace"] as const satisfies readonly SwitcherKind[]
+export const SWITCHER_KINDS = ["session", "terminal", "page", "marketplace", "workgraph"] as const satisfies readonly SwitcherKind[]
 
 export function mapKindFromMeta(type: ContentType): SwitcherKind {
   switch (type) {
@@ -39,6 +39,8 @@ export function mapKindFromMeta(type: ContentType): SwitcherKind {
       return "page"
     case "marketplace":
       return "marketplace"
+    case "workgraph":
+      return "workgraph"
     case "context":
       return "page"
     default: {
@@ -65,6 +67,8 @@ function titleFromMeta(meta: ContentMeta): string {
       return meta.filePath?.split("/").at(-1) || "Page"
     case "marketplace":
       return "Marketplace"
+    case "workgraph":
+      return "WorkGraph"
     default: {
       const exhaustive: never = meta.type
       return exhaustive

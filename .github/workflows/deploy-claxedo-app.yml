@@ -1,0 +1,128 @@
+name: deploy-claxedo-app
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - packages/claxedo-app/**
+      - .github/workflows/deploy-claxedo-app.yml
+  workflow_call:
+    inputs:
+      target_environment:
+        required: true
+        type: string
+      control_plane_verified:
+        required: true
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Protected GitHub environment to deploy"
+        required: true
+        type: choice
+        options: [staging, production]
+        default: staging
+
+concurrency:
+  group: deploy-claxedo-app-${{ inputs.target_environment || 'staging' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.decision.outputs.deploy }}
+    steps:
+      - if: github.event_name == 'push'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 2
+
+      - id: decision
+        env:
+          CONTROL_PLANE_VERIFIED: ${{ inputs.control_plane_verified }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$CONTROL_PLANE_VERIFIED" = "true" ] || [ "${{ github.event_name }}" != "push" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed=$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA")
+          outside=$(printf '%s\n' "$changed" | grep -Ev '^(packages/claxedo-app/|\.github/workflows/deploy-claxedo-app\.yml$)' || true)
+          if [ -n "$outside" ]; then
+            echo "App deployment is delegated to the ordered control-plane workflow because this is not an app-only change:"
+            printf '%s\n' "$outside"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: route
+    if: needs.route.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment || 'staging' }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Verify deployment configuration
+        env:
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          APP_URL: ${{ vars.CLAXEDO_APP_URL }}
+          PAGES_PROJECT: ${{ vars.CLAXEDO_PAGES_PROJECT }}
+          PAGES_BRANCH: ${{ vars.CLAXEDO_PAGES_BRANCH }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+        run: |
+          set -euo pipefail
+          for name in CONTROL_PLANE_URL APP_URL PAGES_PROJECT PAGES_BRANCH CLERK_PUBLISHABLE_KEY CONVEX_URL; do
+            [ -n "${!name}" ] || { echo "::error::$name is not configured in the protected environment"; exit 1; }
+          done
+
+      - name: Verify the target control plane
+        env:
+          BASE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+        run: |
+          set -euo pipefail
+          BASE="${BASE_URL%/}"
+          curl -fsS --max-time 15 "$BASE/api/claxedo/health" | jq -e '.ok == true' > /dev/null
+          curl -fsS --max-time 15 "$BASE/api/claxedo/mode" | jq -e '.signedAuth == true' > /dev/null
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+            -H "Authorization: Bearer app-deploy-garbage-${GITHUB_RUN_ID}" \
+            "$BASE/api/workgraph/snapshot?limit=1")
+          [ "$code" = "401" ] || { echo "::error::target WorkGraph auth probe returned $code, expected 401"; exit 1; }
+
+      - name: Build app for the verified control plane
+        working-directory: packages/claxedo-app
+        env:
+          VITE_CLAXEDO_SERVER_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          VITE_AUTH_ENABLED: "true"
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+        run: bun run build
+
+      - name: Deploy app
+        working-directory: packages/claxedo-app
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLAXEDO_PAGES_PROJECT: ${{ vars.CLAXEDO_PAGES_PROJECT }}
+          CLAXEDO_PAGES_BRANCH: ${{ vars.CLAXEDO_PAGES_BRANCH }}
+        run: bunx wrangler pages deploy dist --project-name "$CLAXEDO_PAGES_PROJECT" --branch "$CLAXEDO_PAGES_BRANCH"
+
+      - name: Verify deployed WorkGraph route
+        env:
+          APP_URL: ${{ vars.CLAXEDO_APP_URL }}
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS --max-time 15 "${APP_URL%/}/workgraph")
+          printf '%s' "$body" | grep -F '<div id="root"' > /dev/null \
+            || { echo "::error::deployed /workgraph did not return the Claxedo app shell"; exit 1; }

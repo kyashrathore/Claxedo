@@ -1,6 +1,4 @@
-import { afterAll, afterEach, describe, expect, test, vi } from "vitest"
-import fs from "node:fs"
-import path from "node:path"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { authorizeAdmin, remove, setEnabled, upsert } from "../../../../convex/agentExtensions"
 import {
   list as listPolicyOverrides,
@@ -133,10 +131,6 @@ afterEach(() => {
     return
   }
   process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = prevServiceToken
-})
-
-afterAll(() => {
-  fs.rmSync(path.resolve(process.cwd(), "convex"), { force: true, recursive: true })
 })
 
 describe("Convex Agent Extensions role policy", () => {

@@ -116,7 +116,7 @@
 | Toggle split (keyboard) | ✅ (Mod+\\) | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ |
 | Focus switch between groups | ✅ (Mod+Alt+Arrow) | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ |
 | Collapsible sidebar / rail | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
-| Tab types (session, page, review, etc.) | ✅ (session, page, workgraph, review) | 🔶 (project) | ✅ (thread) | ✅ (file-based) | 🔶 (workspace) | 🔶 (session) | ✅ (file-based) | 🔶 (agent) | 🔶 (agent) | ✅ (file-based) | 🔶 (terminal) | 🔶 (session) | ✅ (task-based) |
+| Tab types (session, page, review, etc.) | ✅ (session, page, review) | 🔶 (project) | ✅ (thread) | ✅ (file-based) | 🔶 (workspace) | 🔶 (session) | ✅ (file-based) | 🔶 (agent) | 🔶 (agent) | ✅ (file-based) | 🔶 (terminal) | 🔶 (session) | ✅ (task-based) |
 | Layout persistence (survives restart) | ✅ (localStorage + migration) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | File tree sidebar | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ |
 | Project / workspace hierarchy | ✅ (projects > workspaces > sessions) | ✅ (projects) | ✅ (projects) | ✅ (workspaces) | ✅ (workspaces) | ✅ (projects) | ✅ (projects) | ✅ (repos) | ✅ (repos) | ✅ (workspaces) | ✅ (repos) | ✅ (sessions) | ✅ (projects) |

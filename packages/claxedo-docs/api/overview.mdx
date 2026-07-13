@@ -23,6 +23,7 @@ per-surface reference pages.
 | Relay tunnel edge + `/metrics` + `/health` | `@claxedo/workspace-relay` | [Relay API](/api/relay) |
 | MCP runtime tools (stdio) | `@claxedo/mcp` | [MCP tools](/api/mcp) |
 | `/api/claxedo/integrations/*` — connections framework | `@claxedo/connections` (mounted by the host) | [Connections API](/api/connections) |
+| `/api/workgraph/*` — personal WorkGraph commands, snapshots, ordered changes, Work Sources, Source Views, and intake | `@claxedo/workgraph` (mounted by `claxedo-server`) | [WorkGraph package source](https://github.com/kyashrathore/Claxedo/tree/dev/packages/workgraph) |
 | Channel ingress webhooks (github / slack / telegram / discord / whatsapp) | `@claxedo/channels` | [Channels API](/api/channels) |
 
 ## Package roles
@@ -39,6 +40,7 @@ per-surface reference pages.
 | `@claxedo/sandbox-manager` | Manage sandbox placement and epoch-based leases for running workspace runtimes inside provider sandboxes (Cloudflare, Daytona, Docker, Modal, Vercel). |
 | `@claxedo/channels` | Route GitHub / Slack / Telegram / Discord / WhatsApp messages into Claxedo sessions with dedup, session resolution, and approval bridging. |
 | `@claxedo/connections` | Link external accounts (Notion, Atlassian, GitHub, Google) once and consume them by capability. |
+| `@claxedo/workgraph` | Embed the owner-scoped AI-work graph, runtime-neutral contracts, SQLite adapter, and HTTP router. Claxedo Cloud supplies the Convex adapter through its control plane. |
 | control-plane (`claxedo-server`) | Study the gateway/host composition Claxedo itself runs. Private and unpublished; a `@claxedo/control-plane` split is planned. See [control-plane](/packages/control-plane). |
 
 ## Code-supported vs product-owned
@@ -54,8 +56,10 @@ API surface:
 | Agent Extension fan-out | Server/supervisor code decides which connected workspace runtimes receive snapshots. The package materializes the snapshot it is given. |
 
 <Note>
-  `@claxedo/workgraph` is published at `0.1.0` (an event-sourced work inbox for
-  agents). Its API is early and still stabilizing.
+  `@claxedo/workgraph` is published at `0.1.0`. It provides the personal
+  AI-work domain, embedded service/router, runtime-neutral contracts, and
+  SQLite composition. Claxedo Cloud composes the same core contract over
+  Convex; the complete adapter conformance kit remains release work.
 </Note>
 
 ## Supported package entry points

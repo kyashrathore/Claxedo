@@ -31,18 +31,48 @@ and `packages/claxedo-server/src/architecture.test.ts` point here.
 - hosted workspace connection/register/heartbeat/pause routes,
 - hosted control routes,
 - internal relay target/revocation routes,
-- hosted sandbox admin routes.
+- hosted sandbox admin routes,
+- personal WorkGraph HTTP routes backed by Convex.
 
-The hosted app deliberately does not import the local Node server, embedded
-workspace runtime, local workspace store, local supervisor, local tunnel, or
-SQLite-only route implementations.
+The personal, user-owned WorkGraph is embedded in the hosted server. Signed
+identity selects the owner, the service token authenticates in-process Convex
+calls, and runtime commands atomically admit Attempts plus fenced launch
+outbox records. The scheduled Worker provisions the hosted Stream workspace,
+uses runtime-token-authenticated relay routes for Session V2 admission, and
+reconciles explicit durable terminal events on later passes. Transport and
+terminal failures become durable Attempt attention.
+
+The hosted app imports the Worker-safe WorkGraph domain, service, router, and
+Convex adapter. Its import boundary excludes the local Node server, embedded
+workspace runtime, local workspace store, local supervisor, local tunnel, and
+the Node-only SQLite adapter.
+
+The WorkGraph router is one owner-scoped application contract. Source View and
+`intake` paths are backend candidate-admission APIs; the Claxedo app presents
+their relevant records through the single personal WorkGraph attention surface.
+Connections remains the authority for team credentials, while each WorkGraph
+owner supplies a provider identity mapping and saved filters.
 
 ## Local Server Boundary
 
 `packages/claxedo-server/src/server.ts` remains the Node/local entrypoint. It
 owns local execution, embedded workspace runtime proxying, PTY/process/file
-routes, local workspace store access, pages, WorkGraph mounting, and other
-Node-only integrations.
+routes, local workspace store access, pages, and the SQLite WorkGraph adapter.
+The WorkGraph domain and hosted Convex adapter belong to the Worker-safe
+service composition; only the SQLite adapter is Node-only.
+
+## WorkGraph deployment acceptance
+
+The Worker-safe Convex composition, scheduled reconciliation, and hosted
+workspace dispatch are implemented in the repository. The current WorkGraph
+smoke verifies fail-closed authentication and an optional signed
+create/snapshot/delete persistence cycle.
+
+Release acceptance requires a real Convex and Worker staging deployment, signed
+cross-user policy checks, hosted Attempt execution, the approved single-surface
+browser journey, and retained rollout and recovery evidence. SQLite portable
+archive support is local-only today; Convex archive parity and owner-level
+permanent deletion remain repository work.
 
 ## Tests To Check
 

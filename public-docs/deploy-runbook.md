@@ -111,7 +111,24 @@ environments, with per-environment values.
 | secret | `CONVEX_DEPLOY_KEY` | Deploy key for that environment's Convex deployment (staging key on `staging`, prod key on `production`) |
 | secret | `CLOUDFLARE_API_TOKEN` | Workers Scripts:Edit on the target account (least-privilege, per the sandbox workflow's pattern) |
 | secret | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account to deploy into |
+| secret | `CLERK_SECRET_KEY` | Clerk Backend API key used to mint and revoke short-lived Sessions for the two smoke users. |
 | variable | `CLAXEDO_CONTROL_PLANE_URL` | Base URL of that environment's Worker, used by the smoke job (e.g. `https://claxedo-control-plane-staging.<subdomain>.workers.dev`) |
+| variable | `WORKGRAPH_SMOKE_USER_A_ID` | First dedicated Clerk smoke user. |
+| variable | `WORKGRAPH_SMOKE_USER_B_ID` | Second distinct Clerk smoke user used for cross-owner denial. |
+| variable | `WORKGRAPH_SMOKE_WORKSPACE_ID` | Existing hosted Workspace accessible to smoke user A; the capability route reads its real runtime catalog. |
+
+### `deploy-claxedo-app.yml`
+
+| Kind | Name | Purpose |
+|---|---|---|
+| secret | `CLOUDFLARE_API_TOKEN` | Pages deployment permission for the target account. |
+| secret | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account containing the Pages project. |
+| variable | `CLAXEDO_CONTROL_PLANE_URL` | Verified Worker URL embedded into the app build. |
+| variable | `CLAXEDO_APP_URL` | Deployed app base URL used to verify `/workgraph`. |
+| variable | `CLAXEDO_PAGES_PROJECT` | Exact Pages project name. |
+| variable | `CLAXEDO_PAGES_BRANCH` | Exact Pages branch for this protected environment. |
+| variable | `VITE_CLERK_PUBLISHABLE_KEY` | Public Clerk instance key embedded into the app. |
+| variable | `VITE_CONVEX_URL` | Public Convex URL embedded into the app. |
 
 ### `deploy-relay.yml`
 
@@ -132,6 +149,59 @@ Secret-concentration risk is accepted per the ADR (§6.1): environment-scoped
 secrets + required review on `production` + least-privilege tokens beat a
 laptop keychain with no audit trail.
 
+## Runtime configuration required before the first deploy
+
+GitHub Actions deploys code but does not install Worker secrets or Convex function environment variables. Provision these separately for both staging and production, then keep their values stable across ordinary code deploys.
+
+The same randomly generated `CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN` must exist in both runtime environments:
+
+```sh
+# Convex function environment
+CONVEX_DEPLOY_KEY=... bunx convex env set CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN "$TOKEN"
+
+# Cloudflare Worker secret
+cd packages/claxedo-server
+printf '%s' "$TOKEN" | bunx wrangler secret put CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN --env staging
+# Omit --env for production.
+```
+
+The hosted Worker also requires `CLAXEDO_WORKSPACE_AUTHORITY_URL`, `CLERK_JWT_ISSUER`, `CLERK_JWKS_URL`, and `CLAXEDO_RUNTIME_ADMIN_TOKEN`. Hosted execution additionally requires the selected sandbox driver, relay, and runtime-token signing configuration documented in `packages/claxedo-server/wrangler.toml`. A missing required binding fails closed at boot or makes the scheduled reconciliation invocation fail visibly.
+
+Connections and signed WorkGraph webhooks require the encrypted per-organization credential backend. Set `CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1` together with `CLAXEDO_CREDENTIALS_KEK`, `CLAXEDO_CF_KV_URL`, and `CLAXEDO_CF_KV_TOKEN`; use `CLAXEDO_CREDENTIALS_KEK_NEXT` only during key rotation. Provider tokens and webhook signing secrets are then written through the Connections setup routes and never placed in WorkGraph or deployment variables.
+
+## WorkGraph Cloud go/no-go
+
+### Before deploy
+
+- [ ] `bunx convex codegen` and `bunx tsc --noEmit --project convex/tsconfig.json` pass.
+- [ ] `bun run check:worker-safe` and an explicit Wrangler dry-run pass from `packages/claxedo-server`.
+- [ ] The relevant hosted auth, owner-isolation, Connections, webhook, notification, and background-reconciliation tests pass.
+- [ ] The Convex change is additive and can serve the currently deployed Worker before dependent code ships.
+- [ ] The Worker and Convex deployment contain the same control-plane service token, without printing either value.
+- [ ] Signed auth, workspace authority, runtime admin, relay, sandbox, and runtime-token signing bindings are present in the target Worker environment.
+- [ ] Hosted Connections are either deliberately disabled or have the encrypted per-org credential configuration above; webhook signing secrets exist through Connections for every enabled webhook source.
+
+Any failed item is a no-go. Missing external credentials defer deployed acceptance; they do not invalidate repository-level Worker safety or Convex type evidence.
+
+### Deploy and verify
+
+1. [ ] Deploy an additive Convex schema/functions commit first and verify server-side schema validation succeeds.
+2. [ ] Deploy the same reviewed SHA's Worker after Convex is healthy.
+3. [ ] Confirm health, signed-auth mode, and both garbage-token 401 probes.
+4. [ ] Require the short-lived two-user Stream/Task persistence, owner-denial, and execution-capability smoke to pass.
+5. [ ] Confirm the next scheduled invocation completes sandbox GC and WorkGraph reconciliation without an error event.
+6. [ ] Deploy the app from the same SHA through `deploy-claxedo-app.yml` and require `/workgraph` to return the built app shell.
+7. [ ] Send one valid and one invalid-signature provider webhook to a staging Connection; require one filtered intake refresh and one rejection, with no credential material in logs.
+
+### Roll back or roll forward
+
+- Worker-only failure: roll back the Worker version, then repeat health/auth probes against the still-additive Convex deployment.
+- Convex function failure: fix forward by deploying the previous compatible function code or a new corrective commit. Convex data and schema do not roll back.
+- Credential or signing-key failure: restore the prior Worker secret/key slot, leave stored Connection ciphertext untouched, and rerun authenticated persistence plus webhook verification.
+- Reconciliation failure: stop new execution admission if necessary, retain durable Attempts/jobs, restore the Worker, and verify the next claim uses the persisted lease epoch rather than creating duplicate work.
+
+For the first 24 hours, alert on Worker composition 503s, non-401 garbage-token probes, WorkGraph command/query error rate, expired or repeatedly failed Attempt/Recap/source-plan claims, webhook signature/deduplication failures, and credential decryption/authentication failures.
+
 ## Smoke gates (what "green" asserts)
 
 The control-plane smoke is behavioral, not liveness theater:
@@ -142,6 +212,12 @@ The control-plane smoke is behavioral, not liveness theater:
 3. `GET /api/control/sessions?workspaceId=...` with a **garbage bearer token**
    → exactly **401**. Any other status (including 200) fails the job: the auth
    path is not failing closed.
+4. `GET /api/workgraph/snapshot?limit=1` with a garbage bearer token → exactly
+   **401**, proving the personal WorkGraph cannot be reached without signed
+   identity. The workflow then invokes `bun run smoke:workgraph` with two
+   dedicated Clerk users; it checks hosted execution capabilities, creates and
+   reads a real Convex-backed Stream and Task, proves cross-user denial, deletes
+   the Stream, and revokes the short-lived Sessions.
 
 The relay smoke is `/health` recovery plus the tunnel reconvergence assertion
 described above.
@@ -171,6 +247,11 @@ stays the authoritative record of what is running.
 - **Live-run verification is pending credentials.** These workflows have been
   YAML-validated and command-audited against the tree, but have not executed a
   real deploy.
+- Hosted WorkGraph execution admission, fencing, and dispatch outbox are
+  durable in Convex. The scheduled Worker provisions the Stream workspace,
+  admits work through authenticated Session V2 relay routes, and reconciles
+  explicit durable terminal events on later cron passes. Transport failures
+  remain visible as Attempt attention.
 - `packages/workspace-relay/Dockerfile` does not exist yet; the relay
   `fly.toml` references it and documents the requirement. First relay deploy
   is blocked on writing it.

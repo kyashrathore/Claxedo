@@ -215,10 +215,10 @@ than the gated route and `spawnTurn` must be enumerated during
 implementation; each either mints or is deliberately left credential-less
 and thus falls into the absent→team row (safe direction).
 
-Consumers: `forCapability` callers (WorkGraph today, doc-collab next)
-pass the resolved owner. Where a consumer has no turn context it gets
-team scope by construction — WorkGraph's in-process call is server-side
-automation and stays team-only permanently.
+Consumers pass the resolved team partition to `forCapability`. WorkGraph is
+personally owned but uses team Connections for external trackers; each source
+view stores the owner's provider identity and filters. Durable WorkGraph
+records store the team connection reference, never its token.
 
 Agent-facing selection ("use my personal drive"): the tool/MCP surface
 for a turn lists the connections that turn can actually use, scope

@@ -578,18 +578,20 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           pageId(),
           terminalId(),
           shellRouteKind(),
+          location.pathname,
           sessionTitle(),
           sessionHasBadge(),
           sessionBadgeAdditions(),
           sessionBadgeDeletions(),
           routeInventorySignature(),
         ] as const,
-      ([ready, wsId, id, pid, tid, routeKind, title, hasBadge, additions, deletions]) => {
+      ([ready, wsId, id, pid, tid, routeKind, _pathname, title, hasBadge, additions, deletions]) => {
         route.receive({
           ready,
           workspaceId: wsId,
           sessionId: id,
           marketplace: routeKind === "marketplace",
+          workgraph: shellRouteKind() === "workgraph",
           pageId: pid,
           terminalId: tid,
           workspaceBrowse: routeKind === "workspace",

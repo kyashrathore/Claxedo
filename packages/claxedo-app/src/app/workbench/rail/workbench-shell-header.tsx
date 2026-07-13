@@ -8,11 +8,14 @@ import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-
 import { useClaxedoState } from "../state/index"
 import { WorkspaceScopeButtons } from "./workspace-toolbar"
 import { WorkspaceToolButtons } from "./workspace-tool-buttons"
+import { workGraphHasAttention } from "@/features/workgraph/waiting/attention-signal"
 
 export function WorkspacePanelChrome(props: {
   workspacePanelOpen: () => boolean
   workspacePanelFullWidth: () => boolean
   allowFullWidth?: boolean
+  /** When true, the toggle shows a small attention dot (e.g. WorkGraph needs you). */
+  attention?: () => boolean
   onToggleFullWidth: () => void
   onTogglePanel: (button: HTMLButtonElement) => void
 }) {
@@ -32,12 +35,15 @@ export function WorkspacePanelChrome(props: {
       <button
         type="button"
         data-testid="workspace-panel-toggle"
-        class="flex size-7 items-center justify-center rounded-md text-icon-weak-base transition-[background-color,color,scale] duration-100 hover:bg-surface-base-hover hover:text-icon-base active:scale-[0.96]"
-        aria-label={props.workspacePanelOpen() ? "Close workspace panel" : "Open workspace panel"}
+        class="relative flex size-7 items-center justify-center rounded-md text-icon-weak-base transition-[background-color,color,scale] duration-100 hover:bg-surface-base-hover hover:text-icon-base active:scale-[0.96]"
+        aria-label={`${props.workspacePanelOpen() ? "Close workspace panel" : "Open workspace panel"}${props.attention?.() ? ", needs attention" : ""}`}
         title={props.workspacePanelOpen() ? "Close workspace panel" : "Open workspace panel"}
         aria-pressed={props.workspacePanelOpen()}
         onClick={(event) => props.onTogglePanel(event.currentTarget)}
       >
+        <Show when={props.attention?.()}>
+          <span data-testid="workspace-panel-toggle-attention" class="absolute right-1 top-1 size-1.5 rounded-full bg-surface-critical-strong" />
+        </Show>
         <Icon name={props.workspacePanelOpen() ? "layout-right-full" : "layout-right-partial"} size="small" />
       </button>
     </div>
@@ -129,6 +135,7 @@ export function WorkbenchShellHeader(props: {
               workspacePanelOpen={props.workspacePanelVisualOpen}
               workspacePanelFullWidth={props.workspacePanelFullWidth}
               allowFullWidth={false}
+              attention={workGraphHasAttention}
               onToggleFullWidth={props.onToggleWorkspacePanelFullWidth}
               onTogglePanel={props.onToggleWorkspacePanel}
             />

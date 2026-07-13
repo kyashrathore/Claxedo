@@ -131,6 +131,39 @@ export function make<
   return tool
 }
 
+/** Runtime-described tool used by trusted host bridges such as Session-scoped remote tools. */
+export function makeDynamic(config: {
+  readonly description: string
+  readonly inputSchema: JsonSchema.JsonSchema
+  readonly outputSchema: JsonSchema.JsonSchema
+  readonly execute: (input: unknown, context: Context) => Effect.Effect<unknown, ToolFailure>
+}): AnyTool {
+  const tool = Object.freeze({}) as AnyTool
+  const definitions = new Map<string, ToolDefinition>()
+  runtimes.set(tool, {
+    definition: (name) => {
+      const cached = definitions.get(name)
+      if (cached) return cached
+      const result = new ToolDefinition({
+        name,
+        description: config.description,
+        inputSchema: config.inputSchema,
+        outputSchema: config.outputSchema,
+      })
+      definitions.set(name, result)
+      return result
+    },
+    settle: (call, context) => config.execute(call.input, context).pipe(
+      Effect.map((output) => ({
+        output,
+        structured: output,
+        content: [{ type: "text" as const, text: typeof output === "string" ? output : JSON.stringify(output) ?? "null" }],
+      })),
+    ),
+  })
+  return tool
+}
+
 export const validateName = (name: string) =>
   /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)
     ? Effect.void

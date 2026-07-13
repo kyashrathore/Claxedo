@@ -194,6 +194,7 @@ async function verifyJwt(token: string, key: RelayKey, input: {
       algorithms: [...algorithms],
     })
   } catch (err) {
+    if (err instanceof errors.JWKSTimeout) throw err
     if (err instanceof errors.JOSEError) {
       throw new WorkspaceRelayAuthError("invalid_relay_token", "Relay token is invalid")
     }

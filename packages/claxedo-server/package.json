@@ -62,6 +62,7 @@
     "check:worker-safe": "bun run scripts/deploy/check-worker-safe.ts",
     "smoke:central": "bun run scripts/smoke/smoke-central.ts",
     "smoke:runtime": "bun run scripts/smoke/smoke-runtime.ts",
+    "smoke:workgraph": "bun run scripts/smoke/smoke-workgraph.ts",
     "check:package-boundary": "bun run scripts/maintenance/check-package-boundary.ts",
     "maintenance:normalize-sandbox-leases": "bun run scripts/maintenance/normalize-convex-sandbox-leases.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",

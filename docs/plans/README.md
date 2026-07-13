@@ -1,19 +1,22 @@
 # Claxedo Plans
 
 Status: retained plans index
-Last updated: 2026-07-09
+Last updated: 2026-07-13
 
-This directory keeps only dated plans that still have live references outside
-`docs/`.
+This directory keeps active plans and concise dated references that still help
+explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
+
+- [WorkGraph end-to-end execution goal](./2026-07-13-001-goal-execute-workgraph-end-to-end.md)
+  - Active long-running goal for delivering the personal WorkGraph across the embedded backend-neutral service, SQLite, Convex, Claxedo Cloud, the single main app surface, the existing global WorkspacePanel, exact versioned Work Sources, the initial Docs v2 adapter, Connections-backed personal candidates, strict Session planning and Recaps, and core E2E verification. Repository backend verification is green; staging deployment and its signed browser proof remain open.
 
 - [Connections framework](./2026-07-03-004-feat-connections-framework-plan.md)
   - Retained because `packages/claxedo-server` source comments still refer to
     this design while defining integration routes and connection storage.
-- [WorkGraph flat inbox OSS](./2026-07-06-004-refactor-workgraph-flat-inbox-oss-plan.md)
-  - Retained because `packages/workgraph/test/orchestrator-ratchet.test.ts`
-    cites it as the deletion-ratchet design.
+- [WorkGraph package boundary](./2026-07-06-004-refactor-workgraph-flat-inbox-oss-plan.md)
+  - Retained as a concise package-boundary reference. Current architecture and
+    delivery status live in `packages/workgraph/{PRD,ARCHITECTURE,SPEC,TASKS}.md`.
 - [Connections emulator E2E](./2026-07-06-005-test-connections-e2e-emulate-plan.md)
   - Retained as an active test plan. The connections package, server host,
     settings UI, and WorkGraph consumer still exist, and emulator endpoint seams
@@ -27,5 +30,5 @@ This directory keeps only dated plans that still have live references outside
 
 ## Maintenance
 
-Delete new plans once their implementation lands unless a package README,
-source comment, test, or public doc still cites them.
+Delete completed plans when they no longer provide a maintained implementation,
+deployment, testing, or package-boundary reference.

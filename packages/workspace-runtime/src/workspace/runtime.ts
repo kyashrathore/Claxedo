@@ -43,7 +43,7 @@ import {
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { attachSseFanout, createSseReplayBuffer, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import { isTerminalCompatEvent, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
-import type { Hono } from "hono"
+import type { Context, Hono } from "hono"
 import { workspaceCapabilities } from "../capabilities"
 import { runGit } from "../git"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
@@ -1411,6 +1411,21 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
       })
 
+      app.get("/experimental/tool/ids", async (c) => {
+        const adapter = ensure()
+        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
+          return c.json({
+            ok: false,
+            error: {
+              code: "tool_catalog_unavailable",
+              harness: runner.id,
+              message: `${runner.id} does not expose a live Tool catalog`,
+            },
+          }, 502)
+        }
+        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
+      })
+
       app.get("/vcs", async (c) => {
         const adapter = ensure()
         const fallback = () => localVcsInfo(requestDirectory(c))
@@ -1463,6 +1478,19 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
         return new Response(body, { headers: sseHeaders() })
       })
+
+      // Session V2 is the durable agent-control contract used by hosted
+      // WorkGraph. Keep it on the authenticated workspace-runtime/relay path
+      // and proxy byte-for-byte to the local OpenCode engine.
+      const proxySessionV2 = async (c: Context) => {
+        const adapter = ensure()
+        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
+          return c.json({ error: { code: "session_v2_unavailable", message: "Session V2 requires the OpenCode HTTP runtime" } }, 503)
+        }
+        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
+      }
+      app.all("/api/session", proxySessionV2)
+      app.all("/api/session/*", proxySessionV2)
 
       app.route("/", SessionRoutes((input) => adapterForSession(input), {
         eventHub,
@@ -1553,6 +1581,34 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     },
     capabilities() {
       return workspaceCapabilities(enabled)
+    },
+    async registerSessionTools(input) {
+      const directory = options.target?.directory ?? workspaceDir()
+      const next = await adapterForSession({ sessionId: input.sessionId, directory })
+      if (!hasAdapterCapability(next, "http-proxy")) throw new Error("Session harness does not support Core V2 tools")
+      const response = await next.getRequestFn().then((request) => request(new Request(
+        `${OPENCODE_INTERNAL_BASE}/api/session/${encodeURIComponent(input.sessionId)}/tool`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-opencode-directory": directory },
+          body: JSON.stringify({ callbackUrl: input.callbackUrl, tools: input.tools }),
+          // @ts-ignore Node fetch requires duplex for request bodies.
+          duplex: "half",
+        },
+      )))
+      if (!response.ok) throw new Error(`Core Session tool registration failed: ${response.status} ${await response.text()}`)
+    },
+    async unregisterSessionTools(sessionId) {
+      const directory = options.target?.directory ?? workspaceDir()
+      const next = await adapterForSession({ sessionId, directory })
+      if (!hasAdapterCapability(next, "http-proxy")) return
+      const response = await next.getRequestFn().then((request) => request(new Request(
+        `${OPENCODE_INTERNAL_BASE}/api/session/${encodeURIComponent(sessionId)}/tool`,
+        { method: "DELETE", headers: { "x-opencode-directory": directory } },
+      )))
+      if (!response.ok && response.status !== 404) {
+        throw new Error(`Core Session tool cleanup failed: ${response.status} ${await response.text()}`)
+      }
     },
     dispose() {
       cleanupGlobalEventReplay()

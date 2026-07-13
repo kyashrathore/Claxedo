@@ -1,143 +1,174 @@
-import path from "path"
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
 import type { Hono as HonoType } from "hono"
-import type { ConnectionsService } from "@claxedo/connections"
-import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
-import { OPENCODE_INTERNAL_BASE } from "./opencode-engine"
-import type { OpencodeEventsHandle } from "./opencode-events"
-import { dataDir } from "./paths"
-import { localOnlyProjection } from "./routes/local-only-projection"
+import { Hono } from "hono"
+import type BetterSqlite3 from "better-sqlite3"
+import {
+  createConnectionWebhookVerifier,
+  githubConnectionWebhookVerifier,
+  type ConnectionsService,
+  type ConnectionWebhookVerifier,
+} from "@claxedo/connections"
+import type { ExecutionCapabilitiesPort, WorkspaceExecutionPort } from "@claxedo/workgraph"
+import type { SourceIssueConnector } from "@claxedo/workgraph/connectors"
+import type { WorkGraphContext } from "@claxedo/workgraph/contracts"
+import {
+  controlPlaneAuthContext,
+  type ClerkVerifier,
+  type ControlPlaneAuthConfig,
+} from "./control-plane/auth"
+import type { WorkGraphSessionGateway } from "./workgraph-host/local-execution"
 
-const execFileAsync = promisify(execFile)
+export type LocalWorkGraphAuthOptions = Readonly<{
+  authConfig: ControlPlaneAuthConfig
+  verifier?: ClerkVerifier
+}>
 
-type WorkGraphRouteOptions = Omit<Parameters<typeof localOnlyProjection>[0], "label">
-
-type FetchApp = {
-  fetch: (request: Request) => Response | Promise<Response>
-}
-
-function workgraphRequest(request: Request) {
-  const url = new URL(request.url)
-  url.pathname = url.pathname === "/api/workgraph"
-    ? "/"
-    : url.pathname.slice("/api/workgraph".length)
-  return new Request(url, request)
-}
-
-export function mountLazyLocalOnlyWorkGraph(
-  app: HonoType,
-  options: WorkGraphRouteOptions,
-  load: () => Promise<FetchApp>,
-) {
-  let loaded: Promise<FetchApp> | undefined
-
-  app.use("/api/workgraph", localOnlyProjection({
-    ...options,
-    label: "WorkGraph",
-  }))
-  app.use("/api/workgraph/*", localOnlyProjection({
-    ...options,
-    label: "WorkGraph",
-  }))
-  app.all("/api/workgraph", async (c) => (loaded ??= load()).then((next) => next.fetch(workgraphRequest(c.req.raw))))
-  app.all("/api/workgraph/*", async (c) => (loaded ??= load()).then((next) => next.fetch(workgraphRequest(c.req.raw))))
-}
-
-export function mountLocalOnlyWorkGraph(app: HonoType, workgraphApp: HonoType, options: WorkGraphRouteOptions) {
-  mountLazyLocalOnlyWorkGraph(app, options, async () => workgraphApp)
-}
+export type LocalEmbeddedWorkGraph = Awaited<ReturnType<typeof createLocalEmbeddedWorkGraph>>
 
 /**
- * Resolve a GitHub token through the @claxedo/connections framework
- * (one connections layer, no parallel auths). Tries the "work-source"
- * capability first (the capability workgraph connectors ride on), then
- * "code-host" (what the github integration declares today). Returns null
- * when no usable connection exists so callers can fall back.
+ * Compose WorkGraph v2 inside the Claxedo server process over a caller-owned
+ * SQLite handle. Internal consumers use `service` directly; only northbound
+ * clients cross the Hono router.
  */
-async function githubAuthFromConnections(connections: ConnectionsService | undefined) {
-  if (!connections) return null
-  for (const capability of ["work-source", "code-host"] as const) {
-    try {
-      // WorkGraph runs out of band from an interactive user turn, so it is
-      // permanently constrained to the team partition.
-      const [handle] = await connections.forCapability(capability, { integration: "github", scope: "team" })
-      if (!handle) continue
-      const { token } = await handle.getToken()
-      if (!token) continue
-      return {
-        source: "connections" as const,
-        token,
-        name: handle.accountLabel ? `GitHub (${handle.accountLabel})` : "GitHub connection",
-      }
-    } catch {
-      // Broken/degraded credential — keep trying other capabilities, then CLI.
+export async function createLocalEmbeddedWorkGraph(input: Readonly<{
+  database: BetterSqlite3.Database
+  auth?: LocalWorkGraphAuthOptions
+  execution: WorkspaceExecutionPort
+  executionCapabilities?: ExecutionCapabilitiesPort
+  recaps?: Readonly<{
+    sessions?: WorkGraphSessionGateway
+    directory?: string
+    clock?: Readonly<{ now(): number }>
+  }>
+  sourcePlanning?: Readonly<{
+    sessions: WorkGraphSessionGateway
+    directory: string
+  }>
+  connections?: ConnectionsService
+  sourceIssueConnectors?: readonly SourceIssueConnector[]
+  resolveTeamOwner?: (context: WorkGraphContext) => string | undefined
+  webhookVerifier?: ConnectionWebhookVerifier
+}>) {
+  const workgraph = await import("@claxedo/workgraph")
+  const adapter = workgraph.createSqliteWorkGraphService({ database: input.database, execution: input.execution })
+  const recaps = workgraph.createSqliteRecapRuntime({
+    database: input.database,
+    ...(input.recaps?.clock ? { clock: input.recaps.clock } : {}),
+    ...(input.recaps?.sessions ? {
+      sessions: input.recaps.sessions,
+      sessionDirectory: input.recaps.directory ?? process.cwd(),
+    } : {}),
+  })
+  const sourcePlanning = workgraph.createSqliteSourcePlanningRuntime({
+    database: input.database,
+    ...(input.sourcePlanning ? {
+      sessions: input.sourcePlanning.sessions,
+      sessionDirectory: input.sourcePlanning.directory,
+    } : {}),
+  })
+  const sessionIntake = workgraph.createSqliteSessionIntakePort(input.database)
+  const notifications = workgraph.createNotificationService(workgraph.createSqliteNotificationStore(input.database))
+  const archive = workgraph.createSqliteWorkGraphArchivePort(input.database, undefined, input.connections ? {
+    connectionAvailable: async (context, connectionId) => {
+      const connection = await input.connections!.getById(connectionId)
+      return !!connection && connection.owner === (input.resolveTeamOwner ?? (() => undefined))(context)
+    },
+  } : undefined)
+  const deletion = workgraph.createSqliteWorkGraphOwnerDeletionPort(input.database, input.execution)
+  const webhookVerifier = input.webhookVerifier ?? (input.connections ? createConnectionWebhookVerifier({
+    resolve: async (connectionId) => {
+      const secret = await input.connections!.resolveWebhookSigningSecret(connectionId, "github")
+      return secret ? { provider: "github", secret } : undefined
+    },
+    providers: { github: githubConnectionWebhookVerifier() },
+  }) : undefined)
+  const resolveContext = async (request: Request): Promise<WorkGraphContext> => {
+    const auth = await controlPlaneAuthContext(request, input.auth
+      ? { config: input.auth.authConfig, ...(input.auth.verifier ? { verifier: input.auth.verifier } : {}) }
+      : undefined)
+    const ownerUserId = auth.mode === "signed" ? auth.user.subject : "local"
+    return {
+      ownerUserId: ownerUserId as never,
+      actor: { type: "user" as const, id: ownerUserId as never },
+      requestId: (request.headers.get("x-request-id")?.trim() || crypto.randomUUID()) as never,
+      access: { mode: "owner" as const },
     }
   }
-  return null
+  const authenticated = workgraph.createWorkGraphHttpRouter({
+    service: adapter.service,
+    resolveContext,
+    notifications,
+    archive,
+    deletion,
+    ...(input.executionCapabilities ? { executionCapabilities: input.executionCapabilities } : {}),
+  })
+  const intake = input.connections
+    ? await import("./workgraph-host/intake").then((host) => host.createWorkGraphIntakeHost({
+        database: input.database,
+        service: adapter.service,
+        connections: input.connections!,
+        resolveContext,
+        resolveTeamOwner: input.resolveTeamOwner ?? (() => undefined),
+        ...(input.sourceIssueConnectors ? { sourceIssueConnectors: input.sourceIssueConnectors } : {}),
+        ...(webhookVerifier ? { webhookVerifier } : {}),
+      }))
+    : undefined
+  if (intake) authenticated.route("/", intake.router)
+  const router = new Hono()
+  if (intake?.webhookRouter) router.route("/", intake.webhookRouter)
+  router.route("/", authenticated)
+  const reconcile = async (context: WorkGraphContext) => {
+    return Promise.all(workgraph.listSqliteReconcilableAttempts(input.database, context).map(async (attempt) => {
+      const renewal = await adapter.attemptRuntime.renewLease(context, {
+        attemptId: attempt.attemptId,
+        expectedLeaseEpoch: attempt.leaseEpoch,
+        occurredAt: Date.now(),
+        durationMs: 300_000,
+      })
+      if (!renewal) return { settled: false as const }
+      const result = await input.execution.result(context, { attemptId: attempt.attemptId, sessionId: attempt.sessionId })
+      if (result.state === "pending" || result.state === "running") return { settled: false as const }
+      const terminal = result.state === "succeeded"
+        ? await input.execution.integrateResult(context, {
+            streamId: attempt.streamId,
+            workItemId: attempt.workItemId,
+            attemptId: attempt.attemptId,
+            sessionId: attempt.sessionId,
+            envelopeId: attempt.envelopeId,
+            ...(attempt.childIsolationId ? { childIsolationId: attempt.childIsolationId as never } : {}),
+            profile: JSON.parse(attempt.profileJson),
+            result,
+          }).then((integrated) => ({ state: "succeeded" as const, ...integrated }))
+        : result
+      return workgraph.recordSemanticAttemptResult(
+        context,
+        { ...attempt, leaseEpoch: renewal.leaseEpoch },
+        terminal,
+        adapter.attemptResults,
+      )
+    }))
+  }
+  return { database: input.database, service: adapter.service, router, resolveContext, reconcile, recaps, sourcePlanning, sessionIntake, notifications, archive, deletion, intake }
 }
 
-export async function loadWorkGraphApp(input: {
-  opencodeRequest: OpenCodeRequestFn
-  opencodeEvents: OpencodeEventsHandle
-  /**
-   * Optional @claxedo/connections service. When present, github tokens are
-   * resolved through it FIRST (capability handles, rotation-safe), before
-   * falling back to the local `gh` CLI. The host should pass
-   * `createApp(...)` result's `connections` (the connections-host service).
-   */
-  connections?: ConnectionsService
-}) {
-  const [
-    sqlite,
-    workgraph,
-    execution,
-  ] = await Promise.all([
-    import("better-sqlite3"),
-    import("@claxedo/workgraph"),
-    import("./workgraph-execution"),
-  ])
-  const Database = sqlite.default
-  const workgraphDb = new Database(path.join(dataDir(), "workgraph.db"))
-  workgraph.initializeDb(workgraphDb)
+export function mountEmbeddedWorkGraph(app: HonoType, embedded: LocalEmbeddedWorkGraph) {
+  app.route("/api/workgraph", embedded.router)
+}
 
-  return workgraph.createApp(workgraphDb, {
-    execution: execution.createWorkGraphExecution(workgraphDb, input.opencodeRequest, input.opencodeEvents),
-    auth: async (provider) => {
-      if (provider !== "github") return null
-      const viaConnections = await githubAuthFromConnections(input.connections)
-      if (viaConnections) return viaConnections
-      try {
-        const { stdout } = await execFileAsync("gh", ["auth", "token"])
-        const token = stdout.trim()
-        if (!token) return null
-        return { source: "github_cli" as const, token, name: "GitHub CLI" }
-      } catch {
-        return null
-      }
-    },
-    repos: async () => {
-      try {
-        const res = await input.opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/project`, {
-          headers: { "x-opencode-directory": process.cwd() },
-        }))
-        if (!res.ok) return []
-        const data = await res.json()
-        const projects = Array.isArray(data) ? data : [data]
-        const results = await Promise.all(
-          projects
-            .filter((p: Record<string, unknown>) => p?.id && p?.worktree)
-            .map((item: Record<string, unknown>) =>
-              workgraph.resolveRepoDir(item.worktree as string, {
-                project_id: item.id as string,
-                project_name: (item.name as string) ?? null,
-              }).catch(() => null),
-            ),
-        )
-        return results.filter((item): item is Exclude<typeof item, null> => !!item)
-      } catch {
-        return []
-      }
-    },
-  })
+export function mountLazyEmbeddedWorkGraph(
+  app: HonoType,
+  load: () => Promise<LocalEmbeddedWorkGraph>,
+) {
+  let loaded: Promise<LocalEmbeddedWorkGraph> | undefined
+  const forward = (request: Request) => (loaded ??= load()).then((embedded) =>
+    embedded.router.fetch(workgraphRequest(request, "/api/workgraph")))
+  app.all("/api/workgraph", (context) => forward(context.req.raw))
+  app.all("/api/workgraph/*", (context) => forward(context.req.raw))
+}
+
+function workgraphRequest(request: Request, mountPath: string) {
+  const url = new URL(request.url)
+  url.pathname = url.pathname === mountPath
+    ? "/"
+    : url.pathname.slice(mountPath.length)
+  return new Request(url, request)
 }

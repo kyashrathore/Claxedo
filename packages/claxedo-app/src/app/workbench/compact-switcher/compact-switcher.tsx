@@ -42,22 +42,20 @@ function hasVisibleStatus(item: SwitcherItem) {
 }
 
 function StatusDot(props: { status?: SwitcherItem["status"] }) {
-  const bg = () => {
-    if (props.status === "working") return "var(--surface-warning-strong)"
-    if (props.status === "permission") return "var(--surface-critical-strong)"
-    if (props.status === "done") return "var(--text-weaker)"
-    return "var(--text-weaker)"
-  }
-
+  // Minimal status palette, kept in sync with NavigationStatusDot (navigation-
+  // row.tsx): grey for working/done, red only for "needs you", nothing for idle.
+  //   working → pulsing grey · done → solid grey · permission → solid red
+  if (!props.status || props.status === "idle") return null
   return (
     <span
       aria-hidden="true"
-      data-switcher-status={props.status ?? "idle"}
+      data-switcher-status={props.status}
       class="inline-flex size-1.5 shrink-0 rounded-full"
       classList={{
-        "size-0.5 opacity-45": !props.status || props.status === "idle",
+        "bg-text-weak": props.status === "working" || props.status === "done",
+        "animate-pulse": props.status === "working",
+        "bg-icon-critical-base": props.status === "permission",
       }}
-      style={{ "background-color": bg() }}
     />
   )
 }

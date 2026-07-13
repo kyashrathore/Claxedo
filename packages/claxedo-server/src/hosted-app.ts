@@ -42,16 +42,26 @@ import { HostedControlRoutes } from "./routes/hosted-control"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "./control-plane/hosted-services"
 import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
 import { BillingRoutes } from "./billing/billing-routes"
-import { createEntitlementGate } from "./billing/entitlement"
+import { createEntitlementGate, type EntitlementGate } from "./billing/entitlement"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "./control-plane/auth"
 import { deploymentCompatibilityReport } from "./deployment-compatibility"
 import { DEPLOYMENT_MODE_ENV, DeploymentModeError, deploymentMode, unsignedLocalRequestGuard } from "./control-plane/deployment-mode"
+import { createHostedWorkGraph, type HostedWorkGraph } from "./workgraph-host/hosted"
+import {
+  createHostedConnectionOperationExecutor,
+  createHostedConnectionOperationHandler,
+} from "./workgraph-host/hosted-connection-operation"
+import { createHostedConnectionsSetup } from "./workgraph-host/hosted-connections-setup"
 
 export type HostedAppOverrides = {
   /** Hosted relay target lookup. Omitted → the plane's composed lookup is used. */
   relayTargetLookup?: RelayTargetLookup
   /** Node-only hosted deployments mount the real central runtime separately. */
   centralSessionRuntime?: boolean
+  /** Test/custom composition seam; production composes Convex from env. */
+  workgraph?: HostedWorkGraph
+  /** Deterministic hosted capability gate for component tests. */
+  entitlementGate?: EntitlementGate
 }
 
 // Deployment-configured app origins (CLAXEDO_APP_ORIGINS, comma-separated).
@@ -129,6 +139,24 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   assertHostedAppBootConfig(plane)
   const { services } = plane
   const app = new Hono()
+  const workgraph = overrides.workgraph ?? createHostedWorkGraph({
+    env: plane.env,
+    authConfig: services.auth.config,
+    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+    ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
+    ...(services.authority ? { authority: services.authority } : {}),
+    ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
+    ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
+  })
+  const connectionOperationExecutor = createHostedConnectionOperationExecutor({ env: plane.env })
+  const connectionOperationHandler = connectionOperationExecutor
+    ? createHostedConnectionOperationHandler({ env: plane.env, execute: connectionOperationExecutor })
+    : undefined
+  const forwardWorkGraph = (request: Request) => {
+    const url = new URL(request.url)
+    url.pathname = url.pathname === "/api/workgraph" ? "/" : url.pathname.slice("/api/workgraph".length)
+    return workgraph.router.fetch(new Request(url, request))
+  }
 
   app.use(
     corsMiddleware(
@@ -152,7 +180,15 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   // caller's ACTIVE org (Clerk org claim if a member, else the personal org),
   // resolved through the same authority call the rest of the control plane
   // uses. Gate errors resolve to fail-closed denials inside the gate.
-  const entitlementGate = createEntitlementGate({ env: plane.env })
+  const entitlementGate = overrides.entitlementGate ?? createEntitlementGate({ env: plane.env })
+  const connectionsSetup = createHostedConnectionsSetup({
+    env: plane.env,
+    authConfig: services.auth.config,
+    executor: workgraph.executor,
+    serviceToken: workgraph.serviceToken,
+    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+    requireEntitlement: (clerkOrgId) => entitlementGate({ clerkOrgId }, "hosted-connections"),
+  })
   const requireCloudWorkspaceEntitlement = async (auth: Parameters<NonNullable<HostedWorkspaceRouteOptions["requireCloudWorkspaceEntitlement"]>>[0]) => {
     const authority = services.authority
     if (!authority) {
@@ -215,6 +251,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       runtimeAccessTokenSigner: !!services.relay.runtimeAccessTokenSigner,
       hostTunnelTokenSigner: !!services.relay.hostTunnelTokenSigner,
       deviceLogin: !!plane.deviceAuthProvider,
+      workgraph: true,
     }))
 
   app.get("/api/claxedo/compatibility", (c) =>
@@ -242,6 +279,13 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   }))
 
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
+
+  app.all("/api/workgraph", (context) => forwardWorkGraph(context.req.raw))
+  app.all("/api/workgraph/*", (context) => forwardWorkGraph(context.req.raw))
+  app.route("/api/claxedo/integrations", connectionsSetup)
+  if (connectionOperationHandler) {
+    app.post("/internal/workgraph/connection-operation", (context) => connectionOperationHandler(context.req.raw))
+  }
 
   // WP-BILLING (D4, ADR 014 addendum): Polar webhook + checkout + portal live
   // on the CF Worker; all Polar code is confined to src/billing/** (enforced

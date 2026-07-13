@@ -1,14 +1,10 @@
-import { afterAll, describe, expect, test } from "vitest"
+import { describe, expect, test } from "vitest"
 import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 
 const repoRoot = path.resolve(import.meta.dirname, "../../../..")
 const convexRoot = path.join(repoRoot, "convex")
-
-afterAll(() => {
-  fs.rmSync(path.resolve(process.cwd(), "convex"), { force: true, recursive: true })
-})
 
 describe("Convex generated API artifacts", () => {
   test("root generated API includes every Convex module and package-local generated API is not tracked", () => {
@@ -43,6 +39,17 @@ describe("Convex generated API artifacts", () => {
       "sandboxLeases",
       "sessions",
       "users",
+      "workgraphArchive",
+      "workgraphAttention",
+      "workgraphBackground",
+      "workgraphChanges",
+      "workgraphCommands",
+      "workgraphConnections",
+      "workgraphIntake",
+      "workgraphModel",
+      "workgraphNotifications",
+      "workgraphOwnerDeletion",
+      "workgraphRuntime",
       "workspaceShares",
       "workspaces",
     ])

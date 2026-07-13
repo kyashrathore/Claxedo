@@ -35,6 +35,7 @@
     "test": "node ./node_modules/vitest/vitest.mjs run"
   },
   "dependencies": {
+    "@claxedo/workgraph": "workspace:0.1.0",
     "@modelcontextprotocol/sdk": "1.25.2",
     "zod": "4.1.8"
   },

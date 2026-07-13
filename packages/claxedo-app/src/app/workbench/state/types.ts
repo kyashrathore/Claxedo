@@ -22,6 +22,7 @@ export const CONTENT_TYPES = [
   "pages-index",
   "page",
   "marketplace",
+  "workgraph",
 ] as const
 
 export type ContentType = typeof CONTENT_TYPES[number]
@@ -70,6 +71,11 @@ export type MarketplaceContentPayload = BaseContentPayload & {
   directory?: string
 }
 
+export type WorkGraphContentPayload = BaseContentPayload & {
+  type: "workgraph"
+  directory?: string
+}
+
 export type DraftSessionContentPayload = BaseContentPayload & {
   type: "draft-session"
   draftId: string
@@ -84,7 +90,7 @@ export type SessionContentPayload = BaseContentPayload & {
 }
 
 export type ScopedContentPayload = BaseContentPayload & {
-  type: Exclude<ContentType, "session" | "draft-session" | "page" | "pages-index" | "marketplace">
+  type: Exclude<ContentType, "session" | "draft-session" | "page" | "pages-index" | "marketplace" | "workgraph">
   directory: string
 }
 
@@ -92,6 +98,7 @@ export type ContentPayload =
   | PageContentPayload
   | PagesIndexContentPayload
   | MarketplaceContentPayload
+  | WorkGraphContentPayload
   | DraftSessionContentPayload
   | SessionContentPayload
   | ScopedContentPayload
@@ -119,6 +126,7 @@ const GLOBAL_CONTENT_TYPES: ReadonlySet<ContentType> = new Set<ContentType>([
   "page",
   "pages-index",
   "marketplace",
+  "workgraph",
 ])
 
 export function isGlobalContent(content: Pick<ContentMeta, "type" | "scope" | "directory">) {

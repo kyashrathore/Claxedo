@@ -21,6 +21,25 @@ dry-run deploy targets; they do not run smoke tests or browser tests.
 
 Small live probes for deployed central/runtime contracts.
 
+`smoke-workgraph.ts` verifies the deployed signed-auth boundary, mints short-lived
+Clerk Session tokens for two configured test users, reads the hosted execution
+capability route, creates one disposable personal Stream and Task, proves the
+second user receives an indistinguishable not-found result, and deletes the
+Stream through the public command contract:
+
+```sh
+BASE_URL=https://central.example.com \
+CLERK_SECRET_KEY=... \
+WORKGRAPH_SMOKE_USER_A_ID=user_... \
+WORKGRAPH_SMOKE_USER_B_ID=user_... \
+WORKGRAPH_SMOKE_WORKSPACE_ID=workspace_... \
+bun run smoke:workgraph
+```
+
+The script revokes both smoke Sessions before exit. Hosted Attempt execution,
+Connections, Recaps, and the full browser journey are separate
+release-acceptance gates.
+
 ## `maintenance/`
 
 Package boundary guards. These prevent secrets, generated files, dependency

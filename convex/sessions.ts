@@ -10,6 +10,8 @@ import {
   upsertUser,
   workspaceByPublicId,
 } from "./model"
+import { enqueueIndependentSessionIntake } from "./workgraphBackground"
+import type { Id } from "./_generated/dataModel"
 
 const sessionVisibility = v.object({
   session_id: v.string(),
@@ -29,19 +31,19 @@ const serviceUser = v.object({
 })
 
 function rec(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
 
 function directoryHint(input: string | undefined) {
   const hint = input?.trim()
   if (!hint) return undefined
   if (
-    hint === "."
-    || hint === ".."
-    || hint.startsWith("~")
-    || hint.includes("/")
-    || hint.includes("\\")
-    || hint.includes(":")
+    hint === "." ||
+    hint === ".." ||
+    hint.startsWith("~") ||
+    hint.includes("/") ||
+    hint.includes("\\") ||
+    hint.includes(":")
   ) {
     throw new Error("Invalid directory hint")
   }
@@ -51,28 +53,32 @@ function directoryHint(input: string | undefined) {
 async function writableWorkspace(ctx: any, workspaceId: string) {
   const user = await upsertUser(ctx)
   const workspace = await workspaceByPublicId(ctx.db, workspaceId)
-  if (!workspace || !await authorizeWorkspace(ctx, workspace, "write")) throw new Error("Workspace not found")
+  if (!workspace || !(await authorizeWorkspace(ctx, workspace, "write"))) throw new Error("Workspace not found")
   return { user, workspace }
 }
 
 async function writableWorkspaceForUser(ctx: any, user: { _id: unknown }, workspaceId: string) {
   const workspace = await workspaceByPublicId(ctx.db, workspaceId)
-  if (!workspace || !await authorizeWorkspaceForUser(ctx, workspace, user, "write")) throw new Error("Workspace not found")
+  if (!workspace || !(await authorizeWorkspaceForUser(ctx, workspace, user, "write")))
+    throw new Error("Workspace not found")
   return { user, workspace }
 }
 
-async function upsertVisibilityRows(ctx: any, input: {
-  user: Record<string, unknown>
-  workspace: Record<string, unknown>
-  sessions: Array<{
-    session_id: string
-    project_id?: string
-    title?: string
-    directory_hint?: string
-    created_at?: number
-    updated_at?: number
-  }>
-}) {
+async function upsertVisibilityRows(
+  ctx: any,
+  input: {
+    user: Record<string, unknown>
+    workspace: Record<string, unknown>
+    sessions: Array<{
+      session_id: string
+      project_id?: string
+      title?: string
+      directory_hint?: string
+      created_at?: number
+      updated_at?: number
+    }>
+  },
+) {
   for (const session of input.sessions) {
     const now = Date.now()
     const existing = await ctx.db
@@ -150,11 +156,14 @@ function jsonText(input: unknown) {
   }
 }
 
-async function ensureSessionHistoryRow(ctx: any, input: {
-  user: Record<string, unknown>
-  workspace: Record<string, unknown>
-  session_id: string
-}) {
+async function ensureSessionHistoryRow(
+  ctx: any,
+  input: {
+    user: Record<string, unknown>
+    workspace: Record<string, unknown>
+    session_id: string
+  },
+) {
   const existing = await ctx.db
     .query("session_history")
     .withIndex("by_session_id", (q: any) => q.eq("session_id", input.session_id))
@@ -184,22 +193,26 @@ async function deleteMessageRows(ctx: any, sessionId: string, workspaceId: unkno
   }
 }
 
-async function syncMessageRows(ctx: any, input: {
-  user: Record<string, unknown>
-  workspace: Record<string, unknown>
-  session_id: string
-  messages: unknown[]
-}) {
+async function syncMessageRows(
+  ctx: any,
+  input: {
+    user: Record<string, unknown>
+    workspace: Record<string, unknown>
+    session_id: string
+    messages: unknown[]
+  },
+) {
   await ensureSessionHistoryRow(ctx, {
     user: input.user,
     workspace: input.workspace,
     session_id: input.session_id,
   })
-  const existingRows = (await ctx.db
-    .query("session_messages")
-    .withIndex("by_session_ordinal", (q: any) => q.eq("session_id", input.session_id))
-    .collect())
-    .filter((row: any) => row.workspace_id === input.workspace._id)
+  const existingRows = (
+    await ctx.db
+      .query("session_messages")
+      .withIndex("by_session_ordinal", (q: any) => q.eq("session_id", input.session_id))
+      .collect()
+  ).filter((row: any) => row.workspace_id === input.workspace._id)
   const usedRows = new Set<string>()
   const incomingIds = new Set<string>()
   const now = Date.now()
@@ -212,11 +225,7 @@ async function syncMessageRows(ctx: any, input: {
     const existing = existingRows.find((row: any) => row.message_id === id && !usedRows.has(row._id))
     if (existing) {
       usedRows.add(existing._id)
-      if (
-        existing.ordinal !== ordinal
-        || existing.role !== role
-        || jsonText(existing.data) !== jsonText(data)
-      ) {
+      if (existing.ordinal !== ordinal || existing.role !== role || jsonText(existing.data) !== jsonText(data)) {
         await ctx.db.patch(existing._id, {
           role,
           ordinal,
@@ -240,12 +249,43 @@ async function syncMessageRows(ctx: any, input: {
   for (const row of existingRows.filter((row: any) => !incomingIds.has(row.message_id))) {
     await ctx.db.delete(row._id)
   }
+  const summary = [...input.messages].reverse().find((message) => messageRole(message) === "assistant")
+  const summaryText = messageText(summary)
+  const meaningful =
+    input.messages.some((message) => messageRole(message) === "user" && messageText(message)) && summaryText
+  if (meaningful && typeof input.user._id === "string") {
+    const session = await ctx.db
+      .query("session_history")
+      .withIndex("by_session_id", (query: any) => query.eq("session_id", input.session_id))
+      .unique()
+    await enqueueIndependentSessionIntake(ctx, {
+      ownerUserId: input.user._id as Id<"users">,
+      sessionId: input.session_id,
+      title: typeof session?.title === "string" && session.title.trim() ? session.title.trim() : "AI work session",
+      summary: summaryText.slice(0, 8_000),
+      observedAt: now,
+    })
+  }
 }
 
-async function authorizeReadSession(ctx: any, args: {
-  session_id: string
-  workspace_id: string
-}) {
+function messageText(input: unknown) {
+  const row = rec(input)
+  return (Array.isArray(row?.parts) ? row.parts : [])
+    .flatMap((part) => {
+      const value = rec(part)
+      return value?.type === "text" && typeof value.text === "string" && !value.ignored ? [value.text.trim()] : []
+    })
+    .filter(Boolean)
+    .join("\n")
+}
+
+async function authorizeReadSession(
+  ctx: any,
+  args: {
+    session_id: string
+    workspace_id: string
+  },
+) {
   const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
   if (!workspace) return { allowed: false } as const
   const session = await ctx.db
@@ -254,7 +294,7 @@ async function authorizeReadSession(ctx: any, args: {
     .unique()
   if (!session || session.workspace_id !== workspace._id || session.deleted_at) return { allowed: false } as const
   const role = await authorizeWorkspace(ctx, workspace, "read")
-  return role ? { allowed: true, role, workspace } as const : { allowed: false } as const
+  return role ? ({ allowed: true, role, workspace } as const) : ({ allowed: false } as const)
 }
 
 export const authorizeRead = authedQuery({
@@ -273,24 +313,28 @@ export const list = authedQuery({
   },
   handler: async (ctx, args) => {
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
-    if (!workspace || !await authorizeWorkspace(ctx, workspace, "read")) return []
-    return await Promise.all((await ctx.db
-      .query("session_history")
-      .withIndex("by_workspace_updated", (q) => q.eq("workspace_id", workspace._id))
-      .collect())
-      .filter((session) => !session.deleted_at)
-      .sort((a, b) => b.updated_at - a.updated_at)
-      .map(async (session) => {
-        const projectId = await publicProjectId(ctx, session.project_id)
-        return {
-          session_id: session.session_id,
-          ...(projectId ? { project_id: projectId } : {}),
-          title: session.title,
-          directory_hint: session.directory_hint,
-          created_at: session.created_at,
-          updated_at: session.updated_at,
-        }
-      }))
+    if (!workspace || !(await authorizeWorkspace(ctx, workspace, "read"))) return []
+    return await Promise.all(
+      (
+        await ctx.db
+          .query("session_history")
+          .withIndex("by_workspace_updated", (q) => q.eq("workspace_id", workspace._id))
+          .collect()
+      )
+        .filter((session) => !session.deleted_at)
+        .sort((a, b) => b.updated_at - a.updated_at)
+        .map(async (session) => {
+          const projectId = await publicProjectId(ctx, session.project_id)
+          return {
+            session_id: session.session_id,
+            ...(projectId ? { project_id: projectId } : {}),
+            title: session.title,
+            directory_hint: session.directory_hint,
+            created_at: session.created_at,
+            updated_at: session.updated_at,
+          }
+        }),
+    )
   },
 })
 

@@ -4,7 +4,6 @@
  */
 
 import { sqlite, type SqliteInput } from "../sqlite";
-import { initTriggersTable } from "../triggers/store";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -204,7 +203,22 @@ export function initializeDb(input: SqliteInput) {
     );
   `);
 
-  initTriggersTable(db);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS triggers (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      schedule TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      runtime_type_hint TEXT NOT NULL DEFAULT 'task',
+      template_id TEXT,
+      fanout_mode TEXT NOT NULL DEFAULT 'single',
+      payload TEXT,
+      last_run_at TEXT,
+      next_run_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS trace_events (

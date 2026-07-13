@@ -1,48 +1,41 @@
-# WorkGraph Flat Inbox
+# WorkGraph Package Boundary
 
 Status: retained code-grounded reference
-Last updated: 2026-07-09
+Last updated: 2026-07-13
 
-This document is retained because
-`packages/workgraph/test/orchestrator-ratchet.test.ts` cites it as the reason
-the old orchestrator/DAG import count must stay at zero.
+This dated file records the stable package boundary. The authoritative product, service, status, and delivery contracts are:
 
-## Current Implementation
+- `packages/workgraph/PRD.md`
+- `packages/workgraph/ARCHITECTURE.md`
+- `packages/workgraph/SPEC.md`
+- `packages/workgraph/TASKS.md`
 
-- Package: `packages/workgraph`
-- Public client: `packages/workgraph/src/client.ts`
-- Connectors: `packages/workgraph/src/connectors/*`
-- Event substrate: `packages/workgraph/src/substrate/*`
-- Model/reducer/policy layer: `packages/workgraph/src/model/*`
-- HTTP routes: `packages/workgraph/src/routes/*`
-- MCP surface: `packages/workgraph/src/mcp/*`
-- Trigger scheduler/store: `packages/workgraph/src/triggers/*`
-- Ratchet test: `packages/workgraph/test/orchestrator-ratchet.test.ts`
+## Authoritative current shape
 
-## Current Architecture
+`packages/workgraph` is the user-owned AI-work domain and embedded application service. It owns personal Streams, Tasks (`Work Item` internally), optional Outcomes, backend candidate admission, Attempts, Decisions, Recaps, activity, events, source revisions, execution profiles, and connector sync receipts.
 
-WorkGraph is retained as a flat, event-sourced work inbox for AI-agent work:
+The Claxedo app presents one main WorkGraph surface. Streams expand within it and Add task is the canonical manual work action. The existing app-global WorkspacePanel supplies one top-level toggle and hosts WorkGraph's Needs you and execution-only Settings views; the WorkGraph header controls select those views in the same panel. Zero attention leaves the WorkGraph attention body empty. Stream Settings is a tabless Stream-scoped dialog for execution overrides and Recap configuration, and Stream rows expose Recaps through a hover/focus icon and popover. Focused proposal, candidate, Task result, Decision, and actionable-Recap inspection uses dialogs over the main surface.
 
-- mirror work from external trackers through connectors,
-- stage work deliberately,
-- record event-log state changes,
-- create attempts/runs instead of mutating work in place,
-- answer interrupt/decision queues,
-- sync back through connector policy.
+Source planning and Recaps publish only valid output from their exact durable Session V2 jobs. Failed generation retries from durable state and then surfaces attention without publishing substitute content.
 
-The old `src/orchestrator/**` DAG-execution tree is not part of the current
-package. The ratchet test enforces that imports from that tree remain at zero.
+## Composition boundary
 
-## Tests To Check
+The package composes with:
 
-- `packages/workgraph/test/orchestrator-ratchet.test.ts`
-- `packages/workgraph/test/client.test.ts`
-- `packages/workgraph/test/events.test.ts`
-- `packages/workgraph/test/connectors/*`
-- `packages/workgraph/test/unit/*`
+- team-managed Claxedo Connections plus per-user provider mappings and filters;
+- workspace execution ports for sessions, worktrees, and hosted workspaces;
+- a backend-neutral storage port and core conformance version 3;
+- owner-scoped Convex state as the Claxedo Cloud default;
+- SQLite as the local and default single-node OSS adapter;
+- a separate portable archive port and archive conformance version 1, implemented by SQLite and Convex;
+- user-supplied storage adapters in OSS deployments.
 
-## Maintenance Rule
+Snapshot resume across adapter restart, workspace-cleanup conformance, and owner-level permanent deletion are implemented by SQLite and Convex. Replacement browser acceptance and real Cloud deployment evidence remain tracked in `packages/workgraph/TASKS.md`; staging has not been deployed.
 
-Keep this file as the short rationale for the orchestrator deletion ratchet.
-Move implementation details into package README/API docs when they become
-public contract.
+## Execution boundary
+
+WorkGraph models explicit blockers and Task dependencies in its personal domain. Its embedded execution service selects every ready Task from durable state without a product-level capacity queue. One Stream owns one primary isolated execution envelope, with optional child isolation for individual Tasks.
+
+## Maintenance rule
+
+Update current behavior and architecture in the authoritative package documents. Keep this file aligned as a concise package-boundary reference while it remains linked from the retained plans index.

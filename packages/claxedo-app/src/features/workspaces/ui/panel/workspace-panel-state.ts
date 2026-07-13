@@ -1,10 +1,27 @@
 export type WorkspacePanelNavigator = "files" | "changes" | "processes"
 /**
  * Mode the workspace panel is rendering in. The active mode picks the
- * top-level body component (Files / Review / Processes / Activity)
- * inside `WorkspacePanel`.
+ * top-level body component inside `WorkspacePanel`. Workspace-scoped modes
+ * (Files / Review / Processes / Activity) bind to a workspace directory; the
+ * `workgraph-*` modes are global-navigation surfaces that are NOT bound to any
+ * workspace and render their own contributed views via the panel slot.
  */
-export type WorkspacePanelMode = "files" | "review" | "processes" | "activity"
+export type WorkspacePanelMode =
+  | "files"
+  | "review"
+  | "processes"
+  | "activity"
+  | "workgraph-attention"
+  | "workgraph-settings"
+
+/**
+ * A global-navigation panel mode is not bound to a workspace directory. These
+ * bypass every workspace-target requirement (open gate, body directory, focus
+ * retargeting) because the active global surface owns the panel content.
+ */
+export function isGlobalPanelMode(mode: WorkspacePanelMode | undefined): mode is "workgraph-attention" | "workgraph-settings" {
+  return mode === "workgraph-attention" || mode === "workgraph-settings"
+}
 // File focus intent — set by the navigator based on which mode the file
 // tree is in. "tab" opens the file as a workspace tab; "review" scrolls
 // to the file's diff in the review tab.

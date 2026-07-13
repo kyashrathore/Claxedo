@@ -13,6 +13,7 @@
  */
 
 import { For, Show, Switch, Match, createMemo, createSignal, onCleanup, onMount, createEffect, on, type JSX } from "solid-js"
+import { GlobalNavigation } from "./global-navigation"
 import { useQueries, useQuery } from "@tanstack/solid-query"
 import { useClaxedoState, type ContentMeta } from "../state/index"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -167,6 +168,7 @@ export type RailSidebarProps = {
   onSettings?: () => void
   onHelp?: () => void
   onOpenMarketplace?: () => void
+  onOpenWorkGraph?: () => void
   onOpenPages?: () => void
   onRailCancelCollapse: () => void
   onRailLockChange: (locked: boolean) => void
@@ -225,13 +227,6 @@ type GlobalSection = {
   label: string
   rows: Row[]
 }
-
-const activeRowStyle = (active: boolean): JSX.CSSProperties =>
-  active
-    ? {
-        background: "color-mix(in srgb, var(--text-base) 7%, transparent)",
-      }
-    : {}
 
 const sessionRowTitle = (title?: string) => title?.trim() || "Untitled session"
 
@@ -2272,7 +2267,6 @@ export function RailSidebar(props: RailSidebarProps) {
           data-testid="project-header"
           data-active={active() ? "true" : "false"}
           class="flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-colors duration-100"
-          style={activeRowStyle(active())}
           onClick={() => {
             setOpen(true)
             props.onWorkspaceSelect?.(section.project, projectActionDirectory())
@@ -2289,9 +2283,13 @@ export function RailSidebar(props: RailSidebarProps) {
               onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen(!open()))}
             >
               <Icon
-                name="folder"
+                name="folder-open"
                 size="small"
-                class="text-icon-weak-base shrink-0 absolute inset-0 m-auto scale-[0.85] group-hover/header:opacity-0 transition-opacity duration-100"
+                class="shrink-0 absolute inset-0 m-auto group-hover/header:opacity-0 transition-[opacity,color] duration-100"
+                classList={{
+                  "text-text-strong": active(),
+                  "text-icon-weak-base": !active(),
+                }}
               />
               <Icon
                 name={open() ? "chevron-down" : "chevron-right"}
@@ -2399,7 +2397,6 @@ export function RailSidebar(props: RailSidebarProps) {
           data-testid="workspace-project-header"
           data-active={active() ? "true" : "false"}
           class="flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-colors duration-100"
-          style={activeRowStyle(active())}
           onClick={() => {
             setOpen(true)
             props.onWorkspaceSelect?.(group.project, dirs(group.project)[0] ?? group.project.worktree)
@@ -2416,9 +2413,13 @@ export function RailSidebar(props: RailSidebarProps) {
               onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => setOpen(!open()))}
             >
               <Icon
-                name="folder"
+                name="folder-open"
                 size="small"
-                class="text-icon-weak-base shrink-0 absolute inset-0 m-auto scale-[0.85] group-hover/header:opacity-0 transition-opacity duration-100"
+                class="shrink-0 absolute inset-0 m-auto group-hover/header:opacity-0 transition-[opacity,color] duration-100"
+                classList={{
+                  "text-text-strong": active(),
+                  "text-icon-weak-base": !active(),
+                }}
               />
               <Icon
                 name={open() ? "chevron-down" : "chevron-right"}
@@ -2448,21 +2449,6 @@ export function RailSidebar(props: RailSidebarProps) {
       </div>
     )
   }
-
-  const SidebarNavRow = (nav: { icon: "plus-small" | "page" | "dot-grid" | "file-text"; label: string; onClick?: () => void; testId?: string; ariaLabel?: string }) => (
-    <button
-      type="button"
-      data-testid={nav.testId}
-      class="w-full flex items-center gap-2 h-7 px-2.5 rounded-md text-[13px] leading-4 font-medium text-text-base/80 hover:text-text-base hover:bg-surface-base-hover/35 transition-[background-color,color] duration-100 active:scale-[0.98]"
-      onClick={() => nav.onClick?.()}
-      aria-label={nav.ariaLabel ?? nav.label}
-    >
-      <span class="flex size-4 shrink-0 items-center justify-center text-icon-weak-base">
-        <Icon name={nav.icon} size="small" class="text-icon-weak-base" />
-      </span>
-      <span class="min-w-0 truncate leading-4">{nav.label}</span>
-    </button>
-  )
 
   return (
     <nav
@@ -2515,31 +2501,13 @@ export function RailSidebar(props: RailSidebarProps) {
           "scrollbar-color": "rgba(128, 128, 128, 0.3) transparent",
         }}
       >
-        <div class="flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15">
-          <SidebarNavRow
-            icon="plus-small"
-            label={language.t("workspace.new")}
-            onClick={props.onNewProject}
-          />
-          <Show when={props.onOpenPages}>
-            <SidebarNavRow
-              icon="page"
-              label="Pages"
-              onClick={props.onOpenPages}
-              testId="sidebar-pages-entry"
-              ariaLabel="Open Pages"
-            />
-          </Show>
-          <Show when={props.onOpenMarketplace}>
-            <SidebarNavRow
-              icon="dot-grid"
-              label="Marketplace"
-              onClick={props.onOpenMarketplace}
-              testId="sidebar-marketplace-entry"
-              ariaLabel="Open Marketplace"
-            />
-          </Show>
-        </div>
+        <GlobalNavigation
+          newProjectLabel={language.t("workspace.new")}
+          onNewProject={props.onNewProject}
+          onOpenPages={props.onOpenPages}
+          onOpenMarketplace={props.onOpenMarketplace}
+          onOpenWorkGraph={props.onOpenWorkGraph}
+        />
 
         {/* Projects list */}
         <div class="flex-1 flex flex-col py-1.5 gap-0.5">

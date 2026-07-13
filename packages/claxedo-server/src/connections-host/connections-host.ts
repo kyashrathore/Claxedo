@@ -12,6 +12,7 @@ import {
   createIntegrationRegistry,
   createIntegrationsRoutes,
   githubIntegration,
+  linearIntegration,
   googleIntegration,
   notionIntegration,
   type ConnectionsService,
@@ -97,7 +98,7 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
   type OwnerKeys = { personal?: string; team?: string }
   const owners = new WeakMap<Request, OwnerKeys>()
   const registry = createIntegrationRegistry()
-  for (const reference of [notionIntegration(), atlassianIntegration(), githubIntegration()]) {
+  for (const reference of [notionIntegration(), atlassianIntegration(), githubIntegration(), linearIntegration()]) {
     registry.register(reference.decl, reference.impl)
   }
   const googleClientId = env.CLAXEDO_INTEGRATION_GOOGLE_CLIENT_ID?.trim()

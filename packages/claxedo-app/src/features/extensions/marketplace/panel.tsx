@@ -462,33 +462,6 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
                 />
               </Show>
 
-              <Show when={showFeaturedRow()}>
-                <section class="flex flex-col gap-2.5">
-                  <div class="flex items-baseline justify-between">
-                    <h2 class="text-[13px] font-semibold tracking-tight text-text-strong">More extensions</h2>
-                    <button
-                      type="button"
-                      class="text-[11px] text-text-weak underline-offset-2 hover:text-text-base hover:underline"
-                      onClick={() => setActiveCategory("all")}
-                    >
-                      Browse all →
-                    </button>
-                  </div>
-                  <div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                    <For each={(catalog()?.entries ?? []).filter((entry) => !entry.featured).slice(0, 8)}>
-                      {(entry) => (
-                        <ExtensionCard
-                          entry={entry}
-                          installed={isEntryInstalled(entry, installedIds())}
-                          status={installState()[entry.id] ?? "idle"}
-                          onInstall={() => install(entry)}
-                          onUninstall={() => uninstall(entry)}
-                        />
-                      )}
-                    </For>
-                  </div>
-                </section>
-              </Show>
             </Show>
           </div>
         </main>

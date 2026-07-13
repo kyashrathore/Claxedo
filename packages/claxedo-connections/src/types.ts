@@ -115,6 +115,12 @@ export type ConnectionStorePort = {
 // host's harness/model-provider id space).
 export const connectionProviderId = (connectionId: string) => `integration:${connectionId}`
 
+// Webhook signing material is a secondary credential. It must never share
+// the provider id used by the access token because token refresh/status
+// transitions and webhook-secret rotation have independent lifecycles.
+export const connectionWebhookSigningProviderId = (connectionId: string) =>
+  `${connectionProviderId(connectionId)}:webhook-signing`
+
 export const CONNECTION_ERROR_CODES = [
   "connection_exists",
   "connection_verify_failed",

@@ -420,6 +420,17 @@ describe("state/orchestration", () => {
     expect(getState().contentIds).not.toContain(id)
   })
 
+  test("openWorkGraph reuses one global content", () => {
+    const { layout, meta } = makeFixture()
+    const id = layout.openWorkGraph()
+    const again = layout.openWorkGraph()
+    expect(again).toBe(id)
+    expect(meta.get(id)).toMatchObject({
+      scope: "global",
+      content: { type: "workgraph" },
+    })
+  })
+
   test("closeContent removes meta + content + cleans terminal owner", () => {
     const { layout, meta, terminal, getState } = makeFixture()
     const id = layout.openTerminal("/work/foo", "pty_1", "Terminal")

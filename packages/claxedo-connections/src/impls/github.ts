@@ -10,7 +10,7 @@ export function githubIntegration(options: { fetchImpl?: typeof fetch } = {}): {
       id: "github",
       name: "GitHub",
       methods: ["key"],
-      capabilities: ["code-host"],
+      capabilities: ["code-host", "work-source"],
       keyTokenType: "bearer",
       prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
     },

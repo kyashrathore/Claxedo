@@ -3,6 +3,9 @@ import type { PaneCtx } from "../workbench/workbench/index"
 import type { ContentMeta, ContentType } from "../workbench/state/index"
 import { SessionContent } from "../../features/session/ui/content/session-content"
 import { createContributionRegistry, type ContributionGateContext, type SurfaceContribution } from "./registry"
+import { useClaxedoState } from "../workbench/state/index"
+import { isGlobalPanelMode } from "../../features/workspaces/ui/panel/workspace-panel-state"
+import { workGraphPanelBodySlot, workGraphPanelHeaderSlot } from "@/ui/controls/portal-slot"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 
 // Lazy content surfaces: keep non-session feature bundles out of the eager main
@@ -23,10 +26,38 @@ const PagesIndexContent = lazy(() =>
 const MarketplaceContent = lazy(() =>
   import("@/features/extensions/marketplace").then((m) => ({ default: m.MarketplaceContent })),
 )
+const WorkGraphContent = lazy(() =>
+  import("@/features/workgraph").then((m) => ({ default: m.WorkGraphContent })),
+)
 
 function MarketplaceSurface(props: { context: ContentSurfaceRenderContext }) {
   const platform = usePlatform()
   return <MarketplaceContent directory={props.context.meta.directory} request={platform.fetch} />
+}
+
+function WorkGraphSurface(props: { context: ContentSurfaceRenderContext }) {
+  const platform = usePlatform()
+  const state = useClaxedoState()
+  // Bridge WorkGraph's "Needs you" / Settings controls to the one shared
+  // WorkspacePanel. WorkGraph owns no workspace, so it drives the panel as a
+  // global-navigation surface and portals its views into the panel slots.
+  const panelState = () => state.workspacePanel.state()
+  const panel = {
+    // The selected WorkGraph tab, reflected even while the panel animates closed
+    // so its content stays warm-mounted (and non-tabbable) until fully hidden.
+    mode: () => {
+      const mode = panelState().mode
+      if (!isGlobalPanelMode(mode)) return undefined
+      return mode === "workgraph-settings" ? ("settings" as const) : ("attention" as const)
+    },
+    isOpen: () => panelState().open && isGlobalPanelMode(panelState().mode),
+    open: (view: "attention" | "settings") =>
+      state.workspacePanel.openGlobal(view === "settings" ? "workgraph-settings" : "workgraph-attention"),
+    close: () => state.workspacePanel.close(),
+    headerSlot: workGraphPanelHeaderSlot,
+    bodySlot: workGraphPanelBodySlot,
+  }
+  return <WorkGraphContent request={platform.fetch} panel={panel} />
 }
 
 // Neutral placeholder while non-session surface chunks load — matches the
@@ -130,6 +161,17 @@ export const firstPartyContentSurfaces: ContentSurfaceContribution[] = [
     renderer: (context) => (
       <Suspense fallback={<SurfaceFallback />}>
         <MarketplaceSurface context={context} />
+      </Suspense>
+    ),
+  },
+  {
+    id: "surface.content.workgraph",
+    tier: "claxedo-first-party",
+    surface: "workgraph",
+    slot: "workbench",
+    renderer: (context) => (
+      <Suspense fallback={<SurfaceFallback />}>
+        <WorkGraphSurface context={context} />
       </Suspense>
     ),
   },

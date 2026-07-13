@@ -1,0 +1,649 @@
+import { Hono } from "hono"
+import type { Context } from "hono"
+import {
+  ChangeEnvelopeSchema,
+  AttentionCursorError,
+  AttentionPageSchema,
+  CommandResultSchema,
+  EvidenceDtoSchema,
+  EvidencePageCursorError,
+  EvidencePageSchema,
+  AdmissionProposalDtoSchema,
+  AttemptDetailDtoSchema,
+  DecisionDtoSchema,
+  RecapDtoSchema,
+  WorkItemAttemptPageCursorError,
+  WorkItemAttemptPageSchema,
+  WorkItemDtoSchema,
+  StreamDtoSchema,
+  WorkSourceDtoSchema,
+  WorkSourceRevisionDtoSchema,
+  WorkGraphSnapshotPageSchema,
+  NotificationIDSchema,
+  WorkGraphNotificationPageSchema,
+  WorkGraphNotificationSchema,
+  WorkGraphArchiveSchema,
+  WorkGraphArchiveRestoreError,
+  WorkGraphArchiveRestoreRequestSchema,
+  SnapshotResumeCursorError,
+  type CommandErrorCode,
+  type EvidenceSubject,
+  type WorkGraphArchiveRestoreErrorReason,
+  type WorkGraphContext,
+} from "../contracts"
+import {
+  WorkGraphHttpChangesQuerySchema,
+  WorkGraphHttpAttentionQuerySchema,
+  WorkGraphHttpChangesResponseSchema,
+  WorkGraphHttpCommandRequestSchema,
+  WorkGraphHttpContextSchema,
+  WorkGraphHttpDefaultsResponseSchema,
+  WorkGraphHttpExecutionCapabilitiesErrorSchema,
+  WorkGraphHttpExecutionCapabilitiesQuerySchema,
+  WorkGraphHttpExecutionCapabilitiesResponseSchema,
+  WorkGraphHttpErrorSchema,
+  WorkGraphHttpEvidenceListQuerySchema,
+  WorkGraphHttpEvidenceReadQuerySchema,
+  WorkGraphHttpSnapshotQuerySchema,
+  WorkGraphHttpSourceQuerySchema,
+  WorkGraphHttpSourceRevisionQuerySchema,
+  WorkGraphHttpSourcesQuerySchema,
+  WorkGraphHttpSourcesResponseSchema,
+  WorkGraphHttpStreamQuerySchema,
+  WorkGraphHttpProposalReadSchema,
+  WorkGraphHttpWorkItemReadSchema,
+  WorkGraphHttpWorkItemAttemptsQuerySchema,
+  WorkGraphHttpAttemptReadSchema,
+  WorkGraphHttpDecisionReadSchema,
+  WorkGraphHttpRecapReadSchema,
+  type WorkGraphHttpQueries,
+  type WorkGraphHttpService,
+  type WorkGraphHttpErrorCode,
+  type WorkGraphTrustedContextResolver,
+  WorkGraphHttpNotificationsQuerySchema,
+  WorkGraphHttpNotificationReadSchema,
+  WorkGraphHttpArchiveErrorSchema,
+  WorkGraphHttpArchiveRestoreResultSchema,
+  WorkGraphHttpOwnerDeletionErrorSchema,
+  WorkGraphHttpOwnerDeletionRequestSchema,
+  WorkGraphHttpOwnerDeletionResultSchema,
+  workGraphEvidenceListInput,
+} from "./contracts"
+import { NotificationVersionConflictError, type NotificationService } from "../application/notification-service"
+import {
+  WorkGraphOwnerDeletionError,
+  type WorkGraphArchivePort,
+  type WorkGraphOwnerDeletionErrorReason,
+  type WorkGraphOwnerDeletionPort,
+  ExecutionCapabilitiesUnavailableError,
+  type ExecutionCapabilitiesPort,
+} from "../ports"
+
+type Variables = { workGraphContext: WorkGraphContext }
+
+export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(input: Readonly<{
+  service: WorkGraphHttpService<Queries>
+  resolveContext: WorkGraphTrustedContextResolver
+  pollIntervalMs?: number
+  notifications?: NotificationService
+  archive: WorkGraphArchivePort
+  deletion: WorkGraphOwnerDeletionPort
+  executionCapabilities?: ExecutionCapabilitiesPort
+}>) {
+  const router = new Hono<{ Variables: Variables }>()
+  const pollIntervalMs = Math.max(1, input.pollIntervalMs ?? 100)
+
+  router.use("*", async (context, next) => {
+    const candidate = await Promise.resolve().then(() => input.resolveContext(context.req.raw)).catch(() => undefined)
+    const resolved = WorkGraphHttpContextSchema.safeParse(candidate)
+    if (!resolved.success) return errorResponse(context, 401, "unauthorized", "Trusted WorkGraph context is required", false)
+    context.set("workGraphContext", resolved.data)
+    await next()
+  })
+
+  router.post("/commands", async (context) => {
+    if (context.get("workGraphContext").access.mode !== "owner") {
+      return errorResponse(context, 403, "forbidden", "Shared WorkGraph access is read-only", false)
+    }
+    const json = await context.req.json().catch(() => undefined)
+    const request = WorkGraphHttpCommandRequestSchema.safeParse(json)
+    if (!request.success) return errorResponse(context, 400, "validation_error", "Invalid WorkGraph command", false)
+
+    const result = CommandResultSchema.parse(await input.service.execute(context.get("workGraphContext"), request.data))
+    if (result.ok) return context.json(result)
+    return context.json(result, commandStatus(result.error.code))
+  })
+
+  router.get("/archive", async (context) => {
+    if (context.get("workGraphContext").access.mode !== "owner") {
+      return errorResponse(context, 403, "forbidden", "Shared WorkGraph access is read-only", false)
+    }
+    if (Object.keys(context.req.query()).length > 0) {
+      return errorResponse(context, 400, "validation_error", "WorkGraph archive export does not accept query selectors", false)
+    }
+    try {
+      const archive = WorkGraphArchiveSchema.parse(await input.archive.export(context.get("workGraphContext")))
+      if (archive.ownerUserId !== context.get("workGraphContext").ownerUserId) {
+        throw new Error("WorkGraph archive export crossed its trusted owner boundary")
+      }
+      return context.json(archive)
+    } catch (error) {
+      if (isArchiveRestoreError(error)) return archiveErrorResponse(context, error.reason)
+      throw error
+    }
+  })
+
+  router.post("/archive/restore", async (context) => {
+    if (context.get("workGraphContext").access.mode !== "owner") {
+      return errorResponse(context, 403, "forbidden", "Shared WorkGraph access is read-only", false)
+    }
+    const request = WorkGraphArchiveRestoreRequestSchema.safeParse(await context.req.json().catch(() => undefined))
+    if (!request.success) return archiveErrorResponse(context, "malformed")
+    try {
+      return context.json(WorkGraphHttpArchiveRestoreResultSchema.parse(
+        await input.archive.restore(context.get("workGraphContext"), request.data),
+      ))
+    } catch (error) {
+      if (isArchiveRestoreError(error)) return archiveErrorResponse(context, error.reason)
+      throw error
+    }
+  })
+
+  router.delete("/owner", async (context) => {
+    if (context.get("workGraphContext").access.mode !== "owner") {
+      return ownerDeletionErrorResponse(context, "forbidden")
+    }
+    const request = WorkGraphHttpOwnerDeletionRequestSchema.safeParse(await context.req.json().catch(() => undefined))
+    if (!request.success) {
+      return errorResponse(context, 400, "validation_error", "Invalid WorkGraph owner deletion request", false)
+    }
+    try {
+      return context.json(WorkGraphHttpOwnerDeletionResultSchema.parse(
+        await input.deletion.deleteOwner(context.get("workGraphContext"), request.data),
+      ))
+    } catch (error) {
+      if (isOwnerDeletionError(error)) return ownerDeletionErrorResponse(context, error.reason)
+      throw error
+    }
+  })
+
+  router.get("/defaults", async (context) => {
+    if (Object.keys(context.req.query()).length > 0) {
+      return errorResponse(context, 400, "validation_error", "WorkGraph defaults reads do not accept query selectors", false)
+    }
+    const defaults = WorkGraphHttpDefaultsResponseSchema.parse(
+      await input.service.queries.defaults.read(context.get("workGraphContext"), {}),
+    )
+    if (defaults.ownerUserId !== context.get("workGraphContext").ownerUserId) {
+      throw new Error("WorkGraph defaults query crossed its trusted owner boundary")
+    }
+    return context.json(defaults)
+  })
+
+  router.get("/execution-capabilities", async (context) => {
+    if (context.get("workGraphContext").access.mode !== "owner") {
+      return errorResponse(context, 403, "forbidden", "Execution capabilities require owner access", false)
+    }
+    const query = WorkGraphHttpExecutionCapabilitiesQuerySchema.safeParse(context.req.query())
+    if (!query.success) {
+      return errorResponse(context, 400, "validation_error", "Invalid execution capabilities query", false)
+    }
+    if (!input.executionCapabilities) {
+      return executionCapabilitiesErrorResponse(context, new ExecutionCapabilitiesUnavailableError(
+        "runtime",
+        "runtime_unavailable",
+        "Execution capability discovery is not composed",
+        false,
+      ))
+    }
+    try {
+      const result = WorkGraphHttpExecutionCapabilitiesResponseSchema.parse(
+        await input.executionCapabilities.read(context.get("workGraphContext"), query.data),
+      )
+      if (result.ownerUserId !== context.get("workGraphContext").ownerUserId) {
+        throw new Error("Execution capabilities query crossed its trusted owner boundary")
+      }
+      return context.json(result)
+    } catch (error) {
+      if (error instanceof ExecutionCapabilitiesUnavailableError) {
+        return executionCapabilitiesErrorResponse(context, error)
+      }
+      throw error
+    }
+  })
+
+  router.post("/execution-capabilities/refresh", async (context) => {
+    if (context.get("workGraphContext").access.mode !== "owner") {
+      return errorResponse(context, 403, "forbidden", "Execution capabilities require owner access", false)
+    }
+    if (!input.executionCapabilities?.probe) {
+      return executionCapabilitiesErrorResponse(context, new ExecutionCapabilitiesUnavailableError(
+        "catalog_workspace",
+        "catalog_workspace_unavailable",
+        "Hosted capability refresh is not composed",
+        false,
+      ))
+    }
+    try {
+      const result = WorkGraphHttpExecutionCapabilitiesResponseSchema.parse(
+        await input.executionCapabilities.probe(context.get("workGraphContext"), {}),
+      )
+      if (result.ownerUserId !== context.get("workGraphContext").ownerUserId) {
+        throw new Error("Execution capabilities refresh crossed its trusted owner boundary")
+      }
+      return context.json(result)
+    } catch (error) {
+      if (error instanceof ExecutionCapabilitiesUnavailableError) {
+        return executionCapabilitiesErrorResponse(context, error)
+      }
+      throw error
+    }
+  })
+
+  router.get("/snapshot", async (context) => {
+    const query = WorkGraphHttpSnapshotQuerySchema.safeParse(context.req.query())
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid snapshot query", false)
+    const snapshot = await input.service.queries.snapshot.page(context.get("workGraphContext"), query.data)
+      .then(WorkGraphSnapshotPageSchema.parse)
+      .catch((error) => {
+        if (error instanceof SnapshotResumeCursorError) {
+          return errorResponse(context, 409, "cursor_invalid", "Snapshot cursor is no longer valid", false)
+        }
+        throw error
+      })
+    if (snapshot instanceof Response) return snapshot
+    if (snapshot.records.some((record) => record.ownerUserId !== context.get("workGraphContext").ownerUserId)) {
+      throw new Error("Snapshot query crossed its trusted owner boundary")
+    }
+    return context.json(snapshot)
+  })
+
+  router.get("/attention", async (context) => {
+    const query = WorkGraphHttpAttentionQuerySchema.safeParse(context.req.query())
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Attention query", false)
+    try {
+      const page = AttentionPageSchema.parse(
+        await input.service.queries.attention.list(context.get("workGraphContext"), query.data),
+      )
+      if (page.items.some((item) => item.ownerUserId !== context.get("workGraphContext").ownerUserId)) {
+        throw new Error("Attention query crossed its trusted owner boundary")
+      }
+      return context.json(page)
+    } catch (error) {
+      if (error instanceof AttentionCursorError) {
+        return errorResponse(context, 409, "cursor_invalid", "Attention cursor is no longer valid", false)
+      }
+      throw error
+    }
+  })
+
+  router.get("/notifications", async (context) => {
+    if (!input.notifications) return errorResponse(context, 404, "not_found", "Notifications are unavailable", false)
+    const query = WorkGraphHttpNotificationsQuerySchema.safeParse(context.req.query())
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid notification query", false)
+    const page = WorkGraphNotificationPageSchema.parse(await input.notifications.list(context.get("workGraphContext"), query.data))
+    if (page.notifications.some((notification) => notification.ownerUserId !== context.get("workGraphContext").ownerUserId)) {
+      throw new Error("Notification query crossed its trusted owner boundary")
+    }
+    return context.json(page)
+  })
+
+  router.get("/notifications/:notificationId", async (context) => {
+    if (!input.notifications) return errorResponse(context, 404, "not_found", "Notifications are unavailable", false)
+    const id = NotificationIDSchema.safeParse(context.req.param("notificationId"))
+    if (!id.success) return errorResponse(context, 400, "validation_error", "Invalid notification identifier", false)
+    const notification = await input.notifications.read(context.get("workGraphContext"), id.data)
+    if (!notification) return errorResponse(context, 404, "not_found", "Notification not found", false)
+    const parsed = WorkGraphNotificationSchema.parse(notification)
+    if (parsed.ownerUserId !== context.get("workGraphContext").ownerUserId) {
+      throw new Error("Notification query crossed its trusted owner boundary")
+    }
+    return context.json(parsed)
+  })
+
+  router.post("/notifications/:notificationId/read", async (context) => {
+    if (!input.notifications) return errorResponse(context, 404, "not_found", "Notifications are unavailable", false)
+    const id = NotificationIDSchema.safeParse(context.req.param("notificationId"))
+    const body = WorkGraphHttpNotificationReadSchema.safeParse(await context.req.json().catch(() => undefined))
+    if (!id.success || !body.success) return errorResponse(context, 400, "validation_error", "Invalid notification update", false)
+    try {
+      const parsed = WorkGraphNotificationSchema.parse(await input.notifications.markRead(context.get("workGraphContext"), { id: id.data, expectedVersion: body.data.expectedVersion }))
+      if (parsed.ownerUserId !== context.get("workGraphContext").ownerUserId) {
+        throw new Error("Notification mutation crossed its trusted owner boundary")
+      }
+      return context.json(parsed)
+    } catch (error) {
+      if (error instanceof NotificationVersionConflictError) return errorResponse(context, 409, "version_conflict", "Notification version changed", false)
+      throw error
+    }
+  })
+
+  router.get("/streams/:streamId", async (context) => {
+    if (Object.keys(context.req.query()).length > 0) {
+      return errorResponse(context, 400, "validation_error", "Stream reads do not accept query selectors", false)
+    }
+    const query = WorkGraphHttpStreamQuerySchema.safeParse({ streamId: context.req.param("streamId") })
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Stream identifier", false)
+    const stream = await input.service.queries.streams.read(context.get("workGraphContext"), query.data)
+    if (!stream) return errorResponse(context, 404, "not_found", "Stream not found", false)
+    const parsed = StreamDtoSchema.parse(stream)
+    if (parsed.ownerUserId !== context.get("workGraphContext").ownerUserId) {
+      throw new Error("Stream query crossed its trusted owner boundary")
+    }
+    return context.json(parsed)
+  })
+
+  router.get("/proposals/:proposalId", async (context) => {
+    if (Object.keys(context.req.query()).length > 0) {
+      return errorResponse(context, 400, "validation_error", "Proposal reads do not accept query selectors", false)
+    }
+    const query = WorkGraphHttpProposalReadSchema.safeParse({ proposalId: context.req.param("proposalId") })
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Proposal identifier", false)
+    const proposal = await input.service.queries.proposals.read(context.get("workGraphContext"), query.data)
+    if (!proposal) return errorResponse(context, 404, "not_found", "Proposal not found", false)
+    const parsed = AdmissionProposalDtoSchema.parse(proposal)
+    if (parsed.ownerUserId !== context.get("workGraphContext").ownerUserId || parsed.id !== query.data.proposalId) {
+      throw new Error("Proposal query crossed its trusted owner boundary")
+    }
+    return context.json(parsed)
+  })
+
+  router.get("/work-items/:workItemId/attempts", async (context) => {
+    const id = WorkGraphHttpWorkItemReadSchema.safeParse({ workItemId: context.req.param("workItemId") })
+    const query = WorkGraphHttpWorkItemAttemptsQuerySchema.safeParse(context.req.query())
+    if (!id.success || !query.success) return errorResponse(context, 400, "validation_error", "Invalid Task Attempts query", false)
+    try {
+      const page = WorkItemAttemptPageSchema.parse(await input.service.queries.workItems.listAttempts(
+        context.get("workGraphContext"),
+        { workItemId: id.data.workItemId, ...query.data },
+      ))
+      if (page.attempts.some((detail) => detail.attempt.ownerUserId !== context.get("workGraphContext").ownerUserId || detail.attempt.workItemId !== id.data.workItemId)) {
+        throw new Error("Task Attempts query crossed its trusted owner boundary")
+      }
+      return context.json(page)
+    } catch (error) {
+      if (isWorkItemAttemptPageCursorError(error)) {
+        return errorResponse(context, 409, "cursor_invalid", "Task Attempt cursor is no longer valid", false)
+      }
+      throw error
+    }
+  })
+
+  router.get("/work-items/:workItemId", async (context) => {
+    if (Object.keys(context.req.query()).length > 0) {
+      return errorResponse(context, 400, "validation_error", "Task reads do not accept query selectors", false)
+    }
+    const query = WorkGraphHttpWorkItemReadSchema.safeParse({ workItemId: context.req.param("workItemId") })
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Task identifier", false)
+    const item = await input.service.queries.workItems.readDetail(context.get("workGraphContext"), query.data)
+    if (!item) return errorResponse(context, 404, "not_found", "Task not found", false)
+    const parsed = WorkItemDtoSchema.parse(item)
+    if (parsed.ownerUserId !== context.get("workGraphContext").ownerUserId || parsed.id !== query.data.workItemId) {
+      throw new Error("Task query crossed its trusted owner boundary")
+    }
+    return context.json(parsed)
+  })
+
+  router.get("/attempts/:attemptId", async (context) => {
+    if (Object.keys(context.req.query()).length > 0) {
+      return errorResponse(context, 400, "validation_error", "Attempt reads do not accept query selectors", false)
+    }
+    const query = WorkGraphHttpAttemptReadSchema.safeParse({ attemptId: context.req.param("attemptId") })
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Attempt identifier", false)
+    const detail = await input.service.queries.attempts.read(context.get("workGraphContext"), query.data)
+    if (!detail) return errorResponse(context, 404, "not_found", "Attempt not found", false)
+    const parsed = AttemptDetailDtoSchema.parse(detail)
+    if (parsed.attempt.ownerUserId !== context.get("workGraphContext").ownerUserId || parsed.attempt.id !== query.data.attemptId) {
+      throw new Error("Attempt query crossed its trusted owner boundary")
+    }
+    return context.json(parsed)
+  })
+
+  router.get("/decisions/:decisionId", async (context) => {
+    if (Object.keys(context.req.query()).length > 0) {
+      return errorResponse(context, 400, "validation_error", "Decision reads do not accept query selectors", false)
+    }
+    const query = WorkGraphHttpDecisionReadSchema.safeParse({ decisionId: context.req.param("decisionId") })
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Decision identifier", false)
+    const decision = await input.service.queries.decisions.read(context.get("workGraphContext"), query.data)
+    if (!decision) return errorResponse(context, 404, "not_found", "Decision not found", false)
+    const parsed = DecisionDtoSchema.parse(decision)
+    if (parsed.ownerUserId !== context.get("workGraphContext").ownerUserId || parsed.id !== query.data.decisionId) {
+      throw new Error("Decision query crossed its trusted owner boundary")
+    }
+    return context.json(parsed)
+  })
+
+  router.get("/recaps/:recapId", async (context) => {
+    if (Object.keys(context.req.query()).length > 0) {
+      return errorResponse(context, 400, "validation_error", "Recap reads do not accept query selectors", false)
+    }
+    const query = WorkGraphHttpRecapReadSchema.safeParse({ recapId: context.req.param("recapId") })
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Recap identifier", false)
+    const recap = await input.service.queries.recaps.read(context.get("workGraphContext"), query.data)
+    if (!recap) return errorResponse(context, 404, "not_found", "Recap not found", false)
+    const parsed = RecapDtoSchema.parse(recap)
+    if (parsed.ownerUserId !== context.get("workGraphContext").ownerUserId || parsed.id !== query.data.recapId) {
+      throw new Error("Recap query crossed its trusted owner boundary")
+    }
+    return context.json(parsed)
+  })
+
+  router.get("/evidence", async (context) => {
+    const query = WorkGraphHttpEvidenceListQuerySchema.safeParse(context.req.query())
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Evidence query", false)
+    const listInput = workGraphEvidenceListInput(query.data)
+    try {
+      const page = EvidencePageSchema.parse(
+        await input.service.queries.evidence.list(context.get("workGraphContext"), listInput),
+      )
+      if (page.evidence.some((evidence) => !sameEvidenceSubject(evidence.subject, listInput.subject))) {
+        throw new Error("Evidence list query crossed its trusted subject boundary")
+      }
+      return context.json(page)
+    } catch (error) {
+      if (isEvidencePageCursorError(error)) {
+        return errorResponse(context, 409, "cursor_invalid", "Evidence page cursor is no longer valid", false)
+      }
+      throw error
+    }
+  })
+
+  router.get("/evidence/:evidenceId", async (context) => {
+    if (Object.keys(context.req.query()).length > 0) {
+      return errorResponse(context, 400, "validation_error", "Evidence reads do not accept query selectors", false)
+    }
+    const query = WorkGraphHttpEvidenceReadQuerySchema.safeParse({ evidenceId: context.req.param("evidenceId") })
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Evidence identifier", false)
+    const evidence = await input.service.queries.evidence.read(context.get("workGraphContext"), query.data)
+    if (!evidence) return errorResponse(context, 404, "not_found", "Evidence not found", false)
+    const parsed = EvidenceDtoSchema.parse(evidence)
+    if (parsed.id !== query.data.evidenceId) throw new Error("Evidence query returned a different identifier")
+    return context.json(parsed)
+  })
+
+  router.get("/sources", async (context) => {
+    const query = WorkGraphHttpSourcesQuerySchema.safeParse(context.req.query())
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Work Source query", false)
+    const result = WorkGraphHttpSourcesResponseSchema.parse(
+      await input.service.queries.sources.list(context.get("workGraphContext"), query.data),
+    )
+    if (result.sources.some((source) => source.ownerUserId !== context.get("workGraphContext").ownerUserId)) {
+      throw new Error("Work Source query crossed its trusted owner boundary")
+    }
+    return context.json(result)
+  })
+
+  router.get("/sources/:workSourceId", async (context) => {
+    if (Object.keys(context.req.query()).length > 0) {
+      return errorResponse(context, 400, "validation_error", "Work Source reads do not accept query selectors", false)
+    }
+    const query = WorkGraphHttpSourceQuerySchema.safeParse({ workSourceId: context.req.param("workSourceId") })
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Work Source identifier", false)
+    const source = await input.service.queries.sources.read(context.get("workGraphContext"), query.data)
+    if (!source) return errorResponse(context, 404, "not_found", "Work Source not found", false)
+    const parsed = WorkSourceDtoSchema.parse(source)
+    if (parsed.ownerUserId !== context.get("workGraphContext").ownerUserId) {
+      throw new Error("Work Source query crossed its trusted owner boundary")
+    }
+    return context.json(parsed)
+  })
+
+  router.get("/sources/:workSourceId/revisions/:revisionId", async (context) => {
+    if (Object.keys(context.req.query()).length > 0) {
+      return errorResponse(context, 400, "validation_error", "Work Source revision reads do not accept query selectors", false)
+    }
+    const query = WorkGraphHttpSourceRevisionQuerySchema.safeParse({
+      workSourceId: context.req.param("workSourceId"),
+      revisionId: context.req.param("revisionId"),
+    })
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid Work Source revision identifier", false)
+    const revision = await input.service.queries.sources.readRevision(context.get("workGraphContext"), query.data)
+    if (!revision) return errorResponse(context, 404, "not_found", "Work Source revision not found", false)
+    return context.json(WorkSourceRevisionDtoSchema.parse(revision))
+  })
+
+  router.get("/changes", async (context) => {
+    const query = WorkGraphHttpChangesQuerySchema.safeParse(context.req.query())
+    if (!query.success) return errorResponse(context, 400, "validation_error", "Invalid changes query", false)
+    const deadline = Date.now() + query.data.waitMs
+
+    while (true) {
+      const changes = ChangeEnvelopeSchema.array().parse(await input.service.queries.changes.list(
+        context.get("workGraphContext"),
+        { ...(query.data.after ? { after: query.data.after } : {}), limit: query.data.limit },
+      )).slice(0, query.data.limit)
+      if (changes.some((change) =>
+        change.ownerUserId !== context.get("workGraphContext").ownerUserId ||
+        change.event.ownerUserId !== context.get("workGraphContext").ownerUserId
+      )) {
+        throw new Error("Changes query crossed its trusted owner boundary")
+      }
+      if (changes.length > 0) {
+        return context.json(WorkGraphHttpChangesResponseSchema.parse({
+          changes,
+          cursor: changes.at(-1)!.cursor,
+          timedOut: false,
+        }))
+      }
+      if (Date.now() >= deadline || query.data.waitMs === 0 || context.req.raw.signal.aborted) {
+        return context.json(WorkGraphHttpChangesResponseSchema.parse({
+          changes: [],
+          ...(query.data.after ? { cursor: query.data.after } : {}),
+          timedOut: query.data.waitMs > 0,
+        }))
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, Math.max(1, deadline - Date.now()))))
+    }
+  })
+
+  router.onError((_error, context) => {
+    return errorResponse(context, 500, "internal_error", "WorkGraph request failed", false)
+  })
+
+  return router
+}
+
+function commandStatus(code: CommandErrorCode) {
+  if (code === "validation_error") return 400 as const
+  if (code === "forbidden") return 403 as const
+  if (code === "not_found") return 404 as const
+  if (code === "version_conflict" || code === "idempotency_conflict") return 409 as const
+  if (code === "execution_unavailable") return 503 as const
+  if (code === "internal_error") return 500 as const
+  return 422 as const
+}
+
+function errorResponse(
+  context: Context,
+  status: 400 | 401 | 403 | 404 | 409 | 500,
+  code: WorkGraphHttpErrorCode,
+  message: string,
+  retryable: boolean,
+) {
+  return context.json(WorkGraphHttpErrorSchema.parse({ error: { code, message, retryable } }), status)
+}
+
+function archiveErrorResponse(
+  context: Context,
+  reason: ConstructorParameters<typeof WorkGraphArchiveRestoreError>[0],
+) {
+  const retryable = reason === "not_quiescent" || reason === "dependency_unavailable"
+  const status = reason === "malformed" ? 400 as const
+    : reason === "cross_owner" ? 403 as const
+      : reason === "dependency_unavailable" ? 503 as const
+        : 409 as const
+  return context.json(WorkGraphHttpArchiveErrorSchema.parse({
+    error: {
+      code: "archive_restore_rejected",
+      reason,
+      message: "WorkGraph archive operation was rejected",
+      retryable,
+    },
+  }), status)
+}
+
+function executionCapabilitiesErrorResponse(
+  context: Context,
+  error: ExecutionCapabilitiesUnavailableError,
+) {
+  return context.json(WorkGraphHttpExecutionCapabilitiesErrorSchema.parse({
+    error: {
+      code: error.code,
+      capability: error.capability,
+      reason: error.reason,
+      message: error.message,
+      retryable: error.retryable,
+    },
+  }), 503)
+}
+
+function ownerDeletionErrorResponse(
+  context: Context,
+  reason: ConstructorParameters<typeof WorkGraphOwnerDeletionError>[0],
+) {
+  const retryable = reason === "not_quiescent" || reason === "in_progress" || reason === "cleanup_failed"
+  const status = reason === "forbidden" ? 403 as const
+    : reason === "not_quiescent" || reason === "in_progress" ? 409 as const
+      : reason === "cleanup_failed" ? 503 as const
+        : 500 as const
+  return context.json(WorkGraphHttpOwnerDeletionErrorSchema.parse({
+    error: {
+      code: "owner_deletion_rejected",
+      reason,
+      message: "WorkGraph owner deletion was rejected",
+      retryable,
+    },
+  }), status)
+}
+
+function isArchiveRestoreError(error: unknown): error is Error & { reason: WorkGraphArchiveRestoreErrorReason } {
+  return error instanceof Error && error.name === "WorkGraphArchiveRestoreError" && "reason" in error &&
+    ["malformed", "secret_material", "not_quiescent", "cross_owner", "target_not_empty", "operation_conflict", "target_incompatible", "dependency_unavailable"]
+      .includes(String(error.reason))
+}
+
+function isOwnerDeletionError(error: unknown): error is Error & { reason: WorkGraphOwnerDeletionErrorReason } {
+  return error instanceof Error && error.name === "WorkGraphOwnerDeletionError" && "reason" in error &&
+    ["forbidden", "not_quiescent", "in_progress", "cleanup_failed", "storage_failed"].includes(String(error.reason))
+}
+
+function isEvidencePageCursorError(error: unknown): error is EvidencePageCursorError {
+  return error instanceof Error && error.name === "EvidencePageCursorError" && "reason" in error &&
+    ["invalid", "owner_mismatch", "subject_mismatch"].includes(String(error.reason))
+}
+
+function isWorkItemAttemptPageCursorError(error: unknown): error is WorkItemAttemptPageCursorError {
+  return error instanceof Error && error.name === "WorkItemAttemptPageCursorError" && "reason" in error &&
+    ["invalid", "owner_mismatch", "work_item_mismatch"].includes(String(error.reason))
+}
+
+function sameEvidenceSubject(
+  left: EvidenceSubject,
+  right: EvidenceSubject,
+) {
+  if (left.type !== right.type) return false
+  if (left.type === "stream" && right.type === "stream") return left.streamId === right.streamId
+  if (left.type === "outcome" && right.type === "outcome") return left.outcomeId === right.outcomeId
+  return left.type === "work_item" && right.type === "work_item" && left.workItemId === right.workItemId
+}

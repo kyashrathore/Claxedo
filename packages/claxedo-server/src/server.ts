@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import Database from "better-sqlite3"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { HTTPException } from "hono/http-exception"
@@ -11,7 +12,7 @@ import { setupAgentHooks } from "@claxedo/workspace-runtime/host"
 import { capture, initPostHog, shutdownPostHog } from "./posthog"
 import { initNodeObservability } from "./observability/node"
 import { reportError } from "./observability/report"
-import { configureAgentConfig } from "./agent-config"
+import { configureAgentConfig, defaultHarness, loadUserConfig } from "./agent-config"
 import { eventsHandler } from "./routes/events"
 import { peerAddressStamp } from "./routes/local-only-projection"
 import { createConnectionsHost } from "./connections-host/connections-host"
@@ -71,11 +72,15 @@ import { defaultHomeRegion, relayEndpointsFromEnv } from "./region"
 import { mountControlPlaneChannels } from "./channels-control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
 import { createClaxedoSessionEnvFactory } from "./workspace-runtime-integration/session-env"
-import { loadWorkGraphApp, mountLazyLocalOnlyWorkGraph } from "./server-workgraph"
+import {
+  createLocalEmbeddedWorkGraph,
+  mountLazyEmbeddedWorkGraph,
+} from "./server-workgraph"
 import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
 import { centralModelBackend } from "./central-session-runtime"
-
-export { mountLazyLocalOnlyWorkGraph, mountLocalOnlyWorkGraph } from "./server-workgraph"
+import { dataDir } from "./paths"
+import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "./workgraph-host/local-execution"
+import { createLocalExecutionCapabilities } from "./workgraph-host/local-execution-capabilities"
 
 const TrackBody = z.object({
   distinctId: z.string(),
@@ -702,12 +707,92 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
       return localSessionProjectionReady
     },
   })
-  mountLazyLocalOnlyWorkGraph(built.app, authRouteOptions(services), async () =>
-    loadWorkGraphApp({ opencodeRequest, opencodeEvents, connections: built.connections }).catch((err) => {
-      console.error("[claxedo-server] WARN  workgraph init failed:", err)
-      throw err
+  const workgraphSessions = import("./workgraph-session-gateway").then((gateway) =>
+    gateway.createSessionV2WorkGraphGateway(opencodeRequest, { connections: built.connections }))
+  const workgraphSessionGateway = {
+    supportsConnections: !!built.connections,
+    classifyAdmissionError: (error: unknown) => {
+      if (!error || typeof error !== "object" || !("status" in error) || typeof error.status !== "number") return "indeterminate" as const
+      const pathname = "pathname" in error && typeof error.pathname === "string" ? error.pathname : ""
+      if (pathname === "/api/session" && (error.status === 404 || error.status === 501)) return "unavailable" as const
+      if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 425 && error.status !== 429) return "rejected" as const
+      return "indeterminate" as const
+    },
+    admit: (input: Parameters<WorkGraphSessionGateway["admit"]>[0]) => workgraphSessions.then((sessions) => sessions.admit(input)),
+    cancel: (sessionId: string, reason: string) => workgraphSessions.then((sessions) => sessions.cancel(sessionId, reason)),
+    result: (sessionId: string) => workgraphSessions.then((sessions) => sessions.result(sessionId)),
+  }
+  const workgraphDatabase = new Database(path.join(dataDir(), "workgraph-v2.db"))
+  const workgraphRepositoryDirectory = process.env.CLAXEDO_WORKGRAPH_REPOSITORY?.trim() || process.cwd()
+  const workgraphExecution = createLocalWorkspaceExecution({
+    worktreeRoot: path.join(dataDir(), "workgraph-worktrees"),
+    repositoryDirectory: async () => workgraphRepositoryDirectory,
+    sessions: workgraphSessionGateway,
+  })
+  const workgraph = createLocalEmbeddedWorkGraph({
+    database: workgraphDatabase,
+    auth: authRouteOptions(services),
+    execution: workgraphExecution,
+    executionCapabilities: createLocalExecutionCapabilities({
+      opencodeRequest,
+      repositoryDirectory: workgraphRepositoryDirectory,
+      harness: async () => defaultHarness(await loadUserConfig()).id,
+      connections: built.connections,
     }),
-  )
+    recaps: { sessions: workgraphSessionGateway, directory: process.cwd() },
+    sourcePlanning: { sessions: workgraphSessionGateway, directory: process.cwd() },
+    connections: built.connections,
+  })
+  let unsubscribeWorkGraphSessionIntake = () => {}
+  if (!services.auth.config.enabled && services.auth.config.mode === "local-only") {
+    void Promise.all([workgraph, import("./workgraph-host/session-intake")]).then(([embedded, intake]) => {
+      unsubscribeWorkGraphSessionIntake = intake.subscribeSessionIntake({
+        events: globalBus,
+        opencodeRequest,
+        port: embedded.sessionIntake,
+        resolveContext: () => ({
+          ownerUserId: "local" as never,
+          actor: { type: "system" as const, id: "session_intake" as never },
+          requestId: `session_intake_${crypto.randomUUID()}` as never,
+          access: { mode: "owner" as const },
+        }),
+        onError: (error) => console.error("[claxedo-server] WARN WorkGraph Session intake failed:", error),
+      })
+    })
+  }
+  let reconcilingWorkGraph = false
+  const workgraphReconciler = setInterval(() => {
+    if (reconcilingWorkGraph || !workgraphDatabase.open) return
+    reconcilingWorkGraph = true
+    void workgraph.then(async (embedded) => {
+      const owners = workgraphDatabase.prepare(`
+        SELECT owner_user_id FROM wg_v2_streams
+        UNION
+        SELECT owner_user_id FROM wg_v2_attempts WHERE lifecycle = 'running' AND session_id IS NOT NULL
+        UNION
+        SELECT owner_user_id FROM wg_v2_due_jobs WHERE job_type = 'source_plan' AND status IN ('pending', 'failed', 'running')
+      `).all() as Array<{ owner_user_id: string }>
+      await Promise.all(owners.map(async (owner) => {
+        const context = {
+          ownerUserId: owner.owner_user_id as never,
+          actor: { type: "system" as const, id: "workgraph_reconciler" as never },
+          requestId: `reconcile_${crypto.randomUUID()}` as never,
+          access: { mode: "owner" as const },
+        }
+        await embedded.reconcile(context)
+        await embedded.recaps.scheduleDue(context)
+        await embedded.recaps.runDue(context)
+        await embedded.sourcePlanning.runDue(context)
+      }))
+    }).catch((error) => {
+      console.error("[claxedo-server] WARN  workgraph reconciliation failed:", error)
+    }).finally(() => {
+      reconcilingWorkGraph = false
+    })
+  }, 1_000)
+  workgraphReconciler.unref()
+
+  mountLazyEmbeddedWorkGraph(built.app, async () => workgraph)
 
   // Loopback by default (safe for local dev); containers/self-host set
   // CLAXEDO_SERVER_HOST=0.0.0.0 to accept external traffic.
@@ -717,6 +802,11 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
     hostname: process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1",
   })
   built.injectWebSocket(server)
+  server.on("close", () => {
+    clearInterval(workgraphReconciler)
+    unsubscribeWorkGraphSessionIntake()
+    if (workgraphDatabase.open) workgraphDatabase.close()
+  })
 
   // Initialize agent hooks (wrapper scripts, shell integration)
   setupAgentHooks({ port }).catch((err) => {

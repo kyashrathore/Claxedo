@@ -12,6 +12,7 @@ export interface DialogProps extends ParentProps {
   classList?: ComponentProps<"div">["classList"]
   fit?: boolean
   transition?: boolean
+  onEscapeKeyDown?: ComponentProps<typeof Kobalte.Content>["onEscapeKeyDown"]
   /**
    * Accessible name for the dialog when it renders no `<Kobalte.Title>` (i.e.
    * a header-less dialog). Kobalte's `Dialog.Content` only sets
@@ -49,6 +50,7 @@ export function Dialog(props: DialogProps) {
               autofocusEl.focus()
             }
           }}
+          onEscapeKeyDown={props.onEscapeKeyDown}
         >
           <Show when={props.title || props.action}>
             <div data-slot="dialog-header">

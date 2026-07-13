@@ -1351,6 +1351,9 @@ describe("workspace runtime auth helpers", () => {
           default: { opencode: "big-pickle" },
         }), { status: 200, headers: { "Content-Type": "application/json" } })
       }
+      if (url.pathname === "/experimental/tool/ids") {
+        return Response.json(["terminal", "read"])
+      }
       if (url.pathname === "/global/event") {
         const enc = new TextEncoder()
         return new Response(new ReadableStream<Uint8Array>({
@@ -1381,13 +1384,55 @@ describe("workspace runtime auth helpers", () => {
       default: { opencode: "big-pickle" },
     })
 
+    const tools = await app.request("http://localhost/experimental/tool/ids")
+    expect(tools.status).toBe(200)
+    expect(await tools.json()).toEqual(["terminal", "read"])
+
     const event = await app.request("http://localhost/global/event", {
       headers: { Accept: "text/event-stream" },
     })
     expect(event.status).toBe(200)
     expect(await event.text()).toContain("server.connected")
 
-    expect(seen.map((s) => s.path)).toEqual(["/provider", "/global/event"])
+    expect(seen.map((s) => s.path)).toEqual(["/provider", "/experimental/tool/ids", "/global/event"])
+  })
+
+  test("proxies the real Session V2 create, prompt, and history contract", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-session-v2-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const seen: Array<{ method: string; path: string; body: unknown }> = []
+    const handler: OpenCodeRequestFn = async (request) => {
+      const body = request.body ? await request.clone().json().catch(() => undefined) : undefined
+      seen.push({ method: request.method, path: new URL(request.url).pathname, body })
+      if (new URL(request.url).pathname === "/api/session") {
+        expect(body).toEqual({ agent: "build", model: { id: "gpt-5", providerID: "openai" } })
+        expect(body).not.toHaveProperty("id")
+        expect(body).not.toHaveProperty("location")
+        expect((body as { model?: object }).model).not.toHaveProperty("modelID")
+        return Response.json({ id: "ses_v2" }, { status: 201 })
+      }
+      if (new URL(request.url).pathname.endsWith("/prompt")) return Response.json({ data: { admitted: true } })
+      return Response.json({ data: [{ type: "session.next.step.ended", data: {} }], hasMore: false })
+    }
+    const app = new Hono()
+    mountTestHost(app, { opencodeRequest: handler, opencodeCompat: true })
+
+    expect((await app.request("http://localhost/api/session", {
+      method: "POST", headers: { "content-type": "application/json", "x-opencode-directory": dir },
+      body: JSON.stringify({ agent: "build", model: { id: "gpt-5", providerID: "openai" } }),
+    })).status).toBe(201)
+    expect((await app.request("http://localhost/api/session/ses_v2/prompt", {
+      method: "POST", headers: { "content-type": "application/json", "x-opencode-directory": dir },
+      body: JSON.stringify({ prompt: { text: "no-op" }, resume: true }),
+    })).status).toBe(200)
+    expect((await app.request("http://localhost/api/session/ses_v2/history?limit=100&after=0", {
+      headers: { "x-opencode-directory": dir },
+    })).status).toBe(200)
+    expect(seen.map((request) => `${request.method} ${request.path}`)).toEqual([
+      "POST /api/session", "POST /api/session/ses_v2/prompt", "GET /api/session/ses_v2/history",
+    ])
   })
 
   test("opencode proxy routes do not forward relay auth headers", async () => {

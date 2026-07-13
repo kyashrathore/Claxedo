@@ -50,9 +50,11 @@ network, `npx emulate --service github,google` (ports from 4000).
   (public URL defaults to `http://127.0.0.1:3001`).
 - App: `settings-connections.tsx` calls `/api/claxedo/integrations` on the server;
   OAuth popup uses `window.open` (injectable in core, real in component).
-- Workgraph consumer: `server-workgraph.ts:58` `githubAuthFromConnections` resolves
-  a token via `connections.forCapability(capability, { integration: "github" })` —
-  the observable is the resolved token handle, not a GitHub API call.
+- WorkGraph's target consumer contract resolves a team-scoped
+  `CapabilityHandle` from a personal source view, applies the owner's provider
+  identity and filters, obtains a live token per request, and reports
+  authentication rejection through `reportAuthFailure`. The current
+  `server-workgraph.ts` resolver is migration input, not the completed contract.
 - **Do not regress**: the CORS fix (`isConnectionsCredentialPath` in `server.ts:130-165`,
   commit 02ef828225) — credential routes must never reflect `Access-Control-Allow-Origin`.
 
@@ -182,18 +184,20 @@ Acceptance:
       (video or screenshot sequence + curl transcript) recorded here. Progress:
 - [ ] Watched/reviewed the recording and noted what it shows. Progress:
 
-### P5 — Consumer verification (workgraph)
+### P5 — Consumer verification (WorkGraph)
 
 Tasks:
-1. With the GitHub connection from P4 live, assert
-   `githubAuthFromConnections` resolves it: either through the workgraph surface
-   that consumes it, or a minimal integration test that boots `createApp` and
-   calls `connections.forCapability("work-source"-family, { integration: "github" })`
-   asserting the emulator token comes back.
+1. With the GitHub connection from P4 live, import a provider item through the
+   WorkGraph surface. Assert the team capability handle is resolved for the
+   personal source view, the emulator receives the filtered GitHub request with
+   the live PAT, and WorkGraph persistence contains only the connection reference.
+2. Return an authentication rejection from the emulator and assert WorkGraph
+   calls `reportAuthFailure`, Connections becomes degraded, and the provider
+   secret does not appear in WorkGraph events, logs, or responses.
 
 Acceptance:
-- [ ] Token resolved through `forCapability` against the real server + real
-      store adapters (not the in-memory test store). Progress:
+- [ ] Connector request and auth-failure round trip pass through
+      `CapabilityHandle` against the real server and store adapters. Progress:
 
 ### P6 (stretch) — Codify as a repeatable scripted suite
 

@@ -80,6 +80,7 @@ type CreateInput = {
   id?: SessionSchema.ID
   agent?: AgentV2.ID
   model?: ModelV2.Ref
+  tools?: readonly string[]
   location: Location.Ref
 }
 
@@ -257,6 +258,14 @@ const layer = Layer.effect(
             }),
           )
         if (projected.type === "existing") return projected.session
+        if (input.tools) {
+          yield* db
+            .update(SessionTable)
+            .set({ tools: [...input.tools] })
+            .where(eq(SessionTable.id, sessionID))
+            .run()
+            .pipe(Effect.orDie)
+        }
         // TODO: Restore recorded sessions onto replacement synchronized workspaces in a future API slice.
         return yield* result.get(sessionID).pipe(Effect.orDie)
       }),

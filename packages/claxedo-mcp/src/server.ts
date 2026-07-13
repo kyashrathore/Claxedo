@@ -21,8 +21,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import fsPromises from "node:fs/promises"
 import { z } from "zod"
 import { registerBrowserTools } from "./browser-tools"
+import { mcpHttpError } from "./http-error"
 import { handleProcess, type LaunchResult, type ListResponse, type ProcessClient } from "./process-handler"
 import { claxedoMcpReadOnly } from "./tool-policy"
+import { registerWorkGraphTools } from "./workgraph-tools"
 
 const clean = (value: unknown) => {
   if (typeof value !== "string") return ""
@@ -63,13 +65,19 @@ const httpRequest = async <T>(
   const url = `${ORIGIN}${requestPath}${requestPath.includes("?") ? "&" : "?"}${query}`
   const res = await fetch(url, { ...init, headers })
   const text = await res.text()
-  const data = mode === "text" ? text : text.trim() ? JSON.parse(text) : null
-  if (res.ok) return data as T
-  const detail =
-    mode === "json" && data && typeof data === "object" && typeof (data as { error?: unknown }).error === "string"
-      ? (data as { error: string }).error
-      : text || `HTTP ${res.status}`
-  throw new Error(detail)
+  if (!res.ok) {
+    const data = mode === "json" && text.trim() ? parseHttpErrorBody(text) : undefined
+    throw mcpHttpError(res.status, data)
+  }
+  return (mode === "text" ? text : text.trim() ? JSON.parse(text) : null) as T
+}
+
+function parseHttpErrorBody(value: string) {
+  try {
+    return JSON.parse(value) as unknown
+  } catch {
+    return undefined
+  }
 }
 
 type TerminalSessionState = {
@@ -206,6 +214,8 @@ function registerTool(
 ) {
   server.registerTool(name, config as any, handler as any)
 }
+
+registerWorkGraphTools(registerTool, httpRequest, READ_ONLY)
 
 if (!READ_ONLY) {
   registerTool(

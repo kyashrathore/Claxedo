@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { SignJWT, createLocalJWKSet, decodeProtectedHeader, exportJWK, generateKeyPair } from "jose"
+import { SignJWT, createLocalJWKSet, decodeProtectedHeader, errors, exportJWK, generateKeyPair } from "jose"
 import {
   WorkspaceRelayAuthError,
   relayHostTokenAudience,
@@ -118,6 +118,15 @@ describe("workspace relay auth", () => {
     })).rejects.toMatchObject({
       code: "invalid_relay_token",
     } satisfies Partial<WorkspaceRelayAuthError>)
+  })
+
+  test("preserves remote JWKS timeouts as verifier unavailability", async () => {
+    const key = await keys()
+    const token = await mintRuntimeAccessToken(base, key.privateKey, "EdDSA")
+    const resolver = async () => { throw new errors.JWKSTimeout() }
+
+    await expect(verifyRuntimeAccessToken(token, resolver, { workspaceId: "ws_1" }))
+      .rejects.toBeInstanceOf(errors.JWKSTimeout)
   })
 
   test("rejects tampered Runtime Access Token signatures", async () => {

@@ -43,6 +43,7 @@ type Badge = {
 export type RouteIntent = {
   ready: boolean
   marketplace: boolean
+  workgraph?: boolean
   workspaceId: string | undefined
   sessionId: string | undefined
   pageId: string | undefined
@@ -407,6 +408,10 @@ export function createRouteIntentAdapter(input: {
     if (suppressedByFastSessionSwitch(intent)) return
     if (intent.marketplace) {
       state.layout.openMarketplace()
+      return
+    }
+    if (intent.workgraph) {
+      state.layout.openWorkGraph()
       return
     }
     const workspaceId = intent.workspaceId

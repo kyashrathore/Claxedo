@@ -37,6 +37,23 @@ export {
 export type { WorkspaceRuntimeRouteFamily }
   from "./routes/manifest"
 export {
+  WORKGRAPH_CONNECTION_BINDING_PATH,
+  WORKGRAPH_CONNECTION_TOOL_NAMES,
+  WORKGRAPH_CONNECTION_TOOL_PATH,
+  WORKGRAPH_CONNECTION_TOOL_INPUT_SCHEMAS,
+  WORKGRAPH_CONNECTION_TOOL_SCHEMAS,
+  WorkGraphConnectionOperationRequestSchema,
+  WorkGraphConnectionOperationResponseSchema,
+  WorkGraphConnectionToolRoutes,
+} from "./routes/workgraph-connection-tools"
+export type {
+  WorkGraphConnectionOperationBroker,
+  WorkGraphConnectionOperationRequest,
+  WorkGraphConnectionOperationResponse,
+  WorkGraphConnectionToolInput,
+  WorkGraphConnectionToolName,
+} from "./routes/workgraph-connection-tools"
+export {
   embeddedWorkspaceRuntimeExposure,
   loopbackWorkspaceRuntimeExposure,
   privateNetworkDevUnsafeWorkspaceRuntimeExposure,

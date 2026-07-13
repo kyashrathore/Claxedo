@@ -1,6 +1,7 @@
 import { realDirectory, type ContentMeta } from "./types"
 import {
   marketplaceRoute,
+  workGraphRoute,
   sessionRoute as canonicalSessionRoute,
   workspacePageRoute,
   workspaceRoute as canonicalWorkspaceRoute,
@@ -45,6 +46,7 @@ function routeSessionRef(content: RouteContent) {
 
 export function surfaceRoute(dir: string, content: RouteContent) {
   if (content.type === "marketplace") return marketplaceRoute()
+  if (content.type === "workgraph") return workGraphRoute()
   if (content.type === "session") {
     const sessionRef = routeSessionRef(content)
     if (sessionRef?.sessionId && sessionRef.sessionId !== "new") {
@@ -71,6 +73,7 @@ export function routeMatchesSurface(
   route: {
     id?: string
     marketplace?: boolean
+    workgraph?: boolean
     pageId?: string
     terminalId?: string
   },
@@ -79,6 +82,7 @@ export function routeMatchesSurface(
   routeWorkspaceKey?: string,
 ) {
   if (content.type === "marketplace") return route.marketplace === true
+  if (content.type === "workgraph") return route.workgraph === true
   if (routeWorkspaceKey !== dir) return false
 
   if (content.type === "session") {
@@ -100,6 +104,7 @@ export function focusedSurfaceRouteTarget(input: {
     dir?: string
     id?: string
     marketplace?: boolean
+    workgraph?: boolean
     pageId?: string
     terminalId?: string
   }
@@ -116,11 +121,16 @@ export function focusedSurfaceRouteTarget(input: {
   ) return
   if (!input.surface) {
     if (input.route.marketplace) return
+    if (input.route.workgraph) return
     if (!hasConcreteRoute || !input.activeDirectory) return
     return workspaceBrowseRoute(input.activeDirectory)
   }
 
   if (input.surface.type === "marketplace") {
+    if (routeMatchesSurface(input.route, "", input.surface, input.routeWorkspaceKey)) return
+    return surfaceRoute("", input.surface)
+  }
+  if (input.surface.type === "workgraph") {
     if (routeMatchesSurface(input.route, "", input.surface, input.routeWorkspaceKey)) return
     return surfaceRoute("", input.surface)
   }

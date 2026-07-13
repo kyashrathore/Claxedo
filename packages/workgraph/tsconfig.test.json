@@ -1,7 +1,14 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals"],
+    "paths": {
+      "@claxedo/workgraph/contracts": ["./src/contracts/index.ts"],
+      "@claxedo/workgraph/domain": ["./src/domain/index.ts"],
+      "@claxedo/workgraph/hosted": ["./src/hosted.ts"],
+      "@claxedo/workgraph/ports": ["./src/ports/index.ts"],
+      "@claxedo/workgraph/conformance": ["./src/conformance/index.ts"]
+    }
   },
   "include": ["src/**/*", "test/**/*", "vitest.config.ts"]
 }

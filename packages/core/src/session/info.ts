@@ -25,6 +25,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
           variant: ModelV2.VariantID.make(row.model.variant ?? "default"),
         }
       : undefined,
+    tools: row.tools ?? undefined,
     cost: row.cost,
     tokens: {
       input: row.tokens_input,

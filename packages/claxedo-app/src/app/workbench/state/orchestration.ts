@@ -36,6 +36,7 @@ export type LayoutOrchestrationApi = {
   openPage(pageId: string, title?: string, directory?: string, filePath?: string): string
   openPagesIndex(directory?: string): string
   openMarketplace(): string
+  openWorkGraph(): string
   /**
    * Close a content fully — drop the meta entry, remove from workbench, run
    * cleanup hooks (e.g. terminal owner/lifecycle teardown).
@@ -58,7 +59,7 @@ export type LayoutOrchestrationApi = {
 const PINNED_TYPES: ReadonlySet<ContentType> = new Set(["pages-index"])
 
 const newId = (type: ContentType) => {
-  const prefix = type === "marketplace" ? "mkt" : type
+  const prefix = type === "marketplace" ? "mkt" : type === "workgraph" ? "wg" : type
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
@@ -447,6 +448,20 @@ export function createLayoutOrchestration(input: {
           },
         }
       })
+    },
+
+    openWorkGraph() {
+      const existing = meta.find((m) => m.type === "workgraph")
+      if (existing) {
+        meta.patch(existing.id, { content: { type: "workgraph", title: "WorkGraph" } })
+        wb.navigation.show(existing.id)
+        return existing.id
+      }
+      const id = newId("workgraph")
+      meta.upsert({ id, type: "workgraph", scope: "global", content: { type: "workgraph", title: "WorkGraph" } })
+      wb.contents.add(id)
+      wb.navigation.show(id)
+      return id
     },
 
     closeContent(id, reason = "user") {

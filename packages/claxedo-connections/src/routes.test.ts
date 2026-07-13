@@ -4,16 +4,26 @@ import { createConnectionsService } from "./service.js"
 import { createIntegrationsRoutes } from "./routes.js"
 import { createAttempts } from "./attempts.js"
 import { createMemoryConnectionStore, createMemoryCredentialStore } from "./stores/memory.js"
+import { ConnectionsUnavailableError } from "./types.js"
 
-function harness(gates: { gateDenies?: boolean; tokenGateDenies?: boolean; owner?: string; tokenOwner?: string } = {}) {
+function harness(gates: {
+  gateDenies?: boolean
+  tokenGateDenies?: boolean
+  owner?: string
+  tokenOwner?: string
+  webhook?: boolean
+  webhookUnavailable?: boolean
+  listUnavailable?: boolean
+  omitKeyTokenType?: boolean
+} = {}) {
   const registry = createIntegrationRegistry()
   registry.register(
     {
-      id: "fake",
-      name: "Fake",
+      id: gates.webhook ? "github" : "fake",
+      name: gates.webhook ? "GitHub" : "Fake",
       methods: ["key"],
-      capabilities: ["docs"],
-      keyTokenType: "basic",
+      capabilities: gates.webhook ? ["code-host", "work-source"] : ["docs"],
+      ...(!gates.omitKeyTokenType ? { keyTokenType: gates.webhook ? "bearer" as const : "basic" as const } : {}),
       prompts: [
         { id: "site_url", label: "Site" },
         { id: "token", label: "Token", secret: true },
@@ -21,7 +31,21 @@ function harness(gates: { gateDenies?: boolean; tokenGateDenies?: boolean; owner
     },
     { verify: async (_f, secret) => (secret === "good" ? { ok: true, accountLabel: "Acme" } : { ok: false, reason: "unauthorized" }) },
   )
-  const credentials = createMemoryCredentialStore()
+  const memoryCredentials = createMemoryCredentialStore()
+  const credentials = {
+    ...memoryCredentials,
+    ...(gates.webhookUnavailable ? {
+      async put(input: Parameters<typeof memoryCredentials.put>[0]) {
+        if (input.providerId.endsWith(":webhook-signing")) throw new ConnectionsUnavailableError()
+        return memoryCredentials.put(input)
+      },
+    } : {}),
+    ...(gates.listUnavailable ? {
+      async get() {
+        throw new ConnectionsUnavailableError()
+      },
+    } : {}),
+  }
   let nextId = 0
   const service = createConnectionsService({
     registry,
@@ -50,6 +74,8 @@ describe("integrations routes", () => {
       ["GET", "/attempts/x"],
       ["DELETE", "/connections/fake"],
       ["POST", "/connections/fake/reverify"],
+      ["PUT", "/connections/fake/webhook-secret"],
+      ["DELETE", "/connections/fake/webhook-secret"],
       ["POST", "/connections/fake/auth-failure"],
       ["GET", "/connections/fake/token?capability=docs"],
     ] as const) {
@@ -84,6 +110,35 @@ describe("integrations routes", () => {
       tokenType: "basic",
       fields: { site_url: "https://acme.example" },
     })
+  })
+
+  test("list returns 503 for credential-store outages while a missing credential remains broken", async () => {
+    const unavailable = harness({ listUnavailable: true })
+    await unavailable.app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    const outage = await unavailable.app.request("/")
+    expect(outage.status).toBe(503)
+    expect(await outage.json()).toEqual({ code: "connections_unavailable" })
+
+    const broken = harness()
+    await broken.app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    await broken.credentials.deleteByProvider("integration:connection-1")
+    const listing = await broken.app.request("/")
+    expect(listing.status).toBe(200)
+    expect(((await listing.json()) as { connections: Array<{ status: string }> }).connections[0]).toMatchObject({ status: "broken" })
+  })
+
+  test("token endpoint requires declared key authorization metadata", async () => {
+    const secret = "good"
+    const { app } = harness({ omitKeyTokenType: true })
+    await app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ fields: {}, secret: "good" }),
+    })
+    const response = await app.request("/connections/connection-1/token?capability=docs")
+    const body = await response.text()
+    expect(response.status).toBe(409)
+    expect(JSON.parse(body)).toEqual({ code: "connection_not_available", status: "reconnect_required" })
+    expect(body).not.toContain(secret)
   })
 
   test("token endpoint error contract: 404 unknown, 403 ungranted, 409 non-available", async () => {
@@ -159,6 +214,82 @@ describe("integrations routes", () => {
     expect((await app.request("/connections/connection-1/token?capability=docs")).status).toBe(200)
     expect((await app.request("/connections/connection-1", { method: "DELETE" })).status).toBe(200)
     expect((await app.request("/connections/nope", { method: "DELETE" })).status).toBe(404)
+  })
+
+  test("manages a team GitHub webhook secret without echoing or persisting it on Connection responses", async () => {
+    const { app, service, credentials } = harness({ webhook: true, owner: "user:alice" })
+    expect((await app.request("/github/connect", {
+      method: "POST",
+      body: JSON.stringify({ fields: {}, secret: "good" }),
+    })).status).toBe(200)
+
+    const secret = "webhook-secret-not-for-responses"
+    const configured = await app.request("/connections/connection-1/webhook-secret", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ secret }),
+    })
+    expect(configured.status).toBe(200)
+    expect(await configured.json()).toEqual({ ok: true })
+    expect(await service.resolveWebhookSigningSecret("connection-1", "github")).toBe(secret)
+    expect(await credentials.resolveSecret("integration:connection-1")).toBe("good")
+    expect(await (await app.request("/")).text()).not.toContain(secret)
+
+    expect((await app.request("/connections/connection-1/webhook-secret", {
+      method: "PUT",
+      body: JSON.stringify({ secret: "rotated-secret" }),
+    })).status).toBe(200)
+    expect(await service.resolveWebhookSigningSecret("connection-1", "github")).toBe("rotated-secret")
+    expect((await app.request("/connections/connection-1/webhook-secret", { method: "DELETE" })).status).toBe(200)
+    expect(await service.resolveWebhookSigningSecret("connection-1", "github")).toBeUndefined()
+
+    expect((await app.request("/github/connect", {
+      method: "POST",
+      body: JSON.stringify({ fields: {}, secret: "good", scope: "personal" }),
+    })).status).toBe(200)
+    expect((await app.request("/connections/connection-2/webhook-secret", {
+      method: "PUT",
+      body: JSON.stringify({ secret }),
+    })).status).toBe(403)
+  })
+
+  test("webhook secret management uses the same authenticated org partition as team Connections", async () => {
+    const { service } = harness({ webhook: true })
+    const partitioned = (org: string) => createIntegrationsRoutes(service, {
+      owner: () => `user:${org}`,
+      teamOwner: () => `org:${org}`,
+      ownerlessRows: "refuse",
+    })
+    const orgA = partitioned("a")
+    const orgB = partitioned("b")
+    await orgA.request("/github/connect", {
+      method: "POST",
+      body: JSON.stringify({ fields: {}, secret: "good" }),
+    })
+    const id = ((await (await orgA.request("/")).json()) as { connections: Array<{ id: string }> }).connections[0]!.id
+    expect((await orgA.request(`/connections/${id}/webhook-secret`, {
+      method: "PUT",
+      body: JSON.stringify({ secret: "org-a-secret" }),
+    })).status).toBe(200)
+    expect((await orgB.request(`/connections/${id}/webhook-secret`, {
+      method: "PUT",
+      body: JSON.stringify({ secret: "org-b-secret" }),
+    })).status).toBe(404)
+    expect((await orgB.request(`/connections/${id}/webhook-secret`, { method: "DELETE" })).status).toBe(404)
+    expect(await service.resolveWebhookSigningSecret(id, "github")).toBe("org-a-secret")
+  })
+
+  test("webhook secret management reports unavailable credential storage without storing or echoing the secret", async () => {
+    const { app, service } = harness({ webhook: true, webhookUnavailable: true })
+    await app.request("/github/connect", { method: "POST", body: JSON.stringify({ fields: {}, secret: "good" }) })
+    const secret = "must-never-echo"
+    const response = await app.request("/connections/connection-1/webhook-secret", {
+      method: "PUT",
+      body: JSON.stringify({ secret }),
+    })
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ ok: false, code: "connections_unavailable" })
+    expect(await service.resolveWebhookSigningSecret("connection-1", "github")).toBeUndefined()
   })
 
   test("token endpoint never reflects the request Origin (no CORS headers from the kit)", async () => {

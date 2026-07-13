@@ -14,6 +14,10 @@ export type WorkspacePanelProps = {
   fullWidth?: () => boolean
   onModeSelect?: (mode: WorkspacePanelMode) => void
   onClose?: () => void
+  // Resting width used before the user has dragged the resize handle. Lets a
+  // compact global surface (e.g. WorkGraph) open narrower than the workspace
+  // review default without a second panel shell. Falls back to the 70% default.
+  preferredWidth?: () => number | undefined
   renderMode: (mode: WorkspacePanelMode, state: WorkspacePanelState) => JSX.Element
   contentIdentity?: (state: WorkspacePanelState) => unknown
   // Optional chrome that renders at the top of the panel
@@ -105,7 +109,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
   const restingPanelWidth = () => {
     if (isMobile()) return availableWidth()
     if (props.fullWidth?.()) return availableWidth()
-    return Math.min(width() ?? defaultWidth(), maxWidth())
+    return Math.min(width() ?? clampWidth(props.preferredWidth?.() ?? defaultWidth()), maxWidth())
   }
   const panelStyleWidth = () => isMobile() ? "100%" : `${restingPanelWidth()}px`
   const pendingMode = () => {

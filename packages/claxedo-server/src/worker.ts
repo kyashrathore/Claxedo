@@ -23,11 +23,12 @@
 import type { ExecutionContext, Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import * as Sentry from "@sentry/cloudflare"
-import { composeHostedControlPlane, HostedWorkerCompositionError, type HostedWorkerEnv } from "./control-plane/hosted-services"
+import { composeHostedControlPlane, HostedWorkerCompositionError, type HostedControlPlane, type HostedWorkerEnv } from "./control-plane/hosted-services"
 import { createHostedApp } from "./hosted-app"
 import { runScheduledBillingReconciliation } from "./billing/reconcile"
 import { reportError, setErrorReporterSink } from "./observability/report"
 import { sentryInitOptions } from "./observability/sentry-config"
+import { createHostedWorkGraphRuntime } from "./workgraph-host/hosted-runtime"
 
 // D12: route reportError/reportPaymentError (the payment page-class hook the
 // billing routes call) into the request's Sentry scope. withSentry runs the
@@ -42,7 +43,7 @@ setErrorReporterSink((error, context) => {
   })
 })
 
-let cached: { app: Hono } | undefined
+let cached: { app: Hono; plane: HostedControlPlane } | undefined
 
 // D9 fail-closed hosted boot: `composeHostedControlPlane` asserts every
 // hosted dependency/secret per-piece, and `createHostedApp` asserts the
@@ -70,7 +71,7 @@ function buildApp(env: HostedWorkerEnv): Hono {
       return c.text("Internal Server Error", 500)
     })
   }
-  cached = { app }
+  cached = { app, plane }
   return app
 }
 
@@ -157,6 +158,15 @@ const handler = {
       await runScheduledBillingReconciliation(env)
     } catch (err) {
       reportError(err, { tags: { source: "worker_scheduled", reason: "billing_sweep_failed" } })
+    }
+
+    try {
+      const app = buildApp(env)
+      void app
+      await createHostedWorkGraphRuntime(env, cached!.plane.services)?.reconcile()
+    } catch (err) {
+      reportError(err, { tags: { source: "worker_scheduled", reason: "workgraph_reconcile_failed" } })
+      if (!gcError) gcError = err
     }
 
     // Surface the GC failure now that billing has had its independent run.

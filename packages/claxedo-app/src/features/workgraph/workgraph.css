@@ -1,0 +1,835 @@
+/* WorkGraph — flat, quiet. Hairline dividers, no boxed cards. Streams contain
+   outcomes contain tasks. Matches the app's flat sidebar/session surfaces. */
+
+.workgraph-shell {
+  background: var(--background-base);
+}
+
+.workgraph-canvas {
+  position: relative;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+
+.workgraph-head {
+  margin-bottom: 0.85rem;
+}
+
+.workgraph-head-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.workgraph-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.workgraph-mark {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--surface-brand-base) 75%, transparent);
+  transform: rotate(45deg);
+}
+
+.workgraph-title {
+  margin-top: 0.4rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.workgraph-lede {
+  margin-top: 0.3rem;
+  max-width: 44rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.workgraph-count {
+  display: inline-flex;
+  min-width: 1rem;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.15rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: var(--surface-base);
+  font-family: var(--font-family-mono);
+  font-size: 0.625rem;
+  line-height: 1rem;
+  color: var(--text-weak);
+}
+
+.workgraph-rule {
+  height: 1px;
+  margin-bottom: 0.6rem;
+  background: var(--border-weak-base);
+}
+
+/* ── Quiet summary line (not a dashboard) ───────────────── */
+
+.workgraph-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  padding: 0.15rem 0 0.9rem;
+  font-size: 0.75rem;
+}
+
+.workgraph-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.workgraph-stat-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.workgraph-stat-label {
+  color: var(--text-weaker);
+}
+
+/* ── Waiting-on-you (flat) ──────────────────────────────── */
+
+.workgraph-attention {
+  margin-bottom: 0.4rem;
+}
+
+.workgraph-attention-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.25rem 0.45rem;
+}
+
+.workgraph-attention-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--icon-critical-base);
+}
+
+.workgraph-attention-list {
+  padding-left: 0.25rem;
+}
+
+/* ── Stream tree (flat) ─────────────────────────────────── */
+
+.workgraph-tree {
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.workgraph-stream {
+  border-bottom: 1px solid var(--border-weak-base);
+}
+
+/* New-stream dialog: a real backdrop, biased toward the top, borderless
+   Linear-style title + description body. */
+
+.workgraph-dialog-scope [data-component="dialog-overlay"] {
+  background: color-mix(in srgb, black 55%, transparent);
+}
+
+.workgraph-dialog-scope [data-component="dialog"] {
+  align-items: flex-start;
+  padding-top: 11vh;
+}
+
+.workgraph-create-form {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  padding: 0.25rem 1.25rem 1rem;
+}
+
+.workgraph-create-title {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0.25rem 0;
+  color: var(--text-strong);
+  font-size: 1.125rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  outline: none;
+}
+
+.workgraph-create-desc {
+  width: 100%;
+  margin-top: 0.35rem;
+}
+
+.workgraph-create-title::placeholder {
+  color: var(--text-weaker);
+}
+
+.workgraph-create-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.workgraph-defchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 1.75rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border-weak-base);
+  border-radius: 999px;
+  background: var(--surface-base);
+  color: var(--text-base);
+  font-size: 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+  outline: none;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.workgraph-defchip:hover {
+  border-color: var(--border-strong-base);
+  background: var(--background-stronger);
+}
+
+.workgraph-defchip:focus-visible {
+  border-color: var(--border-selected);
+}
+
+.workgraph-defchip-value {
+  white-space: nowrap;
+}
+
+.workgraph-chip-menu {
+  display: flex;
+  min-width: 11rem;
+  flex-direction: column;
+  padding: 0.25rem;
+}
+
+.workgraph-chip-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-md);
+  color: var(--text-base);
+  font-size: 0.8125rem;
+  text-align: left;
+}
+
+.workgraph-chip-option:hover {
+  background: var(--surface-base);
+}
+
+.workgraph-chip-option.is-selected {
+  color: var(--text-strong);
+}
+
+.workgraph-create-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.workgraph-create-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.6875rem;
+}
+
+.workgraph-create-hint kbd {
+  min-width: 1.1rem;
+  padding: 0 0.25rem;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-sm);
+  background: var(--surface-base);
+  font-family: var(--font-family-mono);
+  font-size: 0.625rem;
+  line-height: 1.1rem;
+  text-align: center;
+}
+
+.workgraph-dialog-scope.is-expanded .workgraph-create-form {
+  height: 100%;
+  padding-bottom: 1.25rem;
+}
+
+.workgraph-dialog-scope.is-expanded .richtext-surface {
+  min-height: 20rem;
+}
+
+.workgraph-stream-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.55rem;
+  padding: 0.15rem 0.35rem 0.15rem 0.1rem;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: background 110ms ease;
+}
+
+.workgraph-stream-row:hover {
+  background: color-mix(in srgb, var(--surface-base) 60%, transparent);
+}
+
+.workgraph-disclosure {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: var(--radius-sm);
+  color: var(--icon-weak-base);
+  opacity: 0;
+  transition:
+    transform 140ms ease,
+    color 110ms ease,
+    opacity 110ms ease;
+}
+
+.workgraph-stream-row:hover .workgraph-disclosure,
+.workgraph-stream.is-open .workgraph-disclosure,
+.workgraph-disclosure:focus-visible {
+  opacity: 1;
+}
+
+.workgraph-disclosure:hover {
+  color: var(--icon-base);
+}
+
+.workgraph-stream.is-open .workgraph-disclosure {
+  transform: rotate(90deg);
+  color: var(--icon-base);
+}
+
+.workgraph-status-dot {
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--icon-info-base);
+}
+
+.workgraph-status-dot[data-tone="active"] {
+  background: var(--icon-success-base);
+}
+
+.workgraph-status-dot[data-tone="critical"] {
+  background: var(--icon-critical-base);
+}
+
+.workgraph-status-dot[data-tone="info"] {
+  background: color-mix(in srgb, var(--icon-weak-base) 75%, transparent);
+}
+
+.workgraph-stream-title {
+  flex-shrink: 0;
+  max-width: min(50%, 32rem);
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 450;
+  color: var(--text-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  outline: none;
+}
+
+.workgraph-stream-row:hover .workgraph-stream-title {
+  color: var(--text-strong);
+}
+
+.workgraph-stream-title:focus-visible {
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px var(--border-selected);
+}
+
+.workgraph-stream-meta {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: hidden;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 110ms ease;
+}
+
+.workgraph-stream-row:hover .workgraph-stream-meta,
+.workgraph-stream.is-open .workgraph-stream-meta {
+  opacity: 1;
+}
+
+.workgraph-stream-meta > span {
+  flex-shrink: 0;
+}
+
+.workgraph-running {
+  color: var(--icon-success-base);
+}
+
+.workgraph-stream-time {
+  flex-shrink: 0;
+  font-family: var(--font-family-mono);
+  font-size: 0.6875rem;
+}
+
+/* ── Children: outcomes & tasks ─────────────────────────── */
+
+.workgraph-stream-children {
+  padding: 0.1rem 0 0.55rem 1.5rem;
+}
+
+.workgraph-outcome {
+  padding-left: 0.85rem;
+}
+
+.workgraph-outcome-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem 0.35rem 0;
+}
+
+.workgraph-outcome-marker {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex-shrink: 0;
+  border: 1.5px solid var(--border-strong-base);
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+.workgraph-outcome-marker.is-orphan {
+  border-style: dashed;
+  border-radius: 999px;
+  transform: none;
+}
+
+.workgraph-outcome-check {
+  flex-shrink: 0;
+  color: var(--icon-success-base);
+}
+
+.workgraph-outcome-title {
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.workgraph-outcome-title.is-shipped {
+  color: var(--text-weak);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong-base);
+}
+
+.workgraph-outcome-crit {
+  font-family: var(--font-family-mono);
+  font-size: 0.625rem;
+}
+
+.workgraph-chip {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.workgraph-chip.is-success {
+  background: color-mix(in srgb, var(--icon-success-base) 18%, transparent);
+  color: var(--icon-success-base);
+}
+
+.workgraph-leaves {
+  padding-left: 0.8rem;
+}
+
+.workgraph-leaf {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.85rem;
+  padding: 0.05rem 0.4rem 0.05rem 0;
+}
+
+.workgraph-leaf-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workgraph-leaf-gap {
+  flex: 1;
+}
+
+.workgraph-leaf-waits {
+  flex-shrink: 0;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border-weak-base);
+  border-radius: 999px;
+  font-size: 0.625rem;
+}
+
+.workgraph-leaf-state {
+  flex-shrink: 0;
+  font-family: var(--font-family-mono);
+  font-size: 0.625rem;
+  text-transform: lowercase;
+}
+
+.workgraph-leaf-empty {
+  padding: 0.3rem 0 0.3rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.workgraph-stream-add {
+  padding-left: 0.8rem;
+}
+
+.workgraph-add-task {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.7rem;
+  padding: 0 0.3rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-weaker);
+  font-size: 0.75rem;
+  transition: color 110ms ease;
+}
+
+.workgraph-add-task:hover {
+  color: var(--text-base);
+}
+
+.workgraph-add-task-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.85rem;
+  padding-right: 0.4rem;
+}
+
+.workgraph-add-task-icon {
+  flex-shrink: 0;
+  color: var(--icon-weak-base);
+}
+
+.workgraph-add-task-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-base);
+  font-size: 0.8125rem;
+  outline: none;
+}
+
+.workgraph-add-task-input::placeholder {
+  color: var(--text-weaker);
+}
+
+.workgraph-add-task-input:disabled {
+  opacity: 0.5;
+}
+
+.workgraph-row-delete {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: var(--radius-sm);
+  color: var(--icon-weak-base);
+  opacity: 0;
+  transition:
+    opacity 110ms ease,
+    color 110ms ease,
+    background 110ms ease;
+}
+
+.workgraph-stream-row:hover .workgraph-row-delete,
+.workgraph-leaf:hover .workgraph-row-delete,
+.workgraph-row-delete[data-expanded],
+.workgraph-row-delete:focus-visible {
+  opacity: 1;
+}
+
+.workgraph-row-delete:hover {
+  color: var(--icon-critical-base);
+}
+
+.workgraph-leaf .workgraph-row-delete {
+  margin-left: 0.15rem;
+}
+
+/* Stream-owned recap: a small, always-visible marker on rows that have a latest
+   recap. Hover/focus opens the preview popover below. */
+.workgraph-recap-chip {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: var(--radius-sm);
+  color: var(--icon-weak-base);
+  transition: color 110ms ease;
+}
+
+.workgraph-recap-chip:hover,
+.workgraph-recap-chip[data-expanded] {
+  color: var(--icon-base);
+}
+
+.workgraph-recap-chip:focus-visible {
+  outline: 2px solid var(--border-selected);
+  outline-offset: 1px;
+}
+
+.workgraph-recap-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: min(20rem, 80vw);
+  padding: 0.6rem 0.7rem;
+}
+
+.workgraph-recap-pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-family: var(--font-family-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.workgraph-recap-pop-summary {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.workgraph-recap-pop-meta {
+  font-size: 0.6875rem;
+}
+
+/* Failed mutations surface as a fixed toast — never in document flow, so a
+   row action (delete/add) can't shove the page. */
+.workgraph-toast {
+  position: fixed;
+  z-index: 200;
+  right: 1rem;
+  bottom: 1rem;
+  width: min(92vw, 26rem);
+  overflow: hidden;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.workgraph-toast > [role="alert"] {
+  margin: 0;
+  border-width: 0;
+}
+
+.workgraph-confirm {
+  display: flex;
+  min-width: 15rem;
+  max-width: 17rem;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.75rem;
+}
+
+.workgraph-confirm-text {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-base);
+}
+
+.workgraph-confirm-text b {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.workgraph-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* ── Flat sections (stream detail + reused panels) ──────── */
+
+.workgraph-panel {
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.workgraph-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.1rem 0.45rem;
+}
+
+.workgraph-panel-body {
+  padding-inline: 0.1rem;
+}
+
+.workgraph-empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+}
+
+.workgraph-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--border-weak-base);
+  border-bottom: 1px solid var(--border-weak-base);
+}
+
+.workgraph-plan-card {
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.workgraph-outcome-bar {
+  padding: 0.7rem 0.1rem;
+}
+
+.workgraph-item-row {
+  position: relative;
+  padding: 0.7rem 0.1rem 0.7rem 1.6rem;
+}
+
+.workgraph-item-row::before {
+  position: absolute;
+  top: 1rem;
+  left: 0.5rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border: 1px solid var(--border-strong-base);
+  border-radius: 999px;
+  content: "";
+}
+
+.workgraph-item-row + .workgraph-item-row {
+  border-top: 1px solid var(--border-weak-base);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .workgraph-row-delete,
+  .workgraph-disclosure,
+  .workgraph-stream-meta {
+    opacity: 1;
+  }
+}
+
+/* ── Forms (flat, hairline-topped) ──────────────────────── */
+
+.workgraph-form-surface {
+  padding: 0.85rem 0.1rem;
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.workgraph-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.35rem;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+  background: var(--background-base);
+  padding: 0.5rem 0.7rem;
+  color: var(--text-base);
+  font-size: 0.8125rem;
+  outline: none;
+  transition:
+    border-color 130ms ease,
+    background 130ms ease;
+}
+
+.workgraph-input::placeholder {
+  color: var(--text-weaker);
+}
+
+.workgraph-input:focus {
+  border-color: var(--border-selected);
+  background: var(--background-stronger);
+}
+
+.workgraph-input:disabled {
+  opacity: 0.5;
+}
+
+@media (max-width: 767px) {
+  .workgraph-row-delete {
+    opacity: 1;
+  }
+
+  .workgraph-stream-title {
+    max-width: 58%;
+  }
+
+  .workgraph-stream-meta {
+    display: none;
+  }
+
+  .workgraph-stream-children {
+    padding-left: 0.6rem;
+  }
+
+  .workgraph-outcome {
+    padding-left: 0.5rem;
+  }
+
+  .workgraph-leaves,
+  .workgraph-stream-add {
+    padding-left: 0.4rem;
+  }
+
+  .workgraph-stream-row {
+    gap: 0.4rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workgraph-disclosure,
+  .workgraph-stream-row,
+  .workgraph-row-delete {
+    transition: none;
+  }
+}

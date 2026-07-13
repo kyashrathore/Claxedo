@@ -90,6 +90,14 @@ export type WorkspacePanelSliceApi = {
   /** Switch the active mode in place without re-opening or moving focus. */
   select(mode: WorkspacePanelMode): void
   setNavigatorHidden(hidden: boolean): void
+  /**
+   * Open the panel to a global-navigation mode that is NOT bound to any
+   * workspace. Clears every workspace binding (dir/pane/navigator/focus) so the
+   * active global surface owns the panel content. Used by WorkGraph.
+   */
+  openGlobal(mode: WorkspacePanelMode): void
+  /** Toggle a global-navigation mode: closes if that exact mode is open, else opens it. */
+  toggleGlobal(mode: WorkspacePanelMode): void
 }
 
 /**
@@ -225,6 +233,19 @@ export function createWorkspacePanelSlice(input: {
     setNavigatorHidden(hidden) {
       if (state.workspacePanel.navigatorHidden === hidden) return
       setState("workspacePanel", "navigatorHidden", hidden)
+    },
+    openGlobal(mode) {
+      // Full replace, dropping any prior workspace binding: a global panel is
+      // workspace-agnostic and its content is contributed by the active surface.
+      replacePanel({ open: true, mode })
+    },
+    toggleGlobal(mode) {
+      const current = state.workspacePanel
+      if (current.open && current.mode === mode) {
+        replacePanel(closeWorkspacePanel(current))
+        return
+      }
+      replacePanel({ open: true, mode })
     },
   }
 }

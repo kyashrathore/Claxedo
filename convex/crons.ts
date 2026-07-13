@@ -21,15 +21,14 @@ import { internal } from "./_generated/api"
 
 const crons = cronJobs()
 
-crons.interval(
-  "sweep stale runtime leases",
-  { minutes: 10 },
-  internal.sandboxLeases.sweepStaleLeases,
-  {
-    acquiring_stale_after_ms: 15 * 60 * 1000,
-    ready_heartbeat_stale_after_ms: 30 * 60 * 1000,
-  },
-)
+crons.interval("sweep stale runtime leases", { minutes: 10 }, internal.sandboxLeases.sweepStaleLeases, {
+  acquiring_stale_after_ms: 15 * 60 * 1000,
+  ready_heartbeat_stale_after_ms: 30 * 60 * 1000,
+})
+
+crons.interval("schedule quiet WorkGraph recaps", { minutes: 15 }, internal.workgraphBackground.scheduleDueRecaps, {
+  limit: 100,
+})
 
 // D5 billing reconciliation sweep, Convex half (launch plan 012 §1 / ADR 014
 // §3): Polar disables a webhook endpoint after 10 consecutive failed
@@ -40,13 +39,8 @@ crons.interval(
 // billing.applyPolarState (which clears the flag). Polar credentials never
 // enter Convex — the split mirrors the D13 reaper. Failure to REACH Polar
 // never downgrades anyone: only a successfully fetched fresh state writes.
-crons.interval(
-  "flag stale billing sync",
-  { hours: 6 },
-  internal.billing.flagStaleBillingSync,
-  {
-    stale_after_ms: 24 * 60 * 60 * 1000,
-  },
-)
+crons.interval("flag stale billing sync", { hours: 6 }, internal.billing.flagStaleBillingSync, {
+  stale_after_ms: 24 * 60 * 60 * 1000,
+})
 
 export default crons

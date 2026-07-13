@@ -36,7 +36,7 @@ export function atlassianIntegration(options: { fetchImpl?: typeof fetch } = {})
       id: "atlassian",
       name: "Atlassian",
       methods: ["key"],
-      capabilities: ["docs"],
+      capabilities: ["docs", "work-source"],
       keyTokenType: "basic",
       prompts: [
         { id: "site_url", label: "Site URL", placeholder: "https://your-team.atlassian.net" },

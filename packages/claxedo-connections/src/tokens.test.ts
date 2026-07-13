@@ -13,6 +13,11 @@ const ROW: ConnectionRow = {
   updatedAt: 0,
 }
 
+const KEY_ROW: ConnectionRow = {
+  ...ROW,
+  integrationId: "keyed",
+}
+
 function oauthHarness(input: {
   refresh?: (refreshToken: string) => Promise<OAuthTokens>
   expiresAt?: number
@@ -37,6 +42,71 @@ function oauthHarness(input: {
 }
 
 describe("token service", () => {
+  for (const tokenType of ["bearer", "basic"] as const) {
+    test(`key token preserves declared ${tokenType} authorization type`, async () => {
+      const registry = createIntegrationRegistry()
+      registry.register(
+        { id: "keyed", name: "Keyed", methods: ["key"], capabilities: ["docs"], keyTokenType: tokenType },
+        {},
+      )
+      const credentials = createMemoryCredentialStore()
+      await credentials.put({ providerId: "integration:connection-1", kind: "api_key", secret: "key-secret" })
+
+      expect(await createTokenService({ registry, credentials }).getLiveToken(KEY_ROW)).toEqual({
+        token: "key-secret",
+        tokenType,
+      })
+    })
+  }
+
+  test("missing integration declaration requires reconnect without resolving the secret", async () => {
+    let reads = 0
+    const credentials = createMemoryCredentialStore()
+    await credentials.put({ providerId: "integration:connection-1", kind: "api_key", secret: "hidden-secret" })
+    const tokens = createTokenService({
+      registry: createIntegrationRegistry(),
+      credentials: {
+        ...credentials,
+        async resolveSecret(providerId) {
+          reads += 1
+          return credentials.resolveSecret(providerId)
+        },
+      },
+    })
+
+    await expect(tokens.getLiveToken(KEY_ROW)).rejects.toMatchObject({
+      status: 409,
+      code: "connection_not_available",
+      credentialStatus: "reconnect_required",
+    })
+    expect(reads).toBe(0)
+  })
+
+  test("missing key token type requires reconnect without resolving the secret", async () => {
+    let reads = 0
+    const registry = createIntegrationRegistry()
+    registry.register({ id: "keyed", name: "Keyed", methods: ["key"], capabilities: ["docs"] }, {})
+    const credentials = createMemoryCredentialStore()
+    await credentials.put({ providerId: "integration:connection-1", kind: "api_key", secret: "hidden-secret" })
+    const tokens = createTokenService({
+      registry,
+      credentials: {
+        ...credentials,
+        async resolveSecret(providerId) {
+          reads += 1
+          return credentials.resolveSecret(providerId)
+        },
+      },
+    })
+
+    await expect(tokens.getLiveToken(KEY_ROW)).rejects.toMatchObject({
+      status: 409,
+      code: "connection_not_available",
+      credentialStatus: "reconnect_required",
+    })
+    expect(reads).toBe(0)
+  })
+
   test("fresh oauth token passes through without refresh", async () => {
     const { tokens, seed } = oauthHarness({ expiresAt: 1_000_000 + 10 * 60_000 })
     await seed()

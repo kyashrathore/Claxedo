@@ -39,6 +39,36 @@ const contextual = (contexts: Tool.Context[]) =>
   })
 
 describe("ApplicationTools", () => {
+  it.effect("scopes exact tool aliases to one Session and removes them explicitly", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const contexts: Tool.Context[] = []
+      const otherSession = SessionV2.ID.make("ses_other_application_tool")
+      yield* registry.registerSession(sessionID, { connection_work_source_list: contextual(contexts) })
+
+      expect((yield* registry.materialize([], ["connection_work_source_list"], sessionID)).definitions.map((tool) => tool.name))
+        .toEqual(["connection_work_source_list"])
+      expect((yield* registry.materialize([], ["connection_work_source_list"], otherSession)).definitions).toEqual([])
+      const materialized = yield* registry.materialize([], ["connection_work_source_list"], sessionID)
+      expect((yield* materialized.settle({
+        sessionID,
+        agent,
+        assistantMessageID,
+        call: { type: "tool-call", id: "call-session", name: "connection_work_source_list", input: { query: "bound" } },
+      })).result).toMatchObject({ type: "content" })
+      expect(contexts).toEqual([{ sessionID, agent, assistantMessageID, toolCallID: "call-session" }])
+
+      yield* registry.unregisterSession(sessionID)
+      expect((yield* registry.materialize([], ["connection_work_source_list"], sessionID)).definitions).toEqual([])
+      expect((yield* materialized.settle({
+        sessionID,
+        agent,
+        assistantMessageID,
+        call: { type: "tool-call", id: "call-stale", name: "connection_work_source_list", input: { query: "stale" } },
+      })).result).toEqual({ type: "error", value: "Stale tool call: connection_work_source_list" })
+    }),
+  )
+
   it.effect("keeps the Core carrier opaque and executes its single handler", () =>
     Effect.gen(function* () {
       const applications = yield* ApplicationTools.Service

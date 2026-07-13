@@ -13,6 +13,7 @@ import { Migrations } from "@convex-dev/migrations"
 import { components } from "./_generated/api"
 import type { DataModel } from "./_generated/dataModel"
 import { hasLegacyLeaseFields, legacyLeaseDocument } from "./sandboxLeases"
+import { initializeAttentionProjection, syncAttentionRecord, syncCandidateTransition } from "./workgraphAttention"
 
 export const migrations = new Migrations<DataModel>(components.migrations)
 
@@ -33,3 +34,38 @@ export const normalizeRuntimeLeaseLegacyFields = migrations.define({
     await ctx.db.replace(lease._id, legacyLeaseDocument(row) as never)
   },
 })
+
+export const initializeWorkGraphAttention = migrations.define({
+  table: "workgraphs",
+  migrateOne: async (ctx, row) => {
+    await initializeAttentionProjection(ctx, String(row.owner_user_id), row.updated_at)
+  },
+})
+
+export const backfillWorkGraphAdmissionAttention = attentionMigration("workgraph_admission_proposals")
+export const backfillWorkGraphDecisionAttention = attentionMigration("workgraph_decisions")
+export const backfillWorkGraphWorkItemAttention = attentionMigration("workgraph_work_items")
+export const backfillWorkGraphAttemptAttention = attentionMigration("workgraph_attempts")
+export const backfillWorkGraphNotificationAttention = attentionMigration("workgraph_notifications")
+export const backfillWorkGraphConnectionAttention = attentionMigration("workgraph_connection_metadata")
+export const backfillWorkGraphGenerationAttention = attentionMigration("workgraph_due_jobs")
+
+export const backfillWorkGraphCandidateAttention = migrations.define({
+  table: "workgraph_intake_candidates",
+  migrateOne: backfillCandidateAttention,
+})
+
+export async function backfillCandidateAttention(ctx: Parameters<typeof syncCandidateTransition>[0], row: any) {
+  await initializeAttentionProjection(ctx, String(row.owner_user_id), row.updated_at)
+  await syncCandidateTransition(ctx, undefined, row)
+}
+
+function attentionMigration(table: "workgraph_admission_proposals" | "workgraph_decisions" | "workgraph_work_items" | "workgraph_attempts" | "workgraph_notifications" | "workgraph_connection_metadata" | "workgraph_due_jobs") {
+  return migrations.define({
+    table,
+    migrateOne: async (ctx, row) => {
+      await initializeAttentionProjection(ctx, String(row.owner_user_id), row.updated_at)
+      await syncAttentionRecord(ctx, table, row)
+    },
+  })
+}

@@ -1,0 +1,763 @@
+import { describe, expect, it } from "vitest"
+import BetterSqlite3 from "better-sqlite3"
+import type {
+  ChangeCursor,
+  ChangeEnvelope,
+  CommandErrorCode,
+  CommandResult,
+  OperationID,
+  OwnerUserID,
+  RequestID,
+  StreamDto,
+  StreamID,
+  WorkGraphCommandRequest,
+  WorkGraphContext,
+  WorkGraphEventID,
+  WorkGraphSnapshotPage,
+  WorkGraphNotification,
+  WorkGraphArchive,
+} from "../contracts"
+import { createAttentionCursor, WorkGraphArchiveRestoreError } from "../contracts"
+import { createNotificationService, createWorkGraphService, NotificationVersionConflictError } from "../application"
+import { createSqliteWorkGraphService } from "../adapters/sqlite/store"
+import { createSqliteWorkGraphArchivePort } from "../adapters/sqlite/archive"
+import { createSqliteWorkGraphOwnerDeletionPort } from "../adapters/sqlite/owner-deletion"
+import {
+  WorkGraphOwnerDeletionError,
+  ExecutionCapabilitiesUnavailableError,
+  defineAtomicWorkGraphStore,
+  type WorkGraphCommandHandler,
+  type WorkGraphCommandHandlers,
+  type WorkGraphOwnerDeletionResult,
+} from "../ports"
+import { createWorkGraphHttpRouter } from "./router"
+
+const branded = <Type>(value: string) => value as Type
+
+describe("WorkGraph northbound HTTP router", () => {
+  it("accepts a SQLite service with additional query capabilities without an adapter cast", async () => {
+    const database = new BetterSqlite3(":memory:")
+    try {
+      const service = createSqliteWorkGraphService({ database }).service
+      const app = createWorkGraphHttpRouter({
+        service,
+        archive: createSqliteWorkGraphArchivePort(database),
+        deletion: createSqliteWorkGraphOwnerDeletionPort(database, {
+          provisionOrAdopt: async () => { throw new Error("unused") },
+          createChildIsolation: async () => { throw new Error("unused") },
+          launch: async () => { throw new Error("unused") },
+          cancel: async () => undefined,
+          result: async () => { throw new Error("unused") },
+          integrateResult: async () => { throw new Error("unused") },
+          cleanup: async () => undefined,
+        }),
+        resolveContext: () => ({
+          ownerUserId: "owner_sqlite",
+          actor: { type: "user", id: "owner_sqlite" },
+          requestId: "request_sqlite",
+          access: { mode: "owner" },
+        }),
+      })
+      expect(await (await app.request("/defaults")).json()).toMatchObject({
+        recordType: "workgraph",
+        id: "workgraph_default",
+        ownerUserId: "owner_sqlite",
+        version: 1,
+        defaults: { execution: {}, recap: {} },
+      })
+      expect((await app.request("/defaults?ownerUserId=other")).status).toBe(400)
+      expect(await (await app.request("/attention?limit=5")).json()).toEqual({ items: [], total: 0, hasMore: false })
+      expect((await app.request("/attention?limit=0")).status).toBe(400)
+      expect((await app.request(`/attention?after=${encodeURIComponent(createAttentionCursor("other", { updatedAt: 1, kind: "decision", id: "decision_1" }))}`)).status).toBe(409)
+      const updatedDefaults = await app.request("/commands", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          operationId: "operation_defaults",
+          command: {
+            version: 1,
+            type: "update_workgraph_defaults",
+            expectedVersion: 1,
+            defaults: {
+              execution: { effort: "high" },
+              recap: { quietHours: 12 },
+            },
+          },
+        }),
+      })
+      expect(updatedDefaults.status).toBe(200)
+      expect(await (await app.request("/defaults")).json()).toMatchObject({
+        version: 2,
+        defaults: { execution: { effort: "high" }, recap: { quietHours: 12 } },
+      })
+      const created = await app.request("/commands", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          operationId: "operation_sqlite",
+          command: { version: 1, type: "create_stream", title: "SQLite Stream" },
+        }),
+      })
+      expect(created.status).toBe(200)
+      const createdBody = await created.json() as { value: { streamId: string } }
+      const snapshot = await (await app.request("/snapshot")).json() as WorkGraphSnapshotPage
+      expect(snapshot.snapshotCursor).toBe("2")
+      expect(snapshot.records).toEqual(expect.arrayContaining([
+        expect.objectContaining({ recordType: "workgraph", version: 2 }),
+        expect.objectContaining({ recordType: "stream", title: "SQLite Stream" }),
+      ]))
+      const firstPage = await (await app.request("/snapshot?limit=1")).json() as WorkGraphSnapshotPage
+      expect(firstPage.nextCursor).toMatch(/^wgsp1:/)
+      expect(await (await app.request("/snapshot?after=malformed&limit=1")).json()).toEqual({
+        error: { code: "cursor_invalid", message: "Snapshot cursor is no longer valid", retryable: false },
+      })
+      const source = await app.request("/commands", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          operationId: "operation_source",
+          command: { version: 1, type: "create_work_source", title: "Launch plan", content: "Ship the cloud" },
+        }),
+      })
+      const createdSource = await source.json() as { value: { workSourceId: string; revisionId: string } }
+      const invalidated = await app.request(`/snapshot?after=${encodeURIComponent(firstPage.nextCursor!)}&limit=1`)
+      expect(invalidated.status).toBe(409)
+      expect(await invalidated.json()).toEqual({
+        error: { code: "cursor_invalid", message: "Snapshot cursor is no longer valid", retryable: false },
+      })
+      expect(await (await app.request("/sources?limit=10")).json()).toMatchObject({
+        sources: [{ id: createdSource.value.workSourceId, title: "Launch plan", revisionCount: 1 }],
+        hasMore: false,
+      })
+      expect(await (await app.request(`/sources/${createdSource.value.workSourceId}`)).json())
+        .toMatchObject({ id: createdSource.value.workSourceId, latestRevisionId: createdSource.value.revisionId })
+      expect(await (await app.request(`/sources/${createdSource.value.workSourceId}/revisions/${createdSource.value.revisionId}`)).json())
+        .toMatchObject({ id: createdSource.value.revisionId, content: "Ship the cloud", origin: { kind: "manual" } })
+      const proposal = await app.request("/commands", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          operationId: "operation_proposal",
+          command: {
+            version: 1,
+            type: "propose_admission",
+            source: {
+              workSourceId: createdSource.value.workSourceId,
+              revisionId: createdSource.value.revisionId,
+              contentHash: (await (await app.request(`/sources/${createdSource.value.workSourceId}/revisions/${createdSource.value.revisionId}`)).json() as { contentHash: string }).contentHash,
+            },
+          },
+        }),
+      })
+      const proposalBody = await proposal.json() as { value: { proposalId: string } }
+      expect(await (await app.request(`/proposals/${proposalBody.value.proposalId}`)).json()).toMatchObject({
+        id: proposalBody.value.proposalId,
+        state: "planning",
+      })
+      const item = await app.request("/commands", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          operationId: "operation_item",
+          command: {
+            version: 1,
+            type: "create_work_item",
+            streamId: createdBody.value.streamId,
+            title: "Verify cloud",
+            dependencyIds: [],
+            completionContract: {
+              version: 1,
+              mode: "all",
+              requirements: [{ id: "verified", kind: "verification", description: "Verified", instructions: "Inspect" }],
+            },
+          },
+        }),
+      })
+      const itemBody = await item.json() as { value: { workItemId: string } }
+      expect(await (await app.request(`/work-items/${itemBody.value.workItemId}`)).json()).toMatchObject({
+        id: itemBody.value.workItemId,
+        title: "Verify cloud",
+      })
+      expect(await (await app.request(`/work-items/${itemBody.value.workItemId}/attempts?limit=10`)).json()).toEqual({
+        attempts: [],
+        hasMore: false,
+      })
+      expect((await app.request(`/work-items/${itemBody.value.workItemId}/attempts?after=malformed&limit=10`)).status).toBe(409)
+      const recorded = await app.request("/commands", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          operationId: "operation_evidence",
+          command: {
+            version: 1,
+            type: "record_evidence",
+            subject: { type: "work_item", workItemId: itemBody.value.workItemId },
+            requirementId: "verified",
+            evidence: { kind: "finding", summary: "Cloud is healthy", sourceRef: "session:smoke" },
+          },
+        }),
+      })
+      const recordedBody = await recorded.json() as { value: { evidenceId: string } }
+      expect(await (await app.request(`/evidence/${recordedBody.value.evidenceId}`)).json()).toMatchObject({
+        id: recordedBody.value.evidenceId,
+        subject: { type: "work_item", workItemId: itemBody.value.workItemId },
+        requirementId: "verified",
+        kind: "finding",
+        summary: "Cloud is healthy",
+      })
+      expect(await (await app.request(`/evidence?subjectType=work_item&workItemId=${itemBody.value.workItemId}&limit=1`)).json()).toMatchObject({
+        evidence: [{ id: recordedBody.value.evidenceId }],
+        hasMore: false,
+      })
+      expect((await app.request(`/evidence?subjectType=work_item&workItemId=${itemBody.value.workItemId}&limit=0`)).status).toBe(400)
+      expect((await app.request(`/evidence/${recordedBody.value.evidenceId}?ownerUserId=other`)).status).toBe(400)
+    } finally {
+      database.close()
+    }
+  })
+
+  it("rejects missing or untrusted context and never accepts a client owner selector", async () => {
+    const fixture = createFixture()
+
+    expect((await fixture.app.request("/snapshot")).status).toBe(401)
+    expect((await fixture.app.request("/snapshot", { headers: { "x-owner-user-id": "owner_a" } })).status).toBe(401)
+    expect((await fixture.app.request("/snapshot?ownerUserId=owner_b", fixture.auth("owner_a"))).status).toBe(400)
+    expect((await fixture.app.request("/archive", { headers: { authorization: "Bearer shared_owner_a" } })).status).toBe(403)
+    expect((await fixture.app.request("/commands", {
+      method: "POST",
+      headers: { authorization: "Bearer shared_owner_a", "content-type": "application/json" },
+      body: JSON.stringify(createStream("operation_shared", "Read-only mutation")),
+    })).status).toBe(403)
+
+    const response = await fixture.command("owner_a", {
+      operationId: "operation_1",
+      ownerUserId: "owner_b",
+      command: { version: 1, type: "create_stream", title: "Smuggled owner" },
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "validation_error" } })
+  })
+
+  it("reads truthful owner-scoped execution capabilities and preserves typed unavailability", async () => {
+    const fixture = createFixture()
+
+    const success = await fixture.app.request("/execution-capabilities", fixture.auth("owner_a"))
+    expect(success.status).toBe(200)
+    expect(await success.json()).toMatchObject({
+      schemaVersion: 1,
+      ownerUserId: "owner_a",
+      environments: [{ kind: "local_worktree", isolation: ["stream", "child"], cleanup: ["destroy_on_close", "retain"], integration: ["manual"] }],
+      harnesses: [{ id: "opencode" }],
+      agents: [{ id: "build", harnessId: "opencode" }],
+      models: [],
+      tools: [{ id: "terminal", harnessId: "opencode" }],
+      connections: [],
+    })
+    expect((await fixture.app.request("/execution-capabilities?ownerUserId=owner_b", fixture.auth("owner_a"))).status).toBe(400)
+    expect((await fixture.app.request("/execution-capabilities?workspaceId=workspace_1", fixture.auth("owner_a"))).status).toBe(400)
+    expect((await fixture.app.request("/execution-capabilities", fixture.auth("shared_owner_a"))).status).toBe(403)
+
+    const unavailable = await fixture.app.request("/execution-capabilities/refresh", {
+      ...fixture.auth("owner_a"),
+      method: "POST",
+    })
+    expect(unavailable.status).toBe(503)
+    expect(await unavailable.json()).toEqual({
+      error: {
+        code: "execution_capabilities_unavailable",
+        capability: "catalog_workspace",
+        reason: "catalog_workspace_unavailable",
+        message: "The capability catalog is unavailable",
+        retryable: false,
+      },
+    })
+  })
+
+  it("exports and restores canonical archives only for the trusted owner", async () => {
+    const fixture = createFixture()
+    const exported = await fixture.app.request("/archive", fixture.auth("owner_a"))
+    expect(exported.status).toBe(200)
+    const archive = await exported.json() as WorkGraphArchive
+    expect(archive).toMatchObject({ version: 1, ownerUserId: "owner_a" })
+    expect((await fixture.app.request("/archive?ownerUserId=owner_b", fixture.auth("owner_a"))).status).toBe(400)
+
+    const restored = await fixture.app.request("/archive/restore", {
+      method: "POST",
+      headers: { authorization: "Bearer owner_a", "content-type": "application/json" },
+      body: JSON.stringify({ operationId: "operation_restore", archive }),
+    })
+    expect(restored.status).toBe(200)
+    expect(await restored.json()).toEqual({ restored: true, recordCount: archive.records.length, baselineCursor: "0" })
+
+    const crossOwner = await fixture.app.request("/archive/restore", {
+      method: "POST",
+      headers: { authorization: "Bearer owner_b", "content-type": "application/json" },
+      body: JSON.stringify({ operationId: "operation_restore_cross_owner", archive }),
+    })
+    expect(crossOwner.status).toBe(403)
+    expect(await crossOwner.json()).toMatchObject({ error: { code: "archive_restore_rejected", reason: "cross_owner" } })
+
+    const malformed = await fixture.app.request("/archive/restore", {
+      method: "POST",
+      headers: { authorization: "Bearer owner_a", "content-type": "application/json" },
+      body: JSON.stringify({ operationId: "operation_restore_malformed", archive: { version: 1 } }),
+    })
+    expect(malformed.status).toBe(400)
+    expect(await malformed.json()).toMatchObject({ error: { code: "archive_restore_rejected", reason: "malformed" } })
+
+    const bundledError = await fixture.app.request("/archive/restore", {
+      method: "POST",
+      headers: { authorization: "Bearer owner_a", "content-type": "application/json" },
+      body: JSON.stringify({ operationId: "operation_bundled_archive_error", archive }),
+    })
+    expect(bundledError.status).toBe(503)
+    expect(await bundledError.json()).toMatchObject({ error: { reason: "dependency_unavailable", retryable: true } })
+  })
+
+  it("permanently deletes only the trusted owner through an idempotent protected request", async () => {
+    const fixture = createFixture()
+    await fixture.command("owner_a", createStream("delete_owner_a_stream", "Delete me"))
+    await fixture.command("owner_b", createStream("keep_owner_b_stream", "Keep me"))
+
+    expect((await fixture.app.request("/owner", {
+      method: "DELETE",
+      headers: { authorization: "Bearer shared_owner_a", "content-type": "application/json" },
+      body: JSON.stringify({ operationId: "delete_owner_a" }),
+    })).status).toBe(403)
+    expect((await fixture.app.request("/owner", {
+      method: "DELETE",
+      headers: { authorization: "Bearer owner_a", "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })).status).toBe(400)
+    const bundledError = await fixture.app.request("/owner", {
+      method: "DELETE",
+      headers: { authorization: "Bearer owner_a", "content-type": "application/json" },
+      body: JSON.stringify({ operationId: "bundled_owner_deletion_error" }),
+    })
+    expect(bundledError.status).toBe(503)
+    expect(await bundledError.json()).toMatchObject({ error: { reason: "cleanup_failed", retryable: true } })
+
+    const request = {
+      method: "DELETE",
+      headers: { authorization: "Bearer owner_a", "content-type": "application/json" },
+      body: JSON.stringify({ operationId: "delete_owner_a" }),
+    }
+    const deleted = await fixture.app.request("/owner", request)
+    expect(deleted.status).toBe(200)
+    const result = await deleted.json()
+    expect(result).toMatchObject({ deleted: true, recordCount: expect.any(Number), workspaceCount: 0 })
+    expect(await (await fixture.app.request("/owner", request)).json()).toEqual(result)
+    expect(await (await fixture.app.request("/snapshot", fixture.auth("owner_b"))).json()).toMatchObject({
+      records: [expect.objectContaining({ title: "Keep me" })],
+    })
+  })
+
+  it("validates commands and keeps cross-owner identifiers undiscoverable", async () => {
+    const fixture = createFixture()
+    const malformed = await fixture.command("owner_a", {
+      operationId: "operation_1",
+      command: { version: 1, type: "create_stream", title: "" },
+    })
+    expect(malformed.status).toBe(400)
+
+    const created = await fixture.command("owner_a", createStream("operation_2", "Private stream"))
+    const body = await created.json() as { value: { streamId: string } }
+    expect((await fixture.app.request(`/streams/${body.value.streamId}`, fixture.auth("owner_b"))).status).toBe(404)
+
+    const mutation = await fixture.command("owner_b", {
+      operationId: "operation_3",
+      command: {
+        version: 1,
+        type: "update_stream",
+        streamId: body.value.streamId,
+        expectedVersion: 1,
+        title: "Take over",
+      },
+    })
+    expect(mutation.status).toBe(404)
+    expect(await mutation.json()).toMatchObject({ error: { code: "not_found" } })
+  })
+
+  it("returns the exact same status, body, and cursor for an exact retry", async () => {
+    const fixture = createFixture()
+    const request = createStream("operation_1", "Ship Cloud")
+
+    const first = await fixture.command("owner_a", request)
+    const retry = await fixture.command("owner_a", request)
+
+    expect(retry.status).toBe(first.status)
+    expect(await retry.json()).toEqual(await first.json())
+    const changes = await fixture.app.request("/changes", fixture.auth("owner_a"))
+    expect(await changes.json()).toMatchObject({ changes: [{ cursor: "1" }], cursor: "1", timedOut: false })
+  })
+
+  it("converges an owner snapshot with ordered changes after its cursor", async () => {
+    const fixture = createFixture()
+    await fixture.command("owner_a", createStream("operation_1", "First"))
+    const snapshot = await fixture.app.request("/snapshot", fixture.auth("owner_a"))
+    expect(snapshot.status).toBe(200)
+    const page = await snapshot.json() as WorkGraphSnapshotPage
+    expect(page.snapshotCursor).toBe("1")
+    expect(page.records).toHaveLength(1)
+
+    await fixture.command("owner_a", createStream("operation_2", "Second"))
+    const changes = await fixture.app.request(`/changes?after=${page.snapshotCursor}&limit=10`, fixture.auth("owner_a"))
+    expect(changes.status).toBe(200)
+    expect(await changes.json()).toMatchObject({ changes: [{ cursor: "2" }], cursor: "2", timedOut: false })
+  })
+
+  it("preserves cursor order when changes interleave independent Stream sequences", async () => {
+    const fixture = createFixture()
+    await fixture.command("owner_a", createStream("operation_1", "First"))
+    await fixture.command("owner_a", createStream("operation_2", "Second"))
+
+    const response = await fixture.app.request("/changes", fixture.auth("owner_a"))
+    const body = await response.json() as { changes: ChangeEnvelope[] }
+    expect(body.changes.map((change) => change.cursor)).toEqual(["1", "2"])
+    expect(body.changes.map((change) => change.event.sequence)).toEqual([1, 1])
+  })
+
+  it("bounds long polling and returns early when a new ordered change appears", async () => {
+    const fixture = createFixture()
+    const startedAt = Date.now()
+    const timeout = await fixture.app.request("/changes?after=0&waitMs=15", fixture.auth("owner_a"))
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(10)
+    expect(await timeout.json()).toEqual({ changes: [], cursor: "0", timedOut: true })
+
+    const poll = fixture.app.request("/changes?after=0&waitMs=200", fixture.auth("owner_a"))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    await fixture.command("owner_a", createStream("operation_1", "Arrived while polling"))
+    const response = await poll
+    expect(await response.json()).toMatchObject({ changes: [{ cursor: "1" }], cursor: "1", timedOut: false })
+  })
+
+  it("lists and reads owner notifications and marks them read with exact-version CAS", async () => {
+    const fixture = createFixture()
+    const page = await fixture.app.request("/notifications?limit=1&state=unread", fixture.auth("owner_a"))
+    expect(page.status).toBe(200)
+    expect(await page.json()).toMatchObject({
+      notifications: [{ id: "notification_2", ownerUserId: "owner_a", state: "unread" }],
+      hasMore: true,
+      nextCursor: "1",
+    })
+    expect((await fixture.app.request("/notifications/notification_1", fixture.auth("owner_b"))).status).toBe(404)
+
+    const read = await fixture.app.request("/notifications/notification_1/read", {
+      method: "POST",
+      headers: { authorization: "Bearer owner_a", "content-type": "application/json" },
+      body: JSON.stringify({ expectedVersion: 1 }),
+    })
+    expect(read.status).toBe(200)
+    expect(await read.json()).toMatchObject({ id: "notification_1", state: "read", version: 2, readAt: 2_000 })
+    expect((await fixture.app.request("/notifications/notification_1/read", {
+      method: "POST",
+      headers: { authorization: "Bearer owner_a", "content-type": "application/json" },
+      body: JSON.stringify({ expectedVersion: 1 }),
+    })).status).toBe(409)
+    expect((await fixture.app.request("/notifications?limit=0", fixture.auth("owner_a"))).status).toBe(400)
+  })
+})
+
+function createFixture() {
+  const streams = new Map<StreamID, StreamDto>()
+  const changes = new Map<OwnerUserID, ChangeEnvelope[]>()
+  const streamSequences = new Map<StreamID, number>()
+  const operations = new Map<string, Readonly<{ fingerprint: string; result: CommandResult }>>()
+  const deletionResults = new Map<string, WorkGraphOwnerDeletionResult>()
+  let nextId = 0
+  let now = 1_000
+  const notifications = new Map<string, WorkGraphNotification>([1, 2].map((id) => [`notification_${id}`, {
+    id: branded(`notification_${id}`),
+    ownerUserId: branded("owner_a"),
+    version: 1,
+    kind: "actionable_recap",
+    state: "unread",
+    streamId: branded("stream_1"),
+    recapId: branded(`recap_${id}`),
+    createdAt: id,
+    updatedAt: id,
+  }]))
+
+  const execute: WorkGraphCommandHandler = async (context, request) => {
+    const operationKey = `${context.ownerUserId}:${request.operationId}`
+    const fingerprint = JSON.stringify(request.command)
+    const previous = operations.get(operationKey)
+    if (previous?.fingerprint === fingerprint) return previous.result
+    if (previous) return failure(request.operationId, "idempotency_conflict", "Operation ID already used")
+    if (request.command.type !== "create_stream" && request.command.type !== "update_stream") {
+      return failure(request.operationId, "internal_error", "Unsupported test command")
+    }
+
+    const existing = request.command.type === "update_stream" ? streams.get(request.command.streamId) : undefined
+    if (request.command.type === "update_stream" && existing?.ownerUserId !== context.ownerUserId) {
+      return failure(request.operationId, "not_found", "Stream not found")
+    }
+    if (request.command.type === "update_stream" && existing?.version !== request.command.expectedVersion) {
+      return failure(request.operationId, "version_conflict", "Stream version changed")
+    }
+
+    const streamId = request.command.type === "create_stream" ? branded<StreamID>(`stream_${++nextId}`) : request.command.streamId
+    const timestamp = now++
+    const stream = {
+      recordType: "stream",
+      schemaVersion: 1,
+      id: streamId,
+      ownerUserId: context.ownerUserId,
+      version: existing ? existing.version + 1 : 1,
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+      provenance: { actor: context.actor, operationId: request.operationId },
+      title: request.command.title ?? existing?.title ?? "Untitled",
+      description: existing?.description,
+      lifecycleState: "active",
+      visibility: "visible",
+      pinned: false,
+      executionDefaults: {},
+      recapDefaults: {},
+      activity: { lastActivityAt: timestamp, recapDueAt: timestamp + 28_800_000 },
+      durableEffectCount: 0,
+      sourceRevisionRefs: [],
+    } satisfies StreamDto
+    streams.set(streamId, stream)
+
+    const ownerChanges = changes.get(context.ownerUserId) ?? []
+    const cursor = branded<ChangeCursor>(String(ownerChanges.length + 1))
+    const type = request.command.type === "create_stream" ? "stream_created" : "stream_updated"
+    const sequence = (streamSequences.get(streamId) ?? 0) + 1
+    streamSequences.set(streamId, sequence)
+    ownerChanges.push({
+      cursor,
+      ownerUserId: context.ownerUserId,
+      resource: { type: "stream", id: streamId },
+      event: {
+        schemaVersion: 1,
+        id: branded<WorkGraphEventID>(`event_${context.ownerUserId}_${cursor}`),
+        ownerUserId: context.ownerUserId,
+        streamId,
+        sequence,
+        type,
+        payload: { streamId },
+        provenance: { actor: context.actor, operationId: request.operationId, requestId: context.requestId },
+        occurredAt: timestamp,
+      },
+    })
+    changes.set(context.ownerUserId, ownerChanges)
+    const result = { ok: true, operationId: request.operationId, cursor, value: { streamId } } satisfies CommandResult
+    operations.set(operationKey, { fingerprint, result })
+    return result
+  }
+
+  const commands = Object.fromEntries([
+    "create_work_source", "revise_work_source", "create_stream", "update_stream", "create_outcome", "update_outcome",
+    "create_work_item", "update_work_item", "propose_admission", "retry_admission_planning", "dismiss_admission",
+    "reopen_admission", "confirm_admission", "set_stream_lifecycle",
+    "set_stream_visibility", "execute_stream", "execute_work_item", "cancel_attempt", "retry_work_item",
+    "propose_decision", "answer_decision", "dismiss_decision", "record_evidence", "close_outcome", "reopen_outcome",
+    "close_stream", "delete_stream",
+  ].map((type) => [type, execute])) as WorkGraphCommandHandlers
+
+  const store = defineAtomicWorkGraphStore({
+    commands,
+    queries: {
+      defaults: {
+        read: async (context: WorkGraphContext) => ({
+          recordType: "workgraph" as const,
+          schemaVersion: 1 as const,
+          id: "workgraph_default" as never,
+          ownerUserId: context.ownerUserId,
+          version: 1,
+          createdAt: 0,
+          updatedAt: 0,
+          provenance: { actor: { type: "system" as const, id: "workgraph_defaults" as never } },
+          defaults: { execution: {}, recap: {} },
+        }),
+      },
+      snapshot: {
+        page: async (context: WorkGraphContext): Promise<WorkGraphSnapshotPage> => {
+          const ownerChanges = changes.get(context.ownerUserId) ?? []
+          const records = Array.from(streams.values()).filter((stream) => stream.ownerUserId === context.ownerUserId)
+          return {
+            snapshotCursor: branded<ChangeCursor>(String(ownerChanges.length)),
+            records,
+            references: records.map((stream, index) => ({ sequence: index + 1, resource: { type: "stream", id: stream.id }, version: stream.version })),
+            hasMore: false,
+            capturedAt: now,
+          }
+        },
+      },
+      attention: { list: async () => ({ items: [], total: 0, hasMore: false }) },
+      streams: { read: async (context: WorkGraphContext, input: Readonly<{ streamId: StreamID }>) => {
+        const stream = streams.get(input.streamId)
+        return stream?.ownerUserId === context.ownerUserId ? stream : undefined
+      } },
+      proposals: { read: async () => undefined },
+      attempts: { read: async () => undefined },
+      decisions: { read: async () => undefined },
+      recaps: { read: async () => undefined },
+      workItems: {
+        readDetail: async () => undefined,
+        listAttempts: async () => ({ attempts: [], hasMore: false }),
+      },
+      sources: {
+        list: async () => ({ sources: [], hasMore: false }),
+        read: async () => undefined,
+        readRevision: async () => undefined,
+      },
+      evidence: {
+        read: async () => undefined,
+        list: async () => ({ evidence: [], hasMore: false }),
+      },
+      changes: { list: async (context: WorkGraphContext, input: Readonly<{ after?: ChangeCursor; limit: number }>) =>
+        (changes.get(context.ownerUserId) ?? []).filter((change) => !input.after || Number(change.cursor) > Number(input.after)).slice(0, input.limit) },
+    },
+  })
+  const service = createWorkGraphService(store)
+  const app = createWorkGraphHttpRouter({
+    service,
+    executionCapabilities: {
+      read: async (owner) => {
+        return {
+          schemaVersion: 1,
+          ownerUserId: owner.ownerUserId,
+          observedAt: now,
+          environments: [{
+            kind: "local_worktree" as const,
+            repositoryRequired: true,
+            remoteUrlInput: false,
+            baseRevisionInput: true,
+            isolation: ["stream" as const, "child" as const],
+            cleanup: ["destroy_on_close" as const, "retain" as const],
+            integration: ["manual" as const],
+          }],
+          harnesses: [{ id: "opencode" }],
+          agents: [{ harnessId: "opencode", id: "build", label: "build", mode: "primary" as const }],
+          models: [],
+          tools: [{ harnessId: "opencode", id: "terminal" }],
+          repository: { baseRevisions: ["HEAD"] },
+          connections: [],
+        }
+      },
+      probe: async () => {
+        throw new ExecutionCapabilitiesUnavailableError(
+          "catalog_workspace",
+          "catalog_workspace_unavailable",
+          "The capability catalog is unavailable",
+          false,
+        )
+      },
+    },
+    archive: {
+      export: async (owner) => archive(owner.ownerUserId),
+      restore: async (owner, input) => {
+        if (input.operationId === "operation_bundled_archive_error") {
+          const error = new Error("canonical error from a separately bundled entrypoint")
+          error.name = "WorkGraphArchiveRestoreError"
+          throw Object.assign(error, { reason: "dependency_unavailable" as const })
+        }
+        if (input.archive.ownerUserId !== owner.ownerUserId) throw new WorkGraphArchiveRestoreError("cross_owner")
+        return { restored: true, recordCount: input.archive.records.length, baselineCursor: branded("0") }
+      },
+    },
+    deletion: {
+      deleteOwner: async (owner, input) => {
+        if (owner.access.mode !== "owner") throw new WorkGraphOwnerDeletionError("forbidden")
+        if (input.operationId === "bundled_owner_deletion_error") {
+          const error = new Error("canonical error from a separately bundled entrypoint")
+          error.name = "WorkGraphOwnerDeletionError"
+          throw Object.assign(error, { reason: "cleanup_failed" as const })
+        }
+        const key = `${owner.ownerUserId}:${input.operationId}`
+        const replay = deletionResults.get(key)
+        if (replay) return replay
+        const ownedStreams = [...streams.values()].filter((stream) => stream.ownerUserId === owner.ownerUserId)
+        ownedStreams.forEach((stream) => streams.delete(stream.id))
+        const recordCount = ownedStreams.length + (changes.get(owner.ownerUserId)?.length ?? 0) +
+          [...notifications.values()].filter((notification) => notification.ownerUserId === owner.ownerUserId).length
+        changes.delete(owner.ownerUserId)
+        ;[...notifications.entries()].filter(([, notification]) => notification.ownerUserId === owner.ownerUserId)
+          .forEach(([id]) => notifications.delete(id))
+        ;[...operations.keys()].filter((operation) => operation.startsWith(`${owner.ownerUserId}:`))
+          .forEach((operation) => operations.delete(operation))
+        const result = { deleted: true as const, recordCount, workspaceCount: 0, completedAt: now++ }
+        deletionResults.set(key, result)
+        return result
+      },
+    },
+    notifications: createNotificationService({
+      async list(owner, input) {
+        const offset = Number(input.after ?? 0)
+        const rows = [...notifications.values()]
+          .filter((notification) => notification.ownerUserId === owner.ownerUserId && (!input.state || notification.state === input.state))
+          .sort((left, right) => right.createdAt - left.createdAt)
+        const page = rows.slice(offset, offset + input.limit)
+        return { notifications: page, hasMore: offset + page.length < rows.length, ...(offset + page.length < rows.length ? { nextCursor: String(offset + page.length) } : {}) }
+      },
+      async read(owner, id) {
+        const notification = notifications.get(id)
+        return notification?.ownerUserId === owner.ownerUserId ? notification : undefined
+      },
+      async markRead(owner, input) {
+        const notification = notifications.get(input.id)
+        if (!notification || notification.ownerUserId !== owner.ownerUserId || notification.state !== "unread" || notification.version !== input.expectedVersion) {
+          throw new NotificationVersionConflictError()
+        }
+        const saved = { ...notification, state: "read" as const, version: notification.version + 1, readAt: 2_000, updatedAt: 2_000 }
+        notifications.set(input.id, saved)
+        return saved
+      },
+    }),
+    pollIntervalMs: 5,
+    resolveContext: (request) => {
+      const match = /^Bearer (shared_)?(owner_[ab])$/.exec(request.headers.get("authorization") ?? "")
+      if (!match) return undefined
+      return context(match[2]!, match[1] ? "shared_read" : "owner")
+    },
+  })
+
+  return {
+    app,
+    auth: (owner: string) => ({ headers: { authorization: `Bearer ${owner}` } }),
+    command: (owner: string, body: unknown) => app.request("/commands", {
+      method: "POST",
+      headers: { authorization: `Bearer ${owner}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  }
+}
+
+function archive(ownerUserId: OwnerUserID): WorkGraphArchive {
+  return {
+    version: 1,
+    ownerUserId,
+    exportedAt: 1,
+    records: [{
+      kind: "workgraph",
+      id: "workgraph_default",
+      value: {
+        schemaVersion: 1,
+        version: 1,
+        createdAt: 0,
+        updatedAt: 0,
+        provenance: { actor: { type: "system", id: "workgraph_defaults" } },
+        defaults: { execution: {}, recap: {} },
+      },
+    }],
+  }
+}
+
+function createStream(operationId: string, title: string) {
+  return { operationId, command: { version: 1, type: "create_stream", title } }
+}
+
+function context(ownerUserId: string, mode: "owner" | "shared_read" = "owner"): WorkGraphContext {
+  return {
+    ownerUserId: branded<OwnerUserID>(ownerUserId),
+    actor: { type: "user", id: branded(`actor_${ownerUserId}`) },
+    requestId: branded<RequestID>(`request_${ownerUserId}`),
+    access: { mode },
+  }
+}
+
+function failure(operationId: OperationID, code: CommandErrorCode, message: string): CommandResult {
+  return { ok: false, operationId, error: { code, message, retryable: false } }
+}

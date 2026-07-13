@@ -2,8 +2,8 @@ import { createAttempts, type Attempts } from "./attempts.js"
 import type { IntegrationRegistry } from "./registry.js"
 import { ConnectionTokenError, createTokenService } from "./tokens.js"
 import {
-  ConnectionsUnavailableError,
   connectionProviderId,
+  connectionWebhookSigningProviderId,
   connectionScopeOf,
   type AttemptStatus,
   type ConnectionFields,
@@ -67,13 +67,9 @@ export function createConnectionsService(deps: {
   const tokens = createTokenService({ registry: deps.registry, credentials: deps.credentials, now })
 
   async function summarize(row: ConnectionRow, teamOwner?: string): Promise<ConnectionSummary> {
-    let status: ConnectionSummary["status"] = "broken"
-    try {
-      const credential = await deps.credentials.get(connectionProviderId(row.id))
-      status = credential === undefined ? "broken" : credential.status === "available" ? "connected" : "degraded"
-    } catch (error) {
-      if (!(error instanceof ConnectionsUnavailableError)) throw error
-    }
+    const credential = await deps.credentials.get(connectionProviderId(row.id))
+    const status: ConnectionSummary["status"] =
+      credential === undefined ? "broken" : credential.status === "available" ? "connected" : "degraded"
     return {
       id: row.id,
       integrationId: row.integrationId,
@@ -192,6 +188,14 @@ export function createConnectionsService(deps: {
     return [...selected.values()].map((row) => capabilityHandle(row, capability, options.teamOwner))
   }
 
+  async function webhookConnection(id: string, provider?: string) {
+    const row = await deps.connections.getById(id)
+    if (!row || !row.grantedCapabilities.includes("work-source")) return undefined
+    const integrationId = row.integrationId === "atlassian" ? "jira" : row.integrationId
+    if (provider !== undefined && integrationId !== provider) return undefined
+    return row
+  }
+
   return {
     listIntegrations() {
       return deps.registry.list()
@@ -290,6 +294,7 @@ export function createConnectionsService(deps: {
       const row = await deps.connections.getById(id)
       if (!row) return false
       await deps.credentials.deleteByProvider(connectionProviderId(row.id))
+      await deps.credentials.deleteByProvider(connectionWebhookSigningProviderId(row.id))
       return deps.connections.delete(id)
     },
 
@@ -310,6 +315,7 @@ export function createConnectionsService(deps: {
         // on a team or foreign-owner row even if a store over-returns.
         if (row.owner !== owner) continue
         await deps.credentials.deleteByProvider(connectionProviderId(row.id))
+        await deps.credentials.deleteByProvider(connectionWebhookSigningProviderId(row.id))
         if (await deps.connections.delete(row.id)) removed++
       }
       return removed
@@ -332,6 +338,33 @@ export function createConnectionsService(deps: {
 
     resolveForCapability,
     forCapability: resolveForCapability,
+
+    async setWebhookSigningSecret(id: string, secret: string) {
+      const row = await webhookConnection(id)
+      if (!row || row.integrationId !== "github") return { ok: false as const, code: "webhook_not_supported" as const }
+      if (!secret.trim() || secret.length > 1024) return { ok: false as const, code: "invalid_webhook_secret" as const }
+      await deps.credentials.put({
+        providerId: connectionWebhookSigningProviderId(row.id),
+        kind: "api_key",
+        secret,
+      })
+      return { ok: true as const }
+    },
+
+    async removeWebhookSigningSecret(id: string) {
+      const row = await webhookConnection(id)
+      if (!row || row.integrationId !== "github") return { ok: false as const, code: "webhook_not_supported" as const }
+      await deps.credentials.deleteByProvider(connectionWebhookSigningProviderId(row.id))
+      return { ok: true as const }
+    },
+
+    async resolveWebhookSigningSecret(id: string, provider: string) {
+      const row = await webhookConnection(id, provider)
+      if (!row || row.integrationId !== "github") return undefined
+      const credential = await deps.credentials.get(connectionProviderId(row.id))
+      if (credential?.status !== "available") return undefined
+      return await deps.credentials.resolveSecret(connectionWebhookSigningProviderId(row.id)) ?? undefined
+    },
 
     dispose() {
       attempts.dispose()

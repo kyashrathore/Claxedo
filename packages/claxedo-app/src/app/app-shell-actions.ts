@@ -2,7 +2,7 @@ import type { Navigator, Params } from "@solidjs/router"
 
 import { createClaxedoLayoutActions } from "./workbench/actions/index"
 import { useClaxedoEventsOptional } from "./integrations/claxedo-events"
-import { marketplaceRoute } from "@/platform/identity/route"
+import { marketplaceRoute, workGraphRoute } from "@/platform/identity/route"
 import type { AppShellState } from "./app-shell-state"
 
 export function useAppShellActions(input: {
@@ -14,6 +14,10 @@ export function useAppShellActions(input: {
   const handleOpenMarketplace = () => {
     input.shell.state.layout.openMarketplace()
     input.navigate(marketplaceRoute())
+  }
+  const handleOpenWorkGraph = () => {
+    input.shell.state.layout.openWorkGraph()
+    input.navigate(workGraphRoute())
   }
 
   return {
@@ -38,5 +42,6 @@ export function useAppShellActions(input: {
       flowLog: input.shell.flowLog,
     }),
     handleOpenMarketplace,
+    handleOpenWorkGraph,
   }
 }

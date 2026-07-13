@@ -84,6 +84,16 @@ const SessionActive = Schema.Struct({
   type: Schema.Literal("running"),
 }).annotate({ identifier: "SessionActive" })
 
+export const SessionToolRegistration = Schema.Struct({
+  callbackUrl: Schema.String,
+  tools: Schema.Array(Schema.Struct({
+    name: Schema.String,
+    description: Schema.String,
+    inputSchema: Schema.Record(Schema.String, Schema.Unknown),
+    outputSchema: Schema.Record(Schema.String, Schema.Unknown).pipe(Schema.optional),
+  })),
+})
+
 const SessionHistoryLimit = PositiveInt.check(Schema.isLessThanOrEqualTo(100))
 
 export const SessionHistoryQuery = Schema.Struct({
@@ -131,6 +141,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           id: Session.ID.pipe(Schema.optional),
           agent: Agent.ID.pipe(Schema.optional),
           model: Model.Ref.pipe(Schema.optional),
+          tools: Schema.Array(Schema.String).pipe(Schema.optional),
           location: Location.Ref.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: Session.Info }),
@@ -376,4 +387,19 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         title: "sessions",
         description: "Experimental session routes.",
       }),
+    )
+    .add(
+      HttpApiEndpoint.post("session.tool.register", "/api/session/:sessionID/tool", {
+        params: { sessionID: Session.ID },
+        payload: SessionToolRegistration,
+        success: HttpApiSchema.NoContent,
+        error: [InvalidRequestError, SessionNotFoundError],
+      }).middleware(sessionLocationMiddleware),
+    )
+    .add(
+      HttpApiEndpoint.delete("session.tool.unregister", "/api/session/:sessionID/tool", {
+        params: { sessionID: Session.ID },
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      }).middleware(sessionLocationMiddleware),
     )

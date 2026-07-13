@@ -105,7 +105,7 @@ function SessionNavigationItem(props: {
 
         {/* z-10: sit above NavigationRow's absolute activate overlay so the
             archive button stays clickable and isn't a nested interactive. */}
-        <div class="size-7 shrink-0 relative z-10 flex items-center justify-end self-stretch">
+        <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
           <span
             class="flex items-center justify-end text-[11px] tabular-nums group-hover/session:opacity-0 transition-opacity duration-100"
             classList={{
@@ -130,7 +130,7 @@ function SessionNavigationItem(props: {
               void Promise.resolve(props.onArchive?.(props.row)).finally(() => setArchiving(false))
             }}
           >
-            <span class="text-icon-weak-base hover:text-icon-base transition-colors cursor-pointer">
+            <span class="flex items-center leading-none text-icon-weak-base hover:text-icon-base transition-colors cursor-pointer">
               <Icon name="archive" size="small" />
             </span>
           </button>

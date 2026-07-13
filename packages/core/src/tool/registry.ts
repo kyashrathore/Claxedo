@@ -21,9 +21,18 @@ export type ExecuteInput = {
 }
 
 export interface Interface {
-  readonly materialize: (permissions?: PermissionV2.Ruleset) => Effect.Effect<Materialization>
+  readonly materialize: (
+    permissions?: PermissionV2.Ruleset,
+    allowlist?: readonly string[],
+    sessionID?: SessionSchema.ID,
+  ) => Effect.Effect<Materialization>
   /** Internal registration capability exposed publicly only through Tools.Service. */
   readonly register: (tools: Readonly<Record<string, AnyTool>>) => Effect.Effect<void, RegistrationError, Scope.Scope>
+  readonly registerSession: (
+    sessionID: SessionSchema.ID,
+    tools: Readonly<Record<string, AnyTool>>,
+  ) => Effect.Effect<void, RegistrationError>
+  readonly unregisterSession: (sessionID: SessionSchema.ID) => Effect.Effect<void>
 }
 
 export interface Materialization {
@@ -46,9 +55,11 @@ const registryLayer = Layer.effect(
     const resources = yield* ToolOutputStore.Service
     type Registration = { readonly identity: object; readonly tool: AnyTool }
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
+    const sessions = new Map<SessionSchema.ID, Map<string, Registration>>()
 
     const settleWith = Effect.fn("ToolRegistry.settle")(function* (input: ExecuteInput, advertised?: object) {
       const registration =
+        sessions.get(input.sessionID)?.get(input.call.name) ??
         local.get(input.call.name)?.at(-1)?.registration ?? applications.entries().get(input.call.name)
       if (!registration)
         return {
@@ -103,14 +114,24 @@ const registryLayer = Layer.effect(
           }),
         )
       }),
-      materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = []) {
+      registerSession: Effect.fn("ToolRegistry.registerSession")(function* (sessionID, tools) {
+        const entries = Object.entries(tools)
+        yield* Effect.forEach(entries, ([name]) => validateName(name), { discard: true })
+        sessions.set(sessionID, new Map(entries.map(([name, tool]) => [name, { identity: {}, tool }])))
+      }),
+      unregisterSession: (sessionID) => Effect.sync(() => { sessions.delete(sessionID) }),
+      materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = [], allowlist, sessionID) {
         const registrations = new Map(applications.entries())
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
           if (registration) registrations.set(name, registration)
         }
+        if (sessionID) {
+          for (const [name, registration] of sessions.get(sessionID) ?? []) registrations.set(name, registration)
+        }
         for (const [name, registration] of registrations)
-          if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
+          if (allowlist && !allowlist.includes(name)) registrations.delete(name)
+          else if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
         return {
           definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)),
           settle: (input) => {

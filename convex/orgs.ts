@@ -280,7 +280,7 @@ export const membershipByClerkIds = serviceQuery({
       .collect()
     const membership = memberships.find((item: any) => item.user_id === user._id)
     return membership
-      ? { member: true as const, org_id: String(org._id), role: membership.role as string }
+      ? { member: true as const, org_id: String(org._id), user_id: String(user._id), role: membership.role as string }
       : { member: false as const }
   },
 })

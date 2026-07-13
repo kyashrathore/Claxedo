@@ -611,6 +611,98 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("advertises and executes an exact Session-scoped Connection tool through the provider", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const registry = yield* ToolRegistry.Service
+      const { db } = yield* Database.Service
+      const callbackCalls: Array<{ input: unknown; context: Tool.Context }> = []
+      const toolName = "connection_work_source_list"
+      const connectionInput = {
+        connectionId: "connection_team_github",
+        providerUserId: "octocat",
+        filters: { repo: "claxedo/claxedo", state: "open" },
+      }
+      yield* db
+        .update(SessionTable)
+        .set({ tools: [toolName] })
+        .where(eq(SessionTable.id, sessionID))
+        .run()
+        .pipe(Effect.orDie)
+      yield* registry.registerSession(sessionID, {
+        [toolName]: Tool.makeDynamic({
+          description: "List work-source issues through the Connection bound to this Attempt.",
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["connectionId", "providerUserId", "filters"],
+            properties: {
+              connectionId: { type: "string" },
+              providerUserId: { type: "string" },
+              filters: { type: "object", additionalProperties: { type: "string" } },
+            },
+          },
+          outputSchema: { type: "object" },
+          execute: (input, context) =>
+            Effect.sync(() => {
+              callbackCalls.push({ input, context })
+              return {
+                type: "list",
+                issues: [
+                  {
+                    externalId: "issue_1",
+                    externalKey: "CX-1",
+                    title: "Connection tool reached its broker",
+                    body: "Verified",
+                    status: "open",
+                    updatedAt: 1,
+                  },
+                ],
+              }
+            }),
+        }),
+      })
+      yield* insertSession(otherSessionID)
+      expect((yield* registry.materialize([], [toolName], otherSessionID)).definitions).toEqual([])
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "List my bound GitHub issues" }), resume: false })
+      requests.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-connection-list", name: toolName, input: connectionInput }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-connection-result" }),
+          LLMEvent.textDelta({ id: "text-connection-result", text: "Connection issue list received" }),
+          LLMEvent.textEnd({ id: "text-connection-result" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ]
+
+      yield* session.resume(sessionID).pipe(Effect.ensuring(registry.unregisterSession(sessionID)))
+
+      expect(requests).toHaveLength(2)
+      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual([toolName])
+      expect(callbackCalls).toEqual([
+        {
+          input: connectionInput,
+          context: {
+            sessionID,
+            agent: AgentV2.ID.make("build"),
+            assistantMessageID: expect.stringMatching(/^msg_/),
+            toolCallID: "call-connection-list",
+          },
+        },
+      ])
+      expect(JSON.stringify(requests[1]?.messages)).toContain("Connection tool reached its broker")
+    }),
+  )
+
   it.effect("starts a real runner turn after default prompt recording", () =>
     Effect.gen(function* () {
       yield* setup

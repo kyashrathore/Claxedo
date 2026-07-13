@@ -88,7 +88,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
       <DropdownMenu.Trigger
         aria-label={label()}
         title={label()}
-        class="group flex h-10 w-full items-center gap-2 rounded-lg border border-transparent bg-surface-raised-base px-2 text-left text-text-strong outline-none transition-colors hover:bg-surface-raised-base-hover focus-visible:border-border-focus data-[expanded]:bg-surface-raised-base-hover"
+        class="group flex h-9 w-full items-center gap-2 rounded-md border border-transparent bg-surface-raised-base px-2 text-left text-text-strong outline-none transition-colors hover:bg-surface-raised-base-hover focus-visible:border-border-focus data-[expanded]:bg-surface-raised-base-hover"
         data-testid="rail-account-trigger"
       >
         <Show

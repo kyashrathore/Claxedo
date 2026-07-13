@@ -111,6 +111,8 @@ export type AppShellLayoutProps = ParentProps<{
    * Callback to open the Marketplace as an in-workbench tab.
    */
   onOpenMarketplace?: () => void
+  /** Open the personal WorkGraph as a reusable global tab. */
+  onOpenWorkGraph?: () => void
 
   /**
    * Callback to create a new session. When no workspace is selected yet,
@@ -332,6 +334,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onNewTerminal={props.onNewTerminal}
           onNewWorkspace={props.onNewWorkspace}
           onOpenMarketplace={props.onOpenMarketplace}
+          onOpenWorkGraph={props.onOpenWorkGraph}
           onRemoveProject={props.onRemoveProject}
           onSettings={props.onSettings}
           onSessionSelect={props.onSessionSelect}

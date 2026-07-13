@@ -1,406 +1,192 @@
 # PRD: Claxedo WorkGraph
 
-## One-Liner
+Last updated: 2026-07-13
 
-Claxedo WorkGraph is a local-first, doc-first workspace where notes, sources, ideas, tasks, decisions, evidence, and agent runs share one graph and one history.
+## Vision
 
-## Product Intent
+WorkGraph is a personal operating system for AI-assisted work: Linear for everything one person does with AI.
 
-The product feels like a clean document editor and a powerful graph at the same time:
-- Write rough notes without committing to structure.
-- Promote parts of a doc into tasks, decisions, and evidence without leaving the doc.
-- Ingest many sources and keep only unique ideas, categorized and linked.
-- Create focused slices so the workspace can feel like a complete app, but only show one effort at a time.
-- Converge section-by-section with a gavel flow so the doc stays readable while the debate remains accessible.
+People begin with goals, branch into documents and sessions, discover more work during execution, and then forget what finished, what changed, what remains, and why decisions were made. WorkGraph gives that activity durable structure so the user can run many AI efforts in parallel without losing their state or recreating unnecessary work.
 
-## Goals
+## Core promise
 
-1. Doc stays a doc: readable narrative is the default surface.
-2. One identity for everything: any paragraph, task, idea, or artifact can be referenced forever.
-3. Slices for focus: pick a slice and the entire UI scopes to that subgraph.
-4. Planning as a view: turn doc intent into a task DAG only when asked.
-5. Learning as a view: ingest sources, extract ideas, de-duplicate, categorize, and link to evidence.
-6. Section gavel: converge on a final version per section without embedding every discussion in the main text.
-7. Local-first by default with durable history for replay, audit, and sync.
+The user can return at any time and quickly answer:
 
-## Non-Goals
+- What am I trying to achieve?
+- What are agents doing now?
+- What is finished, blocked, missing, duplicated, or awaiting review?
+- What should happen next?
+- What changed the direction, and why?
+- Which documents, sessions, artifacts, and external issues support the current state?
 
-- Replacing the editor with a block-first storage model.
-- Forcing every doc to end in executable tasks.
-- Making hard-coded node type enums the schema boundary.
+## Product model
 
----
+- **Stream:** A durable context and isolated execution envelope for meaningful work. A Stream may be finite, such as “Ship Claxedo Cloud,” or ongoing, such as “Growth.”
+- **Task:** The primary user-facing unit of work in a Stream. The service contract names it a Work Item and records its dependencies, completion contract, and execution profile.
+- **Outcome:** An optional grouping for Tasks that together produce one shippable result. It carries success criteria and linked evidence; WorkGraph proposes closure when the criteria are satisfied and the user confirms it.
+- **Work Source:** Exact source text captured from an agent, authoring surface, external issue, independent session, or explicit source action. Each edit creates a revision; confirmed work keeps the exact source revision that produced it.
+- **Attempt:** One agent execution try. It preserves the resolved environment, model, effort, session, findings, artifacts, and terminal result.
+- **Decision:** A durable choice containing its context, options, answer, rationale, provenance, and affected work.
+- **Recap:** A Stream-level memory update generated after eight hours without activity.
 
-## Core Model
+## Main interaction
 
-WorkGraph has four primitives: nodes, edges, events, and snapshots.
+WorkGraph is one compact personal surface at `/workgraph`. Streams expand in place to show optional Outcomes and their Tasks, and **Add task** is the canonical manual work action.
 
-### Node
+The existing app-global WorkspacePanel is the single secondary panel and has one top-level toggle. WorkGraph contributes **Needs you** and **Settings** views to that same panel. The WorkGraph header controls select those views; they do not create another panel or toggle. A small dot on the existing top-level toggle indicates open attention. When no attention exists, WorkGraph renders no dot, contextual card, list, or empty attention state.
 
-Nodes are intentionally generic. Meaning is carried by `tags` and `attrs`.
+The Needs you view contains proposal review, Decisions, Task and Attempt attention, actionable Recaps, configuration requirements, and an aggregate for external-issue and independent-Session candidates. Selecting a domain item opens its focused dialog over the same WorkGraph surface. The top-level Settings view contains WorkGraph execution defaults only. A Stream settings control opens one tabless Stream-scoped dialog containing that Stream's execution overrides and Recap configuration. Settings content is flush, descriptions and errors sit beside their fields, and the action footer remains pinned. The WorkspacePanel shell contains no WorkGraph domain state; WorkGraph supplies its owner-scoped views and interactions.
 
-```
-Node:
-  id:         string
-  title:      string
-  body:       string
-  status:     string
-  tags:       string[]
-  attrs:      string        // json
-  created_at: string
-  updated_at: string
-```
+## Creating and organizing work
 
-Tag conventions (runtime conventions, not hard schema):
-- `doc/*`: pages, sections, section versions
-- `work/*`: backlog tasks and planning units
-- `run/*`: agent runs and execution overlays
-- `plan/*`: questions, decisions, risks
-- `evidence/*`: artifacts, citations, provenance
-- `learn/*`: sources, ideas, clusters, categories
-- `collab/*`: threads and review states
-- `view/*`: saved slices and view definitions
+Source-derived and candidate work enters the durable graph through explicit user admission. Within an already authorized Stream, agents may record sourced facts and add clearly necessary follow-up Tasks with provenance.
 
-### Edge
+### From source text
 
-Edges are first-class and open-ended.
+When the user asks an agent or authoring surface to organize an idea, PRD, plan, notes, or other text, WorkGraph stores the exact text as a Work Source revision and creates a durable planning record. An ordinary background Claxedo agent session may then publish a review package containing ranked Stream placement, optional Outcomes with success criteria, Tasks with dependencies and completion contracts, execution defaults, possible duplicates, and a link to that exact revision.
 
-```
-Edge:
-  id:         string
-  source:     string
-  target:     string
-  type:       string
-  attrs:      string        // json
-  created_at: string
-```
+Planning is version-fenced to the immutable revision and proposal. A lost admission response resumes the same durable session and message, and only valid structured output from that Session can make the proposal reviewable. Invalid or unavailable generation produces a visible `planning_failed` state with bounded retry and attention. The user edits and confirms the exact rendered proposal version before any Task is admitted.
 
-Common edge types:
-- `contains` (page tree, section hierarchy)
-- `links_to` (general references and citations)
-- `depends_on` (task graph dependencies)
-- `supports` (evidence supports a claim/decision/task)
-- `derived_from` (idea derived from a source)
-- `same_as` (de-dup equivalence)
-- `member_of` (idea belongs to a cluster)
-- `categorized_as` (idea/cluster linked to a category)
-- `spawned_run` (task/section spawned a run)
-- `produced` (run produced an artifact)
-- `discusses` (thread discusses a section/version/decision)
+When the Work Source changes, WorkGraph shows the revision diff and proposes a replan. The user can keep the existing plan, replace unmerged Tasks and discard obsolete partial work, or fork a new Stream. Confirmed work is never rewritten silently.
 
-### Event (Canonical History)
+Docs v2 is the first authoring adapter for this contract. A user can brainstorm and draft freely in a document, then ask WorkGraph to turn an exact document revision into work. Later document revisions append equivalent Work Source revisions and enter the same diff, replan, and confirmation flow; the document remains the authoring surface while WorkGraph remains execution truth.
 
-Every mutation is an event so the system is replayable and debuggable.
+### From external trackers
 
-```
-Event:
-  id:            string
-  stream_id:     string
-  stream_seq:    number
-  logical_ts:    number
-  schema_version:number
-  type:          string
-  payload_json:  string
-  actor_type:    string
-  actor_id:      string
-  op_id:         string
-  prev_hash:     string
-  hash:          string
-  created_at:    string
+GitHub, Linear, Jira, and similar sources use team-managed Claxedo Connections. Each user configures their provider identity and saved filters over those credentials. Matching issues remain personal candidates until the user chooses **Add to WorkGraph** from Needs you.
+
+The external tracker remains authoritative for team issue state. WorkGraph owns personal execution state, Attempts, Decisions, and Recaps. Sync-back defaults to announcing meaningful results, with silent and fuller synchronization available per source view.
+
+### From independent AI sessions
+
+Sessions started outside WorkGraph remain unassigned. When a session becomes idle after producing meaningful work, it appears in Needs you with a summary and suggested Streams. The user attaches it, creates a Stream, or dismisses it. A dismissed candidate stays hidden until it changes meaningfully or the user restores it.
+
+### Stream suggestion and duplicate prevention
+
+Each Stream maintains a compact memory card containing its purpose, active Outcomes, repositories, latest Recap, and recent activity. Placement searches pinned and recent cards first, then older cards only when the first pass has no convincing match.
+
+Before admission, WorkGraph compares proposed work with active and recent Outcomes and Tasks. When overlap exists, it shows the match, state, reason, and evidence. The user can link, merge, or create separately. WorkGraph never silently places or merges uncertain work.
+
+## Execution
+
+Each Stream owns an isolated execution envelope: a local worktree, cloud VM, or equivalent disposable environment. Tasks execute inside that boundary and may use child worktrees or sessions when concurrent work requires additional isolation.
+
+Execution configuration inherits through:
+
+```text
+WorkGraph defaults → Stream → optional Outcome → Task → immutable Attempt snapshot
 ```
 
-### Snapshot
+The Stream defines the primary environment, repository, and starting revision. Each Task resolves its child isolation, harness and agent, model, effort, tools, Connections, cleanup, and result-integration expectations. The user edits only overrides. One versioned settings save commits the complete scope-specific patch atomically: WorkGraph Settings writes execution defaults, while Stream Settings writes Stream execution overrides and Recap configuration. Clearing a field removes that override, and conflicts preserve the user's unsaved input for an explicit retry.
 
-Snapshots are performance tools, not truth. Replay remains canonical.
+A Stream or Outcome runs in one of two modes:
 
-```
-Snapshot:
-  id:         string
-  stream_id:  string
-  event_seq:  number
-  state_json: string
-  created_at: string
-```
+- **Autonomous:** Launch every ready Task and continue until the selected work completes, becomes blocked, reaches an explicit user safety boundary, or requires a consequential Decision.
+- **Supervised:** Launch one visible batch and pause before selecting more work.
 
----
+“Execute this Stream” defaults to autonomous. WorkGraph has no product-level agent-capacity or work-in-progress limit. Every item whose blockers and required Decisions are resolved and whose execution profile is valid is ready to launch.
 
-## Views
+Pause stops new Attempts; active Attempts continue unless the user explicitly cancels them. Transient infrastructure and provider failures retry automatically. Semantic, repeated, or ambiguous failures require attention.
 
-All views render the same underlying graph.
+## Truthful state
 
-- Document view: pages and sections as readable text with stable anchors.
-- Backlog view: tasks with filters, priorities, and dependency awareness.
-- Flow view (graph + timeline merged): dependencies rendered as a waterfall; adding dates turns it into a timeline/Gantt; selecting a node reveals its event history and diffs.
-- Library view: sources, extracted ideas, clusters, and categories.
+An agent finishing does not complete its Task. The completion contract must be satisfied—for example, code integrated with checks passing, a pull request merged, an artifact delivered, research supported by evidence, or a document accepted. Until then, the Task remains result ready, review needed, integration needed, or verification failed.
 
-## Slices
+Completing all known Tasks does not complete an Outcome. WorkGraph evaluates its success criteria, assembles evidence, and moves it to ready to close. The user confirms completion. New required work or contradictory evidence reopens it with provenance.
 
-A slice is a saved definition of a subgraph.
+Agents may directly update factual execution state, record sourced findings, attach artifacts, and add clearly necessary follow-up work. Scope expansion, removal or reprioritization of confirmed work, changed success criteria, and consequential tradeoffs create reviewable Decisions. Pending Decisions appear in Needs you for the owner to inspect, answer, or dismiss. A Decision blocks only affected and dependent work; unrelated work continues.
 
-Slice definition:
-- seeds: starting nodes (page, section, goal, category)
-- traversal: which edge types to follow, depth, direction
-- filters: tags, status, time windows
-- presentation defaults: which view opens first, grouping/sort/layout hints
+Users can correct any state while preserving history and provenance.
 
-A slice is stored as a node tagged `view/slice`.
+## Stream memory
 
-UX:
-- the workspace can feel like a complete app
-- selecting a slice scopes doc/backlog/flow/search to that subgraph
-- nothing is deleted or moved in the underlying graph
+After eight hours without Stream activity, WorkGraph generates a Recap in the background. It processes activity since the prior Recap and combines it with current state and the previous Recap rather than rereading the full history.
 
----
+A Recap contains progress, active Outcomes and Attempts, important results, unfinished work, blockers, Decisions, discoveries, and next actions across linked sessions, Work Sources, artifacts, and Tasks. Recaps form a timeline and do not change workflow status.
 
-## UX Workflows
+Each Stream owns its background Recap model and effort configuration in Stream Settings. A Recap is published only from valid output produced by its exact agent Session. Missing configuration creates an explicit Stream-scoped requirement. Transient generation failures retry from durable state; repeated failure or missing source access creates attention without publishing a substitute Recap or notification.
 
-### 1) Second Brain and Learning Engine
+The visible Stream memory updates after every Recap. Each Stream row exposes its latest Recap through a hover/focus Recap icon and popover. Actionable Recaps also appear in Needs you with the exact Stream, Recap, and related blocker, Decision, abandoned next action, or completed Outcome identifiers. Reading a notification acknowledges that exact version; older Recap records remain available after newer Recaps exist.
 
-Input:
-- documents, links, transcripts, highlights
+## Lifecycle and sharing
 
-Output:
-- extracted ideas as small, linkable nodes
-- de-dup clusters that keep only unique points
-- categories that can be browsed as slices
-- clean notes that cite sources and link to idea clusters
+Before a Stream produces an integrated or externally durable result, it is disposable. Deleting it cancels Attempts, destroys its worktree or VM, and discards unmerged partial work.
 
-Minimum nodes and edges:
-- `learn/source`, `learn/idea`, `learn/cluster`, `learn/category`
-- `derived_from`, `same_as`, `member_of`, `categorized_as`, `summarizes`
+Integrated code, a merged pull request, a published artifact, or another accepted external write is a point of no return. The Stream can no longer be deleted because its history explains durable effects outside WorkGraph. The user closes it instead.
 
-### 2) Doc to Plan (Optional)
+Closing preserves Attempts, Decisions, Recaps, evidence, and references to integrated results. Unfinished Tasks become abandoned with a reason, and the isolated environment is cleaned up after retained results are recorded. Archive hides a closed Stream while preserving that history.
 
-From a page or a selected section:
-- generate a proposed plan graph (tasks + dependencies + questions/decisions)
-- show it as a slice and a diff before commit
-- create bidirectional links back into the doc so the doc stays canonical
+A WorkGraph is private and personally owned by default. Later sharing begins with owner-controlled, read-only access to a Stream or whole WorkGraph. Collaborative mutation and shared ownership are separate future capabilities; organization goals and top-down allocation are outside the product’s core identity.
 
-### 3) Run Agents Without Losing the Doc
+## User journeys
 
-Runs are overlays:
-- you can launch a run from a section or task
-- the run creates artifacts and evidence nodes
-- the doc remains readable and only shows citations/backlinks unless expanded
+### 1. Turn a goal into organized work
 
-### 4) Section Gavel (Converge Without Polluting the Doc)
+The user creates “Ship Claxedo Cloud” and adds the necessary Tasks. They may group related Tasks into an Outcome when a shippable result benefits from shared success criteria. WorkGraph exposes missing, duplicate, blocked, and active work so the goal can proceed without repeatedly reconstructing its plan.
 
-Docs converge section-by-section. The main text should not become a transcript.
+### 2. Brainstorm or draft, then execute
 
-Model:
-- `doc/section` is a stable identity node for a section anchor
-- `doc/section_version` is a gavelled version of section content
-- `collab/thread` holds discussion, alternates, and recommendations
+The user asks an agent or Docs v2 to organize a PRD, plan, or notes from an exact revision. “Turn into work” proposes the Stream, optional Outcomes, Tasks, execution defaults, and source links. The proposal appears in the Needs you view of the existing global WorkspacePanel. The user edits and confirms it, preserving the exact source text as reasoning evidence and WorkGraph as execution truth.
 
-Edges:
-- `version_of` (section_version -> section)
-- `supersedes` (new_version -> old_version)
-- `discusses` (thread -> section or section_version)
-- `resolves` (section_version -> thread)
+If the source later changes direction, WorkGraph shows the diff and a replan proposal. The user replaces disposable work, keeps the current plan, or forks another Stream without disturbing integrated results.
 
-UX:
-- default reading shows only current gavelled section content
-- section history lists gavelled versions and diffs
-- discussion is one click away via backlinks, not inline
+### 3. Execute a long goal
 
-### 5) Inline "@ Agent" Requests (Doc-Native)
+The user selects autonomous execution. Every ready Task launches with its resolved worktree or cloud VM, model, effort, and tools. WorkGraph shows current agent activity, results awaiting integration, blockers, and required Decisions without requiring the user to inspect each session.
 
-The user can invoke an agent inline anywhere in a doc using `@...` in natural language.
+### 4. Capture discoveries and changed direction
 
-Examples:
-- `@workgraph check if we already have a feature doc for HTTP cache; summarize what exists and link it here`
-- `@workgraph list all related docs/decisions/tasks for this section`
-- `@workgraph extract unique ideas from the sources linked in this doc and rewrite this section with citations`
-
-Requirements:
-- The agent searches the current slice first (if one is selected), then optionally expands to the full workspace.
-- Results are written back as:
-  - a short inline summary (keeps the doc readable)
-  - linked nodes (doc links, evidence, decisions) so the user can inspect provenance
-- The invocation itself becomes a first-class node (so it can be replayed, diffed, and attributed).
-
-Suggested representation:
-- `run/request` node created at the doc cursor location with `attrs` containing:
-  - `anchor` (doc section/paragraph pointer)
-  - `prompt`
-  - `scope` (slice id, tags filter)
-- outputs as `evidence/artifact` nodes linked via `produced`
-
-### 6) Slash Commands and Ghost Typing (Editor-Native)
-
-The editor supports two complementary “speed layers”:
-- Slash commands (`/`) for explicit actions.
-- Ghost typing for continuous writing assistance that does not interrupt flow.
-
-Slash command requirements:
-- always available at the cursor
-- discoverable, keyboard-first
-- actions operate on the current anchor (paragraph/section) unless the user selects a different scope
-
-Ghost typing requirements:
-- suggestions are ephemeral until accepted
-- accepting creates a normal edit plus optional link insertions (citations/backlinks), never hidden state
-- the agent can propose citations as part of the suggestion, but the user controls acceptance
-
-### 7) Self-Healing Links (Identity-First)
-
-Links should not be brittle.
-
-Rules:
-- doc links bind to `Node.id` plus an optional `anchor` within `doc/section` or section-version content
-- if the text anchor shifts (edits, reflow), the UI attempts reattachment using stable section ids and local heuristics
-- when reattachment fails, the link renders as “needs repair” and offers one-click relink to a suggested target
-
-This makes the workspace feel safe to refactor: you can reorganize documents without breaking the graph.
-
----
-
-## Key UI Elements (Doc-First)
-
-- Section toolbar: `Related`, `Backlinks`, `Generate Plan`, `Run Agent`, `Gavel`, `History`.
-- Inline `@workgraph` (and other `@agent`) command at the cursor with preview-before-insert.
-- Recent docs tabs (Coda-like): quick switching between active pages/sections/slices.
-- Slash command (Notion-like): type `/` to insert actions (create task, link, gavel, run agent, insert citation, create slice).
-- Ghost typing: when you pause, the agent suggests the next few sentences in gray; `Tab` accepts, typing continues ignores.
-- Self-healing links: links bind to node ids + anchors, not filenames/paths; renames and moves do not break references.
-- Open-in-side-pane: `Shift+click` on any linked doc/section opens it to the side for read/edit without leaving context.
-- Doc todos -> graph tasks: markdown todos in a doc (`- [ ]`) materialize as `work/task` nodes linked to the originating section; completing either updates both.
-- Mobile per-section actions (Craft-like): swipe right on a paragraph/section to reveal actions (link, taskify, nest, duplicate, gavel) without precision text selection.
-- Audio-first capture: dictate notes, create tasks, and invoke `@agent` actions by voice; the result is still a normal doc with links.
-- Keyboard-first workflow: command palette, quick open, recent tabs, and consistent shortcuts for gavel/history/backlinks/slices.
-- Flow view: dependency waterfall by default; add dates for a timeline/Gantt; show event markers and diffs inline.
-- Related panel: tasks, ideas, decisions, runs, artifacts linked to this section.
-- Backlinks panel: incoming edges grouped by tag (work, learn, run, evidence, collab).
-- Citations: agent-proposed facts insert into the doc with linked evidence nodes.
-- Slice picker: switch between "everything" and a focused effort.
+An agent discovers necessary follow-up work and adds it with provenance. A discovery that changes scope or success criteria becomes a Decision. Only the affected branch pauses while other ready work continues.
 
----
-
-## Browser Example (Multiple Docs, Optional Execution)
+### 5. Return after losing context
 
-```mermaid
-graph TD
-  PRD["Doc: Browser PRD (doc/page)"] -->|contains| R["Doc: Rendering (doc/page)"]
-  PRD -->|contains| N["Doc: Networking (doc/page)"]
-  PRD -->|contains| C["Doc: Competitive landscape (doc/page)"]
-
-  C -->|contains| S1["Source: Article A (learn/source)"]
-  C -->|contains| S2["Source: Video B transcript (learn/source)"]
-  S1 -->|derived_from| I1["Idea: X does Y (learn/idea)"]
-  S2 -->|derived_from| I2["Idea: X does Y (learn/idea)"]
-  I1 <-->|same_as| I2
+Eight quiet hours trigger a Recap. On return, the user sees what changed, what completed, what remains, and what needs attention. Actionable notifications point directly to the relevant work.
 
-  R -->|links_to| TR["Task: Rendering architecture (work/task)"]
-  N -->|links_to| TN["Task: HTTP cache layer (work/task)"]
-  TR -->|depends_on| TN
-```
-
----
-
-## Collaboration That Stays Close to Code
-
-The collaboration product is not “more discussion”. It is a way to converge on decisions and ship code with less churn.
-
-The core loop:
-1. Write intent in a section.
-2. Collaborate in a thread attached to that section (alternates, tradeoffs, evidence).
-3. Gavel the section into a stable version (a contract).
-4. Derive tasks from the gavelled version (optional).
-5. Link tasks to code changes and verification evidence.
-6. If reality changes, reopen the section (new thread, new version), without losing history.
-
-Minimum “close to code” link types:
-- `implements` (code change -> task or section_version)
-- `changes` (code change -> file/artifact)
-- `verifies` (test run/artifact -> code change or task)
-- `blocks` / `depends_on` (task graph)
-- `supports` (evidence -> section_version/decision)
-
-Definition of done for any task derived from a gavelled section:
-- a linked code change exists (or an explicit “no code” resolution)
-- verification evidence exists (tests, checks, review gate) or an explicit waiver is recorded as a decision node
-
-## Delivery Plan (Code-Adjacent MVP)
-
-### P0: Doc Anchors + Backlinks + Todos -> Tasks
-
-Ship:
-- stable `doc/section` identities and anchors
-- backlinks and “Related” panel per section
-- markdown todos materialize as `work/task` nodes with bidirectional sync
-- inline `@workgraph` query: “do we already have this doc / summarize what exists”
-
-Exit criteria:
-- any section can show everything linked to it (tasks, ideas, evidence, threads)
-- tasks created from docs always navigate back to the originating paragraph/section
-
-### P1: Section Threads + Gavel + Reopen
-
-Ship:
-- `collab/thread` nodes attached to sections
-- `doc/section_version` nodes and gavel/reopen UX
-- section history with diffs and attribution
-
-Exit criteria:
-- main doc stays readable by default
-- gavel creates a stable version that can be referenced by tasks and code artifacts
-
-### P2: Code Change + Verification as First-Class Nodes
-
-Ship:
-- `code/change` nodes (PR, patch, commit, or local diff) with `implements` links to tasks/section_versions
-- `evidence/test_run` (or `evidence/check`) nodes linked via `verifies`
-- a “Ready to ship” slice that requires `implements` + `verifies`
-
-Exit criteria:
-- you can answer “what code did we ship for this gavelled section?” in one click
-- you can answer “what verified it?” in one click
-
-### P3: Multi-User Sync (Optional Later)
-
-Ship:
-- replicated event log + conflict handling for concurrent edits
-
-Exit criteria:
-- two users can gavel sections and create tasks without breaking links or history
-
----
-
-## Competitive Lens (Linear and Notion)
-
-Linear:
-- strong execution primitives (issues/projects/cycles, triage/inbox, speed)
-- opinionated workflow defaults
-
-Notion:
-- strong doc and database flexibility (many views, relations, backlinks)
-- capture-first workflows
-
-Claxedo WorkGraph:
-- one identity for docs, tasks, sources, ideas, decisions, evidence, and runs
-- slices that can include mixed node types and traversal, not just filtered rows or issue lists
-- section gavel to keep docs readable while preserving full debate context
-- local-first history as a primary product surface (timeline, diff, replay)
-
----
-
-## Query Surface (Conceptual)
-
-```
-workgraph.node(id) -> Node
-workgraph.edges(id) -> Edge[]
-workgraph.search(query, tags?) -> Node[]
-workgraph.subgraph(seeds, opts) -> { nodes, edges }
-workgraph.slice(id) -> { def, nodes, edges }
-workgraph.timeline(stream_id, since?) -> Event[]
-workgraph.snapshot(stream_id) -> Snapshot
-workgraph.diff(snapshotA, snapshotB) -> Change[]
-```
-
-## Success Metrics
-
-- A user can keep notes, sources, and tasks in one place without losing readability.
-- A user can select a slice and only see the relevant effort across all views.
-- De-dup reduces repeated ideas while keeping provenance links to sources.
-- Section gavel keeps docs clean and makes decisions easy to revisit.
-- Replay reproduces current state deterministically from event 0.
+### 6. Stage personally relevant external work
+
+A saved user filter finds a team issue through a shared Connection. The candidate appears in the aggregated Unorganized AI work entry in Needs you. **Add to WorkGraph** checks for duplicates, proposes a Stream and optional Outcome, and creates the Task after confirmation. Results can sync back through the same team credential with user and agent provenance.
+
+### 7. Recover work started outside WorkGraph
+
+A meaningful independent AI session appears in the aggregated Unorganized AI work entry in Needs you after becoming idle. WorkGraph suggests recent Streams without assigning it automatically. The user attaches, creates, or dismisses it.
+
+### 8. Discard or close a Stream
+
+The user abandons a partially implemented Stream whose work remains isolated. Deleting the Stream cancels its Attempts and destroys its worktree or VM. If any result has already been integrated or published, deletion is unavailable; closing preserves the history and marks unfinished Tasks abandoned.
+
+## Success criteria
+
+WorkGraph succeeds when the user can:
+
+- understand an active Stream in under one minute;
+- run many independent AI efforts without losing their state;
+- see current agent activity without opening individual sessions;
+- identify missing, duplicated, blocked, and integration-pending work before it delays an Outcome;
+- resume from a clear next action rather than reconstructing conversations;
+- trace scope changes to discoveries and Decisions;
+- convert source text into confirmed execution structure without re-entering its context;
+- recover personally relevant external and independent AI work without importing everything.
+
+## Initial scope
+
+- One personal WorkGraph surface with inline Stream expansion, canonical Add task, and WorkGraph Needs you and Settings views in the existing app-global WorkspacePanel.
+- WorkGraph application services embedded in `claxedo-server`, with HTTP/JSON plus ordered change cursors for the app and in-process access for MCP tools and workers.
+- Streams, Tasks, optional Outcomes, Attempts, agent-created Decisions, Recaps, and attention.
+- Versioned Work Sources and durable Session-backed “Turn into work” planning with explicit planning and failure states.
+- Team-credential, user-filtered external sources.
+- Unorganized AI work capture.
+- Recent-first Stream suggestion and duplicate review.
+- Inherited execution profiles and autonomous/supervised execution.
+- Stream-owned worktree/VM envelopes, child isolation, and cleanup.
+- Diff-driven Work Source replanning with keep, replace, or fork actions.
+- Evidence-based completion and agent discovery policy.
+- Disposable deletion before integration and close/abandon after durable effects.
+- Eight-hour background Recaps and actionable notifications.
+
+## Later scope
+
+- Read-only Stream and whole-WorkGraph sharing.
+- Additional authoring-surface adapters beyond the initial Docs v2 integration.
+- Collaborative mutation and shared ownership.
+- Additional notification delivery channels.
+- Organization planning, company goals, and top-down work allocation.

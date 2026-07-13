@@ -44,6 +44,14 @@ export const [reviewToolbarSlot, setReviewToolbarSlot] = createPortalSlot("revie
 
 export const [reviewTabHeaderSlot, setReviewTabHeaderSlot] = createPortalSlot("review-tab-header")
 
+// WorkGraph global-navigation panel slots. The shared WorkspacePanel renders a
+// header tab strip and a body mount when a `workgraph-*` mode is active; the
+// WorkGraph surface portals its "Needs you" / "Settings" tab controls into the
+// header slot and the active view into the body slot. This keeps all WorkGraph
+// state in the surface while reusing the one physical panel shell + toggle.
+export const [workGraphPanelHeaderSlot, setWorkGraphPanelHeaderSlot] = createPortalSlot("workgraph-panel-header")
+export const [workGraphPanelBodySlot, setWorkGraphPanelBodySlot] = createPortalSlot("workgraph-panel-body")
+
 // components/titlebar/titlebar.tsx (legacy titlebar) claims these three mount points
 // on render; components/session/session-header.tsx portals its search
 // button and open-in-app controls into the center/right slots. This

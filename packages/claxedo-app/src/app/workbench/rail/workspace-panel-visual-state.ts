@@ -1,6 +1,7 @@
 import { createEffect, createSignal, type Accessor } from "solid-js"
 
 import {
+  isGlobalPanelMode,
   shouldRetargetWorkspacePanelForFocusedPane,
   type WorkspacePanelPaneTarget,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
@@ -21,9 +22,24 @@ export function useWorkspacePanelVisualState(input: {
 }) {
   const [workspacePanelHasRenderedOpen, setWorkspacePanelHasRenderedOpen] = createSignal(false)
 
+  // The active global surface (e.g. WorkGraph) owns the panel when a global mode
+  // is selected. The panel is only visible while that surface is focused.
+  const activeSurfaceIsWorkGraph = () => {
+    const id = input.claxedoState.wb.selectors.focusedContent()
+    return !!id && input.claxedoState.meta.get(id)?.type === "workgraph"
+  }
+  const [lastWorkGraphMode, setLastWorkGraphMode] = createSignal<"workgraph-attention" | "workgraph-settings">("workgraph-attention")
+  createEffect(() => {
+    const mode = input.claxedoState.workspacePanel.state().mode
+    if (isGlobalPanelMode(mode)) setLastWorkGraphMode(mode)
+  })
+
   const workspacePanelOpen = () => {
     const panel = input.claxedoState.workspacePanel.state()
     if (!(panel.open && !!panel.mode)) return false
+    // Global-navigation modes are workspace-agnostic and only visible while their
+    // owning global surface is focused; they bypass every workspace target gate.
+    if (isGlobalPanelMode(panel.mode)) return activeSurfaceIsWorkGraph()
     if (!hasWorkspacePanelTarget() && !panel.workspaceDir) return false
     const workspaceId = panel.workspaceDir
       ? sessionWorkspaceRuntimeRef({ directory: panel.workspaceDir })?.workspaceId
@@ -134,7 +150,24 @@ export function useWorkspacePanelVisualState(input: {
     if (opened && !motion.visualOpenValue()) motion.setVisualPhase(true)
   }
 
+  // The one physical top-level toggle drives the WorkGraph global panel while the
+  // WorkGraph surface is active, restoring the last selected WorkGraph tab.
+  const toggleWorkGraphPanel = (button?: HTMLButtonElement) => {
+    const slice = input.claxedoState.workspacePanel
+    if (motion.visualOpenValue() && isGlobalPanelMode(slice.state().mode)) {
+      motion.setVisualPhase(false, button)
+      slice.close()
+      return
+    }
+    motion.setVisualPhase(true, button)
+    slice.openGlobal(lastWorkGraphMode())
+  }
+
   const toggleFocusedWorkspaceReview = (button?: HTMLButtonElement) => {
+    if (activeSurfaceIsWorkGraph()) {
+      toggleWorkGraphPanel(button)
+      return
+    }
     const panel = input.claxedoState.workspacePanel.state()
     const target = workspacePanelFallbackTarget()
     if (motion.visualOpenValue()) {

@@ -89,6 +89,7 @@ export function createTokenService(deps: TokenDeps) {
     async getLiveToken(row: ConnectionRow): Promise<ConnectionTokenResponse> {
       const providerId = connectionProviderId(row.id)
       const decl = deps.registry.byId(row.integrationId)?.decl
+      if (!decl) throw new ConnectionTokenError(409, "connection_not_available", "reconnect_required")
       let credential
       try {
         credential = await deps.credentials.get(providerId)
@@ -111,11 +112,14 @@ export function createTokenService(deps: TokenDeps) {
       }
 
       if (credential.kind === "api_key") {
+        if (!decl.keyTokenType) {
+          throw new ConnectionTokenError(409, "connection_not_available", "reconnect_required")
+        }
         const secret = await readSecret()
         if (secret === null) throw new ConnectionTokenError(409, "connection_not_available", credential.status)
         return {
           token: secret,
-          tokenType: decl?.keyTokenType ?? "bearer",
+          tokenType: decl.keyTokenType,
           ...(Object.keys(row.fields).length ? { fields: row.fields } : {}),
         }
       }

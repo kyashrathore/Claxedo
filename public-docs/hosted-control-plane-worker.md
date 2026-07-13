@@ -26,6 +26,7 @@ the Worker-safe app from `src/hosted-app.ts`. The design and rationale are in
 | POST | `/api/workspace/:id/user-hosted/register` | records the link, mints a Host Tunnel Token; does **not** start a tunnel |
 | POST | `/api/workspace/:id/user-hosted/heartbeat` | client-signed; re-mints the Host Tunnel Token |
 | POST | `/api/workspace/:id/user-hosted/pause` | pauses the link in Convex |
+| ALL | `/api/workgraph` · `/api/workgraph/*` | authenticated personal WorkGraph contract backed by Convex; `intake` paths are backend candidate-admission APIs |
 | GET | product compatibility route | deployed component/protocol versions for rollout checks |
 | GET | `/internal/relay/target` · `/internal/relay/revocation` | resolver-token / loopback gated |
 | POST | `/internal/sandbox-manager/gc` · `/internal/sandbox-manager/release` | manual sandbox GC / lease release; `CLAXEDO_RUNTIME_ADMIN_TOKEN` gated |
@@ -103,7 +104,21 @@ curl -s "$BASE/.well-known/jwks.json"       # {"keys":[…]}
 
 # Signed smoke (TOKEN = a Clerk-issued user bearer Convex trusts)
 curl -s -H "authorization: Bearer $TOKEN" "$BASE/api/workspace/<id>/connection"
+
+# WorkGraph signed two-user persistence and capability smoke
+BASE_URL="$BASE" \
+CLERK_SECRET_KEY="$CLERK_SECRET_KEY" \
+WORKGRAPH_SMOKE_USER_A_ID="$USER_A" \
+WORKGRAPH_SMOKE_USER_B_ID="$USER_B" \
+WORKGRAPH_SMOKE_WORKSPACE_ID="$WORKSPACE_ID" \
+bun run smoke:workgraph
 ```
+
+The WorkGraph smoke mints short-lived Clerk Session tokens, verifies owner
+isolation, checks the hosted execution-capability route, and performs one
+Convex-backed Stream-and-Task create/read/delete cycle. Release acceptance also
+requires hosted Attempt execution and the canonical browser journey against the
+deployed app and workspace runtime.
 
 ## Guardrails
 

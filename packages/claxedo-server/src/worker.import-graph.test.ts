@@ -54,6 +54,7 @@ const FORBIDDEN_LOCAL = [
   "server.ts",
   "server-usage-limits",
   "workgraph-execution",
+  "server-workgraph",
   "central-runtime",
   "central-session-runtime",
   "workspace-runtime-integration/session-env",
@@ -144,6 +145,8 @@ describe("worker import-graph", () => {
   test("entrypoints are actually reachable (sanity)", () => {
     expect(visitedRel).toContain("worker.ts")
     expect(visitedRel).toContain("hosted-app.ts")
+    expect(visitedRel).toContain("workgraph-host/hosted.ts")
+    expect(visitedRel).toContain("workgraph-host/hosted-runtime.ts")
     // A representative deep node-safe dependency should be reachable.
     expect(visitedRel).toContain("routes/hosted-workspace.ts")
   })

@@ -25,7 +25,7 @@ import {
  */
 
 const ROW_SHELL_CLASS =
-  "relative flex items-center gap-2 min-h-8 py-1 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,color] duration-100"
+  "relative flex items-center gap-2 min-h-7 py-0.5 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,color] duration-100"
 
 export type NavigationRowProps = {
   /** Extra classes appended to the shared shell (e.g. a `group/*` marker). */
@@ -114,31 +114,23 @@ export function NavigationRow(props: NavigationRowProps) {
  * conveys status textually.
  */
 export function NavigationStatusDot(props: { status: SwitcherStatus; active?: boolean }) {
-  if (props.status === "working") {
-    return (
-      <span
-        aria-hidden="true"
-        data-sidebar-status={props.status}
-        class="relative size-2.5 shrink-0 rounded-full border border-border-interactive-base/40"
-        classList={{
-          "border-border-interactive-base": props.active,
-          "border-border-interactive-base/40": !props.active,
-        }}
-      >
-        <span class="absolute inset-0.5 rounded-full bg-icon-warning-base animate-pulse" />
-      </span>
-    )
-  }
-
+  // Status is conveyed by a single small dot, identical to the tab/compact-
+  // switcher StatusDot (keep the two in sync). Palette is deliberately minimal —
+  // grey for working/done, red only for "needs you", nothing for idle:
+  //   working    → pulsing grey (in progress)
+  //   done       → solid grey   (finished)
+  //   permission → solid red    (needs you)
+  //   idle       → no dot
+  if (props.status === "idle") return null
   return (
     <span
       aria-hidden="true"
       data-sidebar-status={props.status}
-      class="size-2.5 shrink-0 rounded-full"
+      class="size-1.5 shrink-0 rounded-full"
       classList={{
-        "bg-icon-warning-base": props.status === "permission",
-        "bg-icon-success-base": props.status === "done",
-        "bg-text-weaker": props.status === "idle",
+        "bg-text-weak": props.status === "working" || props.status === "done",
+        "animate-pulse": props.status === "working",
+        "bg-icon-critical-base": props.status === "permission",
       }}
     />
   )

@@ -1,1651 +1,276 @@
 # WorkGraph Service Specification
 
-Status: Draft v3
-Purpose: Define a service that decomposes goals into task DAGs and orchestrates multi-agent execution.
+Status: implemented core contract; adapter-surface expansion and deployment validation are tracked in `TASKS.md`
 
-## 1. Problem Statement
+## 1. Purpose
 
-WorkGraph is an event-sourced orchestration service that takes a high-level goal (typically from a
-rich document), decomposes it into a dependency graph of PR-sized tasks, and executes those tasks
-across multiple coding agents in parallel — respecting the graph's ordering constraints.
+WorkGraph is a user-owned service for organizing AI-assisted work, executing it across Claxedo runtimes, and preserving enough state to resume without reconstructing documents and sessions.
 
-The service solves five operational problems:
+Claxedo Cloud uses Convex by default. Local and single-node self-hosted Claxedo use SQLite. OSS deployments may supply conforming storage adapters.
 
-- It turns a freeform document or goal into an executable plan without manual task breakdown.
-- It models task dependencies as a first-class DAG with typed edges, gates, and readiness checks,
-  so agents only start work when their prerequisites are satisfied.
-- It executes tasks through multiple agents concurrently, cascading through the DAG as tasks
-  complete, rather than dispatching one issue at a time.
-- It maintains a durable, replayable event log so every state change is auditable and the full
-  system state can be reconstructed from history.
-- It provides a real-time dashboard with DAG visualization, timeline, and per-task session detail
-  inside the IDE, not as a separate tool.
+### 1.1 Host composition
 
-> **Where we differ from Symphony:** Symphony is a polling-based scheduler that reads one issue at a
-> time from a tracker (Linear) and dispatches it to a single agent in an isolated workspace.
-> WorkGraph is a graph-based orchestrator that decomposes a goal into many tasks, models their
-> dependencies, and runs multiple agents concurrently through a DAG. Symphony's unit of work is a
-> tracker issue; WorkGraph's unit of work is a decomposed task node within a dependency graph.
+`claxedo-server` embeds one WorkGraph application-service composition. It mounts the backend-neutral HTTP/JSON and ordered-change router as the northbound contract used by the Claxedo app. MCP tools, webhooks, background workers, reconcilers, and other server modules receive the application services directly and invoke them in-process.
 
-Important boundaries:
+The host supplies verified identity, storage, Connections, and workspace-execution adapters. Cloud and local deployments preserve this service boundary while selecting Convex or SQLite respectively.
 
-- WorkGraph is an orchestrator, planner, and execution engine.
-- It does not own the IDE UI — the `claxedo-app` package renders the WorkGraph tab, DAG view, and
-  timeline using metadata produced by the session bridge.
-- It does not own the coding agent — it delegates to OpenCode sessions, CLI subprocesses, or ACP
-  agents via pluggable backends.
-- External tracker integration (Linear, GitHub, Jira) is for hydrating context and syncing status,
-  not for driving dispatch. Dispatch is driven by the graph.
+## 2. Request context
 
-## 2. Goals and Non-Goals
+Every operation receives trusted context:
 
-### 2.1 Goals
-
-- Decompose a natural-language goal into a structured task DAG using AI planning.
-- Model task dependencies with typed edges (hard, soft, review gate, artifact gate).
-- Execute tasks concurrently through multiple agents, bounded by configurable concurrency limits.
-- Cascade execution through the DAG as tasks complete, without polling.
-- Maintain an immutable, hash-chained event log for every state mutation.
-- Support replay: reconstruct full system state from event log alone.
-- Bridge orchestrator state to IDE UI via structured metadata.
-- Support multiple execution backends (OpenCode sessions, CLI agents, ACP protocol).
-- Hydrate task context from external trackers (Linear, GitHub, Jira) without coupling dispatch to
-  them.
-- Support offline operation with buffered sync and conflict resolution.
-- Enable inter-node communication via scratchpads — each node writes observations and downstream
-  nodes read them as context.
-
-### 2.2 Non-Goals
-
-- Polling an issue tracker to discover work. Work originates from explicit user action (clicking
-  "Create WorkGraph" on a document, or calling the API).
-- `WORKFLOW.md` or any file-based workflow contract. Configuration is API-driven and stored in the
-  database.
-- Per-issue filesystem workspaces. Agent sessions run in the existing OpenCode sandbox or IDE
-  workspace, not in per-task directories.
-- Prescribing a specific coding agent. The backend abstraction supports any agent that can accept a
-  prompt and return a result.
-- General-purpose workflow engine. WorkGraph is purpose-built for decomposing goals into
-  code-change tasks.
-- Complex team hierarchies or communication protocols. Agents communicate through scratchpads
-  attached to their nodes — there is no team entity, handoff protocol, or message bus.
-
-> **Where we differ from Symphony:** Symphony loads runtime behavior from a repo-owned
-> `WORKFLOW.md` with YAML front matter. WorkGraph has no workflow file — goals are submitted via
-> API, plans are generated by AI, and configuration is programmatic. Symphony polls a tracker on a
-> fixed cadence to discover work; WorkGraph only starts work when explicitly triggered.
-
-## 3. System Overview
-
-### 3.1 Main Components
-
-1. `Planner`
-   - Takes a goal string and optional context.
-   - Spawns an agent with MCP tools scoped to the run.
-   - The agent builds the graph directly via `create_node`, `add_edge` tool calls.
-   - Calls `finish_planning` when done — no JSON parsing, no intermediate plan object.
-
-2. `MCP Tool Server`
-   - Exposes workgraph operations as MCP tools.
-   - Agents connect to an MCP server that includes these tools.
-   - Tools are scoped per `run_id` (and optionally `node_id` for task agents).
-   - Handles: node creation, edge management, status updates, scratchpad, artifacts.
-   - See Section 5.5 for the full tool specification.
-
-3. `Graph Engine`
-   - Owns the DAG of nodes and typed edges.
-   - Computes node readiness based on dependency satisfaction and gate state.
-   - Detects cycles.
-   - Tracks gate satisfaction for review and artifact gates.
-
-4. `Scheduler`
-   - Lease manager preventing concurrent execution of the same node.
-   - Concurrency policies (per-run limits).
-   - Finds ready nodes respecting leases and concurrency bounds.
-
-5. `Executor`
-   - Owns the run lifecycle state machine.
-   - Event-driven via MCP callbacks — no polling, no awaiting agent completion.
-   - `onPlanningComplete`: triggered by `finish_planning` tool → finds ready nodes, spawns task agents.
-   - `onNodeCompleted`: triggered by `update_status` tool → cascades to next ready nodes.
-   - `onNodeFailed`: triggered by `update_status` tool → retries or cascades failure.
-   - Handles retry logic per node (up to `MAX_RETRIES`).
-   - Cascades failure through dependent nodes when a node exhausts retries.
-
-6. `Execution Backends`
-   - `SessionBackend` — creates OpenCode child sessions via the server API.
-   - `SubprocessBackend` — spawns CLI agent processes.
-   - `AcpBackend` — connects to ACP-compatible agent servers via stdio or HTTP.
-
-7. `Session Bridge`
-   - Maps orchestrator DB state to frontend-consumable `OrchestratorMetadata`.
-   - Tracks node-to-session-ID mappings.
-   - Produces summary strings and status rollups for the UI.
-
-8. `Event Store`
-   - Persists all state mutations as immutable `EventEnvelope` records.
-   - Hash-chains events for integrity verification.
-   - Supports replay from any point.
-
-9. `Sync Engine`
-   - Buffers events for offline operation.
-   - Flushes to remote with exponential backoff.
-   - Detects and resolves conflicts using configurable strategies.
-
-10. `Connectors`
-    - Linear, GitHub, and Jira adapters for hydrating issue context.
-    - Normalized issue model across all providers.
-    - Read-write: can update status and post comments back to trackers.
-
-11. `WorkGraph Bridge`
-    - Bidirectional link between orchestration runs and WorkGraph items.
-    - Transitions item status as nodes complete (open → in_progress → done).
-    - Creates WorkGraph items from decomposition plans.
-
-> **Where we differ from Symphony:** Symphony has 8 components centered around a poll loop and
-> workspace manager. WorkGraph has 11 components centered around a DAG engine, MCP tool server,
-> and event store. Symphony's workspace manager creates per-issue directories; WorkGraph delegates
-> workspace concerns to the execution backend. Symphony's agent runner speaks a JSON-RPC stdio
-> protocol with Codex; WorkGraph's backends are pluggable, and agents self-report progress via MCP
-> tools rather than being externally monitored.
-
-### 3.2 Abstraction Levels
-
-1. `Planning Layer` (AI-driven)
-   - Goal decomposition into structured task graphs.
-   - Role assignment and dependency inference.
-
-2. `Graph Layer` (DAG engine)
-   - Node/edge management, readiness computation, gate tracking, cycle detection.
-
-3. `Coordination Layer` (orchestrator + scheduler)
-   - Run lifecycle, concurrency control, lease management, retry logic.
-
-4. `Execution Layer` (backends)
-   - Session creation, agent dispatch, result collection.
-
-5. `Integration Layer` (connectors)
-   - Tracker hydration, status sync, comment posting.
-
-6. `Persistence Layer` (event store + database)
-   - Event sourcing, hash chain, replay, projections.
-
-7. `Presentation Layer` (session bridge + metadata)
-   - UI-consumable state snapshots, DAG visualization data.
-
-### 3.3 External Dependencies
-
-- OpenCode server (for `SessionBackend` — session creation and monitoring).
-- AI model API (for planning/decomposition — currently Claude via OpenCode sessions).
-- SQLite database (for event store, projections, and WorkGraph state).
-- Optional: Issue tracker APIs (Linear, GitHub, Jira) for context hydration.
-- Optional: ACP-compatible agent servers for `AcpBackend`.
-
-## 4. Core Domain Model
-
-### 4.1 Entities
-
-#### 4.1.1 WorkItem
-
-A unit of trackable work in the WorkGraph.
-
-Fields:
-
-- `id` (string)
-  - ULID, globally unique.
-- `title` (string)
-- `description` (string or null)
-- `status` (enum: `open`, `in_progress`, `done`)
-- `labels` (list of strings)
-- `context` (string or null)
-  - Freeform context for the item.
-- `provider` (string or null)
-  - External tracker name (e.g., `linear`, `github`, `jira`).
-- `providerMeta` (string or null)
-  - Provider-specific metadata JSON.
-- `providerUrl` (string or null)
-  - Link back to external tracker.
-- `createdAt` (timestamp)
-- `updatedAt` (timestamp)
-
-#### 4.1.2 WorkEdge
-
-A dependency between two WorkItems.
-
-Fields:
-
-- `source` (string — WorkItem ID)
-  - The blocking item.
-- `target` (string — WorkItem ID)
-  - The item that is blocked.
-
-#### 4.1.3 ScratchpadEntry
-
-An observation, blocker, or scope change attached to a node. Scratchpads are the sole
-inter-node communication primitive — downstream nodes receive upstream scratchpads as context.
-
-Fields:
-
-- `id` (string — ULID)
-- `nodeId` (string — graph node ID)
-- `content` (string)
-- `priority` (enum: `fyi`, `blocking`, `scope_change`)
-- `needsReview` (boolean)
-- `promotedToItemId` (string or null)
-  - If promoted to a standalone WorkItem.
-- `dismissedAt` (timestamp or null)
-- `actor` (string or null)
-- `createdAt` (timestamp)
-
-Scratchpad semantics:
-
-- Each node has its own scratchpad — a running journal of observations, decisions, and blockers.
-- When a downstream node becomes ready, the executor collects scratchpad entries from all
-  completed upstream nodes and injects them into the agent's prompt as context.
-- This replaces any need for team messaging, handoffs, or Q&A protocols — the scratchpad is the
-  shared memory surface between nodes.
-- A `blocking` scratchpad entry can be promoted to a standalone WorkItem if the scope grows beyond
-  the current task.
-
-#### 4.1.4 EventEnvelope
-
-Immutable record in the event log. All state mutations are recorded as events.
-
-Fields:
-
-- `id` (string — ULID)
-- `run_id` (string)
-- `stream_id` (string)
-  - Partitioning key for event streams.
-- `stream_seq` (integer)
-  - Sequence number within a stream.
-- `logical_ts` (integer)
-  - Lamport-style logical timestamp for causal ordering.
-- `schema_version` (integer)
-  - For forward-compatible event evolution.
-- `type` (string)
-  - One of the defined event types (see Section 4.2).
-- `payload_json` (string)
-  - Stringified JSON payload.
-- `actor_type` (string)
-  - `system`, `user`, `agent`, `connector`.
-- `actor_id` (string)
-- `op_id` (string or null)
-  - Operation correlation ID.
-- `prev_hash` (string)
-  - Hash of the previous event in the chain.
-- `hash` (string)
-  - Hash of this event (chain integrity).
-- `created_at` (timestamp)
-
-> **Where we differ from Symphony:** Symphony has no event log. Its orchestrator state is in-memory
-> and ephemeral — after restart, state is rebuilt from the tracker. WorkGraph maintains a durable,
-> hash-chained event log. Every state change is an event. Full state can be reconstructed by
-> replaying events from the beginning.
-
-#### 4.1.5 Graph Node
-
-A task node in the orchestration DAG.
-
-Fields:
-
-- `node_id` (string)
-- `run_id` (string)
-- `role` (string)
-  - The skill-file role assigned to the agent executing this node (see Section 4.3).
-- `kind` (enum: `task`, `verification_task`, `synthesis_task`)
-- `title` (string)
-- `status` (enum: `pending`, `active`, `completed`, `failed`, `retryable`)
-- `retry_count` (integer)
-
-#### 4.1.6 Graph Edge
-
-A typed dependency between two graph nodes.
-
-Fields:
-
-- `id` (string)
-- `run_id` (string)
-- `source_id` (string — node ID)
-- `target_id` (string — node ID)
-- `type` (enum: `hard`, `soft`, `review_gate`, `artifact_gate`)
-
-Edge type semantics:
-
-- `hard` — target cannot start until source completes. Strict ordering.
-- `soft` — target may start before source completes. Informational dependency.
-- `review_gate` — target blocked until source completes and a review is satisfied.
-- `artifact_gate` — target blocked until an explicit gate satisfaction signal is received.
-
-> **Where we differ from Symphony:** Symphony has no graph model. Each issue is independent; the
-> only ordering constraint is the `blocked_by` field on Linear issues, checked at dispatch time.
-> WorkGraph has a first-class DAG with four edge types, including gates that require explicit
-> satisfaction signals beyond simple completion.
-
-#### 4.1.7 Orchestration Run
-
-One execution of a decomposed plan.
-
-Fields:
-
-- `run_id` (string — ULID)
-- `goal` (string)
-- `phase` (enum: `planning`, `executing`, `completed`, `failed`, `cancelled`)
-- `planner_agent_id` (string or null)
-- `node_agents` (map: node ID → agent/session ID)
-- `work_item_id` (string or null)
-  - Linked WorkGraph item.
-- `error` (string or null)
-- `result` (string or null)
-
-Run phases:
-
-- `planning` — planner agent is building the graph via MCP tools (`create_node`, `add_edge`, etc.).
-  Ends when the agent calls `finish_planning`.
-- `executing` — event-driven execution: task agents are spawned and self-report via MCP tools.
-- `completed` — all nodes completed successfully.
-- `failed` — one or more nodes failed after exhausting retries, or a fatal error occurred.
-- `cancelled` — user or system cancelled the run.
-
-#### 4.1.8 Lease
-
-Concurrency guard preventing duplicate execution of a node.
-
-Fields (logical):
-
-- `nodeId` (string)
-- `acquiredAt` (timestamp)
-- `expiresAt` (timestamp)
-
-#### 4.1.9 NormalizedIssue
-
-Unified issue representation across trackers.
-
-Fields:
-
-- `title` (string)
-- `description` (string or null)
-- `status` (enum: `open`, `in_progress`, `closed`)
-- `provider_url` (string or null)
-
-### 4.2 Event Types
-
-WorkGraph defines events organized by domain. The MVP set (~10 events) is marked with `[MVP]`.
-
-**Run lifecycle:**
-
-- `run_created` — new orchestration run started `[MVP]`
-- `run_planned` — planner called `finish_planning`, graph validated and accepted `[MVP]`
-
-**Graph structure:**
-
-- `node_created` — task node added to the graph `[MVP]`
-- `node_status_changed` — node transitioned status (pending → active → completed/failed) `[MVP]`
-- `edge_added` — dependency edge added between nodes `[MVP]`
-- `edge_removed` — dependency edge removed
-
-**Gates:**
-
-- `gate_satisfied` — an artifact or review gate has been explicitly satisfied `[MVP]`
-- `gate_reopened` — a previously satisfied gate has been reopened
-
-**Scratchpad:**
-
-- `scratchpad_written` — agent wrote an observation, blocker, or note to its node's scratchpad `[MVP]`
-- `scratchpad_promoted` — a scratchpad entry was promoted to a standalone WorkItem `[MVP]`
-- `scratchpad_dismissed` — a scratchpad entry was dismissed
-
-**Artifacts:**
-
-- `artifact_created` — agent produced a deliverable (PR, file, report) `[MVP]`
-
-**Execution:**
-
-- `dispatch_requested` — executor requested an agent session for a ready node `[MVP]`
-
-**Hydration and sync:**
-
-- `issue_hydrated` — external issue context loaded into a node
-- `issue_updated` — external issue status changed
-- `issue_linked` — node linked to an external issue
-- `issue_comment_added` — comment posted to external tracker
-
-**Sync protocol:**
-
-- `sync_push_acked` — remote acknowledged a batch of events
-- `sync_pull_applied` — remote events applied locally
-- `conflict_detected` — conflicting events detected during sync
-- `conflict_resolved` — conflict resolved via strategy
-- `snapshot_created` — event store snapshot created
-- `repair_rebuild_completed` — event store rebuilt from log
-
-> **Where we differ from Symphony:** Symphony emits runtime events (session_started,
-> turn_completed, etc.) as transient notifications from the agent subprocess. WorkGraph has ~20
-> typed, persisted events covering the full lifecycle — from planning through scratchpad
-> communication to sync. Events are the source of truth, not a side channel. The MVP requires only
-> ~10 events to be functional.
-
-### 4.3 Roles (Skill Files)
-
-A "teammate" in WorkGraph is simply an agent with a skill file that shapes its behavior. There is
-no team entity, no team hierarchy, no team communication protocol. The planner assigns a role to
-each task node, and the executor loads the corresponding skill file when dispatching the agent.
-
-Defined roles:
-
-- `architect` — designs system structure, breaks down complex problems, makes technology choices.
-  Typically assigned to the first node in a DAG that produces a design document or plan.
-- `developer` — implements features, writes code, creates PRs. The most common role.
-- `code_reviewer` — reviews code changes for correctness, style, and safety. Typically sits behind
-  a `review_gate` edge from a developer node.
-- `qa` — writes and runs tests, validates behavior. Often depends on developer nodes.
-- `pm` — clarifies requirements, writes acceptance criteria, validates scope. May be the root node
-  that feeds into architect/developer nodes.
-- `designer` — produces UI/UX specifications, wireframes, or design tokens. Feeds into developer
-  nodes via hard edges.
-
-Skill file resolution:
-
-- Skill files live in a configurable directory (default: `skills/`).
-- Each role maps to a file: `skills/architect.md`, `skills/developer.md`, etc.
-- The skill file content is prepended to the agent's system prompt when the session is created.
-- If no skill file exists for a role, the agent runs with a default system prompt.
-
-> **Where we differ from Symphony:** Symphony defines roles and team structure in its orchestrator
-> configuration. WorkGraph defines roles as simple skill files — markdown documents that shape agent
-> behavior. There is no team entity or team communication protocol. Agents coordinate implicitly
-> through the DAG structure and scratchpad entries, not through explicit message passing.
-
-### 4.4 Stable Identifiers and Normalization Rules
-
-- `WorkItem ID`, `Node ID`, `Run ID`, `Event ID`
-  - All generated as ULIDs for global uniqueness and temporal ordering.
-- `Session ID`
-  - Assigned by the execution backend (OpenCode session ID or agent process ID).
-- `Stream ID`
-  - Used for event stream partitioning. Typically `run:<run_id>` or `node:<node_id>`.
-- `Issue status normalization`
-  - External tracker statuses are mapped to `open`, `in_progress`, `closed` via per-connector
-    mapping tables.
-
-## 5. Planning Specification
-
-### 5.1 Goal Input
-
-Planning is triggered by an API call with:
-
-- `goal` (string) — natural language description of the desired outcome.
-- `work_item_id` (string, optional) — link to an existing WorkGraph item.
-- `parent_session_id` (string, optional) — parent OpenCode session for context inheritance.
-
-There is no file-based workflow contract.
-
-> **Where we differ from Symphony:** Symphony reads goals from Linear issues discovered by polling.
-> WorkGraph receives goals via explicit API calls, typically triggered by a user clicking "Create
-> WorkGraph" on a page/document in the IDE.
-
-### 5.2 MCP-Driven Planning
-
-Planning is MCP-tool-driven, not JSON-output-driven. The planner spawns an agent with MCP tools
-scoped to the run. The agent builds the graph directly — there is no intermediate plan
-representation.
-
-The planner agent receives a system prompt and the goal:
-
-```text
-System prompt:
-  "You are a technical project planner with access to workgraph MCP tools.
-   Decompose the following goal into small, PR-sized tasks that can each be
-   completed by a single coding agent.
-
-   Use the provided tools to build the execution graph:
-   - create_node() to define each task (title, kind, role, prompt)
-   - add_edge() to wire dependencies between tasks
-   - validate_graph() to check for cycles, orphans, or unreachable nodes
-   - finish_planning() when the graph is complete
-
-   Available roles: architect, developer, code_reviewer, qa, pm, designer.
-   Do NOT output JSON — use the tools directly."
-
-User prompt:
-  <goal text>
-```
-
-The graph IS the plan. Tools validate incrementally (e.g., `add_edge` rejects edges that would
-create cycles). There is no separate JSON parsing step and no separate plan validation step.
-
-### 5.3 Plan Completion
-
-When the planner agent calls `finish_planning(summary)`:
-
-1. The tool runs a final `validate_graph()` check.
-2. If valid, the run transitions from `planning` to `executing`.
-3. The executor's `onPlanningComplete` callback fires, finding ready nodes and spawning task agents.
-4. If invalid, the tool returns the validation issues to the agent for correction.
-
-### 5.4 Plan Review (Optional)
-
-The API supports a two-phase flow:
-
-1. `POST /orchestrate/plan` — spawn planner agent, build graph, pause before execution.
-2. `POST /runs/:run_id/dispatch` — user approves, execution begins.
-
-Or a single-phase flow:
-
-1. `POST /orchestrate` — spawn planner agent, build graph, and begin execution immediately.
-
-### 5.5 MCP Tool Specification
-
-All tools are registered with the active MCP server and scoped per `run_id`. Task agents additionally
-receive a `node_id` scope.
-
-#### 5.5.1 Graph Construction Tools
-
-**`create_node(title, kind, role, prompt, depends_on?)`**
-
-- Args:
-  - `title` (string) — human-readable task title.
-  - `kind` (enum: `task`, `verification_task`, `synthesis_task`).
-  - `role` (string) — skill-file role for the executing agent.
-  - `prompt` (string) — full prompt for the task agent.
-  - `depends_on` (list of node IDs, optional) — convenience shorthand that also creates `hard`
-    edges from each listed node to the new node.
-- Returns: `{ node_id: string }`.
-- Side effects: emits `node_created` event; if `depends_on` is provided, emits `edge_added`
-  events for each dependency.
-
-**`add_edge(source_id, target_id, type?)`**
-
-- Args:
-  - `source_id` (string) — the blocking node.
-  - `target_id` (string) — the blocked node.
-  - `type` (enum: `hard`, `soft`, `review_gate`, `artifact_gate`, default: `hard`).
-- Returns: `{ edge_id: string }`.
-- Side effects: validates both nodes exist, rejects edges that would create cycles, emits
-  `edge_added` event.
-
-**`remove_edge(source_id, target_id)`**
-
-- Args: `source_id`, `target_id` (strings).
-- Returns: `{ ok: true }`.
-- Side effects: emits `edge_removed` event.
-
-**`validate_graph()`**
-
-- Args: none (operates on the current run's graph).
-- Returns: `{ valid: boolean, issues: string[] }`.
-- Checks: cycles, orphan nodes (no edges), unreachable nodes (not reachable from any root).
-- Side effects: none (read-only).
-
-**`finish_planning(summary)`**
-
-- Args: `summary` (string) — brief description of the plan.
-- Returns: `{ ok: true }` on success, `{ ok: false, issues: string[] }` if graph is invalid.
-- Side effects: runs `validate_graph()`, transitions run from `planning` to `executing`, triggers
-  `onPlanningComplete` callback in the executor.
-
-#### 5.5.2 Node Lifecycle Tools
-
-**`update_status(node_id, status)`**
-
-- Args:
-  - `node_id` (string).
-  - `status` (enum: `completed`, `failed`).
-- Returns: `{ ok: true }`.
-- Side effects: emits `node_status_changed` event. On `completed`: triggers `onNodeCompleted`
-  callback (cascades to next ready nodes). On `failed`: triggers `onNodeFailed` callback (retries
-  or cascades failure).
-
-**`write_scratchpad(node_id?, content, priority?)`**
-
-- Args:
-  - `node_id` (string, optional — defaults to the caller's scoped node).
-  - `content` (string).
-  - `priority` (enum: `fyi`, `blocking`, `scope_change`, default: `fyi`).
-- Returns: `{ scratchpad_id: string }`.
-- Side effects: emits `scratchpad_written` event.
-
-**`read_scratchpads(node_id?)`**
-
-- Args: `node_id` (string, optional — if omitted, returns scratchpads from all completed
-  upstream nodes for the caller's node).
-- Returns: `{ entries: ScratchpadEntry[] }`.
-- Side effects: none (read-only).
-
-**`create_artifact(node_id?, content, type)`**
-
-- Args:
-  - `node_id` (string, optional — defaults to the caller's scoped node).
-  - `content` (string) — artifact content or reference (e.g., PR URL, file path).
-  - `type` (string — e.g., `pr`, `file`, `report`).
-- Returns: `{ artifact_id: string }`.
-- Side effects: emits `artifact_created` event.
-
-#### 5.5.3 Read-Only Context Tools
-
-**`get_graph()`**
-
-- Args: none (operates on the current run's graph).
-- Returns: `{ nodes: GraphNode[], edges: GraphEdge[] }`.
-- Side effects: none.
-
-**`get_run_status()`**
-
-- Args: none (operates on the current run).
-- Returns: `{ phase: string, summary: string, counts: { completed, active, pending, failed } }`.
-- Side effects: none.
-
-## 6. Configuration Specification
-
-### 6.1 Runtime Configuration
-
-WorkGraph does not use a workflow file. Configuration is provided via:
-
-1. Environment variables (server-level settings).
-2. API parameters (per-run settings).
-3. Database defaults (persisted settings).
-
-Server-level environment variables:
-
-- `PORT` — HTTP server port (default: `4100`)
-- `DB_PATH` — SQLite database path (default: `:memory:`)
-- `OPENCODE_SERVER_URL` — OpenCode server URL for `SessionBackend`
-- `ACP_REGISTRY_CONFIG` — inline JSON for ACP agent registry
-- `ACP_REGISTRY_PATH` — file path for ACP agent registry
-- `SKILLS_DIR` — directory containing role skill files (default: `skills/`)
-
-> **Where we differ from Symphony:** Symphony has a detailed `WORKFLOW.md` schema with front matter
-> for tracker config, polling intervals, workspace roots, hooks, agent settings, and codex
-> settings. All of these are dynamically reloaded on file change. WorkGraph uses env vars and API
-> parameters — there is no file to watch.
-
-### 6.2 Concurrency Configuration
-
-Default policies:
-
-- `maxActivePerRun` — 12 (max nodes executing concurrently in one run)
-- Lease duration — 30 seconds (auto-expires if not released)
-
-### 6.3 Execution Configuration
-
-- `MAX_RETRIES` — 2 (max retry attempts per node before marking as failed)
-- Retry is immediate (no exponential backoff within a run — the node is re-dispatched as soon as a
-  slot is available).
-
-> **Where we differ from Symphony:** Symphony uses exponential backoff with a configurable cap
-> (`agent.max_retry_backoff_ms`, default 5 minutes) and continuation retries (1-second delay after
-> normal exit). WorkGraph retries immediately within the run since the DAG determines readiness,
-> not a timer. Symphony retries indefinitely; WorkGraph caps at `MAX_RETRIES` per node and then
-> cascades failure to dependents.
-
-## 7. Orchestration State Machine
-
-### 7.1 Run Phases
-
-A run transitions through these phases:
-
-1. `planning`
-   - Planner agent is building the graph via MCP tools.
-   - Ends when the agent calls `finish_planning`.
-2. `executing`
-   - Event-driven execution: task agents self-report via MCP tools.
-3. `completed`
-   - All nodes completed successfully.
-4. `failed`
-   - One or more nodes failed after exhausting retries, or a fatal error occurred.
-5. `cancelled`
-   - User or system cancelled the run.
-
-### 7.2 Node Lifecycle
-
-A node transitions through these statuses:
-
-1. `pending`
-   - Created but not yet ready (dependencies unsatisfied).
-2. `active`
-   - Currently being executed by an agent.
-3. `completed`
-   - Agent finished successfully.
-4. `failed`
-   - Agent failed after exhausting retries.
-5. `retryable`
-   - Agent failed but retries remain.
-
-### 7.3 Transition Triggers
-
-- `finish_planning` tool called
-  - Validates graph, transitions run from `planning` to `executing`.
-  - Triggers `onPlanningComplete` → finds ready nodes, spawns task agents.
-
-- `update_status("completed")` tool called
-  - Marks node as `completed`.
-  - Triggers `onNodeCompleted` → finds newly ready nodes, spawns task agents.
-  - Updates linked WorkGraph item status.
-  - If all nodes completed: transitions run to `completed`.
-
-- `update_status("failed")` tool called
-  - If retries remain: marks node as `retryable`, re-spawns agent.
-  - If retries exhausted: marks node as `failed`, cascades failure to all transitive dependents.
-  - If no more progress possible: transitions run to `failed`.
-
-- `Cancellation`
-  - Cancel all in-flight agent sessions.
-  - Transition run to `cancelled`.
-
-> **Where we differ from Symphony:** Symphony's state machine is issue-centric: Unclaimed →
-> Claimed → Running → RetryQueued → Released. It tracks one issue through one agent session at a
-> time. WorkGraph's state machine operates at two levels: the run level (planning → executing →
-> completed) and the node level (pending → active → completed). Multiple nodes execute concurrently
-> within a single run.
-
-### 7.4 Cascading Execution (Event-Driven)
-
-The core execution is event-driven with no polling and no loop. MCP tool calls from agents
-trigger callbacks in the executor:
-
-```text
-PLANNING PHASE:
-  Planner agent calls MCP tools to build graph
-  Planner calls finish_planning() → triggers onPlanningComplete
-
-EXECUTION PHASE (event-driven, no loop):
-  onPlanningComplete(runId):
-    readyNodes = findReadyNodes(runId)
-    for each readyNode: spawnTaskAgent(readyNode)
-
-  onNodeCompleted(runId, nodeId):  // triggered by update_status MCP tool
-    newlyReady = findReadyNodes(runId)
-    for each ready: spawnTaskAgent(ready)
-    if allNodesDone: markRunCompleted(runId)
-
-  onNodeFailed(runId, nodeId):     // triggered by update_status MCP tool
-    if retriesLeft: respawnAgent(nodeId)
-    else: cascadeFailureToDependents(nodeId)
-    if noMoreProgress: markRunFailed(runId)
-```
-
-Before spawning a task agent, the executor collects scratchpad entries from all completed
-upstream nodes (connected via hard or review_gate edges) and injects them into the agent's
-prompt. This is how agents communicate without any explicit messaging protocol.
-
-> **Where we differ from Symphony:** Symphony polls the tracker every `polling.interval_ms`
-> (default 30s) to discover new work and reconcile running sessions. WorkGraph's execution is
-> entirely event-driven — MCP tool calls from agents trigger cascading callbacks. There is no
-> polling interval and no execution loop.
-
-## 8. Graph Engine
-
-### 8.1 DAG Operations
-
-The `GraphEngine` provides:
-
-- `addNode(node)` — insert a node into the graph.
-- `removeNode(nodeId)` — remove a node and all its edges.
-- `addEdge(edge)` — add a typed edge between two nodes.
-- `removeEdge(sourceId, targetId)` — remove an edge.
-- `updateNodeStatus(nodeId, status)` — transition a node's status.
-- `hasCycles()` — detect cycles using recursive DFS.
-- `isReady(nodeId)` — check if a node is ready for execution.
-
-### 8.2 Readiness Computation
-
-A node is ready if ALL of the following are true:
-
-1. Its status is `pending` or `retryable`.
-2. For every incoming `hard` edge: the source node status is `completed`.
-3. For every incoming `review_gate` edge: the source node status is `completed`.
-4. For every incoming `artifact_gate` edge: the gate is explicitly satisfied (tracked by
-   `GateTracker`).
-5. `soft` edges do NOT block readiness. A node may start even if soft dependencies are incomplete.
-
-### 8.3 Gate Tracking
-
-The `GateTracker` maintains a set of satisfied gates:
-
-- `satisfy(sourceId, targetId)` — mark a gate as satisfied.
-- `reopen(sourceId, targetId)` — revoke satisfaction (e.g., after a review rejection).
-- `isSatisfied(sourceId, targetId)` — query gate state.
-
-Gates are identified by the tuple `(sourceId, targetId)`. Gate satisfaction is an explicit signal,
-distinct from node completion.
-
-> **Where we differ from Symphony:** Symphony has no graph engine. Dependency checking is limited
-> to a `blocked_by` field on Linear issues — if any blocker is non-terminal, the issue is not
-> dispatched. WorkGraph has a full DAG engine with four edge types, explicit gate tracking, and
-> cycle detection.
-
-### 8.4 Cycle Detection
-
-Uses recursive DFS with a visited set and recursion stack:
-
-```text
-function hasCycles():
-  visited = set()
-  recStack = set()
-
-  for node in allNodes:
-    if node not in visited:
-      if dfs(node, visited, recStack):
-        return true
-
-  return false
-
-function dfs(nodeId, visited, recStack):
-  visited.add(nodeId)
-  recStack.add(nodeId)
-
-  for edge in outgoingEdges(nodeId):
-    if edge.target not in visited:
-      if dfs(edge.target, visited, recStack):
-        return true
-    else if edge.target in recStack:
-      return true
-
-  recStack.remove(nodeId)
-  return false
-```
-
-## 9. Scheduling and Concurrency
-
-### 9.1 Lease Manager
-
-The `LeaseManager` prevents concurrent execution of the same node across processes or retries.
-
-Operations:
-
-- `acquireLease(nodeId, durationMs=30000)` — returns `true` if lease acquired, `false` if already
-  leased by another holder.
-- `releaseLease(nodeId)` — explicitly release a lease.
-- `isLeased(nodeId)` — check if leased (auto-cleans expired leases).
-- `getActiveLeases()` — return all current leases.
-
-Lease expiration:
-
-- Leases auto-expire after `durationMs` to prevent permanent locks from crashed processes.
-- `isLeased()` checks expiration time and cleans up expired leases transparently.
-
-### 9.2 Concurrency Control
-
-The scheduler respects a per-run concurrency limit:
-
-- `maxActivePerRun` (default: 12) — global cap across all nodes in one run.
-
-`getReadyNodes()` algorithm:
-
-```text
-function getReadyNodes(db, state, graph, leaseManager):
-  allNodes = db.getNodes(state.run_id)
-  activeCount = count(allNodes where status == "active")
-
-  if activeCount >= maxActivePerRun:
-    return []
-
-  readyNodes = []
-
-  for node in allNodes where status in ("pending", "retryable"):
-    if leaseManager.isLeased(node.node_id):
-      continue
-    if not graph.isReady(node.node_id):
-      continue
-    if activeCount + len(readyNodes) >= maxActivePerRun:
-      break
-
-    readyNodes.push(node)
-
-  return readyNodes
-```
-
-> **Where we differ from Symphony:** Symphony's concurrency is issue-count-based:
-> `max_concurrent_agents` (default 10) globally and optional `max_concurrent_agents_by_state`
-> per-tracker-state. WorkGraph's concurrency is DAG-aware — the scheduler respects graph readiness
-> and uses leases to prevent duplicate execution.
-
-## 10. Execution Backends
-
-### 10.1 Backend Interface
-
-Backends are fire-and-forget: they spawn an agent and return immediately. Task agents self-report
-completion via the MCP `update_status` tool — the executor does not await agent completion.
-
-All backends implement:
-
-```typescript
-interface ExecutionBackend {
-  launch(task: { nodeId, runId, prompt, title, kind, role }): Promise<LaunchResult>
-}
-
-interface LaunchResult {
-  id: string                                          // session or agent ID
-  cancel(): void
+```ts
+interface WorkGraphContext {
+  ownerUserID: string
+  actor: { type: "user" | "agent" | "system"; id: string }
+  requestID: string
+  access: { mode: "owner" | "shared_read" }
 }
 ```
 
-### 10.2 SessionBackend (OpenCode Integration)
+The host derives owner and access from verified identity. Public operations do not accept an arbitrary owner ID as resource selection.
 
-The primary backend. Creates child sessions via the OpenCode server API.
+## 3. Domain records
 
-Behavior:
+Every durable record includes `owner_user_id`, stable ID, creation time, and appropriate update/schema metadata.
 
-1. Load the skill file for the node's role (e.g., `skills/developer.md`).
-2. `POST ${OPENCODE_SERVER_URL}/session` — create a child session with the task prompt, skill
-   file content as system prompt prefix, and MCP tools scoped to `(run_id, node_id)`.
-3. Return the session ID immediately (fire-and-forget).
-4. The agent self-reports completion via the MCP `update_status` tool.
+### 3.1 Stream
 
-Session parameters:
+A Stream is a finite or ongoing work context and the primary execution-isolation boundary. It contains purpose, lifecycle, pinned state, execution defaults, Recap defaults, memory card, activity marker, base repository/revision, primary isolation-envelope intent and identity, durable-effect state, and linked Outcomes and sources.
 
-- `parentSessionID` — for context inheritance.
-- `prompt` — the task-specific prompt, enriched with upstream scratchpad context.
-- `systemPromptPrefix` — content of the role's skill file.
-- `title` — `<task.title>`.
-- `mcpScope` — `{ run_id, node_id }` for MCP tool scoping.
+### 3.2 Outcome
 
-> **Where we differ from Symphony:** Symphony launches `codex app-server` as a subprocess and
-> speaks a JSON-RPC-like protocol over stdio (initialize → thread/start → turn/start → streaming).
-> WorkGraph creates OpenCode sessions via HTTP API — the same sessions that run in the IDE. Agents
-> self-report progress via MCP tools; no custom wire protocol or external monitoring needed.
+An Outcome is a shippable result with success criteria, evidence, state, and optional execution defaults. Satisfied criteria produce `ready_to_close`; owner confirmation produces `completed`. New required work or contradictory evidence may reopen it with provenance.
 
-### 10.3 SubprocessBackend (CLI Agents)
+### 3.3 Work Item
 
-For environments without an OpenCode server.
+A Work Item is presented to users as a Task. It contains title, description, state, optional Outcome membership, dependencies, priority, source links, execution overrides, completion contract, and completion evidence.
 
-Behavior:
+Truthful states distinguish pending, active, result ready, review needed, integration needed, blocked, verification failed, completed, failed, and archived work.
 
-1. Spawn agent process with the task prompt.
-2. Collect stdout/stderr chunks.
-3. Wait for process exit.
-4. Return collected output and exit status.
+### 3.4 Attempt
 
-### 10.4 AcpBackend (Agent Communication Protocol)
+An Attempt is one execution try. It stores an immutable resolved execution profile including workspace/worktree/cloud VM, repository revision, harness, agent, model, effort, tools, Connection references, isolation, cleanup, and integration expectations.
 
-For connecting to ACP-compatible agent servers.
+Attempt state distinguishes admission, placement, running, attention, terminal execution result, and cancellation. A retry creates another Attempt.
 
-Registry:
+### 3.5 Decision
 
-- Loaded from `ACP_REGISTRY_CONFIG` (inline JSON) or `ACP_REGISTRY_PATH` (file).
-- Each registry entry maps task kinds to agent capabilities.
+A Decision stores its question, options, recommendation, rationale, answer, actor provenance, affected work, and state. Agents create Decisions when execution reaches a consequential owner choice. A pending Decision appears in attention and blocks only affected and dependent work.
 
-Agent entry:
+### 3.6 Recap
 
-- `id` (string)
-- `name` (string)
-- `transport` (`stdio` or `http`)
-- `taskKinds` (list of strings)
+A Recap stores the Stream activity range, previous Recap reference, generated summary, actionable references, model/effort profile, provenance, and generation result. Recaps are immutable timeline entries.
 
-Transport modes:
+### 3.7 Work Source
 
-- `stdio` — spawn process, communicate over stdin/stdout.
-  - Config: `command`, `args`, `env`.
-- `http` — POST to ACP server endpoint.
-  - Config: `baseUrl`, `agent`, `token`, `path`.
+A Work Source stores owner-entered text, title, immutable revisions, optional source metadata, and links to admission proposals and confirmed work. Editing appends a revision. Confirmed work binds the exact revision ID and content hash used to produce it. Confirmation compares against the exact proposal version rendered for review, so a background planner publication requires a new review before it can materialize work.
 
-Backend selection:
+### 3.8 Source view and intake candidate
 
-- `createBackend(taskKind)` resolves the registry for the task kind and returns the appropriate
-  backend instance.
-- If no registry entry matches, falls back to the default entry.
+A personal source view binds a team Connection, provider integration, owner identity in that provider, filters, refresh/webhook settings, and sync-back policy.
 
-## 11. Issue Tracker Integration (Connectors)
+Connector results and meaningful independent sessions create intake candidates. Candidates are not executable Work Items. Staging performs explicit admission.
 
-### 11.1 Connector Interface
+### 3.9 External identity
 
-All connectors implement:
+An external identity stores provider, team connection reference, external ID/key/URL, normalized metadata, and observed revision. The unique identity includes owner, provider, connection, and external ID.
 
-```typescript
-interface ConnectorInterface {
-  provider: "linear" | "github" | "jira"
-  hydrateIssue(params): Promise<NormalizedIssue>
-  updateIssue(params, updates): Promise<void>
-  addComment(params, comment): Promise<void>
-  createIssue(params, data): Promise<NormalizedIssue>
-}
-```
+### 3.10 Event and receipt
 
-> **Where we differ from Symphony:** Symphony's tracker client is read-only from the
-> orchestrator's perspective — the agent writes to the tracker using tools. WorkGraph connectors
-> are read-write: the orchestrator itself can update issue status and post comments. Symphony
-> supports only Linear; WorkGraph supports Linear, GitHub, and Jira.
+Events include owner, stream, sequence, schema version, operation ID, actor, payload, correlation/causation, and timestamp. Connector receipts record external effects and idempotency without secret material. Durable-effect receipts identify merged or directly integrated code, published artifacts, accepted external writes, and equivalent results that make a Stream's history externally consequential.
 
-### 11.2 Status Normalization
+## 4. Storage contract
 
-External tracker statuses are mapped to the WorkGraph status model:
+The backend-neutral store covers Streams, Outcomes, Work Items, intake, Attempts, Decisions, Recaps, events, leases, idempotency, change cursors, and connector receipts.
 
-| WorkGraph | Linear | GitHub | Jira |
-|-----------|--------|--------|------|
-| `open` | Todo, Backlog | open | To Do, Open |
-| `in_progress` | In Progress | open (with assignee) | In Progress |
-| `closed` | Done, Cancelled | closed | Done, Closed |
+Every core adapter provides:
 
-### 11.3 Connector Operations
+1. Owner-scoped reads and writes.
+2. Atomic domain command plus event/outbox append.
+3. Monotonic per-stream event ordering.
+4. Unique operation IDs.
+5. Compare-and-set transitions.
+6. Expiring lease acquisition and renewal.
+7. Stable cursor pagination and reconnect cursors.
+8. Ordered change feed with reconnect cursors.
+9. Versioned migrations.
 
-**Linear adapter:**
+Portable owner export and restore use a separate versioned archive port and conformance contract. SQLite and Convex implement archive conformance version 1, restart recovery, workspace cleanup, and owner-level permanent deletion.
 
-- `hydrateIssue(issueId)` — fetch issue by ID, normalize.
-- `updateIssue(issueId, { status?, title?, description? })` — update via GraphQL mutation.
-- `addComment(issueId, comment)` — post comment.
-- `createIssue(teamId, { title, description?, status? })` — create new issue.
+Core conformance version 3 distinguishes the branded `SnapshotResumeCursor` used only to continue one page chain from the `ChangeCursor` watermark returned as `snapshotCursor`. Resume cursors bind owner, snapshot watermark, capture time, and keyset position; malformed, cross-owner, and owner-mutation-invalidated cursors fail with `cursor_invalid`. Convex serves bounded keyset pages beyond 100 records. App and MCP consumers validate and aggregate the full page chain and may discard one invalidated partial chain for one clean restart before surfacing failure.
 
-**GitHub adapter:**
+### 4.1 Convex adapter
 
-- `hydrateIssue(owner, repo, issueNumber)` — fetch via REST API.
-- `updateIssue(owner, repo, issueNumber, updates)` — PATCH issue.
-- `addComment(owner, repo, issueNumber, comment)` — POST comment.
-- `createIssue(owner, repo, { title, body?, labels? })` — POST issue.
+Convex is the hosted default. Owner-first indexes, authenticated server queries/mutations, ordered changes, and scheduled functions support multi-instance operation without process-local correctness state. The app remains on the server-mounted HTTP/change contract and does not depend directly on Convex APIs.
 
-**Jira adapter:**
+### 4.2 SQLite adapter
 
-- `hydrateIssue(issueKey)` — fetch via REST API.
-- `updateIssue(issueKey, updates)` — PUT fields.
-- `addComment(issueKey, comment)` — POST comment.
-- `createIssue(projectKey, { summary, description?, issuetype? })` — POST issue.
+SQLite is the local default and implements the same domain semantics and conformance suite in one Node host.
 
-### 11.4 Hydration Flow
+### 4.3 Custom adapters
 
-When a WorkGraph item is linked to an external issue:
+An OSS adapter implements the published ports, migrations, export/delete behavior, and conformance suite without changing domain services.
 
-1. Connector fetches the external issue.
-2. Normalized fields populate the WorkItem context.
-3. `issue_hydrated` event is emitted.
-4. On status changes, `issue_updated` events keep the link current.
+## 5. Source admission
 
-## 12. Event System
+“Turn into work” reads an exact Work Source revision, persists a bounded durable proposal record, and schedules an ordinary durable Session V2 planner. The planner proposes:
 
-### 12.1 Event Store
+- existing or new Stream;
+- optional Outcomes and success criteria;
+- initial Work Items and completion contracts;
+- source-section links;
+- duplicate matches;
+- inherited execution settings.
 
-The event store persists all events in the `events` table:
+The planning job uses a caller-owned stable Session/message identity. Lost admission responses retry that exact identity; strict result validation, immutable source binding, proposal-version compare-and-set, lease fencing, and dependency-cycle validation prevent stale or malformed output from materializing work. Agent publication appends an ordered owner change so connected clients refetch the proposal.
 
-```sql
-CREATE TABLE events (
-  id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL,
-  stream_id TEXT NOT NULL,
-  stream_seq INTEGER NOT NULL,
-  logical_ts INTEGER NOT NULL,
-  schema_version INTEGER NOT NULL DEFAULT 1,
-  type TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  actor_type TEXT NOT NULL DEFAULT 'system',
-  actor_id TEXT NOT NULL DEFAULT 'orchestrator',
-  op_id TEXT,
-  prev_hash TEXT NOT NULL DEFAULT '',
-  hash TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-```
+The owner edits and confirms the exact rendered package version. A later Work Source revision presents the source diff and a reviewable replan with three choices:
 
-### 12.2 Hash Chain Integrity
+- keep confirmed work and admit selected additions;
+- replace affected unmerged work, cancelling obsolete Attempts and discarding its partial isolation state;
+- fork a new Stream from the revision while preserving the existing Stream.
 
-Events are hash-chained for tamper detection:
+The selected action is recorded with the exact old and new source revisions. Confirmed work changes only after owner approval. Docs v2 is the initial authoring adapter: it appends a Work Source revision carrying an exact external document revision and then invokes the same proposal, compare-and-set confirmation, and replan contract. Agent-driven and explicit source capture use the same contract without depending on an external document service.
 
-- `prev_hash` — hash of the previous event in the same stream.
-- `hash` — computed from `(prev_hash, type, payload_json, stream_seq)`.
+## 6. Connections and external intake
 
-Verification:
+All provider credentials remain in `@claxedo/connections`. One team Connection is canonical within its organization; each personal source view separately records the WorkGraph owner's provider identity and filters. A source view resolves a team-scoped `CapabilityHandle` after verifying the owner still has access to that team Connection.
+
+The connector receives a live token supplier and authentication-failure reporter. WorkGraph stores the team connection reference, provider user mapping, and filters but no token or API key.
+
+Saved filters produce personal candidates. Staging checks external identity idempotency, duplicate matches, and Stream placement before creating or linking a Work Item.
+
+The external tracker remains authoritative for team issue state. WorkGraph's default sync-back policy announces meaningful results. Silent and full policies are explicit source-view choices.
+
+Webhook handlers verify signatures, resolve affected source views, apply each owner's filters, deduplicate deliveries, and enqueue candidate refresh.
+
+## 7. Stream matching and duplicates
+
+Each Stream has a compact memory card. Placement searches pinned and recent cards first and expands to older cards only on low confidence. The response includes best match, alternatives, confidence explanation, and create-new choice.
+
+Duplicate review compares compact active/recent Outcome and Work Item representations. A match offers link, merge, or create separately. No uncertain placement or merge occurs without owner confirmation.
+
+## 8. Execution profiles
+
+Execution settings resolve in this order, skipping the Outcome layer for an ungrouped Task:
 
 ```text
-function verifyChain(events):
-  for i = 1 to len(events):
-    expected_prev = events[i-1].hash
-    if events[i].prev_hash != expected_prev:
-      return { valid: false, break_at: i }
-  return { valid: true }
+WorkGraph → Stream → optional Outcome → Task → Attempt
 ```
 
-### 12.3 Replay
+The Work Item exposes resolved values and their source. Attempt admission stores the immutable resolved snapshot.
 
-State can be reconstructed by replaying events in `(stream_id, stream_seq)` order:
+WorkGraph and Stream settings use one versioned atomic command per save. WorkGraph Settings applies execution-default changes only. Stream Settings applies Stream execution and Recap changes together. Each command appends one ordered change and rejects a stale aggregate version without a partial write. An omitted field remains unchanged; an explicit clear removes the override so inheritance is recalculated from persisted parent settings. Missing required generation configuration produces a configuration requirement and does not select a substitute model, effort, or result.
+
+### 8.1 Capability discovery
+
+`GET /execution-capabilities` returns one owner-scoped schema-version-1 observation and accepts no workspace identifier. The response contains `observedAt`, supported environment inputs and policy values, harnesses, agents, models with supported efforts, tools, repository metadata, and connected Connection metadata. Discovery failure returns `execution_capabilities_unavailable` with a typed capability, reason, message, and retryability.
+
+The GET operation is side-effect free. Local composition reads the configured Git repository and live local runtime. Hosted composition reads a deterministic per-owner catalog workspace that the control plane manages independently of Stream execution. `POST /execution-capabilities/refresh` is an explicit owner-only agent/control-plane operation that may provision or refresh that catalog. Hosted background setup invokes it before the app requires the catalog; the app consumes GET only.
+
+The catalog workspace supplies live runtime choices and has no execution repository. Hosted repository remote and base revision remain validated inputs when the Stream execution workspace is later provisioned. Neither the catalog workspace nor a Stream workspace is represented by execution-profile `presetId`.
+
+Current local capabilities are `local_worktree`, required repository context, Stream and child isolation, destroy-on-close and retain cleanup, and manual integration. Current hosted capabilities are `hosted_workspace`, optional repository input, Stream isolation, destroy-on-close cleanup, and manual integration. Adapters publish only values their placement and reconciliation implementations enforce.
+
+Execution first provisions or adopts the Stream's primary isolation envelope: a dedicated worktree for local repository work or a dedicated VM/workspace for remote execution. Work Items and Attempts execute inside that envelope. A Work Item may request a child worktree or session when its work benefits from narrower isolation, while the Stream remains the ownership and cleanup boundary.
+
+Ready means explicit blockers and required Decisions are resolved and the execution profile is valid. WorkGraph launches every ready Work Item; it has no agent-capacity or product WIP queue.
+
+Autonomous execution continues until completion, blocking, explicit owner safety boundary, or consequential Decision. Supervised execution pauses after one batch.
+
+Pause prevents new launches. Cancel is a separate action for active Attempts.
+
+## 9. Attempt lifecycle
 
 ```text
-function replay(events, reducers):
-  state = initialState()
-  for event in events:
-    reducer = reducers[event.type]
-    state = reducer(state, event)
-  return state
+admitted → placing → running → result
+                       ├──────→ attention
+                       ├──────→ failed
+                       └──────→ cancelled
 ```
 
-Reducers are organized by domain:
+Dispatch acquires a durable execution lease before placement inside the Stream envelope. The workspace execution port hides local, user-hosted, and cloud placement and returns stable Stream-envelope, child-workspace, and session identities.
 
-- `node` — handles node_created, node_status_changed
-- `edge` — handles edge_added, edge_removed
-- `run` — handles run_created, run_planned
-- `scratchpad` — handles scratchpad_written, scratchpad_promoted, scratchpad_dismissed
-- `artifact` — handles artifact_created
-- `gate` — handles gate_satisfied, gate_reopened
-- `sync-reducer` — handles sync events
+Runtime liveness and semantic result are separate. Session stop without a clear result creates attention. Transient infrastructure/provider failures retry automatically; semantic, repeated, and ambiguous failures require attention.
 
-> **Where we differ from Symphony:** Symphony has no replay mechanism. Its state is ephemeral
-> in-memory. After restart, it rebuilds state by querying the tracker for current issue states and
-> scanning the filesystem for existing workspaces. WorkGraph can reconstruct exact state from its
-> event log, enabling time-travel debugging and audit.
+## 10. Completion
 
-### 12.4 Current Projections (Materialized Views)
+An Attempt result is evaluated against the Work Item completion contract. Unsatisfied requirements produce result-ready, review-needed, integration-needed, or verification-failed state and may create necessary follow-up work.
 
-For query performance, events are projected into current-state tables:
+Outcome evaluation assembles linked evidence against success criteria. Satisfied criteria produce ready-to-close and require owner confirmation. Reopening retains prior closure evidence and provenance.
 
-```sql
-runs_current    (run_id, goal, status)
-nodes_current   (node_id, run_id, role, kind, title, status, retry_count)
-dependency_edges_current (id, run_id, source_id, target_id, type)
-scratchpads_current (id, node_id, content, priority, needs_review, promoted_to_item_id, dismissed_at, actor, created_at)
-```
+## 11. Agent authority
 
-These tables are updated in the same transaction as event insertion. They are optimization-only —
-the event log remains canonical.
+Agents may directly:
 
-## 13. Sync Engine
+- update factual execution state;
+- record sourced findings;
+- attach artifacts;
+- add clearly necessary follow-up Work Items.
 
-### 13.1 Offline Buffering
+Agents create reviewable Decisions before expanding confirmed scope, removing or deprioritizing confirmed work, changing success criteria, or accepting consequential tradeoffs.
 
-The `SyncEngine` buffers events when the remote is unreachable:
+MCP tools bind the caller to owner, Attempt, and permitted work. Tool arguments cannot select another owner's records.
 
-- `push(event)` — add event to the local buffer.
-- `flush(remoteHandler)` — send buffered events in batches of 50.
-- `getPendingCount()` — number of unsent events.
-- `getCursor()` — last acknowledged remote sequence number.
+## 12. Recaps and attention
 
-### 13.2 Backoff Strategy
+New Stream activity resets its quiet window. After eight quiet hours, a durable worker reads changes since the prior Recap, current Stream state, and previous memory. It does not reread complete history.
 
-On flush failure:
+Recap model and effort come from the Stream's explicit Recap configuration. Local and hosted generation uses ordinary tool-less Session V2 jobs with stable identity, exact activity-range binding, strict output validation, and publication fencing. Only valid output from that Session can publish a Recap. Missing Stream configuration creates a configuration requirement. Transient failures retry from durable state; repeated failure or inaccessible sources create attention without publishing a substitute Recap or notification.
 
-- Initial backoff: 1 second.
-- Max backoff: 60 seconds.
-- Backoff factor: 2x (exponential).
-- Backoff resets to 0 on successful flush.
+Recaps update visible Stream memory. An actionable Recap atomically creates exactly one owner-scoped unread notification carrying the exact Stream and Recap identifiers. Acknowledgement compares against the rendered notification version and cannot mark a newer delivery read. The Needs you view opens the exact Recap in a focused dialog before acknowledging that rendered notification version. Non-actionable Recaps and retries do not create duplicate deliveries.
 
-### 13.3 Conflict Detection
+The owner-scoped Attention query returns bounded, stable cursor pages covering reviewable proposals, pending Decisions, Task and Attempt attention, actionable Recaps, configuration requirements, and one aggregate for unorganized external-issue and independent-Session candidates. Candidate drilldown uses a separate bounded owner-bound cursor. Ordered changes trigger bounded refresh; Attention and candidate failures are explicit and never cause a full-snapshot substitute read.
 
-Conflicts are detected when two events target the same `(run_id, stream_id, stream_seq)` but have
-different event IDs:
+The existing app-global WorkspacePanel and its top-level toggle are the only panel instance and panel control. WorkGraph contributes top-level Needs you and Settings views. WorkGraph header controls select those views in that same panel. WorkGraph Settings is a tabless execution-defaults view. Stream Settings is a tabless Stream-scoped dialog containing Stream execution and Recap configuration; settings fields are flush, descriptions and errors are adjacent to their fields, and the footer is pinned. Each Stream row exposes its latest Recap through a hover/focus icon and popover. A non-empty Attention page places an accessible dot on the existing toggle. Zero attention renders no WorkGraph dot, contextual card, list, or empty body content.
 
-```text
-function detectConflict(localEvent, remoteEvent):
-  if localEvent.run_id == remoteEvent.run_id
-     and localEvent.stream_id == remoteEvent.stream_id
-     and localEvent.stream_seq == remoteEvent.stream_seq
-     and localEvent.id != remoteEvent.id:
-    return Conflict { local: localEvent, remote: remoteEvent, resolved: false }
-  return null
-```
+Selecting an Attention item uses targeted owner-scoped reads for the proposal, candidate, Task, Attempt, evidence, Decision, or Recap. Each inspector opens as a dialog over `/workgraph`; domain resolution occurs only through the corresponding versioned command.
 
-### 13.4 Conflict Resolution Strategies
+## 13. Independent sessions
 
-- `lww` (last-writer-wins) — event with the later `created_at` timestamp wins.
-- `or_set` (union) — both events are kept (used for additive operations like tags).
-- `append_merge` — both events are preserved in sequence order.
+An outside session that becomes idle after producing meaningful work creates an Unorganized AI work candidate. WorkGraph proposes Streams and exposes the candidate through the main attention surface. Dismissal suppresses the candidate until meaningful change or manual restore.
 
-Resolution is applied per-conflict:
+## 14. Stream closure, deletion, and sharing
 
-```text
-function resolveConflict(conflict, strategy):
-  switch strategy:
-    case "lww":
-      winner = laterOf(conflict.local, conflict.remote)
-      return { ...conflict, winner, resolved: true }
-    case "or_set":
-      return { ...conflict, winner: merge(conflict.local, conflict.remote), resolved: true }
-    case "append_merge":
-      return { ...conflict, winner: concat(conflict.local, conflict.remote), resolved: true }
-```
+A Stream with no durable-effect receipts may be deleted. Deletion atomically prevents new launches, cancels active Attempts, destroys its worktree or VM, discards unmerged partial work, and removes its private records according to the adapter deletion contract.
 
-> **Where we differ from Symphony:** Symphony has no sync or conflict resolution. It is a
-> single-process, in-memory system. WorkGraph supports offline operation, event buffering, and
-> multi-strategy conflict resolution for distributed or intermittent-connectivity scenarios.
+Once a durable-effect receipt exists, the Stream is closed instead of deleted. Closure abandons unfinished Work Items with an owner-visible reason, cancels active Attempts, cleans up the isolation envelope, and preserves Outcomes, Decisions, Recaps, Attempt history, evidence, and external references. A closed Stream may be reopened into a newly provisioned envelope while retaining provenance.
 
-## 14. Session Bridge and UI Metadata
+Stream visibility can be archived to hide inactive work while preserving its records and lifecycle. Portable WorkGraph export/restore is a separate owner-level storage operation.
 
-### 14.1 Node-to-Session Mapping
+Initial sharing is owner-controlled and read-only for a Stream or full WorkGraph. Sharing does not transfer ownership or Connection authority. Collaborative mutation is deferred.
 
-The session bridge tracks which agent session is executing which node:
+## 15. Ordered changes and recovery
 
-- `setNodeSession(runId, nodeId, sessionId)`
-- `getNodeSession(runId, nodeId)`
-- `clearRunSessions(runId)`
+Clients subscribe by authenticated owner and optional resource filters. Reconnect supplies a durable cursor and receives current projections plus subsequent changes.
 
-### 14.2 Metadata Generation
+Workers reconcile admitted Attempts, expired leases, due source refresh, connector outbox work, and pending Recaps from durable storage. Correctness does not depend on process memory.
 
-`buildMetadata(db, runId, state)` produces an `OrchestratorMetadata` object consumed by the
-frontend:
+## 16. Acceptance criteria
 
-```typescript
-interface OrchestratorMetadata {
-  goal: string
-  phase: string
-  nodes: OrchestratorNodeUI[]
-  edges: Array<{ source: string, target: string }>
-  summary: string          // e.g., "4/7 tasks completed, 2 running, 1 failed"
-  startTime?: string
-  endTime?: string
-  paused: boolean
-  canSteer: boolean
-}
-
-interface OrchestratorNodeUI {
-  id: string
-  title: string
-  kind: string
-  role: string
-  status: "pending" | "running" | "completed" | "failed" | "blocked"
-  sessionID?: string
-  agent?: string
-  error?: string
-  prompt?: string
-  lastMessage?: string
-  scratchpad?: ScratchpadEntry[]
-  startTime?: string
-  endTime?: string
-}
-```
-
-Status mapping for UI:
-
-- Graph `active` → UI `running`
-- Graph `pending` with uncompleted hard/gate dependencies → UI `blocked`
-- Graph `pending` with all dependencies met → UI `pending`
-- Graph `completed` → UI `completed`
-- Graph `failed` → UI `failed`
-
-### 14.3 Summary Generation
-
-```text
-function buildSummary(nodes):
-  completed = count(nodes where status == "completed")
-  running = count(nodes where status == "active")
-  failed = count(nodes where status == "failed")
-  total = count(nodes)
-  return "${completed}/${total} tasks completed, ${running} running, ${failed} failed"
-```
-
-> **Where we differ from Symphony:** Symphony's status surface is optional and shows a flat table
-> of running sessions and retry queue. WorkGraph produces structured metadata with a full node/edge
-> graph that the frontend renders as an interactive DAG visualization with click-to-expand task
-> detail.
-
-## 15. HTTP API
-
-### 15.1 Orchestration Routes
-
-- `POST /orchestrate`
-  - Body: `{ goal: string, work_item_id?: string }`
-  - Creates a run, starts planning and execution.
-  - Returns: `{ run_id, phase: "planning" }`
-
-- `POST /orchestrate/plan`
-  - Body: `{ goal: string, work_item_id?: string, parent_session_id?: string }`
-  - Planning only — builds graph via planner agent, does not start execution.
-  - Returns: `{ run_id, phase: "planning" }`
-
-- `GET /runs/:run_id/status`
-  - Returns: `OrchestratorMetadata` (nodes, edges, summary, phase).
-
-- `POST /runs/:run_id/cancel`
-  - Cancels the run and all in-flight sessions.
-
-### 15.2 Run CRUD Routes
-
-- `POST /runs` — create a run.
-- `GET /runs` — list all runs.
-- `GET /runs/:run_id` — get run detail.
-- `POST /runs/:run_id/nodes` — create a node.
-- `GET /runs/:run_id/nodes` — list nodes.
-- `PATCH /runs/:run_id/nodes/:node_id` — update node status.
-- `GET /runs/:run_id/ready` — find ready nodes.
-- `POST /runs/:run_id/edges` — add an edge.
-- `GET /runs/:run_id/edges` — list edges.
-
-### 15.3 WorkGraph CRUD Routes
-
-- `GET /work` — list work items (optional `?status=` filter).
-- `GET /work/ready` — items with no blocking dependencies and no active runs.
-- `POST /work` — create item.
-- `GET /work/:id` — get item.
-- `PATCH /work/:id` — update item.
-- `DELETE /work/:id` — delete item.
-- `POST /work/:id/dep` — add dependency edge.
-- `DELETE /work/:id/dep/:blocking_id` — remove dependency edge.
-
-### 15.4 Scratchpad Routes
-
-- `GET /runs/:run_id/nodes/:node_id/scratchpads` — list scratchpad entries for a node.
-- `POST /runs/:run_id/nodes/:node_id/scratchpads` — add scratchpad entry.
-- `PATCH /runs/:run_id/nodes/:node_id/scratchpads/:id` — promote or dismiss.
-
-### 15.5 Planning Routes
-
-- `POST /runs/:run_id/dispatch` — dispatch approved graph (starts execution phase).
-
-### 15.6 Operational Routes
-
-- `GET /runs/:run_id/events` — SSE stream for live updates.
-- `GET /dashboard` — server-rendered HTML dashboard.
-- `POST /repair` — trigger event store repair/rebuild.
-- `POST /hydrate` — hydrate context from external tracker.
-- `GET /agents` — list registered agents and capabilities.
-
-> **Where we differ from Symphony:** Symphony exposes 3 endpoints: `GET /api/v1/state`,
-> `GET /api/v1/<issue_identifier>`, `POST /api/v1/refresh`. WorkGraph exposes a full REST API with
-> 25+ endpoints covering orchestration, work items, planning, events, scratchpads, hydration, and
-> repair. Symphony's API is observability-only; WorkGraph's API is the primary control surface.
-
-## 16. Failure Model and Recovery Strategy
-
-### 16.1 Failure Classes
-
-1. `Planning Failures`
-   - Planner agent fails to build a valid graph (e.g., orphan nodes, unreachable nodes).
-   - `finish_planning` rejects an invalid graph — agent can correct and retry.
-   - Planner agent session crashes or times out.
-   - Recovery: fail the run with a descriptive error. User can retry with a different goal.
-
-2. `Node Execution Failures`
-   - Agent session fails, times out, or crashes.
-   - Recovery: mark node as `retryable`, re-dispatch up to `MAX_RETRIES` times.
-   - After exhausting retries: mark node as `failed`, cascade failure to all transitive dependents.
-
-3. `Backend Failures`
-   - OpenCode server unreachable.
-   - ACP agent unreachable.
-   - Recovery: node execution fails, triggering retry logic.
-
-4. `Connector Failures`
-   - Tracker API errors (auth, rate limit, network).
-   - Recovery: hydration fails gracefully — execution continues without external context.
-
-5. `Event Store Failures`
-   - SQLite write failure.
-   - Hash chain integrity violation detected.
-   - Recovery: `POST /repair` triggers event store rebuild from events.
-
-6. `Sync Failures`
-   - Remote unreachable during flush.
-   - Conflict detected.
-   - Recovery: exponential backoff for flush; configurable resolution strategy for conflicts.
-
-### 16.2 Failure Cascade
-
-When a node permanently fails (exhausts retries):
-
-```text
-function cascadeFailure(failedNodeId, graph, db):
-  dependents = allTransitiveDependents(failedNodeId, graph)
-  for nodeId in dependents:
-    if db.getNode(nodeId).status == "pending":
-      db.updateNodeStatus(nodeId, "failed")
-      emit(node_status_changed, { nodeId, status: "failed", reason: "dependency_failed" })
-```
-
-This prevents downstream nodes from waiting indefinitely for a prerequisite that will never
-complete.
-
-> **Where we differ from Symphony:** Symphony does not cascade failures. Each issue is independent
-> — if one fails, others continue unaffected. WorkGraph cascades failure through the dependency
-> graph because downstream tasks cannot proceed without their prerequisites.
-
-### 16.3 Recovery After Restart
-
-WorkGraph's event-sourced design enables full recovery:
-
-1. Read all events from the `events` table.
-2. Replay through reducers to reconstruct run state.
-3. Resume execution from where it left off.
-
-In-flight agent sessions may be lost on restart. The executor treats nodes that were `active` at
-crash time as failed, triggering retry logic.
-
-> **Where we differ from Symphony:** Symphony explicitly states recovery is tracker-driven and
-> filesystem-driven — no durable orchestrator DB is required. After restart, it polls the tracker
-> for current states and re-dispatches. WorkGraph recovers from its event log, which preserves the
-> full execution history including partial progress.
-
-## 17. Security and Operational Safety
-
-### 17.1 Trust Boundary
-
-WorkGraph runs inside the OpenCode IDE environment. The trust boundary is:
-
-- The user has already authenticated and authorized the IDE.
-- Agent sessions inherit the user's permissions.
-- External tracker credentials are provided via environment variables.
-
-### 17.2 Agent Execution Safety
-
-- Agents execute within OpenCode sessions, which inherit the IDE's sandbox and approval policies.
-- WorkGraph does not override or bypass the user's configured approval policy.
-- Each agent session is a standard OpenCode session — the same safety controls apply.
-
-> **Where we differ from Symphony:** Symphony requires explicit documentation of approval policy,
-> sandbox mode, and trust posture. It supports auto-approve, operator approval, and sandbox
-> configurations. WorkGraph inherits these from the OpenCode session system — it does not add its
-> own approval layer.
-
-### 17.3 Event Integrity
-
-- Hash-chained events prevent undetected tampering.
-- Event IDs are ULIDs — not guessable.
-- The `repair` endpoint can rebuild projections from the canonical event log.
-
-### 17.4 Secret Handling
-
-- Tracker credentials are provided via environment variables, never stored in the database.
-- API tokens are not logged.
-- ACP registry configs may contain tokens — these are loaded from env vars or files, not from the
-  event log.
-
-## 18. Observability
-
-### 18.1 Structured Events
-
-All state changes emit typed events (Section 4.2) that serve as both the persistence mechanism and
-the observability layer.
-
-### 18.2 SSE Stream
-
-`GET /runs/:run_id/events` provides a Server-Sent Events stream for live updates. The frontend
-subscribes to this for real-time DAG visualization updates.
-
-### 18.3 Dashboard
-
-`GET /dashboard` serves a server-rendered HTML dashboard showing:
-
-- Active runs with phase and progress.
-- Node status breakdown per run.
-- Recent events timeline.
-
-### 18.4 Metadata API
-
-`GET /runs/:run_id/status` returns structured metadata (Section 14.2) that powers the IDE's
-WorkGraph tab — DAG view, timeline, and task detail panel.
-
-## 19. Comparison Summary: WorkGraph vs Symphony
-
-| Dimension | WorkGraph | Symphony |
-|-----------|-----------|----------|
-| **Work discovery** | Explicit API call / user action | Polls issue tracker on cadence |
-| **Work unit** | Task node in a DAG | Single tracker issue |
-| **Concurrency model** | Multi-node within one run, DAG-aware | One agent per issue, global cap |
-| **Dependency model** | First-class DAG, 4 edge types, gates | `blocked_by` field on issues |
-| **Execution model** | Event-driven cascade (await completion) | Timer-based poll loop |
-| **State persistence** | Event-sourced (hash-chained log) | In-memory (ephemeral) |
-| **Recovery** | Replay from event log | Re-poll tracker + scan filesystem |
-| **Configuration** | Env vars + API parameters | `WORKFLOW.md` with YAML front matter |
-| **Agent protocol** | OpenCode sessions (HTTP API) | Codex app-server (stdio JSON-RPC) |
-| **Backends** | Pluggable (Session, Subprocess, ACP) | Single (Codex app-server) |
-| **Tracker support** | Linear, GitHub, Jira (read-write) | Linear only (read-only from orchestrator) |
-| **Tracker role** | Context hydration (optional) | Work source (required) |
-| **Failure cascade** | Through dependency graph | Independent per issue |
-| **Retry model** | Immediate, capped at MAX_RETRIES | Exponential backoff, unbounded |
-| **Sync** | Offline buffering, conflict resolution | None (single-process) |
-| **Planning** | AI decomposes goal into task DAG | No planning — issues pre-exist |
-| **UI integration** | Structured metadata for IDE DAG view | Optional terminal dashboard |
-| **API surface** | 25+ endpoints (full CRUD + orchestration) | 3 endpoints (observability only) |
-| **Workspace isolation** | Delegated to execution backend | Per-issue directories under workspace root |
-| **Agent roles** | Skill files + MCP tools (architect, dev, reviewer, qa, pm, designer) | Single agent type |
-| **Inter-agent communication** | MCP scratchpad tools (upstream → downstream context) | None (isolated agents) |
-| **Agent autonomy** | Agents self-report via MCP tools (update_status, write_scratchpad) | Agents are externally monitored |
-| **Event system** | ~20 typed, persisted, hash-chained events | Transient agent notifications |
-
-## 20. Test and Validation Matrix
-
-### 20.1 Planning
-
-- Planner agent can build a valid graph via MCP tools.
-- `finish_planning` transitions run to `executing` when graph is valid.
-- `finish_planning` rejects and returns issues when graph is invalid.
-- Empty goals produce a descriptive error.
-
-### 20.2 Graph Engine
-
-- `addNode` / `removeNode` maintain node set integrity.
-- `addEdge` / `removeEdge` maintain edge set integrity.
-- `hasCycles()` detects simple cycles, diamond cycles, and self-loops.
-- `hasCycles()` returns false for acyclic graphs.
-- `isReady()` blocks on unsatisfied `hard` edges.
-- `isReady()` blocks on unsatisfied `review_gate` edges.
-- `isReady()` blocks on unsatisfied `artifact_gate` edges.
-- `isReady()` does NOT block on unsatisfied `soft` edges.
-- `GateTracker` satisfy/reopen/isSatisfied round-trips correctly.
-
-### 20.3 Scheduler
-
-- `acquireLease` prevents double-acquisition.
-- Expired leases are cleaned up transparently.
-- `getReadyNodes` respects `maxActivePerRun`.
-- `getReadyNodes` excludes leased nodes.
-- `getReadyNodes` excludes nodes with unsatisfied dependencies.
-
-### 20.4 Executor
-
-- Run transitions through planning → executing → completed.
-- `onPlanningComplete` finds and spawns agents for all ready nodes.
-- `onNodeCompleted` cascades to newly ready nodes.
-- `onNodeFailed` retries or cascades failure.
-- Node transitions through pending → active → completed.
-- Failed node with retries remaining transitions to retryable → active.
-- Failed node after MAX_RETRIES transitions to failed.
-- Failure cascades to all transitive dependents.
-- Cancellation stops all in-flight sessions.
-- Run completes when all nodes are completed.
-- Run fails when any node permanently fails.
-- Upstream scratchpad entries are injected into downstream agent prompts.
-
-### 20.5 Scratchpad Communication
-
-- Agent can write scratchpad entries during execution.
-- Scratchpad entries from completed upstream nodes are collected for downstream dispatch.
-- `blocking` scratchpad entries can be promoted to standalone WorkItems.
-- Scratchpad entries can be dismissed.
-- Promoted scratchpad entries create valid WorkItems.
-
-### 20.6 Roles (Skill Files)
-
-- Each defined role resolves to a skill file.
-- Skill file content is prepended to the agent's system prompt.
-- Missing skill files fall back to default prompt.
-- Planner assigns valid roles to all tasks.
-
-### 20.7 Event System
-
-- Events are persisted with correct schema.
-- Hash chain is maintained across sequential events.
-- Replay from events produces correct state.
-- Each reducer handles its event types correctly.
-- Unknown event types do not crash the reducer.
-
-### 20.8 Sync
-
-- Events are buffered when remote is unreachable.
-- Flush sends events in batches of 50.
-- Backoff increases exponentially on failure.
-- Backoff resets on success.
-- Conflicts are detected on matching `(run_id, stream_id, stream_seq)` with different IDs.
-- LWW strategy selects the later event.
-- OR-set strategy merges both events.
-
-### 20.9 Connectors
-
-- Each connector normalizes status to `open` / `in_progress` / `closed`.
-- `hydrateIssue` returns a valid `NormalizedIssue`.
-- `updateIssue` sends correct API calls.
-- `addComment` sends correct API calls.
-- API errors are surfaced, not swallowed.
-
-### 20.10 Session Bridge
-
-- `buildMetadata` produces correct node counts and status mapping.
-- Active graph nodes map to `running` UI status.
-- Pending nodes with uncompleted dependencies map to `blocked` UI status.
-- Summary string reflects actual counts.
-- Node metadata includes role and scratchpad entries.
-
-### 20.11 API Routes
-
-- `POST /orchestrate` creates a run and returns run_id.
-- `GET /runs/:run_id/status` returns valid metadata.
-- `POST /runs/:run_id/cancel` transitions run to cancelled.
-- WorkGraph CRUD operations (create, read, update, delete) work correctly.
-- Dependency edges can be added and removed.
-- Scratchpad CRUD operations work correctly on node-scoped routes.
-- Invalid requests return appropriate error responses.
-
-### 20.12 MCP Tools
-
-- `create_node` creates node in DB and returns `node_id`.
-- `add_edge` validates both nodes exist and rejects edges that would create cycles.
-- `validate_graph` detects cycles, orphans, and unreachable nodes.
-- `finish_planning` transitions run to `executing` when graph is valid.
-- `update_status("completed")` triggers `onNodeCompleted` cascade.
-- `update_status("failed")` triggers retry or failure cascade.
-- `read_scratchpads` returns upstream context for the caller's node.
-- `write_scratchpad` persists entry and emits event.
-- `create_artifact` persists artifact and emits event.
-- `get_graph` and `get_run_status` return correct current state.
-- Tool calls with invalid `run_id` return error.
-- Tool calls with invalid `node_id` return error.
-
-## 21. Implementation Checklist
-
-### 21.1 Required for Conformance
-
-- MCP tool server with all tool handlers (graph construction, node lifecycle, read-only context).
-- MCP tool registration with the active MCP server.
-- Planner agent with MCP tools for graph construction.
-- Graph engine with 4 edge types and readiness computation.
-- Gate tracker for review and artifact gates.
-- Lease manager with expiration.
-- Scheduler with per-run concurrency limits.
-- Event-driven executor with MCP callbacks (onPlanningComplete, onNodeCompleted, onNodeFailed).
-- Scratchpad system: write, read, promote, dismiss — with upstream context injection.
-- Role/skill file loading and prompt enrichment.
-- At least one execution backend (SessionBackend or SubprocessBackend).
-- Event store with hash chain.
-- Replay from events.
-- Current-state projections.
-- Session bridge producing OrchestratorMetadata.
-- HTTP API for orchestration, runs, nodes, scratchpads, and work items.
-- WorkGraph item CRUD with dependency edges.
-
-### 21.2 Recommended Extensions
-
-- ACP backend for third-party agent integration.
-- All three connectors (Linear, GitHub, Jira).
-- Sync engine with offline buffering and conflict resolution.
-- SSE event stream for live UI updates.
-- Server-rendered dashboard.
-- Repair endpoint for event store integrity recovery.
-- Capability packs (execution, research, UX) for routing-aware planning.
-- Renderer packs (markdown, HTML brief) for output formatting.
-
-### 21.3 Operational Validation
-
-- Run a full goal → plan → execute → complete cycle.
-- Verify failure cascade: fail one node and confirm dependents are marked failed.
-- Verify retry: fail a node once and confirm it retries successfully.
-- Verify concurrency: dispatch more nodes than `maxActivePerRun` and confirm queuing.
-- Verify hash chain integrity after multiple runs.
-- Verify replay produces identical state to live execution.
-- Verify scratchpad context flows from upstream to downstream agents.
-- Verify skill files shape agent behavior per role.
-
----
-
-**END OF WORKGRAPH SERVICE SPECIFICATION**
+1. One user cannot access another user's private WorkGraph records.
+2. Cloud composition uses Convex without SQLite or Node-native database imports.
+3. Local composition uses SQLite without a hosted dependency.
+4. A custom adapter passes core conformance version 3, including owner-bound snapshot pagination, mutation invalidation, exact snapshot-to-change convergence, leases, and Attempt runtime recovery. An adapter offering portable owner migration also passes archive conformance version 1.
+5. WorkGraph persistence, events, logs, and responses contain no provider credentials.
+6. Team Connections can produce user-filtered personal candidates.
+7. Intake candidates cannot execute before staging.
+8. Source admission binds exact Work Source revisions, binds each admission proposal to at most one intake candidate, rejects cyclic Work Item dependencies, publishes planner changes through the ordered feed, and atomically confirms the exact reviewed proposal version.
+9. Recent-first Stream matching expands to older memory cards only when the bounded recent set has low confidence.
+10. Duplicate review never silently merges work.
+11. Every ready Work Item may launch with its immutable resolved profile.
+12. Attempt completion does not bypass the Work Item completion contract.
+13. Outcome closure requires success evidence and owner confirmation.
+14. Agent scope changes create Decisions that block only affected work.
+15. Eight quiet hours schedule an incremental Recap; actionable output creates one notification carrying the exact Stream and Recap identifiers, while non-actionable output creates none.
+16. Retry, reconnect, and worker restart do not duplicate execution ownership or external effects.
+17. A Stream provisions one primary worktree or VM envelope, with optional child isolation for individual Work Items.
+18. Replanning from a later Work Source revision records the revision diff and applies only an owner-confirmed keep, replace, or fork action.
+19. A Stream without durable external effects can be deleted together with its isolation and unmerged work.
+20. A Stream with a durable external effect can only be closed, preserving history while abandoning unfinished work with provenance.
+21. The Claxedo app presents one main WorkGraph surface with inline Stream expansion and Add task as the canonical manual Task action. It uses the HTTP/JSON and ordered-change contract mounted in `claxedo-server`, while MCP tools and server workers exercise the same application services in-process.
+22. Manual or pasted Work Source text supports initial source admission without an external document service.
+23. WorkGraph reuses the existing app-global WorkspacePanel and top-level toggle for its Needs you and Settings views, and all Stream interaction remains inline on `/workgraph`.
+24. Zero attention renders no WorkGraph indicator, card, list, or empty attention state.
+25. Attention and candidate navigation remain bounded and cursor-paged, and a failed query never substitutes snapshot or fabricated data.
+26. One versioned settings command atomically applies the scope-appropriate patch, including explicit override clearing: execution defaults for WorkGraph, and execution plus Recap configuration for a Stream.

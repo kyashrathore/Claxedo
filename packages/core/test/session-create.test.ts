@@ -88,8 +88,14 @@ describe("SessionV2.create", () => {
           location: Location.Ref.make({ directory: location.directory, workspaceID }),
           agent: AgentV2.ID.make("build"),
           model,
+          tools: ["terminal", "browser"],
         }),
-      ).toMatchObject({ location: { directory: location.directory, workspaceID }, agent: "build", model })
+      ).toMatchObject({
+        location: { directory: location.directory, workspaceID },
+        agent: "build",
+        model,
+        tools: ["terminal", "browser"],
+      })
     }),
   )
 

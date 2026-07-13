@@ -59,6 +59,24 @@ const make = (permission?: string) => {
 }
 
 describe("ToolRegistry", () => {
+  it.effect("enforces an exact per-session tool allowlist independently of shared permission actions", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({
+        edit: make("edit"),
+        write: make("edit"),
+        bash: make(),
+      })
+      const materialized = yield* service.materialize([], ["write"])
+
+      expect(materialized.definitions.map((tool) => tool.name)).toEqual(["write"])
+      expect((yield* materialized.settle(call("edit"))).result).toEqual({
+        type: "error",
+        value: "Unknown tool: edit",
+      })
+    }),
+  )
+
   it.effect("filters disabled tools with edit aliases and ordered wildcard precedence", () =>
     Effect.gen(function* () {
       const service = yield* ToolRegistry.Service

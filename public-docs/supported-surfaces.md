@@ -22,12 +22,13 @@ control-plane concerns.
 | Agent Extensions materializers | Exported from `@claxedo/agent-extensions`; compatibility re-exports remain in `workspace-runtime` | `packages/agent-extensions/src/materialize.ts`, `packages/agent-extensions/src/materializers/*`, `packages/workspace-runtime/src/index.ts` |
 | Relay-attached runtime options | `workspaceRelayRuntimeOptionsFromEnv` | `packages/workspace-runtime/src/workspace-relay-env.ts` |
 | MCP runtime tools | `@claxedo/mcp` CLI package | `packages/claxedo-mcp/package.json`, `packages/claxedo-mcp/src/server.ts` |
+| Embedded personal WorkGraph core | Owner-scoped application service, `/api/workgraph` commands/snapshots/ordered changes, SQLite local adapter, hosted Convex core adapter, and MCP tools | `packages/workgraph/src/application`, `packages/workgraph/src/http`, `packages/workgraph/src/adapters`, `packages/claxedo-server/src/server.ts`, `packages/claxedo-server/src/hosted-app.ts` |
 
 ## Present But Not A Public Package Surface Yet
 
 | Surface | Current status |
 | --- | --- |
-| `@claxedo/workgraph` npm package | Published at `0.1.0` — early, API still stabilizing. |
+| `@claxedo/workgraph` npm package | Published at `0.1.0`. The package contains the personal contracts, embedded service/router, SQLite adapter, connector interfaces, and execution foundation. The control plane owns the Convex adapter. Hosted Source View/intake parity, the public adapter conformance kit, and deployed Cloud acceptance remain in progress. |
 
 ## Product-Owned Boundaries
 

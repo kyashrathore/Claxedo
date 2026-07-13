@@ -1311,6 +1311,16 @@
       "table": "session"
     },
     {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tools",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,

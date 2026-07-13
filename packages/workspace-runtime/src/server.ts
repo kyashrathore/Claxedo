@@ -17,6 +17,7 @@ import {
 } from "./workspace-relay-host-tunnel"
 import { ConfigRoutes, type RuntimeRunner } from "./routes/config"
 import { SessionEnvRoutes } from "./routes/session-env"
+import { WorkGraphConnectionToolRoutes, type WorkGraphConnectionOperationBroker } from "./routes/workgraph-connection-tools"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth, type WorkspaceRuntimeManagementTarget } from "./management-auth"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import {
@@ -77,6 +78,8 @@ export type WorkspaceRuntimeServerOptions = {
    * Hosts that need a product whitelist supply it here.
    */
   corsOrigin?: WorkspaceRuntimeCorsOrigin
+  /** Trusted local broker seam. Hosted runtimes forward with the bound RAT. */
+  workgraphConnectionBroker?: WorkGraphConnectionOperationBroker
 }
 
 type ListenPolicyEnv = {
@@ -445,6 +448,12 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   // and relay-host auth middleware registered above — the same workspace-level
   // auth boundary as every other /api/wr route (no per-session scoping).
   app.route(WorkspaceRuntimeRoutes.sessionEnv, SessionEnvRoutes())
+  app.route("/", WorkGraphConnectionToolRoutes({
+    workspaceId: options.target?.workspaceId ?? workspaceId(),
+    ...(options.workgraphConnectionBroker ? { broker: options.workgraphConnectionBroker } : {}),
+    registerSessionTools: host.registerSessionTools,
+    unregisterSessionTools: host.unregisterSessionTools,
+  }))
 
   app.get(WorkspaceRuntimeRoutes.health, (c) =>
     c.json(runtimeLiveness(host, options)),
