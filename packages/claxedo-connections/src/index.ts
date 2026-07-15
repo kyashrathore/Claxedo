@@ -18,4 +18,6 @@ export type {
 export {
   createConnectionWebhookVerifier,
   githubConnectionWebhookVerifier,
+  jiraConnectionWebhookVerifier,
+  linearConnectionWebhookVerifier,
 } from "./webhooks.js"

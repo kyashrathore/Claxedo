@@ -341,7 +341,7 @@ export function createConnectionsService(deps: {
 
     async setWebhookSigningSecret(id: string, secret: string) {
       const row = await webhookConnection(id)
-      if (!row || row.integrationId !== "github") return { ok: false as const, code: "webhook_not_supported" as const }
+      if (!row) return { ok: false as const, code: "webhook_not_supported" as const }
       if (!secret.trim() || secret.length > 1024) return { ok: false as const, code: "invalid_webhook_secret" as const }
       await deps.credentials.put({
         providerId: connectionWebhookSigningProviderId(row.id),
@@ -353,14 +353,14 @@ export function createConnectionsService(deps: {
 
     async removeWebhookSigningSecret(id: string) {
       const row = await webhookConnection(id)
-      if (!row || row.integrationId !== "github") return { ok: false as const, code: "webhook_not_supported" as const }
+      if (!row) return { ok: false as const, code: "webhook_not_supported" as const }
       await deps.credentials.deleteByProvider(connectionWebhookSigningProviderId(row.id))
       return { ok: true as const }
     },
 
     async resolveWebhookSigningSecret(id: string, provider: string) {
       const row = await webhookConnection(id, provider)
-      if (!row || row.integrationId !== "github") return undefined
+      if (!row) return undefined
       const credential = await deps.credentials.get(connectionProviderId(row.id))
       if (credential?.status !== "available") return undefined
       return await deps.credentials.resolveSecret(connectionWebhookSigningProviderId(row.id)) ?? undefined

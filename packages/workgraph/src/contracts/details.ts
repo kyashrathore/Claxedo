@@ -4,8 +4,10 @@ import {
   AttemptIDSchema,
   DecisionIDSchema,
   RecapIDSchema,
+  StreamIDSchema,
   WorkItemIDSchema,
 } from "./ids"
+import { WorkItemStateSchema } from "./lifecycle"
 import {
   AdmissionProposalDtoSchema,
   AttemptDtoSchema,
@@ -14,6 +16,7 @@ import {
   WorkItemDtoSchema,
 } from "./records"
 import { IntakeCandidateDtoSchema } from "./source-view"
+import { WorkSourceRevisionRefSchema } from "./work-source"
 
 const prefix = "wgat1"
 const maxLength = 512
@@ -31,6 +34,54 @@ export const RecapReadInputSchema = z.strictObject({ recapId: RecapIDSchema })
 export type RecapReadInput = z.infer<typeof RecapReadInputSchema>
 export const IntakeCandidateReadInputSchema = z.strictObject({ candidateId: z.string().trim().min(1).max(512) })
 export type IntakeCandidateReadInput = z.infer<typeof IntakeCandidateReadInputSchema>
+
+export const ReplacementReviewInputSchema = z.strictObject({
+  streamId: StreamIDSchema,
+  previousSource: WorkSourceRevisionRefSchema,
+})
+export type ReplacementReviewInput = z.infer<typeof ReplacementReviewInputSchema>
+
+export const ReplacementTargetSchema = z.strictObject({
+  workItemId: WorkItemIDSchema,
+  expectedVersion: z.number().int().positive(),
+  title: z.string().trim().min(1),
+  state: WorkItemStateSchema,
+})
+export type ReplacementTarget = z.infer<typeof ReplacementTargetSchema>
+
+const replacementReviewBase = {
+  streamId: StreamIDSchema,
+  streamTitle: z.string().trim().min(1),
+}
+
+export const ReplacementReviewSchema = z.discriminatedUnion("status", [
+  z.strictObject({
+    ...replacementReviewBase,
+    status: z.literal("eligible"),
+    targets: z.array(ReplacementTargetSchema).min(1),
+  }),
+  z.strictObject({
+    ...replacementReviewBase,
+    status: z.literal("empty"),
+    reason: z.string().trim().min(1),
+  }),
+  z.strictObject({
+    ...replacementReviewBase,
+    status: z.literal("unrelated"),
+    reason: z.string().trim().min(1),
+  }),
+  z.strictObject({
+    ...replacementReviewBase,
+    status: z.literal("durable"),
+    reason: z.string().trim().min(1),
+  }),
+  z.strictObject({
+    ...replacementReviewBase,
+    status: z.literal("unavailable"),
+    reason: z.string().trim().min(1),
+  }),
+])
+export type ReplacementReview = z.infer<typeof ReplacementReviewSchema>
 
 export const AttemptExecutionReferencesSchema = z.strictObject({
   sessionId: runtimeReference.optional(),
@@ -78,6 +129,7 @@ export const WorkGraphDetailSchemas = {
   recap: RecapDtoSchema,
   candidate: IntakeCandidateDtoSchema,
   attempts: WorkItemAttemptPageSchema,
+  replacementReview: ReplacementReviewSchema,
 } as const
 
 export type WorkItemAttemptPageCursorErrorReason = "invalid" | "owner_mismatch" | "work_item_mismatch"
@@ -92,6 +144,7 @@ export class WorkItemAttemptPageCursorError extends Error {
 }
 
 export function createWorkItemAttemptPageCursor(input: Readonly<{
+  organizationId: string
   ownerUserId: string
   workItemId: string
   attemptNumber: number
@@ -99,6 +152,7 @@ export function createWorkItemAttemptPageCursor(input: Readonly<{
 }>): WorkItemAttemptPageCursor {
   const cursor = [
     prefix,
+    encode(input.organizationId),
     encode(input.ownerUserId),
     encode(input.workItemId),
     integer(input.attemptNumber),
@@ -110,17 +164,18 @@ export function createWorkItemAttemptPageCursor(input: Readonly<{
 
 export function readWorkItemAttemptPageCursor(
   cursor: string,
+  organizationId: string,
   ownerUserId: string,
   workItemId: string,
 ): Readonly<{ attemptNumber: number; attemptId: z.infer<typeof AttemptIDSchema> }> {
   if (cursor.length > maxLength) throw new WorkItemAttemptPageCursorError("invalid")
   const parts = cursor.split(":")
-  if (parts.length !== 5 || parts[0] !== prefix) throw new WorkItemAttemptPageCursorError("invalid")
-  if (decode(parts[1]!) !== ownerUserId) throw new WorkItemAttemptPageCursorError("owner_mismatch")
-  if (decode(parts[2]!) !== workItemId) throw new WorkItemAttemptPageCursorError("work_item_mismatch")
+  if (parts.length !== 6 || parts[0] !== prefix) throw new WorkItemAttemptPageCursorError("invalid")
+  if (decode(parts[1]!) !== organizationId || decode(parts[2]!) !== ownerUserId) throw new WorkItemAttemptPageCursorError("owner_mismatch")
+  if (decode(parts[3]!) !== workItemId) throw new WorkItemAttemptPageCursorError("work_item_mismatch")
   return {
-    attemptNumber: integer(parts[3]),
-    attemptId: AttemptIDSchema.parse(decode(parts[4]!)),
+    attemptNumber: integer(parts[4]),
+    attemptId: AttemptIDSchema.parse(decode(parts[5]!)),
   }
 }
 

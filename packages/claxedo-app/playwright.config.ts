@@ -9,18 +9,20 @@ const video = process.env.PLAYWRIGHT_VIDEO === "1" || suite === "core" ? "on" : 
 const grep = suite === "happy" ? /@happy/ : suite === "core" ? /@core/ : undefined
 const workGraphReal = process.env.CLAXEDO_WORKGRAPH_REAL_E2E === "1"
 const workGraphApiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
-const webServer = process.env.PLAYWRIGHT_SKIP_WEBSERVER === "1"
-  ? undefined
-  : {
-      command: `${workGraphReal ? `bun --cwd ../workgraph run build && VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}bun run dev -- --port ${port}`,
-      url: baseURL,
-      reuseExistingServer: reuse,
-      timeout: 120_000,
-    }
+const webServer =
+  process.env.PLAYWRIGHT_SKIP_WEBSERVER === "1"
+    ? undefined
+    : {
+        command: `${workGraphReal ? `bun --cwd ../workgraph run build && VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}bun run dev -- --port ${port}`,
+        url: baseURL,
+        reuseExistingServer: reuse,
+        timeout: 120_000,
+      }
 
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.spec.ts",
+  testIgnore: "**/deployed-workgraph.spec.ts",
   grep,
   outputDir: "./e2e/playwright/test-results",
   timeout: 60_000,
@@ -45,7 +47,7 @@ export default defineConfig({
       // Mobile smoke specs opt into the `mobile` project below (`--project=mobile`);
       // they must never also run at desktop viewport as part of the default/@core
       // suite here.
-      testIgnore: ["**/mobile-*.spec.ts"],
+      testIgnore: ["**/mobile-*.spec.ts", "**/deployed-workgraph.spec.ts"],
       use: { ...devices["Desktop Chrome"] },
     },
     {
@@ -59,6 +61,7 @@ export default defineConfig({
       // UA emulation on the browser this repo actually installs.
       name: "mobile",
       testMatch: ["**/mobile-*.spec.ts"],
+      testIgnore: ["**/deployed-workgraph.spec.ts"],
       use: { ...devices["iPhone 13"], browserName: "chromium" },
     },
   ],

@@ -14,28 +14,42 @@ the Worker-safe app from `src/hosted-app.ts`. The design and rationale are in
 
 ## Worker API surface
 
-| Method | Path | Notes |
-|---|---|---|
-| GET | product health route | `localExecution: false` on the Worker |
-| GET | product mode route | status of configured deps (no secrets) |
-| GET | `/.well-known/jwks.json` | RAT signing public keys |
-| POST | `/api/auth/device/code` · `/api/auth/device/token` | fail-closed until Phase A (see below) |
-| GET | `/api/workspace/:id/connection` | mints a Runtime Access Token (user-hosted) |
-| POST | `/api/workspace/:id/connection/refresh` | re-mint with `previousJti` |
-| POST | `/api/workspace/:id/user-hosted/challenge` | returns a signing challenge (CLI owns the host key) |
-| POST | `/api/workspace/:id/user-hosted/register` | records the link, mints a Host Tunnel Token; does **not** start a tunnel |
-| POST | `/api/workspace/:id/user-hosted/heartbeat` | client-signed; re-mints the Host Tunnel Token |
-| POST | `/api/workspace/:id/user-hosted/pause` | pauses the link in Convex |
-| ALL | `/api/workgraph` · `/api/workgraph/*` | authenticated personal WorkGraph contract backed by Convex; `intake` paths are backend candidate-admission APIs |
-| GET | product compatibility route | deployed component/protocol versions for rollout checks |
-| GET | `/internal/relay/target` · `/internal/relay/revocation` | resolver-token / loopback gated |
-| POST | `/internal/sandbox-manager/gc` · `/internal/sandbox-manager/release` | manual sandbox GC / lease release; `CLAXEDO_RUNTIME_ADMIN_TOKEN` gated |
+| Method | Path                                                                 | Notes                                                                                                                                                                      |
+| ------ | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | product health route                                                 | `localExecution: false` on the Worker                                                                                                                                      |
+| GET    | product mode route                                                   | status of configured deps (no secrets)                                                                                                                                     |
+| GET    | `/.well-known/jwks.json`                                             | RAT signing public keys                                                                                                                                                    |
+| POST   | `/api/auth/device/code` · `/api/auth/device/token`                   | fail-closed until Phase A (see below)                                                                                                                                      |
+| GET    | `/api/workspace/:id/connection`                                      | mints a Runtime Access Token (user-hosted)                                                                                                                                 |
+| POST   | `/api/workspace/:id/connection/refresh`                              | re-mint with `previousJti`                                                                                                                                                 |
+| POST   | `/api/workspace/:id/user-hosted/challenge`                           | returns a signing challenge (CLI owns the host key)                                                                                                                        |
+| POST   | `/api/workspace/:id/user-hosted/register`                            | records the link, mints a Host Tunnel Token; does **not** start a tunnel                                                                                                   |
+| POST   | `/api/workspace/:id/user-hosted/heartbeat`                           | client-signed; re-mints the Host Tunnel Token                                                                                                                              |
+| POST   | `/api/workspace/:id/user-hosted/pause`                               | pauses the link in Convex                                                                                                                                                  |
+| ALL    | `/api/workgraph` · `/api/workgraph/*`                                | authenticated personal WorkGraph contract backed by Convex; candidate-admission paths are backend APIs surfaced through Needs you, not a separate intake/onboarding screen |
+| GET    | product compatibility route                                          | deployed component/protocol versions for rollout checks                                                                                                                    |
+| GET    | `/internal/relay/target` · `/internal/relay/revocation`              | resolver-token / loopback gated                                                                                                                                            |
+| POST   | `/internal/sandbox-manager/gc` · `/internal/sandbox-manager/release` | manual sandbox GC / lease release; `CLAXEDO_RUNTIME_ADMIN_TOKEN` gated                                                                                                     |
+| POST   | `/internal/workgraph/reconcile`                                      | on-demand invocation of the same bounded durable reconciler as cron; accepts no selector and returns counts only                                                           |
 
 The host keypair is owned by the CLI / local runtime, not the server. Register
 is a two-step, client-signed flow: `challenge` → the CLI signs the nonce with
 its local private key → `register`. The control plane never holds a host private
 key and never starts the tunnel — the CLI does, using the returned Host Tunnel
 Token.
+
+The first signed `/api/claxedo/bootstrap` request schedules idempotent WorkGraph
+capability-catalog activation through the Worker's `waitUntil` lifecycle. The
+trusted `(organization, user)` tenant comes only from verified identity and
+membership, and the deterministic tenant catalog workspace provisions without
+delaying shell boot. Capability GET and Settings remain observation-only and
+accept no tenant or workspace selector; explicit refresh uses the same setup
+seam. The catalog response carries a content revision, observation time, and
+exclusive expiry capped at five minutes; settings and Attempt admission reject
+stale or mismatched values. Hosted in-process agent tools remain fail-closed
+until the durable invoking Session supplies verified organization-and-user
+provenance. Standalone stdio MCP clients use this Worker's authenticated HTTP
+boundary.
 
 ## Configuration
 
@@ -45,30 +59,30 @@ defaults. These are the Worker's production knobs, set as Worker secrets
 
 ### Required
 
-| Name | Purpose |
-|---|---|
-| `CLAXEDO_SIGNED_CLOUD_AUTH` | `"1"` to enable signed auth (set as a `[vars]` value) |
-| `CLERK_JWT_ISSUER`, `CLERK_JWKS_URL` | signed-auth verification (`CLERK_JWT_AUDIENCE` optional) |
-| `CLAXEDO_WORKSPACE_AUTHORITY_URL` | hosted workspace/link/audit state |
-| `CLAXEDO_WORKSPACE_RELAY_URL` | relay URL returned in connection data |
-| `CLAXEDO_RELAY_RESOLVER_TOKEN` | authorizes `/internal/relay/*` callers |
-| `CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM` | RAT/HTT signing key (EdDSA PKCS8) |
+| Name                                           | Purpose                                                  |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| `CLAXEDO_SIGNED_CLOUD_AUTH`                    | `"1"` to enable signed auth (set as a `[vars]` value)    |
+| `CLERK_JWT_ISSUER`, `CLERK_JWKS_URL`           | signed-auth verification (`CLERK_JWT_AUDIENCE` optional) |
+| `CLAXEDO_WORKSPACE_AUTHORITY_URL`              | hosted workspace/link/audit state                        |
+| `CLAXEDO_WORKSPACE_RELAY_URL`                  | relay URL returned in connection data                    |
+| `CLAXEDO_RELAY_RESOLVER_TOKEN`                 | authorizes `/internal/relay/*` callers                   |
+| `CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM` | RAT/HTT signing key (EdDSA PKCS8)                        |
 
 The Worker **fails closed** (`503`) at boot if signed auth, the workspace
 authority URL, relay URL, resolver token, or the signing key is missing.
 
 ### Common
 
-| Name | Purpose |
-|---|---|
-| `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM` | published at JWKS |
-| `CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN` | unsigned relay-revocation queries to Convex |
-| `CLAXEDO_RUNTIME_ADMIN_TOKEN` | authorizes `/internal/sandbox-manager/*`; must differ from the resolver token |
-| `CLAXEDO_SANDBOX_DRIVER` | optional cloud sandbox driver: `cloudflare`, `daytona`, or `fetch`; auto-selected from present credentials when unset |
-| Cloudflare driver | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_SANDBOX_WORKER_URL` |
-| Daytona driver | `DAYTONA_API_KEY`, `CLAXEDO_DAYTONA_SNAPSHOT` |
-| `CLAXEDO_DEVICE_LOGIN_ISSUER` (+ optional `_CLIENT_ID`) | device-login broker (Phase A) |
-| `CLAXEDO_POSTHOG_KEY`, `CLAXEDO_POSTHOG_HOST` | optional telemetry (fetch-based) |
+| Name                                                    | Purpose                                                                                                               |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM`           | published at JWKS                                                                                                     |
+| `CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN`                   | unsigned relay-revocation queries to Convex                                                                           |
+| `CLAXEDO_RUNTIME_ADMIN_TOKEN`                           | authorizes `/internal/sandbox-manager/*` and `/internal/workgraph/reconcile`; must differ from the resolver token     |
+| `CLAXEDO_SANDBOX_DRIVER`                                | optional cloud sandbox driver: `cloudflare`, `daytona`, or `fetch`; auto-selected from present credentials when unset |
+| Cloudflare driver                                       | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_SANDBOX_WORKER_URL`                                                               |
+| Daytona driver                                          | `DAYTONA_API_KEY`, `CLAXEDO_DAYTONA_SNAPSHOT`                                                                         |
+| `CLAXEDO_DEVICE_LOGIN_ISSUER` (+ optional `_CLIENT_ID`) | device-login broker (Phase A)                                                                                         |
+| `CLAXEDO_POSTHOG_KEY`, `CLAXEDO_POSTHOG_HOST`           | optional telemetry (fetch-based)                                                                                      |
 
 Additional knobs — per-region relay endpoints, request rate-limit caps,
 key-rotation `_NEXT_*` extras, and device-login URL/audience/scope overrides —
@@ -105,20 +119,63 @@ curl -s "$BASE/.well-known/jwks.json"       # {"keys":[…]}
 # Signed smoke (TOKEN = a Clerk-issued user bearer Convex trusts)
 curl -s -H "authorization: Bearer $TOKEN" "$BASE/api/workspace/<id>/connection"
 
-# WorkGraph signed two-user persistence and capability smoke
+# WorkGraph signed user-and-organization isolation, persistence, and capability smoke
 BASE_URL="$BASE" \
 CLERK_SECRET_KEY="$CLERK_SECRET_KEY" \
 WORKGRAPH_SMOKE_USER_A_ID="$USER_A" \
 WORKGRAPH_SMOKE_USER_B_ID="$USER_B" \
-WORKGRAPH_SMOKE_WORKSPACE_ID="$WORKSPACE_ID" \
+WORKGRAPH_SMOKE_ORGANIZATION_A_ID="$ORGANIZATION_A" \
+WORKGRAPH_SMOKE_ORGANIZATION_B_ID="$ORGANIZATION_B" \
+WORKGRAPH_SMOKE_RECONCILE_TOKEN="$CLAXEDO_RUNTIME_ADMIN_TOKEN" \
+WORKGRAPH_SMOKE_HARNESS="opencode" \
+WORKGRAPH_SMOKE_AGENT="smoke" \
+WORKGRAPH_SMOKE_PROVIDER_ID="$PROVIDER_ID" \
+WORKGRAPH_SMOKE_MODEL_ID="$MODEL_ID" \
+WORKGRAPH_SMOKE_EFFORT="low" \
+WORKGRAPH_SMOKE_TOOLS_JSON='[]' \
 bun run smoke:workgraph
 ```
 
-The WorkGraph smoke mints short-lived Clerk Session tokens, verifies owner
-isolation, checks the hosted execution-capability route, and performs one
-Convex-backed Stream-and-Task create/read/delete cycle. Release acceptance also
-requires hosted Attempt execution and the canonical browser journey against the
-deployed app and workspace runtime.
+The release WorkGraph smoke mints user A Sessions with organizations A and B
+active plus a user B Session with organization A active. User A must belong to
+both organizations and user B must belong to organization A. It explicitly
+refreshes and then reads the workspace-neutral execution catalog, and performs
+one Convex-backed Stream-and-Task create/read/execute/delete cycle. The
+configured profile is a deliberately cheap no-op smoke Agent. The protected
+reconcile trigger drives the same work cron would drive, while rejecting
+tenant/workspace selectors and rate limiting repeated machine requests. Final
+acceptance additionally proves cross-tenant isolation, including one user
+represented in two organizations. This deployment has not yet been executed.
+Release acceptance also requires the canonical browser journey against the
+deployed app and workspace runtime using the one shared WorkspacePanel.
+
+Focused WorkGraph, Convex, Worker-safety, and Claxedo Server verification is
+green in the delivery branch. The currently advertised result-integration
+choice is `manual`; pull-request and direct integration remain reserved
+contract values until their hosted runtime paths exist. The Docs v2 adapter
+seam exists, while the current legacy Pages surface does not yet provide the
+triggerable document-to-work journey.
+
+No staging deployment has been executed. The GitHub staging environment still
+needs its Convex, Cloudflare, Clerk, control-plane, sandbox, relay, and smoke
+configuration before this repository evidence can become deployed acceptance.
+
+## Release ordering
+
+`deploy-control-plane.yml` is the normal Cloud release owner. It deploys the
+additive Convex schema and functions, then the Worker, then runs authenticated
+smoke verification, and finally invokes the Pages app deployment from the same
+SHA. Production repeats that sequence behind the protected GitHub environment.
+Top-level Convex, Worker, and app workflows share one deployment concurrency
+group. The reusable app workflow has no independent trigger or lock, so its
+control-plane or app-only staging caller retains the global lock.
+`deploy-convex.yml` is an operator-only Convex roll-forward for an isolated
+compatible SHA.
+
+Every release validates its complete GitHub environment configuration before
+the first Convex mutation. Runtime Worker secrets and Convex function variables
+are provisioned separately and are proven by the fail-closed mode and signed
+WorkGraph smoke gates documented in `public-docs/deploy-runbook.md`.
 
 ## Guardrails
 

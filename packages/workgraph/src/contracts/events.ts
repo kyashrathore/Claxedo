@@ -6,6 +6,7 @@ import {
   EvidenceIDSchema,
   OutcomeIDSchema,
   OwnerUserIDSchema,
+  RecapIDSchema,
   StreamIDSchema,
   WorkItemIDSchema,
   WorkGraphIDSchema,
@@ -31,6 +32,8 @@ export const WorkGraphEventTypeSchema = z.enum([
   "stream_lifecycle_changed",
   "stream_visibility_changed",
   "stream_execution_requested",
+  "stream_replacement_reset_attention",
+  "stream_replacement_reset_completed",
   "stream_closed",
   "stream_deleted",
   "outcome_created",
@@ -50,10 +53,12 @@ export const WorkGraphEventTypeSchema = z.enum([
   "decision_answered",
   "decision_dismissed",
   "evidence_recorded",
+  "recap_published",
 ])
 export type WorkGraphEventType = z.infer<typeof WorkGraphEventTypeSchema>
 
-const forbiddenPayloadKeys = /^(?:api[_-]?key|authorization|credential|credentials|password|secret|token)$/i
+const forbiddenPayloadKeys =
+  /^(?:credential|credentials|password|passwords|secret|secrets|token|tokens|authorization|cookie|passphrase|privatekey|clientsecret|refreshtoken|accesstoken|apikey|authkey|bearertoken)$/
 
 export const PublicEventPayloadSchema = z.json().superRefine((value, context) => {
   const inspect = (input: unknown, path: PropertyKey[]) => {
@@ -63,7 +68,7 @@ export const PublicEventPayloadSchema = z.json().superRefine((value, context) =>
     }
     if (!input || typeof input !== "object") return
     Object.entries(input).forEach(([key, child]) => {
-      if (forbiddenPayloadKeys.test(key)) {
+      if (forbiddenPayloadKeys.test(key.toLowerCase().replaceAll(/[^a-z0-9]/g, ""))) {
         context.addIssue({ code: "custom", message: "Event payloads cannot contain credentials", path: [...path, key] })
         return
       }
@@ -96,6 +101,7 @@ export const ChangeResourceSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("attempt"), id: AttemptIDSchema }),
   z.strictObject({ type: z.literal("decision"), id: DecisionIDSchema }),
   z.strictObject({ type: z.literal("evidence"), id: EvidenceIDSchema }),
+  z.strictObject({ type: z.literal("recap"), id: RecapIDSchema }),
   z.strictObject({ type: z.literal("admission_proposal"), id: AdmissionProposalIDSchema }),
 ])
 export type ChangeResource = z.infer<typeof ChangeResourceSchema>

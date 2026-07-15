@@ -15,6 +15,8 @@ export function WorkGraphDialog(props: {
   title: JSX.Element
   description?: JSX.Element
   size?: "normal" | "large" | "x-large"
+  /** Keeps dialog chrome fixed while the feature body owns its scroll region. */
+  scrollBody?: boolean
   footer?: JSX.Element
   children: JSX.Element
 }) {
@@ -36,8 +38,8 @@ export function WorkGraphDialog(props: {
             onEscapeKeyDown={props.onClose}
             action={<IconButton variant="ghost" size="small" icon="close" aria-label="Close" onClick={props.onClose} />}
           >
-            <div class="workgraph-item-dialog">
-              <div class="workgraph-item-dialog-body">{props.children}</div>
+            <div class="workgraph-item-dialog" classList={{ "is-scroll-shell": props.scrollBody }}>
+              <div class="workgraph-item-dialog-body" data-scrollable={props.scrollBody ? "true" : undefined}>{props.children}</div>
               <Show when={props.footer}>
                 <div class="workgraph-item-dialog-footer">{props.footer}</div>
               </Show>
@@ -96,7 +98,7 @@ export function DialogSection(props: { title: string; children: JSX.Element; tra
   return (
     <section class="workgraph-dsection">
       <div class="workgraph-dsection-head">
-        <h3 class="workgraph-dsection-title text-text-weaker">{props.title}</h3>
+        <h3 class="workgraph-dsection-title text-text-base">{props.title}</h3>
         {props.trailing}
       </div>
       {props.children}
@@ -107,7 +109,7 @@ export function DialogSection(props: { title: string; children: JSX.Element; tra
 export function DialogField(props: { label: string; children: JSX.Element; mono?: boolean }) {
   return (
     <div class="workgraph-dfield">
-      <span class="workgraph-dfield-label text-text-weaker">{props.label}</span>
+      <span class="workgraph-dfield-label text-text-base">{props.label}</span>
       <span class="workgraph-dfield-value text-text-base" classList={{ "font-mono": props.mono }}>
         {props.children}
       </span>

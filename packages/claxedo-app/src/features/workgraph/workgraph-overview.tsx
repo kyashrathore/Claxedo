@@ -1,8 +1,18 @@
-import type { AttemptDto, CommandResult, OutcomeDto, RecapDto, StreamDto, WorkItemDto } from "@claxedo/workgraph/contracts"
+import type {
+  AttemptDto,
+  CommandResult,
+  ExecutionMode,
+  OutcomeDto,
+  RecapDto,
+  StreamDto,
+  WorkItemDto,
+} from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { createResource, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import { createStore } from "solid-js/store"
+import { Persist, persisted } from "@/platform/persistence/persist"
 import type { WorkGraphClient } from "./api"
 
 type Mutate = (action: () => Promise<CommandResult>) => Promise<boolean>
@@ -17,15 +27,22 @@ export function WorkGraphStreamTree(props: {
   client: WorkGraphClient
   mutate: Mutate
   onOpenStreamSettings: (stream: StreamDto) => void
+  onOpenSession?: (reference: { sessionId: string; workspaceId?: string }) => void
 }) {
-  const [expanded, setExpanded] = createSignal<Set<string>>(new Set(props.streams[0] ? [props.streams[0].id] : []))
-  const toggle = (id: string) =>
-    setExpanded((previous) => {
-      const next = new Set(previous)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  // Expanded Streams are route-restorable: WorkGraph is a single global surface,
+  // so the set persists under a global key and survives a /workgraph reload. The
+  // persisted map holds only explicit user choices; a Stream with no entry falls
+  // back to the approved default (the lead Stream expanded, the rest collapsed).
+  // Because the default is derived rather than written, a first-ever visit needs
+  // no seeding and a deliberately-collapsed lead persists its `false`. Expansion
+  // is only ever read against the live Streams, so a stale id for a Stream that no
+  // longer exists is inert and never renders a phantom row.
+  const [expandedState, setExpandedState] = persisted(
+    Persist.global("workgraph.expanded-streams.v1"),
+    createStore<{ ids: Record<string, boolean> }>({ ids: {} }),
+  )
+  const isExpanded = (id: string) => expandedState.ids[id] ?? id === props.streams[0]?.id
+  const toggle = (id: string) => setExpandedState("ids", id, !isExpanded(id))
 
   return (
     <Show when={props.streams.length} fallback={props.empty}>
@@ -37,12 +54,13 @@ export function WorkGraphStreamTree(props: {
               outcomes={props.outcomes.filter((outcome) => outcome.streamId === stream.id)}
               items={props.items.filter((item) => item.streamId === stream.id && item.state !== "abandoned")}
               attempts={props.attempts.filter((attempt) => attempt.streamId === stream.id)}
-              expanded={expanded().has(stream.id)}
+              expanded={isExpanded(stream.id)}
               onToggle={() => toggle(stream.id)}
               relativeTime={props.relativeTime}
               client={props.client}
               mutate={props.mutate}
               onOpenStreamSettings={props.onOpenStreamSettings}
+              onOpenSession={props.onOpenSession}
             />
           )}
         </For>
@@ -62,12 +80,26 @@ function StreamTreeItem(props: {
   client: WorkGraphClient
   mutate: Mutate
   onOpenStreamSettings: (stream: StreamDto) => void
+  onOpenSession?: (reference: { sessionId: string; workspaceId?: string }) => void
 }) {
-  const liveAttempts = () => props.attempts.filter((attempt) => ["admitted", "placing", "running"].includes(attempt.state))
+  const liveAttempts = () =>
+    props.attempts.filter((attempt) => ["admitted", "placing", "running"].includes(attempt.state))
   const unassigned = () => props.items.filter((item) => !item.outcomeId)
   const completed = () => props.items.filter((item) => item.state === "completed").length
+  const executionTarget = () => {
+    const environment = props.stream.executionDefaults.environment
+    const revision = props.stream.executionDefaults.repository?.baseRevision
+    if (!environment || !revision) return "Execution target required"
+    if (environment.kind === "local_worktree" && !environment.directory) return "Execution target required"
+    if (environment.kind === "hosted_workspace" && !environment.repositoryUrl) return "Execution target required"
+    return `${environment.kind === "local_worktree" ? "Local worktree" : "Cloud workspace"} · ${revision}`
+  }
   const needsAttention = () =>
-    props.items.some((item) => ["blocked", "failed", "verification_failed", "review_needed", "integration_needed", "attention"].includes(item.state))
+    props.items.some((item) =>
+      ["blocked", "failed", "verification_failed", "review_needed", "integration_needed", "attention"].includes(
+        item.state,
+      ),
+    )
   const streamTone = (): "critical" | "active" | "info" | undefined =>
     props.stream.lifecycleState === "paused" || props.stream.lifecycleState === "closed"
       ? "info"
@@ -98,21 +130,54 @@ function StreamTreeItem(props: {
     recapCloseTimer = setTimeout(() => setRecapOpen(false), 90)
   }
   onCleanup(() => clearTimeout(recapCloseTimer))
+  // A Stream's durableEffectCount drives one explicit lifecycle action — never a
+  // fallback. Zero durable effects means the Stream is disposable, so Delete
+  // destroys its planned work and environment. Any durable effect means Close,
+  // which preserves the durable history and abandons unfinished work. If a race
+  // makes the backend reject the chosen command, mutate surfaces the typed error
+  // and the refreshed snapshot re-renders the now-correct single action for the
+  // user to invoke again; we never auto-issue the other command.
+  const hasDurableEffects = () => props.stream.durableEffectCount > 0
   const removeStream = async () => {
     if (removing()) return
     setRemoving(true)
     try {
-      const reason = "Deleted from overview"
-      const removed = await props.mutate(async () => {
-        const result = await props.client.deleteStream(props.stream.id, props.stream.version, reason)
-        if (!result.ok && result.error.code === "close_required") {
-          return props.client.closeStream(props.stream.id, props.stream.version, reason)
-        }
-        return result
-      })
+      const removed = await props.mutate(() =>
+        hasDurableEffects()
+          ? props.client.closeStream(props.stream.id, props.stream.version, "Closed from overview")
+          : props.client.deleteStream(props.stream.id, props.stream.version, "Deleted from overview"),
+      )
       if (removed) setConfirming(false)
     } finally {
       setRemoving(false)
+    }
+  }
+  // Execution is offered only when the current, client-observable Stream/task
+  // state matches what the backend's execute_stream would accept: the Stream is
+  // neither paused nor closed, and at least one Work Item is a ready batch
+  // member — pending with every dependency already completed. Decisions and
+  // leases are backend-only refinements we never fabricate; if a race makes the
+  // ready batch unadmittable, the server's typed rejection surfaces via mutate.
+  const executable = () => {
+    if (props.stream.lifecycleState === "paused" || props.stream.lifecycleState === "closed") return false
+    const completedIds = new Set(props.items.filter((item) => item.state === "completed").map((item) => item.id))
+    return props.items.some(
+      (item) => item.state === "pending" && item.dependencyIds.every((dependencyId) => completedIds.has(dependencyId)),
+    )
+  }
+  const [executeOpen, setExecuteOpen] = createSignal(false)
+  const [executing, setExecuting] = createSignal(false)
+  // The mode is always explicit — the popover never defaults; the user picks
+  // supervised (one ready batch, then stop) or autonomous (keep launching newly
+  // ready tasks until blocked/attention/complete), and we call that exact mode.
+  const runExecution = async (executionMode: ExecutionMode) => {
+    if (executing()) return
+    setExecuting(true)
+    try {
+      const launched = await props.mutate(() => props.client.executeStream(props.stream.id, executionMode))
+      if (launched) setExecuteOpen(false)
+    } finally {
+      setExecuting(false)
     }
   }
 
@@ -131,7 +196,9 @@ function StreamTreeItem(props: {
         >
           <Icon name="chevron-right" size="small" />
         </button>
-        <Show when={streamTone()}>{(tone) => <span class="workgraph-status-dot" data-tone={tone()} aria-hidden="true" />}</Show>
+        <Show when={streamTone()}>
+          {(tone) => <span class="workgraph-status-dot" data-tone={tone()} aria-hidden="true" />}
+        </Show>
         <span class="workgraph-stream-title">{props.stream.title}</span>
         <Show when={props.stream.activity.lastRecapId}>
           <Popover
@@ -153,7 +220,13 @@ function StreamTreeItem(props: {
               onBlur: scheduleRecapClose,
             }}
           >
-            <div class="workgraph-recap-pop" role="group" aria-label="Latest recap" onMouseEnter={openRecap} onMouseLeave={scheduleRecapClose}>
+            <div
+              class="workgraph-recap-pop"
+              role="group"
+              aria-label="Latest recap"
+              onMouseEnter={openRecap}
+              onMouseLeave={scheduleRecapClose}
+            >
               <Switch>
                 <Match when={recap.loading && !recap()}>
                   <div class="workgraph-detail-status" role="status" aria-live="polite">
@@ -162,7 +235,7 @@ function StreamTreeItem(props: {
                 </Match>
                 <Match when={recap.error}>
                   <div class="workgraph-detail-status is-error" role="alert">
-                    {String((recap.error as { message?: string })?.message ?? "Recap could not be loaded.")}
+                    {recap.error instanceof Error ? recap.error.message : String(recap.error)}
                   </div>
                 </Match>
                 <Match when={recap()}>
@@ -174,7 +247,8 @@ function StreamTreeItem(props: {
                       </div>
                       <p class="workgraph-recap-pop-summary text-text-base">{loaded().summary}</p>
                       <div class="workgraph-recap-pop-meta text-text-weaker">
-                        {loaded().actionableReferences.length} actionable ref{loaded().actionableReferences.length === 1 ? "" : "s"}
+                        {loaded().actionableReferences.length} actionable ref
+                        {loaded().actionableReferences.length === 1 ? "" : "s"}
                       </div>
                     </>
                   )}
@@ -193,12 +267,56 @@ function StreamTreeItem(props: {
             {completed() ? ` · ${completed()} done` : ""}
           </span>
           <span aria-hidden="true">·</span>
-          <span>{Object.keys(props.stream.executionDefaults).length ? `${Object.keys(props.stream.executionDefaults).length} Stream overrides` : "inherits WorkGraph defaults"}</span>
+          <span>{executionTarget()}</span>
           <Show when={liveAttempts().length}>
             <span aria-hidden="true">·</span>
             <span class="workgraph-running">{liveAttempts().length} running</span>
           </Show>
         </span>
+        <Show when={executable()}>
+          <Popover
+            placement="bottom-end"
+            portal
+            style={{ "z-index": "400" }}
+            open={executeOpen()}
+            onOpenChange={setExecuteOpen}
+            trigger={<Icon name="console" size="small" />}
+            triggerAs="button"
+            triggerProps={{
+              type: "button",
+              class: "workgraph-row-settings",
+              "aria-label": `Execute stream ${props.stream.title}`,
+              onClick: (event: MouseEvent) => event.stopPropagation(),
+            }}
+          >
+            <div class="workgraph-confirm" role="menu" aria-label={`Execute stream ${props.stream.title}`}>
+              <p class="workgraph-confirm-text">
+                <b>Supervised</b> runs the currently ready batch once and stops. <b>Autonomous</b> keeps launching newly
+                ready tasks until the Stream is blocked, needs attention, or is complete.
+              </p>
+              <div class="workgraph-confirm-actions">
+                <Button
+                  size="small"
+                  variant="secondary"
+                  role="menuitem"
+                  disabled={executing()}
+                  onClick={() => void runExecution("supervised")}
+                >
+                  Supervised
+                </Button>
+                <Button
+                  size="small"
+                  variant="primary"
+                  role="menuitem"
+                  disabled={executing()}
+                  onClick={() => void runExecution("autonomous")}
+                >
+                  Autonomous
+                </Button>
+              </div>
+            </div>
+          </Popover>
+        </Show>
         <button
           type="button"
           class="workgraph-row-settings"
@@ -210,7 +328,9 @@ function StreamTreeItem(props: {
         >
           <Icon name="sliders" size="small" />
         </button>
-        <span class="workgraph-stream-time text-text-weaker">{props.relativeTime(props.stream.activity.lastActivityAt)}</span>
+        <span class="workgraph-stream-time text-text-weaker">
+          {props.relativeTime(props.stream.activity.lastActivityAt)}
+        </span>
         <Popover
           placement="bottom-end"
           portal
@@ -222,20 +342,37 @@ function StreamTreeItem(props: {
           triggerProps={{
             type: "button",
             class: "workgraph-row-delete",
-            "aria-label": `Delete stream ${props.stream.title}`,
+            "aria-label": `${hasDurableEffects() ? "Close" : "Delete"} stream ${props.stream.title}`,
             onClick: (event: MouseEvent) => event.stopPropagation(),
           }}
         >
           <div class="workgraph-confirm">
             <p class="workgraph-confirm-text">
-              Delete <b>{props.stream.title}</b>? Its planned work is discarded. If the stream has durable effects it's closed instead — the record is kept.
+              <Show
+                when={hasDurableEffects()}
+                fallback={
+                  <>
+                    Delete <b>{props.stream.title}</b>? Its disposable planned work and environment are destroyed. It
+                    has no durable history to keep.
+                  </>
+                }
+              >
+                Close <b>{props.stream.title}</b>? Its durable history is preserved and any unfinished work is
+                abandoned.
+              </Show>
             </p>
             <div class="workgraph-confirm-actions">
               <Button size="small" variant="ghost" onClick={() => setConfirming(false)}>
                 Cancel
               </Button>
               <Button size="small" variant="primary" disabled={removing()} onClick={() => void removeStream()}>
-                {removing() ? "Deleting…" : "Delete stream"}
+                {removing()
+                  ? hasDurableEffects()
+                    ? "Closing…"
+                    : "Deleting…"
+                  : hasDurableEffects()
+                    ? "Close stream"
+                    : "Delete stream"}
               </Button>
             </div>
           </div>
@@ -252,21 +389,36 @@ function StreamTreeItem(props: {
                 streamId={props.stream.id}
                 client={props.client}
                 mutate={props.mutate}
+                onOpenSession={props.onOpenSession}
               />
             )}
           </For>
           <Show when={props.outcomes.length > 0 && unassigned().length}>
-            <OutcomeGroup items={unassigned()} attempts={props.attempts} streamId={props.stream.id} client={props.client} mutate={props.mutate} />
+            <OutcomeGroup
+              items={unassigned()}
+              attempts={props.attempts}
+              streamId={props.stream.id}
+              client={props.client}
+              mutate={props.mutate}
+              onOpenSession={props.onOpenSession}
+            />
           </Show>
           <Show when={props.outcomes.length === 0}>
             <div class="workgraph-leaves workgraph-stream-leaves">
               <For each={unassigned()}>
-                {(item) => <WorkItemLeaf item={item} attempts={props.attempts} client={props.client} mutate={props.mutate} />}
+                {(item) => (
+                  <WorkItemLeaf item={item} attempts={props.attempts} client={props.client} mutate={props.mutate} onOpenSession={props.onOpenSession} />
+                )}
               </For>
             </div>
           </Show>
           <div class="workgraph-stream-add">
-            <InlineAddTask streamId={props.stream.id} scopeLabel={props.stream.title} client={props.client} mutate={props.mutate} />
+            <InlineAddTask
+              streamId={props.stream.id}
+              scopeLabel={props.stream.title}
+              client={props.client}
+              mutate={props.mutate}
+            />
           </div>
         </div>
       </Show>
@@ -281,6 +433,7 @@ function OutcomeGroup(props: {
   streamId: string
   client: WorkGraphClient
   mutate: Mutate
+  onOpenSession?: (reference: { sessionId: string; workspaceId?: string }) => void
 }) {
   const shipped = () => props.outcome?.state === "completed"
   return (
@@ -288,7 +441,9 @@ function OutcomeGroup(props: {
       <div class="workgraph-outcome-head">
         <Show
           when={shipped()}
-          fallback={<span class="workgraph-outcome-marker" classList={{ "is-orphan": !props.outcome }} aria-hidden="true" />}
+          fallback={
+            <span class="workgraph-outcome-marker" classList={{ "is-orphan": !props.outcome }} aria-hidden="true" />
+          }
         >
           <Icon name="circle-check" size="small" class="workgraph-outcome-check" />
         </Show>
@@ -297,7 +452,8 @@ function OutcomeGroup(props: {
         </span>
         <Show when={props.outcome}>
           <span class="workgraph-outcome-crit text-text-weaker">
-            {props.outcome!.successCriteria.length} {props.outcome!.successCriteria.length === 1 ? "criterion" : "criteria"}
+            {props.outcome!.successCriteria.length}{" "}
+            {props.outcome!.successCriteria.length === 1 ? "criterion" : "criteria"}
           </span>
         </Show>
         <Show when={shipped()}>
@@ -306,23 +462,42 @@ function OutcomeGroup(props: {
       </div>
       <div class="workgraph-leaves">
         <For each={props.items}>
-          {(item) => <WorkItemLeaf item={item} attempts={props.attempts} client={props.client} mutate={props.mutate} />}
+          {(item) => <WorkItemLeaf item={item} attempts={props.attempts} client={props.client} mutate={props.mutate} onOpenSession={props.onOpenSession} />}
         </For>
         <Show when={props.outcome}>
-          <InlineAddTask streamId={props.streamId} outcomeId={props.outcome!.id} scopeLabel={props.outcome!.title} client={props.client} mutate={props.mutate} />
+          <InlineAddTask
+            streamId={props.streamId}
+            outcomeId={props.outcome!.id}
+            scopeLabel={props.outcome!.title}
+            client={props.client}
+            mutate={props.mutate}
+          />
         </Show>
       </div>
     </div>
   )
 }
 
-function WorkItemLeaf(props: { item: WorkItemDto; attempts: AttemptDto[]; client: WorkGraphClient; mutate: Mutate }) {
+function WorkItemLeaf(props: {
+  item: WorkItemDto
+  attempts: AttemptDto[]
+  client: WorkGraphClient
+  mutate: Mutate
+  onOpenSession?: (reference: { sessionId: string; workspaceId?: string }) => void
+}) {
   const waits = () => props.item.dependencyIds.length
+  const latestAttempt = () =>
+    props.attempts
+      .filter((attempt) => attempt.workItemId === props.item.id)
+      .toSorted((left, right) => left.attemptNumber - right.attemptNumber)
+      .at(-1)
   const hasLiveAttempt = () =>
     props.attempts.some(
       (attempt) => attempt.workItemId === props.item.id && ["admitted", "placing", "running"].includes(attempt.state),
     )
   const [busy, setBusy] = createSignal(false)
+  const [openingSession, setOpeningSession] = createSignal(false)
+  const [sessionError, setSessionError] = createSignal<string>()
   const remove = async (event: MouseEvent) => {
     event.stopPropagation()
     if (busy() || hasLiveAttempt()) return
@@ -333,7 +508,33 @@ function WorkItemLeaf(props: { item: WorkItemDto; attempts: AttemptDto[]; client
       setBusy(false)
     }
   }
+  const openSession = async (event: MouseEvent) => {
+    event.stopPropagation()
+    const attempt = latestAttempt()
+    if (!attempt || openingSession()) return
+    setOpeningSession(true)
+    setSessionError()
+    try {
+      const references = (await props.client.attempt(attempt.id)).executionReferences
+      if (!references?.sessionId) {
+        setSessionError("Session unavailable")
+        return
+      }
+      props.onOpenSession?.({
+        sessionId: references.sessionId,
+        ...(references.workspaceId ? { workspaceId: references.workspaceId } : {}),
+      })
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : "Session unavailable")
+    } finally {
+      setOpeningSession(false)
+    }
+  }
   const showState = () => props.item.state !== "pending"
+  const sessionAvailable = () => {
+    const attempt = latestAttempt()
+    return !!props.onOpenSession && !!attempt && !["admitted", "placing"].includes(attempt.state)
+  }
 
   return (
     <div class="workgraph-leaf">
@@ -345,6 +546,19 @@ function WorkItemLeaf(props: { item: WorkItemDto; attempts: AttemptDto[]; client
       <span class="workgraph-leaf-gap" aria-hidden="true" />
       <Show when={showState()}>
         <span class="workgraph-leaf-state text-text-weaker">{props.item.state.replaceAll("_", " ")}</span>
+      </Show>
+      <Show when={sessionError()}>{(message) => <span class="workgraph-leaf-session-error" role="alert">{message()}</span>}</Show>
+      <Show when={sessionAvailable()}>
+        <button
+          type="button"
+          class="workgraph-leaf-session"
+          aria-label={`Open session for ${props.item.title}`}
+          disabled={openingSession()}
+          onClick={(event) => void openSession(event)}
+        >
+          <span>{openingSession() ? "Opening…" : "Session"}</span>
+          <Icon name="arrow-right" size="small" />
+        </button>
       </Show>
       <Show when={!hasLiveAttempt()}>
         <button
@@ -361,7 +575,13 @@ function WorkItemLeaf(props: { item: WorkItemDto; attempts: AttemptDto[]; client
   )
 }
 
-function InlineAddTask(props: { streamId: string; outcomeId?: string; scopeLabel: string; client: WorkGraphClient; mutate: Mutate }) {
+function InlineAddTask(props: {
+  streamId: string
+  outcomeId?: string
+  scopeLabel: string
+  client: WorkGraphClient
+  mutate: Mutate
+}) {
   const [open, setOpen] = createSignal(false)
   const [value, setValue] = createSignal("")
   const [busy, setBusy] = createSignal(false)
@@ -406,7 +626,11 @@ function InlineAddTask(props: { streamId: string; outcomeId?: string; scopeLabel
       <div class="workgraph-add-task-row">
         <Icon name="plus-small" size="small" class="workgraph-add-task-icon" />
         <input
-          autofocus
+          ref={(input) => {
+            requestAnimationFrame(() => {
+              if (input.isConnected) input.focus()
+            })
+          }}
           class="workgraph-add-task-input"
           aria-label={`Add task to ${props.scopeLabel}`}
           value={value()}
@@ -441,6 +665,7 @@ function statusTone(state: string): "critical" | "active" | "info" {
 function recapGeneratedLabel(recap: RecapDto, relativeTime: (timestamp: number) => string) {
   const generation = recap.generation
   if (generation.state === "succeeded") return relativeTime(generation.generatedAt)
-  if (generation.state === "failed") return generation.failedAt ? `failed · ${relativeTime(generation.failedAt)}` : "failed"
+  if (generation.state === "failed")
+    return generation.failedAt ? `failed · ${relativeTime(generation.failedAt)}` : "failed"
   return "invalidated"
 }

@@ -5,6 +5,9 @@ const id = <Brand extends string>(brand: Brand) => z.string().trim().min(1).bran
 export const OwnerUserIDSchema = id("OwnerUserID")
 export type OwnerUserID = z.infer<typeof OwnerUserIDSchema>
 
+export const OrganizationIDSchema = id("OrganizationID")
+export type OrganizationID = z.infer<typeof OrganizationIDSchema>
+
 export const ActorIDSchema = id("ActorID")
 export type ActorID = z.infer<typeof ActorIDSchema>
 

@@ -2,10 +2,23 @@ import { z } from "zod"
 import { ConnectionIDSchema } from "./ids"
 
 export const ExecutionEnvironmentSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("local_worktree"), presetId: z.string().trim().min(1).optional() }),
-  z.strictObject({ kind: z.literal("hosted_workspace"), presetId: z.string().trim().min(1).optional() }),
+  z.strictObject({
+    kind: z.literal("local_worktree"),
+    directory: z.string().trim().min(1).optional(),
+    presetId: z.string().trim().min(1).optional(),
+  }),
+  z.strictObject({
+    kind: z.literal("hosted_workspace"),
+    repositoryUrl: z.string().url().optional(),
+    presetId: z.string().trim().min(1).optional(),
+  }),
 ])
 export type ExecutionEnvironment = z.infer<typeof ExecutionEnvironmentSchema>
+
+export function executionEnvironmentHasTarget(environment: ExecutionEnvironment) {
+  if (environment.kind === "local_worktree") return !!environment.directory?.trim()
+  return !!environment.repositoryUrl?.trim()
+}
 
 export const RepositoryTargetSchema = z.strictObject({
   remoteUrl: z.string().url().optional(),
@@ -28,15 +41,18 @@ const executionProfileShape = {
   effort: z.string().trim().min(1),
   tools: z.array(z.string().trim().min(1)),
   connectionIds: z.array(ConnectionIDSchema),
-  isolation: z.enum(["stream", "child"]),
-  cleanup: z.enum(["destroy_on_close", "retain"]),
-  integration: z.enum(["manual", "pull_request", "direct"]),
 }
 
-export const ExecutionProfileDefaultsSchema = z.strictObject(executionProfileShape).partial()
+export const ExecutionProfileDefaultsSchema = z.preprocess(
+  withoutLegacyPolicies,
+  z.strictObject(executionProfileShape).partial(),
+)
 export type ExecutionProfileDefaults = z.infer<typeof ExecutionProfileDefaultsSchema>
 
-export const ResolvedExecutionProfileSchema = z.strictObject(executionProfileShape).readonly().transform(deepFreeze)
+export const ResolvedExecutionProfileSchema = z.preprocess(
+  withoutLegacyPolicies,
+  z.strictObject(executionProfileShape).readonly(),
+).transform(deepFreeze)
 export type ResolvedExecutionProfile = z.infer<typeof ResolvedExecutionProfileSchema>
 
 export const ExecutionProfileLevelSchema = z.enum(["workgraph", "stream", "outcome", "work_item"])
@@ -49,6 +65,22 @@ export const RecapProfileDefaultsSchema = z.strictObject({
 })
 export type RecapProfileDefaults = z.infer<typeof RecapProfileDefaultsSchema>
 
+export const DEFAULT_RECAP_QUIET_HOURS = 8
+
+export function resolveRecapProfileDefaults(input: Readonly<{
+  recap?: RecapProfileDefaults
+  execution?: ExecutionProfileDefaults
+}>) {
+  const model = input.recap?.model ?? input.execution?.model
+  const effort = input.recap?.effort ?? input.execution?.effort
+  if (!model || !effort) return undefined
+  return {
+    model: { ...model },
+    effort,
+    quietHours: input.recap?.quietHours ?? DEFAULT_RECAP_QUIET_HOURS,
+  } satisfies Required<RecapProfileDefaults>
+}
+
 export const WorkGraphDefaultsSchema = z.strictObject({
   execution: ExecutionProfileDefaultsSchema,
   recap: RecapProfileDefaultsSchema,
@@ -59,4 +91,14 @@ function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== "object") return value
   Object.values(value).forEach(deepFreeze)
   return Object.freeze(value) as T
+}
+
+function withoutLegacyPolicies(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value
+  if (!("cleanup" in value) && !("integration" in value) && !("isolation" in value)) return value
+  const result = { ...(value as Record<string, unknown>) }
+  delete result.cleanup
+  delete result.integration
+  delete result.isolation
+  return result
 }

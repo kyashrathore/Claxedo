@@ -12,7 +12,13 @@ type ColumnInfo = {
 }
 
 const sqls = [
-  "CREATE TABLE IF NOT EXISTS `claxedo_page` (`id` text PRIMARY KEY NOT NULL, `org_id` text NOT NULL, `project_id` text NOT NULL, `title` text NOT NULL DEFAULT 'Untitled', `content` text NOT NULL DEFAULT '', `visibility` text NOT NULL DEFAULT 'project', `version` integer NOT NULL DEFAULT 0, `status` text NOT NULL DEFAULT 'draft', `session_id` text, `directory` text, `source_kind` text, `source_repo_root` text, `source_repo_key` text, `source_path` text, `source_branch` text, `base_commit` text, `base_blob_sha` text, `base_tree_sha` text, `last_materialized_commit` text, `last_materialized_blob_sha` text, `last_commit_at` text, `last_commit_author_id` text, `commit_status` text NOT NULL DEFAULT 'draft', `created_at` text NOT NULL, `updated_at` text NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_document` (`id` text PRIMARY KEY NOT NULL, `org_id` text NOT NULL, `project_id` text NOT NULL, `title` text NOT NULL, `head_revision_id` text NOT NULL, `created_at` integer NOT NULL, `updated_at` integer NOT NULL)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_document_project_idx` ON `claxedo_document` (`org_id`, `project_id`, `updated_at`)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS `claxedo_document_org_id_unique` ON `claxedo_document` (`org_id`, `id`)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_document_revision` (`id` text PRIMARY KEY NOT NULL, `document_id` text NOT NULL REFERENCES `claxedo_document`(`id`) ON DELETE CASCADE, `revision_number` integer NOT NULL, `parent_revision_id` text, `title` text NOT NULL, `markdown` text NOT NULL, `content_hash` text NOT NULL, `authored_at` integer NOT NULL, `authored_by_type` text NOT NULL, `authored_by_id` text NOT NULL, `created_at` integer NOT NULL)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS `claxedo_document_revision_number_unique` ON `claxedo_document_revision` (`document_id`, `revision_number`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_document_revision_document_idx` ON `claxedo_document_revision` (`document_id`, `created_at`)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_page` (`id` text PRIMARY KEY NOT NULL, `org_id` text NOT NULL, `project_id` text NOT NULL, `title` text NOT NULL DEFAULT 'Untitled', `content` text NOT NULL DEFAULT '', `visibility` text NOT NULL DEFAULT 'project', `version` integer NOT NULL DEFAULT 0, `status` text NOT NULL DEFAULT 'draft', `session_id` text, `directory` text, `source_kind` text, `source_repo_root` text, `source_repo_key` text, `source_path` text, `source_branch` text, `base_commit` text, `base_blob_sha` text, `base_tree_sha` text, `last_materialized_commit` text, `last_materialized_blob_sha` text, `last_commit_at` text, `last_commit_author_id` text, `commit_status` text NOT NULL DEFAULT 'draft', `document_id` text, `document_revision_id` text, `created_at` text NOT NULL, `updated_at` text NOT NULL)",
   "CREATE INDEX IF NOT EXISTS `claxedo_page_project_idx` ON `claxedo_page` (`org_id`, `project_id`)",
   "CREATE INDEX IF NOT EXISTS `claxedo_page_updated_idx` ON `claxedo_page` (`org_id`, `project_id`, `updated_at`)",
   "CREATE TABLE IF NOT EXISTS `claxedo_page_status` (`id` text NOT NULL, `project_id` text NOT NULL, `name` text NOT NULL, `color` text NOT NULL DEFAULT '#6b7280', `position` integer NOT NULL DEFAULT 0, `transitions` text NOT NULL DEFAULT '[]', PRIMARY KEY(`project_id`, `id`))",
@@ -49,6 +55,8 @@ const sqls = [
 ] as const
 
 const tabs = [
+  "claxedo_document",
+  "claxedo_document_revision",
   "claxedo_page",
   "claxedo_page_status",
   "claxedo_page_arena",
@@ -312,6 +320,18 @@ function ensureWorkspaceLeaseDriverColumns(db: SqliteInstance, out: string[]) {
   renameColumn(db, "claxedo_terminal_session", "provider", "driver", out)
 }
 
+function ensurePageDocumentColumns(db: SqliteInstance, out: string[]) {
+  if (!hasColumn(db, "claxedo_page", "document_id")) {
+    db.exec("ALTER TABLE `claxedo_page` ADD COLUMN `document_id` text")
+    out.push("claxedo_page.document_id")
+  }
+  if (!hasColumn(db, "claxedo_page", "document_revision_id")) {
+    db.exec("ALTER TABLE `claxedo_page` ADD COLUMN `document_revision_id` text")
+    out.push("claxedo_page.document_revision_id")
+  }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS `claxedo_page_document_unique` ON `claxedo_page` (`document_id`)")
+}
+
 export function repair(db: SqliteInstance) {
   const out: string[] = tabs.filter((name) => !hasTable(db, name))
   const pageNeedsRebuild = hasTable(db, "claxedo_page")
@@ -349,6 +369,7 @@ export function repair(db: SqliteInstance) {
   ensureSessionAssociationIndexes(db)
   ensureNetworkPolicyHarnessColumn(db, out)
   ensureWorkspaceLeaseDriverColumns(db, out)
+  ensurePageDocumentColumns(db, out)
 
   return out
 }

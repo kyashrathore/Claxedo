@@ -171,6 +171,7 @@ async function setup(factory: SnapshotRestartConformanceFactory) {
 
 function context(ownerUserId: string): WorkGraphContext {
   return {
+    organizationId: "organization" as WorkGraphContext["organizationId"],
     ownerUserId: ownerUserId as OwnerUserID,
     actor: { type: "user", id: ownerUserId as never },
     requestId: `request_${ownerUserId}` as never,

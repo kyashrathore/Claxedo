@@ -85,7 +85,7 @@ describe("hosted WorkGraph Connections port", () => {
     expect(reads).toBe(0)
   })
 
-  it("fails closed for absent credentials and cross-owner metadata", async () => {
+  it("fails closed for absent credentials and cross-tenant metadata", async () => {
     let reads = 0
     const missing = createHostedWorkGraphConnectionsPort({
       resolveMetadata: async () => [row()],
@@ -97,11 +97,20 @@ describe("hosted WorkGraph Connections port", () => {
     })
     await expect(handle!.withAuthorization(async () => undefined)).rejects.toBeInstanceOf(HostedConnectionCredentialUnavailableError)
 
-    const foreign = createHostedWorkGraphConnectionsPort({
+    const sharedWithinOrganization = createHostedWorkGraphConnectionsPort({
       resolveMetadata: async () => [row({ ownerUserId: "mallory" })],
       credentials: () => credentials(() => (reads++, "foreign-secret")),
     })
-    expect(await foreign.resolveCapabilities(context(), {
+    expect(await sharedWithinOrganization.resolveCapabilities(context(), {
+      connectionIds: [ConnectionIDSchema.parse("connection")],
+      capability: "work-source",
+    })).toHaveLength(1)
+
+    const foreignOrganization = createHostedWorkGraphConnectionsPort({
+      resolveMetadata: async () => [row({ orgId: "org-other" })],
+      credentials: () => credentials(() => (reads++, "foreign-org-secret")),
+    })
+    expect(await foreignOrganization.resolveCapabilities(context(), {
       connectionIds: [ConnectionIDSchema.parse("connection")],
       capability: "work-source",
     })).toEqual([])
@@ -111,6 +120,7 @@ describe("hosted WorkGraph Connections port", () => {
 
 function context(): WorkGraphContext {
   return {
+    organizationId: "org-acme" as never,
     ownerUserId: OwnerUserIDSchema.parse("alice"),
     actor: { type: "agent", id: ActorIDSchema.parse("attempt-agent") },
     requestId: RequestIDSchema.parse("request"),

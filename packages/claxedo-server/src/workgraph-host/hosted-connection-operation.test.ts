@@ -3,6 +3,7 @@ import { errors, generateKeyPair } from "jose"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import { ConnectionsUnavailableError } from "@claxedo/connections"
 import {
+  SourceIssueConfigurationError,
   SourceIssueProviderError,
   SourceIssueResponseError,
   SourceIssueTransportError,
@@ -13,9 +14,36 @@ import {
   HostedConnectionCredentialUnavailableError,
   HostedConnectionReconnectRequiredError,
 } from "./hosted-connections"
-import { createHostedConnectionOperationHandler } from "./hosted-connection-operation"
+import {
+  createHostedConnectionOperationExecutor,
+  createHostedConnectionOperationHandler,
+} from "./hosted-connection-operation"
 
 describe("hosted Connection operation endpoint", () => {
+  it("resolves the personal Attempt binding by the verified organization and user", async () => {
+    const queries: Record<string, unknown>[] = []
+    const execute = createHostedConnectionOperationExecutor({
+      env: { CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      executor: {
+        query: async (_fn, args) => {
+          queries.push(args)
+          return null
+        },
+      },
+    })!
+
+    await expect(execute({ ownerUserId: "alice", orgId: "org-acme" }, requestBody("workspace")))
+      .rejects.toBeInstanceOf(ConnectionOperationDeniedError)
+    expect(queries).toEqual([expect.objectContaining({
+      service_token: "service-secret",
+      orgId: "org-acme",
+      ownerUserId: "alice",
+      attemptId: "attempt",
+      workspaceId: "workspace",
+      connectionId: "connection",
+    })])
+  })
+
   it("derives owner and org only from a verified exact-workspace RAT", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
@@ -87,6 +115,7 @@ describe("hosted Connection operation endpoint", () => {
       { error: new HostedConnectionReconnectRequiredError("connection-secret"), status: 409, code: "hosted_connection_reconnect_required" },
       { error: new HostedConnectionCredentialUnavailableError("connection-secret"), status: 503, code: "hosted_connection_credential_unavailable" },
       { error: new ConnectionsUnavailableError(), status: 503, code: "connections_unavailable" },
+      { error: new SourceIssueConfigurationError("jira provider-secret", "site_url"), status: 409, code: "connection_provider_configuration_required" },
       { error: new SourceIssueUnauthorizedError("provider-secret"), status: 401, code: "connection_provider_unauthorized" },
       { error: new SourceIssueResponseError("provider-secret"), status: 502, code: "connection_provider_invalid_response" },
       { error: new SourceIssueTransportError("provider-secret"), status: 503, code: "connection_provider_unavailable" },
@@ -176,10 +205,14 @@ function request(token: string | undefined, workspaceId: string) {
   return new Request("https://central.test/internal/workgraph/connection-operation", {
     method: "POST",
     headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({
-      version: 1,
-      identity: { attemptId: "attempt", sessionId: "session", workspaceId, connectionId: "connection" },
-      operation: { type: "comment", externalId: "42", body: "Done", idempotencyKey: "once" },
-    }),
+    body: JSON.stringify(requestBody(workspaceId)),
   })
+}
+
+function requestBody(workspaceId: string) {
+  return {
+    version: 1 as const,
+    identity: { attemptId: "attempt", sessionId: "session", workspaceId, connectionId: "connection" },
+    operation: { type: "comment" as const, externalId: "42", body: "Done", idempotencyKey: "once" },
+  }
 }

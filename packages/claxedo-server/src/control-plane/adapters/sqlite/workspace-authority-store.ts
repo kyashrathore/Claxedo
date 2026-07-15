@@ -1,3 +1,4 @@
+import fs from "node:fs"
 import path from "path"
 import Database from "better-sqlite3"
 import { dataDir } from "../../../paths"
@@ -200,6 +201,7 @@ CREATE TABLE IF NOT EXISTS channel_identities (
 export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
   return lazy(() => {
     const file = options.path ?? path.join(dataDir(), "authority.db")
+    if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true })
     const db = new Database(file)
     db.pragma("journal_mode = WAL")
     db.pragma("synchronous = NORMAL")

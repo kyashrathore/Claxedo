@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "vitest"
 import type { AdmissionAgentPlan } from "@claxedo/workgraph/contracts"
+import { createChangeCursor, createSnapshotResumeCursor } from "@claxedo/workgraph/contracts"
 import {
   claimRecaps,
   claimSourcePlans,
@@ -7,13 +8,16 @@ import {
   completeSourcePlan,
   enqueueIndependentSessionIntake,
   failSourcePlan,
+  listRunningRecaps,
   listRunningSourcePlans,
+  markRecapSession,
   markSourcePlanSession,
   retryRecapLaunch,
   retrySourcePlanLaunch,
   scheduleDueRecaps,
 } from "../../../../convex/workgraphBackground"
 import { appendSourceRevision } from "../../../../convex/workgraphCommands"
+import { readWorkGraphProjection } from "../../../../convex/workgraphChanges"
 
 beforeEach(() => {
   process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = "service-secret"
@@ -35,6 +39,7 @@ describe("hosted WorkGraph background jobs", () => {
           owner_user_id: "user-a",
           id: "stream-a",
           lifecycle_state: "active",
+          recap_defaults: { quietHours: 8, model: { providerId: "openai", modelId: "gpt-5" }, effort: "high" },
           activity: { lastActivityAt: 1, recapDueAt: 2 },
           updated_at: 2,
         },
@@ -56,10 +61,155 @@ describe("hosted WorkGraph background jobs", () => {
     })
   })
 
+  test("surfaces missing explicit Stream Recap configuration without scheduling generation", async () => {
+    const db = new BackgroundDb({
+      workgraph_streams: [
+        {
+          _id: "stream-row",
+          owner_user_id: "user-a",
+          id: "stream-a",
+          lifecycle_state: "active",
+          recap_defaults: {},
+          activity: { lastActivityAt: 1, recapDueAt: 2 },
+          recap_due_at: 2,
+          updated_at: 2,
+        },
+      ],
+      workgraph_events: [{ _id: "event-row", owner_user_id: "user-a", stream_id: "stream-a", sequence: 4 }],
+      workgraph_recaps: [],
+      workgraph_due_jobs: [],
+    })
+
+    await handler(scheduleDueRecaps)({ db } as never, { limit: 10 })
+
+    expect(db.rows.workgraph_due_jobs).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        due_at: Number.MAX_SAFE_INTEGER,
+        last_error: "Recap requires explicit Stream model, effort, and quietHours configuration",
+        payload: expect.objectContaining({
+          configurationRequirement: {
+            type: "generation",
+            purpose: "recap",
+            scope: { type: "stream", streamId: "stream-a" },
+          },
+        }),
+      }),
+    ])
+    expect(db.rows.workgraph_due_jobs).not.toEqual([expect.objectContaining({ status: "pending" })])
+  })
+
+  test("schedules an empty Stream Recap from inherited execution defaults", async () => {
+    const db = new BackgroundDb({
+      workgraphs: [{
+        _id: "workgraph-row",
+        organization_id: "org-a",
+        owner_user_id: "user-a",
+        id: "workgraph_default",
+        defaults: { agent: "build", model: { providerId: "openai", modelId: "gpt-5" }, effort: "high" },
+      }],
+      workgraph_streams: [{
+        _id: "stream-row",
+        organization_id: "org-a",
+        owner_user_id: "user-a",
+        id: "stream-a",
+        lifecycle_state: "active",
+        execution_defaults: {},
+        recap_defaults: {},
+        activity: { lastActivityAt: 1, recapDueAt: 2 },
+        recap_due_at: 2,
+        updated_at: 2,
+      }],
+      workgraph_events: [{ _id: "event-row", organization_id: "org-a", owner_user_id: "user-a", stream_id: "stream-a", sequence: 4 }],
+      workgraph_recaps: [],
+      workgraph_due_jobs: [],
+    })
+
+    await handler(scheduleDueRecaps)({ db } as never, { limit: 10 })
+
+    expect(db.rows.workgraph_due_jobs).toEqual([
+      expect.objectContaining({ status: "pending", subject_id: "stream-a:4" }),
+    ])
+  })
+
+  test("clears stale Recap configuration attention while preserving the inherited quiet period", async () => {
+    const lastActivityAt = Date.now() - 60 * 60 * 1000
+    const eligibleAt = lastActivityAt + 8 * 60 * 60 * 1000
+    const db = new BackgroundDb({
+      workgraphs: [{
+        _id: "workgraph-row",
+        owner_user_id: "user-a",
+        id: "workgraph_default",
+        defaults: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high" },
+      }],
+      workgraph_streams: [{
+        _id: "stream-row",
+        owner_user_id: "user-a",
+        id: "stream-a",
+        lifecycle_state: "active",
+        execution_defaults: {},
+        recap_defaults: {},
+        activity: { lastActivityAt, recapDueAt: 2 },
+        recap_due_at: 2,
+        updated_at: lastActivityAt,
+      }],
+      workgraph_due_jobs: [{
+        _id: "job-row",
+        owner_user_id: "user-a",
+        id: "stale-recap-job",
+        stream_id: "stream-a",
+        job_type: "recap",
+        subject_id: "stream-a:4",
+        due_at: Number.MAX_SAFE_INTEGER,
+        status: "failed",
+        payload: {
+          streamId: "stream-a",
+          fromSequence: 1,
+          toSequence: 4,
+          quietSince: lastActivityAt,
+          configurationRequirement: {
+            type: "generation",
+            purpose: "recap",
+            scope: { type: "stream", streamId: "stream-a" },
+          },
+        },
+        last_error: "Recap requires explicit Stream model, effort, and quietHours configuration",
+        row_version: 1,
+        updated_at: lastActivityAt,
+      }],
+      workgraph_attention_summaries: [{
+        _id: "attention-summary",
+        owner_user_id: "user-a",
+        total: 1,
+        external_issue_count: 0,
+        session_count: 0,
+        projection_version: 2,
+        updated_at: lastActivityAt,
+      }],
+      workgraph_attention_entries: [{
+        _id: "attention-entry",
+        owner_user_id: "user-a",
+        kind: "configuration_required",
+        id: "stale-recap-job",
+      }],
+    })
+
+    await handler(scheduleDueRecaps)({ db } as never, { limit: 10 })
+
+    expect(db.rows.workgraph_due_jobs[0]).toMatchObject({ status: "completed", due_at: eligibleAt, row_version: 2 })
+    expect(db.rows.workgraph_streams[0]).toMatchObject({
+      activity: { lastActivityAt, recapDueAt: eligibleAt },
+      recap_due_at: eligibleAt,
+    })
+    expect(db.rows.workgraph_attention_entries).toHaveLength(0)
+    expect(db.rows.workgraph_attention_summaries[0]).toMatchObject({ total: 0 })
+  })
+
   test("enqueues meaningful independent Sessions once and excludes WorkGraph execution Sessions", async () => {
     const db = new BackgroundDb({ workgraph_attempts: [], workgraph_due_jobs: [] })
     const context = { db } as never
     const input = {
+      organizationId: "org-a" as never,
       ownerUserId: "user-a" as never,
       sessionId: "session-independent",
       title: "Launch planning",
@@ -69,7 +219,12 @@ describe("hosted WorkGraph background jobs", () => {
 
     await expect(enqueueIndependentSessionIntake(context, input)).resolves.toBe("created")
     await expect(enqueueIndependentSessionIntake(context, input)).resolves.toBe("existing")
-    db.rows.workgraph_attempts.push({ _id: "attempt-row", owner_user_id: "user-a", session_id: "session-workgraph" })
+    db.rows.workgraph_attempts.push({
+      _id: "attempt-row",
+      organization_id: "org-a",
+      owner_user_id: "user-a",
+      session_id: "session-workgraph",
+    })
     await expect(enqueueIndependentSessionIntake(context, { ...input, sessionId: "session-workgraph" })).resolves.toBe(
       "ignored",
     )
@@ -79,18 +234,31 @@ describe("hosted WorkGraph background jobs", () => {
   test("atomically publishes one actionable Recap notification and no retry duplicate", async () => {
     const db = new BackgroundDb({
       workgraph_streams: [{ _id: "stream-row", owner_user_id: "user-a", id: "stream-a", updated_at: 1 }],
-      workgraph_due_jobs: [{
-        _id: "job-row",
-        owner_user_id: "user-a",
-        id: "job-a",
-        stream_id: "stream-a",
-        status: "running",
-        lease_epoch: 2,
-        row_version: 1,
-        payload: { sessionId: "session-a", streamId: "stream-a", fromSequence: 1, toSequence: 2, quietSince: 1, generationProfile: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "medium" } },
-      }],
+      workgraph_due_jobs: [
+        {
+          _id: "job-row",
+          owner_user_id: "user-a",
+          id: "job-a",
+          stream_id: "stream-a",
+          status: "running",
+          lease_epoch: 2,
+          row_version: 1,
+          payload: {
+            sessionId: "session-a",
+            streamId: "stream-a",
+            fromSequence: 1,
+            toSequence: 2,
+            quietSince: 1,
+            generationProfile: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "medium" },
+          },
+        },
+      ],
       workgraph_recaps: [],
       workgraph_notifications: [],
+      workgraph_change_cursors: [],
+      workgraph_stream_sequences: [],
+      workgraph_events: [],
+      workgraph_changes: [],
     })
     const args = {
       service_token: "service-secret",
@@ -124,21 +292,58 @@ describe("hosted WorkGraph background jobs", () => {
         row_version: 1,
       }),
     ])
+    expect(db.rows.workgraph_changes).toEqual([
+      expect.objectContaining({
+        cursor: 1,
+        stream_id: "stream-a",
+        resource_type: "recap",
+        resource_id: "recap_job-a",
+        change_type: "recap_published",
+      }),
+    ])
+    expect(db.rows.workgraph_events).toEqual([
+      expect.objectContaining({
+        event_type: "recap_published",
+        payload: { recapId: "recap_job-a", streamId: "stream-a" },
+      }),
+    ])
+    expect(db.rows.workgraph_events[0]).not.toHaveProperty("stream_id")
+
+    const staleResume = createSnapshotResumeCursor({
+      organizationId: "org-a",
+      ownerUserId: "user-a",
+      snapshotCursor: createChangeCursor({ organizationId: "org-a", ownerUserId: "user-a", position: 0 }),
+      offset: 1,
+      capturedAt: 1,
+      position: { createdAt: 0, recordType: "workgraph", id: "workgraph_default" },
+    })
+    await expect(
+      readWorkGraphProjection({ db }, "org-a", "user-a", "snapshot", { after: staleResume, limit: 1 }),
+    ).rejects.toMatchObject({ data: { code: "cursor_invalid", reason: "invalidated" } })
   })
 
   test("publishes no notification for a non-actionable hosted Recap", async () => {
     const db = new BackgroundDb({
       workgraph_streams: [{ _id: "stream-row", owner_user_id: "user-a", id: "stream-a", updated_at: 1 }],
-      workgraph_due_jobs: [{
-        _id: "job-row",
-        owner_user_id: "user-a",
-        id: "job-a",
-        stream_id: "stream-a",
-        status: "running",
-        lease_epoch: 1,
-        row_version: 1,
-        payload: { sessionId: "session-a", streamId: "stream-a", fromSequence: 1, toSequence: 1, quietSince: 1, generationProfile: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "medium" } },
-      }],
+      workgraph_due_jobs: [
+        {
+          _id: "job-row",
+          owner_user_id: "user-a",
+          id: "job-a",
+          stream_id: "stream-a",
+          status: "running",
+          lease_epoch: 1,
+          row_version: 1,
+          payload: {
+            sessionId: "session-a",
+            streamId: "stream-a",
+            fromSequence: 1,
+            toSequence: 1,
+            quietSince: 1,
+            generationProfile: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "medium" },
+          },
+        },
+      ],
       workgraph_recaps: [],
       workgraph_notifications: [],
     })
@@ -157,18 +362,41 @@ describe("hosted WorkGraph background jobs", () => {
 
   test("keeps hosted launch failures retryable and surfaces Stream attention after exhaustion without publication", async () => {
     const db = new BackgroundDb({
-      workgraph_streams: [{ _id: "stream-row", owner_user_id: "user-a", id: "stream-a", memory: { summary: "Previous memory", updatedAt: 1 }, updated_at: 1 }],
-      workgraph_due_jobs: [{
-        _id: "job-row", owner_user_id: "user-a", id: "job-a", stream_id: "stream-a", status: "running",
-        claimed_by: "worker-a", lease_epoch: 1, row_version: 1, payload: {},
-      }],
+      workgraph_streams: [
+        {
+          _id: "stream-row",
+          owner_user_id: "user-a",
+          id: "stream-a",
+          memory: { summary: "Previous memory", updatedAt: 1 },
+          updated_at: 1,
+        },
+      ],
+      workgraph_due_jobs: [
+        {
+          _id: "job-row",
+          owner_user_id: "user-a",
+          id: "job-a",
+          stream_id: "stream-a",
+          status: "running",
+          claimed_by: "worker-a",
+          lease_epoch: 1,
+          row_version: 1,
+          payload: {},
+        },
+      ],
       workgraph_recaps: [],
       workgraph_notifications: [],
     })
-    const retry = (leaseEpoch: number, now: number) => handler(retryRecapLaunch)({ db } as never, {
-      service_token: "service-secret", owner_user_id: "user-a", job_id: "job-a", lease_epoch: leaseEpoch,
-      worker_id: "worker-a", reason: "workspace unavailable", now,
-    })
+    const retry = (leaseEpoch: number, now: number) =>
+      handler(retryRecapLaunch)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        job_id: "job-a",
+        lease_epoch: leaseEpoch,
+        worker_id: "worker-a",
+        reason: "workspace unavailable",
+        now,
+      })
 
     await expect(retry(1, 10)).resolves.toEqual({ settled: true })
     expect(db.rows.workgraph_due_jobs[0]).toMatchObject({ status: "pending", last_error: "workspace unavailable" })
@@ -176,7 +404,10 @@ describe("hosted WorkGraph background jobs", () => {
     await expect(retry(3, 20)).resolves.toEqual({ settled: true })
     expect(db.rows.workgraph_due_jobs[0]).toMatchObject({ status: "failed", last_error: "workspace unavailable" })
     expect(db.rows.workgraph_streams[0]).toMatchObject({
-      memory: { summary: "Previous memory", attention: { type: "recap_failed", reason: "workspace unavailable", at: 20 } },
+      memory: {
+        summary: "Previous memory",
+        attention: { type: "recap_failed", reason: "workspace unavailable", at: 20 },
+      },
     })
     expect(db.rows.workgraph_recaps).toHaveLength(0)
     expect(db.rows.workgraph_notifications).toHaveLength(0)
@@ -185,21 +416,42 @@ describe("hosted WorkGraph background jobs", () => {
   test("fails a hosted Recap completion whose durable claim lacks its captured generation profile", async () => {
     const db = new BackgroundDb({
       workgraph_streams: [{ _id: "stream-row", owner_user_id: "user-a", id: "stream-a", updated_at: 1 }],
-      workgraph_due_jobs: [{
-        _id: "job-row", owner_user_id: "user-a", id: "job-a", stream_id: "stream-a", status: "running",
-        lease_epoch: 3, row_version: 1, payload: { sessionId: "session-a", fromSequence: 1, toSequence: 1, quietSince: 1 },
-      }],
+      workgraph_due_jobs: [
+        {
+          _id: "job-row",
+          owner_user_id: "user-a",
+          id: "job-a",
+          stream_id: "stream-a",
+          status: "running",
+          lease_epoch: 3,
+          row_version: 1,
+          payload: { sessionId: "session-a", fromSequence: 1, toSequence: 1, quietSince: 1 },
+        },
+      ],
       workgraph_recaps: [],
       workgraph_notifications: [],
     })
-    await expect(handler(completeRecap)({ db } as never, {
-      service_token: "service-secret", owner_user_id: "user-a", job_id: "job-a", lease_epoch: 3,
-      session_id: "session-a", summary: "Must not publish", now: 10,
-    })).resolves.toEqual({ settled: true })
+    await expect(
+      handler(completeRecap)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        job_id: "job-a",
+        lease_epoch: 3,
+        session_id: "session-a",
+        summary: "Must not publish",
+        now: 10,
+      }),
+    ).resolves.toEqual({ settled: true })
     expect(db.rows.workgraph_due_jobs[0]).toMatchObject({
       status: "failed",
       last_error: "Recap generation profile is missing from its durable claim",
-      payload: { configurationRequirement: { type: "generation", purpose: "recap", scope: { type: "stream", streamId: "stream-a" } } },
+      payload: {
+        configurationRequirement: {
+          type: "generation",
+          purpose: "recap",
+          scope: { type: "stream", streamId: "stream-a" },
+        },
+      },
     })
     expect(db.rows.workgraph_streams[0]).toMatchObject({ memory: { attention: { type: "recap_failed" } } })
     expect(db.rows.workgraph_recaps).toHaveLength(0)
@@ -209,113 +461,268 @@ describe("hosted WorkGraph background jobs", () => {
   test("does not claim a Recap Session without an explicit generation profile and surfaces terminal attention", async () => {
     const db = recapClaimDb()
     for (const now of [10, 60_010, 120_010]) {
-      await expect(handler(claimRecaps)({ db } as never, {
-        service_token: "service-secret", worker_id: "worker-a", now, limit: 10,
-      })).resolves.toEqual([])
+      await expect(
+        handler(claimRecaps)({ db } as never, {
+          service_token: "service-secret",
+          worker_id: "worker-a",
+          now,
+          limit: 10,
+        }),
+      ).resolves.toEqual([])
     }
     expect(db.rows.workgraph_due_jobs[0]).toMatchObject({
       status: "failed",
       lease_epoch: 0,
       claimed_by: undefined,
       claim_expires_at: undefined,
-      last_error: "Recap requires explicit valid agent configuration",
+      last_error: "Recap requires explicit Stream model, effort, and quietHours configuration",
       payload: expect.objectContaining({
         automaticFailureCount: 3,
-        configurationRequirement: { type: "generation", purpose: "recap", scope: { type: "stream", streamId: "stream-a" } },
+        configurationRequirement: {
+          type: "generation",
+          purpose: "recap",
+          scope: { type: "stream", streamId: "stream-a" },
+        },
       }),
     })
     expect(db.rows.workgraph_due_jobs[0]?.payload).not.toHaveProperty("sessionId")
     expect(db.rows.workgraph_streams[0]).toMatchObject({
-      memory: { attention: { type: "recap_failed", reason: "Recap requires explicit valid agent configuration" } },
+      memory: {
+        attention: {
+          type: "recap_failed",
+          reason: "Recap requires explicit Stream model, effort, and quietHours configuration",
+        },
+      },
     })
     expect(db.rows.workgraph_recaps).toHaveLength(0)
     expect(db.rows.workgraph_notifications).toHaveLength(0)
   })
 
-  test("claims Recaps with explicit Stream-over-WorkGraph generation settings unchanged", async () => {
+  test("claims Recaps with explicit Stream settings and never borrows WorkGraph Recap defaults", async () => {
     const db = recapClaimDb()
     Object.assign(db.rows.workgraphs[0]!, {
       defaults: { agent: "root-agent", model: { providerId: "root", modelId: "exec" }, effort: "root-effort" },
       recap_defaults: { model: { providerId: "root", modelId: "recap" }, effort: "root-recap-effort" },
     })
     Object.assign(db.rows.workgraph_streams[0]!, {
-      execution_defaults: { agent: "stream-agent", model: { providerId: "stream", modelId: "exec" }, effort: "stream-effort" },
-      recap_defaults: { model: { providerId: "stream", modelId: "recap" }, effort: "stream-recap-effort" },
-    })
-    await expect(handler(claimRecaps)({ db } as never, {
-      service_token: "service-secret", worker_id: "worker-a", now: 10, limit: 10,
-    })).resolves.toEqual([expect.objectContaining({
-      leaseEpoch: 1,
-      profile: {
+      execution_defaults: {
         agent: "stream-agent",
+        model: { providerId: "stream", modelId: "exec" },
+        effort: "stream-effort",
+      },
+      recap_defaults: {
         model: { providerId: "stream", modelId: "recap" },
         effort: "stream-recap-effort",
-        tools: [],
+        quietHours: 8,
       },
-    })])
+    })
+    await expect(
+      handler(claimRecaps)({ db } as never, {
+        service_token: "service-secret",
+        worker_id: "worker-a",
+        now: 10,
+        limit: 10,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        leaseEpoch: 1,
+        queueLagMs: 9,
+        activeLeaseAgeMs: 0,
+        expiredRecovery: false,
+        retryCount: 0,
+        profile: {
+          agent: "stream-agent",
+          model: { providerId: "stream", modelId: "recap" },
+          effort: "stream-recap-effort",
+          tools: [],
+        },
+      }),
+    ])
     expect(db.rows.workgraph_due_jobs[0]).toMatchObject({
       status: "running",
-      payload: { generationProfile: { model: { providerId: "stream", modelId: "recap" }, effort: "stream-recap-effort" } },
+      payload: {
+        generationProfile: { model: { providerId: "stream", modelId: "recap" }, effort: "stream-recap-effort" },
+      },
     })
+  })
+
+  test("reclaims an indeterminate Recap admission with the same durable Session identity", async () => {
+    const db = recapClaimDb()
+    db.rows.workgraphs[0]!.defaults = { agent: "recap-agent" }
+    db.rows.workgraph_streams[0]!.recap_defaults = {
+      model: { providerId: "openai", modelId: "gpt-5" },
+      effort: "high",
+      quietHours: 8,
+    }
+    await handler(claimRecaps)({ db } as never, {
+      service_token: "service-secret",
+      worker_id: "worker-a",
+      now: 10,
+      limit: 10,
+    })
+    await expect(
+      handler(markRecapSession)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        job_id: "recap-job",
+        lease_epoch: 1,
+        worker_id: "worker-a",
+        workspace_id: "workspace-a",
+        session_id: "ses_workgraph_recap_recap-job_1",
+        admission_confirmed: false,
+        now: 11,
+      }),
+    ).resolves.toEqual({ settled: true })
+    await expect(
+      handler(listRunningRecaps)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        now: 12,
+        limit: 10,
+      }),
+    ).resolves.toEqual([])
+
+    const recovered = await handler(claimRecaps)({ db } as never, {
+      service_token: "service-secret",
+      worker_id: "worker-a",
+      now: 300_011,
+      limit: 10,
+    })
+    expect(recovered).toEqual([
+      expect.objectContaining({
+        leaseEpoch: 2,
+        expiredRecovery: true,
+        sessionId: "ses_workgraph_recap_recap-job_1",
+      }),
+    ])
+    await handler(markRecapSession)({ db } as never, {
+      service_token: "service-secret",
+      owner_user_id: "user-a",
+      job_id: "recap-job",
+      lease_epoch: 2,
+      worker_id: "worker-a",
+      workspace_id: "workspace-a",
+      session_id: "ses_workgraph_recap_recap-job_1",
+      admission_confirmed: true,
+      now: 300_012,
+    })
+    await expect(
+      handler(listRunningRecaps)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        now: 300_013,
+        limit: 10,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        leaseEpoch: 2,
+        workspaceId: "workspace-a",
+        sessionId: "ses_workgraph_recap_recap-job_1",
+      }),
+    ])
   })
 
   test("rejects an invalid explicit Recap generation profile before claiming", async () => {
     const db = recapClaimDb()
     db.rows.workgraphs[0]!.defaults = {
-      agent: "recap-agent", model: { providerId: "openai", modelId: "gpt-5" }, effort: "high",
+      agent: "recap-agent",
+      model: { providerId: "openai", modelId: "gpt-5" },
+      effort: "high",
     }
     db.rows.workgraph_streams[0]!.recap_defaults = { model: { providerId: "", modelId: "gpt-5" } }
-    await expect(handler(claimRecaps)({ db } as never, {
-      service_token: "service-secret", worker_id: "worker-a", now: 10, limit: 10,
-    })).resolves.toEqual([])
+    await expect(
+      handler(claimRecaps)({ db } as never, {
+        service_token: "service-secret",
+        worker_id: "worker-a",
+        now: 10,
+        limit: 10,
+      }),
+    ).resolves.toEqual([])
     expect(db.rows.workgraph_due_jobs[0]).toMatchObject({
-      status: "pending", lease_epoch: 0, last_error: "Recap requires explicit valid model configuration",
-      payload: expect.objectContaining({ configurationRequirement: expect.objectContaining({ type: "generation", purpose: "recap" }) }),
+      status: "pending",
+      lease_epoch: 0,
+      last_error: "Recap requires explicit Stream model, effort, and quietHours configuration",
+      payload: expect.objectContaining({
+        configurationRequirement: expect.objectContaining({ type: "generation", purpose: "recap" }),
+      }),
     })
   })
 
   test("claims an exact source revision and publishes one fenced agent proposal", async () => {
     const db = sourcePlanningDb()
-    const claims = await handler(claimSourcePlans)({ db } as never, { service_token: "service-secret", worker_id: "worker-a", now: 10, limit: 10 }) as Array<Record<string, any>>
-    expect(claims).toEqual([expect.objectContaining({
-      ownerUserId: "user-a",
-      orgId: "org-a",
-      jobId: "source-plan-job",
-      leaseEpoch: 1,
-      profile: {
-        agent: "planner-agent",
-        model: { providerId: "openai", modelId: "gpt-5" },
-        effort: "high",
-        tools: [],
-      },
-      prompt: expect.stringContaining('"revisionId":"revision-a"'),
-    })])
-    await expect(handler(markSourcePlanSession)({ db } as never, {
-      service_token: "service-secret", owner_user_id: "user-a", job_id: "source-plan-job", lease_epoch: 1,
-      worker_id: "worker-a", workspace_id: "workspace-a", session_id: "session-a", admission_confirmed: false, now: 11,
-    })).resolves.toEqual({ settled: true })
-    await expect(handler(markSourcePlanSession)({ db } as never, {
-      service_token: "service-secret", owner_user_id: "user-a", job_id: "source-plan-job", lease_epoch: 1,
-      worker_id: "worker-a", workspace_id: "workspace-a", session_id: "session-a", admission_confirmed: true, now: 12,
-    })).resolves.toEqual({ settled: true })
-    await expect(handler(completeSourcePlan)({ db } as never, {
-      owner_user_id: "user-a",
+    const claims = (await handler(claimSourcePlans)({ db } as never, {
       service_token: "service-secret",
-      job_id: "source-plan-job",
-      lease_epoch: 1,
-      session_id: "session-a",
-      plan: sourceAgentPlan(),
-      now: 13,
-    })).resolves.toEqual({ settled: true })
-    await expect(handler(completeSourcePlan)({ db } as never, {
-      owner_user_id: "user-a",
-      service_token: "service-secret",
-      job_id: "source-plan-job",
-      lease_epoch: 1,
-      session_id: "session-a",
-      plan: sourceAgentPlan(),
-      now: 13,
-    })).resolves.toEqual({ settled: false })
+      worker_id: "worker-a",
+      now: 10,
+      limit: 10,
+    })) as Array<Record<string, any>>
+    expect(claims).toEqual([
+      expect.objectContaining({
+        ownerUserId: "user-a",
+        orgId: "org-a",
+        jobId: "source-plan-job",
+        leaseEpoch: 1,
+        queueLagMs: 9,
+        activeLeaseAgeMs: 0,
+        expiredRecovery: false,
+        retryCount: 0,
+        profile: {
+          agent: "planner-agent",
+          model: { providerId: "openai", modelId: "gpt-5" },
+          effort: "high",
+          tools: [],
+        },
+        prompt: expect.stringContaining('"revisionId":"revision-a"'),
+      }),
+    ])
+    await expect(
+      handler(markSourcePlanSession)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        job_id: "source-plan-job",
+        lease_epoch: 1,
+        worker_id: "worker-a",
+        workspace_id: "workspace-a",
+        session_id: "session-a",
+        admission_confirmed: false,
+        now: 11,
+      }),
+    ).resolves.toEqual({ settled: true })
+    await expect(
+      handler(markSourcePlanSession)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        job_id: "source-plan-job",
+        lease_epoch: 1,
+        worker_id: "worker-a",
+        workspace_id: "workspace-a",
+        session_id: "session-a",
+        admission_confirmed: true,
+        now: 12,
+      }),
+    ).resolves.toEqual({ settled: true })
+    await expect(
+      handler(completeSourcePlan)({ db } as never, {
+        owner_user_id: "user-a",
+        service_token: "service-secret",
+        job_id: "source-plan-job",
+        lease_epoch: 1,
+        session_id: "session-a",
+        plan: sourceAgentPlan(),
+        now: 13,
+      }),
+    ).resolves.toEqual({ settled: true })
+    await expect(
+      handler(completeSourcePlan)({ db } as never, {
+        owner_user_id: "user-a",
+        service_token: "service-secret",
+        job_id: "source-plan-job",
+        lease_epoch: 1,
+        session_id: "session-a",
+        plan: sourceAgentPlan(),
+        now: 13,
+      }),
+    ).resolves.toEqual({ settled: false })
     expect(db.rows.workgraph_admission_proposals[0]).toMatchObject({
       state: "proposed",
       row_version: 3,
@@ -330,44 +737,154 @@ describe("hosted WorkGraph background jobs", () => {
         resource_type: "admission_proposal",
         resource_id: "proposal-a",
         change_type: "admission_proposal_updated",
-        payload: expect.objectContaining({ proposalId: "proposal-a", version: 2, generation: expect.objectContaining({ method: "planning", attempt: 1 }) }),
+        payload: expect.objectContaining({
+          proposalId: "proposal-a",
+          version: 2,
+          generation: expect.objectContaining({ method: "planning", attempt: 1 }),
+        }),
       }),
       expect.objectContaining({
         cursor: 2,
         resource_type: "admission_proposal",
         resource_id: "proposal-a",
         change_type: "admission_proposal_updated",
-        payload: expect.objectContaining({ proposalId: "proposal-a", version: 3, generation: { method: "agent_session", sessionId: "session-a" } }),
+        payload: expect.objectContaining({
+          proposalId: "proposal-a",
+          version: 3,
+          generation: { method: "agent_session", sessionId: "session-a" },
+        }),
       }),
     ])
     expect(db.rows.workgraph_events).toEqual([
-      expect.objectContaining({ event_type: "admission_proposal_updated", operation_id: "source_plan_publish_proposal-a_2" }),
-      expect.objectContaining({ event_type: "admission_proposal_updated", operation_id: "source_plan_publish_proposal-a_3" }),
+      expect.objectContaining({
+        event_type: "admission_proposal_updated",
+        operation_id: "source_plan_publish_proposal-a_2",
+      }),
+      expect.objectContaining({
+        event_type: "admission_proposal_updated",
+        operation_id: "source_plan_publish_proposal-a_3",
+      }),
     ])
   })
 
+  test("publishes the exact existing Stream selected by bounded hosted planning evidence", async () => {
+    const db = targetedSourcePlanningDb()
+    const [claim] = await startSourcePlanningSession(db)
+    expect(claim).toMatchObject({
+      prompt: expect.stringContaining('"targetStreamId":"stream-target"'),
+    })
+    expect(claim.prompt).toContain("suggestedPlacement must be existing with that exact Stream ID")
+    const plan = sourceAgentPlan()
+    plan.suggestedPlacement = { mode: "existing", streamId: "stream-target" as never }
+
+    await expect(
+      handler(completeSourcePlan)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        job_id: "source-plan-job",
+        lease_epoch: 1,
+        session_id: "session-a",
+        plan,
+        now: 13,
+      }),
+    ).resolves.toEqual({ settled: true })
+    expect(db.rows.workgraph_admission_proposals[0]).toMatchObject({
+      state: "proposed",
+      suggested_placement: { mode: "existing", streamId: "stream-target" },
+      generation: { method: "agent_session", sessionId: "session-a", generatedAt: 13 },
+    })
+    expect(db.rows.workgraph_due_jobs[0]).toMatchObject({ status: "completed" })
+  })
+
+  test.each([
+    ["a new Stream", { mode: "new_stream", streamTitle: "Incorrect replacement" }],
+    ["another existing Stream", { mode: "existing", streamId: "stream-different" }],
+  ] as const)(
+    "publishes planning_failed instead of substituting %s for an explicit hosted target",
+    async (_label, suggestedPlacement) => {
+      const db = targetedSourcePlanningDb()
+      await startSourcePlanningSession(db)
+      const plan = sourceAgentPlan()
+      plan.suggestedPlacement = suggestedPlacement as AdmissionAgentPlan["suggestedPlacement"]
+
+      await expect(
+        handler(completeSourcePlan)({ db } as never, {
+          service_token: "service-secret",
+          owner_user_id: "user-a",
+          job_id: "source-plan-job",
+          lease_epoch: 1,
+          session_id: "session-a",
+          plan,
+          now: 13,
+        }),
+      ).resolves.toEqual({ settled: true })
+      expect(db.rows.workgraph_admission_proposals[0]).toMatchObject({
+        state: "planning_failed",
+        suggested_placement: undefined,
+        proposed_outcomes: undefined,
+        proposed_work_items: undefined,
+        generation: {
+          method: "planning_failed",
+          attempt: 1,
+          reason: "Source planning result did not honor the exact target Stream",
+          failedAt: 13,
+          retryable: true,
+        },
+      })
+      expect(db.rows.workgraph_due_jobs[0]).toMatchObject({
+        status: "failed",
+        last_error: "Source planning result did not honor the exact target Stream",
+      })
+      expect(db.rows.workgraph_changes.at(-1)).toMatchObject({
+        change_type: "admission_proposal_updated",
+        payload: expect.objectContaining({ generation: expect.objectContaining({ method: "planning_failed" }) }),
+      })
+    },
+  )
+
   test("fences hosted source-plan publication after the source head changes", async () => {
     const db = sourcePlanningDb()
-    await handler(claimSourcePlans)({ db } as never, { service_token: "service-secret", worker_id: "worker-a", now: 10, limit: 10 })
+    await handler(claimSourcePlans)({ db } as never, {
+      service_token: "service-secret",
+      worker_id: "worker-a",
+      now: 10,
+      limit: 10,
+    })
     const job = db.rows.workgraph_due_jobs[0]!
     await handler(markSourcePlanSession)({ db } as never, {
-      service_token: "service-secret", owner_user_id: "user-a", job_id: "source-plan-job", lease_epoch: 1,
-      worker_id: "worker-a", workspace_id: "workspace-a", session_id: "session-a", admission_confirmed: false, now: 11,
-    })
-    await handler(markSourcePlanSession)({ db } as never, {
-      service_token: "service-secret", owner_user_id: "user-a", job_id: "source-plan-job", lease_epoch: 1,
-      worker_id: "worker-a", workspace_id: "workspace-a", session_id: "session-a", admission_confirmed: true, now: 12,
-    })
-    db.rows.work_sources[0]!.latest_revision_id = "revision-b"
-    await expect(handler(completeSourcePlan)({ db } as never, {
-      owner_user_id: "user-a",
       service_token: "service-secret",
+      owner_user_id: "user-a",
       job_id: "source-plan-job",
       lease_epoch: 1,
+      worker_id: "worker-a",
+      workspace_id: "workspace-a",
       session_id: "session-a",
-      plan: sourceAgentPlan(),
-      now: 13,
-    })).resolves.toEqual({ settled: false })
+      admission_confirmed: false,
+      now: 11,
+    })
+    await handler(markSourcePlanSession)({ db } as never, {
+      service_token: "service-secret",
+      owner_user_id: "user-a",
+      job_id: "source-plan-job",
+      lease_epoch: 1,
+      worker_id: "worker-a",
+      workspace_id: "workspace-a",
+      session_id: "session-a",
+      admission_confirmed: true,
+      now: 12,
+    })
+    db.rows.work_sources[0]!.latest_revision_id = "revision-b"
+    await expect(
+      handler(completeSourcePlan)({ db } as never, {
+        owner_user_id: "user-a",
+        service_token: "service-secret",
+        job_id: "source-plan-job",
+        lease_epoch: 1,
+        session_id: "session-a",
+        plan: sourceAgentPlan(),
+        now: 13,
+      }),
+    ).resolves.toEqual({ settled: false })
     expect(db.rows.workgraph_admission_proposals[0]).toMatchObject({
       state: "planning_failed",
       row_version: 3,
@@ -392,42 +909,91 @@ describe("hosted WorkGraph background jobs", () => {
       lease_epoch: 1,
       payload: { ...job.payload, workspaceId: "workspace-a", sessionId: "session-a", sessionAdmissionConfirmed: false },
     })
-    const claims = await handler(claimSourcePlans)({ db } as never, {
-      service_token: "service-secret", worker_id: "worker-after", now: 10, limit: 10,
-    }) as Array<Record<string, unknown>>
+    const claims = (await handler(claimSourcePlans)({ db } as never, {
+      service_token: "service-secret",
+      worker_id: "worker-after",
+      now: 10,
+      limit: 10,
+    })) as Array<Record<string, unknown>>
     expect(claims).toEqual([expect.objectContaining({ leaseEpoch: 2, sessionId: "session-a" })])
-    await expect(handler(listRunningSourcePlans)({ db } as never, {
-      service_token: "service-secret", now: 10, limit: 10,
-    })).resolves.toEqual([])
+    await expect(
+      handler(listRunningSourcePlans)({ db } as never, {
+        service_token: "service-secret",
+        now: 10,
+        limit: 10,
+      }),
+    ).resolves.toEqual([])
     ;(job.payload as Record<string, unknown>).sessionAdmissionConfirmed = true
-    await expect(handler(listRunningSourcePlans)({ db } as never, {
-      service_token: "service-secret", now: 10, limit: 10,
-    })).resolves.toEqual([expect.objectContaining({ sessionId: "session-a", leaseEpoch: 2 })])
+    await expect(
+      handler(listRunningSourcePlans)({ db } as never, {
+        service_token: "service-secret",
+        now: 10,
+        limit: 10,
+      }),
+    ).resolves.toEqual([expect.objectContaining({ sessionId: "session-a", leaseEpoch: 2 })])
   })
 
   test("rejects a two-node hosted agent dependency cycle before proposal publication", async () => {
     const db = sourcePlanningDb()
-    await handler(claimSourcePlans)({ db } as never, { service_token: "service-secret", worker_id: "worker-a", now: 10, limit: 10 })
+    await handler(claimSourcePlans)({ db } as never, {
+      service_token: "service-secret",
+      worker_id: "worker-a",
+      now: 10,
+      limit: 10,
+    })
     const job = db.rows.workgraph_due_jobs[0]!
     await handler(markSourcePlanSession)({ db } as never, {
-      service_token: "service-secret", owner_user_id: "user-a", job_id: "source-plan-job", lease_epoch: 1,
-      worker_id: "worker-a", workspace_id: "workspace-a", session_id: "session-a", admission_confirmed: false, now: 11,
+      service_token: "service-secret",
+      owner_user_id: "user-a",
+      job_id: "source-plan-job",
+      lease_epoch: 1,
+      worker_id: "worker-a",
+      workspace_id: "workspace-a",
+      session_id: "session-a",
+      admission_confirmed: false,
+      now: 11,
     })
     await handler(markSourcePlanSession)({ db } as never, {
-      service_token: "service-secret", owner_user_id: "user-a", job_id: "source-plan-job", lease_epoch: 1,
-      worker_id: "worker-a", workspace_id: "workspace-a", session_id: "session-a", admission_confirmed: true, now: 12,
+      service_token: "service-secret",
+      owner_user_id: "user-a",
+      job_id: "source-plan-job",
+      lease_epoch: 1,
+      worker_id: "worker-a",
+      workspace_id: "workspace-a",
+      session_id: "session-a",
+      admission_confirmed: true,
+      now: 12,
     })
     const plan = sourceAgentPlan()
-    plan.proposedWorkItems.push({ ...plan.proposedWorkItems[0]!, key: "verify", title: "Verify", dependencyKeys: ["deploy"] })
+    plan.proposedWorkItems.push({
+      ...plan.proposedWorkItems[0]!,
+      key: "verify",
+      title: "Verify",
+      dependencyKeys: ["deploy"],
+    })
     plan.proposedWorkItems[0]!.dependencyKeys = ["verify"]
-    await expect(handler(completeSourcePlan)({ db } as never, {
-      service_token: "service-secret", owner_user_id: "user-a", job_id: "source-plan-job",
-      lease_epoch: 1, session_id: "session-a", plan, now: 13,
-    })).rejects.toThrow("dependency cycle")
-    await expect(handler(failSourcePlan)({ db } as never, {
-      service_token: "service-secret", owner_user_id: "user-a", job_id: "source-plan-job", lease_epoch: 1,
-      session_id: "session-a", reason: "Source planning result contains a dependency cycle", now: 13,
-    })).resolves.toEqual({ settled: true })
+    await expect(
+      handler(completeSourcePlan)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        job_id: "source-plan-job",
+        lease_epoch: 1,
+        session_id: "session-a",
+        plan,
+        now: 13,
+      }),
+    ).rejects.toThrow("dependency cycle")
+    await expect(
+      handler(failSourcePlan)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        job_id: "source-plan-job",
+        lease_epoch: 1,
+        session_id: "session-a",
+        reason: "Source planning result contains a dependency cycle",
+        now: 13,
+      }),
+    ).resolves.toEqual({ settled: true })
     expect(db.rows.workgraph_admission_proposals[0]).toMatchObject({
       state: "planning_failed",
       row_version: 3,
@@ -439,19 +1005,35 @@ describe("hosted WorkGraph background jobs", () => {
   test("bounds hosted source planning failures at three attempts and leaves a truthful attention state", async () => {
     const db = sourcePlanningDb()
     for (const [index, now] of [10, 60_011, 120_012].entries()) {
-      const [claim] = await handler(claimSourcePlans)({ db } as never, {
-        service_token: "service-secret", worker_id: "worker-a", now, limit: 10,
-      }) as Array<Record<string, unknown>>
+      const [claim] = (await handler(claimSourcePlans)({ db } as never, {
+        service_token: "service-secret",
+        worker_id: "worker-a",
+        now,
+        limit: 10,
+      })) as Array<Record<string, unknown>>
       expect(claim).toMatchObject({ leaseEpoch: index + 1, proposalId: "proposal-a" })
-      await expect(handler(retrySourcePlanLaunch)({ db } as never, {
-        service_token: "service-secret", owner_user_id: "user-a", job_id: "source-plan-job",
-        lease_epoch: index + 1, worker_id: "worker-a", reason: "workspace unavailable", now: now + 1,
-      })).resolves.toEqual({ settled: true })
+      await expect(
+        handler(retrySourcePlanLaunch)({ db } as never, {
+          service_token: "service-secret",
+          owner_user_id: "user-a",
+          job_id: "source-plan-job",
+          lease_epoch: index + 1,
+          worker_id: "worker-a",
+          reason: "workspace unavailable",
+          now: now + 1,
+        }),
+      ).resolves.toEqual({ settled: true })
     }
     expect(db.rows.workgraph_admission_proposals[0]).toMatchObject({
       state: "planning_failed",
       row_version: 6,
-      generation: { method: "planning_failed", attempt: 0, reason: "workspace unavailable", retryable: true, failedAt: 120_013 },
+      generation: {
+        method: "planning_failed",
+        attempt: 0,
+        reason: "workspace unavailable",
+        retryable: true,
+        failedAt: 120_013,
+      },
     })
     expect(db.rows.workgraph_admission_proposals[0]).toMatchObject({
       proposed_outcomes: undefined,
@@ -469,9 +1051,14 @@ describe("hosted WorkGraph background jobs", () => {
     const db = sourcePlanningDb()
     db.rows.workgraphs[0]!.defaults = {}
     for (const now of [10, 60_010, 120_010]) {
-      await expect(handler(claimSourcePlans)({ db } as never, {
-        service_token: "service-secret", worker_id: "worker-a", now, limit: 10,
-      })).resolves.toEqual([])
+      await expect(
+        handler(claimSourcePlans)({ db } as never, {
+          service_token: "service-secret",
+          worker_id: "worker-a",
+          now,
+          limit: 10,
+        }),
+      ).resolves.toEqual([])
     }
     expect(db.rows.workgraph_due_jobs[0]).toMatchObject({
       status: "failed_terminal",
@@ -500,14 +1087,25 @@ describe("hosted WorkGraph background jobs", () => {
   test("rejects invalid explicit source-planning settings before claiming", async () => {
     const db = sourcePlanningDb()
     db.rows.workgraphs[0]!.defaults = {
-      agent: "planner-agent", model: { providerId: "openai", modelId: "gpt-5" }, effort: " ",
+      agent: "planner-agent",
+      model: { providerId: "openai", modelId: "gpt-5" },
+      effort: " ",
     }
-    await expect(handler(claimSourcePlans)({ db } as never, {
-      service_token: "service-secret", worker_id: "worker-a", now: 10, limit: 10,
-    })).resolves.toEqual([])
+    await expect(
+      handler(claimSourcePlans)({ db } as never, {
+        service_token: "service-secret",
+        worker_id: "worker-a",
+        now: 10,
+        limit: 10,
+      }),
+    ).resolves.toEqual([])
     expect(db.rows.workgraph_due_jobs[0]).toMatchObject({
-      status: "failed", lease_epoch: 0, last_error: "Source planning requires explicit valid effort configuration",
-      payload: expect.objectContaining({ configurationRequirement: expect.objectContaining({ type: "generation", purpose: "source_planning" }) }),
+      status: "failed",
+      lease_epoch: 0,
+      last_error: "Source planning requires explicit valid effort configuration",
+      payload: expect.objectContaining({
+        configurationRequirement: expect.objectContaining({ type: "generation", purpose: "source_planning" }),
+      }),
     })
   })
 
@@ -523,9 +1121,14 @@ describe("hosted WorkGraph background jobs", () => {
       generation: { method: "deterministic_fallback", reason: "legacy" },
     })
 
-    await expect(handler(claimSourcePlans)({ db } as never, {
-      service_token: "service-secret", worker_id: "worker-a", now: 10, limit: 10,
-    })).resolves.toEqual([expect.objectContaining({ proposalId: "proposal-a", leaseEpoch: 1 })])
+    await expect(
+      handler(claimSourcePlans)({ db } as never, {
+        service_token: "service-secret",
+        worker_id: "worker-a",
+        now: 10,
+        limit: 10,
+      }),
+    ).resolves.toEqual([expect.objectContaining({ proposalId: "proposal-a", leaseEpoch: 1 })])
     expect(db.rows.workgraph_admission_proposals[0]).toMatchObject({
       state: "planning",
       row_version: 3,
@@ -538,57 +1141,205 @@ describe("hosted WorkGraph background jobs", () => {
       proposed_work_items: undefined,
     })
     expect(db.rows.workgraph_changes).toEqual([
-      expect.objectContaining({ payload: expect.objectContaining({ version: 2, generation: expect.objectContaining({ method: "planning_failed", attempt: 0, retryable: true }) }) }),
-      expect.objectContaining({ payload: expect.objectContaining({ version: 3, generation: { method: "planning", attempt: 0 } }) }),
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          version: 2,
+          generation: expect.objectContaining({ method: "planning_failed", attempt: 0, retryable: true }),
+        }),
+      }),
+      expect.objectContaining({
+        payload: expect.objectContaining({ version: 3, generation: { method: "planning", attempt: 0 } }),
+      }),
     ])
+  })
+
+  test("quarantines an incomplete legacy proposal without publishing a fabricated source", async () => {
+    const db = sourcePlanningDb()
+    Object.assign(db.rows.workgraph_admission_proposals[0]!, {
+      state: "proposed",
+      source: undefined,
+      generation: { method: "deterministic_fallback", reason: "legacy" },
+    })
+
+    await handler(claimSourcePlans)({ db } as never, {
+      service_token: "service-secret",
+      worker_id: "worker-a",
+      now: 10,
+      limit: 10,
+    })
+
+    expect(db.rows.workgraph_admission_proposals[0]).toMatchObject({ state: "planning_failed" })
+    expect(JSON.stringify(db.rows.workgraph_changes)).not.toContain("unknown_source")
   })
 })
 
 function sourcePlanningDb() {
   return new BackgroundDb({
     orgs: [{ _id: "org-a", owner_user_id: "user-a", kind: "personal" }],
-    workgraphs: [{
-      _id: "graph-a", owner_user_id: "user-a", id: "workgraph_default",
-      defaults: { agent: "planner-agent", model: { providerId: "openai", modelId: "gpt-5" }, effort: "high" },
-    }],
-    work_sources: [{ _id: "source-row", owner_user_id: "user-a", id: "source-a", title: "Ship cloud", latest_revision_id: "revision-a" }],
-    work_source_revisions: [{ _id: "revision-row", owner_user_id: "user-a", id: "revision-a", work_source_id: "source-a", content: "Deploy cloud", content_hash: "a".repeat(64) }],
+    workgraphs: [
+      {
+        _id: "graph-a",
+        owner_user_id: "user-a",
+        id: "workgraph_default",
+        defaults: { agent: "planner-agent", model: { providerId: "openai", modelId: "gpt-5" }, effort: "high" },
+      },
+    ],
+    work_sources: [
+      {
+        _id: "source-row",
+        owner_user_id: "user-a",
+        id: "source-a",
+        title: "Ship cloud",
+        latest_revision_id: "revision-a",
+      },
+    ],
+    work_source_revisions: [
+      {
+        _id: "revision-row",
+        owner_user_id: "user-a",
+        id: "revision-a",
+        work_source_id: "source-a",
+        content: "Deploy cloud",
+        content_hash: "a".repeat(64),
+      },
+    ],
     workgraph_streams: [],
     workgraph_outcomes: [],
     workgraph_work_items: [],
-    workgraph_admission_proposals: [{
-      _id: "proposal-row", owner_user_id: "user-a", id: "proposal-a", state: "planning",
-      source: { work_source_id: "source-a", revision_id: "revision-a", content_hash: "a".repeat(64) },
-      planning_evidence: { placementMatches: [], duplicateMatches: [] },
-      generation: { method: "planning", attempt: 0, queuedAt: 1 }, row_version: 1,
-    }],
-    workgraph_due_jobs: [{
-      _id: "job-row", owner_user_id: "user-a", id: "source-plan-job", job_type: "source_plan",
-      subject_id: "proposal-a", due_at: 1, status: "pending", lease_epoch: 0, row_version: 1,
-      payload: { proposalId: "proposal-a", source: { work_source_id: "source-a", revision_id: "revision-a", content_hash: "a".repeat(64) } },
-    }],
+    workgraph_admission_proposals: [
+      {
+        _id: "proposal-row",
+        owner_user_id: "user-a",
+        id: "proposal-a",
+        state: "planning",
+        source: { work_source_id: "source-a", revision_id: "revision-a", content_hash: "a".repeat(64) },
+        planning_evidence: { placementMatches: [], duplicateMatches: [] },
+        generation: { method: "planning", attempt: 0, queuedAt: 1 },
+        row_version: 1,
+      },
+    ],
+    workgraph_due_jobs: [
+      {
+        _id: "job-row",
+        owner_user_id: "user-a",
+        id: "source-plan-job",
+        job_type: "source_plan",
+        subject_id: "proposal-a",
+        due_at: 1,
+        status: "pending",
+        lease_epoch: 0,
+        row_version: 1,
+        payload: {
+          proposalId: "proposal-a",
+          source: { work_source_id: "source-a", revision_id: "revision-a", content_hash: "a".repeat(64) },
+        },
+      },
+    ],
   })
+}
+
+function targetedSourcePlanningDb() {
+  const db = sourcePlanningDb()
+  db.rows.workgraph_streams.push({
+    _id: "stream-target-row",
+    organization_id: "org-a",
+    owner_user_id: "user-a",
+    id: "stream-target",
+    title: "Existing launch Stream",
+    lifecycle_state: "active",
+    execution_defaults: {},
+    recap_defaults: {},
+    updated_at: 1,
+  })
+  db.rows.workgraph_admission_proposals[0]!.planning_evidence = {
+    targetStreamId: "stream-target",
+    placementMatches: [],
+    duplicateMatches: [],
+  }
+  return db
+}
+
+async function startSourcePlanningSession(db: BackgroundDb) {
+  const claims = (await handler(claimSourcePlans)({ db } as never, {
+    service_token: "service-secret",
+    worker_id: "worker-a",
+    now: 10,
+    limit: 10,
+  })) as Array<Record<string, any>>
+  await handler(markSourcePlanSession)({ db } as never, {
+    service_token: "service-secret",
+    owner_user_id: "user-a",
+    job_id: "source-plan-job",
+    lease_epoch: 1,
+    worker_id: "worker-a",
+    workspace_id: "workspace-a",
+    session_id: "session-a",
+    admission_confirmed: false,
+    now: 11,
+  })
+  await handler(markSourcePlanSession)({ db } as never, {
+    service_token: "service-secret",
+    owner_user_id: "user-a",
+    job_id: "source-plan-job",
+    lease_epoch: 1,
+    worker_id: "worker-a",
+    workspace_id: "workspace-a",
+    session_id: "session-a",
+    admission_confirmed: true,
+    now: 12,
+  })
+  return claims
 }
 
 function recapClaimDb() {
   return new BackgroundDb({
     orgs: [{ _id: "org-a", owner_user_id: "user-a", kind: "personal" }],
-    workgraphs: [{
-      _id: "graph-a", owner_user_id: "user-a", id: "workgraph_default", defaults: {}, recap_defaults: {},
-    }],
-    workgraph_streams: [{
-      _id: "stream-row", owner_user_id: "user-a", id: "stream-a", title: "Ship cloud",
-      lifecycle_state: "active", execution_defaults: {}, recap_defaults: {}, updated_at: 1,
-    }],
-    workgraph_events: [{
-      _id: "event-row", owner_user_id: "user-a", stream_id: "stream-a", sequence: 1,
-      event_type: "work_item_created", payload: { workItemId: "item-a" },
-    }],
-    workgraph_due_jobs: [{
-      _id: "job-row", owner_user_id: "user-a", id: "recap-job", stream_id: "stream-a", job_type: "recap",
-      subject_id: "stream-a:1", due_at: 1, status: "pending", lease_epoch: 0, row_version: 1,
-      payload: { streamId: "stream-a", fromSequence: 1, toSequence: 1, quietSince: 1 },
-    }],
+    workgraphs: [
+      {
+        _id: "graph-a",
+        owner_user_id: "user-a",
+        id: "workgraph_default",
+        defaults: {},
+        recap_defaults: {},
+      },
+    ],
+    workgraph_streams: [
+      {
+        _id: "stream-row",
+        owner_user_id: "user-a",
+        id: "stream-a",
+        title: "Ship cloud",
+        lifecycle_state: "active",
+        execution_defaults: {},
+        recap_defaults: {},
+        updated_at: 1,
+      },
+    ],
+    workgraph_events: [
+      {
+        _id: "event-row",
+        owner_user_id: "user-a",
+        stream_id: "stream-a",
+        sequence: 1,
+        event_type: "work_item_created",
+        payload: { workItemId: "item-a" },
+      },
+    ],
+    workgraph_due_jobs: [
+      {
+        _id: "job-row",
+        owner_user_id: "user-a",
+        id: "recap-job",
+        stream_id: "stream-a",
+        job_type: "recap",
+        subject_id: "stream-a:1",
+        due_at: 1,
+        status: "pending",
+        lease_epoch: 0,
+        row_version: 1,
+        payload: { streamId: "stream-a", fromSequence: 1, toSequence: 1, quietSince: 1 },
+      },
+    ],
     workgraph_recaps: [],
     workgraph_notifications: [],
   })
@@ -596,27 +1347,62 @@ function recapClaimDb() {
 
 function sourceAgentPlan(): AdmissionAgentPlan {
   return {
-    source: { workSourceId: "source-a" as never, revisionId: "revision-a" as never, contentHash: "a".repeat(64) as never },
+    source: {
+      workSourceId: "source-a" as never,
+      revisionId: "revision-a" as never,
+      contentHash: "a".repeat(64) as never,
+    },
     suggestedPlacement: { mode: "new_stream", streamTitle: "Ship cloud" },
     placementMatches: [],
-    proposedOutcomes: [{ key: "ship", title: "Cloud shipped", successCriteria: ["Healthy"], execution: { effort: "high" } }],
-    proposedWorkItems: [{
-      key: "deploy", outcomeKey: "ship", title: "Deploy", dependencyKeys: [], execution: { effort: "medium" },
-      completionContract: { version: 1, mode: "all", requirements: [{ id: "healthy" as never, kind: "owner_confirmation", description: "Owner verifies health" }] },
-    }],
+    proposedOutcomes: [
+      { key: "ship", title: "Cloud shipped", successCriteria: ["Healthy"], execution: { effort: "high" } },
+    ],
+    proposedWorkItems: [
+      {
+        key: "deploy",
+        outcomeKey: "ship",
+        title: "Deploy",
+        dependencyKeys: [],
+        execution: { effort: "medium" },
+        completionContract: {
+          version: 1,
+          mode: "all",
+          requirements: [{ id: "healthy" as never, kind: "owner_confirmation", description: "Owner verifies health" }],
+        },
+      },
+    ],
     duplicateMatches: [],
   }
 }
 
 function handler(fn: unknown) {
-  return (fn as { _handler: (context: unknown, args: Record<string, unknown>) => Promise<unknown> })._handler
+  const run = (fn as { _handler: (context: unknown, args: Record<string, unknown>) => Promise<unknown> })._handler
+  return (context: unknown, args: Record<string, unknown>) =>
+    run(context, {
+      organization_id: "org-a",
+      owner_user_id: "user-a",
+      ...args,
+    })
 }
 
 class BackgroundDb {
   rows: Record<string, Array<Record<string, any>>>
 
   constructor(rows: Record<string, Array<Record<string, any>>>) {
-    this.rows = rows
+    this.rows = Object.fromEntries(
+      Object.entries({
+        org_memberships: [{ _id: "membership-row", org_id: "org-a", user_id: "user-a" }],
+        ...rows,
+      }).map(([table, values]) => [
+        table,
+        values.map((row) => ({
+          ...(table.startsWith("workgraph_") || table === "workgraphs" || table.startsWith("work_source")
+            ? { organization_id: "org-a" }
+            : {}),
+          ...row,
+        })),
+      ]),
+    )
   }
 
   query(table: string) {
@@ -675,6 +1461,13 @@ class BackgroundDb {
       .flat()
       .find((candidate) => candidate._id === id)
     if (row) Object.assign(row, value)
+  }
+
+  async delete(id: string) {
+    Object.values(this.rows).forEach((rows) => {
+      const index = rows.findIndex((candidate) => candidate._id === id)
+      if (index >= 0) rows.splice(index, 1)
+    })
   }
 
   async get(id: string) {

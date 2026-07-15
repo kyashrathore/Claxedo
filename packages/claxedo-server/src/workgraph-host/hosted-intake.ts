@@ -42,23 +42,19 @@ export function createHostedWorkGraphIntake(input: Readonly<{
   executor: Executor
   service: Readonly<{ execute(context: WorkGraphContext, request: WorkGraphCommandRequest): Promise<CommandResult> }>
   resolveContext(request: Request): Promise<WorkGraphContext>
-  resolveClerkOrgId(context: WorkGraphContext): string | undefined
   webhookVerifier?: ConnectionWebhookVerifier
 }>) {
-  const resolvedOrg = new WeakMap<WorkGraphContext, string>()
   const read = (context: WorkGraphContext, query: Record<string, unknown>) => input.executor.query(
     workGraphConvexApi.workgraphIntake.readForService,
-    { service_token: input.serviceToken, owner_subject: context.ownerUserId, query },
+    { service_token: input.serviceToken, organization_id: context.organizationId, owner_subject: context.ownerUserId, query },
   )
   const execute = (context: WorkGraphContext, operation: Record<string, unknown>) => input.executor.mutation(
     workGraphConvexApi.workgraphIntake.executeForService,
-    { service_token: input.serviceToken, owner_subject: context.ownerUserId, operation },
+    { service_token: input.serviceToken, organization_id: context.organizationId, owner_subject: context.ownerUserId, operation },
   )
   const sourceViews: SourceViewStore = {
     async create(context, view) {
-      const orgId = resolvedOrg.get(context)
-      if (!orgId) throw new Error("Source View Connection org is unavailable")
-      return ownedSourceView(await execute(context, { type: "create_source_view", orgId, view }), context)
+      return ownedSourceView(await execute(context, { type: "create_source_view", orgId: context.organizationId, view }), context)
     },
     async read(context, id) {
       const value = await read(context, { kind: "source_view", sourceViewId: id })
@@ -144,14 +140,11 @@ export function createHostedWorkGraphIntake(input: Readonly<{
   }
   const connections = createHostedWorkGraphConnectionsPort({
     async resolveMetadata(context, connectionIds) {
-      const clerkOrgId = input.resolveClerkOrgId(context)
-      if (!clerkOrgId) return []
       const rows = await Promise.all(connectionIds.map(async (connectionId) => {
-        const value = await read(context, { kind: "connection", clerkOrgId, connectionId })
+        const value = await read(context, { kind: "connection", connectionId })
         return value === null ? undefined : ownedConnection(value, context)
       }))
       const metadata = rows.filter((row): row is HostedConnectionMetadata => !!row)
-      if (metadata.length === 1) resolvedOrg.set(context, metadata[0].orgId)
       return metadata
     },
     credentials: (orgId) => hostedOrgCredentials(orgId, input.env),
@@ -164,7 +157,7 @@ export function createHostedWorkGraphIntake(input: Readonly<{
   const connectors = [
     createGitHubSourceIssueConnector(),
     createLinearSourceIssueConnector(),
-    createJiraSourceIssueConnector({ baseUrl: "https://atlassian.net" }),
+    createJiraSourceIssueConnector(),
   ]
   const intake = createIntakeService({
     sourceViews,
@@ -208,7 +201,21 @@ export function createHostedWorkGraphIntake(input: Readonly<{
     sourceViews: sourceViewService,
     intake,
     webhooks,
-    ...(input.webhookVerifier ? { webhookRouter: createWorkGraphWebhookRouter({ verifier: input.webhookVerifier, intake: webhooks }) } : {}),
+    ...(input.webhookVerifier ? {
+      webhookRouter: createWorkGraphWebhookRouter({
+        verifier: input.webhookVerifier,
+        intake: webhooks,
+        resolveOrganizationId: async (connectionId) => {
+          const value = await input.executor.query(workGraphConvexApi.workgraphConnections.resolveWebhookMetadata, {
+            service_token: input.serviceToken,
+            connectionId,
+          })
+          if (!value || typeof value !== "object" || Array.isArray(value)) return
+          const orgId = (value as Record<string, unknown>).orgId
+          return typeof orgId === "string" && orgId.trim() ? orgId.trim() : undefined
+        },
+      }),
+    } : {}),
   }
 }
 

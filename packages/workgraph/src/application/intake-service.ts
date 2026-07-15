@@ -150,6 +150,7 @@ export function createIntakeService(input: Readonly<{
       const proposalResult = await admissions.propose(context, {
         operationId: `intake:${context.ownerUserId}:${candidate.id}:proposal` as OperationID,
         source,
+        ...(candidate.candidateKind === "session" && candidate.execution ? { execution: candidate.execution } : {}),
       })
       if (!proposalResult.ok) throw new IntakeStateError(proposalResult.error.message)
       return input.candidates.stage(context, candidate.id, {

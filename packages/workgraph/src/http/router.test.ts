@@ -17,8 +17,8 @@ import type {
   WorkGraphNotification,
   WorkGraphArchive,
 } from "../contracts"
-import { createAttentionCursor, WorkGraphArchiveRestoreError } from "../contracts"
-import { createNotificationService, createWorkGraphService, NotificationVersionConflictError } from "../application"
+import { createAttentionCursor, createChangeCursor, createNotificationPageCursor, readChangeCursor, readNotificationPageCursor, WorkGraphArchiveRestoreError } from "../contracts"
+import { createAttentionAcknowledgementService, createNotificationService, createWorkGraphService, NotificationVersionConflictError } from "../application"
 import { createSqliteWorkGraphService } from "../adapters/sqlite/store"
 import { createSqliteWorkGraphArchivePort } from "../adapters/sqlite/archive"
 import { createSqliteWorkGraphOwnerDeletionPort } from "../adapters/sqlite/owner-deletion"
@@ -35,23 +35,34 @@ import { createWorkGraphHttpRouter } from "./router"
 const branded = <Type>(value: string) => value as Type
 
 describe("WorkGraph northbound HTTP router", () => {
+  it("persists owner-scoped Attention read and clear acknowledgements", async () => {
+    const fixture = createFixture()
+    expect(await (await fixture.app.request("/attention/read", { method: "POST", headers: { authorization: "Bearer owner_a" } })).json())
+      .toEqual({ ownerUserId: "owner_a", readAt: 100 })
+    expect(await (await fixture.app.request("/attention/clear", { method: "POST", headers: { authorization: "Bearer owner_a" } })).json())
+      .toEqual({ ownerUserId: "owner_a", readAt: 200, clearedAt: 200 })
+    expect(fixture.attentionAcknowledgements).toEqual([
+      { owner: "owner_a", operation: "mark_all_read" },
+      { owner: "owner_a", operation: "clear" },
+    ])
+  })
+
   it("accepts a SQLite service with additional query capabilities without an adapter cast", async () => {
     const database = new BetterSqlite3(":memory:")
     try {
-      const service = createSqliteWorkGraphService({ database }).service
+      const service = createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities }).service
       const app = createWorkGraphHttpRouter({
         service,
         archive: createSqliteWorkGraphArchivePort(database),
         deletion: createSqliteWorkGraphOwnerDeletionPort(database, {
           provisionOrAdopt: async () => { throw new Error("unused") },
-          createChildIsolation: async () => { throw new Error("unused") },
           launch: async () => { throw new Error("unused") },
           cancel: async () => undefined,
           result: async () => { throw new Error("unused") },
-          integrateResult: async () => { throw new Error("unused") },
           cleanup: async () => undefined,
         }),
         resolveContext: () => ({
+          organizationId: "organization_sqlite",
           ownerUserId: "owner_sqlite",
           actor: { type: "user", id: "owner_sqlite" },
           requestId: "request_sqlite",
@@ -68,7 +79,7 @@ describe("WorkGraph northbound HTTP router", () => {
       expect((await app.request("/defaults?ownerUserId=other")).status).toBe(400)
       expect(await (await app.request("/attention?limit=5")).json()).toEqual({ items: [], total: 0, hasMore: false })
       expect((await app.request("/attention?limit=0")).status).toBe(400)
-      expect((await app.request(`/attention?after=${encodeURIComponent(createAttentionCursor("other", { updatedAt: 1, kind: "decision", id: "decision_1" }))}`)).status).toBe(409)
+      expect((await app.request(`/attention?after=${encodeURIComponent(createAttentionCursor("organization_sqlite", "other", { updatedAt: 1, kind: "decision", id: "decision_1" }))}`)).status).toBe(409)
       const updatedDefaults = await app.request("/commands", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -101,7 +112,9 @@ describe("WorkGraph northbound HTTP router", () => {
       expect(created.status).toBe(200)
       const createdBody = await created.json() as { value: { streamId: string } }
       const snapshot = await (await app.request("/snapshot")).json() as WorkGraphSnapshotPage
-      expect(snapshot.snapshotCursor).toBe("2")
+      expect(readChangeCursor(snapshot.snapshotCursor, "organization_sqlite", "owner_sqlite")).toBe(2)
+      const foreignChangeCursor = createChangeCursor({ organizationId: "other_organization", ownerUserId: "owner_sqlite", position: 1 })
+      expect((await app.request(`/changes?after=${encodeURIComponent(foreignChangeCursor)}`)).status).toBe(409)
       expect(snapshot.records).toEqual(expect.arrayContaining([
         expect.objectContaining({ recordType: "workgraph", version: 2 }),
         expect.objectContaining({ recordType: "stream", title: "SQLite Stream" }),
@@ -129,10 +142,11 @@ describe("WorkGraph northbound HTTP router", () => {
         sources: [{ id: createdSource.value.workSourceId, title: "Launch plan", revisionCount: 1 }],
         hasMore: false,
       })
+      expect((await app.request("/sources?after=malformed&limit=1")).status).toBe(409)
       expect(await (await app.request(`/sources/${createdSource.value.workSourceId}`)).json())
         .toMatchObject({ id: createdSource.value.workSourceId, latestRevisionId: createdSource.value.revisionId })
-      expect(await (await app.request(`/sources/${createdSource.value.workSourceId}/revisions/${createdSource.value.revisionId}`)).json())
-        .toMatchObject({ id: createdSource.value.revisionId, content: "Ship the cloud", origin: { kind: "manual" } })
+      const sourceRevision = await (await app.request(`/sources/${createdSource.value.workSourceId}/revisions/${createdSource.value.revisionId}`)).json() as { contentHash: string }
+      expect(sourceRevision).toMatchObject({ id: createdSource.value.revisionId, content: "Ship the cloud", origin: { kind: "manual" } })
       const proposal = await app.request("/commands", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -144,7 +158,7 @@ describe("WorkGraph northbound HTTP router", () => {
             source: {
               workSourceId: createdSource.value.workSourceId,
               revisionId: createdSource.value.revisionId,
-              contentHash: (await (await app.request(`/sources/${createdSource.value.workSourceId}/revisions/${createdSource.value.revisionId}`)).json() as { contentHash: string }).contentHash,
+              contentHash: sourceRevision.contentHash,
             },
           },
         }),
@@ -165,6 +179,11 @@ describe("WorkGraph northbound HTTP router", () => {
             streamId: createdBody.value.streamId,
             title: "Verify cloud",
             dependencyIds: [],
+            source: {
+              workSourceId: createdSource.value.workSourceId,
+              revisionId: createdSource.value.revisionId,
+              contentHash: sourceRevision.contentHash,
+            },
             completionContract: {
               version: 1,
               mode: "all",
@@ -178,6 +197,22 @@ describe("WorkGraph northbound HTTP router", () => {
         id: itemBody.value.workItemId,
         title: "Verify cloud",
       })
+      const reviewQuery = new URLSearchParams({
+        workSourceId: createdSource.value.workSourceId,
+        revisionId: createdSource.value.revisionId,
+        contentHash: sourceRevision.contentHash,
+      })
+      expect(await (await app.request(`/streams/${createdBody.value.streamId}/replacement-review?${reviewQuery}`)).json()).toMatchObject({
+        streamId: createdBody.value.streamId,
+        streamTitle: "SQLite Stream",
+        status: "eligible",
+        targets: [{ workItemId: itemBody.value.workItemId, expectedVersion: 1, title: "Verify cloud", state: "pending" }],
+      })
+      reviewQuery.set("contentHash", "f".repeat(64))
+      expect((await app.request(`/streams/${createdBody.value.streamId}/replacement-review?${reviewQuery}`)).status).toBe(404)
+      reviewQuery.set("contentHash", sourceRevision.contentHash)
+      reviewQuery.set("ownerUserId", "other")
+      expect((await app.request(`/streams/${createdBody.value.streamId}/replacement-review?${reviewQuery}`)).status).toBe(400)
       expect(await (await app.request(`/work-items/${itemBody.value.workItemId}/attempts?limit=10`)).json()).toEqual({
         attempts: [],
         hasMore: false,
@@ -246,7 +281,6 @@ describe("WorkGraph northbound HTTP router", () => {
     expect(await success.json()).toMatchObject({
       schemaVersion: 1,
       ownerUserId: "owner_a",
-      environments: [{ kind: "local_worktree", isolation: ["stream", "child"], cleanup: ["destroy_on_close", "retain"], integration: ["manual"] }],
       harnesses: [{ id: "opencode" }],
       agents: [{ id: "build", harnessId: "opencode" }],
       models: [],
@@ -256,6 +290,10 @@ describe("WorkGraph northbound HTTP router", () => {
     expect((await fixture.app.request("/execution-capabilities?ownerUserId=owner_b", fixture.auth("owner_a"))).status).toBe(400)
     expect((await fixture.app.request("/execution-capabilities?workspaceId=workspace_1", fixture.auth("owner_a"))).status).toBe(400)
     expect((await fixture.app.request("/execution-capabilities", fixture.auth("shared_owner_a"))).status).toBe(403)
+    expect((await fixture.app.request("/execution-capabilities/refresh?workspaceId=workspace_1", {
+      ...fixture.auth("owner_a"),
+      method: "POST",
+    })).status).toBe(400)
 
     const unavailable = await fixture.app.request("/execution-capabilities/refresh", {
       ...fixture.auth("owner_a"),
@@ -287,7 +325,11 @@ describe("WorkGraph northbound HTTP router", () => {
       body: JSON.stringify({ operationId: "operation_restore", archive }),
     })
     expect(restored.status).toBe(200)
-    expect(await restored.json()).toEqual({ restored: true, recordCount: archive.records.length, baselineCursor: "0" })
+    expect(await restored.json()).toEqual({
+      restored: true,
+      recordCount: archive.records.length,
+      baselineCursor: createChangeCursor({ organizationId: "organization", ownerUserId: "owner_a", position: 0 }),
+    })
 
     const crossOwner = await fixture.app.request("/archive/restore", {
       method: "POST",
@@ -388,7 +430,10 @@ describe("WorkGraph northbound HTTP router", () => {
     expect(retry.status).toBe(first.status)
     expect(await retry.json()).toEqual(await first.json())
     const changes = await fixture.app.request("/changes", fixture.auth("owner_a"))
-    expect(await changes.json()).toMatchObject({ changes: [{ cursor: "1" }], cursor: "1", timedOut: false })
+    const body = await changes.json() as { changes: ChangeEnvelope[]; cursor: ChangeCursor; timedOut: boolean }
+    expect(body.timedOut).toBe(false)
+    expect(body.changes.map((change) => readChangeCursor(change.cursor, "organization", "owner_a"))).toEqual([1])
+    expect(readChangeCursor(body.cursor, "organization", "owner_a")).toBe(1)
   })
 
   it("converges an owner snapshot with ordered changes after its cursor", async () => {
@@ -397,13 +442,15 @@ describe("WorkGraph northbound HTTP router", () => {
     const snapshot = await fixture.app.request("/snapshot", fixture.auth("owner_a"))
     expect(snapshot.status).toBe(200)
     const page = await snapshot.json() as WorkGraphSnapshotPage
-    expect(page.snapshotCursor).toBe("1")
+    expect(readChangeCursor(page.snapshotCursor, "organization", "owner_a")).toBe(1)
     expect(page.records).toHaveLength(1)
 
     await fixture.command("owner_a", createStream("operation_2", "Second"))
     const changes = await fixture.app.request(`/changes?after=${page.snapshotCursor}&limit=10`, fixture.auth("owner_a"))
     expect(changes.status).toBe(200)
-    expect(await changes.json()).toMatchObject({ changes: [{ cursor: "2" }], cursor: "2", timedOut: false })
+    const body = await changes.json() as { changes: ChangeEnvelope[]; cursor: ChangeCursor; timedOut: boolean }
+    expect(body.changes.map((change) => readChangeCursor(change.cursor, "organization", "owner_a"))).toEqual([2])
+    expect(readChangeCursor(body.cursor, "organization", "owner_a")).toBe(2)
   })
 
   it("preserves cursor order when changes interleave independent Stream sequences", async () => {
@@ -413,33 +460,39 @@ describe("WorkGraph northbound HTTP router", () => {
 
     const response = await fixture.app.request("/changes", fixture.auth("owner_a"))
     const body = await response.json() as { changes: ChangeEnvelope[] }
-    expect(body.changes.map((change) => change.cursor)).toEqual(["1", "2"])
+    expect(body.changes.map((change) => readChangeCursor(change.cursor, "organization", "owner_a"))).toEqual([1, 2])
     expect(body.changes.map((change) => change.event.sequence)).toEqual([1, 1])
   })
 
   it("bounds long polling and returns early when a new ordered change appears", async () => {
     const fixture = createFixture()
     const startedAt = Date.now()
-    const timeout = await fixture.app.request("/changes?after=0&waitMs=15", fixture.auth("owner_a"))
+    const zero = createChangeCursor({ organizationId: "organization", ownerUserId: "owner_a", position: 0 })
+    const timeout = await fixture.app.request(`/changes?after=${encodeURIComponent(zero)}&waitMs=15`, fixture.auth("owner_a"))
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(10)
-    expect(await timeout.json()).toEqual({ changes: [], cursor: "0", timedOut: true })
+    expect(await timeout.json()).toEqual({ changes: [], cursor: zero, timedOut: true })
 
-    const poll = fixture.app.request("/changes?after=0&waitMs=200", fixture.auth("owner_a"))
+    const poll = fixture.app.request(`/changes?after=${encodeURIComponent(zero)}&waitMs=200`, fixture.auth("owner_a"))
     await new Promise((resolve) => setTimeout(resolve, 10))
     await fixture.command("owner_a", createStream("operation_1", "Arrived while polling"))
     const response = await poll
-    expect(await response.json()).toMatchObject({ changes: [{ cursor: "1" }], cursor: "1", timedOut: false })
+    const body = await response.json() as { changes: ChangeEnvelope[]; cursor: ChangeCursor }
+    expect(body.changes.map((change) => readChangeCursor(change.cursor, "organization", "owner_a"))).toEqual([1])
+    expect(readChangeCursor(body.cursor, "organization", "owner_a")).toBe(1)
   })
 
   it("lists and reads owner notifications and marks them read with exact-version CAS", async () => {
     const fixture = createFixture()
     const page = await fixture.app.request("/notifications?limit=1&state=unread", fixture.auth("owner_a"))
     expect(page.status).toBe(200)
-    expect(await page.json()).toMatchObject({
+    const pageBody = await page.json() as { notifications: WorkGraphNotification[]; hasMore: boolean; nextCursor: string }
+    expect(pageBody).toMatchObject({
       notifications: [{ id: "notification_2", ownerUserId: "owner_a", state: "unread" }],
       hasMore: true,
-      nextCursor: "1",
+      nextCursor: expect.stringMatching(/^wgn1:/),
     })
+    expect((await fixture.app.request(`/notifications?limit=1&state=unread&after=${encodeURIComponent(pageBody.nextCursor)}`, fixture.auth("owner_b"))).status).toBe(409)
+    expect((await fixture.app.request(`/notifications?limit=1&state=read&after=${encodeURIComponent(pageBody.nextCursor)}`, fixture.auth("owner_a"))).status).toBe(409)
     expect((await fixture.app.request("/notifications/notification_1", fixture.auth("owner_b"))).status).toBe(404)
 
     const read = await fixture.app.request("/notifications/notification_1/read", {
@@ -464,6 +517,7 @@ function createFixture() {
   const streamSequences = new Map<StreamID, number>()
   const operations = new Map<string, Readonly<{ fingerprint: string; result: CommandResult }>>()
   const deletionResults = new Map<string, WorkGraphOwnerDeletionResult>()
+  const attentionAcknowledgements: Array<{ owner: string; operation: string }> = []
   let nextId = 0
   let now = 1_000
   const notifications = new Map<string, WorkGraphNotification>([1, 2].map((id) => [`notification_${id}`, {
@@ -521,7 +575,7 @@ function createFixture() {
     streams.set(streamId, stream)
 
     const ownerChanges = changes.get(context.ownerUserId) ?? []
-    const cursor = branded<ChangeCursor>(String(ownerChanges.length + 1))
+    const cursor = createChangeCursor({ organizationId: context.organizationId, ownerUserId: context.ownerUserId, position: ownerChanges.length + 1 })
     const type = request.command.type === "create_stream" ? "stream_created" : "stream_updated"
     const sequence = (streamSequences.get(streamId) ?? 0) + 1
     streamSequences.set(streamId, sequence)
@@ -577,7 +631,7 @@ function createFixture() {
           const ownerChanges = changes.get(context.ownerUserId) ?? []
           const records = Array.from(streams.values()).filter((stream) => stream.ownerUserId === context.ownerUserId)
           return {
-            snapshotCursor: branded<ChangeCursor>(String(ownerChanges.length)),
+            snapshotCursor: createChangeCursor({ organizationId: context.organizationId, ownerUserId: context.ownerUserId, position: ownerChanges.length }),
             records,
             references: records.map((stream, index) => ({ sequence: index + 1, resource: { type: "stream", id: stream.id }, version: stream.version })),
             hasMore: false,
@@ -590,7 +644,7 @@ function createFixture() {
         const stream = streams.get(input.streamId)
         return stream?.ownerUserId === context.ownerUserId ? stream : undefined
       } },
-      proposals: { read: async () => undefined },
+      proposals: { read: async () => undefined, replacementReview: async () => undefined },
       attempts: { read: async () => undefined },
       decisions: { read: async () => undefined },
       recaps: { read: async () => undefined },
@@ -608,26 +662,38 @@ function createFixture() {
         list: async () => ({ evidence: [], hasMore: false }),
       },
       changes: { list: async (context: WorkGraphContext, input: Readonly<{ after?: ChangeCursor; limit: number }>) =>
-        (changes.get(context.ownerUserId) ?? []).filter((change) => !input.after || Number(change.cursor) > Number(input.after)).slice(0, input.limit) },
+        (changes.get(context.ownerUserId) ?? []).filter((change) => !input.after ||
+          readChangeCursor(change.cursor, context.organizationId, context.ownerUserId) >
+            readChangeCursor(input.after, context.organizationId, context.ownerUserId)).slice(0, input.limit) },
     },
   })
   const service = createWorkGraphService(store)
   const app = createWorkGraphHttpRouter({
     service,
+    attentionAcknowledgements: createAttentionAcknowledgementService({
+      async markAllRead(owner) {
+        attentionAcknowledgements.push({ owner: owner.ownerUserId, operation: "mark_all_read" })
+        return { ownerUserId: owner.ownerUserId, readAt: 100 }
+      },
+      async clear(owner) {
+        attentionAcknowledgements.push({ owner: owner.ownerUserId, operation: "clear" })
+        return { ownerUserId: owner.ownerUserId, readAt: 200, clearedAt: 200 }
+      },
+    }),
     executionCapabilities: {
       read: async (owner) => {
         return {
           schemaVersion: 1,
+          organizationId: owner.organizationId,
           ownerUserId: owner.ownerUserId,
+          catalogRevision: "a".repeat(64),
           observedAt: now,
+          expiresAt: now + 300_000,
           environments: [{
             kind: "local_worktree" as const,
             repositoryRequired: true,
             remoteUrlInput: false,
             baseRevisionInput: true,
-            isolation: ["stream" as const, "child" as const],
-            cleanup: ["destroy_on_close" as const, "retain" as const],
-            integration: ["manual" as const],
           }],
           harnesses: [{ id: "opencode" }],
           agents: [{ harnessId: "opencode", id: "build", label: "build", mode: "primary" as const }],
@@ -637,7 +703,7 @@ function createFixture() {
           connections: [],
         }
       },
-      probe: async () => {
+      refresh: async () => {
         throw new ExecutionCapabilitiesUnavailableError(
           "catalog_workspace",
           "catalog_workspace_unavailable",
@@ -646,8 +712,9 @@ function createFixture() {
         )
       },
     },
+    now: () => now,
     archive: {
-      export: async (owner) => archive(owner.ownerUserId),
+      export: async (owner) => archive(owner.organizationId, owner.ownerUserId),
       restore: async (owner, input) => {
         if (input.operationId === "operation_bundled_archive_error") {
           const error = new Error("canonical error from a separately bundled entrypoint")
@@ -655,7 +722,11 @@ function createFixture() {
           throw Object.assign(error, { reason: "dependency_unavailable" as const })
         }
         if (input.archive.ownerUserId !== owner.ownerUserId) throw new WorkGraphArchiveRestoreError("cross_owner")
-        return { restored: true, recordCount: input.archive.records.length, baselineCursor: branded("0") }
+        return {
+          restored: true,
+          recordCount: input.archive.records.length,
+          baselineCursor: createChangeCursor({ organizationId: owner.organizationId, ownerUserId: owner.ownerUserId, position: 0 }),
+        }
       },
     },
     deletion: {
@@ -685,12 +756,29 @@ function createFixture() {
     },
     notifications: createNotificationService({
       async list(owner, input) {
-        const offset = Number(input.after ?? 0)
+        const resume = input.after
+          ? readNotificationPageCursor(input.after, owner.organizationId, owner.ownerUserId, input.state)
+          : undefined
         const rows = [...notifications.values()]
           .filter((notification) => notification.ownerUserId === owner.ownerUserId && (!input.state || notification.state === input.state))
-          .sort((left, right) => right.createdAt - left.createdAt)
-        const page = rows.slice(offset, offset + input.limit)
-        return { notifications: page, hasMore: offset + page.length < rows.length, ...(offset + page.length < rows.length ? { nextCursor: String(offset + page.length) } : {}) }
+          .filter((notification) => !resume || notification.createdAt < resume.createdAt ||
+            (notification.createdAt === resume.createdAt && notification.id < resume.notificationId))
+          .sort((left, right) => right.createdAt - left.createdAt || right.id.localeCompare(left.id))
+        const page = rows.slice(0, input.limit)
+        const hasMore = rows.length > input.limit
+        return {
+          notifications: page,
+          hasMore,
+          ...(hasMore ? {
+            nextCursor: createNotificationPageCursor({
+              organizationId: owner.organizationId,
+              ownerUserId: owner.ownerUserId,
+              state: input.state,
+              createdAt: page.at(-1)!.createdAt,
+              notificationId: page.at(-1)!.id,
+            }),
+          } : {}),
+        }
       },
       async read(owner, id) {
         const notification = notifications.get(id)
@@ -716,6 +804,7 @@ function createFixture() {
 
   return {
     app,
+    attentionAcknowledgements,
     auth: (owner: string) => ({ headers: { authorization: `Bearer ${owner}` } }),
     command: (owner: string, body: unknown) => app.request("/commands", {
       method: "POST",
@@ -725,9 +814,10 @@ function createFixture() {
   }
 }
 
-function archive(ownerUserId: OwnerUserID): WorkGraphArchive {
+function archive(organizationId: WorkGraphContext["organizationId"], ownerUserId: OwnerUserID): WorkGraphArchive {
   return {
     version: 1,
+    organizationId,
     ownerUserId,
     exportedAt: 1,
     records: [{
@@ -751,6 +841,7 @@ function createStream(operationId: string, title: string) {
 
 function context(ownerUserId: string, mode: "owner" | "shared_read" = "owner"): WorkGraphContext {
   return {
+    organizationId: branded("organization"),
     ownerUserId: branded<OwnerUserID>(ownerUserId),
     actor: { type: "user", id: branded(`actor_${ownerUserId}`) },
     requestId: branded<RequestID>(`request_${ownerUserId}`),
@@ -761,3 +852,4 @@ function context(ownerUserId: string, mode: "owner" | "shared_read" = "owner"): 
 function failure(operationId: OperationID, code: CommandErrorCode, message: string): CommandResult {
   return { ok: false, operationId, error: { code, message, retryable: false } }
 }
+import { testExecutionCapabilities } from "../../test/test-execution-capabilities"

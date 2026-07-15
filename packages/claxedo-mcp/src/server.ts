@@ -13,6 +13,7 @@
  *   CLAXEDO_SERVER_URL - Base URL of the Claxedo local control plane
  *   OPENCODE_API_DIR   - Default project directory for requests
  *   CLAXEDO_WORKSPACE_ID - Default workspace id for Docker/cloud workspace requests
+ *   CLAXEDO_REPOSITORY_URL - Optional repository URL override for a cloud workspace
  *   CLAXEDO_AUTH_TOKEN - Optional signed remote server auth token
  */
 
@@ -23,6 +24,7 @@ import { z } from "zod"
 import { registerBrowserTools } from "./browser-tools"
 import { mcpHttpError } from "./http-error"
 import { handleProcess, type LaunchResult, type ListResponse, type ProcessClient } from "./process-handler"
+import { claxedoRequestScope } from "./request-scope"
 import { claxedoMcpReadOnly } from "./tool-policy"
 import { registerWorkGraphTools } from "./workgraph-tools"
 
@@ -39,6 +41,7 @@ const requestDirectory = (args: { directory?: string; workspace_id?: string }) =
 const ORIGIN = clean(process.env.CLAXEDO_SERVER_URL) || "http://127.0.0.1:3001"
 const DEFAULT_WORKSPACE_ID = clean(process.env.CLAXEDO_WORKSPACE_ID)
 const DEFAULT_DIR = clean(process.env.OPENCODE_API_DIR) || (DEFAULT_WORKSPACE_ID ? workspaceRef(DEFAULT_WORKSPACE_ID) : process.cwd())
+const DEFAULT_REPOSITORY_URL = clean(process.env.CLAXEDO_REPOSITORY_URL)
 const TOKEN = clean(process.env.CLAXEDO_AUTH_TOKEN)
 const READ_ONLY = claxedoMcpReadOnly()
 
@@ -50,20 +53,20 @@ const httpRequest = async <T>(
   init?: RequestInit,
   mode: "json" | "text" = "json",
   directory?: string,
+  scope: "workspace" | "owner" = "workspace",
 ): Promise<T> => {
   const dir = directory || DEFAULT_DIR
-  const workspaceId = workspaceIdFromDirectory(dir) || DEFAULT_WORKSPACE_ID
+  const workspaceId = scope === "workspace" ? workspaceIdFromDirectory(dir) || DEFAULT_WORKSPACE_ID : ""
+  const target = claxedoRequestScope(ORIGIN, requestPath, scope === "owner"
+    ? { type: "owner" }
+    : { type: "workspace", directory: dir, ...(workspaceId ? { workspaceId } : {}) })
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "x-opencode-directory": dir,
-    ...(workspaceId ? { "x-workspace-id": workspaceId } : {}),
+    ...target.headers,
     ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
     ...(init?.headers as Record<string, string> | undefined),
   }
-  const query = new URLSearchParams({ directory: dir })
-  if (workspaceId) query.set("workspaceId", workspaceId)
-  const url = `${ORIGIN}${requestPath}${requestPath.includes("?") ? "&" : "?"}${query}`
-  const res = await fetch(url, { ...init, headers })
+  const res = await fetch(target.url, { ...init, headers })
   const text = await res.text()
   if (!res.ok) {
     const data = mode === "json" && text.trim() ? parseHttpErrorBody(text) : undefined
@@ -215,7 +218,33 @@ function registerTool(
   server.registerTool(name, config as any, handler as any)
 }
 
-registerWorkGraphTools(registerTool, httpRequest, READ_ONLY)
+registerWorkGraphTools(
+  registerTool,
+  (path, init) => httpRequest(path, init, "json", undefined, "owner"),
+  READ_ONLY,
+  async () => {
+    if (!DEFAULT_WORKSPACE_ID) return {
+      execution: {
+        environment: { kind: "local_worktree", directory: DEFAULT_DIR },
+        repository: { baseRevision: "HEAD" },
+      },
+    }
+    const resolved = DEFAULT_REPOSITORY_URL
+      ? undefined
+      : await httpRequest<{
+          git?: { remote?: string | null }
+          backing?: { repoUrl?: string | null }
+        }>(`/api/workspace/resolve?workspaceId=${encodeURIComponent(DEFAULT_WORKSPACE_ID)}`, { method: "GET" }, "json", undefined, "owner")
+    const repositoryUrl = DEFAULT_REPOSITORY_URL || clean(resolved?.git?.remote) || clean(resolved?.backing?.repoUrl)
+    if (!repositoryUrl) throw new Error(`Workspace ${DEFAULT_WORKSPACE_ID} has no Git repository URL for the new Stream`)
+    return {
+      execution: {
+        environment: { kind: "hosted_workspace", repositoryUrl },
+        repository: { baseRevision: "HEAD" },
+      },
+    }
+  },
+)
 
 if (!READ_ONLY) {
   registerTool(

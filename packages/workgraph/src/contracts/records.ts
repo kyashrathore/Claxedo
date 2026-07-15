@@ -78,6 +78,16 @@ export const StreamEnvelopeSchema = z.strictObject({
 })
 export type StreamEnvelope = z.infer<typeof StreamEnvelopeSchema>
 
+export const StreamReplacementResetSchema = z.strictObject({
+  state: z.enum(["pending", "attention", "completed"]),
+  proposalId: AdmissionProposalIDSchema,
+  previousSource: WorkSourceRevisionRefSchema,
+  source: WorkSourceRevisionRefSchema,
+  requestedAt: timestamp,
+  completedAt: timestamp.optional(),
+})
+export type StreamReplacementReset = z.infer<typeof StreamReplacementResetSchema>
+
 export const StreamDtoSchema = z.strictObject({
   recordType: z.literal("stream"),
   ...ownerRecordShape,
@@ -92,6 +102,7 @@ export const StreamDtoSchema = z.strictObject({
   memory: StreamMemorySchema.optional(),
   activity: StreamActivitySchema,
   envelope: StreamEnvelopeSchema.optional(),
+  replacementReset: StreamReplacementResetSchema.optional(),
   durableEffectCount: z.number().int().nonnegative(),
   sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
 })
@@ -237,10 +248,10 @@ export const RecapGenerationSchema = z.discriminatedUnion("state", [
   }),
   z.strictObject({
     state: z.literal("invalidated"),
-    model: ModelSelectionSchema,
-    effort: text,
+    model: ModelSelectionSchema.optional(),
+    effort: text.optional(),
     reason: text,
-    source: z.literal("retired_non_session_generation"),
+    source: z.enum(["retired_non_session_generation", "retired_incomplete_generation"]),
   }),
 ])
 export type RecapGeneration = z.infer<typeof RecapGenerationSchema>

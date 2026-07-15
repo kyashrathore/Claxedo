@@ -53,6 +53,9 @@ const runtimeGatewayBoundary = new Set([
   "app/boot/data/bootstrap.ts",
   "features/session/composer/ui/submit-transport.ts",
   "features/session/harness/harness-config-runtime.ts",
+  // Cross-feature provider query adapter owns the explicit harness-scoped
+  // provider route used by settings and session model selectors.
+  "platform/query/control-plane.ts",
 ])
 
 const workspaceRuntimeIdentityBoundary = new Set([
@@ -909,7 +912,7 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, settingsGeneral)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, settingsProviders)).exists()).toBe(true)
     expect(hook).toMatch(/useQueryOptions/)
-    expect(hook).toMatch(/queryOptions\.providers\(dir\(\) \|\| null\)/)
+    expect(hook).toMatch(/queryOptions\.providers\(dir\(\) \|\| null, harness\(\)\)/)
     expect(hook).toMatch(/useShellQueryOptions as useQueryOptions/)
     expect(hook).not.toMatch(/useGlobalSync/)
     expect(hook).not.toMatch(/globalSync\.data\.provider/)
@@ -946,7 +949,7 @@ describe("workspace runtime route audit", () => {
     expect(general).toMatch(/@\/features\/settings\/ui\/account-section/)
     expect(general).not.toMatch(/@\/components\/settings\/account-section/)
     expect(general).not.toMatch(/@claxedo\/context\/config/)
-    expect(connect).toMatch(/queryOptions\.providerAuth\(\)/)
+    expect(connect).toMatch(/queryOptions\.providerAuth\(props\.harness\)/)
     expect(connect).toMatch(/queryOptions\.providers\(null\)/)
     expect(connect).toMatch(/claxedoCredentialRequest/)
     expect(connect).not.toMatch(/globalSync\.data\.(?:provider|provider_auth)/)
@@ -1458,7 +1461,7 @@ describe("workspace runtime route audit", () => {
     expect(input).not.toMatch(/fallbackGuardScopeKey/)
     expect(toolbar).not.toMatch(/shouldUseFallbackModel[\s\S]{0,300}local\.model\.set\(/)
     expect(input).toMatch(/createModelSelectionPicker/)
-    expect(input).toMatch(/write:\s*\(model, options\) => local\.model\.set\(model, options\)/)
+    expect(input).toMatch(/write:\s*\(model, options\) => writeOpenCodeDraftModel\(\{[\s\S]{0,400}write:\s*local\.model\.set/)
     expect(input).toMatch(/fallbackModel:\s*\(\) => toolbarState\.shouldUseFallbackModel\(\) \? toolbarState\.fallbackModel\(\) : undefined/)
     expect(input).not.toMatch(/fallbackModel:\s*\(\) => fallbackModel\(\)/)
     expect(strategy).toMatch(/export function selectRuntimeModel/)

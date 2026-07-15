@@ -104,7 +104,7 @@ describe("control plane HTTP protocol", () => {
     expect(svc.projectionStore.sync_session_messages).not.toHaveBeenCalled()
   })
 
-  test("checkpoint pulls signed session messages into projection and Convex", async () => {
+  test("checkpoint waits for the active status to clear before admitting independent Session intake", async () => {
     const svc = services()
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
@@ -125,34 +125,58 @@ describe("control plane HTTP protocol", () => {
         info: { id: "msg-1", role: "user" },
         parts: [{ type: "text", text: "hello" }],
       },
+      {
+        info: { id: "msg-2", role: "assistant" },
+        parts: [{ type: "text", text: "summary" }],
+      },
     ]
+    const statuses = [{ "session-1": { type: "busy" } }, {}]
+    const payloads = [{ messages }, { messages: messages.slice(0, 1), maxEventOrdinal: 7 }]
 
-    await pullControlSessionMessages(
-      svc,
-      {
-        runtimeFetch: async (input: { path: string }) => {
-          if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
-          if (input.path === "/session/session-1/message?snapshot=1") return Response.json({ messages })
-          return new Response("not found", { status: 404 })
+    const pull = () =>
+      pullControlSessionMessages(
+        svc,
+        {
+          runtimeFetch: async (input: { path: string }) => {
+            if (input.path === "/api/wr/health") return Response.json({ workspaceId: "ws_1" })
+            if (input.path === "/session/session-1/message?snapshot=1") return Response.json(payloads.shift() ?? { messages })
+            if (input.path === "/session/status") return Response.json(statuses.shift() ?? {})
+            return new Response("not found", { status: 404 })
+          },
         },
-      },
-      auth,
-      {
-        workspaceId: "ws_1",
-        sessionId: "session-1",
-      },
-    )
+        auth,
+        {
+          workspaceId: "ws_1",
+          sessionId: "session-1",
+        },
+      )
+
+    await pull()
 
     expect(svc.projectionStore.sync_session_messages).toHaveBeenCalledWith(
       expect.objectContaining({ id: "ws_1" }),
       "session-1",
       messages,
     )
-    expect(syncSessionMessages).toHaveBeenCalledWith(expect.objectContaining({ mode: "signed" }), {
+    expect(syncSessionMessages).toHaveBeenNthCalledWith(1, expect.objectContaining({ mode: "signed" }), {
       workspaceId: "ws_1",
       sessionId: "session-1",
       messages,
+      intakeReady: false,
     })
+
+    vi.mocked(svc.projectionStore.read_session_messages).mockReturnValue(messages)
+    vi.mocked(svc.projectionStore.read_session_max_event_ordinal).mockReturnValue(7)
+
+    await expect(pull()).resolves.toMatchObject({ skipped: true, snapshotOrdinal: 7 })
+
+    expect(syncSessionMessages).toHaveBeenNthCalledWith(2, expect.objectContaining({ mode: "signed" }), {
+      workspaceId: "ws_1",
+      sessionId: "session-1",
+      messages,
+      intakeReady: true,
+    })
+    expect(svc.projectionStore.sync_session_messages).toHaveBeenCalledTimes(1)
   })
 
   test("register and heartbeat delegate to workspace and sandbox manager state", async () => {
@@ -590,9 +614,10 @@ describe("control plane HTTP protocol", () => {
       user: { subject: "user_1", tokenIdentifier: "issuer|user_1", issuer: "issuer" },
     }
 
-    await expect(
-      resolveSessionGateway(svc, "session-1", auth).catch(errorShape),
-    ).resolves.toEqual({ status: 503, code: "workspace_authority_unavailable" })
+    await expect(resolveSessionGateway(svc, "session-1", auth).catch(errorShape)).resolves.toEqual({
+      status: 503,
+      code: "workspace_authority_unavailable",
+    })
   })
 
   test("invalid workspace ids fail at the protocol boundary", async () => {

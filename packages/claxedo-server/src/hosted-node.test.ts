@@ -12,6 +12,8 @@ const privateKey = [
 
 const previous = {
   dataDir: process.env.CLAXEDO_DATA_DIR,
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+  piModel: process.env.CLAXEDO_PI_MODEL,
 }
 
 function env(overrides: Record<string, string | undefined> = {}) {
@@ -24,6 +26,7 @@ function env(overrides: Record<string, string | undefined> = {}) {
     CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
     CLAXEDO_WORKSPACE_RELAY_URL: "https://relay.test",
     CLAXEDO_RELAY_RESOLVER_TOKEN: "resolver-token",
+    CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "control-plane-service-token",
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: privateKey,
     ...overrides,
   }
@@ -31,11 +34,17 @@ function env(overrides: Record<string, string | undefined> = {}) {
 
 beforeEach(() => {
   process.env.CLAXEDO_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "hosted-node-"))
+  process.env.ANTHROPIC_API_KEY = "test-anthropic-key"
+  process.env.CLAXEDO_PI_MODEL = "anthropic/claude-sonnet-4-6"
 })
 
 afterEach(() => {
   if (previous.dataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous.dataDir
+  if (previous.anthropicApiKey === undefined) delete process.env.ANTHROPIC_API_KEY
+  else process.env.ANTHROPIC_API_KEY = previous.anthropicApiKey
+  if (previous.piModel === undefined) delete process.env.CLAXEDO_PI_MODEL
+  else process.env.CLAXEDO_PI_MODEL = previous.piModel
 })
 
 describe("hosted Node entrypoint", () => {
@@ -59,7 +68,8 @@ describe("hosted Node entrypoint", () => {
 
   test("uses hosted app composition with central runtime and does not mount the local server entrypoint", () => {
     const source = fs.readFileSync(path.resolve(import.meta.dirname, "hosted-node.ts"), "utf8")
-    expect(source).toContain("createHostedApp(plane, { centralSessionRuntime: true })")
+    expect(source).toContain("const app = createHostedApp(plane, {")
+    expect(source).toContain("centralSessionRuntime: true")
     expect(source).toContain("createCentralControlApp(plane.services")
     expect(source).toContain("mountControlPlaneChannels(app")
     expect(source).not.toContain("./server")
@@ -77,7 +87,11 @@ describe("hosted Node entrypoint", () => {
     const created = await app.fetch(new Request("http://127.0.0.1/api/control/sessions", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: "hybrid", title: "Hosted channel session" }),
+      body: JSON.stringify({
+        mode: "hybrid",
+        title: "Hosted channel session",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+      }),
     }))
 
     expect(created.status).toBe(201)
@@ -128,7 +142,11 @@ describe("hosted Node entrypoint", () => {
     const created = await app.fetch(new Request("http://127.0.0.1/api/control/sessions", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: "hybrid", title: "Hosted virtual session" }),
+      body: JSON.stringify({
+        mode: "hybrid",
+        title: "Hosted virtual session",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+      }),
     }))
     expect(created.status).toBe(201)
   })

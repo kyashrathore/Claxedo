@@ -62,6 +62,19 @@ export type SourceIssueAuthorization = Readonly<{
   fields?: Readonly<Record<string, string>>
 }>
 
+export class SourceIssueConfigurationError extends Error {
+  readonly code = "source_issue_configuration_required"
+  readonly retryable = false
+
+  constructor(
+    provider: string,
+    readonly field: string,
+  ) {
+    super(`${provider} source requests require ${field}`)
+    this.name = "SourceIssueConfigurationError"
+  }
+}
+
 export class SourceIssueUnauthorizedError extends Error {
   readonly code = "source_issue_provider_unauthorized"
   readonly status = 401

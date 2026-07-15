@@ -79,6 +79,7 @@ const ROUTE_RULES = [
   prefix(["/api/channels"], RouteDomain.Channels, central),
   exact(["/.well-known/jwks.json"], RouteDomain.ClaxedoControlPlane, central),
   prefix(["/internal/relay"], RouteDomain.WorkspaceRelay, central),
+  prefix(["/internal/workgraph"], RouteDomain.ClaxedoControlPlane, central),
   exact(
     [
       "/global/health",
@@ -93,13 +94,7 @@ const ROUTE_RULES = [
   ),
   exact(["/global/config"], RouteDomain.AgentConfigRegistry, central),
   prefix(
-    [
-      "/config",
-      "/provider",
-      "/auth",
-      "/api/claxedo/agent-config",
-      "/api/claxedo/credentials",
-    ],
+    ["/config", "/provider", "/auth", "/api/claxedo/agent-config", "/api/claxedo/credentials"],
     RouteDomain.AgentConfigRegistry,
     central,
   ),
@@ -122,6 +117,7 @@ const ROUTE_RULES = [
       "/api/workspace",
       "/api/claxedo/network-policy",
       "/api/claxedo/living-apps",
+      "/api/claxedo/docs",
       "/pages",
       "/api/workgraph",
     ],
@@ -140,36 +136,12 @@ const ROUTE_RULES = [
     "Phase 2 moves canonical config ownership fully into Agent Config Registry.",
   ),
   prefix(
-    [
-      "/api/wr/pty",
-      "/api/wr/process",
-      "/api/wr/diff",
-      "/api/wr/git",
-      "/api/wr/session-env",
-      "/find",
-      "/file",
-    ],
+    ["/api/wr/pty", "/api/wr/process", "/api/wr/diff", "/api/wr/git", "/api/wr/session-env", "/find", "/file"],
     RouteDomain.SandboxRuntime,
     runtime,
   ),
-  exact(
-    [
-      "/lsp",
-      "/vcs",
-    ],
-    RouteDomain.SandboxRuntime,
-    runtime,
-  ),
-  prefix(
-    [
-      "/session",
-      "/permission",
-      "/question",
-      "/event",
-    ],
-    RouteDomain.AgentSessionRuntime,
-    runtime,
-  ),
+  exact(["/lsp", "/vcs"], RouteDomain.SandboxRuntime, runtime),
+  prefix(["/session", "/permission", "/question", "/event"], RouteDomain.AgentSessionRuntime, runtime),
   prefix(
     ["/mcp"],
     RouteDomain.AgentConfigRegistry,

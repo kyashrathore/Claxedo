@@ -1,18 +1,19 @@
 import type {
-  AdmissionProposalDto,
   AttemptDetailDto,
   AttentionItem,
-  CommandResult,
   IntakeCandidateDto,
   IntakeCandidatePageCursor,
   ResolvedExecutionProfile,
 } from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
 import { createMemo, createResource, createSignal, For, type JSX, onMount, Show } from "solid-js"
+import { ActionError, createAction } from "./dialog-action"
+import { ProposalContent } from "./item-dialog-proposal"
 import type { WorkGraphWaitingSource } from "./waiting-source"
 import { DetailState, DialogField, DialogSection, WorkGraphDialog } from "./workgraph-dialog"
 
 type Selection = AttentionItem | undefined
+type SessionReference = { sessionId: string; workspaceId?: string }
 
 /**
  * Opens a focused dialog over the WorkGraph screen for the selected Waiting
@@ -27,6 +28,7 @@ type ItemContentProps = {
   onClose: () => void
   /** Opens the shared WorkGraph settings panel tab (for configuration_required). */
   onOpenSettings?: () => void
+  onOpenSession?: (reference: SessionReference) => void
 }
 
 export function WaitingItemDialog(props: {
@@ -37,7 +39,42 @@ export function WaitingItemDialog(props: {
   onResolved: () => void
   /** Opens the shared WorkGraph settings panel tab (for configuration_required). */
   onOpenSettings?: () => void
+  /** Opens an execution Session through the app shell's canonical Session route. */
+  onOpenSession?: (reference: SessionReference) => void
 }) {
+  const openSession = (reference: SessionReference) => {
+    props.onClose()
+    props.onOpenSession?.(reference)
+  }
+  const retryAction = createAction(() => {
+    props.onResolved()
+    props.onClose()
+  })
+  const retryableTask = createMemo(() => {
+    const selection = props.selection
+    if (selection?.kind !== "work_item") return
+    if (selection.record.state !== "failed" && selection.record.state !== "verification_failed") return
+    return selection.record
+  })
+  const footer = createMemo<JSX.Element | undefined>(() => {
+    const item = retryableTask()
+    if (!item) return
+    return (
+      <>
+        <Show when={retryAction.error()}>
+          {(message) => <span class="workgraph-dialog-footer-error" role="alert">{message()}</span>}
+        </Show>
+        <Button
+          size="small"
+          variant="primary"
+          disabled={retryAction.busy()}
+          onClick={() => void retryAction.run(() => props.source.retryWorkItem(item.id, item.version))}
+        >
+          {retryAction.busy() ? "Starting…" : "Run again"}
+        </Button>
+      </>
+    )
+  })
   const title = createMemo<JSX.Element>(() => {
     const kind = props.selection?.kind
     if (kind === "decision") return "Decision"
@@ -51,10 +88,10 @@ export function WaitingItemDialog(props: {
   })
 
   return (
-    <WorkGraphDialog open={!!props.selection} onClose={props.onClose} title={title()} size="large">
+    <WorkGraphDialog open={!!props.selection} onClose={props.onClose} title={title()} size="large" scrollBody footer={footer()}>
       <Show when={props.selection} keyed>
         {(item) => (
-          <Show when={item.kind === "decision" && item} keyed fallback={<NonDecision item={item} source={props.source} onResolved={props.onResolved} onClose={props.onClose} onOpenSettings={props.onOpenSettings} />}>
+          <Show when={item.kind === "decision" && item} keyed fallback={<NonDecision item={item} source={props.source} onResolved={props.onResolved} onClose={props.onClose} onOpenSettings={props.onOpenSettings} onOpenSession={props.onOpenSession ? openSession : undefined} />}>
             {(decision) => <DecisionContent item={decision} source={props.source} onResolved={props.onResolved} onClose={props.onClose} />}
           </Show>
         )}
@@ -74,7 +111,7 @@ function NonDecision(props: ItemContentProps) {
 function AfterProposal(props: ItemContentProps) {
   return (
     <Show when={props.item.kind === "work_item" && props.item} keyed fallback={<AfterWorkItem {...props} />}>
-      {(item) => <TaskContent item={item} source={props.source} onResolved={props.onResolved} />}
+      {(item) => <TaskContent item={item} source={props.source} onOpenSession={props.onOpenSession} />}
     </Show>
   )
 }
@@ -82,7 +119,7 @@ function AfterProposal(props: ItemContentProps) {
 function AfterWorkItem(props: ItemContentProps) {
   return (
     <Show when={props.item.kind === "attempt" && props.item} keyed fallback={<AfterAttempt {...props} />}>
-      {(item) => <AttemptContent attemptId={item.record.id} source={props.source} />}
+      {(item) => <AttemptContent attemptId={item.record.id} source={props.source} onOpenSession={props.onOpenSession} />}
     </Show>
   )
 }
@@ -99,42 +136,6 @@ function AfterRecap(props: ItemContentProps) {
   return (
     <Show when={props.item.kind === "unorganized_ai_work"} fallback={<ConfigRequiredContent item={props.item} onOpenSettings={props.onOpenSettings} onClose={props.onClose} />}>
       <CandidatesContent source={props.source} onResolved={props.onResolved} />
-    </Show>
-  )
-}
-
-/** Tracks busy/error for a domain mutation and reports success upstream. */
-function createAction(onSuccess: () => void) {
-  const [busy, setBusy] = createSignal(false)
-  const [error, setError] = createSignal<string>()
-  const run = async (fn: () => Promise<CommandResult | unknown>) => {
-    if (busy()) return false
-    setBusy(true)
-    setError()
-    try {
-      const result = await fn()
-      if (result && typeof result === "object" && "ok" in result && (result as CommandResult).ok === false) {
-        setError((result as CommandResult & { ok: false }).error.message)
-        return false
-      }
-      onSuccess()
-      return true
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-      return false
-    } finally {
-      setBusy(false)
-    }
-  }
-  return { busy, error, run }
-}
-
-function ActionError(props: { message?: string }) {
-  return (
-    <Show when={props.message}>
-      <p class="workgraph-detail-status is-error" role="alert">
-        {props.message}
-      </p>
     </Show>
   )
 }
@@ -159,7 +160,7 @@ function DecisionContent(props: {
         <div class="workgraph-detail">
           <p class="workgraph-detail-lede text-text-strong">{decision.question}</p>
           <Show when={decision.rationale}>
-            <p class="text-[12px] leading-5 text-text-weak">{decision.rationale}</p>
+            <p class="text-[12px] leading-5 text-text-base">{decision.rationale}</p>
           </Show>
           <DialogSection title="Options">
             <div class="workgraph-detail-options">
@@ -214,136 +215,17 @@ function DecisionContent(props: {
   )
 }
 
-// ── Admission proposal ────────────────────────────────────────────────────
-
-function ProposalContent(props: {
-  item: Extract<AttentionItem, { kind: "admission_proposal" }>
-  source: WorkGraphWaitingSource
-  onResolved: () => void
-  onClose: () => void
-}) {
-  const [detail, { refetch }] = createResource(() => props.source.proposal(props.item.record.id))
-  const action = createAction(() => {
-    props.onResolved()
-    props.onClose()
-  })
-  return (
-    <DetailState resource={detail} retry={refetch}>
-      {(proposal) => (
-        <Show
-          when={proposal.state === "proposed" && proposal}
-          keyed
-          fallback={<div class="workgraph-detail-status">This proposal is {proposal.state.replaceAll("_", " ")} and no longer reviewable.</div>}
-        >
-          {(reviewable) => (
-            <div class="workgraph-detail">
-              <DialogField label="Placement">
-                {reviewable.suggestedPlacement.mode === "new_stream"
-                  ? `New stream · ${reviewable.suggestedPlacement.streamTitle}`
-                  : `Existing stream · ${reviewable.suggestedPlacement.streamId}`}
-              </DialogField>
-              <DialogSection title={`Outcomes (${reviewable.proposedOutcomes.length})`}>
-                <For each={reviewable.proposedOutcomes} fallback={<span class="text-[12px] text-text-weaker">No outcomes proposed.</span>}>
-                  {(outcome) => (
-                    <div class="workgraph-detail-plan-item">
-                      <span class="text-text-base">{outcome.title}</span>
-                      <span class="text-[11px] text-text-weaker">{outcome.successCriteria.join(" · ")}</span>
-                    </div>
-                  )}
-                </For>
-              </DialogSection>
-              <DialogSection title={`Tasks (${reviewable.proposedWorkItems.length})`}>
-                <For each={reviewable.proposedWorkItems} fallback={<span class="text-[12px] text-text-weaker">No tasks proposed.</span>}>
-                  {(workItem) => <div class="workgraph-detail-plan-item text-text-base">{workItem.title}</div>}
-                </For>
-              </DialogSection>
-              <Show when={reviewable.duplicateMatches.length}>
-                <DialogSection title={`Possible duplicates (${reviewable.duplicateMatches.length})`}>
-                  <For each={reviewable.duplicateMatches}>
-                    {(match) => (
-                      <div class="workgraph-detail-plan-item">
-                        <span class="text-text-base">{match.title}</span>
-                        <span class="text-[11px] text-text-weaker">{match.reason}</span>
-                      </div>
-                    )}
-                  </For>
-                </DialogSection>
-              </Show>
-              <ActionError message={action.error()} />
-              <div class="workgraph-detail-actions">
-                <Button
-                  size="small"
-                  variant="ghost"
-                  disabled={action.busy()}
-                  onClick={() => void action.run(() => props.source.dismissAdmission(reviewable.id, reviewable.version))}
-                >
-                  Dismiss
-                </Button>
-                <Button
-                  size="small"
-                  variant="primary"
-                  disabled={action.busy()}
-                  onClick={() => void action.run(() => props.source.confirmAdmission(confirmAsProposed(reviewable)))}
-                >
-                  Confirm
-                </Button>
-              </div>
-            </div>
-          )}
-        </Show>
-      )}
-    </DetailState>
-  )
-}
-
-type ReviewableProposal = Extract<AdmissionProposalDto, { state: "proposed" }>
-
-/**
- * Builds a confirm-admission command that accepts the proposal exactly as
- * planned — the placement, outcomes, and work items the agent proposed. Every
- * value comes from the real proposal DTO; nothing is fabricated or hardcoded.
- */
-function confirmAsProposed(proposal: ReviewableProposal): Parameters<WorkGraphWaitingSource["confirmAdmission"]>[0] {
-  return {
-    proposalId: proposal.id,
-    expectedVersion: proposal.version,
-    source: proposal.source,
-    selection:
-      proposal.suggestedPlacement.mode === "new_stream"
-        ? { mode: "create", streamTitle: proposal.suggestedPlacement.streamTitle }
-        : { mode: "existing", streamId: proposal.suggestedPlacement.streamId },
-    outcomes: proposal.proposedOutcomes.map((outcome) => ({
-      proposalKey: outcome.key,
-      title: outcome.title,
-      ...(outcome.description ? { description: outcome.description } : {}),
-      successCriteria: outcome.successCriteria,
-      execution: outcome.execution,
-    })),
-    workItems: proposal.proposedWorkItems.map((workItem) => ({
-      proposalKey: workItem.key,
-      ...(workItem.outcomeKey ? { outcomeProposalKey: workItem.outcomeKey } : {}),
-      title: workItem.title,
-      ...(workItem.description ? { description: workItem.description } : {}),
-      dependencyProposalKeys: workItem.dependencyKeys,
-      completionContract: workItem.completionContract,
-      execution: workItem.execution,
-    })),
-  }
-}
-
 // ── Task (work item) + Attempt execution/results ──────────────────────────
 
 function TaskContent(props: {
   item: Extract<AttentionItem, { kind: "work_item" }>
   source: WorkGraphWaitingSource
-  onResolved: () => void
+  onOpenSession?: (reference: SessionReference) => void
 }) {
   const [workItem, { refetch }] = createResource(() => props.source.workItem(props.item.record.id))
   // The true latest attempt, resolved by following strict page cursors to the
   // end — never an arbitrary first-page attempt.
   const [latest] = createResource(() => props.source.latestAttempt(props.item.record.id))
-  const action = createAction(props.onResolved)
-  const retryable = () => ["failed", "verification_failed"].includes(props.item.record.state)
   return (
     <DetailState resource={workItem} retry={refetch}>
       {(item) => (
@@ -358,7 +240,7 @@ function TaskContent(props: {
               {(requirement) => (
                 <div class="workgraph-detail-plan-item">
                   <span class="text-text-base">{requirement.kind.replaceAll("_", " ")}</span>
-                  <span class="text-[11px] text-text-weaker">{requirement.description}</span>
+                  <span class="text-[11px] text-text-base">{requirement.description}</span>
                 </div>
               )}
             </For>
@@ -375,35 +257,22 @@ function TaskContent(props: {
               </div>
             </Show>
             <Show when={latest()} fallback={<Show when={!latest.loading && !latest.error}><span class="text-[12px] text-text-weaker">No attempt has run yet.</span></Show>}>
-              {(detail) => <AttemptDetailView detail={detail()} />}
+              {(detail) => <AttemptDetailView detail={detail()} onOpenSession={props.onOpenSession} />}
             </Show>
           </DialogSection>
-          <ActionError message={action.error()} />
-          <Show when={retryable()}>
-            <div class="workgraph-detail-actions">
-              <Button
-                size="small"
-                variant="primary"
-                disabled={action.busy()}
-                onClick={() => void action.run(() => props.source.retryWorkItem(item.id, item.version))}
-              >
-                Retry task
-              </Button>
-            </div>
-          </Show>
         </div>
       )}
     </DetailState>
   )
 }
 
-function AttemptContent(props: { attemptId: string; source: WorkGraphWaitingSource }) {
+function AttemptContent(props: { attemptId: string; source: WorkGraphWaitingSource; onOpenSession?: (reference: SessionReference) => void }) {
   const [detail, { refetch }] = createResource(() => props.source.attempt(props.attemptId))
   return (
     <DetailState resource={detail} retry={refetch}>
       {(attemptDetail) => (
         <div class="workgraph-detail">
-          <AttemptDetailView detail={attemptDetail} />
+          <AttemptDetailView detail={attemptDetail} onOpenSession={props.onOpenSession} />
         </div>
       )}
     </DetailState>
@@ -415,13 +284,21 @@ function AttemptContent(props: { attemptId: string; source: WorkGraphWaitingSour
  * credential-bearing field: no repository remote URL, no lease/control-plane
  * tokens, no secrets. Only safe Session/workspace references are shown.
  */
-function AttemptDetailView(props: { detail: AttemptDetailDto }) {
+function AttemptDetailView(props: { detail: AttemptDetailDto; onOpenSession?: (reference: SessionReference) => void }) {
   const attempt = () => props.detail.attempt
   const exec = (): ResolvedExecutionProfile => attempt().resolvedExecution
   const references = () => props.detail.executionReferences
   return (
     <div class="workgraph-detail-grid">
       <DialogField label="Attempt">#{attempt().attemptNumber} · {attempt().state}</DialogField>
+      <Show when={attempt().attentionReason}>
+        {(reason) => (
+          <div class="workgraph-attempt-error" role="alert">
+            <span class="text-[11px] font-semibold">{attempt().state === "failed" ? "Attempt failed" : "Attempt needs attention"}</span>
+            <span class="text-[12px] leading-5">{reason()}</span>
+          </div>
+        )}
+      </Show>
       <DialogField label="Environment">
         {exec().environment.kind.replaceAll("_", " ")}
         <Show when={exec().environment.presetId}> · {exec().environment.presetId}</Show>
@@ -433,21 +310,31 @@ function AttemptDetailView(props: { detail: AttemptDetailDto }) {
       <Show when={exec().repository?.baseRevision}>
         <DialogField label="Base revision" mono>{exec().repository!.baseRevision}</DialogField>
       </Show>
-      <DialogField label="Isolation">{exec().isolation} · {exec().cleanup.replaceAll("_", " ")}</DialogField>
-      <DialogField label="Integration">{exec().integration.replaceAll("_", " ")}</DialogField>
       <DialogField label="Tools">{exec().tools.length ? exec().tools.join(", ") : "none"}</DialogField>
       <DialogField label="Connections">{exec().connectionIds.length ? exec().connectionIds.join(", ") : "none"}</DialogField>
       <Show when={references()?.sessionId}>
-        <DialogField label="Session" mono>{references()!.sessionId}</DialogField>
+        {(sessionId) => (
+          <DialogField label="Session" mono>
+            <Show when={props.onOpenSession} fallback={sessionId()}>
+              {(openSession) => (
+                <button
+                  type="button"
+                  class="workgraph-session-link"
+                  aria-label={`Open session ${sessionId()}`}
+                  onClick={() => openSession()({ sessionId: sessionId(), ...(references()?.workspaceId ? { workspaceId: references()!.workspaceId } : {}) })}
+                >
+                  {sessionId()}
+                </button>
+              )}
+            </Show>
+          </DialogField>
+        )}
       </Show>
       <Show when={references()?.workspaceId}>
         <DialogField label="Workspace" mono>{references()!.workspaceId}</DialogField>
       </Show>
       <Show when={references()?.childWorkspaceId}>
         <DialogField label="Child workspace" mono>{references()!.childWorkspaceId}</DialogField>
-      </Show>
-      <Show when={attempt().attentionReason}>
-        <DialogField label="Attention">{attempt().attentionReason}</DialogField>
       </Show>
       <Show when={attempt().result}>
         {(result) => (

@@ -15,6 +15,7 @@ import { initializeWorkGraphSqliteSchema } from "./schema"
 const deletionLeaseMs = 5 * 60 * 1_000
 
 const ownerTablesInDeletionOrder = [
+  "wg_v2_attention_acknowledgements",
   "wg_v2_notifications",
   "wg_v2_decision_work_items",
   "wg_v2_evidence",
@@ -82,17 +83,20 @@ export function createSqliteWorkGraphOwnerDeletionPort(
       if (prepared.state === "in_progress") throw new WorkGraphOwnerDeletionError("in_progress")
 
       try {
-        await cleanupTargets(context, prepared.targets, execution, async () => undefined)
-      } catch {
+        await withDeletionLease(database, context, input.operationId, prepared, clock, () =>
+          cleanupTargets(context, prepared.targets, execution, async () => undefined))
+      } catch (error) {
         releaseDeletionSafely(database, context, input.operationId)
+        if (error instanceof WorkGraphOwnerDeletionError) throw error
         throw new WorkGraphOwnerDeletionError("cleanup_failed")
       }
 
       let result: WorkGraphOwnerDeletionResult | undefined
       try {
         result = finalizeDeletion(database, context, input.operationId, prepared, clock.now())
-      } catch {
+      } catch (error) {
         releaseDeletionSafely(database, context, input.operationId)
+        if (error instanceof WorkGraphOwnerDeletionError) throw error
         throw new WorkGraphOwnerDeletionError("storage_failed")
       }
       if (result) return result
@@ -123,7 +127,7 @@ function prepareDeletion(
   occurredAt: number,
 ): PreparedDeletion {
   return database.transaction(() => {
-    const ownerSubjectHash = hash(context.ownerUserId)
+    const ownerSubjectHash = ownerHash(context)
     const operationHash = hash(operationId)
     const active = database.prepare(`
       SELECT operation_hash, lease_expires_at FROM wg_owner_deletion_receipts
@@ -167,12 +171,17 @@ function finalizeDeletion(
   occurredAt: number,
 ) {
   return database.transaction(() => {
+    const receipt = database.prepare(`
+      SELECT lease_expires_at FROM wg_owner_deletion_receipts
+      WHERE owner_subject_hash = ? AND operation_hash = ? AND state = 'cleaning' AND target_snapshot_hash = ?
+    `).get(ownerHash(context), hash(operationId), prepared.targetSnapshotHash) as { lease_expires_at: number } | undefined
+    if (!receipt || receipt.lease_expires_at <= occurredAt) throw new WorkGraphOwnerDeletionError("in_progress")
     if (!isQuiescent(database, context)) return undefined
     if (hash(JSON.stringify(readCleanupTargets(database, context))) !== prepared.targetSnapshotHash) return undefined
     const recordCount = countOwnerRecords(database, context)
-    database.prepare("UPDATE wg_v2_recaps SET previous_recap_id = NULL WHERE owner_user_id = ?").run(context.ownerUserId)
+    database.prepare("UPDATE wg_v2_recaps SET previous_recap_id = NULL WHERE organization_id = ? AND owner_user_id = ?").run(context.organizationId, context.ownerUserId)
     ownerTablesInDeletionOrder.forEach((table) => {
-      database.prepare(`DELETE FROM ${table} WHERE owner_user_id = ?`).run(context.ownerUserId)
+      database.prepare(`DELETE FROM ${table} WHERE organization_id = ? AND owner_user_id = ?`).run(context.organizationId, context.ownerUserId)
     })
     if (countOwnerRecords(database, context) !== 0) throw new Error("Owner state remains after permanent deletion")
 
@@ -185,10 +194,60 @@ function finalizeDeletion(
     const updated = database.prepare(`
       UPDATE wg_owner_deletion_receipts SET state = 'completed', result_json = ?, lease_expires_at = 0, updated_at = ?
       WHERE owner_subject_hash = ? AND operation_hash = ? AND state = 'cleaning' AND target_snapshot_hash = ?
-    `).run(JSON.stringify(result), occurredAt, hash(context.ownerUserId), hash(operationId), prepared.targetSnapshotHash)
+        AND lease_expires_at > ?
+    `).run(JSON.stringify(result), occurredAt, ownerHash(context), hash(operationId), prepared.targetSnapshotHash, occurredAt)
     if (updated.changes !== 1) throw new Error("Owner deletion receipt lost")
     return result
   })()
+}
+
+async function withDeletionLease(
+  database: RawDatabase,
+  context: WorkGraphContext,
+  operationId: OperationID,
+  prepared: Extract<PreparedDeletion, { state: "acquired" }>,
+  clock: Readonly<{ now: () => number }>,
+  cleanup: () => Promise<void>,
+) {
+  let renewalFailure: WorkGraphOwnerDeletionError | undefined
+  const renew = () => {
+    if (renewalFailure) throw renewalFailure
+    try {
+      const now = clock.now()
+      const renewed = database.prepare(`
+        UPDATE wg_owner_deletion_receipts SET lease_expires_at = ?, updated_at = ?
+        WHERE owner_subject_hash = ? AND operation_hash = ? AND state = 'cleaning' AND target_snapshot_hash = ?
+          AND lease_expires_at > ?
+      `).run(
+        now + deletionLeaseMs,
+        now,
+        ownerHash(context),
+        hash(operationId),
+        prepared.targetSnapshotHash,
+        now,
+      )
+      if (renewed.changes !== 1) throw new WorkGraphOwnerDeletionError("in_progress")
+    } catch (error) {
+      renewalFailure = error instanceof WorkGraphOwnerDeletionError
+        ? error
+        : new WorkGraphOwnerDeletionError("storage_failed")
+      throw renewalFailure
+    }
+  }
+  renew()
+  const heartbeat = setInterval(() => {
+    try {
+      renew()
+    } catch {
+      clearInterval(heartbeat)
+    }
+  }, deletionLeaseMs / 3)
+  try {
+    await cleanup()
+    renew()
+  } finally {
+    clearInterval(heartbeat)
+  }
 }
 
 function cleanupTargets(
@@ -206,16 +265,16 @@ function cleanupTargets(
 function readCleanupTargets(database: RawDatabase, context: WorkGraphContext): readonly CleanupTarget[] {
   const rows = database.prepare(`
     SELECT id, envelope_identity_json FROM wg_v2_streams
-    WHERE owner_user_id = ? AND envelope_identity_json IS NOT NULL ORDER BY id
-  `).all(context.ownerUserId) as Array<{ id: StreamID; envelope_identity_json: string }>
+    WHERE organization_id = ? AND owner_user_id = ? AND envelope_identity_json IS NOT NULL ORDER BY id
+  `).all(context.organizationId, context.ownerUserId) as Array<{ id: StreamID; envelope_identity_json: string }>
   return rows.map((row) => {
     const envelope = JSON.parse(row.envelope_identity_json) as { id?: unknown }
     if (typeof envelope.id !== "string" || envelope.id.length === 0) throw new WorkGraphOwnerDeletionError("storage_failed")
     const childIsolationIds = (database.prepare(`
       SELECT DISTINCT child_workspace_id FROM wg_v2_attempts
-      WHERE owner_user_id = ? AND stream_id = ? AND child_workspace_id IS NOT NULL
+      WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND child_workspace_id IS NOT NULL
       ORDER BY child_workspace_id
-    `).all(context.ownerUserId, row.id) as Array<{ child_workspace_id: ChildIsolationID }>)
+    `).all(context.organizationId, context.ownerUserId, row.id) as Array<{ child_workspace_id: ChildIsolationID }>)
       .map((attempt) => attempt.child_workspace_id)
     return { streamId: row.id, envelopeId: envelope.id as StreamEnvelopeID, childIsolationIds }
   })
@@ -223,15 +282,15 @@ function readCleanupTargets(database: RawDatabase, context: WorkGraphContext): r
 
 function isQuiescent(database: RawDatabase, context: WorkGraphContext) {
   const checks = [
-    "SELECT 1 FROM wg_v2_attempts WHERE owner_user_id = ? AND lifecycle IN ('admitted', 'placing', 'running', 'attention') LIMIT 1",
-    "SELECT 1 FROM wg_v2_leases WHERE owner_user_id = ? LIMIT 1",
-    "SELECT 1 FROM wg_v2_runtime_effects WHERE owner_user_id = ? AND state != 'completed' LIMIT 1",
-    "SELECT 1 FROM wg_v2_stream_cleanup_reservations WHERE owner_user_id = ? AND state = 'reserved' LIMIT 1",
-    "SELECT 1 FROM wg_v2_admission_proposals WHERE owner_user_id = ? AND lifecycle = 'planning' LIMIT 1",
-    "SELECT 1 FROM wg_v2_outbox WHERE owner_user_id = ? AND status != 'completed' LIMIT 1",
-    "SELECT 1 FROM wg_v2_due_jobs WHERE owner_user_id = ? AND status IN ('pending', 'running', 'claimed') LIMIT 1",
+    "SELECT 1 FROM wg_v2_attempts WHERE organization_id = ? AND owner_user_id = ? AND lifecycle IN ('admitted', 'placing', 'running', 'attention') LIMIT 1",
+    "SELECT 1 FROM wg_v2_leases WHERE organization_id = ? AND owner_user_id = ? LIMIT 1",
+    "SELECT 1 FROM wg_v2_runtime_effects WHERE organization_id = ? AND owner_user_id = ? AND state != 'completed' LIMIT 1",
+    "SELECT 1 FROM wg_v2_stream_cleanup_reservations WHERE organization_id = ? AND owner_user_id = ? AND state = 'reserved' LIMIT 1",
+    "SELECT 1 FROM wg_v2_admission_proposals WHERE organization_id = ? AND owner_user_id = ? AND lifecycle = 'planning' LIMIT 1",
+    "SELECT 1 FROM wg_v2_outbox WHERE organization_id = ? AND owner_user_id = ? AND status != 'completed' LIMIT 1",
+    "SELECT 1 FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND status IN ('pending', 'running', 'claimed') LIMIT 1",
   ]
-  return checks.every((query) => !database.prepare(query).get(context.ownerUserId))
+  return checks.every((query) => !database.prepare(query).get(context.organizationId, context.ownerUserId))
 }
 
 function countOwnerRecords(database: RawDatabase, context: WorkGraphContext) {
@@ -245,8 +304,8 @@ function countOwnerRecords(database: RawDatabase, context: WorkGraphContext) {
     throw new WorkGraphOwnerDeletionError("storage_failed")
   }
   return ownerTablesInDeletionOrder.reduce((total, table) => {
-    const row = database.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE owner_user_id = ?`)
-      .get(context.ownerUserId) as { count: number }
+    const row = database.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE organization_id = ? AND owner_user_id = ?`)
+      .get(context.organizationId, context.ownerUserId) as { count: number }
     return total + row.count
   }, 0)
 }
@@ -255,7 +314,7 @@ function releaseDeletion(database: RawDatabase, context: WorkGraphContext, opera
   database.prepare(`
     UPDATE wg_owner_deletion_receipts SET lease_expires_at = 0
     WHERE owner_subject_hash = ? AND operation_hash = ? AND state = 'cleaning'
-  `).run(hash(context.ownerUserId), hash(operationId))
+  `).run(ownerHash(context), hash(operationId))
 }
 
 function releaseDeletionSafely(database: RawDatabase, context: WorkGraphContext, operationId: OperationID) {
@@ -283,4 +342,8 @@ function requireOwner(context: WorkGraphContext) {
 
 function hash(value: string) {
   return createHash("sha256").update(value).digest("hex")
+}
+
+function ownerHash(context: WorkGraphContext) {
+  return hash(`${context.organizationId}\u0000${context.ownerUserId}`)
 }

@@ -1,8 +1,15 @@
 import { v } from "convex/values"
-import { AdmissionAgentPlanSchema, AdmissionProposalGenerationSchema, PublicEventPayloadSchema, WorkGraphCommandSchema } from "@claxedo/workgraph/contracts"
+import { AdmissionAgentPlanSchema, AdmissionProposalGenerationSchema, AuthoringSourceRevisionSchema, ExecutionProfileDefaultsSchema, PublicEventPayloadSchema, WorkGraphCommandSchema, WorkSourceOriginSchema, createChangeCursor, type ChangeCursor, type ExecutionMode } from "@claxedo/workgraph/contracts"
 import { rankDuplicateMatches, rankStreamMatches } from "@claxedo/workgraph/matching"
+import {
+  evaluateCompletionContract,
+  validateExecutionProfileDefaultsAgainstCapabilities,
+  validateRecapProfileDefaultsAgainstCapabilities,
+  validateResolvedExecutionProfileAgainstCapabilities,
+} from "@claxedo/workgraph/domain"
+import { ExecutionCapabilitiesSchema, RecapProfileDefaultsSchema, ResolvedExecutionProfileSchema, isExecutionCapabilityCatalogFresh, resolveRecapProfileDefaults } from "@claxedo/workgraph/contracts"
 import { authedMutation, serviceMutation } from "./model"
-import { requireOwnedWorkGraphContext, requireTrustedWorkGraphOwnerSubject, workGraphOwnerDeletionBarrier } from "./workgraphModel"
+import { requireOwnedWorkGraphContext, requireTrustedWorkGraphTenantSubject, workGraphOwnerDeletionBarrier } from "./workgraphModel"
 import { initializeAttentionProjection, removeAttentionRecord, syncAttentionResource, syncCandidateTransition } from "./workgraphAttention"
 
 const ROOT_ID = "workgraph_default"
@@ -40,6 +47,7 @@ const supported = new Set([
 ])
 
 const interactiveArgs = {
+  organization_id: v.id("orgs"),
   operation_id: v.string(),
   request_id: v.string(),
   command: v.any(),
@@ -56,8 +64,14 @@ export const execute = authedMutation({
   args: interactiveArgs,
   handler: async (ctx, args) => {
     const owned = await requireOwnedWorkGraphContext(ctx)
+    const membership = await ctx.db.query("org_memberships")
+      .withIndex("by_org_user", (query: any) => query.eq("org_id", args.organization_id).eq("user_id", owned.owner_user_id))
+      .unique()
+    if (!membership) throw new Error("WorkGraph organization membership is required")
     return applyWorkGraphCommand(ctx, {
+      organizationId: String(args.organization_id),
       ownerUserId: owned.owner_user_id,
+      ownerSubject: owned.user.clerk_subject ?? String(owned.owner_user_id),
       actor: { type: "user", id: String(owned.owner_user_id) },
       requestId: args.request_id,
       operationId: args.operation_id,
@@ -69,10 +83,12 @@ export const execute = authedMutation({
 export const executeForService = serviceMutation({
   args: serviceArgs,
   handler: async (ctx, args) => {
-    const owner = await requireTrustedWorkGraphOwnerSubject(ctx, args.service_token, args.owner_subject)
-    const ownerUserId = String(owner._id)
+    const tenant = await requireTrustedWorkGraphTenantSubject(ctx, args.service_token, args.organization_id, args.owner_subject)
+    const ownerUserId = String(tenant.owner_user_id)
     return applyWorkGraphCommand(ctx, {
+      organizationId: String(tenant.organization_id),
       ownerUserId,
+      ownerSubject: args.owner_subject,
       actor: { type: args.actor_type, id: args.actor_id },
       requestId: args.request_id,
       operationId: args.operation_id,
@@ -82,7 +98,9 @@ export const executeForService = serviceMutation({
 })
 
 type CommandInput = {
+  organizationId: string
   ownerUserId: string
+  ownerSubject: string
   actor: { type: "user" | "agent" | "system"; id: string }
   requestId: string
   operationId: string
@@ -100,19 +118,23 @@ export async function applyWorkGraphCommand(ctx: any, input: CommandInput) {
     return failure(input.operationId, "validation_error", "WorkGraph commands cannot contain credentials")
   if (!supported.has(input.command.type))
     return failure(input.operationId, "internal_error", `Unsupported Convex command: ${input.command.type}`)
-  if (await workGraphOwnerDeletionBarrier(ctx, input.ownerUserId)) {
+  if (await workGraphOwnerDeletionBarrier(ctx, input.organizationId, input.ownerUserId)) {
     return failure(input.operationId, "blocked", "WorkGraph owner deletion is in progress")
   }
+
+  const now = Date.now()
+  const capabilityFailure = await validateCommandCapabilities(ctx, input, now)
+  if (capabilityFailure) return failure(input.operationId, capabilityFailure.code, capabilityFailure.message)
 
   const requestHash = await sha256(stableJson(input.command))
   const previous = await ctx.db
     .query("workgraph_operation_results")
-    .withIndex("by_owner_id", (q: any) => q.eq("owner_user_id", input.ownerUserId).eq("id", input.operationId))
+    .withIndex("by_tenant_id", (q: any) => q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("id", input.operationId))
+    .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
     .unique()
   if (previous?.request_hash === requestHash) return previous.result
   if (previous) return failure(input.operationId, "idempotency_conflict", "Operation ID already used")
 
-  const now = Date.now()
   await ensureOwnerRoot(ctx, input, now)
   const pending = await applyCommand(ctx, input, now)
   if (!pending.ok) {
@@ -121,27 +143,32 @@ export async function applyWorkGraphCommand(ctx: any, input: CommandInput) {
   }
 
   if (pending.streamId) {
-    const stream = await owned(ctx, "workgraph_streams", input.ownerUserId, pending.streamId)
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, pending.streamId)
     if (stream) {
-      const root = await owned(ctx, "workgraphs", input.ownerUserId, ROOT_ID)
-      const quietHours = stream.recap_defaults?.quietHours ?? root?.recap_defaults?.quietHours ?? 8
+      const root = await owned(ctx, "workgraphs", input.organizationId, input.ownerUserId, ROOT_ID)
+      const recap = explicitStreamRecapConfiguration(stream.recap_defaults, {
+        ...(root?.defaults ?? {}),
+        ...(stream.execution_defaults ?? {}),
+      })
+      const recapDueAt = recap ? now + recap.quietHours * 60 * 60 * 1000 : now
       await ctx.db.patch(stream._id, {
-        activity: { lastActivityAt: now, recapDueAt: now + quietHours * 60 * 60 * 1000 },
+        activity: { lastActivityAt: now, recapDueAt },
         last_activity_at: now,
         quiet_since: now,
-        recap_due_at: now + quietHours * 60 * 60 * 1000,
+        recap_due_at: recapDueAt,
         updated_at: now,
       })
     }
   }
 
-  await syncCommandAttention(ctx, input.ownerUserId, pending)
+  await syncCommandAttention(ctx, input.organizationId, input.ownerUserId, pending)
 
-  const cursor = await allocateCursor(ctx, input.ownerUserId, now)
+  const cursor = await allocateCursor(ctx, input.organizationId, input.ownerUserId, now)
   const sequenceScope = pending.streamId ?? OWNER_EVENT_SEQUENCE
-  const sequence = await allocateSequence(ctx, input.ownerUserId, sequenceScope, now)
+  const sequence = await allocateSequence(ctx, input.organizationId, input.ownerUserId, sequenceScope, now)
   const payload = { ...pending.value, ...(pending.streamId ? { streamId: pending.streamId } : {}) }
   await ctx.db.insert("workgraph_events", {
+    organization_id: input.organizationId,
     owner_user_id: input.ownerUserId,
     id: resourceId("event", input),
     ...(pending.streamId ? { stream_id: pending.streamId } : {}),
@@ -156,6 +183,7 @@ export async function applyWorkGraphCommand(ctx: any, input: CommandInput) {
     schema_version: 1,
   })
   await ctx.db.insert("workgraph_changes", {
+    organization_id: input.organizationId,
     owner_user_id: input.ownerUserId,
     id: `${resourceId("change", input)}_${cursor}`,
     cursor,
@@ -168,7 +196,11 @@ export async function applyWorkGraphCommand(ctx: any, input: CommandInput) {
     schema_version: 1,
     created_at: now,
   })
-  const result = success(input.operationId, cursor, pending.value)
+  const result = success(input.operationId, createChangeCursor({
+    organizationId: input.organizationId,
+    ownerUserId: input.ownerUserId,
+    position: cursor,
+  }), pending.value)
   await saveOperation(ctx, input, requestHash, result, now, cursor)
   return result
 }
@@ -176,24 +208,10 @@ export async function applyWorkGraphCommand(ctx: any, input: CommandInput) {
 async function applyCommand(ctx: any, input: CommandInput, now: number): Promise<any> {
   const command = input.command
   if (command.type === "update_workgraph_defaults") {
-    const root = await owned(ctx, "workgraphs", input.ownerUserId, ROOT_ID)
+    const root = await owned(ctx, "workgraphs", input.organizationId, input.ownerUserId, ROOT_ID)
     if (!root) return rejected(input.operationId, "not_found", "WorkGraph defaults not found")
     if (root.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "WorkGraph defaults version changed")
-    const streams = await ctx.db
-      .query("workgraph_streams")
-      .withIndex("by_owner", (q: any) => q.eq("owner_user_id", input.ownerUserId))
-      .collect()
-    await Promise.all(streams.filter((stream: any) => stream.lifecycle_state !== "closed").map((stream: any) => {
-      const activity = stream.activity as { lastActivityAt?: number }
-      const lastActivityAt = activity.lastActivityAt ?? stream.last_activity_at ?? stream.updated_at
-      const quietHours = stream.recap_defaults?.quietHours ?? command.defaults.recap.quietHours ?? 8
-      const recapDueAt = lastActivityAt + quietHours * 60 * 60 * 1000
-      return ctx.db.patch(stream._id, {
-        activity: { ...activity, lastActivityAt, recapDueAt },
-        recap_due_at: recapDueAt,
-      })
-    }))
     await ctx.db.patch(root._id, {
       defaults: command.defaults.execution,
       recap_defaults: command.defaults.recap,
@@ -204,13 +222,23 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("workgraph_defaults_updated", "workgraph", ROOT_ID, { workGraphId: ROOT_ID })
   }
   if (command.type === "execute_work_item" || command.type === "retry_work_item") {
-    const item = await owned(ctx, "workgraph_work_items", input.ownerUserId, command.workItemId)
+    const item = await owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, command.workItemId)
     if (!item) return rejected(input.operationId, "not_found", "Work Item not found")
     if (command.type === "retry_work_item" && item.row_version !== command.expectedVersion) {
       return rejected(input.operationId, "version_conflict", "Work Item version changed")
     }
-    const admitted = await admitAttempt(ctx, input, item, now)
+    const executionMode = command.type === "execute_work_item"
+      ? command.executionMode
+      : await latestAttemptExecutionMode(ctx, input.organizationId, input.ownerUserId, item.id)
+    if (!executionMode) return rejected(input.operationId, "validation_error", "Retry requires an explicitly stored execution mode")
+    const admitted = await admitAttempt(ctx, input, item, executionMode, now)
     if (!admitted.ok) return rejected(input.operationId, admitted.code, admitted.message)
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, item.stream_id)
+    if (stream) await ctx.db.patch(stream._id, {
+      execution_mode: executionMode,
+      execution_state: executionMode === "autonomous" ? "active" : "stopped",
+      updated_at: now,
+    })
     return pending(
       "attempt_admitted",
       "attempt",
@@ -220,7 +248,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     )
   }
   if (command.type === "execute_stream") {
-    const stream = await owned(ctx, "workgraph_streams", input.ownerUserId, command.streamId)
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     if (stream.lifecycle_state === "paused")
       return rejected(input.operationId, "blocked", "Paused Streams do not admit new Attempts")
@@ -228,14 +256,26 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       return rejected(input.operationId, "invalid_transition", "Closed Streams do not execute")
     const items = await ctx.db
       .query("workgraph_work_items")
-      .withIndex("by_owner_stream", (q: any) => q.eq("owner_user_id", input.ownerUserId).eq("stream_id", stream.id))
+      .withIndex("by_tenant_stream", (q: any) => q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("stream_id", stream.id))
+      .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
       .collect()
-    const admissions = []
-    for (const item of items.filter((row: any) => !["completed", "abandoned"].includes(row.state))) {
-      const admitted = await admitAttempt(ctx, input, item, now)
-      if (admitted.ok) admissions.push(admitted)
+    const results = []
+    for (const item of items.filter((row: any) => row.state === "pending")) {
+      const admitted = await admitAttempt(ctx, input, item, command.executionMode, now)
+      results.push(admitted)
     }
-    if (admissions.length === 0) return rejected(input.operationId, "blocked", "No ready Work Items can be admitted")
+    const admissions = results.filter((result) => result.ok)
+    if (admissions.length === 0) {
+      const failure = results.find((result) => !result.ok)
+      return failure
+        ? rejected(input.operationId, failure.code, failure.message)
+        : rejected(input.operationId, "blocked", "No ready Work Items can be admitted")
+    }
+    await ctx.db.patch(stream._id, {
+      execution_mode: command.executionMode,
+      execution_state: command.executionMode === "autonomous" ? "active" : "stopped",
+      updated_at: now,
+    })
     return pending(
       "stream_execution_requested",
       "stream",
@@ -245,7 +285,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     )
   }
   if (command.type === "cancel_attempt") {
-    const attempt = await owned(ctx, "workgraph_attempts", input.ownerUserId, command.attemptId)
+    const attempt = await owned(ctx, "workgraph_attempts", input.organizationId, input.ownerUserId, command.attemptId)
     if (!attempt) return rejected(input.operationId, "not_found", "Attempt not found")
     if (attempt.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Attempt version changed")
@@ -269,9 +309,10 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     })
     const outbox = await ctx.db
       .query("workgraph_outbox")
-      .withIndex("by_owner_idempotency", (q: any) =>
-        q.eq("owner_user_id", input.ownerUserId).eq("idempotency_key", `${attempt.id}:launch`),
+      .withIndex("by_tenant_idempotency", (q: any) =>
+        q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("idempotency_key", `${attempt.id}:launch`),
       )
+      .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
       .unique()
     if (outbox && outbox.status === "pending") await ctx.db.patch(outbox._id, { status: "cancelled", updated_at: now })
     return pending(
@@ -283,8 +324,18 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     )
   }
   if (command.type === "create_stream") {
+    if (command.source && !(await exactSourceRevision(ctx, input.organizationId, input.ownerUserId, command.source))) {
+      return rejected(input.operationId, "version_conflict", "Stream source is not the current Work Source head")
+    }
     const id = resourceId("stream", input)
+    const root = await owned(ctx, "workgraphs", input.organizationId, input.ownerUserId, ROOT_ID)
+    const recap = explicitStreamRecapConfiguration(command.recap, {
+      ...(root?.defaults ?? {}),
+      ...(command.execution ?? {}),
+    })
+    const recapDueAt = recap ? now + recap.quietHours * 60 * 60 * 1000 : now
     await ctx.db.insert("workgraph_streams", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id,
       workgraph_id: ROOT_ID,
@@ -294,8 +345,9 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       visibility: "visible",
       pinned: false,
       execution_defaults: command.execution ?? {},
-      recap_defaults: {},
-      activity: { lastActivityAt: now, recapDueAt: now + 8 * 60 * 60 * 1000 },
+      recap_defaults: recap ?? command.recap ?? {},
+      activity: { lastActivityAt: now, recapDueAt },
+      recap_due_at: recapDueAt,
       durable_effect_count: 0,
       source_revision_refs: command.source ? [sourceRef(command.source)] : [],
       provenance: provenance(input),
@@ -307,7 +359,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("stream_created", "stream", id, { streamId: id }, id)
   }
   if (command.type === "update_stream") {
-    const stream = await owned(ctx, "workgraph_streams", input.ownerUserId, command.streamId)
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     if (stream.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Stream version changed")
@@ -322,7 +374,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("stream_updated", "stream", stream.id, { streamId: stream.id }, stream.id)
   }
   if (command.type === "set_stream_lifecycle") {
-    const stream = await owned(ctx, "workgraph_streams", input.ownerUserId, command.streamId)
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     if (stream.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Stream version changed")
@@ -340,13 +392,17 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     const sourceId = resourceId("source", input)
     const revisionId = resourceId("revision", input)
     const contentHash = await sha256(command.content)
+    if (command.authoring && contentHash !== command.authoring.contentHash) {
+      return rejected(input.operationId, "validation_error", "Authoring revision content does not match its declared content hash")
+    }
     await ctx.db.insert("work_sources", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id: sourceId,
       workgraph_id: ROOT_ID,
       title: command.title,
-      source_kind: "manual",
-      metadata: {},
+      source_kind: command.authoring ? "authoring" : "manual",
+      metadata: command.authoring ?? {},
       latest_revision_id: revisionId,
       latest_revision_number: 1,
       row_version: 1,
@@ -355,13 +411,14 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       updated_at: now,
     })
     await ctx.db.insert("work_source_revisions", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id: revisionId,
       work_source_id: sourceId,
       revision_number: 1,
       content: command.content,
       content_hash: contentHash,
-      origin: { kind: "manual" },
+      origin: command.authoring ? { kind: "authoring", ...command.authoring } : { kind: "manual" },
       created_by: input.actor,
       schema_version: 1,
       created_at: now,
@@ -369,19 +426,43 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("work_source_created", "work_source", sourceId, { workSourceId: sourceId, revisionId })
   }
   if (command.type === "revise_work_source") {
-    const source = await owned(ctx, "work_sources", input.ownerUserId, command.workSourceId)
+    const source = await owned(ctx, "work_sources", input.organizationId, input.ownerUserId, command.workSourceId)
     if (!source) return rejected(input.operationId, "not_found", "Work Source not found")
     if (source.latest_revision_id !== command.expectedRevisionId)
       return rejected(input.operationId, "version_conflict", "Work Source revision changed")
+    if ((source.source_kind === "authoring") !== !!command.authoring) {
+      return rejected(input.operationId, "validation_error", "Authoring Work Sources require exact authoring provenance on every revision")
+    }
+    const authoringIdentity = command.authoring ? AuthoringSourceRevisionSchema.parse(source.metadata) : undefined
+    if (command.authoring && (
+      command.authoring.adapterId !== authoringIdentity!.adapterId ||
+      command.authoring.projectId !== authoringIdentity!.projectId ||
+      command.authoring.documentId !== authoringIdentity!.documentId
+    )) return rejected(input.operationId, "validation_error", "Authoring revision belongs to a different document")
+    const contentHash = await sha256(command.content)
+    if (command.authoring && contentHash !== command.authoring.contentHash) {
+      return rejected(input.operationId, "validation_error", "Authoring revision content does not match its declared content hash")
+    }
+    const latest = await owned(ctx, "work_source_revisions", input.organizationId, input.ownerUserId, source.latest_revision_id)
+    if (!latest) throw new Error("Work Source head revision is missing")
+    const previousOrigin = WorkSourceOriginSchema.parse(latest.origin)
+    if (command.authoring && previousOrigin.kind !== "authoring") throw new Error("Authoring Work Source head is missing its authoring origin")
+    if (command.authoring && previousOrigin.kind === "authoring" && previousOrigin.documentRevisionNumber >= command.authoring.documentRevisionNumber) {
+      return rejected(input.operationId, "version_conflict", "Authoring document revision is not newer than the Work Source head")
+    }
+    if (command.authoring && previousOrigin.kind === "authoring" && command.authoring.parentDocumentRevisionId !== previousOrigin.documentRevisionId) {
+      return rejected(input.operationId, "version_conflict", "Authoring document revision does not descend from the Work Source head")
+    }
     const revisionId = resourceId("revision", input)
     await ctx.db.insert("work_source_revisions", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id: revisionId,
       work_source_id: source.id,
       revision_number: source.latest_revision_number + 1,
       content: command.content,
-      content_hash: await sha256(command.content),
-      origin: { kind: "manual" },
+      content_hash: contentHash,
+      origin: command.authoring ? { kind: "authoring", ...command.authoring } : { kind: "manual" },
       created_by: input.actor,
       schema_version: 1,
       created_at: now,
@@ -396,10 +477,11 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("work_source_revised", "work_source", source.id, { workSourceId: source.id, revisionId })
   }
   if (command.type === "create_outcome") {
-    const stream = await owned(ctx, "workgraph_streams", input.ownerUserId, command.streamId)
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     const id = resourceId("outcome", input)
     await ctx.db.insert("workgraph_outcomes", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id,
       stream_id: stream.id,
@@ -419,7 +501,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("outcome_created", "outcome", id, { outcomeId: id }, stream.id)
   }
   if (command.type === "update_outcome") {
-    const outcome = await owned(ctx, "workgraph_outcomes", input.ownerUserId, command.outcomeId)
+    const outcome = await owned(ctx, "workgraph_outcomes", input.organizationId, input.ownerUserId, command.outcomeId)
     if (!outcome) return rejected(input.operationId, "not_found", "Outcome not found")
     if (outcome.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Outcome version changed")
@@ -434,20 +516,21 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("outcome_updated", "outcome", outcome.id, { outcomeId: outcome.id }, outcome.stream_id)
   }
   if (command.type === "create_work_item") {
-    const stream = await owned(ctx, "workgraph_streams", input.ownerUserId, command.streamId)
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     if (command.outcomeId) {
-      const outcome = await owned(ctx, "workgraph_outcomes", input.ownerUserId, command.outcomeId)
+      const outcome = await owned(ctx, "workgraph_outcomes", input.organizationId, input.ownerUserId, command.outcomeId)
       if (!outcome || outcome.stream_id !== stream.id)
         return rejected(input.operationId, "not_found", "Outcome not found")
     }
     for (const dependencyId of command.dependencyIds ?? []) {
-      const dependency = await owned(ctx, "workgraph_work_items", input.ownerUserId, dependencyId)
+      const dependency = await owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, dependencyId)
       if (!dependency || dependency.stream_id !== stream.id)
         return rejected(input.operationId, "not_found", "Dependency not found")
     }
     const id = resourceId("work_item", input)
     await ctx.db.insert("workgraph_work_items", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id,
       stream_id: stream.id,
@@ -469,6 +552,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     await Promise.all(
       (command.dependencyIds ?? []).map((dependencyId: string, index: number) =>
         ctx.db.insert("workgraph_work_item_dependencies", {
+          organization_id: input.organizationId,
           owner_user_id: input.ownerUserId,
           id: `${resourceId("dependency", input)}_${index}`,
           work_item_id: id,
@@ -483,12 +567,12 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("work_item_created", "work_item", id, { workItemId: id }, stream.id)
   }
   if (command.type === "update_work_item") {
-    const item = await owned(ctx, "workgraph_work_items", input.ownerUserId, command.workItemId)
+    const item = await owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, command.workItemId)
     if (!item) return rejected(input.operationId, "not_found", "Work Item not found")
     if (item.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Work Item version changed")
     if (command.outcomeId) {
-      const outcome = await owned(ctx, "workgraph_outcomes", input.ownerUserId, command.outcomeId)
+      const outcome = await owned(ctx, "workgraph_outcomes", input.organizationId, input.ownerUserId, command.outcomeId)
       if (!outcome || outcome.stream_id !== item.stream_id)
         return rejected(input.operationId, "not_found", "Outcome not found")
     }
@@ -501,7 +585,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       )
     }
     const dependencies = await Promise.all(
-      dependencyIds.map((id: string) => owned(ctx, "workgraph_work_items", input.ownerUserId, id)),
+      dependencyIds.map((id: string) => owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, id)),
     )
     if (command.dependencyIds && dependencies.some((row: any) => !row || row.stream_id !== item.stream_id)) {
       return rejected(input.operationId, "not_found", "Dependency not found")
@@ -520,13 +604,15 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       await deleteRows(
         await ctx.db
           .query("workgraph_work_item_dependencies")
-          .withIndex("by_owner_item", (q: any) => q.eq("owner_user_id", input.ownerUserId).eq("work_item_id", item.id))
+          .withIndex("by_tenant_item", (q: any) => q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("work_item_id", item.id))
+          .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
           .collect(),
         ctx,
       )
       await Promise.all(
         dependencyIds.map((dependencyId: string, index: number) =>
           ctx.db.insert("workgraph_work_item_dependencies", {
+            organization_id: input.organizationId,
             owner_user_id: input.ownerUserId,
             id: `${resourceId("dependency", input)}_${index}`,
             work_item_id: item.id,
@@ -542,7 +628,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("work_item_updated", "work_item", item.id, { workItemId: item.id }, item.stream_id)
   }
   if (command.type === "cancel_work_item") {
-    const item = await owned(ctx, "workgraph_work_items", input.ownerUserId, command.workItemId)
+    const item = await owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, command.workItemId)
     if (!item) return rejected(input.operationId, "not_found", "Work Item not found")
     if (item.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Work Item version changed")
@@ -550,15 +636,17 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       return rejected(input.operationId, "invalid_transition", "Work Item is already terminal")
     const attempts = await ctx.db
       .query("workgraph_attempts")
-      .withIndex("by_owner_item_attempt", (q: any) =>
-        q.eq("owner_user_id", input.ownerUserId).eq("work_item_id", item.id),
+      .withIndex("by_tenant_item_attempt", (q: any) =>
+        q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("work_item_id", item.id),
       )
+      .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
       .collect()
     const lease = await ctx.db
       .query("workgraph_leases")
-      .withIndex("by_owner_resource", (q: any) =>
-        q.eq("owner_user_id", input.ownerUserId).eq("resource_type", "work_item").eq("resource_id", item.id),
+      .withIndex("by_tenant_resource", (q: any) =>
+        q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("resource_type", "work_item").eq("resource_id", item.id),
       )
+      .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
       .unique()
     if (attempts.some((attempt: any) => !["result", "failed", "cancelled"].includes(attempt.state)) || lease?.expires_at > now) {
       return rejected(input.operationId, "blocked", "Cancel the active Attempt before abandoning its Work Item")
@@ -573,7 +661,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("work_item_updated", "work_item", item.id, { workItemId: item.id }, item.stream_id)
   }
   if (command.type === "set_stream_visibility") {
-    const stream = await owned(ctx, "workgraph_streams", input.ownerUserId, command.streamId)
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     if (stream.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Stream version changed")
@@ -587,7 +675,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("stream_visibility_changed", "stream", stream.id, { streamId: stream.id }, stream.id)
   }
   if (command.type === "propose_decision") {
-    const stream = await owned(ctx, "workgraph_streams", input.ownerUserId, command.streamId)
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     const optionIds = command.options.map((option: any) => option.id)
     if (
@@ -597,12 +685,13 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       return rejected(input.operationId, "validation_error", "Decision options are invalid")
     }
     const affected = await Promise.all(
-      command.affectedWorkItemIds.map((id: string) => owned(ctx, "workgraph_work_items", input.ownerUserId, id)),
+      command.affectedWorkItemIds.map((id: string) => owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, id)),
     )
     if (affected.some((item: any) => !item || item.stream_id !== stream.id))
       return rejected(input.operationId, "not_found", "Affected Work Item not found")
     const id = resourceId("decision", input)
     await ctx.db.insert("workgraph_decisions", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id,
       stream_id: stream.id,
@@ -621,6 +710,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     await Promise.all(
       command.affectedWorkItemIds.map((workItemId: string, index: number) =>
         ctx.db.insert("workgraph_decision_work_items", {
+          organization_id: input.organizationId,
           owner_user_id: input.ownerUserId,
           id: `${resourceId("decision_item", input)}_${index}`,
           decision_id: id,
@@ -634,7 +724,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("decision_proposed", "decision", id, { decisionId: id }, stream.id)
   }
   if (command.type === "answer_decision" || command.type === "dismiss_decision") {
-    const decision = await owned(ctx, "workgraph_decisions", input.ownerUserId, command.decisionId)
+    const decision = await owned(ctx, "workgraph_decisions", input.organizationId, input.ownerUserId, command.decisionId)
     if (!decision) return rejected(input.operationId, "not_found", "Decision not found")
     if (decision.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Decision version changed")
@@ -668,27 +758,42 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("decision_dismissed", "decision", decision.id, { decisionId: decision.id }, decision.stream_id)
   }
   if (command.type === "propose_admission") {
-    const revision = await exactSourceRevision(ctx, input.ownerUserId, command.source)
+    const revision = await exactSourceRevision(ctx, input.organizationId, input.ownerUserId, command.source)
     if (!revision) return rejected(input.operationId, "not_found", "Work Source revision not found")
-    const source = await owned(ctx, "work_sources", input.ownerUserId, revision.work_source_id)
+    const source = await owned(ctx, "work_sources", input.organizationId, input.ownerUserId, revision.work_source_id)
     if (!source) return rejected(input.operationId, "not_found", "Work Source not found")
-    if (command.targetStreamId && !(await owned(ctx, "workgraph_streams", input.ownerUserId, command.targetStreamId)))
+    const targetStream = command.targetStreamId
+      ? await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.targetStreamId)
+      : undefined
+    if (command.targetStreamId && !targetStream)
       return rejected(input.operationId, "not_found", "Target Stream not found")
     const id = resourceId("admission", input)
-    const evidence = await sourcePlanningEvidence(ctx, input.ownerUserId, {
+    const evidence = await sourcePlanningEvidence(ctx, input.organizationId, input.ownerUserId, {
       title: source.title,
       content: revision.content,
       ...(command.targetStreamId ? { targetStreamId: command.targetStreamId } : {}),
       now,
     })
+    const previousReference = targetStream
+      ? [...(targetStream.source_revision_refs ?? [])].reverse().find((reference: any) =>
+          reference.work_source_id === command.source.workSourceId && reference.revision_id !== command.source.revisionId)
+      : undefined
+    const previousRevision = previousReference
+      ? await owned(ctx, "work_source_revisions", input.organizationId, input.ownerUserId, previousReference.revision_id)
+      : undefined
+    if (previousReference && !previousRevision) throw new Error("Stream source lineage references a missing Work Source revision")
     await ctx.db.insert("workgraph_admission_proposals", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id,
       workgraph_id: ROOT_ID,
       state: "planning",
       source: sourceRef(command.source),
+      ...(previousReference ? { previous_source: previousReference } : {}),
+      ...(previousRevision ? { diff_summary: sourceRevisionDiffSummary(previousRevision.content, revision.content) } : {}),
       proposal_kind: "source",
       generation: { method: "planning", attempt: 0, queuedAt: now },
+      ...(command.execution ? { execution_defaults: command.execution } : {}),
       planning_evidence: evidence,
       provenance: provenance(input),
       row_version: 1,
@@ -697,6 +802,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       updated_at: now,
     })
     await ctx.db.insert("workgraph_due_jobs", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id: `source_plan_job_${id}`,
       job_type: "source_plan",
@@ -713,7 +819,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     return pending("admission_proposed", "work_source", command.source.workSourceId, { proposalId: id })
   }
   if (command.type === "retry_admission_planning") {
-    const proposal = await owned(ctx, "workgraph_admission_proposals", input.ownerUserId, command.proposalId)
+    const proposal = await owned(ctx, "workgraph_admission_proposals", input.organizationId, input.ownerUserId, command.proposalId)
     if (!proposal) return rejected(input.operationId, "not_found", "Admission proposal not found")
     if (proposal.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Admission proposal version changed")
@@ -721,7 +827,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       return rejected(input.operationId, "invalid_transition", "Admission planning has not failed")
     if (proposal.generation?.method !== "planning_failed" || proposal.generation.retryable !== true)
       return rejected(input.operationId, "invalid_transition", "Admission planning failure is not retryable")
-    if (!proposal.source || !(await exactSourceRevision(ctx, input.ownerUserId, {
+    if (!proposal.source || !(await exactSourceRevision(ctx, input.organizationId, input.ownerUserId, {
       workSourceId: proposal.source.work_source_id,
       revisionId: proposal.source.revision_id,
       contentHash: proposal.source.content_hash,
@@ -738,7 +844,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       row_version: proposal.row_version + 1,
       updated_at: now,
     })
-    const job = await owned(ctx, "workgraph_due_jobs", input.ownerUserId, `source_plan_job_${proposal.id}`)
+    const job = await owned(ctx, "workgraph_due_jobs", input.organizationId, input.ownerUserId, `source_plan_job_${proposal.id}`)
     const payload = { proposalId: proposal.id, source: proposal.source, automaticFailureCount: 0 }
     if (job) await ctx.db.patch(job._id, {
       due_at: now,
@@ -751,6 +857,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       updated_at: now,
     })
     if (!job) await ctx.db.insert("workgraph_due_jobs", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id: `source_plan_job_${proposal.id}`,
       job_type: "source_plan",
@@ -771,7 +878,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     })
   }
   if (command.type === "dismiss_admission" || command.type === "reopen_admission") {
-    const proposal = await owned(ctx, "workgraph_admission_proposals", input.ownerUserId, command.proposalId)
+    const proposal = await owned(ctx, "workgraph_admission_proposals", input.organizationId, input.ownerUserId, command.proposalId)
     if (!proposal) return rejected(input.operationId, "not_found", "Admission proposal not found")
     if (proposal.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Admission proposal version changed")
@@ -816,23 +923,25 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
   }
   if (command.type === "confirm_admission") return confirmAdmission(ctx, input, command, now)
   if (command.type === "close_outcome" || command.type === "reopen_outcome") {
-    const outcome = await owned(ctx, "workgraph_outcomes", input.ownerUserId, command.outcomeId)
+    const outcome = await owned(ctx, "workgraph_outcomes", input.organizationId, input.ownerUserId, command.outcomeId)
     if (!outcome) return rejected(input.operationId, "not_found", "Outcome not found")
     if (outcome.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Outcome version changed")
     if (command.type === "close_outcome") {
       const children = await ctx.db
         .query("workgraph_work_items")
-        .withIndex("by_owner_outcome_state", (q: any) =>
-          q.eq("owner_user_id", input.ownerUserId).eq("outcome_id", outcome.id),
+        .withIndex("by_tenant_outcome_state", (q: any) =>
+          q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("outcome_id", outcome.id),
         )
+        .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
         .collect()
       const hasOpen = children.some((item: any) => !["completed", "abandoned"].includes(item.state))
       const confirmations = await ctx.db
         .query("workgraph_evidence")
-        .withIndex("by_owner_subject", (q: any) =>
-          q.eq("owner_user_id", input.ownerUserId).eq("subject_type", "outcome").eq("subject_id", outcome.id),
+        .withIndex("by_tenant_subject", (q: any) =>
+          q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("subject_type", "outcome").eq("subject_id", outcome.id),
         )
+        .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
         .collect()
       if (
         hasOpen ||
@@ -877,13 +986,13 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     )
   }
   if (command.type === "close_stream") {
-    const stream = await owned(ctx, "workgraph_streams", input.ownerUserId, command.streamId)
+    const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     if (stream.row_version !== command.expectedVersion)
       return rejected(input.operationId, "version_conflict", "Stream version changed")
     if (!validTransition(stream.lifecycle_state, "closed"))
       return rejected(input.operationId, "invalid_transition", "Invalid stream transition")
-    const attempts = await streamRows(ctx, "workgraph_attempts", input.ownerUserId, stream.id)
+    const attempts = await streamRows(ctx, input.organizationId, "workgraph_attempts", input.ownerUserId, stream.id)
     await Promise.all(
       attempts
         .filter((attempt: any) => ["admitted", "placing", "running"].includes(attempt.state))
@@ -897,9 +1006,9 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
         }),
     )
     await enqueueControlEffect(ctx, input, now, {
-      effectType: "cleanup_stream",
+      effectType: "finalize_stream",
       streamId: stream.id,
-      idempotencyKey: `${stream.id}:close-cleanup`,
+      idempotencyKey: `${stream.id}:close-finalize`,
       payload: {
         finalize: "close",
         streamId: stream.id,
@@ -926,14 +1035,15 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     const table = command.subject.type === "stream" ? "workgraph_streams"
       : command.subject.type === "work_item" ? "workgraph_work_items"
         : "workgraph_outcomes"
-    const subject = await owned(ctx, table, input.ownerUserId, subjectId)
+    const subject = await owned(ctx, table, input.organizationId, input.ownerUserId, subjectId)
     if (!subject) return rejected(input.operationId, "not_found", "Evidence subject not found")
     const stream = command.subject.type === "stream"
       ? subject
-      : await owned(ctx, "workgraph_streams", input.ownerUserId, subject.stream_id)
+      : await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, subject.stream_id)
     if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
     const id = resourceId("evidence", input)
     await ctx.db.insert("workgraph_evidence", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id,
       stream_id: subject.stream_id,
@@ -955,8 +1065,37 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       row_version: subject.row_version + 1,
       updated_at: now,
     })
+    let completed = false
+    if (command.subject.type === "work_item" && subject.state === "result_ready") {
+      const evidence = await ctx.db.query("workgraph_evidence")
+        .withIndex("by_tenant_subject", (q: any) =>
+          q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("subject_type", "work_item").eq("subject_id", subject.id))
+        .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId)).collect()
+      completed = evaluateCompletionContract(
+        subject.completion_contract,
+        { type: "work_item", workItemId: subject.id } as never,
+        evidence.map((row: any) => ({
+          ...row.reference,
+          id: row.id,
+          subject: { type: "work_item", workItemId: subject.id },
+          recordedAt: row.created_at,
+          recordedBy: row.provenance.actor,
+        })) as never,
+      ).satisfied
+      if (completed) {
+        await ctx.db.patch(subject._id, {
+          state: "completed",
+          completed_at: now,
+          evidence_ids: [...subject.evidence_ids, id],
+          row_version: subject.row_version + 1,
+          updated_at: now,
+        })
+        await syncAttentionResource(ctx, input.organizationId, input.ownerUserId, "workgraph_work_items", subject.id)
+      }
+    }
     if (command.evidence.kind === "integration" && command.evidence.effect !== "other") {
       await ctx.db.insert("workgraph_durable_effect_receipts", {
+        organization_id: input.organizationId,
         owner_user_id: input.ownerUserId,
         id: resourceId("receipt", input),
         stream_id: subject.stream_id,
@@ -973,20 +1112,25 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
         updated_at: now,
       })
     }
-    return pending("evidence_recorded", "evidence", id, { evidenceId: id }, subject.stream_id)
+    if (completed) {
+      const currentStream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, subject.stream_id)
+      if (currentStream) await continueAutonomousStream(ctx, currentStream, now)
+    }
+    return pending("evidence_recorded", "evidence", id, { evidenceId: id, ...(completed ? { workItemState: "completed" } : {}) }, subject.stream_id)
   }
-  const stream = await owned(ctx, "workgraph_streams", input.ownerUserId, command.streamId)
+  const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, command.streamId)
   if (!stream) return rejected(input.operationId, "not_found", "Stream not found")
   const receipts = await ctx.db
     .query("workgraph_durable_effect_receipts")
-    .withIndex("by_owner_stream_created", (q: any) =>
-      q.eq("owner_user_id", input.ownerUserId).eq("stream_id", stream.id),
+    .withIndex("by_tenant_stream_created", (q: any) =>
+      q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("stream_id", stream.id),
     )
+    .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
     .take(1)
   if (receipts.length > 0) return rejected(input.operationId, "close_required", "Durable effects require close")
   if (stream.row_version !== command.expectedVersion)
     return rejected(input.operationId, "version_conflict", "Stream version changed")
-  const attempts = await streamRows(ctx, "workgraph_attempts", input.ownerUserId, stream.id)
+  const attempts = await streamRows(ctx, input.organizationId, "workgraph_attempts", input.ownerUserId, stream.id)
   await ctx.db.patch(stream._id, {
     deletion: { state: "pending", requestedAt: now },
     row_version: stream.row_version + 1,
@@ -1005,9 +1149,9 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       ),
   )
   await enqueueControlEffect(ctx, input, now, {
-    effectType: "cleanup_stream",
+    effectType: "finalize_stream",
     streamId: stream.id,
-    idempotencyKey: `${stream.id}:delete-cleanup`,
+    idempotencyKey: `${stream.id}:delete-release`,
     payload: {
       finalize: "delete",
       streamId: stream.id,
@@ -1025,9 +1169,10 @@ async function enqueueControlEffect(
 ) {
   const existing = await ctx.db
     .query("workgraph_outbox")
-    .withIndex("by_owner_idempotency", (q: any) =>
-      q.eq("owner_user_id", input.ownerUserId).eq("idempotency_key", effect.idempotencyKey),
+    .withIndex("by_tenant_idempotency", (q: any) =>
+      q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("idempotency_key", effect.idempotencyKey),
     )
+    .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
     .unique()
   if (existing) {
     if (["failed", "cancelled"].includes(existing.status))
@@ -1044,6 +1189,7 @@ async function enqueueControlEffect(
     return
   }
   await ctx.db.insert("workgraph_outbox", {
+    organization_id: input.organizationId,
     owner_user_id: input.ownerUserId,
     id: `outbox_${effect.idempotencyKey}`,
     operation_id: input.operationId,
@@ -1060,64 +1206,70 @@ async function enqueueControlEffect(
   })
 }
 
-async function deleteStreamGraph(ctx: any, owner: string, streamId: string) {
-  const items = await streamRows(ctx, "workgraph_work_items", owner, streamId)
+async function deleteStreamGraph(ctx: any, organization: string, owner: string, streamId: string) {
+  const items = await streamRows(ctx, organization, "workgraph_work_items", owner, streamId)
   const direct = await Promise.all([
-    streamRows(ctx, "workgraph_work_item_dependencies", owner, streamId),
-    streamRows(ctx, "workgraph_decision_work_items", owner, streamId),
-    streamRows(ctx, "workgraph_evidence", owner, streamId),
+    streamRows(ctx, organization, "workgraph_work_item_dependencies", owner, streamId),
+    streamRows(ctx, organization, "workgraph_decision_work_items", owner, streamId),
+    streamRows(ctx, organization, "workgraph_evidence", owner, streamId),
     ctx.db
       .query("workgraph_durable_effect_receipts")
-      .withIndex("by_owner_stream_created", (q: any) => q.eq("owner_user_id", owner).eq("stream_id", streamId))
+      .withIndex("by_tenant_stream_created", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("stream_id", streamId))
+      .filter((q: any) => q.eq(q.field("organization_id"), organization))
       .collect(),
-    streamRows(ctx, "workgraph_attempts", owner, streamId),
-    streamRows(ctx, "workgraph_decisions", owner, streamId),
+    streamRows(ctx, organization, "workgraph_attempts", owner, streamId),
+    streamRows(ctx, organization, "workgraph_decisions", owner, streamId),
     ctx.db
       .query("workgraph_recaps")
-      .withIndex("by_owner_stream_created", (q: any) => q.eq("owner_user_id", owner).eq("stream_id", streamId))
+      .withIndex("by_tenant_stream_created", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("stream_id", streamId))
+      .filter((q: any) => q.eq(q.field("organization_id"), organization))
       .collect(),
-    streamRows(ctx, "workgraph_outcomes", owner, streamId),
-    streamRows(ctx, "workgraph_leases", owner, streamId),
-    streamRows(ctx, "workgraph_outbox", owner, streamId),
-    streamRows(ctx, "workgraph_due_jobs", owner, streamId),
-    streamRows(ctx, "workgraph_notifications", owner, streamId),
+    streamRows(ctx, organization, "workgraph_outcomes", owner, streamId),
+    streamRows(ctx, organization, "workgraph_leases", owner, streamId),
+    streamRows(ctx, organization, "workgraph_outbox", owner, streamId),
+    streamRows(ctx, organization, "workgraph_due_jobs", owner, streamId),
+    streamRows(ctx, organization, "workgraph_notifications", owner, streamId),
   ])
   const rows = [...new Map([...direct.flat(), ...items].map((row: any) => [row._id, row])).values()]
-  await rows.reduce((pending: Promise<unknown>, row: any) => pending.then(() => syncDeletedAttention(ctx, owner, row)), Promise.resolve())
+  await rows.reduce((pending: Promise<unknown>, row: any) => pending.then(() => syncDeletedAttention(ctx, organization, owner, row)), Promise.resolve())
   await deleteRows(rows, ctx)
-  const stream = await owned(ctx, "workgraph_streams", owner, streamId)
+  const stream = await owned(ctx, "workgraph_streams", organization, owner, streamId)
   if (stream) await ctx.db.delete(stream._id)
 }
 
-function syncDeletedAttention(ctx: any, owner: string, row: any) {
+function syncDeletedAttention(ctx: any, organization: string, owner: string, row: any) {
   const table = row.notification_kind ? "workgraph_notifications"
     : row.job_type ? "workgraph_due_jobs"
       : row.attempt_number !== undefined ? "workgraph_attempts"
         : row.question !== undefined ? "workgraph_decisions"
           : row.completion_contract !== undefined ? "workgraph_work_items"
             : undefined
-  return table ? removeAttentionRecord(ctx, owner, table, row.id) : undefined
+  return table ? removeAttentionRecord(ctx, organization, owner, table, row.id) : undefined
 }
 
-async function streamRows(ctx: any, table: string, owner: string, streamId: string) {
+async function streamRows(ctx: any, organization: string, table: string, owner: string, streamId: string) {
   return ctx.db
     .query(table)
-    .withIndex("by_owner_stream", (q: any) => q.eq("owner_user_id", owner).eq("stream_id", streamId))
+    .withIndex("by_tenant_stream", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("stream_id", streamId))
+    .filter((q: any) => q.eq(q.field("organization_id"), organization))
     .collect()
 }
 
 async function sourcePlanningEvidence(
   ctx: any,
+  organization: string,
   owner: string,
   input: { title: string; content: string; targetStreamId?: string; now: number },
 ) {
   const candidate = { title: input.title, body: input.content }
   const [recentRows, pinnedRows] = await Promise.all([
     ctx.db.query("workgraph_streams")
-      .withIndex("by_owner_updated", (q: any) => q.eq("owner_user_id", owner))
+      .withIndex("by_tenant_updated", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner))
+      .filter((q: any) => q.eq(q.field("organization_id"), organization))
       .order("desc").take(48),
     ctx.db.query("workgraph_streams")
-      .withIndex("by_owner_pinned_updated", (q: any) => q.eq("owner_user_id", owner).eq("pinned", true))
+      .withIndex("by_tenant_pinned_updated", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("pinned", true))
+      .filter((q: any) => q.eq(q.field("organization_id"), organization))
       .order("desc").take(24),
   ])
   const matchable = (row: any, memoryOnly = false) => ({
@@ -1157,10 +1309,12 @@ async function sourcePlanningEvidence(
     : placementMatches
   const [outcomes, workItems] = await Promise.all([
     ctx.db.query("workgraph_outcomes")
-      .withIndex("by_owner_updated", (q: any) => q.eq("owner_user_id", owner))
+      .withIndex("by_tenant_updated", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner))
+      .filter((q: any) => q.eq(q.field("organization_id"), organization))
       .order("desc").take(48),
     ctx.db.query("workgraph_work_items")
-      .withIndex("by_owner_updated", (q: any) => q.eq("owner_user_id", owner))
+      .withIndex("by_tenant_updated", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner))
+      .filter((q: any) => q.eq(q.field("organization_id"), organization))
       .order("desc").take(48),
   ])
   const duplicates = [...outcomes.map((row: any) => ({
@@ -1187,17 +1341,17 @@ async function deleteRows(rows: any[], ctx: any) {
   await Promise.all(rows.map((row) => ctx.db.delete(row._id)))
 }
 
-async function exactSourceRevision(ctx: any, owner: string, reference: any) {
-  const source = await owned(ctx, "work_sources", owner, reference.workSourceId)
+async function exactSourceRevision(ctx: any, organization: string, owner: string, reference: any) {
+  const source = await owned(ctx, "work_sources", organization, owner, reference.workSourceId)
   if (!source || source.latest_revision_id !== reference.revisionId) return undefined
-  const revision = await owned(ctx, "work_source_revisions", owner, reference.revisionId)
+  const revision = await owned(ctx, "work_source_revisions", organization, owner, reference.revisionId)
   if (!revision || revision.work_source_id !== source.id || revision.content_hash !== reference.contentHash)
     return undefined
   return revision
 }
 
 async function confirmAdmission(ctx: any, input: CommandInput, command: any, now: number) {
-  const proposal = await owned(ctx, "workgraph_admission_proposals", input.ownerUserId, command.proposalId)
+  const proposal = await owned(ctx, "workgraph_admission_proposals", input.organizationId, input.ownerUserId, command.proposalId)
   if (!proposal) return rejected(input.operationId, "not_found", "Admission proposal not found")
   if (proposal.row_version !== command.expectedVersion)
     return rejected(input.operationId, "version_conflict", "Admission proposal version changed")
@@ -1209,7 +1363,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
     !Array.isArray(proposal.duplicate_matches)) {
     return rejected(input.operationId, "invalid_transition", "Admission proposal has no complete Session-authored plan")
   }
-  if (!(await exactSourceRevision(ctx, input.ownerUserId, command.source)))
+  if (!(await exactSourceRevision(ctx, input.organizationId, input.ownerUserId, command.source)))
     return rejected(input.operationId, "version_conflict", "Admission source is not current")
   if (
     !proposal.source ||
@@ -1219,7 +1373,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
     return rejected(input.operationId, "version_conflict", "Admission source does not match proposal")
   }
   const intakeCandidate = proposal.intake_candidate_id
-    ? await owned(ctx, "workgraph_intake_candidates", input.ownerUserId, proposal.intake_candidate_id)
+    ? await owned(ctx, "workgraph_intake_candidates", input.organizationId, input.ownerUserId, proposal.intake_candidate_id)
     : undefined
   if (proposal.intake_candidate_id) {
     const admission = intakeCandidate?.normalized
@@ -1230,7 +1384,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
     }
   }
   const existingId = "streamId" in command.selection ? command.selection.streamId : undefined
-  const existing = existingId ? await owned(ctx, "workgraph_streams", input.ownerUserId, existingId) : undefined
+  const existing = existingId ? await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, existingId) : undefined
   if (existingId && !existing) return rejected(input.operationId, "not_found", "Selected Stream not found")
   const outcomeKeys = command.outcomes?.map((outcome: any) => outcome.proposalKey) ?? []
   const itemKeys = command.workItems?.map((item: any) => item.proposalKey) ?? []
@@ -1247,9 +1401,18 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
   }
   if (admissionDependencyCycle((command.workItems ?? []).map((item: any) => ({ key: item.proposalKey, dependencies: item.dependencyProposalKeys ?? [] }))))
     return rejected(input.operationId, "validation_error", "Admission Work Item dependencies contain a cycle")
+  if (command.selection.mode === "replace") {
+    const replacement = await validateConvexReplacement(ctx, input.organizationId, input.ownerUserId, {
+      streamId: command.selection.streamId,
+      previousSource: proposal.previous_source,
+      workItems: command.selection.workItems,
+    })
+    if (!replacement.ok) return rejected(input.operationId, replacement.code, replacement.message)
+  }
   const streamId = ["create", "fork"].includes(command.selection.mode) ? resourceId("stream", input) : existingId
   if (["create", "fork"].includes(command.selection.mode)) {
     await ctx.db.insert("workgraph_streams", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id: streamId,
       workgraph_id: ROOT_ID,
@@ -1257,9 +1420,10 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
       lifecycle_state: "active",
       visibility: "visible",
       pinned: false,
-      execution_defaults: {},
+      execution_defaults: proposal.execution_defaults ?? {},
       recap_defaults: {},
-      activity: { lastActivityAt: now, recapDueAt: now + 8 * 60 * 60 * 1000 },
+      activity: { lastActivityAt: now, recapDueAt: now },
+      recap_due_at: now,
       durable_effect_count: 0,
       source_revision_refs: [sourceRef(command.source)],
       provenance: provenance(input),
@@ -1269,7 +1433,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
       updated_at: now,
     })
   }
-  if (existing) {
+  if (existing && command.selection.mode !== "replace") {
     const revision = sourceRef(command.source)
     await ctx.db.patch(existing._id, {
       source_revision_refs: appendSourceRevision(existing.source_revision_refs ?? [], revision),
@@ -1278,10 +1442,13 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
     })
   }
   if (command.selection.mode === "replace") {
-    const items = await streamRows(ctx, "workgraph_work_items", input.ownerUserId, streamId)
+    const items = await streamRows(ctx, input.organizationId, "workgraph_work_items", input.ownerUserId, streamId)
+    const workItemIds = new Set(command.selection.workItems.map((item: any) => item.workItemId))
+    const attempts = (await streamRows(ctx, input.organizationId, "workgraph_attempts", input.ownerUserId, streamId))
+      .filter((attempt: any) => workItemIds.has(attempt.work_item_id) && ["admitted", "placing", "running", "attention"].includes(attempt.state))
     await Promise.all(
       items
-        .filter((item: any) => !["completed", "abandoned"].includes(item.state))
+        .filter((item: any) => workItemIds.has(item.id))
         .map((item: any) =>
           ctx.db.patch(item._id, {
             state: "abandoned",
@@ -1292,12 +1459,70 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
           }),
         ),
     )
+    await Promise.all(attempts.map(async (attempt: any) => {
+      await ctx.db.patch(attempt._id, {
+        state: "attention",
+        cancellation: { state: "pending", requestedAt: now, reason: "Replaced by confirmed admission" },
+        attention_reason: "Cancellation pending: replaced by confirmed admission",
+        row_version: attempt.row_version + 1,
+        updated_at: now,
+      })
+      const lease = await ctx.db
+        .query("workgraph_leases")
+        .withIndex("by_tenant_resource", (q: any) =>
+          q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId)
+            .eq("resource_type", "work_item")
+            .eq("resource_id", attempt.work_item_id),
+        )
+        .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
+        .unique()
+      if (lease?.holder_id === attempt.id) await ctx.db.delete(lease._id)
+      const launch = await ctx.db
+        .query("workgraph_outbox")
+        .withIndex("by_tenant_idempotency", (q: any) =>
+          q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("idempotency_key", `${attempt.id}:launch`),
+        )
+        .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
+        .unique()
+      if (launch?.status === "pending") {
+        await ctx.db.patch(launch._id, { status: "cancelled", updated_at: now })
+      }
+    }))
+    await enqueueControlEffect(ctx, input, now, {
+      effectType: "finalize_stream",
+      streamId,
+      idempotencyKey: `${streamId}:replacement:${proposal.id}`,
+      payload: {
+        finalize: "replace",
+        streamId,
+        proposalId: proposal.id,
+        attemptIds: attempts.map((attempt: any) => attempt.id),
+        sessions: attempts.flatMap((attempt: any) => attempt.session_id ? [attempt.session_id] : []),
+      },
+    })
+    await ctx.db.patch(existing._id, {
+      source_revision_refs: appendSourceRevision(existing.source_revision_refs ?? [], sourceRef(command.source)),
+      replacement_reset: {
+        state: "pending",
+        proposalId: proposal.id,
+        previousSource: {
+          workSourceId: proposal.previous_source.work_source_id,
+          revisionId: proposal.previous_source.revision_id,
+          contentHash: proposal.previous_source.content_hash,
+        },
+        source: command.source,
+        requestedAt: now,
+      },
+      row_version: existing.row_version + 1,
+      updated_at: now,
+    })
   }
   const outcomes = new Map<string, string>()
   for (const [index, outcome] of (command.outcomes ?? []).entries()) {
     const id = `${resourceId("outcome", input)}_${index}`
     outcomes.set(outcome.proposalKey, id)
     await ctx.db.insert("workgraph_outcomes", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id,
       stream_id: streamId,
@@ -1324,6 +1549,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
   for (const [index, item] of (command.workItems ?? []).entries()) {
     const id = itemIds.get(item.proposalKey)!
     await ctx.db.insert("workgraph_work_items", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id,
       stream_id: streamId,
@@ -1345,6 +1571,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
     await Promise.all(
       (item.dependencyProposalKeys ?? []).map((key: string, dependencyIndex: number) =>
         ctx.db.insert("workgraph_work_item_dependencies", {
+          organization_id: input.organizationId,
           owner_user_id: input.ownerUserId,
           id: `${resourceId("dependency", input)}_${index}_${dependencyIndex}`,
           work_item_id: id,
@@ -1399,36 +1626,93 @@ function admissionDependencyCycle(items: ReadonlyArray<Readonly<{ key: string; d
   return items.some((item) => visit(item.key))
 }
 
-async function admitAttempt(ctx: any, input: CommandInput, item: any, now: number) {
-  const stream = await owned(ctx, "workgraph_streams", input.ownerUserId, item.stream_id)
+async function validateConvexReplacement(
+  ctx: any,
+  organizationId: string,
+  ownerUserId: string,
+  input: {
+    streamId: string
+    previousSource?: { work_source_id: string; revision_id: string }
+    workItems: Array<{ workItemId: string; expectedVersion: number }>
+  },
+) {
+  if (!input.previousSource) {
+    return { ok: false as const, code: "invalid_transition", message: "Replacement requires an exact previous Work Source revision" }
+  }
+  const stream = await owned(ctx, "workgraph_streams", organizationId, ownerUserId, input.streamId)
+  if (!stream) return { ok: false as const, code: "not_found", message: "Selected Stream not found" }
+  if (stream.replacement_reset && stream.replacement_reset.state !== "completed") {
+    return { ok: false as const, code: "blocked", message: "Stream replacement cleanup is still pending" }
+  }
+  const receipts = await ctx.db
+    .query("workgraph_durable_effect_receipts")
+    .withIndex("by_tenant_stream_created", (q: any) =>
+      q.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId).eq("stream_id", input.streamId),
+    )
+    .filter((q: any) => q.eq(q.field("organization_id"), organizationId))
+    .take(1)
+  if (receipts.length > 0) return { ok: false as const, code: "close_required", message: "Durable effects cannot be replaced" }
+  const current = (await streamRows(ctx, organizationId, "workgraph_work_items", ownerUserId, input.streamId))
+    .filter((item: any) => !["completed", "abandoned"].includes(item.state))
+    .sort((left: any, right: any) => left.id.localeCompare(right.id))
+  const linked = (item: any) => (item.source_revision_refs ?? []).some((reference: any) =>
+    reference.work_source_id === input.previousSource!.work_source_id &&
+    reference.revision_id === input.previousSource!.revision_id)
+  if (current.some((item: any) => !linked(item))) {
+    return { ok: false as const, code: "blocked", message: "Stream contains unrelated nonterminal work; keep or fork instead" }
+  }
+  const reviewed = [...input.workItems].sort((left, right) => left.workItemId.localeCompare(right.workItemId))
+  if (new Set(reviewed.map((item) => item.workItemId)).size !== reviewed.length || reviewed.length !== current.length) {
+    return { ok: false as const, code: "version_conflict", message: "Replacement Task set changed after review" }
+  }
+  if (current.some((item: any, index: number) =>
+    item.id !== reviewed[index]?.workItemId || item.row_version !== reviewed[index]?.expectedVersion)) {
+    return { ok: false as const, code: "version_conflict", message: "Replacement Task set changed after review" }
+  }
+  return { ok: true as const }
+}
+
+async function admitAttempt(ctx: any, input: CommandInput, item: any, executionMode: ExecutionMode, now: number) {
+  const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, item.stream_id)
   if (!stream) return { ok: false as const, code: "not_found", message: "Stream not found" }
   if (stream.lifecycle_state === "paused")
     return { ok: false as const, code: "blocked", message: "Paused Streams do not admit new Attempts" }
   if (stream.lifecycle_state === "closed")
     return { ok: false as const, code: "invalid_transition", message: "Closed Streams do not execute" }
+  if (stream.replacement_reset && stream.replacement_reset.state !== "completed")
+    return { ok: false as const, code: "blocked", message: "Stream replacement cleanup is still pending" }
   if (["completed", "abandoned"].includes(item.state))
     return { ok: false as const, code: "invalid_transition", message: "Finished Work Items do not execute" }
+  const decisions = await ctx.db.query("workgraph_decision_work_items")
+    .withIndex("by_tenant_item", (q: any) => q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("work_item_id", item.id))
+    .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId)).collect()
+  const pendingDecision = await Promise.all(decisions.map((link: any) =>
+    owned(ctx, "workgraph_decisions", input.organizationId, input.ownerUserId, link.decision_id)))
+  if (pendingDecision.some((decision: any) => decision && ["proposed", "pending"].includes(decision.state)))
+    return { ok: false as const, code: "blocked", message: "Work Item requires a pending Decision" }
   const dependencies = await ctx.db
     .query("workgraph_work_item_dependencies")
-    .withIndex("by_owner_item", (q: any) => q.eq("owner_user_id", input.ownerUserId).eq("work_item_id", item.id))
+    .withIndex("by_tenant_item", (q: any) => q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("work_item_id", item.id))
+    .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
     .collect()
   const blockers = await Promise.all(
     dependencies.map((dependency: any) =>
-      owned(ctx, "workgraph_work_items", input.ownerUserId, dependency.depends_on_work_item_id),
+      owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, dependency.depends_on_work_item_id),
     ),
   )
   if (blockers.some((blocker: any) => !blocker || blocker.state !== "completed"))
     return { ok: false as const, code: "blocked", message: "Work Item dependencies are incomplete" }
   const existingLease = await ctx.db
     .query("workgraph_leases")
-    .withIndex("by_owner_resource", (q: any) =>
-      q.eq("owner_user_id", input.ownerUserId).eq("resource_type", "work_item").eq("resource_id", item.id),
+    .withIndex("by_tenant_resource", (q: any) =>
+      q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("resource_type", "work_item").eq("resource_id", item.id),
     )
+    .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
     .unique()
   if (existingLease && existingLease.expires_at > now)
     return { ok: false as const, code: "blocked", message: "Work Item already has an active Attempt" }
   if (existingLease) {
-    const previous = await owned(ctx, "workgraph_attempts", input.ownerUserId, existingLease.holder_id)
+    const previous = await owned(ctx, "workgraph_attempts", input.organizationId, input.ownerUserId, existingLease.holder_id)
     if (previous && ["admitted", "placing", "running"].includes(previous.state)) {
       const attention = {
         ...previous,
@@ -1438,33 +1722,21 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, now: numbe
         updated_at: now,
       }
       await ctx.db.patch(previous._id, attention)
-      await syncAttentionResource(ctx, input.ownerUserId, "workgraph_attempts", previous.id)
+      await syncAttentionResource(ctx, input.organizationId, input.ownerUserId, "workgraph_attempts", previous.id)
     }
     await ctx.db.delete(existingLease._id)
   }
   const outcome = item.outcome_id
-    ? await owned(ctx, "workgraph_outcomes", input.ownerUserId, item.outcome_id)
+    ? await owned(ctx, "workgraph_outcomes", input.organizationId, input.ownerUserId, item.outcome_id)
     : undefined
-  const root = await owned(ctx, "workgraphs", input.ownerUserId, ROOT_ID)
-  const defaults = {
-    ...(root?.defaults?.execution ?? root?.defaults ?? {}),
-    ...(stream.execution_defaults ?? {}),
-    ...(outcome?.execution_defaults ?? {}),
-    ...(item.execution_defaults ?? {}),
-  }
-  const required = [
-    "environment",
-    "harness",
-    "agent",
-    "model",
-    "effort",
-    "tools",
-    "connectionIds",
-    "isolation",
-    "cleanup",
-    "integration",
-  ]
-  if (required.some((field) => defaults[field] === undefined))
+  const root = await owned(ctx, "workgraphs", input.organizationId, input.ownerUserId, ROOT_ID)
+  const defaults = resolveCanonicalAttemptExecutionDefaults({
+    root: root?.defaults,
+    stream: stream.execution_defaults,
+    outcome: outcome?.execution_defaults,
+    workItem: item.execution_defaults,
+  })
+  if (!defaults)
     return { ok: false as const, code: "blocked", message: "Execution profile is incomplete" }
   if (defaults.environment?.kind !== "hosted_workspace")
     return {
@@ -1472,21 +1744,38 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, now: numbe
       code: "blocked",
       message: "Cloud WorkGraph requires a hosted_workspace execution environment",
     }
+  const capabilityValidation = validateResolvedExecutionProfileAgainstCapabilities({
+    organizationId: input.organizationId as never,
+    ownerUserId: input.ownerSubject as never,
+    now,
+    capabilities: await requiredExecutionCapabilities(ctx, input, now),
+    profile: defaults,
+  })
+  if (!capabilityValidation.ok) {
+    return {
+      ok: false as const,
+      code: "blocked",
+      message: `Execution profile is unsupported: ${capabilityValidation.diagnostics.map((item) => item.message).join("; ")}`,
+    }
+  }
   const prior = await ctx.db
     .query("workgraph_attempts")
-    .withIndex("by_owner_item_attempt", (q: any) =>
-      q.eq("owner_user_id", input.ownerUserId).eq("work_item_id", item.id),
+    .withIndex("by_tenant_item_attempt", (q: any) =>
+      q.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId).eq("work_item_id", item.id),
     )
+    .filter((q: any) => q.eq(q.field("organization_id"), input.organizationId))
     .collect()
   const attemptId = `${resourceId("attempt", input)}_${item.id}`
   const leaseEpoch = (existingLease?.epoch ?? 0) + 1
   await ctx.db.insert("workgraph_attempts", {
+    organization_id: input.organizationId,
     owner_user_id: input.ownerUserId,
     id: attemptId,
     stream_id: stream.id,
     work_item_id: item.id,
     attempt_number: prior.length + 1,
     state: "admitted",
+    execution_mode: executionMode,
     resolved_execution: defaults,
     admitted_at: now,
     source_revision_refs: item.source_revision_refs ?? [],
@@ -1497,6 +1786,7 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, now: numbe
     updated_at: now,
   })
   await ctx.db.insert("workgraph_leases", {
+    organization_id: input.organizationId,
     owner_user_id: input.ownerUserId,
     id: `lease_${attemptId}`,
     resource_type: "work_item",
@@ -1511,6 +1801,7 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, now: numbe
     updated_at: now,
   })
   await ctx.db.insert("workgraph_outbox", {
+    organization_id: input.organizationId,
     owner_user_id: input.ownerUserId,
     id: `outbox_${attemptId}`,
     operation_id: input.operationId,
@@ -1529,9 +1820,187 @@ async function admitAttempt(ctx: any, input: CommandInput, item: any, now: numbe
   return { ok: true as const, attemptId, leaseEpoch }
 }
 
+export function resolveCanonicalAttemptExecutionDefaults(input: Readonly<{
+  root?: Record<string, unknown>
+  stream?: Record<string, unknown>
+  outcome?: Record<string, unknown>
+  workItem?: Record<string, unknown>
+}>) {
+  const resolved = {
+    ...(input.root ?? {}),
+    ...(input.stream ?? {}),
+    ...(input.outcome ?? {}),
+    ...(input.workItem ?? {}),
+  }
+  const parsed = ResolvedExecutionProfileSchema.safeParse({
+    ...resolved,
+    connectionIds: resolved.connectionIds ?? [],
+  })
+  return parsed.success ? parsed.data : undefined
+}
+
+async function latestAttemptExecutionMode(ctx: any, organization: string, owner: string, workItemId: string) {
+  const attempts = await ctx.db.query("workgraph_attempts")
+    .withIndex("by_tenant_item_attempt", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("work_item_id", workItemId))
+    .filter((q: any) => q.eq(q.field("organization_id"), organization)).collect()
+  return attempts.sort((left: any, right: any) => right.attempt_number - left.attempt_number)[0]?.execution_mode as ExecutionMode | undefined
+}
+
+/** Bounded durable recovery for Streams explicitly left in autonomous mode. */
+export async function reconcileAutonomousStreams(ctx: any, organization: string, owner: string, now: number, limit: number) {
+  if (await workGraphOwnerDeletionBarrier(ctx, organization, owner)) return { admitted: 0 }
+  const streams = await ctx.db.query("workgraph_streams")
+    .withIndex("by_tenant_execution_state_updated", (query: any) => query
+      .eq("organization_id", organization)
+      .eq("owner_user_id", owner)
+      .eq("execution_state", "active"))
+    .take(Math.max(1, Math.min(100, limit)))
+  const admitted: string[] = []
+  for (const stream of streams) admitted.push(...await continueAutonomousStream(ctx, stream, now))
+  return { admitted: admitted.length }
+}
+
+async function continueAutonomousStream(ctx: any, stream: any, now: number) {
+  if (stream.deletion?.state === "pending" || stream.closure?.state === "pending") return []
+  if (stream.execution_mode !== "autonomous" || stream.execution_state !== "active") return []
+  if (stream.lifecycle_state === "paused") return []
+  if (stream.lifecycle_state === "closed") {
+    await ctx.db.patch(stream._id, { execution_state: "completed", updated_at: now })
+    return []
+  }
+  const [decisions, attempts, items, snapshot] = await Promise.all([
+    ctx.db.query("workgraph_decisions").withIndex("by_tenant_stream", (q: any) =>
+      q.eq("organization_id", stream.organization_id).eq("owner_user_id", stream.owner_user_id).eq("stream_id", stream.id))
+      .filter((q: any) => q.eq(q.field("organization_id"), stream.organization_id)).collect(),
+    ctx.db.query("workgraph_attempts").withIndex("by_tenant_stream", (q: any) =>
+      q.eq("organization_id", stream.organization_id).eq("owner_user_id", stream.owner_user_id).eq("stream_id", stream.id))
+      .filter((q: any) => q.eq(q.field("organization_id"), stream.organization_id)).collect(),
+    ctx.db.query("workgraph_work_items").withIndex("by_tenant_stream", (q: any) =>
+      q.eq("organization_id", stream.organization_id).eq("owner_user_id", stream.owner_user_id).eq("stream_id", stream.id)).collect(),
+    ctx.db.query("workgraph_execution_capabilities").withIndex("by_tenant", (q: any) =>
+      q.eq("organization_id", stream.organization_id).eq("owner_user_id", stream.owner_user_id)).unique(),
+  ])
+  if (decisions.some((decision: any) => ["proposed", "pending"].includes(decision.state)) ||
+    attempts.some((attempt: any) => ["attention", "failed"].includes(attempt.state))) {
+    await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: now })
+    return []
+  }
+  if (!snapshot) {
+    await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: now })
+    return []
+  }
+  const parsedCatalog = ExecutionCapabilitiesSchema.safeParse(snapshot.catalog)
+  if (!parsedCatalog.success) {
+    await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: now })
+    return []
+  }
+  const catalog = parsedCatalog.data
+  if (
+    typeof snapshot.catalog_revision !== "string" ||
+    typeof snapshot.expires_at !== "number" ||
+    snapshot.catalog_revision !== catalog.catalogRevision ||
+    snapshot.expires_at !== catalog.expiresAt ||
+    !isExecutionCapabilityCatalogFresh(catalog, now)
+  ) {
+    await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: now })
+    return []
+  }
+  const ready = items.filter((item: any) => item.state === "pending")
+  const admissions: string[] = []
+  for (const item of ready) {
+    const operationId = `autonomous_${stream.id}_${item.id}_${item.row_version}`
+    const result = await admitAttempt(ctx, {
+      organizationId: String(stream.organization_id),
+      ownerUserId: String(stream.owner_user_id),
+      ownerSubject: catalog.ownerUserId,
+      actor: { type: "system", id: "workgraph_autonomous_runtime" },
+      requestId: operationId,
+      operationId,
+      command: { version: 1, type: "execute_work_item", workItemId: item.id, executionMode: "autonomous" },
+    }, item, "autonomous", now)
+    if (!result.ok) continue
+    admissions.push(result.attemptId)
+    await appendSystemWorkGraphChange(ctx, {
+      organizationId: String(stream.organization_id), ownerUserId: String(stream.owner_user_id), operationId,
+      eventId: `event_${operationId}`, changeId: `change_${operationId}`, resourceType: "attempt",
+      resourceId: result.attemptId, changeType: "attempt_admitted",
+      payload: { attemptId: result.attemptId, workItemId: item.id, streamId: stream.id },
+      actorId: "workgraph_autonomous_runtime", now,
+    })
+  }
+  if (admissions.length > 0) return admissions
+  if (items.every((item: any) => ["completed", "abandoned"].includes(item.state))) {
+    await ctx.db.patch(stream._id, { execution_state: "completed", updated_at: now })
+  }
+  return admissions
+}
+
+async function validateCommandCapabilities(ctx: any, input: CommandInput, now: number) {
+  const command = input.command
+  const profile = command.type === "update_workgraph_defaults"
+    ? command.defaults.execution
+    : command.execution
+  const recap = ["create_stream", "update_stream"].includes(command.type) ? command.recap : undefined
+  const admission = ["execute_stream", "execute_work_item", "retry_work_item"].includes(command.type)
+  if (profile === undefined && !recap?.model && !recap?.effort && !admission) return
+  const capabilities = await requiredExecutionCapabilities(ctx, input, now).catch((error) => ({
+    error: error instanceof Error ? error.message : "Execution capability catalog is unavailable",
+  }))
+  if ("error" in capabilities) {
+    return { code: "execution_unavailable" as const, message: capabilities.error, retryable: true }
+  }
+  const diagnostics = [
+    ...(profile === undefined ? [] : (() => {
+      const result = validateExecutionProfileDefaultsAgainstCapabilities({
+        organizationId: input.organizationId as never,
+        ownerUserId: input.ownerSubject as never,
+        now,
+        capabilities,
+        profile,
+      })
+      return result.ok ? [] : result.diagnostics
+    })()),
+    ...(!recap?.model && !recap?.effort ? [] : (() => {
+      const result = validateRecapProfileDefaultsAgainstCapabilities({
+        organizationId: input.organizationId as never,
+        ownerUserId: input.ownerSubject as never,
+        now,
+        capabilities,
+        profile: recap,
+      })
+      return result.ok ? [] : result.diagnostics
+    })()),
+  ]
+  if (diagnostics.length === 0) return
+  return {
+    code: "validation_error" as const,
+    message: `Capability selections are not available: ${diagnostics.map((item) => `${item.path} (${item.reason})`).join(", ")}`,
+  }
+}
+
+async function requiredExecutionCapabilities(ctx: any, input: CommandInput, now: number) {
+  const snapshot = await ctx.db.query("workgraph_execution_capabilities")
+    .withIndex("by_tenant", (query: any) => query
+      .eq("organization_id", input.organizationId)
+      .eq("owner_user_id", input.ownerUserId))
+    .unique()
+  if (!snapshot) throw new Error("A server-attested execution capability snapshot is required")
+  const catalog = ExecutionCapabilitiesSchema.parse(snapshot.catalog)
+  if (
+    snapshot.catalog_revision !== catalog.catalogRevision ||
+    snapshot.observed_at !== catalog.observedAt ||
+    snapshot.expires_at !== catalog.expiresAt ||
+    !isExecutionCapabilityCatalogFresh(catalog, now)
+  ) {
+    throw new Error("A fresh server-attested execution capability snapshot is required")
+  }
+  return catalog
+}
+
 async function ensureOwnerRoot(ctx: any, input: CommandInput, now: number) {
-  if (!(await owned(ctx, "workgraphs", input.ownerUserId, ROOT_ID))) {
+  if (!(await owned(ctx, "workgraphs", input.organizationId, input.ownerUserId, ROOT_ID))) {
     await ctx.db.insert("workgraphs", {
+      organization_id: input.organizationId,
       owner_user_id: input.ownerUserId,
       id: ROOT_ID,
       defaults: {},
@@ -1542,11 +2011,11 @@ async function ensureOwnerRoot(ctx: any, input: CommandInput, now: number) {
       created_at: now,
       updated_at: now,
     })
-    await initializeAttentionProjection(ctx, input.ownerUserId, now)
+    await initializeAttentionProjection(ctx, input.organizationId, input.ownerUserId, now)
   }
 }
 
-async function syncCommandAttention(ctx: any, owner: string, command: any) {
+async function syncCommandAttention(ctx: any, organization: string, owner: string, command: any) {
   const tables = new Map([
     ["admission_proposal", "workgraph_admission_proposals"],
     ["decision", "workgraph_decisions"],
@@ -1563,16 +2032,18 @@ async function syncCommandAttention(ctx: any, owner: string, command: any) {
     ...(Array.isArray(command.value?.attemptIds) ? command.value.attemptIds.map((id: string) => ["workgraph_attempts", id]) : []),
   ].filter((value): value is [string, string] => Boolean(value?.[0] && value[1]))
   await [...new Map(resources.map((resource) => [`${resource[0]}:${resource[1]}`, resource])).values()]
-    .reduce((pending: Promise<unknown>, [table, id]) => pending.then(() => syncAttentionResource(ctx, owner, table, id)), Promise.resolve())
+    .reduce((pending: Promise<unknown>, [table, id]) => pending.then(() => syncAttentionResource(ctx, organization, owner, table, id)), Promise.resolve())
 }
 
-async function allocateCursor(ctx: any, owner: string, now: number) {
+async function allocateCursor(ctx: any, organization: string, owner: string, now: number) {
   const row = await ctx.db
     .query("workgraph_change_cursors")
-    .withIndex("by_owner", (q: any) => q.eq("owner_user_id", owner))
+    .withIndex("by_tenant", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner))
+    .filter((q: any) => q.eq(q.field("organization_id"), organization))
     .unique()
   if (!row) {
     await ctx.db.insert("workgraph_change_cursors", {
+      organization_id: organization,
       owner_user_id: owner,
       next_cursor: 2,
       row_version: 1,
@@ -1587,13 +2058,15 @@ async function allocateCursor(ctx: any, owner: string, now: number) {
   return cursor
 }
 
-async function allocateSequence(ctx: any, owner: string, streamId: string, now: number) {
+async function allocateSequence(ctx: any, organization: string, owner: string, streamId: string, now: number) {
   const row = await ctx.db
     .query("workgraph_stream_sequences")
-    .withIndex("by_owner_stream", (q: any) => q.eq("owner_user_id", owner).eq("stream_id", streamId))
+    .withIndex("by_tenant_stream", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("stream_id", streamId))
+    .filter((q: any) => q.eq(q.field("organization_id"), organization))
     .unique()
   if (!row) {
     await ctx.db.insert("workgraph_stream_sequences", {
+      organization_id: organization,
       owner_user_id: owner,
       stream_id: streamId,
       next_sequence: 2,
@@ -1610,6 +2083,7 @@ async function allocateSequence(ctx: any, owner: string, streamId: string, now: 
 }
 
 export async function appendSystemWorkGraphChange(ctx: any, input: Readonly<{
+  organizationId: string
   ownerUserId: string
   operationId: string
   eventId: string
@@ -1619,11 +2093,13 @@ export async function appendSystemWorkGraphChange(ctx: any, input: Readonly<{
   changeType: string
   payload: Record<string, unknown>
   actorId: string
+  streamId?: string
   now: number
 }>) {
-  const cursor = await allocateCursor(ctx, input.ownerUserId, input.now)
-  const sequence = await allocateSequence(ctx, input.ownerUserId, OWNER_EVENT_SEQUENCE, input.now)
+  const cursor = await allocateCursor(ctx, input.organizationId, input.ownerUserId, input.now)
+  const sequence = await allocateSequence(ctx, input.organizationId, input.ownerUserId, OWNER_EVENT_SEQUENCE, input.now)
   await ctx.db.insert("workgraph_events", {
+    organization_id: input.organizationId,
     owner_user_id: input.ownerUserId,
     id: input.eventId,
     sequence,
@@ -1637,9 +2113,11 @@ export async function appendSystemWorkGraphChange(ctx: any, input: Readonly<{
     schema_version: 1,
   })
   await ctx.db.insert("workgraph_changes", {
+    organization_id: input.organizationId,
     owner_user_id: input.ownerUserId,
     id: input.changeId,
     cursor,
+    ...(input.streamId ? { stream_id: input.streamId } : {}),
     operation_id: input.operationId,
     resource_type: input.resourceType,
     resource_id: input.resourceId,
@@ -1660,6 +2138,7 @@ async function saveOperation(
   cursor?: number,
 ) {
   await ctx.db.insert("workgraph_operation_results", {
+    organization_id: input.organizationId,
     owner_user_id: input.ownerUserId,
     id: input.operationId,
     command_type: input.command.type,
@@ -1672,10 +2151,11 @@ async function saveOperation(
   })
 }
 
-async function owned(ctx: any, table: string, owner: string, id: string) {
+async function owned(ctx: any, table: string, organization: string, owner: string, id: string) {
   const row = await ctx.db
     .query(table)
-    .withIndex("by_owner_id", (q: any) => q.eq("owner_user_id", owner).eq("id", id))
+    .withIndex("by_tenant", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner))
+    .filter((q: any) => q.eq(q.field("id"), id))
     .unique()
   if (table === "workgraph_streams" && (row?.deletion?.state === "pending" || row?.closure?.state === "pending"))
     return undefined
@@ -1686,6 +2166,10 @@ function sourceRef(value: any) {
   return { work_source_id: value.workSourceId, revision_id: value.revisionId, content_hash: value.contentHash }
 }
 
+function sourceRevisionDiffSummary(previous: string, current: string) {
+  return `Content changed; ${previous.split("\n").length} → ${current.split("\n").length} lines`
+}
+
 function validTransition(from: string, to: string) {
   const transitions: Record<string, string[]> = {
     active: ["paused", "closed"],
@@ -1694,6 +2178,13 @@ function validTransition(from: string, to: string) {
     reopened: ["active"],
   }
   return transitions[from]?.includes(to) ?? false
+}
+
+function explicitStreamRecapConfiguration(value: unknown, execution?: unknown) {
+  const parsed = RecapProfileDefaultsSchema.safeParse(value ?? {})
+  const parsedExecution = ExecutionProfileDefaultsSchema.safeParse(execution ?? {})
+  if (!parsed.success || !parsedExecution.success) return undefined
+  return resolveRecapProfileDefaults({ recap: parsed.data, execution: parsedExecution.data })
 }
 
 function provenance(input: CommandInput) {
@@ -1718,8 +2209,8 @@ function rejected(operationId: string, code: string, message: string) {
   return { ok: false, result: failure(operationId, code, message) }
 }
 
-function success(operationId: string, cursor: number, value: Record<string, any>) {
-  return { ok: true, operationId, cursor: String(cursor), value }
+function success(operationId: string, cursor: ChangeCursor, value: Record<string, any>) {
+  return { ok: true, operationId, cursor, value }
 }
 
 function failure(operationId: string, code: string, message: string) {

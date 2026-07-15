@@ -24,6 +24,8 @@ export {
   matchesFilters,
 } from "./application/webhook-intake-service"
 export { createNotificationService, NotificationVersionConflictError } from "./application/notification-service"
+export { createAttentionAcknowledgementService } from "./application/attention-acknowledgement-service"
+export type { AttentionAcknowledgementStore } from "./application/attention-acknowledgement-service"
 export {
   createSourceViewService,
   SourceViewConnectionError,

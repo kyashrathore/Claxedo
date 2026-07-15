@@ -1,4 +1,7 @@
 import { type JSX, lazy, Suspense } from "solid-js"
+import { useNavigate } from "@solidjs/router"
+import { useQuery } from "@tanstack/solid-query"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { PaneCtx } from "../workbench/workbench/index"
 import type { ContentMeta, ContentType } from "../workbench/state/index"
 import { SessionContent } from "../../features/session/ui/content/session-content"
@@ -7,6 +10,14 @@ import { useClaxedoState } from "../workbench/state/index"
 import { isGlobalPanelMode } from "../../features/workspaces/ui/panel/workspace-panel-state"
 import { workGraphPanelBodySlot, workGraphPanelHeaderSlot } from "@/ui/controls/portal-slot"
 import { usePlatform } from "@/platform/runtime/platform-provider"
+import { sessionRoute } from "@/platform/identity/route"
+import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
+import { workGraphExecutionContext } from "./workgraph-execution-context"
+import { DialogSelectDirectory } from "@/app/dialogs/select-directory"
+import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
+import { useServer } from "@/app/connection/server"
+import { ensureLocalProject } from "@/features/workspaces/data/query/project-ensure"
+import { WorkGraphContent } from "../../features/workgraph"
 
 // Lazy content surfaces: keep non-session feature bundles out of the eager main
 // chunk. SessionContent stays eager so runner/model async work inside the
@@ -26,10 +37,6 @@ const PagesIndexContent = lazy(() =>
 const MarketplaceContent = lazy(() =>
   import("@/features/extensions/marketplace").then((m) => ({ default: m.MarketplaceContent })),
 )
-const WorkGraphContent = lazy(() =>
-  import("@/features/workgraph").then((m) => ({ default: m.WorkGraphContent })),
-)
-
 function MarketplaceSurface(props: { context: ContentSurfaceRenderContext }) {
   const platform = usePlatform()
   return <MarketplaceContent directory={props.context.meta.directory} request={platform.fetch} />
@@ -38,6 +45,12 @@ function MarketplaceSurface(props: { context: ContentSurfaceRenderContext }) {
 function WorkGraphSurface(props: { context: ContentSurfaceRenderContext }) {
   const platform = usePlatform()
   const state = useClaxedoState()
+  const navigate = useNavigate()
+  const queryOptions = useQueryOptions()
+  const globalSDK = useGlobalSDK()
+  const server = useServer()
+  const dialog = useDialog()
+  const projectsQuery = useQuery(() => queryOptions.projects())
   // Bridge WorkGraph's "Needs you" / Settings controls to the one shared
   // WorkspacePanel. WorkGraph owns no workspace, so it drives the panel as a
   // global-navigation surface and portals its views into the panel slots.
@@ -50,19 +63,77 @@ function WorkGraphSurface(props: { context: ContentSurfaceRenderContext }) {
       if (!isGlobalPanelMode(mode)) return undefined
       return mode === "workgraph-settings" ? ("settings" as const) : ("attention" as const)
     },
-    isOpen: () => panelState().open && isGlobalPanelMode(panelState().mode),
+    isOpen: () => panelState().open,
+    identity: panelState,
     open: (view: "attention" | "settings") =>
       state.workspacePanel.openGlobal(view === "settings" ? "workgraph-settings" : "workgraph-attention"),
     close: () => state.workspacePanel.close(),
     headerSlot: workGraphPanelHeaderSlot,
     bodySlot: workGraphPanelBodySlot,
   }
-  return <WorkGraphContent request={platform.fetch} panel={panel} />
+  const directory = () => props.context.meta.directory ?? props.context.fallbackDirectory?.()
+  const executionContext = () => {
+    const current = directory()?.trim()
+    if (!current) return undefined
+    return workGraphExecutionContext(current, projectsQuery.data ?? [])
+  }
+  const localProjects = () => (projectsQuery.data ?? [])
+    .filter((project) => workGraphExecutionContext(project.worktree, [project])?.kind === "local_worktree")
+    .map((project) => ({ value: project.worktree, label: project.worktree }))
+  const chooseLocalProject = async () => {
+    const result = platform.openDirectoryPickerDialog && server.isLocal()
+      ? await platform.openDirectoryPickerDialog({ title: "Choose project", multiple: false })
+      : await new Promise<string | string[] | null>((resolve) => {
+          let selected = false
+          dialog.show(
+            () => (
+              <DialogSelectDirectory
+                onSelect={(directory) => {
+                  selected = true
+                  resolve(directory)
+                }}
+              />
+            ),
+            () => {
+              if (!selected) resolve(null)
+            },
+          )
+        })
+    const directory = Array.isArray(result) ? result[0] : result
+    if (!directory) return undefined
+    await ensureLocalProject({
+      baseUrl: globalSDK.url,
+      request: platform.fetch,
+      directory,
+      projectsQuery: queryOptions.projects(),
+    })
+    return directory
+  }
+  return (
+    <WorkGraphContent
+      active={props.context.ctx.isVisible}
+      request={platform.fetch}
+      panel={panel}
+      executionContext={executionContext()}
+      localProjects={localProjects()}
+      onChooseLocalProject={chooseLocalProject}
+      onOpenSession={(reference) => navigate(sessionRoute(reference.sessionId))}
+    />
+  )
 }
 
 // Neutral placeholder while non-session surface chunks load — matches the
 // workbench background so there is no flash before the panel paints.
-const SurfaceFallback = () => <div class="size-full bg-background-base" />
+const SurfaceFallback = (props: { label?: string }) => (
+  <div
+    role="status"
+    aria-label={props.label ?? "Loading content"}
+    class="flex size-full items-center justify-center gap-3 bg-background-base text-14-regular text-text-weak"
+  >
+    <span class="size-4 animate-spin rounded-full border border-border-base border-t-transparent" aria-hidden="true" />
+    <span>{props.label ?? "Loading…"}</span>
+  </div>
+)
 const HiddenPagesSurface = () => (
   <div class="flex size-full items-center justify-center bg-background-base text-text-weak">
     Pages are not available for this identity.
@@ -169,11 +240,7 @@ export const firstPartyContentSurfaces: ContentSurfaceContribution[] = [
     tier: "claxedo-first-party",
     surface: "workgraph",
     slot: "workbench",
-    renderer: (context) => (
-      <Suspense fallback={<SurfaceFallback />}>
-        <WorkGraphSurface context={context} />
-      </Suspense>
-    ),
+    renderer: (context) => <WorkGraphSurface context={context} />,
   },
 ]
 

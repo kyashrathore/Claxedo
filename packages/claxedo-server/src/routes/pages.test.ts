@@ -14,8 +14,13 @@ process.env.CLAXEDO_DATA_DIR = root
 const { ClaxedoDB } = await import("../storage/db")
 ClaxedoDB.Drizzle()
 const { PagesRoutes } = await import("./pages")
+const { DocsRoutes } = await import("./docs")
+const { sqliteDocumentStore } = await import("../doc-store")
 
 const app = new Hono().route("/pages", PagesRoutes())
+const durableApp = new Hono()
+  .route("/pages", PagesRoutes())
+  .route("/api/claxedo/docs", DocsRoutes({ store: () => sqliteDocumentStore }))
 
 async function json(res: Response) {
   return res.json() as Promise<Record<string, unknown>>
@@ -163,6 +168,137 @@ describe("PagesRoutes", () => {
         },
       })
     }
+  })
+
+  test("binds Page responses to the exact immutable Docs v2 revision across updates", async () => {
+    const createdResponse = await durableApp.request("http://localhost/pages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        project_id: "project_durable_page",
+        title: "Durable architecture",
+        content: "Initial exact body",
+      }),
+    })
+    expect(createdResponse.status).toBe(201)
+    const created = (await createdResponse.json()) as {
+      id: string
+      version: number
+      project_id: string
+      document_id: string
+      document_revision_id: string
+    }
+    expect(created).toMatchObject({ version: 0, project_id: "project_durable_page" })
+    expect(created.document_id).toMatch(/^document_/)
+    expect(created.document_revision_id).toMatch(/^document_revision_/)
+    expect(sqliteDocumentStore.find({ orgId: "__local__" }, created.document_id)).toMatchObject({
+      documentId: created.document_id,
+      projectId: "project_durable_page",
+      headRevisionId: created.document_revision_id,
+    })
+
+    const firstRevision = await durableApp.request(
+      `http://localhost/api/claxedo/docs/${created.document_id}/revisions/${created.document_revision_id}?project_id=project_durable_page`,
+    )
+    expect(firstRevision.status).toBe(200)
+    await expect(firstRevision.json()).resolves.toMatchObject({
+      projectId: "project_durable_page",
+      documentId: created.document_id,
+      revisionId: created.document_revision_id,
+      revisionNumber: 1,
+      documentTitle: "Durable architecture",
+      markdown: "Initial exact body",
+      authoredBy: { type: "user", id: "local_user" },
+    })
+
+    const revisedResponse = await durableApp.request(`http://localhost/pages/${created.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "if-match": "0" },
+      body: JSON.stringify({ title: "Durable architecture v2", content: "Revised exact body" }),
+    })
+    expect(revisedResponse.status).toBe(200)
+    const revised = (await revisedResponse.json()) as {
+      version: number
+      document_id: string
+      document_revision_id: string
+    }
+    expect(revised).toMatchObject({ version: 1, document_id: created.document_id })
+    expect(revised.document_revision_id).not.toBe(created.document_revision_id)
+
+    const secondRevision = await durableApp.request(
+      `http://localhost/api/claxedo/docs/${created.document_id}/revisions/${revised.document_revision_id}?project_id=project_durable_page`,
+    )
+    expect(secondRevision.status).toBe(200)
+    await expect(secondRevision.json()).resolves.toMatchObject({
+      documentId: created.document_id,
+      revisionId: revised.document_revision_id,
+      revisionNumber: 2,
+      parentRevisionId: created.document_revision_id,
+      documentTitle: "Durable architecture v2",
+      markdown: "Revised exact body",
+      authoredBy: { type: "user", id: "local_user" },
+    })
+
+    const staleResponse = await durableApp.request(`http://localhost/pages/${created.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "if-match": "0" },
+      body: JSON.stringify({ content: "Stale content" }),
+    })
+    expect(staleResponse.status).toBe(409)
+    const head = await durableApp.request(
+      `http://localhost/api/claxedo/docs/${created.document_id}?project_id=project_durable_page`,
+    )
+    await expect(head.json()).resolves.toMatchObject({
+      revisionId: revised.document_revision_id,
+      revisionNumber: 2,
+      markdown: "Revised exact body",
+    })
+    const previous = await durableApp.request(
+      `http://localhost/api/claxedo/docs/${created.document_id}/revisions/${created.document_revision_id}?project_id=project_durable_page`,
+    )
+    await expect(previous.json()).resolves.toMatchObject({
+      revisionId: created.document_revision_id,
+      revisionNumber: 1,
+      markdown: "Initial exact body",
+    })
+  })
+
+  test("durably admits a legacy Page into Docs v2 before exposing its revision identity", async () => {
+    const id = `page_legacy_${randomUUID().replaceAll("-", "")}`
+    const now = new Date().toISOString()
+    ClaxedoDB.raw()
+      .prepare(
+        `INSERT INTO claxedo_page (id, org_id, project_id, title, content, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, "__local__", "project_legacy_page", "Legacy plan", "Legacy exact body", now, now)
+
+    const firstResponse = await durableApp.request(`http://localhost/pages/${id}`)
+    expect(firstResponse.status).toBe(200)
+    const first = (await firstResponse.json()) as {
+      document_id: string
+      document_revision_id: string
+      project_id: string
+    }
+    expect(first.project_id).toBe("project_legacy_page")
+    expect(first.document_id).toMatch(/^document_/)
+    expect(first.document_revision_id).toMatch(/^document_revision_/)
+
+    const secondResponse = await durableApp.request(`http://localhost/pages/${id}`)
+    await expect(secondResponse.json()).resolves.toMatchObject({
+      document_id: first.document_id,
+      document_revision_id: first.document_revision_id,
+    })
+    const exactRevision = await durableApp.request(
+      `http://localhost/api/claxedo/docs/${first.document_id}/revisions/${first.document_revision_id}?project_id=project_legacy_page`,
+    )
+    await expect(exactRevision.json()).resolves.toMatchObject({
+      documentId: first.document_id,
+      revisionId: first.document_revision_id,
+      revisionNumber: 1,
+      markdown: "Legacy exact body",
+      authoredBy: { type: "system", id: "pages_v2_binding" },
+    })
   })
 
   test("streams page list invalidations after mutations", async () => {

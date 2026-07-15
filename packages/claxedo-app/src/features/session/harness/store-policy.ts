@@ -69,7 +69,8 @@ export function shouldHydrateDraftFromHarnessStatus(input: {
   workspaceKind?: HarnessWorkspaceKind | null
 }) {
   if (!input.useLocalHarnessConfig) return false
-  return !isRemoteHarnessWorkspaceKind(input.workspaceKind)
+  if (!input.workspaceRuntime) return true
+  return input.workspaceKind === "local"
 }
 
 export function harnessWorkspaceRuntimeRef(input?: HarnessScopeInput) {

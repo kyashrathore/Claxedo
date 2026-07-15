@@ -56,7 +56,9 @@ describe("local WorkGraph workspace execution", () => {
     const admissions: Array<{ directory: string; prompt: string }> = []
     const execution = createLocalWorkspaceExecution({
       worktreeRoot: worktrees,
-      repositoryDirectory: async () => repository,
+      repositoryDirectory: async () => {
+        throw new Error("legacy repository fallback must not be used")
+      },
       sessions: {
         admit: async (input) => {
           admissions.push(input)
@@ -69,12 +71,12 @@ describe("local WorkGraph workspace execution", () => {
     const streamId = "stream_1" as StreamID
     const envelope = await execution.provisionOrAdopt(owner(), {
       streamId,
-      environment: { kind: "local_worktree" },
+      environment: { kind: "local_worktree", directory: repository },
       repository: { baseRevision: "HEAD" },
     })
     const adopted = await execution.provisionOrAdopt(owner(), {
       streamId,
-      environment: { kind: "local_worktree" },
+      environment: { kind: "local_worktree", directory: repository },
       repository: { baseRevision: "HEAD" },
       envelopeId: envelope.id,
     })
@@ -94,7 +96,47 @@ describe("local WorkGraph workspace execution", () => {
     expect(admissions).toEqual([expect.objectContaining({ directory: envelope.workspaceId, prompt: "Implement it" })])
   })
 
-  it("serializes concurrent provisioning, adopts after restart, and isolates equal Stream IDs by owner", async () => {
+  it("uses the registered worktree service and exposes its routable workspace identity", async () => {
+    const root = await repositoryFixture("workgraph-registered")
+    const repository = `${root}/repository`
+    const worktrees = `${root}/worktrees`
+    const provisioned: Array<{ repositoryDirectory: string; directory: string; baseRevision: string }> = []
+    const released: string[] = []
+    const execution = createLocalWorkspaceExecution({
+      worktreeRoot: worktrees,
+      worktrees: {
+        provision: async (input) => {
+          provisioned.push(input)
+          await fs.mkdir(path.join(input.directory, ".git"), { recursive: true })
+          return { directory: input.directory, workspaceId: "ws_stream_1" }
+        },
+        release: async (directory) => { released.push(directory) },
+      },
+      sessions: {
+        admit: async () => "session_1",
+        cancel: async () => undefined,
+        result: async () => ({ state: "running" }),
+      },
+    })
+    const envelope = await execution.provisionOrAdopt(owner(), {
+      streamId: "stream_1" as StreamID,
+      environment: { kind: "local_worktree", directory: repository },
+      repository: { baseRevision: "HEAD" },
+    })
+
+    expect(envelope.workspaceId).toBe("ws_stream_1")
+    expect(provisioned).toEqual([
+      expect.objectContaining({ repositoryDirectory: repository, baseRevision: "HEAD" }),
+    ])
+    await execution.cleanup(owner(), {
+      streamId: "stream_1" as StreamID,
+      envelopeId: envelope.id,
+      reason: "delete",
+    })
+    expect(released).toEqual([provisioned[0]!.directory])
+  })
+
+  it("serializes concurrent provisioning, adopts after restart, and isolates equal Stream IDs by organization and owner", async () => {
     const root = await repositoryFixture("workgraph-local-concurrent")
     const worktrees = `${root}/worktrees`
     const execution = adapter(root, worktrees)
@@ -114,35 +156,47 @@ describe("local WorkGraph workspace execution", () => {
     )
     const otherOwner = await execution.provisionOrAdopt(owner("owner-b"), request)
     expect(otherOwner.workspaceId).not.toBe(first.workspaceId)
+    const otherOrganization = await execution.provisionOrAdopt(owner("owner-a", "org-b"), request)
+    expect(otherOrganization.workspaceId).not.toBe(first.workspaceId)
+    expect(otherOrganization.id).not.toBe(first.id)
   })
 
-  it("tracks and removes child worktrees, honors close policy, and surfaces cleanup failure", async () => {
+  it("removes legacy child worktrees during lifecycle cleanup and surfaces cleanup failure", async () => {
     const root = await repositoryFixture("workgraph-local-cleanup")
     const worktrees = `${root}/worktrees`
-    const execution = adapter(root, worktrees)
+    const released: string[] = []
+    const execution = adapter(root, worktrees, async (directory) => { released.push(directory) })
     const streamId = "stream-cleanup" as StreamID
     const envelope = await execution.provisionOrAdopt(owner(), {
       streamId,
       environment: { kind: "local_worktree" },
       repository: { baseRevision: "HEAD" },
     })
-    const child = await execution.createChildIsolation(owner(), {
-      streamId,
-      envelopeId: envelope.id,
-      workItemId: "item_1" as never,
-      attemptId: "attempt_1" as never,
-    })
+    const legacyChild = path.join(
+      worktrees,
+      encoded("org-a"),
+      encoded("owner"),
+      encoded(streamId),
+      "children",
+      encoded("attempt_1"),
+    )
+    await fs.mkdir(path.dirname(legacyChild), { recursive: true })
+    await run("git", ["-C", envelope.workspaceId, "worktree", "add", "--detach", legacyChild, "HEAD"])
+    const legacyChildId = `child_${encoded("org-a")}.${encoded("owner")}.${encoded("attempt_1")}` as never
     await execution.cleanup(owner(), {
       streamId,
       envelopeId: envelope.id,
-      childIsolationIds: [child.id],
       reason: "reconcile",
     })
-    await expect(fs.stat(child.workspaceId)).rejects.toThrow()
-    expect((await run("git", ["-C", envelope.workspaceId, "rev-parse", "--is-inside-work-tree"])).stdout.trim()).toBe(
-      "true",
-    )
-    await execution.cleanup(owner(), { streamId, envelopeId: envelope.id, reason: "close", cleanupPolicy: "retain" })
+    expect((await run("git", ["-C", legacyChild, "rev-parse", "--is-inside-work-tree"])).stdout.trim()).toBe("true")
+    await execution.cleanup(owner(), {
+      streamId,
+      envelopeId: envelope.id,
+      childIsolationIds: [legacyChildId],
+      reason: "reconcile",
+    })
+    await expect(fs.stat(legacyChild)).rejects.toThrow()
+    expect(released).toEqual([legacyChild])
     expect((await run("git", ["-C", envelope.workspaceId, "rev-parse", "--is-inside-work-tree"])).stdout.trim()).toBe(
       "true",
     )
@@ -150,22 +204,36 @@ describe("local WorkGraph workspace execution", () => {
     await expect(execution.cleanup(owner(), { streamId, envelopeId: envelope.id, reason: "delete" })).rejects.toThrow()
   })
 
-  it("destroys the Stream envelope on close when destroy_on_close is configured", async () => {
-    const root = await repositoryFixture("workgraph-local-close")
-    const execution = adapter(root, `${root}/worktrees`)
-    const streamId = "stream-close" as StreamID
+  it("launches every Attempt in the Stream workspace and leaves worktree strategy to the agent", async () => {
+    const root = await repositoryFixture("workgraph-local-stream-workspace")
+    const worktrees = `${root}/worktrees`
+    const directories: string[] = []
+    const execution = createLocalWorkspaceExecution({
+      worktreeRoot: worktrees,
+      repositoryDirectory: async () => `${root}/repository`,
+      sessions: {
+        admit: async (input) => { directories.push(input.directory); return `session_${input.attemptId}` },
+        cancel: async () => undefined,
+        result: async () => ({ state: "running" }),
+      },
+    })
+    const streamId = "stream-workspace" as StreamID
     const envelope = await execution.provisionOrAdopt(owner(), {
       streamId,
       environment: { kind: "local_worktree" },
       repository: { baseRevision: "HEAD" },
     })
-    await execution.cleanup(owner(), {
+    await Promise.all(["attempt_1", "attempt_2"].map((attemptId) => execution.launch(owner(), {
       streamId,
+      workItemId: `item_${attemptId}` as never,
+      attemptId: attemptId as never,
       envelopeId: envelope.id,
-      reason: "close",
-      cleanupPolicy: "destroy_on_close",
-    })
-    await expect(fs.stat(envelope.workspaceId)).rejects.toThrow()
+      prompt: "Work in the Stream workspace",
+      profile,
+      connectionIds: [],
+    })))
+    expect(directories).toEqual([envelope.workspaceId, envelope.workspaceId])
+    await expect(fs.stat(path.join(path.dirname(envelope.workspaceId), "children"))).rejects.toThrow()
   })
 })
 
@@ -178,9 +246,9 @@ const profile = {
   effort: "high",
   tools: [],
   connectionIds: [],
-  isolation: "stream" as const,
-  cleanup: "destroy_on_close" as const,
-  integration: "pull_request" as const,
+}
+function encoded(value: string) {
+  return Buffer.from(value).toString("base64url")
 }
 async function temp(name: string) {
   const directory = `${process.env.TMPDIR ?? "/tmp"}/${name}-${crypto.randomUUID()}`
@@ -188,8 +256,9 @@ async function temp(name: string) {
   await fs.mkdir(directory, { recursive: true })
   return directory
 }
-function owner(ownerUserId = "owner"): WorkGraphContext {
+function owner(ownerUserId = "owner", organizationId = "org-a"): WorkGraphContext {
   return {
+    organizationId: organizationId as never,
     ownerUserId: ownerUserId as never,
     actor: { type: "agent", id: "agent" as never },
     requestId: "request" as never,
@@ -210,7 +279,7 @@ async function repositoryFixture(name: string) {
   return root
 }
 
-function adapter(root: string, worktreeRoot: string) {
+function adapter(root: string, worktreeRoot: string, releaseDirectory?: (directory: string) => Promise<void>) {
   return createLocalWorkspaceExecution({
     worktreeRoot,
     repositoryDirectory: async () => `${root}/repository`,
@@ -218,6 +287,7 @@ function adapter(root: string, worktreeRoot: string) {
       admit: async (input) => `session_${input.attemptId}`,
       cancel: async () => undefined,
       result: async () => ({ state: "running" }),
+      ...(releaseDirectory ? { releaseDirectory } : {}),
     },
   })
 }

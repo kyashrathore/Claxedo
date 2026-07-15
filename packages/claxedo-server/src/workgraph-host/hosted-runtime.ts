@@ -4,10 +4,12 @@ import { defaultHomeRegion } from "../region"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { AdmissionAgentPlanSchema } from "@claxedo/workgraph/contracts"
 import { clean, type HostedWorkerEnv } from "../control-plane/adapters/worker/hosted-compose"
+import { createWorkGraphOperationalReporter, type WorkGraphOperationalReporter } from "./operational-telemetry"
 
 type Mutation = FunctionReference<"mutation">
 const api = anyApi as unknown as {
   workgraphRuntime: {
+    listWorkerTenants: Mutation
     claimLaunches: Mutation
     markRunning: Mutation
     retryLaunch: Mutation
@@ -18,6 +20,7 @@ const api = anyApi as unknown as {
     claimControlEffects: Mutation
     completeControlEffect: Mutation
     confirmLaunch: Mutation
+    settleRejectedProvision: Mutation
     compensateRejectedLaunch: Mutation
   }
   workgraphBackground: {
@@ -48,10 +51,14 @@ type Claim = {
   streamId: string
   workItemId: string
   leaseEpoch: number
+  queueLagMs?: number
+  activeLeaseAgeMs?: number
+  expiredRecovery?: boolean
+  retryCount?: number
   title: string
   prompt: string
   profile: {
-    environment: { kind: "hosted_workspace"; presetId?: string }
+    environment: { kind: "hosted_workspace"; repositoryUrl?: string; presetId?: string }
     repository?: { remoteUrl?: string; baseRevision: string }
     harness: string
     agent: string
@@ -69,7 +76,12 @@ type RecapClaim = {
   orgId: string
   jobId: string
   leaseEpoch: number
+  queueLagMs?: number
+  activeLeaseAgeMs?: number
+  expiredRecovery?: boolean
+  retryCount?: number
   streamId: string
+  sessionId?: string
   prompt: string
   profile: { agent: string; model: { providerId: string; modelId: string }; effort: string; tools: string[] }
 }
@@ -80,9 +92,12 @@ type RunningRecap = {
   leaseEpoch: number
   sessionId: string
   workspaceId: string
+  activeLeaseAgeMs?: number
+  expiredRecovery?: boolean
 }
 type SourcePlanClaim = Omit<RecapClaim, "streamId"> & { proposalId: string; sessionId?: string }
 type RunningSourcePlan = RunningRecap
+type WorkerTenant = { organizationId: string; ownerUserId: string }
 
 /** Durable Worker dispatcher over SandboxManager → authenticated relay → Session V2. */
 export function createHostedWorkGraphRuntime(
@@ -97,118 +112,159 @@ export function createHostedWorkGraphRuntime(
   const request = options.fetch ?? fetch
   const now = options.now ?? Date.now
   const workerId = clean(env.CLAXEDO_WORKGRAPH_WORKER_ID) ?? "claxedo-worker"
+  const telemetry = createWorkGraphOperationalReporter({ telemetry: services.telemetry, env, now })
   return {
     reconcile: async () => {
       const claimedAt = now()
-      const claims = (await client.mutation(api.workgraphRuntime.claimLaunches, {
-        service_token: serviceToken,
-        worker_id: workerId,
-        now: claimedAt,
-        limit: 10,
-      })) as Claim[]
-      const launched = await Promise.all(
-        claims.map(async (claim) => {
-          try {
-            const connectionTools = claim.profile.tools.filter((tool) =>
-              tool === "connection_work_source_list" || tool === "connection_work_source_comment" || tool === "connection_work_source_update")
-            const brokerUrl = clean(env.CLAXEDO_PUBLIC_URL) ?? clean(env.CLAXEDO_SERVER_URL) ?? clean(env.CLAXEDO_CENTRAL_URL)
-            if (claim.profile.connectionIds.length > 0 && (!connectionTools.length || !brokerUrl)) {
-              throw new Error("Connection-bound Attempts require explicit Connection tools and a central broker URL")
-            }
-            const manager = services.sandbox.sandboxManager
-            const provider = services.relay.provider
-            if (!manager || !provider) throw new Error("Hosted sandbox manager and relay provider are required")
-            const workspaceId = await workGraphWorkspaceId(claim.ownerUserId, claim.streamId)
-            const placement = await manager.ensure(workspaceId, {
-              homeRegion: services.defaultHomeRegion ?? defaultHomeRegion(),
-              labels: { workload: "workgraph", ownerUserId: claim.ownerUserId, streamId: claim.streamId },
-              runtimeCwd: "/workspace",
-              env: { WORKSPACE_RUNTIME_RUNNER: claim.profile.harness },
-              source: claim.profile.repository?.remoteUrl
-                ? {
-                    kind: "git",
-                    repoUrl: claim.profile.repository.remoteUrl,
-                    branch: claim.profile.repository.baseRevision,
-                  }
-                : { kind: "empty" },
-              exposure: { kind: "relay" },
-            })
-            if (placement.status === "provisioning") {
-              return await client.mutation(
-                api.workgraphRuntime.retryLaunch,
+      try {
+        const tenants = (await client.mutation(api.workgraphRuntime.listWorkerTenants, {
+          service_token: serviceToken,
+          limit: 500,
+        })) as WorkerTenant[]
+        const claims = (await tenantRows(client, api.workgraphRuntime.claimLaunches, tenants, {
+          service_token: serviceToken,
+          worker_id: workerId,
+          now: claimedAt,
+          limit: 10,
+        })) as Claim[]
+        const launched = await Promise.all(
+          claims.map(async (claim) => {
+            let compensationTarget: { sessionId: string; workspaceId: string } | undefined
+            try {
+              const connectionTools = claim.profile.tools.filter(
+                (tool) =>
+                  tool === "connection_work_source_list" ||
+                  tool === "connection_work_source_comment" ||
+                  tool === "connection_work_source_update",
+              )
+              const brokerUrl =
+                clean(env.CLAXEDO_PUBLIC_URL) ?? clean(env.CLAXEDO_SERVER_URL) ?? clean(env.CLAXEDO_CENTRAL_URL)
+              const brokerOrigin = brokerUrl ? new URL(brokerUrl).origin : undefined
+              if (claim.profile.connectionIds.length > 0 && (!connectionTools.length || !brokerUrl)) {
+                throw new Error("Connection-bound Attempts require explicit Connection tools and a central broker URL")
+              }
+              const manager = services.sandbox.sandboxManager
+              const provider = services.relay.provider
+              if (!manager || !provider) throw new Error("Hosted sandbox manager and relay provider are required")
+              const workspaceId = await workGraphWorkspaceId(claim.orgId, claim.ownerUserId, claim.streamId)
+              const placement = await manager.ensure(workspaceId, {
+                homeRegion: services.defaultHomeRegion ?? defaultHomeRegion(),
+                labels: {
+                  workload: "workgraph",
+                  organizationId: claim.orgId,
+                  ownerUserId: claim.ownerUserId,
+                  streamId: claim.streamId,
+                },
+                runtimeCwd: "/workspace",
+                env: {
+                  WORKSPACE_RUNTIME_RUNNER: claim.profile.harness,
+                  ...(brokerOrigin ? { WORKSPACE_RUNTIME_WORKGRAPH_BROKER_ORIGIN: brokerOrigin } : {}),
+                },
+                source: claim.profile.environment.kind === "hosted_workspace" && claim.profile.environment.repositoryUrl
+                  ? {
+                      kind: "git",
+                      repoUrl: claim.profile.environment.repositoryUrl,
+                      branch: claim.profile.repository?.baseRevision ?? "HEAD",
+                    }
+                  : claim.profile.repository?.remoteUrl
+                    ? {
+                        kind: "git",
+                        repoUrl: claim.profile.repository.remoteUrl,
+                        branch: claim.profile.repository.baseRevision,
+                      }
+                  : { kind: "empty" },
+                exposure: { kind: "relay" },
+              })
+              if (placement.status === "provisioning") {
+                return await client.mutation(
+                  api.workgraphRuntime.retryLaunch,
+                  mutationArgs(claim, serviceToken, workerId, {
+                    available_at: now() + placement.retryAfterMs,
+                    reason: "Hosted workspace is provisioning",
+                    now: now(),
+                  }),
+                )
+              }
+              if (placement.status !== "ready") throw new Error(placement.error ?? "Hosted workspace is unavailable")
+              const token = await provider.mintRuntimeAccessToken({
+                workspaceId,
+                hostId: placement.hostId,
+                subject: claim.ownerUserId,
+                orgId: claim.orgId,
+                role: "owner",
+                ttlMs: 10 * 60_000,
+              })
+              const relay = await provider.getRelayEndpoint(workspaceId, placement.homeRegion as never)
+              const runtime = async (path: string, init?: RequestInit) => {
+                const headers = new Headers(init?.headers)
+                headers.set("authorization", `Bearer ${token.token}`)
+                headers.set("x-opencode-directory", "/workspace")
+                if (init?.body) headers.set("content-type", "application/json")
+                const response = await request(
+                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}${path}`,
+                  { ...init, headers },
+                )
+                if (response.ok) return response
+                throw new Error(`Hosted Session V2 request failed: ${response.status} ${await response.text()}`)
+              }
+              const confirmed = (await client.mutation(
+                api.workgraphRuntime.confirmLaunch,
+                mutationArgs(claim, serviceToken, workerId, { now: now() }),
+              )) as { accepted?: boolean }
+              if (!confirmed.accepted) {
+                const destroyed = await manager.destroy(workspaceId)
+                if (!destroyed.ok && destroyed.reason !== "runtime_lease_missing") {
+                  throw new Error(`Hosted WorkGraph rejected launch cleanup failed: ${destroyed.reason}`)
+                }
+                if (destroyed.ok) await manager.release(workspaceId)
+                await client.mutation(
+                  api.workgraphRuntime.settleRejectedProvision,
+                  mutationArgs(claim, serviceToken, workerId, { now: now() }),
+                )
+                return { settled: false, state: "cancelled" }
+              }
+              const created = await runtime("/api/session", {
+                method: "POST",
+                body: JSON.stringify({
+                  agent: claim.profile.agent,
+                  model: {
+                    providerID: claim.profile.model.providerId,
+                    id: claim.profile.model.modelId,
+                    variant: claim.profile.effort,
+                  },
+                  tools: claim.profile.tools,
+                  location: { directory: "/workspace" },
+                }),
+              })
+              const createdBody = (await created.json()) as { id?: string; data?: { id?: string } }
+              const sessionId = createdBody.id ?? createdBody.data?.id
+              if (!sessionId) throw new Error("Hosted Session V2 create response did not include a Session ID")
+              compensationTarget = { sessionId, workspaceId }
+              const running = (await client.mutation(
+                api.workgraphRuntime.markRunning,
                 mutationArgs(claim, serviceToken, workerId, {
-                  available_at: now() + placement.retryAfterMs,
-                  reason: "Hosted workspace is provisioning",
+                  workspace_id: workspaceId,
+                  session_id: sessionId,
                   now: now(),
                 }),
-              )
-            }
-            if (placement.status !== "ready") throw new Error(placement.error ?? "Hosted workspace is unavailable")
-            const token = await provider.mintRuntimeAccessToken({
-              workspaceId,
-              hostId: placement.hostId,
-              subject: claim.ownerUserId,
-              orgId: claim.orgId,
-              role: "owner",
-              ttlMs: 10 * 60_000,
-            })
-            const relay = await provider.getRelayEndpoint(workspaceId, placement.homeRegion as never)
-            const runtime = async (path: string, init?: RequestInit) => {
-              const headers = new Headers(init?.headers)
-              headers.set("authorization", `Bearer ${token.token}`)
-              headers.set("x-opencode-directory", "/workspace")
-              if (init?.body) headers.set("content-type", "application/json")
-              const response = await request(
-                `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}${path}`,
-                { ...init, headers },
-              )
-              if (response.ok) return response
-              throw new Error(`Hosted Session V2 request failed: ${response.status} ${await response.text()}`)
-            }
-            const confirmed = (await client.mutation(
-              api.workgraphRuntime.confirmLaunch,
-              mutationArgs(claim, serviceToken, workerId, { now: now() }),
-            )) as { accepted?: boolean }
-            if (!confirmed.accepted) return { settled: false, state: "cancelled" }
-            const created = await runtime("/api/session", {
-              method: "POST",
-              body: JSON.stringify({
-                agent: claim.profile.agent,
-                model: {
-                  providerID: claim.profile.model.providerId,
-                  id: claim.profile.model.modelId,
-                  variant: claim.profile.effort,
-                },
-                tools: claim.profile.tools,
-                location: { directory: "/workspace" },
-              }),
-            })
-            const createdBody = (await created.json()) as { id?: string; data?: { id?: string } }
-            const sessionId = createdBody.id ?? createdBody.data?.id
-            if (!sessionId) throw new Error("Hosted Session V2 create response did not include a Session ID")
-            const running = (await client.mutation(
-              api.workgraphRuntime.markRunning,
-              mutationArgs(claim, serviceToken, workerId, {
-                workspace_id: workspaceId,
-                session_id: sessionId,
-                now: now(),
-              }),
-            )) as { settled?: boolean }
-            if (!running.settled) {
-              await client.mutation(api.workgraphRuntime.compensateRejectedLaunch, {
-                service_token: serviceToken,
-                owner_user_id: claim.ownerUserId,
-                outbox_id: claim.outboxId,
-                attempt_id: claim.attemptId,
-                worker_id: workerId,
-                session_id: sessionId,
-                workspace_id: workspaceId,
-                now: now(),
-              })
-              return { settled: false }
-            }
-            if (claim.profile.connectionIds.length > 0) {
-              try {
+              )) as { settled?: boolean }
+              if (!running.settled) {
+                const compensation = (await client.mutation(api.workgraphRuntime.compensateRejectedLaunch, {
+                  service_token: serviceToken,
+                  organization_id: claim.orgId,
+                  owner_user_id: claim.ownerUserId,
+                  outbox_id: claim.outboxId,
+                  attempt_id: claim.attemptId,
+                  worker_id: workerId,
+                  session_id: sessionId,
+                  workspace_id: workspaceId,
+                  now: now(),
+                })) as { settled?: boolean }
+                if (!compensation.settled)
+                  throw new Error("Durable launch compensation was rejected after the final launch fence")
+                return { settled: false, state: "compensating" }
+              }
+              if (claim.profile.connectionIds.length > 0) {
                 await client.mutation(api.workgraphConnections.bindAttemptConnections, {
                   service_token: serviceToken,
                   ownerUserId: claim.ownerUserId,
@@ -229,136 +285,152 @@ export function createHostedWorkGraphRuntime(
                     brokerUrl,
                   }),
                 })
-              } catch (error) {
-                await client.mutation(api.workgraphRuntime.compensateRejectedLaunch, {
+              }
+              await runtime(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {
+                method: "POST",
+                body: JSON.stringify({
+                  id: `msg_workgraph_${claim.attemptId}`,
+                  prompt: { text: claim.prompt },
+                  delivery: "steer",
+                  resume: true,
+                }),
+              })
+              return { settled: true, state: "running" }
+            } catch (error) {
+              const reason = error instanceof Error ? error.message : String(error)
+              if (compensationTarget) {
+                const compensation = (await client.mutation(api.workgraphRuntime.compensateRejectedLaunch, {
                   service_token: serviceToken,
+                  organization_id: claim.orgId,
                   owner_user_id: claim.ownerUserId,
                   outbox_id: claim.outboxId,
                   attempt_id: claim.attemptId,
                   worker_id: workerId,
-                  session_id: sessionId,
-                  workspace_id: workspaceId,
+                  session_id: compensationTarget.sessionId,
+                  workspace_id: compensationTarget.workspaceId,
                   now: now(),
-                })
-                throw error
+                })) as { settled?: boolean }
+                if (!compensation.settled) throw new Error(`${reason}; durable launch compensation was rejected`)
+                return { settled: false, state: "compensating", reason }
               }
-            }
-            await runtime(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {
-              method: "POST",
-              body: JSON.stringify({
-                id: `msg_workgraph_${claim.attemptId}`,
-                prompt: { text: claim.prompt },
-                delivery: "steer",
-                resume: true,
-              }),
-            })
-            return { settled: true, state: "running" }
-          } catch (error) {
-            return await client.mutation(
-              api.workgraphRuntime.markAttention,
-              mutationArgs(claim, serviceToken, workerId, {
-                reason: error instanceof Error ? error.message : String(error),
-                now: now(),
-              }),
-            )
-          }
-        }),
-      )
-      const running = (await client.mutation(api.workgraphRuntime.listRunning, {
-        service_token: serviceToken,
-        limit: 10,
-        now: now(),
-      })) as RunningAttempt[]
-      const results = await Promise.all(
-        running.map(async (attempt) => {
-          try {
-            const provider = services.relay.provider
-            const manager = services.sandbox.sandboxManager
-            if (!provider || !manager) throw new Error("Hosted sandbox manager and relay provider are required")
-            const placement = await manager.target(attempt.workspaceId)
-            if (placement.status !== "ready")
-              throw new Error("Hosted workspace is unavailable during result reconciliation")
-            const token = await provider.mintRuntimeAccessToken({
-              workspaceId: attempt.workspaceId,
-              hostId: placement.hostId,
-              subject: attempt.ownerUserId,
-              orgId: attempt.orgId,
-              role: "owner",
-              ttlMs: 10 * 60_000,
-            })
-            const relay = await provider.getRelayEndpoint(attempt.workspaceId, placement.homeRegion as never)
-            const events: SessionEvent[] = []
-            let after = 0
-            for (;;) {
-              const history = await request(
-                `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/session/${encodeURIComponent(attempt.sessionId)}/history?limit=100&after=${after}`,
-                {
-                  headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
-                },
-              )
-              if (!history.ok) {
-                throw new Error(`Hosted Session V2 history failed: ${history.status} ${await history.text()}`)
-              }
-              const page = hostedSessionHistoryPage(await history.json())
-              events.push(...page.data)
-              if (!page.hasMore) break
-              const next = page.data.at(-1)?.durable?.seq
-              if (next === undefined || next <= after) throw new SessionHistoryResponseError()
-              after = next
-            }
-            const terminal = events.findLast(
-              (event) =>
-                event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"),
-            )
-            if (!terminal) return { settled: false, state: "running" }
-            const cleanup = await request(
-              `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/workgraph/connection-binding/${encodeURIComponent(attempt.sessionId)}`,
-              {
-                method: "DELETE",
-                headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
-              },
-            )
-            if (!cleanup.ok) {
-              throw new Error(`Hosted Session Connection cleanup failed: ${cleanup.status} ${await cleanup.text()}`)
-            }
-            if (terminal.type.startsWith("session.next.step.failed")) {
               return await client.mutation(
-                api.workgraphRuntime.recordFailure,
-                resultArgs(attempt, serviceToken, {
-                  reason: sessionError(terminal.data.error),
+                api.workgraphRuntime.markAttention,
+                mutationArgs(claim, serviceToken, workerId, {
+                  reason,
                   now: now(),
                 }),
               )
             }
-            const summary = events.findLast((event) => event.type.startsWith("session.next.text.ended"))?.data.text
-            if (typeof summary !== "string" || !summary.trim()) throw new Error("session_output_missing")
-            const files = Array.isArray(terminal.data.files)
-              ? terminal.data.files.filter((file): file is string => typeof file === "string" && !!file.trim())
-              : []
-            return await client.mutation(
-              api.workgraphRuntime.recordResult,
-              resultArgs(attempt, serviceToken, {
-                summary: summary.trim(),
-                artifacts: files.map((file) => `file:${file.trim()}`),
-                now: now(),
-              }),
-            )
-          } catch (error) {
-            return await client.mutation(
-              api.workgraphRuntime.recordFailure,
-              resultArgs(attempt, serviceToken, {
-                reason: error instanceof Error ? error.message : String(error),
-                now: now(),
-              }),
-            )
-          }
-        }),
-      )
-      const background =
-        options.background === false
-          ? undefined
-          : await reconcileBackground(client, services, request, serviceToken, workerId, now)
-      return { launched, results, ...(background ? { background } : {}) }
+          }),
+        )
+        const running = (await tenantRows(client, api.workgraphRuntime.listRunning, tenants, {
+          service_token: serviceToken,
+          limit: 10,
+          now: now(),
+        })) as RunningAttempt[]
+        const results = await Promise.all(
+          running.map(async (attempt) => {
+            try {
+              const provider = services.relay.provider
+              const manager = services.sandbox.sandboxManager
+              if (!provider || !manager) throw new Error("Hosted sandbox manager and relay provider are required")
+              const placement = await manager.target(attempt.workspaceId)
+              if (placement.status !== "ready")
+                throw new Error("Hosted workspace is unavailable during result reconciliation")
+              const token = await provider.mintRuntimeAccessToken({
+                workspaceId: attempt.workspaceId,
+                hostId: placement.hostId,
+                subject: attempt.ownerUserId,
+                orgId: attempt.orgId,
+                role: "owner",
+                ttlMs: 10 * 60_000,
+              })
+              const relay = await provider.getRelayEndpoint(attempt.workspaceId, placement.homeRegion as never)
+              const events: SessionEvent[] = []
+              let after = 0
+              for (;;) {
+                const history = await request(
+                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/session/${encodeURIComponent(attempt.sessionId)}/history?limit=100&after=${after}`,
+                  {
+                    headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
+                  },
+                )
+                if (!history.ok) {
+                  throw new Error(`Hosted Session V2 history failed: ${history.status} ${await history.text()}`)
+                }
+                const page = hostedSessionHistoryPage(await history.json())
+                events.push(...page.data)
+                if (!page.hasMore) break
+                const next = page.data.at(-1)?.durable?.seq
+                if (next === undefined || next <= after) throw new SessionHistoryResponseError()
+                after = next
+              }
+              const terminal = events.findLast(
+                (event) =>
+                  event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"),
+              )
+              if (!terminal) return { settled: false, state: "running" }
+              const cleanup = await request(
+                `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/workgraph/connection-binding/${encodeURIComponent(attempt.sessionId)}`,
+                {
+                  method: "DELETE",
+                  headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
+                },
+              )
+              if (!cleanup.ok) {
+                throw new Error(`Hosted Session Connection cleanup failed: ${cleanup.status} ${await cleanup.text()}`)
+              }
+              if (terminal.type.startsWith("session.next.step.failed")) {
+                return await client.mutation(
+                  api.workgraphRuntime.recordFailure,
+                  resultArgs(attempt, serviceToken, {
+                    reason: sessionError(terminal.data.error),
+                    now: now(),
+                  }),
+                )
+              }
+              const summary = events.findLast((event) => event.type.startsWith("session.next.text.ended"))?.data.text
+              if (typeof summary !== "string" || !summary.trim()) throw new Error("session_output_missing")
+              const files = Array.isArray(terminal.data.files)
+                ? terminal.data.files.filter((file): file is string => typeof file === "string" && !!file.trim())
+                : []
+              return await client.mutation(
+                api.workgraphRuntime.recordResult,
+                resultArgs(attempt, serviceToken, {
+                  summary: summary.trim(),
+                  artifacts: files.map((file) => `file:${file.trim()}`),
+                  now: now(),
+                }),
+              )
+            } catch (error) {
+              return await client.mutation(
+                api.workgraphRuntime.recordFailure,
+                resultArgs(attempt, serviceToken, {
+                  reason: error instanceof Error ? error.message : String(error),
+                  now: now(),
+                }),
+              )
+            }
+          }),
+        )
+        const background =
+          options.background === false
+            ? undefined
+            : await reconcileBackground(client, services, request, serviceToken, workerId, now, tenants, telemetry)
+        recordAttemptTelemetry(telemetry, claims, running, launched, results, now() - claimedAt)
+        return { launched, results, ...(background ? { background } : {}) }
+      } catch (error) {
+        telemetry.reconciliation({
+          outcome: "failed",
+          latencyMs: now() - claimedAt,
+          lagMs: 0,
+          claimed: 0,
+          running: 0,
+          settled: 0,
+          failed: 1,
+        })
+        throw error
+      }
     },
   }
 }
@@ -370,8 +442,10 @@ async function reconcileBackground(
   serviceToken: string,
   workerId: string,
   now: () => number,
+  tenants: readonly WorkerTenant[],
+  telemetry: WorkGraphOperationalReporter,
 ) {
-  const controls = (await client.mutation(api.workgraphRuntime.claimControlEffects, {
+  const controls = (await tenantRows(client, api.workgraphRuntime.claimControlEffects, tenants, {
     service_token: serviceToken,
     worker_id: workerId,
     now: now(),
@@ -381,26 +455,27 @@ async function reconcileBackground(
     orgId: string
     outboxId: string
     streamId: string
-    effectType: "interrupt_attempt" | "cleanup_stream"
-    payload: { sessionId?: string; sessions?: string[] }
+    effectType: "interrupt_attempt" | "finalize_stream" | "cleanup_stream"
+    payload: { finalize?: "close" | "delete" | "replace"; sessionId?: string; sessions?: string[] }
   }>
   const controlResults = await Promise.all(
     controls.map(async (control) => {
+      const startedAt = now()
+      const operation = control.effectType === "interrupt_attempt"
+        ? "cancel" as const
+        : control.payload.finalize === "delete"
+          ? "release" as const
+          : control.payload.finalize === "replace"
+            ? "cleanup" as const
+            : "finalize" as const
       try {
         const manager = services.sandbox.sandboxManager
         const provider = services.relay.provider
         if (!manager || !provider) throw new Error("Hosted sandbox manager and relay provider are required")
-        const workspaceId = await workGraphWorkspaceId(control.ownerUserId, control.streamId)
+        const workspaceId = await workGraphWorkspaceId(control.orgId, control.ownerUserId, control.streamId)
         const placement = await manager.target(workspaceId)
         if (control.effectType === "interrupt_attempt" && placement.status !== "ready") {
           throw new Error("Attempt Session placement is not ready for interruption")
-        }
-        if (
-          control.effectType === "cleanup_stream" &&
-          (control.payload.sessions?.length ?? 0) > 0 &&
-          placement.status !== "ready"
-        ) {
-          throw new Error("Stream Session placement is not ready for interruption")
         }
         if (placement.status === "ready") {
           const token = await provider.mintRuntimeAccessToken({
@@ -425,9 +500,22 @@ async function reconcileBackground(
             ),
           )
         }
-        if (control.effectType === "cleanup_stream") await manager.destroy(workspaceId)
+        if (control.payload.finalize === "replace") {
+          const destroyed = await manager.destroy(workspaceId)
+          if (!destroyed.ok && destroyed.reason !== "runtime_lease_missing") {
+            throw new Error(`Hosted WorkGraph replacement reset failed: ${destroyed.reason}`)
+          }
+          if (destroyed.ok) await manager.release(workspaceId)
+        }
+        if (control.payload.finalize === "delete") await manager.release(workspaceId)
+        telemetry.workspace({
+          operation,
+          outcome: "succeeded",
+          latencyMs: now() - startedAt,
+        })
         return await client.mutation(api.workgraphRuntime.completeControlEffect, {
           service_token: serviceToken,
+          organization_id: control.orgId,
           owner_user_id: control.ownerUserId,
           outbox_id: control.outboxId,
           worker_id: workerId,
@@ -436,8 +524,14 @@ async function reconcileBackground(
           now: now(),
         })
       } catch (error) {
+        telemetry.workspace({
+          operation,
+          outcome: "failed",
+          latencyMs: now() - startedAt,
+        })
         return await client.mutation(api.workgraphRuntime.completeControlEffect, {
           service_token: serviceToken,
+          organization_id: control.orgId,
           owner_user_id: control.ownerUserId,
           outbox_id: control.outboxId,
           worker_id: workerId,
@@ -449,12 +543,22 @@ async function reconcileBackground(
       }
     }),
   )
-  const intake = await client.mutation(api.workgraphBackground.drainSessionIntake, {
+  const intakeRows = (await tenantResults(client, api.workgraphBackground.drainSessionIntake, tenants, {
     service_token: serviceToken,
     now: now(),
     limit: 25,
+  })) as Array<{ completed: number; oldestAgeMs?: number }>
+  const intake = { completed: intakeRows.reduce((total, result) => total + result.completed, 0) }
+  telemetry.queue({
+    kind: "session_intake",
+    backlog: intake.completed,
+    oldestAgeMs: maxNumber(intakeRows, "oldestAgeMs"),
+    failed: 0,
+    retried: 0,
+    expiredRecoveries: 0,
+    activeLeaseAgeMs: 0,
   })
-  const claims = (await client.mutation(api.workgraphBackground.claimRecaps, {
+  const claims = (await tenantRows(client, api.workgraphBackground.claimRecaps, tenants, {
     service_token: serviceToken,
     worker_id: workerId,
     now: now(),
@@ -467,10 +571,15 @@ async function reconcileBackground(
         const manager = services.sandbox.sandboxManager
         const provider = services.relay.provider
         if (!manager || !provider) throw new Error("Hosted sandbox manager and relay provider are required")
-        const workspaceId = await workGraphWorkspaceId(claim.ownerUserId, claim.streamId)
+        const workspaceId = await workGraphWorkspaceId(claim.orgId, claim.ownerUserId, claim.streamId)
         const placement = await manager.ensure(workspaceId, {
           homeRegion: services.defaultHomeRegion ?? defaultHomeRegion(),
-          labels: { workload: "workgraph-recap", ownerUserId: claim.ownerUserId, streamId: claim.streamId },
+          labels: {
+            workload: "workgraph-recap",
+            organizationId: claim.orgId,
+            ownerUserId: claim.ownerUserId,
+            streamId: claim.streamId,
+          },
           runtimeCwd: "/workspace",
           env: {},
           source: { kind: "empty" },
@@ -493,53 +602,80 @@ async function reconcileBackground(
         })
         const relay = await provider.getRelayEndpoint(workspaceId, placement.homeRegion as never)
         const runtime = runtimeRequest(request, relay, workspaceId, token.token)
-        const created = await runtime("/api/session", {
-          method: "POST",
-          body: JSON.stringify({
-            agent: claim.profile.agent,
-            model: {
-              providerID: claim.profile.model.providerId,
-              id: claim.profile.model.modelId,
-              variant: claim.profile.effort,
-            },
-            tools: claim.profile.tools,
-            location: { directory: "/workspace" },
-          }),
-        })
+        const requestedSessionId = claim.sessionId ?? `ses_workgraph_recap_${claim.jobId}_${claim.leaseEpoch}`
+        sessionId = requestedSessionId
+        const reserved = (await client.mutation(api.workgraphBackground.markRecapSession, {
+          service_token: serviceToken,
+          organization_id: claim.orgId,
+          owner_user_id: claim.ownerUserId,
+          job_id: claim.jobId,
+          lease_epoch: claim.leaseEpoch,
+          worker_id: workerId,
+          workspace_id: workspaceId,
+          session_id: requestedSessionId,
+          admission_confirmed: false,
+          now: now(),
+        })) as { settled?: boolean }
+        if (!reserved.settled) return { settled: false }
+        let created: Response
+        try {
+          created = await runtime("/api/session", {
+            method: "POST",
+            body: JSON.stringify({
+              id: requestedSessionId,
+              agent: claim.profile.agent,
+              model: {
+                providerID: claim.profile.model.providerId,
+                id: claim.profile.model.modelId,
+                variant: claim.profile.effort,
+              },
+              tools: claim.profile.tools,
+              location: { directory: "/workspace" },
+            }),
+          })
+        } catch (error) {
+          if (error instanceof HostedSessionRequestError) throw error
+          return { settled: false, state: "running" }
+        }
         const body = (await created.json()) as { id?: string; data?: { id?: string } }
-        sessionId = body.id ?? body.data?.id
-        if (!sessionId) throw new Error("Hosted recap Session create response did not include a Session ID")
+        const adoptedId = body.id ?? body.data?.id
+        if (!adoptedId) throw new Error("Hosted recap Session create response did not include a Session ID")
+        if (adoptedId !== requestedSessionId)
+          throw new Error("Hosted recap Session did not adopt its caller-owned durable identity")
+        try {
+          await runtime(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {
+            method: "POST",
+            body: JSON.stringify({
+              id: `msg_recap_${claim.jobId}`,
+              prompt: { text: claim.prompt },
+              delivery: "steer",
+              resume: true,
+            }),
+          })
+        } catch (error) {
+          if (error instanceof HostedSessionRequestError) throw error
+          return { settled: false, state: "running" }
+        }
         const marked = (await client.mutation(api.workgraphBackground.markRecapSession, {
           service_token: serviceToken,
+          organization_id: claim.orgId,
           owner_user_id: claim.ownerUserId,
           job_id: claim.jobId,
           lease_epoch: claim.leaseEpoch,
           worker_id: workerId,
           workspace_id: workspaceId,
           session_id: sessionId,
+          admission_confirmed: true,
           now: now(),
         })) as { settled?: boolean }
-        if (!marked.settled) {
-          await runtime(`/api/session/${encodeURIComponent(sessionId)}/interrupt`, { method: "POST" }).catch(
-            () => undefined,
-          )
-          return { settled: false }
-        }
-        await runtime(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {
-          method: "POST",
-          body: JSON.stringify({
-            id: `msg_recap_${claim.jobId}`,
-            prompt: { text: claim.prompt },
-            delivery: "steer",
-            resume: true,
-          }),
-        })
+        if (!marked.settled) return { settled: false }
         return { settled: true, state: "running" }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)
         if (sessionId) {
           await client.mutation(api.workgraphBackground.failRecap, {
             service_token: serviceToken,
+            organization_id: claim.orgId,
             owner_user_id: claim.ownerUserId,
             job_id: claim.jobId,
             lease_epoch: claim.leaseEpoch,
@@ -550,6 +686,7 @@ async function reconcileBackground(
         } else {
           await client.mutation(api.workgraphBackground.retryRecapLaunch, {
             service_token: serviceToken,
+            organization_id: claim.orgId,
             owner_user_id: claim.ownerUserId,
             job_id: claim.jobId,
             lease_epoch: claim.leaseEpoch,
@@ -562,7 +699,7 @@ async function reconcileBackground(
       }
     }),
   )
-  const running = (await client.mutation(api.workgraphBackground.listRunningRecaps, {
+  const running = (await tenantRows(client, api.workgraphBackground.listRunningRecaps, tenants, {
     service_token: serviceToken,
     limit: 10,
     now: now(),
@@ -584,22 +721,22 @@ async function reconcileBackground(
           ttlMs: 10 * 60_000,
         })
         const relay = await provider.getRelayEndpoint(recap.workspaceId, placement.homeRegion as never)
-        const history = await runtimeRequest(
-          request,
-          relay,
-          recap.workspaceId,
-          token.token,
-        )(`/api/session/${encodeURIComponent(recap.sessionId)}/history?limit=100&after=0`)
-        const body = (await history.json()) as { data?: SessionEvent[] }
-        const terminal = body.data?.findLast(
+        const events = await hostedSessionHistory(
+          runtimeRequest(request, relay, recap.workspaceId, token.token),
+          recap.sessionId,
+        )
+        const terminal = events.findLast(
           (event) =>
             event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"),
         )
         if (!terminal) return { settled: false, state: "running" }
         if (terminal.type.startsWith("session.next.step.failed")) throw new Error(sessionError(terminal.data.error))
-        const output = parseHostedRecapOutput(body.data?.findLast((event) => event.type.startsWith("session.next.text.ended"))?.data.text)
+        const output = parseHostedRecapOutput(
+          events.findLast((event) => event.type.startsWith("session.next.text.ended"))?.data.text,
+        )
         return await client.mutation(api.workgraphBackground.completeRecap, {
           service_token: serviceToken,
+          organization_id: recap.orgId,
           owner_user_id: recap.ownerUserId,
           job_id: recap.jobId,
           lease_epoch: recap.leaseEpoch,
@@ -609,8 +746,18 @@ async function reconcileBackground(
           now: now(),
         })
       } catch (error) {
+        telemetry.queue({
+          kind: "recap",
+          backlog: 1,
+          oldestAgeMs: 0,
+          failed: 1,
+          retried: 0,
+          expiredRecoveries: 0,
+          activeLeaseAgeMs: recap.activeLeaseAgeMs ?? 0,
+        })
         return await client.mutation(api.workgraphBackground.failRecap, {
           service_token: serviceToken,
+          organization_id: recap.orgId,
           owner_user_id: recap.ownerUserId,
           job_id: recap.jobId,
           lease_epoch: recap.leaseEpoch,
@@ -621,7 +768,18 @@ async function reconcileBackground(
       }
     }),
   )
-  const sourcePlanning = await reconcileSourcePlanning(client, services, request, serviceToken, workerId, now)
+  recordQueueTelemetry(telemetry, "recap", claims, running, [...launched, ...results])
+  recordWorkspaceLaunchTelemetry(telemetry, launched)
+  const sourcePlanning = await reconcileSourcePlanning(
+    client,
+    services,
+    request,
+    serviceToken,
+    workerId,
+    now,
+    tenants,
+    telemetry,
+  )
   return { controls: controlResults, intake, launched, results, sourcePlanning }
 }
 
@@ -632,150 +790,240 @@ async function reconcileSourcePlanning(
   serviceToken: string,
   workerId: string,
   now: () => number,
+  tenants: readonly WorkerTenant[],
+  telemetry: WorkGraphOperationalReporter,
 ) {
-  const claimed = await client.mutation(api.workgraphBackground.claimSourcePlans, {
+  const claimed = await tenantRows(client, api.workgraphBackground.claimSourcePlans, tenants, {
     service_token: serviceToken,
     worker_id: workerId,
     now: now(),
     limit: 10,
   })
-  const claims = Array.isArray(claimed) ? claimed as SourcePlanClaim[] : []
-  const launched = await Promise.all(claims.map(async (claim) => {
-    let sessionId: string | undefined
-    try {
-      const manager = services.sandbox.sandboxManager
-      const provider = services.relay.provider
-      if (!manager || !provider) throw new Error("Hosted sandbox manager and relay provider are required")
-      const workspaceId = await workGraphWorkspaceId(claim.ownerUserId, claim.jobId)
-      const placement = await manager.ensure(workspaceId, {
-        homeRegion: services.defaultHomeRegion ?? defaultHomeRegion(),
-        labels: { workload: "workgraph-source-plan", ownerUserId: claim.ownerUserId, proposalId: claim.proposalId },
-        runtimeCwd: "/workspace",
-        env: {},
-        source: { kind: "empty" },
-        exposure: { kind: "relay" },
-      })
-      if (placement.status !== "ready") throw new Error(placement.status === "provisioning" ? "Source planning workspace is provisioning" : (placement.error ?? "Source planning workspace is unavailable"))
-      const token = await provider.mintRuntimeAccessToken({
-        workspaceId, hostId: placement.hostId, subject: claim.ownerUserId, orgId: claim.orgId,
-        role: "owner", ttlMs: 10 * 60_000,
-      })
-      const relay = await provider.getRelayEndpoint(workspaceId, placement.homeRegion as never)
-      const runtime = runtimeRequest(request, relay, workspaceId, token.token)
-      const requestedSessionId = claim.sessionId ?? `ses_workgraph_${claim.jobId}_${claim.leaseEpoch}`
-      sessionId = requestedSessionId
-      const reserved = await client.mutation(api.workgraphBackground.markSourcePlanSession, {
-        service_token: serviceToken, owner_user_id: claim.ownerUserId, job_id: claim.jobId,
-        lease_epoch: claim.leaseEpoch, worker_id: workerId, workspace_id: workspaceId,
-        session_id: requestedSessionId, admission_confirmed: false, now: now(),
-      }) as { settled?: boolean }
-      if (!reserved.settled) return { settled: false }
-      const created = await runtime("/api/session", {
-        method: "POST",
-        body: JSON.stringify({
-          id: requestedSessionId,
-          agent: claim.profile.agent,
-          model: { providerID: claim.profile.model.providerId, id: claim.profile.model.modelId, variant: claim.profile.effort },
-          tools: claim.profile.tools,
-          location: { directory: "/workspace" },
-        }),
-      })
-      const body = (await created.json()) as { id?: string; data?: { id?: string } }
-      const adoptedId = body.id ?? body.data?.id
-      if (!adoptedId) throw new Error("Hosted source planning Session create response did not include a Session ID")
-      if (adoptedId !== requestedSessionId) throw new Error("Hosted source planning Session did not adopt its caller-owned durable identity")
+  const claims = claimed as SourcePlanClaim[]
+  const launched = await Promise.all(
+    claims.map(async (claim) => {
+      let sessionId: string | undefined
       try {
-        await runtime(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {
+        const manager = services.sandbox.sandboxManager
+        const provider = services.relay.provider
+        if (!manager || !provider) throw new Error("Hosted sandbox manager and relay provider are required")
+        const workspaceId = await workGraphWorkspaceId(claim.orgId, claim.ownerUserId, claim.jobId)
+        const placement = await manager.ensure(workspaceId, {
+          homeRegion: services.defaultHomeRegion ?? defaultHomeRegion(),
+          labels: {
+            workload: "workgraph-source-plan",
+            organizationId: claim.orgId,
+            ownerUserId: claim.ownerUserId,
+            proposalId: claim.proposalId,
+          },
+          runtimeCwd: "/workspace",
+          env: {},
+          source: { kind: "empty" },
+          exposure: { kind: "relay" },
+        })
+        if (placement.status !== "ready")
+          throw new Error(
+            placement.status === "provisioning"
+              ? "Source planning workspace is provisioning"
+              : (placement.error ?? "Source planning workspace is unavailable"),
+          )
+        const token = await provider.mintRuntimeAccessToken({
+          workspaceId,
+          hostId: placement.hostId,
+          subject: claim.ownerUserId,
+          orgId: claim.orgId,
+          role: "owner",
+          ttlMs: 10 * 60_000,
+        })
+        const relay = await provider.getRelayEndpoint(workspaceId, placement.homeRegion as never)
+        const runtime = runtimeRequest(request, relay, workspaceId, token.token)
+        const requestedSessionId = claim.sessionId ?? `ses_workgraph_${claim.jobId}_${claim.leaseEpoch}`
+        sessionId = requestedSessionId
+        const reserved = (await client.mutation(api.workgraphBackground.markSourcePlanSession, {
+          organization_id: claim.orgId,
+          service_token: serviceToken,
+          owner_user_id: claim.ownerUserId,
+          job_id: claim.jobId,
+          lease_epoch: claim.leaseEpoch,
+          worker_id: workerId,
+          workspace_id: workspaceId,
+          session_id: requestedSessionId,
+          admission_confirmed: false,
+          now: now(),
+        })) as { settled?: boolean }
+        if (!reserved.settled) return { settled: false }
+        const created = await runtime("/api/session", {
           method: "POST",
           body: JSON.stringify({
-            id: `msg_workgraph_${claim.jobId}`,
-            prompt: { text: claim.prompt },
-            delivery: "steer",
-            resume: true,
+            id: requestedSessionId,
+            agent: claim.profile.agent,
+            model: {
+              providerID: claim.profile.model.providerId,
+              id: claim.profile.model.modelId,
+              variant: claim.profile.effort,
+            },
+            tools: claim.profile.tools,
+            location: { directory: "/workspace" },
           }),
         })
+        const body = (await created.json()) as { id?: string; data?: { id?: string } }
+        const adoptedId = body.id ?? body.data?.id
+        if (!adoptedId) throw new Error("Hosted source planning Session create response did not include a Session ID")
+        if (adoptedId !== requestedSessionId)
+          throw new Error("Hosted source planning Session did not adopt its caller-owned durable identity")
+        try {
+          await runtime(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {
+            method: "POST",
+            body: JSON.stringify({
+              id: `msg_workgraph_${claim.jobId}`,
+              prompt: { text: claim.prompt },
+              delivery: "steer",
+              resume: true,
+            }),
+          })
+        } catch (error) {
+          if (error instanceof HostedSessionRequestError) throw error
+          // A transport failure after prompt admission is indeterminate. Keep the
+          // reserved durable identity fenced so the next lease replays the exact
+          // same Session and message IDs instead of creating duplicate work.
+          return { settled: false, state: "running" }
+        }
+        const marked = (await client.mutation(api.workgraphBackground.markSourcePlanSession, {
+          organization_id: claim.orgId,
+          service_token: serviceToken,
+          owner_user_id: claim.ownerUserId,
+          job_id: claim.jobId,
+          lease_epoch: claim.leaseEpoch,
+          worker_id: workerId,
+          workspace_id: workspaceId,
+          session_id: sessionId,
+          admission_confirmed: true,
+          now: now(),
+        })) as { settled?: boolean }
+        if (!marked.settled) {
+          return { settled: false }
+        }
+        return { settled: true, state: "running" }
       } catch (error) {
-        if (error instanceof HostedSessionRequestError) throw error
-        // A transport failure after prompt admission is indeterminate. Keep the
-        // reserved durable identity fenced so the next lease replays the exact
-        // same Session and message IDs instead of creating duplicate work.
-        return { settled: false, state: "running" }
+        const reason = error instanceof Error ? error.message : String(error)
+        await client.mutation(
+          sessionId ? api.workgraphBackground.failSourcePlan : api.workgraphBackground.retrySourcePlanLaunch,
+          {
+            organization_id: claim.orgId,
+            service_token: serviceToken,
+            owner_user_id: claim.ownerUserId,
+            job_id: claim.jobId,
+            lease_epoch: claim.leaseEpoch,
+            ...(sessionId ? { session_id: sessionId } : { worker_id: workerId }),
+            reason,
+            now: now(),
+          },
+        )
+        return { settled: false, error: reason }
       }
-      const marked = await client.mutation(api.workgraphBackground.markSourcePlanSession, {
-        service_token: serviceToken, owner_user_id: claim.ownerUserId, job_id: claim.jobId,
-        lease_epoch: claim.leaseEpoch, worker_id: workerId, workspace_id: workspaceId,
-        session_id: sessionId, admission_confirmed: true, now: now(),
-      }) as { settled?: boolean }
-      if (!marked.settled) {
-        return { settled: false }
-      }
-      return { settled: true, state: "running" }
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      await client.mutation(sessionId ? api.workgraphBackground.failSourcePlan : api.workgraphBackground.retrySourcePlanLaunch, {
-        service_token: serviceToken, owner_user_id: claim.ownerUserId, job_id: claim.jobId,
-        lease_epoch: claim.leaseEpoch, ...(sessionId ? { session_id: sessionId } : { worker_id: workerId }), reason, now: now(),
-      })
-      return { settled: false, error: reason }
-    }
-  }))
-  const listed = await client.mutation(api.workgraphBackground.listRunningSourcePlans, {
+    }),
+  )
+  const listed = await tenantRows(client, api.workgraphBackground.listRunningSourcePlans, tenants, {
     service_token: serviceToken,
     limit: 10,
     now: now(),
   })
-  const running = Array.isArray(listed) ? listed as RunningSourcePlan[] : []
-  const results = await Promise.all(running.map(async (plan) => {
-    try {
-      const provider = services.relay.provider
-      const manager = services.sandbox.sandboxManager
-      if (!provider || !manager) throw new Error("Hosted sandbox manager and relay provider are required")
-      const placement = await manager.target(plan.workspaceId)
-      if (placement.status !== "ready") throw new Error("Hosted source planning workspace is unavailable")
-      const token = await provider.mintRuntimeAccessToken({
-        workspaceId: plan.workspaceId, hostId: placement.hostId, subject: plan.ownerUserId, orgId: plan.orgId,
-        role: "owner", ttlMs: 10 * 60_000,
-      })
-      const relay = await provider.getRelayEndpoint(plan.workspaceId, placement.homeRegion as never)
-      const history = await runtimeRequest(request, relay, plan.workspaceId, token.token)(
-        `/api/session/${encodeURIComponent(plan.sessionId)}/history?limit=100&after=0`,
-      )
-      const body = (await history.json()) as { data?: SessionEvent[] }
-      const terminal = body.data?.findLast((event) => event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"))
-      if (!terminal) return { settled: false, state: "running" }
-      if (terminal.type.startsWith("session.next.step.failed")) throw new Error(sessionError(terminal.data.error))
-      const text = body.data?.findLast((event) => event.type.startsWith("session.next.text.ended"))?.data.text
-      if (typeof text !== "string") throw new Error("Source planning Session returned no structured result")
-      const parsed = AdmissionAgentPlanSchema.parse(JSON.parse(text))
-      return await client.mutation(api.workgraphBackground.completeSourcePlan, {
-        service_token: serviceToken, owner_user_id: plan.ownerUserId, job_id: plan.jobId,
-        lease_epoch: plan.leaseEpoch, session_id: plan.sessionId, plan: parsed, now: now(),
-      })
-    } catch (error) {
-      return await client.mutation(api.workgraphBackground.failSourcePlan, {
-        service_token: serviceToken, owner_user_id: plan.ownerUserId, job_id: plan.jobId,
-        lease_epoch: plan.leaseEpoch, session_id: plan.sessionId,
-        reason: error instanceof Error ? error.message : String(error), now: now(),
-      })
-    }
-  }))
+  const running = listed as RunningSourcePlan[]
+  const results = await Promise.all(
+    running.map(async (plan) => {
+      try {
+        const provider = services.relay.provider
+        const manager = services.sandbox.sandboxManager
+        if (!provider || !manager) throw new Error("Hosted sandbox manager and relay provider are required")
+        const placement = await manager.target(plan.workspaceId)
+        if (placement.status !== "ready") throw new Error("Hosted source planning workspace is unavailable")
+        const token = await provider.mintRuntimeAccessToken({
+          workspaceId: plan.workspaceId,
+          hostId: placement.hostId,
+          subject: plan.ownerUserId,
+          orgId: plan.orgId,
+          role: "owner",
+          ttlMs: 10 * 60_000,
+        })
+        const relay = await provider.getRelayEndpoint(plan.workspaceId, placement.homeRegion as never)
+        const events = await hostedSessionHistory(
+          runtimeRequest(request, relay, plan.workspaceId, token.token),
+          plan.sessionId,
+        )
+        const terminal = events.findLast(
+          (event) =>
+            event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"),
+        )
+        if (!terminal) return { settled: false, state: "running" }
+        if (terminal.type.startsWith("session.next.step.failed")) throw new Error(sessionError(terminal.data.error))
+        const text = events.findLast((event) => event.type.startsWith("session.next.text.ended"))?.data.text
+        if (typeof text !== "string") throw new Error("Source planning Session returned no structured result")
+        const parsed = AdmissionAgentPlanSchema.parse(JSON.parse(text))
+        return await client.mutation(api.workgraphBackground.completeSourcePlan, {
+          organization_id: plan.orgId,
+          service_token: serviceToken,
+          owner_user_id: plan.ownerUserId,
+          job_id: plan.jobId,
+          lease_epoch: plan.leaseEpoch,
+          session_id: plan.sessionId,
+          plan: parsed,
+          now: now(),
+        })
+      } catch (error) {
+        telemetry.queue({
+          kind: "source_plan",
+          backlog: 1,
+          oldestAgeMs: 0,
+          failed: 1,
+          retried: 0,
+          expiredRecoveries: 0,
+          activeLeaseAgeMs: plan.activeLeaseAgeMs ?? 0,
+        })
+        return await client.mutation(api.workgraphBackground.failSourcePlan, {
+          organization_id: plan.orgId,
+          service_token: serviceToken,
+          owner_user_id: plan.ownerUserId,
+          job_id: plan.jobId,
+          lease_epoch: plan.leaseEpoch,
+          session_id: plan.sessionId,
+          reason: error instanceof Error ? error.message : String(error),
+          now: now(),
+        })
+      }
+    }),
+  )
+  recordQueueTelemetry(telemetry, "source_plan", claims, running, [...launched, ...results])
+  recordWorkspaceLaunchTelemetry(telemetry, launched)
   return { launched, results }
 }
 
 export function parseHostedRecapOutput(value: unknown) {
   if (typeof value !== "string") throw new Error("Hosted Recap Session did not return text")
   const parsed = JSON.parse(value) as unknown
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Hosted Recap Session returned invalid JSON")
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error("Hosted Recap Session returned invalid JSON")
   const result = parsed as Record<string, unknown>
-  if (Object.keys(result).sort().join(",") !== "actionableReferences,summary" || typeof result.summary !== "string" || !result.summary.trim() || !Array.isArray(result.actionableReferences)) {
+  if (
+    Object.keys(result).sort().join(",") !== "actionableReferences,summary" ||
+    typeof result.summary !== "string" ||
+    !result.summary.trim() ||
+    !Array.isArray(result.actionableReferences)
+  ) {
     throw new Error("Hosted Recap Session returned an invalid structured result")
   }
   const allowed = new Set(["decision", "attempt", "work_item", "outcome", "stream"])
   const seen = new Set<string>()
   const actionableReferences = result.actionableReferences.map((reference) => {
-    if (!reference || typeof reference !== "object" || Array.isArray(reference)) throw new Error("Hosted Recap Session returned an invalid actionable reference")
+    if (!reference || typeof reference !== "object" || Array.isArray(reference))
+      throw new Error("Hosted Recap Session returned an invalid actionable reference")
     const entry = reference as Record<string, unknown>
-    if (Object.keys(entry).sort().join(",") !== "id,type" || typeof entry.type !== "string" || !allowed.has(entry.type) || typeof entry.id !== "string" || !entry.id.trim()) {
+    if (
+      Object.keys(entry).sort().join(",") !== "id,type" ||
+      typeof entry.type !== "string" ||
+      !allowed.has(entry.type) ||
+      typeof entry.id !== "string" ||
+      !entry.id.trim()
+    ) {
       throw new Error("Hosted Recap Session returned an invalid actionable reference")
     }
     const key = `${entry.type}:${entry.id.trim()}`
@@ -802,7 +1050,10 @@ function runtimeRequest(request: RuntimeFetch, relay: string, workspaceId: strin
 }
 
 class HostedSessionRequestError extends Error {
-  constructor(readonly status: number, body: string) {
+  constructor(
+    readonly status: number,
+    body: string,
+  ) {
     super(`Hosted Session V2 request failed: ${status} ${body}`)
   }
 }
@@ -815,11 +1066,14 @@ type RunningAttempt = {
   leaseEpoch: number
   sessionId: string
   workspaceId: string
+  activeLeaseAgeMs?: number
+  expiredRecovery?: boolean
 }
 
 function mutationArgs(claim: Claim, serviceToken: string, workerId: string, extra: Record<string, unknown>) {
   return {
     service_token: serviceToken,
+    organization_id: claim.orgId,
     owner_user_id: claim.ownerUserId,
     outbox_id: claim.outboxId,
     attempt_id: claim.attemptId,
@@ -832,6 +1086,7 @@ function mutationArgs(claim: Claim, serviceToken: string, workerId: string, extr
 function resultArgs(attempt: RunningAttempt, serviceToken: string, extra: Record<string, unknown>) {
   return {
     service_token: serviceToken,
+    organization_id: attempt.orgId,
     owner_user_id: attempt.ownerUserId,
     attempt_id: attempt.attemptId,
     lease_epoch: attempt.leaseEpoch,
@@ -840,8 +1095,123 @@ function resultArgs(attempt: RunningAttempt, serviceToken: string, extra: Record
   }
 }
 
-async function workGraphWorkspaceId(owner: string, stream: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${owner}:${stream}`))
+function tenantResults(
+  client: Executor,
+  mutation: Mutation,
+  tenants: readonly WorkerTenant[],
+  args: Record<string, unknown>,
+) {
+  return Promise.all(
+    tenants.map((tenant) =>
+      client.mutation(mutation, {
+        ...args,
+        organization_id: tenant.organizationId,
+        owner_user_id: tenant.ownerUserId,
+      }),
+    ),
+  )
+}
+
+async function tenantRows(
+  client: Executor,
+  mutation: Mutation,
+  tenants: readonly WorkerTenant[],
+  args: Record<string, unknown>,
+) {
+  const results = await tenantResults(client, mutation, tenants, args)
+  if (results.some((result) => !Array.isArray(result))) {
+    throw new Error("Tenant WorkGraph worker mutation returned an invalid result")
+  }
+  return results.flat()
+}
+
+function recordAttemptTelemetry(
+  telemetry: WorkGraphOperationalReporter,
+  claims: readonly Claim[],
+  running: readonly RunningAttempt[],
+  launched: readonly unknown[],
+  results: readonly unknown[],
+  latencyMs: number,
+) {
+  const observations = [...launched, ...results]
+  recordQueueTelemetry(telemetry, "attempt", claims, running, observations)
+  telemetry.reconciliation({
+    outcome: "succeeded",
+    latencyMs,
+    lagMs: maxNumber(claims, "queueLagMs"),
+    claimed: claims.length,
+    running: running.length,
+    settled: observations.filter((value) => record(value)?.settled === true).length,
+    failed: failureCount(observations),
+  })
+  const runningCount = launched.filter((value) => record(value)?.state === "running").length
+  const cancelledCount = launched.filter((value) => record(value)?.state === "cancelled").length
+  const failed = failureCount(launched)
+  const pending = Math.max(0, launched.length - runningCount - cancelledCount - failed)
+  if (runningCount) {
+    telemetry.workspace({ operation: "provision", outcome: "succeeded", count: runningCount })
+    telemetry.workspace({ operation: "launch", outcome: "succeeded", count: runningCount })
+  }
+  if (pending) telemetry.workspace({ operation: "provision", outcome: "pending", count: pending })
+  if (cancelledCount) telemetry.workspace({ operation: "cancel", outcome: "rejected", count: cancelledCount })
+  if (failed) telemetry.workspace({ operation: "launch", outcome: "failed", count: failed })
+}
+
+function recordQueueTelemetry(
+  telemetry: WorkGraphOperationalReporter,
+  kind: "attempt" | "recap" | "source_plan",
+  claims: readonly unknown[],
+  running: readonly unknown[],
+  observations: readonly unknown[],
+) {
+  telemetry.queue({
+    kind,
+    backlog: claims.length + running.length,
+    oldestAgeMs: maxNumber(claims, "queueLagMs"),
+    failed: failureCount(observations),
+    retried: claims.filter((value) => (numberProperty(value, "retryCount") ?? 0) > 0).length,
+    expiredRecoveries: [...claims, ...running].filter((value) => record(value)?.expiredRecovery === true).length,
+    activeLeaseAgeMs: Math.max(maxNumber(claims, "activeLeaseAgeMs"), maxNumber(running, "activeLeaseAgeMs")),
+  })
+}
+
+function recordWorkspaceLaunchTelemetry(telemetry: WorkGraphOperationalReporter, launched: readonly unknown[]) {
+  const running = launched.filter((value) => record(value)?.state === "running").length
+  const failed = failureCount(launched)
+  const pending = Math.max(0, launched.length - running - failed)
+  if (running) {
+    telemetry.workspace({ operation: "provision", outcome: "succeeded", count: running })
+    telemetry.workspace({ operation: "launch", outcome: "succeeded", count: running })
+  }
+  if (pending) telemetry.workspace({ operation: "provision", outcome: "pending", count: pending })
+  if (failed) telemetry.workspace({ operation: "launch", outcome: "failed", count: failed })
+}
+
+function failureCount(values: readonly unknown[]) {
+  return values.filter((value) => {
+    const item = record(value)
+    return !!item?.error || item?.outcome === "failed" || item?.status === "failed"
+  }).length
+}
+
+function maxNumber(values: readonly unknown[], key: string) {
+  return values.reduce<number>((maximum, value) => Math.max(maximum, numberProperty(value, key) ?? 0), 0)
+}
+
+function numberProperty(value: unknown, key: string) {
+  const item = record(value)
+  return typeof item?.[key] === "number" && Number.isFinite(item[key]) ? (item[key] as number) : undefined
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
+}
+
+export async function workGraphWorkspaceId(organizationId: string, ownerUserId: string, scopeId: string) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify([organizationId, ownerUserId, scopeId])),
+  )
   return `wg-${Array.from(new Uint8Array(digest).slice(0, 12), (byte) => byte.toString(16).padStart(2, "0")).join("")}`
 }
 
@@ -882,6 +1252,23 @@ function hostedSessionHistoryPage(value: unknown): Readonly<{ data: SessionEvent
     return event as SessionEvent
   })
   return { data, hasMore: page.hasMore }
+}
+
+async function hostedSessionHistory(
+  runtime: (path: string, init?: RequestInit) => Promise<Response>,
+  sessionId: string,
+) {
+  const events: SessionEvent[] = []
+  let after = 0
+  for (;;) {
+    const history = await runtime(`/api/session/${encodeURIComponent(sessionId)}/history?limit=100&after=${after}`)
+    const page = hostedSessionHistoryPage(await history.json())
+    events.push(...page.data)
+    if (!page.hasMore) return events
+    const next = page.data.at(-1)?.durable?.seq
+    if (next === undefined || next <= after) throw new SessionHistoryResponseError()
+    after = next
+  }
 }
 
 function convexExecutor(url: string): Executor {

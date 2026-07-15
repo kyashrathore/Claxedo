@@ -47,11 +47,13 @@ export {
   WorkGraphConnectionToolRoutes,
 } from "./routes/workgraph-connection-tools"
 export type {
+  WorkGraphConnectionBrokerRequestLimits,
   WorkGraphConnectionOperationBroker,
   WorkGraphConnectionOperationRequest,
   WorkGraphConnectionOperationResponse,
   WorkGraphConnectionToolInput,
   WorkGraphConnectionToolName,
+  WorkGraphConnectionToolRouteHandle,
 } from "./routes/workgraph-connection-tools"
 export {
   embeddedWorkspaceRuntimeExposure,

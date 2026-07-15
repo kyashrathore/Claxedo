@@ -4,7 +4,7 @@ import type { ControlPlaneAuthContext, SignedControlPlaneAuth } from "./auth"
 import { requireAuthority } from "./authority"
 import type { ControlPlaneServices } from "./services"
 import { ControlPlaneProtocolError, num, rec, txt, type ControlPlaneHttpOptions } from "./http-protocol"
-import { runtimePath, verifiedRuntimeJson } from "./http-runtime-transport"
+import { runtimeJson, runtimePath, verifiedRuntimeJson } from "./http-runtime-transport"
 
 export async function resolveSessionGateway(
   services: ControlPlaneServices,
@@ -104,8 +104,27 @@ export async function pullControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
+  const syncAuthority = async (messages: unknown[]) => {
+    if (auth?.mode !== "signed") return
+    const intakeReady = await runtimeJson<unknown>(services, options, {
+      workspaceId: ws.id,
+      ws,
+      auth,
+      path: "/session/status",
+    }).then(
+      (status) => sessionIsIdle(status, input.sessionId),
+      () => false,
+    )
+    await requireAuthority(services).syncSessionMessages(auth, {
+      workspaceId: ws.id,
+      sessionId: input.sessionId,
+      messages,
+      intakeReady,
+    })
+  }
   const currentMessages = services.projectionStore.read_session_messages(input.sessionId)
   if (payload.maxEventOrdinal !== undefined && payload.maxEventOrdinal < currentOrdinal) {
+    await syncAuthority(currentMessages)
     return {
       ok: true,
       skipped: true,
@@ -120,6 +139,7 @@ export async function pullControlSessionMessages(
     currentMessages.length > 0 &&
     payload.messages.length <= currentMessages.length
   ) {
+    await syncAuthority(currentMessages)
     return {
       ok: true,
       skipped: true,
@@ -129,6 +149,7 @@ export async function pullControlSessionMessages(
     }
   }
   if (payload.maxEventOrdinal === undefined && payload.messages.length < currentMessages.length) {
+    await syncAuthority(currentMessages)
     return {
       ok: true,
       skipped: true,
@@ -144,13 +165,7 @@ export async function pullControlSessionMessages(
       maxEventOrdinal: payload.maxEventOrdinal,
     })
   }
-  if (auth?.mode === "signed") {
-    await requireAuthority(services).syncSessionMessages(auth, {
-      workspaceId: ws.id,
-      sessionId: input.sessionId,
-      messages: payload.messages,
-    })
-  }
+  await syncAuthority(payload.messages)
   return {
     ok: true,
     sessionId: input.sessionId,
@@ -230,6 +245,13 @@ function assertPulledSession(input: unknown, sessionId: string) {
     "workspace_runtime_session_mismatch",
     "Workspace runtime session identity does not match requested session",
   )
+}
+
+function sessionIsIdle(input: unknown, sessionId: string) {
+  const statuses = rec(input)
+  if (!statuses) return false
+  if (!(sessionId in statuses)) return true
+  return rec(statuses[sessionId])?.type === "idle"
 }
 
 async function upsertSignedSessionVisibility(

@@ -8,7 +8,7 @@ import {
   createWorkspaceRelayConnection,
   runtimeAccessTokenJti,
   type WorkspaceConnectionInfo,
-} from "../../src/agent-runtime/workspace-relay-connection"
+} from "../../src/platform/runtime/agent/workspace-relay-connection"
 
 GlobalRegistrator.unregister()
 

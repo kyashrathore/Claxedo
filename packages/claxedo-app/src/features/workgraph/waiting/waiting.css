@@ -16,6 +16,17 @@
   transition: margin-right 140ms cubic-bezier(0.2, 0, 0, 1);
 }
 
+.workgraph-body.has-context {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(17rem, 20.5rem);
+  align-items: start;
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+}
+
+.workgraph-primary {
+  min-width: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .workgraph-scroll {
     transition: none;
@@ -63,6 +74,33 @@
 
 /* ── Waiting panel body ─────────────────────────────────── */
 
+.workgraph-waiting-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 2.25rem 1.1rem;
+}
+
+.workgraph-waiting-empty-mark {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid var(--border-weak-base);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-base) 72%, transparent);
+  color: var(--icon-weak-base);
+}
+
+.workgraph-waiting-empty-copy {
+  display: flex;
+  max-width: 18rem;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding-top: 0.1rem;
+}
+
 .workgraph-waiting-intro {
   padding: 0.75rem 0.85rem 0.65rem;
   border-bottom: 1px solid var(--border-weak-base);
@@ -73,6 +111,29 @@
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.3rem;
+}
+
+.workgraph-waiting-action {
+  padding: 0.25rem 0.35rem;
+  border-radius: var(--radius-md);
+  color: var(--text-weak);
+  font-size: 0.6875rem;
+  transition: background 110ms ease, color 110ms ease;
+}
+
+.workgraph-waiting-action:hover:not(:disabled) {
+  background: var(--surface-base);
+  color: var(--text-base);
+}
+
+.workgraph-waiting-action:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.workgraph-waiting-action:focus-visible {
+  outline: 2px solid var(--border-selected);
+  outline-offset: 1px;
 }
 
 .workgraph-waiting-list {
@@ -109,7 +170,8 @@
 }
 
 .workgraph-waiting-row.is-compact {
-  padding: 0.4rem 0.15rem;
+  padding: 0.5rem 0.45rem;
+  border-radius: 0.55rem;
 }
 
 .workgraph-waiting-row-glyph {
@@ -151,30 +213,61 @@
 /* ── Contextual card ────────────────────────────────────── */
 
 .workgraph-card {
+  padding: 0.9rem 0.8rem 0.75rem;
+  border: 1px solid var(--border-base);
+  border-radius: 1.25rem;
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: var(--shadow-sm);
+}
+
+.workgraph-card.is-inline {
+  position: sticky;
+  top: 1rem;
+  width: 100%;
+}
+
+.workgraph-card.is-floating {
   position: fixed;
   z-index: 210;
   top: 4.5rem;
   right: 1.15rem;
   width: min(92vw, 20.5rem);
-  padding: 0.7rem 0.8rem 0.65rem;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-lg);
-  background: var(--surface-float-base);
   box-shadow: var(--shadow-lg);
 }
 
 .workgraph-card-head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  min-height: 1.75rem;
+  gap: 0.55rem;
+  padding: 0 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.workgraph-card-title-icon {
+  display: grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  place-items: center;
+  color: var(--icon-base);
+}
+
+.workgraph-card-title {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.workgraph-card-total {
+  min-width: 1rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .workgraph-card-gap {
   flex: 1;
-}
-
-.workgraph-card-working {
-  font-size: 0.6875rem;
 }
 
 .workgraph-card-recap {
@@ -182,7 +275,7 @@
   flex-direction: column;
   gap: 0.2rem;
   width: 100%;
-  margin-top: 0.55rem;
+  margin-top: 0.35rem;
   padding: 0.5rem 0.55rem;
   border: 1px solid var(--border-weak-base);
   border-radius: var(--radius-md);
@@ -219,30 +312,20 @@
 .workgraph-card-rows {
   display: flex;
   flex-direction: column;
-  margin-top: 0.35rem;
+  gap: 0.05rem;
+  margin-top: 0.2rem;
 }
 
-.workgraph-card-open {
-  width: 100%;
-  margin-top: 0.55rem;
-  padding: 0.45rem;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-md);
-  color: var(--text-base);
-  font-size: 0.75rem;
-  transition:
-    border-color 110ms ease,
-    background 110ms ease;
-}
+/* BP_LG: below desktop width, preserve legibility by stacking the context. */
+@media (max-width: 1024px) {
+  .workgraph-body.has-context {
+    grid-template-columns: minmax(0, 1fr);
+  }
 
-.workgraph-card-open:hover {
-  border-color: var(--border-strong-base);
-  background: var(--surface-base);
-}
-
-.workgraph-card-open:focus-visible {
-  outline: 2px solid var(--border-selected);
-  outline-offset: 1px;
+  .workgraph-card.is-inline {
+    position: static;
+    grid-row: 1;
+  }
 }
 
 /* ── Item dialogs ───────────────────────────────────────── */
@@ -256,12 +339,59 @@
   padding: 0.25rem 1.25rem 0.5rem;
 }
 
+.workgraph-item-dialog.is-scroll-shell {
+  height: min(68vh, 42rem);
+  min-height: 24rem;
+  overflow: hidden;
+}
+
+.workgraph-item-dialog.is-scroll-shell .workgraph-item-dialog-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.workgraph-attempt-error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--icon-critical-base) 38%, var(--border-weak-base));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--icon-critical-base) 7%, transparent);
+  color: var(--icon-critical-base);
+}
+
+.workgraph-session-link {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.workgraph-session-link:hover {
+  color: var(--text-strong);
+}
+
+.workgraph-session-link:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid var(--border-selected);
+  outline-offset: 2px;
+}
+
 .workgraph-item-dialog-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
   padding: 0.75rem 1.25rem;
   border-top: 1px solid var(--border-weak-base);
+}
+
+.workgraph-dialog-footer-error {
+  margin-right: auto;
+  color: var(--icon-critical-base);
+  font-size: 0.75rem;
 }
 
 .workgraph-detail {
@@ -402,6 +532,14 @@
 
 /* ── Settings (shared panel + stream dialog) ─────────────── */
 
+/* Solid wraps portal content in a div. Constrain that wrapper to the panel body
+   slot so feature-owned headers and footers remain visible at short viewports. */
+.workgraph-panel-body-portal {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* Panel-variant column: flush edge-to-edge, pinned heading + footer, only the
    field list scrolls between them. */
 .workgraph-settings-view {
@@ -428,9 +566,11 @@
 }
 
 .workgraph-settings-form.is-dialog {
-  display: block;
-  flex: initial;
+  display: flex;
+  width: 100%;
+  flex: 1;
   min-height: 0;
+  flex-direction: column;
 }
 
 .workgraph-settings-scroll {
@@ -440,8 +580,10 @@
 }
 
 .workgraph-settings-form.is-dialog .workgraph-settings-scroll {
-  flex: initial;
-  overflow: visible;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .workgraph-settings {
@@ -472,19 +614,27 @@
 }
 
 .workgraph-setting-label {
-  flex-shrink: 0;
-  padding-top: 0.4rem;
   font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-strong);
 }
 
-/* Right column: control on top, description/note/inherited stacked beneath it. */
+.workgraph-setting-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding-top: 0.15rem;
+}
+
+/* Right column: control on top, state notes and inheritance beneath it. */
 .workgraph-setting-side {
   display: flex;
   flex-shrink: 0;
   flex-direction: column;
   gap: 0.25rem;
-  width: 15rem;
-  max-width: 55%;
+  width: min(15rem, 48%);
 }
 
 .workgraph-setting-control {
@@ -499,6 +649,10 @@
 .workgraph-setting-inherit {
   font-size: 0.6875rem;
   line-height: 1.35;
+}
+
+.workgraph-setting-desc {
+  max-width: 18rem;
 }
 
 .workgraph-setting-note {
@@ -573,4 +727,16 @@
 .workgraph-settings-form.is-dialog .workgraph-settings-footer {
   padding-left: 0;
   padding-right: 0;
+}
+
+@media (max-width: 560px) {
+  .workgraph-setting-row {
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .workgraph-setting-side {
+    width: 100%;
+    max-width: none;
+  }
 }

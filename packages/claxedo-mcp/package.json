@@ -18,6 +18,13 @@
   "bin": {
     "claxedo-mcp": "dist/server.js"
   },
+  "exports": {
+    "./workgraph-tools": {
+      "types": "./src/workgraph-tools.ts",
+      "development": "./src/workgraph-tools.ts",
+      "default": "./dist/workgraph-tools.js"
+    }
+  },
   "files": [
     "dist",
     "mcp.json",
@@ -28,7 +35,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/server.ts --outfile dist/server.js --target=node",
+    "build": "bun build src/server.ts src/workgraph-tools.ts --outdir dist --target=node",
     "prepublishOnly": "bun run build",
     "start": "node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",

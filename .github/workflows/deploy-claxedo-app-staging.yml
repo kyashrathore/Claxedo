@@ -1,0 +1,54 @@
+name: deploy-claxedo-app-staging
+
+# App-only staging releases enter through this lock-owning workflow. Commits
+# that also touch the ordered Cloud deployment unit are handled by
+# deploy-control-plane.yml, which invokes the same reusable app workflow only
+# after Convex, Worker, and authenticated smoke succeed.
+on:
+  push:
+    branches: [dev]
+    paths:
+      - packages/claxedo-app/**
+      - .github/workflows/deploy-claxedo-app.yml
+      - .github/workflows/deploy-claxedo-app-staging.yml
+
+concurrency:
+  group: claxedo-cloud-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.decision.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 2
+
+      - id: decision
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA")
+          ordered=$(printf '%s\n' "$changed" | awk '/^(convex\/|packages\/(claxedo-server|claxedo-connections|workgraph|agent-sdk-runtime|channels|sandbox-manager|wakes|workspace-relay|workspace-relay-protocol)\/|\.github\/workflows\/(deploy-control-plane|deploy-claxedo-app|deploy-claxedo-app-staging)\.yml$)/')
+          if [ -n "$ordered" ]; then
+            echo "App deployment is delegated to the ordered control-plane workflow because this commit changes its deployment unit:"
+            printf '%s\n' "$ordered"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: route
+    if: needs.route.outputs.deploy == 'true'
+    uses: ./.github/workflows/deploy-claxedo-app.yml
+    with:
+      target_environment: staging
+    secrets: inherit

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { createServer } from "node:http"
 import type { Workspace } from "./workspace-store"
 
 import { sandboxFetch } from "./sandbox-target-fetch"
@@ -116,17 +117,20 @@ describe("sandboxFetch", () => {
 
   test("uses the explicit loopback relay for local cloud workspace requests", async () => {
     const requests: Array<{ url: string; directory: string | null; encoding: string | null }> = []
-    const server = Bun.serve({
-      port: 0,
-      fetch(request) {
-        requests.push({
-          url: request.url,
-          directory: request.headers.get("x-opencode-directory"),
-          encoding: request.headers.get("accept-encoding"),
-        })
-        return Response.json({ ok: true })
-      },
+    const server = createServer((request, response) => {
+      const headers = new Headers(request.headers as HeadersInit)
+      requests.push({
+        url: `${origin}${request.url}`,
+        directory: headers.get("x-opencode-directory"),
+        encoding: headers.get("accept-encoding"),
+      })
+      response.setHeader("content-type", "application/json")
+      response.end(JSON.stringify({ ok: true }))
     })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Loopback relay did not bind a TCP port")
+    const origin = `http://127.0.0.1:${address.port}`
 
     try {
       const res = await sandboxFetch(
@@ -139,17 +143,17 @@ describe("sandboxFetch", () => {
         } as Workspace,
         "/api/wr/harness-config-options?directory=%2Fworkspace&harness=claude%3Aacp",
         undefined,
-        { loopbackRelayUrl: server.url.origin },
+        { loopbackRelayUrl: origin },
       )
 
       expect(res.status).toBe(200)
       expect(requests).toEqual([{
-        url: `${server.url.origin}/workspaces/ws_loopback/api/wr/harness-config-options?directory=%2Fworkspace&harness=claude%3Aacp`,
+        url: `${origin}/workspaces/ws_loopback/api/wr/harness-config-options?directory=%2Fworkspace&harness=claude%3Aacp`,
         directory: "workspace:ws_loopback",
         encoding: "identity",
       }])
     } finally {
-      server.stop(true)
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
     }
   })
 })

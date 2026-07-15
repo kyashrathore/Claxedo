@@ -133,7 +133,8 @@ describe("worker import-graph", () => {
     expect(sandboxManagerSpecs.length).toBeGreaterThan(0)
 
     const sandboxManagerSrc = path.resolve(import.meta.dirname, "../../sandbox-manager/src")
-    const sandboxManagerImportsDaytona = fs.readdirSync(sandboxManagerSrc)
+    const sandboxManagerImportsDaytona = fs
+      .readdirSync(sandboxManagerSrc)
       .filter((name) => name.endsWith(".ts"))
       .some((name) => fs.readFileSync(path.join(sandboxManagerSrc, name), "utf8").includes('"@daytona/sdk"'))
     expect(sandboxManagerImportsDaytona).toBe(true)
@@ -147,14 +148,16 @@ describe("worker import-graph", () => {
     expect(visitedRel).toContain("hosted-app.ts")
     expect(visitedRel).toContain("workgraph-host/hosted.ts")
     expect(visitedRel).toContain("workgraph-host/hosted-runtime.ts")
+    expect(visitedRel).toContain("routes/docs.ts")
+    expect(visitedRel).toContain("document-host/convex-store.ts")
+    expect(visitedRel).toContain("document-store.ts")
+    expect(visitedRel).not.toContain("doc-store.ts")
     // A representative deep node-safe dependency should be reachable.
     expect(visitedRel).toContain("routes/hosted-workspace.ts")
   })
 
   test("no local-only source module is in the Worker graph", () => {
-    const leaked = visitedRel.filter(
-      (rel) => FORBIDDEN_LOCAL.some((bad) => rel.includes(bad)),
-    )
+    const leaked = visitedRel.filter((rel) => FORBIDDEN_LOCAL.some((bad) => rel.includes(bad)))
     expect(leaked, `local-only modules leaked into the Worker graph: ${leaked.join(", ")}`).toEqual([])
   })
 

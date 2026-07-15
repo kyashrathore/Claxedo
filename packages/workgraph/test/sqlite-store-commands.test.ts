@@ -1,10 +1,12 @@
 import BetterSqlite3 from "better-sqlite3"
 import { createHash } from "node:crypto"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { createSqliteSourcePlanningRuntime } from "../src/adapters/sqlite/source-planning-runtime"
 import { createSqliteWorkGraphService, SQLITE_WORKGRAPH_SUPPORTED_COMMANDS, SQLITE_WORKGRAPH_UNSUPPORTED_COMMANDS } from "../src/adapters/sqlite/store"
-import { AttentionCursorError, AttentionPageSchema, ChangeEnvelopeSchema, StreamDtoSchema, WorkGraphDefaultsDtoSchema, WorkGraphSnapshotPageSchema } from "../src/contracts"
+import { AdmissionProposalIDSchema, AttentionCursorError, AttentionPageSchema, ChangeEnvelopeSchema, StreamDtoSchema, StreamIDSchema, WorkGraphDefaultsDtoSchema, WorkGraphSnapshotPageSchema, WorkSourceIDSchema, WorkSourceRevisionIDSchema, readChangeCursor } from "../src/contracts"
+import { workGraphReplacementConformance } from "../src/conformance"
 import type { AdmissionAgentPlan, CompletionContract, OperationID, StreamID, WorkGraphContext, WorkSourceRevisionRef } from "../src/contracts"
+import type { WorkspaceExecutionPort } from "../src/ports"
 
 const databases: BetterSqlite3.Database[] = []
 const contract = { version: 1, mode: "all", requirements: [{ id: branded("owner"), kind: "owner_confirmation", description: "Owner accepts" }] } satisfies CompletionContract
@@ -16,10 +18,320 @@ const planningProfile = {
   model: { providerId: "openai", modelId: "gpt-5" },
   effort: "high",
 }
+const resolvedProfile = {
+  ...planningProfile,
+  tools: [],
+  connectionIds: [],
+}
 
 afterEach(() => databases.splice(0).forEach((database) => database.close()))
 
 describe("SQLite WorkGraph public commands", () => {
+  it("replaces only the exact disposable Stream snapshot behind a durable reset barrier", async () => {
+    let finishCleanup!: () => void
+    const cleanupFinished = new Promise<void>((resolve) => { finishCleanup = resolve })
+    const cancelled: string[] = []
+    const cleaned: Array<{ streamId: string; reason: string }> = []
+    const execution = replacementExecution({
+      cancel: async (_context, input) => { cancelled.push(input.attemptId) },
+      cleanup: async (_context, input) => {
+        cleaned.push({ streamId: input.streamId, reason: input.reason })
+        await cleanupFinished
+      },
+    })
+    const fixture = await setup(execution)
+    const replacement = await replacementFixture(fixture)
+    const completedId = resultId(await execute(fixture, "create_work_item", {
+      streamId: replacement.streamId,
+      title: "Completed unrelated history",
+      completionContract: contract,
+    }), "workItemId")
+    fixture.database.prepare("UPDATE wg_v2_work_items SET lifecycle = 'completed' WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?").run(completedId)
+    fixture.database.prepare("UPDATE wg_v2_streams SET envelope_identity_json = ? WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?")
+      .run(JSON.stringify({ id: "envelope_replace" }), replacement.streamId)
+    fixture.database.prepare(`
+      INSERT INTO wg_v2_attempts
+        (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json,
+          envelope_id, session_id, lease_epoch, created_at, updated_at, started_at)
+      VALUES ('organization', 'owner', 'attempt_replace', ?, ?, 1, 'running', ?, 'envelope_replace', 'session_replace', 1, 1, 1, 1)
+    `).run(replacement.streamId, replacement.workItemId, JSON.stringify(resolvedProfile))
+    fixture.database.prepare(`
+      INSERT INTO wg_v2_leases
+        (organization_id, owner_user_id, id, resource_type, resource_id, holder_id, epoch, expires_at, created_at, updated_at)
+      VALUES ('organization', 'owner', 'lease_replace', 'work_item', ?, 'attempt_replace', 1, 999999, 1, 1)
+    `).run(replacement.workItemId)
+
+    await expect(execute(fixture, "confirm_admission", {
+      proposalId: replacement.proposalId,
+      expectedVersion: 3,
+      source: replacement.source,
+      selection: {
+        mode: "replace",
+        streamId: replacement.streamId,
+        workItems: [{ workItemId: replacement.workItemId, expectedVersion: 1 }],
+      },
+      workItems: [{ proposalKey: "replacement", title: "Replacement Task", completionContract: contract }],
+    })).resolves.toMatchObject({ ok: true })
+
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(replacement.workItemId)).toEqual({ lifecycle: "abandoned" })
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(completedId)).toEqual({ lifecycle: "completed" })
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_attempts WHERE id = 'attempt_replace'").get()).toEqual({ lifecycle: "attention" })
+    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_leases WHERE id = 'lease_replace'").get()).toEqual({ count: 0 })
+    expect(fixture.database.prepare("SELECT state FROM wg_v2_runtime_effects WHERE effect_kind = 'reset_stream'").get()).toEqual({ state: "claimed" })
+    const replacementId = (fixture.database.prepare("SELECT id FROM wg_v2_work_items WHERE title = 'Replacement Task'").get() as { id: string }).id
+    await expect(execute(fixture, "execute_work_item", { workItemId: replacementId, executionMode: "autonomous" }))
+      .resolves.toMatchObject({ ok: false, error: { code: "blocked" } })
+
+    finishCleanup()
+    await vi.waitFor(() => {
+      expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_attempts WHERE id = 'attempt_replace'").get()).toEqual({ lifecycle: "cancelled" })
+    })
+    expect(cancelled).toEqual(["attempt_replace"])
+    expect(cleaned).toEqual([{ streamId: replacement.streamId, reason: "replace" }])
+    expect(fixture.database.prepare("SELECT state FROM wg_v2_runtime_effects WHERE effect_kind = 'reset_stream'").get()).toEqual({ state: "completed" })
+    expect(ChangeEnvelopeSchema.array().parse(await fixture.adapter.service.query(owner(), "changes", "list", { limit: 100 })).at(-1))
+      .toMatchObject({ resource: { type: "stream", id: replacement.streamId }, event: { type: "stream_replacement_reset_completed" } })
+    await expect(fixture.adapter.service.query(owner(), "streams", "read", { streamId: replacement.streamId }))
+      .resolves.toMatchObject({ replacementReset: { state: "completed", previousSource: replacement.previousSource, source: replacement.source } })
+  })
+
+  it("recovers a pending replacement reset after the SQLite runtime restarts", async () => {
+    const fixture = await setup(replacementExecution({
+      cleanup: async () => { throw new Error("runtime unavailable") },
+    }))
+    const replacement = await replacementFixture(fixture)
+    fixture.database.prepare("UPDATE wg_v2_streams SET envelope_identity_json = ? WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?")
+      .run(JSON.stringify({ id: "envelope_replace" }), replacement.streamId)
+
+    await expect(execute(fixture, "confirm_admission", {
+      proposalId: replacement.proposalId,
+      expectedVersion: 3,
+      source: replacement.source,
+      selection: {
+        mode: "replace",
+        streamId: replacement.streamId,
+        workItems: [{ workItemId: replacement.workItemId, expectedVersion: 1 }],
+      },
+    })).resolves.toMatchObject({ ok: true })
+    await vi.waitFor(() => {
+      expect(fixture.database.prepare("SELECT state, last_error FROM wg_v2_runtime_effects WHERE effect_kind = 'reset_stream'").get())
+        .toEqual({ state: "pending", last_error: "runtime unavailable" })
+    })
+
+    const cleaned: string[] = []
+    createSqliteWorkGraphService({
+      database: fixture.database,
+      executionCapabilities: { read: async (context) => capabilities(context, 9_000) },
+      execution: replacementExecution({ cleanup: async (_context, input) => { cleaned.push(input.streamId) } }),
+      clock: { now: () => 9_000 },
+      ids: { next: (kind) => `${kind}_restart_${crypto.randomUUID()}` },
+    })
+    await vi.waitFor(() => {
+      expect(fixture.database.prepare("SELECT state, last_error FROM wg_v2_runtime_effects WHERE effect_kind = 'reset_stream'").get())
+        .toEqual({ state: "completed", last_error: null })
+    })
+    expect(cleaned).toEqual([replacement.streamId])
+    await expect(fixture.adapter.service.query(owner(), "streams", "read", { streamId: replacement.streamId }))
+      .resolves.toMatchObject({ replacementReset: { state: "completed", completedAt: 9_000 } })
+  })
+
+  it("retries a transient replacement cleanup without restarting the SQLite runtime", async () => {
+    let cleanupAttempts = 0
+    const fixture = await setup(
+      replacementExecution({
+        cleanup: async () => {
+          cleanupAttempts += 1
+          if (cleanupAttempts === 1) throw new Error("transient cleanup failure")
+        },
+      }),
+      5,
+    )
+    const replacement = await replacementFixture(fixture)
+    fixture.database.prepare("UPDATE wg_v2_streams SET envelope_identity_json = ? WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?")
+      .run(JSON.stringify({ id: "envelope_replace" }), replacement.streamId)
+
+    await expect(execute(fixture, "confirm_admission", {
+      proposalId: replacement.proposalId,
+      expectedVersion: 3,
+      source: replacement.source,
+      selection: {
+        mode: "replace",
+        streamId: replacement.streamId,
+        workItems: [{ workItemId: replacement.workItemId, expectedVersion: 1 }],
+      },
+    })).resolves.toMatchObject({ ok: true })
+
+    await vi.waitFor(() => {
+      expect(cleanupAttempts).toBe(2)
+      expect(fixture.database.prepare("SELECT state, last_error FROM wg_v2_runtime_effects WHERE effect_kind = 'reset_stream'").get())
+        .toEqual({ state: "completed", last_error: null })
+    })
+    expect(JSON.parse((fixture.database.prepare(`
+      SELECT replacement_reset_json FROM wg_v2_streams WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?
+    `).get(replacement.streamId) as { replacement_reset_json: string }).replacement_reset_json)).toMatchObject({ state: "completed" })
+  })
+
+  it("rejects replacement when the reviewed snapshot drifts, contains unrelated work, or has a durable effect", async () => {
+    const stale = await setup()
+    const staleReplacement = await replacementFixture(stale)
+    await execute(stale, "update_work_item", { workItemId: staleReplacement.workItemId, expectedVersion: 1, title: "Changed" })
+    await expect(execute(stale, "confirm_admission", {
+      proposalId: staleReplacement.proposalId,
+      expectedVersion: 3,
+      source: staleReplacement.source,
+      selection: { mode: "replace", streamId: staleReplacement.streamId, workItems: [{ workItemId: staleReplacement.workItemId, expectedVersion: 1 }] },
+    })).resolves.toMatchObject({ ok: false, error: { code: "version_conflict" } })
+
+    const unrelated = await setup()
+    const unrelatedReplacement = await replacementFixture(unrelated)
+    await execute(unrelated, "create_work_item", { streamId: unrelatedReplacement.streamId, title: "Unrelated", completionContract: contract })
+    await expect(execute(unrelated, "confirm_admission", {
+      proposalId: unrelatedReplacement.proposalId,
+      expectedVersion: 3,
+      source: unrelatedReplacement.source,
+      selection: { mode: "replace", streamId: unrelatedReplacement.streamId, workItems: [{ workItemId: unrelatedReplacement.workItemId, expectedVersion: 1 }] },
+    })).resolves.toMatchObject({ ok: false, error: { code: "blocked" } })
+
+    const durable = await setup()
+    const durableReplacement = await replacementFixture(durable)
+    await execute(durable, "record_evidence", {
+      subject: { type: "work_item", workItemId: durableReplacement.workItemId },
+      evidence: { kind: "integration", summary: "Merged", effect: "merged", reference: "pr:1" },
+    })
+    await expect(execute(durable, "confirm_admission", {
+      proposalId: durableReplacement.proposalId,
+      expectedVersion: 3,
+      source: durableReplacement.source,
+      selection: { mode: "replace", streamId: durableReplacement.streamId, workItems: [{ workItemId: durableReplacement.workItemId, expectedVersion: 2 }] },
+    })).resolves.toMatchObject({ ok: false, error: { code: "close_required" } })
+  })
+
+  it("preserves exact authoring provenance and links a later revision proposal to confirmed Stream work", async () => {
+    const fixture = await setup()
+    const firstContent = "Initial launch document"
+    const firstHash = createHash("sha256").update(firstContent).digest("hex")
+    const first = await execute(fixture, "create_work_source", {
+      title: "Launch",
+      content: firstContent,
+      authoring: {
+        adapterId: "claxedo_docs",
+        projectId: "project-1",
+        documentId: "doc-1",
+        documentRevisionId: "doc-revision-1",
+        documentRevisionNumber: 1,
+        authoredAt: 900,
+        authoredBy: owner().actor,
+        contentHash: firstHash,
+      },
+    })
+    const workSourceId = WorkSourceIDSchema.parse(resultId(first, "workSourceId"))
+    const firstRevisionId = WorkSourceRevisionIDSchema.parse(resultId(first, "revisionId"))
+    const firstRef = { workSourceId, revisionId: firstRevisionId, contentHash: firstHash } as WorkSourceRevisionRef
+    await expect(fixture.adapter.service.query(owner(), "sources", "readRevision", {
+      workSourceId,
+      revisionId: firstRevisionId,
+    })).resolves.toMatchObject({
+      content: firstContent,
+      contentHash: firstHash,
+      origin: {
+        kind: "authoring",
+        adapterId: "claxedo_docs",
+        projectId: "project-1",
+        documentId: "doc-1",
+        documentRevisionId: "doc-revision-1",
+        documentRevisionNumber: 1,
+        authoredBy: owner().actor,
+      },
+    })
+    const beforeMismatch = fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_work_sources").get()
+    await expect(execute(fixture, "create_work_source", {
+      title: "Invalid",
+      content: "different content",
+      authoring: {
+        adapterId: "claxedo_docs",
+        projectId: "project-1",
+        documentId: "doc-invalid",
+        documentRevisionId: "doc-invalid-revision",
+        documentRevisionNumber: 1,
+        authoredAt: 901,
+        authoredBy: owner().actor,
+        contentHash: firstHash,
+      },
+    })).resolves.toMatchObject({ ok: false, error: { code: "validation_error" } })
+    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_work_sources").get()).toEqual(beforeMismatch)
+
+    const streamId = StreamIDSchema.parse(resultId(await execute(fixture, "create_stream", { title: "Launch", source: firstRef }), "streamId"))
+    const secondContent = "Initial launch document\nAdd rollout checks"
+    const secondHash = createHash("sha256").update(secondContent).digest("hex")
+    await expect(execute(fixture, "revise_work_source", {
+      workSourceId,
+      expectedRevisionId: firstRevisionId,
+      title: "Launch",
+      content: secondContent,
+      authoring: {
+        adapterId: "claxedo_docs",
+        projectId: "project-1",
+        documentId: "doc-1",
+        documentRevisionId: "doc-revision-2",
+        documentRevisionNumber: 2,
+        parentDocumentRevisionId: "unrelated-document-revision",
+        authoredAt: 949,
+        authoredBy: owner().actor,
+        contentHash: secondHash,
+      },
+    })).resolves.toMatchObject({ ok: false, error: { code: "version_conflict" } })
+    const revised = await execute(fixture, "revise_work_source", {
+      workSourceId,
+      expectedRevisionId: firstRevisionId,
+      title: "Launch",
+      content: secondContent,
+      authoring: {
+        adapterId: "claxedo_docs",
+        projectId: "project-1",
+        documentId: "doc-1",
+        documentRevisionId: "doc-revision-2",
+        documentRevisionNumber: 2,
+        parentDocumentRevisionId: "doc-revision-1",
+        authoredAt: 950,
+        authoredBy: { type: "agent", id: branded("agent-1") },
+        contentHash: secondHash,
+      },
+    })
+    const secondRef = { workSourceId, revisionId: WorkSourceRevisionIDSchema.parse(resultId(revised, "revisionId")), contentHash: secondHash } as WorkSourceRevisionRef
+    const proposalId = resultId(await execute(fixture, "propose_admission", { source: secondRef, targetStreamId: streamId }), "proposalId")
+    await expect(fixture.adapter.service.query(owner(), "proposals", "read", { proposalId })).resolves.toMatchObject({
+      state: "planning",
+      source: secondRef,
+      previousSource: firstRef,
+      diffSummary: "Content changed; 1 → 2 lines",
+    })
+    await publishAdmissionPlan(fixture, {
+      source: secondRef,
+      suggestedPlacement: { mode: "existing", streamId },
+      placementMatches: [{ streamId, confidence: "high", score: 1, reason: "Exact target", evidence: ["Owner selected Stream"] }],
+      proposedOutcomes: [],
+      proposedWorkItems: [],
+      duplicateMatches: [],
+    })
+    await expect(fixture.adapter.service.query(owner(), "proposals", "read", { proposalId })).resolves.toMatchObject({
+      state: "proposed",
+      version: 3,
+      source: secondRef,
+      previousSource: firstRef,
+      diffSummary: "Content changed; 1 → 2 lines",
+      generation: { method: "agent_session" },
+    })
+    await expect(execute(fixture, "confirm_admission", {
+      proposalId,
+      expectedVersion: 3,
+      source: secondRef,
+      selection: { mode: "keep", streamId },
+    })).resolves.toMatchObject({ ok: true })
+    await expect(fixture.adapter.service.query(owner(), "streams", "read", { streamId })).resolves.toMatchObject({
+      sourceRevisionRefs: [firstRef, secondRef],
+    })
+  })
+
   it("reads and atomically updates owner-scoped WorkGraph defaults with replay safety", async () => {
     const fixture = await setup()
     expect(WorkGraphDefaultsDtoSchema.parse(
@@ -44,7 +356,9 @@ describe("SQLite WorkGraph public commands", () => {
       },
     } as const
     const updated = await fixture.adapter.service.execute(owner(), request as never)
-    expect(updated).toMatchObject({ ok: true, cursor: "1" })
+    expect(updated).toMatchObject({ ok: true })
+    if (!updated.ok) throw new Error("Expected WorkGraph defaults update")
+    expect(readChangeCursor(updated.cursor, owner().organizationId, owner().ownerUserId)).toBe(1)
     expect(await fixture.adapter.service.execute(owner(), request as never)).toEqual(updated)
     expect(await fixture.adapter.service.execute(owner(), {
       ...request,
@@ -152,13 +466,13 @@ describe("SQLite WorkGraph public commands", () => {
     const live = await createItem(fixture, streamId, undefined, "Running")
     fixture.database.prepare(`
       INSERT INTO wg_v2_attempts
-        (owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json, created_at, updated_at)
-      VALUES ('owner', 'attempt_running', ?, ?, 1, 'running', '{}', 1000, 1000)
+        (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json, created_at, updated_at)
+      VALUES ('organization', 'owner', 'attempt_running', ?, ?, 1, 'running', '{}', 1000, 1000)
     `).run(streamId, live)
     fixture.database.prepare(`
       INSERT INTO wg_v2_leases
-        (owner_user_id, id, resource_type, resource_id, holder_id, expires_at, created_at, updated_at)
-      VALUES ('owner', 'lease_running', 'work_item', ?, 'attempt_running', 999999, 1000, 1000)
+        (organization_id, owner_user_id, id, resource_type, resource_id, holder_id, expires_at, created_at, updated_at)
+      VALUES ('organization', 'owner', 'lease_running', 'work_item', ?, 'attempt_running', 999999, 1000, 1000)
     `).run(live)
     expect(await execute(fixture, "cancel_work_item", { workItemId: live, expectedVersion: 1, reason: "unsafe" })).toMatchObject({
       ok: false,
@@ -179,15 +493,15 @@ describe("SQLite WorkGraph public commands", () => {
     const proposalId = resultId(proposed, "proposalId")
     fixture.database.prepare(`
       INSERT INTO wg_v2_intake_candidates
-        (owner_user_id, id, workgraph_id, candidate_kind, title, body, normalized_json, status, created_at, updated_at)
-      VALUES ('owner', 'candidate_admission', 'workgraph_default', 'session', 'Plan', 'One', ?, 'staged', 1000, 1000)
+        (organization_id, owner_user_id, id, workgraph_id, candidate_kind, title, body, normalized_json, status, created_at, updated_at)
+      VALUES ('organization', 'owner', 'candidate_admission', 'workgraph_default', 'session', 'Plan', 'One', ?, 'staged', 1000, 1000)
     `).run(JSON.stringify({
       sessionId: "session_admission",
       admissionDraft: { title: "Plan", content: "One" },
       source: sourceRef,
       admissionProposalId: proposalId,
     }))
-    fixture.database.prepare(`UPDATE wg_v2_admission_proposals SET intake_candidate_id = 'candidate_admission' WHERE owner_user_id = 'owner' AND id = ?`).run(proposalId)
+    fixture.database.prepare(`UPDATE wg_v2_admission_proposals SET intake_candidate_id = 'candidate_admission' WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?`).run(proposalId)
     await publishAdmissionPlan(fixture, {
       source: sourceRef,
       suggestedPlacement: { mode: "new_stream", streamTitle: "Plan" },
@@ -223,9 +537,9 @@ describe("SQLite WorkGraph public commands", () => {
     expect(confirmed).toMatchObject({ ok: true })
     expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_admission_proposals WHERE id = ?").get(proposalId)).toEqual({ lifecycle: "confirmed" })
     expect(fixture.database.prepare("SELECT status FROM wg_v2_intake_candidates WHERE id = 'candidate_admission'").get()).toEqual({ status: "confirmed" })
-    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_work_items WHERE owner_user_id = 'owner'").get()).toEqual({ count: 1 })
-    expect(fixture.database.prepare("SELECT execution_defaults_json FROM wg_v2_outcomes WHERE owner_user_id = 'owner'").get()).toEqual({ execution_defaults_json: '{"effort":"high"}' })
-    expect(fixture.database.prepare("SELECT execution_overrides_json FROM wg_v2_work_items WHERE owner_user_id = 'owner'").get()).toEqual({ execution_overrides_json: '{"effort":"medium"}' })
+    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_work_items WHERE organization_id = 'organization' AND owner_user_id = 'owner'").get()).toEqual({ count: 1 })
+    expect(fixture.database.prepare("SELECT execution_defaults_json FROM wg_v2_outcomes WHERE organization_id = 'organization' AND owner_user_id = 'owner'").get()).toEqual({ execution_defaults_json: '{"effort":"high"}' })
+    expect(fixture.database.prepare("SELECT execution_overrides_json FROM wg_v2_work_items WHERE organization_id = 'organization' AND owner_user_id = 'owner'").get()).toEqual({ execution_overrides_json: '{"effort":"medium"}' })
     const snapshot = WorkGraphSnapshotPageSchema.parse(await fixture.adapter.service.query(owner(), "snapshot", "page", { limit: 50 }))
     expect(snapshot.records).toEqual(expect.arrayContaining([
       expect.objectContaining({ recordType: "admission_proposal", id: proposalId, source: sourceRef }),
@@ -256,7 +570,9 @@ describe("SQLite WorkGraph public commands", () => {
       revisionId: resultId(source, "revisionId"),
       contentHash: createHash("sha256").update(content).digest("hex"),
     } as WorkSourceRevisionRef
-    const proposalId = resultId(await execute(fixture, "propose_admission", { source: sourceRef }), "proposalId")
+    const proposalId = AdmissionProposalIDSchema.parse(
+      resultId(await execute(fixture, "propose_admission", { source: sourceRef }), "proposalId"),
+    )
 
     await expect(execute(fixture, "dismiss_admission", { proposalId: branded("missing"), expectedVersion: 1 }))
       .resolves.toMatchObject({ ok: false, error: { code: "not_found" } })
@@ -267,8 +583,8 @@ describe("SQLite WorkGraph public commands", () => {
 
     fixture.database.prepare(`
       INSERT INTO wg_v2_intake_candidates
-        (owner_user_id, id, workgraph_id, candidate_kind, title, body, normalized_json, status, created_at, updated_at)
-      VALUES ('owner', 'candidate_review', 'workgraph_default', 'session', 'Launch', ?, ?, 'staged', 1000, 1000)
+        (organization_id, owner_user_id, id, workgraph_id, candidate_kind, title, body, normalized_json, status, created_at, updated_at)
+      VALUES ('organization', 'owner', 'candidate_review', 'workgraph_default', 'session', 'Launch', ?, ?, 'staged', 1000, 1000)
     `).run(content, JSON.stringify({
       sessionId: "session_review",
       admissionDraft: { title: "Launch", content },
@@ -277,7 +593,7 @@ describe("SQLite WorkGraph public commands", () => {
     }))
     fixture.database.prepare(`
       UPDATE wg_v2_admission_proposals SET intake_candidate_id = 'candidate_review'
-      WHERE owner_user_id = 'owner' AND id = ?
+      WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?
     `).run(proposalId)
     await publishAdmissionPlan(fixture, {
       source: sourceRef,
@@ -289,7 +605,7 @@ describe("SQLite WorkGraph public commands", () => {
     })
     const original = fixture.database.prepare(`
       SELECT source_revision_id, intake_candidate_id, lifecycle, proposed_work_json, row_version
-      FROM wg_v2_admission_proposals WHERE owner_user_id = 'owner' AND id = ?
+      FROM wg_v2_admission_proposals WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?
     `).get(proposalId)
     expect(original).toMatchObject({
       source_revision_id: sourceRef.revisionId,
@@ -313,7 +629,7 @@ describe("SQLite WorkGraph public commands", () => {
     })).resolves.toMatchObject({ ok: false, error: { code: "idempotency_conflict" } })
     expect(fixture.database.prepare(`
       SELECT source_revision_id, intake_candidate_id, lifecycle, proposed_work_json, row_version
-      FROM wg_v2_admission_proposals WHERE owner_user_id = 'owner' AND id = ?
+      FROM wg_v2_admission_proposals WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?
     `).get(proposalId)).toEqual({ ...original as object, lifecycle: "dismissed", row_version: 4 })
     await expect(execute(fixture, "dismiss_admission", { proposalId, expectedVersion: 4 }))
       .resolves.toMatchObject({ ok: false, error: { code: "invalid_transition" } })
@@ -329,7 +645,7 @@ describe("SQLite WorkGraph public commands", () => {
     expect(await fixture.adapter.service.execute(owner(), reopenRequest)).toEqual(reopened)
     expect(fixture.database.prepare(`
       SELECT source_revision_id, intake_candidate_id, lifecycle, proposed_work_json, row_version
-      FROM wg_v2_admission_proposals WHERE owner_user_id = 'owner' AND id = ?
+      FROM wg_v2_admission_proposals WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?
     `).get(proposalId)).toEqual({ ...original as object, lifecycle: "proposed", row_version: 5 })
     expect(fixture.database.prepare("SELECT status, row_version FROM wg_v2_intake_candidates WHERE id = 'candidate_review'").get())
       .toEqual({ status: "staged", row_version: 1 })
@@ -351,7 +667,7 @@ describe("SQLite WorkGraph public commands", () => {
     const malformedId = resultId(await execute(fixture, "propose_admission", { source: sourceRef }), "proposalId")
     fixture.database.prepare(`
       UPDATE wg_v2_admission_proposals SET lifecycle = 'proposed', proposed_work_json = ?
-      WHERE owner_user_id = 'owner' AND id = ?
+      WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?
     `).run(JSON.stringify({
       source: sourceRef,
       generation: { method: "agent_session", sessionId: " ", generatedAt: 2 },
@@ -473,6 +789,25 @@ describe("SQLite WorkGraph public commands", () => {
     ]))
   })
 
+  it("durably stops autonomous execution and propagates capability read failure", async () => {
+    let failCapabilityRead = false
+    const fixture = await setup(replacementExecution({}), undefined, async (context, now) => {
+      if (failCapabilityRead) throw new Error("capability runtime unavailable")
+      return capabilities(context, now)
+    })
+    const streamId = await createStream(fixture)
+    fixture.database.prepare(`
+      UPDATE wg_v2_streams SET execution_mode = 'autonomous', execution_state = 'active'
+      WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?
+    `).run(streamId)
+    failCapabilityRead = true
+
+    await expect(execute(fixture, "create_work_source", { title: "Trigger drain", content: "text" }))
+      .rejects.toThrow("capability runtime unavailable")
+    expect(fixture.database.prepare("SELECT execution_state FROM wg_v2_streams WHERE id = ?").get(streamId))
+      .toEqual({ execution_state: "stopped" })
+  })
+
   it("serves strict owner-scoped HTTP records and rejects unavailable execution without persistence", async () => {
     const fixture = await setup()
     await execute(fixture, "create_work_source", { title: "Plan", content: "Text" })
@@ -481,13 +816,21 @@ describe("SQLite WorkGraph public commands", () => {
     const stream = await fixture.adapter.service.query(owner(), "streams", "read", { streamId })
     expect(StreamDtoSchema.parse(stream)).toMatchObject({ recordType: "stream", ownerUserId: "owner", visibility: "visible" })
     const snapshot = await fixture.adapter.service.query(owner(), "snapshot", "page", { limit: 50 })
-    expect(WorkGraphSnapshotPageSchema.parse(snapshot)).toMatchObject({ snapshotCursor: "2" })
+    expect(readChangeCursor(
+      WorkGraphSnapshotPageSchema.parse(snapshot).snapshotCursor,
+      owner().organizationId,
+      owner().ownerUserId,
+    )).toBe(2)
     expect(WorkGraphSnapshotPageSchema.parse(snapshot).records).toEqual(expect.arrayContaining([
       expect.objectContaining({ recordType: "workgraph", id: "workgraph_default" }),
       expect.objectContaining({ recordType: "stream", id: streamId }),
     ]))
     const changes = await fixture.adapter.service.query(owner(), "changes", "list", { limit: 50 })
-    expect(ChangeEnvelopeSchema.array().parse(changes).map((change) => change.cursor)).toEqual(["1", "2"])
+    expect(ChangeEnvelopeSchema.array().parse(changes).map((change) => readChangeCursor(
+      change.cursor,
+      owner().organizationId,
+      owner().ownerUserId,
+    ))).toEqual([1, 2])
 
     const rowsBefore = fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_operation_results").get()
     expect(await execute(fixture, "execute_stream", { streamId, executionMode: "autonomous" })).toMatchObject({
@@ -501,13 +844,13 @@ describe("SQLite WorkGraph public commands", () => {
     const fixture = await setup()
     const streamId = await createStream(fixture)
     const itemId = await createItem(fixture, streamId, undefined, "Review release")
-    fixture.database.prepare("UPDATE wg_v2_work_items SET lifecycle = 'review_needed', updated_at = 9_000 WHERE owner_user_id = 'owner' AND id = ?")
+    fixture.database.prepare("UPDATE wg_v2_work_items SET lifecycle = 'review_needed', updated_at = 9_000 WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?")
       .run(itemId)
     fixture.database.prepare(`
       INSERT INTO wg_v2_intake_candidates
-        (owner_user_id, id, workgraph_id, candidate_kind, title, status, created_at, updated_at)
-      VALUES ('owner', 'candidate_issue', 'workgraph_default', 'external_issue', 'Issue', 'unorganized', 7000, 7000),
-        ('owner', 'candidate_session', 'workgraph_default', 'session', 'Session', 'unorganized', 8000, 8000)
+        (organization_id, owner_user_id, id, workgraph_id, candidate_kind, title, status, created_at, updated_at)
+      VALUES ('organization', 'owner', 'candidate_issue', 'workgraph_default', 'external_issue', 'Issue', 'unorganized', 7000, 7000),
+        ('organization', 'owner', 'candidate_session', 'workgraph_default', 'session', 'Session', 'unorganized', 8000, 8000)
     `).run()
 
     const first = AttentionPageSchema.parse(await fixture.adapter.service.query(owner(), "attention", "list", { limit: 1 }))
@@ -519,12 +862,115 @@ describe("SQLite WorkGraph public commands", () => {
   })
 })
 
-async function setup() {
+describe("SQLite WorkGraph replacement conformance v5", () => {
+  for (const conformance of workGraphReplacementConformance(async (scenario) => {
+    const fixture = await setup()
+    const replacement = await replacementFixture(fixture)
+    if (scenario === "version_drift") {
+      await execute(fixture, "update_work_item", { workItemId: replacement.workItemId, expectedVersion: 1, title: "Changed" })
+    }
+    if (scenario === "unrelated_work") {
+      await execute(fixture, "create_work_item", { streamId: replacement.streamId, title: "Unrelated", completionContract: contract })
+    }
+    if (scenario === "durable_effect") {
+      await execute(fixture, "record_evidence", {
+        subject: { type: "work_item", workItemId: replacement.workItemId },
+        evidence: { kind: "integration", summary: "Merged", effect: "merged", reference: "pr:1" },
+      })
+    }
+    return execute(fixture, "confirm_admission", {
+      proposalId: replacement.proposalId,
+      expectedVersion: 3,
+      source: replacement.source,
+      selection: {
+        mode: "replace",
+        streamId: replacement.streamId,
+        workItems: [{ workItemId: replacement.workItemId, expectedVersion: scenario === "durable_effect" ? 2 : 1 }],
+      },
+    })
+  })) it(conformance.name, conformance.run)
+})
+
+async function setup(
+  execution?: WorkspaceExecutionPort,
+  replacementRetryDelayMs?: number,
+  readCapabilities?: (context: WorkGraphContext, now: number) => ReturnType<typeof capabilities> | Promise<ReturnType<typeof capabilities>>,
+) {
   const database = new BetterSqlite3(":memory:")
   databases.push(database)
   let id = 0
   let now = 1_000
-  return { database, adapter: createSqliteWorkGraphService({ database, clock: { now: () => now++ }, ids: { next: (kind) => `${kind}_${++id}` } }) }
+  return {
+    database,
+    adapter: createSqliteWorkGraphService({
+      database,
+      executionCapabilities: {
+        read: async (context) => readCapabilities ? readCapabilities(context, now) : capabilities(context, now),
+      },
+      ...(execution ? { execution } : {}),
+      ...(replacementRetryDelayMs === undefined ? {} : { replacementRetryDelayMs }),
+      clock: { now: () => now++ },
+      ids: { next: (kind) => `${kind}_${++id}` },
+    }),
+  }
+}
+
+async function replacementFixture(fixture: Awaited<ReturnType<typeof setup>>) {
+  const firstContent = "Original source"
+  const firstHash = createHash("sha256").update(firstContent).digest("hex")
+  const created = await execute(fixture, "create_work_source", { title: "Source", content: firstContent })
+  const workSourceId = WorkSourceIDSchema.parse(resultId(created, "workSourceId"))
+  const previousSource = {
+    workSourceId,
+    revisionId: WorkSourceRevisionIDSchema.parse(resultId(created, "revisionId")),
+    contentHash: firstHash,
+  } as WorkSourceRevisionRef
+  const streamId = StreamIDSchema.parse(resultId(await execute(fixture, "create_stream", { title: "Stream", source: previousSource }), "streamId"))
+  const workItemId = resultId(await execute(fixture, "create_work_item", {
+    streamId,
+    source: previousSource,
+    title: "Original Task",
+    completionContract: contract,
+  }), "workItemId")
+  const nextContent = "Revised source"
+  const nextHash = createHash("sha256").update(nextContent).digest("hex")
+  const revised = await execute(fixture, "revise_work_source", {
+    workSourceId,
+    expectedRevisionId: previousSource.revisionId,
+    content: nextContent,
+  })
+  const source = {
+    workSourceId,
+    revisionId: WorkSourceRevisionIDSchema.parse(resultId(revised, "revisionId")),
+    contentHash: nextHash,
+  } as WorkSourceRevisionRef
+  const proposalId = resultId(await execute(fixture, "propose_admission", { source, targetStreamId: streamId }), "proposalId")
+  await publishAdmissionPlan(fixture, {
+    source,
+    suggestedPlacement: { mode: "existing", streamId },
+    placementMatches: [{ streamId, confidence: "high", score: 1, reason: "Exact target", evidence: ["Owner selected Stream"] }],
+    proposedOutcomes: [],
+    proposedWorkItems: [],
+    duplicateMatches: [],
+  })
+  return { workSourceId, previousSource, source, streamId, workItemId, proposalId }
+}
+
+function replacementExecution(overrides: Partial<WorkspaceExecutionPort>): WorkspaceExecutionPort {
+  return {
+    provisionOrAdopt: async (_context, input) => ({
+      id: "envelope_replace" as never,
+      streamId: input.streamId,
+      environment: input.environment,
+      repository: input.repository,
+      workspaceId: "/tmp/replacement",
+    }),
+    launch: async (_context, input) => ({ sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId }),
+    cancel: async () => undefined,
+    result: async () => ({ state: "running" }),
+    cleanup: async () => undefined,
+    ...overrides,
+  }
 }
 
 function execute(fixture: Awaited<ReturnType<typeof setup>>, type: string, command: Record<string, unknown>) {
@@ -551,6 +997,7 @@ async function publishAdmissionPlan(fixture: Awaited<ReturnType<typeof setup>>, 
   const runtime = createSqliteSourcePlanningRuntime({
     database: fixture.database,
     workerId: "test-source-planner",
+    sessionDirectory: "/repo",
     sessions: {
       async admit(input) { return String(input.sessionId) },
       async result() { return { state: "succeeded", summary: JSON.stringify(plan), artifacts: [] } },
@@ -560,7 +1007,7 @@ async function publishAdmissionPlan(fixture: Awaited<ReturnType<typeof setup>>, 
 }
 
 function admissionPlanningEvidence(fixture: Awaited<ReturnType<typeof setup>>, proposalId: string) {
-  const row = fixture.database.prepare("SELECT proposed_work_json FROM wg_v2_admission_proposals WHERE owner_user_id = 'owner' AND id = ?")
+  const row = fixture.database.prepare("SELECT proposed_work_json FROM wg_v2_admission_proposals WHERE organization_id = 'organization' AND owner_user_id = 'owner' AND id = ?")
     .get(proposalId) as { proposed_work_json: string }
   return (JSON.parse(row.proposed_work_json) as {
     planningEvidence: Pick<AdmissionAgentPlan, "placementMatches" | "duplicateMatches">
@@ -577,5 +1024,28 @@ function resultId(result: Awaited<ReturnType<typeof execute>>, key: string) {
 function operation(value: string) { return branded<OperationID>(value) }
 function branded<Type = string>(value: string) { return value as Type }
 function owner(id = "owner"): WorkGraphContext {
-  return { ownerUserId: branded(id), actor: { type: "user", id: branded(id) }, requestId: branded(`request_${id}`), access: { mode: "owner" } }
+  return { organizationId: branded("organization"), ownerUserId: branded(id), actor: { type: "user", id: branded(id) }, requestId: branded(`request_${id}`), access: { mode: "owner" } }
+}
+
+function capabilities(context: WorkGraphContext, observedAt: number) {
+  return {
+    schemaVersion: 1 as const,
+    organizationId: context.organizationId,
+    ownerUserId: context.ownerUserId,
+    catalogRevision: "f".repeat(64),
+    observedAt,
+    expiresAt: observedAt + 300_000,
+    environments: [{
+      kind: "local_worktree" as const,
+      repositoryRequired: true,
+      remoteUrlInput: false,
+      baseRevisionInput: true,
+    }],
+    harnesses: [{ id: "claxedo-v2" }],
+    agents: [{ harnessId: "claxedo-v2", id: "build", label: "Build" }],
+    models: [{ harnessId: "claxedo-v2", providerId: "openai", modelId: "gpt-5", label: "GPT-5", efforts: ["high"] }],
+    tools: [{ harnessId: "claxedo-v2", id: "read" }],
+    repository: { baseRevisions: ["HEAD"] },
+    connections: [],
+  }
 }

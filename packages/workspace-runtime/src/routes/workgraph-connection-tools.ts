@@ -91,7 +91,7 @@ const centralBrokerError = z.object({
   }).strict(),
 }).strict()
 
-const callBase = z.object({ sessionId: z.string().min(1), connectionId: z.string().min(1) })
+const callBase = z.object({ connectionId: z.string().min(1) })
 export const WORKGRAPH_CONNECTION_TOOL_INPUT_SCHEMAS = {
   connection_work_source_list: callBase.extend({
     providerUserId: z.string().min(1),
@@ -120,31 +120,50 @@ export type WorkGraphConnectionToolInput = {
 export const WORKGRAPH_CONNECTION_TOOL_SCHEMAS = {
   connection_work_source_list: {
     description: "List work-source issues through an explicitly bound Connection.",
-    input: { sessionId: "string", connectionId: "string", providerUserId: "string", filters: "record<string,string>", cursor: "string?" },
+    input: { connectionId: "string", providerUserId: "string", filters: "record<string,string>", cursor: "string?" },
   },
   connection_work_source_comment: {
     description: "Add an idempotent comment to a work-source issue through an explicitly bound Connection.",
-    input: { sessionId: "string", connectionId: "string", externalId: "string", body: "string", idempotencyKey: "string" },
+    input: { connectionId: "string", externalId: "string", body: "string", idempotencyKey: "string" },
   },
   connection_work_source_update: {
     description: "Idempotently update status or body on a work-source issue through an explicitly bound Connection.",
-    input: { sessionId: "string", connectionId: "string", externalId: "string", status: "string?", body: "string?", idempotencyKey: "string" },
+    input: { connectionId: "string", externalId: "string", status: "string?", body: "string?", idempotencyKey: "string" },
   },
 } as const
 
 export type WorkGraphConnectionOperationBroker = (
   request: WorkGraphConnectionOperationRequest,
+  signal: AbortSignal,
 ) => Promise<WorkGraphConnectionOperationResponse>
 
-type Binding = z.infer<typeof bind> & { authorization?: string; callbackNonce: string }
+type Binding = Omit<z.infer<typeof bind>, "brokerUrl"> & {
+  authorization?: string
+  brokerOrigin?: string
+  callbackNonce: string
+}
+
+export type WorkGraphConnectionBrokerRequestLimits = {
+  timeoutMs: number
+  maxResponseBytes: number
+}
+
+const DEFAULT_BROKER_REQUEST_LIMITS = {
+  timeoutMs: 15_000,
+  maxResponseBytes: 1024 * 1024,
+} satisfies WorkGraphConnectionBrokerRequestLimits
 
 export const WORKGRAPH_CONNECTION_BINDING_PATH = "/api/workgraph/connection-binding"
 export const WORKGRAPH_CONNECTION_TOOL_PATH = "/api/workgraph/tools"
 const CENTRAL_BROKER_PATH = "/internal/workgraph/connection-operation"
+export type WorkGraphConnectionToolRouteHandle = Hono & { dispose(): void }
 
 export function WorkGraphConnectionToolRoutes(input: {
   workspaceId: string
   broker?: WorkGraphConnectionOperationBroker
+  /** Exact central origin allowed to receive the bound Runtime Access Token. */
+  brokerOrigin?: string
+  brokerRequestLimits?: WorkGraphConnectionBrokerRequestLimits
   fetch?: typeof fetch
   registerSessionTools?: (input: {
     sessionId: string
@@ -153,13 +172,16 @@ export function WorkGraphConnectionToolRoutes(input: {
   }) => Promise<void>
   unregisterSessionTools?: (sessionId: string) => Promise<void>
 }) {
-  const app = new Hono()
+  const app = new Hono() as WorkGraphConnectionToolRouteHandle
   const callbacks = new Hono()
   const bindings = new Map<string, Binding>()
   const callbackSessions = new Map<string, string>()
   const request = input.fetch ?? fetch
+  const brokerOrigin = input.brokerOrigin ? validatedBrokerOrigin(input.brokerOrigin) : undefined
+  const brokerRequestLimits = validateBrokerRequestLimits(input.brokerRequestLimits ?? DEFAULT_BROKER_REQUEST_LIMITS)
   let callbackServer: ReturnType<typeof serve> | undefined
   let callbackOrigin: Promise<string> | undefined
+  let disposed = false
 
   callbacks.post("/callback/:nonce", async (c) => {
     const sessionId = callbackSessions.get(c.req.param("nonce"))
@@ -170,15 +192,17 @@ export function WorkGraphConnectionToolRoutes(input: {
       : undefined
     if (body.sessionID !== sessionId || !name) return c.json({ error: "Session tool callback identity is invalid" }, 403)
     const value = body.input && typeof body.input === "object" ? body.input as Record<string, unknown> : {}
-    const response = await execute(name, { ...value, sessionId })
+    const response = await execute(name, sessionId, value)
     return new Response(response.body, { status: response.status, headers: response.headers })
   })
 
   app.post(WORKGRAPH_CONNECTION_BINDING_PATH, async (c) => {
+    if (disposed) return c.json(errorBody("connection_binding_unavailable", "Connection binding is unavailable"), 503)
     const parsed = bind.safeParse(await boundedJsonBody(c, {}))
     if (!parsed.success) return c.json(errorBody("connection_binding_invalid", "Connection binding is invalid"), 400)
+    let requestedBrokerOrigin: string
     try {
-      brokerBase(parsed.data.brokerUrl)
+      requestedBrokerOrigin = validatedBrokerOrigin(parsed.data.brokerUrl)
     } catch {
       return c.json(errorBody("connection_binding_broker_invalid", "Connection broker URL is invalid"), 400)
     }
@@ -188,6 +212,15 @@ export function WorkGraphConnectionToolRoutes(input: {
     const token = bearerToken(c.req.header("authorization"))
     if (!token && !input.broker) {
       return c.json(errorBody("connection_binding_auth_required", "A Runtime Access Token is required"), 401)
+    }
+    if (!input.broker && !brokerOrigin) {
+      return c.json(errorBody("connection_binding_broker_unavailable", "Trusted central broker origin is not configured"), 503)
+    }
+    if (!input.broker && requestedBrokerOrigin !== brokerOrigin) {
+      return c.json(errorBody(
+        "connection_binding_broker_mismatch",
+        "Connection broker does not match the trusted central origin",
+      ), 403)
     }
     if (!input.registerSessionTools) {
       return c.json(errorBody("connection_tool_registration_unavailable", "Core Session tool registration is unavailable"), 503)
@@ -204,10 +237,12 @@ export function WorkGraphConnectionToolRoutes(input: {
     }
     const callbackNonce = crypto.randomUUID()
     const binding = {
-      ...parsed.data,
+      version: parsed.data.version,
+      identity: parsed.data.identity,
       connectionIds: [...new Set(parsed.data.connectionIds)],
       tools: [...new Set(parsed.data.tools)],
       ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(!input.broker && brokerOrigin ? { brokerOrigin } : {}),
       callbackNonce,
     }
     bindings.set(parsed.data.identity.sessionId, binding)
@@ -220,9 +255,15 @@ export function WorkGraphConnectionToolRoutes(input: {
       })
     } catch {
       callbackSessions.delete(callbackNonce)
-      if (existing) bindings.set(parsed.data.identity.sessionId, existing)
+      if (existing && !disposed) bindings.set(parsed.data.identity.sessionId, existing)
       else bindings.delete(parsed.data.identity.sessionId)
+      closeCallbackServerIfUnused()
       return c.json(errorBody("connection_tool_registration_failed", "Core Session tools could not be registered"), 503)
+    }
+    if (disposed) {
+      bindings.delete(parsed.data.identity.sessionId)
+      callbackSessions.delete(callbackNonce)
+      return c.json(errorBody("connection_binding_unavailable", "Connection binding is unavailable"), 503)
     }
     if (existing) callbackSessions.delete(existing.callbackNonce)
     return c.json({ bound: true, sessionId: parsed.data.identity.sessionId })
@@ -235,26 +276,16 @@ export function WorkGraphConnectionToolRoutes(input: {
     if (input.unregisterSessionTools) await input.unregisterSessionTools(sessionId)
     bindings.delete(sessionId)
     callbackSessions.delete(binding.callbackNonce)
-    if (bindings.size === 0 && callbackServer) {
-      callbackServer.close()
-      callbackServer = undefined
-      callbackOrigin = undefined
-    }
+    closeCallbackServerIfUnused()
     return c.json({ unbound: true })
   })
 
   app.get(`${WORKGRAPH_CONNECTION_TOOL_PATH}`, (c) => c.json({ tools: WORKGRAPH_CONNECTION_TOOL_SCHEMAS }))
 
-  for (const tool of WORKGRAPH_CONNECTION_TOOL_NAMES) {
-    app.post(`${WORKGRAPH_CONNECTION_TOOL_PATH}/${tool}`, async (c) => {
-      return execute(tool, await boundedJsonBody(c, {}))
-    })
-  }
-
-  async function execute(tool: WorkGraphConnectionToolName, value: unknown) {
+  async function execute(tool: WorkGraphConnectionToolName, sessionId: string, value: unknown) {
     const parsed = WORKGRAPH_CONNECTION_TOOL_INPUT_SCHEMAS[tool].safeParse(value)
     if (!parsed.success) return Response.json(errorBody("connection_tool_input_invalid", "Connection tool input is invalid"), { status: 400 })
-    const binding = bindings.get(parsed.data.sessionId)
+    const binding = bindings.get(sessionId)
     if (!binding) return Response.json(errorBody("connection_binding_missing", "Session has no Connection binding"), { status: 403 })
     if (!binding.tools.includes(tool)) return Response.json(errorBody("connection_tool_not_bound", "Tool is not bound to this Session"), { status: 403 })
     if (!binding.connectionIds.includes(parsed.data.connectionId)) {
@@ -262,7 +293,10 @@ export function WorkGraphConnectionToolRoutes(input: {
     }
     try {
       const brokerRequest = requestFor(tool, binding, parsed.data)
-      const result = input.broker ? await input.broker(brokerRequest) : await callBroker(request, binding, brokerRequest)
+      const signal = AbortSignal.timeout(brokerRequestLimits.timeoutMs)
+      const result = input.broker
+        ? await abortable(input.broker(brokerRequest, signal), signal)
+        : await callBroker(request, binding, brokerRequest, signal, brokerRequestLimits.maxResponseBytes)
       const response = WorkGraphConnectionOperationResponseSchema.safeParse(result)
       if (!response.success) throw new Error("Connection broker returned an invalid response")
       return Response.json(response.data)
@@ -275,6 +309,7 @@ export function WorkGraphConnectionToolRoutes(input: {
   }
 
   function localCallbackOrigin() {
+    if (disposed) return Promise.reject(new Error("Session tool callback is unavailable"))
     return callbackOrigin ??= new Promise<string>((resolve, reject) => {
       callbackServer = serve({ fetch: callbacks.fetch, hostname: "127.0.0.1", port: 0 })
       const ready = () => {
@@ -286,6 +321,23 @@ export function WorkGraphConnectionToolRoutes(input: {
       if (address && typeof address !== "string") ready()
       else callbackServer.once("listening", ready)
     })
+  }
+
+  function closeCallbackServerIfUnused() {
+    if (bindings.size > 0 || !callbackServer) return
+    callbackServer.close()
+    callbackServer = undefined
+    callbackOrigin = undefined
+  }
+
+  app.dispose = () => {
+    if (disposed) return
+    disposed = true
+    bindings.clear()
+    callbackSessions.clear()
+    callbackServer?.close()
+    callbackServer = undefined
+    callbackOrigin = undefined
   }
 
   return app
@@ -354,16 +406,21 @@ async function callBroker(
   request: typeof fetch,
   binding: Binding,
   body: WorkGraphConnectionOperationRequest,
+  signal: AbortSignal,
+  maxResponseBytes: number,
 ) {
   if (!binding.authorization) throw new Error("Runtime Access Token is unavailable")
-  const url = new URL(CENTRAL_BROKER_PATH, brokerBase(binding.brokerUrl))
+  if (!binding.brokerOrigin) throw new Error("Trusted central broker origin is unavailable")
+  const url = new URL(CENTRAL_BROKER_PATH, binding.brokerOrigin)
   const response = await request(url, {
     method: "POST",
     headers: { authorization: binding.authorization, "content-type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   })
+  const value = await boundedResponseJson(response, maxResponseBytes, signal)
   if (!response.ok) {
-    const parsed = centralBrokerError.safeParse(await response.json().catch(() => undefined))
+    const parsed = centralBrokerError.safeParse(value)
     if (!parsed.success || response.status < 400 || response.status > 599) {
       throw new Error("Connection broker rejected the operation")
     }
@@ -375,7 +432,7 @@ async function callBroker(
       },
     })
   }
-  return response.json()
+  return value
 }
 
 class CentralBrokerHttpError extends Error {
@@ -388,10 +445,60 @@ class CentralBrokerHttpError extends Error {
   }
 }
 
-function brokerBase(input: string) {
+function validatedBrokerOrigin(input: string) {
   const url = new URL(input)
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
     throw new Error("Connection broker URL is invalid")
   }
-  return url
+  return url.origin
+}
+
+function validateBrokerRequestLimits(input: WorkGraphConnectionBrokerRequestLimits) {
+  if (!Number.isSafeInteger(input.timeoutMs) || input.timeoutMs < 1) {
+    throw new Error("Connection broker timeout must be a positive integer")
+  }
+  if (!Number.isSafeInteger(input.maxResponseBytes) || input.maxResponseBytes < 1) {
+    throw new Error("Connection broker response limit must be a positive integer")
+  }
+  return input
+}
+
+async function abortable<T>(promise: Promise<T>, signal: AbortSignal) {
+  if (signal.aborted) throw signal.reason
+  return await new Promise<T>((resolve, reject) => {
+    const aborted = () => reject(signal.reason)
+    signal.addEventListener("abort", aborted, { once: true })
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", aborted)
+        resolve(value)
+      },
+      (cause) => {
+        signal.removeEventListener("abort", aborted)
+        reject(cause)
+      },
+    )
+  })
+}
+
+async function boundedResponseJson(response: Response, limit: number, signal: AbortSignal) {
+  const declared = response.headers.get("content-length")
+  if (declared !== null && Number(declared) > limit) throw new Error("Connection broker response is too large")
+  if (!response.body) throw new Error("Connection broker response is empty")
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let bytes = 0
+  let text = ""
+  while (true) {
+    const chunk = await abortable(reader.read(), signal)
+    if (chunk.done) break
+    bytes += chunk.value.byteLength
+    if (bytes > limit) {
+      await reader.cancel()
+      throw new Error("Connection broker response is too large")
+    }
+    text += decoder.decode(chunk.value, { stream: true })
+  }
+  text += decoder.decode()
+  return JSON.parse(text) as unknown
 }

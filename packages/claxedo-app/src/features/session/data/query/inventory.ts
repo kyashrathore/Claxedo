@@ -77,6 +77,7 @@ export function signedInventoryProjects(input: { workspaces: unknown[] }) {
       kind: txt(row?.access) ?? txt(row?.backing) ?? "cloud",
       workspace_name: workspaceName,
       directory,
+      repo_url: txt(row?.repo_url) ?? txt(row?.repoUrl) ?? txt(row?.git_remote) ?? txt(row?.gitRemote),
     }
     groups.set(projectID, group)
   }

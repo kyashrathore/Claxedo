@@ -14,23 +14,31 @@ import {
   WorkSourceRevisionIDSchema,
 } from "./ids"
 import { StreamLifecycleStateSchema, StreamVisibilitySchema } from "./lifecycle"
-import { WorkSourceRevisionRefSchema } from "./work-source"
+import { AuthoringSourceRevisionSchema, WorkSourceRevisionRefSchema } from "./work-source"
+import { ChangeCursorSchema } from "./change-cursor"
+
+export { ChangeCursorSchema, type ChangeCursor } from "./change-cursor"
 
 const version = z.literal(1)
 const text = z.string().trim().min(1)
 const expectedVersion = z.number().int().nonnegative()
+const executionWithoutStreamTarget = ExecutionProfileDefaultsSchema.refine(
+  (execution) => !execution.environment && !execution.repository,
+  "Environment and repository target belong to the Stream",
+)
+const workGraphDefaults = WorkGraphDefaultsSchema.refine(
+  (defaults) => !defaults.execution.environment && !defaults.execution.repository,
+  "Environment and repository target belong to the Stream",
+)
 
 export const AdmissionProposalIDSchema = text.brand("AdmissionProposalID")
 export type AdmissionProposalID = z.infer<typeof AdmissionProposalIDSchema>
-
-export const ChangeCursorSchema = text.brand("ChangeCursor")
-export type ChangeCursor = z.infer<typeof ChangeCursorSchema>
 
 export const UpdateWorkGraphDefaultsCommandSchema = z.strictObject({
   version,
   type: z.literal("update_workgraph_defaults"),
   expectedVersion,
-  defaults: WorkGraphDefaultsSchema,
+  defaults: workGraphDefaults,
 })
 export type UpdateWorkGraphDefaultsCommand = z.infer<typeof UpdateWorkGraphDefaultsCommandSchema>
 
@@ -39,6 +47,7 @@ export const CreateWorkSourceCommandSchema = z.strictObject({
   type: z.literal("create_work_source"),
   title: text,
   content: z.string().min(1),
+  authoring: AuthoringSourceRevisionSchema.optional(),
 })
 export type CreateWorkSourceCommand = z.infer<typeof CreateWorkSourceCommandSchema>
 
@@ -49,6 +58,7 @@ export const ReviseWorkSourceCommandSchema = z.strictObject({
   expectedRevisionId: WorkSourceRevisionIDSchema,
   title: text.optional(),
   content: z.string().min(1),
+  authoring: AuthoringSourceRevisionSchema.optional(),
 })
 export type ReviseWorkSourceCommand = z.infer<typeof ReviseWorkSourceCommandSchema>
 
@@ -59,6 +69,7 @@ export const CreateStreamCommandSchema = z.strictObject({
   description: z.string().optional(),
   source: WorkSourceRevisionRefSchema.optional(),
   execution: ExecutionProfileDefaultsSchema.optional(),
+  recap: RecapProfileDefaultsSchema.optional(),
 })
 export type CreateStreamCommand = z.infer<typeof CreateStreamCommandSchema>
 
@@ -81,7 +92,7 @@ export const CreateOutcomeCommandSchema = z.strictObject({
   title: text,
   description: z.string().optional(),
   successCriteria: z.array(text).min(1),
-  execution: ExecutionProfileDefaultsSchema.optional(),
+  execution: executionWithoutStreamTarget.optional(),
 })
 export type CreateOutcomeCommand = z.infer<typeof CreateOutcomeCommandSchema>
 
@@ -93,7 +104,7 @@ export const UpdateOutcomeCommandSchema = z.strictObject({
   title: text.optional(),
   description: z.string().optional(),
   successCriteria: z.array(text).min(1).optional(),
-  execution: ExecutionProfileDefaultsSchema.optional(),
+  execution: executionWithoutStreamTarget.optional(),
 })
 export type UpdateOutcomeCommand = z.infer<typeof UpdateOutcomeCommandSchema>
 
@@ -108,7 +119,7 @@ export const CreateWorkItemCommandSchema = z.strictObject({
   dependencyIds: z.array(WorkItemIDSchema).optional(),
   source: WorkSourceRevisionRefSchema.optional(),
   completionContract: CompletionContractSchema,
-  execution: ExecutionProfileDefaultsSchema.optional(),
+  execution: executionWithoutStreamTarget.optional(),
 })
 export type CreateWorkItemCommand = z.infer<typeof CreateWorkItemCommandSchema>
 
@@ -123,7 +134,7 @@ export const UpdateWorkItemCommandSchema = z.strictObject({
   priority: z.number().int().nonnegative().optional(),
   dependencyIds: z.array(WorkItemIDSchema).optional(),
   completionContract: CompletionContractSchema.optional(),
-  execution: ExecutionProfileDefaultsSchema.optional(),
+  execution: executionWithoutStreamTarget.optional(),
 })
 export type UpdateWorkItemCommand = z.infer<typeof UpdateWorkItemCommandSchema>
 
@@ -132,6 +143,7 @@ export const ProposeAdmissionCommandSchema = z.strictObject({
   type: z.literal("propose_admission"),
   source: WorkSourceRevisionRefSchema,
   targetStreamId: StreamIDSchema.optional(),
+  execution: ExecutionProfileDefaultsSchema.optional(),
 })
 export type ProposeAdmissionCommand = z.infer<typeof ProposeAdmissionCommandSchema>
 
@@ -163,7 +175,14 @@ export const AdmissionSelectionSchema = z.discriminatedUnion("mode", [
   z.strictObject({ mode: z.literal("create"), streamTitle: text }),
   z.strictObject({ mode: z.literal("existing"), streamId: StreamIDSchema }),
   z.strictObject({ mode: z.literal("keep"), streamId: StreamIDSchema }),
-  z.strictObject({ mode: z.literal("replace"), streamId: StreamIDSchema }),
+  z.strictObject({
+    mode: z.literal("replace"),
+    streamId: StreamIDSchema,
+    workItems: z.array(z.strictObject({
+      workItemId: WorkItemIDSchema,
+      expectedVersion,
+    })).min(1),
+  }),
   z.strictObject({ mode: z.literal("fork"), streamId: StreamIDSchema, streamTitle: text }),
 ])
 export type AdmissionSelection = z.infer<typeof AdmissionSelectionSchema>

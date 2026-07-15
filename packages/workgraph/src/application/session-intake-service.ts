@@ -1,4 +1,4 @@
-import type { WorkGraphContext } from "../contracts"
+import type { ExecutionProfileDefaults, WorkGraphContext } from "../contracts"
 
 export type IdleSession = Readonly<{
   sessionId: string
@@ -6,12 +6,20 @@ export type IdleSession = Readonly<{
   summary: string
   meaningful: boolean
   becameIdleAt: number
+  execution?: ExecutionProfileDefaults
 }>
 
 export type SessionIntakePort = Readonly<{
   createUnorganized(
     context: WorkGraphContext,
-    input: Readonly<{ idempotencyKey: string; sessionId: string; title: string; body: string; observedAt: number }>,
+    input: Readonly<{
+      idempotencyKey: string
+      sessionId: string
+      title: string
+      body: string
+      observedAt: number
+      execution?: ExecutionProfileDefaults
+    }>,
   ): Promise<"created" | "existing">
 }>
 
@@ -25,6 +33,7 @@ export function createSessionIntakeService(port: SessionIntakePort) {
         title: session.title,
         body: session.summary,
         observedAt: session.becameIdleAt,
+        ...(session.execution ? { execution: session.execution } : {}),
       })
     },
   }

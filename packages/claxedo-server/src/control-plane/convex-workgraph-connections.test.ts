@@ -29,8 +29,7 @@ describe("Convex WorkGraph Connection bindings", () => {
     })
     expect(db.rows.workgraph_connection_metadata).toEqual([
       expect.objectContaining({
-        owner_user_id: "user-a",
-        org_id: "org-a",
+        organization_id: "org-a",
         connection_id: "connection-github",
         integration_id: "github",
         capabilities: ["work-source"],
@@ -61,8 +60,7 @@ describe("Convex WorkGraph Connection bindings", () => {
 
     expect(db.rows.workgraph_connection_metadata).toHaveLength(1)
     expect(db.rows.workgraph_connection_metadata[0]).toMatchObject({
-      owner_user_id: "user-a",
-      org_id: "org-a",
+      organization_id: "org-a",
       connection_id: "connection-github",
       account_label: "Shared GitHub",
       row_version: 2,
@@ -145,9 +143,9 @@ describe("Convex WorkGraph Connection bindings", () => {
     await invoke(upsertMetadata, db, metadata({ status: "degraded" }))
     await expect(invoke(resolveOperationBinding, db, operation())).resolves.toBeNull()
     await invoke(upsertMetadata, db, metadata())
-    await expect(invoke(revokeAttemptBinding, db, { ownerUserId: "user-a", attemptId: "attempt-a" })).resolves.toEqual({ revoked: true })
+    await expect(invoke(revokeAttemptBinding, db, { ownerUserId: "user-a", orgId: "org-a", attemptId: "attempt-a" })).resolves.toEqual({ revoked: true })
     await expect(invoke(resolveOperationBinding, db, operation())).resolves.toBeNull()
-    await expect(invoke(revokeAttemptBinding, db, { ownerUserId: "user-a", attemptId: "attempt-a" })).resolves.toEqual({ revoked: false })
+    await expect(invoke(revokeAttemptBinding, db, { ownerUserId: "user-a", orgId: "org-a", attemptId: "attempt-a" })).resolves.toEqual({ revoked: false })
   })
 })
 
@@ -197,6 +195,7 @@ function fixture() {
     ],
     workgraph_attempts: [{
       _id: "attempt-row",
+      organization_id: "org-a",
       owner_user_id: "user-a",
       id: "attempt-a",
       state: "running",

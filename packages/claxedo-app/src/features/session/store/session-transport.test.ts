@@ -1,6 +1,11 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
 
 const calls: Array<{ url: string; method?: string }> = []
+const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?session-transport-restore`)) }
+
+afterAll(() => {
+  mock.module("@/platform/api/api", () => realApiModule)
+})
 
 mock.module("@/platform/api/api", () => ({
   authFetch: async (input: string | URL | Request, init?: RequestInit) => {

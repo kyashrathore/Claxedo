@@ -150,6 +150,7 @@ function memoryStore() {
 
 function context(ownerUserId: string): WorkGraphContext {
   return {
+    organizationId: "organization" as never,
     ownerUserId: branded<OwnerUserID>(ownerUserId),
     actor: { type: "user", id: branded(ownerUserId) },
     requestId: branded<RequestID>(`request_${ownerUserId}`),

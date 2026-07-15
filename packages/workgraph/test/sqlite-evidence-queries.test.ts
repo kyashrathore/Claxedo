@@ -108,6 +108,7 @@ describe("SQLite targeted Evidence queries", () => {
 
 function owner(ownerUserId: string): WorkGraphContext {
   return {
+    organizationId: "organization" as never,
     ownerUserId: ownerUserId as never,
     actor: { type: "user", id: ownerUserId as never },
     requestId: `request_${ownerUserId}` as never,

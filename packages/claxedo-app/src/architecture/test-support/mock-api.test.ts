@@ -1,5 +1,11 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { createMockApi, mockApiRegistration } from "./mock-api"
+
+const realApiModule = { ...(await import(`${import.meta.dir}/../../platform/api/api.ts?mock-api-restore`)) }
+
+afterAll(() => {
+  mock.module("@/platform/api/api", () => realApiModule)
+})
 
 describe("createMockApi defaults", () => {
   test("api.get resolves the JSON body of the configured response", async () => {

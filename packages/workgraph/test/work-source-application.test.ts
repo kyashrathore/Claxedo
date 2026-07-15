@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import {
   createAttentionService,
+  createWorkGraphAuthoringAdapter,
   createRecapService,
   createSessionIntakeService,
   createSourceAdmissionService,
@@ -9,6 +10,15 @@ import {
   RECAP_QUIET_PERIOD_MS,
   workSourceModelExcerpt,
 } from "../src/application"
+import {
+  ActorIDSchema,
+  ChangeCursorSchema,
+  CommandSuccessSchema,
+  ContentHashSchema,
+  OwnerUserIDSchema,
+  RequestIDSchema,
+  WorkSourceRevisionRefSchema,
+} from "../src/contracts"
 import type {
   OperationID,
   RecapID,
@@ -48,6 +58,76 @@ describe("manual Work Sources", () => {
 })
 
 describe("source admission", () => {
+  it("passes one exact authoring revision into strict planning and binds later revisions to a Stream", async () => {
+    const requests: Array<{ operationId: string; command: Record<string, unknown> }> = []
+    const adapter = createWorkGraphAuthoringAdapter({
+      async execute(_context, request) {
+        requests.push(request as never)
+        if (request.command.type === "create_work_source" || request.command.type === "revise_work_source") {
+          return CommandSuccessSchema.parse({
+            ok: true,
+            operationId: request.operationId,
+            cursor: String(requests.length),
+            value: { workSourceId: "source-1", revisionId: request.command.type === "create_work_source" ? "revision-1" : "revision-2" },
+          })
+        }
+        return CommandSuccessSchema.parse({
+          ok: true,
+          operationId: request.operationId,
+          cursor: String(requests.length),
+          value: { proposalId: requests.length === 2 ? "proposal-1" : "proposal-2" },
+        })
+      },
+    })
+    const firstContent = "Initial document"
+    const first = {
+      adapterId: "claxedo_docs",
+      projectId: "project-1",
+      documentId: "doc-1",
+      documentRevisionId: "doc-revision-1",
+      documentRevisionNumber: 1,
+      authoredAt: 10,
+      authoredBy: owner().actor,
+      contentHash: ContentHashSchema.parse(hashWorkSourceContent(firstContent)),
+    }
+    await expect(adapter.turnIntoWork(owner(), {
+      operationId: id("docs:doc-1:1"),
+      title: "Launch",
+      content: firstContent,
+      revision: first,
+    })).resolves.toMatchObject({ ok: true, source: { workSourceId: "source-1", revisionId: "revision-1" }, proposalId: "proposal-1" })
+
+    const secondContent = "Revised document"
+    await expect(adapter.turnIntoWork(owner(), {
+      operationId: id("docs:doc-1:2"),
+      title: "Launch",
+      content: secondContent,
+      revision: {
+        ...first,
+        documentRevisionId: "doc-revision-2",
+        documentRevisionNumber: 2,
+        parentDocumentRevisionId: "doc-revision-1",
+        contentHash: ContentHashSchema.parse(hashWorkSourceContent(secondContent)),
+      },
+      binding: { workSourceId: id("source-1"), latestRevisionId: id("revision-1") },
+      targetStreamId: id("stream-1"),
+    })).resolves.toMatchObject({ ok: true, source: { revisionId: "revision-2" }, proposalId: "proposal-2" })
+
+    expect(requests.map((request) => request.command)).toEqual([
+      expect.objectContaining({ type: "create_work_source", authoring: first }),
+      expect.objectContaining({ type: "propose_admission", source: expect.objectContaining({ revisionId: "revision-1" }) }),
+      expect.objectContaining({ type: "revise_work_source", expectedRevisionId: "revision-1", authoring: expect.objectContaining({ documentRevisionId: "doc-revision-2" }) }),
+      expect.objectContaining({ type: "propose_admission", targetStreamId: "stream-1", source: expect.objectContaining({ revisionId: "revision-2" }) }),
+    ])
+    await expect(adapter.turnIntoWork(owner(), {
+      operationId: id("docs:bad"),
+      title: "Bad",
+      content: "does not match",
+      revision: first,
+    })).rejects.toThrow("declared content hash")
+    expect(requests).toHaveLength(4)
+  })
+
   it("separates non-executable proposals from owner confirmation and preserves disposition", async () => {
     const commands: string[] = []
     const confirmationVersions: number[] = []
@@ -55,28 +135,32 @@ describe("source admission", () => {
       execute: async (_context, request) => {
         commands.push(String(request.command.type))
         if (request.command.type === "confirm_admission") confirmationVersions.push(request.command.expectedVersion)
-        if (request.command.type === "propose_admission") return {
+        if (request.command.type === "propose_admission") return CommandSuccessSchema.parse({
           ok: true,
           operationId: request.operationId,
-          cursor: id(String(commands.length)),
+          cursor: ChangeCursorSchema.parse(String(commands.length)),
           value: { proposalId: "proposal-1", executable: false },
-        }
-        if (request.command.type === "confirm_admission") return {
+        })
+        if (request.command.type === "confirm_admission") return CommandSuccessSchema.parse({
           ok: true,
           operationId: request.operationId,
-          cursor: id(String(commands.length)),
+          cursor: ChangeCursorSchema.parse(String(commands.length)),
           value: { disposition: request.command.selection },
-        }
-        if (request.command.type === "dismiss_admission" || request.command.type === "reopen_admission") return {
+        })
+        if (request.command.type === "dismiss_admission" || request.command.type === "reopen_admission") return CommandSuccessSchema.parse({
           ok: true,
           operationId: request.operationId,
-          cursor: id(String(commands.length)),
+          cursor: ChangeCursorSchema.parse(String(commands.length)),
           value: { proposalId: request.command.proposalId, version: request.command.expectedVersion + 1 },
-        }
+        })
         throw new Error(`Unexpected command: ${request.command.type}`)
       },
     })
-    const source = { workSourceId: id("source-1"), revisionId: id("revision-1"), contentHash: id(hashWorkSourceContent("Plan")) }
+    const source = WorkSourceRevisionRefSchema.parse({
+      workSourceId: "source-1",
+      revisionId: "revision-1",
+      contentHash: hashWorkSourceContent("Plan"),
+    })
     const proposed = await service.propose(owner(), { operationId: id("op-1"), source })
     expect(proposed).toMatchObject({ ok: true, value: { executable: false } })
     expect(commands).toEqual(["propose_admission"])
@@ -167,17 +251,17 @@ function memorySources(): WorkSourcePort {
     const now = ++next
     const workSourceId = source?.id ?? id<WorkSourceID>(`source-${next}`)
     const revisionId = id<WorkSourceRevisionID>(`revision-${next}`)
-    const revision = {
+    const revision: WorkSourceRevisionDto = {
       id: revisionId,
       workSourceId,
       revisionNumber: (source?.revisionCount ?? 0) + 1,
       content: input.content,
-      contentHash: id(hashWorkSourceContent(input.content)),
+      contentHash: ContentHashSchema.parse(hashWorkSourceContent(input.content)),
       origin: { kind: "manual" as const },
       createdAt: now,
       createdBy: context.actor,
     }
-    const record = {
+    const record: WorkSourceDto = {
       id: workSourceId,
       ownerUserId: context.ownerUserId,
       title: input.title,
@@ -204,7 +288,13 @@ function memorySources(): WorkSourcePort {
 }
 
 function owner(): WorkGraphContext {
-  return { ownerUserId: id("owner"), actor: { type: "user", id: id("owner") }, requestId: id("request"), access: { mode: "owner" } }
+  return {
+    organizationId: "organization" as never,
+    ownerUserId: OwnerUserIDSchema.parse("owner"),
+    actor: { type: "user", id: ActorIDSchema.parse("owner") },
+    requestId: RequestIDSchema.parse("request"),
+    access: { mode: "owner" },
+  }
 }
 
 function id<Type = string>(value: string) { return value as Type }

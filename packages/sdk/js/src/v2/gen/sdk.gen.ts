@@ -175,6 +175,10 @@ import type {
   QuestionReplyErrors,
   QuestionReplyResponses,
   QuestionV2Reply,
+  ServerSessionSessionToolRegisterErrors,
+  ServerSessionSessionToolRegisterResponses,
+  ServerSessionSessionToolUnregisterErrors,
+  ServerSessionSessionToolUnregisterResponses,
   SessionAbortErrors,
   SessionAbortResponses,
   SessionChildrenErrors,
@@ -5476,6 +5480,7 @@ export class Session3 extends HeyApiClient {
       id?: string
       agent?: string
       model?: ModelRef
+      tools?: Array<string>
       location?: LocationRef
     },
     options?: Options<never, ThrowOnError>,
@@ -5488,6 +5493,7 @@ export class Session3 extends HeyApiClient {
             { in: "body", key: "id" },
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
+            { in: "body", key: "tools" },
             { in: "body", key: "location" },
           ],
         },
@@ -7074,6 +7080,92 @@ export class V2 extends HeyApiClient {
   }
 }
 
+export class Tool2 extends HeyApiClient {
+  public unregister<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).delete<
+      ServerSessionSessionToolUnregisterResponses,
+      ServerSessionSessionToolUnregisterErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/tool",
+      ...options,
+      ...params,
+    })
+  }
+
+  public register<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      callbackUrl?: string
+      tools?: Array<{
+        name: string
+        description: string
+        inputSchema: {
+          [key: string]: unknown
+        }
+        outputSchema?: {
+          [key: string]: unknown
+        }
+      }>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "callbackUrl" },
+            { in: "body", key: "tools" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ServerSessionSessionToolRegisterResponses,
+      ServerSessionSessionToolRegisterErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/tool",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Session4 extends HeyApiClient {
+  private _tool?: Tool2
+  get tool(): Tool2 {
+    return (this._tool ??= new Tool2({ client: this.client }))
+  }
+}
+
+export class Session5 extends HeyApiClient {
+  private _session?: Session4
+  get session(): Session4 {
+    return (this._session ??= new Session4({ client: this.client }))
+  }
+}
+
+export class Server extends HeyApiClient {
+  private _session?: Session5
+  get session(): Session5 {
+    return (this._session ??= new Session5({ client: this.client }))
+  }
+}
+
 export class OpencodeClient extends HeyApiClient {
   public static readonly __registry = new HeyApiRegistry<OpencodeClient>()
 
@@ -7215,5 +7307,10 @@ export class OpencodeClient extends HeyApiClient {
   private _v2?: V2
   get v2(): V2 {
     return (this._v2 ??= new V2({ client: this.client }))
+  }
+
+  private _server?: Server
+  get server(): Server {
+    return (this._server ??= new Server({ client: this.client }))
   }
 }

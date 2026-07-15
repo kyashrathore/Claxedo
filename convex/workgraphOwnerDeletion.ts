@@ -1,6 +1,6 @@
 import { v } from "convex/values"
 import { serviceMutation } from "./model"
-import { requireTrustedWorkGraphOwnerSubject } from "./workgraphModel"
+import { requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
 
 const deletionLeaseMs = 5 * 60 * 1_000
 export const WORKGRAPH_OWNER_DELETION_BATCH_SIZE = 8
@@ -10,7 +10,6 @@ export const WORKGRAPH_OWNER_TABLES = [
   "workgraph_attention_summaries",
   "workgraph_notifications",
   "workgraph_attempt_connection_bindings",
-  "workgraph_connection_metadata",
   "workgraph_decision_work_items",
   "workgraph_evidence",
   "workgraph_durable_effect_receipts",
@@ -41,6 +40,7 @@ export const WORKGRAPH_OWNER_TABLES = [
   "workgraph_migration_intake",
   "workgraph_operation_results",
   "workgraphs",
+  "workgraph_execution_capabilities",
 ] as const
 
 type CleanupTarget = Readonly<{
@@ -51,28 +51,53 @@ type CleanupTarget = Readonly<{
 
 export const prepareForService = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_subject: v.string(),
     operation_id: v.string(),
     now: v.number(),
   },
   handler: async (ctx, args) => {
-    const owner = await requireTrustedWorkGraphOwnerSubject(ctx, args.service_token, args.owner_subject)
-    return prepareWorkGraphOwnerDeletion(ctx, String(owner._id), args.operation_id, args.now)
+    const tenant = await requireTrustedWorkGraphTenantSubject(ctx, args.service_token, args.organization_id, args.owner_subject)
+    return prepareWorkGraphOwnerDeletion(ctx, String(tenant.organization_id), String(tenant.owner_user_id), args.operation_id, args.now)
   },
 })
 
 export const finalizeForService = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_subject: v.string(),
     operation_id: v.string(),
     target_snapshot_hash: v.string(),
     now: v.number(),
   },
   handler: async (ctx, args) => {
-    const owner = await requireTrustedWorkGraphOwnerSubject(ctx, args.service_token, args.owner_subject)
+    const tenant = await requireTrustedWorkGraphTenantSubject(ctx, args.service_token, args.organization_id, args.owner_subject)
     return finalizeWorkGraphOwnerDeletion(
       ctx,
-      String(owner._id),
+      String(tenant.organization_id),
+      String(tenant.owner_user_id),
+      args.operation_id,
+      args.target_snapshot_hash,
+      args.now,
+    )
+  },
+})
+
+export const renewForService = serviceMutation({
+  args: {
+    organization_id: v.id("orgs"),
+    owner_subject: v.string(),
+    operation_id: v.string(),
+    target_snapshot_hash: v.string(),
+    renew_only: v.literal(true),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const tenant = await requireTrustedWorkGraphTenantSubject(ctx, args.service_token, args.organization_id, args.owner_subject)
+    return renewWorkGraphOwnerDeletion(
+      ctx,
+      String(tenant.organization_id),
+      String(tenant.owner_user_id),
       args.operation_id,
       args.target_snapshot_hash,
       args.now,
@@ -82,22 +107,24 @@ export const finalizeForService = serviceMutation({
 
 export const releaseForService = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_subject: v.string(),
     operation_id: v.string(),
   },
   handler: async (ctx, args) => {
-    const owner = await requireTrustedWorkGraphOwnerSubject(ctx, args.service_token, args.owner_subject)
-    return releaseWorkGraphOwnerDeletion(ctx, String(owner._id), args.operation_id)
+    const tenant = await requireTrustedWorkGraphTenantSubject(ctx, args.service_token, args.organization_id, args.owner_subject)
+    return releaseWorkGraphOwnerDeletion(ctx, String(tenant.organization_id), String(tenant.owner_user_id), args.operation_id)
   },
 })
 
 export async function prepareWorkGraphOwnerDeletion(
   ctx: any,
+  organization: string,
   owner: string,
   operationId: string,
   now: number,
 ) {
-  const ownerSubjectHash = await sha256(owner)
+  const ownerSubjectHash = await sha256(`${organization}\u0000${owner}`)
   const operationHash = await sha256(operationId)
   const receipt = await ctx.db.query("workgraph_owner_deletion_receipts")
     .withIndex("by_owner_operation", (query: any) =>
@@ -106,7 +133,7 @@ export async function prepareWorkGraphOwnerDeletion(
   if (receipt?.state === "completed") {
     return { ok: true as const, state: "completed" as const, result: receipt.result }
   }
-  const barrier = await ownerDeletionBarrier(ctx, owner)
+  const barrier = await ownerDeletionBarrier(ctx, organization, owner)
   if (barrier?.operation_hash === operationHash && receipt?.state === "deleting") {
     await renewDeletion(ctx, barrier, receipt, now)
     return { ok: true as const, state: "deleting" as const, targetSnapshotHash: receipt.target_snapshot_hash }
@@ -134,6 +161,7 @@ export async function prepareWorkGraphOwnerDeletion(
   }
   if (receipt?.state === "deleting") {
     await ctx.db.insert("workgraph_owner_deletion_barriers", {
+      organization_id: organization,
       owner_user_id: owner,
       operation_hash: operationHash,
       lease_expires_at: now + deletionLeaseMs,
@@ -143,11 +171,12 @@ export async function prepareWorkGraphOwnerDeletion(
     await ctx.db.patch(receipt._id, { lease_expires_at: now + deletionLeaseMs, updated_at: now })
     return { ok: true as const, state: "deleting" as const, targetSnapshotHash: receipt.target_snapshot_hash }
   }
-  if (!await isQuiescent(ctx, owner)) return { ok: false as const, reason: "not_quiescent" as const }
+  if (!await isQuiescent(ctx, organization, owner)) return { ok: false as const, reason: "not_quiescent" as const }
 
-  const targets = receipt?.targets ?? await readCleanupTargets(ctx, owner)
+  const targets = receipt?.targets ?? await readCleanupTargets(ctx, organization, owner)
   const targetSnapshotHash = await sha256(stableJson(targets))
   await ctx.db.insert("workgraph_owner_deletion_barriers", {
+    organization_id: organization,
     owner_user_id: owner,
     operation_hash: operationHash,
     lease_expires_at: now + deletionLeaseMs,
@@ -172,33 +201,35 @@ export async function prepareWorkGraphOwnerDeletion(
 
 export async function finalizeWorkGraphOwnerDeletion(
   ctx: any,
+  organization: string,
   owner: string,
   operationId: string,
   targetSnapshotHash: string,
   now: number,
 ) {
-  const ownerSubjectHash = await sha256(owner)
+  const ownerSubjectHash = await sha256(`${organization}\u0000${owner}`)
   const operationHash = await sha256(operationId)
   const receipt = await ctx.db.query("workgraph_owner_deletion_receipts")
     .withIndex("by_owner_operation", (query: any) =>
       query.eq("owner_subject_hash", ownerSubjectHash).eq("operation_hash", operationHash))
     .unique()
-  const barrier = await ownerDeletionBarrier(ctx, owner)
+  const barrier = await ownerDeletionBarrier(ctx, organization, owner)
   if (receipt?.state === "completed") {
     return { ok: true as const, result: receipt.result }
   }
   if (!receipt || !["cleaning", "deleting"].includes(receipt.state) || receipt.target_snapshot_hash !== targetSnapshotHash ||
-    (receipt.state === "cleaning" && !Array.isArray(receipt.targets)) || barrier?.operation_hash !== operationHash) {
+    (receipt.state === "cleaning" && !Array.isArray(receipt.targets)) || barrier?.operation_hash !== operationHash ||
+    receipt.lease_expires_at <= now || barrier.lease_expires_at <= now) {
     return { ok: false as const, reason: "in_progress" as const }
   }
   if (receipt.state === "cleaning") {
-    if (!await isQuiescent(ctx, owner)) return { ok: false as const, reason: "not_quiescent" as const }
-    if (await sha256(stableJson(await readCleanupTargets(ctx, owner))) !== targetSnapshotHash) {
+    if (!await isQuiescent(ctx, organization, owner)) return { ok: false as const, reason: "not_quiescent" as const }
+    if (await sha256(stableJson(await readCleanupTargets(ctx, organization, owner))) !== targetSnapshotHash) {
       return { ok: false as const, reason: "not_quiescent" as const }
     }
   }
 
-  const batch = await deleteOwnerRecordBatch(ctx, owner)
+  const batch = await deleteOwnerRecordBatch(ctx, organization, owner)
   const recordCount = (receipt.deleted_record_count ?? 0) + batch.deleted
   if (!batch.complete) {
     await ctx.db.patch(barrier._id, { lease_expires_at: now + deletionLeaseMs, updated_at: now })
@@ -229,15 +260,38 @@ export async function finalizeWorkGraphOwnerDeletion(
   return { ok: true as const, result }
 }
 
-export async function releaseWorkGraphOwnerDeletion(ctx: any, owner: string, operationId: string) {
-  const ownerSubjectHash = await sha256(owner)
+export async function renewWorkGraphOwnerDeletion(
+  ctx: any,
+  organization: string,
+  owner: string,
+  operationId: string,
+  targetSnapshotHash: string,
+  now: number,
+) {
+  const ownerSubjectHash = await sha256(`${organization}\u0000${owner}`)
+  const operationHash = await sha256(operationId)
+  const receipt = await ctx.db.query("workgraph_owner_deletion_receipts")
+    .withIndex("by_owner_operation", (query: any) =>
+      query.eq("owner_subject_hash", ownerSubjectHash).eq("operation_hash", operationHash))
+    .unique()
+  const barrier = await ownerDeletionBarrier(ctx, organization, owner)
+  if (receipt?.state !== "cleaning" || receipt.target_snapshot_hash !== targetSnapshotHash ||
+    barrier?.operation_hash !== operationHash || receipt.lease_expires_at <= now || barrier.lease_expires_at <= now) {
+    return { ok: false as const, reason: "in_progress" as const }
+  }
+  await renewDeletion(ctx, barrier, receipt, now)
+  return { ok: true as const, state: "renewed" as const }
+}
+
+export async function releaseWorkGraphOwnerDeletion(ctx: any, organization: string, owner: string, operationId: string) {
+  const ownerSubjectHash = await sha256(`${organization}\u0000${owner}`)
   const operationHash = await sha256(operationId)
   const receipt = await ctx.db.query("workgraph_owner_deletion_receipts")
     .withIndex("by_owner_operation", (query: any) => query
       .eq("owner_subject_hash", ownerSubjectHash)
       .eq("operation_hash", operationHash))
     .unique()
-  const barrier = await ownerDeletionBarrier(ctx, owner)
+  const barrier = await ownerDeletionBarrier(ctx, organization, owner)
   if (receipt?.state === "cleaning") {
     if (barrier?.operation_hash === operationHash) await ctx.db.delete(barrier._id)
     await ctx.db.delete(receipt._id)
@@ -245,10 +299,10 @@ export async function releaseWorkGraphOwnerDeletion(ctx: any, owner: string, ope
   return { ok: true as const }
 }
 
-async function readCleanupTargets(ctx: any, owner: string): Promise<readonly CleanupTarget[]> {
+async function readCleanupTargets(ctx: any, organization: string, owner: string): Promise<readonly CleanupTarget[]> {
   const [streams, attempts] = await Promise.all([
-    ownerRows(ctx, "workgraph_streams", owner),
-    ownerRows(ctx, "workgraph_attempts", owner),
+    ownerRows(ctx, "workgraph_streams", organization, owner),
+    ownerRows(ctx, "workgraph_attempts", organization, owner),
   ])
   const streamIds: string[] = [...new Set<string>([
     ...streams.map((stream: any) => String(stream.id)),
@@ -278,15 +332,15 @@ async function readCleanupTargets(ctx: any, owner: string): Promise<readonly Cle
   })
 }
 
-async function isQuiescent(ctx: any, owner: string) {
+async function isQuiescent(ctx: any, organization: string, owner: string) {
   const [attempts, leases, runtimeEffects, bindings, proposals, outbox, jobs] = await Promise.all([
-    ownerRows(ctx, "workgraph_attempts", owner),
-    ownerRows(ctx, "workgraph_leases", owner),
-    ownerRows(ctx, "workgraph_runtime_effects", owner),
-    ownerRows(ctx, "workgraph_attempt_connection_bindings", owner),
-    ownerRows(ctx, "workgraph_admission_proposals", owner),
-    ownerRows(ctx, "workgraph_outbox", owner),
-    ownerRows(ctx, "workgraph_due_jobs", owner),
+    ownerRows(ctx, "workgraph_attempts", organization, owner),
+    ownerRows(ctx, "workgraph_leases", organization, owner),
+    ownerRows(ctx, "workgraph_runtime_effects", organization, owner),
+    ownerRows(ctx, "workgraph_attempt_connection_bindings", organization, owner),
+    ownerRows(ctx, "workgraph_admission_proposals", organization, owner),
+    ownerRows(ctx, "workgraph_outbox", organization, owner),
+    ownerRows(ctx, "workgraph_due_jobs", organization, owner),
   ])
   return !attempts.some((row: any) => ["admitted", "placing", "running", "attention"].includes(row.state))
     && leases.length === 0
@@ -297,13 +351,13 @@ async function isQuiescent(ctx: any, owner: string) {
     && !jobs.some((row: any) => ["pending", "running", "claimed"].includes(row.status))
 }
 
-async function deleteOwnerRecordBatch(ctx: any, owner: string) {
+async function deleteOwnerRecordBatch(ctx: any, organization: string, owner: string) {
   let remaining = WORKGRAPH_OWNER_DELETION_BATCH_SIZE
   let deleted = 0
   for (const table of WORKGRAPH_OWNER_TABLES) {
     if (remaining === 0) return { deleted, complete: false }
     const candidates = await ctx.db.query(table)
-      .withIndex("by_owner", (query: any) => query.eq("owner_user_id", owner))
+      .withIndex("by_tenant", (query: any) => query.eq("organization_id", organization).eq("owner_user_id", owner))
       .take(remaining + 1)
     const rows = candidates.slice(0, remaining)
     for (const row of rows) await ctx.db.delete(row._id)
@@ -319,13 +373,15 @@ async function renewDeletion(ctx: any, barrier: any, receipt: any, now: number) 
   await ctx.db.patch(receipt._id, { lease_expires_at: now + deletionLeaseMs, updated_at: now })
 }
 
-function ownerRows(ctx: any, table: string, owner: string) {
-  return ctx.db.query(table).withIndex("by_owner", (query: any) => query.eq("owner_user_id", owner)).collect()
+function ownerRows(ctx: any, table: string, organization: string, owner: string) {
+  return ctx.db.query(table).withIndex("by_tenant", (query: any) =>
+    query.eq("organization_id", organization).eq("owner_user_id", owner),
+  ).collect()
 }
 
-function ownerDeletionBarrier(ctx: any, owner: string) {
+function ownerDeletionBarrier(ctx: any, organization: string, owner: string) {
   return ctx.db.query("workgraph_owner_deletion_barriers")
-    .withIndex("by_owner", (query: any) => query.eq("owner_user_id", owner))
+    .withIndex("by_tenant", (query: any) => query.eq("organization_id", organization).eq("owner_user_id", owner))
     .unique()
 }
 

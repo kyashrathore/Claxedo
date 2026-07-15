@@ -1,11 +1,23 @@
 import { createHash } from "node:crypto"
 import BetterSqlite3 from "better-sqlite3"
 import { describe, expect, it } from "vitest"
-import type { AdmissionAgentPlan, WorkGraphContext, WorkSourceRevisionRef } from "../../contracts"
+import { readChangeCursor, type AdmissionAgentPlan, type WorkGraphContext, type WorkSourceRevisionRef } from "../../contracts"
 import { createSqliteWorkGraphService } from "./store"
 import { createSqliteSourcePlanningRuntime } from "./source-planning-runtime"
 
 describe("SQLite durable source planning runtime", () => {
+  it("requires an exact Session directory before composing a Session-backed runtime", () => {
+    const database = new BetterSqlite3(":memory:")
+    try {
+      expect(() => createSqliteSourcePlanningRuntime({
+        database,
+        sessions: { admit: async () => "session", result: async () => ({ state: "running" }) },
+      })).toThrow("requires an explicit Session directory")
+    } finally {
+      database.close()
+    }
+  })
+
   it("surfaces incomplete WorkGraph generation configuration without admitting a Session", async () => {
     const database = new BetterSqlite3(":memory:")
     let admissions = 0
@@ -14,6 +26,7 @@ describe("SQLite durable source planning runtime", () => {
       const source = await createSource(workgraph, false)
       const runtime = createSqliteSourcePlanningRuntime({
         database,
+        sessionDirectory: "/repo",
         sessions: {
           async admit() {
             admissions += 1
@@ -100,9 +113,12 @@ describe("SQLite durable source planning runtime", () => {
           completionContract: expect.objectContaining({ version: 1 }),
         })],
       })
-      await expect(workgraph.query(owner(), "changes", "list", { after: baseline.snapshotCursor as never })).resolves.toEqual([
+      const changes = await workgraph.query(owner(), "changes", "list", { after: baseline.snapshotCursor as never })
+      const baselinePosition = readChangeCursor(baseline.snapshotCursor, owner().organizationId, owner().ownerUserId)
+      expect(changes.map((change) => readChangeCursor(change.cursor, owner().organizationId, owner().ownerUserId)))
+        .toEqual([baselinePosition + 1, baselinePosition + 2])
+      expect(changes).toEqual([
         expect.objectContaining({
-          cursor: String(Number(baseline.snapshotCursor) + 1),
           resource: { type: "admission_proposal", id: source.proposalId },
           event: expect.objectContaining({
             type: "admission_proposal_updated",
@@ -114,7 +130,6 @@ describe("SQLite durable source planning runtime", () => {
           }),
         }),
         expect.objectContaining({
-          cursor: String(Number(baseline.snapshotCursor) + 2),
           resource: { type: "admission_proposal", id: source.proposalId },
           event: expect.objectContaining({
             type: "admission_proposal_updated",
@@ -161,6 +176,89 @@ describe("SQLite durable source planning runtime", () => {
     }
   })
 
+  it("publishes an exact existing-Stream placement when bounded planning evidence names a target", async () => {
+    const database = new BetterSqlite3(":memory:")
+    try {
+      const workgraph = service(database)
+      const target = await workgraph.execute(owner(), {
+        operationId: "target-stream" as never,
+        command: { version: 1, type: "create_stream", title: "Existing launch Stream" },
+      })
+      if (!target.ok) throw new Error("target Stream failed")
+      const targetStreamId = (target.value as { streamId: string }).streamId
+      const source = await createSource(workgraph, true, targetStreamId)
+      const output = plan(source.ref)
+      output.suggestedPlacement = { mode: "existing", streamId: targetStreamId as never }
+      let prompt = ""
+      const runtime = createSqliteSourcePlanningRuntime({
+        database,
+        sessionDirectory: "/repo",
+        sessions: {
+          async admit(input) { prompt = input.prompt; return String(input.sessionId) },
+          async result() { return { state: "succeeded", summary: JSON.stringify(output), artifacts: [] } },
+        },
+      })
+
+      await expect(runtime.runDue(owner())).resolves.toMatchObject({ state: "completed" })
+      expect(prompt).toContain(`"targetStreamId":"${targetStreamId}"`)
+      expect(prompt).toContain("suggestedPlacement must be existing with that exact Stream ID")
+      expect(await admission(database, source.proposalId)).toMatchObject({
+        state: "proposed",
+        suggestedPlacement: { mode: "existing", streamId: targetStreamId },
+      })
+    } finally {
+      database.close()
+    }
+  })
+
+  it.each([
+    ["a new Stream", { mode: "new_stream", streamTitle: "Incorrect replacement" }],
+    ["a different Stream", { mode: "existing", streamId: "stream_different" }],
+  ] as const)("rejects %s when bounded planning evidence names an exact target", async (_label, suggestedPlacement) => {
+    const database = new BetterSqlite3(":memory:")
+    try {
+      const workgraph = service(database)
+      const target = await workgraph.execute(owner(), {
+        operationId: "target-stream" as never,
+        command: { version: 1, type: "create_stream", title: "Existing launch Stream" },
+      })
+      if (!target.ok) throw new Error("target Stream failed")
+      const targetStreamId = (target.value as { streamId: string }).streamId
+      const source = await createSource(workgraph, true, targetStreamId)
+      const output = plan(source.ref)
+      output.suggestedPlacement = suggestedPlacement as AdmissionAgentPlan["suggestedPlacement"]
+      const runtime = createSqliteSourcePlanningRuntime({
+        database,
+        sessionDirectory: "/repo",
+        sessions: {
+          async admit(input) { return String(input.sessionId) },
+          async result() { return { state: "succeeded", summary: JSON.stringify(output), artifacts: [] } },
+        },
+      })
+
+      await expect(runtime.runDue(owner())).resolves.toMatchObject({
+        state: "failed",
+        error: expect.objectContaining({ message: "Source planning result did not honor the exact target Stream" }),
+      })
+      const failed = await admission(database, source.proposalId)
+      expect(failed).toMatchObject({
+        state: "planning_failed",
+        generation: expect.objectContaining({
+          method: "planning_failed",
+          reason: "Source planning result did not honor the exact target Stream",
+        }),
+      })
+      expect(failed).not.toHaveProperty("suggestedPlacement")
+      expect(failed).not.toHaveProperty("proposedOutcomes")
+      expect(database.prepare("SELECT status, last_error FROM wg_v2_due_jobs WHERE subject_id = ?").get(source.proposalId)).toEqual({
+        status: "failed",
+        last_error: "Source planning result did not honor the exact target Stream",
+      })
+    } finally {
+      database.close()
+    }
+  })
+
   it("fences a settled Session when the exact source revision was revised", async () => {
     const database = new BetterSqlite3(":memory:")
     try {
@@ -169,6 +267,7 @@ describe("SQLite durable source planning runtime", () => {
       const runtime = createSqliteSourcePlanningRuntime({
         database,
         workerId: "planner-a",
+        sessionDirectory: "/repo",
         sessions: {
           async admit(input) { return String(input.sessionId) },
           async result() { return { state: "running" } },
@@ -202,7 +301,7 @@ describe("SQLite durable source planning runtime", () => {
     let now = 1_000
     const identities: Array<{ attemptId: string; sessionId?: string }> = []
     try {
-      const source = await createSource(createSqliteWorkGraphService({ database, clock: { now: () => now } }).service)
+      const source = await createSource(createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, clock: { now: () => now } }).service)
       const sessions = {
         classifyAdmissionError: () => "indeterminate" as const,
         async admit(input: { attemptId: string; sessionId?: string }) {
@@ -214,13 +313,13 @@ describe("SQLite durable source planning runtime", () => {
           return { state: "succeeded" as const, summary: JSON.stringify(plan(source.ref)), artifacts: [] }
         },
       }
-      const beforeRestart = createSqliteSourcePlanningRuntime({ database, clock: { now: () => now }, workerId: "planner-before", sessions })
+      const beforeRestart = createSqliteSourcePlanningRuntime({ database, clock: { now: () => now }, workerId: "planner-before", sessions, sessionDirectory: "/repo" })
       await expect(beforeRestart.runDue(owner())).resolves.toMatchObject({ state: "running" })
       const durable = JSON.parse((database.prepare("SELECT payload_json FROM wg_v2_due_jobs").get() as { payload_json: string }).payload_json)
       expect(durable).toMatchObject({ sessionId: identities[0]?.sessionId, sessionAdmissionConfirmed: false })
 
       now += 5 * 60 * 1000
-      const afterRestart = createSqliteSourcePlanningRuntime({ database, clock: { now: () => now }, workerId: "planner-after", sessions })
+      const afterRestart = createSqliteSourcePlanningRuntime({ database, clock: { now: () => now }, workerId: "planner-after", sessions, sessionDirectory: "/repo" })
       await expect(afterRestart.runDue(owner())).resolves.toMatchObject({ state: "completed", sessionId: identities[0]?.sessionId })
       expect(identities).toEqual([identities[0], identities[0]])
       expect(await admission(database, source.proposalId)).toMatchObject({ generation: { method: "agent_session", sessionId: identities[0]?.sessionId } })
@@ -233,11 +332,12 @@ describe("SQLite durable source planning runtime", () => {
     const database = new BetterSqlite3(":memory:")
     let now = 1_000
     try {
-      const workgraph = createSqliteWorkGraphService({ database, clock: { now: () => now } }).service
+      const workgraph = createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, clock: { now: () => now } }).service
       const source = await createSource(workgraph)
       const runtime = createSqliteSourcePlanningRuntime({
         database,
         clock: { now: () => now },
+        sessionDirectory: "/repo",
         sessions: {
           classifyAdmissionError: () => "unavailable",
           async admit() { throw new Error("Session V2 is disabled") },
@@ -314,6 +414,7 @@ describe("SQLite durable source planning runtime", () => {
       output.proposedWorkItems[0]!.dependencyKeys = ["verify"]
       const runtime = createSqliteSourcePlanningRuntime({
         database,
+        sessionDirectory: "/repo",
         sessions: {
           async admit(input) { return String(input.sessionId) },
           async result() { return { state: "succeeded", summary: JSON.stringify(output), artifacts: [] } },
@@ -353,7 +454,7 @@ describe("SQLite durable source planning runtime", () => {
         generation: { method: "deterministic_fallback", reason: "legacy" },
       }), owner().ownerUserId, source.proposalId)
 
-      createSqliteWorkGraphService({ database })
+      createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities })
 
       expect(await admission(database, source.proposalId)).toMatchObject({
         state: "planning_failed",
@@ -378,7 +479,7 @@ describe("SQLite durable source planning runtime", () => {
   })
 })
 
-async function createSource(workgraph: ReturnType<typeof service>, configure = true) {
+async function createSource(workgraph: ReturnType<typeof service>, configure = true, targetStreamId?: string) {
   if (configure) {
     const configured = await workgraph.execute(owner(), {
       operationId: "generation_defaults" as never,
@@ -401,7 +502,12 @@ async function createSource(workgraph: ReturnType<typeof service>, configure = t
   const ref = { ...source, contentHash: createHash("sha256").update(content).digest("hex") } as WorkSourceRevisionRef
   const proposed = await workgraph.execute(owner(), {
     operationId: "proposal" as never,
-    command: { version: 1, type: "propose_admission", source: ref },
+    command: {
+      version: 1,
+      type: "propose_admission",
+      source: ref,
+      ...(targetStreamId ? { targetStreamId: targetStreamId as never } : {}),
+    },
   })
   if (!proposed.ok) throw new Error("proposal failed")
   return { ref, proposalId: (proposed.value as { proposalId: string }).proposalId }
@@ -416,9 +522,6 @@ const generationExecution = {
   effort: "high",
   tools: ["read"],
   connectionIds: [],
-  isolation: "stream" as const,
-  cleanup: "retain" as const,
-  integration: "manual" as const,
 }
 
 async function admission(database: BetterSqlite3.Database, proposalId: string) {
@@ -427,11 +530,12 @@ async function admission(database: BetterSqlite3.Database, proposalId: string) {
 }
 
 function service(database: BetterSqlite3.Database) {
-  return createSqliteWorkGraphService({ database }).service
+  return createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities }).service
 }
 
 function owner(): WorkGraphContext {
   return {
+    organizationId: "organization" as never,
     ownerUserId: "owner" as never,
     actor: { type: "user", id: "owner" as never },
     requestId: "request" as never,
@@ -456,3 +560,4 @@ function plan(source: WorkSourceRevisionRef): AdmissionAgentPlan {
     duplicateMatches: [],
   }
 }
+import { testExecutionCapabilities } from "../../../test/test-execution-capabilities"

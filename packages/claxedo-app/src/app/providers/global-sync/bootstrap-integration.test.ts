@@ -46,7 +46,7 @@ afterEach(() => {
 })
 
 describe("global sync bootstrap integration", () => {
-  test("cached child data is synchronous and bootstrap critical path is inventory-only", async () => {
+  test("cached child data is synchronous and bootstrap loads inventory with the explicit provider capability", async () => {
     queryClient.setQueryData(queryKeys.directory.projectMeta("/tmp/ws"), { name: "Cached" })
     queryClient.setQueryData(queryKeys.directory.icon("/tmp/ws"), "triangle")
     queryClient.setQueryData(queryKeys.directory.sessionCache("/tmp/ws"), {
@@ -76,15 +76,18 @@ describe("global sync bootstrap integration", () => {
         calls.push("inventory")
       },
       translate: (key) => key,
-      baseUrl: "http://localhost:4096",
+      baseUrl: "http://claxedo.test",
       fetch: async (input) => {
         const req = input instanceof Request ? input : new Request(String(input))
         calls.push(req.url.includes("/api/workspace/resolve") ? "workspace_resolve" : req.url)
+        if (req.url === "http://claxedo.test/provider?harness=opencode") {
+          return Response.json({ all: [], connected: [], default: {} })
+        }
         return new Response("{}", { headers: { "Content-Type": "application/json" } })
       },
     })
 
-    expect(calls).toEqual(["inventory"])
+    expect(calls).toEqual(["inventory", "http://claxedo.test/provider?harness=opencode"])
 
     await frames(60)
 

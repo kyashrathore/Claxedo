@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import {
   workGraphOwnerDeletionConformance,
   type OwnerDeletionCleanupObservation,
@@ -9,11 +9,14 @@ import {
   finalizeWorkGraphOwnerDeletion,
   prepareWorkGraphOwnerDeletion,
   releaseWorkGraphOwnerDeletion,
+  renewWorkGraphOwnerDeletion,
   WORKGRAPH_OWNER_TABLES,
 } from "../../../../convex/workgraphOwnerDeletion"
 import { applyWorkGraphCommand } from "../../../../convex/workgraphCommands"
-import { readWorkGraphProjection } from "../../../../convex/workgraphChanges"
+import { readWorkGraphProjection as readTenantWorkGraphProjection } from "../../../../convex/workgraphChanges"
 import { createConvexWorkGraphOwnerDeletionPort } from "./convex-owner-deletion"
+
+afterEach(() => vi.useRealTimers())
 
 describe("Convex WorkGraph owner deletion conformance", () => {
   workGraphOwnerDeletionConformance(async (input) => {
@@ -83,7 +86,9 @@ describe("Convex WorkGraph owner deletion conformance", () => {
         const deleting = startDeletion()
         await started
         const write = await applyWorkGraphCommand(harness, {
+          organizationId: String(context.organizationId),
           ownerUserId: context.ownerUserId,
+          ownerSubject: String(context.ownerUserId),
           actor: context.actor,
           requestId: "request_conformance_raced_command",
           operationId: "operation_conformance_raced_command",
@@ -115,6 +120,35 @@ describe("Convex WorkGraph owner deletion conformance", () => {
     expect(JSON.stringify(receipt)).not.toContain(operationId)
   })
 
+  test("preserves organization-owned Connection metadata when a member deletes personal WorkGraph data", async () => {
+    const harness = new DeletionHarness()
+    const context = owner("connection_member")
+    await seedOwner(harness, context, [])
+    await harness.insert("workgraph_connection_metadata", {
+      organization_id: context.organizationId,
+      connection_id: "team_connection",
+      integration_id: "github",
+      capabilities: ["work-source"],
+      status: "connected",
+      row_version: 1,
+      schema_version: 1,
+      created_at: 1,
+      updated_at: 1,
+    })
+    const deletion = createConvexWorkGraphOwnerDeletionPort({
+      serviceToken: "service-secret",
+      executor: executor(harness),
+      execution: { cleanup: async () => undefined },
+      clock: { now: () => 50 },
+    })
+
+    await deletion.deleteOwner(context, { operationId: "delete_member_workgraph" as OperationID })
+
+    expect(harness.rowsFor("workgraph_connection_metadata")).toEqual([
+      expect.objectContaining({ organization_id: context.organizationId, connection_id: "team_connection" }),
+    ])
+  })
+
   test("fences a normal owner command throughout external workspace cleanup", async () => {
     const harness = new DeletionHarness()
     const context = owner("owner_command_race")
@@ -140,7 +174,9 @@ describe("Convex WorkGraph owner deletion conformance", () => {
     const deleting = deletion.deleteOwner(context, { operationId: "owner_delete_race" as OperationID })
     await started
     const raced = await applyWorkGraphCommand(harness, {
+      organizationId: String(context.organizationId),
       ownerUserId: context.ownerUserId,
+      ownerSubject: String(context.ownerUserId),
       actor: context.actor,
       requestId: "request_raced_command",
       operationId: "operation_raced_command",
@@ -149,6 +185,45 @@ describe("Convex WorkGraph owner deletion conformance", () => {
     expect(raced).toMatchObject({ ok: false, error: { code: "blocked" } })
     expect(harness.rowsFor("workgraph_streams").some((row) => row.title === "Must not disappear")).toBe(false)
 
+    finishCleanup()
+    await deleting
+  })
+
+  test("renews the deletion barrier throughout long external workspace cleanup", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+    const harness = new DeletionHarness()
+    const context = owner("owner_long_cleanup")
+    await seedOwner(harness, context, [
+      { streamId: "long_stream", envelopeId: "long_envelope", childIsolationId: "long_child" },
+    ])
+    let cleanupStarted!: () => void
+    let finishCleanup!: () => void
+    const started = new Promise<void>((resolve) => { cleanupStarted = resolve })
+    const finishing = new Promise<void>((resolve) => { finishCleanup = resolve })
+    const deletion = createConvexWorkGraphOwnerDeletionPort({
+      serviceToken: "service-secret",
+      executor: executor(harness),
+      execution: {
+        cleanup: async () => {
+          cleanupStarted()
+          await finishing
+        },
+      },
+    })
+    const deleting = deletion.deleteOwner(context, { operationId: "owner_delete_long_cleanup" as OperationID })
+    await started
+
+    await Array.from({ length: 7 }, (_, index) => index).reduce(
+      (advance) =>
+        advance.then(async () => {
+          await vi.advanceTimersByTimeAsync(60 * 1_000)
+        }),
+      Promise.resolve(),
+    )
+
+    expect(harness.rowsFor("workgraph_owner_deletion_barriers")[0]?.lease_expires_at).toBeGreaterThan(Date.now())
+    expect(harness.rowsFor("workgraph_owner_deletion_receipts")[0]?.lease_expires_at).toBeGreaterThan(Date.now())
     finishCleanup()
     await deleting
   })
@@ -196,7 +271,7 @@ describe("Convex WorkGraph owner deletion conformance", () => {
     await committed
     expect(countOwnerRecords(harness, context)).toBeGreaterThan(0)
     expect(countOwnerRecords(harness, context)).toBeLessThan(before)
-    await expect(readWorkGraphProjection(harness, context.ownerUserId, "defaults", {}))
+    await expect(readTenantWorkGraphProjection(harness, String(context.organizationId), context.ownerUserId, "defaults", {}))
       .rejects.toThrow("owner deletion is in progress")
 
     resumePurge()
@@ -237,9 +312,21 @@ function executor(harness: DeletionHarness) {
     query: async () => undefined,
     mutation: async (_function: unknown, args: Record<string, unknown>) => {
       const owner = String(args.owner_subject)
+      const organization = String(args.organization_id)
+      if ("renew_only" in args) {
+        return renewWorkGraphOwnerDeletion(
+          harness,
+          organization,
+          owner,
+          String(args.operation_id),
+          String(args.target_snapshot_hash),
+          Number(args.now),
+        )
+      }
       if ("target_snapshot_hash" in args) {
         return finalizeWorkGraphOwnerDeletion(
           harness,
+          organization,
           owner,
           String(args.operation_id),
           String(args.target_snapshot_hash),
@@ -247,9 +334,9 @@ function executor(harness: DeletionHarness) {
         )
       }
       if ("now" in args) {
-        return prepareWorkGraphOwnerDeletion(harness, owner, String(args.operation_id), Number(args.now))
+        return prepareWorkGraphOwnerDeletion(harness, organization, owner, String(args.operation_id), Number(args.now))
       }
-      return releaseWorkGraphOwnerDeletion(harness, owner, String(args.operation_id))
+      return releaseWorkGraphOwnerDeletion(harness, organization, owner, String(args.operation_id))
     },
   }
 }
@@ -263,6 +350,7 @@ function countOwnerRecords(harness: DeletionHarness, context: WorkGraphContext) 
 
 function owner(value: string): WorkGraphContext {
   return {
+    organizationId: `org_${value}` as never,
     ownerUserId: value as never,
     actor: { type: "user", id: value as never },
     requestId: `request_${value}` as never,
@@ -271,7 +359,7 @@ function owner(value: string): WorkGraphContext {
 }
 
 function ownerRow(context: WorkGraphContext, value: Record<string, unknown>) {
-  return { owner_user_id: context.ownerUserId, ...value }
+  return { organization_id: context.organizationId, owner_user_id: context.ownerUserId, ...value }
 }
 
 class DeletionHarness {
@@ -296,6 +384,16 @@ class DeletionHarness {
         }
         build(query)
         selected = selected.filter((row) => filters.every(([field, expected]) => row[field] === expected))
+        return chain
+      },
+      filter: (build: (query: any) => (row: Record<string, unknown>) => boolean) => {
+        const query = {
+          field: (field: string) => field,
+          eq: (field: string, expected: unknown) => (row: Record<string, unknown>) => row[field] === expected,
+          and: (...predicates: Array<(row: Record<string, unknown>) => boolean>) =>
+            (row: Record<string, unknown>) => predicates.every((predicate) => predicate(row)),
+        }
+        selected = selected.filter(build(query))
         return chain
       },
       unique: async () => selected[0] ?? null,

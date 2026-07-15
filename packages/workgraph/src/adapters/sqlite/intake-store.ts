@@ -6,6 +6,7 @@ import {
   IntakeCandidatePageSchema,
   readIntakeCandidatePageCursor,
   type AdmissionProposalID,
+  type ExecutionProfileDefaults,
   type WorkGraphContext,
   type WorkSourceRevisionRef,
 } from "../../contracts"
@@ -30,15 +31,15 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
       if (view.ownerUserId !== context.ownerUserId) throw new Error("Source view owner mismatch")
       const filters = sanitizeSourceViewFilters(view.provider, view.filters)
       return database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         ensureRoot(database, context, view.createdAt)
         database.prepare(`
           INSERT INTO wg_v2_source_views
-            (owner_user_id, id, workgraph_id, team_connection_id, provider, provider_user_id,
+            (organization_id, owner_user_id, id, workgraph_id, team_connection_id, provider, provider_user_id,
              filters_json, sync_policy, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           view.id,
           rootId,
           view.teamConnectionId,
@@ -55,21 +56,21 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
     },
     async read(context, id) {
       return sourceView(database.prepare(`
-        SELECT * FROM wg_v2_source_views WHERE owner_user_id = ? AND id = ?
-      `).get(context.ownerUserId, id) as SourceViewRow | undefined)
+        SELECT * FROM wg_v2_source_views WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+      `).get(context.organizationId, context.ownerUserId, id) as SourceViewRow | undefined)
     },
     async list(context) {
       return (database.prepare(`
-        SELECT * FROM wg_v2_source_views WHERE owner_user_id = ? ORDER BY updated_at DESC, id
-      `).all(context.ownerUserId) as SourceViewRow[]).map((row) => sourceView(row)!)
+        SELECT * FROM wg_v2_source_views WHERE organization_id = ? AND owner_user_id = ? ORDER BY updated_at DESC, id
+      `).all(context.organizationId, context.ownerUserId) as SourceViewRow[]).map((row) => sourceView(row)!)
     },
     async update(context, id, input) {
       requireOwner(context)
       return database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         const row = database.prepare(`
-          SELECT * FROM wg_v2_source_views WHERE owner_user_id = ? AND id = ?
-        `).get(context.ownerUserId, id) as SourceViewRow | undefined
+          SELECT * FROM wg_v2_source_views WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `).get(context.organizationId, context.ownerUserId, id) as SourceViewRow | undefined
         if (!row) return { ok: false as const, reason: "not_found" as const }
         const filters = sanitizeSourceViewFilters(row.provider as SourceView["provider"], input.filters)
         const current = sourceView(row)!
@@ -83,56 +84,56 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
           UPDATE wg_v2_source_views SET
             provider_user_id = ?, filters_json = ?, sync_policy = ?, status = ?,
             row_version = row_version + 1, updated_at = ?
-          WHERE owner_user_id = ? AND id = ? AND row_version = ?
+          WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
         `).run(
           input.providerUserId,
           JSON.stringify(filters),
           input.syncPolicy,
           input.status,
           input.updatedAt,
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           id,
           input.expectedVersion,
         )
         if (result.changes !== 1) return { ok: false as const, reason: "version_conflict" as const }
         return { ok: true as const, view: sourceView(database.prepare(`
-          SELECT * FROM wg_v2_source_views WHERE owner_user_id = ? AND id = ?
-        `).get(context.ownerUserId, id) as SourceViewRow)! }
+          SELECT * FROM wg_v2_source_views WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `).get(context.organizationId, context.ownerUserId, id) as SourceViewRow)! }
       })()
     },
     async delete(context, id, input) {
       requireOwner(context)
       return database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         const row = database.prepare(`
-          SELECT * FROM wg_v2_source_views WHERE owner_user_id = ? AND id = ?
-        `).get(context.ownerUserId, id) as SourceViewRow | undefined
+          SELECT * FROM wg_v2_source_views WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `).get(context.organizationId, context.ownerUserId, id) as SourceViewRow | undefined
         if (!row) return { ok: false as const, reason: "not_found" as const }
         if (row.row_version !== input.expectedVersion) return { ok: false as const, reason: "version_conflict" as const }
         const retained = database.prepare(`
           SELECT 1 AS present FROM wg_v2_intake_candidates
-          WHERE owner_user_id = ? AND source_view_id = ? AND status != 'dismissed' LIMIT 1
-        `).get(context.ownerUserId, id)
+          WHERE organization_id = ? AND owner_user_id = ? AND source_view_id = ? AND status != 'dismissed' LIMIT 1
+        `).get(context.organizationId, context.ownerUserId, id)
         const admitted = database.prepare(`
           SELECT 1 AS present
           FROM wg_v2_admission_proposals proposals
           JOIN wg_v2_intake_candidates candidates
-            ON candidates.owner_user_id = proposals.owner_user_id AND candidates.id = proposals.intake_candidate_id
-          WHERE candidates.owner_user_id = ? AND candidates.source_view_id = ? LIMIT 1
-        `).get(context.ownerUserId, id)
+            ON candidates.organization_id = proposals.organization_id AND candidates.owner_user_id = proposals.owner_user_id AND candidates.id = proposals.intake_candidate_id
+          WHERE candidates.organization_id = ? AND candidates.owner_user_id = ? AND candidates.source_view_id = ? LIMIT 1
+        `).get(context.organizationId, context.ownerUserId, id)
         if (retained || admitted) return { ok: false as const, reason: "in_use" as const }
         database.prepare(`
           DELETE FROM wg_v2_external_identities
-          WHERE owner_user_id = ? AND intake_candidate_id IN (
-            SELECT id FROM wg_v2_intake_candidates WHERE owner_user_id = ? AND source_view_id = ?
+          WHERE organization_id = ? AND owner_user_id = ? AND intake_candidate_id IN (
+            SELECT id FROM wg_v2_intake_candidates WHERE organization_id = ? AND owner_user_id = ? AND source_view_id = ?
           )
-        `).run(context.ownerUserId, context.ownerUserId, id)
+        `).run(context.organizationId, context.ownerUserId, context.organizationId, context.ownerUserId, id)
         database.prepare(`
-          DELETE FROM wg_v2_intake_candidates WHERE owner_user_id = ? AND source_view_id = ?
-        `).run(context.ownerUserId, id)
+          DELETE FROM wg_v2_intake_candidates WHERE organization_id = ? AND owner_user_id = ? AND source_view_id = ?
+        `).run(context.organizationId, context.ownerUserId, id)
         const deleted = database.prepare(`
-          DELETE FROM wg_v2_source_views WHERE owner_user_id = ? AND id = ? AND row_version = ?
-        `).run(context.ownerUserId, id, input.expectedVersion)
+          DELETE FROM wg_v2_source_views WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
+        `).run(context.organizationId, context.ownerUserId, id, input.expectedVersion)
         if (deleted.changes !== 1) return { ok: false as const, reason: "version_conflict" as const }
         return { ok: true as const, view: sourceView(row)! }
       })()
@@ -144,25 +145,25 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
       requireOwner(context)
       if (input.candidate.ownerUserId !== context.ownerUserId) throw new Error("Intake candidate owner mismatch")
       return database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         const view = database.prepare(`
-          SELECT team_connection_id FROM wg_v2_source_views WHERE owner_user_id = ? AND id = ?
-        `).get(context.ownerUserId, input.candidate.sourceViewId) as { team_connection_id: string } | undefined
+          SELECT team_connection_id FROM wg_v2_source_views WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `).get(context.organizationId, context.ownerUserId, input.candidate.sourceViewId) as { team_connection_id: string } | undefined
         if (!view) throw new Error("Source view not found")
         const identity = database.prepare(`
           SELECT intake_candidate_id FROM wg_v2_external_identities
-          WHERE owner_user_id = ? AND provider = ? AND team_connection_id = ? AND external_id = ?
-        `).get(context.ownerUserId, input.candidate.provider, view.team_connection_id, input.candidate.externalId) as { intake_candidate_id: string | null } | undefined
+          WHERE organization_id = ? AND owner_user_id = ? AND provider = ? AND team_connection_id = ? AND external_id = ?
+        `).get(context.organizationId, context.ownerUserId, input.candidate.provider, view.team_connection_id, input.candidate.externalId) as { intake_candidate_id: string | null } | undefined
         if (identity?.intake_candidate_id) {
           const existing = database.prepare(`
-            SELECT normalized_json, status FROM wg_v2_intake_candidates WHERE owner_user_id = ? AND id = ?
-          `).get(context.ownerUserId, identity.intake_candidate_id) as { normalized_json: string; status: string }
+            SELECT normalized_json, status FROM wg_v2_intake_candidates WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+          `).get(context.organizationId, context.ownerUserId, identity.intake_candidate_id) as { normalized_json: string; status: string }
           const frozen = JSON.parse(existing.normalized_json) as CandidateNormalized
           if (existing.status === "unorganized" && !frozen.admissionDraft) database.prepare(`
               UPDATE wg_v2_intake_candidates SET
                 source_view_id = ?, title = ?, body = ?, normalized_json = ?, observed_revision = ?,
                 row_version = row_version + 1, updated_at = ?
-              WHERE owner_user_id = ? AND id = ?
+              WHERE organization_id = ? AND owner_user_id = ? AND id = ?
             `).run(
               input.candidate.sourceViewId,
               input.candidate.title,
@@ -170,18 +171,18 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
               JSON.stringify(normalized(input.candidate)),
               input.candidate.observedRevision ?? null,
               input.candidate.updatedAt,
-              context.ownerUserId,
+              context.organizationId, context.ownerUserId,
               identity.intake_candidate_id,
             )
           database.prepare(`
             UPDATE wg_v2_external_identities SET external_key = ?, external_url = ?, observed_revision = ?, updated_at = ?
-            WHERE owner_user_id = ? AND provider = ? AND team_connection_id = ? AND external_id = ?
+            WHERE organization_id = ? AND owner_user_id = ? AND provider = ? AND team_connection_id = ? AND external_id = ?
           `).run(
             input.candidate.externalKey ?? null,
             input.candidate.externalUrl ?? null,
             input.candidate.observedRevision ?? null,
             input.candidate.updatedAt,
-            context.ownerUserId,
+            context.organizationId, context.ownerUserId,
             input.candidate.provider,
             view.team_connection_id,
             input.candidate.externalId,
@@ -192,11 +193,11 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
         }
         database.prepare(`
           INSERT INTO wg_v2_intake_candidates
-            (owner_user_id, id, workgraph_id, source_view_id, candidate_kind, title, body,
+            (organization_id, owner_user_id, id, workgraph_id, source_view_id, candidate_kind, title, body,
              normalized_json, status, observed_revision, created_at, updated_at)
-          VALUES (?, ?, ?, ?, 'external_issue', ?, ?, ?, 'unorganized', ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, 'external_issue', ?, ?, ?, 'unorganized', ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           input.candidate.id,
           rootId,
           input.candidate.sourceViewId,
@@ -209,11 +210,11 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
         )
         database.prepare(`
           INSERT INTO wg_v2_external_identities
-            (owner_user_id, id, intake_candidate_id, provider, team_connection_id, external_id,
+            (organization_id, owner_user_id, id, intake_candidate_id, provider, team_connection_id, external_id,
              external_key, external_url, observed_revision, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           `identity_${hash(input.identityKey)}`,
           input.candidate.id,
           input.candidate.provider,
@@ -233,24 +234,25 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
     },
     async list(context, sourceViewId) {
       const rows = sourceViewId
-        ? database.prepare(`SELECT * FROM wg_v2_intake_candidates WHERE owner_user_id = ? AND source_view_id = ? ORDER BY updated_at DESC, id`).all(context.ownerUserId, sourceViewId)
-        : database.prepare(`SELECT * FROM wg_v2_intake_candidates WHERE owner_user_id = ? ORDER BY updated_at DESC, id`).all(context.ownerUserId)
+        ? database.prepare(`SELECT * FROM wg_v2_intake_candidates WHERE organization_id = ? AND owner_user_id = ? AND source_view_id = ? ORDER BY updated_at DESC, id`).all(context.organizationId, context.ownerUserId, sourceViewId)
+        : database.prepare(`SELECT * FROM wg_v2_intake_candidates WHERE organization_id = ? AND owner_user_id = ? ORDER BY updated_at DESC, id`).all(context.organizationId, context.ownerUserId)
       return (rows as CandidateRow[]).map((row) => candidate(database, row)!)
     },
     async page(context, input) {
       requireOwner(context)
       const after = input.after
-        ? readIntakeCandidatePageCursor(input.after, context.ownerUserId, input.sourceViewId)
+        ? readIntakeCandidatePageCursor(input.after, context.organizationId, context.ownerUserId, input.sourceViewId)
         : undefined
       const rows = database.prepare(`
         SELECT * FROM wg_v2_intake_candidates
-        WHERE owner_user_id = @owner AND status = 'unorganized'
+        WHERE organization_id = @organization AND owner_user_id = @owner AND status = 'unorganized'
           AND (@source_view_id IS NULL OR source_view_id = @source_view_id)
           AND (@after_updated_at IS NULL OR updated_at < @after_updated_at
             OR (updated_at = @after_updated_at AND id < @after_id))
         ORDER BY updated_at DESC, id DESC
         LIMIT @limit
       `).all({
+        organization: context.organizationId,
         owner: context.ownerUserId,
         source_view_id: input.sourceViewId ?? null,
         after_updated_at: after?.updatedAt ?? null,
@@ -264,6 +266,7 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
         hasMore,
         ...(hasMore ? {
           nextCursor: createIntakeCandidatePageCursor({
+            organizationId: context.organizationId,
             ownerUserId: context.ownerUserId,
             ...(input.sourceViewId ? { sourceViewId: input.sourceViewId } : {}),
             updatedAt: page.at(-1)!.updatedAt,
@@ -275,27 +278,27 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
     async prepareStage(context, id, draft) {
       requireOwner(context)
       return database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         const row = database.prepare(`
-          SELECT normalized_json, status FROM wg_v2_intake_candidates WHERE owner_user_id = ? AND id = ?
-        `).get(context.ownerUserId, id) as { normalized_json: string; status: string } | undefined
+          SELECT normalized_json, status FROM wg_v2_intake_candidates WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `).get(context.organizationId, context.ownerUserId, id) as { normalized_json: string; status: string } | undefined
         if (!row || !["unorganized", "staged"].includes(row.status)) throw new Error("Candidate cannot be staged")
         const data = JSON.parse(row.normalized_json) as CandidateNormalized
         const frozen = data.admissionDraft ?? draft
         if (!data.admissionDraft) database.prepare(`
           UPDATE wg_v2_intake_candidates SET normalized_json = ?, row_version = row_version + 1, updated_at = ?
-          WHERE owner_user_id = ? AND id = ?
-        `).run(JSON.stringify({ ...data, admissionDraft: frozen }), Date.now(), context.ownerUserId, id)
+          WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `).run(JSON.stringify({ ...data, admissionDraft: frozen }), Date.now(), context.organizationId, context.ownerUserId, id)
         return { candidate: readCandidate(database, context, id)!, draft: frozen }
       })()
     },
     async stage(context, id, input) {
       requireOwner(context)
       return database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         const row = database.prepare(`
-          SELECT normalized_json, status FROM wg_v2_intake_candidates WHERE owner_user_id = ? AND id = ?
-        `).get(context.ownerUserId, id) as { normalized_json: string; status: string } | undefined
+          SELECT normalized_json, status FROM wg_v2_intake_candidates WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `).get(context.organizationId, context.ownerUserId, id) as { normalized_json: string; status: string } | undefined
         if (!row || !["unorganized", "staged"].includes(row.status)) throw new Error("Candidate cannot be staged")
         const data = JSON.parse(row.normalized_json) as CandidateNormalized
         if (!data.admissionDraft || hashWorkSourceContent(data.admissionDraft.content) !== input.source.contentHash) {
@@ -305,21 +308,21 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
           SELECT proposals.id
           FROM wg_v2_admission_proposals proposals
           JOIN wg_v2_work_source_revisions revisions
-            ON revisions.owner_user_id = proposals.owner_user_id AND revisions.id = proposals.source_revision_id
-          WHERE proposals.owner_user_id = ? AND proposals.id = ? AND proposals.lifecycle IN ('planning', 'planning_failed', 'proposed')
+            ON revisions.organization_id = proposals.organization_id AND revisions.owner_user_id = proposals.owner_user_id AND revisions.id = proposals.source_revision_id
+          WHERE proposals.organization_id = ? AND proposals.owner_user_id = ? AND proposals.id = ? AND proposals.lifecycle IN ('planning', 'planning_failed', 'proposed')
             AND revisions.work_source_id = ? AND revisions.id = ? AND revisions.content_hash = ?
-        `).get(context.ownerUserId, input.proposalId, input.source.workSourceId, input.source.revisionId, input.source.contentHash) as { id: string } | undefined
+        `).get(context.organizationId, context.ownerUserId, input.proposalId, input.source.workSourceId, input.source.revisionId, input.source.contentHash) as { id: string } | undefined
         if (!proposal) throw new Error("Admission proposal does not match the candidate source")
         const now = Date.now()
         const binding = database.prepare(`
           UPDATE wg_v2_admission_proposals SET intake_candidate_id = ?, updated_at = ?
-          WHERE owner_user_id = ? AND id = ? AND (intake_candidate_id IS NULL OR intake_candidate_id = ?)
-        `).run(id, now, context.ownerUserId, input.proposalId, id)
+          WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND (intake_candidate_id IS NULL OR intake_candidate_id = ?)
+        `).run(id, now, context.organizationId, context.ownerUserId, input.proposalId, id)
         if (binding.changes !== 1) throw new Error("Admission proposal is already bound to another candidate")
         const result = database.prepare(`
           UPDATE wg_v2_intake_candidates SET status = 'staged', normalized_json = ?, row_version = row_version + 1, updated_at = ?
-          WHERE owner_user_id = ? AND id = ?
-        `).run(JSON.stringify({ ...data, source: input.source, admissionProposalId: input.proposalId }), now, context.ownerUserId, id)
+          WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `).run(JSON.stringify({ ...data, source: input.source, admissionProposalId: input.proposalId }), now, context.organizationId, context.ownerUserId, id)
         if (!result.changes) throw new Error("Candidate cannot be staged")
         return readCandidate(database, context, id)!
       })()
@@ -327,10 +330,10 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
     async transition(context, id, input) {
       requireOwner(context)
       return database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         const row = database.prepare(`
-          SELECT status, row_version FROM wg_v2_intake_candidates WHERE owner_user_id = ? AND id = ?
-        `).get(context.ownerUserId, id) as { status: string; row_version: number } | undefined
+          SELECT status, row_version FROM wg_v2_intake_candidates WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `).get(context.organizationId, context.ownerUserId, id) as { status: string; row_version: number } | undefined
         if (!row) return { ok: false as const, reason: "not_found" as const }
         if (row.row_version !== input.expectedVersion) {
           if (row.row_version === input.expectedVersion + 1 && row.status === input.to) {
@@ -341,8 +344,8 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
         if (row.status !== input.from) return { ok: false as const, reason: "invalid_state" as const }
         const result = database.prepare(`
           UPDATE wg_v2_intake_candidates SET status = ?, row_version = row_version + 1, updated_at = ?
-          WHERE owner_user_id = ? AND id = ? AND row_version = ? AND status = ?
-        `).run(input.to, input.updatedAt, context.ownerUserId, id, input.expectedVersion, input.from)
+          WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ? AND status = ?
+        `).run(input.to, input.updatedAt, context.organizationId, context.ownerUserId, id, input.expectedVersion, input.from)
         if (result.changes !== 1) return { ok: false as const, reason: "version_conflict" as const }
         return { ok: true as const, candidate: readCandidate(database, context, id)! }
       })()
@@ -354,10 +357,10 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
       requireOwner(context)
       const operationId = `intake_sync_${hash(receipt.key)}`
       return database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         const existing = database.prepare(`
-          SELECT status, claim_expires_at FROM wg_v2_outbox WHERE owner_user_id = ? AND idempotency_key = ?
-        `).get(context.ownerUserId, receipt.key) as { status: string; claim_expires_at: number | null } | undefined
+          SELECT status, claim_expires_at FROM wg_v2_outbox WHERE organization_id = ? AND owner_user_id = ? AND idempotency_key = ?
+        `).get(context.organizationId, context.ownerUserId, receipt.key) as { status: string; claim_expires_at: number | null } | undefined
         if (existing?.status === "completed") return { state: "completed" as const }
         const now = Date.now()
         if (existing?.status === "pending" && Number(existing.claim_expires_at) > now) return { state: "busy" as const }
@@ -365,15 +368,15 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
         if (existing) {
           database.prepare(`
             UPDATE wg_v2_outbox SET status = 'pending', claimed_by = ?, claim_expires_at = ?, updated_at = ?
-            WHERE owner_user_id = ? AND idempotency_key = ?
-          `).run(leaseId, now + 60_000, now, context.ownerUserId, receipt.key)
+            WHERE organization_id = ? AND owner_user_id = ? AND idempotency_key = ?
+          `).run(leaseId, now + 60_000, now, context.organizationId, context.ownerUserId, receipt.key)
           return { state: "acquired" as const, leaseId }
         }
         database.prepare(`
           INSERT INTO wg_v2_operation_results
-            (owner_user_id, id, command_type, request_hash, result_status, result_json, created_at)
-          VALUES (?, ?, 'intake_external_sync', ?, 200, ?, ?)
-        `).run(context.ownerUserId, operationId, hash(JSON.stringify(receipt)), JSON.stringify({
+            (organization_id, owner_user_id, id, command_type, request_hash, result_status, result_json, created_at)
+          VALUES (?, ?, ?, 'intake_external_sync', ?, 200, ?, ?)
+        `).run(context.organizationId, context.ownerUserId, operationId, hash(JSON.stringify(receipt)), JSON.stringify({
           ok: true,
           operationId,
           cursor: "0",
@@ -381,11 +384,11 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
         }), now)
         database.prepare(`
           INSERT INTO wg_v2_outbox
-            (owner_user_id, id, operation_id, effect_type, idempotency_key, payload_json, status, available_at, created_at, updated_at)
-          VALUES (?, ?, ?, 'intake_external_sync', ?, ?, 'pending', ?, ?, ?)
+            (organization_id, owner_user_id, id, operation_id, effect_type, idempotency_key, payload_json, status, available_at, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'intake_external_sync', ?, ?, 'pending', ?, ?, ?)
         `).run(
-          context.ownerUserId,
-          `intake_receipt_${hash(`${context.ownerUserId}:${receipt.key}`)}`,
+          context.organizationId, context.ownerUserId,
+          `intake_receipt_${hash(`${context.organizationId}\u0000${context.ownerUserId}\u0000${receipt.key}`)}`,
           operationId,
           receipt.key,
           JSON.stringify({ candidateId: receipt.candidateId, effect: receipt.effect }),
@@ -395,29 +398,29 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
         )
         database.prepare(`
           UPDATE wg_v2_outbox SET claimed_by = ?, claim_expires_at = ?
-          WHERE owner_user_id = ? AND idempotency_key = ?
-        `).run(leaseId, now + 60_000, context.ownerUserId, receipt.key)
+          WHERE organization_id = ? AND owner_user_id = ? AND idempotency_key = ?
+        `).run(leaseId, now + 60_000, context.organizationId, context.ownerUserId, receipt.key)
         return { state: "acquired" as const, leaseId }
       })()
     },
     async complete(context, receipt) {
       requireOwner(context)
       database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         database.prepare(`
           UPDATE wg_v2_outbox SET status = 'completed', claimed_by = NULL, claim_expires_at = NULL, updated_at = ?
-          WHERE owner_user_id = ? AND idempotency_key = ? AND status = 'pending' AND claimed_by = ?
-        `).run(Date.now(), context.ownerUserId, receipt.key, receipt.leaseId)
+          WHERE organization_id = ? AND owner_user_id = ? AND idempotency_key = ? AND status = 'pending' AND claimed_by = ?
+        `).run(Date.now(), context.organizationId, context.ownerUserId, receipt.key, receipt.leaseId)
       })()
     },
     async fail(context, receipt) {
       requireOwner(context)
       database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         database.prepare(`
           UPDATE wg_v2_outbox SET status = 'failed', claimed_by = NULL, claim_expires_at = NULL, updated_at = ?
-          WHERE owner_user_id = ? AND idempotency_key = ? AND status = 'pending' AND claimed_by = ?
-        `).run(Date.now(), context.ownerUserId, receipt.key, receipt.leaseId)
+          WHERE organization_id = ? AND owner_user_id = ? AND idempotency_key = ? AND status = 'pending' AND claimed_by = ?
+        `).run(Date.now(), context.organizationId, context.ownerUserId, receipt.key, receipt.leaseId)
       })()
     },
   }
@@ -427,14 +430,14 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
 
 function ensureRoot(database: BetterSqlite3.Database, context: WorkGraphContext, now: number) {
   database.prepare(`
-    INSERT OR IGNORE INTO wg_v2_workgraphs (owner_user_id, id, created_at, updated_at) VALUES (?, ?, ?, ?)
-  `).run(context.ownerUserId, rootId, now, now)
+    INSERT OR IGNORE INTO wg_v2_workgraphs (organization_id, owner_user_id, id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+  `).run(context.organizationId, context.ownerUserId, rootId, now, now)
 }
 
 function readCandidate(database: BetterSqlite3.Database, context: WorkGraphContext, id: string) {
   return candidate(database, database.prepare(`
-    SELECT * FROM wg_v2_intake_candidates WHERE owner_user_id = ? AND id = ?
-  `).get(context.ownerUserId, id) as CandidateRow | undefined)
+    SELECT * FROM wg_v2_intake_candidates WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+  `).get(context.organizationId, context.ownerUserId, id) as CandidateRow | undefined)
 }
 
 function sourceView(row: SourceViewRow | undefined): SourceView | undefined {
@@ -461,11 +464,11 @@ function candidate(database: BetterSqlite3.Database, row: CandidateRow | undefin
     SELECT proposals.id
     FROM wg_v2_admission_proposals proposals
     JOIN wg_v2_work_source_revisions revisions
-      ON revisions.owner_user_id = proposals.owner_user_id AND revisions.id = proposals.source_revision_id
-    WHERE proposals.owner_user_id = ? AND proposals.id = ? AND proposals.intake_candidate_id = ?
+      ON revisions.organization_id = proposals.organization_id AND revisions.owner_user_id = proposals.owner_user_id AND revisions.id = proposals.source_revision_id
+    WHERE proposals.organization_id = ? AND proposals.owner_user_id = ? AND proposals.id = ? AND proposals.intake_candidate_id = ?
       AND proposals.lifecycle = 'confirmed' AND revisions.work_source_id = ?
       AND revisions.id = ? AND revisions.content_hash = ?
-  `).get(row.owner_user_id, data.admissionProposalId, row.id, data.source.workSourceId, data.source.revisionId, data.source.contentHash)
+  `).get(row.organization_id, row.owner_user_id, data.admissionProposalId, row.id, data.source.workSourceId, data.source.revisionId, data.source.contentHash)
   const common = {
     id: row.id,
     ownerUserId: row.owner_user_id,
@@ -481,7 +484,12 @@ function candidate(database: BetterSqlite3.Database, row: CandidateRow | undefin
   }
   if (row.candidate_kind === "session") {
     if (!data.sessionId) throw new Error(`Session intake candidate ${row.id} is missing its Session identity`)
-    return { ...common, candidateKind: "session", sessionId: data.sessionId }
+    return {
+      ...common,
+      candidateKind: "session",
+      sessionId: data.sessionId,
+      ...(data.execution ? { execution: data.execution } : {}),
+    }
   }
   if (!row.source_view_id || !data.provider || !data.externalId || !data.externalStatus) {
     throw new Error(`External intake candidate ${row.id} is missing provider identity`)
@@ -539,6 +547,7 @@ type SourceViewRow = Readonly<{
 }>
 
 type CandidateRow = Readonly<{
+  organization_id: string
   owner_user_id: string
   id: string
   source_view_id: string | null
@@ -555,6 +564,7 @@ type CandidateRow = Readonly<{
 
 type CandidateNormalized = ReturnType<typeof normalized> & Readonly<{
   sessionId?: string
+  execution?: ExecutionProfileDefaults
   admissionDraft?: Readonly<{ title: string; content: string }>
   source?: WorkSourceRevisionRef
   admissionProposalId?: AdmissionProposalID

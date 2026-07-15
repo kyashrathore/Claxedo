@@ -21,17 +21,17 @@ describe("WorkGraph snapshot pagination contract", () => {
     {
       name: "changed snapshot metadata",
       pages: [snapshotPage([root("one")], "change_1", 1, "resume_1"), snapshotPage([root("two")], "change_2", 1, undefined, 2)],
-      reason: "metadata",
+      reason: "metadata" as const,
     },
     {
       name: "a duplicate record",
       pages: [snapshotPage([root("same")], "change_1", 1, "resume_1"), snapshotPage([root("same")], "change_1", 1, undefined, 2)],
-      reason: "duplicate",
+      reason: "duplicate" as const,
     },
     {
       name: "a non-contiguous ordered reference",
       pages: [snapshotPage([root("one")], "change_1", 1, "resume_1"), snapshotPage([root("two")], "change_1", 1, undefined, 3)],
-      reason: "order",
+      reason: "order" as const,
     },
   ])("rejects $name without returning a mixed snapshot", async ({ pages, reason }) => {
     await expect(collectWorkGraphSnapshotPages({

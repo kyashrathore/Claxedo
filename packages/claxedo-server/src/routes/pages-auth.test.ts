@@ -17,6 +17,7 @@ const { ClaxedoDB } = await import("../storage/db")
 ClaxedoDB.Drizzle()
 const { PagesRoutes } = await import("./pages")
 const { PageArenaRoutes } = await import("./pages-arena")
+const { sqliteDocumentStore } = await import("../doc-store")
 
 const authConfig: ControlPlaneAuthConfig = {
   enabled: true,
@@ -64,7 +65,12 @@ async function createSignedPage(input: { projectId: string; title?: string; cont
     body: JSON.stringify({ title: input.title ?? "Signed", content: input.content ?? "Hello", project_id: input.projectId }),
   })
   expect(res.status).toBe(201)
-  return await res.json() as { id: string; version: number }
+  return await res.json() as {
+    id: string
+    version: number
+    document_id: string
+    document_revision_id: string
+  }
 }
 
 describe("PagesRoutes signed auth", () => {
@@ -120,6 +126,24 @@ describe("PagesRoutes signed auth", () => {
       headers: { authorization: "Bearer tenant_b" },
     })
     expect(res.status).toBe(404)
+  })
+
+  test("attributes immutable Page revisions to the authenticated user", async () => {
+    const projectId = `project_${randomUUID()}`
+    const page = await createSignedPage({ projectId, title: "Authored plan", content: "Exact signed body" })
+    const revision = sqliteDocumentStore.getRevision(
+      { orgId: "org_tenant_a", projectId },
+      page.document_id,
+      page.document_revision_id,
+    )
+
+    expect(revision).toMatchObject({
+      documentId: page.document_id,
+      revisionId: page.document_revision_id,
+      documentTitle: "Authored plan",
+      markdown: "Exact signed body",
+      authoredBy: { type: "user", id: "tenant_a" },
+    })
   })
 
   test("does not let workspace-share-only principals read project pages", async () => {

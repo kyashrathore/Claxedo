@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { ChangeCursor } from "./commands"
+import { ChangeCursorSchema, type ChangeCursor } from "./commands"
 import type { WorkGraphSnapshotPage } from "./records"
 
 const prefix = "wgsp1"
@@ -31,6 +31,7 @@ export class SnapshotResumeCursorError extends Error {
 }
 
 export type DecodedSnapshotResumeCursor = Readonly<{
+  organizationId: string
   ownerUserId: string
   snapshotCursor: ChangeCursor
   offset: number
@@ -45,39 +46,43 @@ export type SnapshotCursorPosition = Readonly<{
 }>
 
 export function createSnapshotResumeCursor(input: Readonly<{
+  organizationId: string
   ownerUserId: string
   snapshotCursor: string
   offset: number
   capturedAt: number
   position: SnapshotCursorPosition
 }>): SnapshotResumeCursor {
-  const cursor = `${prefix}:${encodeURIComponent(input.ownerUserId)}:${input.snapshotCursor}:${input.offset}:${input.capturedAt}:${input.position.createdAt}:${encodeURIComponent(input.position.recordType)}:${encodeURIComponent(input.position.id)}`
+  const cursor = `${prefix}:${encodeURIComponent(input.organizationId)}:${encodeURIComponent(input.ownerUserId)}:${encodeURIComponent(input.snapshotCursor)}:${input.offset}:${input.capturedAt}:${input.position.createdAt}:${encodeURIComponent(input.position.recordType)}:${encodeURIComponent(input.position.id)}`
   if (cursor.length > maxLength) throw new SnapshotResumeCursorError("invalid")
   return cursor as SnapshotResumeCursor
 }
 
 export function readSnapshotResumeCursor(
   cursor: string,
+  organizationId: string,
   ownerUserId: string,
   currentSnapshotCursor: string,
 ): DecodedSnapshotResumeCursor {
   if (cursor.length > maxLength) throw new SnapshotResumeCursorError("invalid")
   const parts = cursor.split(":")
-  if (parts.length !== 8 || parts[0] !== prefix) throw new SnapshotResumeCursorError("invalid")
-  const encodedOwner = parts[1]!
+  if (parts.length !== 9 || parts[0] !== prefix) throw new SnapshotResumeCursorError("invalid")
+  if (decodeOwner(parts[1]!) !== organizationId) throw new SnapshotResumeCursorError("owner_mismatch")
+  const encodedOwner = parts[2]!
   const cursorOwner = decodeOwner(encodedOwner)
   if (cursorOwner !== ownerUserId) throw new SnapshotResumeCursorError("owner_mismatch")
-  const snapshotCursor = String(integer(parts[2]))
-  const offset = integer(parts[3])
-  const capturedAt = integer(parts[4])
-  const createdAt = integer(parts[5])
-  const recordType = decodeComponent(parts[6]!)
-  const id = decodeComponent(parts[7]!)
+  const snapshotCursor = ChangeCursorSchema.parse(decodeComponent(parts[3]!))
+  const offset = integer(parts[4])
+  const capturedAt = integer(parts[5])
+  const createdAt = integer(parts[6])
+  const recordType = decodeComponent(parts[7]!)
+  const id = decodeComponent(parts[8]!)
   if (!recordTypes.has(recordType)) throw new SnapshotResumeCursorError("invalid")
   if (snapshotCursor !== currentSnapshotCursor) throw new SnapshotResumeCursorError("invalidated")
   return {
+    organizationId,
     ownerUserId,
-    snapshotCursor: snapshotCursor as ChangeCursor,
+    snapshotCursor,
     offset,
     capturedAt,
     position: { createdAt, recordType, id },

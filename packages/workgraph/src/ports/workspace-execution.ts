@@ -24,17 +24,9 @@ export type StreamEnvelope = Readonly<{
   workspaceId: string
 }>
 
-export type ChildIsolation = Readonly<{
-  id: ChildIsolationID
-  envelopeId: StreamEnvelopeID
-  workItemId: WorkItemID
-  workspaceId: string
-}>
-
 export type ExecutionLaunch = Readonly<{
   sessionId: ExecutionSessionID
   envelopeId: StreamEnvelopeID
-  childIsolationId?: ChildIsolationID
 }>
 
 export type ExecutionResult =
@@ -42,11 +34,6 @@ export type ExecutionResult =
   | Readonly<{ state: "succeeded"; summary: string; artifacts: readonly string[] }>
   | Readonly<{ state: "failed"; message: string }>
   | Readonly<{ state: "cancelled" }>
-
-export type IntegratedExecutionResult = Readonly<{
-  summary: string
-  artifacts: readonly string[]
-}>
 
 export type WorkspaceExecutionPort = Readonly<{
   provisionOrAdopt(
@@ -59,16 +46,6 @@ export type WorkspaceExecutionPort = Readonly<{
     }>,
   ): Promise<StreamEnvelope>
 
-  createChildIsolation(
-    context: WorkGraphContext,
-    input: Readonly<{
-      streamId: StreamID
-      envelopeId: StreamEnvelopeID
-      workItemId: WorkItemID
-      attemptId: AttemptID
-    }>,
-  ): Promise<ChildIsolation>
-
   launch(
     context: WorkGraphContext,
     input: Readonly<{
@@ -76,13 +53,13 @@ export type WorkspaceExecutionPort = Readonly<{
       workItemId: WorkItemID
       attemptId: AttemptID
       envelopeId: StreamEnvelopeID
-      childIsolationId?: ChildIsolationID
       prompt: string
       profile: ResolvedExecutionProfile
       connectionIds: readonly ConnectionID[]
     }>,
   ): Promise<ExecutionLaunch>
 
+  /** Cancellation is retried from durable compensation state and must be idempotent. */
   cancel(
     context: WorkGraphContext,
     input: Readonly<{
@@ -101,32 +78,16 @@ export type WorkspaceExecutionPort = Readonly<{
   ): Promise<ExecutionResult>
 
   /**
-   * Applies the Attempt's configured integration policy after execution has
-   * produced a semantic success and before WorkGraph records result_ready.
-   * Implementations must be idempotent for an Attempt ID.
+   * Cleanup is idempotent. Reconciliation targets only the supplied legacy
+   * child IDs; Stream workspace removal belongs to delete/replace lifecycle.
    */
-  integrateResult(
-    context: WorkGraphContext,
-    input: Readonly<{
-      streamId: StreamID
-      workItemId: WorkItemID
-      attemptId: AttemptID
-      sessionId: ExecutionSessionID
-      envelopeId: StreamEnvelopeID
-      childIsolationId?: ChildIsolationID
-      profile: ResolvedExecutionProfile
-      result: Extract<ExecutionResult, { state: "succeeded" }>
-    }>,
-  ): Promise<IntegratedExecutionResult>
-
   cleanup(
     context: WorkGraphContext,
     input: Readonly<{
       streamId: StreamID
       envelopeId: StreamEnvelopeID
       childIsolationIds?: readonly ChildIsolationID[]
-      reason: "delete" | "close" | "reconcile"
-      cleanupPolicy?: ResolvedExecutionProfile["cleanup"]
+      reason: "delete" | "replace" | "reconcile"
     }>,
   ): Promise<void>
 }>

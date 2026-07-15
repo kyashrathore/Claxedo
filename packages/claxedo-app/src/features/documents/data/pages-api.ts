@@ -32,6 +32,15 @@ export type Page = {
   project_id?: string | null
   project_name?: string | null
   project_worktree?: string | null
+  /**
+   * Durable Docs v2 revision this page is bound to. The server surfaces these
+   * only for pages backed by a persisted Docs v2 document revision; they are
+   * absent/null for pages with no durable revision identity. They carry the
+   * exact persisted revision to hand to WorkGraph — never editor content — and
+   * a missing value means the WorkGraph handoff is honestly unavailable.
+   */
+  document_id?: string | null
+  document_revision_id?: string | null
 }
 
 export type PageStatus = {

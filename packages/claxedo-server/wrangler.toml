@@ -24,7 +24,9 @@ enabled = true
 
 # D13 sandbox lease reaper (ops floor ADR 2026-07-11-016 §4): drives the
 # driver-side reconciliation sweep — the `scheduled` handler in src/worker.ts
-# calls the existing GC admin path (`sandboxManager.garbageCollect()`) with
+# calls sandbox GC and the bounded WorkGraph reconciler. Operators and the
+# deployment smoke can invoke that same reconciler through the rate-limited,
+# selector-free `/internal/workgraph/reconcile` route with
 # CLAXEDO_RUNTIME_ADMIN_TOKEN. Every 15 minutes per the ADR's 10–15 minute
 # truth-keeper band, offset from the Convex lease-table sweep (10 minutes,
 # convex/crons.ts) so the lease-side marks generally land before the

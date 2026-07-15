@@ -2,6 +2,7 @@ import {
   CommandResultSchema,
   CommandErrorCodeSchema,
   AttentionCursorSchema,
+  AttentionAcknowledgementSchema,
   AttentionPageSchema,
   CompletionContractSchema,
   EvidenceInputSchema,
@@ -12,6 +13,7 @@ import {
   AttemptDetailDtoSchema,
   DecisionDtoSchema,
   RecapDtoSchema,
+  ReplacementReviewSchema,
   WorkItemAttemptPageCursorSchema,
   WorkItemAttemptPageSchema,
   WorkItemDtoSchema,
@@ -19,12 +21,15 @@ import {
   AdmissionOutcomeInputSchema,
   AdmissionWorkItemInputSchema,
   WorkSourceRevisionRefSchema,
+  WorkSourceDtoSchema,
   WorkSourceRevisionDtoSchema,
   StreamDtoSchema,
   WorkGraphChangeEnvelopeSchema,
   WorkGraphCommandRequestSchema,
   WorkGraphDefaultsDtoSchema,
   WorkGraphDefaultsSchema,
+  ExecutionCapabilitiesSchema,
+  ExecutionCapabilitiesErrorSchema,
   ExecutionProfileDefaultsSchema,
   RecapProfileDefaultsSchema,
   WorkGraphSnapshotPageSchema,
@@ -38,6 +43,11 @@ import {
   type WorkItemAttemptPageCursor,
   type StreamDto,
   type WorkGraphDefaultsDto,
+  type ExecutionCapabilities,
+  type ExecutionCapabilityName,
+  type ExecutionCapabilityUnavailableReason,
+  type ReplacementReview,
+  type WorkSourceRevisionRef,
   type SnapshotResumeCursor,
   type IntakeCandidatePageCursor,
   WorkGraphNotificationPageSchema,
@@ -52,6 +62,7 @@ import {
   UpdateSourceViewInputSchema,
 } from "@claxedo/workgraph/contracts"
 import z from "zod"
+import { bypassFetchThrottle } from "@/lib/fetch-throttle"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
 
@@ -59,6 +70,12 @@ const ChangesResponseSchema = z.strictObject({
   changes: z.array(WorkGraphChangeEnvelopeSchema),
   cursor: z.string().trim().min(1).brand("ChangeCursor").optional(),
   timedOut: z.boolean(),
+})
+
+const WorkSourcesResponseSchema = z.strictObject({
+  sources: z.array(WorkSourceDtoSchema),
+  hasMore: z.boolean(),
+  nextCursor: z.string().trim().min(1).max(512).optional(),
 })
 
 const WorkGraphApiErrorCodeSchema = z.union([
@@ -76,15 +93,18 @@ const WorkGraphApiErrorResponseSchema = z.strictObject({
 })
 
 type WorkGraphApiErrorCode = z.infer<typeof WorkGraphApiErrorCodeSchema>
-type ApiErrorKind = WorkGraphApiErrorCode | "conflict" | "offline" | "invalid_response" | "request_failed"
+type ApiErrorCode = WorkGraphApiErrorCode | z.infer<typeof ExecutionCapabilitiesErrorSchema>["error"]["code"]
+type ApiErrorKind = ApiErrorCode | "conflict" | "offline" | "invalid_response" | "request_failed"
 
 export class WorkGraphApiError extends Error {
   constructor(
     readonly kind: ApiErrorKind,
     message: string,
     readonly status?: number,
-    readonly code?: WorkGraphApiErrorCode,
+    readonly code?: ApiErrorCode,
     readonly retryable?: boolean,
+    readonly capability?: ExecutionCapabilityName,
+    readonly reason?: ExecutionCapabilityUnavailableReason,
   ) {
     super(message)
     this.name = "WorkGraphApiError"
@@ -102,11 +122,11 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
   )
   const url = (path: string) => `${baseUrl}/api/workgraph${path}`
 
-  const read = async <T>(path: string, parse: (value: unknown) => T, init?: RequestInit) => {
+  const read = async <T>(path: string, parse: (value: unknown) => T, init?: RequestInit, decodeError?: ApiErrorDecoder) => {
     const response = await request(url(path), init).catch((error) => {
       throw new WorkGraphApiError("offline", error instanceof Error ? error.message : "WorkGraph is offline")
     })
-    if (!response.ok) throw await apiError(response)
+    if (!response.ok) throw await apiError(response, undefined, decodeError)
     const value = await response.json().catch(() => {
       throw new WorkGraphApiError("invalid_response", "WorkGraph returned invalid JSON", response.status)
     })
@@ -167,12 +187,39 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       if (after) query.set("after", AttentionCursorSchema.parse(after))
       return read(`/attention?${query}`, (value) => AttentionPageSchema.parse(value))
     },
+    markAllAttentionRead: () => write("/attention/read", {}, (value) => AttentionAcknowledgementSchema.parse(value)),
+    clearAttention: () => write("/attention/clear", {}, (value) => AttentionAcknowledgementSchema.parse(value)),
     defaults: (): Promise<WorkGraphDefaultsDto> =>
       read("/defaults", (value) => WorkGraphDefaultsDtoSchema.parse(value)),
-    changes: (cursor?: ChangeCursor) =>
-      read(`/changes${cursor ? `?after=${encodeURIComponent(cursor)}` : ""}`, (value) => ChangesResponseSchema.parse(value)),
+    executionCapabilities: (): Promise<ExecutionCapabilities> =>
+      read("/execution-capabilities", (value) => ExecutionCapabilitiesSchema.parse(value), undefined, decodeExecutionCapabilitiesError),
+    // The bounded /changes long-poll. `waitMs` holds the request open server-side
+    // until a change lands or the window elapses; `signal` cancels the in-flight
+    // poll on unmount/navigation so the synchronizer aborts cleanly.
+    changes: (cursor?: ChangeCursor, options: Readonly<{ waitMs?: number; signal?: AbortSignal }> = {}) => {
+      const query = new URLSearchParams()
+      if (cursor) query.set("after", cursor)
+      if (options.waitMs !== undefined) query.set("waitMs", String(options.waitMs))
+      const search = query.toString()
+      return read(
+        `/changes${search ? `?${search}` : ""}`,
+        (value) => ChangesResponseSchema.parse(value),
+        bypassFetchThrottle(options.signal ? { signal: options.signal } : {}),
+      )
+    },
     stream: (streamId: string): Promise<StreamDto> =>
       read(`/streams/${encodeURIComponent(streamId)}`, (value) => StreamDtoSchema.parse(value)),
+    replacementReview: (input: Readonly<{ streamId: string; previousSource: WorkSourceRevisionRef }>): Promise<ReplacementReview> => {
+      const query = new URLSearchParams({
+        workSourceId: input.previousSource.workSourceId,
+        revisionId: input.previousSource.revisionId,
+        contentHash: input.previousSource.contentHash,
+      })
+      return read(
+        `/streams/${encodeURIComponent(input.streamId)}/replacement-review?${query}`,
+        (value) => ReplacementReviewSchema.parse(value),
+      )
+    },
     proposal: (proposalId: string) =>
       read(`/proposals/${encodeURIComponent(proposalId)}`, (value) => AdmissionProposalDtoSchema.parse(value)),
     workItem: (workItemId: string) =>
@@ -193,6 +240,11 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       read(`/recaps/${encodeURIComponent(recapId)}`, (value) => RecapDtoSchema.parse(value)),
     sourceRevision: (workSourceId: string, revisionId: string) =>
       read(`/sources/${encodeURIComponent(workSourceId)}/revisions/${encodeURIComponent(revisionId)}`, (value) => WorkSourceRevisionDtoSchema.parse(value)),
+    workSources: (options: Readonly<{ after?: string; limit?: number }> = {}) => {
+      const query = new URLSearchParams({ limit: String(options.limit ?? 50) })
+      if (options.after) query.set("after", options.after)
+      return read(`/sources?${query}`, (value) => WorkSourcesResponseSchema.parse(value))
+    },
     evidence: (evidenceId: string) =>
       read(`/evidence/${encodeURIComponent(evidenceId)}`, (value) => EvidenceDtoSchema.parse(value)),
     evidencePage: (
@@ -301,13 +353,13 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       expectedVersion,
       execution,
     }),
-    executeStream: (streamId: string, executionMode: ExecutionMode = "supervised") => execute({
+    executeStream: (streamId: string, executionMode: ExecutionMode) => execute({
       version: 1,
       type: "execute_stream",
       streamId,
       executionMode,
     }),
-    executeWorkItem: (workItemId: string, executionMode: ExecutionMode = "supervised") => execute({
+    executeWorkItem: (workItemId: string, executionMode: ExecutionMode) => execute({
       version: 1,
       type: "execute_work_item",
       workItemId,
@@ -395,11 +447,16 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       type: "revise_work_source",
       ...source,
     }),
-    proposeAdmission: (source: z.input<typeof WorkSourceRevisionRefSchema>, targetStreamId?: string) => execute({
+    proposeAdmission: (
+      source: z.input<typeof WorkSourceRevisionRefSchema>,
+      targetStreamId?: string,
+      execution?: z.input<typeof ExecutionProfileDefaultsSchema>,
+    ) => execute({
       version: 1,
       type: "propose_admission",
       source,
       ...(targetStreamId ? { targetStreamId } : {}),
+      ...(execution ? { execution } : {}),
     }),
     retryAdmissionPlanning: (proposalId: string, expectedVersion: number) => execute({
       version: 1,
@@ -434,10 +491,13 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
   }
 }
 
-async function apiError(response: Response, responseValue?: unknown) {
-  const parsed = WorkGraphApiErrorResponseSchema.safeParse(
-    responseValue === undefined ? await response.json().catch(() => undefined) : responseValue,
-  )
+type ApiErrorDecoder = (value: unknown, status: number) => WorkGraphApiError | undefined
+
+async function apiError(response: Response, responseValue?: unknown, decodeError?: ApiErrorDecoder) {
+  const value = responseValue === undefined ? await response.json().catch(() => undefined) : responseValue
+  const decoded = decodeError?.(value, response.status)
+  if (decoded) return decoded
+  const parsed = WorkGraphApiErrorResponseSchema.safeParse(value)
   if (!parsed.success) {
     return new WorkGraphApiError("invalid_response", "WorkGraph returned an invalid error response", response.status)
   }
@@ -447,6 +507,23 @@ async function apiError(response: Response, responseValue?: unknown) {
     response.status,
     parsed.data.error.code,
     parsed.data.error.retryable,
+  )
+}
+
+// The GET /execution-capabilities failure is a strict 503 with a distinct
+// capability envelope; recognize it exactly so callers keep code, capability,
+// reason, status, retryable, and message instead of an opaque invalid_response.
+function decodeExecutionCapabilitiesError(value: unknown, status: number) {
+  const parsed = ExecutionCapabilitiesErrorSchema.safeParse(value)
+  if (!parsed.success) return undefined
+  return new WorkGraphApiError(
+    parsed.data.error.code,
+    parsed.data.error.message,
+    status,
+    parsed.data.error.code,
+    parsed.data.error.retryable,
+    parsed.data.error.capability,
+    parsed.data.error.reason,
   )
 }
 

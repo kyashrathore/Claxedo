@@ -23,6 +23,25 @@ describe("WorkGraph MCP parity", () => {
   })
 
   it("uses the app's exact execution-default and retry commands", () => {
+    expect(z.object(WORKGRAPH_TOOL_SCHEMAS.workgraph_execute).safeParse({
+      operation_id: "operation-execute",
+      target_type: "stream",
+      target_id: "stream-1",
+    }).success).toBe(false)
+    expect(toCommandRequest("workgraph_execute", {
+      operation_id: "operation-execute",
+      target_type: "stream",
+      target_id: "stream-1",
+      mode: "supervised",
+    })).toEqual({
+      operationId: "operation-execute",
+      command: {
+        version: 1,
+        type: "execute_stream",
+        streamId: "stream-1",
+        executionMode: "supervised",
+      },
+    })
     expect(toCommandRequest("workgraph_update_defaults", {
       operation_id: "operation-defaults",
       expected_version: 1,
@@ -79,7 +98,100 @@ describe("WorkGraph MCP parity", () => {
     })
   })
 
-  it("confirms only the exact reviewed admission proposal version", () => {
+  it("uses canonical proposal lifecycle, nested execution, and Task cancellation commands", () => {
+    expect(toCommandRequest("workgraph_review_proposal", {
+      operation_id: "operation-proposal",
+      action: "retry",
+      proposal_id: "proposal-1",
+      expected_version: 0,
+    })).toEqual({
+      operationId: "operation-proposal",
+      command: { version: 1, type: "retry_admission_planning", proposalId: "proposal-1", expectedVersion: 0 },
+    })
+    expect(toCommandRequest("workgraph_update_execution", {
+      operation_id: "operation-outcome",
+      target_type: "outcome",
+      target_id: "outcome-1",
+      expected_version: 2,
+      execution: { effort: "high" },
+    })).toEqual({
+      operationId: "operation-outcome",
+      command: { version: 1, type: "update_outcome", outcomeId: "outcome-1", expectedVersion: 2, execution: { effort: "high" } },
+    })
+    expect(toCommandRequest("workgraph_cancel_work", {
+      operation_id: "operation-cancel",
+      work_item_id: "item-1",
+      expected_version: 4,
+      reason: "Replanned",
+    })).toEqual({
+      operationId: "operation-cancel",
+      command: { version: 1, type: "cancel_work_item", workItemId: "item-1", expectedVersion: 4, reason: "Replanned" },
+    })
+    expect(toCommandRequest("workgraph_stream_lifecycle", {
+      operation_id: "operation-reopen",
+      stream_id: "stream-1",
+      expected_version: 5,
+      state: "reopened",
+      reason: "Continue the launch",
+    })).toEqual({
+      operationId: "operation-reopen",
+      command: { version: 1, type: "set_stream_lifecycle", streamId: "stream-1", expectedVersion: 5, state: "reopened", reason: "Continue the launch" },
+    })
+  })
+
+  it("reads and explicitly refreshes owner-scoped execution capabilities without selectors", async () => {
+    const request = vi.fn(async () => executionCapabilities())
+    await expect(callWorkGraph(request, "workgraph_execution_capabilities", {})).resolves.toEqual(executionCapabilities())
+    await expect(callWorkGraph(request, "workgraph_refresh_execution_capabilities", {})).resolves.toEqual(executionCapabilities())
+    expect(request.mock.calls).toEqual([
+      ["/api/workgraph/execution-capabilities", { method: "GET" }],
+      ["/api/workgraph/execution-capabilities/refresh", { method: "POST", body: "{}" }],
+    ])
+  })
+
+  it("uses stable cursor pages for Attention, notifications, candidates, and changes", async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce({ items: [], total: 0, hasMore: false })
+      .mockResolvedValueOnce({ notifications: [], hasMore: false })
+      .mockResolvedValueOnce({ candidates: [], hasMore: false })
+      .mockResolvedValueOnce({ changes: [], cursor: "change-1", timedOut: true })
+    await callWorkGraph(request, "workgraph_attention", { cursor: "attention-1", limit: 25 })
+    await callWorkGraph(request, "workgraph_notifications", { cursor: "notification-1", limit: 20, state: "unread" })
+    await callWorkGraph(request, "workgraph_intake", { cursor: "candidate-1", limit: 15 })
+    await callWorkGraph(request, "workgraph_changes", { cursor: "change-1", limit: 10, wait_ms: 500 })
+    expect(request.mock.calls).toEqual([
+      ["/api/workgraph/attention?limit=25&after=attention-1", { method: "GET" }],
+      ["/api/workgraph/notifications?limit=20&after=notification-1&state=unread", { method: "GET" }],
+      ["/api/workgraph/intake?limit=15&after=candidate-1", { method: "GET" }],
+      ["/api/workgraph/changes?limit=10&after=change-1&waitMs=500", { method: "GET" }],
+    ])
+  })
+
+  it("marks actionable Recap notifications read with optimistic concurrency", async () => {
+    const notification = {
+      id: "notification-1",
+      ownerUserId: "user_1",
+      version: 2,
+      kind: "actionable_recap" as const,
+      state: "read" as const,
+      streamId: "stream-1",
+      recapId: "recap-1",
+      createdAt: 1,
+      updatedAt: 2,
+      readAt: 2,
+    }
+    const request = vi.fn(async () => notification)
+    await expect(callWorkGraph(request, "workgraph_mark_notification_read", {
+      notification_id: "notification-1",
+      expected_version: 1,
+    })).resolves.toEqual(notification)
+    expect(request).toHaveBeenCalledWith("/api/workgraph/notifications/notification-1/read", {
+      method: "POST",
+      body: JSON.stringify({ expectedVersion: 1 }),
+    })
+  })
+
+  it("confirms only the exact reviewed admission proposal version and replacement Work Item set", () => {
     expect(z.object(WORKGRAPH_TOOL_SCHEMAS.workgraph_admit).safeParse({
       operation_id: "operation-admit",
       proposal_id: "proposal-1",
@@ -105,12 +217,117 @@ describe("WorkGraph MCP parity", () => {
         selection: { mode: "create", streamTitle: "Launch" },
       },
     })
+
+    const replace = {
+      operation_id: "operation-replace",
+      proposal_id: "proposal-2",
+      expected_version: 3,
+      source: { work_source_id: "source-1", revision_id: "revision-2", content_hash: "b".repeat(64) },
+      disposition: "replace",
+      stream_id: "stream-1",
+      replace_work_items: [
+        { work_item_id: "work-item-1", expected_version: 4 },
+        { work_item_id: "work-item-2", expected_version: 7 },
+      ],
+    }
+    expect(z.object(WORKGRAPH_TOOL_SCHEMAS.workgraph_admit).safeParse(replace).success).toBe(true)
+    expect(toCommandRequest("workgraph_admit", replace)).toEqual({
+      operationId: "operation-replace",
+      command: {
+        version: 1,
+        type: "confirm_admission",
+        proposalId: "proposal-2",
+        expectedVersion: 3,
+        source: { workSourceId: "source-1", revisionId: "revision-2", contentHash: "b".repeat(64) },
+        selection: {
+          mode: "replace",
+          streamId: "stream-1",
+          workItems: [
+            { workItemId: "work-item-1", expectedVersion: 4 },
+            { workItemId: "work-item-2", expectedVersion: 7 },
+          ],
+        },
+      },
+    })
+    expect(() => toCommandRequest("workgraph_admit", { ...replace, replace_work_items: undefined }))
+      .toThrow()
+    expect(z.object(WORKGRAPH_TOOL_SCHEMAS.workgraph_admit).safeParse({
+      ...replace,
+      replace_work_items: [
+        { work_item_id: "work-item-1", expected_version: 4 },
+        { work_item_id: "work-item-1", expected_version: 4 },
+      ],
+    }).success).toBe(false)
+    expect(() => toCommandRequest("workgraph_admit", {
+      ...replace,
+      disposition: "keep",
+      replace_work_items: [{ work_item_id: "work-item-1", expected_version: 4 }],
+    })).toThrow("replace_work_items is only valid for replace admission")
   })
 
-  it("never accepts an owner identity or credentials from tool arguments", () => {
+  it("never exposes tenant identity or credentials in tool schemas", () => {
     Object.values(WORKGRAPH_TOOL_SCHEMAS).forEach((schema) => {
-      expect(Object.keys(schema)).not.toEqual(expect.arrayContaining(["owner", "owner_id", "owner_user_id", "credentials", "token"]))
+      expect(Object.keys(schema)).not.toEqual(expect.arrayContaining([
+        "owner",
+        "owner_id",
+        "owner_user_id",
+        "organization",
+        "organization_id",
+        "org_id",
+        "tenant_id",
+        "user_id",
+        "credentials",
+        "token",
+      ]))
     })
+  })
+
+  it("rejects caller-selected organization and user identity before transport", async () => {
+    const request = vi.fn(async () => ({}))
+    for (const selector of [
+      "owner",
+      "owner_id",
+      "ownerUserId",
+      "organization",
+      "organization_id",
+      "organizationId",
+      "org_id",
+      "tenantId",
+      "user_id",
+    ]) {
+      await expect(callWorkGraph(request, "workgraph_create_stream", {
+        operation_id: `operation-${selector}`,
+        title: "Launch",
+        [selector]: "caller-selected-tenant",
+      })).rejects.toThrow("organization and user come from trusted request context")
+    }
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it("keeps identical same-user calls isolated by trusted organization-bound transports", async () => {
+    const calls: Array<{ organizationId: string; userId: string; path: string; body: unknown }> = []
+    const transport = (organizationId: string, userId: string) => async (path: string, init?: RequestInit) => {
+      calls.push({ organizationId, userId, path, body: JSON.parse(String(init?.body)) })
+      return {
+        ok: true as const,
+        operationId: "operation-launch",
+        cursor: `cursor-${organizationId}`,
+        value: { streamId: `stream-${organizationId}` },
+      }
+    }
+    const input = { operation_id: "operation-launch", title: "Launch" }
+
+    const first = await callWorkGraph(transport("organization-a", "user-1"), "workgraph_create_stream", input)
+    const second = await callWorkGraph(transport("organization-b", "user-1"), "workgraph_create_stream", input)
+
+    expect(first).toMatchObject({ value: { streamId: "stream-organization-a" } })
+    expect(second).toMatchObject({ value: { streamId: "stream-organization-b" } })
+    expect(calls).toEqual([
+      expect.objectContaining({ organizationId: "organization-a", userId: "user-1", path: "/api/workgraph/commands" }),
+      expect.objectContaining({ organizationId: "organization-b", userId: "user-1", path: "/api/workgraph/commands" }),
+    ])
+    expect(calls[0]!.body).toEqual(calls[1]!.body)
+    expect(JSON.stringify(calls.map((call) => call.body))).not.toMatch(/organization|ownerUser|tenant/i)
   })
 
   it("rejects nested credential material in Source View filters", () => {
@@ -124,7 +341,12 @@ describe("WorkGraph MCP parity", () => {
 
   it("forwards atomic input unchanged and returns the service cursor", async () => {
     const handlers = new Map<string, (input: Record<string, unknown>) => Promise<unknown>>()
-    const request = vi.fn(async (_path: string, init?: RequestInit) => ({ cursor: "42", command: JSON.parse(String(init?.body)) }))
+    const request = vi.fn(async (_path: string, init?: RequestInit) => ({
+      ok: true as const,
+      operationId: JSON.parse(String(init?.body)).operationId,
+      cursor: "42",
+      value: { streamId: "stream-42" },
+    }))
     registerWorkGraphTools((name, _config, handler) => handlers.set(name, handler), request, false)
     const result = await handlers.get("workgraph_create_stream")?.({ operation_id: "op-1", title: "Launch" })
     expect(request).toHaveBeenCalledWith("/api/workgraph/commands", expect.objectContaining({
@@ -134,13 +356,48 @@ describe("WorkGraph MCP parity", () => {
     expect(result).toMatchObject({ content: [{ text: expect.stringContaining('"cursor": "42"') }] })
   })
 
+  it("resolves the invoking project target when an agent creates a Stream", async () => {
+    const handlers = new Map<string, (input: Record<string, unknown>) => Promise<unknown>>()
+    const request = vi.fn(async (_path: string, init?: RequestInit) => ({
+      ok: true as const,
+      operationId: JSON.parse(String(init?.body)).operationId,
+      cursor: "43",
+      value: { streamId: "stream-43" },
+    }))
+    const context = vi.fn(async () => ({
+      execution: {
+        environment: { kind: "hosted_workspace" as const, repositoryUrl: "https://github.com/acme/project.git" },
+        repository: { baseRevision: "HEAD" },
+      },
+    }))
+    registerWorkGraphTools((name, _config, handler) => handlers.set(name, handler), request, false, context)
+
+    await handlers.get("workgraph_create_stream")?.({ operation_id: "op-context", title: "Cloud project" })
+
+    expect(context).toHaveBeenCalledOnce()
+    expect(request).toHaveBeenCalledWith("/api/workgraph/commands", expect.objectContaining({
+      body: JSON.stringify({
+        operationId: "op-context",
+        command: {
+          version: 1,
+          type: "create_stream",
+          title: "Cloud project",
+          execution: {
+            environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/acme/project.git" },
+            repository: { baseRevision: "HEAD" },
+          },
+        },
+      }),
+    }))
+  })
+
   it("uses the exact create Stream command payload and result cursor as the UI HTTP boundary", async () => {
     const input = { operation_id: "operation-1", title: "Launch", description: "Ship cloud" }
     const mcpCommand = toCommandRequest("workgraph_create_stream", input)
     const uiCommand = { operationId: "operation-1", command: { version: 1, type: "create_stream", title: "Launch", description: "Ship cloud" } }
     expect(mcpCommand).toEqual(uiCommand)
 
-    const execute = vi.fn(async (payload: unknown) => ({ ok: true, operationId: "operation-1", cursor: "7", value: { streamId: "stream-1" }, payload }))
+    const execute = vi.fn(async () => ({ ok: true as const, operationId: "operation-1", cursor: "7", value: { streamId: "stream-1" } }))
     const uiResult = await execute(uiCommand)
     const request = async (_path: string, init?: RequestInit) => execute(JSON.parse(String(init?.body)))
     const handlers = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
@@ -151,7 +408,7 @@ describe("WorkGraph MCP parity", () => {
   })
 
   it("calls an injected embedded service directly without an HTTP hop", async () => {
-    const execute = vi.fn(async () => ({ ok: true, cursor: "9", value: { streamId: "stream-9" } }))
+    const execute = vi.fn(async () => ({ ok: true as const, operationId: "op-9", cursor: "9", value: { streamId: "stream-9" } }))
     const handlers = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
     registerWorkGraphTools((name, _config, handler) => handlers.set(name, handler), {
       execute,
@@ -179,6 +436,58 @@ describe("WorkGraph MCP parity", () => {
     await callWorkGraph(request, "workgraph_get", { record_type: "source", id: "source-1" })
     expect(request).toHaveBeenNthCalledWith(1, "/api/workgraph/sources?after=sqlite%3A2&limit=10", { method: "GET" })
     expect(request).toHaveBeenNthCalledWith(2, "/api/workgraph/sources/source-1", { method: "GET" })
+  })
+
+  it("reads exact source revisions and detailed records from canonical resources", async () => {
+    const revision = {
+      id: "revision-1",
+      workSourceId: "source-1",
+      revisionNumber: 1,
+      content: "Exact source content",
+      contentHash: "a".repeat(64),
+      origin: { kind: "manual" as const },
+      createdAt: 1,
+      createdBy: actor,
+    }
+    const revisionRequest = vi.fn(async () => revision)
+    await expect(callWorkGraph(revisionRequest, "workgraph_source_revision", {
+      work_source_id: "source-1",
+      revision_id: "revision-1",
+    })).resolves.toEqual(revision)
+    expect(revisionRequest).toHaveBeenCalledWith(
+      "/api/workgraph/sources/source-1/revisions/revision-1",
+      { method: "GET" },
+    )
+
+    for (const [recordType, path] of [
+      ["proposal", "/api/workgraph/proposals/missing"],
+      ["work_item", "/api/workgraph/work-items/missing"],
+      ["attempt", "/api/workgraph/attempts/missing"],
+      ["decision", "/api/workgraph/decisions/missing"],
+      ["recap", "/api/workgraph/recaps/missing"],
+    ] as const) {
+      const request = vi.fn(async () => { throw new McpHttpError(404, "not_found", "missing") })
+      await expect(callWorkGraph(request, "workgraph_get", { record_type: recordType, id: "missing" }))
+        .rejects.toMatchObject({ code: "not_found", status: 404, recordType, recordId: "missing" })
+      expect(request).toHaveBeenCalledWith(path, { method: "GET" })
+    }
+  })
+
+  it("uses canonical detail pages for Attempts and evidence", async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce({ attempts: [], hasMore: false })
+      .mockResolvedValueOnce({ evidence: [], hasMore: false })
+    await callWorkGraph(request, "workgraph_attempts", { work_item_id: "item-1", cursor: "attempt-1", limit: 10 })
+    await callWorkGraph(request, "workgraph_evidence", {
+      action: "list",
+      subject: { type: "work_item", workItemId: "item-1" },
+      cursor: "evidence-1",
+      limit: 20,
+    })
+    expect(request.mock.calls).toEqual([
+      ["/api/workgraph/work-items/item-1/attempts?limit=10&after=attempt-1", { method: "GET" }],
+      ["/api/workgraph/evidence?limit=20&after=evidence-1&subjectType=work_item&workItemId=item-1", { method: "GET" }],
+    ])
   })
 
   it("validates direct reads and reports missing embedded Stream and Source records", async () => {
@@ -261,6 +570,20 @@ describe("WorkGraph MCP parity", () => {
     expect(result).toMatchObject({ records: [], snapshotCursor: "change_empty" })
   })
 
+  it("filters snapshot lists by the requested noun and rejects misleading pagination", async () => {
+    const result = await callWorkGraph(
+      vi.fn(async () => snapshotPage([streams(0, 1)[0]!, recap("recap-1", "stream_1", 2)], "change-2", 2)),
+      "workgraph_list",
+      { kind: "streams" },
+    ) as { records: Array<{ recordType: string }> }
+    expect(result.records.map((record) => record.recordType)).toEqual(["stream"])
+    await expect(callWorkGraph(
+      vi.fn(async () => snapshotPage([], "change-2", 2)),
+      "workgraph_list",
+      { kind: "streams", limit: 10 },
+    )).rejects.toThrow("cursor and limit apply only to Work Source pages")
+  })
+
   it("throws typed not_found when a requested snapshot record does not exist", async () => {
     const request = vi.fn(async () => snapshotPage(streams(0, 1), "change_1", 5))
 
@@ -277,7 +600,7 @@ describe("WorkGraph MCP parity", () => {
 
   it("throws typed not_found when a Stream has no requested Recap", async () => {
     await expect(callWorkGraph(
-      vi.fn(async () => snapshotPage([], "change_empty", 5)),
+      vi.fn(async () => { throw new McpHttpError(404, "not_found", "Recap not found") }),
       "workgraph_recap",
       { stream_id: "stream_1", recap_id: "recap_missing" },
     )).rejects.toMatchObject({
@@ -299,15 +622,16 @@ describe("WorkGraph MCP parity", () => {
       vi.fn(async () => snapshotPage(records, "change_recaps", 30)),
       "workgraph_recap",
       { stream_id: "stream_1" },
-    ) as { records: Array<{ id: string }>; references: Array<{ resource: { id: string } }> }
+    ) as { id: string }
 
-    expect(result.records.map((record) => record.id)).toEqual(["recap_latest"])
-    expect(result.references.map((reference) => reference.resource.id)).toEqual(["recap_latest"])
+    expect(result.id).toBe("recap_latest")
   })
 
   it("returns a typed MCP error instead of a successful empty record array", async () => {
     const handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>()
-    registerWorkGraphTools((name, _config, handler) => handlers.set(name, handler), async () => snapshotPage([], "change_empty", 5), false)
+    registerWorkGraphTools((name, _config, handler) => handlers.set(name, handler), async () => {
+      throw new McpHttpError(404, "not_found", "Decision not found")
+    }, false)
 
     const result = await handlers.get("workgraph_get")!({ record_type: "decision", id: "decision_missing" })
 
@@ -377,7 +701,13 @@ describe("WorkGraph MCP parity", () => {
   })
 
   it("uses the same Connections-backed Source View and intake routes as the UI", async () => {
-    const request = vi.fn(async () => ({}))
+    const request = vi.fn()
+      .mockResolvedValueOnce({ sourceViews: [sourceView()] })
+      .mockResolvedValueOnce(sourceView())
+      .mockResolvedValueOnce({ created: 1, updated: 0, candidates: [candidate("unorganized")] })
+      .mockResolvedValueOnce({ candidates: [candidate("unorganized")], hasMore: false })
+      .mockResolvedValueOnce(candidate("staged"))
+      .mockResolvedValueOnce({ ok: true })
     await callWorkGraph(request, "workgraph_source_views", {})
     await callWorkGraph(request, "workgraph_configure_source_view", {
       team_connection_id: "connection-1",
@@ -394,10 +724,38 @@ describe("WorkGraph MCP parity", () => {
       ["/api/workgraph/source-views", { method: "GET" }],
       ["/api/workgraph/source-views", { method: "POST", body: JSON.stringify({ teamConnectionId: "connection-1", provider: "github", providerUserId: "octocat", filters: { repo: "claxedo/claxedo" }, syncPolicy: "silent" }) }],
       ["/api/workgraph/source-views/view%2F1/refresh", { method: "POST", body: "{}" }],
-      ["/api/workgraph/intake?sourceViewId=view%2F1", { method: "GET" }],
+      ["/api/workgraph/intake?limit=50&sourceViewId=view%2F1", { method: "GET" }],
       ["/api/workgraph/intake/candidate%2F1/stage", { method: "POST", body: "{}" }],
       ["/api/workgraph/intake/candidate%2F1/sync", { method: "POST", body: JSON.stringify({ idempotencyKey: "sync-1", summary: "Shipped", status: "done" }) }],
     ])
+  })
+
+  it("passes only the team Connection reference to organization-bound Source View transports", async () => {
+    const calls: Array<{ organizationId: string; body: unknown }> = []
+    const transport = (organizationId: string) => async (_path: string, init?: RequestInit) => {
+      calls.push({ organizationId, body: JSON.parse(String(init?.body)) })
+      return { ...sourceView(), id: `view-${organizationId}` }
+    }
+    const input = {
+      team_connection_id: "shared-team-connection-id",
+      provider: "github" as const,
+      provider_user_id: "octocat",
+      filters: { repo: "claxedo/claxedo" },
+    }
+
+    await callWorkGraph(transport("organization-a"), "workgraph_configure_source_view", input)
+    await callWorkGraph(transport("organization-b"), "workgraph_configure_source_view", input)
+
+    expect(calls.map((call) => call.organizationId)).toEqual(["organization-a", "organization-b"])
+    expect(calls[0]!.body).toEqual(calls[1]!.body)
+    expect(calls[0]!.body).toEqual({
+      teamConnectionId: "shared-team-connection-id",
+      provider: "github",
+      providerUserId: "octocat",
+      filters: { repo: "claxedo/claxedo" },
+      syncPolicy: "silent",
+    })
+    expect(JSON.stringify(calls.map((call) => call.body))).not.toMatch(/organization|ownerUser|tenant/i)
   })
 
   it("dispatches Connections-backed intake in process and hides unsupported embedded capabilities", async () => {
@@ -407,7 +765,7 @@ describe("WorkGraph MCP parity", () => {
       snapshot: vi.fn(async () => ({ records: [] })),
       readStream: vi.fn(async () => undefined),
       listSourceViews: vi.fn(async () => ({ sourceViews: [] })),
-      stageCandidate: vi.fn(async (id: string) => ({ id, state: "staged" })),
+      stageCandidate: vi.fn(async () => candidate("staged")),
     }
     registerWorkGraphTools((name, _config, handler) => handlers.set(name, handler), embedded, false)
     expect(handlers.has("workgraph_source_views")).toBe(true)
@@ -420,14 +778,113 @@ describe("WorkGraph MCP parity", () => {
     expect(embedded.stageCandidate).toHaveBeenCalledWith("candidate-1")
   })
 
+  it("reads, dismisses, and restores independent-session candidates through canonical routes", async () => {
+    const sessionCandidate = (state: "unorganized" | "dismissed") => ({
+      id: "session-candidate",
+      ownerUserId: "user_1",
+      version: state === "dismissed" ? 2 : 3,
+      title: "Independent session",
+      body: "Meaningful AI work",
+      state,
+      candidateKind: "session" as const,
+      sessionId: "session-1",
+      createdAt: 1,
+      updatedAt: state === "dismissed" ? 2 : 3,
+    })
+    const request = vi.fn()
+      .mockResolvedValueOnce(sessionCandidate("unorganized"))
+      .mockResolvedValueOnce(sessionCandidate("dismissed"))
+      .mockResolvedValueOnce(sessionCandidate("unorganized"))
+    await callWorkGraph(request, "workgraph_get_candidate", { candidate_id: "session-candidate" })
+    await callWorkGraph(request, "workgraph_update_candidate", { action: "dismiss", candidate_id: "session-candidate", expected_version: 1 })
+    await callWorkGraph(request, "workgraph_update_candidate", { action: "restore", candidate_id: "session-candidate", expected_version: 2 })
+    expect(request.mock.calls).toEqual([
+      ["/api/workgraph/intake/session-candidate", { method: "GET" }],
+      ["/api/workgraph/intake/session-candidate/dismiss", { method: "POST", body: JSON.stringify({ expectedVersion: 1 }) }],
+      ["/api/workgraph/intake/session-candidate/restore", { method: "POST", body: JSON.stringify({ expectedVersion: 2 }) }],
+    ])
+  })
+
   it("keeps reads and removes mutations in read-only mode", () => {
     const names: string[] = []
     registerWorkGraphTools((name) => names.push(name), async () => ({}), true)
-    expect(names).toEqual(["workgraph_get_defaults", "workgraph_list", "workgraph_get", "workgraph_source_views", "workgraph_intake", "workgraph_recap"])
+    expect(names).toEqual([
+      "workgraph_get_defaults",
+      "workgraph_execution_capabilities",
+      "workgraph_attention",
+      "workgraph_notifications",
+      "workgraph_list",
+      "workgraph_get",
+      "workgraph_source_revision",
+      "workgraph_changes",
+      "workgraph_source_views",
+      "workgraph_intake",
+      "workgraph_get_candidate",
+      "workgraph_evidence",
+      "workgraph_attempts",
+      "workgraph_recap",
+    ])
   })
 })
 
 const actor = { type: "user" as const, id: "user_1" }
+
+function sourceView() {
+  return {
+    id: "view/1",
+    ownerUserId: "user_1",
+    version: 1,
+    teamConnectionId: "connection-1",
+    provider: "github" as const,
+    providerUserId: "octocat",
+    filters: { repo: "claxedo/claxedo" },
+    syncPolicy: "silent" as const,
+    status: "active" as const,
+    createdAt: 1,
+    updatedAt: 1,
+  }
+}
+
+function candidate(state: "unorganized" | "staged") {
+  return {
+    id: "candidate/1",
+    ownerUserId: "user_1",
+    version: state === "staged" ? 2 : 1,
+    title: "Issue 1",
+    body: "Ship it",
+    state,
+    candidateKind: "external_issue" as const,
+    sourceViewId: "view/1",
+    provider: "github" as const,
+    externalId: "1",
+    externalStatus: "open",
+    createdAt: 1,
+    updatedAt: state === "staged" ? 2 : 1,
+  }
+}
+
+function executionCapabilities() {
+  return {
+    schemaVersion: 1 as const,
+    organizationId: "organization-1",
+    ownerUserId: "user_1",
+    catalogRevision: "a".repeat(64),
+    observedAt: 1,
+    expiresAt: 300_001,
+    environments: [{
+      kind: "local_worktree" as const,
+      repositoryRequired: true,
+      remoteUrlInput: true,
+      baseRevisionInput: true,
+    }],
+    harnesses: [{ id: "opencode" }],
+    agents: [{ harnessId: "opencode", id: "build", label: "Build" }],
+    models: [],
+    tools: [{ harnessId: "opencode", id: "read" }],
+    repository: { baseRevisions: ["dev"] },
+    connections: [],
+  }
+}
 
 function streams(start: number, count: number) {
   return Array.from({ length: count }, (_, index) => ({

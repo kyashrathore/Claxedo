@@ -1,13 +1,12 @@
 import { describe, expect, expectTypeOf, it } from "vitest"
 import {
-  type AttemptID,
   type ConnectionID,
   type OperationID,
+  type OrganizationID,
   type OwnerUserID,
   type RequestID,
   type StreamID,
   type WorkGraphContext,
-  type WorkItemID,
   type WorkSourceID,
   type WorkSourceRevisionID,
 } from "../src/contracts"
@@ -28,6 +27,7 @@ import type { WorkSourcePort } from "../src/ports/work-source"
 const branded = <Type>(value: string) => value as Type
 
 const context: WorkGraphContext = {
+  organizationId: branded<OrganizationID>("organization_01"),
   ownerUserId: branded<OwnerUserID>("owner_01"),
   actor: { type: "agent", id: branded("agent_01") },
   requestId: branded<RequestID>("request_01"),
@@ -105,9 +105,8 @@ describe("WorkGraph ports", () => {
     expectTypeOf<Parameters<ConnectionsPort["resolveCapabilities"]>[0]>().toEqualTypeOf<WorkGraphContext>()
   })
 
-  it("models one Stream envelope, optional child isolation, and attempt lifecycle", () => {
+  it("models one Stream workspace and attempt lifecycle", () => {
     expectTypeOf<Parameters<WorkspaceExecutionPort["provisionOrAdopt"]>[0]>().toEqualTypeOf<WorkGraphContext>()
-    expectTypeOf<Parameters<WorkspaceExecutionPort["createChildIsolation"]>[0]>().toEqualTypeOf<WorkGraphContext>()
     expectTypeOf<Parameters<WorkspaceExecutionPort["launch"]>[0]>().toEqualTypeOf<WorkGraphContext>()
     expectTypeOf<Parameters<WorkspaceExecutionPort["cancel"]>[0]>().toEqualTypeOf<WorkGraphContext>()
     expectTypeOf<Parameters<WorkspaceExecutionPort["result"]>[0]>().toEqualTypeOf<WorkGraphContext>()
@@ -135,11 +134,4 @@ describe("WorkGraph ports", () => {
     expectTypeOf(workSource).toMatchTypeOf<WorkSourcePort>()
   })
 
-  it("keeps runtime identities typed across execution operations", () => {
-    expectTypeOf<Parameters<WorkspaceExecutionPort["createChildIsolation"]>[1]>().toMatchTypeOf<{
-      streamId: StreamID
-      workItemId: WorkItemID
-      attemptId: AttemptID
-    }>()
-  })
 })

@@ -43,7 +43,11 @@ setErrorReporterSink((error, context) => {
   })
 })
 
-let cached: { app: Hono; plane: HostedControlPlane } | undefined
+let cached: {
+  app: Hono
+  plane: HostedControlPlane
+  workGraphRuntime?: NonNullable<ReturnType<typeof createHostedWorkGraphRuntime>>
+} | undefined
 
 // D9 fail-closed hosted boot: `composeHostedControlPlane` asserts every
 // hosted dependency/secret per-piece, and `createHostedApp` asserts the
@@ -54,7 +58,10 @@ let cached: { app: Hono; plane: HostedControlPlane } | undefined
 function buildApp(env: HostedWorkerEnv): Hono {
   if (cached) return cached.app
   const plane = composeHostedControlPlane(env)
-  const app = createHostedApp(plane)
+  const workGraphRuntime = createHostedWorkGraphRuntime(env, plane.services)
+  const app = createHostedApp(plane, {
+    ...(workGraphRuntime ? { workGraphReconcile: workGraphRuntime.reconcile } : {}),
+  })
   // D12: Hono converts route exceptions into 500s internally, so they never
   // escape to withSentry — report them here, keeping Hono's default response
   // behavior (HTTPException responses pass through unreported; they are
@@ -71,7 +78,7 @@ function buildApp(env: HostedWorkerEnv): Hono {
       return c.text("Internal Server Error", 500)
     })
   }
-  cached = { app, plane }
+  cached = { app, plane, ...(workGraphRuntime ? { workGraphRuntime } : {}) }
   return app
 }
 
@@ -163,7 +170,7 @@ const handler = {
     try {
       const app = buildApp(env)
       void app
-      await createHostedWorkGraphRuntime(env, cached!.plane.services)?.reconcile()
+      await cached!.workGraphRuntime?.reconcile()
     } catch (err) {
       reportError(err, { tags: { source: "worker_scheduled", reason: "workgraph_reconcile_failed" } })
       if (!gcError) gcError = err

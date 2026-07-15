@@ -53,6 +53,7 @@ import * as DialogSelectDirectoryModule from "@/app/dialogs/select-directory"
 import * as SessionQueries from "@/features/session/data/sync/queries"
 import * as SessionCache from "@/features/session/data/sync/directory-session-cache"
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
+import * as DocWorkGraph from "@/app/integrations/doc-workgraph"
 
 configureSessionAppPorts({
   useSDK: SDK.useSDK,
@@ -139,6 +140,7 @@ configureDocumentsAppPorts({
   ensureLocalProject: ProjectEnsure.ensureLocalProject,
   surfaceRoute: SurfaceRoute.surfaceRoute,
   SessionPaneScope: SessionScope.SessionPaneScope,
+  turnDocumentRevisionIntoWork: DocWorkGraph.turnDocumentRevisionIntoWork,
 })
 
 configureReviewAppPorts({

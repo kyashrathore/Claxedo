@@ -24,7 +24,7 @@ The package composes with:
 
 - team-managed Claxedo Connections plus per-user provider mappings and filters;
 - workspace execution ports for sessions, worktrees, and hosted workspaces;
-- a backend-neutral storage port and core conformance version 3;
+- a backend-neutral storage port and core conformance version 5;
 - owner-scoped Convex state as the Claxedo Cloud default;
 - SQLite as the local and default single-node OSS adapter;
 - a separate portable archive port and archive conformance version 1, implemented by SQLite and Convex;

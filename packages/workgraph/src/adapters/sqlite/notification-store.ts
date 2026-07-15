@@ -1,6 +1,6 @@
 import type BetterSqlite3 from "better-sqlite3"
 import { NotificationVersionConflictError, type NotificationStore } from "../../application/notification-service"
-import type { WorkGraphNotification } from "../../contracts"
+import { createNotificationPageCursor, readNotificationPageCursor, type WorkGraphNotification } from "../../contracts"
 import { assertNoSqliteWorkGraphOwnerDeletion } from "./deletion-barrier"
 import { initializeWorkGraphSqliteSchema } from "./schema"
 
@@ -9,67 +9,87 @@ export function createSqliteNotificationStore(databaseInput: BetterSqlite3.Datab
   if (!database) throw new Error("The SQLite notification adapter requires a real better-sqlite3 database")
   return {
     async list(context, input) {
-      const offset = cursor(input.after)
+      const resume = input.after
+        ? readNotificationPageCursor(input.after, context.organizationId, context.ownerUserId, input.state)
+        : undefined
       const rows = database.prepare(`
-        SELECT notifications.* FROM wg_v2_notifications notifications WHERE notifications.owner_user_id = ?
+        SELECT notifications.* FROM wg_v2_notifications notifications WHERE notifications.organization_id = ? AND notifications.owner_user_id = ?
           AND (? IS NULL OR notifications.state = ?)
+          AND (? IS NULL OR notifications.created_at < ? OR (notifications.created_at = ? AND notifications.id < ?))
           AND NOT EXISTS (
             SELECT 1 FROM wg_v2_recaps recaps
-            WHERE recaps.owner_user_id = notifications.owner_user_id AND recaps.id = notifications.recap_id
+            WHERE recaps.organization_id = notifications.organization_id AND recaps.owner_user_id = notifications.owner_user_id AND recaps.id = notifications.recap_id
               AND (
                 json_extract(recaps.generation_result_json, '$.method') = 'deterministic_fallback'
                 OR json_extract(recaps.generation_result_json, '$.sessionId') IS NULL
               )
           )
-        ORDER BY notifications.created_at DESC, notifications.id DESC LIMIT ? OFFSET ?
-      `).all(context.ownerUserId, input.state ?? null, input.state ?? null, input.limit + 1, offset) as NotificationRow[]
+        ORDER BY notifications.created_at DESC, notifications.id DESC LIMIT ?
+      `).all(
+        context.organizationId,
+        context.ownerUserId,
+        input.state ?? null,
+        input.state ?? null,
+        resume?.createdAt ?? null,
+        resume?.createdAt ?? null,
+        resume?.createdAt ?? null,
+        resume?.notificationId ?? null,
+        input.limit + 1,
+      ) as NotificationRow[]
       const page = rows.slice(0, input.limit).map(notification)
-      return { notifications: page, hasMore: rows.length > input.limit, ...(rows.length > input.limit ? { nextCursor: String(offset + page.length) } : {}) }
+      const hasMore = rows.length > input.limit
+      return {
+        notifications: page,
+        hasMore,
+        ...(hasMore ? {
+          nextCursor: createNotificationPageCursor({
+            organizationId: context.organizationId,
+            ownerUserId: context.ownerUserId,
+            state: input.state,
+            createdAt: page.at(-1)!.createdAt,
+            notificationId: page.at(-1)!.id,
+          }),
+        } : {}),
+      }
     },
     async read(context, id) {
       const row = database.prepare(`
         SELECT notifications.* FROM wg_v2_notifications notifications
-        WHERE notifications.owner_user_id = ? AND notifications.id = ?
+        WHERE notifications.organization_id = ? AND notifications.owner_user_id = ? AND notifications.id = ?
           AND NOT EXISTS (
             SELECT 1 FROM wg_v2_recaps recaps
-            WHERE recaps.owner_user_id = notifications.owner_user_id AND recaps.id = notifications.recap_id
+            WHERE recaps.organization_id = notifications.organization_id AND recaps.owner_user_id = notifications.owner_user_id AND recaps.id = notifications.recap_id
               AND (
                 json_extract(recaps.generation_result_json, '$.method') = 'deterministic_fallback'
                 OR json_extract(recaps.generation_result_json, '$.sessionId') IS NULL
               )
           )
       `)
-        .get(context.ownerUserId, id) as NotificationRow | undefined
+        .get(context.organizationId, context.ownerUserId, id) as NotificationRow | undefined
       return row ? notification(row) : undefined
     },
     async markRead(context, input) {
       return database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         const now = Date.now()
         const changed = database.prepare(`
           UPDATE wg_v2_notifications SET state = 'read', read_at = COALESCE(read_at, ?), updated_at = ?, row_version = row_version + 1
-          WHERE owner_user_id = ? AND id = ? AND row_version = ? AND state = 'unread'
+          WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ? AND state = 'unread'
             AND NOT EXISTS (
               SELECT 1 FROM wg_v2_recaps recaps
-              WHERE recaps.owner_user_id = wg_v2_notifications.owner_user_id AND recaps.id = wg_v2_notifications.recap_id
+              WHERE recaps.organization_id = wg_v2_notifications.organization_id
+                AND recaps.owner_user_id = wg_v2_notifications.owner_user_id AND recaps.id = wg_v2_notifications.recap_id
                 AND (
                   json_extract(recaps.generation_result_json, '$.method') = 'deterministic_fallback'
                   OR json_extract(recaps.generation_result_json, '$.sessionId') IS NULL
                 )
             )
-        `).run(now, now, context.ownerUserId, input.id, input.expectedVersion)
+        `).run(now, now, context.organizationId, context.ownerUserId, input.id, input.expectedVersion)
         if (changed.changes !== 1) throw new NotificationVersionConflictError()
-        return notification(database.prepare("SELECT * FROM wg_v2_notifications WHERE owner_user_id = ? AND id = ?").get(context.ownerUserId, input.id) as NotificationRow)
+        return notification(database.prepare("SELECT * FROM wg_v2_notifications WHERE organization_id = ? AND owner_user_id = ? AND id = ?").get(context.organizationId, context.ownerUserId, input.id) as NotificationRow)
       })()
     },
   }
-}
-
-function cursor(value?: string) {
-  if (!value) return 0
-  const result = Number(value)
-  if (!Number.isInteger(result) || result < 0) throw new Error("Invalid notification cursor")
-  return result
 }
 
 function notification(row: NotificationRow): WorkGraphNotification {

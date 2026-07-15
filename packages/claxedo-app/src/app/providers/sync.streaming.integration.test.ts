@@ -28,7 +28,7 @@ describe("sync streaming integration", () => {
       event_ordinal: ordinal,
     }))
 
-    const staleSnapshot = [textPart("p2", "stale"), textPart("p3", "stale")]
+    const staleSnapshot = [textPart("p2", "s2"), textPart("p3", "s3")]
     const afterFetch = mergeParts(undefined, snapshot)
     const afterReplay = replay.reduce((parts, event, index) => {
       expect(event.payload.properties.sessionID).toBe(sessionID)

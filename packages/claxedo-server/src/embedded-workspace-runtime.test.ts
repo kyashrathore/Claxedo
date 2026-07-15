@@ -5,6 +5,7 @@ import path from "path"
 import {
   configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
+  releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
   syncEmbeddedWorkspaceRuntimeAgentExtensions,
 } from "./embedded-workspace-runtime"
@@ -107,6 +108,7 @@ describe("embedded workspace runtime", () => {
         },
       })
 
+    shutdownEmbeddedWorkspaceRuntimes()
     await fs.rm(root, { recursive: true, force: true })
   })
 
@@ -132,6 +134,7 @@ describe("embedded workspace runtime", () => {
       // fresh one is created.
       expect(moved).not.toBe(first)
     } finally {
+      shutdownEmbeddedWorkspaceRuntimes()
       await fs.rm(root, { recursive: true, force: true })
     }
   })
@@ -153,6 +156,7 @@ describe("embedded workspace runtime", () => {
       // apply-status.json marker into the workspace directory.
       expect(await applyStatusExists(sync.project)).toBe(true)
     } finally {
+      shutdownEmbeddedWorkspaceRuntimes()
       await fs.rm(skip.root, { recursive: true, force: true })
       await fs.rm(sync.root, { recursive: true, force: true })
     }
@@ -185,6 +189,7 @@ describe("embedded workspace runtime", () => {
       // Restore the default target so we do not leak the reconfigured URL into
       // other tests in this file.
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      shutdownEmbeddedWorkspaceRuntimes()
       await fs.rm(root, { recursive: true, force: true })
       await fs.rm(project + "-new", { recursive: true, force: true }).catch(() => {})
     }
@@ -207,6 +212,22 @@ describe("embedded workspace runtime", () => {
       const rebuilt = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       expect(rebuilt).not.toBe(first)
     } finally {
+      shutdownEmbeddedWorkspaceRuntimes()
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("releaseEmbeddedWorkspaceRuntime disposes one cached workspace runtime", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-release-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+
+    try {
+      const ws = workspace("ws_release", project)
+      const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      releaseEmbeddedWorkspaceRuntime(ws.id)
+      expect(await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })).not.toBe(first)
+    } finally {
+      shutdownEmbeddedWorkspaceRuntimes()
       await fs.rm(root, { recursive: true, force: true })
     }
   })
@@ -255,6 +276,7 @@ describe("embedded workspace runtime", () => {
       }])
     } finally {
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      shutdownEmbeddedWorkspaceRuntimes()
       await fs.rm(root, { recursive: true, force: true })
     }
   })
@@ -334,6 +356,7 @@ describe("embedded workspace runtime", () => {
       // Reset the module singleton so later tests in this file don't inherit
       // this test's callback or fake transport.
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      shutdownEmbeddedWorkspaceRuntimes()
       await fs.rm(root, { recursive: true, force: true })
     }
   })
@@ -379,6 +402,7 @@ describe("embedded workspace runtime", () => {
       ]])
     } finally {
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      shutdownEmbeddedWorkspaceRuntimes()
       await fs.rm(root, { recursive: true, force: true })
     }
   })

@@ -1,42 +1,72 @@
 /**
- * Capability catalog for execution settings. The backend does not yet expose an
- * enumerable catalog of harness/agent/model/effort/tool options (defaults() only
- * returns the CONFIGURED values, not the available ones), and this feature may
- * not import the shared Session selectors (`@/features/session/*`). So the
- * capability-driven settings subsections are built around these strict typed
- * props. When `capabilities` is absent the dialog shows current values read-only
- * and surfaces an explicit "options unavailable" state rather than inventing
- * choices. See the report for the exact missing integration point.
+ * Pure projections of the execution capability catalog for the settings forms.
+ *
+ * Every choice a settings field can offer comes from `ExecutionCapabilities`, the
+ * enumerable catalog the backend advertises. These helpers narrow that catalog to
+ * the choices valid for the current selection: agents, models, and tools scoped to
+ * the chosen harness, efforts scoped to the chosen model, plus the
+ * repository inputs and connections. They never inject defaults or fabricate
+ * options; an empty result means the catalog advertises nothing for that field.
  */
-export type SettingsCapabilities = {
-  harnesses: readonly string[]
-  agents: readonly string[]
-  /** Model options as provider/model pairs with a display label. */
-  models: readonly { providerId: string; modelId: string; label: string }[]
-  efforts: readonly string[]
-  tools: readonly string[]
-  /** Optional base-revision suggestions (e.g. branches). */
-  baseRevisions?: readonly string[]
+import type { ExecutionCapabilities, ExecutionEnvironmentCapability } from "@claxedo/workgraph/contracts"
+
+/** Harness ids the catalog advertises. */
+export function harnessChoices(capabilities: ExecutionCapabilities) {
+  return capabilities.harnesses.map((harness) => harness.id)
 }
 
-/** Contract enums that are always safe to offer (not capability-gated). */
-export const ENVIRONMENT_OPTIONS = [
-  { value: "local_worktree", label: "Local worktree" },
-  { value: "hosted_workspace", label: "Cloud workspace" },
-] as const
+/** Agents the catalog advertises for a harness. */
+export function agentChoices(capabilities: ExecutionCapabilities, harnessId: string) {
+  return capabilities.agents.filter((agent) => agent.harnessId === harnessId)
+}
 
-export const ISOLATION_OPTIONS = [
-  { value: "stream", label: "Stream" },
-  { value: "child", label: "Child" },
-] as const
+/** Models the catalog advertises for a harness. */
+export function modelChoices(capabilities: ExecutionCapabilities, harnessId: string) {
+  return capabilities.models.filter((model) => model.harnessId === harnessId)
+}
 
-export const CLEANUP_OPTIONS = [
-  { value: "destroy_on_close", label: "Destroy on close" },
-  { value: "retain", label: "Retain" },
-] as const
+/** Provider ids the catalog advertises for a harness, in catalog order. */
+export function providerChoices(capabilities: ExecutionCapabilities, harnessId: string) {
+  return [...new Set(modelChoices(capabilities, harnessId).map((model) => model.providerId))]
+}
 
-export const INTEGRATION_OPTIONS = [
-  { value: "manual", label: "Manual" },
-  { value: "pull_request", label: "Pull request" },
-  { value: "direct", label: "Direct" },
-] as const
+/** Models the catalog advertises for one provider of a harness. */
+export function providerModelChoices(capabilities: ExecutionCapabilities, harnessId: string, providerId: string) {
+  return modelChoices(capabilities, harnessId).filter((model) => model.providerId === providerId)
+}
+
+/** Efforts the catalog advertises for one model of a harness. */
+export function effortChoices(capabilities: ExecutionCapabilities, harnessId: string, providerId: string, modelId: string) {
+  return capabilities.models
+    .filter((model) => model.harnessId === harnessId && model.providerId === providerId && model.modelId === modelId)
+    .flatMap((model) => model.efforts)
+}
+
+/** Tools the catalog advertises for a harness. */
+export function toolChoices(capabilities: ExecutionCapabilities, harnessId: string) {
+  return capabilities.tools.filter((tool) => tool.harnessId === harnessId)
+}
+
+/** Environment kinds the catalog advertises. */
+export function environmentChoices(capabilities: ExecutionCapabilities) {
+  return capabilities.environments.map((environment) => environment.kind)
+}
+
+/**
+ * The repository input policy advertised for one environment
+ * (`repositoryRequired`, `remoteUrlInput`, `baseRevisionInput`). `undefined` when
+ * the catalog does not advertise that environment.
+ */
+export function environmentPolicy(capabilities: ExecutionCapabilities, kind: ExecutionEnvironmentCapability["kind"]) {
+  return capabilities.environments.find((environment) => environment.kind === kind)
+}
+
+/** Base revisions the catalog advertises for the repository. */
+export function baseRevisionChoices(capabilities: ExecutionCapabilities) {
+  return capabilities.repository.baseRevisions
+}
+
+/** Connections the catalog advertises. */
+export function connectionChoices(capabilities: ExecutionCapabilities) {
+  return capabilities.connections
+}

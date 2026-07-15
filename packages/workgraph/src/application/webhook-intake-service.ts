@@ -1,7 +1,8 @@
-import { ActorIDSchema, OwnerUserIDSchema, RequestIDSchema, type ConnectionID, type WorkGraphContext } from "../contracts"
+import { ActorIDSchema, OrganizationIDSchema, OwnerUserIDSchema, RequestIDSchema, type ConnectionID, type WorkGraphContext } from "../contracts"
 import type { SourceProvider, SourceView } from "./source-view-service"
 
 export type VerifiedWorkSourceSignal = Readonly<{
+  organizationId: string
   connectionId: ConnectionID
   provider: SourceProvider
   deliveryId: string
@@ -15,6 +16,7 @@ export type WebhookIntakeStore = Readonly<{
     { state: "completed" } | { state: "busy" } | { state: "acquired"; leaseId: string }
   >>
   listSourceViews(input: Readonly<{
+    organizationId: string
     connectionId: ConnectionID
     provider: SourceProvider
     limit: number
@@ -37,6 +39,7 @@ export function createWebhookIntakeService(input: Readonly<{
       if (receipt.state === "busy") return { accepted: false, reason: "in_progress" as const, refreshed: 0 }
       try {
         const sourceViews = await input.store.listSourceViews({
+          organizationId: signal.organizationId,
           connectionId: signal.connectionId,
           provider: signal.provider,
           limit: maxSourceViews + 1,
@@ -71,7 +74,8 @@ export function matchesFilters(sourceView: SourceView, signal: VerifiedWorkSourc
   // Only stable routing dimensions are checked here. State, labels, and JQL
   // are re-evaluated by the provider refresh so transitions *out* of a view
   // still update the owner's intake state.
-  const routingKeys = sourceView.provider === "github" ? ["repo"] : sourceView.provider === "linear" ? ["team"] : []
+  if (sourceView.provider === "jira") return matchesJiraProject(sourceView.filters.jql, signal.attributes.project)
+  const routingKeys = sourceView.provider === "github" ? ["repo"] : ["team"]
   return routingKeys.every((key) => {
     const expected = sourceView.filters[key]
     if (!expected) return true
@@ -85,8 +89,23 @@ export function matchesFilters(sourceView: SourceView, signal: VerifiedWorkSourc
   })
 }
 
+function matchesJiraProject(jql: string | undefined, actual: string | readonly string[] | undefined) {
+  if (!jql || !actual) return true
+  const equalities = [...jql.matchAll(/(?:^|[\s(])project\s*=\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi)]
+    .flatMap((match) => match.slice(1).filter((value): value is string => !!value))
+  const lists = [...jql.matchAll(/(?:^|[\s(])project\s+in\s*\(([^)]+)\)/gi)]
+    .flatMap((match) => match[1]?.split(",") ?? [])
+    .map((value) => value.trim().replace(/^(?:"([^"]+)"|'([^']+)')$/, "$1$2"))
+    .filter(Boolean)
+  const expected = [...new Set([...equalities, ...lists].map((value) => value.trim().toLowerCase()))]
+  if (!expected.length) return true
+  const projects = (Array.isArray(actual) ? actual : [actual]).map((value) => value.trim().toLowerCase())
+  return expected.some((value) => projects.includes(value))
+}
+
 function ownerContext(sourceView: SourceView, signal: VerifiedWorkSourceSignal): WorkGraphContext {
   return {
+    organizationId: OrganizationIDSchema.parse(signal.organizationId),
     ownerUserId: OwnerUserIDSchema.parse(sourceView.ownerUserId),
     actor: { type: "system", id: ActorIDSchema.parse("workgraph_webhook") },
     requestId: RequestIDSchema.parse(`webhook_${signal.deliveryId}`),

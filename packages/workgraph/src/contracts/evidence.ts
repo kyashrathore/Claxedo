@@ -44,6 +44,7 @@ export class EvidencePageCursorError extends Error {
 }
 
 export function createEvidencePageCursor(input: Readonly<{
+  organizationId: string
   ownerUserId: string
   subject: EvidenceSubject
   recordedAt: number
@@ -51,6 +52,7 @@ export function createEvidencePageCursor(input: Readonly<{
 }>): EvidencePageCursor {
   const cursor = [
     prefix,
+    encode(input.organizationId),
     encode(input.ownerUserId),
     input.subject.type,
     encode(subjectId(input.subject)),
@@ -63,19 +65,20 @@ export function createEvidencePageCursor(input: Readonly<{
 
 export function readEvidencePageCursor(
   cursor: string,
+  organizationId: string,
   ownerUserId: string,
   subject: EvidenceSubject,
 ): Readonly<{ recordedAt: number; evidenceId: z.infer<typeof EvidenceIDSchema> }> {
   if (cursor.length > maxLength) throw new EvidencePageCursorError("invalid")
   const parts = cursor.split(":")
-  if (parts.length !== 6 || parts[0] !== prefix) throw new EvidencePageCursorError("invalid")
-  if (decode(parts[1]!) !== ownerUserId) throw new EvidencePageCursorError("owner_mismatch")
-  if (parts[2] !== subject.type || decode(parts[3]!) !== subjectId(subject)) {
+  if (parts.length !== 7 || parts[0] !== prefix) throw new EvidencePageCursorError("invalid")
+  if (decode(parts[1]!) !== organizationId || decode(parts[2]!) !== ownerUserId) throw new EvidencePageCursorError("owner_mismatch")
+  if (parts[3] !== subject.type || decode(parts[4]!) !== subjectId(subject)) {
     throw new EvidencePageCursorError("subject_mismatch")
   }
   return {
-    recordedAt: integer(parts[4]),
-    evidenceId: EvidenceIDSchema.parse(decode(parts[5]!)),
+    recordedAt: integer(parts[5]),
+    evidenceId: EvidenceIDSchema.parse(decode(parts[6]!)),
   }
 }
 

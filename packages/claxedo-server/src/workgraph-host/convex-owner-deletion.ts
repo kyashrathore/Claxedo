@@ -13,6 +13,8 @@ import {
   type WorkGraphConvexExecutor,
 } from "./convex-store"
 
+const deletionLeaseRenewalMs = 100_000
+
 type CleanupTarget = Readonly<{
   streamId: StreamID
   envelopeId: StreamEnvelopeID
@@ -38,6 +40,7 @@ export function createConvexWorkGraphOwnerDeletionPort(input: Input): WorkGraphO
       requireOwner(context)
       const prepared = await mutate(executor, workGraphConvexApi.workgraphOwnerDeletion.prepareForService, {
         service_token: input.serviceToken,
+        organization_id: context.organizationId,
         owner_subject: context.ownerUserId,
         operation_id: request.operationId,
         now: clock.now(),
@@ -53,17 +56,19 @@ export function createConvexWorkGraphOwnerDeletionPort(input: Input): WorkGraphO
         if (!("targets" in prepared)) throw storageFailed()
         const targets = cleanupTargets(prepared.targets)
         try {
-          await targets.reduce(
-            (previous, target) => previous.then(() => input.execution.cleanup(context, {
-              streamId: target.streamId,
-              envelopeId: target.envelopeId,
-              childIsolationIds: target.childIsolationIds,
-              reason: "delete",
-            })),
-            Promise.resolve(),
-          )
-        } catch {
+          await withDeletionLease(executor, input.serviceToken, context, request.operationId, prepared.targetSnapshotHash, clock, () =>
+            targets.reduce(
+              (previous, target) => previous.then(() => input.execution.cleanup(context, {
+                streamId: target.streamId,
+                envelopeId: target.envelopeId,
+                childIsolationIds: target.childIsolationIds,
+                reason: "delete",
+              })),
+              Promise.resolve(),
+            ))
+        } catch (error) {
           await release(executor, input.serviceToken, context, request.operationId)
+          if (error instanceof WorkGraphOwnerDeletionError) throw error
           throw new WorkGraphOwnerDeletionError("cleanup_failed")
         }
       }
@@ -71,6 +76,7 @@ export function createConvexWorkGraphOwnerDeletionPort(input: Input): WorkGraphO
       for (;;) {
         const finalized = await mutate(executor, workGraphConvexApi.workgraphOwnerDeletion.finalizeForService, {
           service_token: input.serviceToken,
+          organization_id: context.organizationId,
           owner_subject: context.ownerUserId,
           operation_id: request.operationId,
           target_snapshot_hash: prepared.targetSnapshotHash,
@@ -85,6 +91,50 @@ export function createConvexWorkGraphOwnerDeletionPort(input: Input): WorkGraphO
   }
 }
 
+async function withDeletionLease(
+  executor: WorkGraphConvexExecutor,
+  serviceToken: string,
+  context: WorkGraphContext,
+  operationId: string,
+  targetSnapshotHash: string,
+  clock: Readonly<{ now: () => number }>,
+  cleanup: () => Promise<void>,
+) {
+  let failure: WorkGraphOwnerDeletionError | undefined
+  let renewal = Promise.resolve()
+  const renew = async () => {
+    if (failure) throw failure
+    try {
+      const result = await mutate(executor, workGraphConvexApi.workgraphOwnerDeletion.renewForService, {
+        service_token: serviceToken,
+        organization_id: context.organizationId,
+        owner_subject: context.ownerUserId,
+        operation_id: operationId,
+        target_snapshot_hash: targetSnapshotHash,
+        renew_only: true,
+        now: clock.now(),
+      })
+      if (!result || typeof result !== "object" || !("ok" in result)) throw storageFailed()
+      if (!result.ok) throw deletionFailure(result)
+      if (!("state" in result) || result.state !== "renewed") throw storageFailed()
+    } catch (error) {
+      failure = error instanceof WorkGraphOwnerDeletionError ? error : storageFailed()
+      throw failure
+    }
+  }
+  await renew()
+  const heartbeat = setInterval(() => {
+    renewal = renewal.then(renew).catch(() => undefined)
+  }, deletionLeaseRenewalMs)
+  try {
+    await cleanup()
+    await renewal
+    await renew()
+  } finally {
+    clearInterval(heartbeat)
+  }
+}
+
 async function release(
   executor: WorkGraphConvexExecutor,
   serviceToken: string,
@@ -93,6 +143,7 @@ async function release(
 ) {
   const result = await mutate(executor, workGraphConvexApi.workgraphOwnerDeletion.releaseForService, {
     service_token: serviceToken,
+    organization_id: context.organizationId,
     owner_subject: context.ownerUserId,
     operation_id: operationId,
   }).catch(() => undefined)

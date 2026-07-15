@@ -1,4 +1,9 @@
 import { describe, expect, test } from "bun:test"
+import {
+  __resetFetchThrottleForTests,
+  __setFetchThrottleForTests,
+  throttledFetch,
+} from "@/lib/fetch-throttle"
 import { WorkGraphApiError, createWorkGraphClient, decodeWorkGraphSnapshot } from "./api"
 
 const actor = { type: "user" as const, id: "user_1" }
@@ -21,6 +26,27 @@ const stream = {
   activity: { lastActivityAt: 1, recapDueAt: 2 },
   durableEffectCount: 0,
   sourceRevisionRefs: [],
+}
+
+const executionCapabilities = {
+  schemaVersion: 1,
+  organizationId: "org_1",
+  ownerUserId: "user_1",
+  catalogRevision: "b".repeat(64),
+  observedAt: 1,
+  expiresAt: 300_001,
+  environments: [{
+    kind: "hosted_workspace",
+    repositoryRequired: false,
+    remoteUrlInput: false,
+    baseRevisionInput: false,
+  }],
+  harnesses: [{ id: "codex" }],
+  agents: [{ harnessId: "codex", id: "developer", label: "Developer" }],
+  models: [],
+  tools: [{ harnessId: "codex", id: "read" }],
+  repository: { baseRevisions: [] },
+  connections: [],
 }
 
 describe("WorkGraph API", () => {
@@ -68,6 +94,39 @@ describe("WorkGraph API", () => {
       retryable: false,
       status: 409,
     })
+  })
+
+  test("long-polling changes never starves an ordinary WorkGraph read", async () => {
+    __setFetchThrottleForTests(4)
+    const releasePolls: Array<() => void> = []
+    let snapshotStarted = false
+    const client = createWorkGraphClient({
+      baseUrl: "https://control.test",
+      request: (input, init) => throttledFetch(async () => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url)
+        if (url.pathname.endsWith("/changes")) {
+          return await new Promise<Response>((resolve) => {
+            releasePolls.push(() => resolve(Response.json({ changes: [], timedOut: true })))
+          })
+        }
+        snapshotStarted = true
+        return Response.json(snapshotPage([], "cursor_1", 1))
+      }, init, input),
+    })
+
+    const polls = Array.from({ length: 4 }, () => client.changes(undefined, { waitMs: 25_000 }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const snapshot = client.snapshot()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    try {
+      expect(releasePolls).toHaveLength(4)
+      expect(snapshotStarted).toBe(true)
+    } finally {
+      releasePolls.forEach((release) => release())
+      __resetFetchThrottleForTests()
+    }
+    await Promise.all([...polls, snapshot])
   })
 
   test("reads the bounded Attention projection without loading a snapshot", async () => {
@@ -129,6 +188,25 @@ describe("WorkGraph API", () => {
       status: 409,
     })
     expect(paths).toEqual(["/api/workgraph/attention"])
+  })
+
+  test("persists Attention read and clear acknowledgements through backend routes", async () => {
+    const calls: Array<{ path: string; method: string }> = []
+    const client = createWorkGraphClient({
+      baseUrl: "http://127.0.0.1:3001",
+      request: async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url)
+        calls.push({ path: url.pathname, method: init?.method ?? "GET" })
+        return Response.json({ ownerUserId: "owner_1", readAt: 10, ...(url.pathname.endsWith("/clear") ? { clearedAt: 10 } : {}) })
+      },
+    })
+
+    await expect(client.markAllAttentionRead()).resolves.toEqual({ ownerUserId: "owner_1", readAt: 10 })
+    await expect(client.clearAttention()).resolves.toEqual({ ownerUserId: "owner_1", readAt: 10, clearedAt: 10 })
+    expect(calls).toEqual([
+      { path: "/api/workgraph/attention/read", method: "POST" },
+      { path: "/api/workgraph/attention/clear", method: "POST" },
+    ])
   })
 
   test("reads a bounded Candidate page with explicit paging and Source View scope", async () => {
@@ -260,11 +338,16 @@ describe("WorkGraph API", () => {
       resolvedExecution: {
         environment: { kind: "hosted_workspace" }, harness: "codex", agent: "developer",
         model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", tools: [], connectionIds: [],
-        isolation: "stream", cleanup: "retain", integration: "pull_request",
       },
     }
     const responses: Record<string, unknown> = {
       "/api/workgraph/proposals/proposal_1": { recordType: "admission_proposal", ...base, id: "proposal_1", state: "planning", source, generation: { method: "planning", attempt: 0, queuedAt: 1 } },
+      "/api/workgraph/streams/stream_1/replacement-review": {
+        streamId: "stream_1",
+        streamTitle: "Launch",
+        status: "eligible",
+        targets: [{ workItemId: "item_1", expectedVersion: 1, title: "Ship", state: "active" }],
+      },
       "/api/workgraph/work-items/item_1": workItem,
       "/api/workgraph/work-items/item_1/attempts": { attempts: [{ attempt, executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" } }], hasMore: false },
       "/api/workgraph/attempts/attempt_1": { attempt, executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" } },
@@ -282,6 +365,10 @@ describe("WorkGraph API", () => {
     })
 
     await expect(client.proposal("proposal_1")).resolves.toMatchObject({ id: "proposal_1" })
+    await expect(client.replacementReview({ streamId: "stream_1", previousSource: source })).resolves.toMatchObject({
+      status: "eligible",
+      targets: [{ workItemId: "item_1", expectedVersion: 1 }],
+    })
     await expect(client.workItem("item_1")).resolves.toMatchObject({ id: "item_1" })
     await expect(client.workItemAttempts("item_1", { limit: 10 })).resolves.toMatchObject({ attempts: [{ executionReferences: { sessionId: "session_1" } }] })
     await expect(client.attempt("attempt_1")).resolves.toMatchObject({ attempt: { id: "attempt_1" } })
@@ -290,6 +377,7 @@ describe("WorkGraph API", () => {
     await expect(client.intakeCandidate("candidate_1")).resolves.toMatchObject({ id: "candidate_1" })
     expect(calls).toEqual([
       "/api/workgraph/proposals/proposal_1",
+      `/api/workgraph/streams/stream_1/replacement-review?workSourceId=${source.workSourceId}&revisionId=${source.revisionId}&contentHash=${source.contentHash}`,
       "/api/workgraph/work-items/item_1",
       "/api/workgraph/work-items/item_1/attempts?limit=10",
       "/api/workgraph/attempts/attempt_1",
@@ -569,6 +657,55 @@ describe("WorkGraph API", () => {
     })
 
     await expect(client.proposal("proposal_1")).rejects.toMatchObject({ kind: "invalid_response", status: 500 })
+  })
+
+  test("reads the strict execution capability catalog with an implicit GET", async () => {
+    const calls: Array<{ path: string; method: string }> = []
+    const client = createWorkGraphClient({
+      baseUrl: "http://127.0.0.1:3001",
+      request: async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url)
+        calls.push({ path: `${url.pathname}${url.search}`, method: init?.method ?? "GET" })
+        return Response.json(executionCapabilities)
+      },
+    })
+
+    await expect(client.executionCapabilities()).resolves.toEqual(executionCapabilities)
+    expect(calls).toEqual([{ path: "/api/workgraph/execution-capabilities", method: "GET" }])
+  })
+
+  test("rejects a malformed execution capability catalog without a fallback", async () => {
+    const client = createWorkGraphClient({
+      baseUrl: "http://127.0.0.1:3001",
+      request: async () => Response.json({ ...executionCapabilities, harnesses: [] }),
+    })
+
+    await expect(client.executionCapabilities()).rejects.toMatchObject({ kind: "invalid_response", status: 200 })
+  })
+
+  test("preserves the strict execution capability unavailable envelope", async () => {
+    const client = createWorkGraphClient({
+      baseUrl: "http://127.0.0.1:3001",
+      request: async () => Response.json({
+        error: {
+          code: "execution_capabilities_unavailable",
+          capability: "runtime",
+          reason: "runtime_unavailable",
+          message: "Execution capability discovery is not composed",
+          retryable: false,
+        },
+      }, { status: 503 }),
+    })
+
+    await expect(client.executionCapabilities()).rejects.toMatchObject({
+      kind: "execution_capabilities_unavailable",
+      code: "execution_capabilities_unavailable",
+      capability: "runtime",
+      reason: "runtime_unavailable",
+      retryable: false,
+      status: 503,
+      message: "Execution capability discovery is not composed",
+    })
   })
 })
 

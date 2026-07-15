@@ -21,23 +21,44 @@ dry-run deploy targets; they do not run smoke tests or browser tests.
 
 Small live probes for deployed central/runtime contracts.
 
-`smoke-workgraph.ts` verifies the deployed signed-auth boundary, mints short-lived
-Clerk Session tokens for two configured test users, reads the hosted execution
-capability route, creates one disposable personal Stream and Task, proves the
-second user receives an indistinguishable not-found result, and deletes the
-Stream through the public command contract:
+`smoke-workgraph.ts` verifies the deployed signed-auth boundary with three
+short-lived Clerk Sessions: user A in organization A, that same user A in
+organization B, and user B in organization A. It creates one disposable Stream
+and Task for user A in organization A, then proves snapshot listing, guessed-ID
+reads and mutations, and snapshot resume cursors are isolated across both the
+organization and user boundaries. It runs the configured no-op execution profile
+to a durable Attempt result and deletes the Stream through the public command
+contract:
 
 ```sh
 BASE_URL=https://central.example.com \
 CLERK_SECRET_KEY=... \
 WORKGRAPH_SMOKE_USER_A_ID=user_... \
 WORKGRAPH_SMOKE_USER_B_ID=user_... \
-WORKGRAPH_SMOKE_WORKSPACE_ID=workspace_... \
+WORKGRAPH_SMOKE_ORGANIZATION_A_ID=org_... \
+WORKGRAPH_SMOKE_ORGANIZATION_B_ID=org_... \
+WORKGRAPH_SMOKE_RECONCILE_TOKEN=... \
+WORKGRAPH_SMOKE_HARNESS=opencode \
+WORKGRAPH_SMOKE_AGENT=smoke \
+WORKGRAPH_SMOKE_PROVIDER_ID=... \
+WORKGRAPH_SMOKE_MODEL_ID=... \
+WORKGRAPH_SMOKE_EFFORT=low \
+WORKGRAPH_SMOKE_TOOLS_JSON='[]' \
 bun run smoke:workgraph
 ```
 
-The script revokes both smoke Sessions before exit. Hosted Attempt execution,
-Connections, Recaps, and the full browser journey are separate
+`WORKGRAPH_SMOKE_RECONCILE_TOKEN` is the deployed Worker's
+`CLAXEDO_RUNTIME_ADMIN_TOKEN`; the remaining values must name one deliberately
+configured no-op profile in the live capability catalog. Both organizations and
+both users are explicit release inputs: user A must be a member of organizations
+A and B, user B must be a member of organization A, and the organizations must be
+distinct. The script supplies Clerk's `active_organization_id` when creating each
+test Session; it never selects an organization through a WorkGraph query or
+default. The script uses the protected, selector-free reconcile route to avoid
+waiting for cron, requires
+durable Workspace and Session references on the Attempt result, verifies
+asynchronous cleanup, and revokes all three smoke Sessions before exit.
+Connections, Recaps, and the full browser journey remain separate
 release-acceptance gates.
 
 ## `maintenance/`

@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { EvidenceSubjectSchema } from "./completion"
+import { CompletionContractSchema, EvidenceSubjectSchema } from "./completion"
 import {
   AdmissionProposalIDSchema,
   AdmissionSelectionSchema,
@@ -14,7 +14,12 @@ import {
   ResolvedExecutionProfileSchema,
   WorkGraphDefaultsSchema,
 } from "./execution"
-import { ChangeResourceSchema, PublicEventPayloadSchema, WorkGraphEventIDSchema, WorkGraphEventTypeSchema } from "./events"
+import {
+  ChangeResourceSchema,
+  PublicEventPayloadSchema,
+  WorkGraphEventIDSchema,
+  WorkGraphEventTypeSchema,
+} from "./events"
 import {
   AttemptIDSchema,
   CompletionRequirementIDSchema,
@@ -22,6 +27,7 @@ import {
   DurableEffectReceiptIDSchema,
   EvidenceIDSchema,
   OperationIDSchema,
+  OrganizationIDSchema,
   OutcomeIDSchema,
   OwnerUserIDSchema,
   RecapIDSchema,
@@ -53,6 +59,7 @@ import {
   StreamActivitySchema,
   StreamEnvelopeSchema,
   StreamMemorySchema,
+  StreamReplacementResetSchema,
   WorkGraphRecordReferenceSchema,
 } from "./records"
 import { WorkSourceOriginSchema, WorkSourceRevisionRefSchema } from "./work-source"
@@ -156,23 +163,31 @@ const intakeBase = {
   admissionProposalId: AdmissionProposalIDSchema.optional(),
   admissionDraft: z.strictObject({ title: text, content: z.string().min(1) }).optional(),
 }
-const IntakeCandidateArchiveValueSchema = z.discriminatedUnion("candidateKind", [
-  z.strictObject({ ...intakeBase, candidateKind: z.literal("session"), sessionId: text }),
-  z.strictObject({
-    ...intakeBase,
-    candidateKind: z.literal("external_issue"),
-    sourceViewId: text,
-    provider: z.enum(["github", "linear", "jira"]),
-    externalId: text,
-    externalKey: text.optional(),
-    externalUrl: z.string().url().optional(),
-    externalStatus: text,
-  }),
-]).superRefine((candidate, context) => {
-  if (!["staged", "confirmed"].includes(candidate.state)) return
-  if (!candidate.source) context.addIssue({ code: "custom", path: ["source"], message: "Organized intake requires its immutable source" })
-  if (!candidate.admissionProposalId) context.addIssue({ code: "custom", path: ["admissionProposalId"], message: "Organized intake requires its proposal" })
-})
+const IntakeCandidateArchiveValueSchema = z
+  .discriminatedUnion("candidateKind", [
+    z.strictObject({ ...intakeBase, candidateKind: z.literal("session"), sessionId: text }),
+    z.strictObject({
+      ...intakeBase,
+      candidateKind: z.literal("external_issue"),
+      sourceViewId: text,
+      provider: z.enum(["github", "linear", "jira"]),
+      externalId: text,
+      externalKey: text.optional(),
+      externalUrl: z.string().url().optional(),
+      externalStatus: text,
+    }),
+  ])
+  .superRefine((candidate, context) => {
+    if (!["staged", "confirmed"].includes(candidate.state)) return
+    if (!candidate.source)
+      context.addIssue({ code: "custom", path: ["source"], message: "Organized intake requires its immutable source" })
+    if (!candidate.admissionProposalId)
+      context.addIssue({
+        code: "custom",
+        path: ["admissionProposalId"],
+        message: "Organized intake requires its proposal",
+      })
+  })
 
 const ExternalIdentityArchiveValueSchema = z.strictObject({
   ...storedImmutable,
@@ -200,6 +215,22 @@ const StreamArchiveValueSchema = z.strictObject({
   memory: StreamMemorySchema.optional(),
   activity: StreamActivitySchema,
   envelope: StreamEnvelopeSchema.optional(),
+  replacementReset: StreamReplacementResetSchema.superRefine((reset, context) => {
+    if (reset.state === "completed" && reset.completedAt === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["completedAt"],
+        message: "Completed replacement reset requires completedAt",
+      })
+    }
+    if (reset.state !== "completed" && reset.completedAt !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["completedAt"],
+        message: "Active replacement reset cannot have completedAt",
+      })
+    }
+  }).optional(),
   durableEffectCount: z.number().int().nonnegative(),
   sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
 })
@@ -232,18 +263,7 @@ const WorkItemArchiveValueSchema = z.strictObject({
   priority: z.number().int().nonnegative(),
   dependencyIds: z.array(WorkItemIDSchema),
   sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
-  completionContract: z.strictObject({
-    version: z.number().int().positive(),
-    mode: z.enum(["all", "any"]),
-    requirements: z.array(z.discriminatedUnion("kind", [
-      z.strictObject({ id: CompletionRequirementIDSchema, description: text, kind: z.literal("test"), command: text.optional() }),
-      z.strictObject({ id: CompletionRequirementIDSchema, description: text, kind: z.literal("artifact"), artifactType: text.optional() }),
-      z.strictObject({ id: CompletionRequirementIDSchema, description: text, kind: z.literal("review"), reviewerRole: text.optional() }),
-      z.strictObject({ id: CompletionRequirementIDSchema, description: text, kind: z.literal("integration"), target: text.optional() }),
-      z.strictObject({ id: CompletionRequirementIDSchema, description: text, kind: z.literal("verification"), instructions: text }),
-      z.strictObject({ id: CompletionRequirementIDSchema, description: text, kind: z.literal("owner_confirmation") }),
-    ])).min(1),
-  }),
+  completionContract: CompletionContractSchema,
   evidenceIds: z.array(EvidenceIDSchema),
   executionDefaults: ExecutionProfileDefaultsSchema.optional(),
   completedAt: timestamp.optional(),
@@ -251,12 +271,14 @@ const WorkItemArchiveValueSchema = z.strictObject({
   abandonReason: text.optional(),
 })
 
-const WorkItemDependencyArchiveValueSchema = z.strictObject({
-  ...storedImmutable,
-  workItemId: WorkItemIDSchema,
-  dependsOnWorkItemId: WorkItemIDSchema,
-  dependencyKind: text,
-}).refine((value) => value.workItemId !== value.dependsOnWorkItemId, "A Work Item cannot depend on itself")
+const WorkItemDependencyArchiveValueSchema = z
+  .strictObject({
+    ...storedImmutable,
+    workItemId: WorkItemIDSchema,
+    dependsOnWorkItemId: WorkItemIDSchema,
+    dependencyKind: text,
+  })
+  .refine((value) => value.workItemId !== value.dependsOnWorkItemId, "A Work Item cannot depend on itself")
 
 const AttemptArchiveValueSchema = z.strictObject({
   ...publicMutable,
@@ -270,11 +292,13 @@ const AttemptArchiveValueSchema = z.strictObject({
   finishedAt: timestamp.optional(),
   result: AttemptResultSchema.optional(),
   attentionReason: text.optional(),
-  executionIdentity: z.strictObject({
-    envelopeId: text.optional(),
-    childIsolationId: text.optional(),
-    sessionId: text.optional(),
-  }).optional(),
+  executionIdentity: z
+    .strictObject({
+      envelopeId: text.optional(),
+      childIsolationId: text.optional(),
+      sessionId: text.optional(),
+    })
+    .optional(),
   sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
 })
 
@@ -309,23 +333,40 @@ const evidenceBase = {
   recordedAt: timestamp,
   recordedBy: WorkGraphActorSchema,
 }
-const EvidenceArchiveValueSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ ...evidenceBase, kind: z.literal("test_result"), passed: z.boolean(), command: text.optional(), outputRef: text.optional() }),
-  z.strictObject({ ...evidenceBase, kind: z.literal("artifact"), artifactRef: text, mediaType: text.optional() }),
-  z.strictObject({ ...evidenceBase, kind: z.literal("review"), verdict: z.enum(["approved", "changes_requested"]), reviewer: text.optional() }),
-  z.strictObject({
-    ...evidenceBase,
-    kind: z.literal("integration"),
-    effect: z.enum(["merged", "published", "accepted_external_write", "other"]),
-    reference: text,
-    durableEffectReceiptId: DurableEffectReceiptIDSchema.optional(),
-  }),
-  z.strictObject({ ...evidenceBase, kind: z.literal("owner_confirmation"), confirmed: z.boolean() }),
-  z.strictObject({ ...evidenceBase, kind: z.literal("finding"), sourceRef: text.optional() }),
-]).superRefine((evidence, context) => {
-  if (evidence.kind !== "integration" || evidence.effect === "other" || evidence.durableEffectReceiptId) return
-  context.addIssue({ code: "custom", path: ["durableEffectReceiptId"], message: "Durable integration evidence requires its receipt" })
-})
+const EvidenceArchiveValueSchema = z
+  .discriminatedUnion("kind", [
+    z.strictObject({
+      ...evidenceBase,
+      kind: z.literal("test_result"),
+      passed: z.boolean(),
+      command: text.optional(),
+      outputRef: text.optional(),
+    }),
+    z.strictObject({ ...evidenceBase, kind: z.literal("artifact"), artifactRef: text, mediaType: text.optional() }),
+    z.strictObject({
+      ...evidenceBase,
+      kind: z.literal("review"),
+      verdict: z.enum(["approved", "changes_requested"]),
+      reviewer: text.optional(),
+    }),
+    z.strictObject({
+      ...evidenceBase,
+      kind: z.literal("integration"),
+      effect: z.enum(["merged", "published", "accepted_external_write", "other"]),
+      reference: text,
+      durableEffectReceiptId: DurableEffectReceiptIDSchema.optional(),
+    }),
+    z.strictObject({ ...evidenceBase, kind: z.literal("owner_confirmation"), confirmed: z.boolean() }),
+    z.strictObject({ ...evidenceBase, kind: z.literal("finding"), sourceRef: text.optional() }),
+  ])
+  .superRefine((evidence, context) => {
+    if (evidence.kind !== "integration" || evidence.effect === "other" || evidence.durableEffectReceiptId) return
+    context.addIssue({
+      code: "custom",
+      path: ["durableEffectReceiptId"],
+      message: "Durable integration evidence requires its receipt",
+    })
+  })
 
 const DurableEffectReceiptArchiveValueSchema = z.strictObject({
   ...storedImmutable,
@@ -341,11 +382,13 @@ const RecapArchiveValueSchema = z.strictObject({
   ...publicMutable,
   streamId: StreamIDSchema,
   previousRecapId: RecapIDSchema.optional(),
-  activityRange: z.strictObject({
-    fromSequence: z.number().int().positive(),
-    toSequence: z.number().int().positive(),
-    quietSince: timestamp,
-  }).refine((range) => range.fromSequence <= range.toSequence, "Recap activity range must be ordered"),
+  activityRange: z
+    .strictObject({
+      fromSequence: z.number().int().positive(),
+      toSequence: z.number().int().positive(),
+      quietSince: timestamp,
+    })
+    .refine((range) => range.fromSequence <= range.toSequence, "Recap activity range must be ordered"),
   summary: text,
   actionableReferences: z.array(WorkGraphRecordReferenceSchema),
   generation: RecapGenerationSchema,
@@ -379,14 +422,19 @@ const planningGeneration = z.strictObject({
   queuedAt: timestamp,
   startedAt: timestamp.optional(),
 })
-const failedPlanningGeneration = z.strictObject({
-  method: z.literal("planning_failed"),
-  attempt: z.number().int().nonnegative(),
-  reason: text,
-  failedAt: timestamp.optional(),
-  invalidatedAt: timestamp.optional(),
-  retryable: z.boolean(),
-}).refine((value) => value.failedAt !== undefined || value.invalidatedAt !== undefined, "Planning failure requires a timestamp")
+const failedPlanningGeneration = z
+  .strictObject({
+    method: z.literal("planning_failed"),
+    attempt: z.number().int().nonnegative(),
+    reason: text,
+    failedAt: timestamp.optional(),
+    invalidatedAt: timestamp.optional(),
+    retryable: z.boolean(),
+  })
+  .refine(
+    (value) => value.failedAt !== undefined || value.invalidatedAt !== undefined,
+    "Planning failure requires a timestamp",
+  )
 const agentGeneration = z.strictObject({ method: z.literal("agent_session"), sessionId: text, generatedAt: timestamp })
 const proposalBase = {
   ...publicMutable,
@@ -545,30 +593,53 @@ export type WorkGraphArchiveRecord = Readonly<{
   value: Readonly<Record<string, unknown>>
 }>
 
-export const WorkGraphArchiveSchema = z.strictObject({
-  version: z.literal(WORKGRAPH_ARCHIVE_VERSION),
-  ownerUserId: OwnerUserIDSchema,
-  exportedAt: timestamp,
-  records: z.array(WorkGraphArchiveRecordSchema),
-}).superRefine((archive, context) => {
-  const identities = new Set<string>()
-  archive.records.forEach((record, index) => {
-    const identity = `${record.kind}:${record.id}`
-    if (identities.has(identity)) context.addIssue({ code: "custom", path: ["records", index], message: "Archive record identity must be unique" })
-    identities.add(identity)
-    if (index > 0) {
-      const previous = archive.records[index - 1]!
-      if (`${previous.kind}:${previous.id}`.localeCompare(identity) >= 0) {
-        context.addIssue({ code: "custom", path: ["records", index], message: "Archive records must use canonical kind and ID order" })
-      }
-    }
-    if (containsAuthorityField(record.value)) context.addIssue({ code: "custom", path: ["records", index, "value"], message: "Archive record values cannot contain owner or adapter authority fields" })
-    if (containsSecret(record.value)) context.addIssue({ code: "custom", path: ["records", index, "value"], message: "Archive cannot contain credential material" })
+export const WorkGraphArchiveSchema = z
+  .strictObject({
+    version: z.literal(WORKGRAPH_ARCHIVE_VERSION),
+    organizationId: OrganizationIDSchema,
+    ownerUserId: OwnerUserIDSchema,
+    exportedAt: timestamp,
+    records: z.array(WorkGraphArchiveRecordSchema),
   })
-})
+  .superRefine((archive, context) => {
+    const identities = new Set<string>()
+    archive.records.forEach((record, index) => {
+      const identity = `${record.kind}:${record.id}`
+      if (identities.has(identity))
+        context.addIssue({
+          code: "custom",
+          path: ["records", index],
+          message: "Archive record identity must be unique",
+        })
+      identities.add(identity)
+      if (index > 0) {
+        const previous = archive.records[index - 1]!
+        if (`${previous.kind}:${previous.id}`.localeCompare(identity) >= 0) {
+          context.addIssue({
+            code: "custom",
+            path: ["records", index],
+            message: "Archive records must use canonical kind and ID order",
+          })
+        }
+      }
+      if (containsAuthorityField(record.value))
+        context.addIssue({
+          code: "custom",
+          path: ["records", index, "value"],
+          message: "Archive record values cannot contain owner or adapter authority fields",
+        })
+      if (containsSecret(record.value))
+        context.addIssue({
+          code: "custom",
+          path: ["records", index, "value"],
+          message: "Archive cannot contain credential material",
+        })
+    })
+  })
 export type CanonicalWorkGraphArchive = z.infer<typeof WorkGraphArchiveSchema>
 export type WorkGraphArchive = Readonly<{
   version: typeof WORKGRAPH_ARCHIVE_VERSION
+  organizationId: z.infer<typeof OrganizationIDSchema>
   ownerUserId: z.infer<typeof OwnerUserIDSchema>
   exportedAt: number
   records: readonly WorkGraphArchiveRecord[]
@@ -610,14 +681,22 @@ export class WorkGraphArchiveRestoreError extends Error {
 export async function validateWorkGraphArchive(input: unknown): Promise<WorkGraphArchive> {
   const parsed = WorkGraphArchiveSchema.safeParse(input)
   if (!parsed.success) throw new WorkGraphArchiveRestoreError("malformed")
-  if (parsed.data.records.some((record) => record.kind === "attempt" && ["admitted", "placing", "running"].includes(record.value.state))) {
+  if (
+    parsed.data.records.some(
+      (record) => record.kind === "attempt" && ["admitted", "placing", "running"].includes(record.value.state),
+    )
+  ) {
     throw new WorkGraphArchiveRestoreError("not_quiescent")
   }
   if (parsed.data.records.some((record) => record.kind === "admission_proposal" && record.value.state === "planning")) {
     throw new WorkGraphArchiveRestoreError("not_quiescent")
   }
-  for (const record of parsed.data.records.filter((entry): entry is Extract<CanonicalWorkGraphArchiveRecord, { kind: "work_source_revision" }> => entry.kind === "work_source_revision")) {
-    if (await sha256(record.value.content) !== record.value.contentHash.toLowerCase()) throw new WorkGraphArchiveRestoreError("malformed")
+  for (const record of parsed.data.records.filter(
+    (entry): entry is Extract<CanonicalWorkGraphArchiveRecord, { kind: "work_source_revision" }> =>
+      entry.kind === "work_source_revision",
+  )) {
+    if ((await sha256(record.value.content)) !== record.value.contentHash.toLowerCase())
+      throw new WorkGraphArchiveRestoreError("malformed")
   }
   return parsed.data
 }
@@ -632,12 +711,19 @@ function archiveRecord<const Kind extends string, Value extends z.ZodType>(kind:
 
 function containsSecret(value: unknown, key = ""): boolean {
   const normalized = key.toLowerCase().replaceAll(/[^a-z0-9]/g, "")
-  if (/^(?:credential|credentials|password|passwords|secret|secrets|token|tokens|authorization|cookie|passphrase|privatekey|clientsecret|refreshtoken|accesstoken|apikey|authkey|bearertoken)$/.test(normalized)) return true
+  if (
+    /^(?:credential|credentials|password|passwords|secret|secrets|token|tokens|authorization|cookie|passphrase|privatekey|clientsecret|refreshtoken|accesstoken|apikey|authkey|bearertoken)$/.test(
+      normalized,
+    )
+  )
+    return true
   if (typeof value === "string") {
-    return /^(?:basic|bearer)\s+\S+/i.test(value.trim())
-      || /^(?:github_pat_|gh[pousr]_|lin_api_|xox[baprs]-|sk-(?:proj-)?)[A-Za-z0-9_-]{8,}$/i.test(value.trim())
-      || /^AKIA[A-Z0-9]{16}$/.test(value.trim())
-      || /^-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/.test(value.trim())
+    return (
+      /^(?:basic|bearer)\s+\S+/i.test(value.trim()) ||
+      /^(?:github_pat_|gh[pousr]_|lin_api_|xox[baprs]-|sk-(?:proj-)?)[A-Za-z0-9_-]{8,}$/i.test(value.trim()) ||
+      /^AKIA[A-Z0-9]{16}$/.test(value.trim()) ||
+      /^-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/.test(value.trim())
+    )
   }
   if (Array.isArray(value)) return value.some((entry) => containsSecret(entry))
   if (!value || typeof value !== "object") return false
@@ -649,9 +735,11 @@ function containsAuthorityField(value: unknown): boolean {
   if (!value || typeof value !== "object") return false
   return Object.entries(value).some(([key, nested]) => {
     const normalized = key.toLowerCase().replaceAll(/[^a-z0-9]/g, "")
-    return ["owneruserid", "ownerid", "orgid", "organizationid", "rowversion", "creationtime"].includes(normalized)
-      || key === "_id"
-      || containsAuthorityField(nested)
+    return (
+      ["owneruserid", "ownerid", "orgid", "organizationid", "rowversion", "creationtime"].includes(normalized) ||
+      key === "_id" ||
+      containsAuthorityField(nested)
+    )
   })
 }
 
@@ -667,5 +755,9 @@ function canonicalJson(value: unknown) {
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical)
   if (!value || typeof value !== "object") return value
-  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, entry]) => [key, canonical(entry)]))
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, canonical(entry)]),
+  )
 }

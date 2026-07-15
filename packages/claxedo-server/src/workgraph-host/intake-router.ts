@@ -11,6 +11,7 @@ import {
   type SourceView,
 } from "@claxedo/workgraph/hosted"
 import {
+  SourceIssueConfigurationError,
   SourceIssueProviderError,
   SourceIssueResponseError,
   SourceIssueTransportError,
@@ -221,8 +222,8 @@ function intakeFailure(error: unknown): Readonly<{
   if (error instanceof SourceViewFilterError) {
     return { status: 400, error: { code: error.code, message: "Source View input is invalid", retryable: false } }
   }
-  if (error instanceof SourceViewConnectionError) {
-    return { status: 409, error: { code: error.code, message: "Source View Connection is unavailable", retryable: false } }
+  if (isSourceViewConnectionError(error)) {
+    return { status: 409, error: { code: "source_view_connection_unavailable", message: "Source View Connection is unavailable", retryable: false } }
   }
   if (error instanceof SourceViewNotFoundError) {
     return { status: 404, error: { code: error.code, message: "Source View not found", retryable: false } }
@@ -244,6 +245,16 @@ function intakeFailure(error: unknown): Readonly<{
   }
   if (error instanceof IntakeStateError) {
     return { status: 409, error: { code: error.code, message: "Candidate state does not allow this action", retryable: false } }
+  }
+  if (error instanceof SourceIssueConfigurationError) {
+    return {
+      status: 409,
+      error: {
+        code: error.code,
+        message: "Source issue provider configuration is required",
+        retryable: false,
+      },
+    }
   }
   if (error instanceof SourceIssueUnauthorizedError) {
     return {
@@ -306,4 +317,9 @@ function intakeFailure(error: unknown): Readonly<{
     }
   }
   throw error
+}
+
+function isSourceViewConnectionError(error: unknown) {
+  if (error instanceof SourceViewConnectionError) return true
+  return typeof error === "object" && error !== null && "code" in error && error.code === "source_view_connection_unavailable"
 }

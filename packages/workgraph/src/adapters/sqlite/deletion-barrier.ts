@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import type { OwnerUserID } from "../../contracts"
+import type { OrganizationID, OwnerUserID } from "../../contracts"
 import type { RawDatabase } from "../../sqlite"
 
 export class SqliteWorkGraphOwnerDeletionInProgressError extends Error {
@@ -11,11 +11,12 @@ export class SqliteWorkGraphOwnerDeletionInProgressError extends Error {
 
 export function assertNoSqliteWorkGraphOwnerDeletion(
   database: RawDatabase,
+  organizationId: OrganizationID,
   ownerUserId: OwnerUserID,
 ) {
   const receipt = database.prepare(`
     SELECT 1 AS present FROM wg_owner_deletion_receipts
     WHERE owner_subject_hash = ? AND state = 'cleaning' LIMIT 1
-  `).get(createHash("sha256").update(ownerUserId).digest("hex"))
+  `).get(createHash("sha256").update(`${organizationId}\u0000${ownerUserId}`).digest("hex"))
   if (receipt) throw new SqliteWorkGraphOwnerDeletionInProgressError()
 }

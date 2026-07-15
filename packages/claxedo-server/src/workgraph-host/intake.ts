@@ -35,7 +35,7 @@ export function createWorkGraphIntakeHost(input: Readonly<{
   const connectors = input.sourceIssueConnectors ?? [
     createGitHubSourceIssueConnector(),
     createLinearSourceIssueConnector(),
-    createJiraSourceIssueConnector({ baseUrl: "https://atlassian.net" }),
+    createJiraSourceIssueConnector(),
   ]
   const intake = createIntakeService({
     ...stores,
@@ -55,6 +55,18 @@ export function createWorkGraphIntakeHost(input: Readonly<{
     sourceViews,
     intake,
     webhooks,
-    ...(input.webhookVerifier ? { webhookRouter: createWorkGraphWebhookRouter({ verifier: input.webhookVerifier, intake: webhooks }) } : {}),
+    ...(input.webhookVerifier ? {
+      webhookRouter: createWorkGraphWebhookRouter({
+        verifier: input.webhookVerifier,
+        intake: webhooks,
+        resolveOrganizationId: async (connectionId) => {
+          const connection = await input.connections.getById(connectionId)
+          if (!connection) return
+          if (connection.owner === undefined) return "local"
+          if (!connection.owner.startsWith("org:") || connection.owner.length === 4) return
+          return connection.owner.slice(4)
+        },
+      }),
+    } : {}),
   }
 }

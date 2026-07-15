@@ -28,10 +28,12 @@ export { createSqliteWorkGraphOwnerDeletionPort } from "./adapters/sqlite/owner-
 export { createSqliteIntakeStores } from "./adapters/sqlite/intake-store";
 export { createSqliteWebhookIntakeStore } from "./adapters/sqlite/webhook-intake-store";
 export { createSqliteNotificationStore } from "./adapters/sqlite/notification-store";
+export { createSqliteAttentionAcknowledgementStore } from "./adapters/sqlite/attention-acknowledgement-store";
 export { createSqliteSessionIntakePort } from "./adapters/sqlite/session-intake";
 export {
   createSqliteRecapPort,
   createSqliteRecapRuntime,
 } from "./adapters/sqlite/recap-runtime";
 export { createSqliteSourcePlanningRuntime } from "./adapters/sqlite/source-planning-runtime";
+export { SqliteWorkGraphSessionDirectoryRequiredError } from "./adapters/sqlite/session-directory";
 export { applyLegacyWorkGraphMigration, exportLegacyWorkGraphMigration } from "./adapters/sqlite/legacy-migration";

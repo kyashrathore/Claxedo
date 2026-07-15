@@ -137,6 +137,7 @@ const documentsThunks: Thunks<DocumentsAppPorts> = {
   ensureLocalProject: lazy("@/features/workspaces/data/query/project-ensure", "ensureLocalProject"),
   surfaceRoute: lazy("@/app/workbench/state/surface-route", "surfaceRoute"),
   SessionPaneScope: lazy("@/features/session/ui/components/session-pane-scope", "SessionPaneScope"),
+  turnDocumentRevisionIntoWork: lazy("@/app/integrations/doc-workgraph", "turnDocumentRevisionIntoWork"),
 }
 
 const reviewThunks: Thunks<ReviewAppPorts> = {

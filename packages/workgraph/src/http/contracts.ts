@@ -3,6 +3,7 @@ import type { WorkGraphService } from "../application"
 import {
   ChangeCursorSchema,
   AttentionCursorSchema,
+  AttentionAcknowledgementSchema,
   AttentionListInputSchema,
   AttentionPageSchema,
   SnapshotResumeCursorSchema,
@@ -15,6 +16,8 @@ import {
   EvidenceReadInputSchema,
   AdmissionProposalDtoSchema,
   AdmissionProposalReadInputSchema,
+  ReplacementReviewInputSchema,
+  ReplacementReviewSchema,
   AttemptDetailDtoSchema,
   AttemptReadInputSchema,
   DecisionDtoSchema,
@@ -34,6 +37,8 @@ import {
   WorkSourceIDSchema,
   WorkSourceRevisionDtoSchema,
   WorkSourceRevisionIDSchema,
+  WorkSourcePageCursorSchema,
+  NotificationPageCursorSchema,
   WorkGraphCommandRequestSchema,
   WorkGraphContextSchema,
   WorkGraphDefaultsDtoSchema,
@@ -44,8 +49,7 @@ import {
   WorkGraphArchiveRestoreResultSchema,
   OperationIDSchema,
   ExecutionCapabilitiesSchema,
-  ExecutionCapabilityNameSchema,
-  ExecutionCapabilityUnavailableReasonSchema,
+  ExecutionCapabilitiesErrorSchema,
 } from "../contracts"
 import type { WorkGraphCommandHandlers } from "../ports"
 
@@ -57,15 +61,7 @@ export const WorkGraphHttpDefaultsResponseSchema = WorkGraphDefaultsDtoSchema
 export const WorkGraphHttpExecutionCapabilitiesQuerySchema = z.strictObject({})
 export type WorkGraphHttpExecutionCapabilitiesQuery = z.infer<typeof WorkGraphHttpExecutionCapabilitiesQuerySchema>
 export const WorkGraphHttpExecutionCapabilitiesResponseSchema = ExecutionCapabilitiesSchema
-export const WorkGraphHttpExecutionCapabilitiesErrorSchema = z.strictObject({
-  error: z.strictObject({
-    code: z.literal("execution_capabilities_unavailable"),
-    capability: ExecutionCapabilityNameSchema,
-    reason: ExecutionCapabilityUnavailableReasonSchema,
-    message: z.string().trim().min(1),
-    retryable: z.boolean(),
-  }),
-})
+export const WorkGraphHttpExecutionCapabilitiesErrorSchema = ExecutionCapabilitiesErrorSchema
 
 export const WorkGraphHttpSnapshotQuerySchema = z.strictObject({
   after: SnapshotResumeCursorSchema.optional(),
@@ -79,11 +75,14 @@ export const WorkGraphHttpAttentionQuerySchema = z.strictObject({
 })
 export type WorkGraphHttpAttentionQuery = z.infer<typeof WorkGraphHttpAttentionQuerySchema>
 export const WorkGraphHttpAttentionPageSchema = AttentionPageSchema
+export const WorkGraphHttpAttentionAcknowledgementSchema = AttentionAcknowledgementSchema
 
 export const WorkGraphHttpStreamQuerySchema = z.strictObject({ streamId: StreamIDSchema })
 export type WorkGraphHttpStreamQuery = z.infer<typeof WorkGraphHttpStreamQuerySchema>
 
 export const WorkGraphHttpProposalReadSchema = AdmissionProposalReadInputSchema
+export const WorkGraphHttpReplacementReviewQuerySchema = ReplacementReviewInputSchema
+export const WorkGraphHttpReplacementReviewResponseSchema = ReplacementReviewSchema
 export const WorkGraphHttpWorkItemReadSchema = WorkItemReadInputSchema
 export const WorkGraphHttpAttemptReadSchema = AttemptReadInputSchema
 export const WorkGraphHttpDecisionReadSchema = DecisionReadInputSchema
@@ -94,7 +93,7 @@ export const WorkGraphHttpWorkItemAttemptsQuerySchema = z.strictObject({
 })
 
 export const WorkGraphHttpSourcesQuerySchema = z.strictObject({
-  after: z.string().trim().min(1).max(512).optional(),
+  after: WorkSourcePageCursorSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 })
 export type WorkGraphHttpSourcesQuery = z.infer<typeof WorkGraphHttpSourcesQuerySchema>
@@ -102,7 +101,7 @@ export type WorkGraphHttpSourcesQuery = z.infer<typeof WorkGraphHttpSourcesQuery
 export const WorkGraphHttpSourcesResponseSchema = z.strictObject({
   sources: z.array(WorkSourceDtoSchema),
   hasMore: z.boolean(),
-  nextCursor: z.string().trim().min(1).max(512).optional(),
+  nextCursor: WorkSourcePageCursorSchema.optional(),
 })
 export type WorkGraphHttpSourcesResponse = z.infer<typeof WorkGraphHttpSourcesResponseSchema>
 
@@ -181,7 +180,7 @@ export const WorkGraphHttpOwnerDeletionErrorSchema = z.strictObject({
 })
 
 export const WorkGraphHttpNotificationsQuerySchema = z.strictObject({
-  after: z.string().trim().min(1).optional(),
+  after: NotificationPageCursorSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   state: z.enum(["unread", "read"]).optional(),
 })
@@ -229,6 +228,10 @@ export type WorkGraphHttpQueries = Readonly<{
       context: z.infer<typeof WorkGraphContextSchema>,
       input: z.infer<typeof AdmissionProposalReadInputSchema>,
     ) => Promise<z.infer<typeof AdmissionProposalDtoSchema> | undefined>
+    replacementReview: (
+      context: z.infer<typeof WorkGraphContextSchema>,
+      input: z.infer<typeof ReplacementReviewInputSchema>,
+    ) => Promise<z.infer<typeof ReplacementReviewSchema> | undefined>
   }>
   workItems: Readonly<{
     readDetail: (

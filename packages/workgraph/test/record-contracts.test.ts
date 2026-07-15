@@ -24,9 +24,6 @@ const execution = {
   effort: "high",
   tools: ["shell"],
   connectionIds: ["connection_01"],
-  isolation: "stream" as const,
-  cleanup: "destroy_on_close" as const,
-  integration: "pull_request" as const,
 }
 
 describe("public WorkGraph record contracts", () => {

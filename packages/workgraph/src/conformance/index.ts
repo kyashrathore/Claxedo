@@ -1,10 +1,11 @@
-import { SnapshotResumeCursorError } from "../contracts"
+import { SnapshotResumeCursorError, readChangeCursor } from "../contracts"
 import type {
   ChangeCursor,
   AttemptID,
   CommandResult,
   OperationID,
   OwnerUserID,
+  ResolvedExecutionProfile,
   StreamID,
   WorkGraphContext,
   WorkGraphSnapshotPage,
@@ -20,9 +21,10 @@ import type { WorkGraphCommandHandlers } from "../ports/store"
 export * from "./archive"
 export * from "./attention"
 export * from "./owner-deletion"
+export * from "./replacement"
 export * from "./snapshot-restart"
 
-export const WORKGRAPH_ADAPTER_CONFORMANCE_VERSION = 4 as const
+export const WORKGRAPH_ADAPTER_CONFORMANCE_VERSION = 5 as const
 
 export const WORKGRAPH_ADAPTER_CONFORMANCE_SCOPE = {
   covered: [
@@ -40,6 +42,7 @@ export const WORKGRAPH_ADAPTER_CONFORMANCE_SCOPE = {
     "durable_effect_delete_arbitration",
     "lease_acquire_renew_expire",
     "attempt_runtime_recovery",
+    "source_revision_replacement_fencing",
   ],
   remaining: [
     "migration_export_restore_roundtrip",
@@ -135,6 +138,7 @@ export type StoreConformanceFactory = (input: Readonly<{
 }>) => Promise<Readonly<{
   service: WorkGraphService<ConformanceCommands, ConformanceQueries>
   attemptRuntime: AttemptRuntimePort
+  executionProfile?: ResolvedExecutionProfile
   restart: () => Promise<Readonly<{ attemptRuntime: AttemptRuntimePort }>>
   faults: Readonly<{ failNextAppend: () => void }>
 }>>
@@ -201,8 +205,8 @@ export function workGraphAdapterConformance(factory: StoreConformanceFactory): r
       })
       const all = await fixture.service.query(fixture.owners.first, "changes", "list", {})
       const stream = await fixture.service.query(fixture.owners.first, "changes", "listStream", { streamId }) as unknown as readonly ConformanceChangeView[]
-      assertDeepEqual(all.map((change) => Number(change.cursor)), [1, 2], "Owner cursors are not monotonic")
-      assertDeepEqual(stream.map((change) => Number(change.cursor)), [1, 2], "Per-stream cursors are not monotonic")
+      assertDeepEqual(all.map((change) => readChangeCursor(change.cursor, fixture.owners.first.organizationId, fixture.owners.first.ownerUserId)), [1, 2], "Owner cursors are not monotonic")
+      assertDeepEqual(stream.map((change) => readChangeCursor(change.cursor, fixture.owners.first.organizationId, fixture.owners.first.ownerUserId, { type: "stream", streamId })), [1, 2], "Per-stream cursors are not monotonic")
       assertDeepEqual(all.map((change) => change.event.occurredAt), [1_000, 1_001], "Adapter ignored the supplied clock ordering")
       assertDeepEqual(
         await fixture.service.query(fixture.owners.first, "changes", "list", { after: all[0]!.cursor }),
@@ -286,7 +290,7 @@ export function workGraphAdapterConformance(factory: StoreConformanceFactory): r
       await createStream(fixture, fixture.owners.second, "operation_1", "Other owner")
 
       const changes = await fixture.service.query(fixture.owners.first, "changes", "list", { after: snapshot.snapshotCursor })
-      assertDeepEqual(changes.map((change) => Number(change.cursor)), [2, 3], "Snapshot convergence returned missing, duplicate, or unordered changes")
+      assertDeepEqual(changes.map((change) => readChangeCursor(change.cursor, fixture.owners.first.organizationId, fixture.owners.first.ownerUserId)), [2, 3], "Snapshot convergence returned missing, duplicate, or unordered changes")
       assertDeepEqual(changes.map((change) => change.event.type), ["stream_created", "stream_updated"], "Snapshot convergence returned the wrong owner change sequence")
       assert(new Set(changes.map((change) => change.cursor)).size === changes.length, "Snapshot convergence returned a change more than once")
       assertDeepEqual(
@@ -412,7 +416,7 @@ export function workGraphAdapterConformance(factory: StoreConformanceFactory): r
           version: 1,
           type: "create_stream",
           title: "Lease stream",
-          execution: executionProfile,
+          execution: fixture.executionProfile ?? executionProfile,
         },
       })
       const workItem = await fixture.service.execute(fixture.owners.first, {
@@ -440,7 +444,10 @@ export function workGraphAdapterConformance(factory: StoreConformanceFactory): r
           command: { version: 1, type: "execute_work_item", workItemId, executionMode: "autonomous" },
         }),
       ])
-      assert(attempts.filter((attempt) => attempt.ok).length === 1, "Competing admission did not produce exactly one live lease holder")
+      assert(
+        attempts.filter((attempt) => attempt.ok).length === 1,
+        `Competing admission did not produce exactly one live lease holder: ${canonicalJson(attempts)}`,
+      )
       const admitted = attempts.find((attempt) => attempt.ok)!
       const rejectedAttempt = attempts.find((attempt) => !attempt.ok)!
       assertError(rejectedAttempt, "blocked")
@@ -502,7 +509,7 @@ export function workGraphAdapterConformance(factory: StoreConformanceFactory): r
 }
 
 const executionProfile = {
-  environment: { kind: "local_worktree" as const },
+  environment: { kind: "local_worktree" as const, directory: "/repo" },
   repository: { baseRevision: "HEAD" },
   harness: "claxedo-v2",
   agent: "build",
@@ -510,9 +517,6 @@ const executionProfile = {
   effort: "high",
   tools: [],
   connectionIds: [],
-  isolation: "stream" as const,
-  cleanup: "destroy_on_close" as const,
-  integration: "manual" as const,
 }
 
 async function assertSnapshotCursorError(
@@ -522,12 +526,25 @@ async function assertSnapshotCursorError(
   try {
     await run()
   } catch (error) {
-    assert(error instanceof SnapshotResumeCursorError, "Invalid snapshot cursor did not use the canonical typed error")
+    assert(isCanonicalSnapshotResumeCursorError(error), "Invalid snapshot cursor did not use the canonical typed error")
     assert(error.reason === reason, `Expected snapshot cursor ${reason}, received ${error.reason}`)
     assert(!error.message.includes("owner_first") && !error.message.includes("owner_second"), "Snapshot cursor error revealed an owner identifier")
     return
   }
   throw new Error(`Expected snapshot cursor ${reason} rejection`)
+}
+
+/** Strict public-shape check that remains valid when package entrypoints bundle separate class identities. */
+function isCanonicalSnapshotResumeCursorError(
+  error: unknown,
+): error is Error & Readonly<{
+  name: "SnapshotResumeCursorError"
+  code: "cursor_invalid"
+  reason: SnapshotResumeCursorError["reason"]
+}> {
+  return error instanceof Error && error.name === "SnapshotResumeCursorError" &&
+    "code" in error && error.code === "cursor_invalid" &&
+    "reason" in error && (error.reason === "invalid" || error.reason === "owner_mismatch" || error.reason === "invalidated")
 }
 
 async function snapshotPages(
@@ -584,6 +601,7 @@ async function setup(factory: StoreConformanceFactory) {
 
 function context(ownerUserId: string): WorkGraphContext {
   return {
+    organizationId: branded("organization"),
     ownerUserId: branded<OwnerUserID>(ownerUserId),
     actor: { type: "user", id: branded(ownerUserId) },
     requestId: branded(`request_${ownerUserId}`),

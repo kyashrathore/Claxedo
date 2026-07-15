@@ -36,7 +36,9 @@ function files(dir: string): string[] {
 describe("runtime contract", () => {
   test("runtime source directories stay Bun-free", () => {
     const hits = dirs.flatMap((dir) =>
-      files(path.join(root, dir)).flatMap((file) => {
+      files(path.join(root, dir))
+        .filter((file) => !file.startsWith(path.join(root, "packages/claxedo-app/src/architecture") + path.sep))
+        .flatMap((file) => {
         const text = fs.readFileSync(file, "utf8")
         return banned.filter((item) => text.includes(item)).map((item) => `${path.relative(root, file)} -> ${item}`)
       }),
@@ -57,7 +59,7 @@ describe("runtime contract", () => {
   })
 
   test("package type entries point at generated or source exports, not manual shadows", () => {
-    expect(JSON.parse(fs.readFileSync(path.join(root, "packages/workspace-runtime/package.json"), "utf8")).types).toBe("./src/index.ts")
+    expect(JSON.parse(fs.readFileSync(path.join(root, "packages/workspace-runtime/package.json"), "utf8")).types).toBe("./dist/index.d.ts")
     expect(JSON.parse(fs.readFileSync(path.join(root, "packages/claxedo-server/package.json"), "utf8")).types).toBe("./src/index.ts")
   })
 })

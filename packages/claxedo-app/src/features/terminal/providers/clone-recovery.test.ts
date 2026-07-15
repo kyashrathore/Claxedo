@@ -4,7 +4,7 @@
  * Tests for the clone-on-reconnect flow where stale PTYs are replaced
  * by cloning them with a new server-side process.
  */
-import { describe, expect, test, beforeEach, mock } from "bun:test"
+import { afterAll, describe, expect, test, beforeEach, mock } from "bun:test"
 import { createRoot } from "solid-js"
 import { createMockSDK, createMockStorage, installFetchMock } from "./test-helpers"
 
@@ -13,6 +13,15 @@ import { createMockSDK, createMockStorage, installFetchMock } from "./test-helpe
 // ---------------------------------------------------------------------------
 
 const storage = createMockStorage()
+const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?clone-recovery-restore`)) }
+const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?clone-recovery-restore`)) }
+const realRouterModule = { ...(await import("@solidjs/router")) }
+
+afterAll(() => {
+  mock.module("@/platform/api/api", () => realApiModule)
+  mock.module("@/platform/persistence/persist", () => realPersistModule)
+  mock.module("@solidjs/router", () => realRouterModule)
+})
 
 mock.module("@opencode-ai/ui/context", () => ({
   createSimpleContext: () => ({ use: () => {}, provider: () => {} }),
@@ -39,11 +48,10 @@ mock.module("@/platform/api/api", () => ({
 
 // Spread the real module: `mock.module` replaces the module PROCESS-WIDE, so a
 // partial mock would break later files that import its other exports.
-const realPersist = await import("@/platform/persistence/persist")
 mock.module("@/platform/persistence/persist", () => ({
-  ...realPersist,
+  ...realPersistModule,
   Persist: {
-    ...realPersist.Persist,
+    ...realPersistModule.Persist,
     scoped: (dir: string, session: string | undefined, key: string, legacy?: string[]) => ({
       storage: "test.dat",
       key: session ? `${dir}:session:${session}:${key}` : `${dir}:workspace:${key}`,

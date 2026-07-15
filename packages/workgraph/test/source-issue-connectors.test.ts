@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { createGitHubSourceIssueConnector } from "../src/connectors/github/source-view"
 import { createLinearSourceIssueConnector } from "../src/connectors/linear/source-view"
 import { createJiraSourceIssueConnector } from "../src/connectors/jira/source-view"
-import { SourceIssueProviderError, SourceIssueResponseError, SourceIssueTransportError, type SourceIssueConnector } from "../src/connectors"
+import { SourceIssueConfigurationError, SourceIssueProviderError, SourceIssueResponseError, SourceIssueTransportError, type SourceIssueConnector } from "../src/connectors"
 
 const updated = "2026-07-13T00:00:00Z"
 const githubIssue = { id: 100, number: 7, title: "GitHub issue", body: null, html_url: null, state: "open", updated_at: updated }
@@ -132,7 +132,7 @@ describe("Connections-authorized source issue connectors", () => {
   it("uses Jira connection fields only inside the call to build site URL and Basic authorization", async () => {
     const requests: Array<{ url: string; authorization?: string }> = []
     const connector = createJiraSourceIssueConnector({
-      baseUrl: "https://fallback.invalid",
+      baseUrl: "https://configured.example.test",
       fetch: (async (url, init) => {
         requests.push({ url: String(url), authorization: new Headers(init?.headers).get("authorization") ?? undefined })
         return Response.json({ issues: [{ id: "100", key: "ENG-2", fields: { summary: "Jira issue", description: "body", status: { name: "Open" }, updated: "2026-07-13T00:00:00Z" } }] })
@@ -143,6 +143,56 @@ describe("Connections-authorized source issue connectors", () => {
     expect(requests[0]!.url).toContain("https://acme.atlassian.net/rest/api/3/search")
     expect(requests[0]!.authorization).toBe(`Basic ${btoa("alice@example.test:jira-live")}`)
     expect(JSON.stringify(connector)).not.toContain("jira-live")
+  })
+
+  it("requires an exact Jira site URL before making a provider request", async () => {
+    let requests = 0
+    const connector = createJiraSourceIssueConnector({
+      fetch: (async () => {
+        requests++
+        return Response.json({ issues: [] })
+      }) as typeof fetch,
+    })
+
+    const error = await connector.list(authorization(), { providerUserId: "alice", filters: {} })
+      .then(() => undefined, (cause) => cause)
+
+    expect(error).toBeInstanceOf(SourceIssueConfigurationError)
+    expect(error).toMatchObject({ code: "source_issue_configuration_required", field: "site_url", retryable: false })
+    expect(requests).toBe(0)
+  })
+
+  it("rejects a generic Jira cloud host before making a provider request", async () => {
+    let requests = 0
+    const connector = createJiraSourceIssueConnector({
+      fetch: (async () => {
+        requests++
+        return Response.json({ issues: [] })
+      }) as typeof fetch,
+    })
+
+    await expect(connector.list({
+      ...authorization(),
+      fields: { site_url: "https://atlassian.net" },
+    }, { providerUserId: "alice", filters: {} })).rejects.toBeInstanceOf(SourceIssueConfigurationError)
+    expect(requests).toBe(0)
+  })
+
+  it("rejects an explicit invalid Jira Connection URL even when the connector is configured", async () => {
+    let requests = 0
+    const connector = createJiraSourceIssueConnector({
+      baseUrl: "https://configured.example.test",
+      fetch: (async () => {
+        requests++
+        return Response.json({ issues: [] })
+      }) as typeof fetch,
+    })
+
+    await expect(connector.list({
+      ...authorization(),
+      fields: { site_url: "not-a-url" },
+    }, { providerUserId: "alice", filters: {} })).rejects.toBeInstanceOf(SourceIssueConfigurationError)
+    expect(requests).toBe(0)
   })
 })
 

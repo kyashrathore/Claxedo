@@ -16,23 +16,29 @@ const prevServiceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
 
 describe("convex authority url from env", () => {
   test("reads the neutral env name", () => {
-    expect(convexAuthorityUrlFromEnv({
-      CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://authority.example.test",
-    })).toBe("https://authority.example.test")
+    expect(
+      convexAuthorityUrlFromEnv({
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://authority.example.test",
+      }),
+    ).toBe("https://authority.example.test")
   })
 
   test("ignores the retired legacy Convex aliases", () => {
-    expect(convexAuthorityUrlFromEnv({
-      CONVEX_URL: "https://legacy.convex.test",
-      CLAXEDO_CONVEX_URL: "https://legacy-claxedo.convex.test",
-    })).toBeUndefined()
+    expect(
+      convexAuthorityUrlFromEnv({
+        CONVEX_URL: "https://legacy.convex.test",
+        CLAXEDO_CONVEX_URL: "https://legacy-claxedo.convex.test",
+      }),
+    ).toBeUndefined()
   })
 
   test("treats blank values as unset", () => {
     expect(convexAuthorityUrlFromEnv({})).toBeUndefined()
-    expect(convexAuthorityUrlFromEnv({
-      CLAXEDO_WORKSPACE_AUTHORITY_URL: "   ",
-    })).toBeUndefined()
+    expect(
+      convexAuthorityUrlFromEnv({
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "   ",
+      }),
+    ).toBeUndefined()
   })
 })
 
@@ -62,10 +68,12 @@ describe("convex authority", () => {
   test("requires Convex config when no executor is injected", async () => {
     const authority = createConvexAuthority({ url: "" })
 
-    await expect(authority.authorizeSessionRead(auth, {
-      sessionId: "session-1",
-      workspaceId: "ws_1",
-    })).rejects.toMatchObject({
+    await expect(
+      authority.authorizeSessionRead(auth, {
+        sessionId: "session-1",
+        workspaceId: "ws_1",
+      }),
+    ).rejects.toMatchObject({
       status: 503,
       code: "workspace_authority_unavailable",
     } satisfies Partial<ControlPlaneAuthError>)
@@ -99,10 +107,12 @@ describe("convex authority", () => {
       },
     })
 
-    await expect(authority.authorizeSessionRead(auth, {
-      sessionId: "session-1",
-      workspaceId: "ws_1",
-    })).rejects.toMatchObject({
+    await expect(
+      authority.authorizeSessionRead(auth, {
+        sessionId: "session-1",
+        workspaceId: "ws_1",
+      }),
+    ).rejects.toMatchObject({
       status: 403,
       code: "workspace_authorization_denied",
     } satisfies Partial<ControlPlaneAuthError>)
@@ -189,13 +199,15 @@ describe("convex authority", () => {
       },
     })
 
-    await expect(authority.resolveOrgId({
-      ...auth,
-      user: {
-        ...auth.user,
-        orgId: "org_clerk_1",
-      },
-    })).resolves.toBe("org_doc_1")
+    await expect(
+      authority.resolveOrgId({
+        ...auth,
+        user: {
+          ...auth.user,
+          orgId: "org_clerk_1",
+        },
+      }),
+    ).resolves.toBe("org_doc_1")
 
     expect(mutation).toHaveBeenCalledWith(expect.anything(), {
       clerk_org_id: "org_clerk_1",
@@ -215,10 +227,12 @@ describe("convex authority", () => {
       },
     })
 
-    await expect(authority.authorizeProject(auth, {
-      projectId: "project_1" as never,
-      action: "read",
-    })).resolves.toEqual({
+    await expect(
+      authority.authorizeProject(auth, {
+        projectId: "project_1" as never,
+        action: "read",
+      }),
+    ).resolves.toEqual({
       ok: true,
       role: "editor",
       orgId: "org_doc_1",
@@ -293,9 +307,11 @@ describe("convex authority", () => {
       hostId: "host_1",
       paused: true,
     })
-    await expect(authority.activeLocalHostLink(auth, {
-      workspaceId: "ws_local",
-    })).resolves.toMatchObject({
+    await expect(
+      authority.activeLocalHostLink(auth, {
+        workspaceId: "ws_local",
+      }),
+    ).resolves.toMatchObject({
       active: true,
       host_id: "host_1",
     })
@@ -377,10 +393,12 @@ describe("convex authority", () => {
     await authority.syncSessionMessages(auth, {
       workspaceId: "ws_1",
       sessionId: "session-1",
-      messages: [{
-        info: { id: "msg-1", role: "user" },
-        parts: [{ type: "text", text: "hello" }],
-      }],
+      messages: [
+        {
+          info: { id: "msg-1", role: "user" },
+          parts: [{ type: "text", text: "hello" }],
+        },
+      ],
     })
 
     expect(query).toHaveBeenNthCalledWith(1, expect.anything(), {
@@ -393,10 +411,13 @@ describe("convex authority", () => {
     expect(mutation).toHaveBeenCalledWith(expect.anything(), {
       workspace_id: "ws_1",
       session_id: "session-1",
-      messages: [{
-        info: { id: "msg-1", role: "user" },
-        parts: [{ type: "text", text: "hello" }],
-      }],
+      intake_ready: false,
+      messages: [
+        {
+          info: { id: "msg-1", role: "user" },
+          parts: [{ type: "text", text: "hello" }],
+        },
+      ],
     })
   })
 
@@ -411,18 +432,22 @@ describe("convex authority", () => {
 
     await authority.upsertSessionVisibility(auth, {
       workspaceId: "ws_1",
-      sessions: [{
-        sessionId: "session-1",
-        title: "Demo Session",
-        createdAt: 10,
-        updatedAt: 20,
-      }],
+      sessions: [
+        {
+          sessionId: "session-1",
+          title: "Demo Session",
+          createdAt: 10,
+          updatedAt: 20,
+        },
+      ],
     })
     await authority.replaceSessionVisibility(auth, {
       workspaceId: "ws_1",
-      sessions: [{
-        sessionId: "session-2",
-      }],
+      sessions: [
+        {
+          sessionId: "session-2",
+        },
+      ],
     })
     await authority.deleteSessionVisibility(auth, {
       workspaceId: "ws_1",
@@ -431,18 +456,22 @@ describe("convex authority", () => {
 
     expect(mutation).toHaveBeenNthCalledWith(1, expect.anything(), {
       workspace_id: "ws_1",
-      sessions: [{
-        session_id: "session-1",
-        title: "Demo Session",
-        created_at: 10,
-        updated_at: 20,
-      }],
+      sessions: [
+        {
+          session_id: "session-1",
+          title: "Demo Session",
+          created_at: 10,
+          updated_at: 20,
+        },
+      ],
     })
     expect(mutation).toHaveBeenNthCalledWith(2, expect.anything(), {
       workspace_id: "ws_1",
-      sessions: [{
-        session_id: "session-2",
-      }],
+      sessions: [
+        {
+          session_id: "session-2",
+        },
+      ],
     })
     expect(mutation).toHaveBeenNthCalledWith(3, expect.anything(), {
       workspace_id: "ws_1",
@@ -467,11 +496,13 @@ describe("convex authority", () => {
       hostId: "host_1",
       expiresAt: 123,
     })
-    await expect(authority.runtimeAccessTokenActive({
-      jti: "jti_1",
-      workspaceId: "ws_1",
-      hostId: "host_1",
-    })).resolves.toEqual({ active: true })
+    await expect(
+      authority.runtimeAccessTokenActive({
+        jti: "jti_1",
+        workspaceId: "ws_1",
+        hostId: "host_1",
+      }),
+    ).resolves.toEqual({ active: true })
     await authority.revokeRuntimeAccessToken(auth, {
       jti: "jti_1",
       workspaceId: "ws_1",
@@ -526,9 +557,11 @@ describe("convex authority", () => {
       },
     })
 
-    await expect(authority.listWorkspaceAgentExtensions(auth, {
-      workspaceId: "ws_1",
-    })).resolves.toEqual([{ desired: { id: "review" }, lock: { resolved_sha: "abc" } }])
+    await expect(
+      authority.listWorkspaceAgentExtensions(auth, {
+        workspaceId: "ws_1",
+      }),
+    ).resolves.toEqual([{ desired: { id: "review" }, lock: { resolved_sha: "abc" } }])
     await authority.upsertWorkspaceAgentExtension(auth, {
       workspaceId: "ws_1",
       extensionId: "review",
@@ -595,9 +628,11 @@ describe("convex authority", () => {
       },
     })
 
-    await expect(authority.listWorkspaceAgentExtensionsForRuntime({
-      workspaceId: "ws_1",
-    })).resolves.toEqual([{ desired: { id: "review" }, lock: { resolved_sha: "abc" } }])
+    await expect(
+      authority.listWorkspaceAgentExtensionsForRuntime({
+        workspaceId: "ws_1",
+      }),
+    ).resolves.toEqual([{ desired: { id: "review" }, lock: { resolved_sha: "abc" } }])
 
     expect(query).toHaveBeenCalledWith(expect.anything(), {
       workspace_id: "ws_1",
@@ -615,9 +650,11 @@ describe("convex authority", () => {
       },
     })
 
-    await expect(authority.listAgentExtensionPolicyOverrides(auth, {
-      workspaceId: "ws_1",
-    })).resolves.toEqual([{ id: "review", scope: "org", enabled: false, reason: "blocked" }])
+    await expect(
+      authority.listAgentExtensionPolicyOverrides(auth, {
+        workspaceId: "ws_1",
+      }),
+    ).resolves.toEqual([{ id: "review", scope: "org", enabled: false, reason: "blocked" }])
     await authority.setAgentExtensionPolicyOverride(auth, {
       workspaceId: "ws_1",
       extensionId: "review",
@@ -658,9 +695,11 @@ describe("convex authority", () => {
       },
     })
 
-    await expect(authority.listAgentExtensionPolicyOverridesForRuntime({
-      workspaceId: "ws_1",
-    })).resolves.toEqual([{ id: "review", scope: "workspace", enabled: false }])
+    await expect(
+      authority.listAgentExtensionPolicyOverridesForRuntime({
+        workspaceId: "ws_1",
+      }),
+    ).resolves.toEqual([{ id: "review", scope: "workspace", enabled: false }])
 
     expect(query).toHaveBeenCalledWith(expect.anything(), {
       workspace_id: "ws_1",
@@ -677,9 +716,11 @@ describe("convex authority", () => {
       },
     })
 
-    await expect(authority.listWorkspaceAgentExtensionsForRuntime({
-      workspaceId: "ws_1",
-    })).rejects.toMatchObject({
+    await expect(
+      authority.listWorkspaceAgentExtensionsForRuntime({
+        workspaceId: "ws_1",
+      }),
+    ).rejects.toMatchObject({
       status: 503,
       code: "workspace_authority_unavailable",
     } satisfies Partial<ControlPlaneAuthError>)

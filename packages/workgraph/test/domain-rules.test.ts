@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest"
 import {
+  ActorIDSchema,
   AttemptDtoSchema,
   CompletionContractSchema,
   EvidenceDtoSchema,
+  EvidenceSubjectSchema,
   ExecutionProfileDefaultsSchema,
+  OwnerUserIDSchema,
+  WorkItemIDSchema,
   type CompletionContract,
   type EvidenceDto,
 } from "../src/contracts"
@@ -78,7 +82,7 @@ describe("WorkGraph domain rules", () => {
 
   it("satisfies an all-mode completion contract only from matching positive evidence", () => {
     const contract = completionContract("all")
-    const result = evaluateCompletionContract(contract, { type: "work_item", workItemId: "item_01" }, [
+    const result = evaluateCompletionContract(contract, workItemSubject("item_01"), [
       testEvidence({ id: "evidence_pass", requirementId: "requirement_test", passed: true, recordedAt: 1 }),
       reviewEvidence({ id: "evidence_review", requirementId: "requirement_review", verdict: "approved", recordedAt: 2 }),
       integrationEvidence({ id: "evidence_merge", requirementId: "requirement_merge", recordedAt: 3 }),
@@ -96,7 +100,7 @@ describe("WorkGraph domain rules", () => {
   })
 
   it("uses the latest evidence per requirement so contradictory evidence reopens completion", () => {
-    const result = evaluateCompletionContract(completionContract("all"), { type: "work_item", workItemId: "item_01" }, [
+    const result = evaluateCompletionContract(completionContract("all"), workItemSubject("item_01"), [
       testEvidence({ id: "passing", requirementId: "requirement_test", passed: true, recordedAt: 1 }),
       testEvidence({ id: "failing", requirementId: "requirement_test", passed: false, recordedAt: 4 }),
       reviewEvidence({ id: "approved", requirementId: "requirement_review", verdict: "approved", recordedAt: 2 }),
@@ -136,7 +140,7 @@ describe("WorkGraph domain rules", () => {
       recordedBy: { type: "user", id: "user_01" },
     })
 
-    expect(evaluateCompletionContract(contract, { type: "work_item", workItemId: "item_01" }, [wrongKind, ownerConfirmation])).toEqual({
+    expect(evaluateCompletionContract(contract, workItemSubject("item_01"), [wrongKind, ownerConfirmation])).toEqual({
       subject: { type: "work_item", workItemId: "item_01" },
       satisfied: true,
       requirementResults: [
@@ -156,12 +160,12 @@ describe("WorkGraph domain rules", () => {
         mode: "all",
         requirements: [{ id: "requirement_test", kind: "test", description: "Tests pass" }],
       }),
-      { type: "work_item", workItemId: "item_01" },
+      workItemSubject("item_01"),
       [
-        { ...otherSubject, subject: { type: "work_item", workItemId: "item_02" } },
+        EvidenceDtoSchema.parse({ ...otherSubject, subject: workItemSubject("item_02") }),
         tiedFirst,
         tiedLast,
-      ] as EvidenceDto[],
+      ],
     )
 
     expect(result).toEqual({
@@ -189,24 +193,30 @@ describe("WorkGraph domain rules", () => {
       EvidenceDtoSchema.parse({ id: "integration_e", subject: { type: "work_item", workItemId: "item_01" }, requirementId: "integration", kind: "integration", effect: "other", reference: "refs/heads/main", summary: "Integrated", recordedAt: 1, recordedBy: { type: "agent", id: "agent_01" } }),
     ] as EvidenceDto[]
 
-    expect(evaluateCompletionContract(contract, { type: "work_item", workItemId: "item_01" }, evidence).requirementResults)
-      .toEqual(contract.requirements.map((requirement, index) => ({ requirementId: requirement.id, satisfied: false, evidenceId: evidence[index].id })))
+    expect(evaluateCompletionContract(contract, workItemSubject("item_01"), evidence).requirementResults)
+      .toEqual(contract.requirements.map((requirement, index) => {
+        const item = evidence[index]
+        if (!item) throw new Error(`Missing evidence for requirement ${requirement.id}`)
+        return { requirementId: requirement.id, satisfied: false, evidenceId: item.id }
+      }))
   })
 
   it("requires semantic completion guards for work items and outcomes and records close/reopen provenance", () => {
     const workItemEvaluation = evaluateCompletionContract(
       CompletionContractSchema.parse({ version: 1, mode: "all", requirements: [{ id: "owner", kind: "owner_confirmation", description: "Owner accepts" }] }),
-      { type: "work_item", workItemId: "item_01" },
+      workItemSubject("item_01"),
       [EvidenceDtoSchema.parse({ id: "work_owner", subject: { type: "work_item", workItemId: "item_01" }, requirementId: "owner", kind: "owner_confirmation", confirmed: true, summary: "Accepted", recordedAt: 7, recordedBy: { type: "user", id: "user_01" } })],
     )
     expect(completeWorkItem({ workItemId: "item_01", state: "result_ready", evaluation: workItemEvaluation })).toEqual({ ok: true, state: "completed" })
     expect(completeWorkItem({ workItemId: "item_01", state: "active", evaluation: workItemEvaluation })).toMatchObject({ ok: false, error: { code: "result_not_ready" } })
 
     const ownerEvidence = EvidenceDtoSchema.parse({ id: "outcome_owner", subject: { type: "outcome", outcomeId: "outcome_01" }, requirementId: "owner", kind: "owner_confirmation", confirmed: true, summary: "Ship it", recordedAt: 11, recordedBy: { type: "user", id: "user_01" } })
-    const completed = completeOutcome({ outcomeId: "outcome_01", ownerUserId: "user_01", state: "ready_to_close", childStates: ["completed", "abandoned"], ownerConfirmation: ownerEvidence, closedAt: 12, closedBy: { type: "user", id: "user_01" } })
+    const ownerUserId = OwnerUserIDSchema.parse("user_01")
+    const ownerActor = { type: "user" as const, id: ActorIDSchema.parse("user_01") }
+    const completed = completeOutcome({ outcomeId: "outcome_01", ownerUserId, state: "ready_to_close", childStates: ["completed", "abandoned"], ownerConfirmation: ownerEvidence, closedAt: 12, closedBy: ownerActor })
     expect(completed).toEqual({ ok: true, state: "completed", provenance: { ownerConfirmationEvidenceId: "outcome_owner", closedAt: 12, closedBy: { type: "user", id: "user_01" } } })
-    expect(completeOutcome({ outcomeId: "outcome_01", ownerUserId: "user_01", state: "ready_to_close", childStates: ["active"], ownerConfirmation: ownerEvidence, closedAt: 12, closedBy: { type: "user", id: "user_01" } })).toMatchObject({ ok: false, error: { code: "unfinished_work_items" } })
-    expect(reopenOutcome({ state: "completed", reopenedAt: 13, reopenedBy: { type: "user", id: "user_01" }, reason: "Criteria changed" })).toEqual({ ok: true, state: "reopened", provenance: { reopenedAt: 13, reopenedBy: { type: "user", id: "user_01" }, reason: "Criteria changed" } })
+    expect(completeOutcome({ outcomeId: "outcome_01", ownerUserId, state: "ready_to_close", childStates: ["active"], ownerConfirmation: ownerEvidence, closedAt: 12, closedBy: ownerActor })).toMatchObject({ ok: false, error: { code: "unfinished_work_items" } })
+    expect(reopenOutcome({ state: "completed", reopenedAt: 13, reopenedBy: ownerActor, reason: "Criteria changed" })).toEqual({ ok: true, state: "reopened", provenance: { reopenedAt: 13, reopenedBy: { type: "user", id: "user_01" }, reason: "Criteria changed" } })
   })
 
   it("blocks only Decision-affected work and its transitive dependents", () => {
@@ -229,22 +239,20 @@ describe("WorkGraph domain rules", () => {
   it("resolves each execution setting from the nearest WorkGraph hierarchy level with provenance", () => {
     const result = resolveExecutionProfile({
       workgraph: ExecutionProfileDefaultsSchema.parse({
-        environment: { kind: "local_worktree", presetId: "standard" },
-        repository: { remoteUrl: "https://example.com/acme/repo.git", baseRevision: "dev" },
         harness: "opencode",
         agent: "developer",
         model: { providerId: "openai", modelId: "gpt-5" },
         effort: "medium",
         tools: ["shell"],
         connectionIds: ["connection_default"],
-        isolation: "stream",
-        cleanup: "destroy_on_close",
-        integration: "manual",
       }),
       stream: ExecutionProfileDefaultsSchema.parse({
-        environment: { kind: "hosted_workspace", presetId: "large" },
-        cleanup: "retain",
-        integration: "pull_request",
+        environment: {
+          kind: "hosted_workspace",
+          repositoryUrl: "https://example.com/acme/repo.git",
+          presetId: "large",
+        },
+        repository: { baseRevision: "dev" },
       }),
       outcome: ExecutionProfileDefaultsSchema.parse({
         model: { providerId: "anthropic", modelId: "claude-sonnet" },
@@ -254,37 +262,34 @@ describe("WorkGraph domain rules", () => {
         agent: "reviewer",
         tools: ["shell", "browser"],
         connectionIds: [],
-        isolation: "child",
       }),
     })
 
     expect(result).toMatchObject({
       ok: true,
       profile: {
-        environment: { kind: "hosted_workspace", presetId: "large" },
-        repository: { remoteUrl: "https://example.com/acme/repo.git", baseRevision: "dev" },
+        environment: {
+          kind: "hosted_workspace",
+          repositoryUrl: "https://example.com/acme/repo.git",
+          presetId: "large",
+        },
+        repository: { baseRevision: "dev" },
         harness: "opencode",
         agent: "reviewer",
         model: { providerId: "anthropic", modelId: "claude-sonnet" },
         effort: "high",
         tools: ["shell", "browser"],
         connectionIds: [],
-        isolation: "child",
-        cleanup: "retain",
-        integration: "pull_request",
       },
       provenance: {
         environment: "stream",
-        repository: "workgraph",
+        repository: "stream",
         harness: "workgraph",
         agent: "work_item",
         model: "outcome",
         effort: "outcome",
         tools: "work_item",
         connectionIds: "work_item",
-        isolation: "work_item",
-        cleanup: "stream",
-        integration: "stream",
       },
     })
     if (!result.ok) throw new Error("expected a resolved profile")
@@ -305,29 +310,54 @@ describe("WorkGraph domain rules", () => {
           "model",
           "effort",
           "tools",
-          "connectionIds",
-          "isolation",
-          "cleanup",
-          "integration",
+          "repository",
         ],
       },
     })
   })
 
-  it("requires a repository for local worktree execution", () => {
-    const defaults = ExecutionProfileDefaultsSchema.parse({ environment: { kind: "local_worktree" }, harness: "opencode", agent: "developer", model: { providerId: "openai", modelId: "gpt-5" }, effort: "medium", tools: [], connectionIds: [], isolation: "stream", cleanup: "retain", integration: "manual" })
-    expect(resolveExecutionProfile({ workgraph: defaults })).toEqual({ ok: false, error: { code: "incomplete_execution_profile", missingFields: ["repository"] } })
+  it("resolves no configured Connections to the safe empty default", () => {
+    const result = resolveExecutionProfile({
+      workgraph: ExecutionProfileDefaultsSchema.parse({
+        harness: "opencode",
+        agent: "developer",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "medium",
+        tools: [],
+      }),
+      stream: ExecutionProfileDefaultsSchema.parse({
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/acme/project.git" },
+        repository: { baseRevision: "HEAD" },
+      }),
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      profile: { connectionIds: [] },
+      provenance: { connectionIds: null },
+    })
+  })
+
+  it("requires a base revision for execution", () => {
+    const defaults = ExecutionProfileDefaultsSchema.parse({ harness: "opencode", agent: "developer", model: { providerId: "openai", modelId: "gpt-5" }, effort: "medium", tools: [], connectionIds: [] })
+    expect(resolveExecutionProfile({ workgraph: defaults, stream: { environment: { kind: "local_worktree", directory: "/repo" } } })).toEqual({ ok: false, error: { code: "incomplete_execution_profile", missingFields: ["repository"] } })
   })
 
   it("creates a serializable immutable Attempt admission snapshot with resolved provenance", () => {
-    const resolved = resolveExecutionProfile({ workgraph: ExecutionProfileDefaultsSchema.parse({ environment: { kind: "hosted_workspace" }, harness: "opencode", agent: "developer", model: { providerId: "openai", modelId: "gpt-5" }, effort: "medium", tools: [], connectionIds: [], isolation: "stream", cleanup: "retain", integration: "manual" }) })
+    const resolved = resolveExecutionProfile({
+      workgraph: ExecutionProfileDefaultsSchema.parse({ harness: "opencode", agent: "developer", model: { providerId: "openai", modelId: "gpt-5" }, effort: "medium", tools: [], connectionIds: [] }),
+      stream: ExecutionProfileDefaultsSchema.parse({ environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/acme/project.git" }, repository: { baseRevision: "HEAD" } }),
+    })
     if (!resolved.ok) throw new Error("expected resolved profile")
     const snapshot = createAttemptAdmissionSnapshot({ attempt: AttemptDtoSchema.parse({ recordType: "attempt", schemaVersion: 1, ownerUserId: "user_01", version: 3, createdAt: 1, updatedAt: 1, provenance: { actor: { type: "agent", id: "agent_01" }, operationId: "operation_01" }, id: "attempt_01", streamId: "stream_01", workItemId: "item_01", attemptNumber: 1, state: "admitted", resolvedExecution: resolved.profile, admittedAt: 1, sourceRevisionRefs: [] }), executionProvenance: resolved.provenance })
     expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot)
     expect(snapshot.attempt.version).toBe(3)
-    expect(snapshot.executionProvenance.environment).toBe("workgraph")
+    expect(snapshot.executionProvenance.environment).toBe("stream")
     expect(Object.isFrozen(snapshot)).toBe(true)
     expect(Object.isFrozen(snapshot.executionProvenance)).toBe(true)
+  })
+
+  it("strips retired lifecycle, integration, and isolation policies from legacy saved execution profiles", () => {
+    expect(ExecutionProfileDefaultsSchema.parse({ harness: "opencode", cleanup: "retain", integration: "manual", isolation: "child" })).toEqual({ harness: "opencode" })
   })
 })
 
@@ -341,6 +371,10 @@ function completionContract(mode: "all" | "any"): CompletionContract {
       { id: "requirement_merge", kind: "integration", description: "Merged" },
     ],
   })
+}
+
+function workItemSubject(workItemId: string) {
+  return EvidenceSubjectSchema.parse({ type: "work_item", workItemId: WorkItemIDSchema.parse(workItemId) })
 }
 
 function testEvidence(input: {

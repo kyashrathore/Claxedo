@@ -1,4 +1,4 @@
-import type { AttentionCursor, AttentionItem, AttemptDto, CommandResult, OutcomeDto, StreamDto, WorkItemDto } from "@claxedo/workgraph/contracts"
+import type { AttentionCursor, AttentionItem, AttemptDto, CommandResult, ExecutionEnvironment, OutcomeDto, StreamDto, WorkItemDto } from "@claxedo/workgraph/contracts"
 import { Dialog as DialogRoot } from "@kobalte/core/dialog"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog as DialogShell } from "@opencode-ai/ui/dialog"
@@ -6,16 +6,17 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
 import { RichTextEditor } from "@/ui/rich-text"
-import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, type Accessor } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, onCleanup, onMount, Show, Switch, type Accessor } from "solid-js"
 import { Portal } from "solid-js/web"
 import { createWorkGraphClient, WorkGraphApiError, type WorkGraphClient } from "./api"
-import { syncWorkGraphChanges } from "./change-sync"
-import { setWorkGraphAttentionCount } from "./waiting/attention-signal"
+import { ProjectPicker, type LocalProjectOption } from "./project-picker"
+import { useWorkGraphSyncLifecycle } from "./sync-lifecycle"
+import { environmentChoices } from "./waiting/settings-capabilities"
 import { WaitingCard, createWaitingCardController } from "./waiting/waiting-card"
 import { WaitingItemDialog } from "./waiting/item-dialogs"
 import { WaitingPanelBody } from "./waiting/waiting-panel"
-import { StreamSettingsDialog, WorkGraphSettingsView } from "./waiting/settings-dialogs"
-import { waitingSourceFromClient } from "./waiting/waiting-source"
+import { WorkGraphSettingsPanel } from "./settings-panel"
+import { toWaitingRow, waitingSourceFromClient } from "./waiting/waiting-source"
 import { WorkGraphStreamTree } from "./workgraph-overview"
 import "./workgraph.css"
 import "./waiting/waiting.css"
@@ -29,15 +30,26 @@ import "./waiting/waiting.css"
 export type WorkGraphPanelBridge = {
   /** Selected WorkGraph panel tab, or undefined when the panel isn't in a WorkGraph mode. */
   mode: () => "attention" | "settings" | undefined
-  /** Whether the shared panel is currently open in a WorkGraph mode. */
+  /** Whether the shared main panel is currently open in any mode. */
   isOpen: () => boolean
+  /** Stable identity for the current open-panel state. */
+  identity: () => unknown
   open: (view: "attention" | "settings") => void
   close: () => void
   headerSlot: Accessor<HTMLElement | null>
   bodySlot: Accessor<HTMLElement | null>
 }
 
-export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkGraphClient; panel?: WorkGraphPanelBridge }) {
+export function WorkGraphContent(props: {
+  active?: Accessor<boolean>
+  request?: typeof fetch
+  client?: WorkGraphClient
+  panel?: WorkGraphPanelBridge
+  onOpenSession?: (reference: { sessionId: string; workspaceId?: string }) => void
+  executionContext?: ExecutionEnvironment
+  localProjects?: readonly LocalProjectOption[]
+  onChooseLocalProject?: () => Promise<string | undefined>
+}) {
   const client = props.client ?? createWorkGraphClient({ request: props.request })
   const source = waitingSourceFromClient(client)
   const [creating, setCreating] = createSignal(false)
@@ -46,22 +58,44 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
   const [reconnecting, setReconnecting] = createSignal(false)
   const [title, setTitle] = createSignal("")
   const [description, setDescription] = createSignal("")
-  const [environment, setEnvironment] = createSignal<"inherit" | "local_worktree" | "hosted_workspace">("inherit")
-  const [integration, setIntegration] = createSignal<"inherit" | "manual" | "pull_request" | "direct">("inherit")
+  const [environment, setEnvironment] = createSignal<"local_worktree" | "hosted_workspace">(
+    props.executionContext?.kind ?? "local_worktree",
+  )
+  const [localDirectory, setLocalDirectory] = createSignal(
+    props.executionContext?.kind === "local_worktree" ? props.executionContext.directory ?? "" : "",
+  )
+  const [repositoryUrl, setRepositoryUrl] = createSignal(
+    props.executionContext?.kind === "hosted_workspace" ? props.executionContext.repositoryUrl ?? "" : "",
+  )
+  const [baseRevision, setBaseRevision] = createSignal("HEAD")
   const [mutationError, setMutationError] = createSignal<WorkGraphApiError>()
-  const [syncError, setSyncError] = createSignal<WorkGraphApiError>()
 
   // Focused item dialog + per-stream settings dialog (focused, over this screen).
-  const [selectedWaiting, setSelectedWaiting] = createSignal<AttentionItem>()
+  // The selection carries the exact element that invoked it so focus can be
+  // restored deterministically after the dialog acts.
+  const [selectedWaiting, setSelectedWaiting] = createSignal<{ item: AttentionItem; invoker: HTMLElement }>()
   const [streamSettings, setStreamSettings] = createSignal<StreamDto>()
+  // Stable references for the focus-restoration fallback hierarchy. Row focus is
+  // always scoped to the Needs you panel — never a global text query.
+  let needsYouTabRef: HTMLButtonElement | undefined
+  let attentionControlRef: HTMLSpanElement | undefined
+  // Resolution bookkeeping: whether the just-closed dialog resolved its item (vs
+  // a plain close), the attention ordering captured before the resolve refetch,
+  // and that refetch's promise — the restore genuinely awaits it before choosing
+  // a target rather than racing the resource update.
+  let waitingResolved = false
+  let waitingPrevOrder: string[] = []
+  let waitingRefetch: Promise<void> | undefined
 
   const closeCreating = () => {
     setCreating(false)
     setExpanded(false)
     setTitle("")
     setDescription("")
-    setEnvironment("inherit")
-    setIntegration("inherit")
+    setEnvironment(props.executionContext?.kind ?? "local_worktree")
+    setLocalDirectory(props.executionContext?.kind === "local_worktree" ? props.executionContext.directory ?? "" : "")
+    setRepositoryUrl(props.executionContext?.kind === "hosted_workspace" ? props.executionContext.repositoryUrl ?? "" : "")
+    setBaseRevision("HEAD")
   }
   const dismissCreating = (event: KeyboardEvent) => {
     if (!creating() || event.key !== "Escape") return
@@ -77,6 +111,28 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
   const [snapshot, { refetch }] = createResource(() => client.snapshot())
   const [defaults] = createResource(() => client.defaults())
 
+  // The execution capability catalog powers the Settings, Stream-settings, and New
+  // stream forms — every override option those surfaces offer is projected from it.
+  // It is fetched ONLY while one of those surfaces is showing (never for the stream
+  // tree) and its explicit failure (the strict 503 capability envelope) is preserved
+  // as the resource error, so the forms stay fail-closed on the exact WorkGraphApiError
+  // instead of substituting cached or invented choices. Closing and reopening any
+  // surface refetches; retry re-runs it in place.
+  const capabilitiesNeeded = () => (!!props.panel?.isOpen() && props.panel?.mode() === "settings") || !!streamSettings() || creating()
+  const [capabilities, { refetch: refetchCapabilities }] = createResource(
+    () => (capabilitiesNeeded() ? true : undefined),
+    () => client.executionCapabilities(),
+  )
+  // An explicit capability failure (its WorkGraphApiError) is observed here and
+  // resolves to "no catalog" — the forms then stay fail-closed on that absence
+  // rather than substituting cached or hardcoded choices. Reading `.error` first
+  // keeps the failure a handled state and never falls through to a stale value.
+  const capabilityCatalog = createMemo(() => (capabilities.error ? undefined : capabilities()))
+  // The exact resource error, normalized to a WorkGraphApiError, is handed to both
+  // settings forms so their footers render its real message and fail closed — never
+  // reduced to a generic "no catalog" nor paired with a stale catalog.
+  const capabilityResourceError = createMemo(() => (capabilities.error ? normalizeError(capabilities.error) : undefined))
+
   // Attention ("Needs you") is sourced ONLY from the strict Attention endpoint and
   // paged explicitly: the first load fetches page one, "Load more" appends the next
   // page via nextCursor. It never reconstructs from the snapshot and never eagerly
@@ -87,24 +143,28 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
   const [attentionLoading, setAttentionLoading] = createSignal(false)
   const [attentionLoaded, setAttentionLoaded] = createSignal(false)
   const [attentionError, setAttentionError] = createSignal<unknown>()
-  const loadAttention = async (after?: AttentionCursor) => {
-    if (attentionLoading()) return
-    setAttentionLoading(true)
-    if (!after) setAttentionError(undefined)
-    try {
-      const page = await source.waiting(after)
-      setAttentionItems((prev) => (after ? [...prev, ...page.items] : page.items))
-      setAttentionTotal(page.total)
-      // Publish to the shared top-level toggle attention dot (strict Attention only).
-      setWorkGraphAttentionCount(page.total)
-      setAttentionNextCursor(page.hasMore ? page.nextCursor : undefined)
-      setAttentionLoaded(true)
-      setAttentionError(undefined)
-    } catch (error) {
-      setAttentionError(error)
-    } finally {
-      setAttentionLoading(false)
-    }
+  let activeAttentionLoad: Promise<void> | undefined
+  const loadAttention = (after?: AttentionCursor) => {
+    if (activeAttentionLoad) return activeAttentionLoad
+    const request = (async () => {
+      setAttentionLoading(true)
+      if (!after) setAttentionError(undefined)
+      try {
+        const page = await source.waiting(after)
+        setAttentionItems((prev) => (after ? [...prev, ...page.items] : page.items))
+        setAttentionTotal(page.total)
+        setAttentionNextCursor(page.hasMore ? page.nextCursor : undefined)
+        setAttentionLoaded(true)
+        setAttentionError(undefined)
+      } catch (error) {
+        setAttentionError(error)
+      } finally {
+        setAttentionLoading(false)
+        activeAttentionLoad = undefined
+      }
+    })()
+    activeAttentionLoad = request
+    return request
   }
   onMount(() => void loadAttention())
 
@@ -117,28 +177,41 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
   const sortedStreams = createMemo(() => [...streams()].sort((a, b) => b.activity.lastActivityAt - a.activity.lastActivityAt))
 
   const hasAttention = () => attentionTotal() > 0
-  // Clear the shared top-level toggle attention when this surface unmounts; the
-  // live total is published from loadAttention as each page resolves.
-  onCleanup(() => setWorkGraphAttentionCount(0))
   const card = createWaitingCardController(attentionItems)
-  const needsYouOpen = () => !!props.panel?.isOpen() && props.panel?.mode() === "attention"
+  const contextMode = () => card.mode(props.panel?.isOpen() ?? false, props.panel?.identity())
 
   const retryMutation = () => {
     void refetch()
   }
-  let syncedCursor: string | undefined
-  createEffect(
-    on(snapshot, (current) => {
-      if (!current || current.snapshotCursor === syncedCursor) return
-      syncedCursor = current.snapshotCursor
-      // A change-sync failure means live updates stalled; surface it explicitly
-      // rather than swallowing it, and let the user force a fresh snapshot.
-      void syncWorkGraphChanges(client, current.snapshotCursor, refetch).then(
-        () => setSyncError(undefined),
-        (error) => setSyncError(normalizeError(error)),
-      )
-    }),
-  )
+  // One live synchronizer, seeded once from the first canonical snapshot cursor
+  // and never restarted by later snapshot updates (it reloads the snapshot
+  // itself). It drives the bounded /changes long-poll continuously; its stall is
+  // surfaced verbatim through the sync StatusBanner, whose Retry resumes the loop
+  // from the last good cursor. cursor_invalid is auto-reset inside the loop, so it
+  // never reaches the banner.
+  // Applying a change window (and resetting after cursor_invalid) reloads the
+  // canonical snapshot and Attention together; the fresh snapshot cursor is
+  // returned so the loop can resume from it after a reset.
+  const reloadCanonical = async () => {
+    await Promise.all([refetch(), loadAttention()])
+    return snapshot()?.snapshotCursor
+  }
+  const acknowledgeAttention = async (action: () => Promise<unknown>) => {
+    setAttentionError(undefined)
+    try {
+      await action()
+      await activeAttentionLoad
+      await loadAttention()
+    } catch (error) {
+      setAttentionError(error)
+    }
+  }
+  const sync = useWorkGraphSyncLifecycle({
+    active: () => props.active?.() ?? true,
+    snapshot,
+    changes: client.changes,
+    reload: reloadCanonical,
+  })
   const mutate = async (action: () => Promise<CommandResult>) => {
     if (submitting()) return false
     setSubmitting(true)
@@ -158,23 +231,52 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
       setSubmitting(false)
     }
   }
-  // Only the harness-independent knobs live here. Harness/model/agent/effort are
-  // driven by the session harness system (@/features/session/*, which WorkGraph
-  // can't import) and belong to a future shared harness selector, not fabricated
-  // defaults.
   const createStream = async (event: SubmitEvent) => {
     event.preventDefault()
     if (!title().trim()) return
     const summary = description().trim()
     const selectedEnvironment = environment()
-    const selectedIntegration = integration()
     const execution: NonNullable<Parameters<typeof client.createStream>[0]["execution"]> = {
-      ...(selectedEnvironment !== "inherit" ? { environment: { kind: selectedEnvironment } } : {}),
-      ...(selectedIntegration !== "inherit" ? { integration: selectedIntegration } : {}),
+      environment: selectedEnvironment === "local_worktree"
+        ? { kind: "local_worktree", directory: localDirectory().trim() }
+        : { kind: "hosted_workspace", repositoryUrl: repositoryUrl().trim() },
+      repository: { baseRevision: baseRevision().trim() },
     }
-    const hasExecutionOverride = Object.keys(execution).length > 0
-    if (!(await mutate(() => client.createStream({ title: title().trim(), ...(summary ? { description: summary } : {}), ...(hasExecutionOverride ? { execution } : {}) })))) return
+    if (!(await mutate(() => client.createStream({
+      title: title().trim(),
+      ...(summary ? { description: summary } : {}),
+      execution,
+    })))) return
     closeCreating()
+  }
+  const createEnvironmentValues = () => {
+    const catalog = capabilityCatalog()
+    return catalog ? environmentChoices(catalog) : []
+  }
+  const openCreating = () => {
+    setBaseRevision(capabilityCatalog()?.repository.baseRevisions[0] ?? "HEAD")
+    if (!props.executionContext) {
+      const choices = createEnvironmentValues()
+      const next = choices[0]
+      if (next) setEnvironment(next)
+    }
+    setCreating(true)
+  }
+  const createOverrideInvalid = () => {
+    const env = environment()
+    const catalog = capabilityCatalog()
+    if (!catalog) return true
+    if (!environmentChoices(catalog).some((kind) => kind === env)) return true
+    if (!baseRevision().trim()) return true
+    if (env === "local_worktree" && !localDirectory().trim()) return true
+    if (env === "hosted_workspace") {
+      try {
+        new URL(repositoryUrl().trim())
+      } catch {
+        return true
+      }
+    }
+    return false
   }
   const reconnect = async () => {
     setReconnecting(true)
@@ -183,11 +285,113 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
   }
 
   const openPanelTab = (view: "attention" | "settings") => {
-    if (view === "attention") card.markAllSeen()
+    card.closeFloating()
     props.panel?.open(view)
   }
-  const selectWaiting = (item: AttentionItem) => setSelectedWaiting(item)
-  const resolvedWaiting = () => void loadAttention()
+  const openWaitingItemInPanel = (item: AttentionItem) => {
+    openPanelTab("attention")
+    void nextFrame().then(async () => {
+      if (focusRowByKey(toWaitingRow(item).key)) return
+      await nextFrame()
+      focusRowByKey(toWaitingRow(item).key)
+    })
+  }
+  const showAttentionContext = () => {
+    if (!hasAttention()) return openPanelTab("attention")
+    if (contextMode()) return card.dismiss()
+    card.reveal(props.panel?.isOpen() ?? false, props.panel?.identity())
+  }
+  const openWorkGraphSettings = () => {
+    setStreamSettings(undefined)
+    openPanelTab("settings")
+  }
+  const openStreamSettings = (stream: StreamDto) => {
+    setStreamSettings(stream)
+    openPanelTab("settings")
+  }
+  // A selection records the exact invoking element so an ordinary close returns
+  // focus to the row that opened the dialog.
+  const selectWaiting = (item: AttentionItem, element: HTMLElement) => {
+    waitingResolved = false
+    waitingRefetch = undefined
+    setSelectedWaiting({ item, invoker: element })
+  }
+  // A real domain transition: remember the pre-refetch ordering and start the
+  // attention refetch, but defer the focus move to close (see closeWaiting) so it
+  // lands after the dialog has actually torn down.
+  const resolvedWaiting = () => {
+    waitingResolved = true
+    waitingPrevOrder = attentionItems().map((item) => toWaitingRow(item).key)
+    waitingRefetch = loadAttention()
+  }
+  // Single close funnel (Kobalte close, Escape, and content-initiated close all
+  // route here). Idempotent: the first pass clears the selection and moves focus,
+  // the echo pass sees no selection and returns.
+  const closeWaiting = () => {
+    const selection = selectedWaiting()
+    if (!selection) return
+    setSelectedWaiting(undefined)
+    const resolved = waitingResolved
+    waitingResolved = false
+    if (resolved) void restoreFocusAfterResolve(selection)
+    else focusElement(selection.invoker)
+  }
+  const focusElement = (element: HTMLElement | undefined | null) => {
+    if (element?.isConnected) element.focus()
+  }
+  const panelRows = (): HTMLElement[] => {
+    const list = props.panel?.bodySlot()?.querySelector(".workgraph-waiting-list")
+    return list ? [...list.querySelectorAll<HTMLElement>(".workgraph-waiting-row")] : []
+  }
+  // Focuses the currently-rendered panel row for a stable attention key by
+  // pairing live items with rows positionally. Returns whether it landed.
+  const focusRowByKey = (key: string) => {
+    const index = card.items().findIndex((item) => toWaitingRow(item).key === key)
+    if (index < 0) return false
+    const row = panelRows()[index]
+    if (!row?.isConnected) return false
+    row.focus()
+    return true
+  }
+  const focusFallback = () => {
+    if (needsYouTabRef?.isConnected) return focusElement(needsYouTabRef)
+    focusElement(attentionControlRef?.querySelector<HTMLElement>("button"))
+    // Anything further defers to the dialog's own focus restoration.
+  }
+  const restoreFocusAfterResolve = async (selection: { item: AttentionItem; invoker: HTMLElement }) => {
+    // 1) Genuinely await the attention refetch so the surface has re-rendered its
+    //    rows for the post-action ordering before any target is chosen.
+    await (waitingRefetch ?? Promise.resolve())
+    waitingRefetch = undefined
+    // 2) Await the closing dialog's teardown. Its modal focus scope performs one
+    //    deferred focus-restoration on the next animation frame (re-asserting focus
+    //    into its still-present content while the exit transition runs). Letting
+    //    that one-shot land first makes our restoration the last word — otherwise it
+    //    clobbers a focus we set on the earlier microtask.
+    await nextFrame()
+    const removedKey = toWaitingRow(selection.item).key
+    const items = attentionItems()
+    const liveKeys = new Set(items.map((item) => toWaitingRow(item).key))
+    if (liveKeys.has(removedKey)) {
+      // The item survived the action: prefer its exact invoker, else its
+      // re-rendered row, else the surface fallback.
+      if (selection.invoker.isConnected) return focusElement(selection.invoker)
+      if (focusRowByKey(removedKey)) return
+      return focusFallback()
+    }
+    // The item left Waiting: focus the next still-present row in the previous
+    // ordering, then the previous one, then the fallback hierarchy.
+    const removedIndex = waitingPrevOrder.indexOf(removedKey)
+    let targetKey: string | undefined
+    for (let i = removedIndex + 1; i < waitingPrevOrder.length && targetKey === undefined; i++) {
+      if (liveKeys.has(waitingPrevOrder[i])) targetKey = waitingPrevOrder[i]
+    }
+    for (let i = removedIndex - 1; i >= 0 && targetKey === undefined; i--) {
+      if (liveKeys.has(waitingPrevOrder[i])) targetKey = waitingPrevOrder[i]
+    }
+    if (targetKey !== undefined && focusRowByKey(targetKey)) return
+    focusFallback()
+  }
 
   const workgraphSettingsSource = {
     defaults: () => client.defaults(),
@@ -199,6 +403,7 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
     workgraphDefaults: () => client.defaults(),
     save: (streamId: string, expectedVersion: number, settings: Parameters<typeof client.updateStreamSettings>[2]) => client.updateStreamSettings(streamId, expectedVersion, settings),
   }
+  const waitingCard = (mode: "inline" | "floating") => <WaitingCard mode={mode} items={card.items()} total={attentionTotal()} unread={card.unread()} onClose={card.closeFloating} onSelect={openWaitingItemInPanel} />
 
   return (
     <main class="workgraph-shell workgraph-surface size-full overflow-hidden text-text-base" aria-label="WorkGraph">
@@ -214,28 +419,29 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
               </div>
               <div class="flex flex-shrink-0 items-center gap-1.5">
                 <div class="workgraph-head-controls">
-                  <span class="workgraph-attention-control">
+                  <span class="workgraph-attention-control" ref={attentionControlRef}>
                     <IconButton
                       variant="ghost"
                       size="small"
                       icon="bullet-list"
                       aria-label={hasAttention() ? `Needs you — ${attentionTotal()} waiting on you` : "Needs you"}
-                      onClick={() => openPanelTab("attention")}
+                      aria-pressed={contextMode() !== undefined}
+                      class="aria-pressed:bg-surface-base-hover aria-pressed:text-text-base"
+                      onClick={showAttentionContext}
                     />
-                    <Show when={hasAttention()}>
-                      <span class="workgraph-attention-dot workgraph-attention-control-dot" aria-hidden="true" />
-                    </Show>
                   </span>
-                  <IconButton variant="ghost" size="small" icon="sliders" aria-label="WorkGraph settings" onClick={() => openPanelTab("settings")} />
+                  <IconButton variant="ghost" size="small" icon="sliders" aria-label="WorkGraph settings" onClick={openWorkGraphSettings} />
                 </div>
-                <Button size="small" icon="plus-small" variant="primary" onClick={() => setCreating(true)} aria-haspopup="dialog">
+                <Button size="small" icon="plus-small" variant="primary" onClick={openCreating} aria-haspopup="dialog">
                   New stream
                 </Button>
               </div>
             </div>
             <p class="workgraph-lede text-text-weak">Every thread of work you're shipping with AI. Expand a stream to see its outcomes and the tasks underneath.</p>
           </header>
-          <div class="workgraph-rule" aria-hidden="true" />
+          <div class="workgraph-body" classList={{ "has-context": contextMode() === "inline" }}>
+            <div class="workgraph-primary">
+              <div class="workgraph-rule" aria-hidden="true" />
           <DialogRoot
             modal
             open={creating()}
@@ -291,28 +497,60 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
                     </div>
                     <div class="workgraph-create-chips" role="group" aria-label="Stream defaults">
                       <ChipMenu
-                        value={environment() === "inherit" ? `Inherit · ${defaults()?.defaults.execution.environment?.kind === "hosted_workspace" ? "Cloud" : defaults()?.defaults.execution.environment?.kind === "local_worktree" ? "Local" : "environment not set"}` : environment() === "local_worktree" ? "Override · Local" : "Override · Cloud"}
+                        value={environment() === "local_worktree" ? "Local worktree" : "Cloud workspace"}
                         selected={environment()}
-                        options={[
-                          { value: "inherit", label: "Inherit WorkGraph environment" },
-                          { value: "local_worktree", label: "Override · Local worktree" },
-                          { value: "hosted_workspace", label: "Override · Cloud workspace" },
-                        ]}
+                        options={createEnvironmentValues().map((kind) => ({
+                          value: kind,
+                          label: kind === "local_worktree" ? "Local worktree" : "Cloud workspace",
+                        }))}
                         onSelect={setEnvironment}
                       />
-                      <ChipMenu
-                        value={integration() === "inherit" ? `Inherit · ${defaults()?.defaults.execution.integration === "pull_request" ? "Pull request" : defaults()?.defaults.execution.integration === "manual" ? "Manual" : defaults()?.defaults.execution.integration === "direct" ? "Direct" : "integration not set"}` : integration() === "pull_request" ? "Override · Pull request" : integration() === "manual" ? "Override · Manual" : "Override · Direct"}
-                        selected={integration()}
-                        options={[
-                          { value: "inherit", label: "Inherit WorkGraph integration" },
-                          { value: "pull_request", label: "Override · Pull request" },
-                          { value: "manual", label: "Override · Manual" },
-                          { value: "direct", label: "Override · Direct" },
-                        ]}
-                        onSelect={setIntegration}
-                      />
                     </div>
+                    <Show
+                      when={environment() === "local_worktree"}
+                      fallback={
+                        <label class="workgraph-create-target">
+                          <span>GitHub repository URL</span>
+                          <input
+                            value={repositoryUrl()}
+                            onInput={(event) => setRepositoryUrl(event.currentTarget.value)}
+                            placeholder="https://github.com/owner/repository.git"
+                            required
+                          />
+                          <small>The cloud workspace clones this repository for every Stream Attempt.</small>
+                        </label>
+                      }
+                    >
+                      <div class="workgraph-create-target">
+                        <span>Project directory</span>
+                        <ProjectPicker
+                          value={localDirectory()}
+                          projects={props.localProjects ?? []}
+                          onChange={setLocalDirectory}
+                          onChoose={props.onChooseLocalProject}
+                          onError={(error) => setMutationError(normalizeError(error))}
+                        />
+                        <small>The Stream creates its isolated worktree from this local Git repository.</small>
+                      </div>
+                    </Show>
+                    <label class="workgraph-create-target">
+                      <span>Base revision</span>
+                      <input
+                        value={baseRevision()}
+                        onInput={(event) => setBaseRevision(event.currentTarget.value)}
+                        list="workgraph-stream-base-revisions"
+                        placeholder="HEAD"
+                        required
+                      />
+                      <datalist id="workgraph-stream-base-revisions">
+                        <For each={capabilityCatalog()?.repository.baseRevisions ?? []}>
+                          {(revision) => <option value={revision} />}
+                        </For>
+                      </datalist>
+                      <small>The Git ref used to create this Stream's execution workspace.</small>
+                    </label>
                     <Show when={mutationError()}>{(error) => <StatusBanner error={error()} retry={retryMutation} />}</Show>
+                    <Show when={capabilityResourceError()}>{(error) => <StatusBanner error={error()} retry={() => void refetchCapabilities()} />}</Show>
                     <div class="workgraph-create-actions">
                       <span class="workgraph-create-hint text-text-weaker">
                         <kbd>⌘</kbd> <kbd>↵</kbd> to create
@@ -321,7 +559,7 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
                         <Button type="button" size="small" variant="ghost" onClick={closeCreating}>
                           Cancel
                         </Button>
-                        <Button type="submit" size="small" variant="primary" disabled={!title().trim() || submitting()}>
+                        <Button type="submit" size="small" variant="primary" disabled={!title().trim() || submitting() || createOverrideInvalid()}>
                           {submitting() ? "Creating…" : "Create"}
                         </Button>
                       </div>
@@ -332,7 +570,7 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
             </DialogRoot.Portal>
           </DialogRoot>
           <Show when={!creating() && mutationError()}>{(error) => <div class="workgraph-toast"><StatusBanner error={error()} retry={retryMutation} /></div>}</Show>
-          <Show when={syncError()}>{(error) => <div class="workgraph-toast"><StatusBanner error={error()} retry={() => { setSyncError(undefined); void refetch() }} /></div>}</Show>
+          <Show when={sync.error()}>{(error) => <div class="workgraph-toast"><StatusBanner error={error()} retry={sync.retry} /></div>}</Show>
           <Show when={reconnecting()}>
             <div class="mb-6 border-y border-border-weak-base px-3 py-2 text-[12px] text-text-weak" role="status">
               Reconnecting to WorkGraph…
@@ -363,18 +601,18 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
                   relativeTime={relativeTime}
                   client={client}
                   mutate={mutate}
-                  onOpenStreamSettings={setStreamSettings}
+                  onOpenStreamSettings={openStreamSettings}
+                  onOpenSession={props.onOpenSession}
                 />
               </div>
             </Match>
           </Switch>
+            </div>
+            <Show when={contextMode() === "inline"}>{waitingCard("inline")}</Show>
+          </div>
         </div>
       </div>
-      {/* Contextual "Needs you" card: only while attention exists AND the panel's
-          Needs-you tab isn't already open. Nothing renders at zero attention. */}
-      <Show when={card.visible(needsYouOpen())}>
-        <WaitingCard items={attentionItems()} total={attentionTotal()} working={activeAttempts().length} onOpenPanel={() => openPanelTab("attention")} onDismiss={card.markAllSeen} onSelect={selectWaiting} />
-      </Show>
+      <Show when={contextMode() === "floating"}>{waitingCard("floating")}</Show>
       {/* The two WorkGraph tabs + the active view live in the one shared panel. */}
       <Show when={props.panel}>
         {(panel) => (
@@ -383,13 +621,13 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
               {(slot) => (
                 <Portal mount={slot()}>
                   <div class="flex h-full items-center gap-0.5 pl-2" role="tablist" aria-label="WorkGraph panel">
-                    <PanelTab active={panel().mode() === "attention"} onClick={() => openPanelTab("attention")}>
+                    <PanelTab ref={(element) => (needsYouTabRef = element)} active={panel().mode() === "attention"} onClick={() => openPanelTab("attention")}>
                       Needs you
-                      <Show when={hasAttention()}>
+                      <Show when={card.unread() > 0}>
                         <span class="workgraph-attention-dot" aria-hidden="true" />
                       </Show>
                     </PanelTab>
-                    <PanelTab active={panel().mode() === "settings"} onClick={() => openPanelTab("settings")}>
+                    <PanelTab active={panel().mode() === "settings"} onClick={openWorkGraphSettings}>
                       Settings
                     </PanelTab>
                   </div>
@@ -398,11 +636,11 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
             </Show>
             <Show when={panel().bodySlot()}>
               {(slot) => (
-                <Portal mount={slot()}>
+                <Portal mount={slot()} ref={(element) => element.classList.add("workgraph-panel-body-portal")}>
                   <Switch>
                     <Match when={panel().mode() === "attention"}>
                       <WaitingPanelBody
-                        items={attentionItems()}
+                        items={card.items()}
                         total={attentionTotal()}
                         hasMore={!!attentionNextCursor()}
                         loading={attentionLoading()}
@@ -410,12 +648,18 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
                         loaded={attentionLoaded()}
                         error={attentionError()}
                         retry={() => void loadAttention()}
+                        unread={card.unread()}
+                        onMarkAllRead={() => void acknowledgeAttention(source.markAllRead)}
+                        onClear={() => void acknowledgeAttention(source.clear)}
                         onLoadMore={() => void loadAttention(attentionNextCursor())}
                         onSelect={selectWaiting}
                       />
                     </Match>
                     <Match when={panel().mode() === "settings"}>
-                      <WorkGraphSettingsView active={panel().mode() === "settings"} source={workgraphSettingsSource} onClose={() => panel().close()} />
+                      <WorkGraphSettingsPanel active workgraphSource={workgraphSettingsSource} streamSource={streamSettingsSource} stream={streamSettings()} capabilities={capabilityCatalog()} capabilitiesError={capabilityResourceError()} capabilitiesLoading={capabilities.loading} localProjects={props.localProjects} onChooseLocalProject={props.onChooseLocalProject} onClose={() => {
+                        setStreamSettings(undefined)
+                        panel().close()
+                      }} />
                     </Match>
                   </Switch>
                 </Portal>
@@ -424,22 +668,22 @@ export function WorkGraphContent(props: { request?: typeof fetch; client?: WorkG
           </>
         )}
       </Show>
-      <WaitingItemDialog selection={selectedWaiting()} source={source} onClose={() => setSelectedWaiting(undefined)} onResolved={resolvedWaiting} onOpenSettings={() => props.panel?.open("settings")} />
-      <StreamSettingsDialog open={!!streamSettings()} onClose={() => setStreamSettings(undefined)} stream={streamSettings()} source={streamSettingsSource} />
+      <WaitingItemDialog selection={selectedWaiting()?.item} source={source} onClose={closeWaiting} onResolved={resolvedWaiting} onOpenSettings={openWorkGraphSettings} onOpenSession={props.onOpenSession} />
     </main>
   )
 }
 
-function PanelTab(props: { active: boolean; onClick: () => void; children: JSX.Element }) {
+function PanelTab(props: { active: boolean; onClick: () => void; children: JSX.Element; ref?: (element: HTMLButtonElement) => void }) {
   return (
     <button
+      ref={props.ref}
       type="button"
       role="tab"
       aria-selected={props.active}
       class="flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors"
       classList={{
         "bg-surface-base text-text-strong": props.active,
-        "text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
+        "text-text-base hover:bg-surface-base-hover hover:text-text-base": !props.active,
       }}
       onClick={props.onClick}
     >
@@ -525,6 +769,13 @@ function StatusBanner(props: { error: WorkGraphApiError; retry: () => void; retr
 
 function normalizeError(error: unknown) {
   return error instanceof WorkGraphApiError ? error : new WorkGraphApiError("request_failed", error instanceof Error ? error.message : String(error))
+}
+
+// Resolves after the next animation frame — the point by which a closing modal
+// dialog has performed its one deferred focus-restoration. Registered after the
+// dialog's own frame, so focus work chained on this runs strictly afterwards.
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
 }
 
 function relativeTime(timestamp: number) {

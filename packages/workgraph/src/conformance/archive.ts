@@ -215,6 +215,7 @@ function secretBearing(archive: WorkGraphArchive): WorkGraphArchive {
 
 function context(ownerUserId: string): WorkGraphContext {
   return {
+    organizationId: branded("organization"),
     ownerUserId: branded<OwnerUserID>(ownerUserId),
     actor: { type: "user", id: branded(ownerUserId) },
     requestId: branded(`request_${ownerUserId}`),

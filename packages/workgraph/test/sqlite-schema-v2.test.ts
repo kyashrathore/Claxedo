@@ -40,6 +40,7 @@ describe("WorkGraph SQLite v2 schema", () => {
       "wg_v2_admission_proposals",
       "wg_v2_archive_restores",
       "wg_v2_attempts",
+      "wg_v2_attention_acknowledgements",
       "wg_v2_change_cursors",
       "wg_v2_changes",
       "wg_v2_decision_work_items",
@@ -82,44 +83,61 @@ describe("WorkGraph SQLite v2 schema", () => {
         .filter((column) => column.pk > 0)
         .sort((left, right) => left.pk - right.pk)
         .map((column) => column.name)
-      expect(primaryKey[0], `${table} primary key`).toBe("owner_user_id")
+      expect(primaryKey.slice(0, 2), `${table} primary key`).toEqual(["organization_id", "owner_user_id"])
       expect(columns(db, table).map((column) => column.name), `${table} schema version`).toContain("schema_version")
 
       const lookupIndexes = indexes(db, table).filter((index) => !index.name.startsWith("sqlite_autoindex"))
-      for (const index of lookupIndexes) expect(index.columns[0], `${index.name} on ${table}`).toBe("owner_user_id")
+      for (const index of lookupIndexes) expect(index.columns.slice(0, 2), `${index.name} on ${table}`).toEqual(["organization_id", "owner_user_id"])
     }
+  })
+
+  test("replaces a legacy global execution recovery index with an exact tenant-leading index", () => {
+    const db = database()
+    initializeWorkGraphSqliteSchema(db)
+    db.exec(`
+      DROP INDEX wg_v2_streams_execution_idx;
+      CREATE INDEX wg_v2_streams_execution_idx ON wg_v2_streams(execution_state, updated_at);
+    `)
+
+    initializeWorkGraphSqliteSchema(db)
+
+    expect(indexes(db, "wg_v2_streams").find((index) => index.name === "wg_v2_streams_execution_idx"))
+      .toEqual({
+        name: "wg_v2_streams_execution_idx",
+        columns: ["organization_id", "owner_user_id", "execution_state", "updated_at"],
+      })
   })
 
   test("enforces owner-bound relationships and monotonic ordering constraints", () => {
     const db = database()
     initializeWorkGraphSqliteSchema(db)
     db.exec(`
-      INSERT INTO wg_v2_workgraphs (owner_user_id, id, created_at, updated_at)
-      VALUES ('user_a', 'graph_a', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
-      INSERT INTO wg_v2_streams (owner_user_id, id, workgraph_id, title, purpose, lifecycle, created_at, updated_at)
-      VALUES ('user_a', 'stream_a', 'graph_a', 'Ship', 'Ship product', 'active', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
-      INSERT INTO wg_v2_operation_results (owner_user_id, id, command_type, request_hash, result_status, result_json, created_at)
-      VALUES ('user_a', 'op_1', 'create_stream', 'hash_1', 200, '{}', '2026-07-13T00:00:00.000Z');
-      INSERT INTO wg_v2_work_items (owner_user_id, id, stream_id, outcome_id, title, lifecycle, created_at, updated_at)
-      VALUES ('user_a', 'item_1', 'stream_a', NULL, 'Stream-level item', 'ready', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
-      INSERT INTO wg_v2_work_sources (owner_user_id, id, workgraph_id, title, latest_revision_number, created_at, updated_at)
-      VALUES ('user_a', 'source_1', 'graph_a', 'Plan', 2, '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
-      INSERT INTO wg_v2_work_source_revisions (owner_user_id, id, work_source_id, revision_number, content, content_hash, created_at)
+      INSERT INTO wg_v2_workgraphs (organization_id, owner_user_id, id, created_at, updated_at)
+      VALUES ('organization_a', 'user_a', 'graph_a', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
+      INSERT INTO wg_v2_streams (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, created_at, updated_at)
+      VALUES ('organization_a', 'user_a', 'stream_a', 'graph_a', 'Ship', 'Ship product', 'active', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
+      INSERT INTO wg_v2_operation_results (organization_id, owner_user_id, id, command_type, request_hash, result_status, result_json, created_at)
+      VALUES ('organization_a', 'user_a', 'op_1', 'create_stream', 'hash_1', 200, '{}', '2026-07-13T00:00:00.000Z');
+      INSERT INTO wg_v2_work_items (organization_id, owner_user_id, id, stream_id, outcome_id, title, lifecycle, created_at, updated_at)
+      VALUES ('organization_a', 'user_a', 'item_1', 'stream_a', NULL, 'Stream-level item', 'ready', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
+      INSERT INTO wg_v2_work_sources (organization_id, owner_user_id, id, workgraph_id, title, latest_revision_number, created_at, updated_at)
+      VALUES ('organization_a', 'user_a', 'source_1', 'graph_a', 'Plan', 2, '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
+      INSERT INTO wg_v2_work_source_revisions (organization_id, owner_user_id, id, work_source_id, revision_number, content, content_hash, created_at)
       VALUES
-        ('user_a', 'revision_1', 'source_1', 1, 'First', 'hash_revision_1', '2026-07-13T00:00:00.000Z'),
-        ('user_a', 'revision_2', 'source_1', 2, 'Second', 'hash_revision_2', '2026-07-13T00:00:01.000Z');
-      INSERT INTO wg_v2_record_source_revisions (owner_user_id, id, record_type, record_id, work_source_id, source_revision_id, ordinal, created_at)
+        ('organization_a', 'user_a', 'revision_1', 'source_1', 1, 'First', 'hash_revision_1', '2026-07-13T00:00:00.000Z'),
+        ('organization_a', 'user_a', 'revision_2', 'source_1', 2, 'Second', 'hash_revision_2', '2026-07-13T00:00:01.000Z');
+      INSERT INTO wg_v2_record_source_revisions (organization_id, owner_user_id, id, record_type, record_id, work_source_id, source_revision_id, ordinal, created_at)
       VALUES
-        ('user_a', 'source_ref_1', 'stream', 'stream_a', 'source_1', 'revision_1', 0, '2026-07-13T00:00:00.000Z'),
-        ('user_a', 'source_ref_2', 'stream', 'stream_a', 'source_1', 'revision_2', 1, '2026-07-13T00:00:01.000Z');
-      INSERT INTO wg_v2_attempts (owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json, created_at, updated_at)
-      VALUES ('user_a', 'attempt_1', 'stream_a', 'item_1', 1, 'admitted', '{}', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
-      INSERT INTO wg_v2_evidence (owner_user_id, id, stream_id, subject_type, subject_id, requirement_id, source_attempt_id, evidence_kind, summary, provenance_json, created_at)
-      VALUES ('user_a', 'evidence_1', 'stream_a', 'work_item', 'item_1', 'requirement_1', 'attempt_1', 'test', 'Focused proof', '{}', '2026-07-13T00:00:00.000Z');
-      INSERT INTO wg_v2_events (owner_user_id, id, stream_id, sequence, schema_version, operation_id, event_type, actor_type, actor_id, request_id, payload_json, occurred_at)
-      VALUES ('user_a', 'event_1', 'stream_a', 1, 1, 'op_1', 'stream.created', 'user', 'user_a', 'request_1', '{}', '2026-07-13T00:00:00.000Z');
-      INSERT INTO wg_v2_operation_results (owner_user_id, id, command_type, request_hash, result_status, result_json, created_at)
-      VALUES ('user_a', 'op_2', 'update_stream', 'hash_2', 200, '{}', '2026-07-13T00:00:01.000Z');
+        ('organization_a', 'user_a', 'source_ref_1', 'stream', 'stream_a', 'source_1', 'revision_1', 0, '2026-07-13T00:00:00.000Z'),
+        ('organization_a', 'user_a', 'source_ref_2', 'stream', 'stream_a', 'source_1', 'revision_2', 1, '2026-07-13T00:00:01.000Z');
+      INSERT INTO wg_v2_attempts (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json, created_at, updated_at)
+      VALUES ('organization_a', 'user_a', 'attempt_1', 'stream_a', 'item_1', 1, 'admitted', '{}', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z');
+      INSERT INTO wg_v2_evidence (organization_id, owner_user_id, id, stream_id, subject_type, subject_id, requirement_id, source_attempt_id, evidence_kind, summary, provenance_json, created_at)
+      VALUES ('organization_a', 'user_a', 'evidence_1', 'stream_a', 'work_item', 'item_1', 'requirement_1', 'attempt_1', 'test', 'Focused proof', '{}', '2026-07-13T00:00:00.000Z');
+      INSERT INTO wg_v2_events (organization_id, owner_user_id, id, stream_id, sequence, schema_version, operation_id, event_type, actor_type, actor_id, request_id, payload_json, occurred_at)
+      VALUES ('organization_a', 'user_a', 'event_1', 'stream_a', 1, 1, 'op_1', 'stream.created', 'user', 'user_a', 'request_1', '{}', '2026-07-13T00:00:00.000Z');
+      INSERT INTO wg_v2_operation_results (organization_id, owner_user_id, id, command_type, request_hash, result_status, result_json, created_at)
+      VALUES ('organization_a', 'user_a', 'op_2', 'update_stream', 'hash_2', 200, '{}', '2026-07-13T00:00:01.000Z');
     `)
     expect(db.prepare("SELECT outcome_id FROM wg_v2_work_items WHERE owner_user_id = ? AND id = ?").get("user_a", "item_1")).toEqual({ outcome_id: null })
     expect(
@@ -137,26 +155,26 @@ describe("WorkGraph SQLite v2 schema", () => {
 
     expect(() =>
       db.exec(`
-        INSERT INTO wg_v2_events (owner_user_id, id, stream_id, sequence, schema_version, operation_id, event_type, actor_type, actor_id, request_id, payload_json, occurred_at)
-        VALUES ('user_a', 'event_2', 'stream_a', 1, 1, 'op_2', 'stream.updated', 'user', 'user_a', 'request_2', '{}', '2026-07-13T00:00:01.000Z')
+        INSERT INTO wg_v2_events (organization_id, owner_user_id, id, stream_id, sequence, schema_version, operation_id, event_type, actor_type, actor_id, request_id, payload_json, occurred_at)
+        VALUES ('organization_a', 'user_a', 'event_2', 'stream_a', 1, 1, 'op_2', 'stream.updated', 'user', 'user_a', 'request_2', '{}', '2026-07-13T00:00:01.000Z')
       `),
     ).toThrow()
     expect(() =>
       db.exec(`
-        INSERT INTO wg_v2_stream_sequences (owner_user_id, stream_id, next_sequence, created_at, updated_at)
-        VALUES ('user_a', 'stream_a', 0, '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z')
+        INSERT INTO wg_v2_stream_sequences (organization_id, owner_user_id, stream_id, next_sequence, created_at, updated_at)
+        VALUES ('organization_a', 'user_a', 'stream_a', 0, '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z')
       `),
     ).toThrow()
     expect(() =>
       db.exec(`
-        INSERT INTO wg_v2_change_cursors (owner_user_id, next_cursor, created_at, updated_at)
-        VALUES ('user_a', 0, '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z')
+        INSERT INTO wg_v2_change_cursors (organization_id, owner_user_id, next_cursor, created_at, updated_at)
+        VALUES ('organization_a', 'user_a', 0, '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z')
       `),
     ).toThrow()
     expect(() =>
       db.exec(`
-        INSERT INTO wg_v2_outcomes (owner_user_id, id, stream_id, title, lifecycle, success_criteria_json, created_at, updated_at)
-        VALUES ('user_b', 'outcome_b', 'stream_a', 'Cross-owner', 'active', '[]', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z')
+        INSERT INTO wg_v2_outcomes (organization_id, owner_user_id, id, stream_id, title, lifecycle, success_criteria_json, created_at, updated_at)
+        VALUES ('organization_b', 'user_b', 'outcome_b', 'stream_a', 'Cross-owner', 'active', '[]', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z')
       `),
     ).toThrow()
   })
@@ -203,10 +221,10 @@ describe("WorkGraph SQLite v2 schema", () => {
     ]))
     expect(columns(db, "wg_v2_work_items").map((column) => column.name)).toContain("abandoned_at")
     db.exec(`
-      INSERT INTO wg_v2_workgraphs (owner_user_id, id, created_at, updated_at)
-      VALUES ('owner', 'workgraph_default', 1, 1);
-      INSERT INTO wg_v2_streams (owner_user_id, id, workgraph_id, title, purpose, lifecycle, created_at, updated_at)
-      VALUES ('owner', 'stream_1', 'workgraph_default', 'Ship', 'Ship', 'active', 1, 1);
+      INSERT INTO wg_v2_workgraphs (organization_id, owner_user_id, id, created_at, updated_at)
+      VALUES ('organization', 'owner', 'workgraph_default', 1, 1);
+      INSERT INTO wg_v2_streams (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, created_at, updated_at)
+      VALUES ('organization', 'owner', 'stream_1', 'workgraph_default', 'Ship', 'Ship', 'active', 1, 1);
     `)
     expect(db.prepare("SELECT visibility FROM wg_v2_streams WHERE owner_user_id = 'owner'").get()).toEqual({ visibility: "visible" })
   })

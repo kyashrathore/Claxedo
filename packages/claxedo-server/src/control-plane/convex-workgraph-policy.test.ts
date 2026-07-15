@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { readFile } from "node:fs/promises"
 import schema from "../../../../convex/schema"
 import {
   requireOwnedWorkGraphContext,
   requireTrustedWorkGraphOwner,
   requireTrustedWorkGraphOwnerSubject,
 } from "../../../../convex/workgraphModel"
+import { migrateWorkGraphTenancyRow } from "../../../../convex/migrations"
 
 const workGraphTables = [
   "workgraphs",
@@ -18,7 +20,6 @@ const workGraphTables = [
   "workgraph_work_items",
   "workgraph_work_item_dependencies",
   "workgraph_attempts",
-  "workgraph_connection_metadata",
   "workgraph_attempt_connection_bindings",
   "workgraph_leases",
   "workgraph_decisions",
@@ -26,16 +27,24 @@ const workGraphTables = [
   "workgraph_evidence",
   "workgraph_durable_effect_receipts",
   "workgraph_recaps",
+  "workgraph_notifications",
   "workgraph_admission_proposals",
+  "workgraph_attention_entries",
+  "workgraph_attention_summaries",
   "workgraph_operation_results",
   "workgraph_stream_sequences",
   "workgraph_change_cursors",
   "workgraph_events",
   "workgraph_changes",
+  "workgraph_record_source_revisions",
+  "workgraph_runtime_effects",
+  "workgraph_archive_restores",
+  "workgraph_owner_deletion_barriers",
   "workgraph_outbox",
   "workgraph_due_jobs",
   "workgraph_cleanup_receipts",
   "workgraph_migration_intake",
+  "workgraph_execution_capabilities",
 ] as const
 
 afterEach(() => {
@@ -43,7 +52,7 @@ afterEach(() => {
 })
 
 describe("Convex WorkGraph persistence policy", () => {
-  test("defines the complete owner-first cloud persistence vocabulary", () => {
+  test("defines the complete organization-and-owner cloud persistence vocabulary", () => {
     for (const tableName of workGraphTables) {
       const table = schema.tables[tableName]
       expect(table, tableName).toBeDefined()
@@ -54,10 +63,17 @@ describe("Convex WorkGraph persistence policy", () => {
       })
       const indexes = (table as unknown as { indexes: Array<{ fields: string[] }> }).indexes
       expect(
-        indexes.some((index) => index.fields[0] === "owner_user_id"),
+        indexes.length > 0 &&
+          indexes.every((index) => index.fields[0] === "organization_id" && index.fields[1] === "owner_user_id"),
         tableName,
       ).toBe(true)
     }
+    expect(schema.tables.workgraph_connection_metadata.validator.fields.organization_id).toMatchObject({
+      isOptional: "required",
+      kind: "id",
+      tableName: "orgs",
+    })
+    expect(schema.tables.workgraph_connection_metadata.validator.fields).not.toHaveProperty("owner_user_id")
   })
 
   test("keeps exact multi-source provenance and optional Outcome placement in public records", () => {
@@ -77,7 +93,44 @@ describe("Convex WorkGraph persistence policy", () => {
     expect(schema.tables.workgraph_work_items.validator.fields.outcome_id.isOptional).toBe("optional")
     expect(
       (schema.tables.workgraph_attempts as unknown as { indexes: Array<{ fields: string[] }> }).indexes,
-    ).toContainEqual(expect.objectContaining({ fields: ["state", "updated_at"] }))
+    ).toContainEqual(expect.objectContaining({ fields: ["organization_id", "owner_user_id", "state", "updated_at"] }))
+  })
+
+  test("keeps every WorkGraph runtime and background access on tuple-leading indexes", async () => {
+    const sources = await Promise.all(
+      [
+        "workgraphArchive.ts",
+        "workgraphAttention.ts",
+        "workgraphBackground.ts",
+        "workgraphCapabilities.ts",
+        "workgraphChanges.ts",
+        "workgraphCommands.ts",
+        "workgraphIntake.ts",
+        "workgraphNotifications.ts",
+        "workgraphRuntime.ts",
+      ].map((file) => readFile(new URL(`../../../../convex/${file}`, import.meta.url), "utf8")),
+    )
+    const runtime = sources.join("\n")
+
+    expect(runtime).not.toMatch(/\.query\("(?:workgraph|work_|work_sources)[^\n]*"\)\s*\.filter/)
+    expect(runtime).not.toMatch(/withIndex\("by_owner/)
+    expect(runtime).not.toMatch(/withIndex\("by_(?:execution_state_updated|recap_due|state_updated)/)
+    for (const worker of [
+      "claimLaunches",
+      "claimControlEffects",
+      "listRunning",
+      "drainSessionIntake",
+      "claimRecaps",
+      "listRunningRecaps",
+      "claimSourcePlans",
+      "listRunningSourcePlans",
+    ]) {
+      const start = runtime.indexOf(`export const ${worker}`)
+      const end = runtime.indexOf("export const ", start + 13)
+      expect(runtime.slice(start, end === -1 ? undefined : end)).toMatch(
+        /args:\s*\{\s*organization_id: v\.id\("orgs"\),\s*owner_user_id: v\.id\("users"\)/,
+      )
+    }
   })
 
   test("does not place provider credentials in personal WorkGraph documents", () => {
@@ -91,6 +144,60 @@ describe("Convex WorkGraph persistence policy", () => {
     expect(Object.keys(schema.tables.workgraph_source_views.validator.fields)).toEqual(
       expect.arrayContaining(["team_connection_id", "provider_user_id", "filters"]),
     )
+  })
+
+  test("never infers tenancy from current membership and removes unscoped rows from active storage", async () => {
+    const rows = {
+      org_memberships: [{ _id: "membership", org_id: "org_only", user_id: "owner" }],
+      workgraph_tenancy_migration_quarantine: [] as Record<string, unknown>[],
+    }
+    const deleted: string[] = []
+    const ctx = {
+      db: {
+        query: (table: keyof typeof rows) => {
+          let selected = [...rows[table]] as Record<string, unknown>[]
+          const chain = {
+            withIndex: (_index: string, build: (query: any) => unknown) => {
+              const filters: Array<[string, unknown]> = []
+              const query = {
+                eq: (field: string, value: unknown) => {
+                  filters.push([field, value])
+                  return query
+                },
+              }
+              build(query)
+              selected = selected.filter((row) => filters.every(([field, value]) => row[field] === value))
+              return chain
+            },
+            collect: async () => selected,
+            unique: async () => selected[0] ?? null,
+          }
+          return chain
+        },
+        insert: async (_table: string, value: Record<string, unknown>) => {
+          rows.workgraph_tenancy_migration_quarantine.push(value)
+        },
+        delete: async (id: string) => {
+          deleted.push(id)
+        },
+        patch: async () => {
+          throw new Error("Membership inference attempted to assign organization_id")
+        },
+      },
+    }
+    const row = { _id: "legacy_stream", owner_user_id: "owner", id: "stream" }
+
+    await migrateWorkGraphTenancyRow(ctx, "workgraph_streams", row)
+
+    expect(deleted).toEqual(["legacy_stream"])
+    expect(rows.workgraph_tenancy_migration_quarantine).toEqual([
+      expect.objectContaining({
+        record_id: "legacy_stream",
+        candidate_organization_ids: ["org_only"],
+        reason: "missing_organization",
+        record: row,
+      }),
+    ])
   })
 
   test("leaves production-shaped pre-WorkGraph rows compatible", () => {

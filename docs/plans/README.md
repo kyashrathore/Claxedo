@@ -9,7 +9,7 @@ explain a maintained package or cross-package delivery contract.
 ## Retained Plans
 
 - [WorkGraph end-to-end execution goal](./2026-07-13-001-goal-execute-workgraph-end-to-end.md)
-  - Active long-running goal for delivering the personal WorkGraph across the embedded backend-neutral service, SQLite, Convex, Claxedo Cloud, the single main app surface, the existing global WorkspacePanel, exact versioned Work Sources, the initial Docs v2 adapter, Connections-backed personal candidates, strict Session planning and Recaps, and core E2E verification. Repository backend verification is green; staging deployment and its signed browser proof remain open.
+  - Active long-running goal for delivering the tenant-scoped personal WorkGraph across the service embedded in `claxedo-server`, SQLite, Convex, Claxedo Cloud, the single main app surface, the existing global WorkspacePanel, exact versioned Work Sources, the Docs v2 adapter seam, Connections-backed personal candidates, strict Session planning and Recaps, core conformance v5, opaque tenant-bound cursors, expiring capability catalogs, durable execution compensation, and core E2E verification. Local embedded tools invoke the service directly; standalone stdio MCP uses authenticated HTTP; hosted embedded tools require durable Session tenant provenance. Focused repository verification is green; the triggerable Docs journey, final integrated/browser proof, and configured staging deployment remain open.
 
 - [Connections framework](./2026-07-03-004-feat-connections-framework-plan.md)
   - Retained because `packages/claxedo-server` source comments still refer to

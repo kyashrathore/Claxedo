@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { client, type SqliteInput } from "../../sqlite"
 
 export type LegacyMigrationTarget = {
+  organizationId: string
   ownerUserId: string
   workgraphId: string
   now: () => string
@@ -28,6 +29,7 @@ export type LegacyMigrationIntake = {
 }
 
 export type LegacyMigrationReport = {
+  organizationId: string
   ownerUserId: string
   workgraphId: string
   exportedAt: string
@@ -149,6 +151,7 @@ export function exportLegacyWorkGraphMigration(input: SqliteInput, target: Legac
   ]
 
   return {
+    organizationId: target.organizationId,
     ownerUserId: target.ownerUserId,
     workgraphId: target.workgraphId,
     exportedAt: target.now(),
@@ -160,24 +163,27 @@ export function exportLegacyWorkGraphMigration(input: SqliteInput, target: Legac
 
 export function applyLegacyWorkGraphMigration(input: SqliteInput, target: LegacyMigrationTarget) {
   const report = exportLegacyWorkGraphMigration(input, target)
+  const exportedAt = Date.parse(report.exportedAt)
+  if (!Number.isFinite(exportedAt)) throw new Error("Legacy migration requires a valid export timestamp")
   const db = client(input)
   db.transaction(() => {
     db.prepare(
-      `INSERT OR IGNORE INTO wg_v2_workgraphs (owner_user_id, id, created_at, updated_at)
-       VALUES (?, ?, ?, ?)`,
-    ).run(report.ownerUserId, report.workgraphId, report.exportedAt, report.exportedAt)
+      `INSERT OR IGNORE INTO wg_v2_workgraphs (organization_id, owner_user_id, id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(report.organizationId, report.ownerUserId, report.workgraphId, exportedAt, exportedAt)
 
     for (const source of report.sources) {
       db.prepare(
         `INSERT OR IGNORE INTO wg_v2_work_sources
-           (owner_user_id, id, workgraph_id, title, source_kind, latest_revision_number, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'manual', 1, ?, ?)`,
-      ).run(report.ownerUserId, source.sourceId, report.workgraphId, source.title, report.exportedAt, report.exportedAt)
+           (organization_id, owner_user_id, id, workgraph_id, title, source_kind, latest_revision_number, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'manual', 1, ?, ?)`,
+      ).run(report.organizationId, report.ownerUserId, source.sourceId, report.workgraphId, source.title, exportedAt, exportedAt)
       db.prepare(
         `INSERT OR IGNORE INTO wg_v2_work_source_revisions
-           (owner_user_id, id, work_source_id, revision_number, content, content_hash, origin_kind, origin_reference_json, created_by_json, created_at)
-         VALUES (?, ?, ?, 1, ?, ?, 'manual', ?, ?, ?)`,
+           (organization_id, owner_user_id, id, work_source_id, revision_number, content, content_hash, origin_kind, origin_reference_json, created_by_json, created_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?, 'manual', ?, ?, ?)`,
       ).run(
+        report.organizationId,
         report.ownerUserId,
         source.revisionId,
         source.sourceId,
@@ -185,17 +191,18 @@ export function applyLegacyWorkGraphMigration(input: SqliteInput, target: Legacy
         source.contentHash,
         JSON.stringify({ legacyTable: source.legacyTable, legacyRecordId: source.legacyRecordId }),
         JSON.stringify({ type: "system", id: "legacy_migration" }),
-        report.exportedAt,
+        exportedAt,
       )
-      assertSourceIdentity(db, report.ownerUserId, source)
+      assertSourceIdentity(db, report.organizationId, report.ownerUserId, source)
     }
 
     for (const row of report.intake) {
       db.prepare(
         `INSERT OR IGNORE INTO wg_v2_migration_intake
-           (owner_user_id, id, legacy_table, legacy_record_id, intake_kind, reason, raw_reference_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (organization_id, owner_user_id, id, legacy_table, legacy_record_id, intake_kind, reason, raw_reference_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
+        report.organizationId,
         report.ownerUserId,
         row.id,
         row.legacyTable,
@@ -203,10 +210,10 @@ export function applyLegacyWorkGraphMigration(input: SqliteInput, target: Legacy
         row.intakeKind,
         row.reason,
         JSON.stringify(row.rawReference),
-        report.exportedAt,
-        report.exportedAt,
+        exportedAt,
+        exportedAt,
       )
-      assertIntakeIdentity(db, report.ownerUserId, row)
+      assertIntakeIdentity(db, report.organizationId, report.ownerUserId, row)
     }
   })()
 
@@ -214,6 +221,7 @@ export function applyLegacyWorkGraphMigration(input: SqliteInput, target: Legacy
 }
 
 function requireTarget(target: LegacyMigrationTarget) {
+  if (!target.organizationId.trim()) throw new Error("Legacy migration requires one trusted organization ID")
   if (!target.ownerUserId.trim()) throw new Error("Legacy migration requires one trusted owner user ID")
   if (!target.workgraphId.trim()) throw new Error("Legacy migration requires one target WorkGraph ID")
 }
@@ -260,11 +268,12 @@ function attemptIntake(target: LegacyMigrationTarget, attempt: LegacyAttempt): L
   }
 }
 
-function assertSourceIdentity(db: ReturnType<typeof client>, ownerUserId: string, source: LegacyMigrationSource) {
-  const parent = db.prepare("SELECT title, source_kind FROM wg_v2_work_sources WHERE owner_user_id = ? AND id = ?").get(ownerUserId, source.sourceId) as
+function assertSourceIdentity(db: ReturnType<typeof client>, organizationId: string, ownerUserId: string, source: LegacyMigrationSource) {
+  const parent = db.prepare("SELECT title, source_kind FROM wg_v2_work_sources WHERE organization_id = ? AND owner_user_id = ? AND id = ?").get(organizationId, ownerUserId, source.sourceId) as
     | { title: string; source_kind: string }
     | undefined
-  const revision = db.prepare("SELECT work_source_id, content_hash FROM wg_v2_work_source_revisions WHERE owner_user_id = ? AND id = ?").get(
+  const revision = db.prepare("SELECT work_source_id, content_hash FROM wg_v2_work_source_revisions WHERE organization_id = ? AND owner_user_id = ? AND id = ?").get(
+    organizationId,
     ownerUserId,
     source.revisionId,
   ) as { work_source_id: string; content_hash: string } | undefined
@@ -272,12 +281,12 @@ function assertSourceIdentity(db: ReturnType<typeof client>, ownerUserId: string
   throw new Error(`Legacy migration ID collision for sources_current:${source.legacyRecordId}`)
 }
 
-function assertIntakeIdentity(db: ReturnType<typeof client>, ownerUserId: string, intake: LegacyMigrationIntake) {
+function assertIntakeIdentity(db: ReturnType<typeof client>, organizationId: string, ownerUserId: string, intake: LegacyMigrationIntake) {
   const row = db.prepare(
     `SELECT id, intake_kind, reason, raw_reference_json
      FROM wg_v2_migration_intake
-     WHERE owner_user_id = ? AND legacy_table = ? AND legacy_record_id = ?`,
-  ).get(ownerUserId, intake.legacyTable, intake.legacyRecordId) as
+     WHERE organization_id = ? AND owner_user_id = ? AND legacy_table = ? AND legacy_record_id = ?`,
+  ).get(organizationId, ownerUserId, intake.legacyTable, intake.legacyRecordId) as
     | { id: string; intake_kind: string; reason: string; raw_reference_json: string }
     | undefined
   if (

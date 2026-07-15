@@ -2,6 +2,8 @@ import {
   connectionWebhookSigningProviderId,
   createConnectionWebhookVerifier,
   githubConnectionWebhookVerifier,
+  jiraConnectionWebhookVerifier,
+  linearConnectionWebhookVerifier,
   type ConnectionWebhookVerifier,
 } from "@claxedo/connections"
 import { anyApi, type FunctionReference } from "convex/server"
@@ -43,12 +45,16 @@ export function createHostedConnectionWebhookVerifier(input: Readonly<{
         service_token: input.serviceToken,
         connectionId,
       }) as Metadata | null
-      if (!metadata || metadata.id !== connectionId || metadata.integrationId !== "github" ||
+      if (!metadata || metadata.id !== connectionId ||
         metadata.status !== "connected" || !metadata.capabilities.includes("work-source")) return undefined
       const credentials = input.credentials?.(metadata.orgId) ?? hostedOrgCredentials(metadata.orgId, input.env)
       const secret = await credentials.resolveCredentialSecret?.(connectionWebhookSigningProviderId(connectionId))
-      return secret ? { provider: "github", secret } : undefined
+      return secret ? { provider: metadata.integrationId, secret } : undefined
     },
-    providers: { github: githubConnectionWebhookVerifier() },
+    providers: {
+      github: githubConnectionWebhookVerifier(),
+      linear: linearConnectionWebhookVerifier(),
+      jira: jiraConnectionWebhookVerifier(),
+    },
   })
 }

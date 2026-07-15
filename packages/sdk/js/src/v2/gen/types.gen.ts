@@ -3903,6 +3903,7 @@ export type SessionV2Info = {
   projectID: string
   agent?: string
   model?: ModelRef
+  tools?: Array<string>
   cost: number
   tokens: {
     input: number
@@ -11370,6 +11371,7 @@ export type V2SessionCreateData = {
     id?: string
     agent?: string
     model?: ModelRef
+    tools?: Array<string>
     location?: LocationRef
   }
   path?: never
@@ -11979,6 +11981,92 @@ export type V2SessionMessageResponses = {
 }
 
 export type V2SessionMessageResponse = V2SessionMessageResponses[keyof V2SessionMessageResponses]
+
+export type ServerSessionSessionToolUnregisterData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/tool"
+}
+
+export type ServerSessionSessionToolUnregisterErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type ServerSessionSessionToolUnregisterError =
+  ServerSessionSessionToolUnregisterErrors[keyof ServerSessionSessionToolUnregisterErrors]
+
+export type ServerSessionSessionToolUnregisterResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type ServerSessionSessionToolUnregisterResponse =
+  ServerSessionSessionToolUnregisterResponses[keyof ServerSessionSessionToolUnregisterResponses]
+
+export type ServerSessionSessionToolRegisterData = {
+  body: {
+    callbackUrl: string
+    tools: Array<{
+      name: string
+      description: string
+      inputSchema: {
+        [key: string]: unknown
+      }
+      outputSchema?: {
+        [key: string]: unknown
+      }
+    }>
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/tool"
+}
+
+export type ServerSessionSessionToolRegisterErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type ServerSessionSessionToolRegisterError =
+  ServerSessionSessionToolRegisterErrors[keyof ServerSessionSessionToolRegisterErrors]
+
+export type ServerSessionSessionToolRegisterResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type ServerSessionSessionToolRegisterResponse =
+  ServerSessionSessionToolRegisterResponses[keyof ServerSessionSessionToolRegisterResponses]
 
 export type V2SessionMessagesData = {
   body?: never

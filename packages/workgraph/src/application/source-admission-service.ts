@@ -4,6 +4,7 @@ import type {
   AdmissionSelection,
   AdmissionWorkItemInput,
   CommandResult,
+  ExecutionProfileDefaults,
   OperationID,
   StreamID,
   WorkGraphContext,
@@ -21,7 +22,12 @@ export type AdmissionCommandGateway = Readonly<{
 export type SourceAdmissionService = Readonly<{
   propose(
     context: WorkGraphContext,
-    input: Readonly<{ operationId: OperationID; source: WorkSourceRevisionRef; targetStreamId?: StreamID }>,
+    input: Readonly<{
+      operationId: OperationID
+      source: WorkSourceRevisionRef
+      targetStreamId?: StreamID
+      execution?: ExecutionProfileDefaults
+    }>,
   ): Promise<CommandResult>
   dismiss(
     context: WorkGraphContext,
@@ -50,10 +56,21 @@ export function createSourceAdmissionService(gateway: AdmissionCommandGateway): 
   return {
     propose: (
       context: WorkGraphContext,
-      input: Readonly<{ operationId: OperationID; source: WorkSourceRevisionRef; targetStreamId?: StreamID }>,
+      input: Readonly<{
+        operationId: OperationID
+        source: WorkSourceRevisionRef
+        targetStreamId?: StreamID
+        execution?: ExecutionProfileDefaults
+      }>,
     ) => gateway.execute(context, {
       operationId: input.operationId,
-      command: { version: 1, type: "propose_admission", source: input.source, ...(input.targetStreamId ? { targetStreamId: input.targetStreamId } : {}) },
+      command: {
+        version: 1,
+        type: "propose_admission",
+        source: input.source,
+        ...(input.targetStreamId ? { targetStreamId: input.targetStreamId } : {}),
+        ...(input.execution ? { execution: input.execution } : {}),
+      },
     }),
     dismiss: (context, input) => gateway.execute(context, {
       operationId: input.operationId,

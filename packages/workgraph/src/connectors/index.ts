@@ -4,7 +4,7 @@ export type {
   SourceIssueAuthorization,
   SourceIssueConnector,
 } from "./interface"
-export { SourceIssueProviderError, SourceIssueResponseError, SourceIssueTransportError, SourceIssueUnauthorizedError } from "./interface"
+export { SourceIssueConfigurationError, SourceIssueProviderError, SourceIssueResponseError, SourceIssueTransportError, SourceIssueUnauthorizedError } from "./interface"
 export { createGitHubSourceIssueConnector } from "./github/source-view"
 export { createLinearSourceIssueConnector } from "./linear/source-view"
 export { createJiraSourceIssueConnector } from "./jira/source-view"

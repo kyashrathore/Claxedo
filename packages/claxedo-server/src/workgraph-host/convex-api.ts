@@ -12,6 +12,9 @@ type WorkGraphConvexApi = {
     read: ConvexQuery
     readForService: ConvexQuery
   }
+  workgraphAttention: {
+    acknowledgeForService: ConvexMutation
+  }
   workgraphIntake: {
     readForService: ConvexQuery
     executeForService: ConvexMutation
@@ -28,8 +31,16 @@ type WorkGraphConvexApi = {
   }
   workgraphOwnerDeletion: {
     prepareForService: ConvexMutation
+    renewForService: ConvexMutation
     finalizeForService: ConvexMutation
     releaseForService: ConvexMutation
+  }
+  workgraphCapabilities: {
+    attestForService: ConvexMutation
+    readForService: ConvexQuery
+  }
+  workgraphConnections: {
+    resolveWebhookMetadata: ConvexQuery
   }
 }
 

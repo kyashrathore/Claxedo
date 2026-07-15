@@ -160,6 +160,47 @@ export function reconcileArchivedSessionListQueryData(input: {
   }
 }
 
+type SessionListUpdate = {
+  sessionId: string
+  directory: SessionNavigationRow["directory"]
+  title?: string
+  updatedAt?: number
+}
+
+export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
+  for (const query of queryClient.getQueryCache().findAll({
+    predicate: (query) => isSessionListQueryKey(query.queryKey),
+  })) {
+    setSessionListQueryData(query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>, (response) => {
+      if (!response) return response
+      return {
+        ...response,
+        ...(response.items ? { items: reconcileUpdatedSessionListRows(response.items, input) } : {}),
+        ...(response.groups ? {
+          groups: response.groups.map((group) => ({
+            ...group,
+            items: reconcileUpdatedSessionListRows(group.items, input),
+          })),
+        } : {}),
+      }
+    })
+  }
+}
+
+function reconcileUpdatedSessionListRows(
+  rows: readonly SessionNavigationRow[],
+  input: SessionListUpdate,
+) {
+  return rows.map((row) => {
+    if (row.sessionId !== input.sessionId || row.directory !== input.directory) return row
+    return {
+      ...row,
+      title: input.title ?? row.title,
+      updatedAt: input.updatedAt ?? row.updatedAt,
+    }
+  })
+}
+
 function reconcileSessionListResponseAfterArchive(input: {
   response: SessionListResponse
   sessionRef: string
@@ -222,8 +263,8 @@ function sessionListArchiveView(key: readonly unknown[]): NonNullable<SessionLis
   return "active"
 }
 
-function isSessionListQueryKey(key: readonly unknown[], base: string) {
-  return key[0] === "shell" && key[1] === base && key[2] === "sessionList"
+function isSessionListQueryKey(key: readonly unknown[], base?: string) {
+  return key[0] === "shell" && key[2] === "sessionList" && (base === undefined || key[1] === base)
 }
 
 function normalizedBase(url: string | undefined) {

@@ -1007,6 +1007,59 @@ describe("session prompt route", () => {
     expect(seen).toBe(true)
   })
 
+  it("deduplicates exact prompt_async retries while replaying an unsubmitted retry", async () => {
+    const directory = process.cwd()
+    let executions = 0
+    const make = (messages: unknown[] = [], beforeMessages = async () => {}) => SessionRoutes(() =>
+      adapter({
+        getMessages: async () => {
+          await beforeMessages()
+          return messages
+        },
+        async *sendMessage(id) {
+          executions++
+          yield sessionIdle(id)
+        },
+      }))
+    const request = (app: ReturnType<typeof make>, retry = false) => app.request(
+      `http://localhost/session/s1/prompt_async?directory=${encodeURIComponent(directory)}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(retry ? { "x-claxedo-idempotency-retry": "1" } : {}),
+        },
+        body: JSON.stringify({ messageID: "msg-workgraph", parts: [{ type: "text", text: "hello" }] }),
+      },
+    )
+
+    const live = make()
+    expect((await request(live)).status).toBe(204)
+    expect((await request(live, true)).status).toBe(204)
+    await Bun.sleep(0)
+    expect(executions).toBe(1)
+
+    const restored = make([{ info: { id: "msg-workgraph", role: "user" }, parts: [] }])
+    expect((await request(restored, true)).status).toBe(204)
+    await Bun.sleep(0)
+    expect(executions).toBe(1)
+
+    let release!: () => void
+    const concurrent = make([], () => new Promise<void>((resolve) => { release = resolve }))
+    const first = request(concurrent, true)
+    await Bun.sleep(0)
+    const second = request(concurrent, true)
+    release()
+    await Promise.all([first, second])
+    await Bun.sleep(0)
+    expect(executions).toBe(2)
+
+    const prepared = make()
+    expect((await request(prepared, true)).status).toBe(204)
+    await Bun.sleep(0)
+    expect(executions).toBe(3)
+  })
+
   it("returns structured abort result and publishes recovery status", async () => {
     const directory = process.cwd()
     const seen: CompatEvent[] = []

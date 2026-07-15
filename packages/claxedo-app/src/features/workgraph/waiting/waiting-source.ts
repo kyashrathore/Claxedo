@@ -9,9 +9,11 @@ import type {
   IntakeCandidatePage,
   IntakeCandidatePageCursor,
   RecapDto,
+  ReplacementReview,
   WorkGraphDefaultsDto,
   WorkItemAttemptPageCursor,
   WorkItemDto,
+  WorkSourceRevisionRef,
 } from "@claxedo/workgraph/contracts"
 import type { WorkGraphClient } from "../api"
 
@@ -25,6 +27,8 @@ import type { WorkGraphClient } from "../api"
 export type WorkGraphWaitingSource = {
   /** One page of Attention items. Pass the previous page's `nextCursor` to page. */
   waiting: (after?: AttentionCursor) => Promise<AttentionPage>
+  markAllRead: WorkGraphClient["markAllAttentionRead"]
+  clear: WorkGraphClient["clearAttention"]
   proposal: (proposalId: string) => Promise<AdmissionProposalDto>
   workItem: (workItemId: string) => Promise<WorkItemDto>
   /**
@@ -48,12 +52,24 @@ export type WorkGraphWaitingSource = {
   dismissIntakeCandidate: (candidateId: string, expectedVersion: number) => Promise<unknown>
   cancelAttempt: (attemptId: string, expectedVersion: number, reason: string) => Promise<CommandResult>
   retryWorkItem: (workItemId: string, expectedVersion: number) => Promise<CommandResult>
+  /**
+   * Server-truth review for a Work Source *revision* admission (i.e. a proposal
+   * whose `previousSource` is set). Returns the target Stream's title (needed to
+   * fork) and the exact current nonterminal source-linked Tasks eligible for a
+   * Replace, or a disabled status with a clear reason. The eligible set is never
+   * reconstructed from the full snapshot or fabricated from LLM duplicate hints —
+   * when the backend cannot supply the exact set the adapter surfaces it as an
+   * explicit, non-eligible status.
+   */
+  replacementReview: (input: Readonly<{ streamId: string; previousSource: WorkSourceRevisionRef }>) => Promise<ReplacementReview>
 }
 
 /** Adapts the transport client to the Waiting UI's typed data source. */
 export function waitingSourceFromClient(client: WorkGraphClient): WorkGraphWaitingSource {
   return {
     waiting: (after) => client.attention(after),
+    markAllRead: () => client.markAllAttentionRead(),
+    clear: () => client.clearAttention(),
     proposal: (id) => client.proposal(id),
     workItem: (id) => client.workItem(id),
     latestAttempt: (id) => latestAttempt(client, id),
@@ -71,6 +87,7 @@ export function waitingSourceFromClient(client: WorkGraphClient): WorkGraphWaiti
     dismissIntakeCandidate: (id, version) => client.dismissIntakeCandidate(id, version),
     cancelAttempt: (id, version, reason) => client.cancelAttempt(id, version, reason),
     retryWorkItem: (id, version) => client.retryWorkItem(id, version),
+    replacementReview: (input) => client.replacementReview(input),
   }
 }
 

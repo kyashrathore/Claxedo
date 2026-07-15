@@ -1,4 +1,4 @@
-import { SourceIssueProviderError, SourceIssueUnauthorizedError, type SourceIssueConnector, type SourceIssueAuthorization } from "../interface"
+import { SourceIssueConfigurationError, SourceIssueProviderError, SourceIssueUnauthorizedError, type SourceIssueConnector, type SourceIssueAuthorization } from "../interface"
 import { z } from "zod"
 import { decodeSourceIssueResponse, providerTimestamp, readSourceIssueResponse, requestSourceIssue } from "../provider-response"
 
@@ -15,10 +15,10 @@ const issueSchema = z.object({
 const responseSchema = z.object({ issues: z.array(issueSchema) })
 
 export function createJiraSourceIssueConnector(input: Readonly<{
-  baseUrl: string
+  baseUrl?: string
   fetch?: typeof globalThis.fetch
-}>): SourceIssueConnector {
-  const baseUrl = input.baseUrl.replace(/\/$/, "")
+}> = {}): SourceIssueConnector {
+  const baseUrl = input.baseUrl === undefined ? undefined : requireBaseUrl(input.baseUrl)
   const request = input.fetch ?? globalThis.fetch
   return {
     provider: "jira",
@@ -72,8 +72,21 @@ async function call(fetcher: typeof globalThis.fetch, authorization: SourceIssue
   return response
 }
 
-function connectionBaseUrl(authorization: SourceIssueAuthorization, configuredBaseUrl: string) {
-  return (authorization.fields?.site_url ?? configuredBaseUrl).replace(/\/$/, "")
+function connectionBaseUrl(authorization: SourceIssueAuthorization, configuredBaseUrl: string | undefined) {
+  if (authorization.fields?.site_url !== undefined) return requireBaseUrl(authorization.fields.site_url)
+  if (configuredBaseUrl) return configuredBaseUrl
+  throw new SourceIssueConfigurationError("jira", "site_url")
+}
+
+function requireBaseUrl(value: string) {
+  const url = value.trim().replace(/\/$/, "")
+  if (!URL.canParse(url)) throw new SourceIssueConfigurationError("jira", "site_url")
+  const parsed = new URL(url)
+  if (!["http:", "https:"].includes(parsed.protocol) || parsed.hostname === "atlassian.net" ||
+    parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new SourceIssueConfigurationError("jira", "site_url")
+  }
+  return url
 }
 
 function jiraAuthorization(authorization: SourceIssueAuthorization) {

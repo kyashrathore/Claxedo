@@ -1,10 +1,12 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import type BetterSqlite3 from "better-sqlite3"
 import {
   AdmissionAgentPlanSchema,
+  createChangeCursor,
   ExecutionProfileDefaultsSchema,
   ResolvedExecutionProfileSchema,
   type AdmissionAgentPlan,
+  type ExecutionProfileDefaults,
   type ResolvedExecutionProfile,
   type WorkGraphContext,
   type WorkSourceRevisionRef,
@@ -12,6 +14,7 @@ import {
 import { resolveExecutionProfile } from "../../domain/execution-profile"
 import type { ExecutionResult } from "../../ports"
 import { initializeWorkGraphSqliteSchema } from "./schema"
+import { requireSessionDirectory } from "./session-directory"
 
 const leaseDurationMs = 5 * 60 * 1000
 const retryDelayMs = 60 * 1000
@@ -37,6 +40,7 @@ export function createSqliteSourcePlanningRuntime(input: Readonly<{
   clock?: Readonly<{ now(): number }>
   workerId?: string
 }>) {
+  const sessionDirectory = input.sessions ? requireSessionDirectory(input.sessionDirectory, "SQLite source planning") : undefined
   const database = initializeWorkGraphSqliteSchema(input.database).raw()
   if (!database) throw new Error("The SQLite source planning runtime requires a real better-sqlite3 database")
   const clock = input.clock ?? { now: Date.now }
@@ -56,13 +60,13 @@ export function createSqliteSourcePlanningRuntime(input: Readonly<{
       }
       try {
         const existing = sourcePlanningSession(database, context, claimed.id)
-        const profile = existing?.profile ?? sourcePlanningProfile(database, context)
+        const profile = existing?.profile ?? sourcePlanningProfile(database, context, source.execution)
         const requestedSessionId = existing?.id ?? `ses_workgraph_${claimed.id}_${claimed.leaseEpoch}`
         if (!existing) markSession(database, context, claimed.id, workerId, claimed.leaseEpoch, requestedSessionId, profile, false, clock.now())
         const admitted = existing?.admitted ? requestedSessionId : await input.sessions.admit({
           attemptId: claimed.id,
           sessionId: requestedSessionId,
-          directory: input.sessionDirectory ?? process.cwd(),
+          directory: sessionDirectory!,
           title: `Plan: ${source.title}`,
           prompt: sourcePlanningPrompt(claimed.job, source),
           profile,
@@ -106,14 +110,19 @@ type PlanningEvidence = Readonly<{
   duplicateMatches?: unknown[]
 }>
 
+type PlanningLineage = Readonly<{
+  previousSource?: WorkSourceRevisionRef
+  diffSummary?: string
+}>
+
 function claimDue(database: BetterSqlite3.Database, context: WorkGraphContext, workerId: string, now: number) {
   return database.transaction(() => {
     const row = database.prepare(`
       SELECT id, payload_json, status, claimed_by, lease_epoch, row_version FROM wg_v2_due_jobs
-      WHERE owner_user_id = ? AND job_type = 'source_plan' AND due_at <= ?
+      WHERE organization_id = ? AND owner_user_id = ? AND job_type = 'source_plan' AND due_at <= ?
         AND (status IN ('pending', 'failed') OR (status = 'running' AND (claimed_by = ? OR claim_expires_at <= ?)))
       ORDER BY due_at, created_at, id LIMIT 1
-    `).get(context.ownerUserId, now, workerId, now) as {
+    `).get(context.organizationId, context.ownerUserId, now, workerId, now) as {
       id: string; payload_json: string; status: string; claimed_by: string | null; lease_epoch: number; row_version: number
     } | undefined
     if (!row) return undefined
@@ -123,14 +132,14 @@ function claimDue(database: BetterSqlite3.Database, context: WorkGraphContext, w
     const changed = database.prepare(`
       UPDATE wg_v2_due_jobs SET status = 'running', claimed_by = ?, claim_expires_at = ?, lease_epoch = ?,
         payload_json = ?, updated_at = ?, row_version = row_version + 1
-      WHERE owner_user_id = ? AND id = ? AND row_version = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
         AND (status IN ('pending', 'failed') OR (status = 'running' AND (claimed_by = ? OR claim_expires_at <= ?)))
     `).run(workerId, now + leaseDurationMs, leaseEpoch, JSON.stringify(row.status === "running" ? payload : {
       proposalId: payload.proposalId,
       source: payload.source,
       automaticFailureCount: payload.automaticFailureCount ?? 0,
     }), now,
-      context.ownerUserId, row.id, row.row_version, workerId, now)
+      context.organizationId, context.ownerUserId, row.id, row.row_version, workerId, now)
     if (changed.changes !== 1) return undefined
     if (row.status === "failed") markPlanningQueued(database, context, payload.proposalId, now)
     return { id: row.id, leaseEpoch, job: { proposalId: payload.proposalId, source: payload.source } as SourcePlanJob }
@@ -143,18 +152,27 @@ function planningSource(database: BetterSqlite3.Database, context: WorkGraphCont
       revisions.content_hash, proposals.lifecycle, proposals.source_revision_id, proposals.proposed_work_json
     FROM wg_v2_admission_proposals proposals
     JOIN wg_v2_work_source_revisions revisions
-      ON revisions.owner_user_id = proposals.owner_user_id AND revisions.id = proposals.source_revision_id
+      ON revisions.organization_id = proposals.organization_id AND revisions.owner_user_id = proposals.owner_user_id AND revisions.id = proposals.source_revision_id
     JOIN wg_v2_work_sources sources
-      ON sources.owner_user_id = revisions.owner_user_id AND sources.id = revisions.work_source_id
-    WHERE proposals.owner_user_id = ? AND proposals.id = ? AND revisions.work_source_id = ?
-  `).get(context.ownerUserId, job.proposalId, job.source.workSourceId) as {
+      ON sources.organization_id = revisions.organization_id AND sources.owner_user_id = revisions.owner_user_id AND sources.id = revisions.work_source_id
+    WHERE proposals.organization_id = ? AND proposals.owner_user_id = ? AND proposals.id = ? AND revisions.work_source_id = ?
+  `).get(context.organizationId, context.ownerUserId, job.proposalId, job.source.workSourceId) as {
     title: string; latest_revision_number: number; revision_number: number; content: string; content_hash: string
     lifecycle: string; source_revision_id: string; proposed_work_json: string
   } | undefined
   if (!row || row.lifecycle !== "planning" || row.source_revision_id !== job.source.revisionId ||
     row.content_hash !== job.source.contentHash || row.revision_number !== row.latest_revision_number) return undefined
-  const planning = JSON.parse(row.proposed_work_json) as { planningEvidence?: PlanningEvidence }
-  return { title: row.title, content: row.content, evidence: planning.planningEvidence ?? {} }
+  const planning = JSON.parse(row.proposed_work_json) as PlanningLineage & {
+    planningEvidence?: PlanningEvidence
+    execution?: ExecutionProfileDefaults
+  }
+  return {
+    title: row.title,
+    content: row.content,
+    evidence: planning.planningEvidence ?? {},
+    lineage: planningLineage(planning),
+    execution: planning.execution,
+  }
 }
 
 function sourcePlanningPrompt(job: SourcePlanJob, source: NonNullable<ReturnType<typeof planningSource>>) {
@@ -166,6 +184,7 @@ function sourcePlanningPrompt(job: SourcePlanJob, source: NonNullable<ReturnType
     `Source title: ${source.title}`,
     `Source content: ${source.content}`,
     `Bounded current placement and duplicate evidence: ${JSON.stringify(source.evidence)}`,
+    "When bounded evidence includes targetStreamId, suggestedPlacement must be existing with that exact Stream ID.",
   ].join("\n")
 }
 
@@ -178,6 +197,10 @@ function validatePlan(
 ) {
   const plan = AdmissionAgentPlanSchema.parse(JSON.parse(output))
   if (JSON.stringify(plan.source) !== JSON.stringify(job.source)) throw new Error("Source planning result did not echo the exact immutable source revision")
+  if (typeof source.evidence.targetStreamId === "string" &&
+    (plan.suggestedPlacement.mode !== "existing" || plan.suggestedPlacement.streamId !== source.evidence.targetStreamId)) {
+    throw new Error("Source planning result did not honor the exact target Stream")
+  }
   const outcomeKeys = plan.proposedOutcomes.map((outcome) => outcome.key)
   const itemKeys = plan.proposedWorkItems.map((item) => item.key)
   if (new Set(outcomeKeys).size !== outcomeKeys.length || new Set(itemKeys).size !== itemKeys.length)
@@ -201,7 +224,7 @@ function validatePlan(
       : []),
   ])
   if (streamIds.some((id) => !allowedStreamIds.has(id))) throw new Error("Source planning result referenced a Stream outside its bounded evidence package")
-  if (streamIds.some((id) => !database.prepare("SELECT 1 FROM wg_v2_streams WHERE owner_user_id = ? AND id = ?").get(context.ownerUserId, id)))
+  if (streamIds.some((id) => !database.prepare("SELECT 1 FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND id = ?").get(context.organizationId, context.ownerUserId, id)))
     throw new Error("Source planning result referenced an unavailable Stream")
   const allowedDuplicates = new Set<string>((Array.isArray(source.evidence.duplicateMatches) ? source.evidence.duplicateMatches : []).flatMap((match: unknown) => {
     if (!match || typeof match !== "object" || !("subject" in match) || !match.subject || typeof match.subject !== "object") return []
@@ -214,7 +237,7 @@ function validatePlan(
     const table = match.subject.type === "outcome" ? "wg_v2_outcomes" : "wg_v2_work_items"
     const id = match.subject.type === "outcome" ? match.subject.outcomeId : match.subject.workItemId
     return !allowedDuplicates.has(`${match.subject.type}:${id}`) ||
-      !database.prepare(`SELECT 1 FROM ${table} WHERE owner_user_id = ? AND id = ? AND stream_id = ?`).get(context.ownerUserId, id, match.streamId)
+      !database.prepare(`SELECT 1 FROM ${table} WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND stream_id = ?`).get(context.organizationId, context.ownerUserId, id, match.streamId)
   })) throw new Error("Source planning result contained unsupported duplicate evidence")
   return plan
 }
@@ -247,18 +270,22 @@ function publishPlan(
 ) {
   return database.transaction(() => {
     const due = database.prepare(`
-      SELECT payload_json FROM wg_v2_due_jobs WHERE owner_user_id = ? AND id = ? AND job_type = 'source_plan'
+      SELECT payload_json FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND job_type = 'source_plan'
         AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
-    `).get(context.ownerUserId, jobId, workerId, leaseEpoch) as { payload_json: string } | undefined
+    `).get(context.organizationId, context.ownerUserId, jobId, workerId, leaseEpoch) as { payload_json: string } | undefined
     const job = due ? JSON.parse(due.payload_json) as SourcePlanJob : undefined
-    if (!job || job.sessionId !== sessionId || !planningSource(database, context, job)) return false
+    if (!job || job.sessionId !== sessionId) return false
+    const source = planningSource(database, context, job)
+    if (!source) return false
     const targetStreamId = plan.suggestedPlacement.mode === "existing" ? plan.suggestedPlacement.streamId : undefined
     const changed = database.prepare(`
       UPDATE wg_v2_admission_proposals SET lifecycle = 'proposed', proposed_work_json = ?, duplicate_matches_json = ?,
         row_version = row_version + 1, updated_at = ?
-      WHERE owner_user_id = ? AND id = ? AND lifecycle = 'planning' AND source_revision_id = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle = 'planning' AND source_revision_id = ?
     `).run(JSON.stringify({
       source: plan.source,
+      ...source.lineage,
+      ...(source.execution ? { execution: source.execution } : {}),
       suggestedPlacement: plan.suggestedPlacement,
       ...(targetStreamId ? { targetStreamId } : {}),
       generation: { method: "agent_session", sessionId, generatedAt: now },
@@ -271,10 +298,10 @@ function publishPlan(
         dependencyProposalKeys: item.dependencyKeys,
       })),
       duplicateMatches: plan.duplicateMatches,
-    }), JSON.stringify(plan.duplicateMatches), now, context.ownerUserId, job.proposalId, job.source.revisionId)
+    }), JSON.stringify(plan.duplicateMatches), now, context.organizationId, context.ownerUserId, job.proposalId, job.source.revisionId)
     if (changed.changes !== 1) return false
-    const version = (database.prepare("SELECT row_version FROM wg_v2_admission_proposals WHERE owner_user_id = ? AND id = ?")
-      .get(context.ownerUserId, job.proposalId) as { row_version: number }).row_version
+    const version = (database.prepare("SELECT row_version FROM wg_v2_admission_proposals WHERE organization_id = ? AND owner_user_id = ? AND id = ?")
+      .get(context.organizationId, context.ownerUserId, job.proposalId) as { row_version: number }).row_version
     appendProposalPublication(database, context, {
       proposalId: job.proposalId,
       workSourceId: job.source.workSourceId,
@@ -285,16 +312,20 @@ function publishPlan(
     const completed = database.prepare(`
       UPDATE wg_v2_due_jobs SET status = 'completed', claimed_by = NULL, claim_expires_at = NULL, last_error = NULL,
         row_version = row_version + 1, updated_at = ?
-      WHERE owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
-    `).run(now, context.ownerUserId, jobId, workerId, leaseEpoch)
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
+    `).run(now, context.organizationId, context.ownerUserId, jobId, workerId, leaseEpoch)
     if (completed.changes !== 1) throw new Error("Source planning job lost its durable claim before publication")
     return true
   })()
 }
 
-function sourcePlanningProfile(database: BetterSqlite3.Database, context: WorkGraphContext): ResolvedExecutionProfile {
-  const row = database.prepare("SELECT defaults_json FROM wg_v2_workgraphs WHERE owner_user_id = ? AND id = 'workgraph_default'")
-    .get(context.ownerUserId) as { defaults_json: string } | undefined
+function sourcePlanningProfile(
+  database: BetterSqlite3.Database,
+  context: WorkGraphContext,
+  execution?: ExecutionProfileDefaults,
+): ResolvedExecutionProfile {
+  const row = database.prepare("SELECT defaults_json FROM wg_v2_workgraphs WHERE organization_id = ? AND owner_user_id = ? AND id = 'workgraph_default'")
+    .get(context.organizationId, context.ownerUserId) as { defaults_json: string } | undefined
   if (!row) throw new Error("Source planning requires configured WorkGraph execution defaults")
   const defaults = ExecutionProfileDefaultsSchema.parse(JSON.parse(row.defaults_json))
   const resolved = resolveExecutionProfile({
@@ -302,10 +333,8 @@ function sourcePlanningProfile(database: BetterSqlite3.Database, context: WorkGr
       ...defaults,
       tools: [],
       connectionIds: [],
-      isolation: "stream",
-      cleanup: "retain",
-      integration: "manual",
     },
+    ...(execution ? { stream: execution } : {}),
   })
   if (!resolved.ok) {
     throw new Error(`Source planning execution profile is incomplete: ${resolved.error.missingFields.join(", ")}`)
@@ -314,8 +343,8 @@ function sourcePlanningProfile(database: BetterSqlite3.Database, context: WorkGr
 }
 
 function sourcePlanningSession(database: BetterSqlite3.Database, context: WorkGraphContext, jobId: string) {
-  const row = database.prepare("SELECT payload_json FROM wg_v2_due_jobs WHERE owner_user_id = ? AND id = ?")
-    .get(context.ownerUserId, jobId) as { payload_json: string } | undefined
+  const row = database.prepare("SELECT payload_json FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND id = ?")
+    .get(context.organizationId, context.ownerUserId, jobId) as { payload_json: string } | undefined
   const payload = row ? JSON.parse(row.payload_json) as SourcePlanJob & {
     generationProfile?: unknown
     sessionAdmissionConfirmed?: boolean
@@ -338,16 +367,16 @@ function markSession(
   now: number,
 ) {
   return database.transaction(() => {
-    const row = database.prepare(`SELECT payload_json FROM wg_v2_due_jobs WHERE owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?`)
-      .get(context.ownerUserId, jobId, workerId, leaseEpoch) as { payload_json: string } | undefined
+    const row = database.prepare(`SELECT payload_json FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?`)
+      .get(context.organizationId, context.ownerUserId, jobId, workerId, leaseEpoch) as { payload_json: string } | undefined
     if (!row) throw new Error("Source planning Session lost its durable job claim")
-    const changed = database.prepare(`UPDATE wg_v2_due_jobs SET payload_json = ? WHERE owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?`)
+    const changed = database.prepare(`UPDATE wg_v2_due_jobs SET payload_json = ? WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?`)
       .run(JSON.stringify({
         ...JSON.parse(row.payload_json),
         sessionId,
         generationProfile: profile,
         sessionAdmissionConfirmed: admitted,
-      }), context.ownerUserId, jobId, workerId, leaseEpoch)
+      }), context.organizationId, context.ownerUserId, jobId, workerId, leaseEpoch)
     if (changed.changes !== 1) throw new Error("Source planning Session lost its durable job claim")
     if (!admitted) markPlanningStarted(database, context, jobId, sessionId, now)
   })()
@@ -356,11 +385,14 @@ function markSession(
 function markPlanningQueued(database: BetterSqlite3.Database, context: WorkGraphContext, proposalId: string, now: number) {
   const row = database.prepare(`
     SELECT proposed_work_json, row_version FROM wg_v2_admission_proposals
-    WHERE owner_user_id = ? AND id = ? AND lifecycle = 'planning_failed'
-  `).get(context.ownerUserId, proposalId) as { proposed_work_json: string; row_version: number } | undefined
+    WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle = 'planning_failed'
+  `).get(context.organizationId, context.ownerUserId, proposalId) as { proposed_work_json: string; row_version: number } | undefined
   if (!row) return
   const failed = JSON.parse(row.proposed_work_json) as {
     source: WorkSourceRevisionRef
+    execution?: ExecutionProfileDefaults
+    previousSource?: WorkSourceRevisionRef
+    diffSummary?: string
     planningEvidence?: PlanningEvidence
     generation?: { attempt?: number }
   }
@@ -368,9 +400,15 @@ function markPlanningQueued(database: BetterSqlite3.Database, context: WorkGraph
   const changed = database.prepare(`
     UPDATE wg_v2_admission_proposals SET lifecycle = 'planning', proposed_work_json = ?,
       row_version = row_version + 1, updated_at = ?
-    WHERE owner_user_id = ? AND id = ? AND lifecycle = 'planning_failed' AND row_version = ?
-  `).run(JSON.stringify({ source: failed.source, planningEvidence: failed.planningEvidence ?? {}, generation }), now,
-    context.ownerUserId, proposalId, row.row_version)
+    WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle = 'planning_failed' AND row_version = ?
+  `).run(JSON.stringify({
+    source: failed.source,
+    ...(failed.execution ? { execution: failed.execution } : {}),
+    ...planningLineage(failed),
+    planningEvidence: failed.planningEvidence ?? {},
+    generation,
+  }), now,
+    context.organizationId, context.ownerUserId, proposalId, row.row_version)
   if (changed.changes !== 1) return
   appendProposalPublication(database, context, {
     proposalId,
@@ -388,17 +426,20 @@ function markPlanningStarted(
   sessionId: string,
   now: number,
 ) {
-  const due = database.prepare("SELECT payload_json FROM wg_v2_due_jobs WHERE owner_user_id = ? AND id = ? AND status = 'running'")
-    .get(context.ownerUserId, jobId) as { payload_json: string } | undefined
+  const due = database.prepare("SELECT payload_json FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'running'")
+    .get(context.organizationId, context.ownerUserId, jobId) as { payload_json: string } | undefined
   const job = due ? JSON.parse(due.payload_json) as SourcePlanJob : undefined
   if (!job) throw new Error("Source planning Session lost its durable job")
   const row = database.prepare(`
     SELECT proposed_work_json, row_version FROM wg_v2_admission_proposals
-    WHERE owner_user_id = ? AND id = ? AND lifecycle = 'planning'
-  `).get(context.ownerUserId, job.proposalId) as { proposed_work_json: string; row_version: number } | undefined
+    WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle = 'planning'
+  `).get(context.organizationId, context.ownerUserId, job.proposalId) as { proposed_work_json: string; row_version: number } | undefined
   if (!row) throw new Error("Source planning proposal is unavailable")
   const planning = JSON.parse(row.proposed_work_json) as {
     source: WorkSourceRevisionRef
+    execution?: ExecutionProfileDefaults
+    previousSource?: WorkSourceRevisionRef
+    diffSummary?: string
     planningEvidence?: PlanningEvidence
     generation?: { attempt?: number; queuedAt?: number }
   }
@@ -410,9 +451,15 @@ function markPlanningStarted(
   }
   const changed = database.prepare(`
     UPDATE wg_v2_admission_proposals SET proposed_work_json = ?, row_version = row_version + 1, updated_at = ?
-    WHERE owner_user_id = ? AND id = ? AND lifecycle = 'planning' AND row_version = ?
-  `).run(JSON.stringify({ source: planning.source, planningEvidence: planning.planningEvidence ?? {}, generation }), now,
-    context.ownerUserId, job.proposalId, row.row_version)
+    WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle = 'planning' AND row_version = ?
+  `).run(JSON.stringify({
+    source: planning.source,
+    ...(planning.execution ? { execution: planning.execution } : {}),
+    ...planningLineage(planning),
+    planningEvidence: planning.planningEvidence ?? {},
+    generation,
+  }), now,
+    context.organizationId, context.ownerUserId, job.proposalId, row.row_version)
   if (changed.changes !== 1) throw new Error("Source planning proposal changed before Session admission")
   appendProposalPublication(database, context, {
     proposalId: job.proposalId,
@@ -437,18 +484,21 @@ function settlePlanningFailure(
 ) {
   return database.transaction(() => {
     const due = database.prepare(`
-      SELECT payload_json FROM wg_v2_due_jobs WHERE owner_user_id = ? AND id = ?
+      SELECT payload_json FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND id = ?
         AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
-    `).get(context.ownerUserId, jobId, workerId, leaseEpoch) as { payload_json: string } | undefined
+    `).get(context.organizationId, context.ownerUserId, jobId, workerId, leaseEpoch) as { payload_json: string } | undefined
     if (!due) return { retryScheduled: false }
     const job = JSON.parse(due.payload_json) as SourcePlanJob & { automaticFailureCount?: number }
     const row = database.prepare(`
       SELECT proposed_work_json, row_version FROM wg_v2_admission_proposals
-      WHERE owner_user_id = ? AND id = ? AND lifecycle = 'planning'
-    `).get(context.ownerUserId, job.proposalId) as { proposed_work_json: string; row_version: number } | undefined
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle = 'planning'
+    `).get(context.organizationId, context.ownerUserId, job.proposalId) as { proposed_work_json: string; row_version: number } | undefined
     if (row) {
       const planning = JSON.parse(row.proposed_work_json) as {
         source: WorkSourceRevisionRef
+        execution?: ExecutionProfileDefaults
+        previousSource?: WorkSourceRevisionRef
+        diffSummary?: string
         planningEvidence?: PlanningEvidence
         generation?: { attempt?: number }
       }
@@ -462,9 +512,15 @@ function settlePlanningFailure(
       const changed = database.prepare(`
         UPDATE wg_v2_admission_proposals SET lifecycle = 'planning_failed', proposed_work_json = ?,
           row_version = row_version + 1, updated_at = ?
-        WHERE owner_user_id = ? AND id = ? AND lifecycle = 'planning' AND row_version = ?
-      `).run(JSON.stringify({ source: planning.source, planningEvidence: planning.planningEvidence ?? {}, generation }), now,
-        context.ownerUserId, job.proposalId, row.row_version)
+        WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle = 'planning' AND row_version = ?
+      `).run(JSON.stringify({
+        source: planning.source,
+        ...(planning.execution ? { execution: planning.execution } : {}),
+        ...planningLineage(planning),
+        planningEvidence: planning.planningEvidence ?? {},
+        generation,
+      }), now,
+        context.organizationId, context.ownerUserId, job.proposalId, row.row_version)
       if (changed.changes === 1) appendProposalPublication(database, context, {
         proposalId: job.proposalId,
         workSourceId: job.source.workSourceId,
@@ -478,7 +534,7 @@ function settlePlanningFailure(
     database.prepare(`
       UPDATE wg_v2_due_jobs SET status = ?, due_at = ?, payload_json = ?, claimed_by = NULL, claim_expires_at = NULL,
         last_error = ?, updated_at = ?, row_version = row_version + 1
-      WHERE owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
     `).run(retryScheduled ? status : retryable ? "failed_terminal" : status, dueAt, JSON.stringify({
       proposalId: job.proposalId,
       source: job.source,
@@ -490,9 +546,16 @@ function settlePlanningFailure(
           scope: { type: "workgraph" },
         },
       } : {}),
-    }), reason, now, context.ownerUserId, jobId, workerId, leaseEpoch)
+    }), reason, now, context.organizationId, context.ownerUserId, jobId, workerId, leaseEpoch)
     return { retryScheduled }
   })()
+}
+
+function planningLineage(value: PlanningLineage) {
+  return {
+    ...(value.previousSource ? { previousSource: value.previousSource } : {}),
+    ...(value.diffSummary ? { diffSummary: value.diffSummary } : {}),
+  }
 }
 
 function sourcePlanningConfigurationFailure(reason: string) {
@@ -517,31 +580,53 @@ function appendProposalPublication(
 ) {
   const operationId = `source_plan_publish_${input.proposalId}_${input.version}`
   database.prepare(`
-    INSERT INTO wg_v2_operation_results
-      (owner_user_id, id, command_type, request_hash, result_status, result_json, created_at)
-    VALUES (?, ?, 'source_plan_publication', ?, 200, '{}', ?)
-  `).run(context.ownerUserId, operationId, operationId, input.now)
-  database.prepare(`
-    INSERT OR IGNORE INTO wg_v2_change_cursors (owner_user_id, next_cursor, created_at, updated_at)
-    VALUES (?, 1, ?, ?)
-  `).run(context.ownerUserId, input.now, input.now)
-  const cursor = (database.prepare("SELECT next_cursor FROM wg_v2_change_cursors WHERE owner_user_id = ?")
-    .get(context.ownerUserId) as { next_cursor: number }).next_cursor
+    INSERT OR IGNORE INTO wg_v2_change_cursors (organization_id, owner_user_id, next_cursor, created_at, updated_at)
+    VALUES (?, ?, 1, ?, ?)
+  `).run(context.organizationId, context.ownerUserId, input.now, input.now)
+  const cursor = (database.prepare("SELECT next_cursor FROM wg_v2_change_cursors WHERE organization_id = ? AND owner_user_id = ?")
+    .get(context.organizationId, context.ownerUserId) as { next_cursor: number }).next_cursor
   database.prepare(`
     UPDATE wg_v2_change_cursors SET next_cursor = next_cursor + 1, row_version = row_version + 1, updated_at = ?
-    WHERE owner_user_id = ?
-  `).run(input.now, context.ownerUserId)
+    WHERE organization_id = ? AND owner_user_id = ?
+  `).run(input.now, context.organizationId, context.ownerUserId)
+  database.prepare(`
+    INSERT INTO wg_v2_operation_results
+      (organization_id, owner_user_id, id, command_type, request_hash, result_status, result_json, change_cursor, created_at)
+    VALUES (?, ?, ?, 'source_plan_publication', ?, 200, ?, ?, ?)
+  `).run(
+    context.organizationId,
+    context.ownerUserId,
+    operationId,
+    createHash("sha256").update(operationId).digest("hex"),
+    JSON.stringify({
+      ok: true,
+      operationId,
+      cursor: createChangeCursor({
+        organizationId: context.organizationId,
+        ownerUserId: context.ownerUserId,
+        position: cursor,
+      }),
+      value: {
+        proposalId: input.proposalId,
+        workSourceId: input.workSourceId,
+        version: input.version,
+        generation: input.generation,
+      },
+    }),
+    cursor,
+    input.now,
+  )
   const sequenceScope = "__workgraph_owner_events__"
   database.prepare(`
-    INSERT OR IGNORE INTO wg_v2_stream_sequences (owner_user_id, stream_id, next_sequence, created_at, updated_at)
-    VALUES (?, ?, 1, ?, ?)
-  `).run(context.ownerUserId, sequenceScope, input.now, input.now)
-  const sequence = (database.prepare("SELECT next_sequence FROM wg_v2_stream_sequences WHERE owner_user_id = ? AND stream_id = ?")
-    .get(context.ownerUserId, sequenceScope) as { next_sequence: number }).next_sequence
+    INSERT OR IGNORE INTO wg_v2_stream_sequences (organization_id, owner_user_id, stream_id, next_sequence, created_at, updated_at)
+    VALUES (?, ?, ?, 1, ?, ?)
+  `).run(context.organizationId, context.ownerUserId, sequenceScope, input.now, input.now)
+  const sequence = (database.prepare("SELECT next_sequence FROM wg_v2_stream_sequences WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?")
+    .get(context.organizationId, context.ownerUserId, sequenceScope) as { next_sequence: number }).next_sequence
   database.prepare(`
     UPDATE wg_v2_stream_sequences SET next_sequence = next_sequence + 1, row_version = row_version + 1, updated_at = ?
-    WHERE owner_user_id = ? AND stream_id = ?
-  `).run(input.now, context.ownerUserId, sequenceScope)
+    WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?
+  `).run(input.now, context.organizationId, context.ownerUserId, sequenceScope)
   const payload = JSON.stringify({
     proposalId: input.proposalId,
     workSourceId: input.workSourceId,
@@ -550,16 +635,14 @@ function appendProposalPublication(
   })
   database.prepare(`
     INSERT INTO wg_v2_events
-      (owner_user_id, id, stream_id, sequence, schema_version, operation_id, event_type, actor_type, actor_id, request_id, payload_json, occurred_at)
-    VALUES (?, ?, NULL, ?, 1, ?, 'admission_proposal_updated', 'system', 'source_planner', ?, ?, ?)
-  `).run(context.ownerUserId, `event_${operationId}`, sequence, operationId, operationId, payload, input.now)
+      (organization_id, owner_user_id, id, stream_id, sequence, schema_version, operation_id, event_type, actor_type, actor_id, request_id, payload_json, occurred_at)
+    VALUES (?, ?, ?, NULL, ?, 1, ?, 'admission_proposal_updated', 'system', 'source_planner', ?, ?, ?)
+  `).run(context.organizationId, context.ownerUserId, `event_${operationId}`, sequence, operationId, operationId, payload, input.now)
   database.prepare(`
     INSERT INTO wg_v2_changes
-      (owner_user_id, cursor, id, stream_id, operation_id, resource_type, resource_id, change_type, payload_json, created_at)
-    VALUES (?, ?, ?, NULL, ?, 'admission_proposal', ?, 'admission_proposal_updated', ?, ?)
-  `).run(context.ownerUserId, cursor, `change_${operationId}`, operationId, input.proposalId, payload, input.now)
-  database.prepare("UPDATE wg_v2_operation_results SET change_cursor = ? WHERE owner_user_id = ? AND id = ?")
-    .run(cursor, context.ownerUserId, operationId)
+      (organization_id, owner_user_id, cursor, id, stream_id, operation_id, resource_type, resource_id, change_type, payload_json, created_at)
+    VALUES (?, ?, ?, ?, NULL, ?, 'admission_proposal', ?, 'admission_proposal_updated', ?, ?)
+  `).run(context.organizationId, context.ownerUserId, cursor, `change_${operationId}`, operationId, input.proposalId, payload, input.now)
 }
 
 function failClaim(database: BetterSqlite3.Database, context: WorkGraphContext, id: string, workerId: string, leaseEpoch: number, reason: string, now: number) {

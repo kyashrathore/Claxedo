@@ -1,7 +1,7 @@
 import { v } from "convex/values"
 import { serviceMutation, serviceQuery } from "./model"
 import { assertWorkGraphOwnerReadable, assertWorkGraphOwnerWritable } from "./workgraphModel"
-import { removeAttentionRecord, syncAttentionRecord } from "./workgraphAttention"
+import { syncConnectionAttention } from "./workgraphAttention"
 
 const integrationId = v.union(v.literal("github"), v.literal("linear"), v.literal("jira"))
 const status = v.union(v.literal("connected"), v.literal("degraded"), v.literal("broken"))
@@ -32,7 +32,6 @@ export const upsertMetadata = serviceMutation({
   },
   handler: async (ctx, args) => {
     await requireOrgMember(ctx, args.ownerUserId, args.orgId)
-    await assertWorkGraphOwnerWritable(ctx, args.ownerUserId)
     const connectionId = required(args.connectionId, "connectionId")
     const granted = unique(args.capabilities.map((capability) => required(capability, "capability")))
     if (granted.some((capability) => !capabilities.has(capability))) throw new Error("Unsupported Connection capability")
@@ -41,7 +40,7 @@ export const upsertMetadata = serviceMutation({
     const matching = await ctx.db.query("workgraph_connection_metadata")
       .withIndex("by_connection", (query: any) => query.eq("connection_id", connectionId))
       .take(2)
-    if (matching.some((row: any) => row.org_id !== args.orgId)) throw new Error("Connection belongs to another org")
+    if (matching.some((row: any) => row.organization_id !== args.orgId)) throw new Error("Connection belongs to another org")
     const existing = await connectionMetadata(ctx, args.orgId, connectionId)
     if (existing && existing.integration_id !== args.integrationId) throw new Error("Connection integration cannot change")
     const now = Date.now()
@@ -57,12 +56,11 @@ export const upsertMetadata = serviceMutation({
     if (existing) {
       const saved = { ...existing, ...value, row_version: existing.row_version + 1 }
       await ctx.db.patch(existing._id, saved)
-      await syncAttentionRecord(ctx, "workgraph_connection_metadata", saved)
+      await syncConnectionAttention(ctx, String(args.orgId), connectionId, saved.status, saved.updated_at)
       return metadataResult(saved)
     }
     const saved = {
-      owner_user_id: args.ownerUserId,
-      org_id: args.orgId,
+      organization_id: args.orgId,
       connection_id: connectionId,
       ...value,
       row_version: 1,
@@ -70,7 +68,7 @@ export const upsertMetadata = serviceMutation({
       created_at: now,
     }
     await ctx.db.insert("workgraph_connection_metadata", saved)
-    await syncAttentionRecord(ctx, "workgraph_connection_metadata", saved)
+    await syncConnectionAttention(ctx, String(args.orgId), connectionId, saved.status, saved.updated_at)
     return metadataResult(saved)
   },
 })
@@ -82,9 +80,8 @@ export const listMetadata = serviceQuery({
   },
   handler: async (ctx, args) => {
     if (!await isOrgMember(ctx, args.ownerUserId, args.orgId)) return []
-    await assertWorkGraphOwnerReadable(ctx, args.ownerUserId)
     return (await ctx.db.query("workgraph_connection_metadata")
-      .withIndex("by_org_connection", (query: any) => query.eq("org_id", args.orgId))
+      .withIndex("by_organization_connection", (query: any) => query.eq("organization_id", args.orgId))
       .collect())
       .map(metadataResult)
   },
@@ -102,7 +99,6 @@ export const resolveWebhookMetadata = serviceQuery({
     if (rows.length !== 1) return null
     const row = rows[0]
     if (!row || row.status !== "connected" || !row.capabilities.includes("work-source")) return null
-    await assertWorkGraphOwnerReadable(ctx, row.owner_user_id)
     return metadataResult(row)
   },
 })
@@ -115,11 +111,10 @@ export const deleteMetadata = serviceMutation({
   },
   handler: async (ctx, args) => {
     await requireOrgMember(ctx, args.ownerUserId, args.orgId)
-    await assertWorkGraphOwnerWritable(ctx, args.ownerUserId)
     const existing = await connectionMetadata(ctx, args.orgId, required(args.connectionId, "connectionId"))
     if (!existing) return { deleted: false as const }
+    await syncConnectionAttention(ctx, String(args.orgId), existing.connection_id, "connected", Date.now())
     await ctx.db.delete(existing._id)
-    await removeAttentionRecord(ctx, String(args.ownerUserId), "workgraph_connection_metadata", existing.connection_id)
     return { deleted: true as const }
   },
 })
@@ -136,7 +131,7 @@ export const bindAttemptConnections = serviceMutation({
   },
   handler: async (ctx, args) => {
     await requireOrgMember(ctx, args.ownerUserId, args.orgId)
-    await assertWorkGraphOwnerWritable(ctx, args.ownerUserId)
+    await assertWorkGraphOwnerWritable(ctx, args.orgId, args.ownerUserId)
     const attemptId = required(args.attemptId, "attemptId")
     const sessionId = required(args.sessionId, "sessionId")
     const workspaceId = required(args.workspaceId, "workspaceId")
@@ -144,7 +139,7 @@ export const bindAttemptConnections = serviceMutation({
     const tools = unique(args.tools.map((tool) => required(tool, "tool")))
     if (!connectionIds.length || !tools.length) throw new Error("Connection binding requires connections and tools")
     if (tools.some((tool) => !connectionTools.has(tool))) throw new Error("Unsupported Connection operation tool")
-    const attempt = await ownedAttempt(ctx, args.ownerUserId, attemptId)
+    const attempt = await ownedAttempt(ctx, args.orgId, args.ownerUserId, attemptId)
     if (!attempt || attempt.session_id !== sessionId || attempt.envelope_id !== workspaceId || attempt.state !== "running") {
       throw new Error("Attempt placement does not match the Connection binding")
     }
@@ -156,10 +151,9 @@ export const bindAttemptConnections = serviceMutation({
     if (metadata.some((connection) => !connection || connection.status !== "connected" || !connection.capabilities.includes("work-source"))) {
       throw new Error("Connection metadata is unavailable")
     }
-    const existing = await attemptBinding(ctx, args.ownerUserId, attemptId)
+    const existing = await attemptBinding(ctx, args.orgId, args.ownerUserId, attemptId)
     const now = Date.now()
     const value = {
-      org_id: args.orgId,
       session_id: sessionId,
       workspace_id: workspaceId,
       connection_ids: connectionIds,
@@ -172,6 +166,7 @@ export const bindAttemptConnections = serviceMutation({
       return { bound: true as const }
     }
     await ctx.db.insert("workgraph_attempt_connection_bindings", {
+      organization_id: args.orgId,
       owner_user_id: args.ownerUserId,
       attempt_id: attemptId,
       ...value,
@@ -195,12 +190,12 @@ export const resolveOperationBinding = serviceQuery({
   },
   handler: async (ctx, args) => {
     if (!await isOrgMember(ctx, args.ownerUserId, args.orgId)) return null
-    await assertWorkGraphOwnerReadable(ctx, args.ownerUserId)
-    const binding = await attemptBinding(ctx, args.ownerUserId, args.attemptId)
-    if (!binding || binding.revoked_at || binding.org_id !== args.orgId || binding.session_id !== args.sessionId ||
+    await assertWorkGraphOwnerReadable(ctx, args.orgId, args.ownerUserId)
+    const binding = await attemptBinding(ctx, args.orgId, args.ownerUserId, args.attemptId)
+    if (!binding || binding.revoked_at || binding.organization_id !== args.orgId || binding.session_id !== args.sessionId ||
       binding.workspace_id !== args.workspaceId || !binding.connection_ids.includes(args.connectionId) ||
       !binding.tools.includes(args.tool)) return null
-    const attempt = await ownedAttempt(ctx, args.ownerUserId, args.attemptId)
+    const attempt = await ownedAttempt(ctx, args.orgId, args.ownerUserId, args.attemptId)
     if (!attempt || attempt.state !== "running" || attempt.session_id !== args.sessionId || attempt.envelope_id !== args.workspaceId) return null
     const connection = await connectionMetadata(ctx, args.orgId, args.connectionId)
     if (!connection || connection.status !== "connected" || !connection.capabilities.includes("work-source")) return null
@@ -217,10 +212,10 @@ export const resolveOperationBinding = serviceQuery({
 })
 
 export const revokeAttemptBinding = serviceMutation({
-  args: { ownerUserId: v.id("users"), attemptId: v.string() },
+  args: { ownerUserId: v.id("users"), orgId: v.id("orgs"), attemptId: v.string() },
   handler: async (ctx, args) => {
-    await assertWorkGraphOwnerWritable(ctx, args.ownerUserId)
-    const binding = await attemptBinding(ctx, args.ownerUserId, required(args.attemptId, "attemptId"))
+    await assertWorkGraphOwnerWritable(ctx, args.orgId, args.ownerUserId)
+    const binding = await attemptBinding(ctx, args.orgId, args.ownerUserId, required(args.attemptId, "attemptId"))
     if (!binding || binding.revoked_at) return { revoked: false as const }
     await ctx.db.patch(binding._id, {
       revoked_at: Date.now(),
@@ -240,25 +235,25 @@ function metadataResult(row: any) {
     ...(row.account_label ? { accountLabel: row.account_label } : {}),
     ...(row.fields ? { fields: row.fields } : {}),
     ...(row.token_type ? { tokenType: row.token_type } : {}),
-    orgId: String(row.org_id),
+    orgId: String(row.organization_id),
   }
 }
 
 function connectionMetadata(ctx: any, orgId: string, connectionId: string) {
   return ctx.db.query("workgraph_connection_metadata")
-    .withIndex("by_org_connection", (query: any) => query.eq("org_id", orgId).eq("connection_id", connectionId))
+    .withIndex("by_organization_connection", (query: any) => query.eq("organization_id", orgId).eq("connection_id", connectionId))
     .unique()
 }
 
-function attemptBinding(ctx: any, ownerUserId: string, attemptId: string) {
+function attemptBinding(ctx: any, orgId: string, ownerUserId: string, attemptId: string) {
   return ctx.db.query("workgraph_attempt_connection_bindings")
-    .withIndex("by_owner_attempt", (query: any) => query.eq("owner_user_id", ownerUserId).eq("attempt_id", attemptId))
+    .withIndex("by_tenant_attempt", (query: any) => query.eq("organization_id", orgId).eq("owner_user_id", ownerUserId).eq("attempt_id", attemptId))
     .unique()
 }
 
-function ownedAttempt(ctx: any, ownerUserId: string, attemptId: string) {
+function ownedAttempt(ctx: any, orgId: string, ownerUserId: string, attemptId: string) {
   return ctx.db.query("workgraph_attempts")
-    .withIndex("by_owner_id", (query: any) => query.eq("owner_user_id", ownerUserId).eq("id", attemptId))
+    .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", orgId).eq("owner_user_id", ownerUserId).eq("id", attemptId))
     .unique()
 }
 

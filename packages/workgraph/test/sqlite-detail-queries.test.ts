@@ -30,19 +30,16 @@ describe("SQLite targeted WorkGraph details", () => {
         effort: "high",
         tools: [],
         connectionIds: [],
-        isolation: "stream",
-        cleanup: "retain",
-        integration: "manual",
       })
       const insert = database.prepare(`
         INSERT INTO wg_v2_attempts (
-          owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle,
+          organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle,
           resolved_execution_profile_json, envelope_id, child_workspace_id, session_id,
           row_version, schema_version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, 1, 2, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, 1, 2, ?, ?)
       `)
-      insert.run(owner.ownerUserId, "attempt_1", streamId, workItemId, 1, execution, "workspace_1", null, "session_1", 10, 10)
-      insert.run(owner.ownerUserId, "attempt_2", streamId, workItemId, 2, execution, null, null, null, 20, 20)
+      insert.run(owner.organizationId, owner.ownerUserId, "attempt_1", streamId, workItemId, 1, execution, "workspace_1", null, "session_1", 10, 10)
+      insert.run(owner.organizationId, owner.ownerUserId, "attempt_2", streamId, workItemId, 2, execution, null, null, null, 20, 20)
 
       expect(await service.queries.workItems.readDetail(owner, { workItemId: workItemId as never })).toMatchObject({ id: workItemId })
       expect(await service.queries.workItems.readDetail(other, { workItemId: workItemId as never })).toBeUndefined()
@@ -68,6 +65,7 @@ describe("SQLite targeted WorkGraph details", () => {
 
 function context(ownerUserId: string): WorkGraphContext {
   return {
+    organizationId: "organization" as never,
     ownerUserId: ownerUserId as never,
     actor: { type: "user", id: ownerUserId as never },
     requestId: `request_${ownerUserId}` as never,

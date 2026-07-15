@@ -1,16 +1,236 @@
+import path from "node:path"
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import type { ConnectionsService } from "@claxedo/connections"
 import type { SourceIssueConnector } from "@claxedo/workgraph/connectors"
 import { WorkGraphConnectionToolRoutes } from "@claxedo/workspace-runtime"
+import type { WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { OPENCODE_INTERNAL_BASE } from "./opencode-engine"
 import { createConnectionOperationBroker } from "./workgraph-host/connection-operation-broker"
 import { createWorkGraphConnectionsPort } from "./workgraph-host/connections"
 import type { WorkGraphSessionGateway } from "./workgraph-host/local-execution"
 
+type SessionV2WorkGraphGatewayOptions = Readonly<{
+  connections?: undefined
+  connectors?: Readonly<Record<string, SourceIssueConnector>>
+}> | Readonly<{
+  connections: ConnectionsService
+  connectors?: Readonly<Record<string, SourceIssueConnector>>
+  resolveTeamOwner(context: WorkGraphContext): string | undefined
+}>
+
+export type WorkGraphSessionBinding = Readonly<{
+  attemptId: string
+  sessionId: string
+  runtimeSessionId?: string
+  directory: string
+  harness: string
+}>
+
+export type WorkGraphSessionBindingStore = Readonly<{
+  all(): Promise<readonly WorkGraphSessionBinding[]>
+  findByAttempt(attemptId: string): Promise<WorkGraphSessionBinding | undefined>
+  findBySession(sessionId: string): Promise<WorkGraphSessionBinding | undefined>
+  save(binding: WorkGraphSessionBinding): Promise<void>
+  deleteByAttempt?(attemptId: string): Promise<void>
+  deleteByDirectory(directory: string): Promise<void>
+}>
+
+const bindingWrites = new Map<string, Promise<void>>()
+
+/** Durable local index used by compensation and reconciliation after a server restart. */
+export function createFileWorkGraphSessionBindingStore(file: string): WorkGraphSessionBindingStore {
+  let loaded: Promise<WorkGraphSessionBinding[]> | undefined
+  const read = () => loaded ??= (async () => {
+    const source = await readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined
+      throw error
+    })
+    if (source === undefined) return []
+    const root = record(JSON.parse(source))
+    if (root?.version !== 1 || !Array.isArray(root.bindings)) {
+      throw new Error("WorkGraph Session binding index is malformed")
+    }
+    return root.bindings.map((value): WorkGraphSessionBinding => {
+      const row = record(value)
+      const attemptId = clean(row?.attemptId)
+      const sessionId = clean(row?.sessionId)
+      const runtimeSessionId = clean(row?.runtimeSessionId)
+      const directory = clean(row?.directory)
+      const harness = clean(row?.harness)
+      if (!attemptId || !sessionId || !directory || !harness) {
+        throw new Error("WorkGraph Session binding index contains an invalid binding")
+      }
+      return { attemptId, sessionId, ...(runtimeSessionId ? { runtimeSessionId } : {}), directory, harness }
+    })
+  })()
+  const write = async (bindings: WorkGraphSessionBinding[]) => {
+    await mkdir(path.dirname(file), { recursive: true })
+    const temporary = `${file}.${crypto.randomUUID()}.tmp`
+    await writeFile(temporary, JSON.stringify({ version: 1, bindings }))
+    await rename(temporary, file)
+    loaded = Promise.resolve(bindings)
+  }
+  const update = async (change: (bindings: WorkGraphSessionBinding[]) => WorkGraphSessionBinding[]) => {
+    const previous = bindingWrites.get(file) ?? Promise.resolve()
+    const current = previous.then(async () => {
+      const bindings = await read()
+      const next = change(bindings)
+      if (next === bindings) return
+      await write(next)
+    })
+    bindingWrites.set(file, current)
+    try {
+      await current
+    } finally {
+      if (bindingWrites.get(file) === current) bindingWrites.delete(file)
+    }
+  }
+  return {
+    all: async () => [...await read()],
+    findByAttempt: async (attemptId) => (await read()).find((binding) => binding.attemptId === attemptId),
+    findBySession: async (sessionId) => (await read()).find((binding) => binding.sessionId === sessionId),
+    save: async (binding) => update((bindings) => [
+      ...bindings.filter((item) => item.attemptId !== binding.attemptId && item.sessionId !== binding.sessionId),
+      binding,
+    ]),
+    deleteByAttempt: async (attemptId) => update((bindings) => {
+      const next = bindings.filter((binding) => binding.attemptId !== attemptId)
+      return next.length === bindings.length ? bindings : next
+    }),
+    deleteByDirectory: async (directory) => update((bindings) => {
+      const next = bindings.filter((binding) => binding.directory !== directory)
+      return next.length === bindings.length ? bindings : next
+    }),
+  }
+}
+
+/** Routes OpenCode through durable Session V2 and every other Session composer
+ * harness through the shared harness-aware Session runtime. */
+export function createHarnessWorkGraphGateway(
+  opencodeRequest: OpenCodeRequestFn,
+  options: SessionV2WorkGraphGatewayOptions & Readonly<{
+    sessionRequest(directory: string, request: Request): Promise<Response>
+    releaseSessionRuntime?(directory: string): Promise<void>
+    bindings?: WorkGraphSessionBindingStore
+  }>,
+): WorkGraphSessionGateway {
+  const v2 = createSessionV2WorkGraphGateway(opencodeRequest, options)
+  const memory = new Map<string, WorkGraphSessionBinding>()
+  const bindings = options.bindings ?? {
+    all: async () => [...memory.values()],
+    findByAttempt: async (attemptId: string) => memory.get(attemptId),
+    findBySession: async (sessionId: string) => [...memory.values()].find((binding) => binding.sessionId === sessionId),
+    save: async (binding: WorkGraphSessionBinding) => { memory.set(binding.attemptId, binding) },
+    deleteByAttempt: async (attemptId: string) => { memory.delete(attemptId) },
+    deleteByDirectory: async (directory: string) => {
+      for (const [attemptId, binding] of memory) {
+        if (binding.directory === directory) memory.delete(attemptId)
+      }
+    },
+  }
+  const request = async (binding: Pick<WorkGraphSessionBinding, "directory" | "harness">, pathname: string, init?: RequestInit) => {
+    const url = new URL(pathname, "http://workgraph-session.local")
+    url.searchParams.set("directory", binding.directory)
+    url.searchParams.set("harness", binding.harness)
+    const response = await options.sessionRequest(binding.directory, new Request(url, {
+      ...init,
+      headers: {
+        ...(init?.body ? { "content-type": "application/json" } : {}),
+        ...init?.headers,
+      },
+      ...(init?.body ? { duplex: "half" as const } : {}),
+    } as RequestInit))
+    if (response.ok) return response
+    throw new HarnessSessionRequestError(pathname, response.status, await response.text())
+  }
+  return {
+    supportsConnections: v2.supportsConnections,
+    classifyAdmissionError: (error) =>
+      error instanceof HarnessSessionRequestError ? classifySessionRequest(error.status) : v2.classifyAdmissionError?.(error) ?? "indeterminate",
+    admit: async (input) => {
+      if (input.profile.harness === "opencode") return v2.admit(input)
+      if (input.profile.connectionIds.length > 0) {
+        throw new Error("Connection-bound Attempts currently require the OpenCode harness")
+      }
+      const existing = await bindings.findByAttempt(input.attemptId)
+      const binding = existing ?? await (async () => {
+        const created = await request({ directory: input.directory, harness: input.profile.harness }, "/session", {
+          method: "POST",
+          body: JSON.stringify({ title: input.title }),
+        })
+        const body = record(await created.json())
+        const runtimeSessionId = clean(body?.id)
+        if (!runtimeSessionId) throw new Error("Harness Session create response did not include a Session ID")
+        const next = {
+          attemptId: input.attemptId,
+          sessionId: input.sessionId ?? runtimeSessionId,
+          ...(input.sessionId && input.sessionId !== runtimeSessionId ? { runtimeSessionId } : {}),
+          directory: input.directory,
+          harness: input.profile.harness,
+        }
+        await bindings.save(next)
+        return next
+      })()
+      try {
+        await request(binding, `/session/${encodeURIComponent(runtimeSessionId(binding))}/prompt_async`, {
+          method: "POST",
+          ...(existing ? { headers: { "x-claxedo-idempotency-retry": "1" } } : {}),
+          body: JSON.stringify({
+            messageID: `msg_workgraph_${input.attemptId}`,
+            parts: [{ type: "text", text: input.prompt }],
+            agent: input.profile.agent,
+            model: {
+              providerID: input.profile.model.providerId,
+              modelID: input.profile.model.modelId,
+            },
+            variant: input.profile.effort,
+          }),
+        })
+      } catch (error) {
+        if (error instanceof HarnessSessionRequestError) await bindings.deleteByAttempt?.(input.attemptId)
+        throw error
+      }
+      return binding.sessionId
+    },
+    cancel: async (sessionId, reason) => {
+      const binding = await bindings.findBySession(sessionId)
+      if (!binding) return v2.cancel(sessionId, reason)
+      await request(binding, `/session/${encodeURIComponent(runtimeSessionId(binding))}/abort`, { method: "POST" })
+    },
+    result: async (sessionId) => {
+      const binding = await bindings.findBySession(sessionId)
+      if (!binding) return v2.result(sessionId)
+      const runtimeId = runtimeSessionId(binding)
+      const session = record(await request(binding, `/session/${encodeURIComponent(runtimeId)}`).then((response) => response.json()))
+      const status = clean(session?.status)
+      if (status === "busy" || status === "recovering" || status === "retry") return { state: "running" }
+      const lastTurn = record(session?.lastTurn)
+      if (lastTurn?.status === "failed") {
+        return { state: "failed", message: clean(lastTurn.error) ?? "Harness Session failed" }
+      }
+      if (lastTurn?.status === "cancelled") return { state: "cancelled" }
+      if (lastTurn?.status !== "completed") return { state: "pending" }
+      const messages = await request(binding, `/session/${encodeURIComponent(runtimeId)}/message`).then((response) => response.json())
+      const summary = assistantSummary(messages)
+      if (!summary) return { state: "failed", message: "session_output_missing" }
+      return { state: "succeeded", summary, artifacts: [] }
+    },
+    releaseDirectory: async (directory) => {
+      await bindings.deleteByDirectory(directory)
+      await options.releaseSessionRuntime?.(directory)
+    },
+  }
+}
+
+function runtimeSessionId(binding: WorkGraphSessionBinding) {
+  return binding.runtimeSessionId ?? binding.sessionId
+}
+
 /** Session V2 transport used by the local embedded WorkGraph execution adapter. */
 export function createSessionV2WorkGraphGateway(
   opencodeRequest: OpenCodeRequestFn,
-  options: { connections?: ConnectionsService; connectors?: Readonly<Record<string, SourceIssueConnector>> } = {},
+  options: SessionV2WorkGraphGatewayOptions = {},
 ): WorkGraphSessionGateway {
   const bridges = new Map<string, ReturnType<typeof WorkGraphConnectionToolRoutes>>()
   const request = async (pathname: string, init?: RequestInit, directory?: string) => {
@@ -64,12 +284,14 @@ export function createSessionV2WorkGraphGateway(
         if (!options.connections) throw new Error("Connection-bound Attempts require the Connections service")
         const context = input.context
         if (!context) throw new Error("Connection-bound Attempts require the WorkGraph owner context")
+        const ownerPartition = options.resolveTeamOwner(context)
+        if (!ownerPartition) throw new Error("Connection-bound Attempts require an organization-owned Connection scope")
         const connectionTools = input.profile.tools.filter((tool) =>
           tool === "connection_work_source_list" || tool === "connection_work_source_comment" || tool === "connection_work_source_update")
         if (!connectionTools.length) throw new Error("Connection-bound Attempts require explicit Connection tools")
         const binding = {
           context,
-          ownerPartition: "local-team",
+          ownerPartition,
           attemptId: input.attemptId,
           sessionId: adoptedId,
           workspaceId: input.directory,
@@ -78,14 +300,14 @@ export function createSessionV2WorkGraphGateway(
         }
         const broker = createConnectionOperationBroker({
           bindings: { resolve: async () => binding },
-          connections: createWorkGraphConnectionsPort({ service: options.connections, resolveTeamOwner: () => undefined }),
+          connections: createWorkGraphConnectionsPort({ service: options.connections, resolveTeamOwner: options.resolveTeamOwner }),
           ...(options.connectors ? { connectors: options.connectors } : {}),
         })
         const bridge = WorkGraphConnectionToolRoutes({
           workspaceId: input.directory,
           broker: (operation) => broker.execute(operation.identity as never, operation.operation, {
             ownerUserId: context.ownerUserId,
-            ownerPartition: "local-team",
+            ownerPartition,
           }),
           registerSessionTools: async (registration) => {
             await request(`/api/session/${encodeURIComponent(registration.sessionId)}/tool`, {
@@ -183,6 +405,40 @@ export function createSessionV2WorkGraphGateway(
       }
     },
   }
+}
+
+class HarnessSessionRequestError extends Error {
+  constructor(readonly pathname: string, readonly status: number, body: string) {
+    super(`Harness Session request failed: ${status} ${body}`)
+  }
+}
+
+function classifySessionRequest(status: number) {
+  if (status === 404 || status === 501 || status === 503) return "unavailable" as const
+  if (status >= 400 && status < 500 && status !== 408 && status !== 425 && status !== 429) return "rejected" as const
+  return "indeterminate" as const
+}
+
+function assistantSummary(input: unknown) {
+  if (!Array.isArray(input)) return
+  const assistant = input.findLast((message) => record(record(message)?.info)?.role === "assistant")
+  const parts = record(assistant)?.parts
+  if (!Array.isArray(parts)) return
+  const text = parts.flatMap((part) => {
+    const row = record(part)
+    return row?.type === "text" && clean(row.text) ? [clean(row.text)!] : []
+  }).join("\n").trim()
+  return text || undefined
+}
+
+function record(input: unknown) {
+  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+}
+
+function clean(input: unknown) {
+  if (typeof input !== "string") return
+  const value = input.trim()
+  return value || undefined
 }
 
 class SessionV2RequestError extends Error {

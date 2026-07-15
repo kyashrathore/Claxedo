@@ -30,109 +30,161 @@ const itemShape = {
   ownerUserId: OwnerUserIDSchema,
   id: text,
   updatedAt: timestamp,
+  readAt: timestamp.optional(),
 }
 
-const AdmissionAttentionItemSchema = z.strictObject({
-  ...itemShape,
-  kind: z.literal("admission_proposal"),
-  record: AdmissionProposalDtoSchema,
-}).superRefine((item, context) => {
-  if (item.record.state !== "proposed") {
-    context.addIssue({ code: "custom", path: ["record", "state"], message: "Attention requires a reviewable admission proposal" })
-  }
-  recordIdentity(item, context)
-})
+const AdmissionAttentionItemSchema = z
+  .strictObject({
+    ...itemShape,
+    kind: z.literal("admission_proposal"),
+    record: AdmissionProposalDtoSchema,
+  })
+  .superRefine((item, context) => {
+    if (item.record.state !== "proposed") {
+      context.addIssue({
+        code: "custom",
+        path: ["record", "state"],
+        message: "Attention requires a reviewable admission proposal",
+      })
+    }
+    recordIdentity(item, context)
+  })
 
-const DecisionAttentionItemSchema = z.strictObject({
-  ...itemShape,
-  kind: z.literal("decision"),
-  record: DecisionDtoSchema,
-}).superRefine((item, context) => {
-  if (item.record.state !== "proposed" && item.record.state !== "pending") {
-    context.addIssue({ code: "custom", path: ["record", "state"], message: "Attention requires an unanswered Decision" })
-  }
-  recordIdentity(item, context)
-})
+const DecisionAttentionItemSchema = z
+  .strictObject({
+    ...itemShape,
+    kind: z.literal("decision"),
+    record: DecisionDtoSchema,
+  })
+  .superRefine((item, context) => {
+    if (item.record.state !== "proposed" && item.record.state !== "pending") {
+      context.addIssue({
+        code: "custom",
+        path: ["record", "state"],
+        message: "Attention requires an unanswered Decision",
+      })
+    }
+    recordIdentity(item, context)
+  })
 
-const WorkItemAttentionItemSchema = z.strictObject({
-  ...itemShape,
-  kind: z.literal("work_item"),
-  record: WorkItemDtoSchema,
-}).superRefine((item, context) => {
-  if (!["result_ready", "blocked", "review_needed", "integration_needed", "verification_failed", "failed"].includes(item.record.state)) {
-    context.addIssue({ code: "custom", path: ["record", "state"], message: "Task state does not require owner attention" })
-  }
-  recordIdentity(item, context)
-})
+const WorkItemAttentionItemSchema = z
+  .strictObject({
+    ...itemShape,
+    kind: z.literal("work_item"),
+    record: WorkItemDtoSchema,
+  })
+  .superRefine((item, context) => {
+    if (
+      !["result_ready", "blocked", "review_needed", "integration_needed", "verification_failed", "failed"].includes(
+        item.record.state,
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["record", "state"],
+        message: "Task state does not require owner attention",
+      })
+    }
+    recordIdentity(item, context)
+  })
 
-const AttemptAttentionItemSchema = z.strictObject({
-  ...itemShape,
-  kind: z.literal("attempt"),
-  record: AttemptDtoSchema,
-}).superRefine((item, context) => {
-  if (item.record.state !== "attention") {
-    context.addIssue({ code: "custom", path: ["record", "state"], message: "Attempt is not waiting for attention" })
-  }
-  recordIdentity(item, context)
-})
+const AttemptAttentionItemSchema = z
+  .strictObject({
+    ...itemShape,
+    kind: z.literal("attempt"),
+    record: AttemptDtoSchema,
+  })
+  .superRefine((item, context) => {
+    if (item.record.state !== "attention") {
+      context.addIssue({ code: "custom", path: ["record", "state"], message: "Attempt is not waiting for attention" })
+    }
+    recordIdentity(item, context)
+  })
 
-const RecapNotificationAttentionItemSchema = z.strictObject({
-  ...itemShape,
-  kind: z.literal("recap_notification"),
-  notification: WorkGraphNotificationSchema,
-  recap: RecapDtoSchema,
-}).superRefine((item, context) => {
-  if (item.ownerUserId !== item.notification.ownerUserId || item.id !== item.notification.id || item.updatedAt !== item.notification.updatedAt) {
-    context.addIssue({ code: "custom", path: ["notification"], message: "Attention identity must match its Recap notification" })
-  }
-  if (item.notification.state !== "unread" || item.notification.recapId !== item.recap.id ||
-    item.notification.streamId !== item.recap.streamId || item.notification.ownerUserId !== item.recap.ownerUserId ||
-    item.recap.actionableReferences.length === 0) {
-    context.addIssue({ code: "custom", path: ["recap"], message: "Recap notification is not actionable" })
-  }
-})
+const RecapNotificationAttentionItemSchema = z
+  .strictObject({
+    ...itemShape,
+    kind: z.literal("recap_notification"),
+    notification: WorkGraphNotificationSchema,
+    recap: RecapDtoSchema,
+  })
+  .superRefine((item, context) => {
+    if (
+      item.ownerUserId !== item.notification.ownerUserId ||
+      item.id !== item.notification.id ||
+      item.updatedAt !== item.notification.updatedAt
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["notification"],
+        message: "Attention identity must match its Recap notification",
+      })
+    }
+    if (
+      item.notification.state !== "unread" ||
+      item.notification.recapId !== item.recap.id ||
+      item.notification.streamId !== item.recap.streamId ||
+      item.notification.ownerUserId !== item.recap.ownerUserId ||
+      item.recap.actionableReferences.length === 0
+    ) {
+      context.addIssue({ code: "custom", path: ["recap"], message: "Recap notification is not actionable" })
+    }
+  })
 
-const UnorganizedAIWorkAttentionItemSchema = z.strictObject({
-  ...itemShape,
-  id: z.literal("unorganized_ai_work"),
-  kind: z.literal("unorganized_ai_work"),
-  counts: z.strictObject({
-    externalIssues: z.number().int().nonnegative(),
-    sessions: z.number().int().nonnegative(),
-    total: z.number().int().positive(),
-  }),
-}).superRefine((item, context) => {
-  if (item.counts.total === item.counts.externalIssues + item.counts.sessions) return
-  context.addIssue({ code: "custom", path: ["counts", "total"], message: "Unorganized AI work total must equal its kind counts" })
-})
-
-const ConfigurationRequiredAttentionItemSchema = z.strictObject({
-  ...itemShape,
-  kind: z.literal("configuration_required"),
-  requirement: z.union([
-    z.strictObject({
-      type: z.literal("connection"),
-      connectionId: ConnectionIDSchema,
-      integrationId: SourceProviderSchema,
-      status: z.enum(["degraded", "broken"]),
-      accountLabel: text.optional(),
+const UnorganizedAIWorkAttentionItemSchema = z
+  .strictObject({
+    ...itemShape,
+    id: z.literal("unorganized_ai_work"),
+    kind: z.literal("unorganized_ai_work"),
+    counts: z.strictObject({
+      externalIssues: z.number().int().nonnegative(),
+      sessions: z.number().int().nonnegative(),
+      total: z.number().int().positive(),
     }),
-    z.strictObject({
-      type: z.literal("generation"),
-      jobId: text,
-      purpose: z.enum(["source_planning", "recap"]),
-      scope: z.union([
-        z.strictObject({ type: z.literal("workgraph") }),
-        z.strictObject({ type: z.literal("stream"), streamId: StreamIDSchema }),
-      ]),
-      reason: text,
-    }),
-  ]),
-}).superRefine((item, context) => {
-  const requirementId = item.requirement.type === "connection" ? item.requirement.connectionId : item.requirement.jobId
-  if (item.id === requirementId) return
-  context.addIssue({ code: "custom", path: ["requirement"], message: "Configuration attention identity must match its requirement" })
-})
+  })
+  .superRefine((item, context) => {
+    if (item.counts.total === item.counts.externalIssues + item.counts.sessions) return
+    context.addIssue({
+      code: "custom",
+      path: ["counts", "total"],
+      message: "Unorganized AI work total must equal its kind counts",
+    })
+  })
+
+const ConfigurationRequiredAttentionItemSchema = z
+  .strictObject({
+    ...itemShape,
+    kind: z.literal("configuration_required"),
+    requirement: z.union([
+      z.strictObject({
+        type: z.literal("connection"),
+        connectionId: ConnectionIDSchema,
+        integrationId: SourceProviderSchema,
+        status: z.enum(["degraded", "broken"]),
+        accountLabel: text.optional(),
+      }),
+      z.strictObject({
+        type: z.literal("generation"),
+        jobId: text,
+        purpose: z.enum(["source_planning", "recap"]),
+        scope: z.union([
+          z.strictObject({ type: z.literal("workgraph") }),
+          z.strictObject({ type: z.literal("stream"), streamId: StreamIDSchema }),
+        ]),
+        reason: text,
+      }),
+    ]),
+  })
+  .superRefine((item, context) => {
+    const requirementId =
+      item.requirement.type === "connection" ? item.requirement.connectionId : item.requirement.jobId
+    if (item.id === requirementId) return
+    context.addIssue({
+      code: "custom",
+      path: ["requirement"],
+      message: "Configuration attention identity must match its requirement",
+    })
+  })
 
 export const AttentionItemSchema = z.union([
   AdmissionAttentionItemSchema,
@@ -142,7 +194,10 @@ export const AttentionItemSchema = z.union([
   RecapNotificationAttentionItemSchema,
   UnorganizedAIWorkAttentionItemSchema,
   ConfigurationRequiredAttentionItemSchema,
-])
+]).superRefine((item, context) => {
+  if (item.readAt === undefined || item.readAt >= item.updatedAt) return
+  context.addIssue({ code: "custom", path: ["readAt"], message: "Attention cannot be read before its current update" })
+})
 export type AttentionItem = z.infer<typeof AttentionItemSchema>
 
 export const AttentionCursorSchema = z.string().trim().min(1).max(maxLength).brand("AttentionCursor")
@@ -154,19 +209,45 @@ export const AttentionListInputSchema = z.strictObject({
 })
 export type AttentionListInput = z.infer<typeof AttentionListInputSchema>
 
-export const AttentionPageSchema = z.strictObject({
-  items: z.array(AttentionItemSchema),
-  total: z.number().int().nonnegative(),
-  hasMore: z.boolean(),
-  nextCursor: AttentionCursorSchema.optional(),
-}).superRefine((page, context) => {
-  if (page.total < page.items.length) {
-    context.addIssue({ code: "custom", path: ["total"], message: "Attention total cannot be smaller than the current page" })
-  }
-  if (page.hasMore === Boolean(page.nextCursor)) return
-  context.addIssue({ code: "custom", path: ["nextCursor"], message: "An Attention cursor is required exactly when more items exist" })
-})
+export const AttentionPageSchema = z
+  .strictObject({
+    items: z.array(AttentionItemSchema),
+    total: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+    nextCursor: AttentionCursorSchema.optional(),
+  })
+  .superRefine((page, context) => {
+    if (page.total < page.items.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["total"],
+        message: "Attention total cannot be smaller than the current page",
+      })
+    }
+    if (page.hasMore === Boolean(page.nextCursor)) return
+    context.addIssue({
+      code: "custom",
+      path: ["nextCursor"],
+      message: "An Attention cursor is required exactly when more items exist",
+    })
+  })
 export type AttentionPage = z.infer<typeof AttentionPageSchema>
+
+export const AttentionAcknowledgementSchema = z
+  .strictObject({
+    ownerUserId: OwnerUserIDSchema,
+    readAt: timestamp,
+    clearedAt: timestamp.optional(),
+  })
+  .superRefine((acknowledgement, context) => {
+    if (acknowledgement.clearedAt === undefined || acknowledgement.clearedAt <= acknowledgement.readAt) return
+    context.addIssue({
+      code: "custom",
+      path: ["clearedAt"],
+      message: "Attention cannot be cleared after its read watermark",
+    })
+  })
+export type AttentionAcknowledgement = z.infer<typeof AttentionAcknowledgementSchema>
 
 export type AttentionCursorErrorReason = "invalid" | "owner_mismatch"
 
@@ -185,21 +266,35 @@ export type AttentionPosition = Readonly<{
   id: string
 }>
 
-export function createAttentionCursor(ownerUserId: string, position: AttentionPosition): AttentionCursor {
-  const cursor = [prefix, encode(ownerUserId), integer(position.updatedAt), position.kind, encode(position.id)].join(":")
+export function createAttentionCursor(
+  organizationId: string,
+  ownerUserId: string,
+  position: AttentionPosition,
+): AttentionCursor {
+  const cursor = [
+    prefix,
+    encode(organizationId),
+    encode(ownerUserId),
+    integer(position.updatedAt),
+    position.kind,
+    encode(position.id),
+  ].join(":")
   if (cursor.length > maxLength) throw new AttentionCursorError("invalid")
   return AttentionCursorSchema.parse(cursor)
 }
 
-export function readAttentionCursor(cursor: string, ownerUserId: string): AttentionPosition {
+export function readAttentionCursor(cursor: string, organizationId: string, ownerUserId: string): AttentionPosition {
   if (cursor.length > maxLength) throw new AttentionCursorError("invalid")
   const parts = cursor.split(":")
-  if (parts.length !== 5 || parts[0] !== prefix) throw new AttentionCursorError("invalid")
-  if (decode(parts[1]!) !== ownerUserId) throw new AttentionCursorError("owner_mismatch")
+  if (parts.length !== 6 || parts[0] !== prefix) throw new AttentionCursorError("invalid")
+  if (decode(parts[1]!) !== organizationId || decode(parts[2]!) !== ownerUserId)
+    throw new AttentionCursorError("owner_mismatch")
+  const kind = AttentionKindSchema.safeParse(parts[4])
+  if (!kind.success) throw new AttentionCursorError("invalid")
   return {
-    updatedAt: integer(parts[2]),
-    kind: AttentionKindSchema.parse(parts[3]),
-    id: decode(parts[4]!),
+    updatedAt: integer(parts[3]),
+    kind: kind.data,
+    id: decode(parts[5]!),
   }
 }
 
@@ -209,10 +304,20 @@ export function compareAttentionPosition(left: AttentionPosition, right: Attenti
 }
 
 function recordIdentity(
-  item: Readonly<{ ownerUserId: string; id: string; updatedAt: number; record: { ownerUserId: string; id: string; updatedAt: number } }>,
+  item: Readonly<{
+    ownerUserId: string
+    id: string
+    updatedAt: number
+    record: { ownerUserId: string; id: string; updatedAt: number }
+  }>,
   context: z.core.$RefinementCtx<unknown>,
 ) {
-  if (item.ownerUserId === item.record.ownerUserId && item.id === item.record.id && item.updatedAt === item.record.updatedAt) return
+  if (
+    item.ownerUserId === item.record.ownerUserId &&
+    item.id === item.record.id &&
+    item.updatedAt === item.record.updatedAt
+  )
+    return
   context.addIssue({ code: "custom", path: ["record"], message: "Attention identity must match its canonical record" })
 }
 

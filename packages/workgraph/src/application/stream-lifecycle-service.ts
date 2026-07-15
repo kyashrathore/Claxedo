@@ -8,7 +8,7 @@ export async function cleanupStreamBeforeRemoval(
     streamId: StreamID
     envelopeId: StreamEnvelopeID
     childIsolationIds?: readonly ChildIsolationID[]
-    mode: "delete" | "close"
+    mode: "delete"
   }>,
   execution: WorkspaceExecutionPort,
   remove: () => Promise<void>,
@@ -17,7 +17,7 @@ export async function cleanupStreamBeforeRemoval(
     streamId: input.streamId,
     envelopeId: input.envelopeId,
     childIsolationIds: input.childIsolationIds,
-    reason: input.mode,
+    reason: "delete",
   })
   await remove()
 }

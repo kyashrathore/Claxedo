@@ -74,6 +74,45 @@ registry.register(...Object.values(googleIntegration({
   the next call retries. Refresh is single-flight per credential,
   per-process.
 
+## Signed WorkGraph webhooks
+
+Team Connections with the `work-source` capability can own an independent
+webhook signing credential. The provider callback URL is:
+
+```text
+https://<claxedo-host>/api/workgraph/webhooks/<provider>/<connection-id>
+```
+
+Store or rotate the signing value through the authenticated team-Connection
+management route. The response never contains the value:
+
+```http
+PUT /api/claxedo/integrations/connections/<connection-id>/webhook-secret
+Content-Type: application/json
+
+{"secret":"<provider webhook signing secret>"}
+```
+
+Provider setup:
+
+- **GitHub:** use `<provider> = github`, configure the same secret on the
+  repository or organization webhook, and subscribe to issue events.
+- **Linear:** use `<provider> = linear`. Create the webhook in Linear API
+  settings with the callback URL above, subscribe to Issue events, then copy
+  the signing secret from the webhook detail page into the Connection route.
+  Claxedo verifies `Linear-Signature` over the raw body, requires
+  `Linear-Delivery` and `Linear-Event`, and enforces Linear's one-minute
+  `webhookTimestamp` replay window.
+- **Jira Cloud:** use `<provider> = jira`. Create an admin/REST webhook with
+  issue events, the callback URL above, and a high-entropy `secret`; store that
+  same value in the Connection route. Claxedo verifies the raw-body
+  `X-Hub-Signature` and deduplicates the retry-stable
+  `X-Atlassian-Webhook-Identifier`.
+
+Webhook bodies and signing credentials stay within the Connection verifier.
+WorkGraph receives a normalized delivery identity and routing attributes, and
+refreshes only active personal Source Views bound to that team Connection.
+
 ## Reference integrations & extension policy
 
 The package ships **reference implementations only**: Notion, Atlassian,

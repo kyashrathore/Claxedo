@@ -9,18 +9,19 @@ import {
 describe("WorkGraph detail contracts", () => {
   test("round-trips an owner- and Work Item-bound Attempt cursor", () => {
     const cursor = createWorkItemAttemptPageCursor({
+      organizationId: "organization_a",
       ownerUserId: "owner_a",
       workItemId: "item_a",
       attemptNumber: 2,
       attemptId: "attempt_2",
     })
-    expect(readWorkItemAttemptPageCursor(cursor, "owner_a", "item_a")).toEqual({
+    expect(readWorkItemAttemptPageCursor(cursor, "organization_a", "owner_a", "item_a")).toEqual({
       attemptNumber: 2,
       attemptId: "attempt_2",
     })
-    expect(() => readWorkItemAttemptPageCursor(cursor, "owner_b", "item_a"))
+    expect(() => readWorkItemAttemptPageCursor(cursor, "organization_a", "owner_b", "item_a"))
       .toThrowError(expect.objectContaining<Partial<WorkItemAttemptPageCursorError>>({ reason: "owner_mismatch" }))
-    expect(() => readWorkItemAttemptPageCursor(cursor, "owner_a", "item_b"))
+    expect(() => readWorkItemAttemptPageCursor(cursor, "organization_a", "owner_a", "item_b"))
       .toThrowError(expect.objectContaining<Partial<WorkItemAttemptPageCursorError>>({ reason: "work_item_mismatch" }))
   })
 
@@ -46,9 +47,6 @@ describe("WorkGraph detail contracts", () => {
         effort: "high",
         tools: [],
         connectionIds: [],
-        isolation: "stream",
-        cleanup: "retain",
-        integration: "manual",
       },
       admittedAt: 1,
       sourceRevisionRefs: [],

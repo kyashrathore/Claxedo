@@ -6,3 +6,4 @@ export { Database } from "@opencode-ai/core/database/database"
 // per-directory engine instances (closes their fibers + sqlite handles).
 // This is the same teardown the TUI worker's `shutdown()` invokes.
 export { InstanceRuntime } from "@/project/instance-runtime"
+export { ApplicationToolRuntime } from "@/tool/application-tool-runtime"

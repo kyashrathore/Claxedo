@@ -1,8 +1,8 @@
 import { Hono } from "hono"
 import { errorBody } from "./http"
-import { timingSafeEqualStrings } from "../control-plane/web-crypto"
 import type { ControlPlaneTelemetry } from "../control-plane/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { internalAdminAuthorized } from "./internal-admin-auth"
 
 export type HostedSandboxAdminOptions = {
   adminToken?: string
@@ -13,14 +13,6 @@ export type HostedSandboxAdminOptions = {
 function clean(input: string | undefined) {
   const value = input?.trim()
   return value ? value : undefined
-}
-
-function authorized(request: Request, expected: string | undefined) {
-  const header = request.headers.get("authorization")
-  if (!expected || !header) return false
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim())
-  const presented = match?.[1]?.trim()
-  return presented ? timingSafeEqualStrings(presented, expected) : false
 }
 
 function capture(options: HostedSandboxAdminOptions, event: string, properties: Record<string, unknown>) {
@@ -35,7 +27,7 @@ export function HostedSandboxAdminRoutes(options: HostedSandboxAdminOptions = {}
   const app = new Hono()
 
   app.use("/internal/sandbox-manager/*", async (c, next) => {
-    if (!authorized(c.req.raw, clean(options.adminToken))) {
+    if (!internalAdminAuthorized(c.req.raw, clean(options.adminToken))) {
       return c.json(errorBody("sandbox_admin_unauthorized", "Sandbox admin routes require a matching bearer token"), 401)
     }
     await next()

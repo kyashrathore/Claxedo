@@ -159,6 +159,21 @@ export function oscColorEscapesOutsideResponder(files: SourceFile[]): Finding[] 
     .flatMap((file) => findMatches(file, oscColorEscapeRe))
 }
 
+export const WORKGRAPH_SURFACE_FILE = "app/integrations/first-party-content-surfaces.tsx"
+
+export function workGraphEagerSurfaceViolations(files: SourceFile[]): Finding[] {
+  const file = files.find((item) => item.path === WORKGRAPH_SURFACE_FILE)
+  if (!file) return [{ file: WORKGRAPH_SURFACE_FILE, line: 1, match: "WorkGraph surface file is missing" }]
+  const findings = [
+    ...findMatches(file, /const\s+WorkGraphContent\s*=\s*lazy/g),
+    ...findMatches(file, /Loading WorkGraph/g),
+  ]
+  if (/import\s+\{\s*WorkGraphContent\s*\}\s+from\s+["']\.\.\/\.\.\/features\/workgraph["']/.test(file.text)) {
+    return findings
+  }
+  return [{ file: file.path, line: 1, match: "WorkGraphContent must be imported eagerly" }, ...findings]
+}
+
 // Standalone drift guard: the app/entry/app.tsx route spine, ordering, and negatives.
 //
 // override-batch-contract.test.ts (retired as snapshot theater) encoded ONE

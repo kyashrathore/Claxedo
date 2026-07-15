@@ -76,6 +76,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const hostname = workspaceRuntimeListenHostname(env)
   const relayOptions = await workspaceRelayRuntimeOptionsFromEnv(env, port)
   const opencodeUrl = text(env, "OPENCODE_URL")
+  const workgraphConnectionBrokerOrigin = text(env, "WORKSPACE_RUNTIME_WORKGRAPH_BROKER_ORIGIN")
   const options: WorkspaceRuntimeServerOptions = {
     target: { workspaceId: workspaceId(env), directory: workspaceDir(env) },
     ...relayOptions,
@@ -90,6 +91,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
           "WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK local managed-cloud runtime",
         ),
     ...(opencodeUrl ? { opencodeUrl } : {}),
+    ...(workgraphConnectionBrokerOrigin ? { workgraphConnectionBrokerOrigin } : {}),
     harness: claxedoRuntimeRunnerFromEnv(env),
     corsOrigin: claxedoCorsOrigin,
     // Claxedo keeps OpenCode compat ON unless its env flag disables it. The

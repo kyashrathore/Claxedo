@@ -53,6 +53,49 @@ describe("hosted Connection webhook verifier", () => {
     await expect(verifier.verify(request("connection-a", "github", "new-secret"))).resolves.toBeUndefined()
   })
 
+  test("resolves Linear and Jira signing secrets through their owning org Connection", async () => {
+    const receivedAt = 1_700_000_000_000
+    const integrations = ["linear", "jira"] as const
+    const verifier = createHostedConnectionWebhookVerifier({
+      env: {},
+      serviceToken: "service-token",
+      executor: { query: async (_fn, args) => ({
+        id: args.connectionId,
+        integrationId: args.connectionId,
+        capabilities: ["work-source"],
+        status: "connected",
+        orgId: "org-a",
+      }) },
+      credentials: () => credentialStore("provider-secret", "*"),
+    })!
+
+    for (const provider of integrations) {
+      const body = new TextEncoder().encode(JSON.stringify(provider === "linear" ? {
+        webhookTimestamp: receivedAt,
+        data: { teamId: "team-a" },
+      } : {
+        webhookEvent: "jira:issue_updated",
+        issue: { id: "10001", fields: { project: { key: "CLOUD" } } },
+      }))
+      const headers: Record<string, string> = provider === "linear" ? {
+        "linear-delivery": "linear-delivery",
+        "linear-event": "Issue",
+        "linear-timestamp": String(receivedAt),
+        "linear-signature": createHmac("sha256", "provider-secret").update(body).digest("hex"),
+      } : {
+        "x-atlassian-webhook-identifier": "jira-delivery",
+        "x-hub-signature": `sha256=${createHmac("sha256", "provider-secret").update(body).digest("hex")}`,
+      }
+      await expect(verifier.verify({
+        connectionId: provider,
+        provider,
+        body,
+        headers,
+        receivedAt,
+      })).resolves.toMatchObject({ connectionId: provider, provider })
+    }
+  })
+
   test("omits the public verifier when encrypted hosted credentials are disabled", () => {
     expect(createHostedConnectionWebhookVerifier({
       env: {},
@@ -76,12 +119,14 @@ function request(connectionId: string, provider: string, secret: string) {
   }
 }
 
-function credentialStore(secret: string | undefined): ControlPlaneCredentials {
+function credentialStore(secret: string | undefined, connectionId = "connection-a"): ControlPlaneCredentials {
   return {
     listCredentials: async () => [],
     getCredentialByProvider: async () => undefined,
     resolveCredentialSecret: async (providerId) =>
-      providerId === "integration:connection-a:webhook-signing" ? secret ?? null : null,
+      (connectionId === "*"
+        ? providerId.startsWith("integration:") && providerId.endsWith(":webhook-signing")
+        : providerId === `integration:${connectionId}:webhook-signing`) ? secret ?? null : null,
     putCredential: async () => { throw new Error("unused") },
     deleteCredential: async () => false,
     deleteCredentialsByProvider: async () => 0,

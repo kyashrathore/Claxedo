@@ -51,9 +51,9 @@ describe("SQLite personal intake stores", () => {
     })
     const prepared = await stores.candidates.prepareStage(alice, "candidate-a", { title: "Ship", content: "immutable issue evidence" })
     const source = { workSourceId: "source-1", revisionId: "revision-1", contentHash: hashWorkSourceContent(prepared.draft.content) } as const
-    database.prepare(`INSERT INTO wg_v2_work_sources (owner_user_id, id, workgraph_id, title, latest_revision_number, created_at, updated_at) VALUES (?, ?, 'workgraph_default', ?, 1, 1, 1)`).run(alice.ownerUserId, source.workSourceId, "Ship")
-    database.prepare(`INSERT INTO wg_v2_work_source_revisions (owner_user_id, id, work_source_id, revision_number, content, content_hash, created_at) VALUES (?, ?, ?, 1, ?, ?, 1)`).run(alice.ownerUserId, source.revisionId, source.workSourceId, prepared.draft.content, source.contentHash)
-    database.prepare(`INSERT INTO wg_v2_admission_proposals (owner_user_id, id, workgraph_id, source_revision_id, proposal_kind, lifecycle, proposed_work_json, created_at, updated_at) VALUES (?, 'proposal-1', 'workgraph_default', ?, 'source', 'proposed', '{}', 1, 1)`).run(alice.ownerUserId, source.revisionId)
+    database.prepare(`INSERT INTO wg_v2_work_sources (organization_id, owner_user_id, id, workgraph_id, title, latest_revision_number, created_at, updated_at) VALUES (?, ?, ?, 'workgraph_default', ?, 1, 1, 1)`).run(alice.organizationId, alice.ownerUserId, source.workSourceId, "Ship")
+    database.prepare(`INSERT INTO wg_v2_work_source_revisions (organization_id, owner_user_id, id, work_source_id, revision_number, content, content_hash, created_at) VALUES (?, ?, ?, ?, 1, ?, ?, 1)`).run(alice.organizationId, alice.ownerUserId, source.revisionId, source.workSourceId, prepared.draft.content, source.contentHash)
+    database.prepare(`INSERT INTO wg_v2_admission_proposals (organization_id, owner_user_id, id, workgraph_id, source_revision_id, proposal_kind, lifecycle, proposed_work_json, created_at, updated_at) VALUES (?, ?, 'proposal-1', 'workgraph_default', ?, 'source', 'proposed', '{}', 1, 1)`).run(alice.organizationId, alice.ownerUserId, source.revisionId)
     expect(await stores.candidates.stage(alice, "candidate-a", { source: source as never, proposalId: "proposal-1" as never })).toMatchObject({
       state: "staged",
       admissionProposalId: "proposal-1",
@@ -95,9 +95,9 @@ describe("SQLite personal intake stores", () => {
     const prepared = await stores.candidates.prepareStage(alice, "candidate-a", draft)
     await stores.candidates.prepareStage(alice, "candidate-b", draft)
     const source = { workSourceId: "source-1", revisionId: "revision-1", contentHash: hashWorkSourceContent(prepared.draft.content) } as const
-    database.prepare(`INSERT INTO wg_v2_work_sources (owner_user_id, id, workgraph_id, title, latest_revision_number, created_at, updated_at) VALUES (?, ?, 'workgraph_default', ?, 1, 1, 1)`).run(alice.ownerUserId, source.workSourceId, "Ship")
-    database.prepare(`INSERT INTO wg_v2_work_source_revisions (owner_user_id, id, work_source_id, revision_number, content, content_hash, created_at) VALUES (?, ?, ?, 1, ?, ?, 1)`).run(alice.ownerUserId, source.revisionId, source.workSourceId, prepared.draft.content, source.contentHash)
-    database.prepare(`INSERT INTO wg_v2_admission_proposals (owner_user_id, id, workgraph_id, source_revision_id, proposal_kind, lifecycle, proposed_work_json, created_at, updated_at) VALUES (?, 'proposal-1', 'workgraph_default', ?, 'source', 'proposed', '{}', 1, 1)`).run(alice.ownerUserId, source.revisionId)
+    database.prepare(`INSERT INTO wg_v2_work_sources (organization_id, owner_user_id, id, workgraph_id, title, latest_revision_number, created_at, updated_at) VALUES (?, ?, ?, 'workgraph_default', ?, 1, 1, 1)`).run(alice.organizationId, alice.ownerUserId, source.workSourceId, "Ship")
+    database.prepare(`INSERT INTO wg_v2_work_source_revisions (organization_id, owner_user_id, id, work_source_id, revision_number, content, content_hash, created_at) VALUES (?, ?, ?, ?, 1, ?, ?, 1)`).run(alice.organizationId, alice.ownerUserId, source.revisionId, source.workSourceId, prepared.draft.content, source.contentHash)
+    database.prepare(`INSERT INTO wg_v2_admission_proposals (organization_id, owner_user_id, id, workgraph_id, source_revision_id, proposal_kind, lifecycle, proposed_work_json, created_at, updated_at) VALUES (?, ?, 'proposal-1', 'workgraph_default', ?, 'source', 'proposed', '{}', 1, 1)`).run(alice.organizationId, alice.ownerUserId, source.revisionId)
     await stores.candidates.stage(alice, "candidate-a", { source: source as never, proposalId: "proposal-1" as never })
     const before = database.prepare(`SELECT status, normalized_json, row_version FROM wg_v2_intake_candidates WHERE owner_user_id = ? AND id = 'candidate-b'`).get(alice.ownerUserId)
 
@@ -259,6 +259,7 @@ function open() {
 
 function context(owner: string): WorkGraphContext {
   return {
+    organizationId: "organization" as never,
     ownerUserId: OwnerUserIDSchema.parse(owner),
     actor: { type: "user", id: ActorIDSchema.parse(owner) },
     requestId: RequestIDSchema.parse(`request-${owner}`),

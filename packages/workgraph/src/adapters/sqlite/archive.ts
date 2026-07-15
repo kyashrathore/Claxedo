@@ -1,5 +1,8 @@
 import {
   ChangeCursorSchema,
+  createChangeCursor,
+  readChangeCursor,
+  ModelSelectionSchema,
   WorkGraphArchiveRestoreError,
   WorkGraphArchiveSchema,
   hashWorkGraphArchive,
@@ -9,6 +12,7 @@ import {
   type WorkGraphArchive,
   type WorkGraphContext,
   type WorkGraphPublicRecord,
+  type WorkSourceOrigin,
 } from "../../contracts"
 import type { WorkGraphArchivePort, WorkGraphArchiveRestoreResult } from "../../ports"
 import type { RawDatabase, SqliteInput } from "../../sqlite"
@@ -95,28 +99,33 @@ export function createSqliteWorkGraphArchivePort(
   return {
     export: async (context) => {
       requireOwner(context)
-      assertArchiveAvailable(database, context)
-      assertQuiescent(database, context)
-      assertCanonicalCoverage(database, context)
-      const archive = WorkGraphArchiveSchema.safeParse({
-        version: 1,
-        ownerUserId: context.ownerUserId,
-        exportedAt: clock.now(),
-        records: exportRecords(database, context),
-      })
-      if (!archive.success) throw new WorkGraphArchiveRestoreError("target_incompatible")
-      return archive.data
+      return database.transaction(() => {
+        assertArchiveAvailable(database, context)
+        assertQuiescent(database, context)
+        assertCanonicalCoverage(database, context)
+        const archive = WorkGraphArchiveSchema.safeParse({
+          version: 1,
+          organizationId: context.organizationId,
+          ownerUserId: context.ownerUserId,
+          exportedAt: clock.now(),
+          records: exportRecords(database, context),
+        })
+        if (!archive.success) throw new WorkGraphArchiveRestoreError("target_incompatible")
+        return archive.data
+      })()
     },
     restore: async (context, input) => {
       requireOwner(context)
       assertArchiveAvailable(database, context)
       const archive = await validateWorkGraphArchive(input.archive)
-      if (archive.ownerUserId !== context.ownerUserId) throw new WorkGraphArchiveRestoreError("cross_owner")
+      if (archive.organizationId !== context.organizationId || archive.ownerUserId !== context.ownerUserId) {
+        throw new WorkGraphArchiveRestoreError("cross_owner")
+      }
       const archiveHash = await hashWorkGraphArchive(archive)
       const prior = database.prepare(`
         SELECT archive_hash, result_json FROM wg_v2_archive_restores
-        WHERE owner_user_id = ? AND operation_id = ?
-      `).get(context.ownerUserId, input.operationId) as { archive_hash: string; result_json: string } | undefined
+        WHERE organization_id = ? AND owner_user_id = ? AND operation_id = ?
+      `).get(context.organizationId, context.ownerUserId, input.operationId) as { archive_hash: string; result_json: string } | undefined
       if (prior) {
         if (prior.archive_hash !== archiveHash) throw new WorkGraphArchiveRestoreError("idempotency_conflict")
         return restoreResult(prior.result_json)
@@ -132,25 +141,27 @@ export function createSqliteWorkGraphArchivePort(
         assertArchiveAvailable(database, context)
         records.filter(kind("operation_result")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_operation_results
-            (owner_user_id, id, command_type, request_hash, result_status, result_json, change_cursor, schema_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (organization_id, owner_user_id, id, command_type, request_hash, result_status, result_json, change_cursor, schema_version, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.commandType,
           record.value.requestHash,
           record.value.resultStatus,
           JSON.stringify(record.value.result),
-          record.value.changeCursor === undefined ? null : Number(record.value.changeCursor),
+          record.value.changeCursor === undefined
+            ? null
+            : readChangeCursor(record.value.changeCursor, context.organizationId, context.ownerUserId),
           record.value.schemaVersion,
           record.value.createdAt,
         ))
         records.filter(kind("workgraph")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_workgraphs
-            (owner_user_id, id, defaults_json, recap_defaults_json, row_version, schema_version, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (organization_id, owner_user_id, id, defaults_json, recap_defaults_json, row_version, schema_version, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           JSON.stringify(record.value.defaults.execution),
           JSON.stringify(record.value.defaults.recap),
@@ -161,11 +172,11 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("work_source")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_work_sources
-            (owner_user_id, id, workgraph_id, title, source_kind, metadata_json, latest_revision_number,
+            (organization_id, owner_user_id, id, workgraph_id, title, source_kind, metadata_json, latest_revision_number,
              row_version, schema_version, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.workgraphId,
           record.value.title,
@@ -179,34 +190,29 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("work_source_revision")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_work_source_revisions
-            (owner_user_id, id, work_source_id, revision_number, content, content_hash, origin_kind,
+            (organization_id, owner_user_id, id, work_source_id, revision_number, content, content_hash, origin_kind,
              origin_reference_json, created_by_json, schema_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.workSourceId,
           record.value.revisionNumber,
           record.value.content,
           record.value.contentHash,
           record.value.origin.kind,
-          record.value.origin.kind === "manual" ? null : JSON.stringify({
-            provider: record.value.origin.provider,
-            externalId: record.value.origin.externalId,
-            externalRevision: record.value.origin.externalRevision,
-            ...(record.value.origin.url === undefined ? {} : { url: record.value.origin.url }),
-          }),
+          workSourceOriginReference(record.value.origin),
           JSON.stringify(record.value.createdBy),
           record.value.schemaVersion,
           record.value.createdAt,
         ))
         records.filter(kind("source_view")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_source_views
-            (owner_user_id, id, workgraph_id, team_connection_id, provider, provider_user_id,
+            (organization_id, owner_user_id, id, workgraph_id, team_connection_id, provider, provider_user_id,
              filters_json, sync_policy, status, row_version, schema_version, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.workgraphId,
           record.value.teamConnectionId,
@@ -222,11 +228,11 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("intake_candidate")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_intake_candidates
-            (owner_user_id, id, workgraph_id, source_view_id, candidate_kind, title, body,
+            (organization_id, owner_user_id, id, workgraph_id, source_view_id, candidate_kind, title, body,
              normalized_json, status, observed_revision, row_version, schema_version, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.workgraphId,
           record.value.candidateKind === "external_issue" ? record.value.sourceViewId : null,
@@ -256,11 +262,11 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("external_identity")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_external_identities
-            (owner_user_id, id, intake_candidate_id, provider, team_connection_id, external_id,
+            (organization_id, owner_user_id, id, intake_candidate_id, provider, team_connection_id, external_id,
              external_key, external_url, observed_revision, metadata_json, schema_version, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.intakeCandidateId ?? null,
           record.value.provider,
@@ -276,12 +282,12 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("stream")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_streams
-            (owner_user_id, id, workgraph_id, title, purpose, lifecycle, visibility, pinned,
+            (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, visibility, pinned,
              execution_defaults_json, recap_defaults_json, memory_card_json, last_activity_at,
-             row_version, schema_version, created_at, updated_at, closed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             replacement_reset_json, row_version, schema_version, created_at, updated_at, closed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.workgraphId,
           record.value.title,
@@ -293,6 +299,7 @@ export function createSqliteWorkGraphArchivePort(
           JSON.stringify(record.value.recapDefaults),
           JSON.stringify(record.value.memory ?? {}),
           record.value.activity.lastActivityAt,
+          record.value.replacementReset === undefined ? null : JSON.stringify(record.value.replacementReset),
           record.value.version,
           record.value.schemaVersion,
           record.value.createdAt,
@@ -301,12 +308,12 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("outcome")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_outcomes
-            (owner_user_id, id, stream_id, title, description, lifecycle, success_criteria_json,
+            (organization_id, owner_user_id, id, stream_id, title, description, lifecycle, success_criteria_json,
              execution_defaults_json, ready_to_close_at, completed_at, closed_by_json, close_reason,
              reopened_at, reopen_reason, row_version, schema_version, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.streamId,
           record.value.title,
@@ -327,12 +334,12 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("work_item")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_work_items
-            (owner_user_id, id, stream_id, outcome_id, title, description, lifecycle, priority,
+            (organization_id, owner_user_id, id, stream_id, outcome_id, title, description, lifecycle, priority,
              execution_overrides_json, completion_contract_json, abandoned_reason, abandoned_at,
              row_version, schema_version, created_at, updated_at, completed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.streamId,
           record.value.outcomeId ?? null,
@@ -352,10 +359,10 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("work_item_dependency")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_work_item_dependencies
-            (owner_user_id, id, work_item_id, depends_on_work_item_id, dependency_kind, schema_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+            (organization_id, owner_user_id, id, work_item_id, depends_on_work_item_id, dependency_kind, schema_version, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.workItemId,
           record.value.dependsOnWorkItemId,
@@ -365,13 +372,13 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("attempt")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_attempts
-            (owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle,
+            (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle,
              resolved_execution_profile_json, envelope_id, child_workspace_id, session_id,
              terminal_result_json, attention_reason, row_version, schema_version,
              created_at, updated_at, started_at, finished_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.streamId,
           record.value.workItemId,
@@ -392,12 +399,12 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("decision")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_decisions
-            (owner_user_id, id, stream_id, question, options_json, recommendation_json, rationale,
+            (organization_id, owner_user_id, id, stream_id, question, options_json, recommendation_json, rationale,
              answer_json, lifecycle, proposed_by_json, answered_by_json, row_version, schema_version,
              created_at, updated_at, answered_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.streamId,
           record.value.question,
@@ -423,10 +430,10 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("decision_work_item")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_decision_work_items
-            (owner_user_id, id, decision_id, work_item_id, schema_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)
+            (organization_id, owner_user_id, id, decision_id, work_item_id, schema_version, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.decisionId,
           record.value.workItemId,
@@ -435,11 +442,11 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("durable_effect_receipt")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_durable_effect_receipts
-            (owner_user_id, id, stream_id, attempt_id, effect_kind, idempotency_key,
+            (organization_id, owner_user_id, id, stream_id, attempt_id, effect_kind, idempotency_key,
              external_reference_json, provenance_json, schema_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.streamId,
           record.value.attemptId ?? null,
@@ -452,12 +459,12 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("evidence")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_evidence
-            (owner_user_id, id, stream_id, subject_type, subject_id, requirement_id,
+            (organization_id, owner_user_id, id, stream_id, subject_type, subject_id, requirement_id,
              source_attempt_id, evidence_kind, summary, reference_json, provenance_json,
              schema_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           subjectStreamId(records, record.value.subject),
           record.value.subject.type,
@@ -473,13 +480,13 @@ export function createSqliteWorkGraphArchivePort(
         ))
         orderedRecaps(records).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_recaps
-            (owner_user_id, id, stream_id, previous_recap_id, activity_start_sequence,
+            (organization_id, owner_user_id, id, stream_id, previous_recap_id, activity_start_sequence,
              activity_end_sequence, quiet_since, summary, actionable_references_json,
              generation_profile_json, provenance_json, generation_result_json,
              schema_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.streamId,
           record.value.previousRecapId ?? null,
@@ -496,11 +503,11 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("notification")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_notifications
-            (owner_user_id, id, notification_kind, state, stream_id, recap_id, row_version,
+            (organization_id, owner_user_id, id, notification_kind, state, stream_id, recap_id, row_version,
              schema_version, created_at, updated_at, read_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.kind,
           record.value.state,
@@ -514,11 +521,11 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("record_source_revision")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_record_source_revisions
-            (owner_user_id, id, record_type, record_id, work_source_id,
+            (organization_id, owner_user_id, id, record_type, record_id, work_source_id,
              source_revision_id, ordinal, schema_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.recordType,
           record.value.recordId,
@@ -530,13 +537,13 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("admission_proposal")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_admission_proposals
-            (owner_user_id, id, workgraph_id, source_revision_id, previous_source_revision_id,
+            (organization_id, owner_user_id, id, workgraph_id, source_revision_id, previous_source_revision_id,
              intake_candidate_id, proposal_kind, lifecycle, proposed_work_json,
              duplicate_matches_json, disposition_json, confirmed_change_cursor,
              row_version, schema_version, created_at, updated_at, confirmed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.workgraphId,
           record.value.source.revisionId,
@@ -548,7 +555,7 @@ export function createSqliteWorkGraphArchivePort(
           JSON.stringify(record.value.planningEvidence.duplicateMatches),
           "disposition" in record.value && record.value.disposition !== undefined ? JSON.stringify(record.value.disposition) : null,
           "confirmedChangeCursor" in record.value && record.value.confirmedChangeCursor !== undefined
-            ? Number(record.value.confirmedChangeCursor)
+            ? readChangeCursor(record.value.confirmedChangeCursor, context.organizationId, context.ownerUserId)
             : null,
           record.value.version,
           record.value.schemaVersion,
@@ -558,11 +565,11 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("runtime_effect")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_runtime_effects
-            (owner_user_id, id, effect_kind, resource_type, resource_id, idempotency_key,
+            (organization_id, owner_user_id, id, effect_kind, resource_type, resource_id, idempotency_key,
              payload_json, state, attempt_count, schema_version, created_at, updated_at, completed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.effectKind,
           record.value.resourceType,
@@ -577,12 +584,12 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("migration_intake")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_migration_intake
-            (owner_user_id, id, legacy_table, legacy_record_id, intake_kind, reason,
+            (organization_id, owner_user_id, id, legacy_table, legacy_record_id, intake_kind, reason,
              raw_reference_json, status, resolution_json, row_version, schema_version,
              created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.legacyTable,
           record.value.legacyRecordId,
@@ -598,11 +605,11 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("completed_external_effect")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_outbox
-            (owner_user_id, id, operation_id, effect_type, idempotency_key, payload_json,
+            (organization_id, owner_user_id, id, operation_id, effect_type, idempotency_key, payload_json,
              status, available_at, attempt_count, schema_version, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.operationId,
           record.value.effectType,
@@ -616,11 +623,11 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("terminal_scheduled_job")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_due_jobs
-            (owner_user_id, id, stream_id, job_type, subject_id, due_at, status, payload_json,
+            (organization_id, owner_user_id, id, stream_id, job_type, subject_id, due_at, status, payload_json,
              lease_epoch, row_version, schema_version, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.streamId ?? null,
           record.value.jobType,
@@ -636,11 +643,11 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("event")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_events
-            (owner_user_id, id, stream_id, sequence, schema_version, operation_id, event_type,
+            (organization_id, owner_user_id, id, stream_id, sequence, schema_version, operation_id, event_type,
              actor_type, actor_id, request_id, payload_json, correlation_id, causation_id, occurred_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           record.id,
           record.value.streamId ?? null,
           record.value.sequence,
@@ -657,12 +664,12 @@ export function createSqliteWorkGraphArchivePort(
         ))
         records.filter(kind("change")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_changes
-            (owner_user_id, cursor, id, stream_id, operation_id, resource_type, resource_id,
+            (organization_id, owner_user_id, cursor, id, stream_id, operation_id, resource_type, resource_id,
              change_type, payload_json, schema_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
-          Number(record.value.cursor),
+          context.organizationId, context.ownerUserId,
+          readChangeCursor(record.value.cursor, context.organizationId, context.ownerUserId),
           record.id,
           record.value.streamId ?? null,
           record.value.operationId,
@@ -675,13 +682,18 @@ export function createSqliteWorkGraphArchivePort(
         ))
 
         rebuildAllocators(database, context, records, clock.now())
-        const baselineCursor = ChangeCursorSchema.parse(String(Math.max(0, ...records.filter(kind("change")).map((record) => Number(record.value.cursor)))))
+        const baselineCursor = createChangeCursor({
+          organizationId: context.organizationId,
+          ownerUserId: context.ownerUserId,
+          position: Math.max(0, ...records.filter(kind("change")).map((record) =>
+            readChangeCursor(record.value.cursor, context.organizationId, context.ownerUserId))),
+        })
         const result = { restored: true, recordCount: archive.records.length, baselineCursor }
         database.prepare(`
           INSERT INTO wg_v2_archive_restores
-            (owner_user_id, operation_id, archive_hash, result_json, created_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(context.ownerUserId, input.operationId, archiveHash, JSON.stringify(result), clock.now())
+            (organization_id, owner_user_id, operation_id, archive_hash, result_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(context.organizationId, context.ownerUserId, input.operationId, archiveHash, JSON.stringify(result), clock.now())
         return result
       })()
     },
@@ -690,7 +702,7 @@ export function createSqliteWorkGraphArchivePort(
 
 function assertArchiveAvailable(database: RawDatabase, context: WorkGraphContext) {
   try {
-    assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+    assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
   } catch (error) {
     if (error instanceof SqliteWorkGraphOwnerDeletionInProgressError) {
       throw new WorkGraphArchiveRestoreError("not_quiescent")
@@ -715,8 +727,8 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
   const sources = rows(database, "wg_v2_work_sources", context).map((row) => {
     const latest = database.prepare(`
       SELECT id FROM wg_v2_work_source_revisions
-      WHERE owner_user_id = ? AND work_source_id = ? AND revision_number = ?
-    `).get(context.ownerUserId, id(row), integer(row.latest_revision_number)) as { id: string } | undefined
+      WHERE organization_id = ? AND owner_user_id = ? AND work_source_id = ? AND revision_number = ?
+    `).get(context.organizationId, context.ownerUserId, id(row), integer(row.latest_revision_number)) as { id: string } | undefined
     if (!latest) throw new WorkGraphArchiveRestoreError("target_incompatible")
     return {
       kind: "work_source" as const,
@@ -747,7 +759,9 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       contentHash: string(row.content_hash),
       origin: string(row.origin_kind) === "manual"
         ? { kind: "manual" as const }
-        : { kind: "external" as const, ...json(row.origin_reference_json) },
+        : string(row.origin_kind) === "authoring"
+          ? { kind: "authoring" as const, ...json(row.origin_reference_json) }
+          : { kind: "external" as const, ...json(row.origin_reference_json) },
       createdBy: actor(json(row.created_by_json)),
     },
   }))
@@ -831,14 +845,14 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
     value: {
       ...publicValue(record),
       workgraphId: string((database.prepare(`
-        SELECT workgraph_id FROM wg_v2_streams WHERE owner_user_id = ? AND id = ?
-      `).get(context.ownerUserId, record.id) as { workgraph_id: string }).workgraph_id),
+        SELECT workgraph_id FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+      `).get(context.organizationId, context.ownerUserId, record.id) as { workgraph_id: string }).workgraph_id),
     },
   }))
   const outcomes = publicRecords.filter((record) => record.recordType === "outcome").map((record) => {
     const row = database.prepare(`
-      SELECT ready_to_close_at FROM wg_v2_outcomes WHERE owner_user_id = ? AND id = ?
-    `).get(context.ownerUserId, record.id) as { ready_to_close_at: string | number | null }
+      SELECT ready_to_close_at FROM wg_v2_outcomes WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+    `).get(context.organizationId, context.ownerUserId, record.id) as { ready_to_close_at: string | number | null }
     return {
       kind: "outcome" as const,
       id: record.id,
@@ -850,8 +864,8 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
   })
   const workItems = publicRecords.filter((record) => record.recordType === "work_item").map((record) => {
     const row = database.prepare(`
-      SELECT completed_at FROM wg_v2_work_items WHERE owner_user_id = ? AND id = ?
-    `).get(context.ownerUserId, record.id) as { completed_at: string | number | null }
+      SELECT completed_at FROM wg_v2_work_items WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+    `).get(context.organizationId, context.ownerUserId, record.id) as { completed_at: string | number | null }
     return {
       kind: "work_item" as const,
       id: record.id,
@@ -875,8 +889,8 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
   const attempts = publicRecords.filter((record) => record.recordType === "attempt").map((record) => {
     const row = database.prepare(`
       SELECT envelope_id, child_workspace_id, session_id FROM wg_v2_attempts
-      WHERE owner_user_id = ? AND id = ?
-    `).get(context.ownerUserId, record.id) as {
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+    `).get(context.organizationId, context.ownerUserId, record.id) as {
       envelope_id: string | null
       child_workspace_id: string | null
       session_id: string | null
@@ -901,8 +915,8 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
     value: {
       ...publicValue(record),
       proposedBy: actor(json((database.prepare(`
-        SELECT proposed_by_json FROM wg_v2_decisions WHERE owner_user_id = ? AND id = ?
-      `).get(context.ownerUserId, record.id) as { proposed_by_json: string }).proposed_by_json)),
+        SELECT proposed_by_json FROM wg_v2_decisions WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+      `).get(context.organizationId, context.ownerUserId, record.id) as { proposed_by_json: string }).proposed_by_json)),
     },
   }))
   const decisionWorkItems = rows(database, "wg_v2_decision_work_items", context).map((row) => ({
@@ -987,7 +1001,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
     row,
     publicRecords.find((record) => record.recordType === "admission_proposal" && record.id === id(row)),
   ))
-  const operations = rows(database, "wg_v2_operation_results", context).map(archiveOperation)
+  const operations = rows(database, "wg_v2_operation_results", context).map((row) => archiveOperation(context, row))
   const runtimeEffects = rows(database, "wg_v2_runtime_effects", context).map((row) => ({
     kind: "runtime_effect" as const,
     id: id(row),
@@ -1087,15 +1101,19 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
   }))
   const changes = rows(database, "wg_v2_changes", context).map((row) => {
     const events = database.prepare(`
-      SELECT id FROM wg_v2_events WHERE owner_user_id = ? AND operation_id = ?
-    `).all(context.ownerUserId, string(row.operation_id)) as Array<{ id: string }>
+      SELECT id FROM wg_v2_events WHERE organization_id = ? AND owner_user_id = ? AND operation_id = ?
+    `).all(context.organizationId, context.ownerUserId, string(row.operation_id)) as Array<{ id: string }>
     if (events.length !== 1) throw new WorkGraphArchiveRestoreError("target_incompatible")
     return {
       kind: "change" as const,
       id: id(row),
       value: {
         schemaVersion: integer(row.schema_version),
-        cursor: String(integer(row.cursor)),
+        cursor: createChangeCursor({
+          organizationId: context.organizationId,
+          ownerUserId: context.ownerUserId,
+          position: integer(row.cursor),
+        }),
         eventId: events[0]!.id,
         operationId: string(row.operation_id),
         ...(row.stream_id === null ? {} : { streamId: string(row.stream_id) }),
@@ -1166,7 +1184,13 @@ function archiveProposal(
       },
       ...(publicRecord.state === "planning" || publicRecord.state === "planning_failed" ? {} : {
         ...(disposition === undefined ? {} : { disposition }),
-        ...(row.confirmed_change_cursor === null ? {} : { confirmedChangeCursor: String(integer(row.confirmed_change_cursor)) }),
+        ...(row.confirmed_change_cursor === null ? {} : {
+          confirmedChangeCursor: createChangeCursor({
+            organizationId: context.organizationId,
+            ownerUserId: context.ownerUserId,
+            position: integer(row.confirmed_change_cursor),
+          }),
+        }),
         ...(row.confirmed_at === null ? {} : { confirmedAt: timestamp(row.confirmed_at) }),
       }),
     },
@@ -1176,33 +1200,40 @@ function archiveProposal(
 function archiveRecap(database: Database, context: WorkGraphContext, row: Record<string, unknown>) {
   const profile = json(row.generation_profile_json)
   const result = json(row.generation_result_json)
-  const model = json(profile.model)
-  const effort = string(profile.effort)
-  const generation = result.state === "succeeded"
-    ? result.method === "agent_session" && typeof result.sessionId === "string"
-      ? {
-        state: "succeeded" as const,
-        model,
-        effort,
-        generatedAt: timestamp(result.generatedAt),
-        method: "agent_session" as const,
-        sessionId: result.sessionId,
-      }
-      : {
+  const model = ModelSelectionSchema.safeParse(profile.model)
+  const effort = typeof profile.effort === "string" && profile.effort.trim() ? profile.effort : undefined
+  const nonSession = result.state === "succeeded" && (result.method !== "agent_session" || typeof result.sessionId !== "string")
+  const completeSuccess = result.state === "succeeded" && !nonSession && model.success && effort && Number.isFinite(result.generatedAt)
+  const completeFailure = result.state === "failed" && model.success && effort &&
+    typeof result.reason === "string" && result.reason.trim() &&
+    (Number.isFinite(result.failedAt) || Number.isFinite(result.invalidatedAt))
+  const generation = !completeSuccess && !completeFailure
+    ? {
         state: "invalidated" as const,
-        model,
-        effort,
-        reason: "Retired deterministic Recap fallback is non-authoritative",
-        source: "retired_non_session_generation" as const,
+        ...(model.success ? { model: model.data } : {}),
+        ...(effort ? { effort } : {}),
+        reason: nonSession
+          ? "Retired deterministic Recap fallback is non-authoritative"
+          : "Incomplete legacy Recap generation metadata is non-authoritative",
+        source: nonSession ? "retired_non_session_generation" as const : "retired_incomplete_generation" as const,
       }
-    : {
-      state: "failed" as const,
-      model,
-      effort,
-      ...(result.failedAt === undefined ? {} : { failedAt: timestamp(result.failedAt) }),
-      ...(result.invalidatedAt === undefined ? {} : { invalidatedAt: timestamp(result.invalidatedAt) }),
-      reason: string(result.reason),
-    }
+    : result.state === "succeeded"
+      ? {
+          state: "succeeded" as const,
+          model: model.data!,
+          effort: effort!,
+          generatedAt: timestamp(result.generatedAt),
+          method: "agent_session" as const,
+          sessionId: string(result.sessionId),
+        }
+      : {
+          state: "failed" as const,
+          model: model.data!,
+          effort: effort!,
+          ...(result.failedAt === undefined ? {} : { failedAt: timestamp(result.failedAt) }),
+          ...(result.invalidatedAt === undefined ? {} : { invalidatedAt: timestamp(result.invalidatedAt) }),
+          reason: string(result.reason),
+        }
   return {
     kind: "recap" as const,
     id: id(row),
@@ -1227,7 +1258,7 @@ function archiveRecap(database: Database, context: WorkGraphContext, row: Record
   }
 }
 
-function archiveOperation(row: Record<string, unknown>) {
+function archiveOperation(context: WorkGraphContext, row: Record<string, unknown>) {
   const operationId = id(row)
   const result = json(row.result_json)
   const legacyExternalSync = row.command_type === "intake_external_sync" && integer(row.result_status) === 1 && result.claimed === true
@@ -1240,10 +1271,24 @@ function archiveOperation(row: Record<string, unknown>) {
       commandType: string(row.command_type),
       requestHash: string(row.request_hash),
       resultStatus: legacyExternalSync ? 200 : integer(row.result_status),
-      result: legacyExternalSync
-        ? { ok: true as const, operationId, cursor: "0", value: { claimed: true } }
-        : result,
-      ...(row.change_cursor === null ? {} : { changeCursor: String(integer(row.change_cursor)) }),
+      result: row.change_cursor === null
+        ? result
+        : {
+            ...result,
+            cursor: createChangeCursor({
+              organizationId: context.organizationId,
+              ownerUserId: context.ownerUserId,
+              position: legacyExternalSync ? 0 : integer(row.change_cursor),
+            }),
+            ...(legacyExternalSync ? { value: { claimed: true } } : {}),
+          },
+      ...(row.change_cursor === null ? {} : {
+        changeCursor: createChangeCursor({
+          organizationId: context.organizationId,
+          ownerUserId: context.ownerUserId,
+          position: integer(row.change_cursor),
+        }),
+      }),
     },
   }
 }
@@ -1251,8 +1296,8 @@ function archiveOperation(row: Record<string, unknown>) {
 function sourceRevisionReference(database: Database, context: WorkGraphContext, revisionId: string) {
   const row = database.prepare(`
     SELECT work_source_id, id, content_hash FROM wg_v2_work_source_revisions
-    WHERE owner_user_id = ? AND id = ?
-  `).get(context.ownerUserId, revisionId) as {
+    WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+  `).get(context.organizationId, context.ownerUserId, revisionId) as {
     work_source_id: string
     id: string
     content_hash: string
@@ -1266,12 +1311,12 @@ function sourceReferences(database: Database, context: WorkGraphContext, recordT
     SELECT refs.work_source_id, refs.source_revision_id, revisions.content_hash
     FROM wg_v2_record_source_revisions refs
     JOIN wg_v2_work_source_revisions revisions
-      ON revisions.owner_user_id = refs.owner_user_id
+      ON revisions.organization_id = refs.organization_id AND revisions.owner_user_id = refs.owner_user_id
       AND revisions.work_source_id = refs.work_source_id
       AND revisions.id = refs.source_revision_id
-    WHERE refs.owner_user_id = ? AND refs.record_type = ? AND refs.record_id = ?
+    WHERE refs.organization_id = ? AND refs.owner_user_id = ? AND refs.record_type = ? AND refs.record_id = ?
     ORDER BY refs.ordinal
-  `).all(context.ownerUserId, recordType, recordId) as Array<{
+  `).all(context.organizationId, context.ownerUserId, recordType, recordId) as Array<{
     work_source_id: string
     source_revision_id: string
     content_hash: string
@@ -1418,16 +1463,17 @@ function subjectStreamId(
 
 function assertQuiescent(database: Database, context: WorkGraphContext) {
   const checks = [
-    "SELECT 1 FROM wg_v2_attempts WHERE owner_user_id = ? AND lifecycle IN ('admitted', 'placing', 'running') LIMIT 1",
-    "SELECT 1 FROM wg_v2_leases WHERE owner_user_id = ? LIMIT 1",
-    "SELECT 1 FROM wg_v2_runtime_effects WHERE owner_user_id = ? AND state != 'completed' LIMIT 1",
-    "SELECT 1 FROM wg_v2_stream_cleanup_reservations WHERE owner_user_id = ? AND state = 'reserved' LIMIT 1",
-    "SELECT 1 FROM wg_v2_admission_proposals WHERE owner_user_id = ? AND lifecycle = 'planning' LIMIT 1",
-    "SELECT 1 FROM wg_v2_outbox WHERE owner_user_id = ? AND status != 'completed' LIMIT 1",
-    "SELECT 1 FROM wg_v2_due_jobs WHERE owner_user_id = ? AND status NOT IN ('completed', 'cancelled', 'attention', 'failed_terminal') LIMIT 1",
-    "SELECT 1 FROM wg_v2_streams WHERE owner_user_id = ? AND envelope_identity_json IS NOT NULL LIMIT 1",
+    "SELECT 1 FROM wg_v2_attempts WHERE organization_id = ? AND owner_user_id = ? AND lifecycle IN ('admitted', 'placing', 'running') LIMIT 1",
+    "SELECT 1 FROM wg_v2_leases WHERE organization_id = ? AND owner_user_id = ? LIMIT 1",
+    "SELECT 1 FROM wg_v2_runtime_effects WHERE organization_id = ? AND owner_user_id = ? AND state != 'completed' LIMIT 1",
+    "SELECT 1 FROM wg_v2_stream_cleanup_reservations WHERE organization_id = ? AND owner_user_id = ? AND state = 'reserved' LIMIT 1",
+    "SELECT 1 FROM wg_v2_admission_proposals WHERE organization_id = ? AND owner_user_id = ? AND lifecycle = 'planning' LIMIT 1",
+    "SELECT 1 FROM wg_v2_outbox WHERE organization_id = ? AND owner_user_id = ? AND status != 'completed' LIMIT 1",
+    "SELECT 1 FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND status NOT IN ('completed', 'cancelled', 'attention', 'failed_terminal') LIMIT 1",
+    "SELECT 1 FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND envelope_identity_json IS NOT NULL LIMIT 1",
+    "SELECT 1 FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND replacement_reset_json IS NOT NULL AND json_extract(replacement_reset_json, '$.state') != 'completed' LIMIT 1",
   ]
-  if (checks.some((query) => database.prepare(query).get(context.ownerUserId))) {
+  if (checks.some((query) => database.prepare(query).get(context.organizationId, context.ownerUserId))) {
     throw new WorkGraphArchiveRestoreError("not_quiescent")
   }
 }
@@ -1437,21 +1483,21 @@ function assertCanonicalCoverage(database: Database, context: WorkGraphContext) 
   if (unsupported) throw new WorkGraphArchiveRestoreError("target_incompatible")
   const invalidRuntimeEffect = database.prepare(`
     SELECT 1 FROM wg_v2_runtime_effects
-    WHERE owner_user_id = ? AND state = 'completed' AND (completed_at IS NULL OR last_error IS NOT NULL)
+    WHERE organization_id = ? AND owner_user_id = ? AND state = 'completed' AND (completed_at IS NULL OR last_error IS NOT NULL)
     LIMIT 1
-  `).get(context.ownerUserId)
+  `).get(context.organizationId, context.ownerUserId)
   if (invalidRuntimeEffect) throw new WorkGraphArchiveRestoreError("target_incompatible")
   rows(database, "wg_v2_stream_sequences", context).forEach((row) => {
     const scope = string(row.stream_id)
     const maximum = (scope === ownerEventScopeId
       ? database.prepare(`
           SELECT COALESCE(MAX(sequence), 0) AS value FROM wg_v2_events
-          WHERE owner_user_id = ? AND stream_id IS NULL
-        `).get(context.ownerUserId)
+          WHERE organization_id = ? AND owner_user_id = ? AND stream_id IS NULL
+        `).get(context.organizationId, context.ownerUserId)
       : database.prepare(`
           SELECT COALESCE(MAX(sequence), 0) AS value FROM wg_v2_events
-          WHERE owner_user_id = ? AND stream_id = ?
-        `).get(context.ownerUserId, scope)) as { value: number }
+          WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?
+        `).get(context.organizationId, context.ownerUserId, scope)) as { value: number }
     if (integer(row.next_sequence) !== integer(maximum.value) + 1) {
       throw new WorkGraphArchiveRestoreError("target_incompatible")
     }
@@ -1459,8 +1505,8 @@ function assertCanonicalCoverage(database: Database, context: WorkGraphContext) 
   const cursor = rows(database, "wg_v2_change_cursors", context)[0]
   if (!cursor) return
   const maximum = database.prepare(`
-    SELECT COALESCE(MAX(cursor), 0) AS value FROM wg_v2_changes WHERE owner_user_id = ?
-  `).get(context.ownerUserId) as { value: number }
+    SELECT COALESCE(MAX(cursor), 0) AS value FROM wg_v2_changes WHERE organization_id = ? AND owner_user_id = ?
+  `).get(context.organizationId, context.ownerUserId) as { value: number }
   if (integer(cursor.next_cursor) !== integer(maximum.value) + 1) {
     throw new WorkGraphArchiveRestoreError("target_incompatible")
   }
@@ -1510,6 +1556,17 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
       require("workgraph", record.value.workgraphId)
       requireSourceReferences(record)
       if (record.value.activity.lastRecapId) require("recap", record.value.activity.lastRecapId)
+      if (record.value.replacementReset) {
+        if (record.value.replacementReset.state !== "completed") throw new WorkGraphArchiveRestoreError("not_quiescent")
+        require("admission_proposal", record.value.replacementReset.proposalId)
+        requireSourceReference(record.value.replacementReset.previousSource)
+        requireSourceReference(record.value.replacementReset.source)
+        if (![record.value.replacementReset.previousSource, record.value.replacementReset.source].every((reference) =>
+          record.value.sourceRevisionRefs.some((source) => source.workSourceId === reference.workSourceId &&
+            source.revisionId === reference.revisionId && source.contentHash === reference.contentHash))) {
+          throw new WorkGraphArchiveRestoreError("malformed")
+        }
+      }
     }
     if (record.kind === "outcome") {
       require("stream", record.value.streamId)
@@ -1657,12 +1714,12 @@ function candidateState(
   const confirmed = database.prepare(`
     SELECT 1 AS present FROM wg_v2_admission_proposals proposals
     JOIN wg_v2_work_source_revisions revisions
-      ON revisions.owner_user_id = proposals.owner_user_id AND revisions.id = proposals.source_revision_id
-    WHERE proposals.owner_user_id = ? AND proposals.id = ? AND proposals.intake_candidate_id = ?
+      ON revisions.organization_id = proposals.organization_id AND revisions.owner_user_id = proposals.owner_user_id AND revisions.id = proposals.source_revision_id
+    WHERE proposals.organization_id = ? AND proposals.owner_user_id = ? AND proposals.id = ? AND proposals.intake_candidate_id = ?
       AND proposals.lifecycle = 'confirmed' AND revisions.work_source_id = ?
       AND revisions.id = ? AND revisions.content_hash = ?
   `).get(
-    context.ownerUserId,
+    context.organizationId, context.ownerUserId,
     normalized.admissionProposalId,
     id(row),
     source.workSourceId,
@@ -1688,25 +1745,26 @@ function rebuildAllocators(database: Database, context: WorkGraphContext, record
   })
   sequences.forEach((sequence, streamId) => database.prepare(`
     INSERT INTO wg_v2_stream_sequences
-      (owner_user_id, stream_id, next_sequence, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(context.ownerUserId, streamId, sequence + 1, now, now))
-  const cursor = Math.max(0, ...records.filter(kind("change")).map((record) => Number(record.value.cursor)))
+      (organization_id, owner_user_id, stream_id, next_sequence, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(context.organizationId, context.ownerUserId, streamId, sequence + 1, now, now))
+  const cursor = Math.max(0, ...records.filter(kind("change")).map((record) =>
+    readChangeCursor(record.value.cursor, context.organizationId, context.ownerUserId)))
   if (cursor === 0) return
   database.prepare(`
-    INSERT INTO wg_v2_change_cursors (owner_user_id, next_cursor, created_at, updated_at)
-    VALUES (?, ?, ?, ?)
-  `).run(context.ownerUserId, cursor + 1, now, now)
+    INSERT INTO wg_v2_change_cursors (organization_id, owner_user_id, next_cursor, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(context.organizationId, context.ownerUserId, cursor + 1, now, now)
 }
 
 function provenance(database: Database, context: WorkGraphContext, resourceType: string, resourceId: string) {
   const row = database.prepare(`
     SELECT events.actor_type, events.actor_id, events.operation_id
     FROM wg_v2_changes changes
-    JOIN wg_v2_events events ON events.owner_user_id = changes.owner_user_id AND events.operation_id = changes.operation_id
-    WHERE changes.owner_user_id = ? AND changes.resource_type = ? AND changes.resource_id = ?
+    JOIN wg_v2_events events ON events.organization_id = changes.organization_id AND events.owner_user_id = changes.owner_user_id AND events.operation_id = changes.operation_id
+    WHERE changes.organization_id = ? AND changes.owner_user_id = ? AND changes.resource_type = ? AND changes.resource_id = ?
     ORDER BY changes.cursor DESC LIMIT 1
-  `).get(context.ownerUserId, resourceType, resourceId) as {
+  `).get(context.organizationId, context.ownerUserId, resourceType, resourceId) as {
     actor_type: WorkGraphActor["type"]
     actor_id: string
     operation_id: string
@@ -1716,15 +1774,36 @@ function provenance(database: Database, context: WorkGraphContext, resourceType:
 }
 
 function rows(database: Database, table: string, context: WorkGraphContext) {
-  return database.prepare(`SELECT * FROM ${table} WHERE owner_user_id = ?`).all(context.ownerUserId) as Array<Record<string, unknown>>
+  return database.prepare(`SELECT * FROM ${table} WHERE organization_id = ? AND owner_user_id = ?`).all(context.organizationId, context.ownerUserId) as Array<Record<string, unknown>>
 }
 
 function hasOwnerRow(database: Database, table: string, context: WorkGraphContext) {
-  return !!database.prepare(`SELECT 1 AS present FROM ${table} WHERE owner_user_id = ? LIMIT 1`).get(context.ownerUserId)
+  return !!database.prepare(`SELECT 1 AS present FROM ${table} WHERE organization_id = ? AND owner_user_id = ? LIMIT 1`).get(context.organizationId, context.ownerUserId)
 }
 
 function kind<Kind extends CanonicalWorkGraphArchiveRecord["kind"]>(value: Kind) {
   return (record: CanonicalWorkGraphArchiveRecord): record is Extract<CanonicalWorkGraphArchiveRecord, { kind: Kind }> => record.kind === value
+}
+
+function workSourceOriginReference(origin: WorkSourceOrigin) {
+  if (origin.kind === "manual") return null
+  if (origin.kind === "authoring") return JSON.stringify({
+    adapterId: origin.adapterId,
+    projectId: origin.projectId,
+    documentId: origin.documentId,
+    documentRevisionId: origin.documentRevisionId,
+    documentRevisionNumber: origin.documentRevisionNumber,
+    ...(origin.parentDocumentRevisionId ? { parentDocumentRevisionId: origin.parentDocumentRevisionId } : {}),
+    authoredAt: origin.authoredAt,
+    authoredBy: origin.authoredBy,
+    contentHash: origin.contentHash,
+  })
+  return JSON.stringify({
+    provider: origin.provider,
+    externalId: origin.externalId,
+    externalRevision: origin.externalRevision,
+    ...(origin.url === undefined ? {} : { url: origin.url }),
+  })
 }
 
 function requireOwner(context: WorkGraphContext) {

@@ -15,7 +15,9 @@ describe("WorkGraph archive contract", () => {
 
   it("defines a usable strict semantic value for every portable record kind", async () => {
     const archive = value(canonicalRecords())
-    expect(new Set(archive.records.map((record) => record.kind))).toEqual(new Set(WorkGraphArchiveRecordKindSchema.options))
+    expect(new Set(archive.records.map((record) => record.kind))).toEqual(
+      new Set(WorkGraphArchiveRecordKindSchema.options),
+    )
     await expect(validateWorkGraphArchive(archive)).resolves.toEqual(WorkGraphArchiveSchema.parse(archive))
   })
 
@@ -41,20 +43,26 @@ describe("WorkGraph archive contract", () => {
   })
 
   it("rejects source content that does not match its public contentHash", async () => {
-    await expect(validateWorkGraphArchive(value([{
-      kind: "work_source_revision",
-      id: "revision_1",
-      value: {
-        schemaVersion: 1,
-        workSourceId: "source_1",
-        revisionNumber: 1,
-        content: "changed",
-        contentHash: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
-        origin: { kind: "manual" },
-        createdAt: 1,
-        createdBy: { type: "user", id: "user_1" },
-      },
-    }]))).rejects.toMatchObject({ reason: "malformed" })
+    await expect(
+      validateWorkGraphArchive(
+        value([
+          {
+            kind: "work_source_revision",
+            id: "revision_1",
+            value: {
+              schemaVersion: 1,
+              workSourceId: "source_1",
+              revisionNumber: 1,
+              content: "changed",
+              contentHash: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+              origin: { kind: "manual" },
+              createdAt: 1,
+              createdBy: { type: "user", id: "user_1" },
+            },
+          },
+        ]),
+      ),
+    ).rejects.toMatchObject({ reason: "malformed" })
   })
 
   it("rejects incomplete semantics and SQLite or Convex physical vocabulary", async () => {
@@ -69,38 +77,108 @@ describe("WorkGraph archive contract", () => {
     }
   })
 
+  it("rejects archived Work Items with duplicate completion requirement IDs", async () => {
+    const records = canonicalRecords().map((record) =>
+      record.kind === "work_item"
+        ? {
+            ...record,
+            value: {
+              ...record.value,
+              completionContract: {
+                version: 1,
+                mode: "all",
+                requirements: [
+                  { id: "done", kind: "artifact", description: "Deployment artifact" },
+                  { id: "done", kind: "test", description: "Deployment test" },
+                ],
+              },
+            },
+          }
+        : record,
+    )
+
+    await expect(validateWorkGraphArchive(value(records))).rejects.toMatchObject({ reason: "malformed" })
+  })
+
   it("accepts a canonical change-feed record and rejects physical change columns", async () => {
-    const canonical = value([{
-      kind: "change",
-      id: "change_1",
-      value: {
-        schemaVersion: 1,
-        cursor: "7",
-        eventId: "event_1",
-        operationId: "operation_1",
-        resource: { type: "stream", id: "stream_1" },
-        changeType: "stream_updated",
-        payload: { streamId: "stream_1" },
-        createdAt: 7,
+    const canonical = value([
+      {
+        kind: "change",
+        id: "change_1",
+        value: {
+          schemaVersion: 1,
+          cursor: "7",
+          eventId: "event_1",
+          operationId: "operation_1",
+          resource: { type: "stream", id: "stream_1" },
+          changeType: "stream_updated",
+          payload: { streamId: "stream_1" },
+          createdAt: 7,
+        },
       },
-    }])
+    ])
 
     await expect(validateWorkGraphArchive(canonical)).resolves.toEqual(WorkGraphArchiveSchema.parse(canonical))
-    await expect(validateWorkGraphArchive(value([{
-      kind: "change",
-      id: "change_1",
-      value: {
-        schema_version: 1,
-        cursor: 7,
-        event_id: "event_1",
-        operation_id: "operation_1",
-        resource_type: "stream",
-        resource_id: "stream_1",
-        change_type: "stream_updated",
-        payload: {},
-        created_at: 7,
-      },
-    }]))).rejects.toMatchObject({ reason: "malformed" })
+    await expect(
+      validateWorkGraphArchive(
+        value([
+          {
+            kind: "change",
+            id: "change_1",
+            value: {
+              schema_version: 1,
+              cursor: 7,
+              event_id: "event_1",
+              operation_id: "operation_1",
+              resource_type: "stream",
+              resource_id: "stream_1",
+              change_type: "stream_updated",
+              payload: {},
+              created_at: 7,
+            },
+          },
+        ]),
+      ),
+    ).rejects.toMatchObject({ reason: "malformed" })
+  })
+
+  it("requires replacement reset completion timestamps to match reset state", async () => {
+    const reference = {
+      workSourceId: "source_1",
+      revisionId: "revision_1",
+      contentHash: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+    }
+    const reset = {
+      proposalId: "proposal_1",
+      previousSource: reference,
+      source: reference,
+      requestedAt: 1,
+    }
+    const archive = (replacementReset: Record<string, unknown>) =>
+      value(
+        canonicalRecords().map((record) =>
+          record.kind === "stream" ? { ...record, value: { ...record.value, replacementReset } } : record,
+        ),
+      )
+
+    await expect(validateWorkGraphArchive(archive({ ...reset, state: "completed" }))).rejects.toMatchObject({
+      reason: "malformed",
+    })
+    await expect(
+      validateWorkGraphArchive(archive({ ...reset, state: "pending", completedAt: 2 })),
+    ).rejects.toMatchObject({ reason: "malformed" })
+    await expect(
+      validateWorkGraphArchive(archive({ ...reset, state: "completed", completedAt: 2 })),
+    ).resolves.toMatchObject({
+      records: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "stream",
+          value: expect.objectContaining({
+            replacementReset: expect.objectContaining({ state: "completed", completedAt: 2 }),
+          }),
+        }),
+      ]),
+    })
   })
 
   it("exposes explicit portable restore refusal reasons", () => {
@@ -152,7 +230,9 @@ describe("WorkGraph archive contract", () => {
       sourceRevisionRefs: [],
     }
     const first = WorkGraphArchiveSchema.parse(value([{ kind: "stream", id: "stream_1", value: fields }]))
-    const second = WorkGraphArchiveSchema.parse(value([{ kind: "stream", id: "stream_1", value: { ...fields, activity: { recapDueAt: 2, lastActivityAt: 1 } } }]))
+    const second = WorkGraphArchiveSchema.parse(
+      value([{ kind: "stream", id: "stream_1", value: { ...fields, activity: { recapDueAt: 2, lastActivityAt: 1 } } }]),
+    )
 
     await expect(hashWorkGraphArchive(first)).resolves.toBe(await hashWorkGraphArchive(second))
   })
@@ -161,6 +241,7 @@ describe("WorkGraph archive contract", () => {
 function value(records: Array<{ kind: string; id: string; value: Record<string, unknown> }>) {
   return {
     version: 1,
+    organizationId: "organization_1",
     ownerUserId: "owner_1",
     exportedAt: 1,
     records,
@@ -189,9 +270,6 @@ function canonicalRecords() {
     effort: "high",
     tools: [],
     connectionIds: [],
-    isolation: "stream",
-    cleanup: "retain",
-    integration: "pull_request",
   }
   return [
     {

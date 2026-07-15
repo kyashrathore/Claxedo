@@ -9,12 +9,13 @@
  *  5. Runner changes for ongoing sessions are rejected (409)
  *  6. ?runner= query param overrides the global runner for provider endpoints
  *
- * Requires: claxedo-server running at BACKEND (default: http://127.0.0.1:3001)
+ * Requires: CLAXEDO_TEST_BACKEND pointing at a running claxedo-server.
  */
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 
-const BACKEND = process.env.CLAXEDO_TEST_BACKEND ?? "http://127.0.0.1:3001"
-const UPSTREAM = process.env.OPENCODE_URL ?? "http://127.0.0.1:4096"
+const externalServerConfigured = !!process.env.CLAXEDO_TEST_BACKEND
+const BACKEND = process.env.CLAXEDO_TEST_BACKEND
+const UPSTREAM = process.env.OPENCODE_URL
 
 type ProviderList = {
   all: Array<{ id: string; models: Record<string, unknown> }>
@@ -25,7 +26,7 @@ type ProviderList = {
 let originalRunner: { type: string; binary?: string } | undefined
 
 // Check upstream availability at module scope so test.skipIf can use it
-const upstreamAvailable = await fetch(`${UPSTREAM}/provider`, { signal: AbortSignal.timeout(2_000) })
+const upstreamAvailable = externalServerConfigured && !!UPSTREAM && await fetch(`${UPSTREAM}/provider`, { signal: AbortSignal.timeout(2_000) })
   .then((r) => r.ok)
   .catch(() => false)
 
@@ -60,7 +61,7 @@ async function getBootstrap(runner?: string) {
   return res.json() as Promise<{ provider: ProviderList }>
 }
 
-describe("runner ↔ provider integration", () => {
+describe.skipIf(!externalServerConfigured)("runner ↔ provider integration", () => {
   beforeAll(async () => {
     const health = await fetch(`${BACKEND}/api/claxedo/health`).catch(() => null)
     if (!health?.ok) throw new Error(`Server not reachable at ${BACKEND}`)

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, primaryKey } from "drizzle-orm/sqlite-core"
+import { sqliteTable, text, integer, index, primaryKey, uniqueIndex } from "drizzle-orm/sqlite-core"
 
 export const ClaxedoPageTable = sqliteTable(
   "claxedo_page",
@@ -26,12 +26,15 @@ export const ClaxedoPageTable = sqliteTable(
     last_commit_at: text(),
     last_commit_author_id: text(),
     commit_status: text().notNull().default("draft"),
+    document_id: text(),
+    document_revision_id: text(),
     created_at: text().notNull(),
     updated_at: text().notNull(),
   },
   (table) => [
     index("claxedo_page_project_idx").on(table.org_id, table.project_id),
     index("claxedo_page_updated_idx").on(table.org_id, table.project_id, table.updated_at),
+    uniqueIndex("claxedo_page_document_unique").on(table.document_id),
   ],
 )
 

@@ -8,7 +8,6 @@ import {
   type WorkspacePanelPaneTarget,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import { setWorkGraphPanelBodySlot, setWorkGraphPanelHeaderSlot } from "@/ui/controls/portal-slot"
-import { workGraphHasAttention } from "@/features/workgraph/waiting/attention-signal"
 import type { useClaxedoState } from "../state/index"
 import { WorkspacePanelChrome, WorkspacePanelHeader } from "./workbench-shell-header"
 import { WorkspacePanelBody } from "./workspace-panel-body"
@@ -109,7 +108,6 @@ function GlobalPanelHeader(props: {
           <WorkspacePanelChrome
             workspacePanelOpen={props.workspacePanelOpen}
             workspacePanelFullWidth={props.workspacePanelFullWidth}
-            attention={workGraphHasAttention}
             onToggleFullWidth={props.onToggleFullWidth}
             onTogglePanel={props.onTogglePanel}
           />

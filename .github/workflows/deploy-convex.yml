@@ -1,22 +1,14 @@
 name: deploy-convex
 
-# D11 / D14 (docs/plans/2026-07-11-016 §2.3, §5): standalone Convex deploy for
-# SCHEMA-ONLY changes. Convex is the unit with NO server-side rollback —
-# "rollback" means re-pushing an old git SHA, which only works if every schema
-# change was additive (expand-migrate-contract). Discipline encoded here:
+# Operator-driven Convex-only roll-forward. Normal staging and production
+# releases use deploy-control-plane.yml, which owns the complete
+# Convex -> Worker -> app sequence. This workflow exists for an isolated
+# additive Convex repair or re-push of a previously green compatible SHA; it
+# never carries dependent Worker or app changes.
 #
-#   - Schema changes ship SOLO: deploy convex/ alone via this workflow FIRST,
-#     verify, and only then ship dependent Worker/relay code via their own
-#     workflows. Never bundle a schema change with dependent code in one push.
-#   - Convex validates the schema against CURRENT DATA on every push and
-#     rejects narrowing changes over nonconforming rows — that server-side
-#     validation is the real gate. The --dry-run step below (flag verified via
-#     `convex deploy --help`, convex 1.39.1) prints the generated
-#     configuration without deploying, catching config/codegen errors before
-#     the push; it does NOT reach the server-side schema/data validation.
-#
-# Manual dispatch only — there is deliberately no auto-trigger, because a
-# schema push is the highest-stakes, least-reversible deploy in the system.
+# Convex validates the schema against current data on every push and rejects
+# narrowing changes over nonconforming rows. The dry-run catches local
+# config/codegen/type errors before that irreversible server-side gate.
 #
 # Environment-scoped secret (same name in `staging` and `production`):
 #   CONVEX_DEPLOY_KEY — deploy key for that environment's Convex deployment
@@ -34,7 +26,7 @@ on:
         default: staging
 
 concurrency:
-  group: deploy-convex-${{ inputs.environment }}
+  group: claxedo-cloud-deploy
   cancel-in-progress: false
 
 permissions:
@@ -47,6 +39,13 @@ jobs:
     # environment is the human gate for prod schema pushes.
     environment: ${{ inputs.environment }}
     steps:
+      - name: Verify deployment configuration
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$CONVEX_DEPLOY_KEY" ] || { echo "::error::CONVEX_DEPLOY_KEY is not configured in the ${{ inputs.environment }} environment"; exit 1; }
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun

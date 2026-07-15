@@ -184,6 +184,53 @@
   border-top: 1px solid var(--border-weak-base);
 }
 
+.workgraph-create-target {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.85rem;
+  color: var(--text-base);
+  font-size: 0.75rem;
+}
+
+.workgraph-create-target input,
+.workgraph-project-select {
+  width: 100%;
+  border: 1px solid var(--border-weak-base);
+  border-radius: 0.375rem;
+  background: var(--surface-base);
+  padding: 0.5rem 0.625rem;
+  color: var(--text-strong);
+  outline: none;
+}
+
+.workgraph-create-target input:focus,
+.workgraph-project-select:focus-visible {
+  border-color: var(--border-strong-base);
+}
+
+.workgraph-project-picker {
+  display: grid;
+  gap: 0.3rem;
+  width: 100%;
+}
+
+.workgraph-project-picker > button {
+  justify-self: start;
+}
+
+.workgraph-setting-control .workgraph-project-select {
+  height: 1.85rem;
+  padding: 0 0.6rem;
+  border-radius: var(--radius-md);
+  color: var(--text-base);
+  font-size: 0.75rem;
+}
+
+.workgraph-create-target small {
+  color: var(--text-weaker);
+  font-size: 0.6875rem;
+}
+
 .workgraph-defchip {
   display: inline-flex;
   align-items: center;
@@ -503,6 +550,37 @@
   font-family: var(--font-family-mono);
   font-size: 0.625rem;
   text-transform: lowercase;
+}
+
+.workgraph-leaf-session {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 1.4rem;
+  padding: 0 0.3rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-weak);
+  font-size: 0.6875rem;
+  transition:
+    color 110ms ease,
+    background 110ms ease;
+}
+
+.workgraph-leaf-session:hover,
+.workgraph-leaf-session:focus-visible {
+  background: var(--background-stronger);
+  color: var(--text-base);
+}
+
+.workgraph-leaf-session:disabled {
+  opacity: 0.55;
+}
+
+.workgraph-leaf-session-error {
+  flex-shrink: 0;
+  color: var(--icon-critical-base);
+  font-size: 0.6875rem;
 }
 
 .workgraph-leaf-empty {

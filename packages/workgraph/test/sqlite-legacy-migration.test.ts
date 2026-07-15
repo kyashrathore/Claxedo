@@ -2,6 +2,8 @@ import BetterSqlite3 from "better-sqlite3"
 import { afterEach, describe, expect, test } from "vitest"
 import { initializeWorkGraphSqliteSchema } from "../src/adapters/sqlite/schema"
 import { applyLegacyWorkGraphMigration, exportLegacyWorkGraphMigration } from "../src/adapters/sqlite/legacy-migration"
+import { createSqliteWorkGraphService } from "../src/adapters/sqlite/store"
+import type { WorkGraphContext } from "../src/contracts"
 import { initializeDb } from "../src/db/schema"
 
 const databases: BetterSqlite3.Database[] = []
@@ -19,6 +21,7 @@ function database() {
 }
 
 const target = {
+  organizationId: "organization_1",
   ownerUserId: "user_1",
   workgraphId: "workgraph_1",
   now: () => "2026-07-13T00:00:00.000Z",
@@ -111,6 +114,28 @@ describe("legacy WorkGraph migration", () => {
     expect(JSON.stringify(db.prepare("SELECT * FROM wg_v2_migration_intake").all())).not.toContain("secret-token-that-must-never-migrate")
   })
 
+  test("projects the migration export time as the canonical numeric timestamp", async () => {
+    const db = database()
+    seedLegacy(db)
+
+    applyLegacyWorkGraphMigration(db, target)
+
+    const context = {
+      organizationId: target.organizationId,
+      ownerUserId: target.ownerUserId,
+      actor: { type: "system", id: "migration_test" },
+      requestId: "migration_timestamp",
+      access: { mode: "owner" },
+    } as WorkGraphContext
+    const source = await createSqliteWorkGraphService({ database: db }).service.queries.sources.read(context, {
+      workSourceId: "migration:source:sources_current:source_manual" as never,
+    })
+    expect(source?.createdAt).toBe(Date.parse(target.now()))
+    expect(source?.updatedAt).toBe(Date.parse(target.now()))
+    expect(Number.isFinite(source?.createdAt)).toBe(true)
+    expect(Number.isFinite(source?.updatedAt)).toBe(true)
+  })
+
   test("is idempotent and preserves every legacy row", () => {
     const db = database()
     seedLegacy(db)
@@ -143,8 +168,8 @@ describe("legacy WorkGraph migration", () => {
     db.prepare(
       `UPDATE wg_v2_migration_intake
        SET ${assignment}
-       WHERE owner_user_id = ? AND legacy_table = 'runs_current' AND legacy_record_id = 'run_1'`,
-    ).run(target.ownerUserId)
+       WHERE organization_id = ? AND owner_user_id = ? AND legacy_table = 'runs_current' AND legacy_record_id = 'run_1'`,
+    ).run(target.organizationId, target.ownerUserId)
 
     expect(() => applyLegacyWorkGraphMigration(db, target)).toThrow("Legacy migration ID collision for runs_current:run_1")
   })

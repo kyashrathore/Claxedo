@@ -11,10 +11,6 @@ const requiredFields = [
   "model",
   "effort",
   "tools",
-  "connectionIds",
-  "isolation",
-  "cleanup",
-  "integration",
 ] as const satisfies readonly (keyof ResolvedExecutionProfile)[]
 
 export interface ExecutionProfileHierarchy {
@@ -49,21 +45,25 @@ export function resolveExecutionProfile(hierarchy: ExecutionProfileHierarchy): E
     ...(hierarchy.outcome ? [{ level: "outcome" as const, defaults: hierarchy.outcome }] : []),
     ...(hierarchy.workItem ? [{ level: "work_item" as const, defaults: hierarchy.workItem }] : []),
   ]
+  // New writes own the execution target on the Stream. The WorkGraph layer is
+  // retained only as a read fallback for records created before that invariant;
+  // public WorkGraph-default commands can no longer write these fields.
+  const streamTarget = [
+    { level: "workgraph" as const, defaults: hierarchy.workgraph },
+    ...(hierarchy.stream ? [{ level: "stream" as const, defaults: hierarchy.stream }] : []),
+  ]
   const resolved = {
-    environment: resolveField(layers, "environment"),
-    repository: resolveField(layers, "repository"),
+    environment: resolveField(streamTarget, "environment"),
+    repository: resolveField(streamTarget, "repository"),
     harness: resolveField(layers, "harness"),
     agent: resolveField(layers, "agent"),
     model: resolveField(layers, "model"),
     effort: resolveField(layers, "effort"),
     tools: resolveField(layers, "tools"),
     connectionIds: resolveField(layers, "connectionIds"),
-    isolation: resolveField(layers, "isolation"),
-    cleanup: resolveField(layers, "cleanup"),
-    integration: resolveField(layers, "integration"),
   }
   const missingFields: (keyof ResolvedExecutionProfile)[] = requiredFields.filter((field) => resolved[field].value === undefined)
-  if (resolved.environment.value?.kind === "local_worktree" && !resolved.repository.value) missingFields.push("repository")
+  if (!resolved.repository.value) missingFields.push("repository")
   if (missingFields.length > 0) {
     return { ok: false, error: { code: "incomplete_execution_profile", missingFields } }
   }
@@ -76,10 +76,7 @@ export function resolveExecutionProfile(hierarchy: ExecutionProfileHierarchy): E
     model: { ...resolved.model.value! },
     effort: resolved.effort.value!,
     tools: [...resolved.tools.value!],
-    connectionIds: [...resolved.connectionIds.value!],
-    isolation: resolved.isolation.value!,
-    cleanup: resolved.cleanup.value!,
-    integration: resolved.integration.value!,
+    connectionIds: [...(resolved.connectionIds.value ?? [])],
   } satisfies ResolvedExecutionProfile)
   const provenance = Object.freeze({
     environment: resolved.environment.level,
@@ -90,9 +87,6 @@ export function resolveExecutionProfile(hierarchy: ExecutionProfileHierarchy): E
     effort: resolved.effort.level,
     tools: resolved.tools.level,
     connectionIds: resolved.connectionIds.level,
-    isolation: resolved.isolation.level,
-    cleanup: resolved.cleanup.level,
-    integration: resolved.integration.level,
   })
   return { ok: true, profile, provenance }
 }

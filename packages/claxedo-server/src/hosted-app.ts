@@ -26,6 +26,7 @@
  *   GET  /internal/relay/target
  *   GET  /internal/relay/revocation
  *   POST /internal/sandbox-manager/gc
+ *   POST /internal/workgraph/reconcile
  */
 
 import { Hono } from "hono"
@@ -38,20 +39,35 @@ import { signedOrError } from "./routes/workspace-user-hosted"
 import { HostedDeviceAuthRoutes } from "./routes/hosted-device-auth"
 import { HostedShellRoutes } from "./routes/hosted-shell"
 import { HostedSandboxAdminRoutes } from "./routes/hosted-sandbox-admin"
+import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "./routes/hosted-workgraph-admin"
 import { HostedControlRoutes } from "./routes/hosted-control"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "./control-plane/hosted-services"
+import type { ControlPlaneServices } from "./control-plane/services"
 import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
 import { BillingRoutes } from "./billing/billing-routes"
 import { createEntitlementGate, type EntitlementGate } from "./billing/entitlement"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "./control-plane/auth"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "./control-plane/auth"
 import { deploymentCompatibilityReport } from "./deployment-compatibility"
-import { DEPLOYMENT_MODE_ENV, DeploymentModeError, deploymentMode, unsignedLocalRequestGuard } from "./control-plane/deployment-mode"
-import { createHostedWorkGraph, type HostedWorkGraph } from "./workgraph-host/hosted"
+import {
+  DEPLOYMENT_MODE_ENV,
+  DeploymentModeError,
+  deploymentMode,
+  unsignedLocalRequestGuard,
+} from "./control-plane/deployment-mode"
+import {
+  createHostedWorkGraph,
+  type HostedWorkGraph,
+  type HostedWorkGraphOwnerActivation,
+} from "./workgraph-host/hosted"
 import {
   createHostedConnectionOperationExecutor,
   createHostedConnectionOperationHandler,
 } from "./workgraph-host/hosted-connection-operation"
 import { createHostedConnectionsSetup } from "./workgraph-host/hosted-connections-setup"
+import { DocsRoutes } from "./routes/docs"
+import { createConvexDocumentStore } from "./document-host/convex-store"
+import type { DocumentStore } from "./document-store"
+import { workGraphHttpTelemetry } from "./workgraph-host/operational-telemetry"
 
 export type HostedAppOverrides = {
   /** Hosted relay target lookup. Omitted → the plane's composed lookup is used. */
@@ -60,8 +76,14 @@ export type HostedAppOverrides = {
   centralSessionRuntime?: boolean
   /** Test/custom composition seam; production composes Convex from env. */
   workgraph?: HostedWorkGraph
+  /** Test/custom seam for signed bootstrap owner activation. */
+  workGraphOwnerActivation?: (auth: SignedControlPlaneAuth) => Promise<HostedWorkGraphOwnerActivation>
+  /** Bounded durable reconciler shared by cron and the protected admin trigger. */
+  workGraphReconcile?: () => Promise<WorkGraphReconcileResult>
   /** Deterministic hosted capability gate for component tests. */
   entitlementGate?: EntitlementGate
+  /** Test/custom storage seam; production composes Convex from env. */
+  documentStore?: (auth: SignedControlPlaneAuth) => DocumentStore
 }
 
 // Deployment-configured app origins (CLAXEDO_APP_ORIGINS, comma-separated).
@@ -69,7 +91,10 @@ export type HostedAppOverrides = {
 // entries are accepted, so staged app hosts (e.g. Cloudflare Pages) can call
 // the central API without editing shared code per deployment.
 export function configuredAppOrigins(raw: string | undefined) {
-  const entries = (raw ?? "").split(",").map((item) => item.trim()).filter(Boolean)
+  const entries = (raw ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
   const exact = new Set<string>()
   const suffixes: string[] = []
   for (const entry of entries) {
@@ -139,15 +164,21 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   assertHostedAppBootConfig(plane)
   const { services } = plane
   const app = new Hono()
-  const workgraph = overrides.workgraph ?? createHostedWorkGraph({
-    env: plane.env,
-    authConfig: services.auth.config,
-    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-    ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
-    ...(services.authority ? { authority: services.authority } : {}),
-    ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
-    ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
-  })
+  const workgraph =
+    overrides.workgraph ??
+    createHostedWorkGraph({
+      env: plane.env,
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
+      ...(services.authority ? { authority: services.authority } : {}),
+      ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
+      ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
+      telemetry: services.telemetry,
+    })
+  const workGraphOwnerActivation = overrides.workGraphOwnerActivation
+    ? overrides.workGraphOwnerActivation
+    : workgraph.activateOwner
   const connectionOperationExecutor = createHostedConnectionOperationExecutor({ env: plane.env })
   const connectionOperationHandler = connectionOperationExecutor
     ? createHostedConnectionOperationHandler({ env: plane.env, execute: connectionOperationExecutor })
@@ -189,7 +220,9 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
     requireEntitlement: (clerkOrgId) => entitlementGate({ clerkOrgId }, "hosted-connections"),
   })
-  const requireCloudWorkspaceEntitlement = async (auth: Parameters<NonNullable<HostedWorkspaceRouteOptions["requireCloudWorkspaceEntitlement"]>>[0]) => {
+  const requireCloudWorkspaceEntitlement = async (
+    auth: Parameters<NonNullable<HostedWorkspaceRouteOptions["requireCloudWorkspaceEntitlement"]>>[0],
+  ) => {
     const authority = services.authority
     if (!authority) {
       return {
@@ -220,9 +253,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     ...(services.relay.runtimeAccessTokenSigner
       ? { runtimeAccessTokenSigner: services.relay.runtimeAccessTokenSigner }
       : {}),
-    ...(services.relay.hostTunnelTokenSigner
-      ? { hostTunnelTokenSigner: services.relay.hostTunnelTokenSigner }
-      : {}),
+    ...(services.relay.hostTunnelTokenSigner ? { hostTunnelTokenSigner: services.relay.hostTunnelTokenSigner } : {}),
     cliTokenEnv: plane.env,
     connectionRateLimiter: createFixedWindowConnectionRateLimiter({
       limit: plane.safetyLimits.connectionRateLimit,
@@ -239,7 +270,8 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       ok: true,
       mode: "hosted-control-plane",
       localExecution: services.localExecution.enabled,
-    }))
+    }),
+  )
 
   app.get("/api/claxedo/mode", (c) =>
     c.json({
@@ -252,38 +284,70 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       hostTunnelTokenSigner: !!services.relay.hostTunnelTokenSigner,
       deviceLogin: !!plane.deviceAuthProvider,
       workgraph: true,
-    }))
+    }),
+  )
 
-  app.get("/api/claxedo/compatibility", (c) =>
-    c.json(deploymentCompatibilityReport(plane.env)))
+  app.get("/api/claxedo/compatibility", (c) => c.json(deploymentCompatibilityReport(plane.env)))
 
   // Minimal hosted shell-boot surface (events bus, health, bootstrap, path/
   // project/provider) — see routes/hosted-shell.ts for the shape contracts.
-  app.route("/", HostedShellRoutes({
-    authConfig: services.auth.config,
-    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-    ...(plane.env.npm_package_version ? { version: plane.env.npm_package_version } : {}),
-    ...(services.authority
-      ? { listWorkspaces: (auth) => services.authority!.listWorkspaces(auth) }
-      : {}),
-  }))
+  app.route(
+    "/",
+    HostedShellRoutes({
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      ...(plane.env.npm_package_version ? { version: plane.env.npm_package_version } : {}),
+      ...(services.authority ? { listWorkspaces: (auth) => services.authority!.listWorkspaces(auth) } : {}),
+      activateOwner: ownerActivationWithTelemetry(services.telemetry, workGraphOwnerActivation),
+    }),
+  )
 
   app.route("/", JwksRoutes(plane.env))
 
-  app.route("/", HostedDeviceAuthRoutes({
-    ...(plane.deviceAuthProvider ? { provider: plane.deviceAuthProvider } : {}),
-    authConfig: services.auth.config,
-    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-    env: plane.env,
-    ...(services.authority ? { ensureCliUser: (auth) => services.authority!.usersMe(auth) } : {}),
-  }))
+  app.route(
+    "/",
+    HostedDeviceAuthRoutes({
+      ...(plane.deviceAuthProvider ? { provider: plane.deviceAuthProvider } : {}),
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      env: plane.env,
+      ...(services.authority ? { ensureCliUser: (auth) => services.authority!.usersMe(auth) } : {}),
+    }),
+  )
 
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
 
   app.all("/api/workgraph", (context) => forwardWorkGraph(context.req.raw))
   app.all("/api/workgraph/*", (context) => forwardWorkGraph(context.req.raw))
+  app.route(
+    "/api/claxedo/docs",
+    DocsRoutes({
+      services,
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      ...(services.authority ? { authority: services.authority } : {}),
+      store: (auth) => {
+        if (!auth) {
+          throw new ControlPlaneAuthError(401, "missing_bearer_token", "Signed Control Plane auth is required")
+        }
+        if (overrides.documentStore) return overrides.documentStore(auth)
+        const url = plane.env.CLAXEDO_WORKSPACE_AUTHORITY_URL?.trim()
+        const serviceToken = plane.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
+        if (!url || !serviceToken) {
+          throw new HostedWorkerCompositionError(
+            "hosted_dependency_missing",
+            "Hosted document storage requires Convex authority URL and Control Plane service token",
+          )
+        }
+        return createConvexDocumentStore({ url, serviceToken, auth })
+      },
+    }),
+  )
   app.route("/api/claxedo/integrations", connectionsSetup)
   if (connectionOperationHandler) {
+    if (workgraph.operationalTelemetry) {
+      app.use("/internal/workgraph/connection-operation", workGraphHttpTelemetry(workgraph.operationalTelemetry))
+    }
     app.post("/internal/workgraph/connection-operation", (context) => connectionOperationHandler(context.req.raw))
   }
 
@@ -291,21 +355,28 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   // on the CF Worker; all Polar code is confined to src/billing/** (enforced
   // by billing-architecture.test.ts). Unconfigured deployments keep the
   // routes mounted but every surface fails closed (503) at request time.
-  app.route("/api/billing", BillingRoutes({
-    env: plane.env,
-    authConfig: services.auth.config,
-    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-  }))
+  app.route(
+    "/api/billing",
+    BillingRoutes({
+      env: plane.env,
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+    }),
+  )
 
   if (!overrides.centralSessionRuntime) {
     app.get("/api/control/sessions", async (c) => {
       const workspaceId = c.req.query("workspaceId")
       if (!workspaceId || !services.authority?.listSessions) return c.json({ sessions: [] })
-      const authResult = await signedOrError(c.req.raw, {
-        authConfig: services.auth.config,
-        ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-        requireSigned: true,
-      }, services)
+      const authResult = await signedOrError(
+        c.req.raw,
+        {
+          authConfig: services.auth.config,
+          ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+          requireSigned: true,
+        },
+        services,
+      )
       if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
       if (!authResult.auth) return c.json({ sessions: [] })
       return c.json({
@@ -314,24 +385,61 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     })
   }
 
-  app.route("/api/control", HostedControlRoutes(services, {
-    authConfig: services.auth.config,
-    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-    cliTokenEnv: plane.env,
-  }))
+  app.route(
+    "/api/control",
+    HostedControlRoutes(services, {
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      cliTokenEnv: plane.env,
+    }),
+  )
 
-  app.route("/", InternalRelayResolverRoutes({
-    resolverToken: plane.resolverToken,
-    ...(services.authority ? { authority: services.authority } : {}),
-    targetLookup: overrides.relayTargetLookup ?? plane.relayTargetLookup,
-    // No localTargetExists — the hosted control plane has no local disk store.
-  }))
+  app.route(
+    "/",
+    InternalRelayResolverRoutes({
+      resolverToken: plane.resolverToken,
+      ...(services.authority ? { authority: services.authority } : {}),
+      targetLookup: overrides.relayTargetLookup ?? plane.relayTargetLookup,
+      // No localTargetExists — the hosted control plane has no local disk store.
+    }),
+  )
 
-  app.route("/", HostedSandboxAdminRoutes({
-    adminToken: plane.env.CLAXEDO_RUNTIME_ADMIN_TOKEN,
-    sandboxManager: services.sandbox.sandboxManager,
-    telemetry: services.telemetry,
-  }))
+  app.route(
+    "/",
+    HostedSandboxAdminRoutes({
+      adminToken: plane.env.CLAXEDO_RUNTIME_ADMIN_TOKEN,
+      sandboxManager: services.sandbox.sandboxManager,
+      telemetry: services.telemetry,
+    }),
+  )
+  app.route(
+    "/",
+    HostedWorkGraphAdminRoutes({
+      adminToken: plane.env.CLAXEDO_RUNTIME_ADMIN_TOKEN,
+      ...(overrides.workGraphReconcile ? { reconcile: overrides.workGraphReconcile } : {}),
+      telemetry: services.telemetry,
+    }),
+  )
 
   return app
+}
+
+function ownerActivationWithTelemetry(
+  telemetry: ControlPlaneServices["telemetry"],
+  activate: (auth: SignedControlPlaneAuth) => Promise<HostedWorkGraphOwnerActivation>,
+) {
+  return async (auth: SignedControlPlaneAuth) => {
+    const result = await activate(auth)
+    telemetry.capture(auth.user.subject, "workgraph.catalog_activation", {
+      status: result.status,
+      ...(result.status === "ready"
+        ? {}
+        : {
+            code: result.error.code,
+            capability: result.error.capability,
+            reason: result.error.reason,
+            retryable: result.error.retryable,
+          }),
+    })
+  }
 }

@@ -29,6 +29,15 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.options.opencodeCompat).toBe(false)
   })
 
+  test("wires the trusted WorkGraph broker origin from host composition", async () => {
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv({
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_WORKGRAPH_BROKER_ORIGIN: "https://central.example",
+    })
+    expect(boot.options.workgraphConnectionBrokerOrigin).toBe("https://central.example")
+  })
+
   test("runner parsing: acp alias, named harness, acp binary connection", () => {
     expect(claxedoRuntimeRunnerFromEnv({ WORKSPACE_RUNTIME_RUNNER: "acp" })).toEqual({ id: "claude", access: "acp" })
     expect(claxedoRuntimeRunnerFromEnv({ WORKSPACE_RUNTIME_RUNNER: "codex" })).toMatchObject({ id: "codex" })

@@ -478,7 +478,31 @@ describe("agent config", () => {
       },
     })
 
-    expect(snap.agent_extensions?.installs).toEqual([])
+    expect(snap.agent_extensions?.installs).toEqual([{
+      desired: {
+        id: "review",
+        package_name: "review",
+        source: { type: "github", owner: "acme", repo: "review" },
+        scope: "workspace",
+        enabled: false,
+        targets: ["cursor"],
+        installed_at: 1,
+        updated_at: 1,
+      },
+      lock: {
+        source: { type: "github", owner: "acme", repo: "review" },
+        resolved_sha: "abcdef1234567890",
+        manifest_digests: { package: "abc" },
+        component_digests: { package: "abc" },
+        targets: ["cursor"],
+      },
+      effective: {
+        enabled: false,
+        source: "org",
+        reason: "blocked by org policy",
+      },
+      components: [],
+    }])
     expect(listWorkspaceAgentExtensionsForRuntime).toHaveBeenCalledWith({
       workspaceId: "ws_1",
     })

@@ -30,7 +30,14 @@
 /* Keep modal dialogs above Claxedo's floating mobile sidebar and dropdown layers. */
 [data-component="dialog-overlay"],
 [data-component="dialog"] {
-  z-index: 300;
+  z-index: 300 !important;
+}
+
+/* DialogProvider adds an inline layer wrapper around dialogs it owns. Keep that
+   wrapper in the same elevated app-modal stacking context so a dialog opened
+   from another modal appears above its invoker instead of behind it. */
+[data-dialog-layer] {
+  z-index: 300 !important;
 }
 
 /* Settings selects are portaled to <body>, so they need to clear the elevated dialog layer. */

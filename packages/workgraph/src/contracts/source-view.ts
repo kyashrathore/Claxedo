@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { AdmissionProposalIDSchema } from "./commands"
+import { ExecutionProfileDefaultsSchema } from "./execution"
 import { ConnectionIDSchema } from "./ids"
 import { WorkSourceRevisionRefSchema } from "./work-source"
 
@@ -77,6 +78,7 @@ export const IntakeCandidateDtoSchema = z.discriminatedUnion("candidateKind", [
   IntakeCandidateBaseSchema.extend({
     candidateKind: z.literal("session"),
     sessionId: text,
+    execution: ExecutionProfileDefaultsSchema.optional(),
   }),
 ])
 export type IntakeCandidateDto = z.infer<typeof IntakeCandidateDtoSchema>

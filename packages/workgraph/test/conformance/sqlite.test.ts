@@ -22,7 +22,7 @@ afterEach(() => {
 workGraphStoreContract("SQLite", async (input) => {
   const database = new BetterSqlite3(":memory:")
   databases.push(database)
-  const adapter = createSqliteWorkGraphService({ database, clock: input.clock, ids: input.ids, execution })
+  const adapter = createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, clock: input.clock, ids: input.ids, execution })
   return {
     ...adapter,
     restart: async () => ({ attemptRuntime: createSqliteAttemptRuntime(database, input.clock) }),
@@ -37,13 +37,13 @@ workGraphSnapshotRestartContract("SQLite", async (input) => {
   databases.push(database)
 
   return {
-    service: createSqliteWorkGraphService({ database, clock: input.clock, ids: input.ids }).service,
+    service: createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, clock: input.clock, ids: input.ids }).service,
     restart: async () => {
       database.close()
       database = new BetterSqlite3(path)
       databases.push(database)
       return {
-        service: createSqliteWorkGraphService({ database, clock: input.clock, ids: input.ids }).service,
+        service: createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, clock: input.clock, ids: input.ids }).service,
       }
     },
   }
@@ -52,7 +52,7 @@ workGraphSnapshotRestartContract("SQLite", async (input) => {
 workGraphAttentionContract("SQLite", async () => {
   const database = new BetterSqlite3(":memory:")
   databases.push(database)
-  const service = createSqliteWorkGraphService({ database, clock: { now: () => 1_000 } }).service
+  const service = createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, clock: { now: () => 1_000 } }).service
   return {
     service,
     seed: async (context) => {
@@ -72,13 +72,13 @@ workGraphAttentionContract("SQLite", async () => {
         },
       })
       if (!item.ok || !item.value || typeof item.value !== "object" || Array.isArray(item.value) || typeof item.value.workItemId !== "string") throw new Error("Attention Task was not created")
-      database.prepare("UPDATE wg_v2_work_items SET lifecycle = 'review_needed', updated_at = 200 WHERE owner_user_id = ? AND id = ?")
-        .run(context.ownerUserId, item.value.workItemId)
+      database.prepare("UPDATE wg_v2_work_items SET lifecycle = 'review_needed', updated_at = 200 WHERE organization_id = ? AND owner_user_id = ? AND id = ?")
+        .run(context.organizationId, context.ownerUserId, item.value.workItemId)
       database.prepare(`
         INSERT INTO wg_v2_intake_candidates
-          (owner_user_id, id, workgraph_id, candidate_kind, title, status, created_at, updated_at)
-        VALUES (?, ?, 'workgraph_default', 'session', 'Unorganized', 'unorganized', 100, 100)
-      `).run(context.ownerUserId, `candidate_${context.ownerUserId}`)
+          (organization_id, owner_user_id, id, workgraph_id, candidate_kind, title, status, created_at, updated_at)
+        VALUES (?, ?, ?, 'workgraph_default', 'session', 'Unorganized', 'unorganized', 100, 100)
+      `).run(context.organizationId, context.ownerUserId, `candidate_${context.ownerUserId}`)
       return { expectedKinds: ["work_item", "unorganized_ai_work"] as const }
     },
   }
@@ -90,8 +90,8 @@ workGraphArchiveContract("SQLite", async (input) => {
   const nonEmptyTarget = new BetterSqlite3(":memory:")
   databases.push(source, emptyTarget, nonEmptyTarget)
 
-  const sourceService = createSqliteWorkGraphService({ database: source, clock: input.clock, ids: input.ids }).service
-  const nonEmptyService = createSqliteWorkGraphService({ database: nonEmptyTarget, clock: input.clock, ids: input.ids }).service
+  const sourceService = createSqliteWorkGraphService({ database: source, executionCapabilities: testExecutionCapabilities, clock: input.clock, ids: input.ids }).service
+  const nonEmptyService = createSqliteWorkGraphService({ database: nonEmptyTarget, executionCapabilities: testExecutionCapabilities, clock: input.clock, ids: input.ids }).service
   await sourceService.execute(input.owners.first, {
     operationId: operation("archive_source_stream"),
     command: { version: 1, type: "create_stream", title: "Ship archive conformance" },
@@ -120,11 +120,9 @@ const execution: WorkspaceExecutionPort = {
     repository: input.repository,
     workspaceId: "/tmp/workgraph-conformance",
   }),
-  createChildIsolation: async () => { throw new Error("unused") },
   launch: async (_context, input) => ({ sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId }),
   cancel: async () => undefined,
   result: async () => ({ state: "running" }),
-  integrateResult: async (_context, input) => ({ summary: input.result.summary, artifacts: input.result.artifacts }),
   cleanup: async () => undefined,
 }
 
@@ -135,6 +133,7 @@ describe("SQLite WorkGraph persistence", () => {
     let id = 0
     const adapter = createSqliteWorkGraphService({
       database,
+      executionCapabilities: testExecutionCapabilities,
       clock: { now: () => 1_000 + id },
       ids: { next: (kind) => `${kind}_${++id}` },
     })
@@ -152,11 +151,19 @@ describe("SQLite WorkGraph persistence", () => {
         streamId,
         expectedVersion: 1,
         title: "Ship now",
-        recap: { quietHours: 16, effort: "high" },
+        recap: {
+          model: { providerId: "openai", modelId: "gpt-5" },
+          quietHours: 16,
+          effort: "high",
+        },
       },
     })
     await expect(adapter.service.query(owner(), "streams", "read", { streamId })).resolves.toMatchObject({
-      recapDefaults: { quietHours: 16, effort: "high" },
+      recapDefaults: {
+        model: { providerId: "openai", modelId: "gpt-5" },
+        quietHours: 16,
+        effort: "high",
+      },
     })
     await adapter.service.execute(owner(), {
       operationId: operation("clear_settings"),
@@ -180,23 +187,23 @@ describe("SQLite WorkGraph persistence", () => {
     })
 
     expect(database.prepare(`
-      SELECT stream_id, sequence FROM wg_v2_events WHERE owner_user_id = ? AND event_type IN ('stream_created', 'stream_updated') ORDER BY sequence
-    `).all("owner")).toEqual([
+      SELECT stream_id, sequence FROM wg_v2_events WHERE organization_id = ? AND owner_user_id = ? AND event_type IN ('stream_created', 'stream_updated') ORDER BY sequence
+    `).all("organization", "owner")).toEqual([
       { stream_id: streamId, sequence: 1 },
       { stream_id: streamId, sequence: 2 },
       { stream_id: streamId, sequence: 3 },
     ])
     expect(database.prepare(`
-      SELECT stream_id FROM wg_v2_changes WHERE owner_user_id = ? AND change_type IN ('stream_created', 'stream_updated') ORDER BY cursor
-    `).all("owner")).toEqual([
+      SELECT stream_id FROM wg_v2_changes WHERE organization_id = ? AND owner_user_id = ? AND change_type IN ('stream_created', 'stream_updated') ORDER BY cursor
+    `).all("organization", "owner")).toEqual([
       { stream_id: streamId },
       { stream_id: streamId },
       { stream_id: streamId },
     ])
     expect(database.prepare(`
-      SELECT stream_id FROM wg_v2_events WHERE owner_user_id = ? AND event_type = 'work_source_created'
-    `).get("owner")).toEqual({ stream_id: null })
-    expect(database.prepare("SELECT id FROM wg_v2_streams WHERE owner_user_id = ? AND id LIKE '__workgraph_%'").all("owner")).toEqual([])
+      SELECT stream_id FROM wg_v2_events WHERE organization_id = ? AND owner_user_id = ? AND event_type = 'work_source_created'
+    `).get("organization", "owner")).toEqual({ stream_id: null })
+    expect(database.prepare("SELECT id FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND id LIKE '__workgraph_%'").all("organization", "owner")).toEqual([])
 
     const deleted = await adapter.service.execute(owner(), {
       operationId: operation("delete"),
@@ -204,11 +211,11 @@ describe("SQLite WorkGraph persistence", () => {
     })
     expect(deleted.ok).toBe(true)
     expect(database.prepare(`
-      SELECT stream_id, sequence FROM wg_v2_events WHERE owner_user_id = ? AND event_type = 'stream_deleted'
-    `).get("owner")).toEqual({ stream_id: streamId, sequence: 4 })
+      SELECT stream_id, sequence FROM wg_v2_events WHERE organization_id = ? AND owner_user_id = ? AND event_type = 'stream_deleted'
+    `).get("organization", "owner")).toEqual({ stream_id: streamId, sequence: 4 })
     expect(database.prepare(`
-      SELECT stream_id FROM wg_v2_changes WHERE owner_user_id = ? AND change_type = 'stream_deleted'
-    `).get("owner")).toEqual({ stream_id: streamId })
+      SELECT stream_id FROM wg_v2_changes WHERE organization_id = ? AND owner_user_id = ? AND change_type = 'stream_deleted'
+    `).get("organization", "owner")).toEqual({ stream_id: streamId })
     await expect(adapter.service.query(owner(), "changes", "listStream", { streamId })).resolves.toHaveLength(4)
     await expect(adapter.service.query(owner(), "streams", "read", { streamId })).resolves.toBeUndefined()
   })
@@ -217,7 +224,7 @@ describe("SQLite WorkGraph persistence", () => {
     const database = new BetterSqlite3(":memory:")
     databases.push(database)
     let id = 0
-    const adapter = createSqliteWorkGraphService({ database, ids: { next: (kind) => `${kind}_${++id}` } })
+    const adapter = createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, ids: { next: (kind) => `${kind}_${++id}` } })
     const created = await adapter.service.execute(owner(), {
       operationId: operation("create"),
       command: { version: 1, type: "create_stream", title: "Ship" },
@@ -262,9 +269,11 @@ function operation(value: string) {
 
 function owner(): WorkGraphContext {
   return {
+    organizationId: "organization" as never,
     ownerUserId: branded("owner"),
     actor: { type: "user", id: branded("owner") },
     requestId: branded("request"),
     access: { mode: "owner" },
   }
 }
+import { testExecutionCapabilities } from "../test-execution-capabilities"

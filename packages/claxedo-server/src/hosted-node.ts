@@ -20,6 +20,7 @@ import {
 import type { SandboxFetchOptions } from "./sandbox-target-fetch"
 import { ControlPlaneAuthError } from "./control-plane/auth"
 import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "./connections-host/turn-credentials"
+import { createHostedWorkGraphRuntime } from "./workgraph-host/hosted-runtime"
 
 function centralStorePorts() {
   const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
@@ -93,7 +94,11 @@ function hostedSessionEnvFactory(services: ControlPlaneServices, turnCredentials
 export function createHostedNodeApp(env: HostedWorkerEnv = process.env) {
   const plane = composeHostedNodeControlPlane(env)
   const turnCredentials = createConnectionTurnCredentials()
-  const app = createHostedApp(plane, { centralSessionRuntime: true })
+  const workGraphRuntime = createHostedWorkGraphRuntime(env, plane.services)
+  const app = createHostedApp(plane, {
+    centralSessionRuntime: true,
+    ...(workGraphRuntime ? { workGraphReconcile: workGraphRuntime.reconcile } : {}),
+  })
   const centralControl = createCentralControlApp(plane.services, {
     authConfig: plane.services.auth.config,
     ...(plane.services.auth.verifier ? { verifier: plane.services.auth.verifier } : {}),

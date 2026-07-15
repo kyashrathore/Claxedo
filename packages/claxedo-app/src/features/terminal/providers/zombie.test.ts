@@ -5,7 +5,7 @@
  * then exercise createTerminalSession directly. "Reload" is simulated by
  * creating a new session that reads from the same in-memory storage.
  */
-import { describe, expect, test, beforeEach, mock } from "bun:test"
+import { afterAll, describe, expect, test, beforeEach, mock } from "bun:test"
 import { createRoot } from "solid-js"
 import { createMockSDK, createMockStorage, installFetchMock } from "./test-helpers"
 
@@ -20,6 +20,13 @@ const LEGACY_KEY = `${RAW_SCOPE}:workspace:terminal`
 // ---------------------------------------------------------------------------
 
 const storage = createMockStorage()
+const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?zombie-restore`)) }
+const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?zombie-restore`)) }
+
+afterAll(() => {
+  mock.module("@/platform/api/api", () => realApiModule)
+  mock.module("@/platform/persistence/persist", () => realPersistModule)
+})
 
 // Mock persisted() to use our in-memory storage instead of localStorage
 mock.module("@opencode-ai/ui/context", () => ({
@@ -47,11 +54,10 @@ mock.module("@/platform/api/api", () => ({
 
 // Spread the real module: `mock.module` replaces the module PROCESS-WIDE, so a
 // partial mock would break later files that import its other exports.
-const realPersist = await import("@/platform/persistence/persist")
 mock.module("@/platform/persistence/persist", () => ({
-  ...realPersist,
+  ...realPersistModule,
   Persist: {
-    ...realPersist.Persist,
+    ...realPersistModule.Persist,
     scoped: (dir: string, session: string | undefined, key: string, legacy?: string[]) => ({
       storage: "test.dat",
       key: session ? `${dir}:session:${session}:${key}` : `${dir}:workspace:${key}`,

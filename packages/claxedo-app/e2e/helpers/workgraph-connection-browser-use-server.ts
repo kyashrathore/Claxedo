@@ -5,7 +5,7 @@ import { createRequire } from "node:module"
 import path from "node:path"
 import type { ConnectionsService } from "../../../claxedo-connections/src/index"
 import { createLocalEmbeddedWorkGraph } from "../../../claxedo-server/src/server-workgraph"
-import { createSessionV2WorkGraphGateway } from "../../../claxedo-server/src/workgraph-execution"
+import { createSessionV2WorkGraphGateway } from "../../../claxedo-server/src/workgraph-session-gateway"
 import { createLocalWorkspaceExecution } from "../../../claxedo-server/src/workgraph-host/local-execution"
 import type { SourceIssueConnector } from "../../../workgraph/src/connectors/interface"
 
@@ -73,7 +73,7 @@ const connections = {
     return {
       id,
       integrationId: "github",
-      owner: undefined,
+      owner: "org:local",
       grantedCapabilities: ["work-source"],
       fields: {},
       createdAt: 1,
@@ -135,7 +135,7 @@ const sessionGateway = createSessionV2WorkGraphGateway(
       ...(["GET", "HEAD"].includes(request.method) ? {} : { body: request.body, duplex: "half" as const }),
     })
   },
-  { connections, connectors: { github } },
+  { connections, connectors: { github }, resolveTeamOwner: (context) => `org:${context.organizationId}` },
 )
 const sessions = {
   ...sessionGateway,
@@ -195,7 +195,7 @@ const api = createServer(async (incoming, outgoing) => {
     headers: Object.entries(incoming.headers).flatMap(([key, value]) =>
       value === undefined ? [] : [[key, Array.isArray(value) ? value.join(",") : value]],
     ),
-    ...(["GET", "HEAD"].includes(incoming.method ?? "GET") ? {} : { body }),
+    ...(["GET", "HEAD"].includes(incoming.method ?? "GET") ? {} : { body: body.toString() }),
   })
   const response = await embedded.router.fetch(request)
   outgoing.statusCode = response.status
@@ -206,6 +206,7 @@ const api = createServer(async (incoming, outgoing) => {
 await new Promise<void>((resolve) => api.listen(apiPort, "127.0.0.1", resolve))
 const reconcile = setInterval(() =>
   void embedded.reconcile({
+    organizationId: "local" as never,
     ownerUserId: "local" as never,
     actor: { type: "system", id: "connection-browser-reconciler" as never },
     requestId: crypto.randomUUID() as never,

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import type BetterSqlite3 from "better-sqlite3"
 import type { RecapGenerator, RecapJob, RecapPort } from "../../application/recap-service"
 import { createRecapService } from "../../application/recap-service"
@@ -6,6 +6,9 @@ import {
   ExecutionProfileDefaultsSchema,
   RecapProfileDefaultsSchema,
   ResolvedExecutionProfileSchema,
+  createChangeCursor,
+  resolveRecapProfileDefaults,
+  type ExecutionProfileDefaults,
   type RecapID,
   type ResolvedExecutionProfile,
   type StreamID,
@@ -16,6 +19,7 @@ import { resolveExecutionProfile } from "../../domain/execution-profile"
 import type { ExecutionResult } from "../../ports"
 import { assertNoSqliteWorkGraphOwnerDeletion } from "./deletion-barrier"
 import { initializeWorkGraphSqliteSchema } from "./schema"
+import { requireSessionDirectory } from "./session-directory"
 
 const leaseDurationMs = 5 * 60 * 1000
 const retryDelayMs = 60 * 1000
@@ -41,6 +45,7 @@ export function createSqliteRecapRuntime(input: Readonly<{
   sessions?: RecapSessionGateway
   sessionDirectory?: string
 }>) {
+  const sessionDirectory = input.sessions ? requireSessionDirectory(input.sessionDirectory, "SQLite Recap generation") : undefined
   const database = initializeWorkGraphSqliteSchema(input.database).raw()
   if (!database) throw new Error("The SQLite Recap runtime requires a real better-sqlite3 database")
   const clock = input.clock ?? { now: Date.now }
@@ -61,7 +66,7 @@ export function createSqliteRecapRuntime(input: Readonly<{
               context,
               jobId: claimed.id,
               sessions: input.sessions,
-              directory: input.sessionDirectory ?? process.cwd(),
+              directory: sessionDirectory!,
               leaseEpoch: claimed.leaseEpoch,
               workerId,
             })
@@ -99,52 +104,107 @@ function createClaimedSqliteRecapPort(
       return (database.prepare(`
         SELECT streams.id AS stream_id,
           streams.recap_defaults_json AS stream_recap_defaults,
-          graphs.recap_defaults_json AS workgraph_recap_defaults,
+          streams.execution_defaults_json AS stream_execution_defaults,
+          graphs.defaults_json AS workgraph_execution_defaults,
           COALESCE(MAX(events.occurred_at), streams.updated_at) AS last_activity_at,
           COALESCE(MAX(events.sequence), 0) AS latest_sequence,
           latest.id AS recap_id,
           latest.activity_end_sequence AS recap_sequence
         FROM wg_v2_streams streams
         JOIN wg_v2_workgraphs graphs
-          ON graphs.owner_user_id = streams.owner_user_id AND graphs.id = streams.workgraph_id
+          ON graphs.organization_id = streams.organization_id AND graphs.owner_user_id = streams.owner_user_id AND graphs.id = streams.workgraph_id
         LEFT JOIN wg_v2_events events
-          ON events.owner_user_id = streams.owner_user_id AND events.stream_id = streams.id
+          ON events.organization_id = streams.organization_id AND events.owner_user_id = streams.owner_user_id AND events.stream_id = streams.id
         LEFT JOIN wg_v2_recaps latest
-          ON latest.owner_user_id = streams.owner_user_id AND latest.stream_id = streams.id
+          ON latest.organization_id = streams.organization_id AND latest.owner_user_id = streams.owner_user_id AND latest.stream_id = streams.id
           AND latest.activity_end_sequence = (
             SELECT MAX(candidate.activity_end_sequence) FROM wg_v2_recaps candidate
-            WHERE candidate.owner_user_id = streams.owner_user_id AND candidate.stream_id = streams.id
+            WHERE candidate.organization_id = streams.organization_id AND candidate.owner_user_id = streams.owner_user_id AND candidate.stream_id = streams.id
           )
-        WHERE streams.owner_user_id = ? AND streams.lifecycle <> 'closed'
-        GROUP BY streams.id, streams.recap_defaults_json, graphs.recap_defaults_json, latest.id, latest.activity_end_sequence
+        WHERE streams.organization_id = ? AND streams.owner_user_id = ? AND streams.lifecycle <> 'closed'
+        GROUP BY streams.id, streams.recap_defaults_json, latest.id, latest.activity_end_sequence
         ORDER BY last_activity_at, streams.id
-      `).all(context.ownerUserId) as CandidateRow[]).map((row) => {
-        const workgraph = JSON.parse(row.workgraph_recap_defaults) as { quietHours?: number }
-        const stream = JSON.parse(row.stream_recap_defaults) as { quietHours?: number }
+      `).all(context.organizationId, context.ownerUserId) as CandidateRow[]).map((row) => {
+        const stream = explicitStreamRecapConfiguration(row.stream_recap_defaults, {
+          ...ExecutionProfileDefaultsSchema.parse(JSON.parse(row.workgraph_execution_defaults)),
+          ...ExecutionProfileDefaultsSchema.parse(JSON.parse(row.stream_execution_defaults)),
+        })
+        if (stream.ok) clearRecoveredRecapConfigurationJobs(database, context, row.stream_id, clock.now())
         return {
           streamId: row.stream_id as StreamID,
           lastActivityAt: Number(row.last_activity_at),
           latestSequence: Number(row.latest_sequence),
-          quietPeriodMs: (stream.quietHours ?? workgraph.quietHours ?? 8) * 60 * 60 * 1000,
+          quietPeriodMs: stream.ok ? stream.value.quietHours * 60 * 60 * 1000 : 0,
           ...(row.recap_id ? { lastRecap: { id: row.recap_id as RecapID, toSequence: Number(row.recap_sequence) } } : {}),
         }
       })
     },
     async enqueue(context, job) {
       return database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         const now = clock.now()
+        const row = database.prepare(`
+          SELECT streams.recap_defaults_json, streams.execution_defaults_json,
+            graphs.defaults_json AS workgraph_execution_defaults
+          FROM wg_v2_streams streams
+          JOIN wg_v2_workgraphs graphs
+            ON graphs.organization_id = streams.organization_id AND graphs.owner_user_id = streams.owner_user_id AND graphs.id = streams.workgraph_id
+          WHERE streams.organization_id = ? AND streams.owner_user_id = ? AND streams.id = ?
+        `).get(context.organizationId, context.ownerUserId, job.streamId) as {
+          recap_defaults_json: string
+          execution_defaults_json: string
+          workgraph_execution_defaults: string
+        } | undefined
+        if (!row) throw new Error("Recap Stream was not found")
+        const configuration = explicitStreamRecapConfiguration(row.recap_defaults_json, {
+          ...ExecutionProfileDefaultsSchema.parse(JSON.parse(row.workgraph_execution_defaults)),
+          ...ExecutionProfileDefaultsSchema.parse(JSON.parse(row.execution_defaults_json)),
+        })
+        const existing = database.prepare(`
+          SELECT status, last_error FROM wg_v2_due_jobs
+          WHERE organization_id = ? AND owner_user_id = ? AND job_type = 'recap' AND subject_id = ?
+        `).get(context.organizationId, context.ownerUserId, `${job.streamId}:${job.toSequence}`) as {
+          status: string
+          last_error: string | null
+        } | undefined
+        if (
+          existing &&
+          ((configuration.ok && existing.status === "pending") ||
+            (!configuration.ok && existing.status === "failed" && existing.last_error === configuration.error))
+        ) return "existing"
+        const payload = configuration.ok ? job : {
+          ...job,
+          configurationRequirement: {
+            type: "generation",
+            purpose: "recap",
+            scope: { type: "stream", streamId: job.streamId },
+          },
+        }
         const result = database.prepare(`
-          INSERT OR IGNORE INTO wg_v2_due_jobs
-            (owner_user_id, id, stream_id, job_type, subject_id, due_at, status, payload_json, created_at, updated_at)
-          VALUES (?, ?, ?, 'recap', ?, ?, 'pending', ?, ?, ?)
+          INSERT INTO wg_v2_due_jobs
+            (organization_id, owner_user_id, id, stream_id, job_type, subject_id, due_at, status, payload_json, last_error, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'recap', ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (organization_id, owner_user_id, job_type, subject_id) DO UPDATE SET
+            due_at = excluded.due_at,
+            status = excluded.status,
+            payload_json = excluded.payload_json,
+            last_error = excluded.last_error,
+            updated_at = excluded.updated_at,
+            row_version = wg_v2_due_jobs.row_version + 1
+          WHERE wg_v2_due_jobs.status IN ('pending', 'failed', 'attention')
+            OR (
+              wg_v2_due_jobs.status = 'completed'
+              AND json_extract(wg_v2_due_jobs.payload_json, '$.configurationRequirement.type') = 'generation'
+            )
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           `recap_job_${randomUUID()}`,
           job.streamId,
           `${job.streamId}:${job.toSequence}`,
-          now,
-          JSON.stringify(job),
+          configuration.ok ? now : Number.MAX_SAFE_INTEGER,
+          configuration.ok ? "pending" : "failed",
+          JSON.stringify(payload),
+          configuration.ok ? null : configuration.error,
           now,
           now,
         )
@@ -154,16 +214,16 @@ function createClaimedSqliteRecapPort(
     async complete(context, job, output) {
       const now = clock.now()
       database.transaction(() => {
-        assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+        assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
         const due = (claim
           ? database.prepare(`
               SELECT id, claimed_by, lease_epoch FROM wg_v2_due_jobs
-              WHERE owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
-            `).get(context.ownerUserId, claim.id, claim.workerId, claim.leaseEpoch)
+              WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
+            `).get(context.organizationId, context.ownerUserId, claim.id, claim.workerId, claim.leaseEpoch)
           : database.prepare(`
               SELECT id, claimed_by, lease_epoch FROM wg_v2_due_jobs
-              WHERE owner_user_id = ? AND job_type = 'recap' AND subject_id = ? AND status = 'running'
-            `).get(context.ownerUserId, `${job.streamId}:${job.toSequence}`)) as { id: string; claimed_by: string | null; lease_epoch: number } | undefined
+              WHERE organization_id = ? AND owner_user_id = ? AND job_type = 'recap' AND subject_id = ? AND status = 'running'
+            `).get(context.organizationId, context.ownerUserId, `${job.streamId}:${job.toSequence}`)) as { id: string; claimed_by: string | null; lease_epoch: number } | undefined
         if (!due?.claimed_by) throw new Error("Recap job is not durably claimed")
         const profile = claim
           ? claimedRecapProfile(database, context, due.id)
@@ -171,12 +231,12 @@ function createClaimedSqliteRecapPort(
         const id = `recap_${randomUUID()}`
         const published = database.prepare(`
           INSERT OR IGNORE INTO wg_v2_recaps
-            (owner_user_id, id, stream_id, previous_recap_id, activity_start_sequence,
+            (organization_id, owner_user_id, id, stream_id, previous_recap_id, activity_start_sequence,
              activity_end_sequence, quiet_since, summary, actionable_references_json, generation_profile_json,
              provenance_json, generation_result_json, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-          context.ownerUserId,
+          context.organizationId, context.ownerUserId,
           id,
           job.streamId,
           job.previousRecapId ?? null,
@@ -196,19 +256,131 @@ function createClaimedSqliteRecapPort(
         if (published.changes === 1 && output.actionableReferences.length > 0) {
           database.prepare(`
             INSERT INTO wg_v2_notifications
-              (owner_user_id, id, notification_kind, state, stream_id, recap_id, created_at, updated_at)
-            VALUES (?, ?, 'actionable_recap', 'unread', ?, ?, ?, ?)
-          `).run(context.ownerUserId, `notification_${id}`, job.streamId, id, now, now)
+              (organization_id, owner_user_id, id, notification_kind, state, stream_id, recap_id, created_at, updated_at)
+            VALUES (?, ?, ?, 'actionable_recap', 'unread', ?, ?, ?, ?)
+          `).run(context.organizationId, context.ownerUserId, `notification_${id}`, job.streamId, id, now, now)
         }
+        if (published.changes === 1) appendRecapPublicationChange(database, context, id, job.streamId, now)
         const completed = database.prepare(`
           UPDATE wg_v2_due_jobs SET status = 'completed', claimed_by = NULL, claim_expires_at = NULL,
             last_error = NULL, updated_at = ?, row_version = row_version + 1
-          WHERE owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
-        `).run(now, context.ownerUserId, due.id, due.claimed_by, due.lease_epoch)
+          WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
+        `).run(now, context.organizationId, context.ownerUserId, due.id, due.claimed_by, due.lease_epoch)
         if (completed.changes !== 1) throw new Error("Recap job lost its durable claim before publication")
       })()
     },
   }
+}
+
+function clearRecoveredRecapConfigurationJobs(
+  database: BetterSqlite3.Database,
+  context: WorkGraphContext,
+  streamId: string,
+  now: number,
+) {
+  database.prepare(`
+    UPDATE wg_v2_due_jobs SET status = 'completed', due_at = ?, claimed_by = NULL,
+      claim_expires_at = NULL, last_error = NULL, updated_at = ?, row_version = row_version + 1
+    WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND job_type = 'recap'
+      AND status IN ('pending', 'failed', 'failed_terminal', 'attention')
+      AND json_extract(payload_json, '$.configurationRequirement.type') = 'generation'
+  `).run(Number.MAX_SAFE_INTEGER, now, context.organizationId, context.ownerUserId, streamId)
+}
+
+function appendRecapPublicationChange(
+  database: BetterSqlite3.Database,
+  context: WorkGraphContext,
+  recapId: string,
+  streamId: StreamID,
+  occurredAt: number,
+) {
+  database.prepare(`
+    INSERT OR IGNORE INTO wg_v2_change_cursors
+      (organization_id, owner_user_id, next_cursor, created_at, updated_at)
+    VALUES (?, ?, 1, ?, ?)
+  `).run(context.organizationId, context.ownerUserId, occurredAt, occurredAt)
+  const cursor = (database.prepare(`
+    SELECT next_cursor FROM wg_v2_change_cursors
+    WHERE organization_id = ? AND owner_user_id = ?
+  `).get(context.organizationId, context.ownerUserId) as { next_cursor: number }).next_cursor
+  database.prepare(`
+    UPDATE wg_v2_change_cursors
+    SET next_cursor = next_cursor + 1, row_version = row_version + 1, updated_at = ?
+    WHERE organization_id = ? AND owner_user_id = ?
+  `).run(occurredAt, context.organizationId, context.ownerUserId)
+
+  const sequenceScope = "__workgraph_owner_events__"
+  database.prepare(`
+    INSERT OR IGNORE INTO wg_v2_stream_sequences
+      (organization_id, owner_user_id, stream_id, next_sequence, created_at, updated_at)
+    VALUES (?, ?, ?, 1, ?, ?)
+  `).run(context.organizationId, context.ownerUserId, sequenceScope, occurredAt, occurredAt)
+  const sequence = (database.prepare(`
+    SELECT next_sequence FROM wg_v2_stream_sequences
+    WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?
+  `).get(context.organizationId, context.ownerUserId, sequenceScope) as { next_sequence: number }).next_sequence
+  database.prepare(`
+    UPDATE wg_v2_stream_sequences
+    SET next_sequence = next_sequence + 1, row_version = row_version + 1, updated_at = ?
+    WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?
+  `).run(occurredAt, context.organizationId, context.ownerUserId, sequenceScope)
+
+  const operationId = `recap_publish_${recapId}`
+  const payload = JSON.stringify({ recapId, streamId })
+  database.prepare(`
+    INSERT INTO wg_v2_operation_results
+      (organization_id, owner_user_id, id, command_type, request_hash, result_status, result_json, change_cursor, created_at)
+    VALUES (?, ?, ?, 'recap_publication', ?, 200, ?, ?, ?)
+  `).run(
+    context.organizationId,
+    context.ownerUserId,
+    operationId,
+    createHash("sha256").update(operationId).digest("hex"),
+    JSON.stringify({
+      ok: true,
+      operationId,
+      cursor: createChangeCursor({
+        organizationId: context.organizationId,
+        ownerUserId: context.ownerUserId,
+        position: cursor,
+      }),
+      value: { recapId, streamId },
+    }),
+    cursor,
+    occurredAt,
+  )
+  // The change is Stream-scoped for consumers, while the event remains owner-scoped so publication is not new Recap activity.
+  database.prepare(`
+    INSERT INTO wg_v2_events
+      (organization_id, owner_user_id, id, stream_id, sequence, schema_version, operation_id, event_type,
+       actor_type, actor_id, request_id, payload_json, occurred_at)
+    VALUES (?, ?, ?, NULL, ?, 1, ?, 'recap_published', 'system', 'recap_runtime', ?, ?, ?)
+  `).run(
+    context.organizationId,
+    context.ownerUserId,
+    `event_${operationId}`,
+    sequence,
+    operationId,
+    context.requestId,
+    payload,
+    occurredAt,
+  )
+  database.prepare(`
+    INSERT INTO wg_v2_changes
+      (organization_id, owner_user_id, cursor, id, stream_id, operation_id, resource_type, resource_id,
+       change_type, payload_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'recap', ?, 'recap_published', ?, ?)
+  `).run(
+    context.organizationId,
+    context.ownerUserId,
+    cursor,
+    `change_${operationId}`,
+    streamId,
+    operationId,
+    recapId,
+    payload,
+    occurredAt,
+  )
 }
 
 function createSqliteSessionRecapGenerator(input: Readonly<{
@@ -265,8 +437,8 @@ function createSqliteSessionRecapGenerator(input: Readonly<{
 class RecapSessionPendingError extends Error {}
 
 function recapSession(database: BetterSqlite3.Database, context: WorkGraphContext, jobId: string) {
-  const row = database.prepare("SELECT payload_json FROM wg_v2_due_jobs WHERE owner_user_id = ? AND id = ?")
-    .get(context.ownerUserId, jobId) as { payload_json: string } | undefined
+  const row = database.prepare("SELECT payload_json FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND id = ?")
+    .get(context.organizationId, context.ownerUserId, jobId) as { payload_json: string } | undefined
   const payload = row ? JSON.parse(row.payload_json) as {
     sessionId?: unknown
     generationProfile?: unknown
@@ -290,38 +462,38 @@ function markRecapSession(
 ) {
   const row = database.prepare(`
     SELECT payload_json FROM wg_v2_due_jobs
-    WHERE owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
-  `).get(context.ownerUserId, jobId, workerId, leaseEpoch) as { payload_json: string } | undefined
+    WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
+  `).get(context.organizationId, context.ownerUserId, jobId, workerId, leaseEpoch) as { payload_json: string } | undefined
   if (!row) throw new Error("Recap Session lost its durable job claim")
   const changed = database.prepare(`
     UPDATE wg_v2_due_jobs SET payload_json = ?
-    WHERE owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
+    WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
   `).run(JSON.stringify({
     ...JSON.parse(row.payload_json),
     sessionId,
     generationProfile: profile,
     sessionAdmissionConfirmed: admitted,
-  }), context.ownerUserId, jobId, workerId, leaseEpoch)
+  }), context.organizationId, context.ownerUserId, jobId, workerId, leaseEpoch)
   if (changed.changes !== 1) throw new Error("Recap Session lost its durable job claim")
 }
 
 function recapSource(database: BetterSqlite3.Database, context: WorkGraphContext, job: RecapJob) {
-  const stream = database.prepare("SELECT title FROM wg_v2_streams WHERE owner_user_id = ? AND id = ?")
-    .get(context.ownerUserId, job.streamId) as { title: string } | undefined
+  const stream = database.prepare("SELECT title FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND id = ?")
+    .get(context.organizationId, context.ownerUserId, job.streamId) as { title: string } | undefined
   if (!stream) throw new Error("Recap Stream was not found")
   const events = database.prepare(`
     SELECT sequence, event_type, payload_json FROM wg_v2_events
-    WHERE owner_user_id = ? AND stream_id = ? AND sequence BETWEEN ? AND ?
+    WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND sequence BETWEEN ? AND ?
     ORDER BY sequence
-  `).all(context.ownerUserId, job.streamId, job.fromSequence, job.toSequence) as ActivityRow[]
+  `).all(context.organizationId, context.ownerUserId, job.streamId, job.fromSequence, job.toSequence) as ActivityRow[]
   if (events.length !== job.toSequence - job.fromSequence + 1 || events.some((event, index) => event.sequence !== job.fromSequence + index)) {
     throw new Error("Recap activity range no longer matches its claimed Stream sequence")
   }
   const previous = job.previousRecapId
     ? database.prepare(`
         SELECT id, summary, activity_end_sequence FROM wg_v2_recaps
-        WHERE owner_user_id = ? AND stream_id = ? AND id = ?
-      `).get(context.ownerUserId, job.streamId, job.previousRecapId) as { id: string; summary: string; activity_end_sequence: number } | undefined
+        WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND id = ?
+      `).get(context.organizationId, context.ownerUserId, job.streamId, job.previousRecapId) as { id: string; summary: string; activity_end_sequence: number } | undefined
     : undefined
   if (job.previousRecapId && (!previous || previous.activity_end_sequence !== job.fromSequence - 1)) {
     throw new Error("Recap previous revision no longer matches its claimed activity range")
@@ -371,36 +543,32 @@ function recapProfile(database: BetterSqlite3.Database, context: WorkGraphContex
   const stream = database.prepare(`
     SELECT streams.recap_defaults_json,
       streams.execution_defaults_json,
-      graphs.recap_defaults_json AS workgraph_recap_defaults_json,
       graphs.defaults_json AS workgraph_execution_defaults_json
     FROM wg_v2_streams streams
     JOIN wg_v2_workgraphs graphs
-      ON graphs.owner_user_id = streams.owner_user_id AND graphs.id = streams.workgraph_id
-    WHERE streams.owner_user_id = ? AND streams.id = ?
-  `).get(context.ownerUserId, streamId) as {
+      ON graphs.organization_id = streams.organization_id AND graphs.owner_user_id = streams.owner_user_id AND graphs.id = streams.workgraph_id
+    WHERE streams.organization_id = ? AND streams.owner_user_id = ? AND streams.id = ?
+  `).get(context.organizationId, context.ownerUserId, streamId) as {
     recap_defaults_json: string
     execution_defaults_json: string
-    workgraph_recap_defaults_json: string
     workgraph_execution_defaults_json: string
   } | undefined
   if (!stream) throw new Error("Recap Stream was not found")
   const workgraphExecution = ExecutionProfileDefaultsSchema.parse(JSON.parse(stream.workgraph_execution_defaults_json))
   const streamExecution = ExecutionProfileDefaultsSchema.parse(JSON.parse(stream.execution_defaults_json))
-  const workgraphRecap = RecapProfileDefaultsSchema.parse(JSON.parse(stream.workgraph_recap_defaults_json))
-  const streamRecap = RecapProfileDefaultsSchema.parse(JSON.parse(stream.recap_defaults_json))
+  const streamRecap = explicitStreamRecapConfiguration(stream.recap_defaults_json, {
+    ...workgraphExecution,
+    ...streamExecution,
+  })
+  if (!streamRecap.ok) throw new Error(streamRecap.error)
   const resolved = resolveExecutionProfile({
     workgraph: {
       ...workgraphExecution,
       ...streamExecution,
-      ...(workgraphRecap.model ? { model: workgraphRecap.model } : {}),
-      ...(workgraphRecap.effort ? { effort: workgraphRecap.effort } : {}),
-      ...(streamRecap.model ? { model: streamRecap.model } : {}),
-      ...(streamRecap.effort ? { effort: streamRecap.effort } : {}),
+      model: streamRecap.value.model,
+      effort: streamRecap.value.effort,
       tools: [],
       connectionIds: [],
-      isolation: "stream",
-      cleanup: "retain",
-      integration: "manual",
     },
   })
   if (!resolved.ok) {
@@ -410,8 +578,8 @@ function recapProfile(database: BetterSqlite3.Database, context: WorkGraphContex
 }
 
 function claimedRecapProfile(database: BetterSqlite3.Database, context: WorkGraphContext, jobId: string) {
-  const row = database.prepare("SELECT payload_json FROM wg_v2_due_jobs WHERE owner_user_id = ? AND id = ?")
-    .get(context.ownerUserId, jobId) as { payload_json: string } | undefined
+  const row = database.prepare("SELECT payload_json FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND id = ?")
+    .get(context.organizationId, context.ownerUserId, jobId) as { payload_json: string } | undefined
   if (!row) throw new Error("Recap job is unavailable")
   const profile = ResolvedExecutionProfileSchema.safeParse((JSON.parse(row.payload_json) as { generationProfile?: unknown }).generationProfile)
   if (!profile.success) throw new Error("Recap job has no valid durable generation profile")
@@ -425,22 +593,22 @@ function claimDue(
   now: number,
 ) {
   return database.transaction(() => {
-    assertNoSqliteWorkGraphOwnerDeletion(database, context.ownerUserId)
+    assertNoSqliteWorkGraphOwnerDeletion(database, context.organizationId, context.ownerUserId)
     const row = database.prepare(`
       SELECT id, payload_json, status, claimed_by, lease_epoch, row_version FROM wg_v2_due_jobs
-      WHERE owner_user_id = ? AND job_type = 'recap' AND due_at <= ?
+      WHERE organization_id = ? AND owner_user_id = ? AND job_type = 'recap' AND due_at <= ?
         AND (status = 'pending' OR status = 'failed' OR (status = 'running' AND (claimed_by = ? OR claim_expires_at <= ?)))
       ORDER BY due_at, created_at, id LIMIT 1
-    `).get(context.ownerUserId, now, workerId, now) as { id: string; payload_json: string; status: string; claimed_by: string | null; lease_epoch: number; row_version: number } | undefined
+    `).get(context.organizationId, context.ownerUserId, now, workerId, now) as { id: string; payload_json: string; status: string; claimed_by: string | null; lease_epoch: number; row_version: number } | undefined
     if (!row) return undefined
     const resumed = row.status === "running" && row.claimed_by === workerId
     const leaseEpoch = resumed ? row.lease_epoch : row.lease_epoch + 1
     const changed = database.prepare(`
       UPDATE wg_v2_due_jobs SET status = 'running', claimed_by = ?, claim_expires_at = ?,
         lease_epoch = ?, updated_at = ?, row_version = row_version + 1
-      WHERE owner_user_id = ? AND id = ? AND row_version = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
         AND (status = 'pending' OR status = 'failed' OR (status = 'running' AND (claimed_by = ? OR claim_expires_at <= ?)))
-    `).run(workerId, now + leaseDurationMs, leaseEpoch, now, context.ownerUserId, row.id, row.row_version, workerId, now)
+    `).run(workerId, now + leaseDurationMs, leaseEpoch, now, context.organizationId, context.ownerUserId, row.id, row.row_version, workerId, now)
     if (changed.changes !== 1) return undefined
     return { id: row.id, leaseEpoch, job: JSON.parse(row.payload_json) as RecapJob }
   })()
@@ -463,7 +631,7 @@ function failClaim(
     const changed = database.prepare(`
       UPDATE wg_v2_due_jobs SET status = ?, due_at = ?, payload_json = ?, claimed_by = NULL, claim_expires_at = NULL,
         last_error = ?, updated_at = ?, row_version = row_version + 1
-      WHERE owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND status = 'running' AND claimed_by = ? AND lease_epoch = ?
     `).run(
       status,
       now + retryDelayMs,
@@ -481,7 +649,7 @@ function failClaim(
       }),
       reason,
       now,
-      context.ownerUserId,
+      context.organizationId, context.ownerUserId,
       id,
       workerId,
       leaseEpoch,
@@ -489,24 +657,37 @@ function failClaim(
     if (changed.changes !== 1) return
     committed = true
     if (status !== "attention") return
-    const row = database.prepare("SELECT memory_card_json FROM wg_v2_streams WHERE owner_user_id = ? AND id = ?")
-      .get(context.ownerUserId, job.streamId) as { memory_card_json: string } | undefined
+    const row = database.prepare("SELECT memory_card_json FROM wg_v2_streams WHERE organization_id = ? AND owner_user_id = ? AND id = ?")
+      .get(context.organizationId, context.ownerUserId, job.streamId) as { memory_card_json: string } | undefined
     const memory = row ? JSON.parse(row.memory_card_json) as { summary?: unknown } : undefined
     database.prepare(`
       UPDATE wg_v2_streams SET memory_card_json = ?, updated_at = ?, row_version = row_version + 1
-      WHERE owner_user_id = ? AND id = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ?
     `).run(JSON.stringify({
       summary: typeof memory?.summary === "string" && memory.summary.trim() ? memory.summary : "Recap generation needs attention",
       updatedAt: now,
       attention: { type: "recap_failed", reason, at: now },
-    }), now, context.ownerUserId, job.streamId)
+    }), now, context.organizationId, context.ownerUserId, job.streamId)
   })()
   return committed ? status : "failed" as const
 }
 
 function recapConfigurationFailure(reason: string) {
   return reason.startsWith("Recap execution profile is incomplete:") ||
+    reason === "Recap requires explicit Stream model, effort, and quietHours configuration" ||
     reason === "Recap job has no valid durable generation profile"
+}
+
+function explicitStreamRecapConfiguration(value: string, execution?: ExecutionProfileDefaults) {
+  const parsed = RecapProfileDefaultsSchema.safeParse(JSON.parse(value))
+  const resolved = parsed.success ? resolveRecapProfileDefaults({ recap: parsed.data, execution }) : undefined
+  if (!resolved) {
+    return {
+      ok: false as const,
+      error: "Recap requires explicit Stream model, effort, and quietHours configuration",
+    }
+  }
+  return { ok: true as const, value: resolved }
 }
 
 function eventReferences(payload: Record<string, unknown>): WorkGraphRecordReference[] {
@@ -522,7 +703,8 @@ function eventReferences(payload: Record<string, unknown>): WorkGraphRecordRefer
 type CandidateRow = Readonly<{
   stream_id: string
   stream_recap_defaults: string
-  workgraph_recap_defaults: string
+  stream_execution_defaults: string
+  workgraph_execution_defaults: string
   last_activity_at: string | number
   latest_sequence: string | number
   recap_id: string | null

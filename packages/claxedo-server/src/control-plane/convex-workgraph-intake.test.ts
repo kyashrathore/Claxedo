@@ -1,10 +1,16 @@
 import { describe, expect, test } from "vitest"
 import {
-  applyWorkGraphIntakeOperation,
+  applyWorkGraphIntakeOperation as applyTenantWorkGraphIntakeOperation,
   applyWorkGraphWebhookOperation,
-  readWorkGraphIntake,
+  readWorkGraphIntake as readTenantWorkGraphIntake,
   readWorkGraphWebhook,
 } from "../../../../convex/workgraphIntake"
+
+const organizationId = "org_a" as never
+const readWorkGraphIntake = (ctx: never, ownerUserId: never, input: unknown) =>
+  readTenantWorkGraphIntake(ctx, organizationId, ownerUserId, input)
+const applyWorkGraphIntakeOperation = (ctx: never, ownerUserId: never, input: unknown) =>
+  applyTenantWorkGraphIntakeOperation(ctx, organizationId, ownerUserId, input)
 
 describe("Convex WorkGraph intake", () => {
   test("projects independent Sessions as complete discriminated candidate DTOs", async () => {
@@ -381,7 +387,12 @@ class ConvexIntakeHarness {
   readonly db = this
 
   constructor(seed: Record<string, Array<Record<string, unknown>>>) {
-    Object.entries(seed).forEach(([table, rows]) => this.tables.set(table, rows.map((row) => ({ ...row }))))
+    Object.entries(seed).forEach(([table, rows]) => this.tables.set(table, rows.map((row) => ({
+      ...(table.startsWith("workgraph_") || table === "workgraphs" || table.startsWith("work_source")
+        ? { organization_id: "org_a" }
+        : {}),
+      ...row,
+    }))))
   }
 
   query(table: string) {
@@ -416,6 +427,15 @@ class ConvexIntakeHarness {
         })
         return chain
       },
+      filter: (build: (query: { field(field: string): string; eq(field: string, value: unknown): (row: Record<string, unknown>) => boolean; and(...filters: Array<(row: Record<string, unknown>) => boolean>): (row: Record<string, unknown>) => boolean }) => (row: Record<string, unknown>) => boolean) => {
+        const query = {
+          field: (field: string) => field,
+          eq: (field: string, value: unknown) => (row: Record<string, unknown>) => row[field] === value,
+          and: (...filters: Array<(row: Record<string, unknown>) => boolean>) => (row: Record<string, unknown>) => filters.every((filter) => filter(row)),
+        }
+        selected = selected.filter(build(query))
+        return chain
+      },
       unique: async () => selected[0] ?? null,
       collect: async () => selected,
       take: async (limit: number) => selected.slice(0, limit),
@@ -424,7 +444,13 @@ class ConvexIntakeHarness {
   }
 
   async insert(table: string, value: Record<string, unknown>) {
-    const row = { _id: `${table}:${++this.next}`, ...value }
+    const row = {
+      _id: `${table}:${++this.next}`,
+      ...(table.startsWith("workgraph_") || table === "workgraphs" || table.startsWith("work_source")
+        ? { organization_id: "org_a" }
+        : {}),
+      ...value,
+    }
     this.tables.set(table, [...(this.tables.get(table) ?? []), row])
     return row._id
   }

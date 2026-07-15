@@ -13,11 +13,13 @@ export {
   WorkGraphConnectionToolRoutes,
 } from "./routes/workgraph-connection-tools"
 export type {
+  WorkGraphConnectionBrokerRequestLimits,
   WorkGraphConnectionOperationBroker,
   WorkGraphConnectionOperationRequest,
   WorkGraphConnectionOperationResponse,
   WorkGraphConnectionToolInput,
   WorkGraphConnectionToolName,
+  WorkGraphConnectionToolRouteHandle,
 } from "./routes/workgraph-connection-tools"
 export { PtyRoutes } from "./routes/pty"
 export { ProcessRoutes } from "./routes/process"

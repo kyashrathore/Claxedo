@@ -25,6 +25,15 @@ function db(seed: Record<string, Row[]>) {
         async unique() {
           return (await query.collect())[0]
         },
+        filter() {
+          return query
+        },
+        async first() {
+          return (await query.collect())[0]
+        },
+        async take(limit: number) {
+          return (await query.collect()).slice(0, limit)
+        },
       }
       return query
     },
@@ -66,11 +75,17 @@ function ctx() {
     db: db({
       users: [{ _id: "user_1", token_identifier: "user_token" }],
       projects: [{ _id: "project_1_doc", project_id: "project_1", owner_user_id: "user_1" }],
-      workspaces: [{ _id: "workspace_1", workspace_id: "ws_1", owner_user_id: "user_1", project_id: "project_1" }],
+      workspaces: [
+        { _id: "workspace_1", workspace_id: "ws_1", org_id: "org_1", owner_user_id: "user_1", project_id: "project_1" },
+      ],
       workspace_memberships: [],
       workspace_share_grants: [],
       org_memberships: [],
       session_history: [],
+      session_messages: [],
+      workgraph_attempts: [],
+      workgraph_due_jobs: [],
+      workgraph_owner_deletion_barriers: [],
     }),
     auth: {
       getUserIdentity: async () => ({
@@ -93,14 +108,18 @@ describe("Convex session visibility policy", () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const input = ctx()
 
-    await expect(handler(upsertVisibility)(input, {
-      workspace_id: "ws_1",
-      sessions: [{
-        session_id: "ses_1",
-        title: "Review",
-        directory_hint: "  opencode  ",
-      }],
-    })).resolves.toEqual({ ok: true })
+    await expect(
+      handler(upsertVisibility)(input, {
+        workspace_id: "ws_1",
+        sessions: [
+          {
+            session_id: "ses_1",
+            title: "Review",
+            directory_hint: "  opencode  ",
+          },
+        ],
+      }),
+    ).resolves.toEqual({ ok: true })
 
     expect(input.db.rows.session_history[0]).toMatchObject({
       session_id: "ses_1",
@@ -114,62 +133,73 @@ describe("Convex session visibility policy", () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const input = ctx()
 
-    await expect(handler(upsertVisibility)(input, {
-      workspace_id: "ws_1",
-      sessions: [{
-        session_id: "ses_1",
-        project_id: "project_1",
-        title: "Review",
-      }],
-    })).resolves.toEqual({ ok: true })
+    await expect(
+      handler(upsertVisibility)(input, {
+        workspace_id: "ws_1",
+        sessions: [
+          {
+            session_id: "ses_1",
+            project_id: "project_1",
+            title: "Review",
+          },
+        ],
+      }),
+    ).resolves.toEqual({ ok: true })
 
     expect(input.db.rows.session_history[0]).toMatchObject({
       session_id: "ses_1",
       project_id: "project_1_doc",
     })
-    await expect(handler(list)(input, {
-      workspace_id: "ws_1",
-    })).resolves.toMatchObject([{
-      session_id: "ses_1",
-      project_id: "project_1",
-    }])
+    await expect(
+      handler(list)(input, {
+        workspace_id: "ws_1",
+      }),
+    ).resolves.toMatchObject([
+      {
+        session_id: "ses_1",
+        project_id: "project_1",
+      },
+    ])
   })
 
-  test.each([
-    "/Users/yash/opencode",
-    "src/app",
-    "src\\app",
-    "C:\\repo",
-    "~/.claxedo",
-    ".",
-    "..",
-  ])("rejects path-like directory hint %s", async (directoryHint) => {
-    await expect(handler(upsertVisibility)(ctx(), {
-      workspace_id: "ws_1",
-      sessions: [{
-        session_id: "ses_1",
-        directory_hint: directoryHint,
-      }],
-    })).rejects.toThrow("Invalid directory hint")
-  })
+  test.each(["/Users/yash/opencode", "src/app", "src\\app", "C:\\repo", "~/.claxedo", ".", ".."])(
+    "rejects path-like directory hint %s",
+    async (directoryHint) => {
+      await expect(
+        handler(upsertVisibility)(ctx(), {
+          workspace_id: "ws_1",
+          sessions: [
+            {
+              session_id: "ses_1",
+              directory_hint: directoryHint,
+            },
+          ],
+        }),
+      ).rejects.toThrow("Invalid directory hint")
+    },
+  )
 
   test("syncs and reads session messages for authorized workspace readers", async () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const input = ctx()
 
-    await expect(handler(syncMessages)(input, {
-      workspace_id: "ws_1",
-      session_id: "ses_1",
-      messages: [
-        { info: { id: "msg_1", role: "user" }, parts: [{ type: "text", text: "hi" }] },
-        { info: { id: "msg_2", role: "assistant" }, parts: [{ type: "text", text: "hello" }] },
-      ],
-    })).resolves.toEqual({ ok: true })
+    await expect(
+      handler(syncMessages)(input, {
+        workspace_id: "ws_1",
+        session_id: "ses_1",
+        messages: [
+          { info: { id: "msg_1", role: "user" }, parts: [{ type: "text", text: "hi" }] },
+          { info: { id: "msg_2", role: "assistant" }, parts: [{ type: "text", text: "hello" }] },
+        ],
+      }),
+    ).resolves.toEqual({ ok: true })
 
-    await expect(handler(readMessages)(input, {
-      workspace_id: "ws_1",
-      session_id: "ses_1",
-    })).resolves.toEqual({
+    await expect(
+      handler(readMessages)(input, {
+        workspace_id: "ws_1",
+        session_id: "ses_1",
+      }),
+    ).resolves.toEqual({
       allowed: true,
       role: "owner",
       messages: [
@@ -185,25 +215,80 @@ describe("Convex session visibility policy", () => {
     expect(input.db.rows.session_messages.map((row) => row.message_id)).toEqual(["msg_1", "msg_2"])
   })
 
+  test("waits for an explicit idle observation before enqueuing independent Session intake", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(123_456)
+    const input = ctx()
+    const args = {
+      workspace_id: "ws_1",
+      session_id: "ses_idle",
+      messages: [
+        { info: { id: "msg_1", role: "user" }, parts: [{ type: "text", text: "Plan launch" }] },
+        { info: { id: "msg_2", role: "assistant" }, parts: [{ type: "text", text: "First partial summary" }] },
+      ],
+    }
+
+    await handler(syncMessages)(input, { ...args, intake_ready: false })
+    expect(input.db.rows.workgraph_due_jobs).toEqual([])
+
+    await handler(syncMessages)(input, { ...args, intake_ready: true })
+    expect(input.db.rows.workgraph_due_jobs).toEqual([
+      expect.objectContaining({
+        job_type: "session_intake",
+        subject_id: "ses_idle",
+        payload: expect.objectContaining({ sessionId: "ses_idle", summary: "First partial summary" }),
+      }),
+    ])
+  })
+
+  test("persists Session messages while owner deletion suppresses WorkGraph intake", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(123_456)
+    const input = ctx()
+    input.db.rows.workgraph_owner_deletion_barriers.push({
+      _id: "barrier_1",
+      organization_id: "org_1",
+      owner_user_id: "user_1",
+    })
+    const messages = [
+      { info: { id: "msg_1", role: "user" }, parts: [{ type: "text", text: "Plan launch" }] },
+      { info: { id: "msg_2", role: "assistant" }, parts: [{ type: "text", text: "Summary" }] },
+    ]
+
+    await expect(
+      handler(syncMessages)(input, {
+        workspace_id: "ws_1",
+        session_id: "ses_deleting",
+        messages,
+        intake_ready: true,
+      }),
+    ).resolves.toEqual({ ok: true })
+
+    expect(input.db.rows.session_messages).toHaveLength(2)
+    expect(input.db.rows.workgraph_due_jobs).toEqual([])
+  })
+
   test("message sync preserves existing session metadata", async () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const input = ctx()
 
     await handler(upsertVisibility)(input, {
       workspace_id: "ws_1",
-      sessions: [{
-        session_id: "ses_1",
-        title: "Review",
-        directory_hint: "opencode",
-      }],
+      sessions: [
+        {
+          session_id: "ses_1",
+          title: "Review",
+          directory_hint: "opencode",
+        },
+      ],
     })
 
     vi.spyOn(Date, "now").mockReturnValue(234_567)
-    await expect(handler(syncMessages)(input, {
-      workspace_id: "ws_1",
-      session_id: "ses_1",
-      messages: [{ info: { id: "msg_1", role: "user" }, parts: [] }],
-    })).resolves.toEqual({ ok: true })
+    await expect(
+      handler(syncMessages)(input, {
+        workspace_id: "ws_1",
+        session_id: "ses_1",
+        messages: [{ info: { id: "msg_1", role: "user" }, parts: [] }],
+      }),
+    ).resolves.toEqual({ ok: true })
 
     expect(input.db.rows.session_history[0]).toMatchObject({
       session_id: "ses_1",

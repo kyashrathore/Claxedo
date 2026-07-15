@@ -84,6 +84,7 @@ describe("signedInventoryProjects", () => {
         project_id: "proj_1",
         display_name: "Shared Repo",
         access: "user-hosted",
+        repo_url: "https://github.com/claxedo/shared.git",
         created_at: 1,
         updated_at: 2,
       }],
@@ -96,6 +97,7 @@ describe("signedInventoryProjects", () => {
         "workspace:ws_user_hosted": {
           id: "ws_user_hosted",
           kind: "user-hosted",
+          repo_url: "https://github.com/claxedo/shared.git",
           workspace_name: "Shared Repo",
           directory: "workspace:ws_user_hosted",
         },

@@ -5,6 +5,7 @@ describe("check-package-boundary", () => {
   test("rejects secrets, generated output, dependency directories, and nested deploy packages", () => {
     expect([
       ".env.local",
+      "scripts/sandbox/.build/package.json",
       "scripts/sandbox/cloudflare-worker/package.json",
       "scripts/sandbox/cloudflare-worker/package-lock.json",
       "scripts/sandbox/cloudflare-worker/Dockerfile",
@@ -15,6 +16,7 @@ describe("check-package-boundary", () => {
       "dist-worker/index.js",
       "coverage/index.html",
     ].map(forbiddenPackagePath)).toEqual([
+      true,
       true,
       true,
       true,

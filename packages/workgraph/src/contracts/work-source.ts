@@ -5,6 +5,19 @@ import { OwnerUserIDSchema, WorkSourceIDSchema, WorkSourceRevisionIDSchema } fro
 export const ContentHashSchema = z.string().regex(/^[a-f0-9]{64}$/i).brand("ContentHash")
 export type ContentHash = z.infer<typeof ContentHashSchema>
 
+export const AuthoringSourceRevisionSchema = z.strictObject({
+  adapterId: z.string().trim().min(1),
+  projectId: z.string().trim().min(1),
+  documentId: z.string().trim().min(1),
+  documentRevisionId: z.string().trim().min(1),
+  documentRevisionNumber: z.number().int().positive(),
+  parentDocumentRevisionId: z.string().trim().min(1).optional(),
+  authoredAt: z.number().int().nonnegative(),
+  authoredBy: WorkGraphActorSchema,
+  contentHash: ContentHashSchema,
+})
+export type AuthoringSourceRevision = z.infer<typeof AuthoringSourceRevisionSchema>
+
 export const WorkSourceOriginSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("manual") }),
   z.strictObject({
@@ -14,6 +27,7 @@ export const WorkSourceOriginSchema = z.discriminatedUnion("kind", [
     externalRevision: z.string().trim().min(1),
     url: z.string().url().optional(),
   }),
+  z.strictObject({ kind: z.literal("authoring"), ...AuthoringSourceRevisionSchema.shape }),
 ])
 export type WorkSourceOrigin = z.infer<typeof WorkSourceOriginSchema>
 

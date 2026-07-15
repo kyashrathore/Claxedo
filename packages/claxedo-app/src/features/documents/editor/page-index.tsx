@@ -5,9 +5,11 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { ensureLocalProject, useGlobalSDK, useShellQueryOptions as useQueryOptions } from "@/features/documents/app-ports"
+import { ensureLocalProject, useClaxedoState, useGlobalSDK, useShellQueryOptions as useQueryOptions } from "@/features/documents/app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import { pagesApi, type Page, type PageQuery, type PageStatus } from "@/features/documents/data/pages-api"
+import { turnDocumentRevisionIntoWork, type DocumentRevisionLocator } from "@/features/documents/actions/doc-actions"
+import { durableDocumentRevisionForPage, TURN_REVISION_INTO_WORK_LABEL } from "@/features/documents/actions/doc-work-action"
 import { StatusEditorDialog } from "./status-editor-dialog"
 
 type Project = {
@@ -15,6 +17,16 @@ type Project = {
   name?: string | null
   worktree: string
   sandboxes?: string[]
+  git?: { remote?: string | null }
+  workspaces?: Record<string, {
+    id?: string
+    workspaceId?: string
+    directory?: string
+    remote_directory?: string
+    kind?: string
+    git_remote?: string
+    repo_url?: string
+  }>
 }
 
 type Scope = "all" | "project" | "global"
@@ -38,7 +50,13 @@ export type PageIndexProps = {
 
 function currentProject(list: Project[], dir?: string) {
   if (!dir) return
-  return list.find((item) => item.worktree === dir || item.sandboxes?.includes(dir))
+  return list.find((item) =>
+    item.worktree === dir ||
+    item.sandboxes?.includes(dir) ||
+    Object.entries(item.workspaces ?? {}).some(([key, workspace]) =>
+      [key, workspace.id, workspace.workspaceId, workspace.directory, workspace.remote_directory].includes(dir),
+    ),
+  )
 }
 
 function query(scope: Scope, dir: string | undefined): PageQuery {
@@ -149,6 +167,13 @@ export function PageIndex(props: PageIndexProps) {
   const globalSDK = useGlobalSDK()
   const platform = usePlatform()
   const queryOptions = useQueryOptions()
+  const claxedoState = (() => {
+    try {
+      return useClaxedoState()
+    } catch {
+      return undefined
+    }
+  })()
   const [pages, setPages] = createSignal<Page[]>([])
   const [statuses, setStatuses] = createSignal<PageStatus[]>([])
   const [loading, setLoading] = createSignal(true)
@@ -156,6 +181,21 @@ export function PageIndex(props: PageIndexProps) {
   const [collapsed, setCollapsed] = createSignal(new Set())
   const projects = createMemo(() => queryClient.getQueryData<Project[]>(queryOptions.projects().queryKey) ?? props.projects)
   const project = createMemo(() => currentProject(projects(), props.directory))
+  const workTarget = createMemo(() => {
+    const directory = props.directory?.trim()
+    if (!directory) return undefined
+    const workspace = Object.entries(project()?.workspaces ?? {}).find(([key, candidate]) =>
+      [key, candidate.id, candidate.workspaceId, candidate.directory, candidate.remote_directory].includes(directory),
+    )?.[1]
+    const hosted = new Set(["cloud", "user-hosted"]).has(workspace?.kind ?? "") || directory.startsWith("workspace:")
+    const repositoryUrl = workspace?.git_remote ?? workspace?.repo_url ?? project()?.git?.remote ?? undefined
+    if (hosted) return repositoryUrl ? { repositoryUrl } : undefined
+    return directory.startsWith("/") ? { directory } : undefined
+  })
+  const revisionLocator = (page: Page) => {
+    const target = workTarget()
+    return target ? durableDocumentRevisionForPage(page, target) : undefined
+  }
   const listQuery = createMemo(() => query(props.scope, props.directory))
   const canEdit = createMemo(() => props.scope !== "all")
   const filterOptions = createMemo(() => {
@@ -277,6 +317,31 @@ export function PageIndex(props: PageIndexProps) {
         }),
     })
 
+  // Open the existing global WorkspacePanel on "Needs you" so the strict
+  // WorkGraph planning for the new revision can be reviewed there. Uses the
+  // established navigation bridge (focus the WorkGraph surface, then select the
+  // attention tab); it never renders its own panel/card.
+  const openWorkGraphNeedsYou = () => {
+    if (!claxedoState) return
+    claxedoState.layout.openWorkGraph()
+    claxedoState.workspacePanel.openGlobal("workgraph-attention")
+  }
+
+  const turnRevisionIntoWork = async (locator: DocumentRevisionLocator) => {
+    try {
+      await turnDocumentRevisionIntoWork(locator)
+      openWorkGraphNeedsYou()
+    } catch (err) {
+      // Surface the exact typed error (DocsApiError / DocumentWorkGraphHandoffError)
+      // message — no generic success/failure substitute.
+      showToast({
+        title: "Couldn't turn revision into WorkGraph work",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "error",
+      })
+    }
+  }
+
   const toggle = (id: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -391,6 +456,21 @@ export function PageIndex(props: PageIndexProps) {
                                     </DropdownMenu.Trigger>
                                     <DropdownMenu.Portal>
                                       <DropdownMenu.Content>
+                                        <Show when={revisionLocator(page)}>
+                                          {(locator) => (
+                                            <>
+                                              <DropdownMenu.Item
+                                                aria-label={TURN_REVISION_INTO_WORK_LABEL}
+                                                onSelect={() => void turnRevisionIntoWork(locator())}
+                                              >
+                                                <DropdownMenu.ItemLabel>
+                                                  {TURN_REVISION_INTO_WORK_LABEL}
+                                                </DropdownMenu.ItemLabel>
+                                              </DropdownMenu.Item>
+                                              <DropdownMenu.Separator />
+                                            </>
+                                          )}
+                                        </Show>
                                         <DropdownMenu.Group>
                                           <DropdownMenu.GroupLabel>Move To</DropdownMenu.GroupLabel>
                                           <For each={moves()}>

@@ -4,8 +4,9 @@ import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { describe, expect, test } from "vitest"
+import type { ConnectionsService } from "@claxedo/connections"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import type { WorkGraphContext } from "@claxedo/workgraph/contracts"
+import { EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS, type WorkGraphContext } from "@claxedo/workgraph/contracts"
 import type { SignedControlPlaneAuth } from "../control-plane/auth"
 import type { WorkspaceAuthority } from "../control-plane/authority"
 import type { RelayProvider } from "../relay-provider"
@@ -14,6 +15,7 @@ import { createHostedExecutionCapabilities } from "./hosted-execution-capabiliti
 import { createLocalExecutionCapabilities } from "./local-execution-capabilities"
 
 const context = {
+  organizationId: "org_1",
   ownerUserId: "owner_1",
   actor: { type: "user", id: "owner_1" },
   requestId: "request_1",
@@ -25,16 +27,19 @@ const runtime = {
   agents: [{ name: "build", description: "Build Agent", mode: "primary" }],
   providers: {
     connected: ["openai"],
-    all: [{
-      id: "openai",
-      models: {
-        current: { id: "gpt-5", name: "GPT-5", status: "active", variants: { low: {}, high: {} } },
-        old: { id: "gpt-4", name: "GPT-4", status: "deprecated", variants: {} },
+    all: [
+      {
+        id: "openai",
+        models: {
+          current: { id: "gpt-5", name: "GPT-5", status: "active", variants: { low: {}, high: {} } },
+          old: { id: "gpt-4", name: "GPT-4", status: "deprecated", variants: {} },
+        },
       },
-    }, {
-      id: "anthropic",
-      models: { current: { id: "claude", name: "Claude", status: "active", variants: {} } },
-    }],
+      {
+        id: "anthropic",
+        models: { current: { id: "claude", name: "Claude", status: "active", variants: {} } },
+      },
+    ],
   },
   tools: ["terminal", "read"],
 }
@@ -47,37 +52,65 @@ describe("WorkGraph execution capability composition", () => {
         repositoryRequired: true,
         remoteUrlInput: false,
         baseRevisionInput: true,
-        isolation: ["stream", "child"],
-        cleanup: ["destroy_on_close", "retain"],
-        integration: ["manual"],
       },
       readRuntime: async () => runtime,
       readRepository: async () => ({ remoteUrl: "git@example.test:repo.git", baseRevisions: ["HEAD", "main"] }),
-      readConnections: async () => [{
-        id: "connection_1" as never,
-        integrationId: "github",
-        scope: "team",
-        grantedCapabilities: ["work-source"],
-      }],
+      readConnections: async () => [
+        {
+          id: "connection_1" as never,
+          integrationId: "github",
+          scope: "team",
+          grantedCapabilities: ["work-source"],
+        },
+      ],
       connectionToolIds: ["connection_work_source_list"],
       now: () => 123,
     })
 
     await expect(capabilities.read(context, {})).resolves.toMatchObject({
+      organizationId: "org_1",
       ownerUserId: "owner_1",
       observedAt: 123,
+      expiresAt: 123 + EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
       models: [{ providerId: "openai", modelId: "gpt-5", efforts: ["low", "high"] }],
       tools: [
         { id: "terminal" },
         { id: "read" },
         { id: "connection_work_source_list", requiresConnectionCapability: "work-source" },
       ],
-      environments: [{
+      environments: [
+        {
+          kind: "local_worktree",
+        },
+      ],
+    })
+  })
+
+  test("gives every live observation an exact immutable revision and bounded expiry", async () => {
+    let now = 100
+    const capabilities = createExecutionCapabilitiesPort({
+      environment: {
         kind: "local_worktree",
-        isolation: ["stream", "child"],
-        cleanup: ["destroy_on_close", "retain"],
-        integration: ["manual"],
-      }],
+        repositoryRequired: true,
+        remoteUrlInput: false,
+        baseRevisionInput: true,
+      },
+      readRuntime: async () => runtime,
+      readRepository: async () => ({ baseRevisions: ["HEAD"] }),
+      readConnections: async () => [],
+      now: () => now,
+    })
+
+    const first = await capabilities.read(context, {})
+    const retry = await capabilities.read(context, {})
+    now += 1
+    const second = await capabilities.read(context, {})
+    expect(first.catalogRevision).toMatch(/^[0-9a-f]{64}$/)
+    expect(retry.catalogRevision).toBe(first.catalogRevision)
+    expect(second.catalogRevision).not.toBe(first.catalogRevision)
+    expect(second).toMatchObject({
+      observedAt: 101,
+      expiresAt: 101 + EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
     })
   })
 
@@ -88,9 +121,6 @@ describe("WorkGraph execution capability composition", () => {
         repositoryRequired: true,
         remoteUrlInput: false,
         baseRevisionInput: true,
-        isolation: ["stream"],
-        cleanup: ["destroy_on_close"],
-        integration: ["manual"],
       },
       readRuntime: async () => ({ ...runtime, agents: [] }),
       readRepository: async () => ({ baseRevisions: ["HEAD"] }),
@@ -105,8 +135,40 @@ describe("WorkGraph execution capability composition", () => {
     })
   })
 
-  test("reads local OpenCode and Git catalogs without substitute values", async () => {
+  test("normalizes malformed assembled Connection metadata into the public capability error", async () => {
+    const capabilities = createExecutionCapabilitiesPort({
+      environment: {
+        kind: "local_worktree",
+        repositoryRequired: true,
+        remoteUrlInput: false,
+        baseRevisionInput: true,
+      },
+      readRuntime: async () => runtime,
+      readRepository: async () => ({ baseRevisions: ["HEAD"] }),
+      readConnections: async () => [
+        {
+          id: "connection_1",
+          provider: "github",
+          scope: "organization",
+          grantedCapabilities: ["work-source"],
+        } as never,
+      ],
+    })
+
+    await expect(capabilities.read(context, {})).rejects.toMatchObject({
+      code: "execution_capabilities_unavailable",
+      capability: "connections",
+      reason: "catalog_invalid",
+      retryable: false,
+    })
+  })
+
+  test("reads every Session composer harness plus live OpenCode and Git catalogs", async () => {
     const directory = await gitRepository()
+    const previousBackend = process.env.CLAXEDO_PI_MODEL_BACKEND
+    const previousOpenAiKey = process.env.OPENAI_API_KEY
+    process.env.CLAXEDO_PI_MODEL_BACKEND = "1"
+    process.env.OPENAI_API_KEY = "test-key"
     try {
       const requested: string[] = []
       const capabilities = createLocalExecutionCapabilities({
@@ -115,9 +177,12 @@ describe("WorkGraph execution capability composition", () => {
         now: () => 456,
         opencodeRequest: async (request) => {
           requested.push(new URL(request.url).pathname)
-          const value = new URL(request.url).pathname === "/agent" ? runtime.agents
-            : new URL(request.url).pathname === "/provider" ? runtime.providers
-              : runtime.tools
+          const value =
+            new URL(request.url).pathname === "/agent"
+              ? runtime.agents
+              : new URL(request.url).pathname === "/provider"
+                ? runtime.providers
+                : runtime.tools
           return Response.json(value)
         },
       })
@@ -126,29 +191,147 @@ describe("WorkGraph execution capability composition", () => {
       expect(requested).toEqual(["/agent", "/provider", "/experimental/tool/ids"])
       expect(result.repository.baseRevisions).toContain("HEAD")
       expect(result.repository.baseRevisions).toContain("main")
-      expect(result.harnesses).toEqual([{ id: "opencode" }])
-      expect(result.models).toEqual([{ harnessId: "opencode", providerId: "openai", modelId: "gpt-5", label: "GPT-5", efforts: ["low", "high"] }])
+      expect(result.harnesses).toEqual([
+        { id: "opencode" },
+        { id: "claude-acp" },
+        { id: "codex-acp" },
+        { id: "cursor-acp" },
+        { id: "claude-sdk" },
+        { id: "codex-app-server" },
+        { id: "cursor-sdk" },
+        { id: "pi" },
+      ])
+      expect(result.models).toEqual(expect.arrayContaining([
+        expect.objectContaining({ harnessId: "claude-acp", providerId: "claude-acp", modelId: "claude-sonnet-4-6" }),
+        expect.objectContaining({ harnessId: "codex-acp", providerId: "codex-acp", modelId: "gpt-5.5" }),
+        expect.objectContaining({ harnessId: "cursor-acp", providerId: "cursor-acp", modelId: "auto" }),
+        expect.objectContaining({ harnessId: "claude-sdk", providerId: "claude-sdk", modelId: "claude-sonnet-4-6" }),
+        expect.objectContaining({ harnessId: "codex-app-server", providerId: "codex-app-server", modelId: "gpt-5.5" }),
+        expect.objectContaining({ harnessId: "cursor-sdk", providerId: "cursor-sdk", modelId: "auto" }),
+        expect.objectContaining({ harnessId: "pi", providerId: "openai" }),
+        { harnessId: "opencode", providerId: "openai", modelId: "gpt-5", label: "GPT-5", efforts: ["low", "high"] },
+      ]))
+    } finally {
+      if (previousBackend === undefined) delete process.env.CLAXEDO_PI_MODEL_BACKEND
+      else process.env.CLAXEDO_PI_MODEL_BACKEND = previousBackend
+      if (previousOpenAiKey === undefined) delete process.env.OPENAI_API_KEY
+      else process.env.OPENAI_API_KEY = previousOpenAiKey
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("advertises only connected organization-owned team Connections available to execution", async () => {
+    const directory = await gitRepository()
+    const partitions: unknown[] = []
+    try {
+      const capabilities = createLocalExecutionCapabilities({
+        repositoryDirectory: directory,
+        harness: async () => "opencode",
+        opencodeRequest: async (request) => {
+          const pathname = new URL(request.url).pathname
+          return Response.json(
+            pathname === "/agent" ? runtime.agents : pathname === "/provider" ? runtime.providers : runtime.tools,
+          )
+        },
+        connections: {
+          list: async (partition: unknown) => {
+            partitions.push(partition)
+            return [
+              {
+                id: "connection_team",
+                integrationId: "github",
+                scope: "team",
+                grantedCapabilities: ["work-source"],
+                fields: {},
+                status: "connected",
+                createdAt: 1,
+                updatedAt: 1,
+              },
+              {
+                id: "connection_personal",
+                integrationId: "github",
+                scope: "personal",
+                grantedCapabilities: ["work-source"],
+                fields: {},
+                status: "connected",
+                createdAt: 1,
+                updatedAt: 1,
+              },
+              {
+                id: "connection_degraded",
+                integrationId: "linear",
+                scope: "team",
+                grantedCapabilities: ["work-source"],
+                fields: {},
+                status: "degraded",
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            ]
+          },
+        } as unknown as ConnectionsService,
+        resolveTeamOwner: () => "org:org_1",
+      })
+
+      const result = await capabilities.read(context, {})
+      expect(partitions).toEqual([{ owner: "owner_1", teamOwner: "org:org_1" }])
+      expect(result.connections).toEqual([
+        {
+          id: "connection_team",
+          integrationId: "github",
+          scope: "team",
+          grantedCapabilities: ["work-source"],
+        },
+      ])
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
   })
 
-  test("reads an existing managed catalog without provisioning on GET and provisions only on explicit probe", async () => {
+  test("reads an existing managed catalog without provisioning on GET and provisions only on explicit refresh", async () => {
     const requested: string[] = []
     const ensured: string[] = []
+    const destroyed: string[] = []
+    const released: string[] = []
     let ready = false
     const capabilities = createHostedExecutionCapabilities({
       authority: {
         resolveOrgId: async () => "org_1",
       } as unknown as WorkspaceAuthority,
       sandboxManager: {
-        target: async (workspaceId: string) => ready
-          ? { status: "ready", workspaceId, sandboxId: "sandbox_1", url: "https://host.test", hostId: "host_1", epoch: 1, homeRegion: "us-east" }
-          : { status: "unavailable", reason: "missing" },
+        target: async (workspaceId: string) =>
+          ready
+            ? {
+                status: "ready",
+                workspaceId,
+                sandboxId: "sandbox_1",
+                url: "https://host.test",
+                hostId: "host_1",
+                epoch: 1,
+                homeRegion: "us-east",
+              }
+            : { status: "unavailable", reason: "missing" },
         ensure: async (workspaceId: string) => {
           ensured.push(workspaceId)
           ready = true
-          return { status: "ready", workspaceId, sandboxId: "sandbox_1", url: "https://host.test", hostId: "host_1", epoch: 1, homeRegion: "us-east" }
+          return {
+            status: "ready",
+            workspaceId,
+            sandboxId: "sandbox_1",
+            url: "https://host.test",
+            hostId: "host_1",
+            epoch: 1,
+            homeRegion: "us-east",
+          }
+        },
+        destroy: async (workspaceId: string) => {
+          destroyed.push(workspaceId)
+          ready = false
+          return { ok: true, status: "destroyed" }
+        },
+        release: async (workspaceId: string) => {
+          released.push(workspaceId)
+          return { released: true }
         },
       } as unknown as SandboxManager,
       relayProvider: {
@@ -171,29 +354,372 @@ describe("WorkGraph execution capability composition", () => {
       },
     })
 
-    await expect(capabilities.read(context, {})).rejects.toEqual(expect.objectContaining({
-      capability: "catalog_workspace",
-      reason: "catalog_workspace_unavailable",
-    }))
+    await expect(capabilities.read(context, {})).rejects.toEqual(
+      expect.objectContaining({
+        capability: "catalog_workspace",
+        reason: "runtime_unavailable",
+        retryable: true,
+      }),
+    )
     expect(ensured).toEqual([])
-    const result = await capabilities.probe(context)
+    const result = await capabilities.refresh(context)
     expect(ensured).toHaveLength(1)
     expect(ensured[0]).toMatch(/^wg-catalog-/)
-    expect(result.environments).toEqual([{
-      kind: "hosted_workspace",
-      repositoryRequired: false,
-      remoteUrlInput: true,
-      baseRevisionInput: true,
-      isolation: ["stream"],
-      cleanup: ["destroy_on_close"],
-      integration: ["manual"],
-    }])
+    expect(destroyed).toEqual(ensured)
+    expect(released).toEqual(ensured)
+    expect(result.environments).toEqual([
+      {
+        kind: "hosted_workspace",
+        repositoryRequired: false,
+        remoteUrlInput: true,
+        baseRevisionInput: true,
+      },
+    ])
     expect(requested.map((path) => path.replace(/\/workspaces\/wg-catalog-[^/]+/, "/workspaces/catalog"))).toEqual([
       "/workspaces/catalog/session/capabilities",
       "/workspaces/catalog/agent",
       "/workspaces/catalog/provider",
       "/workspaces/catalog/experimental/tool/ids",
     ])
+  })
+
+  test("coalesces concurrent refresh and read callers behind one transient catalog workspace", async () => {
+    const catalogStarted = Promise.withResolvers<void>()
+    const releaseCatalog = Promise.withResolvers<void>()
+    const ensured: string[] = []
+    const targeted: string[] = []
+    const destroyed: string[] = []
+    const released: string[] = []
+    const requested: string[] = []
+    const capabilities = createHostedExecutionCapabilities({
+      authority: { resolveOrgId: async () => "org_1" } as unknown as WorkspaceAuthority,
+      sandboxManager: {
+        ensure: async (workspaceId: string) => {
+          ensured.push(workspaceId)
+          return {
+            status: "ready",
+            workspaceId,
+            sandboxId: "sandbox_1",
+            url: "https://host.test",
+            hostId: "host_1",
+            epoch: 1,
+            homeRegion: "us-east",
+          }
+        },
+        target: async (workspaceId: string) => {
+          targeted.push(workspaceId)
+          return {
+            status: "ready",
+            workspaceId,
+            sandboxId: "sandbox_1",
+            url: "https://host.test",
+            hostId: "host_1",
+            epoch: 1,
+            homeRegion: "us-east",
+          }
+        },
+        destroy: async (workspaceId: string) => {
+          destroyed.push(workspaceId)
+          return { ok: true, status: "destroyed" }
+        },
+        release: async (workspaceId: string) => {
+          released.push(workspaceId)
+          return { released: true }
+        },
+      } as unknown as SandboxManager,
+      relayProvider: {
+        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1, jti: "jti_1" }),
+        getRelayEndpoint: async () => "https://relay.test",
+      } as unknown as RelayProvider,
+      defaultHomeRegion: "us-east",
+      auth: () => signedAuth,
+      readConnections: async () => [],
+      connectionToolIds: [],
+      now: () => 789,
+      request: async (request) => {
+        const pathname = new URL(request).pathname
+        requested.push(pathname)
+        catalogStarted.resolve()
+        await releaseCatalog.promise
+        if (pathname.endsWith("/session/capabilities")) return Response.json(runtime.harness)
+        if (pathname.endsWith("/agent")) return Response.json(runtime.agents)
+        if (pathname.endsWith("/provider")) return Response.json(runtime.providers)
+        if (pathname.endsWith("/experimental/tool/ids")) return Response.json(runtime.tools)
+        throw new Error(`Unexpected request ${pathname}`)
+      },
+    })
+
+    const first = capabilities.refresh(context)
+    await catalogStarted.promise
+    const second = capabilities.refresh(context)
+    const concurrentRead = capabilities.read(context, {})
+    await Promise.resolve()
+    expect(ensured).toHaveLength(1)
+    expect(destroyed).toEqual([])
+    expect(released).toEqual([])
+    releaseCatalog.resolve()
+
+    const results = await Promise.all([first, second, concurrentRead])
+    expect(new Set(results.map((result) => result.catalogRevision)).size).toBe(1)
+    expect(requested).toHaveLength(4)
+    expect(targeted).toEqual(ensured)
+    expect(destroyed).toEqual(ensured)
+    expect(released).toEqual(ensured)
+    await capabilities.read(context, {})
+    expect(targeted).toHaveLength(1)
+  })
+
+  test("waits for an active catalog read before refreshing and destroying its workspace", async () => {
+    const readStarted = Promise.withResolvers<void>()
+    const releaseRead = Promise.withResolvers<void>()
+    const ensured: string[] = []
+    const destroyed: string[] = []
+    let blockExistingRead = true
+    const capabilities = createHostedExecutionCapabilities({
+      authority: { resolveOrgId: async () => "org_1" } as unknown as WorkspaceAuthority,
+      sandboxManager: {
+        target: async (workspaceId: string) => ({
+          status: "ready",
+          workspaceId,
+          sandboxId: "sandbox_1",
+          url: "https://host.test",
+          hostId: "host_1",
+          epoch: 1,
+          homeRegion: "us-east",
+        }),
+        ensure: async (workspaceId: string) => {
+          ensured.push(workspaceId)
+          return {
+            status: "ready",
+            workspaceId,
+            sandboxId: "sandbox_1",
+            url: "https://host.test",
+            hostId: "host_1",
+            epoch: 1,
+            homeRegion: "us-east",
+          }
+        },
+        destroy: async (workspaceId: string) => {
+          destroyed.push(workspaceId)
+          return { ok: true, status: "destroyed" }
+        },
+        release: async () => ({ released: true }),
+      } as unknown as SandboxManager,
+      relayProvider: {
+        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1, jti: "jti_1" }),
+        getRelayEndpoint: async () => "https://relay.test",
+      } as unknown as RelayProvider,
+      defaultHomeRegion: "us-east",
+      auth: () => signedAuth,
+      readConnections: async () => [],
+      connectionToolIds: [],
+      request: async (request) => {
+        const pathname = new URL(request).pathname
+        if (blockExistingRead) {
+          readStarted.resolve()
+          await releaseRead.promise
+        }
+        if (pathname.endsWith("/session/capabilities")) return Response.json(runtime.harness)
+        if (pathname.endsWith("/agent")) return Response.json(runtime.agents)
+        if (pathname.endsWith("/provider")) return Response.json(runtime.providers)
+        if (pathname.endsWith("/experimental/tool/ids")) return Response.json(runtime.tools)
+        throw new Error(`Unexpected request ${pathname}`)
+      },
+    })
+
+    const read = capabilities.read(context, {})
+    await readStarted.promise
+    const refresh = capabilities.refresh(context)
+    await Promise.resolve()
+    expect(ensured).toEqual([])
+    expect(destroyed).toEqual([])
+    blockExistingRead = false
+    releaseRead.resolve()
+    await Promise.all([read, refresh])
+    expect(ensured).toHaveLength(1)
+    expect(destroyed).toEqual(ensured)
+  })
+
+  test("returns a typed refresh failure when a ready catalog workspace cannot be destroyed", async () => {
+    let released = false
+    const capabilities = createHostedExecutionCapabilities({
+      authority: { resolveOrgId: async () => "org_1" } as unknown as WorkspaceAuthority,
+      sandboxManager: {
+        ensure: async (workspaceId: string) => ({
+          status: "ready",
+          workspaceId,
+          sandboxId: "sandbox_1",
+          url: "https://host.test",
+          hostId: "host_1",
+          epoch: 1,
+          homeRegion: "us-east",
+        }),
+        target: async (workspaceId: string) => ({
+          status: "ready",
+          workspaceId,
+          sandboxId: "sandbox_1",
+          url: "https://host.test",
+          hostId: "host_1",
+          epoch: 1,
+          homeRegion: "us-east",
+        }),
+        destroy: async () => ({ ok: false, reason: "runtime_lease_not_ready" }),
+        release: async () => {
+          released = true
+          return { released: true }
+        },
+      } as unknown as SandboxManager,
+      relayProvider: {
+        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1, jti: "jti_1" }),
+        getRelayEndpoint: async () => "https://relay.test",
+      } as unknown as RelayProvider,
+      defaultHomeRegion: "us-east",
+      auth: () => signedAuth,
+      readConnections: async () => [],
+      connectionToolIds: [],
+      request: async (request) => {
+        const pathname = new URL(request).pathname
+        if (pathname.endsWith("/session/capabilities")) return Response.json(runtime.harness)
+        if (pathname.endsWith("/agent")) return Response.json(runtime.agents)
+        if (pathname.endsWith("/provider")) return Response.json(runtime.providers)
+        if (pathname.endsWith("/experimental/tool/ids")) return Response.json(runtime.tools)
+        throw new Error(`Unexpected request ${pathname}`)
+      },
+    })
+
+    await expect(capabilities.refresh(context)).rejects.toMatchObject({
+      code: "execution_capabilities_unavailable",
+      capability: "catalog_workspace",
+      reason: "catalog_workspace_unavailable",
+      retryable: true,
+    })
+    expect(released).toBe(false)
+  })
+
+  test("destroys and releases the transient workspace when hosted catalog discovery fails", async () => {
+    const destroyed: string[] = []
+    const released: string[] = []
+    const capabilities = createHostedExecutionCapabilities({
+      authority: { resolveOrgId: async () => "org_1" } as unknown as WorkspaceAuthority,
+      sandboxManager: {
+        ensure: async (workspaceId: string) => ({
+          status: "ready",
+          workspaceId,
+          sandboxId: "sandbox_1",
+          url: "https://host.test",
+          hostId: "host_1",
+          epoch: 1,
+          homeRegion: "us-east",
+        }),
+        target: async (workspaceId: string) => ({
+          status: "ready",
+          workspaceId,
+          sandboxId: "sandbox_1",
+          url: "https://host.test",
+          hostId: "host_1",
+          epoch: 1,
+          homeRegion: "us-east",
+        }),
+        destroy: async (workspaceId: string) => {
+          destroyed.push(workspaceId)
+          return { ok: true, status: "destroyed" }
+        },
+        release: async (workspaceId: string) => {
+          released.push(workspaceId)
+          return { released: true }
+        },
+      } as unknown as SandboxManager,
+      relayProvider: {
+        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1, jti: "jti_1" }),
+        getRelayEndpoint: async () => "https://relay.test",
+      } as unknown as RelayProvider,
+      defaultHomeRegion: "us-east",
+      auth: () => signedAuth,
+      readConnections: async () => [],
+      connectionToolIds: [],
+      request: async () => new Response("catalog unavailable", { status: 503 }),
+    })
+
+    await expect(capabilities.refresh(context)).rejects.toMatchObject({
+      code: "execution_capabilities_unavailable",
+      capability: "runtime",
+      reason: "runtime_unavailable",
+      retryable: true,
+    })
+    expect(destroyed).toHaveLength(1)
+    expect(released).toEqual(destroyed)
+  })
+
+  test("isolates hosted catalog workspace identity and cache by organization and owner", async () => {
+    const ensured: Array<{ workspaceId: string; labels: Record<string, string> }> = []
+    const capabilities = createHostedExecutionCapabilities({
+      authority: { resolveOrgId: async () => "org_1" } as unknown as WorkspaceAuthority,
+      sandboxManager: {
+        ensure: async (workspaceId: string, options: { labels: Record<string, string> }) => {
+          ensured.push({ workspaceId, labels: options.labels })
+          return { status: "provisioning", retryAfterMs: 1 }
+        },
+      } as unknown as SandboxManager,
+      relayProvider: {} as RelayProvider,
+      defaultHomeRegion: "us-east",
+      auth: () => signedAuth,
+      readConnections: async () => [],
+      connectionToolIds: [],
+    })
+    const otherOrganization = { ...context, organizationId: "org_2" } as WorkGraphContext
+
+    await expect(capabilities.refresh(context)).rejects.toMatchObject({ reason: "runtime_unavailable" })
+    await expect(capabilities.refresh(otherOrganization)).rejects.toMatchObject({ reason: "runtime_unavailable" })
+
+    expect(ensured[0]!.workspaceId).not.toBe(ensured[1]!.workspaceId)
+    expect(ensured.map((entry) => entry.labels)).toEqual([
+      { workload: "workgraph-catalog", organizationId: "org_1", ownerUserId: "owner_1" },
+      { workload: "workgraph-catalog", organizationId: "org_2", ownerUserId: "owner_1" },
+    ])
+  })
+
+  test("expires the tenant-scoped hosted runtime cache at the catalog freshness boundary", async () => {
+    let now = 1_000
+    const requested: string[] = []
+    const capabilities = createHostedExecutionCapabilities({
+      authority: { resolveOrgId: async () => "org_1" } as unknown as WorkspaceAuthority,
+      sandboxManager: {
+        target: async (workspaceId: string) => ({
+          status: "ready",
+          workspaceId,
+          sandboxId: "sandbox_1",
+          url: "https://host.test",
+          hostId: "host_1",
+          epoch: 1,
+          homeRegion: "us-east",
+        }),
+      } as unknown as SandboxManager,
+      relayProvider: {
+        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1, jti: "jti_1" }),
+        getRelayEndpoint: async () => "https://relay.test",
+      } as unknown as RelayProvider,
+      defaultHomeRegion: "us-east",
+      auth: () => signedAuth,
+      readConnections: async () => [],
+      connectionToolIds: [],
+      now: () => now,
+      request: async (request) => {
+        const pathname = new URL(request).pathname
+        requested.push(pathname)
+        if (pathname.endsWith("/session/capabilities")) return Response.json(runtime.harness)
+        if (pathname.endsWith("/agent")) return Response.json(runtime.agents)
+        if (pathname.endsWith("/provider")) return Response.json(runtime.providers)
+        if (pathname.endsWith("/experimental/tool/ids")) return Response.json(runtime.tools)
+        throw new Error(`Unexpected request ${pathname}`)
+      },
+    })
+
+    await capabilities.read(context, {})
+    await capabilities.read(context, {})
+    expect(requested).toHaveLength(4)
+    now += EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS
+    await capabilities.read(context, {})
+    expect(requested).toHaveLength(8)
   })
 })
 
@@ -209,6 +735,16 @@ async function gitRepository() {
   await run("git", ["init", "-b", "main", directory])
   await writeFile(path.join(directory, "README.md"), "test\n")
   await run("git", ["-C", directory, "add", "README.md"])
-  await run("git", ["-C", directory, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"])
+  await run("git", [
+    "-C",
+    directory,
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "-m",
+    "initial",
+  ])
   return directory
 }

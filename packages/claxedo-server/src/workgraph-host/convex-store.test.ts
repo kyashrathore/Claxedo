@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { AttentionCursorError, AttentionPageSchema, ChangeEnvelopeSchema, SnapshotResumeCursorError, WorkGraphArchiveRestoreError, WorkGraphSnapshotPageSchema, hashWorkGraphArchive } from "@claxedo/workgraph/contracts"
-import { workGraphArchiveConformance, workGraphAttentionConformance, workGraphSnapshotRestartConformance } from "@claxedo/workgraph/conformance"
-import type { WorkGraphArchivePort } from "@claxedo/workgraph/ports"
+import { AttentionCursorError, AttentionPageSchema, ChangeCursorError, ChangeEnvelopeSchema, SnapshotResumeCursorError, WorkGraphArchiveRestoreError, WorkGraphArchiveSchema, WorkGraphSnapshotPageSchema, WorkSourcePageCursorError, createChangeCursor, readChangeCursor, hashWorkGraphArchive } from "@claxedo/workgraph/contracts"
+import { workGraphAdapterConformance, workGraphArchiveConformance, workGraphAttentionConformance, workGraphSnapshotRestartConformance } from "@claxedo/workgraph/conformance"
+import { workGraphReplacementConformance } from "../../../workgraph/src/conformance/replacement"
+import type { AttemptRuntimePort, WorkGraphArchivePort } from "@claxedo/workgraph/ports"
 import { createWorkGraphHttpRouter } from "@claxedo/workgraph"
-import { applyWorkGraphCommand } from "../../../../convex/workgraphCommands"
-import { readWorkGraphProjection } from "../../../../convex/workgraphChanges"
-import { completeControlEffect } from "../../../../convex/workgraphRuntime"
-import { exportWorkGraphArchive, restoreWorkGraphArchive } from "../../../../convex/workgraphArchive"
-import { initializeAttentionProjection, syncAttentionRecord, syncCandidateTransition } from "../../../../convex/workgraphAttention"
+import { applyWorkGraphCommand, reconcileAutonomousStreams } from "../../../../convex/workgraphCommands"
+import { readWorkGraphProjection as readTenantWorkGraphProjection } from "../../../../convex/workgraphChanges"
+import { claimControlEffects, claimLaunches, completeControlEffect, markRunning, recordResult, renewWorkGraphAttemptLease, settleRejectedProvision } from "../../../../convex/workgraphRuntime"
+import { exportWorkGraphArchive as exportTenantWorkGraphArchive, restoreWorkGraphArchive as restoreTenantWorkGraphArchive } from "../../../../convex/workgraphArchive"
+import { initializeAttentionProjection as initializeTenantAttentionProjection, syncAttentionRecord, syncCandidateTransition, syncConnectionAttention } from "../../../../convex/workgraphAttention"
 import { backfillCandidateAttention } from "../../../../convex/migrations"
 import {
   CONVEX_WORKGRAPH_SUPPORTED_COMMANDS,
@@ -17,9 +18,424 @@ import {
   createConvexWorkGraphArchivePort,
 } from "./convex-store"
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+})
+
+const testOrganizationId = "org_test"
+
+function readWorkGraphProjection(ctx: any, ownerUserId: string, kind: string, input: Record<string, any>) {
+  return readTenantWorkGraphProjection(ctx, testOrganizationId, ownerUserId, kind, input)
+}
+
+function exportWorkGraphArchive(ctx: any, ownerUserId: string, ownerSubject: string, exportedAt: number) {
+  return exportTenantWorkGraphArchive(ctx, testOrganizationId, ownerUserId, ownerSubject, exportedAt)
+}
+
+function restoreWorkGraphArchive(ctx: any, ownerUserId: string, ownerSubject: string, input: any) {
+  return restoreTenantWorkGraphArchive(ctx, testOrganizationId, ownerUserId, ownerSubject, input)
+}
+
+function initializeAttentionProjection(ctx: any, ownerUserId: string, now: number) {
+  return initializeTenantAttentionProjection(ctx, testOrganizationId, ownerUserId, now)
+}
 
 describe("Convex WorkGraph store", () => {
+  test.each([
+    ["autonomous", 2],
+    ["supervised", 1],
+  ] as const)("persists %s execution and recovers only its allowed ready batches", async (executionMode, expectedAttempts) => {
+    const harness = new ConvexHarness(["owner_a"])
+    const streamId = value(await execute(harness, "owner_a", `mode_stream_${executionMode}`, {
+      type: "create_stream",
+      title: "Mode Stream",
+      execution: {
+        environment: { kind: "hosted_workspace" },
+        harness: "opencode",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
+      },
+    }), "streamId")
+    const blockerId = value(await execute(harness, "owner_a", `mode_blocker_${executionMode}`, {
+      type: "create_work_item",
+      streamId,
+      title: "Blocker",
+      completionContract: ownerConfirmationContract(),
+    }), "workItemId")
+    const dependentId = value(await execute(harness, "owner_a", `mode_dependent_${executionMode}`, {
+      type: "create_work_item",
+      streamId,
+      title: "Dependent",
+      dependencyIds: [blockerId],
+      completionContract: ownerConfirmationContract(),
+    }), "workItemId")
+
+    await expect(execute(harness, "owner_a", `mode_execute_${executionMode}`, {
+      type: "execute_stream",
+      streamId,
+      executionMode,
+    })).resolves.toMatchObject({ ok: true })
+    expect(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId)).toMatchObject({
+      execution_mode: executionMode,
+      execution_state: executionMode === "autonomous" ? "active" : "stopped",
+    })
+    expect(harness.rowsFor("workgraph_attempts").find((row) => row.work_item_id === blockerId))
+      .toMatchObject({ execution_mode: executionMode })
+
+    const blocker = harness.rowsFor("workgraph_work_items").find((row) => row.id === blockerId)!
+    const attempt = harness.rowsFor("workgraph_attempts").find((row) => row.work_item_id === blockerId)!
+    Object.assign(blocker, { state: "completed", completed_at: 2, row_version: blocker.row_version + 1 })
+    Object.assign(attempt, { state: "result", finished_at: 2, row_version: attempt.row_version + 1 })
+    const lease = harness.rowsFor("workgraph_leases").find((row) => row.resource_id === blockerId)!
+    await harness.delete(lease._id)
+
+    await reconcileAutonomousStreams(harness as never, testOrganizationId, "owner_a", 3, 10)
+    expect(harness.rowsFor("workgraph_attempts")).toHaveLength(expectedAttempts)
+    expect(harness.rowsFor("workgraph_attempts").filter((row) => row.work_item_id === dependentId))
+      .toHaveLength(executionMode === "autonomous" ? 1 : 0)
+  })
+
+  test("refuses autonomous admission from an expired attested capability snapshot", async () => {
+    const harness = new ConvexHarness(["owner_a"])
+    const streamId = value(await execute(harness, "owner_a", "stale_autonomous_stream", {
+      type: "create_stream",
+      title: "Stale autonomous Stream",
+      execution: {
+        environment: { kind: "hosted_workspace" },
+        harness: "opencode",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
+      },
+    }), "streamId")
+    await execute(harness, "owner_a", "stale_autonomous_item", {
+      type: "create_work_item",
+      streamId,
+      title: "Must wait for refresh",
+      completionContract: ownerConfirmationContract(),
+    })
+    Object.assign(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId)!, {
+      execution_mode: "autonomous",
+      execution_state: "active",
+    })
+    const snapshot = harness.rowsFor("workgraph_execution_capabilities")[0]!
+    Object.assign(snapshot, { observed_at: 1, expires_at: 3 })
+    Object.assign(snapshot.catalog, { observedAt: 1, expiresAt: 3 })
+
+    await expect(reconcileAutonomousStreams(harness as never, testOrganizationId, "owner_a", 3, 10))
+      .resolves.toEqual({ admitted: 0 })
+    expect(harness.rowsFor("workgraph_attempts")).toEqual([])
+    expect(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId))
+      .toMatchObject({ execution_state: "stopped" })
+  })
+
+  test("does not reconcile autonomous work while owner deletion holds the write barrier", async () => {
+    const harness = new ConvexHarness(["owner_a"])
+    const streamId = value(await execute(harness, "owner_a", "deleting_owner_stream", {
+      type: "create_stream",
+      title: "Deleting owner Stream",
+      execution: {
+        environment: { kind: "hosted_workspace" },
+        harness: "opencode",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
+      },
+    }), "streamId")
+    await execute(harness, "owner_a", "deleting_owner_item", {
+      type: "create_work_item",
+      streamId,
+      title: "Must not be admitted",
+      completionContract: ownerConfirmationContract(),
+    })
+    Object.assign(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId)!, {
+      execution_mode: "autonomous",
+      execution_state: "active",
+    })
+    await harness.insert("workgraph_owner_deletion_barriers", {
+      owner_user_id: "owner_a",
+      operation_id: "delete_owner",
+      state: "cleaning",
+      created_at: 2,
+      updated_at: 2,
+    })
+
+    await expect(reconcileAutonomousStreams(harness as never, testOrganizationId, "owner_a", 3, 10))
+      .resolves.toEqual({ admitted: 0 })
+    expect(harness.rowsFor("workgraph_attempts")).toEqual([])
+    expect(harness.rowsFor("workgraph_outbox").filter((row) => row.effect_type === "launch_attempt")).toEqual([])
+  })
+
+  test("version-fences a whole disposable Stream replacement until durable cleanup acknowledgment", async () => {
+    const harness = new ConvexHarness(["owner_a"])
+    const firstContent = "Original source"
+    const first = await execute(harness, "owner_a", "replace_source", {
+      type: "create_work_source",
+      title: "Source",
+      content: firstContent,
+    })
+    const previousSource = {
+      workSourceId: value(first, "workSourceId"),
+      revisionId: value(first, "revisionId"),
+      contentHash: await digest(firstContent),
+    }
+    const streamId = value(await execute(harness, "owner_a", "replace_stream", {
+      type: "create_stream",
+      title: "Stream",
+      source: previousSource,
+    }), "streamId")
+    const workItemId = value(await execute(harness, "owner_a", "replace_item", {
+      type: "create_work_item",
+      streamId,
+      source: previousSource,
+      title: "Original Task",
+      completionContract: {
+        version: 1,
+        mode: "all",
+        requirements: [{ id: "owner", kind: "owner_confirmation", description: "Owner confirms" }],
+      },
+    }), "workItemId")
+    const nextContent = "Revised source"
+    const revised = await execute(harness, "owner_a", "replace_revision", {
+      type: "revise_work_source",
+      workSourceId: previousSource.workSourceId,
+      expectedRevisionId: previousSource.revisionId,
+      content: nextContent,
+    })
+    const source = {
+      workSourceId: previousSource.workSourceId,
+      revisionId: value(revised, "revisionId"),
+      contentHash: await digest(nextContent),
+    }
+    const proposalId = value(await execute(harness, "owner_a", "replace_proposal", {
+      type: "propose_admission",
+      source,
+      targetStreamId: streamId,
+    }), "proposalId")
+    const proposal = harness.rowsFor("workgraph_admission_proposals").find((row) => row.id === proposalId)!
+    Object.assign(proposal, {
+      state: "proposed",
+      generation: { method: "agent_session", sessionId: "session_plan", generatedAt: 10 },
+      suggested_placement: { mode: "existing", streamId },
+      placement_matches: [],
+      proposed_outcomes: [],
+      proposed_work_items: [],
+      duplicate_matches: [],
+      row_version: 2,
+      updated_at: 10,
+    })
+    await harness.insert("workgraph_attempts", {
+      owner_user_id: "owner_a",
+      id: "attempt_replace",
+      stream_id: streamId,
+      work_item_id: workItemId,
+      attempt_number: 1,
+      state: "running",
+      resolved_execution: {},
+      admitted_at: 1,
+      started_at: 2,
+      envelope_id: "envelope_replace",
+      session_id: "session_replace",
+      source_revision_refs: [],
+      provenance: { actor: { type: "user", id: "owner_a" } },
+      row_version: 1,
+      schema_version: 1,
+      created_at: 1,
+      updated_at: 2,
+    })
+    await harness.insert("workgraph_leases", {
+      owner_user_id: "owner_a",
+      id: "lease_replace",
+      resource_type: "work_item",
+      resource_id: workItemId,
+      stream_id: streamId,
+      holder_id: "attempt_replace",
+      epoch: 1,
+      expires_at: 100,
+      row_version: 1,
+      schema_version: 1,
+      created_at: 1,
+      updated_at: 1,
+    })
+    await harness.insert("workgraph_outbox", {
+      owner_user_id: "owner_a",
+      id: "outbox_attempt_replace",
+      operation_id: "replace_item",
+      stream_id: streamId,
+      effect_type: "launch_attempt",
+      idempotency_key: "attempt_replace:launch",
+      payload: { attemptId: "attempt_replace", workItemId, streamId, leaseEpoch: 1 },
+      status: "claimed",
+      claimed_by: "launch-worker",
+      claim_expires_at: 100,
+      available_at: 1,
+      attempt_count: 0,
+      schema_version: 1,
+      created_at: 1,
+      updated_at: 1,
+    })
+
+    await expect(execute(harness, "owner_a", "replace_confirm", {
+      type: "confirm_admission",
+      proposalId,
+      expectedVersion: 2,
+      source,
+      selection: { mode: "replace", streamId, workItems: [{ workItemId, expectedVersion: 1 }] },
+      workItems: [{
+        proposalKey: "new",
+        title: "Replacement Task",
+        completionContract: {
+          version: 1,
+          mode: "all",
+          requirements: [{ id: "owner", kind: "owner_confirmation", description: "Owner confirms" }],
+        },
+      }],
+    })).resolves.toMatchObject({ ok: true })
+
+    expect(harness.rowsFor("workgraph_work_items").find((row) => row.id === workItemId)).toMatchObject({ state: "abandoned" })
+    expect(harness.rowsFor("workgraph_attempts").find((row) => row.id === "attempt_replace")).toMatchObject({
+      state: "attention",
+      cancellation: { state: "pending" },
+    })
+    expect(harness.rowsFor("workgraph_leases").find((row) => row.id === "lease_replace")).toBeUndefined()
+    expect(harness.rowsFor("workgraph_outbox").find((row) => row.id === "outbox_attempt_replace")).toMatchObject({
+      status: "claimed",
+      claimed_by: "launch-worker",
+    })
+    const replacement = harness.rowsFor("workgraph_work_items").find((row) => row.title === "Replacement Task")!
+    const stream = harness.rowsFor("workgraph_streams").find((row) => row.id === streamId)!
+    expect(stream).toMatchObject({ replacement_reset: { state: "pending", previousSource, source } })
+    await expect(execute(harness, "owner_a", "replace_execute_blocked", {
+      type: "execute_work_item",
+      workItemId: replacement.id,
+      executionMode: "autonomous",
+    })).resolves.toMatchObject({ ok: false, error: { code: "blocked" } })
+    const control = harness.rowsFor("workgraph_outbox").find((row) => row.payload?.finalize === "replace")!
+    expect(control.payload).toMatchObject({ sessions: ["session_replace"], attemptIds: ["attempt_replace"] })
+    await harness.patch(control._id, { status: "claimed", claimed_by: "worker", attempt_count: 1 })
+    vi.stubEnv("CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", "replacement-test")
+    await expect(handler(completeControlEffect)(harness, {
+      service_token: "replacement-test",
+      organization_id: testOrganizationId,
+      owner_user_id: "owner_a",
+      outbox_id: control.id,
+      worker_id: "worker",
+      ok: true,
+      now: 20,
+    })).resolves.toEqual({ settled: false })
+    await expect(handler(settleRejectedProvision)(harness, {
+      service_token: "replacement-test",
+      organization_id: testOrganizationId,
+      owner_user_id: "owner_a",
+      outbox_id: "outbox_attempt_replace",
+      attempt_id: "attempt_replace",
+      worker_id: "launch-worker",
+      now: 21,
+    })).resolves.toEqual({ settled: true })
+    await expect(handler(completeControlEffect)(harness, {
+      service_token: "replacement-test",
+      organization_id: testOrganizationId,
+      owner_user_id: "owner_a",
+      outbox_id: control.id,
+      worker_id: "worker",
+      ok: true,
+      now: 22,
+    })).resolves.toEqual({ settled: true })
+    expect(stream).toMatchObject({ replacement_reset: { state: "completed", completedAt: 22 } })
+    expect(harness.rowsFor("workgraph_attempts").find((row) => row.id === "attempt_replace")).toMatchObject({ state: "cancelled" })
+    expect(harness.rowsFor("workgraph_changes").at(-1)).toMatchObject({
+      resource_type: "stream",
+      resource_id: streamId,
+      change_type: "stream_replacement_reset_completed",
+    })
+  })
+
+  test("rejects replacement for drifted, unrelated, or externally durable Stream work", async () => {
+    const stale = await prepareConvexReplacement()
+    await execute(stale.harness, "owner_a", "stale_update", {
+      type: "update_work_item",
+      workItemId: stale.workItemId,
+      expectedVersion: 1,
+      title: "Changed after review",
+    })
+    await expect(execute(stale.harness, "owner_a", "stale_confirm", replacementConfirmation(stale, 1)))
+      .resolves.toMatchObject({ ok: false, error: { code: "version_conflict" } })
+
+    const unrelated = await prepareConvexReplacement()
+    await execute(unrelated.harness, "owner_a", "unrelated_item", {
+      type: "create_work_item",
+      streamId: unrelated.streamId,
+      title: "Unrelated",
+      completionContract: ownerConfirmationContract(),
+    })
+    await expect(execute(unrelated.harness, "owner_a", "unrelated_confirm", replacementConfirmation(unrelated, 1)))
+      .resolves.toMatchObject({ ok: false, error: { code: "blocked" } })
+
+    const durable = await prepareConvexReplacement()
+    await execute(durable.harness, "owner_a", "durable_receipt", {
+      type: "record_evidence",
+      subject: { type: "work_item", workItemId: durable.workItemId },
+      evidence: { kind: "integration", summary: "Merged", effect: "merged", reference: "pr:1" },
+    })
+    await expect(execute(durable.harness, "owner_a", "durable_confirm", replacementConfirmation(durable, 2)))
+      .resolves.toMatchObject({ ok: false, error: { code: "close_required" } })
+  })
+
+  test("reads exact-tenant replacement eligibility before proposal confirmation", async () => {
+    const fixture = await prepareConvexReplacement()
+    const review = () => readWorkGraphProjection(fixture.harness, "owner_a", "replacement_review", {
+      streamId: fixture.streamId,
+      previousSource: fixture.previousSource,
+    })
+
+    await expect(review()).resolves.toEqual({
+      status: "eligible",
+      streamId: fixture.streamId,
+      streamTitle: "Stream",
+      targets: [{ workItemId: fixture.workItemId, expectedVersion: 1, title: "Original Task", state: "pending" }],
+    })
+
+    const unrelatedId = value(await execute(fixture.harness, "owner_a", "review_unrelated", {
+      type: "create_work_item",
+      streamId: fixture.streamId,
+      title: "Unrelated",
+      completionContract: ownerConfirmationContract(),
+    }), "workItemId")
+    await expect(review()).resolves.toMatchObject({ status: "unrelated" })
+
+    const unrelated = fixture.harness.rowsFor("workgraph_work_items").find((row) => row.id === unrelatedId)!
+    await fixture.harness.patch(unrelated._id, { state: "abandoned", abandoned_at: 10 })
+    const receiptId = await fixture.harness.insert("workgraph_durable_effect_receipts", {
+      owner_user_id: "owner_a",
+      id: "receipt_review",
+      stream_id: fixture.streamId,
+      effect_kind: "pull_request_merged",
+      idempotency_key: "receipt:review",
+      external_reference: { pullRequest: 1 },
+      provenance: { actor: { type: "system", id: "test" } },
+      schema_version: 1,
+      created_at: 11,
+    })
+    await expect(review()).resolves.toMatchObject({ status: "durable" })
+
+    await fixture.harness.delete(receiptId)
+    const stream = fixture.harness.rowsFor("workgraph_streams").find((row) => row.id === fixture.streamId)!
+    await fixture.harness.patch(stream._id, { replacement_reset: { state: "pending" } })
+    await expect(review()).resolves.toMatchObject({ status: "unavailable" })
+    await expect(readWorkGraphProjection(fixture.harness, "owner_a", "replacement_review", {
+      streamId: fixture.streamId,
+      previousSource: { ...fixture.previousSource, contentHash: "wrong" },
+    })).resolves.toBeUndefined()
+  })
+
   test("exposes the same explicit launch subset as the conformance corpus", () => {
     expect(CONVEX_WORKGRAPH_SUPPORTED_COMMANDS).toEqual([
       "update_workgraph_defaults",
@@ -309,15 +725,14 @@ describe("Convex WorkGraph store", () => {
           effort: "high",
           tools: [],
           connectionIds: [],
-          isolation: "stream",
-          cleanup: "destroy_on_close",
-          integration: "pull_request",
         },
         recap: { quietHours: 12, effort: "medium" },
       },
     }
     const updated = await execute(harness, "owner_a", "defaults_once", command)
-    expect(updated).toMatchObject({ ok: true, cursor: "1" })
+    expect(updated).toMatchObject({ ok: true })
+    if (!updated.ok) throw new Error("Expected WorkGraph defaults update")
+    expect(readChangeCursor(updated.cursor, testOrganizationId, "owner_a")).toBe(1)
     expect(await execute(harness, "owner_a", "defaults_once", command)).toEqual(updated)
     await expect(execute(harness, "owner_a", "defaults_once", {
       ...command,
@@ -343,7 +758,10 @@ describe("Convex WorkGraph store", () => {
         expect.objectContaining({ resource: { type: "workgraph", id: "workgraph_default" }, version: 2 }),
       ]),
     })
-    await expect(readWorkGraphProjection(harness, "owner_a", "changes", { after: "0", limit: 10 })).resolves.toContainEqual(
+    await expect(readWorkGraphProjection(harness, "owner_a", "changes", {
+      after: createChangeCursor({ organizationId: testOrganizationId, ownerUserId: "owner_a", position: 0 }),
+      limit: 10,
+    })).resolves.toContainEqual(
       expect.objectContaining({
         resource: { type: "workgraph", id: "workgraph_default" },
         event: expect.objectContaining({ type: "workgraph_defaults_updated" }),
@@ -377,7 +795,7 @@ describe("Convex WorkGraph store", () => {
     }))
   })
 
-  test("reindexes existing Stream recap timing when root quiet hours change", async () => {
+  test("does not substitute root quiet hours for explicit Stream Recap configuration", async () => {
     const harness = new ConvexHarness(["owner_a"])
     vi.spyOn(Date, "now").mockReturnValue(1_000)
     const streamId = value(
@@ -392,8 +810,8 @@ describe("Convex WorkGraph store", () => {
     })).resolves.toMatchObject({ ok: true })
 
     expect(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId)).toMatchObject({
-      activity: { lastActivityAt: 1_000, recapDueAt: 1_000 + 2 * 60 * 60 * 1000 },
-      recap_due_at: 1_000 + 2 * 60 * 60 * 1000,
+      activity: { lastActivityAt: 1_000, recapDueAt: 1_000 },
+      recap_due_at: 1_000,
     })
   })
 
@@ -442,6 +860,34 @@ describe("Convex WorkGraph store", () => {
       .rejects.toMatchObject({ name: "SnapshotResumeCursorError", code: "cursor_invalid", reason: "invalidated" })
   })
 
+  test.each([
+    ["changes", ChangeCursorError],
+    ["stream_changes", ChangeCursorError],
+    ["sources", WorkSourcePageCursorError],
+  ] as const)("normalizes structured hosted %s cursor rejections", async (kind, ErrorType) => {
+    const store = createConvexWorkGraphStore({
+      serviceToken: "service-secret",
+      executor: {
+        mutation: async () => undefined,
+        query: async () => {
+          throw Object.assign(new Error("Convex query rejected"), {
+            data: { code: "cursor_invalid", reason: "owner_mismatch" },
+          })
+        },
+      },
+    })
+
+    const request = kind === "stream_changes"
+      ? store.queries.changes.listStream(owner("owner_a"), {
+          streamId: "stream" as never,
+          after: "foreign" as never,
+          limit: 1,
+        })
+      : store.queries[kind].list(owner("owner_a"), { after: "foreign" as never, limit: 1 })
+    await expect(request)
+      .rejects.toBeInstanceOf(ErrorType)
+  })
+
   test("serves canonical commands and snapshots through the hosted HTTP component contract", async () => {
     const harness = new ConvexHarness(["owner_a"])
     const service = createConvexWorkGraphService({
@@ -449,7 +895,9 @@ describe("Convex WorkGraph store", () => {
       executor: {
         mutation: async (_fn, args) =>
           applyWorkGraphCommand(harness, {
+            organizationId: String(args.organization_id),
             ownerUserId: String(args.owner_subject),
+            ownerSubject: String(args.owner_subject),
             actor: { type: String(args.actor_type) as "agent", id: String(args.actor_id) },
             requestId: String(args.request_id),
             operationId: String(args.operation_id),
@@ -457,7 +905,7 @@ describe("Convex WorkGraph store", () => {
           }),
         query: async (_fn, args) => {
           const query = args.query as Record<string, unknown> & { kind: string }
-          return readWorkGraphProjection(harness, String(args.owner_subject), query.kind, query)
+          return readTenantWorkGraphProjection(harness, String(args.organization_id), String(args.owner_subject), query.kind, query)
         },
       },
     })
@@ -485,7 +933,9 @@ describe("Convex WorkGraph store", () => {
       serviceToken: "service-secret",
       executor: {
         mutation: async (_fn, args) => applyWorkGraphCommand(harness, {
+          organizationId: String(args.organization_id),
           ownerUserId: String(args.owner_subject),
+          ownerSubject: String(args.owner_subject),
           actor: { type: "agent", id: String(args.actor_id) },
           requestId: String(args.request_id),
           operationId: String(args.operation_id),
@@ -591,7 +1041,9 @@ describe("Convex WorkGraph store", () => {
       serviceToken: "service-secret",
       executor: {
         mutation: async (_fn, args) => applyWorkGraphCommand(harness, {
+          organizationId: String(args.organization_id),
           ownerUserId: String(args.owner_subject),
+          ownerSubject: String(args.owner_subject),
           actor: { type: "agent", id: String(args.actor_id) },
           requestId: String(args.request_id),
           operationId: String(args.operation_id),
@@ -638,7 +1090,6 @@ describe("Convex WorkGraph store", () => {
     const resolved_execution = {
       environment: { kind: "hosted_workspace" }, harness: "codex", agent: "developer",
       model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", tools: [], connectionIds: [],
-      isolation: "stream", cleanup: "retain", integration: "pull_request",
     }
     await harness.db.insert("workgraph_attempts", {
       ...common, id: "attempt_1", stream_id: streamId, work_item_id: workItemId, attempt_number: 1,
@@ -685,7 +1136,9 @@ describe("Convex WorkGraph store", () => {
         mutation: async (_fn, args) => {
           expect(args.owner_subject).toBe("clerk_user_a")
           return applyWorkGraphCommand(harness, {
+            organizationId: String(args.organization_id),
             ownerUserId: "durable_user_a",
+            ownerSubject: String(args.owner_subject),
             actor: { type: "agent", id: String(args.actor_id) },
             requestId: String(args.request_id),
             operationId: String(args.operation_id),
@@ -718,7 +1171,7 @@ describe("Convex WorkGraph store", () => {
     const stream = await app.request(`/streams/${streamId}`)
     expect(stream.status).toBe(200)
     expect(await stream.json()).toMatchObject({ id: streamId, ownerUserId: "clerk_user_a" })
-    const changes = await app.request("/changes?after=0&limit=10")
+    const changes = await app.request("/changes?limit=10")
     expect(changes.status).toBe(200)
     expect(await changes.json()).toMatchObject({ changes: [{
       ownerUserId: "clerk_user_a",
@@ -782,17 +1235,102 @@ describe("Convex WorkGraph store", () => {
     })
   })
 
+  test("binds trusted same-user Change cursors to organization and Stream filter through the Convex adapter", async () => {
+    const harness = new ConvexHarness(["same_user"], ["organization_a", "organization_b"])
+    vi.spyOn(Date, "now").mockReturnValue(1_000)
+    const service = createConvexWorkGraphService({
+      serviceToken: "service-secret",
+      executor: convexConformanceExecutor(harness),
+    })
+    const context = (organizationId: string) => ({
+      organizationId,
+      ownerUserId: "same_user",
+      actor: { type: "user", id: "same_user" },
+      requestId: `request_${organizationId}`,
+      access: { mode: "owner" },
+    }) as never
+    const executeIn = (organizationId: string, operationId: string, title: string) => service.execute(context(organizationId), {
+      operationId: operationId as never,
+      command: { version: 1, type: "create_stream", title },
+    })
+    const first = await executeIn("organization_a", "operation_a", "A")
+    const second = await executeIn("organization_b", "operation_b", "B")
+    if (!first.ok || !second.ok) throw new Error("Expected both tenant writes")
+    expect(readChangeCursor(first.cursor, "organization_a", "same_user")).toBe(1)
+    expect(readChangeCursor(second.cursor, "organization_b", "same_user")).toBe(1)
+
+    const firstChanges = await service.query(context("organization_a"), "changes", "list", {})
+    await expect(service.query(context("organization_b"), "changes", "list", {
+      after: firstChanges[0]!.cursor,
+    })).rejects.toMatchObject({ code: "cursor_invalid", reason: "owner_mismatch" })
+
+    const firstStreamId = String((first.value as { streamId: string }).streamId)
+    const otherStream = await executeIn("organization_a", "operation_other", "Other")
+    if (!otherStream.ok) throw new Error("Expected second Stream")
+    const otherStreamId = String((otherStream.value as { streamId: string }).streamId)
+    const streamChanges = await service.query(context("organization_a"), "changes", "listStream", {
+      streamId: firstStreamId as never,
+    })
+    await expect(service.query(context("organization_a"), "changes", "listStream", {
+      streamId: otherStreamId,
+      after: streamChanges[0].cursor,
+    } as never)).rejects.toMatchObject({ code: "cursor_invalid", reason: "filter_mismatch" })
+    await expect(service.query(context("organization_a"), "changes", "list", {
+      after: "broken" as never,
+    })).rejects.toMatchObject({ code: "cursor_invalid", reason: "invalid" })
+  })
+
+  test("rejects unsupported Stream Recap capability selections before Convex mutation", async () => {
+    const harness = new ConvexHarness(["owner_a"])
+    const recap = { model: { providerId: "openai", modelId: "missing" }, effort: "high", quietHours: 8 }
+
+    await expect(execute(harness, "owner_a", "recap_capability_create", {
+      type: "create_stream",
+      title: "Unsupported recap",
+      recap,
+    })).resolves.toMatchObject({
+      ok: false,
+      error: { code: "validation_error", message: expect.stringContaining("unsupported_model") },
+    })
+    expect(harness.rowsFor("workgraph_streams")).toHaveLength(0)
+
+    const streamId = value(await execute(harness, "owner_a", "recap_capability_stream", {
+      type: "create_stream",
+      title: "Supported Stream",
+    }), "streamId")
+    await expect(execute(harness, "owner_a", "recap_capability_update", {
+      type: "update_stream",
+      streamId,
+      expectedVersion: 1,
+      recap,
+    })).resolves.toMatchObject({ ok: false, error: { code: "validation_error" } })
+    expect(harness.rowsFor("workgraph_streams").find((row) => row.id === streamId))
+      .toMatchObject({ row_version: 1, recap_defaults: {} })
+  })
+
+  test("returns a typed failure when explicit Stream Recap settings have no attested catalog", async () => {
+    const harness = new ConvexHarness(["owner_a"])
+    harness.rowsFor("workgraph_execution_capabilities").splice(0)
+    await expect(execute(harness, "owner_a", "recap_capability_missing", {
+      type: "create_stream",
+      title: "No attested catalog",
+      recap: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", quietHours: 8 },
+    })).resolves.toMatchObject({ ok: false, error: { code: "execution_unavailable" } })
+    expect(harness.rowsFor("workgraph_streams")).toHaveLength(0)
+  })
+
   test("binds hosted snapshot resume cursors to one unchanged owner projection", async () => {
     const harness = new ConvexHarness(["owner_a", "owner_b"])
     vi.spyOn(Date, "now").mockReturnValue(1_000)
     await execute(harness, "owner_a", "snapshot_stream_1", { type: "create_stream", title: "First" })
     await execute(harness, "owner_a", "snapshot_stream_2", { type: "create_stream", title: "Second" })
     const first = await readWorkGraphProjection(harness, "owner_a", "snapshot", { limit: 1 }) as any
-    expect(first).toMatchObject({ snapshotCursor: "2", hasMore: true, capturedAt: 1_000 })
+    expect(readChangeCursor(first.snapshotCursor, testOrganizationId, "owner_a")).toBe(2)
+    expect(first).toMatchObject({ hasMore: true, capturedAt: 1_000 })
     expect(first.nextCursor).toMatch(/^wgsp1:/)
 
     const second = await readWorkGraphProjection(harness, "owner_a", "snapshot", { after: first.nextCursor, limit: 1 }) as any
-    expect(second).toMatchObject({ snapshotCursor: "2", capturedAt: 1_000 })
+    expect(second).toMatchObject({ snapshotCursor: first.snapshotCursor, capturedAt: 1_000 })
     await expect(readWorkGraphProjection(harness, "owner_b", "snapshot", { after: first.nextCursor, limit: 1 }))
       .rejects.toMatchObject({ name: "ConvexError", data: { code: "cursor_invalid", reason: "owner_mismatch" } })
     await expect(readWorkGraphProjection(harness, "owner_a", "snapshot", { after: "malformed", limit: 1 }))
@@ -814,9 +1352,10 @@ describe("Convex WorkGraph store", () => {
     const first = await readWorkGraphProjection(harness, "owner_a", "snapshot", { limit: 100 }) as any
     const second = await readWorkGraphProjection(harness, "owner_a", "snapshot", { after: first.nextCursor, limit: 100 }) as any
     const identities = [...first.records, ...second.records].map((record) => `${record.recordType}:${record.id}`)
-    expect(first).toMatchObject({ snapshotCursor: "105", hasMore: true })
+    expect(readChangeCursor(first.snapshotCursor, testOrganizationId, "owner_a")).toBe(105)
+    expect(first).toMatchObject({ hasMore: true })
     expect(first.records).toHaveLength(100)
-    expect(second).toMatchObject({ snapshotCursor: "105", hasMore: false })
+    expect(second).toMatchObject({ snapshotCursor: first.snapshotCursor, hasMore: false })
     expect(second.records).toHaveLength(6)
     expect(new Set(identities).size).toBe(106)
   })
@@ -871,14 +1410,15 @@ describe("Convex WorkGraph store", () => {
       }),
     ])
     expect(harness.rowsFor("workgraph_work_items")).toHaveLength(1)
-    const cleanup = harness.rowsFor("workgraph_outbox").find((row) => row.effect_type === "cleanup_stream")!
-    await harness.patch(cleanup._id, { status: "claimed", claimed_by: "worker-a" })
+    const finalization = harness.rowsFor("workgraph_outbox").find((row) => row.effect_type === "finalize_stream")!
+    await harness.patch(finalization._id, { status: "claimed", claimed_by: "worker-a" })
     process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = "service-secret"
     await expect(
       handler(completeControlEffect)({ db: harness.db } as never, {
         service_token: "service-secret",
+        organization_id: testOrganizationId,
         owner_user_id: "owner_a",
-        outbox_id: cleanup.id,
+        outbox_id: finalization.id,
         worker_id: "worker-a",
         ok: true,
         now: 10,
@@ -961,12 +1501,123 @@ describe("Convex WorkGraph store", () => {
         expect.objectContaining({ recordType: "work_item", id: workItemId }),
       ]),
     })
-    const changes = (await readWorkGraphProjection(harness, "owner_a", "changes", { after: "0", limit: 20 })) as any[]
+    const changes = (await readWorkGraphProjection(harness, "owner_a", "changes", {
+      after: createChangeCursor({ organizationId: testOrganizationId, ownerUserId: "owner_a", position: 0 }),
+      limit: 20,
+    })) as any[]
     expect(() => changes.forEach((change) => ChangeEnvelopeSchema.parse(change))).not.toThrow()
     expect(changes[0]).toMatchObject({
       ownerUserId: "owner_a",
       resource: { type: "work_source" },
       event: { schemaVersion: 1, sequence: 1 },
+    })
+  })
+
+  test("preserves authoring provenance and links later document revisions to existing Stream work", async () => {
+    const harness = new ConvexHarness(["owner_a"])
+    const firstContent = "Initial launch document"
+    const firstHash = await digest(firstContent)
+    const first = await execute(harness, "owner_a", "authoring_source_1", {
+      type: "create_work_source",
+      title: "Launch",
+      content: firstContent,
+      authoring: {
+        adapterId: "claxedo_docs",
+        projectId: "project-1",
+        documentId: "doc-1",
+        documentRevisionId: "doc-revision-1",
+        documentRevisionNumber: 1,
+        authoredAt: 1,
+        authoredBy: { type: "user", id: "owner_a" },
+        contentHash: firstHash,
+      },
+    })
+    const workSourceId = value(first, "workSourceId")
+    const firstRevisionId = value(first, "revisionId")
+    const firstRef = { workSourceId, revisionId: firstRevisionId, contentHash: firstHash }
+    await expect(readWorkGraphProjection(harness, "owner_a", "source_revision", {
+      workSourceId,
+      revisionId: firstRevisionId,
+    })).resolves.toMatchObject({
+      content: firstContent,
+      origin: {
+        kind: "authoring",
+        adapterId: "claxedo_docs",
+        projectId: "project-1",
+        documentId: "doc-1",
+        documentRevisionId: "doc-revision-1",
+      },
+    })
+    await expect(execute(harness, "owner_a", "authoring_invalid_hash", {
+      type: "create_work_source",
+      title: "Invalid",
+      content: "different content",
+      authoring: {
+        adapterId: "claxedo_docs",
+        projectId: "project-1",
+        documentId: "doc-invalid",
+        documentRevisionId: "doc-invalid-revision",
+        documentRevisionNumber: 1,
+        authoredAt: 2,
+        authoredBy: { type: "user", id: "owner_a" },
+        contentHash: firstHash,
+      },
+    })).resolves.toMatchObject({ ok: false, error: { code: "validation_error" } })
+
+    const streamId = value(await execute(harness, "owner_a", "authoring_stream", {
+      type: "create_stream",
+      title: "Launch",
+      source: firstRef,
+    }), "streamId")
+    const secondContent = "Initial launch document\nAdd rollout checks"
+    const secondHash = await digest(secondContent)
+    await expect(execute(harness, "owner_a", "authoring_wrong_parent", {
+      type: "revise_work_source",
+      workSourceId,
+      expectedRevisionId: firstRevisionId,
+      title: "Launch",
+      content: secondContent,
+      authoring: {
+        adapterId: "claxedo_docs",
+        projectId: "project-1",
+        documentId: "doc-1",
+        documentRevisionId: "doc-revision-2",
+        documentRevisionNumber: 2,
+        parentDocumentRevisionId: "unrelated-document-revision",
+        authoredAt: 2,
+        authoredBy: { type: "user", id: "owner_a" },
+        contentHash: secondHash,
+      },
+    })).resolves.toMatchObject({ ok: false, error: { code: "version_conflict" } })
+    const second = await execute(harness, "owner_a", "authoring_source_2", {
+      type: "revise_work_source",
+      workSourceId,
+      expectedRevisionId: firstRevisionId,
+      title: "Launch",
+      content: secondContent,
+      authoring: {
+        adapterId: "claxedo_docs",
+        projectId: "project-1",
+        documentId: "doc-1",
+        documentRevisionId: "doc-revision-2",
+        documentRevisionNumber: 2,
+        parentDocumentRevisionId: "doc-revision-1",
+        authoredAt: 3,
+        authoredBy: { type: "agent", id: "agent-1" },
+        contentHash: secondHash,
+      },
+    })
+    const secondRef = { workSourceId, revisionId: value(second, "revisionId"), contentHash: secondHash }
+    const proposalId = value(await execute(harness, "owner_a", "authoring_proposal_2", {
+      type: "propose_admission",
+      source: secondRef,
+      targetStreamId: streamId,
+    }), "proposalId")
+    await expect(readWorkGraphProjection(harness, "owner_a", "admission_proposal", { proposalId })).resolves.toMatchObject({
+      state: "planning",
+      source: secondRef,
+      previousSource: firstRef,
+      diffSummary: "Content changed; 1 → 2 lines",
     })
   })
 
@@ -1047,7 +1698,7 @@ describe("Convex WorkGraph store", () => {
         streamId,
         executionMode: "autonomous",
       }),
-    ).resolves.toMatchObject({ ok: false, error: { code: "blocked" } })
+    ).resolves.toMatchObject({ ok: false, error: { code: "blocked", message: "Execution profile is incomplete" } })
 
     const executableStreamId = value(
       await execute(harness, "owner_a", "runtime_stream", {
@@ -1061,9 +1712,6 @@ describe("Convex WorkGraph store", () => {
           effort: "high",
           tools: [],
           connectionIds: [],
-          isolation: "stream",
-          cleanup: "destroy_on_close",
-          integration: "pull_request",
         },
       }),
       "streamId",
@@ -1369,7 +2017,11 @@ describe("Convex WorkGraph store", () => {
     const retry = await restoreWorkGraphArchive(target, "owner_a", "clerk_owner_a", input)
     expect(restored).toEqual({
       ok: true,
-      result: { restored: true, recordCount: exported.archive.records.length, baselineCursor: "1" },
+      result: {
+        restored: true,
+        recordCount: exported.archive.records.length,
+        baselineCursor: createChangeCursor({ organizationId: testOrganizationId, ownerUserId: "owner_a", position: 1 }),
+      },
     })
     expect(retry).toEqual(restored)
     const roundTrip = await exportWorkGraphArchive(target, "owner_a", "clerk_owner_a", 300)
@@ -1389,6 +2041,69 @@ describe("Convex WorkGraph store", () => {
     })).resolves.toEqual({ ok: false, reason: "idempotency_conflict" })
   })
 
+  test("round-trips a completed replacement reset and refuses active reset execution state", async () => {
+    const fixture = await prepareConvexReplacement()
+    await expect(execute(fixture.harness, "owner_a", "archive_confirm_replace", replacementConfirmation(fixture, 1)))
+      .resolves.toMatchObject({ ok: true })
+    const control = fixture.harness.rowsFor("workgraph_outbox").find((row) => row.payload?.finalize === "replace")!
+    await fixture.harness.patch(control._id, { status: "claimed", claimed_by: "archive-worker", attempt_count: 1 })
+    vi.stubEnv("CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", "archive-replacement-test")
+    await expect(handler(completeControlEffect)(fixture.harness, {
+      service_token: "archive-replacement-test",
+      organization_id: testOrganizationId,
+      owner_user_id: "owner_a",
+      outbox_id: control.id,
+      worker_id: "archive-worker",
+      ok: true,
+      now: 20,
+    })).resolves.toEqual({ settled: true })
+    fixture.harness.rowsFor("workgraph_due_jobs").forEach((job) => Object.assign(job, { status: "cancelled", updated_at: 20 }))
+    const stream = fixture.harness.rowsFor("workgraph_streams").find((row) => row.id === fixture.streamId)!
+    const exported = await exportWorkGraphArchive(fixture.harness, "owner_a", "clerk_owner_a", 30)
+    if (!exported.ok) throw new Error(exported.reason)
+    expect(exported.archive.records.find((record) => record.kind === "stream")?.value).toMatchObject({
+      replacementReset: { state: "completed", proposalId: fixture.proposalId, completedAt: 20 },
+    })
+
+    const target = new ConvexHarness(["owner_a"])
+    await expect(restoreWorkGraphArchive(target, "owner_a", "clerk_owner_a", {
+      operation_id: "restore_completed_reset",
+      archive_hash: await hashWorkGraphArchive(exported.archive),
+      archive: exported.archive,
+      restored_at: 40,
+    })).resolves.toMatchObject({ ok: true })
+    const roundTrip = await exportWorkGraphArchive(target, "owner_a", "clerk_owner_a", 50)
+    if (!roundTrip.ok) throw new Error(roundTrip.reason)
+    expect(roundTrip.archive.records).toEqual(exported.archive.records)
+
+    const pendingArchive = WorkGraphArchiveSchema.parse({
+      ...exported.archive,
+      records: exported.archive.records.map((record) => record.kind !== "stream" ? record : {
+        ...record,
+        value: {
+          ...record.value,
+          replacementReset: {
+            state: "pending",
+            proposalId: fixture.proposalId,
+            previousSource: fixture.previousSource,
+            source: fixture.source,
+            requestedAt: 10,
+          },
+        },
+      }),
+    })
+    await expect(restoreWorkGraphArchive(new ConvexHarness(["owner_a"]), "owner_a", "clerk_owner_a", {
+      operation_id: "restore_pending_reset",
+      archive_hash: await hashWorkGraphArchive(pendingArchive),
+      archive: pendingArchive,
+      restored_at: 60,
+    })).resolves.toEqual({ ok: false, reason: "not_quiescent" })
+    stream.replacement_reset = { ...stream.replacement_reset, state: "pending" }
+    delete stream.replacement_reset.completedAt
+    await expect(exportWorkGraphArchive(fixture.harness, "owner_a", "clerk_owner_a", 70))
+      .resolves.toEqual({ ok: false, reason: "not_quiescent" })
+  })
+
   test("rejects live Convex execution and unavailable Connection dependencies without partial restore", async () => {
     const live = new ConvexHarness(["owner_a"])
     await live.db.insert("workgraph_attempts", { owner_user_id: "owner_a", id: "attempt_live", state: "running" })
@@ -1403,6 +2118,7 @@ describe("Convex WorkGraph store", () => {
     if (!workgraph) throw new Error("Missing WorkGraph root")
     const archive = {
       version: 1 as const,
+      organizationId: testOrganizationId as never,
       ownerUserId: "clerk_owner_a" as never,
       exportedAt: 10,
       records: [
@@ -1460,11 +2176,12 @@ describe("Convex WorkGraph store", () => {
     await expect(port.restore(owner("clerk_owner_a"), { operationId: "restore_transport" as never, archive: exported.archive }))
       .resolves.toEqual({ restored: true, recordCount: exported.archive.records.length, baselineCursor: "1" })
     expect(calls).toEqual([
-      { kind: "query", args: { service_token: "service-secret", owner_subject: "clerk_owner_a", exported_at: 40 } },
+      { kind: "query", args: { service_token: "service-secret", organization_id: testOrganizationId, owner_subject: "clerk_owner_a", exported_at: 40 } },
       {
         kind: "mutation",
         args: expect.objectContaining({
           service_token: "service-secret",
+          organization_id: testOrganizationId,
           owner_subject: "clerk_owner_a",
           operation_id: "restore_transport",
           archive_hash: await hashWorkGraphArchive(exported.archive),
@@ -1560,7 +2277,6 @@ describe("Convex WorkGraph store", () => {
     const resolvedExecution = {
       environment: { kind: "hosted_workspace" }, harness: "opencode", agent: "build",
       model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", tools: [], connectionIds: [],
-      isolation: "stream", cleanup: "retain", integration: "pull_request",
     }
     await source.db.insert("workgraph_attempts", {
       owner_user_id: "owner_a", id: "attempt_all", stream_id: streamId, work_item_id: firstItemId,
@@ -1572,7 +2288,7 @@ describe("Convex WorkGraph store", () => {
       row_version: 1, schema_version: 1, created_at: 10, updated_at: 12,
     })
     await source.db.insert("workgraph_source_views", {
-      owner_user_id: "owner_a", id: "view_all", workgraph_id: "workgraph_default", org_id: "org_1",
+      owner_user_id: "owner_a", id: "view_all", workgraph_id: "workgraph_default",
       team_connection_id: "connection_1", provider: "github", provider_user_id: "octocat", filters: {},
       sync_policy: "silent", status: "active", row_version: 1, schema_version: 1, created_at: 1, updated_at: 1,
     })
@@ -1652,8 +2368,13 @@ describe("Convex WorkGraph store", () => {
       title: "Session", body: "", normalized: {}, status: "unorganized", row_version: 1, schema_version: 1, created_at: 5, updated_at: 6,
     })
     await harness.db.insert("workgraph_connection_metadata", {
-      owner_user_id: "owner_a", org_id: "org_1", connection_id: "connection_broken", integration_id: "github",
+      organization_id: testOrganizationId, connection_id: "connection_broken", integration_id: "github",
       capabilities: ["work-source"], status: "broken", row_version: 1, schema_version: 1, created_at: 6, updated_at: 7,
+    })
+    await harness.db.insert("workgraph_source_views", {
+      owner_user_id: "owner_a", id: "view_broken", workgraph_id: "workgraph_default", team_connection_id: "connection_broken",
+      provider: "github", provider_user_id: "owner_a", filters: {}, sync_policy: "silent", status: "active",
+      row_version: 1, schema_version: 1, created_at: 6, updated_at: 7,
     })
     await harness.db.insert("workgraph_due_jobs", {
       owner_user_id: "owner_a", id: "recap_job_configuration", stream_id: "stream_1", job_type: "recap",
@@ -1749,6 +2470,41 @@ describe("Convex WorkGraph store", () => {
   })
 })
 
+describe("Convex WorkGraph replacement conformance v5", () => {
+  for (const conformance of workGraphReplacementConformance(async (scenario) => {
+    const fixture = await prepareConvexReplacement()
+    if (scenario === "version_drift") {
+      await execute(fixture.harness, "owner_a", "conformance_update", {
+        type: "update_work_item",
+        workItemId: fixture.workItemId,
+        expectedVersion: 1,
+        title: "Changed",
+      })
+    }
+    if (scenario === "unrelated_work") {
+      await execute(fixture.harness, "owner_a", "conformance_unrelated", {
+        type: "create_work_item",
+        streamId: fixture.streamId,
+        title: "Unrelated",
+        completionContract: ownerConfirmationContract(),
+      })
+    }
+    if (scenario === "durable_effect") {
+      await execute(fixture.harness, "owner_a", "conformance_receipt", {
+        type: "record_evidence",
+        subject: { type: "work_item", workItemId: fixture.workItemId },
+        evidence: { kind: "integration", summary: "Merged", effect: "merged", reference: "pr:1" },
+      })
+    }
+    return execute(
+      fixture.harness,
+      "owner_a",
+      `conformance_confirm_${scenario}`,
+      replacementConfirmation(fixture, scenario === "durable_effect" ? 2 : 1),
+    )
+  })) test(conformance.name, conformance.run)
+})
+
 describe("Convex WorkGraph archive conformance v1", () => {
   for (const conformance of workGraphArchiveConformance(async (input) => {
     const source = new ConvexHarness([String(input.owners.first.ownerUserId), String(input.owners.second.ownerUserId)])
@@ -1776,7 +2532,9 @@ describe("Convex WorkGraph snapshot restart conformance v1", () => {
       executor: {
         mutation: async (_fn, args) =>
           applyWorkGraphCommand(harness, {
+            organizationId: String(args.organization_id),
             ownerUserId: String(args.owner_subject),
+            ownerSubject: String(args.owner_subject),
             actor: { type: String(args.actor_type) as "agent", id: String(args.actor_id) },
             requestId: String(args.request_id),
             operationId: String(args.operation_id),
@@ -1784,7 +2542,7 @@ describe("Convex WorkGraph snapshot restart conformance v1", () => {
           }),
         query: async (_fn, args) => {
           const query = args.query as Record<string, unknown> & { kind: string }
-          return readWorkGraphProjection(harness, String(args.owner_subject), query.kind, query)
+          return readTenantWorkGraphProjection(harness, String(args.organization_id), String(args.owner_subject), query.kind, query)
         },
       },
     })
@@ -1812,8 +2570,13 @@ describe("Convex WorkGraph Attention conformance v1", () => {
       service,
       seed: async (context) => {
         await harness.db.insert("workgraph_connection_metadata", {
-          owner_user_id: context.ownerUserId, org_id: `org_${context.ownerUserId}`, connection_id: `connection_${context.ownerUserId}`,
+          organization_id: testOrganizationId, connection_id: `connection_${context.ownerUserId}`,
           integration_id: "github", capabilities: ["work-source"], status: "broken", row_version: 1, schema_version: 1, created_at: 200, updated_at: 200,
+        })
+        await harness.db.insert("workgraph_source_views", {
+          owner_user_id: context.ownerUserId, id: `view_${context.ownerUserId}`, workgraph_id: "workgraph_default",
+          team_connection_id: `connection_${context.ownerUserId}`, provider: "github", provider_user_id: String(context.ownerUserId),
+          filters: {}, sync_policy: "silent", status: "active", row_version: 1, schema_version: 1, created_at: 200, updated_at: 200,
         })
         await harness.db.insert("workgraph_intake_candidates", {
           owner_user_id: context.ownerUserId, id: `candidate_${context.ownerUserId}`, workgraph_id: "workgraph_default", candidate_kind: "session",
@@ -1826,8 +2589,199 @@ describe("Convex WorkGraph Attention conformance v1", () => {
   })) test(conformance.name, conformance.run)
 })
 
+describe("Convex AtomicWorkGraphStore conformance v5", () => {
+  for (const conformance of workGraphAdapterConformance(async (input) => {
+    vi.stubEnv("CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", "service-secret")
+    const organizationId = String(input.owners.first.organizationId)
+    const harness = new ConvexHarness(
+      [String(input.owners.first.ownerUserId), String(input.owners.second.ownerUserId)],
+      organizationId,
+      0,
+    )
+    vi.spyOn(Date, "now").mockImplementation(input.clock.now)
+    const executor = convexConformanceExecutor(harness)
+    const attemptRuntime = convexConformanceAttemptRuntime(harness)
+    return {
+      service: createConvexWorkGraphService({ serviceToken: "service-secret", executor }),
+      attemptRuntime,
+      executionProfile: {
+        environment: { kind: "hosted_workspace" },
+        harness: "claxedo-v2",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
+      },
+      restart: async () => ({ attemptRuntime: convexConformanceAttemptRuntime(harness) }),
+      faults: { failNextAppend: () => harness.failNextInsert("workgraph_events") },
+    }
+  })) test(conformance.name, conformance.run)
+})
+
+function convexConformanceExecutor(harness: ConvexHarness) {
+  return {
+    mutation: async (_fn: unknown, args: Record<string, unknown>) => {
+      const command = args.command as Record<string, unknown> & { type: string }
+      const organizationId = String(args.organization_id)
+      const ownerUserId = String(args.owner_subject)
+      const result = await harness.transaction(() => applyWorkGraphCommand(harness, {
+        organizationId,
+        ownerUserId,
+        ownerSubject: ownerUserId,
+        actor: { type: String(args.actor_type) as "agent", id: String(args.actor_id) },
+        requestId: String(args.request_id),
+        operationId: String(args.operation_id),
+        command,
+      }))
+      if (!result.ok) return result
+      if (command.type === "execute_work_item") await launchConvexConformanceAttempt(harness, organizationId, ownerUserId, result)
+      if (command.type === "delete_stream") await completeConvexConformanceDeletion(harness, organizationId, ownerUserId, result)
+      return result
+    },
+    query: async (_fn: unknown, args: Record<string, unknown>) => {
+      const query = args.query as Record<string, unknown> & { kind: string }
+      return readTenantWorkGraphProjection(
+        harness,
+        String(args.organization_id),
+        String(args.owner_subject),
+        query.kind,
+        query,
+      )
+    },
+  }
+}
+
+async function launchConvexConformanceAttempt(
+  harness: ConvexHarness,
+  organizationId: string,
+  ownerUserId: string,
+  result: { value?: unknown },
+) {
+  const attemptId = (result.value as { attemptId?: string } | undefined)?.attemptId
+  if (!attemptId) throw new Error("Convex conformance admission omitted its Attempt ID")
+  const claims = await harness.transaction(() => handler(claimLaunches)(harness, {
+    service_token: "service-secret",
+    organization_id: organizationId,
+    owner_user_id: ownerUserId,
+    worker_id: "conformance_worker",
+    now: Date.now(),
+    limit: 10,
+  })) as Array<{ outboxId: string; attemptId: string; leaseEpoch: number }>
+  const claim = claims.find((candidate) => candidate.attemptId === attemptId)
+  if (!claim) throw new Error("Convex conformance worker could not claim the admitted Attempt")
+  const marked = await harness.transaction(() => handler(markRunning)(harness, {
+    service_token: "service-secret",
+    organization_id: organizationId,
+    owner_user_id: ownerUserId,
+    outbox_id: claim.outboxId,
+    attempt_id: claim.attemptId,
+    lease_epoch: claim.leaseEpoch,
+    worker_id: "conformance_worker",
+    workspace_id: `workspace_${attemptId}`,
+    session_id: `session_${attemptId}`,
+    now: Date.now(),
+  })) as { settled: boolean }
+  if (!marked.settled) throw new Error("Convex conformance worker could not mark the Attempt running")
+}
+
+async function completeConvexConformanceDeletion(
+  harness: ConvexHarness,
+  organizationId: string,
+  ownerUserId: string,
+  result: { value?: unknown },
+) {
+  const streamId = (result.value as { streamId?: string } | undefined)?.streamId
+  if (!streamId) throw new Error("Convex conformance deletion omitted its Stream ID")
+  const controls = await harness.transaction(() => handler(claimControlEffects)(harness, {
+    service_token: "service-secret",
+    organization_id: organizationId,
+    owner_user_id: ownerUserId,
+    worker_id: "conformance_worker",
+    now: Date.now(),
+    limit: 10,
+  })) as Array<{ outboxId: string; streamId: string }>
+  const control = controls.find((candidate) => candidate.streamId === streamId)
+  if (!control) throw new Error("Convex conformance worker could not claim Stream cleanup")
+  const completed = await harness.transaction(() => handler(completeControlEffect)(harness, {
+    service_token: "service-secret",
+    organization_id: organizationId,
+    owner_user_id: ownerUserId,
+    outbox_id: control.outboxId,
+    worker_id: "conformance_worker",
+    ok: true,
+    now: Date.now(),
+  })) as { settled: boolean }
+  if (!completed.settled) throw new Error("Convex conformance worker could not complete Stream cleanup")
+}
+
+function convexConformanceAttemptRuntime(harness: ConvexHarness): AttemptRuntimePort {
+  return {
+    listReconcilable: async (context) => harness.rowsFor("workgraph_attempts")
+      .filter((attempt) =>
+        attempt.organization_id === context.organizationId &&
+        attempt.owner_user_id === context.ownerUserId &&
+        attempt.state === "running" &&
+        attempt.session_id &&
+        attempt.envelope_id,
+      )
+      .flatMap((attempt) => {
+        const lease = harness.rowsFor("workgraph_leases").find((candidate) =>
+          candidate.organization_id === context.organizationId &&
+          candidate.owner_user_id === context.ownerUserId &&
+          candidate.resource_type === "work_item" &&
+          candidate.resource_id === attempt.work_item_id &&
+          candidate.holder_id === attempt.id &&
+          candidate.epoch === attempt.lease_epoch,
+        )
+        return lease ? [{
+          attemptId: attempt.id,
+          streamId: attempt.stream_id,
+          workItemId: attempt.work_item_id,
+          sessionId: attempt.session_id,
+          envelopeId: attempt.envelope_id,
+          childIsolationId: attempt.child_workspace_id ?? null,
+          profileJson: JSON.stringify(attempt.resolved_execution),
+          leaseEpoch: lease.epoch,
+          leaseExpiresAt: lease.expires_at,
+        }] : []
+      }) as never,
+    renewLease: (context, input) => harness.transaction(() => renewWorkGraphAttemptLease(harness as never, {
+      organizationId: context.organizationId as never,
+      ownerUserId: context.ownerUserId as never,
+      attemptId: input.attemptId,
+      expectedLeaseEpoch: input.expectedLeaseEpoch,
+      now: input.occurredAt,
+      durationMs: input.durationMs,
+    })),
+    recordResult: async (context, input) => {
+      if (input.state !== "result") return false
+      const attempt = harness.rowsFor("workgraph_attempts").find((candidate) =>
+        candidate.organization_id === context.organizationId &&
+        candidate.owner_user_id === context.ownerUserId &&
+        candidate.id === input.attemptId &&
+        candidate.work_item_id === input.workItemId,
+      )
+      if (!attempt?.session_id) return false
+      const recorded = await harness.transaction(() => handler(recordResult)(harness, {
+        service_token: "service-secret",
+        organization_id: context.organizationId,
+        owner_user_id: context.ownerUserId,
+        attempt_id: input.attemptId,
+        lease_epoch: input.leaseEpoch,
+        session_id: attempt.session_id,
+        summary: input.summary,
+        artifacts: input.artifacts,
+        now: Date.now(),
+      })) as { settled: boolean }
+      return recorded.settled
+    },
+  }
+}
+
 function owner(ownerUserId: string) {
   return {
+    organizationId: testOrganizationId,
     ownerUserId,
     actor: { type: "user" as const, id: ownerUserId },
     requestId: `request_${ownerUserId}`,
@@ -1837,12 +2791,95 @@ function owner(ownerUserId: string) {
 
 function execute(harness: ConvexHarness, ownerUserId: string, operationId: string, command: Record<string, unknown>) {
   return applyWorkGraphCommand(harness, {
+    organizationId: testOrganizationId,
     ownerUserId,
+    ownerSubject: ownerUserId,
     actor: { type: "user", id: ownerUserId },
     requestId: `request_${ownerUserId}`,
     operationId,
     command: { version: 1, ...command },
   })
+}
+
+async function prepareConvexReplacement() {
+  const harness = new ConvexHarness(["owner_a"])
+  const firstContent = "Original source"
+  const created = await execute(harness, "owner_a", "prepare_source", {
+    type: "create_work_source",
+    title: "Source",
+    content: firstContent,
+  })
+  const previousSource = {
+    workSourceId: value(created, "workSourceId"),
+    revisionId: value(created, "revisionId"),
+    contentHash: await digest(firstContent),
+  }
+  const streamId = value(await execute(harness, "owner_a", "prepare_stream", {
+    type: "create_stream",
+    title: "Stream",
+    source: previousSource,
+  }), "streamId")
+  const workItemId = value(await execute(harness, "owner_a", "prepare_item", {
+    type: "create_work_item",
+    streamId,
+    source: previousSource,
+    title: "Original Task",
+    completionContract: ownerConfirmationContract(),
+  }), "workItemId")
+  const nextContent = "Revised source"
+  const revised = await execute(harness, "owner_a", "prepare_revision", {
+    type: "revise_work_source",
+    workSourceId: previousSource.workSourceId,
+    expectedRevisionId: previousSource.revisionId,
+    content: nextContent,
+  })
+  const source = {
+    workSourceId: previousSource.workSourceId,
+    revisionId: value(revised, "revisionId"),
+    contentHash: await digest(nextContent),
+  }
+  const proposalId = value(await execute(harness, "owner_a", "prepare_proposal", {
+    type: "propose_admission",
+    source,
+    targetStreamId: streamId,
+  }), "proposalId")
+  Object.assign(harness.rowsFor("workgraph_admission_proposals").find((row) => row.id === proposalId)!, {
+    state: "proposed",
+    generation: { method: "agent_session", sessionId: "session_plan", generatedAt: 10 },
+    suggested_placement: { mode: "existing", streamId },
+    placement_matches: [],
+    proposed_outcomes: [],
+    proposed_work_items: [],
+    duplicate_matches: [],
+    row_version: 2,
+    updated_at: 10,
+  })
+  return { harness, previousSource, source, streamId, workItemId, proposalId }
+}
+
+function replacementConfirmation(
+  fixture: Awaited<ReturnType<typeof prepareConvexReplacement>>,
+  expectedVersion: number,
+) {
+  return {
+    type: "confirm_admission",
+    proposalId: fixture.proposalId,
+    expectedVersion: 2,
+    source: fixture.source,
+    selection: {
+      mode: "replace",
+      streamId: fixture.streamId,
+      workItems: [{ workItemId: fixture.workItemId, expectedVersion }],
+    },
+  }
+}
+
+function ownerConfirmationContract() {
+  return {
+    version: 1,
+    mode: "all",
+    requirements: [{ id: "owner", kind: "owner_confirmation", description: "Owner confirms" }],
+  }
 }
 
 function value(result: any, key: string) {
@@ -1856,9 +2893,9 @@ async function digest(value: string) {
 }
 
 async function seedConnection(harness: ConvexHarness) {
-  await harness.db.insert("org_memberships", { org_id: "org_1", user_id: "owner_a" })
+  await harness.db.insert("org_memberships", { org_id: testOrganizationId, user_id: "owner_a" })
   await harness.db.insert("workgraph_connection_metadata", {
-    owner_user_id: "owner_a", org_id: "org_1", connection_id: "connection_1", integration_id: "github",
+    organization_id: testOrganizationId, connection_id: "connection_1", integration_id: "github",
     capabilities: ["work-source"], status: "connected", row_version: 1, schema_version: 1, created_at: 1, updated_at: 1,
   })
 }
@@ -1871,12 +2908,14 @@ async function materializeAttention(harness: ConvexHarness, owner: string) {
     "workgraph_work_items",
     "workgraph_attempts",
     "workgraph_notifications",
-    "workgraph_connection_metadata",
     "workgraph_due_jobs",
   ]) {
     for (const row of harness.rowsFor(table).filter((candidate) => candidate.owner_user_id === owner)) {
       await syncAttentionRecord(harness as never, table, row)
     }
+  }
+  for (const row of harness.rowsFor("workgraph_connection_metadata")) {
+    await syncConnectionAttention(harness as never, testOrganizationId, row.connection_id, row.status, row.updated_at)
   }
   for (const row of harness.rowsFor("workgraph_intake_candidates").filter((candidate) => candidate.owner_user_id === owner)) {
     await syncCandidateTransition(harness as never, undefined, row)
@@ -1887,13 +2926,64 @@ class ConvexHarness {
   private rows = new Map<string, any[]>()
   private next = 0
   private collectRejected = false
+  private rejectedInsert: string | undefined
+  private transactionTail = Promise.resolve()
   readonly db = this
 
-  constructor(owners: string[]) {
+  constructor(
+    owners: string[],
+    organizations: string | readonly string[] = testOrganizationId,
+    capabilitiesObservedAt = Date.now(),
+  ) {
+    const organizationIds = typeof organizations === "string" ? [organizations] : organizations
     this.rows.set(
       "users",
       owners.map((owner) => ({ _id: owner, token_identifier: `token:${owner}` })),
     )
+    this.rows.set(
+      "org_memberships",
+      organizationIds.flatMap((organizationId) => owners.map((owner) => ({
+        _id: `membership:${organizationId}:${owner}`,
+        org_id: organizationId,
+        user_id: owner,
+      }))),
+    )
+    this.rows.set("workgraph_execution_capabilities", organizationIds.flatMap((organizationId) => owners.map((owner) => {
+      const observedAt = capabilitiesObservedAt
+      const catalogRevision = "a".repeat(64)
+      return {
+      _id: `capabilities:${organizationId}:${owner}`,
+      organization_id: organizationId,
+      owner_user_id: owner,
+      schema_version: 1,
+      catalog_revision: catalogRevision,
+      observed_at: observedAt,
+      expires_at: observedAt + 300_000,
+      attested_at: observedAt,
+      catalog: {
+        schemaVersion: 1,
+        organizationId,
+        ownerUserId: owner,
+        catalogRevision,
+        observedAt,
+        expiresAt: observedAt + 300_000,
+        environments: [
+          { kind: "local_worktree", repositoryRequired: false, remoteUrlInput: true, baseRevisionInput: true },
+          { kind: "hosted_workspace", repositoryRequired: false, remoteUrlInput: true, baseRevisionInput: true },
+        ],
+        harnesses: [{ id: "opencode" }, { id: "codex" }, { id: "claxedo-v2" }],
+        agents: [{ harnessId: "opencode", id: "build", label: "Build" }, { harnessId: "codex", id: "build", label: "Build" }, { harnessId: "claxedo-v2", id: "build", label: "Build" }],
+        models: [
+          { harnessId: "opencode", providerId: "openai", modelId: "gpt-5", label: "GPT-5", efforts: ["low", "medium", "high"] },
+          { harnessId: "codex", providerId: "openai", modelId: "gpt-5", label: "GPT-5", efforts: ["low", "medium", "high"] },
+          { harnessId: "claxedo-v2", providerId: "openai", modelId: "gpt-5", label: "GPT-5", efforts: ["low", "medium", "high"] },
+        ],
+        tools: [{ harnessId: "opencode", id: "read" }, { harnessId: "opencode", id: "edit" }, { harnessId: "codex", id: "read" }, { harnessId: "codex", id: "edit" }, { harnessId: "claxedo-v2", id: "read" }, { harnessId: "claxedo-v2", id: "edit" }],
+        repository: { remoteUrl: "https://example.test/repo.git", baseRevisions: ["HEAD", "dev", "main"] },
+        connections: [],
+      },
+    }
+    })))
   }
 
   rowsFor(table: string) {
@@ -1902,6 +2992,26 @@ class ConvexHarness {
 
   rejectCollects() {
     this.collectRejected = true
+  }
+
+  failNextInsert(table: string) {
+    this.rejectedInsert = table
+  }
+
+  transaction<Result>(run: () => Promise<Result>) {
+    const result = this.transactionTail.then(async () => {
+      const rows = structuredClone([...this.rows.entries()])
+      const next = this.next
+      try {
+        return await run()
+      } catch (error) {
+        this.rows = new Map(rows)
+        this.next = next
+        throw error
+      }
+    })
+    this.transactionTail = result.then(() => undefined, () => undefined)
+    return result
   }
 
   query(table: string) {
@@ -1932,13 +3042,17 @@ class ConvexHarness {
         if (index === "by_owner_created_id") {
           selected.sort((left, right) => left.created_at - right.created_at || String(left.id).localeCompare(String(right.id)))
         }
-        if (index === "by_owner_position") selected.sort((left, right) => String(left.position_key).localeCompare(String(right.position_key)))
+        if (index === "by_owner_position" || index === "by_tenant_position") selected.sort((left, right) => String(left.position_key).localeCompare(String(right.position_key)))
         return chain
       },
       filter: (build: (query: any) => (row: Record<string, unknown>) => boolean) => {
         const query = {
           field: (field: string) => field,
           eq: (field: string, expected: unknown) => (row: Record<string, unknown>) => row[field] === expected,
+          and: (...predicates: Array<(row: Record<string, unknown>) => boolean>) => (row: Record<string, unknown>) => predicates.every((predicate) => predicate(row)),
+          or: (...predicates: Array<(row: Record<string, unknown>) => boolean>) => (row: Record<string, unknown>) => predicates.some((predicate) => predicate(row)),
+          neq: (field: string, expected: unknown) => (row: Record<string, unknown>) => row[field] !== expected,
+          lte: (field: string, expected: number) => (row: Record<string, unknown>) => Number(row[field]) <= expected,
         }
         selected = selected.filter(build(query))
         return chain
@@ -1959,7 +3073,17 @@ class ConvexHarness {
   }
 
   async insert(table: string, value: Record<string, unknown>) {
-    const row = { _id: `${table}:${++this.next}`, ...value }
+    if (this.rejectedInsert === table) {
+      this.rejectedInsert = undefined
+      throw new Error(`Injected Convex ${table} append failure`)
+    }
+    const row = {
+      _id: `${table}:${++this.next}`,
+      ...(table.startsWith("workgraph_") || table === "workgraphs" || table.startsWith("work_source")
+        ? { organization_id: testOrganizationId }
+        : {}),
+      ...value,
+    }
     this.rows.set(table, [...(this.rows.get(table) ?? []), row])
     return row._id
   }
@@ -1989,7 +3113,7 @@ function handler(fn: unknown) {
 
 function archivePort() {
   return {
-    export: async (context: { ownerUserId: string }) => ({ version: 1, ownerUserId: context.ownerUserId, exportedAt: 1, records: [] }),
+    export: async (context: { ownerUserId: string }) => ({ version: 1, organizationId: testOrganizationId, ownerUserId: context.ownerUserId, exportedAt: 1, records: [] }),
     restore: async () => ({ restored: true, recordCount: 0, baselineCursor: "0" }),
   } as never
 }
@@ -2003,12 +3127,12 @@ function deletionPort() {
 function directArchivePort(harness: ConvexHarness, clock: Readonly<{ now: () => number }>): WorkGraphArchivePort {
   return {
     export: async (context) => {
-      const exported = await exportWorkGraphArchive(harness, String(context.ownerUserId), String(context.ownerUserId), clock.now())
+      const exported = await exportTenantWorkGraphArchive(harness, testOrganizationId, String(context.ownerUserId), String(context.ownerUserId), clock.now())
       if (!exported.ok) throw new WorkGraphArchiveRestoreError(exported.reason)
       return exported.archive
     },
     restore: async (context, input) => {
-      const restored = await restoreWorkGraphArchive(harness, String(context.ownerUserId), String(context.ownerUserId), {
+      const restored = await restoreTenantWorkGraphArchive(harness, testOrganizationId, String(context.ownerUserId), String(context.ownerUserId), {
         operation_id: String(input.operationId), archive_hash: await hashWorkGraphArchive(input.archive),
         archive: input.archive, restored_at: clock.now(),
       })

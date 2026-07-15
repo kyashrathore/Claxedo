@@ -46,37 +46,12 @@ export function mergeStoredItems<T extends { id: string }>(existing: T[] | undef
   let changed = false
   for (const item of next) {
     const result = Binary.search(merged, item.id, (value) => value.id)
-    if (result.found) {
-      const current = merged[result.index]!
-      const replacement = mergeStoredItem(current, item)
-      if (replacement === current) continue
-      merged[result.index] = replacement
-      changed = true
-      continue
-    }
+    if (result.found) continue
     merged.splice(result.index, 0, item)
     changed = true
   }
   if (!changed) return existing
   return merged
-}
-
-function mergeStoredItem<T extends { id: string }>(current: T, next: T) {
-  if (storedText(next).length < storedText(current).length) return current
-  return sameStoredItem(current, next) ? current : next
-}
-
-function storedText(input: unknown) {
-  const value = input as { text?: unknown }
-  return typeof value.text === "string" ? value.text : ""
-}
-
-function sameStoredItem(left: unknown, right: unknown) {
-  try {
-    return JSON.stringify(left) === JSON.stringify(right)
-  } catch {
-    return false
-  }
 }
 
 export function mergeParts(parts: Part[] | undefined, want: Part[]) {

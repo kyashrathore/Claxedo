@@ -4,7 +4,7 @@ import { isCanonicalWorkGraphArchiveRestoreError } from "../src/conformance/arch
 describe("archive conformance public error identity", () => {
   it("accepts the exact public error shape from a separately bundled class identity", () => {
     class SeparatelyBundledArchiveError extends Error {
-      readonly name = "WorkGraphArchiveRestoreError"
+      override readonly name = "WorkGraphArchiveRestoreError"
       readonly code = "archive_restore_rejected"
 
       constructor(readonly reason: "cross_owner") {

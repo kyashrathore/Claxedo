@@ -8,18 +8,18 @@
 //
 // Long-lived requests (SSE streams) must NOT hold a slot, or the
 // throttle's queue would never drain. Callers identify these requests via
-// the `bypassFetchThrottle` symbol below, or via an `Accept:
+// the `bypassFetchThrottle` marker below, or via an `Accept:
 // text/event-stream` header which we detect heuristically.
 
 const DEFAULT_CAP = 4
 
-// Attaching this symbol to RequestInit.signal via a side-channel won't work
-// because Request copies headers/init but not arbitrary properties. We use
-// a WeakSet of fetch input identifiers (the input arg itself when it's a
-// Request, or an explicit init.headers["X-Fetch-Bypass"] marker for the
-// string/URL case). Callers shouldn't depend on a particular shape — the
-// `bypassFetchThrottle()` helper hides it.
-const FETCH_BYPASS_HEADER = "x-fetch-bypass-throttle"
+// Keep the marker out of the HTTP request. A wire header would trigger CORS
+// preflights for control-plane calls and require every server to allow-list a
+// client-only scheduling detail. Auth fetch preserves enumerable symbol keys
+// when it enriches RequestInit, while the native fetch implementation ignores
+// the extra property.
+const FETCH_BYPASS = Symbol("fetch-bypass-throttle")
+type FetchThrottleInit = RequestInit & { [FETCH_BYPASS]?: true }
 
 function isEventStreamRequest(init?: RequestInit | undefined, input?: string | URL | Request): boolean {
   const accept = (() => {
@@ -41,31 +41,11 @@ function isEventStreamRequest(init?: RequestInit | undefined, input?: string | U
   return false
 }
 
-function hasBypassHeader(init?: RequestInit | undefined, input?: string | URL | Request): boolean {
-  const seek = (h: HeadersInit | undefined) => {
-    if (!h) return false
-    if (h instanceof Headers) return h.has(FETCH_BYPASS_HEADER)
-    if (Array.isArray(h)) return h.some(([k]) => k.toLowerCase() === FETCH_BYPASS_HEADER)
-    const rec = h as Record<string, string>
-    return rec[FETCH_BYPASS_HEADER] !== undefined || rec[FETCH_BYPASS_HEADER.toUpperCase()] !== undefined
-  }
-  if (seek(init?.headers)) return true
-  if (input instanceof Request && input.headers.has(FETCH_BYPASS_HEADER)) return true
-  return false
-}
-
-// Attaches the bypass marker to an init. Long-lived consumers (SSE, WS
-// upgrades, anything that holds a connection across many seconds) should
-// pass their init through this so the throttle leaves them alone.
-//
-// WARNING: the marker is a real header and IS sent on the wire. Do NOT use it
-// on cross-origin requests (relay/control-plane) — the CORS preflight will
-// fail unless the server allow-lists it. SSE consumers don't need it at all:
-// `Accept: text/event-stream` already bypasses the throttle.
-export function bypassFetchThrottle<T extends RequestInit | undefined>(init: T): T {
-  const headers = new Headers(init?.headers)
-  headers.set(FETCH_BYPASS_HEADER, "1")
-  return { ...init, headers } as T
+// Attaches the local-only bypass marker to an init. Long-lived consumers (SSE,
+// bounded long polls, WS upgrades) pass their init through this so they never
+// occupy an ordinary request slot.
+export function bypassFetchThrottle<T extends RequestInit>(init: T): T {
+  return { ...init, [FETCH_BYPASS]: true } as T
 }
 
 type FetchThrottle = {
@@ -140,7 +120,7 @@ export async function throttledFetch(
   init?: RequestInit | undefined,
   input?: string | URL | Request,
 ): Promise<Response> {
-  if (isEventStreamRequest(init, input) || hasBypassHeader(init, input)) {
+  if (isEventStreamRequest(init, input) || (init as FetchThrottleInit | undefined)?.[FETCH_BYPASS]) {
     return underlying()
   }
   const release = await getFetchThrottle().acquire()

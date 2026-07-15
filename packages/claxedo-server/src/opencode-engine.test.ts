@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import {
   __setOpenCodeEmbedLoaderForTests,
+  configureOpenCodeApplicationTools,
   configureOpenCodeEngine,
   drainOpenCodeEngine,
   opencodeEngineMode,
@@ -15,6 +16,7 @@ const originalFetch = globalThis.fetch
 afterEach(() => {
   globalThis.fetch = originalFetch
   __setOpenCodeEmbedLoaderForTests(undefined)
+  configureOpenCodeApplicationTools(undefined)
   configureOpenCodeEngine({ embedded: true })
   configureOpenCodeAuth(null)
 })
@@ -117,6 +119,43 @@ describe("opencode-engine embedded mode", () => {
 
     await drainOpenCodeEngine()
     expect(dispose).toHaveBeenCalledTimes(1)
+  })
+
+  test("registers process-owned tools before serving the first embedded request and disposes them on drain", async () => {
+    const order: string[] = []
+    const disposeTools = vi.fn(async () => { order.push("dispose-tools") })
+    const disposeInstances = vi.fn(async () => { order.push("dispose-instances") })
+    configureOpenCodeApplicationTools(async () => ({
+      workgraph_create_stream: {
+        description: "Create a Stream",
+        inputSchema: { type: "object" },
+        execute: async () => ({ ok: true }),
+      },
+    }))
+    __setOpenCodeEmbedLoaderForTests(async () => ({
+      ApplicationToolRuntime: {
+        register: async (tools: Record<string, unknown>) => {
+          order.push(`register:${Object.keys(tools).join(",")}`)
+          return disposeTools
+        },
+      },
+      Server: { Default: () => ({ app: { fetch: async () => {
+        order.push("request")
+        return Response.json({ ok: true })
+      } } }) },
+      InstanceRuntime: { disposeAllInstances: disposeInstances },
+    }) as never)
+
+    await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))
+    expect(order).toEqual(["register:workgraph_create_stream", "request"])
+
+    await drainOpenCodeEngine()
+    expect(order).toEqual([
+      "register:workgraph_create_stream",
+      "request",
+      "dispose-tools",
+      "dispose-instances",
+    ])
   })
 
   test("drain is a no-op when the engine was never loaded", async () => {

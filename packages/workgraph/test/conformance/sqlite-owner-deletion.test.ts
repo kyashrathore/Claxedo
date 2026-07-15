@@ -1,5 +1,5 @@
 import BetterSqlite3 from "better-sqlite3"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   createSqliteWorkGraphOwnerDeletionPort,
   createSqliteWorkGraphService,
@@ -18,10 +18,12 @@ import type {
   WorkItemID,
 } from "../../src/contracts"
 import type { WorkspaceExecutionPort } from "../../src/ports"
+import { testExecutionCapabilities } from "../test-execution-capabilities"
 
 const databases: BetterSqlite3.Database[] = []
 
 afterEach(() => {
+  vi.useRealTimers()
   databases.splice(0).forEach((database) => database.close())
 })
 
@@ -72,15 +74,15 @@ describe("SQLite WorkGraph owner deletion conformance", () => {
       setCleanupFailure: (envelopeId) => { failingEnvelope = envelopeId },
       setExecutionBusy: async (context, busy) => {
         if (!busy) {
-          database.prepare("DELETE FROM wg_v2_leases WHERE owner_user_id = ? AND id = 'owner_delete_busy'")
-            .run(context.ownerUserId)
+          database.prepare("DELETE FROM wg_v2_leases WHERE organization_id = ? AND owner_user_id = ? AND id = 'owner_delete_busy'")
+            .run(context.organizationId, context.ownerUserId)
           return
         }
         database.prepare(`
           INSERT INTO wg_v2_leases
-            (owner_user_id, id, resource_type, resource_id, holder_id, expires_at, created_at, updated_at)
-          VALUES (?, 'owner_delete_busy', 'owner_deletion', 'owner_deletion', 'conformance', 999999, 1, 1)
-        `).run(context.ownerUserId)
+            (organization_id, owner_user_id, id, resource_type, resource_id, holder_id, expires_at, created_at, updated_at)
+          VALUES (?, ?, 'owner_delete_busy', 'owner_deletion', 'owner_deletion', 'conformance', 999999, 1, 1)
+        `).run(context.organizationId, context.ownerUserId)
       },
       raceOwnerWriteDuringCleanup: async (context, startDeletion) => {
         let cleanupStarted!: () => void
@@ -134,7 +136,6 @@ describe("SQLite WorkGraph owner deletion conformance", () => {
       sessionId: "session_during_owner_delete",
       title: "Must not survive deletion",
       body: "Concurrent Session intake",
-      meaningful: true,
       observedAt: 12,
       idempotencyKey: "session_during_owner_delete",
     })).rejects.toThrow("WorkGraph owner deletion is in progress")
@@ -181,6 +182,80 @@ describe("SQLite WorkGraph owner deletion conformance", () => {
     fail = false
     await deletion.deleteOwner(context, input)
     if (countOwnerRecords(database, context) !== 0) throw new Error("Cleanup failure retry left owner rows")
+  })
+
+  it("renews the owner deletion lease throughout long external cleanup", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+    const database = new BetterSqlite3(":memory:")
+    databases.push(database)
+    const context = owner("long_cleanup_owner")
+    const service = createSqliteWorkGraphService({ database }).service
+    const streamId = await createStream(service, context, "long_cleanup_stream", "Long cleanup")
+    database.prepare("UPDATE wg_v2_streams SET envelope_identity_json = ? WHERE owner_user_id = ? AND id = ?")
+      .run(JSON.stringify({ id: "long_cleanup_envelope", workspaceId: "/tmp/long-cleanup" }), context.ownerUserId, streamId)
+    let cleanupStarted!: () => void
+    let releaseCleanup!: () => void
+    const started = new Promise<void>((resolve) => { cleanupStarted = resolve })
+    const blocked = new Promise<void>((resolve) => { releaseCleanup = resolve })
+    const deletion = createSqliteWorkGraphOwnerDeletionPort(database, workspaceExecution(async () => {
+      cleanupStarted()
+      await blocked
+    }))
+    const deleting = deletion.deleteOwner(context, { operationId: "long_cleanup_delete" as OperationID })
+    await started
+
+    await vi.advanceTimersByTimeAsync(7 * 60 * 1_000)
+
+    const receipt = database.prepare("SELECT lease_expires_at FROM wg_owner_deletion_receipts WHERE state = 'cleaning'")
+      .get() as { lease_expires_at: number }
+    expect(receipt.lease_expires_at).toBeGreaterThan(Date.now())
+    releaseCleanup()
+    await deleting
+  })
+
+  it("does not admit autonomous work while owner workspace cleanup is in progress", async () => {
+    const database = new BetterSqlite3(":memory:")
+    databases.push(database)
+    const context = owner("autonomous_owner_delete")
+    const seed = createSqliteWorkGraphService({ database }).service
+    const streamId = await createStream(seed, context, "autonomous_stream", "Autonomous deletion")
+    const workItemId = await createWorkItem(seed, context, streamId, "autonomous_item")
+    database.prepare(`
+      UPDATE wg_v2_streams SET execution_defaults_json = ?, execution_mode = 'autonomous', execution_state = 'active',
+        envelope_identity_json = ? WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+    `).run(
+      JSON.stringify(executionProfile),
+      JSON.stringify({ id: "autonomous_envelope", workspaceId: "/tmp/autonomous" }),
+      context.organizationId,
+      context.ownerUserId,
+      streamId,
+    )
+    let cleanupStarted!: () => void
+    let releaseCleanup!: () => void
+    const started = new Promise<void>((resolve) => { cleanupStarted = resolve })
+    const blocked = new Promise<void>((resolve) => { releaseCleanup = resolve })
+    const deletion = createSqliteWorkGraphOwnerDeletionPort(database, workspaceExecution(async () => {
+      cleanupStarted()
+      await blocked
+    }))
+    const deleting = deletion.deleteOwner(context, { operationId: "autonomous_owner_delete" as OperationID })
+    await started
+
+    let launches = 0
+    createSqliteWorkGraphService({
+      database,
+      executionCapabilities: testExecutionCapabilities,
+      execution: autonomousExecution(() => { launches += 1 }),
+      ids: { next: (kind) => `${kind}_during_delete` },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(database.prepare("SELECT COUNT(*) AS count FROM wg_v2_attempts WHERE work_item_id = ?").get(workItemId))
+      .toEqual({ count: 0 })
+    expect(launches).toBe(0)
+    releaseCleanup()
+    await deleting
   })
 })
 
@@ -236,29 +311,29 @@ function seedWorkspace(
     .run(JSON.stringify({ id: envelopeId, workspaceId: `/tmp/${envelopeId}` }), context.ownerUserId, streamId)
   database.prepare(`
     INSERT INTO wg_v2_attempts
-      (owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json,
+      (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_number, lifecycle, resolved_execution_profile_json,
        envelope_id, child_workspace_id, terminal_result_json, created_at, updated_at, finished_at)
-    VALUES (?, ?, ?, ?, 1, 'result', '{}', ?, ?, '{"summary":"done","artifacts":[]}', 10, 11, 11)
-  `).run(context.ownerUserId, `attempt_${workItemId}`, streamId, workItemId, envelopeId, childIsolationId)
+    VALUES (?, ?, ?, ?, ?, 1, 'result', '{}', ?, ?, '{"summary":"done","artifacts":[]}', 10, 11, 11)
+  `).run(context.organizationId, context.ownerUserId, `attempt_${workItemId}`, streamId, workItemId, envelopeId, childIsolationId)
 }
 
 function seedOperationalState(database: BetterSqlite3.Database, context: WorkGraphContext) {
   database.prepare(`
     INSERT INTO wg_v2_runtime_effects
-      (owner_user_id, id, effect_kind, resource_type, resource_id, idempotency_key, payload_json,
+      (organization_id, owner_user_id, id, effect_kind, resource_type, resource_id, idempotency_key, payload_json,
        state, attempt_count, created_at, updated_at, completed_at)
-    VALUES (?, 'completed_effect', 'cleanup', 'owner', 'owner', 'completed_effect', '{}', 'completed', 1, 1, 2, 2)
-  `).run(context.ownerUserId)
+    VALUES (?, ?, 'completed_effect', 'cleanup', 'owner', 'owner', 'completed_effect', '{}', 'completed', 1, 1, 2, 2)
+  `).run(context.organizationId, context.ownerUserId)
   database.prepare(`
     INSERT INTO wg_v2_archive_restores
-      (owner_user_id, operation_id, archive_hash, result_json, created_at)
-    VALUES (?, 'old_restore', 'archive_hash', '{}', 1)
-  `).run(context.ownerUserId)
+      (organization_id, owner_user_id, operation_id, archive_hash, result_json, created_at)
+    VALUES (?, ?, 'old_restore', 'archive_hash', '{}', 1)
+  `).run(context.organizationId, context.ownerUserId)
   database.prepare(`
     INSERT INTO wg_v2_migration_intake
-      (owner_user_id, id, legacy_table, legacy_record_id, intake_kind, reason, raw_reference_json, created_at, updated_at)
-    VALUES (?, 'migration_review', 'legacy_work', 'legacy_1', 'work_mapping_review', 'Review', '{}', 1, 1)
-  `).run(context.ownerUserId)
+      (organization_id, owner_user_id, id, legacy_table, legacy_record_id, intake_kind, reason, raw_reference_json, created_at, updated_at)
+    VALUES (?, ?, 'migration_review', 'legacy_work', 'legacy_1', 'work_mapping_review', 'Review', '{}', 1, 1)
+  `).run(context.organizationId, context.ownerUserId)
 }
 
 function countOwnerRecords(database: BetterSqlite3.Database, context: WorkGraphContext) {
@@ -277,13 +352,41 @@ function workspaceExecution(
 ): WorkspaceExecutionPort {
   return {
     provisionOrAdopt: async () => { throw new Error("unused") },
-    createChildIsolation: async () => { throw new Error("unused") },
     launch: async () => { throw new Error("unused") },
     cancel: async () => { throw new Error("unused") },
     result: async () => { throw new Error("unused") },
-    integrateResult: async () => { throw new Error("unused") },
     cleanup,
   }
+}
+
+function autonomousExecution(launched: () => void): WorkspaceExecutionPort {
+  return {
+    provisionOrAdopt: async (_context, input) => ({
+      id: "autonomous_envelope" as never,
+      streamId: input.streamId,
+      environment: input.environment,
+      repository: input.repository,
+      workspaceId: "/tmp/autonomous",
+    }),
+    launch: async (_context, input) => {
+      launched()
+      return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId }
+    },
+    cancel: async () => undefined,
+    result: async () => ({ state: "running" }),
+    cleanup: async () => undefined,
+  }
+}
+
+const executionProfile = {
+  environment: { kind: "local_worktree" as const },
+  repository: { baseRevision: "HEAD" },
+  harness: "claxedo-v2",
+  agent: "build",
+  model: { providerId: "openai", modelId: "gpt-5" },
+  effort: "high",
+  tools: [],
+  connectionIds: [],
 }
 
 function branded<Type>(value: string) {
@@ -292,6 +395,7 @@ function branded<Type>(value: string) {
 
 function owner(ownerUserId: string): WorkGraphContext {
   return {
+    organizationId: "organization" as never,
     ownerUserId: branded<OwnerUserID>(ownerUserId),
     actor: { type: "user", id: branded(ownerUserId) },
     requestId: branded(`request_${ownerUserId}`),

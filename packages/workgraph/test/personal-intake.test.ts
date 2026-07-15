@@ -2,6 +2,8 @@ import { createServer, type Server } from "node:http"
 import { afterEach, describe, expect, it } from "vitest"
 import {
   ActorIDSchema,
+  ChangeCursorSchema,
+  CommandSuccessSchema,
   ConnectionIDSchema,
   createIntakeCandidatePageCursor,
   OwnerUserIDSchema,
@@ -41,7 +43,9 @@ describe("Connections-backed personal intake", () => {
 
     await expect(create({ token: "connection-secret" })).rejects.toBeInstanceOf(SourceViewFilterError)
     await expect(create({ repo: "github_pat_1234567890abcdef" })).rejects.toBeInstanceOf(SourceViewFilterError)
-    await expect(create({ metadata: { authorization: "Bearer connection-secret" } } as unknown as Record<string, string>)).rejects.toBeInstanceOf(SourceViewFilterError)
+    const nestedCredential: Record<string, string> = {}
+    Reflect.set(nestedCredential, "metadata", { authorization: "Bearer connection-secret" })
+    await expect(create(nestedCredential)).rejects.toBeInstanceOf(SourceViewFilterError)
     await expect(create({ project: "cloud" })).rejects.toThrow('Supported filters: repo, state, labels')
     expect(state.viewRows.size).toBe(0)
   })
@@ -370,6 +374,7 @@ const fixedClock = { now: () => Date.parse("2026-07-13T12:00:00Z") }
 
 function context(owner: string): WorkGraphContext {
   return {
+    organizationId: "organization" as never,
     ownerUserId: OwnerUserIDSchema.parse(owner),
     actor: { type: "user", id: ActorIDSchema.parse(owner) },
     requestId: RequestIDSchema.parse(`request-${owner}`),
@@ -455,7 +460,7 @@ function memoryState() {
     read: async (ctx, id) => candidateRows.get(`${ctx.ownerUserId}:${id}`),
     list: async (ctx, sourceViewId) => [...candidateRows.values()].filter((candidate) => candidate.ownerUserId === ctx.ownerUserId && (!sourceViewId || (candidate.candidateKind === "external_issue" && candidate.sourceViewId === sourceViewId))),
     page: async (ctx, input) => {
-      const after = input.after ? readIntakeCandidatePageCursor(input.after, ctx.ownerUserId, input.sourceViewId) : undefined
+      const after = input.after ? readIntakeCandidatePageCursor(input.after, ctx.organizationId, ctx.ownerUserId, input.sourceViewId) : undefined
       const rows = [...candidateRows.values()]
         .filter((candidate) => candidate.ownerUserId === ctx.ownerUserId && candidate.state === "unorganized")
         .filter((candidate) => !input.sourceViewId || (candidate.candidateKind === "external_issue" && candidate.sourceViewId === input.sourceViewId))
@@ -467,6 +472,7 @@ function memoryState() {
         candidates: page,
         hasMore,
         ...(hasMore ? { nextCursor: createIntakeCandidatePageCursor({
+          organizationId: ctx.organizationId,
           ownerUserId: ctx.ownerUserId,
           ...(input.sourceViewId ? { sourceViewId: input.sourceViewId } : {}),
           updatedAt: page.at(-1)!.updatedAt,
@@ -530,14 +536,14 @@ function intakeService(
 }
 
 function commandResult(request: Parameters<Parameters<typeof createIntakeService>[0]["commands"]["execute"]>[1]) {
-  return {
-    ok: true as const,
+  return CommandSuccessSchema.parse({
+    ok: true,
     operationId: request.operationId,
-    cursor: "cursor" as never,
+    cursor: ChangeCursorSchema.parse("cursor"),
     value: request.command.type === "create_work_source"
       ? { workSourceId: "source", revisionId: "revision" }
       : { proposalId: "proposal" },
-  }
+  })
 }
 
 function ids(prefix: string) {

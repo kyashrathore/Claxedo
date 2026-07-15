@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { createRoot, createSignal } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { WaitingCard, createWaitingCardController } from "./waiting-card"
-import { WaitingPanelBody } from "./waiting-panel"
+import { WaitingPanelBody, WaitingRow } from "./waiting-panel"
+import { toWaitingRow } from "./waiting-source"
 
 afterEach(cleanup)
 
@@ -42,6 +43,9 @@ function body(items: AttentionItem[], overrides: BodyOverrides = {}) {
     loaded: true,
     error: undefined as unknown,
     retry: () => {},
+    unread: items.length,
+    onMarkAllRead: () => {},
+    onClear: () => {},
     onSelect: () => {},
   }
   return <WaitingPanelBody {...base} {...overrides} />
@@ -56,11 +60,24 @@ describe("WaitingPanelBody", () => {
     expect(screen.getByText("blocked")).toBeInTheDocument()
   })
 
-  test("selecting a row reports the underlying attention item (opens a dialog upstream)", async () => {
+  test("selecting a row pairs the underlying attention item with the row's exact element (opens a dialog upstream)", async () => {
     const onSelect = vi.fn()
     render(() => body([decisionItem], { onSelect }))
-    await fireEvent.click(screen.getByRole("button", { name: /Which auth strategy/ }))
-    expect(onSelect).toHaveBeenCalledWith(decisionItem)
+    const button = screen.getByRole("button", { name: /Which auth strategy/ })
+    await fireEvent.click(button)
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onSelect.mock.calls[0][0]).toBe(decisionItem)
+    expect(onSelect.mock.calls[0][1]).toBe(button)
+  })
+
+  test("keeps mark-read and clear actions in the full panel", async () => {
+    const onMarkAllRead = vi.fn()
+    const onClear = vi.fn()
+    render(() => body([decisionItem, workItem], { unread: 2, onMarkAllRead, onClear }))
+    await fireEvent.click(screen.getByRole("button", { name: "Mark all read" }))
+    expect(onMarkAllRead).toHaveBeenCalledOnce()
+    await fireEvent.click(screen.getByRole("button", { name: "Clear" }))
+    expect(onClear).toHaveBeenCalledOnce()
   })
 
   test("shows an explicit error state with retry — never a snapshot fallback", async () => {
@@ -71,13 +88,10 @@ describe("WaitingPanelBody", () => {
     expect(retry).toHaveBeenCalled()
   })
 
-  test("contributes no body at zero attention, but still shows a distinct loading state", () => {
-    // A successful load with zero items renders absolutely nothing — no intro, dot,
-    // list, or "Nothing is waiting on you" placeholder.
-    const { container, unmount } = render(() => body([]))
-    expect(container).toBeEmptyDOMElement()
-    expect(screen.queryByText("Nothing is waiting on you.")).not.toBeInTheDocument()
-    expect(container.querySelector(".workgraph-waiting-intro")).toBeNull()
+  test("shows a calm empty state at zero attention and a distinct loading state", () => {
+    const { unmount } = render(() => body([]))
+    expect(screen.getByRole("status")).toHaveTextContent("Nothing needs you right now")
+    expect(screen.getByText(/buzz you when that changes/)).toBeInTheDocument()
     unmount()
     render(() => body([], { loading: true, loaded: false }))
     expect(screen.getByRole("status")).toHaveTextContent("Loading")
@@ -92,44 +106,94 @@ describe("WaitingPanelBody", () => {
   })
 })
 
+describe("WaitingRow", () => {
+  // The shared row backs both the ordinary panel list and the compact contextual
+  // card. Each trigger must report its own exact button element via
+  // event.currentTarget so the caller can anchor to the precise row that fired.
+  test("an ordinary trigger reports its exact invoking element", async () => {
+    const onSelect = vi.fn()
+    render(() => <WaitingRow view={toWaitingRow(decisionItem)} onSelect={onSelect} />)
+    const button = screen.getByRole("button")
+    await fireEvent.click(button)
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onSelect.mock.calls[0][0]).toBe(button)
+  })
+
+  test("a compact trigger reports its exact invoking element", async () => {
+    const onSelect = vi.fn()
+    render(() => <WaitingRow view={toWaitingRow(workItem)} onSelect={onSelect} compact />)
+    const button = screen.getByRole("button")
+    await fireEvent.click(button)
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onSelect.mock.calls[0][0]).toBe(button)
+  })
+})
+
 describe("createWaitingCardController", () => {
-  test("hides after dismissal and reappears only for newly unseen attention", () => {
+  test("derives unread state from backend acknowledgements and only dismisses the current local preview", () => {
     createRoot(() => {
       const [items, setItems] = createSignal<AttentionItem[]>([decisionItem, workItem])
       const controller = createWaitingCardController(items)
-      expect(controller.visible(false)).toBe(true)
-      // Dismiss: no longer visible for the same items…
-      controller.markAllSeen()
-      expect(controller.visible(false)).toBe(false)
-      // …and stays hidden even as the same items persist.
-      setItems([decisionItem, workItem])
-      expect(controller.visible(false)).toBe(false)
-      // New attention makes it reappear.
-      setItems([decisionItem, workItem, recapItem])
-      expect(controller.visible(false)).toBe(true)
+      expect(controller.mode(false)).toBe("inline")
+      expect(controller.unread()).toBe(2)
+      setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, readAt: 2 }])
+      expect(controller.mode(false)).toBe("inline")
+      expect(controller.unread()).toBe(0)
+      controller.dismiss()
+      expect(controller.mode(false)).toBeUndefined()
+      setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, readAt: 2 }])
+      expect(controller.mode(false)).toBeUndefined()
+      setItems([{ ...decisionItem, readAt: 2 }, { ...workItem, readAt: 2 }, recapItem])
+      expect(controller.mode(false)).toBe("inline")
+      expect(controller.unread()).toBe(1)
     })
   })
 
-  test("is never visible while the panel is open", () => {
+  test("hides for the main panel and floats only when explicitly reopened over that panel state", () => {
     createRoot(() => {
       const controller = createWaitingCardController(() => [decisionItem])
-      expect(controller.visible(true)).toBe(false)
+      const firstPanel = {}
+      expect(controller.mode(true, firstPanel)).toBeUndefined()
+      controller.reveal(true, firstPanel)
+      expect(controller.mode(true, firstPanel)).toBe("floating")
+      expect(controller.mode(true, {})).toBeUndefined()
+      expect(controller.mode(false)).toBe("inline")
     })
   })
 })
 
 describe("WaitingCard", () => {
-  test("previews items, exposes dismiss and open-panel affordances", async () => {
-    const onDismiss = vi.fn()
-    const onOpen = vi.fn()
-    render(() => <WaitingCard items={[recapItem, decisionItem, workItem]} total={5} working={1} onOpenPanel={onOpen} onDismiss={onDismiss} onSelect={() => {}} />)
+  test("previews items with one count and leaves management actions to the full panel", () => {
+    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem, workItem]} total={5} unread={3} onClose={() => {}} onSelect={() => {}} />)
     // Lead recap gets the rich treatment.
     expect(screen.getByText("Latest recap")).toBeInTheDocument()
     expect(screen.getByText("Idempotency keys shipped in PR #482.")).toBeInTheDocument()
-    expect(screen.getByText("1 working")).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole("button", { name: "Open Waiting panel" }))
-    expect(onOpen).toHaveBeenCalled()
-    await fireEvent.click(screen.getByRole("button", { name: "Dismiss waiting card" }))
-    expect(onDismiss).toHaveBeenCalled()
+    expect(screen.getByText("5")).toBeInTheDocument()
+    expect(screen.queryByText(/unread/)).toBeNull()
+    expect(screen.queryByRole("button", { name: "Mark all read" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Clear" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Open Waiting panel" })).toBeNull()
+  })
+
+  // Both card triggers must pair their item with the precise element that fired,
+  // so the caller can anchor focus back to it — never discard the invoker.
+  test("the lead recap button reports its item and its exact element", async () => {
+    const onSelect = vi.fn()
+    render(() => <WaitingCard mode="inline" items={[recapItem, decisionItem]} total={2} unread={2} onClose={() => {}} onSelect={onSelect} />)
+    const recapButton = screen.getByText("Latest recap").closest("button") as HTMLElement
+    await fireEvent.click(recapButton)
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onSelect.mock.calls[0][0]).toBe(recapItem)
+    expect(onSelect.mock.calls[0][1]).toBe(recapButton)
+  })
+
+  test("a compact row reports its item and its exact element", async () => {
+    const onSelect = vi.fn()
+    render(() => <WaitingCard mode="inline" items={[decisionItem, workItem]} total={2} unread={2} onClose={() => {}} onSelect={onSelect} />)
+    const row = screen.getByRole("button", { name: /Backfill invoices/ })
+    await fireEvent.click(row)
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onSelect.mock.calls[0][0]).toBe(workItem)
+    expect(onSelect.mock.calls[0][1]).toBe(row)
   })
 })

@@ -22,6 +22,7 @@ import {
 describe("WorkGraph contracts", () => {
   it("accepts a trusted owner context and rejects unknown or empty identity fields", () => {
     const context = WorkGraphContextSchema.parse({
+      organizationId: "organization_01",
       ownerUserId: "user_01",
       actor: { type: "agent", id: "agent_01" },
       requestId: "request_01",
@@ -60,9 +61,6 @@ describe("WorkGraph contracts", () => {
       effort: "high",
       tools: ["shell", "browser"],
       connectionIds: ["connection_01"],
-      isolation: "stream",
-      cleanup: "destroy_on_close",
-      integration: "pull_request",
     })
 
     expect(Object.isFrozen(profile)).toBe(true)

@@ -1,37 +1,49 @@
 import type { AttentionItem } from "@claxedo/workgraph/contracts"
+import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { toWaitingRow } from "./waiting-source"
 import { WaitingRow } from "./waiting-panel"
 
-/**
- * Controls when the compact contextual card appears. It surfaces for newly
- * unseen attention while the full panel is closed, and — once dismissed — does
- * not reopen for the same items. New attention (a key not seen before) makes it
- * reappear. Opening the panel counts as seeing everything.
- */
 export function createWaitingCardController(items: () => AttentionItem[]) {
-  const [seen, setSeen] = createSignal<Set<string>>(new Set())
-  const keys = createMemo(() => items().map((item) => toWaitingRow(item).key))
-  const hasUnseen = createMemo(() => keys().some((key) => !seen().has(key)))
-  const markAllSeen = () => setSeen(new Set(keys()))
+  const [dismissed, setDismissed] = createSignal<Set<string>>(new Set())
+  const [floating, setFloating] = createSignal<{ identity: unknown }>()
+  const visibleItems = createMemo(() => items().filter((item) => !dismissed().has(toWaitingRow(item).key)))
+  const unread = createMemo(() => visibleItems().filter((item) => item.readAt === undefined).length)
+  const dismiss = () => {
+    setDismissed((current) => new Set([...current, ...visibleItems().map((item) => toWaitingRow(item).key)]))
+    setFloating()
+  }
   return {
-    hasUnseen,
-    markAllSeen,
-    /** Whether the card should render: unseen attention exists and panel is closed. */
-    visible: (panelOpen: boolean) => !panelOpen && items().length > 0 && hasUnseen(),
+    items: visibleItems,
+    unread,
+    dismiss,
+    reveal: (panelOpen: boolean, identity?: unknown) => {
+      setDismissed(new Set<string>())
+      if (panelOpen) setFloating({ identity })
+    },
+    closeFloating: () => setFloating(),
+    mode: (panelOpen: boolean, identity?: unknown) => {
+      if (visibleItems().length === 0) return undefined
+      if (!panelOpen) return "inline" as const
+      const request = floating()
+      if (request && request.identity === identity) return "floating" as const
+      return undefined
+    },
   }
 }
 
 /** Compact contextual attention card. Previews the four most recent items plus
  *  the total, is dismissible, and opens the full Waiting panel. */
 export function WaitingCard(props: {
+  mode: "inline" | "floating"
   items: AttentionItem[]
   total: number
-  working?: number
-  onOpenPanel: () => void
-  onDismiss: () => void
-  onSelect: (item: AttentionItem) => void
+  unread: number
+  onClose: () => void
+  /** Reports the selected item paired with its exact invoking element (the lead
+   *  recap button or a compact row button) so the caller can restore focus. */
+  onSelect: (item: AttentionItem, element: HTMLElement) => void
 }) {
   const preview = createMemo(() => props.items.slice(0, 4))
   const leadRecap = createMemo(() => {
@@ -41,33 +53,28 @@ export function WaitingCard(props: {
   const rows = createMemo(() => (leadRecap() ? preview().slice(1) : preview()))
 
   return (
-    <div class="workgraph-card" role="dialog" aria-label="Waiting on you">
+    <aside class="workgraph-card" classList={{ "is-inline": props.mode === "inline", "is-floating": props.mode === "floating" }} aria-label="Waiting on you">
       <div class="workgraph-card-head">
-        <span class="workgraph-attention-dot" aria-hidden="true" />
-        <span class="text-[12px] font-semibold text-text-strong">Waiting on you</span>
-        <span class="workgraph-count" aria-hidden="true">
-          {props.total}
-        </span>
-        <Show when={props.working}>
-          <span class="workgraph-card-working text-text-weaker">{props.working} working</span>
-        </Show>
+        <span class="workgraph-card-title-icon" aria-hidden="true"><Icon name="workgraph" size="small" /></span>
+        <span class="workgraph-card-title text-text-weak">Needs you</span>
         <span class="workgraph-card-gap" aria-hidden="true" />
-        <IconButton variant="ghost" size="small" icon="close" aria-label="Dismiss waiting card" onClick={props.onDismiss} />
+        <Show when={props.unread > 0}><span class="workgraph-attention-dot" aria-label={`${props.unread} unread`} /></Show>
+        <span class="workgraph-card-total text-text-base" aria-label={`${props.total} waiting`}>{props.total}</span>
+        <Show when={props.mode === "floating"}>
+          <IconButton variant="ghost" size="small" icon="close" aria-label="Close waiting context" onClick={props.onClose} />
+        </Show>
       </div>
       <Show when={leadRecap()}>
         {(recap) => (
-          <button type="button" class="workgraph-card-recap" onClick={() => props.onSelect(recap())}>
+          <button type="button" class="workgraph-card-recap" onClick={(event) => props.onSelect(recap(), event.currentTarget)}>
             <span class="workgraph-card-recap-label text-text-weaker">Latest recap</span>
             <span class="workgraph-card-recap-body text-text-base">{recap().recap.summary}</span>
           </button>
         )}
       </Show>
       <div class="workgraph-card-rows">
-        <For each={rows()}>{(item) => <WaitingRow view={toWaitingRow(item)} onSelect={() => props.onSelect(item)} compact />}</For>
+        <For each={rows()}>{(item) => <WaitingRow view={toWaitingRow(item)} onSelect={(element) => props.onSelect(item, element)} compact />}</For>
       </div>
-      <button type="button" class="workgraph-card-open" onClick={props.onOpenPanel}>
-        Open Waiting panel
-      </button>
-    </div>
+    </aside>
   )
 }

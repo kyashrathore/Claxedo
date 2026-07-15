@@ -965,6 +965,7 @@ describe("harness-scoped resolution", () => {
       "agent-config.ts",
       "bootstrap.ts",
       "credential.ts",
+      "docs.ts",
       "events.ts",
       // Hosted (Cloudflare Worker) control-plane routes. Mounted by hosted-app.ts
       // (the Worker entrypoint), NOT by the local Node server.ts. See
@@ -976,8 +977,10 @@ describe("harness-scoped resolution", () => {
       // /api/claxedo/bootstrap, /project, /project/current, /path, /provider)
       // so the app shell boots against a hosted central with no local runner.
       "hosted-shell.ts",
+      "hosted-workgraph-admin.ts",
       "hosted-workspace.ts",
       "http.ts",
+      "internal-admin-auth.ts",
       // Node-only disk-backed relay target lookups injected into the shared
       // internal-relay route from server.ts (keeps workspace-store out of the
       // Worker graph).

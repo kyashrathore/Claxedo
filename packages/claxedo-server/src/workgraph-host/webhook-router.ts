@@ -14,6 +14,7 @@ type WebhookIntake = Readonly<{
 export function createWorkGraphWebhookRouter(input: Readonly<{
   verifier: ConnectionWebhookVerifier
   intake: WebhookIntake
+  resolveOrganizationId(connectionId: string): Promise<string | undefined>
   maxBodyBytes?: number
 }>) {
   const router = new Hono()
@@ -43,8 +44,14 @@ export function createWorkGraphWebhookRouter(input: Readonly<{
     if (!verified || verified.connectionId !== context.req.param("connectionId") || verified.provider !== provider) {
       return context.json({ error: { code: "invalid_webhook_signature" } }, 401)
     }
+    const organizationId = await input.resolveOrganizationId(verified.connectionId).catch(() => undefined)
+    if (!organizationId) {
+      context.header("retry-after", "60")
+      return context.json({ error: { code: "webhook_organization_unavailable", retryable: true } }, 503)
+    }
     const result = await input.intake.receive({
       ...verified,
+      organizationId,
       connectionId: ConnectionIDSchema.parse(verified.connectionId),
       provider,
     }).catch(() => undefined)
@@ -56,7 +63,9 @@ export function createWorkGraphWebhookRouter(input: Readonly<{
       context.header("retry-after", "1")
       return context.json({ ...result, retryable: true }, 503)
     }
-    return context.json(result, result.reason === "already_processed" ? 200 : 202)
+    // Linear treats every status other than exactly 200 as a failed delivery.
+    // Other providers accept the asynchronous 202 admission response.
+    return context.json(result, result.reason === "already_processed" || provider === "linear" ? 200 : 202)
   })
 
   return router

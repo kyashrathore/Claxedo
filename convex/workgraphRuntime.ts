@@ -3,15 +3,36 @@ import { v } from "convex/values"
 import { serviceMutation } from "./model"
 import type { DataModel, Doc, Id } from "./_generated/dataModel"
 import { removeAttentionRecord, syncAttentionRecord } from "./workgraphAttention"
+import { appendSystemWorkGraphChange, reconcileAutonomousStreams } from "./workgraphCommands"
 
 type RuntimeMutationCtx = GenericMutationCtx<DataModel>
 
+/** Trusted non-WorkGraph registry used only to dispatch tenant-scoped workers. */
+export const listWorkerTenants = serviceMutation({
+  args: { limit: v.number() },
+  handler: async (ctx, args) =>
+    (await ctx.db.query("org_memberships").take(Math.max(1, Math.min(500, args.limit)))).map((membership) => ({
+      organizationId: String(membership.org_id),
+      ownerUserId: String(membership.user_id),
+    })),
+})
+
 /** Claim durable advisory launch effects. Convex admission remains the authority. */
 export const claimLaunches = serviceMutation({
-  args: { worker_id: v.string(), now: v.number(), limit: v.number() },
+  args: {
+    organization_id: v.id("orgs"),
+    owner_user_id: v.id("users"),
+    worker_id: v.string(),
+    now: v.number(),
+    limit: v.number(),
+  },
   handler: async (ctx, args) => {
+    await reconcileAutonomousStreams(ctx, args.organization_id, args.owner_user_id, args.now, args.limit)
     const rows = await ctx.db
       .query("workgraph_outbox")
+      .withIndex("by_tenant", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
       .filter((query) =>
         query.and(
           query.eq(query.field("effect_type"), "launch_attempt"),
@@ -25,20 +46,31 @@ export const claimLaunches = serviceMutation({
       .take(Math.max(1, Math.min(25, args.limit)))
     return await Promise.all(
       rows.map(async (row) => {
+        if (!row.organization_id) return null
         const payload = row.payload as { attemptId: string; leaseEpoch: number }
         const attempt = await ctx.db
           .query("workgraph_attempts")
-          .withIndex("by_owner_id", (query) => query.eq("owner_user_id", row.owner_user_id))
-          .filter((query) => query.eq(query.field("id"), payload.attemptId))
+          .withIndex("by_tenant_id", (query: any) =>
+            query.eq("organization_id", row.organization_id).eq("owner_user_id", row.owner_user_id),
+          )
+          .filter((query) =>
+            query.and(
+              query.eq(query.field("organization_id"), row.organization_id),
+              query.eq(query.field("id"), payload.attemptId),
+            ),
+          )
           .unique()
         const lease = attempt
           ? await ctx.db
               .query("workgraph_leases")
-              .withIndex("by_owner_resource", (query) => query.eq("owner_user_id", row.owner_user_id))
+              .withIndex("by_tenant_resource", (query: any) =>
+                query.eq("organization_id", row.organization_id).eq("owner_user_id", row.owner_user_id),
+              )
               .filter((query) =>
                 query.and(
                   query.eq(query.field("resource_type"), "work_item"),
                   query.eq(query.field("resource_id"), attempt.work_item_id),
+                  query.eq(query.field("organization_id"), row.organization_id),
                 ),
               )
               .unique()
@@ -60,15 +92,17 @@ export const claimLaunches = serviceMutation({
         }
         const item = await ctx.db
           .query("workgraph_work_items")
-          .withIndex("by_owner_id", (query) => query.eq("owner_user_id", row.owner_user_id))
-          .filter((query) => query.eq(query.field("id"), attempt.work_item_id))
+          .withIndex("by_tenant_id", (query: any) =>
+            query.eq("organization_id", row.organization_id).eq("owner_user_id", row.owner_user_id),
+          )
+          .filter((query) =>
+            query.and(
+              query.eq(query.field("organization_id"), row.organization_id),
+              query.eq(query.field("id"), attempt.work_item_id),
+            ),
+          )
           .unique()
-        const org = await ctx.db
-          .query("orgs")
-          .withIndex("by_owner", (query) => query.eq("owner_user_id", row.owner_user_id))
-          .filter((query) => query.eq(query.field("kind"), "personal"))
-          .unique()
-        if (!item || !org) {
+        if (!item || attempt.organization_id !== row.organization_id || item.organization_id !== row.organization_id) {
           await ctx.db.patch(row._id, {
             status: "failed",
             last_error: "Attempt owner or Work Item is unavailable",
@@ -77,6 +111,7 @@ export const claimLaunches = serviceMutation({
           return null
         }
         const renewal = await renewWorkGraphAttemptLease(ctx, {
+          organizationId: row.organization_id,
           ownerUserId: row.owner_user_id,
           attemptId: attempt.id,
           expectedLeaseEpoch: payload.leaseEpoch,
@@ -91,6 +126,7 @@ export const claimLaunches = serviceMutation({
           })
           return null
         }
+        const retryCount = row.attempt_count
         await ctx.db.patch(row._id, {
           payload: { ...payload, leaseEpoch: renewal.leaseEpoch },
           status: "claimed",
@@ -106,7 +142,11 @@ export const claimLaunches = serviceMutation({
           streamId: attempt.stream_id,
           workItemId: attempt.work_item_id,
           leaseEpoch: renewal.leaseEpoch,
-          orgId: String(org._id),
+          queueLagMs: Math.max(0, args.now - row.available_at),
+          activeLeaseAgeMs: Math.max(0, args.now - (lease.updated_at ?? args.now)),
+          expiredRecovery: renewal.recovered,
+          retryCount,
+          orgId: String(row.organization_id),
           title: item.title,
           prompt: item.description?.trim() || item.title,
           profile: attempt.resolved_execution,
@@ -117,14 +157,24 @@ export const claimLaunches = serviceMutation({
 })
 
 export const claimControlEffects = serviceMutation({
-  args: { worker_id: v.string(), now: v.number(), limit: v.number() },
+  args: {
+    organization_id: v.id("orgs"),
+    owner_user_id: v.id("users"),
+    worker_id: v.string(),
+    now: v.number(),
+    limit: v.number(),
+  },
   handler: async (ctx, args) => {
     const rows = await ctx.db
       .query("workgraph_outbox")
+      .withIndex("by_tenant", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
       .filter((query) =>
         query.and(
           query.or(
             query.eq(query.field("effect_type"), "interrupt_attempt"),
+            query.eq(query.field("effect_type"), "finalize_stream"),
             query.eq(query.field("effect_type"), "cleanup_stream"),
           ),
           query.or(
@@ -137,12 +187,7 @@ export const claimControlEffects = serviceMutation({
       .take(Math.max(1, Math.min(25, args.limit)))
     return await Promise.all(
       rows.map(async (row) => {
-        const org = await ctx.db
-          .query("orgs")
-          .withIndex("by_owner", (query) => query.eq("owner_user_id", row.owner_user_id))
-          .filter((query) => query.eq(query.field("kind"), "personal"))
-          .unique()
-        if (!org || !row.stream_id) {
+        if (!row.organization_id || !row.stream_id) {
           await ctx.db.patch(row._id, {
             status: "failed",
             last_error: "Control effect owner or Stream identity is unavailable",
@@ -159,7 +204,7 @@ export const claimControlEffects = serviceMutation({
         })
         return {
           ownerUserId: String(row.owner_user_id),
-          orgId: String(org._id),
+          orgId: String(row.organization_id),
           outboxId: row.id,
           streamId: row.stream_id,
           effectType: row.effect_type,
@@ -172,6 +217,7 @@ export const claimControlEffects = serviceMutation({
 
 export const confirmLaunch = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_user_id: v.id("users"),
     outbox_id: v.string(),
     attempt_id: v.string(),
@@ -188,8 +234,48 @@ export const confirmLaunch = serviceMutation({
   },
 })
 
+export const settleRejectedProvision = serviceMutation({
+  args: {
+    organization_id: v.id("orgs"),
+    owner_user_id: v.id("users"),
+    outbox_id: v.string(),
+    attempt_id: v.string(),
+    worker_id: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const launch = await ctx.db
+      .query("workgraph_outbox")
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("id"), args.outbox_id),
+        ),
+      )
+      .unique()
+    if (!launch) return { settled: false }
+    if (launch.status === "cancelled") return { settled: true }
+    const payload = launch.payload as { attemptId?: string }
+    if (launch.status !== "claimed" || launch.claimed_by !== args.worker_id || payload.attemptId !== args.attempt_id) {
+      return { settled: false }
+    }
+    await ctx.db.patch(launch._id, {
+      status: "cancelled",
+      claimed_by: undefined,
+      claim_expires_at: undefined,
+      last_error: "Launch placement was rejected by its durable fence",
+      updated_at: args.now,
+    })
+    return { settled: true }
+  },
+})
+
 export const compensateRejectedLaunch = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_user_id: v.id("users"),
     outbox_id: v.string(),
     attempt_id: v.string(),
@@ -201,13 +287,27 @@ export const compensateRejectedLaunch = serviceMutation({
   handler: async (ctx, args) => {
     const attempt = await ctx.db
       .query("workgraph_attempts")
-      .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-      .filter((query) => query.eq(query.field("id"), args.attempt_id))
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("id"), args.attempt_id),
+        ),
+      )
       .unique()
     const launch = await ctx.db
       .query("workgraph_outbox")
-      .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-      .filter((query) => query.eq(query.field("id"), args.outbox_id))
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("id"), args.outbox_id),
+        ),
+      )
       .unique()
     if (!attempt || !launch || launch.claimed_by !== args.worker_id) return { settled: false }
     await ctx.db.patch(launch._id, {
@@ -218,8 +318,15 @@ export const compensateRejectedLaunch = serviceMutation({
     const key = `${attempt.id}:interrupt`
     const control = await ctx.db
       .query("workgraph_outbox")
-      .withIndex("by_owner_idempotency", (query) => query.eq("owner_user_id", args.owner_user_id))
-      .filter((query) => query.eq(query.field("idempotency_key"), key))
+      .withIndex("by_tenant_idempotency", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("idempotency_key"), key),
+        ),
+      )
       .unique()
     const payload = {
       finalize: "cancel",
@@ -238,6 +345,7 @@ export const compensateRejectedLaunch = serviceMutation({
       })
     else
       await ctx.db.insert("workgraph_outbox", {
+        organization_id: args.organization_id,
         owner_user_id: args.owner_user_id,
         id: `outbox_${key}`,
         operation_id: launch.operation_id,
@@ -268,6 +376,7 @@ export const compensateRejectedLaunch = serviceMutation({
 
 export const completeControlEffect = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_user_id: v.id("users"),
     outbox_id: v.string(),
     worker_id: v.string(),
@@ -279,20 +388,35 @@ export const completeControlEffect = serviceMutation({
   handler: async (ctx, args) => {
     const row = await ctx.db
       .query("workgraph_outbox")
-      .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-      .filter((query) => query.eq(query.field("id"), args.outbox_id))
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("id"), args.outbox_id),
+        ),
+      )
       .unique()
     if (!row) {
       const receipt = await ctx.db
         .query("workgraph_cleanup_receipts")
-        .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-        .filter((query) => query.eq(query.field("id"), args.outbox_id))
+        .withIndex("by_tenant_id", (query: any) =>
+          query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+        )
+        .filter((query) =>
+          query.and(
+            query.eq(query.field("organization_id"), args.organization_id),
+            query.eq(query.field("id"), args.outbox_id),
+          ),
+        )
         .unique()
       return { settled: !!receipt }
     }
     if (row.status !== "claimed" || row.claimed_by !== args.worker_id) return { settled: false }
     if (!args.ok) {
-      const exhausted = row.attempt_count >= 3
+      const replacement = (row.payload as { finalize?: string }).finalize === "replace"
+      const exhausted = row.attempt_count >= 3 && !replacement
       await ctx.db.patch(row._id, {
         status: exhausted ? "failed" : "pending",
         available_at: args.now + 60_000,
@@ -301,32 +425,56 @@ export const completeControlEffect = serviceMutation({
         last_error: args.reason,
         updated_at: args.now,
       })
-      if (exhausted) await surfaceControlAttention(ctx, row, args.reason ?? "Hosted cleanup failed", args.now)
+      if (row.attempt_count >= 3)
+        await surfaceControlAttention(ctx, row, args.reason ?? "Hosted lifecycle finalization failed", args.now)
       return { settled: true }
     }
-    const payload = row.payload as { finalize?: string; attemptId?: string }
+    const payload = row.payload as { finalize?: string; attemptId?: string; attemptIds?: string[]; proposalId?: string }
     const controlPayload = row.payload as { sessionId?: string }
     if (payload.finalize === "cancel" && controlPayload.sessionId !== args.observed_session_id)
       return { settled: false }
     if (payload.finalize === "cancel" && payload.attemptId) {
-      if (!(await finalizeAttemptCancellation(ctx, args.owner_user_id, payload.attemptId, args.now)))
+      if (
+        !(await finalizeAttemptCancellation(ctx, args.organization_id, args.owner_user_id, payload.attemptId, args.now))
+      )
         return { settled: false }
     }
     if (payload.finalize === "close" && row.stream_id) {
-      const attempts = await streamRows(ctx, "workgraph_attempts", args.owner_user_id, row.stream_id)
+      const attempts = await streamRows(
+        ctx,
+        args.organization_id,
+        "workgraph_attempts",
+        args.owner_user_id,
+        row.stream_id,
+      )
       const finalized = await Promise.all(
         attempts
           .filter((attempt) => attempt.cancellation?.state === "pending")
-          .map((attempt) => finalizeAttemptCancellation(ctx, args.owner_user_id, attempt.id, args.now)),
+          .map((attempt) =>
+            finalizeAttemptCancellation(ctx, args.organization_id, args.owner_user_id, attempt.id, args.now),
+          ),
       )
       if (finalized.includes(false)) return { settled: false }
       const stream = await ctx.db
         .query("workgraph_streams")
-        .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-        .filter((query) => query.eq(query.field("id"), row.stream_id))
+        .withIndex("by_tenant_id", (query: any) =>
+          query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+        )
+        .filter((query) =>
+          query.and(
+            query.eq(query.field("organization_id"), args.organization_id),
+            query.eq(query.field("id"), row.stream_id),
+          ),
+        )
         .unique()
       if (stream?.closure?.state === "pending") {
-        const items = await streamRows(ctx, "workgraph_work_items", args.owner_user_id, row.stream_id)
+        const items = await streamRows(
+          ctx,
+          args.organization_id,
+          "workgraph_work_items",
+          args.owner_user_id,
+          row.stream_id,
+        )
         const reason = typeof stream.closure.reason === "string" ? stream.closure.reason : "Stream closed"
         await Promise.all(
           items
@@ -350,8 +498,54 @@ export const completeControlEffect = serviceMutation({
         })
       }
     }
+    if (payload.finalize === "replace" && row.stream_id) {
+      const finalized = await Promise.all(
+        (payload.attemptIds ?? []).map((attemptId) =>
+          finalizeAttemptCancellation(ctx, args.organization_id, args.owner_user_id, attemptId, args.now),
+        ),
+      )
+      if (finalized.includes(false)) return { settled: false }
+      const stream = await ctx.db
+        .query("workgraph_streams")
+        .withIndex("by_tenant_id", (query: any) =>
+          query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+        )
+        .filter((query) =>
+          query.and(
+            query.eq(query.field("organization_id"), args.organization_id),
+            query.eq(query.field("id"), row.stream_id),
+          ),
+        )
+        .unique()
+      if (
+        stream?.replacement_reset &&
+        stream.replacement_reset.state !== "completed" &&
+        (!payload.proposalId || stream.replacement_reset.proposalId === payload.proposalId)
+      ) {
+        await ctx.db.patch(stream._id, {
+          replacement_reset: { ...stream.replacement_reset, state: "completed", completedAt: args.now },
+          envelope: undefined,
+          row_version: stream.row_version + 1,
+          updated_at: args.now,
+        })
+        await appendSystemWorkGraphChange(ctx, {
+          organizationId: String(args.organization_id),
+          ownerUserId: String(args.owner_user_id),
+          operationId: `replacement_reset_completed_${row.id}`,
+          eventId: `event_replacement_reset_completed_${row.id}`,
+          changeId: `change_replacement_reset_completed_${row.id}`,
+          resourceType: "stream",
+          resourceId: row.stream_id,
+          changeType: "stream_replacement_reset_completed",
+          payload: { streamId: row.stream_id, proposalId: payload.proposalId ?? stream.replacement_reset.proposalId },
+          actorId: "workgraph_runtime",
+          now: args.now,
+        })
+      }
+    }
     if (payload.finalize === "delete" && row.stream_id) {
       await ctx.db.insert("workgraph_cleanup_receipts", {
+        organization_id: args.organization_id,
         owner_user_id: args.owner_user_id,
         id: row.id,
         idempotency_key: row.idempotency_key,
@@ -360,7 +554,7 @@ export const completeControlEffect = serviceMutation({
         schema_version: 1,
         created_at: args.now,
       })
-      await deleteStreamGraph(ctx, args.owner_user_id, row.stream_id)
+      await deleteStreamGraph(ctx, args.organization_id, args.owner_user_id, row.stream_id)
       return { settled: true }
     }
     await ctx.db.patch(row._id, {
@@ -380,12 +574,20 @@ async function surfaceControlAttention(
   reason: string,
   now: number,
 ) {
+  if (!row.organization_id) throw new Error("WorkGraph organization is required")
   const payload = row.payload as { finalize?: string; attemptId?: string }
   if (payload.finalize === "cancel" && payload.attemptId) {
     const attempt = await ctx.db
       .query("workgraph_attempts")
-      .withIndex("by_owner_id", (query) => query.eq("owner_user_id", row.owner_user_id))
-      .filter((query) => query.eq(query.field("id"), payload.attemptId))
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", row.organization_id).eq("owner_user_id", row.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), row.organization_id),
+          query.eq(query.field("id"), payload.attemptId),
+        ),
+      )
       .unique()
     if (attempt) {
       const attention = {
@@ -404,10 +606,39 @@ async function surfaceControlAttention(
   if (!row.stream_id) return
   const stream = await ctx.db
     .query("workgraph_streams")
-    .withIndex("by_owner_id", (query) => query.eq("owner_user_id", row.owner_user_id))
-    .filter((query) => query.eq(query.field("id"), row.stream_id))
+    .withIndex("by_tenant_id", (query: any) =>
+      query.eq("organization_id", row.organization_id).eq("owner_user_id", row.owner_user_id),
+    )
+    .filter((query) =>
+      query.and(
+        query.eq(query.field("organization_id"), row.organization_id),
+        query.eq(query.field("id"), row.stream_id),
+      ),
+    )
     .unique()
   if (!stream) return
+  if (payload.finalize === "replace") {
+    if (!stream.replacement_reset || stream.replacement_reset.state !== "pending") return
+    await ctx.db.patch(stream._id, {
+      replacement_reset: { ...stream.replacement_reset, state: "attention" },
+      row_version: stream.row_version + 1,
+      updated_at: now,
+    })
+    await appendSystemWorkGraphChange(ctx, {
+      organizationId: String(row.organization_id),
+      ownerUserId: String(row.owner_user_id),
+      operationId: `replacement_reset_attention_${row.id}`,
+      eventId: `event_replacement_reset_attention_${row.id}`,
+      changeId: `change_replacement_reset_attention_${row.id}`,
+      resourceType: "stream",
+      resourceId: row.stream_id,
+      changeType: "stream_replacement_reset_attention",
+      payload: { streamId: row.stream_id, proposalId: stream.replacement_reset.proposalId, reason },
+      actorId: "workgraph_runtime",
+      now,
+    })
+    return
+  }
   const field = payload.finalize === "delete" ? "deletion" : "closure"
   await ctx.db.patch(stream._id, {
     [field]: { ...((stream[field] as object | undefined) ?? {}), state: "attention", reason, at: now },
@@ -417,20 +648,30 @@ async function surfaceControlAttention(
 
 async function finalizeAttemptCancellation(
   ctx: RuntimeMutationCtx,
+  organization: Id<"orgs">,
   owner: Id<"users">,
   attemptId: string,
   now: number,
 ) {
   const attempt = await ctx.db
     .query("workgraph_attempts")
-    .withIndex("by_owner_id", (query) => query.eq("owner_user_id", owner))
-    .filter((query) => query.eq(query.field("id"), attemptId))
+    .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", organization).eq("owner_user_id", owner))
+    .filter((query) =>
+      query.and(query.eq(query.field("organization_id"), organization), query.eq(query.field("id"), attemptId)),
+    )
     .unique()
   if (!attempt || attempt.cancellation?.state !== "pending") return true
   const launch = await ctx.db
     .query("workgraph_outbox")
-    .withIndex("by_owner_idempotency", (query) => query.eq("owner_user_id", owner))
-    .filter((query) => query.eq(query.field("idempotency_key"), `${attempt.id}:launch`))
+    .withIndex("by_tenant_idempotency", (query: any) =>
+      query.eq("organization_id", organization).eq("owner_user_id", owner),
+    )
+    .filter((query) =>
+      query.and(
+        query.eq(query.field("organization_id"), organization),
+        query.eq(query.field("idempotency_key"), `${attempt.id}:launch`),
+      ),
+    )
     .unique()
   if (launch && ["pending", "claimed"].includes(launch.status)) return false
   await ctx.db.patch(attempt._id, {
@@ -442,19 +683,25 @@ async function finalizeAttemptCancellation(
   })
   const lease = await ctx.db
     .query("workgraph_leases")
-    .withIndex("by_owner_resource", (query) => query.eq("owner_user_id", owner))
-    .filter((query) =>
-      query.and(
-        query.eq(query.field("resource_type"), "work_item"),
-        query.eq(query.field("resource_id"), attempt.work_item_id),
-      ),
+    .withIndex("by_tenant_resource", (query: any) =>
+      query
+        .eq("organization_id", organization)
+        .eq("owner_user_id", owner)
+        .eq("resource_type", "work_item")
+        .eq("resource_id", attempt.work_item_id),
     )
+    .filter((query) => query.eq(query.field("organization_id"), organization))
     .unique()
   if (lease?.holder_id === attempt.id) await ctx.db.delete(lease._id)
   return true
 }
 
-async function deleteStreamGraph(ctx: RuntimeMutationCtx, owner: Id<"users">, streamId: string) {
+async function deleteStreamGraph(
+  ctx: RuntimeMutationCtx,
+  organization: Id<"orgs">,
+  owner: Id<"users">,
+  streamId: string,
+) {
   const tables = [
     "workgraph_work_item_dependencies",
     "workgraph_decision_work_items",
@@ -471,33 +718,40 @@ async function deleteStreamGraph(ctx: RuntimeMutationCtx, owner: Id<"users">, st
     "workgraph_work_items",
   ] as const
   for (const table of tables) {
-    for (const row of await streamRows(ctx, table, owner, streamId)) {
-      await removeAttentionRecord(ctx, String(owner), table, row.id)
+    for (const row of await streamRows(ctx, organization, table, owner, streamId)) {
+      await removeAttentionRecord(ctx, String(organization), String(owner), table, row.id)
       await ctx.db.delete(row._id)
     }
   }
   const stream = await ctx.db
     .query("workgraph_streams")
-    .withIndex("by_owner_id", (query) => query.eq("owner_user_id", owner))
-    .filter((query) => query.eq(query.field("id"), streamId))
+    .withIndex("by_tenant_id", (query: any) => query.eq("organization_id", organization).eq("owner_user_id", owner))
+    .filter((query) =>
+      query.and(query.eq(query.field("organization_id"), organization), query.eq(query.field("id"), streamId)),
+    )
     .unique()
   if (stream?.deletion?.state === "pending") await ctx.db.delete(stream._id)
 }
 
 function streamRows<Table extends Parameters<RuntimeMutationCtx["db"]["query"]>[0]>(
   ctx: RuntimeMutationCtx,
+  organization: Id<"orgs">,
   table: Table,
   owner: Id<"users">,
   streamId: string,
 ) {
   return ctx.db
     .query(table)
-    .withIndex("by_owner_stream" as never, (query: any) => query.eq("owner_user_id", owner).eq("stream_id", streamId))
+    .withIndex("by_tenant_stream" as never, (query: any) =>
+      query.eq("organization_id", organization).eq("owner_user_id", owner).eq("stream_id", streamId),
+    )
+    .filter((query: any) => query.eq(query.field("organization_id"), organization))
     .collect()
 }
 
 export const markRunning = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_user_id: v.id("users"),
     outbox_id: v.string(),
     attempt_id: v.string(),
@@ -526,6 +780,7 @@ export const markRunning = serviceMutation({
 
 export const retryLaunch = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_user_id: v.id("users"),
     outbox_id: v.string(),
     attempt_id: v.string(),
@@ -553,6 +808,7 @@ export const retryLaunch = serviceMutation({
 
 export const recordResult = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_user_id: v.id("users"),
     attempt_id: v.string(),
     lease_epoch: v.number(),
@@ -568,39 +824,56 @@ export const recordResult = serviceMutation({
     }
     const attempt = await ctx.db
       .query("workgraph_attempts")
-      .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-      .filter((query) => query.eq(query.field("id"), args.attempt_id))
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("id"), args.attempt_id),
+        ),
+      )
       .unique()
     if (!attempt || attempt.cancellation?.state === "pending" || attempt.session_id !== args.session_id) {
       return { settled: false }
     }
     if (attempt.state === "result") {
       const result = attempt.result as { summary?: unknown; artifacts?: unknown } | undefined
-      if (result?.summary === args.summary && Array.isArray(result.artifacts) &&
-        JSON.stringify(result.artifacts) === JSON.stringify(args.artifacts)) return { settled: true }
+      if (
+        result?.summary === args.summary &&
+        Array.isArray(result.artifacts) &&
+        JSON.stringify(result.artifacts) === JSON.stringify(args.artifacts)
+      )
+        return { settled: true }
       throw new Error("Attempt already has a different terminal result")
     }
     if (attempt.state !== "running") return { settled: false }
     const lease = await ctx.db
       .query("workgraph_leases")
-      .withIndex("by_owner_resource", (query) => query.eq("owner_user_id", args.owner_user_id))
+      .withIndex("by_tenant_resource", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
       .filter((query) =>
         query.and(
           query.eq(query.field("resource_type"), "work_item"),
           query.eq(query.field("resource_id"), attempt.work_item_id),
+          query.eq(query.field("organization_id"), args.organization_id),
         ),
       )
       .unique()
-    if (
-      !lease ||
-      lease.holder_id !== attempt.id ||
-      lease.epoch !== args.lease_epoch ||
-      lease.expires_at <= args.now
-    ) return { settled: false }
+    if (!lease || lease.holder_id !== attempt.id || lease.epoch !== args.lease_epoch || lease.expires_at <= args.now)
+      return { settled: false }
     const item = await ctx.db
       .query("workgraph_work_items")
-      .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-      .filter((query) => query.eq(query.field("id"), attempt.work_item_id))
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("id"), attempt.work_item_id),
+        ),
+      )
       .unique()
     await ctx.db.patch(attempt._id, {
       state: "result",
@@ -624,31 +897,43 @@ export const recordResult = serviceMutation({
 })
 
 export const listRunning = serviceMutation({
-  args: { limit: v.number(), now: v.number() },
+  args: { organization_id: v.id("orgs"), owner_user_id: v.id("users"), limit: v.number(), now: v.number() },
   handler: async (ctx, args) => {
     const attempts = await ctx.db
       .query("workgraph_attempts")
-      .withIndex("by_state_updated", (query) => query.eq("state", "running"))
+      .withIndex("by_tenant_state_updated", (query: any) =>
+        query
+          .eq("organization_id", args.organization_id)
+          .eq("owner_user_id", args.owner_user_id)
+          .eq("state", "running"),
+      )
       .take(Math.max(1, Math.min(25, args.limit)))
     return await Promise.all(
       attempts.map(async (attempt) => {
+        if (!attempt.organization_id) return null
         const lease = await ctx.db
           .query("workgraph_leases")
-          .withIndex("by_owner_resource", (query) => query.eq("owner_user_id", attempt.owner_user_id))
+          .withIndex("by_tenant_resource", (query: any) =>
+            query.eq("organization_id", attempt.organization_id).eq("owner_user_id", attempt.owner_user_id),
+          )
           .filter((query) =>
             query.and(
               query.eq(query.field("resource_type"), "work_item"),
               query.eq(query.field("resource_id"), attempt.work_item_id),
+              query.eq(query.field("organization_id"), attempt.organization_id),
             ),
           )
           .unique()
-        const org = await ctx.db
-          .query("orgs")
-          .withIndex("by_owner", (query) => query.eq("owner_user_id", attempt.owner_user_id))
-          .filter((query) => query.eq(query.field("kind"), "personal"))
-          .unique()
-        if (!lease || lease.holder_id !== attempt.id || !org || !attempt.session_id || !attempt.envelope_id) return null
+        if (
+          !lease ||
+          lease.holder_id !== attempt.id ||
+          lease.organization_id !== attempt.organization_id ||
+          !attempt.session_id ||
+          !attempt.envelope_id
+        )
+          return null
         const renewal = await renewWorkGraphAttemptLease(ctx, {
+          organizationId: attempt.organization_id,
           ownerUserId: attempt.owner_user_id,
           attemptId: attempt.id,
           expectedLeaseEpoch: lease.epoch,
@@ -659,11 +944,13 @@ export const listRunning = serviceMutation({
         await ctx.db.patch(attempt._id, { updated_at: args.now })
         return {
           ownerUserId: String(attempt.owner_user_id),
-          orgId: String(org._id),
+          orgId: String(attempt.organization_id),
           attemptId: attempt.id,
           streamId: attempt.stream_id,
           workItemId: attempt.work_item_id,
           leaseEpoch: renewal.leaseEpoch,
+          activeLeaseAgeMs: Math.max(0, args.now - (lease.updated_at ?? args.now)),
+          expiredRecovery: renewal.recovered,
           sessionId: attempt.session_id,
           workspaceId: attempt.envelope_id,
         }
@@ -674,6 +961,7 @@ export const listRunning = serviceMutation({
 
 export const recordFailure = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_user_id: v.id("users"),
     attempt_id: v.string(),
     lease_epoch: v.number(),
@@ -684,35 +972,43 @@ export const recordFailure = serviceMutation({
   handler: async (ctx, args) => {
     const attempt = await ctx.db
       .query("workgraph_attempts")
-      .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-      .filter((query) => query.eq(query.field("id"), args.attempt_id))
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("id"), args.attempt_id),
+        ),
+      )
       .unique()
     if (
       !attempt ||
       attempt.cancellation?.state === "pending" ||
       attempt.state !== "running" ||
       attempt.session_id !== args.session_id
-    ) return { settled: false }
+    )
+      return { settled: false }
     const lease = await ctx.db
       .query("workgraph_leases")
-      .withIndex("by_owner_resource", (query) => query.eq("owner_user_id", args.owner_user_id))
+      .withIndex("by_tenant_resource", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
       .filter((query) =>
         query.and(
           query.eq(query.field("resource_type"), "work_item"),
           query.eq(query.field("resource_id"), attempt.work_item_id),
+          query.eq(query.field("organization_id"), args.organization_id),
         ),
       )
       .unique()
-    if (
-      !lease ||
-      lease.holder_id !== attempt.id ||
-      lease.epoch !== args.lease_epoch ||
-      lease.expires_at <= args.now
-    ) return { settled: false }
+    if (!lease || lease.holder_id !== attempt.id || lease.epoch !== args.lease_epoch || lease.expires_at <= args.now)
+      return { settled: false }
     const failed = {
       ...attempt,
       state: "failed",
       attention_reason: args.reason,
+      finished_at: args.now,
       row_version: attempt.row_version + 1,
       updated_at: args.now,
     }
@@ -720,8 +1016,15 @@ export const recordFailure = serviceMutation({
     await syncAttentionRecord(ctx, "workgraph_attempts", failed)
     const item = await ctx.db
       .query("workgraph_work_items")
-      .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-      .filter((query) => query.eq(query.field("id"), attempt.work_item_id))
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("id"), attempt.work_item_id),
+        ),
+      )
       .unique()
     if (item) {
       const failedItem = { ...item, state: "failed", row_version: item.row_version + 1, updated_at: args.now }
@@ -732,6 +1035,21 @@ export const recordFailure = serviceMutation({
       })
       await syncAttentionRecord(ctx, "workgraph_work_items", failedItem)
     }
+    const stream = await ctx.db
+      .query("workgraph_streams")
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("id"), attempt.stream_id),
+        ),
+      )
+      .unique()
+    if (stream?.execution_mode === "autonomous") {
+      await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: args.now })
+    }
     await ctx.db.delete(lease._id)
     return { settled: true }
   },
@@ -740,6 +1058,7 @@ export const recordFailure = serviceMutation({
 /** Fenced owner-attention transition when the hosted runtime cannot place an Attempt. */
 export const markAttention = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_user_id: v.id("users"),
     outbox_id: v.string(),
     attempt_id: v.string(),
@@ -762,11 +1081,33 @@ export const markAttention = serviceMutation({
     await syncAttentionRecord(ctx, "workgraph_attempts", attention)
     const item = await ctx.db
       .query("workgraph_work_items")
-      .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-      .filter((query) => query.eq(query.field("id"), attempt.work_item_id))
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("id"), attempt.work_item_id),
+        ),
+      )
       .unique()
     if (item)
       await ctx.db.patch(item._id, { state: "pending", row_version: item.row_version + 1, updated_at: args.now })
+    const stream = await ctx.db
+      .query("workgraph_streams")
+      .withIndex("by_tenant_id", (query: any) =>
+        query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+      )
+      .filter((query) =>
+        query.and(
+          query.eq(query.field("organization_id"), args.organization_id),
+          query.eq(query.field("id"), attempt.stream_id),
+        ),
+      )
+      .unique()
+    if (stream?.execution_mode === "autonomous") {
+      await ctx.db.patch(stream._id, { execution_state: "stopped", updated_at: args.now })
+    }
     await ctx.db.delete(lease._id)
     await ctx.db.patch(outbox._id, {
       status: "failed",
@@ -780,58 +1121,83 @@ export const markAttention = serviceMutation({
 
 async function fenced(
   ctx: RuntimeMutationCtx,
-  args: { owner_user_id: Id<"users">; outbox_id: string; attempt_id: string; lease_epoch: number; worker_id: string; now: number },
+  args: {
+    organization_id: Id<"orgs">
+    owner_user_id: Id<"users">
+    outbox_id: string
+    attempt_id: string
+    lease_epoch: number
+    worker_id: string
+    now: number
+  },
 ) {
   const outbox = await ctx.db
     .query("workgraph_outbox")
-    .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-    .filter((query) => query.eq(query.field("id"), args.outbox_id))
+    .withIndex("by_tenant_id", (query: any) =>
+      query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+    )
+    .filter((query) =>
+      query.and(
+        query.eq(query.field("organization_id"), args.organization_id),
+        query.eq(query.field("id"), args.outbox_id),
+      ),
+    )
     .unique()
   const attempt = await ctx.db
     .query("workgraph_attempts")
-    .withIndex("by_owner_id", (query) => query.eq("owner_user_id", args.owner_user_id))
-    .filter((query) => query.eq(query.field("id"), args.attempt_id))
+    .withIndex("by_tenant_id", (query: any) =>
+      query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+    )
+    .filter((query) =>
+      query.and(
+        query.eq(query.field("organization_id"), args.organization_id),
+        query.eq(query.field("id"), args.attempt_id),
+      ),
+    )
     .unique()
   if (!outbox || !attempt || outbox.claimed_by !== args.worker_id || outbox.status !== "claimed") return {}
   const lease = await ctx.db
     .query("workgraph_leases")
-    .withIndex("by_owner_resource", (query) => query.eq("owner_user_id", args.owner_user_id))
+    .withIndex("by_tenant_resource", (query: any) =>
+      query.eq("organization_id", args.organization_id).eq("owner_user_id", args.owner_user_id),
+    )
     .filter((query) =>
       query.and(
         query.eq(query.field("resource_type"), "work_item"),
         query.eq(query.field("resource_id"), attempt.work_item_id),
+        query.eq(query.field("organization_id"), args.organization_id),
       ),
     )
     .unique()
-  if (
-    !lease ||
-    lease.holder_id !== attempt.id ||
-    lease.epoch !== args.lease_epoch ||
-    lease.expires_at <= args.now
-  ) return {}
+  if (!lease || lease.holder_id !== attempt.id || lease.epoch !== args.lease_epoch || lease.expires_at <= args.now)
+    return {}
   return { outbox, attempt, lease }
 }
 
 export const renewAttemptLease = serviceMutation({
   args: {
+    organization_id: v.id("orgs"),
     owner_user_id: v.id("users"),
     attempt_id: v.string(),
     lease_epoch: v.number(),
     now: v.number(),
     duration_ms: v.number(),
   },
-  handler: (ctx, args) => renewWorkGraphAttemptLease(ctx, {
-    ownerUserId: args.owner_user_id,
-    attemptId: args.attempt_id,
-    expectedLeaseEpoch: args.lease_epoch,
-    now: args.now,
-    durationMs: args.duration_ms,
-  }),
+  handler: (ctx, args) =>
+    renewWorkGraphAttemptLease(ctx, {
+      organizationId: args.organization_id,
+      ownerUserId: args.owner_user_id,
+      attemptId: args.attempt_id,
+      expectedLeaseEpoch: args.lease_epoch,
+      now: args.now,
+      durationMs: args.duration_ms,
+    }),
 })
 
 export async function renewWorkGraphAttemptLease(
   ctx: RuntimeMutationCtx,
   input: Readonly<{
+    organizationId: Id<"orgs">
     ownerUserId: Id<"users">
     attemptId: string
     expectedLeaseEpoch: number
@@ -841,25 +1207,31 @@ export async function renewWorkGraphAttemptLease(
 ) {
   const attempt = await ctx.db
     .query("workgraph_attempts")
-    .withIndex("by_owner_id", (query) => query.eq("owner_user_id", input.ownerUserId))
-    .filter((query) => query.eq(query.field("id"), input.attemptId))
+    .withIndex("by_tenant_id", (query: any) =>
+      query.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId),
+    )
+    .filter((query) =>
+      query.and(
+        query.eq(query.field("organization_id"), input.organizationId),
+        query.eq(query.field("id"), input.attemptId),
+      ),
+    )
     .unique()
   if (!attempt || !["admitted", "placing", "running", "attention"].includes(attempt.state)) return undefined
   const lease = await ctx.db
     .query("workgraph_leases")
-    .withIndex("by_owner_resource", (query) => query.eq("owner_user_id", input.ownerUserId))
+    .withIndex("by_tenant_resource", (query: any) =>
+      query.eq("organization_id", input.organizationId).eq("owner_user_id", input.ownerUserId),
+    )
     .filter((query) =>
       query.and(
         query.eq(query.field("resource_type"), "work_item"),
         query.eq(query.field("resource_id"), attempt.work_item_id),
+        query.eq(query.field("organization_id"), input.organizationId),
       ),
     )
     .unique()
-  if (
-    !lease ||
-    lease.holder_id !== attempt.id ||
-    lease.epoch !== input.expectedLeaseEpoch
-  ) return undefined
+  if (!lease || lease.holder_id !== attempt.id || lease.epoch !== input.expectedLeaseEpoch) return undefined
   const recovered = lease.expires_at <= input.now
   const leaseEpoch = recovered ? lease.epoch + 1 : lease.epoch
   const expiresAt = input.now + input.durationMs

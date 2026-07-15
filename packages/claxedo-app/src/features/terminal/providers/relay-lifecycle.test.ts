@@ -1,8 +1,15 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { createMockSDK, createMockStorage } from "./test-helpers"
 
 const storage = createMockStorage()
+const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?relay-lifecycle-restore`)) }
+const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?relay-lifecycle-restore`)) }
+
+afterAll(() => {
+  mock.module("@/platform/api/api", () => realApiModule)
+  mock.module("@/platform/persistence/persist", () => realPersistModule)
+})
 
 mock.module("@opencode-ai/ui/context", () => ({
   createSimpleContext: () => ({ use: () => {}, provider: () => {} }),
@@ -35,11 +42,10 @@ mock.module("@/platform/api/api", () => ({
 
 // Spread the real module: `mock.module` replaces the module PROCESS-WIDE, so a
 // partial mock would break later files that import its other exports.
-const realPersist = await import("@/platform/persistence/persist")
 mock.module("@/platform/persistence/persist", () => ({
-  ...realPersist,
+  ...realPersistModule,
   Persist: {
-    ...realPersist.Persist,
+    ...realPersistModule.Persist,
     scoped: (_dir: string, _session: string | undefined, key: string) => ({
       storage: "test.dat",
       key: `workspace:${key}`,

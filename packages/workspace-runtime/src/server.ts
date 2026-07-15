@@ -17,7 +17,11 @@ import {
 } from "./workspace-relay-host-tunnel"
 import { ConfigRoutes, type RuntimeRunner } from "./routes/config"
 import { SessionEnvRoutes } from "./routes/session-env"
-import { WorkGraphConnectionToolRoutes, type WorkGraphConnectionOperationBroker } from "./routes/workgraph-connection-tools"
+import {
+  WorkGraphConnectionToolRoutes,
+  type WorkGraphConnectionBrokerRequestLimits,
+  type WorkGraphConnectionOperationBroker,
+} from "./routes/workgraph-connection-tools"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth, type WorkspaceRuntimeManagementTarget } from "./management-auth"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import {
@@ -35,6 +39,7 @@ type Host = ReturnType<typeof createWorkspaceHost>
 export type WorkspaceRuntimeApp = {
   app: Hono
   host: Host
+  dispose: () => void
   injectWebSocket: (server: Parameters<ReturnType<typeof createNodeWebSocket>["injectWebSocket"]>[0]) => void
   upgradeWebSocket: UpgradeWebSocket
 }
@@ -80,6 +85,9 @@ export type WorkspaceRuntimeServerOptions = {
   corsOrigin?: WorkspaceRuntimeCorsOrigin
   /** Trusted local broker seam. Hosted runtimes forward with the bound RAT. */
   workgraphConnectionBroker?: WorkGraphConnectionOperationBroker
+  /** Exact central origin allowed to receive a bound Runtime Access Token. */
+  workgraphConnectionBrokerOrigin?: string
+  workgraphConnectionBrokerRequestLimits?: WorkGraphConnectionBrokerRequestLimits
 }
 
 type ListenPolicyEnv = {
@@ -444,16 +452,21 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
     ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
   }))
-  // Tools-only execution surface for central sessions. Inherits the exposure
-  // and relay-host auth middleware registered above — the same workspace-level
-  // auth boundary as every other /api/wr route (no per-session scoping).
+  // Binding management inherits the workspace exposure/auth boundary. Tool
+  // execution itself is only reachable through each Session's nonce-bound
+  // loopback callback, which supplies the canonical Session identity.
   app.route(WorkspaceRuntimeRoutes.sessionEnv, SessionEnvRoutes())
-  app.route("/", WorkGraphConnectionToolRoutes({
+  const workgraphConnectionTools = WorkGraphConnectionToolRoutes({
     workspaceId: options.target?.workspaceId ?? workspaceId(),
     ...(options.workgraphConnectionBroker ? { broker: options.workgraphConnectionBroker } : {}),
+    ...(options.workgraphConnectionBrokerOrigin ? { brokerOrigin: options.workgraphConnectionBrokerOrigin } : {}),
+    ...(options.workgraphConnectionBrokerRequestLimits
+      ? { brokerRequestLimits: options.workgraphConnectionBrokerRequestLimits }
+      : {}),
     registerSessionTools: host.registerSessionTools,
     unregisterSessionTools: host.unregisterSessionTools,
-  }))
+  })
+  app.route("/", workgraphConnectionTools)
 
   app.get(WorkspaceRuntimeRoutes.health, (c) =>
     c.json(runtimeLiveness(host, options)),
@@ -462,7 +475,14 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   app.get(WorkspaceRuntimeRoutes.capabilities, (c) => c.json(host.capabilities()))
   host.mount(app, { core: { upgradeWebSocket }, exposure: options.exposure! })
 
-  return { app, host, injectWebSocket, upgradeWebSocket }
+  let disposed = false
+  const dispose = () => {
+    if (disposed) return
+    disposed = true
+    workgraphConnectionTools.dispose()
+    host.dispose()
+  }
+  return { app, host: { ...host, dispose }, dispose, injectWebSocket, upgradeWebSocket }
 }
 
 export type WorkspaceRuntimeLifecycleOptions = {

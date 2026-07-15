@@ -20,6 +20,22 @@ const commandSamples = [
   { version: 1, type: "create_work_source", title: "Launch", content: "Ship the launch" },
   {
     version: 1,
+    type: "create_work_source",
+    title: "Launch",
+    content: "Ship the launch",
+    authoring: {
+      adapterId: "claxedo_docs",
+      projectId: "project-1",
+      documentId: "doc-1",
+      documentRevisionId: "doc-revision-1",
+      documentRevisionNumber: 1,
+      authoredAt: 1,
+      authoredBy: { type: "user", id: "owner" },
+      contentHash: "a".repeat(64),
+    },
+  },
+  {
+    version: 1,
     type: "revise_work_source",
     workSourceId: "source-1",
     expectedRevisionId: "revision-1",
@@ -51,7 +67,9 @@ const commandSamples = [
     completionContract: {
       version: 1,
       mode: "all",
-      requirements: [{ id: "requirement-1", kind: "verification", description: "Smoke passes", instructions: "Open production" }],
+      requirements: [
+        { id: "requirement-1", kind: "verification", description: "Smoke passes", instructions: "Open production" },
+      ],
     },
   },
   { version: 1, type: "update_work_item", workItemId: "work-item-1", expectedVersion: 4, priority: 1 },
@@ -71,7 +89,14 @@ const commandSamples = [
     selection: { mode: "create", streamTitle: "Launch" },
   },
   { version: 1, type: "retry_admission_planning", proposalId: "proposal-1", expectedVersion: 3 },
-  { version: 1, type: "set_stream_lifecycle", streamId: "stream-1", expectedVersion: 2, state: "paused", reason: "Review" },
+  {
+    version: 1,
+    type: "set_stream_lifecycle",
+    streamId: "stream-1",
+    expectedVersion: 2,
+    state: "paused",
+    reason: "Review",
+  },
   { version: 1, type: "set_stream_visibility", streamId: "stream-1", expectedVersion: 3, visibility: "archived" },
   { version: 1, type: "execute_stream", streamId: "stream-1", executionMode: "autonomous" },
   { version: 1, type: "execute_work_item", workItemId: "work-item-1", executionMode: "supervised" },
@@ -125,20 +150,64 @@ describe("WorkGraph command contracts", () => {
         selection: { mode: "existing", streamId: "stream-1", ownerUserId: "another-user" },
       }).success,
     ).toBe(false)
-    expect(WorkGraphCommandSchema.safeParse({
-      version: 1,
-      type: "confirm_admission",
-      proposalId: "proposal-1",
-      source: { workSourceId: "source-1", revisionId: "revision-1", contentHash: "a".repeat(64) },
-      selection: { mode: "create", streamTitle: "Launch" },
-    }).success).toBe(false)
+    expect(
+      WorkGraphCommandSchema.safeParse({
+        version: 1,
+        type: "confirm_admission",
+        proposalId: "proposal-1",
+        source: { workSourceId: "source-1", revisionId: "revision-1", contentHash: "a".repeat(64) },
+        selection: { mode: "create", streamTitle: "Launch" },
+      }).success,
+    ).toBe(false)
+    expect(
+      WorkGraphCommandSchema.safeParse({
+        ...commandSamples[13],
+        selection: { mode: "replace", streamId: "stream-1" },
+      }).success,
+    ).toBe(false)
+    expect(
+      WorkGraphCommandSchema.safeParse({
+        ...commandSamples[13],
+        selection: {
+          mode: "replace",
+          streamId: "stream-1",
+          workItems: [{ workItemId: "work-item-1", expectedVersion: 2 }],
+        },
+      }).success,
+    ).toBe(true)
     expect(WorkGraphCommandSchema.safeParse({ ...commandSamples[0], version: 2 }).success).toBe(false)
   })
 
+  it("keeps execution targets on Streams instead of WorkGraph, Outcome, or Task defaults", () => {
+    const target = {
+      environment: { kind: "local_worktree", directory: "/repo" },
+      repository: { baseRevision: "HEAD" },
+    }
+    expect(WorkGraphCommandSchema.safeParse({
+      version: 1,
+      type: "create_stream",
+      title: "Targeted",
+      execution: target,
+    }).success).toBe(true)
+    expect(WorkGraphCommandSchema.safeParse({
+      ...commandSamples[0],
+      defaults: { execution: target, recap: {} },
+    }).success).toBe(false)
+    expect(WorkGraphCommandSchema.safeParse({
+      ...commandSamples[6],
+      execution: target,
+    }).success).toBe(false)
+    expect(WorkGraphCommandSchema.safeParse({
+      ...commandSamples[8],
+      execution: target,
+    }).success).toBe(false)
+  })
+
   it("wraps mutations in an operation ID without accepting caller identity", () => {
-    expect(
-      WorkGraphCommandRequestSchema.parse({ operationId: "operation-1", command: commandSamples[0] }),
-    ).toEqual({ operationId: "operation-1", command: commandSamples[0] })
+    expect(WorkGraphCommandRequestSchema.parse({ operationId: "operation-1", command: commandSamples[0] })).toEqual({
+      operationId: "operation-1",
+      command: commandSamples[0],
+    })
     expect(
       WorkGraphCommandRequestSchema.safeParse({
         operationId: "operation-1",
@@ -149,7 +218,14 @@ describe("WorkGraph command contracts", () => {
   })
 
   it("normalizes success and typed command failures around committed cursors", () => {
-    expect(CommandResultSchema.parse({ ok: true, operationId: "operation-1", cursor: "17", value: { streamId: "stream-1" } })).toEqual({
+    expect(
+      CommandResultSchema.parse({
+        ok: true,
+        operationId: "operation-1",
+        cursor: "17",
+        value: { streamId: "stream-1" },
+      }),
+    ).toEqual({
       ok: true,
       operationId: "operation-1",
       cursor: "17",
@@ -159,7 +235,12 @@ describe("WorkGraph command contracts", () => {
       CommandResultSchema.parse({
         ok: false,
         operationId: "operation-1",
-        error: { code: "version_conflict", message: "Expected version 2", retryable: true, details: { expectedVersion: 2 } },
+        error: {
+          code: "version_conflict",
+          message: "Expected version 2",
+          retryable: true,
+          details: { expectedVersion: 2 },
+        },
       }),
     ).toMatchObject({ ok: false, error: { code: "version_conflict" } })
   })
@@ -187,8 +268,18 @@ describe("WorkGraph command contracts", () => {
     expect(
       WorkGraphEventEnvelopeSchema.safeParse({ ...event, payload: { connection: { token: "secret" } } }).success,
     ).toBe(false)
+    for (const key of ["accessToken", "refresh_token", "cookie", "privateKey", "client-secret"]) {
+      expect(
+        WorkGraphEventEnvelopeSchema.safeParse({ ...event, payload: { connection: { [key]: "secret" } } }).success,
+      ).toBe(false)
+    }
     expect(
-      ChangeEnvelopeSchema.parse({ cursor: "18", ownerUserId: "owner-1", resource: { type: "stream", id: "stream-1" }, event }),
+      ChangeEnvelopeSchema.parse({
+        cursor: "18",
+        ownerUserId: "owner-1",
+        resource: { type: "stream", id: "stream-1" },
+        event,
+      }),
     ).toMatchObject({ cursor: "18", event: { id: "event-1" } })
   })
 })

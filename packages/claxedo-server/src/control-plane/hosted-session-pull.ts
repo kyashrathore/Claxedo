@@ -5,13 +5,17 @@ import { requireAuthority } from "./authority"
 import type { ControlPlaneServices } from "./services"
 
 class HostedSessionPullError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
     super(message)
   }
 }
 
 function rec(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
+  return input && typeof input === "object" ? (input as Record<string, unknown>) : undefined
 }
 
 function txt(input: unknown) {
@@ -55,9 +59,10 @@ function messagesPayload(input: unknown) {
   const row = rec(input)
   return {
     messages: Array.isArray(row?.messages) ? row.messages : [],
-    maxEventOrdinal: typeof row?.maxEventOrdinal === "number" && Number.isFinite(row.maxEventOrdinal)
-      ? row.maxEventOrdinal
-      : undefined,
+    maxEventOrdinal:
+      typeof row?.maxEventOrdinal === "number" && Number.isFinite(row.maxEventOrdinal)
+        ? row.maxEventOrdinal
+        : undefined,
   }
 }
 
@@ -68,7 +73,18 @@ function sessionPayloadId(input: unknown) {
 
 function assertPulledSession(input: unknown, sessionId: string) {
   if (sessionPayloadId(input) === sessionId) return
-  throw new HostedSessionPullError(409, "workspace_runtime_session_mismatch", "Workspace runtime session identity does not match requested session")
+  throw new HostedSessionPullError(
+    409,
+    "workspace_runtime_session_mismatch",
+    "Workspace runtime session identity does not match requested session",
+  )
+}
+
+function sessionIsIdle(input: unknown, sessionId: string) {
+  const statuses = rec(input)
+  if (!statuses) return false
+  if (!(sessionId in statuses)) return true
+  return rec(statuses[sessionId])?.type === "idle"
 }
 
 function runtimePath(path: string, query?: Record<string, string | undefined>) {
@@ -88,9 +104,10 @@ async function hostedWorkspaceForPull(
   const authority = requireAuthority(services)
   const opened = await authority.openWorkspace(signed, { workspaceId })
   const workspace = rec(rec(opened)?.workspace)
-  const orgId = txt(workspace?.org_id)
-    ?? txt(workspace?.orgId)
-    ?? (typeof authority.resolveOrgId === "function" ? txt(await authority.resolveOrgId(signed)) : undefined)
+  const orgId =
+    txt(workspace?.org_id) ??
+    txt(workspace?.orgId) ??
+    (typeof authority.resolveOrgId === "function" ? txt(await authority.resolveOrgId(signed)) : undefined)
   const stamp = Date.now()
   return {
     id: workspaceId,
@@ -114,7 +131,11 @@ async function runtimeFetch(
 ) {
   const provider = services.relay.provider
   if (!provider) {
-    throw new HostedSessionPullError(503, "workspace_runtime_unavailable", "Workspace runtime pull transport is not configured")
+    throw new HostedSessionPullError(
+      503,
+      "workspace_runtime_unavailable",
+      "Workspace runtime pull transport is not configured",
+    )
   }
   const hostManager = services.sandbox.sandboxManager
   if (!hostManager) {
@@ -126,7 +147,11 @@ async function runtimeFetch(
   }
   const orgId = input.ws.org_id
   if (!orgId) {
-    throw new HostedSessionPullError(409, "workspace_org_required", "Workspace is missing org identity for runtime token minting")
+    throw new HostedSessionPullError(
+      409,
+      "workspace_org_required",
+      "Workspace is missing org identity for runtime token minting",
+    )
   }
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
@@ -140,13 +165,16 @@ async function runtimeFetch(
     input.workspaceId,
     normalizeClaxedoRegion(target.homeRegion, services.defaultHomeRegion ?? defaultHomeRegion()),
   )
-  return await fetch(`${relayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(input.workspaceId)}${input.path}`, {
-    headers: {
-      accept: "application/json",
-      authorization: `Bearer ${token.token}`,
-      "x-opencode-directory": `workspace:${input.workspaceId}`,
+  return await fetch(
+    `${relayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(input.workspaceId)}${input.path}`,
+    {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${token.token}`,
+        "x-opencode-directory": `workspace:${input.workspaceId}`,
+      },
     },
-  })
+  )
 }
 
 async function runtimeJson<T>(
@@ -159,8 +187,12 @@ async function runtimeJson<T>(
   },
 ) {
   const res = await runtimeFetch(services, auth, input)
-  if (res.ok) return await res.json() as T
-  throw new HostedSessionPullError(res.status, "workspace_runtime_pull_failed", await res.text().catch(() => "") || `Workspace runtime pull failed: ${res.status}`)
+  if (res.ok) return (await res.json()) as T
+  throw new HostedSessionPullError(
+    res.status,
+    "workspace_runtime_pull_failed",
+    (await res.text().catch(() => "")) || `Workspace runtime pull failed: ${res.status}`,
+  )
 }
 
 async function verifiedRuntimeJson<T>(
@@ -177,7 +209,11 @@ async function verifiedRuntimeJson<T>(
     path: "/api/wr/health",
   })
   if (txt(health.workspaceId) !== input.workspaceId) {
-    throw new HostedSessionPullError(409, "workspace_runtime_mismatch", "Workspace runtime identity does not match requested workspace")
+    throw new HostedSessionPullError(
+      409,
+      "workspace_runtime_mismatch",
+      "Workspace runtime identity does not match requested workspace",
+    )
   }
   return await runtimeJson<T>(services, auth, input)
 }
@@ -228,9 +264,32 @@ export async function pullHostedControlSessionMessages(
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
   const payload = messagesPayload(pulled)
+  const syncAuthority = async (messages: unknown[]) => {
+    const intakeReady = await runtimeJson<unknown>(services, signed, {
+      workspaceId: ws.id,
+      ws,
+      path: "/session/status",
+    }).then(
+      (status) => sessionIsIdle(status, input.sessionId),
+      () => false,
+    )
+    await requireAuthority(services).syncSessionMessages(signed, {
+      workspaceId: ws.id,
+      sessionId: input.sessionId,
+      messages,
+      intakeReady,
+    })
+  }
   const currentMessages = services.projectionStore.read_session_messages(input.sessionId)
   if (payload.maxEventOrdinal !== undefined && payload.maxEventOrdinal < currentOrdinal) {
-    return { ok: true, skipped: true, reason: "older_snapshot_ordinal", currentOrdinal, snapshotOrdinal: payload.maxEventOrdinal }
+    await syncAuthority(currentMessages)
+    return {
+      ok: true,
+      skipped: true,
+      reason: "older_snapshot_ordinal",
+      currentOrdinal,
+      snapshotOrdinal: payload.maxEventOrdinal,
+    }
   }
   if (
     payload.maxEventOrdinal !== undefined &&
@@ -238,10 +297,24 @@ export async function pullHostedControlSessionMessages(
     currentMessages.length > 0 &&
     payload.messages.length <= currentMessages.length
   ) {
-    return { ok: true, skipped: true, reason: "older_snapshot_ordinal", currentOrdinal, snapshotOrdinal: payload.maxEventOrdinal }
+    await syncAuthority(currentMessages)
+    return {
+      ok: true,
+      skipped: true,
+      reason: "older_snapshot_ordinal",
+      currentOrdinal,
+      snapshotOrdinal: payload.maxEventOrdinal,
+    }
   }
   if (payload.maxEventOrdinal === undefined && payload.messages.length < currentMessages.length) {
-    return { ok: true, skipped: true, reason: "shorter_snapshot", currentMessages: currentMessages.length, snapshotMessages: payload.messages.length }
+    await syncAuthority(currentMessages)
+    return {
+      ok: true,
+      skipped: true,
+      reason: "shorter_snapshot",
+      currentMessages: currentMessages.length,
+      snapshotMessages: payload.messages.length,
+    }
   }
   if (payload.maxEventOrdinal === undefined) {
     await services.projectionStore.sync_session_messages(ws, input.sessionId, payload.messages)
@@ -250,11 +323,7 @@ export async function pullHostedControlSessionMessages(
       maxEventOrdinal: payload.maxEventOrdinal,
     })
   }
-  await requireAuthority(services).syncSessionMessages(signed, {
-    workspaceId: ws.id,
-    sessionId: input.sessionId,
-    messages: payload.messages,
-  })
+  await syncAuthority(payload.messages)
   return {
     ok: true,
     sessionId: input.sessionId,

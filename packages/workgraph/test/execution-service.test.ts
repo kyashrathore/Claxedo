@@ -118,7 +118,7 @@ describe("durable local execution", () => {
 })
 
 const execution = {
-  environment: { kind: "local_worktree" as const },
+  environment: { kind: "local_worktree" as const, directory: "/repo" },
   repository: { baseRevision: "HEAD" },
   harness: "claxedo-v2",
   agent: "build",
@@ -126,20 +126,15 @@ const execution = {
   effort: "high",
   tools: ["terminal"],
   connectionIds: [],
-  isolation: "stream" as const,
-  cleanup: "destroy_on_close" as const,
-  integration: "pull_request" as const,
 }
 const contract = { version: 1, mode: "all", requirements: [{ id: branded("proof"), kind: "test", description: "Tests pass" }] } satisfies CompletionContract
 
 function runtime(calls: string[]): WorkspaceExecutionPort {
   return {
     provisionOrAdopt: async (_context, input) => { calls.push("envelope"); return { id: branded("envelope_1"), streamId: input.streamId, environment: input.environment, repository: input.repository, workspaceId: "/tmp/worktree" } },
-    createChildIsolation: async (_context, input) => { calls.push("child"); return { id: branded("child_1"), envelopeId: input.envelopeId, workItemId: input.workItemId, workspaceId: "/tmp/child" } },
-    launch: async (_context, input) => { calls.push("launch"); return { sessionId: branded("session_1"), envelopeId: input.envelopeId, childIsolationId: input.childIsolationId } },
+    launch: async (_context, input) => { calls.push("launch"); return { sessionId: branded("session_1"), envelopeId: input.envelopeId } },
     cancel: async () => { calls.push("cancel") },
     result: async () => ({ state: "running" }),
-    integrateResult: async (_context, input) => ({ summary: input.result.summary, artifacts: input.result.artifacts }),
     cleanup: async () => { calls.push("cleanup") },
   }
 }
@@ -149,7 +144,7 @@ function setup(executionPort: WorkspaceExecutionPort) {
   databases.push(database)
   let id = 0
   let now = 1_000
-  return { database, ...createSqliteWorkGraphService({ database, execution: executionPort, clock: { now: () => now++ }, ids: { next: (kind) => `${kind}_${++id}` } }) }
+  return { database, ...createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, execution: executionPort, clock: { now: () => now++ }, ids: { next: (kind) => `${kind}_${++id}` } }) }
 }
 function execute(fixture: ReturnType<typeof setup>, type: string, command: Record<string, unknown>) {
   return fixture.service.execute(owner(), { operationId: branded<OperationID>(`operation_${crypto.randomUUID()}`), command: { version: 1, type, ...command } } as never)
@@ -160,5 +155,6 @@ function resultId(result: Awaited<ReturnType<typeof execute>>, key: string) {
 }
 function branded<Type = string>(value: string) { return value as Type }
 function owner(): WorkGraphContext {
-  return { ownerUserId: branded("owner"), actor: { type: "agent", id: branded("agent") }, requestId: branded("request"), access: { mode: "owner" } }
+  return { organizationId: "organization" as never, ownerUserId: branded("owner"), actor: { type: "agent", id: branded("agent") }, requestId: branded("request"), access: { mode: "owner" } }
 }
+import { testExecutionCapabilities } from "./test-execution-capabilities"

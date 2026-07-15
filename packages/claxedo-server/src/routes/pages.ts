@@ -381,6 +381,7 @@ export function PagesRoutes(options: PagesRouteOptions = {}) {
         status: body.status,
         directory: authScope.directory,
         org_id: authScope.orgId,
+        authored_by: pageAuthor(authScope),
       })
       emitPageList(authScope.orgId, authScope.projectId, "create")
       return c.json(await enrichPage(page), 201)
@@ -421,6 +422,7 @@ export function PagesRoutes(options: PagesRouteOptions = {}) {
         status: body.status,
         directory: authScope.directory,
         org_id: authScope.orgId,
+        authored_by: pageAuthor(authScope),
         source: {
           source_kind: "git",
           source_repo_root: snapshot.repoRoot,
@@ -541,7 +543,7 @@ export function PagesRoutes(options: PagesRouteOptions = {}) {
       if (expectedVersion !== undefined && row.version !== expectedVersion) {
         return c.json(pageVersionConflict(row.version), 409)
       }
-      const page = updatePage(resolved.scope, c.req.param("id"), body, expectedVersion)
+      const page = updatePage(resolved.scope, c.req.param("id"), body, expectedVersion, pageAuthor(resolved.scope))
       if (!page) return c.json(errorBody(pageNotFound()), 404)
       if (page === "conflict") {
         const current = getPageRow(resolved.scope, c.req.param("id"))
@@ -558,4 +560,9 @@ export function PagesRoutes(options: PagesRouteOptions = {}) {
       emitPageList(resolved.scope.orgId, resolved.page.project_id, "delete")
       return c.json({ ok: true })
     })
+}
+
+function pageAuthor(scope: PageScope<SignedControlPlaneAuth>) {
+  if (scope.auth) return { type: "user" as const, id: scope.auth.user.subject }
+  return { type: "user" as const, id: "local_user" }
 }

@@ -53,6 +53,7 @@ async function assertCursorError(action: () => Promise<unknown>) {
 
 function owner(ownerUserId: string): WorkGraphContext {
   return {
+    organizationId: "organization" as WorkGraphContext["organizationId"],
     ownerUserId: ownerUserId as WorkGraphContext["ownerUserId"],
     actor: { type: "user", id: ownerUserId as WorkGraphContext["actor"]["id"] },
     requestId: `request_${ownerUserId}` as WorkGraphContext["requestId"],

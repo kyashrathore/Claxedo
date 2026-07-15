@@ -191,6 +191,7 @@ async function updateHarnessResponse(c: Context, options: AgentConfigRouteOption
   }
 
   const config = await loadUserConfig()
+  if (!sameHarness(defaultHarness(config), next)) delete config.model
   config.harness = next
   await saveUserConfig(config)
   await fanOutConfig().catch(() => {})

@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { ActorIDSchema, OwnerUserIDSchema, RequestIDSchema } from "./ids"
+import { ActorIDSchema, OrganizationIDSchema, OwnerUserIDSchema, RequestIDSchema } from "./ids"
 
 export const WorkGraphActorSchema = z.strictObject({
   type: z.enum(["user", "agent", "system"]),
@@ -13,10 +13,10 @@ export const WorkGraphAccessSchema = z.strictObject({
 export type WorkGraphAccess = z.infer<typeof WorkGraphAccessSchema>
 
 export const WorkGraphContextSchema = z.strictObject({
+  organizationId: OrganizationIDSchema,
   ownerUserId: OwnerUserIDSchema,
   actor: WorkGraphActorSchema,
   requestId: RequestIDSchema,
   access: WorkGraphAccessSchema,
 })
 export type WorkGraphContext = z.infer<typeof WorkGraphContextSchema>
-

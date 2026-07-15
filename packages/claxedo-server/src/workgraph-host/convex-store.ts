@@ -17,6 +17,8 @@ import type {
   AttemptDetailDto,
   DecisionDto,
   RecapDto,
+  ReplacementReview,
+  ReplacementReviewInput,
   WorkItemAttemptListInput,
   WorkItemAttemptPage,
   WorkItemDto,
@@ -26,6 +28,7 @@ import type {
   WorkGraphDefaultsDto,
   WorkGraphSnapshotPage,
   WorkSourceID,
+  WorkSourcePageCursor,
   WorkSourceDto,
   WorkSourceRevisionDto,
   WorkSourceRevisionID,
@@ -33,6 +36,7 @@ import type {
 import {
   AttentionCursorError,
   AttentionPageSchema,
+  ChangeCursorError,
   AdmissionProposalDtoSchema,
   AttemptDetailDtoSchema,
   DecisionDtoSchema,
@@ -40,17 +44,19 @@ import {
   EvidencePageCursorError,
   EvidencePageSchema,
   RecapDtoSchema,
+  ReplacementReviewSchema,
   SnapshotResumeCursorError,
   WorkItemAttemptPageCursorError,
   WorkItemAttemptPageSchema,
   WorkItemDtoSchema,
+  WorkSourcePageCursorError,
   WorkGraphArchiveRestoreError,
   WorkGraphArchiveRestoreErrorReasonSchema,
   WorkGraphArchiveRestoreResultSchema,
   hashWorkGraphArchive,
   validateWorkGraphArchive,
 } from "@claxedo/workgraph/contracts"
-import type { AttentionCursorErrorReason, EvidencePageCursorErrorReason, SnapshotResumeCursorErrorReason, WorkItemAttemptPageCursorErrorReason } from "@claxedo/workgraph/contracts"
+import type { AttentionCursorErrorReason, ChangeCursorErrorReason, EvidencePageCursorErrorReason, SnapshotResumeCursorErrorReason, WorkItemAttemptPageCursorErrorReason, WorkSourcePageCursorErrorReason } from "@claxedo/workgraph/contracts"
 import type { WorkGraphArchivePort, WorkGraphArchiveRestoreResult } from "@claxedo/workgraph/ports"
 import { createWorkGraphService, defineAtomicWorkGraphStore } from "@claxedo/workgraph/hosted"
 import { ConvexHttpClient } from "convex/browser"
@@ -117,10 +123,12 @@ export function createConvexWorkGraphStore(input: Input) {
       operationId: request.operationId,
       error: { code: "forbidden", message: "Owner access is required", retryable: false },
     }
+    const organizationId = context.organizationId
     const args = interactive
-      ? { operation_id: request.operationId, request_id: context.requestId, command: request.command }
+      ? { organization_id: organizationId, operation_id: request.operationId, request_id: context.requestId, command: request.command }
       : {
           service_token: input.serviceToken ?? "",
+          organization_id: organizationId,
           owner_subject: context.ownerUserId,
           actor_type: context.actor.type === "user" ? "agent" : context.actor.type,
           actor_id: context.actor.id,
@@ -128,16 +136,25 @@ export function createConvexWorkGraphStore(input: Input) {
           request_id: context.requestId,
           command: request.command,
         }
-    return await exec.mutation(
-      interactive ? workGraphConvexApi.workgraphCommands.execute : workGraphConvexApi.workgraphCommands.executeForService,
-      args,
-    ) as CommandResult
+    try {
+      return await exec.mutation(
+        interactive ? workGraphConvexApi.workgraphCommands.execute : workGraphConvexApi.workgraphCommands.executeForService,
+        args,
+      ) as CommandResult
+    } catch {
+      return {
+        ok: false,
+        operationId: request.operationId,
+        error: { code: "internal_error", message: "Convex WorkGraph command transaction failed", retryable: true },
+      }
+    }
   }
 
   const read = async (context: WorkGraphContext, kind: string, queryInput: Record<string, unknown>) => {
+    const organizationId = context.organizationId
     const args = interactive
-      ? { query: { kind, ...queryInput } }
-      : { service_token: input.serviceToken ?? "", owner_subject: context.ownerUserId, query: { kind, ...queryInput } }
+      ? { organization_id: organizationId, query: { kind, ...queryInput } }
+      : { service_token: input.serviceToken ?? "", organization_id: organizationId, owner_subject: context.ownerUserId, query: { kind, ...queryInput } }
     try {
       return await exec.query(
         interactive ? workGraphConvexApi.workgraphChanges.read : workGraphConvexApi.workgraphChanges.readForService,
@@ -152,6 +169,10 @@ export function createConvexWorkGraphStore(input: Input) {
       if (attentionReason) throw new AttentionCursorError(attentionReason)
       const attemptReason = kind === "work_item_attempts" ? attemptCursorErrorReason(error) : undefined
       if (attemptReason) throw new WorkItemAttemptPageCursorError(attemptReason)
+      const changeReason = kind === "changes" || kind === "stream_changes" ? changeCursorErrorReason(error) : undefined
+      if (changeReason) throw new ChangeCursorError(changeReason)
+      const sourceReason = kind === "sources" ? workSourceCursorErrorReason(error) : undefined
+      if (sourceReason) throw new WorkSourcePageCursorError(sourceReason)
       throw error
     }
   }
@@ -185,6 +206,10 @@ export function createConvexWorkGraphStore(input: Input) {
           const proposal = await read(context, "admission_proposal", queryInput)
           return proposal ? publicOwner(context, AdmissionProposalDtoSchema.parse(proposal)) : undefined
         },
+        replacementReview: async (context: WorkGraphContext, queryInput: ReplacementReviewInput): Promise<ReplacementReview | undefined> => {
+          const review = await read(context, "replacement_review", queryInput)
+          return review ? ReplacementReviewSchema.parse(review) : undefined
+        },
       },
       attempts: {
         read: async (context: WorkGraphContext, queryInput: Readonly<{ attemptId: string }>): Promise<AttemptDetailDto | undefined> => {
@@ -208,8 +233,8 @@ export function createConvexWorkGraphStore(input: Input) {
         },
       },
       sources: {
-        list: async (context: WorkGraphContext, queryInput: Readonly<{ after?: string; limit: number }>) => {
-          const result = await read(context, "sources", queryInput) as { sources: WorkSourceDto[]; hasMore: boolean; nextCursor?: string }
+        list: async (context: WorkGraphContext, queryInput: Readonly<{ after?: WorkSourcePageCursor; limit: number }>) => {
+          const result = await read(context, "sources", queryInput) as { sources: WorkSourceDto[]; hasMore: boolean; nextCursor?: WorkSourcePageCursor }
           return { ...result, sources: result.sources.map((source) => publicOwner(context, source)) }
         },
         read: async (context: WorkGraphContext, queryInput: Readonly<{ workSourceId: WorkSourceID }>) => {
@@ -301,6 +326,31 @@ function attentionCursorReason(value: unknown): value is AttentionCursorErrorRea
   return value === "invalid" || value === "owner_mismatch"
 }
 
+function changeCursorErrorReason(error: unknown): ChangeCursorErrorReason | undefined {
+  if (error instanceof ChangeCursorError) return error.reason
+  if (error && typeof error === "object" && "code" in error && error.code === "cursor_invalid") {
+    if (!(("reason" in error) && changeCursorReason(error.reason))) return
+    return error.reason
+  }
+  if (!error || typeof error !== "object" || !("data" in error)) return
+  const data = error.data
+  if (!data || typeof data !== "object" || !("code" in data) || data.code !== "cursor_invalid") return
+  if (!("reason" in data) || !changeCursorReason(data.reason)) return
+  return data.reason
+}
+
+function changeCursorReason(value: unknown): value is ChangeCursorErrorReason {
+  return value === "invalid" || value === "owner_mismatch" || value === "filter_mismatch"
+}
+
+function workSourceCursorErrorReason(error: unknown): WorkSourcePageCursorErrorReason | undefined {
+  if (error instanceof WorkSourcePageCursorError) return error.reason
+  const value = error && typeof error === "object" && "data" in error ? error.data : error
+  if (!value || typeof value !== "object" || !("code" in value) || value.code !== "cursor_invalid" || !("reason" in value)) return
+  if (value.reason === "invalid" || value.reason === "owner_mismatch") return value.reason
+  if (value.reason === "filter_mismatch") return "invalid"
+}
+
 function attemptCursorErrorReason(error: unknown): WorkItemAttemptPageCursorErrorReason | undefined {
   if (error instanceof WorkItemAttemptPageCursorError) return error.reason
   if (error && typeof error === "object" && "code" in error && error.code === "cursor_invalid") {
@@ -347,6 +397,7 @@ export function createConvexWorkGraphArchivePort(input: Input): WorkGraphArchive
     export: async (context) => {
       const archive = result(await exec.query(workGraphConvexApi.workgraphArchive.exportForService, {
         service_token: input.serviceToken,
+        organization_id: context.organizationId,
         owner_subject: owner(context),
         exported_at: clock.now(),
       }))
@@ -357,6 +408,7 @@ export function createConvexWorkGraphArchivePort(input: Input): WorkGraphArchive
       if (archive.ownerUserId !== owner(context)) throw new WorkGraphArchiveRestoreError("cross_owner")
       const restored = WorkGraphArchiveRestoreResultSchema.safeParse(result(await exec.mutation(workGraphConvexApi.workgraphArchive.restoreForService, {
         service_token: input.serviceToken,
+        organization_id: context.organizationId,
         owner_subject: context.ownerUserId,
         operation_id: restore.operationId,
         archive_hash: await hashWorkGraphArchive(archive),

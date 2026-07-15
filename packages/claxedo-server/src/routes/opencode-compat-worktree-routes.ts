@@ -1,11 +1,12 @@
 import fs from "fs"
 import type { Context } from "hono"
 import path from "path"
-import { deleteWorkspaceByDirectory, ensureWorkspace, getProjectWorkspace, listWorkspaces, resolveWorkspace } from "../workspace-store"
+import { deleteWorkspaceByDirectory, getProjectWorkspace, listWorkspaces, resolveWorkspace } from "../workspace-store"
 import { errorBody } from "./http"
 import { workspaceInput } from "./opencode-compat-context"
 import { defaultBranch, gitRun, locate, shell, trees } from "./opencode-compat-git"
 import { nextWorktreeInfo, publishWorktreeFailed, publishWorktreeReady } from "./opencode-compat-worktree"
+import { provisionRegisteredWorktree, WorktreeProvisionError } from "../worktree-service"
 
 type WorktreeInfo = NonNullable<Awaited<ReturnType<typeof nextWorktreeInfo>>>
 
@@ -24,16 +25,17 @@ export async function createWorktree(c: Context) {
   const body = await c.req.json().catch(() => ({})) as { name?: string; startCommand?: string }
   const info = await nextWorktreeInfo(root.directory, root.project_id ?? root.id, body.name)
   if (!info) return c.json(errorBody("opencode_worktree_name_failed", "Failed to generate a unique worktree name"), 400)
-  const created = await gitRun(root.directory, ["worktree", "add", "--no-checkout", "-b", info.branch, info.directory])
-  if (!created.ok) {
-    return c.json(errorBody("opencode_worktree_create_failed", created.err || created.out || "Failed to create git worktree"), 400)
+  try {
+    await provisionRegisteredWorktree({
+      repositoryDirectory: root.directory,
+      directory: info.directory,
+      workspaceName: info.name,
+      checkout: { kind: "branch", branch: info.branch, noCheckout: true },
+    })
+  } catch (error) {
+    const message = error instanceof WorktreeProvisionError ? error.detail : error instanceof Error ? error.message : String(error)
+    return c.json(errorBody("opencode_worktree_create_failed", message || "Failed to create git worktree"), 400)
   }
-  await ensureWorkspace({
-    project_id: root.project_id ?? root.id,
-    project_name: root.project_name,
-    workspace_name: info.name,
-    directory: info.directory,
-  })
   scheduleWorktreeReadyCheck(info, body.startCommand)
   return c.json(info)
 }

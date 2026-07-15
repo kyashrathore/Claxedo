@@ -197,6 +197,7 @@ function canonicalCleanupIdentity(value: Readonly<{ streamId: string; envelopeId
 
 function context(ownerUserId: string): WorkGraphContext {
   return {
+    organizationId: branded("organization"),
     ownerUserId: branded<OwnerUserID>(ownerUserId),
     actor: { type: "user", id: branded(ownerUserId) },
     requestId: branded(`request_${ownerUserId}`),

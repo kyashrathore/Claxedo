@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import {
+  SourceIssueConfigurationError,
   SourceIssueProviderError,
   SourceIssueResponseError,
   SourceIssueTransportError,
@@ -16,7 +17,7 @@ import { createWorkGraphIntakeRouter } from "./intake-router"
 describe("WorkGraph intake router", () => {
   test("requires a bounded Candidate page and maps owner-bound cursor failures", async () => {
     const requests: unknown[] = []
-    const cursor = createIntakeCandidatePageCursor({ ownerUserId: "owner", updatedAt: 2, candidateId: "candidate_2" })
+    const cursor = createIntakeCandidatePageCursor({ organizationId: "org", ownerUserId: "owner", updatedAt: 2, candidateId: "candidate_2" })
     const router = createWorkGraphIntakeRouter({
       sourceViews: {
         list: async () => [],
@@ -183,6 +184,23 @@ describe("WorkGraph intake router", () => {
         retryable: true,
       },
     })
+  })
+
+  test("surfaces missing provider configuration as a typed non-retryable response", async () => {
+    const response = await failureRouter(new SourceIssueConfigurationError("jira provider-secret", "site_url"))
+      .request("http://workgraph.test/source-views/view_1/refresh", { method: "POST" })
+    const body = await response.text()
+
+    expect(response.status).toBe(409)
+    expect(JSON.parse(body)).toEqual({
+      error: {
+        code: "source_issue_configuration_required",
+        message: "Source issue provider configuration is required",
+        retryable: false,
+      },
+    })
+    expect(body).not.toContain("secret")
+    expect(body).not.toContain("site_url")
   })
 
   test("surfaces provider failures with safe statuses and fixed redacted details", async () => {

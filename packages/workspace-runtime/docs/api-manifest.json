@@ -10,7 +10,16 @@
     "./testing"
   ],
   "rootRuntimeExports": [
+    "Pty",
+    "WORKGRAPH_CONNECTION_BINDING_PATH",
+    "WORKGRAPH_CONNECTION_TOOL_INPUT_SCHEMAS",
+    "WORKGRAPH_CONNECTION_TOOL_NAMES",
+    "WORKGRAPH_CONNECTION_TOOL_PATH",
+    "WORKGRAPH_CONNECTION_TOOL_SCHEMAS",
     "WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER",
+    "WorkGraphConnectionOperationRequestSchema",
+    "WorkGraphConnectionOperationResponseSchema",
+    "WorkGraphConnectionToolRoutes",
     "WorkspaceRuntimeRouteManifest",
     "WorkspaceRuntimeRoutes",
     "createWorkspaceHost",
@@ -33,6 +42,8 @@
     "workspaceRuntimeRoute"
   ],
   "routePrefixes": [
+    "/api/workgraph/connection-binding",
+    "/api/workgraph/tools",
     "/api/wr/health",
     "/api/wr/capabilities",
     "/api/wr/config",

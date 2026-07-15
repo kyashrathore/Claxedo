@@ -1,8 +1,10 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { ClaxedoDB, and, desc, eq, inArray } from "../storage/db"
 import { ClaxedoPageStatusTable, ClaxedoPageTable } from "../storage/schema"
 import { migratePages } from "../storage/migrate-legacy"
 import { getWorkspaceByDirectory, listProjects } from "../workspace-store"
+import { appendDocumentRevisionInTransaction, createDocumentInTransaction, type DocumentAuthor } from "../doc-store"
+import { markdownFromContent } from "./page-content"
 
 export const GLOBAL_PROJECT = "__pages_global__"
 export const LOCAL_ORG = "__local__"
@@ -32,11 +34,18 @@ export type Page = {
   last_commit_at: string | null
   last_commit_author_id: string | null
   commit_status: string
+  document_id: string | null
+  document_revision_id: string | null
   created_at: string
   updated_at: string
 }
 
-export type PageView = Omit<Page, "project_id"> & {
+type BoundPage = Page & {
+  document_id: string
+  document_revision_id: string
+}
+
+export type PageView = Omit<BoundPage, "project_id"> & {
   project_id: string | null
   project_name: string | null
   project_worktree: string | null
@@ -126,19 +135,20 @@ export async function statusProject(input: { directory?: string; project_id?: st
 }
 
 export async function enrichPage(page: Page): Promise<PageView> {
-  if (isGlobalProject((page as Page & { project_id?: string }).project_id || "")) {
+  const bound = ensurePageDocumentBinding(page)
+  if (isGlobalProject((bound as Page & { project_id?: string }).project_id || "")) {
     return {
-      ...page,
+      ...bound,
       project_id: null,
       project_name: null,
       project_worktree: null,
     }
   }
   const map = await projectMap()
-  const meta = map.get((page as Page & { project_id?: string }).project_id || "")
+  const meta = map.get((bound as Page & { project_id?: string }).project_id || "")
   return {
-    ...page,
-    project_id: (page as Page & { project_id?: string }).project_id || null,
+    ...bound,
+    project_id: (bound as Page & { project_id?: string }).project_id || null,
     project_name: meta?.name || null,
     project_worktree: meta?.worktree || null,
   }
@@ -146,7 +156,7 @@ export async function enrichPage(page: Page): Promise<PageView> {
 
 export async function enrichPages(rows: Page[]) {
   const map = await projectMap()
-  return rows.map((page) => {
+  return rows.map(ensurePageDocumentBinding).map((page) => {
     const pid = (page as Page & { project_id?: string }).project_id || ""
     if (isGlobalProject(pid)) {
       return {
@@ -216,12 +226,12 @@ export function getPageAny(orgId: string, pageId: string): Page | undefined {
 
 export function createPage(
   pid: string,
-  title?: string,
-  opts?: {
+  title: string | undefined,
+  opts: {
     content?: string
     status?: string
     directory?: string
-    org_id?: string
+    org_id: string
     source?: Partial<Pick<Page,
       | "source_kind"
       | "source_repo_root"
@@ -233,37 +243,55 @@ export function createPage(
       | "base_tree_sha"
       | "commit_status"
     >>
+    authored_by: DocumentAuthor
   },
 ): Page {
-  ensureProject(pid, opts?.directory)
-  const page: Page & { project_id: string } = {
-    id: pageId(),
-    org_id: opts?.org_id ?? LOCAL_ORG,
-    project_id: pid,
-    title: clean(title) || "Untitled",
-    content: opts?.content ?? "",
-    visibility: "project",
-    version: 0,
-    status: clean(opts?.status) || "draft",
-    session_id: null,
-    directory: opts?.directory || null,
-    source_kind: opts?.source?.source_kind ?? null,
-    source_repo_root: opts?.source?.source_repo_root ?? null,
-    source_repo_key: opts?.source?.source_repo_key ?? null,
-    source_path: opts?.source?.source_path ?? null,
-    source_branch: opts?.source?.source_branch ?? null,
-    base_commit: opts?.source?.base_commit ?? null,
-    base_blob_sha: opts?.source?.base_blob_sha ?? null,
-    base_tree_sha: opts?.source?.base_tree_sha ?? null,
-    last_materialized_commit: null,
-    last_materialized_blob_sha: null,
-    last_commit_at: null,
-    last_commit_author_id: null,
-    commit_status: opts?.source?.commit_status ?? "draft",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-  ClaxedoDB.use((db) => db.insert(ClaxedoPageTable).values(page).run())
+  ensureProject(pid, opts.directory)
+  const now = new Date()
+  const content = opts.content ?? ""
+  const markdown = markdownFromContent(content).markdown
+  const pageTitle = clean(title) || "Untitled"
+  const page = ClaxedoDB.transaction((db) => {
+    const document = createDocumentInTransaction(db, {
+      scope: { orgId: opts.org_id, projectId: pid },
+      title: pageTitle,
+      markdown,
+      contentHash: hashContent(markdown),
+      authoredBy: opts.authored_by,
+      authoredAt: now.getTime(),
+    })
+    const row: Page & { project_id: string } = {
+      id: pageId(),
+      org_id: opts.org_id,
+      project_id: pid,
+      title: pageTitle,
+      content,
+      visibility: "project",
+      version: 0,
+      status: clean(opts.status) || "draft",
+      session_id: null,
+      directory: opts.directory || null,
+      source_kind: opts.source?.source_kind ?? null,
+      source_repo_root: opts.source?.source_repo_root ?? null,
+      source_repo_key: opts.source?.source_repo_key ?? null,
+      source_path: opts.source?.source_path ?? null,
+      source_branch: opts.source?.source_branch ?? null,
+      base_commit: opts.source?.base_commit ?? null,
+      base_blob_sha: opts.source?.base_blob_sha ?? null,
+      base_tree_sha: opts.source?.base_tree_sha ?? null,
+      last_materialized_commit: null,
+      last_materialized_blob_sha: null,
+      last_commit_at: null,
+      last_commit_author_id: null,
+      commit_status: opts.source?.commit_status ?? "draft",
+      document_id: document.documentId,
+      document_revision_id: document.revisionId,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    }
+    db.insert(ClaxedoPageTable).values(row).run()
+    return row
+  })
   return page
 }
 
@@ -393,37 +421,67 @@ export function mergeStatuses(rows: PageStatusDef[]) {
   return [...map.values()].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
 }
 
-export function updatePage(scope: PageScope, pageId: string, patch: { title?: string; content?: string }, expectedVersion: number): Page | "conflict" | undefined {
-  const row = getPageRow(scope, pageId)
-  if (!row) return undefined
-
+export function updatePage(
+  scope: PageScope,
+  pageId: string,
+  patch: { title?: string; content?: string },
+  expectedVersion: number,
+  authoredBy: DocumentAuthor,
+): Page | "conflict" | undefined {
   const now = new Date().toISOString()
-
-  const next: Page = {
-    ...row,
-    title: patch.title !== undefined ? patch.title : row.title,
-    content: patch.content !== undefined ? patch.content : row.content,
-    version: row.version + 1,
-    updated_at: now,
-  }
-  const result = ClaxedoDB.raw()
-    .prepare(
-      `UPDATE claxedo_page
-        SET title = ?, content = ?, version = ?, updated_at = ?
-        WHERE id = ? AND org_id = ? AND project_id = ? AND version = ?`,
-    )
-    .run(
-      next.title,
-      next.content,
-      next.version,
-      next.updated_at,
-      pageId,
-      scope.orgId,
-      scope.projectId,
-      expectedVersion,
-    ) as { changes: number }
-  if (result.changes < 1) return "conflict"
-  return next
+  return ClaxedoDB.transaction((db) => {
+    const row = db
+      .select()
+      .from(ClaxedoPageTable)
+      .where(and(
+        eq(ClaxedoPageTable.id, pageId),
+        eq(ClaxedoPageTable.org_id, scope.orgId),
+        eq(ClaxedoPageTable.project_id, scope.projectId),
+      ))
+      .get()
+    if (!row) return undefined
+    if (row.version !== expectedVersion) return "conflict"
+    const bound = bindPageDocument(db, row, { type: "system", id: "pages_v2_binding" })
+    const title = patch.title !== undefined ? patch.title : bound.title
+    const content = patch.content !== undefined ? patch.content : bound.content
+    const markdown = markdownFromContent(content).markdown
+    const revisionId = appendDocumentRevisionInTransaction(db, {
+      scope: { orgId: scope.orgId, projectId: scope.projectId },
+      documentId: bound.document_id!,
+      expectedParentRevisionId: bound.document_revision_id!,
+      title,
+      markdown,
+      contentHash: hashContent(markdown),
+      authoredBy,
+      authoredAt: Date.parse(now),
+    })
+    const next: Page = {
+      ...bound,
+      title,
+      content,
+      version: bound.version + 1,
+      document_revision_id: revisionId,
+      updated_at: now,
+    }
+    const result = db
+      .update(ClaxedoPageTable)
+      .set({
+        title: next.title,
+        content: next.content,
+        version: next.version,
+        document_revision_id: next.document_revision_id,
+        updated_at: next.updated_at,
+      })
+      .where(and(
+        eq(ClaxedoPageTable.id, pageId),
+        eq(ClaxedoPageTable.org_id, scope.orgId),
+        eq(ClaxedoPageTable.project_id, scope.projectId),
+        eq(ClaxedoPageTable.version, expectedVersion),
+      ))
+      .run()
+    if (result.changes < 1) return "conflict"
+    return next
+  })
 }
 
 export function pageVersionConflict(currentVersion: number) {
@@ -468,6 +526,58 @@ async function projectMap() {
 
 function pageId() {
   return `page_${randomUUID().replaceAll("-", "")}`
+}
+
+function ensurePageDocumentBinding(page: Page): BoundPage {
+  if (page.document_id && page.document_revision_id) {
+    return { ...page, document_id: page.document_id, document_revision_id: page.document_revision_id }
+  }
+  return ClaxedoDB.transaction((db) => {
+    const row = db
+      .select()
+      .from(ClaxedoPageTable)
+      .where(and(
+        eq(ClaxedoPageTable.id, page.id),
+        eq(ClaxedoPageTable.org_id, page.org_id),
+        eq(ClaxedoPageTable.project_id, page.project_id),
+      ))
+      .get()
+    if (!row) throw new Error(`Page ${page.id} disappeared while establishing its Docs v2 identity`)
+    return bindPageDocument(db, row, { type: "system", id: "pages_v2_binding" })
+  })
+}
+
+function bindPageDocument(db: ClaxedoDB.Client, page: Page, authoredBy: DocumentAuthor): BoundPage {
+  if (page.document_id && page.document_revision_id) {
+    return { ...page, document_id: page.document_id, document_revision_id: page.document_revision_id }
+  }
+  if (page.document_id || page.document_revision_id) {
+    throw new Error(`Page ${page.id} has an incomplete Docs v2 identity`)
+  }
+  const markdown = markdownFromContent(page.content).markdown
+  const authoredAt = Date.parse(page.updated_at)
+  if (!Number.isFinite(authoredAt)) throw new Error(`Page ${page.id} has an invalid updated_at timestamp`)
+  const document = createDocumentInTransaction(db, {
+    scope: { orgId: page.org_id, projectId: page.project_id },
+    title: page.title,
+    markdown,
+    contentHash: hashContent(markdown),
+    authoredBy,
+    authoredAt,
+  })
+  db.update(ClaxedoPageTable)
+    .set({ document_id: document.documentId, document_revision_id: document.revisionId })
+    .where(and(
+      eq(ClaxedoPageTable.id, page.id),
+      eq(ClaxedoPageTable.org_id, page.org_id),
+      eq(ClaxedoPageTable.project_id, page.project_id),
+    ))
+    .run()
+  return { ...page, document_id: document.documentId, document_revision_id: document.revisionId }
+}
+
+function hashContent(markdown: string) {
+  return createHash("sha256").update(markdown).digest("hex")
 }
 
 function seedDefaultStatuses(pid: string) {

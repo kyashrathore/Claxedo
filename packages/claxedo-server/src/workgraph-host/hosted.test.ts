@@ -3,7 +3,10 @@ import { describe, expect, test, vi } from "vitest"
 import type { ConnectionWebhookVerifier } from "@claxedo/connections"
 import type { ControlPlaneCredentials } from "../control-plane/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import type { ExecutionCapabilitiesPort } from "@claxedo/workgraph/ports"
+import { ExecutionCapabilitiesUnavailableError, type ExecutionCapabilitiesPort } from "@claxedo/workgraph/ports"
+import { EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS } from "@claxedo/workgraph/contracts"
+import type { SignedControlPlaneAuth } from "../control-plane/auth"
+import type { WorkspaceAuthority } from "../control-plane/authority"
 import { createHostedWorkGraph } from "./hosted"
 
 const authConfig = { enabled: true as const, issuer: "https://clerk.test", jwksUrl: "https://clerk.test/jwks" }
@@ -14,7 +17,9 @@ function composition(
   webhookCredentials?: (orgId: string) => ControlPlaneCredentials,
   sandboxManager?: SandboxManager,
   executionCapabilities?: ExecutionCapabilitiesPort,
+  now?: () => number,
 ) {
+  let attestedCapabilities: unknown
   return createHostedWorkGraph({
     env: {
       CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
@@ -26,13 +31,23 @@ function composition(
       user: { subject: token, tokenIdentifier: `issuer|${token}`, issuer: "https://clerk.test", orgId: "clerk_org_a" },
     })),
     requestId: () => "request-hosted",
+    authority: {
+      resolveOrgId: async (auth: SignedControlPlaneAuth) =>
+        auth.user.orgId === "clerk_org_b" ? "org_internal_b" : "org_internal_a",
+    } as unknown as WorkspaceAuthority,
     ...(webhookVerifier ? { webhookVerifier } : {}),
     ...(webhookCredentials ? { webhookCredentials } : {}),
     ...(sandboxManager ? { sandboxManager } : {}),
     ...(executionCapabilities ? { executionCapabilities } : {}),
+    ...(now ? { now } : {}),
     executor: {
       mutation: async (_fn, args) => {
         calls.push(args)
+        if (args.capabilities) {
+          attestedCapabilities = args.capabilities
+          return { attested: true }
+        }
+        if (args.renew_only) return { ok: true, state: "renewed" }
         if (args.target_snapshot_hash) return {
           ok: true,
           result: { deleted: true, recordCount: 7, workspaceCount: 1, completedAt: 101 },
@@ -83,6 +98,12 @@ function composition(
       },
       query: async (_fn, args) => {
         calls.push(args)
+        if (
+          args.organization_id &&
+          args.owner_subject &&
+          args.now !== undefined &&
+          Object.keys(args).length === 4
+        ) return attestedCapabilities ?? null
         if (args.connectionId === "connection_1" && !("query" in args)) return {
           id: "connection_1",
           integrationId: "github",
@@ -135,35 +156,205 @@ function composition(
   })
 }
 
-test("hosted composition exposes its injected owner-scoped execution capability port", async () => {
-  const workgraph = composition([], undefined, undefined, undefined, {
-    read: async (context) => ({
-      schemaVersion: 1,
-      ownerUserId: context.ownerUserId,
-      observedAt: 1,
-      environments: [{
-        kind: "hosted_workspace",
-        repositoryRequired: false,
-        remoteUrlInput: true,
-        baseRevisionInput: true,
-        isolation: ["stream"],
-        cleanup: ["destroy_on_close"],
-        integration: ["manual"],
-      }],
-      harnesses: [{ id: "opencode" }],
-      agents: [{ harnessId: "opencode", id: "build", label: "build" }],
-      models: [],
-      tools: [{ harnessId: "opencode", id: "terminal" }],
-      repository: { baseRevisions: [] },
-      connections: [],
-    }),
+test("hosted capability GET reads only the persisted attestation and explicit refresh discovers and attests", async () => {
+  const calls: Record<string, unknown>[] = []
+  const discover = vi.fn(async (context: Parameters<ExecutionCapabilitiesPort["read"]>[0]) =>
+    capabilityCatalog(context))
+  const workgraph = composition(calls, undefined, undefined, undefined, {
+    read: discover,
+    refresh: discover,
   })
 
+  const unavailable = await workgraph.router.request("/execution-capabilities", {
+    headers: { authorization: "Bearer user_a" },
+  })
+  expect({ status: unavailable.status, body: await unavailable.text(), calls }).toMatchObject({ status: 503 })
+  expect(discover).not.toHaveBeenCalled()
+  expect(calls).toEqual([expect.objectContaining({
+    service_token: "service-secret",
+    organization_id: "org_internal_a",
+    owner_subject: "user_a",
+  })])
+
+  calls.length = 0
+  const refreshed = await workgraph.router.request("/execution-capabilities/refresh", {
+    method: "POST",
+    headers: { authorization: "Bearer user_a" },
+  })
+  expect(refreshed.status).toBe(200)
+  expect(discover).toHaveBeenCalledTimes(1)
+  expect(calls).toEqual([expect.objectContaining({
+    service_token: "service-secret",
+    organization_id: "org_internal_a",
+    owner_subject: "user_a",
+    capabilities: expect.objectContaining({ ownerUserId: "user_a" }),
+  })])
+
+  calls.length = 0
   const response = await workgraph.router.request("/execution-capabilities", {
     headers: { authorization: "Bearer user_a" },
   })
   expect(response.status).toBe(200)
   expect(await response.json()).toMatchObject({ ownerUserId: "user_a", environments: [{ kind: "hosted_workspace" }] })
+  expect(discover).toHaveBeenCalledTimes(1)
+  expect(calls).toEqual([expect.objectContaining({
+    service_token: "service-secret",
+    organization_id: "org_internal_a",
+    owner_subject: "user_a",
+  })])
+})
+
+test("hosted capability GET rejects an expired attestation and explicit refresh records a new revision", async () => {
+  let now = 1_000
+  let revision = 0
+  const source: ExecutionCapabilitiesPort = {
+    read: async (context) => capabilityCatalog(context, now, `${revision}`.repeat(64)),
+    refresh: async (context) => capabilityCatalog(context, now, `${++revision}`.repeat(64)),
+  }
+  const workgraph = composition([], undefined, undefined, undefined, source, () => now)
+
+  const first = await workgraph.router.request("/execution-capabilities/refresh", {
+    method: "POST",
+    headers: { authorization: "Bearer user_a" },
+  })
+  const firstBody = await first.json()
+  expect({ status: first.status, body: firstBody }).toMatchObject({
+    status: 200,
+    body: { catalogRevision: "1".repeat(64) },
+  })
+
+  now += EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS
+  const stale = await workgraph.router.request("/execution-capabilities", {
+    headers: { authorization: "Bearer user_a" },
+  })
+  expect(stale.status).toBe(503)
+  expect(await stale.json()).toMatchObject({
+    error: { code: "execution_capabilities_unavailable", retryable: true },
+  })
+
+  const refreshed = await workgraph.router.request("/execution-capabilities/refresh", {
+    method: "POST",
+    headers: { authorization: "Bearer user_a" },
+  })
+  expect(refreshed.status).toBe(200)
+  expect((await refreshed.json()).catalogRevision).toBe("2".repeat(64))
+})
+
+test("signed owner activation coalesces idempotent capability setup and derives the owner from auth", async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const refresh = vi.fn(async (context) => {
+    await gate
+    const observedAt = Date.now()
+    return {
+      schemaVersion: 1 as const,
+      organizationId: context.organizationId,
+      ownerUserId: context.ownerUserId,
+      catalogRevision: "e".repeat(64),
+      observedAt,
+      expiresAt: observedAt + EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
+      environments: [],
+      harnesses: [],
+      agents: [],
+      models: [],
+      tools: [],
+      repository: { baseRevisions: [] },
+      connections: [],
+    }
+  })
+  const workgraph = composition([], undefined, undefined, undefined, {
+    read: refresh,
+    refresh,
+  })
+  const auth = signedAuth("owner_a")
+  const first = workgraph.activateOwner(auth)
+  const second = workgraph.activateOwner(auth)
+  release()
+  await expect(Promise.all([first, second])).resolves.toEqual([{ status: "ready" }, { status: "ready" }])
+  expect(refresh).toHaveBeenCalledTimes(1)
+  expect(refresh.mock.calls[0]![0]).toMatchObject({ organizationId: "org_internal_a", ownerUserId: "owner_a", access: { mode: "owner" } })
+})
+
+test("owner activation isolates the same user across trusted organizations", async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const refresh = vi.fn(async (context: Parameters<ExecutionCapabilitiesPort["read"]>[0]) => {
+    await gate
+    return capabilityCatalog(context)
+  })
+  const workgraph = composition([], undefined, undefined, undefined, { read: refresh, refresh })
+
+  const first = workgraph.activateOwner(signedAuth("owner_a", "clerk_org_a"))
+  const second = workgraph.activateOwner(signedAuth("owner_a", "clerk_org_b"))
+  expect(first).not.toBe(second)
+  release()
+  await Promise.all([first, second])
+  expect(refresh.mock.calls.map(([resolved]) => resolved)).toEqual(expect.arrayContaining([
+    expect.objectContaining({ organizationId: "org_internal_a", ownerUserId: "owner_a" }),
+    expect.objectContaining({ organizationId: "org_internal_b", ownerUserId: "owner_a" }),
+  ]))
+})
+
+test("hosted capability attestation rejects a catalog from another organization", async () => {
+  const calls: Record<string, unknown>[] = []
+  const refresh = vi.fn(async (context: Parameters<ExecutionCapabilitiesPort["read"]>[0]) => ({
+    ...capabilityCatalog(context),
+    organizationId: "org_internal_b" as typeof context.organizationId,
+  }))
+  const workgraph = composition(calls, undefined, undefined, undefined, { read: refresh, refresh })
+
+  await expect(workgraph.activateOwner(signedAuth("owner_a"))).resolves.toMatchObject({
+    status: "failed",
+    error: {
+      code: "execution_capabilities_unavailable",
+      capability: "runtime",
+      reason: "runtime_unavailable",
+      retryable: false,
+    },
+  })
+  expect(calls).toEqual([])
+})
+
+test("signed owner activation reports typed pending state without substitute capabilities", async () => {
+  const workgraph = composition([], undefined, undefined, undefined, {
+    read: async () => {
+      throw new Error("not read")
+    },
+    refresh: async () => {
+      throw new ExecutionCapabilitiesUnavailableError(
+        "catalog_workspace",
+        "runtime_unavailable",
+        "Catalog provisioning is still running",
+        true,
+      )
+    },
+  })
+  await expect(workgraph.activateOwner(signedAuth("owner_a"))).resolves.toEqual({
+    status: "pending",
+    error: {
+      code: "execution_capabilities_unavailable",
+      capability: "catalog_workspace",
+      reason: "runtime_unavailable",
+      message: "Catalog provisioning is still running",
+      retryable: true,
+    },
+  })
+})
+
+test("signed owner activation preserves unexpected failures and permits a clean retry", async () => {
+  const refresh = vi.fn()
+    .mockRejectedValueOnce(new Error("catalog runtime contract violated"))
+    .mockImplementationOnce(async (context) => capabilityCatalog(context))
+  const workgraph = composition([], undefined, undefined, undefined, {
+    read: refresh,
+    refresh,
+  })
+  const auth = signedAuth("owner_a")
+  await expect(workgraph.activateOwner(auth)).rejects.toThrow("catalog runtime contract violated")
+  await expect(workgraph.activateOwner(auth)).resolves.toEqual({ status: "ready" })
+  expect(refresh).toHaveBeenCalledTimes(2)
 })
 
 describe("hosted WorkGraph composition", () => {
@@ -286,6 +477,11 @@ describe("hosted WorkGraph composition", () => {
     })))
     expect(calls.map((call) => call.owner_subject).sort()).toEqual(["user_a", "user_b"])
     expect(calls.every((call) => !("ownerUserId" in call))).toBe(true)
+
+    const selected = await workgraph.router.request("/snapshot?limit=10&organizationId=org_internal_b", {
+      headers: { authorization: "Bearer user_a" },
+    })
+    expect(selected.status).toBe(400)
   })
 
   test("mounts Convex-backed hosted Source View and independent Session intake routes", async () => {
@@ -352,8 +548,9 @@ describe("hosted WorkGraph composition", () => {
     expect(await restored.json()).toMatchObject({ version: 3, state: "unorganized" })
     expect(calls).toContainEqual(expect.objectContaining({
       service_token: "service-secret",
+      organization_id: "org_internal_a",
       owner_subject: "user_a",
-      query: { kind: "connection", clerkOrgId: "clerk_org_a", connectionId: "connection_1" },
+      query: { kind: "connection", connectionId: "connection_1" },
     }))
     expect(calls).toContainEqual(expect.objectContaining({
       operation: expect.objectContaining({ type: "create_source_view", orgId: "org_internal_a" }),
@@ -369,6 +566,13 @@ describe("hosted WorkGraph composition", () => {
       env: { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test" },
       authConfig,
     })).toThrow("CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN")
+    expect(() => createHostedWorkGraph({
+      env: {
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+      },
+      authConfig,
+    })).toThrow("trusted WorkspaceAuthority")
   })
 })
 
@@ -383,5 +587,45 @@ function credentialStore(secret: string): ControlPlaneCredentials {
     deleteCredentialsByProvider: async () => 0,
     updateCredentialStatus: async () => undefined,
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+  }
+}
+
+function signedAuth(subject: string, orgId = "clerk_org_a"): SignedControlPlaneAuth {
+  return {
+    mode: "signed",
+    token: "token",
+    user: {
+      subject,
+      tokenIdentifier: `https://clerk.test|${subject}`,
+      issuer: "https://clerk.test",
+      orgId,
+    },
+  }
+}
+
+function capabilityCatalog(
+  context: Parameters<ExecutionCapabilitiesPort["read"]>[0],
+  observedAt = Date.now(),
+  catalogRevision = "d".repeat(64),
+) {
+  return {
+    schemaVersion: 1 as const,
+    organizationId: context.organizationId,
+    ownerUserId: context.ownerUserId,
+    catalogRevision,
+    observedAt,
+    expiresAt: observedAt + EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
+    environments: [{
+      kind: "hosted_workspace" as const,
+      repositoryRequired: false,
+      remoteUrlInput: true,
+      baseRevisionInput: true,
+    }],
+    harnesses: [{ id: "opencode" }],
+    agents: [{ harnessId: "opencode", id: "build", label: "build" }],
+    models: [],
+    tools: [{ harnessId: "opencode", id: "terminal" }],
+    repository: { baseRevisions: [] },
+    connections: [],
   }
 }

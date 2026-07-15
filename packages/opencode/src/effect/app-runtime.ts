@@ -54,6 +54,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { ApplicationTools } from "@opencode-ai/core/tool/application-tools"
 
 export const AppLayer = AppNodeBuilderV1.build(
   LayerNode.group([
@@ -95,6 +96,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     McpAuth.node,
     Command.node,
     Truncate.node,
+    ApplicationTools.node,
     ToolRegistry.node,
     Format.node,
     InstanceStore.node,

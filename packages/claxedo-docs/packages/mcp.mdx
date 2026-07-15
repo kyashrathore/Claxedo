@@ -5,6 +5,11 @@ description: "Standalone MCP server for Claxedo runtime operations: process mana
 
 `@claxedo/mcp` is a standalone MCP server exposing Claxedo runtime tools — process management, log retrieval and summarization, session messages, and browser control — to any MCP client. It is a local operator tool: run it on the same machine as the Claxedo loopback endpoint, or against an intentionally configured signed remote server. It points at the server via `CLAXEDO_SERVER_URL` (default `http://127.0.0.1:3001`).
 
+Its WorkGraph tools are northbound clients of the authenticated WorkGraph HTTP
+contract. Local Claxedo agent Sessions expose the same schemas through direct
+in-process tools. Hosted embedded tools remain unavailable until the durable
+invoking Session supplies verified organization-and-user provenance.
+
 ## Install
 
 ```sh
@@ -30,13 +35,16 @@ Supported env: `CLAXEDO_SERVER_URL`, `OPENCODE_API_DIR`, `CLAXEDO_WORKSPACE_ID`,
 
 ## Tool surface
 
-- **Full-control mode (default)** — `process`, `get_logs`, `session_messages`, `summarize_logs`, `browser_list_tabs`, `browser_screenshot`, `browser_get_console_logs`, `browser_evaluate_js`, `browser_navigate`.
-- **Read-only mode** — registers only `get_logs`, `session_messages`, `browser_list_tabs`, `browser_screenshot`, `browser_get_console_logs`; omits `process`, `summarize_logs`, `browser_evaluate_js`, and `browser_navigate`.
+- **Full-control mode (default)** — runtime, browser, and owner-scoped `workgraph_*` inspection and mutation tools.
+- **Read-only mode** — runtime and browser inspection plus owner-scoped WorkGraph defaults, capabilities, attention, notifications, lists, details, source revisions, changes, candidates, evidence, Attempts, and Recaps; mutation tools remain omitted.
 
 ## Trust model
 
 <Warning>
-This MCP is a **local operator tool** — do not expose it as a shared remote endpoint. The `process` tool mutates `.claxedo/processes.jsonc` and starts/stops long-running commands; `summarize_logs` sends log text (possibly containing secrets) to a model; browser tools drive the desktop bridge. Treat remote `CLAXEDO_SERVER_URL` values as privileged and pair any bearer token with server-side audit logging.
+  This MCP is a **local operator tool** — do not expose it as a shared remote endpoint. The `process` tool mutates
+  `.claxedo/processes.jsonc` and starts/stops long-running commands; `summarize_logs` sends log text (possibly
+  containing secrets) to a model; browser tools drive the desktop bridge. Treat remote `CLAXEDO_SERVER_URL` values as
+  privileged and pair any bearer token with server-side audit logging.
 </Warning>
 
 ## Full API

@@ -9,10 +9,12 @@ import {
   createLocalEmbeddedWorkGraph,
   mountEmbeddedWorkGraph,
   mountLazyEmbeddedWorkGraph,
+  requireLocalWorkGraphRepositoryDirectory,
   type LocalWorkGraphAuthOptions,
 } from "./server-workgraph"
 import type { ExecutionCapabilitiesPort, WorkspaceExecutionPort } from "@claxedo/workgraph"
-import type { WorkGraphArchive } from "@claxedo/workgraph/contracts"
+import { EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS, readChangeCursor, type WorkGraphArchive } from "@claxedo/workgraph/contracts"
+import type { SignedControlPlaneAuth } from "./control-plane/auth"
 import {
   createAttempts,
   createConnectionsService,
@@ -31,20 +33,31 @@ afterEach(() => {
 })
 
 describe("embedded local WorkGraph v2", () => {
+  it("requires an explicitly configured absolute local repository before composition", () => {
+    expect(() => requireLocalWorkGraphRepositoryDirectory(undefined)).toThrowError(expect.objectContaining({
+      code: "local_workgraph_repository_directory_required",
+      retryable: false,
+    }))
+    expect(() => requireLocalWorkGraphRepositoryDirectory("relative/repo")).toThrow("requires CLAXEDO_WORKGRAPH_REPOSITORY")
+    expect(requireLocalWorkGraphRepositoryDirectory(" /repo ")).toBe("/repo")
+  })
+
   it("mounts the composed local execution capability port at the WorkGraph API", async () => {
     const executionCapabilities: ExecutionCapabilitiesPort = {
-      read: async (context) => ({
+      read: async (context) => {
+        const observedAt = Date.now()
+        return {
         schemaVersion: 1,
+        organizationId: context.organizationId,
         ownerUserId: context.ownerUserId,
-        observedAt: 1,
+        catalogRevision: "a".repeat(64),
+        observedAt,
+        expiresAt: observedAt + EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
         environments: [{
           kind: "local_worktree",
           repositoryRequired: true,
           remoteUrlInput: false,
           baseRevisionInput: true,
-          isolation: ["stream", "child"],
-          cleanup: ["destroy_on_close", "retain"],
-          integration: ["manual"],
         }],
         harnesses: [{ id: "opencode" }],
         agents: [{ harnessId: "opencode", id: "build", label: "build" }],
@@ -52,7 +65,8 @@ describe("embedded local WorkGraph v2", () => {
         tools: [{ harnessId: "opencode", id: "terminal" }],
         repository: { baseRevisions: ["HEAD"] },
         connections: [],
-      }),
+        }
+      },
     }
     const embedded = await createLocalEmbeddedWorkGraph({
       database: trackedDatabase(databaseFile()),
@@ -103,8 +117,9 @@ describe("embedded local WorkGraph v2", () => {
 
     const snapshot = await reloadedApp.request("/api/workgraph/snapshot", localAuth())
     expect(snapshot.status).toBe(200)
-    expect(await snapshot.json()).toMatchObject({
-      snapshotCursor: "2",
+    const snapshotBody = await snapshot.json() as { snapshotCursor: string; records: unknown[] }
+    expect(readChangeCursor(snapshotBody.snapshotCursor, "local", "local")).toBe(2)
+    expect(snapshotBody).toMatchObject({
       records: expect.arrayContaining([expect.objectContaining({
         recordType: "stream",
         id: created.value.streamId,
@@ -114,7 +129,9 @@ describe("embedded local WorkGraph v2", () => {
 
     const changes = await reloadedApp.request("/api/workgraph/changes", localAuth())
     expect(changes.status).toBe(200)
-    expect(await changes.json()).toMatchObject({ cursor: "2", changes: [{ cursor: "1" }, { cursor: "2" }] })
+    const changesBody = await changes.json() as { cursor: string; changes: Array<{ cursor: string }> }
+    expect(readChangeCursor(changesBody.cursor, "local", "local")).toBe(2)
+    expect(changesBody.changes.map((change) => readChangeCursor(change.cursor, "local", "local"))).toEqual([1, 2])
     await reloadedComposition
   })
 
@@ -132,7 +149,7 @@ describe("embedded local WorkGraph v2", () => {
     const exported = await sourceApp.request("/api/workgraph/archive", localAuth())
     expect(exported.status).toBe(200)
     const archive = await exported.json() as WorkGraphArchive
-    expect(archive).toMatchObject({ version: 1, ownerUserId: "local" })
+    expect(archive).toMatchObject({ version: 1, organizationId: "local", ownerUserId: "local" })
 
     const target = await composition(databaseFile())
     const targetApp = new Hono()
@@ -173,9 +190,15 @@ describe("embedded local WorkGraph v2", () => {
     const embedded = await composition(databaseFile())
     const app = new Hono()
     mountEmbeddedWorkGraph(app, embedded)
-    await command(app, "recap_stream", { version: 1, type: "create_stream", title: "Quiet launch" })
+    await command(app, "recap_stream", {
+      version: 1,
+      type: "create_stream",
+      title: "Quiet launch",
+      recap: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", quietHours: 8 },
+    })
     embedded.database.prepare("UPDATE wg_v2_events SET occurred_at = ?").run(Date.now() - 8 * 60 * 60 * 1000)
     const context = {
+      organizationId: "local" as never,
       ownerUserId: "local" as never,
       actor: { type: "system" as const, id: "recap_worker" as never },
       requestId: "recap_tick" as never,
@@ -197,6 +220,7 @@ describe("embedded local WorkGraph v2", () => {
     const embedded = await createLocalEmbeddedWorkGraph({
       database: trackedDatabase(databaseFile()),
       execution: terminalExecution(),
+      executionCapabilities: localExecutionCapabilities(),
       recaps: {
         directory: "/repo",
         sessions: {
@@ -230,10 +254,16 @@ describe("embedded local WorkGraph v2", () => {
         recap: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high" },
       },
     })
-    const created = await command(app, "recap_session_stream", { version: 1, type: "create_stream", title: "Session-backed recap" })
+    const created = await command(app, "recap_session_stream", {
+      version: 1,
+      type: "create_stream",
+      title: "Session-backed recap",
+      recap: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", quietHours: 8 },
+    })
     streamId = ((await created.json()) as { value: { streamId: string } }).value.streamId
     embedded.database.prepare("UPDATE wg_v2_events SET occurred_at = ? WHERE stream_id = ?").run(Date.now() - 8 * 60 * 60 * 1000, streamId)
     const context = {
+      organizationId: "local" as never,
       ownerUserId: "local" as never,
       actor: { type: "system" as const, id: "recap_worker" as never },
       requestId: "recap_session_tick" as never,
@@ -295,6 +325,64 @@ describe("embedded local WorkGraph v2", () => {
     expect(await (await app.request("/api/workgraph/intake?limit=50")).json()).toEqual({ candidates: [], hasMore: false })
   })
 
+  it("maps a foreign-organization Source View Connection to the canonical typed response", async () => {
+    const registry = createIntegrationRegistry()
+    registry.register({
+      id: "github",
+      name: "GitHub",
+      methods: ["key"],
+      capabilities: ["code-host", "work-source"],
+      keyTokenType: "bearer",
+      prompts: [{ id: "token", label: "Token", secret: true }],
+    }, { verify: async () => ({ ok: true }) })
+    const connections = createConnectionsService({
+      registry,
+      credentials: createMemoryCredentialStore(),
+      connections: createMemoryConnectionStore(),
+      attempts: createAttempts({ sweepIntervalMs: 0 }),
+      newId: () => "connection-org-a",
+    })
+    expect(await connections.connect({ integrationId: "github", owner: "org-owner-a", fields: {}, secret: "live" }))
+      .toEqual({ ok: true })
+    const embedded = await createLocalEmbeddedWorkGraph({
+      database: trackedDatabase(databaseFile()),
+      execution: terminalExecution(),
+      connections,
+      auth: signedAuth(),
+      resolveTeamOwner: (context) => context.organizationId,
+    })
+    const app = new Hono()
+    mountEmbeddedWorkGraph(app, embedded)
+    const body = JSON.stringify({
+      teamConnectionId: "connection-org-a",
+      provider: "github",
+      providerUserId: "octocat",
+      filters: { repo: "claxedo/claxedo" },
+    })
+
+    expect((await app.request("/api/workgraph/source-views", {
+      ...bearer("owner-a"),
+      method: "POST",
+      headers: { ...bearer("owner-a").headers, "content-type": "application/json" },
+      body,
+    })).status).toBe(201)
+    const hidden = await app.request("/api/workgraph/source-views", {
+      ...bearer("owner-b"),
+      method: "POST",
+      headers: { ...bearer("owner-b").headers, "content-type": "application/json" },
+      body,
+    })
+
+    expect(hidden.status).toBe(409)
+    expect(await hidden.json()).toEqual({
+      error: {
+        code: "source_view_connection_unavailable",
+        message: "Source View Connection is unavailable",
+        retryable: false,
+      },
+    })
+  })
+
   it("automatically verifies local GitHub callbacks from the Connection webhook credential", async () => {
     const registry = createIntegrationRegistry()
     registry.register({
@@ -339,6 +427,8 @@ describe("embedded local WorkGraph v2", () => {
 
     expect((await app.request("/api/workgraph/snapshot")).status).toBe(401)
     expect((await app.request("/api/workgraph/snapshot", bearer("invalid"))).status).toBe(401)
+    await expect(embedded.resolveContext(new Request("http://local.test/api/workgraph/snapshot", bearer("owner-a"))))
+      .resolves.toMatchObject({ organizationId: "org-owner-a", ownerUserId: "owner-a" })
 
     const ownerA = await command(app, "operation_a", {
       version: 1,
@@ -350,6 +440,7 @@ describe("embedded local WorkGraph v2", () => {
 
     expect((await app.request(`/api/workgraph/streams/${created.value.streamId}`, bearer("owner-b"))).status).toBe(404)
     expect((await app.request("/api/workgraph/snapshot?ownerUserId=owner-a", bearer("owner-b"))).status).toBe(400)
+    expect((await app.request("/api/workgraph/snapshot?organizationId=org-owner-a", bearer("owner-b"))).status).toBe(400)
 
     const smuggled = await app.request("/api/workgraph/commands", {
       ...bearer("owner-b"),
@@ -364,8 +455,30 @@ describe("embedded local WorkGraph v2", () => {
     expect(smuggled.status).toBe(400)
   })
 
+  it("fails signed WorkGraph requests closed when trusted organization resolution is unavailable", async () => {
+    const trusted = signedAuth()
+    const embedded = await composition(databaseFile(), {
+      authConfig: trusted.authConfig,
+      verifier: trusted.verifier,
+    })
+    const app = new Hono()
+    mountEmbeddedWorkGraph(app, embedded)
+
+    await expect(embedded.resolveContext(new Request("http://local.test/api/workgraph/snapshot", bearer("owner-a"))))
+      .rejects.toMatchObject({ status: 503, code: "workspace_authority_unavailable" })
+    const response = await app.request("/api/workgraph/snapshot", bearer("owner-a"))
+    expect(response.status).toBe(401)
+    expect(await response.json()).toMatchObject({
+      error: { code: "unauthorized" },
+    })
+  })
+
   it("executes through the embedded service and reconciles an explicit terminal result into result_ready", async () => {
-    const embedded = await createLocalEmbeddedWorkGraph({ database: trackedDatabase(databaseFile()), execution: terminalExecution() })
+    const embedded = await createLocalEmbeddedWorkGraph({
+      database: trackedDatabase(databaseFile()),
+      execution: terminalExecution(),
+      executionCapabilities: localExecutionCapabilities(),
+    })
     const app = new Hono()
     mountEmbeddedWorkGraph(app, embedded)
     const stream = await command(app, "operation_execute_stream", {
@@ -384,7 +497,7 @@ describe("embedded local WorkGraph v2", () => {
     })
     const workItemId = ((await item.json()) as { value: { workItemId: string } }).value.workItemId
     expect((await command(app, "operation_execute", { version: 1, type: "execute_work_item", workItemId, executionMode: "autonomous" })).status).toBe(200)
-    await embedded.reconcile({ ownerUserId: "local" as never, actor: { type: "system", id: "reconciler" as never }, requestId: "reconcile" as never, access: { mode: "owner" } })
+    await embedded.reconcile({ organizationId: "local" as never, ownerUserId: "local" as never, actor: { type: "system", id: "reconciler" as never }, requestId: "reconcile" as never, access: { mode: "owner" } })
     const snapshot = await app.request("/api/workgraph/snapshot", localAuth())
     const records = ((await snapshot.json()) as { records: Array<{ recordType: string; state?: string; result?: unknown }> }).records
     expect(records).toEqual(expect.arrayContaining([
@@ -396,7 +509,12 @@ describe("embedded local WorkGraph v2", () => {
 
 async function composition(file: string, auth?: LocalWorkGraphAuthOptions) {
   const database = trackedDatabase(file)
-  return createLocalEmbeddedWorkGraph({ database, execution: terminalExecution(), ...(auth ? { auth } : {}) })
+  return createLocalEmbeddedWorkGraph({
+    database,
+    execution: terminalExecution(),
+    executionCapabilities: localExecutionCapabilities(),
+    ...(auth ? { auth } : {}),
+  })
 }
 
 function trackedDatabase(file: string) {
@@ -442,6 +560,9 @@ function signedAuth(): LocalWorkGraphAuthOptions {
         user: { subject: token, tokenIdentifier: `session-${token}`, issuer: "test" },
       }
     },
+    authority: {
+      resolveOrgId: async (auth: SignedControlPlaneAuth) => `org-${auth.user.subject}` as never,
+    } as unknown as NonNullable<LocalWorkGraphAuthOptions["authority"]>,
   }
 }
 
@@ -462,17 +583,48 @@ async function command(
 function terminalExecution(): WorkspaceExecutionPort {
   return {
     provisionOrAdopt: async (_context, input) => ({ id: "envelope_1" as never, streamId: input.streamId, environment: input.environment, repository: input.repository, workspaceId: "/tmp/worktree" }),
-    createChildIsolation: async () => { throw new Error("unused") },
     launch: async (_context, input) => ({ sessionId: "session_1" as never, envelopeId: input.envelopeId }),
     cancel: async () => undefined,
     result: async () => ({ state: "succeeded", summary: "Done", artifacts: ["commit:abc"] }),
-    integrateResult: async (_context, input) => ({ summary: input.result.summary, artifacts: input.result.artifacts }),
     cleanup: async () => undefined,
+  }
+}
+
+function localExecutionCapabilities(): ExecutionCapabilitiesPort {
+  return {
+    read: async (context) => {
+      const observedAt = Date.now()
+      return {
+      schemaVersion: 1,
+      organizationId: context.organizationId,
+      ownerUserId: context.ownerUserId,
+      catalogRevision: "b".repeat(64),
+      observedAt,
+      expiresAt: observedAt + EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
+      environments: [{
+        kind: "local_worktree",
+        repositoryRequired: true,
+        remoteUrlInput: false,
+        baseRevisionInput: true,
+      }],
+      harnesses: [{ id: "claxedo-v2" }],
+      agents: [{ harnessId: "claxedo-v2", id: "build", label: "build" }],
+      models: [{
+        harnessId: "claxedo-v2",
+        providerId: "openai",
+        modelId: "gpt-5",
+        label: "GPT-5",
+        efforts: ["high"],
+      }],
+      tools: [],
+      repository: { baseRevisions: ["HEAD"] },
+      connections: [],
+      }
+    },
   }
 }
 
 const profile = {
   environment: { kind: "local_worktree" as const }, repository: { baseRevision: "HEAD" }, harness: "claxedo-v2", agent: "build",
-  model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", tools: [], connectionIds: [], isolation: "stream" as const,
-  cleanup: "destroy_on_close" as const, integration: "manual" as const,
+  model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", tools: [], connectionIds: [],
 }

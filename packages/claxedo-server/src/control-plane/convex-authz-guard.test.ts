@@ -48,6 +48,7 @@ const ALLOWED_FUNCTION_BUILDERS = new Set([
 // `httpAction` (Svix-verified webhook surface) is the only permitted
 // non-builder function constructor, and only in convex/http.ts.
 const ALLOWED_HTTP_CONSTRUCTORS = new Set(["httpAction"])
+const ALLOWED_MIGRATION_BUILDERS = new Set(["attentionMigration", "workGraphTenancyMigration"])
 
 function convexModules() {
   return fs.readdirSync(convexRoot)
@@ -117,6 +118,7 @@ describe("Convex authz builder guard (D8)", () => {
         const callee = match[2]!
         if (ALLOWED_FUNCTION_BUILDERS.has(callee)) continue
         if (file === HTTP_MODULE && ALLOWED_HTTP_CONSTRUCTORS.has(callee)) continue
+        if (file === "migrations.ts" && ALLOWED_MIGRATION_BUILDERS.has(callee)) continue
         violations.push(`convex/${file}: export const ${match[1]} = ${callee}(...)`)
       }
     }
@@ -127,6 +129,13 @@ describe("Convex authz builder guard (D8)", () => {
     const source = fs.readFileSync(path.join(convexRoot, BUILDER_MODULE), "utf8")
     for (const builder of ALLOWED_FUNCTION_BUILDERS) {
       expect(source).toContain(`export function ${builder}`)
+    }
+  })
+
+  test("migration helpers remain internal component builders", () => {
+    const source = fs.readFileSync(path.join(convexRoot, "migrations.ts"), "utf8")
+    for (const builder of ALLOWED_MIGRATION_BUILDERS) {
+      expect(source).toMatch(new RegExp(`function ${builder}\\([^]*?return migrations\\.define\\(`))
     }
   })
 })

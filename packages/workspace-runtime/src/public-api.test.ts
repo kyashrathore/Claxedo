@@ -29,12 +29,13 @@ describe("workspace-runtime public API manifest", () => {
     expect(Object.keys(rootApi).sort()).toEqual([...manifest.rootRuntimeExports].sort())
   })
 
-  test("route manifest exposes only neutral runtime routes", () => {
+  test("route manifest exposes only the documented runtime and WorkGraph capability routes", () => {
     expect(WorkspaceRuntimeRouteManifest.map((item) => item.path).sort()).toEqual(
       manifest.routePrefixes.sort(),
     )
     expect(Object.values(WorkspaceRuntimeRoutes).sort()).toEqual(manifest.routePrefixes.sort())
-    expect(WorkspaceRuntimeRouteManifest.every((item) => item.path.startsWith("/api/wr/"))).toBe(true)
+    expect(WorkspaceRuntimeRouteManifest.every((item) =>
+      item.path.startsWith("/api/wr/") || item.path.startsWith("/api/workgraph/"))).toBe(true)
   })
 
   // The kit stays decision-free: hosts construct the OpenCode engine and

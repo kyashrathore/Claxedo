@@ -30,4 +30,24 @@ declare module "opencode/node-embed" {
      */
     function disposeAllInstances(): Promise<void>
   }
+
+  export namespace ApplicationToolRuntime {
+    type Registration = Readonly<{
+      description: string
+      inputSchema: Record<string, unknown>
+      outputSchema?: Record<string, unknown>
+      execute(
+        input: unknown,
+        context: Readonly<{
+          sessionID: string
+          agent: string
+          assistantMessageID: string
+          toolCallID: string
+        }>,
+      ): Promise<unknown>
+    }>
+
+    /** Register process-scoped Core tools and return their exact disposer. */
+    function register(tools: Readonly<Record<string, Registration>>): Promise<() => Promise<void>>
+  }
 }

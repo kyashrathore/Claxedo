@@ -52,7 +52,7 @@ export function createConnectionOperationBroker(input: Readonly<{
   const connectors = input.connectors ?? {
     github: createGitHubSourceIssueConnector(),
     linear: createLinearSourceIssueConnector(),
-    jira: createJiraSourceIssueConnector({ baseUrl: "https://atlassian.net" }),
+    jira: createJiraSourceIssueConnector(),
   }
   return {
     async execute(

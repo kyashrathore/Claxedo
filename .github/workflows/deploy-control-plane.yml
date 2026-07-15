@@ -20,11 +20,18 @@ name: deploy-control-plane
 #   CLOUDFLARE_ACCOUNT_ID   — the account to deploy into
 #   CLERK_SECRET_KEY        — Clerk Backend API key used only to mint short-lived
 #                             smoke sessions for the configured test users
+#   CLAXEDO_RUNTIME_ADMIN_TOKEN — Worker admin bearer used by the smoke to run
+#                                  the same bounded WorkGraph reconciler as cron
 # Environment-scoped variables:
 #   CLAXEDO_CONTROL_PLANE_URL — base URL of that environment's Worker
 #                               (e.g. https://claxedo-control-plane-staging.<subdomain>.workers.dev)
 #   WORKGRAPH_SMOKE_USER_A_ID / WORKGRAPH_SMOKE_USER_B_ID — distinct Clerk users
-#   WORKGRAPH_SMOKE_WORKSPACE_ID — existing owner-accessible hosted Workspace
+#   WORKGRAPH_SMOKE_USER_A_EMAIL — primary email for user A's browser sign-in
+#   WORKGRAPH_SMOKE_ORGANIZATION_A_ID / WORKGRAPH_SMOKE_ORGANIZATION_B_ID
+#     — distinct Clerk organizations; user A belongs to both and user B belongs to A
+#   WORKGRAPH_SMOKE_HARNESS / WORKGRAPH_SMOKE_AGENT — deployed execution catalog IDs
+#   WORKGRAPH_SMOKE_PROVIDER_ID / WORKGRAPH_SMOKE_MODEL_ID / WORKGRAPH_SMOKE_EFFORT
+#   WORKGRAPH_SMOKE_TOOLS_JSON — exact JSON array of tool IDs used by the no-op Task
 
 on:
   push:
@@ -34,8 +41,15 @@ on:
       - packages/claxedo-server/**
       - packages/claxedo-connections/**
       - packages/workgraph/**
+      - packages/agent-sdk-runtime/**
+      - packages/channels/**
+      - packages/sandbox-manager/**
+      - packages/wakes/**
+      - packages/workspace-relay/**
+      - packages/workspace-relay-protocol/**
       - .github/workflows/deploy-control-plane.yml
       - .github/workflows/deploy-claxedo-app.yml
+      - .github/workflows/deploy-claxedo-app-staging.yml
   workflow_dispatch:
     inputs:
       promote:
@@ -44,9 +58,11 @@ on:
         type: boolean
         default: true
 
-# Deploys must never interleave; queue rather than cancel.
+# Every top-level Claxedo Cloud deploy shares this lock. The reusable app
+# workflow has no independent trigger or lock, so this ordered parent keeps the
+# global lock through Convex -> Worker -> app.
 concurrency:
-  group: deploy-control-plane
+  group: claxedo-cloud-deploy
   cancel-in-progress: false
 
 permissions:
@@ -57,15 +73,55 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
+      - name: Verify ordered release configuration
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLAXEDO_RUNTIME_ADMIN_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
+          WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
+          WORKGRAPH_SMOKE_USER_B_ID: ${{ vars.WORKGRAPH_SMOKE_USER_B_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_B_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_B_ID }}
+          WORKGRAPH_SMOKE_HARNESS: ${{ vars.WORKGRAPH_SMOKE_HARNESS }}
+          WORKGRAPH_SMOKE_AGENT: ${{ vars.WORKGRAPH_SMOKE_AGENT }}
+          WORKGRAPH_SMOKE_PROVIDER_ID: ${{ vars.WORKGRAPH_SMOKE_PROVIDER_ID }}
+          WORKGRAPH_SMOKE_MODEL_ID: ${{ vars.WORKGRAPH_SMOKE_MODEL_ID }}
+          WORKGRAPH_SMOKE_EFFORT: ${{ vars.WORKGRAPH_SMOKE_EFFORT }}
+          WORKGRAPH_SMOKE_TOOLS_JSON: ${{ vars.WORKGRAPH_SMOKE_TOOLS_JSON }}
+          APP_URL: ${{ vars.CLAXEDO_APP_URL }}
+          PAGES_PROJECT: ${{ vars.CLAXEDO_PAGES_PROJECT }}
+          PAGES_BRANCH: ${{ vars.CLAXEDO_PAGES_BRANCH }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+        run: |
+          set -euo pipefail
+          required=(
+            CONVEX_DEPLOY_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
+            CLERK_SECRET_KEY CLAXEDO_RUNTIME_ADMIN_TOKEN CONTROL_PLANE_URL
+            WORKGRAPH_SMOKE_USER_A_ID WORKGRAPH_SMOKE_USER_A_EMAIL WORKGRAPH_SMOKE_USER_B_ID
+            WORKGRAPH_SMOKE_ORGANIZATION_A_ID WORKGRAPH_SMOKE_ORGANIZATION_B_ID
+            WORKGRAPH_SMOKE_HARNESS WORKGRAPH_SMOKE_AGENT WORKGRAPH_SMOKE_PROVIDER_ID
+            WORKGRAPH_SMOKE_MODEL_ID WORKGRAPH_SMOKE_EFFORT WORKGRAPH_SMOKE_TOOLS_JSON
+            APP_URL PAGES_PROJECT PAGES_BRANCH CLERK_PUBLISHABLE_KEY CONVEX_URL
+          )
+          for name in "${required[@]}"; do
+            [ -n "${!name}" ] || { echo "::error::$name is not configured in the staging environment"; exit 1; }
+          done
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun
 
       # ADR ordering: Convex FIRST (push-only, no server-side rollback; old
       # Workers must keep working against new Convex, so Convex changes are
-      # additive-only). D14 discipline: Convex SCHEMA changes ship SOLO — a
-      # commit that changes convex/schema.ts should not also change Worker
-      # code. Use .github/workflows/deploy-convex.yml for a schema-only push.
+      # additive-only). Schema commits contain only the compatible Convex
+      # expansion; this ordered workflow then redeploys the unchanged Worker
+      # and app artifacts from the same SHA. deploy-convex.yml is reserved for
+      # an isolated operator-driven Convex roll-forward.
       # F18 (adversarial review): run the SAME pre-flight gate deploy-convex.yml
       # encodes before the real push — generate config + codegen + typecheck
       # WITHOUT deploying, so a config/codegen/type error is caught before the
@@ -152,14 +208,23 @@ jobs:
           [ "$workgraph_code" = "401" ] \
             || { echo "::error::expected WorkGraph 401, got $workgraph_code"; exit 1; }
 
-      - name: WorkGraph authenticated persistence smoke
+      - name: WorkGraph authenticated persistence and no-op execution smoke
         working-directory: packages/claxedo-server
         env:
           BASE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
+          WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
           WORKGRAPH_SMOKE_USER_B_ID: ${{ vars.WORKGRAPH_SMOKE_USER_B_ID }}
-          WORKGRAPH_SMOKE_WORKSPACE_ID: ${{ vars.WORKGRAPH_SMOKE_WORKSPACE_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_B_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_B_ID }}
+          WORKGRAPH_SMOKE_RECONCILE_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
+          WORKGRAPH_SMOKE_HARNESS: ${{ vars.WORKGRAPH_SMOKE_HARNESS }}
+          WORKGRAPH_SMOKE_AGENT: ${{ vars.WORKGRAPH_SMOKE_AGENT }}
+          WORKGRAPH_SMOKE_PROVIDER_ID: ${{ vars.WORKGRAPH_SMOKE_PROVIDER_ID }}
+          WORKGRAPH_SMOKE_MODEL_ID: ${{ vars.WORKGRAPH_SMOKE_MODEL_ID }}
+          WORKGRAPH_SMOKE_EFFORT: ${{ vars.WORKGRAPH_SMOKE_EFFORT }}
+          WORKGRAPH_SMOKE_TOOLS_JSON: ${{ vars.WORKGRAPH_SMOKE_TOOLS_JSON }}
         run: bun run smoke:workgraph
 
   deploy-app-staging:
@@ -167,7 +232,6 @@ jobs:
     uses: ./.github/workflows/deploy-claxedo-app.yml
     with:
       target_environment: staging
-      control_plane_verified: true
     secrets: inherit
 
   # Prod promotion: only on manual dispatch, and only after a human approves
@@ -175,16 +239,55 @@ jobs:
   # redeploys the SAME commit the staging smoke just validated.
   promote-production:
     if: github.event_name == 'workflow_dispatch' && inputs.promote
-    needs: smoke-staging
+    needs: deploy-app-staging
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Verify ordered release configuration
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLAXEDO_RUNTIME_ADMIN_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
+          WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
+          WORKGRAPH_SMOKE_USER_B_ID: ${{ vars.WORKGRAPH_SMOKE_USER_B_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_B_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_B_ID }}
+          WORKGRAPH_SMOKE_HARNESS: ${{ vars.WORKGRAPH_SMOKE_HARNESS }}
+          WORKGRAPH_SMOKE_AGENT: ${{ vars.WORKGRAPH_SMOKE_AGENT }}
+          WORKGRAPH_SMOKE_PROVIDER_ID: ${{ vars.WORKGRAPH_SMOKE_PROVIDER_ID }}
+          WORKGRAPH_SMOKE_MODEL_ID: ${{ vars.WORKGRAPH_SMOKE_MODEL_ID }}
+          WORKGRAPH_SMOKE_EFFORT: ${{ vars.WORKGRAPH_SMOKE_EFFORT }}
+          WORKGRAPH_SMOKE_TOOLS_JSON: ${{ vars.WORKGRAPH_SMOKE_TOOLS_JSON }}
+          APP_URL: ${{ vars.CLAXEDO_APP_URL }}
+          PAGES_PROJECT: ${{ vars.CLAXEDO_PAGES_PROJECT }}
+          PAGES_BRANCH: ${{ vars.CLAXEDO_PAGES_BRANCH }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+        run: |
+          set -euo pipefail
+          required=(
+            CONVEX_DEPLOY_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
+            CLERK_SECRET_KEY CLAXEDO_RUNTIME_ADMIN_TOKEN CONTROL_PLANE_URL
+            WORKGRAPH_SMOKE_USER_A_ID WORKGRAPH_SMOKE_USER_A_EMAIL WORKGRAPH_SMOKE_USER_B_ID
+            WORKGRAPH_SMOKE_ORGANIZATION_A_ID WORKGRAPH_SMOKE_ORGANIZATION_B_ID
+            WORKGRAPH_SMOKE_HARNESS WORKGRAPH_SMOKE_AGENT WORKGRAPH_SMOKE_PROVIDER_ID
+            WORKGRAPH_SMOKE_MODEL_ID WORKGRAPH_SMOKE_EFFORT WORKGRAPH_SMOKE_TOOLS_JSON
+            APP_URL PAGES_PROJECT PAGES_BRANCH CLERK_PUBLISHABLE_KEY CONVEX_URL
+          )
+          for name in "${required[@]}"; do
+            [ -n "${!name}" ] || { echo "::error::$name is not configured in the production environment"; exit 1; }
+          done
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun
 
-      # Same ADR ordering as staging: Convex before Worker. Schema changes
-      # still ship solo (D14) — see deploy-convex.yml.
+      # Same ADR ordering as staging: Convex before Worker, with the app
+      # released only after the Worker and authenticated smoke are healthy.
       # F18: same pre-flight gate as staging / deploy-convex.yml before the push.
       - name: Convex dry-run (config generation gate)
         env:
@@ -244,14 +347,22 @@ jobs:
             || { echo "::error::expected WorkGraph 401, got $workgraph_code"; exit 1; }
           echo "production smoke passed"
 
-      - name: WorkGraph authenticated persistence smoke
+      - name: WorkGraph authenticated persistence and no-op execution smoke
         working-directory: packages/claxedo-server
         env:
           BASE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
           WORKGRAPH_SMOKE_USER_B_ID: ${{ vars.WORKGRAPH_SMOKE_USER_B_ID }}
-          WORKGRAPH_SMOKE_WORKSPACE_ID: ${{ vars.WORKGRAPH_SMOKE_WORKSPACE_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
+          WORKGRAPH_SMOKE_ORGANIZATION_B_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_B_ID }}
+          WORKGRAPH_SMOKE_RECONCILE_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
+          WORKGRAPH_SMOKE_HARNESS: ${{ vars.WORKGRAPH_SMOKE_HARNESS }}
+          WORKGRAPH_SMOKE_AGENT: ${{ vars.WORKGRAPH_SMOKE_AGENT }}
+          WORKGRAPH_SMOKE_PROVIDER_ID: ${{ vars.WORKGRAPH_SMOKE_PROVIDER_ID }}
+          WORKGRAPH_SMOKE_MODEL_ID: ${{ vars.WORKGRAPH_SMOKE_MODEL_ID }}
+          WORKGRAPH_SMOKE_EFFORT: ${{ vars.WORKGRAPH_SMOKE_EFFORT }}
+          WORKGRAPH_SMOKE_TOOLS_JSON: ${{ vars.WORKGRAPH_SMOKE_TOOLS_JSON }}
         run: bun run smoke:workgraph
 
   deploy-app-production:
@@ -260,5 +371,4 @@ jobs:
     uses: ./.github/workflows/deploy-claxedo-app.yml
     with:
       target_environment: production
-      control_plane_verified: true
     secrets: inherit

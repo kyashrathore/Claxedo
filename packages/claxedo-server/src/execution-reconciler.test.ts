@@ -27,14 +27,12 @@ const ids = { attemptId: "attempt_1" as never, workItemId: "item_1" as never, se
 function execution(result: Awaited<ReturnType<WorkspaceExecutionPort["result"]>>): WorkspaceExecutionPort {
   return {
     provisionOrAdopt: async () => { throw new Error("unused") },
-    createChildIsolation: async () => { throw new Error("unused") },
     launch: async () => { throw new Error("unused") },
     cancel: async () => undefined,
     result: async () => result,
-    integrateResult: async (_context, input) => ({ summary: input.result.summary, artifacts: input.result.artifacts }),
     cleanup: async () => undefined,
   }
 }
 function owner(): WorkGraphContext {
-  return { ownerUserId: "owner" as never, actor: { type: "system", id: "reconciler" as never }, requestId: "request" as never, access: { mode: "owner" } }
+  return { organizationId: "org" as never, ownerUserId: "owner" as never, actor: { type: "system", id: "reconciler" as never }, requestId: "request" as never, access: { mode: "owner" } }
 }

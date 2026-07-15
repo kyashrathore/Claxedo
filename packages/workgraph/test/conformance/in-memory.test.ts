@@ -1,7 +1,9 @@
 import {
   createSnapshotResumeCursor,
+  createChangeCursor,
   compareSnapshotCursorPosition,
   readSnapshotResumeCursor,
+  readChangeCursor,
 } from "@claxedo/workgraph/contracts"
 import type {
   ChangeCursor,
@@ -68,7 +70,11 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
 
     pending.commit()
     const ownerChanges = changes.get(context.ownerUserId) ?? []
-    const cursor = branded<ChangeCursor>(String(ownerChanges.length + 1))
+    const cursor = createChangeCursor({
+      organizationId: context.organizationId,
+      ownerUserId: context.ownerUserId,
+      position: ownerChanges.length + 1,
+    })
     ownerChanges.push({
       cursor,
       event: {
@@ -193,9 +199,13 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
   const queries: ConformanceQueries = {
     snapshot: {
       page: async (context, query): Promise<WorkGraphSnapshotPage> => {
-        const snapshotCursor = branded<ChangeCursor>(String((changes.get(context.ownerUserId) ?? []).length))
+        const snapshotCursor = createChangeCursor({
+          organizationId: context.organizationId,
+          ownerUserId: context.ownerUserId,
+          position: (changes.get(context.ownerUserId) ?? []).length,
+        })
         const resume = query.after
-          ? readSnapshotResumeCursor(query.after, context.ownerUserId, snapshotCursor)
+          ? readSnapshotResumeCursor(query.after, context.organizationId, context.ownerUserId, snapshotCursor)
           : { offset: 0, capturedAt: input.clock.now() }
         const records = [...streams.values()]
           .filter((stream) => stream.ownerUserId === context.ownerUserId)
@@ -229,6 +239,7 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
           hasMore,
           ...(hasMore ? {
             nextCursor: createSnapshotResumeCursor({
+              organizationId: context.organizationId,
               ownerUserId: context.ownerUserId,
               snapshotCursor,
               offset: offset + page.length,
@@ -249,8 +260,26 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
       },
     },
     changes: {
-      list: async (context, query) => (changes.get(context.ownerUserId) ?? []).filter((change) => !query.after || Number(change.cursor) > Number(query.after)),
-      listStream: async (context, query) => (changes.get(context.ownerUserId) ?? []).filter((change) => change.event.streamId === query.streamId && (!query.after || Number(change.cursor) > Number(query.after))),
+      list: async (context, query) => {
+        const after = query.after ? readChangeCursor(query.after, context.organizationId, context.ownerUserId) : 0
+        return (changes.get(context.ownerUserId) ?? []).filter((change) =>
+          readChangeCursor(change.cursor, context.organizationId, context.ownerUserId) > after)
+      },
+      listStream: async (context, query) => {
+        const scope = { type: "stream" as const, streamId: query.streamId }
+        const after = query.after ? readChangeCursor(query.after, context.organizationId, context.ownerUserId, scope) : 0
+        return (changes.get(context.ownerUserId) ?? [])
+          .filter((change) => change.event.streamId === query.streamId && readChangeCursor(change.cursor, context.organizationId, context.ownerUserId) > after)
+          .map((change) => ({
+            ...change,
+            cursor: createChangeCursor({
+              organizationId: context.organizationId,
+              ownerUserId: context.ownerUserId,
+              scope,
+              position: readChangeCursor(change.cursor, context.organizationId, context.ownerUserId),
+            }),
+          }))
+      },
     },
     workItems: {
       read: async (context, query) => {

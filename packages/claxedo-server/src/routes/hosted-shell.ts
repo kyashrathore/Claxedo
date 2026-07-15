@@ -49,6 +49,8 @@ export type HostedShellRouteOptions = {
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<unknown>
   putPiCredential?: (auth: SignedControlPlaneAuth, providerID: string, key: string) => Promise<void>
   deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
+  /** Idempotent owner setup scheduled only from signed bootstrap on Worker waitUntil. */
+  activateOwner?: (auth: SignedControlPlaneAuth) => Promise<void>
 }
 
 function rec(input: unknown) {
@@ -187,11 +189,24 @@ async function signedAuth(c: Context, options: HostedShellRouteOptions) {
   return context.mode === "signed" ? context : undefined
 }
 
-async function signedProjects(c: Context, options: HostedShellRouteOptions) {
+function guardedWaitUntil(c: Context) {
+  try {
+    const execution = c.executionCtx
+    if (typeof execution?.waitUntil !== "function") return
+    return (promise: Promise<unknown>) => execution.waitUntil(promise)
+  } catch {
+    return
+  }
+}
+
+async function signedProjects(c: Context, options: HostedShellRouteOptions, activateOwner = false) {
   if (!bearerToken(c.req.header("authorization") ?? null)) return []
-  if (!options.listWorkspaces) return []
   const auth = await signedAuth(c, options)
   if (!auth) return []
+  if (activateOwner && options.activateOwner) {
+    guardedWaitUntil(c)?.(options.activateOwner(auth))
+  }
+  if (!options.listWorkspaces) return []
   const workspaces = await options.listWorkspaces(auth)
   return signedShellProjects(Array.isArray(workspaces) ? workspaces : [], Date.now())
 }
@@ -268,7 +283,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
           healthy: true,
           version: version(options),
           path: hostedPath(),
-          project: await signedProjects(c, options),
+          project: await signedProjects(c, options, true),
           provider,
           provider_auth: {},
           config: {},

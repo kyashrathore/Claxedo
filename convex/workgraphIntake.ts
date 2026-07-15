@@ -6,9 +6,8 @@ import {
   readIntakeCandidatePageCursor,
 } from "@claxedo/workgraph/contracts"
 import { ConvexError, v } from "convex/values"
-import { orgByClerkOrgId } from "./model"
 import { serviceMutation, serviceQuery } from "./model"
-import { assertWorkGraphOwnerReadable, assertWorkGraphOwnerWritable, requireTrustedWorkGraphOwnerSubject } from "./workgraphModel"
+import { assertWorkGraphOwnerReadable, assertWorkGraphOwnerWritable, requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
 import type { DataModel, Doc, Id } from "./_generated/dataModel"
 import { initializeAttentionProjection, syncAttentionRecord, syncCandidateTransition } from "./workgraphAttention"
 
@@ -17,21 +16,19 @@ type WriteCtx = GenericMutationCtx<DataModel>
 type Ctx = ReadCtx | WriteCtx
 
 export const readForService = serviceQuery({
-  args: { owner_subject: v.string(), query: v.any() },
-  handler: async (ctx, args) => readWorkGraphIntake(
-    ctx,
-    (await requireTrustedWorkGraphOwnerSubject(ctx, args.service_token, args.owner_subject))._id,
-    args.query,
-  ),
+  args: { organization_id: v.id("orgs"), owner_subject: v.string(), query: v.any() },
+  handler: async (ctx, args) => {
+    const tenant = await requireTrustedWorkGraphTenantSubject(ctx, args.service_token, args.organization_id, args.owner_subject)
+    return readWorkGraphIntake(ctx, tenant.organization_id as Id<"orgs">, tenant.owner_user_id, args.query)
+  },
 })
 
 export const executeForService = serviceMutation({
-  args: { owner_subject: v.string(), operation: v.any() },
-  handler: async (ctx, args) => applyWorkGraphIntakeOperation(
-    ctx,
-    (await requireTrustedWorkGraphOwnerSubject(ctx, args.service_token, args.owner_subject))._id,
-    args.operation,
-  ),
+  args: { organization_id: v.id("orgs"), owner_subject: v.string(), operation: v.any() },
+  handler: async (ctx, args) => {
+    const tenant = await requireTrustedWorkGraphTenantSubject(ctx, args.service_token, args.organization_id, args.owner_subject)
+    return applyWorkGraphIntakeOperation(ctx, tenant.organization_id as Id<"orgs">, tenant.owner_user_id, args.operation)
+  },
 })
 
 export const readWebhookForService = serviceQuery({
@@ -45,28 +42,28 @@ export const executeWebhookForService = serviceMutation({
 })
 
 /** Shared implementations are exported so adapter tests exercise the production state machine. */
-export async function readWorkGraphIntake(ctx: ReadCtx, ownerUserId: Id<"users">, input: unknown) {
-  await assertWorkGraphOwnerReadable(ctx, ownerUserId)
+export async function readWorkGraphIntake(ctx: ReadCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, input: unknown) {
+  await assertWorkGraphOwnerReadable(ctx, organizationId, ownerUserId)
   const query = object(input, "intake query")
   const kind = requiredString(query.kind, "query.kind")
   if (kind === "source_views") {
     return {
       sourceViews: (await ctx.db.query("workgraph_source_views")
-        .withIndex("by_owner", (builder) => builder.eq("owner_user_id", ownerUserId))
+        .withIndex("by_tenant", (builder) => builder.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId))
         .collect())
         .sort(newestFirst)
         .map(sourceViewDto),
     }
   }
   if (kind === "source_view") {
-    const row = await ownedSourceView(ctx, ownerUserId, requiredString(query.sourceViewId, "sourceViewId"))
+    const row = await ownedSourceView(ctx, organizationId, ownerUserId, requiredString(query.sourceViewId, "sourceViewId"))
     return row ? sourceViewDto(row) : null
   }
   if (kind === "candidates") {
     const sourceViewId = optionalString(query.sourceViewId, "sourceViewId")
     return {
       candidates: (await ctx.db.query("workgraph_intake_candidates")
-        .withIndex("by_owner", (builder) => builder.eq("owner_user_id", ownerUserId))
+        .withIndex("by_tenant", (builder) => builder.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId))
         .collect())
         .filter((row) => !sourceViewId || row.source_view_id === sourceViewId)
         .sort(newestFirst)
@@ -80,8 +77,8 @@ export async function readWorkGraphIntake(ctx: ReadCtx, ownerUserId: Id<"users">
     try {
       const after = query.after === undefined
         ? undefined
-        : readIntakeCandidatePageCursor(requiredString(query.after, "after"), String(ownerUserId), sourceViewId)
-      const rows = await candidatePageRows(ctx, ownerUserId, sourceViewId, after, limit + 1)
+        : readIntakeCandidatePageCursor(requiredString(query.after, "after"), String(organizationId), String(ownerUserId), sourceViewId)
+      const rows = await candidatePageRows(ctx, organizationId, ownerUserId, sourceViewId, after, limit + 1)
       const page = rows.slice(0, limit)
       const hasMore = rows.length > limit
       return IntakeCandidatePageSchema.parse({
@@ -89,6 +86,7 @@ export async function readWorkGraphIntake(ctx: ReadCtx, ownerUserId: Id<"users">
         hasMore,
         ...(hasMore ? {
           nextCursor: createIntakeCandidatePageCursor({
+            organizationId: String(organizationId),
             ownerUserId: String(ownerUserId),
             ...(sourceViewId ? { sourceViewId } : {}),
             updatedAt: page.at(-1)!.updated_at,
@@ -104,34 +102,34 @@ export async function readWorkGraphIntake(ctx: ReadCtx, ownerUserId: Id<"users">
     }
   }
   if (kind === "candidate") {
-    const row = await ownedCandidate(ctx, ownerUserId, requiredString(query.candidateId, "candidateId"))
+    const row = await ownedCandidate(ctx, organizationId, ownerUserId, requiredString(query.candidateId, "candidateId"))
     return row ? candidateDto(row) : null
   }
   if (kind === "connection") {
     return resolveConnection(
       ctx,
+      organizationId,
       ownerUserId,
-      requiredString(query.clerkOrgId, "clerkOrgId"),
       requiredString(query.connectionId, "connectionId"),
     )
   }
   throw new Error("Unsupported WorkGraph intake query")
 }
 
-export async function applyWorkGraphIntakeOperation(ctx: WriteCtx, ownerUserId: Id<"users">, input: unknown) {
-  await assertWorkGraphOwnerWritable(ctx, ownerUserId)
+export async function applyWorkGraphIntakeOperation(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, input: unknown) {
+  await assertWorkGraphOwnerWritable(ctx, organizationId, ownerUserId)
   const operation = object(input, "intake operation")
   const type = requiredString(operation.type, "operation.type")
-  if (type === "create_source_view") return createSourceView(ctx, ownerUserId, operation)
-  if (type === "update_source_view") return updateSourceView(ctx, ownerUserId, operation)
-  if (type === "delete_source_view") return deleteSourceView(ctx, ownerUserId, operation)
-  if (type === "upsert_external") return upsertExternal(ctx, ownerUserId, operation)
-  if (type === "prepare_stage_candidate") return prepareStageCandidate(ctx, ownerUserId, operation)
-  if (type === "stage_candidate") return stageCandidate(ctx, ownerUserId, operation)
-  if (type === "transition_candidate") return transitionCandidate(ctx, ownerUserId, operation)
-  if (type === "begin_receipt") return beginReceipt(ctx, ownerUserId, operation)
-  if (type === "complete_receipt") return settleReceipt(ctx, ownerUserId, operation, "completed")
-  if (type === "fail_receipt") return settleReceipt(ctx, ownerUserId, operation, "failed")
+  if (type === "create_source_view") return createSourceView(ctx, organizationId, ownerUserId, operation)
+  if (type === "update_source_view") return updateSourceView(ctx, organizationId, ownerUserId, operation)
+  if (type === "delete_source_view") return deleteSourceView(ctx, organizationId, ownerUserId, operation)
+  if (type === "upsert_external") return upsertExternal(ctx, organizationId, ownerUserId, operation)
+  if (type === "prepare_stage_candidate") return prepareStageCandidate(ctx, organizationId, ownerUserId, operation)
+  if (type === "stage_candidate") return stageCandidate(ctx, organizationId, ownerUserId, operation)
+  if (type === "transition_candidate") return transitionCandidate(ctx, organizationId, ownerUserId, operation)
+  if (type === "begin_receipt") return beginReceipt(ctx, organizationId, ownerUserId, operation)
+  if (type === "complete_receipt") return settleReceipt(ctx, organizationId, ownerUserId, operation, "completed")
+  if (type === "fail_receipt") return settleReceipt(ctx, organizationId, ownerUserId, operation, "failed")
   throw new Error("Unsupported WorkGraph intake operation")
 }
 
@@ -140,12 +138,22 @@ export async function readWorkGraphWebhook(ctx: ReadCtx, input: unknown) {
   if (requiredString(query.kind, "query.kind") !== "source_views") throw new Error("Unsupported WorkGraph webhook query")
   const limit = requiredNumber(query.limit, "limit")
   if (!Number.isInteger(limit) || limit < 1 || limit > 101) throw new Error("Webhook Source View limit is invalid")
-  const rows = await ctx.db.query("workgraph_source_views")
-    .withIndex("by_connection_provider_status", (builder) => builder
-      .eq("team_connection_id", requiredString(query.connectionId, "connectionId"))
+  const connectionId = requiredString(query.connectionId, "connectionId")
+  const connection = await ctx.db.query("workgraph_connection_metadata")
+    .withIndex("by_connection", (builder) => builder.eq("connection_id", connectionId))
+    .unique()
+  if (!connection) throw new Error("Webhook Connection metadata is unavailable")
+  const memberships = await ctx.db.query("org_memberships")
+    .withIndex("by_org_user", (builder) => builder.eq("org_id", connection.organization_id))
+    .take(limit)
+  const rows = (await Promise.all(memberships.map((membership) => ctx.db.query("workgraph_source_views")
+    .withIndex("by_tenant_connection_provider_status", (builder) => builder
+      .eq("organization_id", connection.organization_id)
+      .eq("owner_user_id", membership.user_id)
+      .eq("team_connection_id", connectionId)
       .eq("provider", sourceProvider(query.provider))
       .eq("status", "active"))
-    .take(limit)
+    .take(limit)))).flat().slice(0, limit)
   return {
     sourceViews: await Promise.all(rows.map(async (row) => {
       const owner = await ctx.db.get(row.owner_user_id)
@@ -214,28 +222,29 @@ async function settleWebhook(ctx: WriteCtx, operation: Record<string, unknown>, 
   return false
 }
 
-async function createSourceView(ctx: WriteCtx, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
+async function createSourceView(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
   const view = object(operation.view, "view")
   const orgId = requiredString(operation.orgId, "orgId") as Id<"orgs">
+  if (orgId !== organizationId) throw new Error("Source View organization does not match its WorkGraph tenant")
   if (!await isOrgMember(ctx, ownerUserId, orgId)) throw new Error("WorkGraph owner is not an org member")
   const id = requiredString(view.id, "view.id")
-  if (await ownedSourceView(ctx, ownerUserId, id)) throw new Error("Source View already exists")
+  if (await ownedSourceView(ctx, organizationId, ownerUserId, id)) throw new Error("Source View already exists")
   const provider = sourceProvider(view.provider)
   const connectionId = requiredString(view.teamConnectionId, "view.teamConnectionId")
   const connection = await ctx.db.query("workgraph_connection_metadata")
-    .withIndex("by_org_connection", (builder) => builder
-      .eq("org_id", orgId)
+    .withIndex("by_organization_connection", (builder) => builder
+      .eq("organization_id", orgId)
       .eq("connection_id", connectionId))
     .unique()
   if (!connection || connection.status !== "connected" || !connection.capabilities.includes("work-source") ||
     !providerMatches(provider, connection.integration_id)) throw new Error("Source View Connection is unavailable")
   const now = requiredNumber(view.createdAt, "view.createdAt")
-  await ensureRoot(ctx, ownerUserId, now)
+  await ensureRoot(ctx, organizationId, ownerUserId, now)
   const row = {
+    organization_id: organizationId,
     owner_user_id: ownerUserId,
     id,
     workgraph_id: "workgraph_default",
-    org_id: orgId,
     team_connection_id: connectionId,
     provider,
     provider_user_id: requiredString(view.providerUserId, "view.providerUserId"),
@@ -252,8 +261,8 @@ async function createSourceView(ctx: WriteCtx, ownerUserId: Id<"users">, operati
   return sourceViewDto(row)
 }
 
-async function updateSourceView(ctx: WriteCtx, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
-  const row = await ownedSourceView(ctx, ownerUserId, requiredString(operation.sourceViewId, "sourceViewId"))
+async function updateSourceView(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
+  const row = await ownedSourceView(ctx, organizationId, ownerUserId, requiredString(operation.sourceViewId, "sourceViewId"))
   if (!row) return { ok: false as const, reason: "not_found" as const }
   const expectedVersion = positiveInteger(operation.expectedVersion, "expectedVersion")
   const target = {
@@ -282,14 +291,15 @@ async function updateSourceView(ctx: WriteCtx, ownerUserId: Id<"users">, operati
   return { ok: true as const, view: sourceViewDto(updated) }
 }
 
-async function deleteSourceView(ctx: WriteCtx, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
-  const row = await ownedSourceView(ctx, ownerUserId, requiredString(operation.sourceViewId, "sourceViewId"))
+async function deleteSourceView(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
+  const row = await ownedSourceView(ctx, organizationId, ownerUserId, requiredString(operation.sourceViewId, "sourceViewId"))
   if (!row) return { ok: false as const, reason: "not_found" as const }
   if (row.row_version !== positiveInteger(operation.expectedVersion, "expectedVersion")) {
     return { ok: false as const, reason: "version_conflict" as const }
   }
   const candidates = (await ctx.db.query("workgraph_intake_candidates")
-    .withIndex("by_owner", (builder) => builder.eq("owner_user_id", ownerUserId))
+    .withIndex("by_tenant", (builder) => builder.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId))
+    .filter((builder) => builder.eq(builder.field("organization_id"), organizationId))
     .collect())
     .filter((candidate) => candidate.source_view_id === row.id)
   if (candidates.some((candidate) => candidate.status !== "dismissed")) {
@@ -297,12 +307,14 @@ async function deleteSourceView(ctx: WriteCtx, ownerUserId: Id<"users">, operati
   }
   const candidateIds = new Set(candidates.map((candidate) => candidate.id))
   const admitted = (await ctx.db.query("workgraph_admission_proposals")
-    .withIndex("by_owner", (builder) => builder.eq("owner_user_id", ownerUserId))
+    .withIndex("by_tenant", (builder) => builder.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId))
+    .filter((builder) => builder.eq(builder.field("organization_id"), organizationId))
     .collect())
     .some((proposal) => !!proposal.intake_candidate_id && candidateIds.has(proposal.intake_candidate_id))
   if (admitted) return { ok: false as const, reason: "in_use" as const }
   const identities = (await ctx.db.query("workgraph_external_identities")
-    .withIndex("by_owner", (builder) => builder.eq("owner_user_id", ownerUserId))
+    .withIndex("by_tenant", (builder) => builder.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId))
+    .filter((builder) => builder.eq(builder.field("organization_id"), organizationId))
     .collect())
     .filter((identity) => !!identity.intake_candidate_id && candidateIds.has(identity.intake_candidate_id))
   await Promise.all(identities.map((identity) => ctx.db.delete(identity._id)))
@@ -311,27 +323,29 @@ async function deleteSourceView(ctx: WriteCtx, ownerUserId: Id<"users">, operati
   return { ok: true as const, view: sourceViewDto(row) }
 }
 
-async function upsertExternal(ctx: WriteCtx, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
+async function upsertExternal(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
   requiredString(operation.identityKey, "identityKey")
   const input = object(operation.candidate, "candidate")
   if (input.candidateKind !== "external_issue") throw new Error("Only external issue candidates can be upserted")
   const sourceViewId = requiredString(input.sourceViewId, "candidate.sourceViewId")
-  const sourceView = await ownedSourceView(ctx, ownerUserId, sourceViewId)
+  const sourceView = await ownedSourceView(ctx, organizationId, ownerUserId, sourceViewId)
   if (!sourceView) throw new Error("Source View not found")
   const provider = sourceProvider(input.provider)
   if (provider !== sourceView.provider) throw new Error("Candidate provider does not match its Source View")
   const externalId = requiredString(input.externalId, "candidate.externalId")
   const existingIdentity = await ctx.db.query("workgraph_external_identities")
-    .withIndex("by_owner_external", (builder) => builder
+    .withIndex("by_tenant_external", (builder) => builder
+      .eq("organization_id", organizationId)
       .eq("owner_user_id", ownerUserId)
       .eq("provider", provider)
       .eq("team_connection_id", sourceView.team_connection_id)
       .eq("external_id", externalId))
+    .filter((builder) => builder.eq(builder.field("organization_id"), organizationId))
     .unique()
   const now = requiredNumber(input.updatedAt, "candidate.updatedAt")
   const normalized = externalNormalized(input)
   if (existingIdentity?.intake_candidate_id) {
-    const existing = await ownedCandidate(ctx, ownerUserId, existingIdentity.intake_candidate_id)
+    const existing = await ownedCandidate(ctx, organizationId, ownerUserId, existingIdentity.intake_candidate_id)
     if (!existing || existing.candidate_kind !== "external_issue") throw new Error("External identity resolved to an invalid candidate")
     const existingNormalized = object(existing.normalized, "candidate.normalized")
     const saved = existing.status === "unorganized" && existingNormalized.admissionDraft === undefined
@@ -360,6 +374,7 @@ async function upsertExternal(ctx: WriteCtx, ownerUserId: Id<"users">, operation
   }
   const createdAt = requiredNumber(input.createdAt, "candidate.createdAt")
   const candidate = {
+    organization_id: organizationId,
     owner_user_id: ownerUserId,
     id: requiredString(input.id, "candidate.id"),
     workgraph_id: "workgraph_default",
@@ -386,6 +401,7 @@ async function upsertExternal(ctx: WriteCtx, ownerUserId: Id<"users">, operation
   }
   if (existingIdentity) await ctx.db.patch(existingIdentity._id, identity)
   if (!existingIdentity) await ctx.db.insert("workgraph_external_identities", {
+    organization_id: organizationId,
     owner_user_id: ownerUserId,
     id: `identity_${candidate.id}`,
     ...identity,
@@ -399,8 +415,8 @@ async function upsertExternal(ctx: WriteCtx, ownerUserId: Id<"users">, operation
   return { candidate: candidateDto(candidate), created: true as const }
 }
 
-async function prepareStageCandidate(ctx: WriteCtx, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
-  const row = await requireCandidate(ctx, ownerUserId, operation)
+async function prepareStageCandidate(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
+  const row = await requireCandidate(ctx, organizationId, ownerUserId, operation)
   if (row.status !== "unorganized" && row.status !== "staged") throw new Error("Candidate cannot be staged")
   const normalized = object(row.normalized, "candidate.normalized")
   const provided = object(operation.draft, "draft")
@@ -417,8 +433,8 @@ async function prepareStageCandidate(ctx: WriteCtx, ownerUserId: Id<"users">, op
   return { candidate: candidateDto(saved), draft }
 }
 
-async function stageCandidate(ctx: WriteCtx, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
-  const row = await requireCandidate(ctx, ownerUserId, operation)
+async function stageCandidate(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
+  const row = await requireCandidate(ctx, organizationId, ownerUserId, operation)
   if (row.status !== "unorganized" && row.status !== "staged") throw new Error("Candidate cannot be staged")
   const normalized = object(row.normalized, "candidate.normalized")
   const draft = stageDraft(normalized.admissionDraft)
@@ -428,7 +444,8 @@ async function stageCandidate(ctx: WriteCtx, ownerUserId: Id<"users">, operation
   }
   const proposalId = requiredString(operation.proposalId, "proposalId")
   const proposal = await ctx.db.query("workgraph_admission_proposals")
-    .withIndex("by_owner_id", (builder) => builder.eq("owner_user_id", ownerUserId).eq("id", proposalId))
+    .withIndex("by_tenant_id", (builder) => builder.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId).eq("id", proposalId))
+    .filter((builder) => builder.eq(builder.field("organization_id"), organizationId))
     .unique()
   if (!proposal || !["planning", "planning_failed", "proposed"].includes(proposal.state) || !sameSource(proposal.source, source)) {
     throw new Error("Admission proposal does not match the candidate source")
@@ -448,8 +465,8 @@ async function stageCandidate(ctx: WriteCtx, ownerUserId: Id<"users">, operation
   return candidateDto(saved)
 }
 
-async function transitionCandidate(ctx: WriteCtx, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
-  const row = await ownedCandidate(ctx, ownerUserId, requiredString(operation.candidateId, "candidateId"))
+async function transitionCandidate(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
+  const row = await ownedCandidate(ctx, organizationId, ownerUserId, requiredString(operation.candidateId, "candidateId"))
   if (!row) return { ok: false as const, reason: "not_found" as const }
   const expectedVersion = positiveInteger(operation.expectedVersion, "expectedVersion")
   const from = candidateTransitionState(operation.from, "from")
@@ -475,11 +492,12 @@ async function transitionCandidate(ctx: WriteCtx, ownerUserId: Id<"users">, oper
   return { ok: true as const, candidate: candidateDto(updated) }
 }
 
-async function beginReceipt(ctx: WriteCtx, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
+async function beginReceipt(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
   const key = requiredString(operation.key, "key")
   const now = requiredNumber(operation.now, "now")
   const existing = await ctx.db.query("workgraph_outbox")
-    .withIndex("by_owner_idempotency", (builder) => builder.eq("owner_user_id", ownerUserId).eq("idempotency_key", key))
+    .withIndex("by_tenant_idempotency", (builder) => builder.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId).eq("idempotency_key", key))
+    .filter((builder) => builder.eq(builder.field("organization_id"), organizationId))
     .unique()
   if (existing?.status === "completed") return { state: "completed" as const }
   if (existing?.status === "pending" && (existing.claim_expires_at ?? 0) > now) return { state: "busy" as const }
@@ -489,6 +507,7 @@ async function beginReceipt(ctx: WriteCtx, ownerUserId: Id<"users">, operation: 
     return { state: "acquired" as const, leaseId }
   }
   await ctx.db.insert("workgraph_outbox", {
+    organization_id: organizationId,
     owner_user_id: ownerUserId,
     id: `intake_receipt_${crypto.randomUUID()}`,
     operation_id: `intake_sync_${crypto.randomUUID()}`,
@@ -510,11 +529,13 @@ async function beginReceipt(ctx: WriteCtx, ownerUserId: Id<"users">, operation: 
   return { state: "acquired" as const, leaseId }
 }
 
-async function settleReceipt(ctx: WriteCtx, ownerUserId: Id<"users">, operation: Record<string, unknown>, status: "completed" | "failed") {
+async function settleReceipt(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, operation: Record<string, unknown>, status: "completed" | "failed") {
   const row = await ctx.db.query("workgraph_outbox")
-    .withIndex("by_owner_idempotency", (builder) => builder
+    .withIndex("by_tenant_idempotency", (builder) => builder
+      .eq("organization_id", organizationId)
       .eq("owner_user_id", ownerUserId)
       .eq("idempotency_key", requiredString(operation.key, "key")))
+    .filter((builder) => builder.eq(builder.field("organization_id"), organizationId))
     .unique()
   if (row?.status === "pending" && row.claimed_by === requiredString(operation.leaseId, "leaseId")) {
     await ctx.db.patch(row._id, {
@@ -526,19 +547,18 @@ async function settleReceipt(ctx: WriteCtx, ownerUserId: Id<"users">, operation:
   }
 }
 
-async function resolveConnection(ctx: ReadCtx, ownerUserId: Id<"users">, clerkOrgId: string, connectionId: string) {
-  const org = await orgByClerkOrgId(ctx.db, clerkOrgId)
-  if (!org || org.deleted_at || !await isOrgMember(ctx, ownerUserId, org._id)) return null
+async function resolveConnection(ctx: ReadCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, connectionId: string) {
+  if (!await isOrgMember(ctx, ownerUserId, organizationId)) return null
   const row = await ctx.db.query("workgraph_connection_metadata")
-    .withIndex("by_org_connection", (builder) => builder
-      .eq("org_id", org._id)
+    .withIndex("by_organization_connection", (builder) => builder
+      .eq("organization_id", organizationId)
       .eq("connection_id", connectionId))
     .unique()
   if (!row) return null
   return {
     id: row.connection_id,
     ownerUserId: String(ownerUserId),
-    orgId: String(org._id),
+    orgId: String(organizationId),
     integrationId: row.integration_id,
     capabilities: row.capabilities,
     status: row.status,
@@ -548,9 +568,10 @@ async function resolveConnection(ctx: ReadCtx, ownerUserId: Id<"users">, clerkOr
   }
 }
 
-async function ensureRoot(ctx: WriteCtx, ownerUserId: Id<"users">, now: number) {
-  if (await ownedRoot(ctx, ownerUserId)) return
+async function ensureRoot(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, now: number) {
+  if (await ownedRoot(ctx, organizationId, ownerUserId)) return
   await ctx.db.insert("workgraphs", {
+    organization_id: organizationId,
     owner_user_id: ownerUserId,
     id: "workgraph_default",
     defaults: {},
@@ -561,75 +582,85 @@ async function ensureRoot(ctx: WriteCtx, ownerUserId: Id<"users">, now: number) 
     created_at: now,
     updated_at: now,
   })
-  await initializeAttentionProjection(ctx, String(ownerUserId), now)
+  await initializeAttentionProjection(ctx, String(organizationId), String(ownerUserId), now)
 }
 
-async function requireCandidate(ctx: WriteCtx, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
-  const row = await ownedCandidate(ctx, ownerUserId, requiredString(operation.candidateId, "candidateId"))
+async function requireCandidate(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, operation: Record<string, unknown>) {
+  const row = await ownedCandidate(ctx, organizationId, ownerUserId, requiredString(operation.candidateId, "candidateId"))
   if (!row) throw new Error("Candidate not found")
   return row
 }
 
-function ownedRoot(ctx: Ctx, ownerUserId: Id<"users">) {
+function ownedRoot(ctx: Ctx, organizationId: Id<"orgs">, ownerUserId: Id<"users">) {
   return ctx.db.query("workgraphs")
-    .withIndex("by_owner_id", (builder) => builder.eq("owner_user_id", ownerUserId).eq("id", "workgraph_default"))
+    .withIndex("by_tenant_id", (builder) => builder.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId).eq("id", "workgraph_default"))
     .unique()
 }
 
-function ownedSourceView(ctx: Ctx, ownerUserId: Id<"users">, id: string) {
+function ownedSourceView(ctx: Ctx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, id: string) {
   return ctx.db.query("workgraph_source_views")
-    .withIndex("by_owner_id", (builder) => builder.eq("owner_user_id", ownerUserId).eq("id", id))
+    .withIndex("by_tenant_id", (builder) => builder.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId).eq("id", id))
     .unique()
 }
 
-function ownedCandidate(ctx: Ctx, ownerUserId: Id<"users">, id: string) {
+function ownedCandidate(ctx: Ctx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, id: string) {
   return ctx.db.query("workgraph_intake_candidates")
-    .withIndex("by_owner_id", (builder) => builder.eq("owner_user_id", ownerUserId).eq("id", id))
+    .withIndex("by_tenant", (builder) => builder.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId))
+    .filter((builder) => builder.eq(builder.field("id"), id))
     .unique()
 }
 
 async function candidatePageRows(
   ctx: ReadCtx,
+  organizationId: Id<"orgs">,
   ownerUserId: Id<"users">,
   sourceViewId: string | undefined,
   after: Readonly<{ updatedAt: number; candidateId: string }> | undefined,
   limit: number,
 ) {
-  const index = sourceViewId ? "by_owner_status_source_updated_id" as const : "by_owner_status_updated_id" as const
+  const index = sourceViewId ? "by_tenant_status_source_updated_id" as const : "by_tenant_status_updated_id" as const
   const query = () => sourceViewId
     ? ctx.db.query("workgraph_intake_candidates").withIndex(index, (builder) => builder
+        .eq("organization_id", organizationId)
         .eq("owner_user_id", ownerUserId)
         .eq("status", "unorganized")
         .eq("source_view_id", sourceViewId))
     : ctx.db.query("workgraph_intake_candidates").withIndex(index, (builder) => builder
+        .eq("organization_id", organizationId)
         .eq("owner_user_id", ownerUserId)
         .eq("status", "unorganized"))
-  if (!after) return query().order("desc").take(limit)
+  if (!after) return query().filter((builder) => builder.eq(builder.field("organization_id"), organizationId)).order("desc").take(limit)
   const sameTimestamp = await (sourceViewId
     ? ctx.db.query("workgraph_intake_candidates").withIndex(index, (builder) => builder
+        .eq("organization_id", organizationId)
         .eq("owner_user_id", ownerUserId)
         .eq("status", "unorganized")
         .eq("source_view_id", sourceViewId)
         .eq("updated_at", after.updatedAt)
         .lt("id", after.candidateId))
     : ctx.db.query("workgraph_intake_candidates").withIndex(index, (builder) => builder
+        .eq("organization_id", organizationId)
         .eq("owner_user_id", ownerUserId)
         .eq("status", "unorganized")
         .eq("updated_at", after.updatedAt)
         .lt("id", after.candidateId)))
+    .filter((builder) => builder.eq(builder.field("organization_id"), organizationId))
     .order("desc")
     .take(limit)
   if (sameTimestamp.length === limit) return sameTimestamp
   const older = await (sourceViewId
     ? ctx.db.query("workgraph_intake_candidates").withIndex(index, (builder) => builder
+        .eq("organization_id", organizationId)
         .eq("owner_user_id", ownerUserId)
         .eq("status", "unorganized")
         .eq("source_view_id", sourceViewId)
         .lt("updated_at", after.updatedAt))
     : ctx.db.query("workgraph_intake_candidates").withIndex(index, (builder) => builder
+        .eq("organization_id", organizationId)
         .eq("owner_user_id", ownerUserId)
         .eq("status", "unorganized")
         .lt("updated_at", after.updatedAt)))
+    .filter((builder) => builder.eq(builder.field("organization_id"), organizationId))
     .order("desc")
     .take(limit - sameTimestamp.length)
   return [...sameTimestamp, ...older]
@@ -672,7 +703,12 @@ function candidateDto(row: Pick<Doc<"workgraph_intake_candidates">, "id" | "owne
     updatedAt: row.updated_at,
   }
   if (row.candidate_kind === "session") {
-    return { ...common, candidateKind: "session" as const, sessionId: requiredString(normalized.sessionId, "candidate.sessionId") }
+    return {
+      ...common,
+      candidateKind: "session" as const,
+      sessionId: requiredString(normalized.sessionId, "candidate.sessionId"),
+      ...(normalized.execution ? { execution: normalized.execution } : {}),
+    }
   }
   if (row.candidate_kind !== "external_issue" || !row.source_view_id) throw new Error("Unsupported intake candidate kind")
   return {
@@ -773,12 +809,12 @@ function providerMatches(provider: string, integration: string) {
 async function requireSourceViewConnection(
   ctx: WriteCtx,
   ownerUserId: Id<"users">,
-  view: Pick<Doc<"workgraph_source_views">, "org_id" | "team_connection_id" | "provider">,
+  view: Pick<Doc<"workgraph_source_views">, "organization_id" | "team_connection_id" | "provider">,
 ) {
-  if (!view.org_id || !await isOrgMember(ctx, ownerUserId, view.org_id)) throw new Error("Source View Connection is unavailable")
+  if (!await isOrgMember(ctx, ownerUserId, view.organization_id)) throw new Error("Source View Connection is unavailable")
   const connection = await ctx.db.query("workgraph_connection_metadata")
-    .withIndex("by_org_connection", (builder) => builder
-      .eq("org_id", view.org_id!)
+    .withIndex("by_organization_connection", (builder) => builder
+      .eq("organization_id", view.organization_id)
       .eq("connection_id", view.team_connection_id))
     .unique()
   if (!connection || connection.status !== "connected" || !connection.capabilities.includes("work-source") ||

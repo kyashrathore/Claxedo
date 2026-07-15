@@ -7,6 +7,7 @@ import type * as QueryOptions from "@/app/integrations/sync/query-options"
 import type * as ProjectEnsure from "@/features/workspaces/data/query/project-ensure"
 import type * as SurfaceRoute from "@/app/workbench/state/surface-route"
 import type * as SessionScope from "@/features/session/ui/components/session-pane-scope"
+import type * as DocWorkGraph from "@/app/integrations/doc-workgraph"
 
 export type DocumentsAppPorts = {
   useSDK: typeof SDK.useSDK
@@ -18,6 +19,7 @@ export type DocumentsAppPorts = {
   ensureLocalProject: typeof ProjectEnsure.ensureLocalProject
   surfaceRoute: typeof SurfaceRoute.surfaceRoute
   SessionPaneScope: typeof SessionScope.SessionPaneScope
+  turnDocumentRevisionIntoWork: typeof DocWorkGraph.turnDocumentRevisionIntoWork
 }
 
 let ports: DocumentsAppPorts | undefined
@@ -44,3 +46,4 @@ export const useShellQueryOptions = bind("useShellQueryOptions")
 export const ensureLocalProject = bind("ensureLocalProject")
 export const surfaceRoute = bind("surfaceRoute")
 export const SessionPaneScope = bind("SessionPaneScope")
+export const turnDocumentRevisionIntoWork = bind("turnDocumentRevisionIntoWork")

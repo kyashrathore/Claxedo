@@ -6,6 +6,7 @@ import type { ControlPlaneServices } from "./control-plane/services"
 import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "./routes/hosted-device-auth"
+import type { DocumentStore } from "./document-store"
 
 /**
  * Positive coverage for the hosted app: health/mode/JWKS/device routes mount
@@ -41,6 +42,12 @@ function fakePlane(
     authority: {
       auditAllow: vi.fn(),
       usersMe: vi.fn(async () => ({ id: "user_1" })),
+      resolveOrgId: vi.fn(async (auth) => `org_${auth.user.subject}`),
+      authorizeProject: vi.fn(async (auth, args) =>
+        auth.user.subject === "tenant_a" && args.orgId === "org_tenant_a"
+          ? { ok: true, role: args.action === "read" ? "viewer" : "editor", orgId: args.orgId }
+          : { ok: false },
+      ),
       openWorkspace: vi.fn(async (_auth, args) => ({
         allowed: true,
         role: "owner",
@@ -116,6 +123,11 @@ async function ed25519Pair() {
   }
 }
 
+async function digest(value: string) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
+  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
 describe("hosted app", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch
@@ -126,6 +138,102 @@ describe("hosted app", () => {
     const res = await app.fetch(new Request("http://cp.test/api/claxedo/health"))
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ ok: true, mode: "hosted-control-plane", localExecution: false })
+  })
+
+  test("mounts the strict Docs v2 API with hosted storage and tenant-scoped reads", async () => {
+    const revision = {
+      projectId: "project_1",
+      documentId: "document_1",
+      documentTitle: "Launch",
+      revisionId: "document_revision_1",
+      revisionNumber: 1,
+      markdown: "# Launch",
+      contentHash: await digest("# Launch"),
+      authoredAt: 1,
+      authoredBy: { type: "user" as const, id: "tenant_a" },
+    }
+    const store: DocumentStore = {
+      create: vi.fn(async () => revision),
+      appendRevision: vi.fn(async () => revision),
+      list: vi.fn(async (scope) =>
+        scope.orgId === "org_tenant_a"
+          ? [
+              {
+                documentId: revision.documentId,
+                projectId: revision.projectId,
+                title: revision.documentTitle,
+                headRevisionId: revision.revisionId,
+                createdAt: revision.authoredAt,
+                updatedAt: revision.authoredAt,
+              },
+            ]
+          : [],
+      ),
+      find: vi.fn(async (scope) =>
+        scope.orgId === "org_tenant_a"
+          ? {
+              documentId: revision.documentId,
+              projectId: revision.projectId,
+              title: revision.documentTitle,
+              headRevisionId: revision.revisionId,
+              createdAt: revision.authoredAt,
+              updatedAt: revision.authoredAt,
+            }
+          : undefined,
+      ),
+      getRevision: vi.fn(async (scope) => (scope.orgId === "org_tenant_a" ? revision : undefined)),
+      getHeadRevision: vi.fn(async (scope) => (scope.orgId === "org_tenant_a" ? revision : undefined)),
+    }
+    const app = createHostedApp(fakePlane(), { documentStore: () => store })
+    const created = await app.fetch(
+      new Request("http://cp.test/api/claxedo/docs?project_id=project_1", {
+        method: "POST",
+        headers: { authorization: "Bearer tenant_a", "content-type": "application/json" },
+        body: JSON.stringify({
+          title: "Launch",
+          markdown: revision.markdown,
+          contentHash: revision.contentHash,
+          authoredBy: revision.authoredBy,
+        }),
+      }),
+    )
+    expect(created.status).toBe(201)
+    await expect(created.json()).resolves.toEqual(revision)
+
+    const exact = await app.fetch(
+      new Request(
+        `http://cp.test/api/claxedo/docs/${revision.documentId}/revisions/${revision.revisionId}?project_id=project_1`,
+        { headers: { authorization: "Bearer tenant_a" } },
+      ),
+    )
+    expect(exact.status).toBe(200)
+    await expect(exact.json()).resolves.toEqual(revision)
+
+    const listing = await app.fetch(
+      new Request("http://cp.test/api/claxedo/docs?project_id=project_1", {
+        headers: { authorization: "Bearer tenant_a" },
+      }),
+    )
+    expect(listing.status).toBe(200)
+    await expect(listing.json()).resolves.toMatchObject({
+      documents: [{ documentId: revision.documentId, headRevisionId: revision.revisionId }],
+    })
+
+    const head = await app.fetch(
+      new Request(`http://cp.test/api/claxedo/docs/${revision.documentId}?project_id=project_1`, {
+        headers: { authorization: "Bearer tenant_a" },
+      }),
+    )
+    expect(head.status).toBe(200)
+    await expect(head.json()).resolves.toEqual(revision)
+
+    const crossTenant = await app.fetch(
+      new Request(
+        `http://cp.test/api/claxedo/docs/${revision.documentId}/revisions/${revision.revisionId}?project_id=project_1`,
+        { headers: { authorization: "Bearer tenant_b" } },
+      ),
+    )
+    expect(crossTenant.status).toBe(404)
   })
 
   test("fails hosted boot when WorkGraph Convex service configuration is missing", () => {
@@ -248,7 +356,7 @@ describe("hosted app", () => {
       }),
     )
     expect(exchanged.status).toBe(200)
-    const first = await exchanged.json() as {
+    const first = (await exchanged.json()) as {
       access_token?: string
       refresh_token?: string
       expires_in?: number
@@ -268,7 +376,7 @@ describe("hosted app", () => {
       }),
     )
     expect(refreshed.status).toBe(200)
-    const next = await refreshed.json() as { access_token?: string }
+    const next = (await refreshed.json()) as { access_token?: string }
     expect(next).toMatchObject({
       token_type: "Bearer",
       expires_in: 600,
@@ -473,25 +581,30 @@ describe("hosted app", () => {
 
   test("control-plane session inventory returns authorized Convex visibility rows", async () => {
     const plane = fakePlane()
-    plane.services.authority!.listSessions = vi.fn(async () => [{
-      session_id: "ses_1",
-      title: "Smoke session",
-    }])
-    const app = createHostedApp(plane)
-    const res = await app.fetch(new Request("http://cp.test/api/control/sessions?workspaceId=ws_1", {
-      headers: { authorization: "Bearer user_1" },
-    }))
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({
-      sessions: [{
+    plane.services.authority!.listSessions = vi.fn(async () => [
+      {
         session_id: "ses_1",
         title: "Smoke session",
-      }],
-    })
-    expect(plane.services.authority!.listSessions).toHaveBeenCalledWith(
-      expect.objectContaining({ token: "user_1" }),
-      { workspaceId: "ws_1" },
+      },
+    ])
+    const app = createHostedApp(plane)
+    const res = await app.fetch(
+      new Request("http://cp.test/api/control/sessions?workspaceId=ws_1", {
+        headers: { authorization: "Bearer user_1" },
+      }),
     )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      sessions: [
+        {
+          session_id: "ses_1",
+          title: "Smoke session",
+        },
+      ],
+    })
+    expect(plane.services.authority!.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
+      workspaceId: "ws_1",
+    })
   })
 
   test("local-only routes are absent from the hosted app", async () => {
@@ -513,14 +626,16 @@ describe("hosted app", () => {
     ] as const
 
     for (const [method, path] of routes) {
-      const res = await app.fetch(new Request(`http://cp.test${path}`, {
-        method,
-        headers: {
-          authorization: "Bearer user_1",
-          "content-type": "application/json",
-        },
-        body: method === "DELETE" ? undefined : JSON.stringify({ workspaceId: "ws_1" }),
-      }))
+      const res = await app.fetch(
+        new Request(`http://cp.test${path}`, {
+          method,
+          headers: {
+            authorization: "Bearer user_1",
+            "content-type": "application/json",
+          },
+          body: method === "DELETE" ? undefined : JSON.stringify({ workspaceId: "ws_1" }),
+        }),
+      )
       expect(res.status, `${method} ${path}`).toBe(404)
     }
     expect(plane.services.authority!.upsertSessionVisibility).not.toHaveBeenCalled()
@@ -529,25 +644,27 @@ describe("hosted app", () => {
 
   test("hosted control runtime heartbeat requires signed auth", async () => {
     const app = createHostedApp(fakePlane())
-    const res = await app.fetch(new Request("http://cp.test/api/control/runtime/heartbeat", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        workspaceId: "ws_1",
-        ok: true,
-        status: "ready",
-        healthStatus: "ok",
-        directory: "/workspace",
-        profile: "workspace",
-        agentType: "opencode",
-        model: null,
-        ptyCount: 0,
-        processCount: 0,
-        activeProcessCount: 0,
+    const res = await app.fetch(
+      new Request("http://cp.test/api/control/runtime/heartbeat", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          workspaceId: "ws_1",
+          ok: true,
+          status: "ready",
+          healthStatus: "ok",
+          directory: "/workspace",
+          profile: "workspace",
+          agentType: "opencode",
+          model: null,
+          ptyCount: 0,
+          processCount: 0,
+          activeProcessCount: 0,
+        }),
       }),
-    }))
+    )
 
     expect(res.status).toBe(401)
     expect(await res.json()).toMatchObject({ error: { code: "MISSING_BEARER_TOKEN" } })
@@ -556,33 +673,34 @@ describe("hosted app", () => {
   test("hosted control runtime heartbeat validates workspace access", async () => {
     const plane = fakePlane()
     const app = createHostedApp(plane)
-    const res = await app.fetch(new Request("http://cp.test/api/control/runtime/heartbeat", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer user_1",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        workspaceId: "ws_1",
-        ok: true,
-        status: "ready",
-        healthStatus: "ok",
-        directory: "/workspace",
-        profile: "workspace",
-        agentType: "opencode",
-        model: null,
-        ptyCount: 0,
-        processCount: 0,
-        activeProcessCount: 0,
+    const res = await app.fetch(
+      new Request("http://cp.test/api/control/runtime/heartbeat", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer user_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          workspaceId: "ws_1",
+          ok: true,
+          status: "ready",
+          healthStatus: "ok",
+          directory: "/workspace",
+          profile: "workspace",
+          agentType: "opencode",
+          model: null,
+          ptyCount: 0,
+          processCount: 0,
+          activeProcessCount: 0,
+        }),
       }),
-    }))
+    )
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true })
-    expect(plane.services.authority!.openWorkspace).toHaveBeenCalledWith(
-      expect.objectContaining({ token: "user_1" }),
-      { workspaceId: "ws_1" },
-    )
+    expect(plane.services.authority!.openWorkspace).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
+      workspaceId: "ws_1",
+    })
   })
 
   test("workspace connection route uses hosted safety limits for Runtime Access Token minting", async () => {
@@ -776,33 +894,40 @@ describe("hosted app", () => {
       if (url === "https://relay.example.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
         return Response.json({ messages: [] })
       }
+      if (url === "https://relay.example.test/workspaces/ws_1/session/status") {
+        return Response.json({})
+      }
       return new Response("not found", { status: 404 })
     })
     globalThis.fetch = fetch as unknown as typeof globalThis.fetch
 
     const app = createHostedApp(plane)
-    const res = await app.fetch(new Request("http://cp.test/api/control/workspaces/ws_1/sessions/session-1/checkpoint", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer user_1",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ reason: "test" }),
-    }))
+    const res = await app.fetch(
+      new Request("http://cp.test/api/control/workspaces/ws_1/sessions/session-1/checkpoint", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer user_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ reason: "test" }),
+      }),
+    )
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({ ok: true, messages: 0 })
     expect(target).toHaveBeenCalledWith("ws_1")
     expect(sandboxManager.ensure).not.toHaveBeenCalled()
-    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({
-      workspaceId: "ws_1",
-      hostId: "host_cloud_1",
-      orgId: "org_1",
-      role: "owner",
-    }))
+    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "ws_1",
+        hostId: "host_cloud_1",
+        orgId: "org_1",
+        role: "owner",
+      }),
+    )
     expect(JSON.stringify(mintRuntimeAccessToken.mock.calls)).not.toContain("legacy-host")
     expect(JSON.stringify(mintRuntimeAccessToken.mock.calls)).not.toContain("legacy-sandbox")
-    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(fetch).toHaveBeenCalledTimes(3)
   })
 
   test("hosted session pull fails closed when the canonical sandbox lease is unavailable", async () => {
@@ -834,14 +959,16 @@ describe("hosted app", () => {
     globalThis.fetch = fetch as unknown as typeof globalThis.fetch
 
     const app = createHostedApp(plane)
-    const res = await app.fetch(new Request("http://cp.test/api/control/workspaces/ws_1/sessions/session-1/checkpoint", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer user_1",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ reason: "test" }),
-    }))
+    const res = await app.fetch(
+      new Request("http://cp.test/api/control/workspaces/ws_1/sessions/session-1/checkpoint", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer user_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ reason: "test" }),
+      }),
+    )
 
     expect(res.status).toBe(409)
     await expect(res.json()).resolves.toMatchObject({
@@ -992,9 +1119,7 @@ describe("hosted app", () => {
   })
 
   test("sandbox garbage collection does not accept the relay resolver token as admin auth", async () => {
-    const app = createHostedApp(
-      fakePlane({ sandboxManager: { garbageCollect: vi.fn() } as unknown as SandboxManager }),
-    )
+    const app = createHostedApp(fakePlane({ sandboxManager: { garbageCollect: vi.fn() } as unknown as SandboxManager }))
     const res = await app.fetch(
       new Request("http://cp.test/internal/sandbox-manager/gc", {
         method: "POST",
@@ -1025,8 +1150,10 @@ describe("hosted app", () => {
     const plane = {
       ...fakePlane({ sandboxManager }),
       env: {
-        CLAXEDO_DEPLOYMENT_MODE: "hosted", CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin-token",
-        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+        CLAXEDO_DEPLOYMENT_MODE: "hosted",
+        CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin-token",
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
       },
     }
     const app = createHostedApp(plane)
@@ -1167,6 +1294,56 @@ describe("hosted shell boot surface", () => {
     const anonymous = await app.fetch(new Request("http://cp.test/api/claxedo/bootstrap"))
     expect(anonymous.status).toBe(200)
     expect(await anonymous.json()).toMatchObject({ healthy: true, project: [] })
+  })
+
+  test("signed bootstrap schedules idempotent WorkGraph owner activation without delaying boot", async () => {
+    const plane = fakePlane()
+    let finish!: () => void
+    const activation = vi.fn(async () => {
+      await new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      return {
+        status: "pending" as const,
+        error: {
+          code: "execution_capabilities_unavailable",
+          capability: "catalog_workspace",
+          reason: "runtime_unavailable",
+          message: "Catalog provisioning is still running",
+          retryable: true,
+        },
+      }
+    })
+    const waitUntil = vi.fn()
+    const app = createHostedApp(plane, { workGraphOwnerActivation: activation })
+    const response = await app.fetch(
+      new Request("http://cp.test/api/claxedo/bootstrap", {
+        headers: { authorization: "Bearer owner_a" },
+      }),
+      {},
+      { waitUntil, passThroughOnException: vi.fn() } as never,
+    )
+    expect(response.status).toBe(200)
+    expect(waitUntil).toHaveBeenCalledTimes(1)
+    expect(activation).toHaveBeenCalledWith(
+      expect.objectContaining({ user: expect.objectContaining({ subject: "owner_a" }) }),
+    )
+    finish()
+    await Promise.all(waitUntil.mock.calls.map((call) => call[0]))
+    expect(plane.services.telemetry.capture).toHaveBeenCalledWith("owner_a", "workgraph.catalog_activation", {
+      status: "pending",
+      code: "execution_capabilities_unavailable",
+      capability: "catalog_workspace",
+      reason: "runtime_unavailable",
+      retryable: true,
+    })
+
+    const anonymous = await app.fetch(new Request("http://cp.test/api/claxedo/bootstrap"), {}, {
+      waitUntil,
+      passThroughOnException: vi.fn(),
+    } as never)
+    expect(anonymous.status).toBe(200)
+    expect(waitUntil).toHaveBeenCalledTimes(1)
   })
 
   test("/api/claxedo/events requires the control-plane bearer", async () => {

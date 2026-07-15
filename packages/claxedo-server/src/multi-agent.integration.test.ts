@@ -66,6 +66,7 @@ const prev = {
   HOME: process.env.HOME,
   CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
   CLAXEDO_STATE_DIR: process.env.CLAXEDO_STATE_DIR,
+  CLAXEDO_WORKGRAPH_REPOSITORY: process.env.CLAXEDO_WORKGRAPH_REPOSITORY,
   POSTHOG_KEY: process.env.POSTHOG_KEY,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
@@ -75,6 +76,7 @@ const prev = {
 process.env.HOME = home
 process.env.CLAXEDO_DATA_DIR = data
 process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
+process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../..")
 process.env.POSTHOG_KEY = ""
 // Clear env keys so tests control the connected state
 delete process.env.ANTHROPIC_API_KEY
@@ -134,7 +136,8 @@ function cfgFile() {
 async function savedConfig() {
   return JSON.parse(await fs.readFile(cfgFile(), "utf-8")) as {
     mcp: Record<string, unknown>
-    runner?: { type: string; binary?: string; model?: string }
+    harness?: { id: string; access: string; connection?: { kind: string; binary?: string } }
+    model?: string
     auth?: Record<string, string>
     sandbox?: unknown
   }
@@ -193,7 +196,7 @@ describe("multi-agent integration", () => {
     await agent.saveUserConfig({
       mcp: {},
       auth: {},
-      runner: { type: "opencode" },
+      harness: { id: "opencode", access: "native" },
     })
   })
 
@@ -212,7 +215,7 @@ describe("multi-agent integration", () => {
   // ── Runner type validation ──────────────────────────────────────────
 
   test("POST /runner rejects missing type", async () => {
-    const res = await fetch(`${base()}/api/claxedo/agent-config/runner`, {
+    const res = await fetch(`${base()}/api/claxedo/agent-config/harness`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -226,7 +229,7 @@ describe("multi-agent integration", () => {
   })
 
   test("POST /runner rejects invalid type", async () => {
-    const res = await fetch(`${base()}/api/claxedo/agent-config/runner`, {
+    const res = await fetch(`${base()}/api/claxedo/agent-config/harness`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "gpt-acp" }),
@@ -241,7 +244,7 @@ describe("multi-agent integration", () => {
 
   test("POST /runner accepts all valid runner types", async () => {
     for (const type of ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "opencode", "pi"]) {
-      const res = await fetch(`${base()}/api/claxedo/agent-config/runner`, {
+      const res = await fetch(`${base()}/api/claxedo/agent-config/harness`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type }),
@@ -252,14 +255,14 @@ describe("multi-agent integration", () => {
   })
 
   test("POST /runner persists chosen runner to disk", async () => {
-    await fetch(`${base()}/api/claxedo/agent-config/runner`, {
+    await fetch(`${base()}/api/claxedo/agent-config/harness`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "claude-acp" }),
     })
 
     const cfg = await savedConfig()
-    expect(cfg.runner?.type).toBe("claude-acp")
+    expect(cfg.harness).toMatchObject({ id: "claude", access: "acp" })
   })
 
   test("POST /runner preserves model when switching to same type", async () => {
@@ -271,15 +274,15 @@ describe("multi-agent integration", () => {
     })
 
     // Switch to claude-acp again (same type)
-    await fetch(`${base()}/api/claxedo/agent-config/runner`, {
+    await fetch(`${base()}/api/claxedo/agent-config/harness`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "claude-acp" }),
     })
 
     const cfg = await savedConfig()
-    expect(cfg.runner?.type).toBe("claude-acp")
-    expect(cfg.runner?.model).toBe("claude-opus-4-6")
+    expect(cfg.harness).toMatchObject({ id: "claude", access: "acp" })
+    expect(cfg.model).toBe("claude-opus-4-6")
   })
 
   test("POST /runner drops model when switching to different type", async () => {
@@ -289,24 +292,24 @@ describe("multi-agent integration", () => {
       runner: { type: "claude-acp", model: "claude-opus-4-6" },
     })
 
-    await fetch(`${base()}/api/claxedo/agent-config/runner`, {
+    await fetch(`${base()}/api/claxedo/agent-config/harness`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "codex-acp" }),
     })
 
     const cfg = await savedConfig()
-    expect(cfg.runner?.type).toBe("codex-acp")
-    expect(cfg.runner?.model).toBeUndefined()
+    expect(cfg.harness).toMatchObject({ id: "codex", access: "acp" })
+    expect(cfg.model).toBeUndefined()
   })
 
   // ── Runner GET ─────────────────────────────────────────────────────
 
   test("GET /runner returns configured runner state without workspace", async () => {
-    const res = await fetch(`${base()}/api/claxedo/agent-config/runner`)
+    const res = await fetch(`${base()}/api/claxedo/agent-config/harness`)
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { type: string; activeType: string; status: string }
-    expect(body.type).toBe("opencode")
+    const body = (await res.json()) as { id: string; activeType: string; status: string }
+    expect(body.id).toBe("opencode")
     expect(body.activeType).toBe("opencode")
     expect(body.status).toBe("configured")
   })
@@ -314,7 +317,7 @@ describe("multi-agent integration", () => {
   // ── Runner model ───────────────────────────────────────────────────
 
   test("POST /runner/model rejects missing model", async () => {
-    const res = await fetch(`${base()}/api/claxedo/agent-config/runner/model`, {
+    const res = await fetch(`${base()}/api/claxedo/agent-config/harness/model`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -334,7 +337,7 @@ describe("multi-agent integration", () => {
       runner: { type: "claude-acp" },
     })
 
-    const res = await fetch(`${base()}/api/claxedo/agent-config/runner/model`, {
+    const res = await fetch(`${base()}/api/claxedo/agent-config/harness/model`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model: "claude-opus-4-6" }),
@@ -342,7 +345,7 @@ describe("multi-agent integration", () => {
     expect(res.status).toBe(200)
 
     const cfg = await savedConfig()
-    expect(cfg.runner?.model).toBe("claude-opus-4-6")
+    expect(cfg.model).toBe("claude-opus-4-6")
   })
 
   test("POST /runner/model rejects runners without runner model configuration", async () => {
@@ -353,7 +356,7 @@ describe("multi-agent integration", () => {
         runner: { type },
       })
 
-      const res = await fetch(`${base()}/api/claxedo/agent-config/runner/model`, {
+      const res = await fetch(`${base()}/api/claxedo/agent-config/harness/model`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: "anything" }),
@@ -369,7 +372,7 @@ describe("multi-agent integration", () => {
 
   // ── Auth store / remove ────────────────────────────────────────────
 
-  test("PUT /auth stores API key and reflects in provider connected list", async () => {
+  test("PUT /auth stores API key and keeps the local harness catalog available", async () => {
     // Switch to ACP mode so provider endpoint uses local ACP response
     await agent.saveUserConfig({
       mcp: {},
@@ -393,7 +396,8 @@ describe("multi-agent integration", () => {
     const provider = await fetch(`${base()}/provider`)
     expect(provider.status).toBe(200)
     expect(await provider.json()).toMatchObject({
-      error: { code: "provider_models_unavailable" },
+      all: expect.arrayContaining([expect.objectContaining({ id: "claude-acp", models: {} })]),
+      default: {},
     })
   })
 
@@ -413,7 +417,8 @@ describe("multi-agent integration", () => {
     const provider = await fetch(`${base()}/provider`)
     expect(provider.status).toBe(200)
     expect(await provider.json()).toMatchObject({
-      error: { code: "provider_models_unavailable" },
+      all: expect.arrayContaining([expect.objectContaining({ id: "claude-acp", models: {} })]),
+      default: {},
     })
   })
 
@@ -437,7 +442,7 @@ describe("multi-agent integration", () => {
     const provider = await fetch(`${base()}/provider`)
     expect(provider.status).toBe(200)
     expect(await provider.json()).toMatchObject({
-      error: { code: "provider_models_unavailable" },
+      connected: expect.arrayContaining(["claude-acp", "claude-sdk"]),
     })
     delete process.env.ANTHROPIC_API_KEY
   })
@@ -451,7 +456,7 @@ describe("multi-agent integration", () => {
     expect(body.all.some((p) => p.id === "upstream")).toBe(true)
   })
 
-  test("provider endpoint reports unavailable in ACP mode", async () => {
+  test("provider endpoint returns the local harness catalog in ACP mode", async () => {
     await agent.saveUserConfig({
       mcp: {},
       auth: {},
@@ -461,7 +466,9 @@ describe("multi-agent integration", () => {
     const res = await fetch(`${base()}/provider`)
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({
-      error: { code: "provider_models_unavailable" },
+      all: expect.arrayContaining([expect.objectContaining({ id: "claude-acp", models: {} })]),
+      connected: [],
+      default: {},
     })
   })
 
@@ -665,7 +672,7 @@ describe("multi-agent integration", () => {
 
   // ── Bootstrap in ACP mode ──────────────────────────────────────────
 
-  test("bootstrap response reports unavailable provider models in ACP mode", async () => {
+  test("bootstrap response includes the local harness catalog in ACP mode", async () => {
     await agent.saveUserConfig({
       mcp: {},
       auth: { "claude-acp": "sk-ant-test" },
@@ -676,15 +683,16 @@ describe("multi-agent integration", () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as {
       healthy: boolean
-      provider: { ok: boolean; error: { code: string } }
+      provider: { all: Array<{ id: string }>; connected: string[]; default: Record<string, string> }
       provider_auth: Record<string, unknown>
       config: { model: string }
     }
 
     expect(body.healthy).toBe(true)
     expect(body.provider).toMatchObject({
-      ok: false,
-      error: { code: "provider_models_unavailable" },
+      all: expect.arrayContaining([expect.objectContaining({ id: "claude-acp" })]),
+      connected: [],
+      default: {},
     })
 
     // Auth should be ACP-style
@@ -723,7 +731,7 @@ describe("multi-agent integration", () => {
     const res = await fetch(`${base()}/config`)
     expect(res.status).toBe(200)
     const body = (await res.json()) as { model: string; mcp: Record<string, unknown> }
-    expect(body.model).toBe("claude-acp/claude-opus-4-6")
+    expect(body.model).toBe("claude/claude-opus-4-6")
     expect(body.mcp).toEqual({})
   })
 
@@ -822,14 +830,14 @@ describe("multi-agent integration", () => {
   // ── Runner options endpoint ───────────────────────────────────────
 
   test("GET /runner/options requires directory or workspaceId", async () => {
-    const res = await fetch(`${base()}/api/claxedo/agent-config/runner/options`)
+    const res = await fetch(`${base()}/api/claxedo/agent-config/harness/options`)
     expect(res.status).toBe(400)
   })
 
   test("GET /runner/options reports unavailable for opencode runner", async () => {
     const ws = await workspace("options-opencode")
     const res = await fetch(
-      `${base()}/api/claxedo/agent-config/runner/options?directory=${encodeURIComponent(ws.directory)}&type=opencode`,
+      `${base()}/api/claxedo/agent-config/harness/options?directory=${encodeURIComponent(ws.directory)}&type=opencode`,
     )
     expect(res.status).toBe(404)
     expect(await res.json()).toMatchObject({
@@ -842,7 +850,7 @@ describe("multi-agent integration", () => {
   test("GET /runner/options reports unavailable for pi runner", async () => {
     const ws = await workspace("options-pi")
     const res = await fetch(
-      `${base()}/api/claxedo/agent-config/runner/options?directory=${encodeURIComponent(ws.directory)}&type=pi`,
+      `${base()}/api/claxedo/agent-config/harness/options?directory=${encodeURIComponent(ws.directory)}&type=pi`,
     )
     expect(res.status).toBe(404)
     expect(await res.json()).toMatchObject({
@@ -855,15 +863,16 @@ describe("multi-agent integration", () => {
   test("GET /runner/options resolves workspace ids", async () => {
     const ws = await workspace("options-workspace-id")
     const res = await fetch(
-      `${base()}/api/claxedo/agent-config/runner/options?workspaceId=${encodeURIComponent(ws.id)}&type=codex-acp`,
+      `${base()}/api/claxedo/agent-config/harness/options?workspaceId=${encodeURIComponent(ws.id)}&type=codex-acp`,
     )
+    const body = await res.json() as { source?: string; options?: unknown[]; error?: { code?: string; message?: string } }
+    if (res.status === 200) {
+      expect(body.source).toBe("harness")
+      expect(body.options?.length).toBeGreaterThan(0)
+      return
+    }
     expect(res.status).toBe(502)
-    const body = await res.json() as { error?: { code?: string; message?: string } }
-    expect(body).toMatchObject({
-      error: {
-        code: "harness_config_options_unavailable",
-      },
-    })
+    expect(body.error?.code).toBe("harness_config_options_unavailable")
     expect(body.error?.message).not.toContain("codex-app-server")
   })
 
@@ -871,21 +880,22 @@ describe("multi-agent integration", () => {
     const ws = await workspace("options-placeholder-models")
     const byRunner = await Promise.all(["codex-acp", "cursor-acp"].map(async (type) => {
       const res = await fetch(
-        `${base()}/api/claxedo/agent-config/runner/options?directory=${encodeURIComponent(ws.directory)}&type=${type}`,
+        `${base()}/api/claxedo/agent-config/harness/options?directory=${encodeURIComponent(ws.directory)}&type=${type}`,
       )
-      expect(res.status).toBe(502)
-      return [type, await res.json()] as const
+      return [type, res.status, await res.json()] as const
     }))
 
-    for (const [, body] of byRunner) {
-      expect(body).toMatchObject({
-        error: {
-          code: "harness_config_options_unavailable",
-        },
-      })
+    for (const [, status, body] of byRunner) {
+      if (status === 200) {
+        expect(body).toMatchObject({ source: "harness", stale: false })
+        expect(body.options.length).toBeGreaterThan(0)
+        continue
+      }
+      expect(status).toBe(502)
+      expect(body).toMatchObject({ error: { code: "harness_config_options_unavailable" } })
     }
     const sdk = await fetch(
-      `${base()}/api/claxedo/agent-config/runner/options?directory=${encodeURIComponent(ws.directory)}&type=codex-app-server`,
+      `${base()}/api/claxedo/agent-config/harness/options?directory=${encodeURIComponent(ws.directory)}&type=codex-app-server`,
     )
     expect(sdk.status).toBe(200)
     expect(await sdk.json()).toMatchObject({
@@ -897,11 +907,11 @@ describe("multi-agent integration", () => {
   test("GET /runner/options only returns live ACP options or an unavailable error", async () => {
     const ws = await workspace("options-claude")
     const res = await fetch(
-      `${base()}/api/claxedo/agent-config/runner/options?directory=${encodeURIComponent(ws.directory)}&type=claude-acp`,
+      `${base()}/api/claxedo/agent-config/harness/options?directory=${encodeURIComponent(ws.directory)}&type=claude-acp`,
     )
     const body = await res.json()
     if (res.status === 200) {
-      expect(body.source).toBe("runner")
+      expect(body.source).toBe("harness")
       expect(body.options.length).toBeGreaterThan(0)
       return
     }
@@ -946,7 +956,7 @@ describe("multi-agent integration", () => {
 
   test("config file has stable JSON structure after multiple mutations", async () => {
     // Runner switch
-    await fetch(`${base()}/api/claxedo/agent-config/runner`, {
+    await fetch(`${base()}/api/claxedo/agent-config/harness`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "claude-acp" }),
@@ -967,15 +977,15 @@ describe("multi-agent integration", () => {
     const cfg = await savedConfig()
 
     // Runner and MCP persist in config file
-    expect(cfg.runner?.type).toBe("claude-acp")
+    expect(cfg.harness).toMatchObject({ id: "claude", access: "acp" })
     expect(cfg.mcp["toolx"]).toBeDefined()
 
     // Auth is stored in credential registry, verify there
     const { resolveSecret } = await import("./credentials/registry")
     expect(await resolveSecret("claude-acp")).toBe("sk-test")
 
-    // Top-level keys should include at least mcp and runner
+    // Top-level keys should include at least mcp and harness.
     const keys = Object.keys(cfg).sort()
-    expect(keys).toEqual(expect.arrayContaining(["mcp", "runner"]))
+    expect(keys).toEqual(expect.arrayContaining(["mcp", "harness"]))
   })
 })

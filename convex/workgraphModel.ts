@@ -1,28 +1,35 @@
 import { readUser, requireControlPlaneService } from "./model"
+import type { GenericDatabaseReader, GenericDatabaseWriter } from "convex/server"
+import type { DataModel, Id } from "./_generated/dataModel"
+
+type WorkGraphDb = GenericDatabaseReader<DataModel> | GenericDatabaseWriter<DataModel>
 
 export async function workGraphOwnerDeletionBarrier(
-  ctx: { db: Parameters<typeof readUser>[0]["db"] },
+  ctx: { db: WorkGraphDb },
+  organizationId: unknown,
   ownerUserId: unknown,
 ) {
   return ctx.db.query("workgraph_owner_deletion_barriers")
-    .withIndex("by_owner", (query) => query.eq("owner_user_id", ownerUserId))
+    .withIndex("by_tenant", (query) => query.eq("organization_id", organizationId as Id<"orgs">).eq("owner_user_id", ownerUserId as Id<"users">))
     .unique()
 }
 
 export async function assertWorkGraphOwnerWritable(
-  ctx: { db: Parameters<typeof readUser>[0]["db"] },
+  ctx: { db: WorkGraphDb },
+  organizationId: unknown,
   ownerUserId: unknown,
 ) {
-  if (await workGraphOwnerDeletionBarrier(ctx, ownerUserId)) {
+  if (await workGraphOwnerDeletionBarrier(ctx, organizationId, ownerUserId)) {
     throw new Error("WorkGraph owner deletion is in progress")
   }
 }
 
 export async function assertWorkGraphOwnerReadable(
-  ctx: { db: Parameters<typeof readUser>[0]["db"] },
+  ctx: { db: WorkGraphDb },
+  organizationId: unknown,
   ownerUserId: unknown,
 ) {
-  if (await workGraphOwnerDeletionBarrier(ctx, ownerUserId)) {
+  if (await workGraphOwnerDeletionBarrier(ctx, organizationId, ownerUserId)) {
     throw new Error("WorkGraph owner deletion is in progress")
   }
 }
@@ -58,4 +65,23 @@ export async function requireTrustedWorkGraphOwnerSubject(ctx: Parameters<typeof
   const user = await ctx.db.query("users").withIndex("by_clerk_subject", (query) => query.eq("clerk_subject", subject)).unique()
   if (!user) throw new Error("WorkGraph owner not found")
   return user
+}
+
+/** Resolve and verify the exact durable organization + user WorkGraph tenant. */
+export async function requireTrustedWorkGraphTenantSubject(
+  ctx: Parameters<typeof readUser>[0],
+  serviceToken: string,
+  organizationId: unknown,
+  ownerSubject: string,
+) {
+  const user = await requireTrustedWorkGraphOwnerSubject(ctx, serviceToken, ownerSubject)
+  if (!organizationId) throw new Error("WorkGraph organization is required")
+  const organization = await ctx.db.get(organizationId as never)
+  if (!organization || organization._id !== organizationId) throw new Error("WorkGraph organization not found")
+  const membership = await ctx.db.query("org_memberships")
+    .withIndex("by_org_user", (query) => query.eq("org_id", organizationId))
+    .filter((query) => query.eq(query.field("user_id"), user._id))
+    .unique()
+  if (!membership) throw new Error("WorkGraph organization membership is required")
+  return { organization_id: organizationId, owner_user_id: user._id, user, organization }
 }

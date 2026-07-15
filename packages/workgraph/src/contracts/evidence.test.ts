@@ -11,25 +11,27 @@ describe("Evidence query contracts", () => {
 
   it("round trips an owner- and subject-bound stable position", () => {
     const cursor = createEvidencePageCursor({
+      organizationId: "organization_a",
       ownerUserId: "owner:one@example.com",
       subject,
       recordedAt: 42,
       evidenceId: "evidence:2",
     })
 
-    expect(readEvidencePageCursor(cursor, "owner:one@example.com", subject)).toEqual({
+    expect(readEvidencePageCursor(cursor, "organization_a", "owner:one@example.com", subject)).toEqual({
       recordedAt: 42,
       evidenceId: "evidence:2",
     })
   })
 
   it("rejects cross-owner, cross-subject, and malformed cursor reuse", () => {
-    const cursor = createEvidencePageCursor({ ownerUserId: "owner_a", subject, recordedAt: 42, evidenceId: "evidence_2" })
+    const cursor = createEvidencePageCursor({ organizationId: "organization_a", ownerUserId: "owner_a", subject, recordedAt: 42, evidenceId: "evidence_2" })
 
-    expect(() => readEvidencePageCursor(cursor, "owner_b", subject)).toThrow(expect.objectContaining({ reason: "owner_mismatch" }))
-    expect(() => readEvidencePageCursor(cursor, "owner_a", { type: "stream", streamId: "stream_1" as never }))
+    expect(() => readEvidencePageCursor(cursor, "organization_b", "owner_a", subject)).toThrow(expect.objectContaining({ reason: "owner_mismatch" }))
+    expect(() => readEvidencePageCursor(cursor, "organization_a", "owner_b", subject)).toThrow(expect.objectContaining({ reason: "owner_mismatch" }))
+    expect(() => readEvidencePageCursor(cursor, "organization_a", "owner_a", { type: "stream", streamId: "stream_1" as never }))
       .toThrow(expect.objectContaining({ reason: "subject_mismatch" }))
-    expect(() => readEvidencePageCursor("broken", "owner_a", subject)).toThrow(EvidencePageCursorError)
+    expect(() => readEvidencePageCursor("broken", "organization_a", "owner_a", subject)).toThrow(EvidencePageCursorError)
   })
 
   it("requires nextCursor exactly when a page has more records", () => {

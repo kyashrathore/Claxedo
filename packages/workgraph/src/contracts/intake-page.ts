@@ -40,6 +40,7 @@ export class IntakeCandidatePageCursorError extends Error {
 }
 
 export function createIntakeCandidatePageCursor(input: Readonly<{
+  organizationId: string
   ownerUserId: string
   sourceViewId?: string
   updatedAt: number
@@ -47,6 +48,7 @@ export function createIntakeCandidatePageCursor(input: Readonly<{
 }>): IntakeCandidatePageCursor {
   const cursor = [
     prefix,
+    encode(input.organizationId),
     encode(input.ownerUserId),
     input.sourceViewId ? encode(input.sourceViewId) : "*",
     integer(input.updatedAt),
@@ -58,16 +60,17 @@ export function createIntakeCandidatePageCursor(input: Readonly<{
 
 export function readIntakeCandidatePageCursor(
   cursor: string,
+  organizationId: string,
   ownerUserId: string,
   sourceViewId?: string,
 ): Readonly<{ updatedAt: number; candidateId: string }> {
   if (cursor.length > maxLength) throw new IntakeCandidatePageCursorError("invalid")
   const parts = cursor.split(":")
-  if (parts.length !== 5 || parts[0] !== prefix) throw new IntakeCandidatePageCursorError("invalid")
-  if (decode(parts[1]!) !== ownerUserId) throw new IntakeCandidatePageCursorError("owner_mismatch")
-  const cursorSourceViewId = parts[2] === "*" ? undefined : decode(parts[2]!)
+  if (parts.length !== 6 || parts[0] !== prefix) throw new IntakeCandidatePageCursorError("invalid")
+  if (decode(parts[1]!) !== organizationId || decode(parts[2]!) !== ownerUserId) throw new IntakeCandidatePageCursorError("owner_mismatch")
+  const cursorSourceViewId = parts[3] === "*" ? undefined : decode(parts[3]!)
   if (cursorSourceViewId !== sourceViewId) throw new IntakeCandidatePageCursorError("source_view_mismatch")
-  return { updatedAt: integer(parts[3]), candidateId: decode(parts[4]!) }
+  return { updatedAt: integer(parts[4]), candidateId: decode(parts[5]!) }
 }
 
 export function compareIntakeCandidatePosition(

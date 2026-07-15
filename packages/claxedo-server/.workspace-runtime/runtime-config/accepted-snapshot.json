@@ -1,0 +1,28 @@
+{
+  "revision": 9,
+  "acceptedAt": "2026-07-15T05:10:17.048Z",
+  "snapshot": {
+    "version": 1,
+    "harness": {
+      "id": "opencode",
+      "access": "native"
+    },
+    "mcp": {
+      "keys": []
+    },
+    "auth": {
+      "keys": [
+        "claude-acp",
+        "claude-sdk",
+        "codex-acp",
+        "codex-app-server",
+        "openai"
+      ]
+    },
+    "agent_extensions": {
+      "version": 1,
+      "installCount": 0,
+      "installIds": []
+    }
+  }
+}

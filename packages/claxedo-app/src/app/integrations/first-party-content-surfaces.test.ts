@@ -22,6 +22,9 @@ beforeAll(async () => {
   mock.module("@/features/extensions/marketplace", () => ({
     MarketplaceContent: () => null,
   }))
+  mock.module("../../features/workgraph", () => ({
+    WorkGraphContent: () => null,
+  }))
 
   mod = await import("./first-party-content-surfaces")
 })
@@ -62,4 +65,5 @@ describe("content surface contributions", () => {
       },
     }, registry)?.id).toBe("surface.content.agent-review")
   })
+
 })

@@ -1,5 +1,9 @@
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import type { ExecutionConnectionCapability, WorkGraphContext } from "@claxedo/workgraph/contracts"
+import {
+  EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
+  type ExecutionConnectionCapability,
+  type WorkGraphContext,
+} from "@claxedo/workgraph/contracts"
 import { ExecutionCapabilitiesUnavailableError } from "@claxedo/workgraph/ports"
 import type { SignedControlPlaneAuth } from "../control-plane/auth"
 import type { WorkspaceAuthority } from "../control-plane/authority"
@@ -20,14 +24,49 @@ type HostedExecutionCapabilitiesInput = Readonly<{
 }>
 
 export function createHostedExecutionCapabilities(input: HostedExecutionCapabilitiesInput) {
-  const reads = new WeakMap<WorkGraphContext, Promise<HostedCatalog>>()
+  const now = input.now ?? Date.now
+  const reads = new Map<string, Readonly<{ expiresAt: number; value: Promise<HostedCatalog> }>>()
+  const refreshes = new Map<string, Promise<HostedCatalog>>()
   const catalog = (context: WorkGraphContext) => {
-    const existing = reads.get(context)
+    const key = tenantKey(context)
+    const refreshing = refreshes.get(key)
+    if (refreshing) return refreshing
+    const existing = reads.get(key)
+    if (existing && now() < existing.expiresAt) return existing.value
+    const entry = {
+      expiresAt: now() + EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
+      value: readHostedCatalog(input, context),
+    }
+    reads.set(key, entry)
+    void entry.value.catch(() => {
+      if (reads.get(key) === entry) reads.delete(key)
+    })
+    return entry.value
+  }
+  const refreshCatalog = (context: WorkGraphContext) => {
+    const key = tenantKey(context)
+    const existing = refreshes.get(key)
     if (existing) return existing
-    const pending = readHostedCatalog(input, context)
-    reads.set(context, pending)
-    void pending.catch(() => reads.delete(context))
-    return pending
+    const previous = reads.get(key)?.value
+    const operation = (async () => {
+      if (previous) await Promise.allSettled([previous])
+      const value = await readTransientHostedCatalog(input, context)
+      reads.set(key, {
+        expiresAt: now() + EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
+        value: Promise.resolve(value),
+      })
+      return value
+    })()
+    refreshes.set(key, operation)
+    void operation.then(
+      () => {
+        if (refreshes.get(key) === operation) refreshes.delete(key)
+      },
+      () => {
+        if (refreshes.get(key) === operation) refreshes.delete(key)
+      },
+    )
+    return operation
   }
 
   const capabilities = createExecutionCapabilitiesPort({
@@ -36,9 +75,6 @@ export function createHostedExecutionCapabilities(input: HostedExecutionCapabili
       repositoryRequired: false,
       remoteUrlInput: true,
       baseRevisionInput: true,
-      isolation: ["stream"],
-      cleanup: ["destroy_on_close"],
-      integration: ["manual"],
     },
     readRuntime: async (context) => (await catalog(context)).runtime,
     readRepository: async () => ({ baseRevisions: [] }),
@@ -48,8 +84,8 @@ export function createHostedExecutionCapabilities(input: HostedExecutionCapabili
   })
   return {
     ...capabilities,
-    async probe(context: WorkGraphContext) {
-      await provisionCatalogWorkspace(input, context)
+    async refresh(context: WorkGraphContext) {
+      await refreshCatalog(context)
       return capabilities.read(context, {})
     },
   }
@@ -80,14 +116,14 @@ async function readHostedCatalog(
       false,
     )
   })
-  const workspaceId = await catalogWorkspaceId(context.ownerUserId)
+  const workspaceId = await catalogWorkspaceId(context.organizationId, context.ownerUserId)
   const placement = await input.sandboxManager.target(workspaceId)
   if (placement.status !== "ready") {
     throw new ExecutionCapabilitiesUnavailableError(
       "catalog_workspace",
-      "catalog_workspace_unavailable",
-      "The hosted capability catalog has not been discovered yet",
-      false,
+      "runtime_unavailable",
+      "The hosted capability catalog runtime is not ready yet",
+      true,
     )
   }
   const token = await input.relayProvider.mintRuntimeAccessToken({
@@ -142,10 +178,15 @@ async function provisionCatalogWorkspace(input: HostedExecutionCapabilitiesInput
       false,
     )
   }
-  const placement = await input.sandboxManager.ensure(await catalogWorkspaceId(context.ownerUserId), {
+  const workspaceId = await catalogWorkspaceId(context.organizationId, context.ownerUserId)
+  const placement = await input.sandboxManager.ensure(workspaceId, {
     homeRegion: input.defaultHomeRegion,
     runtimeCwd: "/workspace",
-    labels: { workload: "workgraph-catalog", ownerUserId: context.ownerUserId },
+    labels: {
+      workload: "workgraph-catalog",
+      organizationId: context.organizationId,
+      ownerUserId: context.ownerUserId,
+    },
     source: { kind: "empty" },
     exposure: { kind: "relay" },
   })
@@ -165,9 +206,57 @@ async function provisionCatalogWorkspace(input: HostedExecutionCapabilitiesInput
       true,
     )
   }
+  return workspaceId
 }
 
-async function catalogWorkspaceId(ownerUserId: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`workgraph-catalog:${ownerUserId}`))
+async function readTransientHostedCatalog(input: HostedExecutionCapabilitiesInput, context: WorkGraphContext) {
+  const workspaceId = await provisionCatalogWorkspace(input, context)
+  let value: HostedCatalog
+  try {
+    value = await readHostedCatalog(input, context)
+  } catch (error) {
+    await destroyCatalogWorkspace(input, workspaceId)
+    throw error
+  }
+  await destroyCatalogWorkspace(input, workspaceId)
+  return value
+}
+
+async function destroyCatalogWorkspace(input: HostedExecutionCapabilitiesInput, workspaceId: string) {
+  let destroyed: Awaited<ReturnType<SandboxManager["destroy"]>>
+  try {
+    destroyed = await input.sandboxManager.destroy(workspaceId)
+  } catch (error) {
+    throw catalogWorkspaceCleanupError(error)
+  }
+  if (!destroyed.ok) {
+    if (destroyed.reason === "runtime_lease_missing") return
+    throw catalogWorkspaceCleanupError(`Hosted capability catalog destroy failed: ${destroyed.reason}`)
+  }
+  try {
+    await input.sandboxManager.release(workspaceId)
+  } catch (error) {
+    throw catalogWorkspaceCleanupError(error)
+  }
+}
+
+function catalogWorkspaceCleanupError(error: unknown) {
+  return new ExecutionCapabilitiesUnavailableError(
+    "catalog_workspace",
+    "catalog_workspace_unavailable",
+    error instanceof Error ? error.message : String(error),
+    true,
+  )
+}
+
+async function catalogWorkspaceId(organizationId: string, ownerUserId: string) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify(["workgraph-catalog", organizationId, ownerUserId])),
+  )
   return `wg-catalog-${Array.from(new Uint8Array(digest).slice(0, 12), (byte) => byte.toString(16).padStart(2, "0")).join("")}`
+}
+
+function tenantKey(context: WorkGraphContext) {
+  return JSON.stringify([context.organizationId, context.ownerUserId])
 }

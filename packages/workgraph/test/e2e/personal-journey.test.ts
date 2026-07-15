@@ -43,7 +43,7 @@ describe("canonical personal WorkGraph journey", () => {
       revisionId: resultId(source, "revisionId"),
       contentHash: createHash("sha256").update("Ship Claxedo Cloud, verify it, and preserve every consequential decision.").digest("hex"),
     } as WorkSourceRevisionRef
-    const proposal = await fixture.execute("propose_admission", { source: sourceRef })
+    const proposal = await fixture.execute("propose_admission", { source: sourceRef, execution: streamTarget })
     await fixture.planAdmission({
       source: sourceRef,
       suggestedPlacement: { mode: "new_stream", streamTitle: "Ship Claxedo Cloud" },
@@ -144,7 +144,7 @@ describe("canonical personal WorkGraph journey", () => {
     expect(refreshed.candidates).toHaveLength(1)
     await expect(intake.stage(owner(), refreshed.candidates[0]!.id)).resolves.toMatchObject({ state: "staged", title: "Discovered follow-up" })
 
-    const disposable = await fixture.execute("create_stream", { title: "Disposable spike" })
+    const disposable = await fixture.execute("create_stream", { title: "Disposable spike", execution: streamTarget })
     const disposableId = resultId(disposable, "streamId")
     expect(await fixture.execute("delete_stream", { streamId: disposableId, expectedVersion: 1, reason: "Spike is no longer useful" })).toMatchObject({ ok: true })
     expect((await fixture.snapshot()).records.some((candidate) => candidate.recordType === "stream" && candidate.id === disposableId)).toBe(false)
@@ -163,7 +163,10 @@ describe("canonical personal WorkGraph journey", () => {
 
   it("promotes evidence-satisfied result_ready work into completed semantic work before closing its Outcome", async () => {
     const fixture = setup()
-    const streamId = resultId(await fixture.execute("create_stream", { title: "Completion contract" }), "streamId")
+    const streamId = resultId(await fixture.execute("create_stream", {
+      title: "Completion contract",
+      execution: streamTarget,
+    }), "streamId")
     const outcomeId = resultId(await fixture.execute("create_outcome", { streamId, title: "Shipped", successCriteria: ["Verified"] }), "outcomeId")
     const workItemId = resultId(await fixture.execute("create_work_item", {
       streamId,
@@ -191,7 +194,11 @@ describe("canonical personal WorkGraph journey", () => {
 
   it("persists a background recap after eight quiet hours without requiring a foreground request", async () => {
     const fixture = setup()
-    const streamId = resultId(await fixture.execute("create_stream", { title: "Quiet stream" }), "streamId")
+    const streamId = resultId(await fixture.execute("create_stream", {
+      title: "Quiet stream",
+      execution: streamTarget,
+      recap: { quietHours: 8, model: profile.model, effort: profile.effort },
+    }), "streamId")
     fixture.advance(8 * 60 * 60 * 1000 + 1)
     await fixture.backgroundTick()
     expect(record(await fixture.snapshot(), "recap", (candidate) => candidate.streamId === streamId)).toMatchObject({
@@ -209,11 +216,12 @@ function setup() {
   let operation = 0
   let generationConfigured = false
   const runtime = controlledExecution()
-  const adapter = createSqliteWorkGraphService({ database, execution: runtime.port, clock: { now: () => now++ }, ids: { next: (kind) => `${kind}_${++id}` } })
+  const adapter = createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, execution: runtime.port, clock: { now: () => now++ }, ids: { next: (kind) => `${kind}_${++id}` } })
   const recaps = createSqliteRecapRuntime({
     database,
     clock: { now: () => now },
     workerId: "e2e_recap",
+    sessionDirectory: "/repo",
     sessions: {
       async admit(input) { return String(input.sessionId) },
       async result() {
@@ -230,8 +238,8 @@ function setup() {
     const result = await execute("update_workgraph_defaults", {
       expectedVersion: 1,
       defaults: {
-        execution: profile,
-        recap: { model: profile.model, effort: profile.effort },
+        execution: runtimeDefaults,
+        recap: {},
       },
     })
     if (!result.ok) throw new Error(`Expected explicit WorkGraph generation configuration: ${result.error.message}`)
@@ -255,12 +263,14 @@ function setup() {
         database,
         clock: { now: () => now },
         workerId: "e2e-source-planner",
+        sessionDirectory: "/repo",
         sessions: {
           async admit(input) { return String(input.sessionId) },
           async result() { return { state: "succeeded", summary: JSON.stringify(plan), artifacts: [] } },
         },
       })
-      await expect(runtime.runDue(owner())).resolves.toMatchObject({ state: "completed" })
+      const result = await runtime.runDue(owner())
+      if (result.state !== "completed") throw new Error(JSON.stringify(result))
     },
     snapshot: () => adapter.service.query(owner(), "snapshot", "page", { limit: 500 }),
     reconcile: async () => Promise.all(listSqliteReconcilableAttempts(database, owner()).map(async (attempt) => {
@@ -273,20 +283,10 @@ function setup() {
       if (!renewal) return
       const result = await runtime.port.result(owner(), { attemptId: attempt.attemptId, sessionId: attempt.sessionId })
       if (result.state !== "succeeded") return
-      const integrated = await runtime.port.integrateResult(owner(), {
-        streamId: attempt.streamId,
-        workItemId: attempt.workItemId,
-        attemptId: attempt.attemptId,
-        sessionId: attempt.sessionId,
-        envelopeId: attempt.envelopeId,
-        ...(attempt.childIsolationId ? { childIsolationId: attempt.childIsolationId as never } : {}),
-        profile: JSON.parse(attempt.profileJson),
-        result,
-      })
       return recordSemanticAttemptResult(
         owner(),
         { ...attempt, leaseEpoch: renewal.leaseEpoch },
-        { state: "succeeded", ...integrated },
+        result,
         adapter.attemptResults,
       )
     })),
@@ -304,7 +304,6 @@ function controlledExecution() {
       envelopes.push(id)
       return { id, streamId: input.streamId, environment: input.environment, repository: input.repository, workspaceId: `/tmp/${id}` }
     },
-    createChildIsolation: async () => { throw new Error("Canonical journey uses one Stream envelope") },
     launch: async (_context, input) => {
       const sessionId = `session:${input.attemptId}` as never
       results.set(sessionId, "running")
@@ -314,25 +313,26 @@ function controlledExecution() {
     result: async (_context, input) => results.get(input.sessionId) === "succeeded"
       ? { state: "succeeded", summary: "Execution completed", artifacts: ["commit:e2e"] }
       : { state: "running" },
-    integrateResult: async (_context, input) => ({ summary: input.result.summary, artifacts: input.result.artifacts }),
     cleanup: async () => undefined,
   }
   return { port, provisioned, envelopes, succeedAll: () => results.forEach((_value, key) => results.set(key, "succeeded")) }
 }
 
-const profile = {
-  environment: { kind: "local_worktree" as const },
+const streamTarget = {
+  environment: { kind: "local_worktree" as const, directory: "/repo" },
   repository: { baseRevision: "HEAD" },
+}
+
+const runtimeDefaults = {
   harness: "claxedo-v2",
   agent: "build",
   model: { providerId: "openai", modelId: "gpt-5" },
   effort: "high",
   tools: [],
   connectionIds: [],
-  isolation: "stream" as const,
-  cleanup: "destroy_on_close" as const,
-  integration: "manual" as const,
 }
+
+const profile = { ...streamTarget, ...runtimeDefaults }
 
 function completion(id: string): CompletionContract {
   return { version: 1, mode: "all", requirements: [{ id: branded(id), kind: "test", description: "The focused test passes" }] }
@@ -386,7 +386,8 @@ function sequence(prefix: string) {
 }
 
 function owner(): WorkGraphContext {
-  return { ownerUserId: branded("owner"), actor: { type: "user", id: branded("owner") }, requestId: branded("request"), access: { mode: "owner" } }
+  return { organizationId: "organization" as never, ownerUserId: branded("owner"), actor: { type: "user", id: branded("owner") }, requestId: branded("request"), access: { mode: "owner" } }
 }
 
 function branded<Type = string>(value: string) { return value as Type }
+import { testExecutionCapabilities } from "../test-execution-capabilities"

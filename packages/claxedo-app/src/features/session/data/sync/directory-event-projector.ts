@@ -8,6 +8,7 @@ import {
 } from "../../store/session-status-dispatcher"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { setSessionDiffQueryData } from "./queries"
+import { reconcileUpdatedSessionListQueryData } from "../query/session-list"
 
 type DirectoryEvent = {
   type: string
@@ -61,6 +62,12 @@ export function applyDirectoryEventToShellQueries(input: {
   switch (input.event.type) {
     case "session.updated": {
       const info = (input.event.properties as { info: Session }).info
+      reconcileUpdatedSessionListQueryData({
+        sessionId: info.id,
+        directory: input.directory,
+        title: info.title,
+        updatedAt: info.time?.updated,
+      })
       if (info.time?.archived) {
         removeSessionShellQueries(info.id)
       }

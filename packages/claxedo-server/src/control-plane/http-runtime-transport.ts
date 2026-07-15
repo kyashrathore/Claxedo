@@ -36,7 +36,7 @@ export async function verifiedRuntimeJson<T>(
   return await runtimeJson<T>(services, options, input)
 }
 
-async function runtimeJson<T>(
+export async function runtimeJson<T>(
   services: ControlPlaneServices,
   options: ControlPlaneHttpOptions,
   input: {
@@ -72,19 +72,11 @@ async function runtimeFetch(
   if (options.runtimeFetch) return await options.runtimeFetch(input)
   const hostManager = services.sandbox.sandboxManager
   if (!hostManager) {
-    throw new ControlPlaneProtocolError(
-      503,
-      "sandbox_unavailable",
-      "Sandbox manager is not configured",
-    )
+    throw new ControlPlaneProtocolError(503, "sandbox_unavailable", "Sandbox manager is not configured")
   }
   const target = await hostManager.target(input.workspaceId).catch(() => undefined)
   if (target?.status !== "ready") {
-    throw new ControlPlaneProtocolError(
-      409,
-      "cloud_runtime_unavailable",
-      "Cloud runtime is unavailable",
-    )
+    throw new ControlPlaneProtocolError(409, "cloud_runtime_unavailable", "Cloud runtime is unavailable")
   }
   const provider = services.relay.provider
   if (!provider) {

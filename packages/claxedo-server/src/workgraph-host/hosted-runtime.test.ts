@@ -8,9 +8,11 @@ import {
   recordFailure,
   recordResult,
   renewWorkGraphAttemptLease,
+  settleRejectedProvision,
 } from "../../../../convex/workgraphRuntime"
-import { createHostedWorkGraphRuntime, parseHostedRecapOutput } from "./hosted-runtime"
+import { createHostedWorkGraphRuntime, parseHostedRecapOutput, workGraphWorkspaceId } from "./hosted-runtime"
 import type { ControlPlaneServices } from "../control-plane/services"
+import { StreamReplacementResetSchema } from "@claxedo/workgraph/contracts"
 
 const previousToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
 beforeEach(() => {
@@ -22,77 +24,127 @@ afterEach(() => {
 })
 
 describe("hosted WorkGraph runtime outbox", () => {
+  test("partitions workspace identity by organization, owner, and Stream scope", async () => {
+    const first = await workGraphWorkspaceId("org-a", "owner-a", "stream-a")
+    expect(await workGraphWorkspaceId("org-a", "owner-a", "stream-a")).toBe(first)
+    expect(await workGraphWorkspaceId("org-b", "owner-a", "stream-a")).not.toBe(first)
+    expect(await workGraphWorkspaceId("org-a", "owner-b", "stream-a")).not.toBe(first)
+    expect(await workGraphWorkspaceId("org-a", "owner-a", "stream-b")).not.toBe(first)
+  })
+
   test("accepts only strict structured ordinary-Session Recap output", () => {
-    expect(parseHostedRecapOutput(JSON.stringify({ summary: "Ready", actionableReferences: [{ type: "stream", id: "stream-a" }] })))
-      .toEqual({ summary: "Ready", actionableReferences: [{ type: "stream", id: "stream-a" }] })
+    expect(
+      parseHostedRecapOutput(
+        JSON.stringify({ summary: "Ready", actionableReferences: [{ type: "stream", id: "stream-a" }] }),
+      ),
+    ).toEqual({ summary: "Ready", actionableReferences: [{ type: "stream", id: "stream-a" }] })
     for (const value of [
       "plain text summary",
       JSON.stringify({ summary: "Missing references" }),
       JSON.stringify({ summary: "Unknown reference", actionableReferences: [{ type: "issue", id: "issue-a" }] }),
-      JSON.stringify({ summary: "Duplicate", actionableReferences: [{ type: "stream", id: "stream-a" }, { type: "stream", id: "stream-a" }] }),
-    ]) expect(() => parseHostedRecapOutput(value)).toThrow()
+      JSON.stringify({
+        summary: "Duplicate",
+        actionableReferences: [
+          { type: "stream", id: "stream-a" },
+          { type: "stream", id: "stream-a" },
+        ],
+      }),
+    ])
+      expect(() => parseHostedRecapOutput(value)).toThrow()
   })
 
   test("recovers an expired durable Attempt after restart and fences stale completion", async () => {
     const db = new RuntimeDb({
-      workgraph_attempts: [{
-        _id: "attempt-row",
-        owner_user_id: "user-a",
-        id: "attempt-a",
-        stream_id: "stream-a",
-        work_item_id: "item-a",
-        state: "running",
-        session_id: "session-a",
-        envelope_id: "workspace-a",
-        row_version: 1,
-      }],
-      workgraph_leases: [{
-        _id: "lease-row",
-        owner_user_id: "user-a",
-        resource_type: "work_item",
-        resource_id: "item-a",
-        holder_id: "attempt-a",
-        epoch: 1,
-        expires_at: 10,
-        row_version: 1,
-      }],
-      workgraph_work_items: [{ _id: "item-row", owner_user_id: "user-a", id: "item-a", state: "active", row_version: 1 }],
+      workgraph_attempts: [
+        {
+          _id: "attempt-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          id: "attempt-a",
+          stream_id: "stream-a",
+          work_item_id: "item-a",
+          state: "running",
+          session_id: "session-a",
+          envelope_id: "workspace-a",
+          row_version: 1,
+        },
+      ],
+      workgraph_leases: [
+        {
+          _id: "lease-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          resource_type: "work_item",
+          resource_id: "item-a",
+          holder_id: "attempt-a",
+          epoch: 1,
+          expires_at: 10,
+          row_version: 1,
+        },
+      ],
+      workgraph_work_items: [
+        {
+          _id: "item-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          id: "item-a",
+          state: "active",
+          row_version: 1,
+        },
+      ],
       orgs: [{ _id: "org-a", owner_user_id: "user-a", kind: "personal" }],
     })
-    await expect(renewWorkGraphAttemptLease({ db } as never, {
-      ownerUserId: "user-b" as never,
-      attemptId: "attempt-a",
-      expectedLeaseEpoch: 1,
-      now: 20,
-      durationMs: 300_000,
-    })).resolves.toBeUndefined()
+    await expect(
+      renewWorkGraphAttemptLease({ db } as never, {
+        organizationId: "org-a" as never,
+        ownerUserId: "user-b" as never,
+        attemptId: "attempt-a",
+        expectedLeaseEpoch: 1,
+        now: 20,
+        durationMs: 300_000,
+      }),
+    ).resolves.toBeUndefined()
 
-    const restarted = await handler(listRunning)({ db } as never, {
+    const restarted = (await handler(listRunning)({ db } as never, {
       service_token: "service-secret",
       limit: 10,
       now: 20,
-    }) as Array<{ attemptId: string; leaseEpoch: number }>
-    expect(restarted).toMatchObject([{ attemptId: "attempt-a", leaseEpoch: 2 }])
+    })) as Array<{ attemptId: string; leaseEpoch: number }>
+    expect(restarted).toMatchObject([
+      {
+        attemptId: "attempt-a",
+        leaseEpoch: 2,
+        activeLeaseAgeMs: 0,
+        expiredRecovery: true,
+      },
+    ])
     expect(db.row("workgraph_leases", "lease-row")).toMatchObject({ epoch: 2, expires_at: 300_020 })
-    await expect(renewWorkGraphAttemptLease({ db } as never, {
-      ownerUserId: "user-a" as never,
-      attemptId: "attempt-a",
-      expectedLeaseEpoch: 1,
-      now: 21,
-      durationMs: 300_000,
-    })).resolves.toBeUndefined()
-    await expect(handler(recordResult)({ db } as never, {
-      service_token: "service-secret",
-      owner_user_id: "user-a",
-      attempt_id: "attempt-a",
-      lease_epoch: 1,
-      session_id: "session-a",
-      summary: "stale",
-      artifacts: [],
-      now: 21,
-    })).resolves.toEqual({ settled: false })
+    await expect(
+      renewWorkGraphAttemptLease({ db } as never, {
+        organizationId: "org-a" as never,
+        ownerUserId: "user-a" as never,
+        attemptId: "attempt-a",
+        expectedLeaseEpoch: 1,
+        now: 21,
+        durationMs: 300_000,
+      }),
+    ).resolves.toBeUndefined()
+    await expect(
+      handler(recordResult)({ db } as never, {
+        service_token: "service-secret",
+        organization_id: "org-a",
+        owner_user_id: "user-a",
+        attempt_id: "attempt-a",
+        lease_epoch: 1,
+        session_id: "session-a",
+        summary: "stale",
+        artifacts: [],
+        now: 21,
+      }),
+    ).resolves.toEqual({ settled: false })
     const result = {
       service_token: "service-secret",
+      organization_id: "org-a",
       owner_user_id: "user-a",
       attempt_id: "attempt-a",
       lease_epoch: 2,
@@ -101,13 +153,18 @@ describe("hosted WorkGraph runtime outbox", () => {
       artifacts: ["commit:abc"],
       now: 21,
     }
-    await expect(handler(recordResult)({ db } as never, { ...result, summary: " " }))
-      .rejects.toThrow("Attempt result summary must be non-empty")
-    await expect(handler(recordResult)({ db } as never, { ...result, artifacts: [" "] }))
-      .rejects.toThrow("Attempt result artifacts must contain non-empty references")
+    await expect(handler(recordResult)({ db } as never, { ...result, summary: " " })).rejects.toThrow(
+      "Attempt result summary must be non-empty",
+    )
+    await expect(handler(recordResult)({ db } as never, { ...result, artifacts: [" "] })).rejects.toThrow(
+      "Attempt result artifacts must contain non-empty references",
+    )
     await expect(handler(recordResult)({ db } as never, result)).resolves.toEqual({ settled: true })
     await expect(handler(recordResult)({ db } as never, result)).resolves.toEqual({ settled: true })
-    expect(db.row("workgraph_attempts", "attempt-row")).toMatchObject({ state: "result", result: { summary: "current" } })
+    expect(db.row("workgraph_attempts", "attempt-row")).toMatchObject({
+      state: "result",
+      result: { summary: "current" },
+    })
     expect(db.row("workgraph_work_items", "item-row")).toMatchObject({ state: "result_ready" })
     expect(db.row("workgraph_attention_entries", "workgraph_attention_entries-1")).toMatchObject({
       owner_user_id: "user-a",
@@ -120,40 +177,58 @@ describe("hosted WorkGraph runtime outbox", () => {
 
   test("projects a semantic Session failure as a retryable Task requiring owner attention", async () => {
     const db = new RuntimeDb({
-      workgraph_attempts: [{
-        _id: "attempt-row",
-        owner_user_id: "user-a",
-        id: "attempt-a",
-        stream_id: "stream-a",
-        work_item_id: "item-a",
-        state: "running",
-        session_id: "session-a",
-        row_version: 1,
-      }],
-      workgraph_leases: [{
-        _id: "lease-row",
-        owner_user_id: "user-a",
-        resource_type: "work_item",
-        resource_id: "item-a",
-        holder_id: "attempt-a",
-        epoch: 1,
-        expires_at: 100,
-        row_version: 1,
-      }],
-      workgraph_work_items: [{ _id: "item-row", owner_user_id: "user-a", id: "item-a", state: "active", row_version: 1 }],
+      workgraph_attempts: [
+        {
+          _id: "attempt-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          id: "attempt-a",
+          stream_id: "stream-a",
+          work_item_id: "item-a",
+          state: "running",
+          session_id: "session-a",
+          row_version: 1,
+        },
+      ],
+      workgraph_leases: [
+        {
+          _id: "lease-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          resource_type: "work_item",
+          resource_id: "item-a",
+          holder_id: "attempt-a",
+          epoch: 1,
+          expires_at: 100,
+          row_version: 1,
+        },
+      ],
+      workgraph_work_items: [
+        {
+          _id: "item-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          id: "item-a",
+          state: "active",
+          row_version: 1,
+        },
+      ],
     })
 
-    await expect(handler(recordFailure)({ db } as never, {
-      service_token: "service-secret",
-      owner_user_id: "user-a",
-      attempt_id: "attempt-a",
-      lease_epoch: 1,
-      session_id: "session-a",
-      reason: "Session execution failed",
-      now: 20,
-    })).resolves.toEqual({ settled: true })
+    await expect(
+      handler(recordFailure)({ db } as never, {
+        service_token: "service-secret",
+        organization_id: "org-a",
+        owner_user_id: "user-a",
+        attempt_id: "attempt-a",
+        lease_epoch: 1,
+        session_id: "session-a",
+        reason: "Session execution failed",
+        now: 20,
+      }),
+    ).resolves.toEqual({ settled: true })
 
-    expect(db.row("workgraph_attempts", "attempt-row")).toMatchObject({ state: "failed" })
+    expect(db.row("workgraph_attempts", "attempt-row")).toMatchObject({ state: "failed", finished_at: 20 })
     expect(db.row("workgraph_work_items", "item-row")).toMatchObject({ state: "failed" })
     expect(db.row("workgraph_attention_entries", "workgraph_attention_entries-1")).toMatchObject({
       kind: "work_item",
@@ -179,15 +254,232 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(mutations[3]).toMatchObject({ ok: false, reason: expect.stringContaining("not ready") })
   })
 
-  test("records workspace destroy failure instead of acknowledging deletion", async () => {
+  test("finalizes close by interrupting Sessions without destroying or releasing the workspace", async () => {
+    const destroyed: string[] = []
+    const released: string[] = []
     const mutations = await runControlEffect({
-      effectType: "cleanup_stream",
+      effectType: "finalize_stream",
+      payload: { finalize: "close", sessions: ["session-a"] },
+      destroy: async () => {
+        destroyed.push("destroyed")
+        return { ok: true, status: "destroyed" }
+      },
+      release: async (workspaceId) => { released.push(workspaceId) },
+    })
+    expect(mutations[3]).toMatchObject({ ok: true })
+    expect(destroyed).toEqual([])
+    expect(released).toEqual([])
+  })
+
+  test("releases workspace ownership without destroying compute when deletion finalizes", async () => {
+    const released: string[] = []
+    const mutations = await runControlEffect({
+      effectType: "finalize_stream",
       payload: { finalize: "delete", sessions: [] },
       destroy: async () => {
-        throw new Error("provider destroy failed")
+        throw new Error("delete finalization must not destroy compute")
       },
+      release: async (workspaceId) => { released.push(workspaceId) },
     })
-    expect(mutations[3]).toMatchObject({ ok: false, reason: "provider destroy failed" })
+    expect(mutations[3]).toMatchObject({ ok: true })
+    expect(released).toHaveLength(1)
+  })
+
+  test("does not acknowledge replacement reset when workspace destruction is rejected", async () => {
+    const mutations = await runControlEffect({
+      effectType: "cleanup_stream",
+      payload: { finalize: "replace", sessions: [] },
+      destroy: async () => ({ ok: false as const, reason: "runtime_lease_not_ready" }),
+    })
+    expect(mutations[3]).toMatchObject({
+      ok: false,
+      reason: "Hosted WorkGraph replacement reset failed: runtime_lease_not_ready",
+    })
+  })
+
+  test("acknowledges an already-destroyed replacement workspace on retry", async () => {
+    const mutations = await runControlEffect({
+      effectType: "cleanup_stream",
+      payload: { finalize: "replace", sessions: ["session-a"] },
+      targetStatus: "provisioning",
+      destroy: async () => ({ ok: false as const, reason: "runtime_lease_missing" }),
+    })
+    expect(mutations[3]).toMatchObject({ ok: true })
+  })
+
+  test("destroys a late claimed placement before settling its rejected launch fence", async () => {
+    const mutations: Record<string, unknown>[] = []
+    const destroyed: string[] = []
+    const released: string[] = []
+    const runtime = createHostedWorkGraphRuntime(
+      { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      {
+        sandbox: {
+          sandboxManager: {
+            ensure: async () => ({
+              status: "ready",
+              sandboxId: "sandbox",
+              url: "https://runtime.test",
+              hostId: "host-a",
+              epoch: 1,
+              homeRegion: "us-east",
+            }),
+            destroy: async (workspaceId: string) => {
+              destroyed.push(workspaceId)
+              return { ok: true as const, status: "destroyed" as const }
+            },
+            release: async (workspaceId: string) => {
+              released.push(workspaceId)
+            },
+          },
+        },
+        relay: {
+          provider: {
+            mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+            getRelayEndpoint: async () => "https://relay.test",
+          },
+        },
+      } as unknown as ControlPlaneServices,
+      {
+        background: false,
+        executor: {
+          mutation: async (_fn, args) => {
+            if (args.limit === 500 && Object.keys(args).length === 2)
+              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
+            mutations.push(args)
+            if (mutations.length === 1)
+              return [
+                {
+                  ownerUserId: "user-a",
+                  orgId: "org-a",
+                  outboxId: "launch-a",
+                  attemptId: "attempt-a",
+                  streamId: "stream-a",
+                  workItemId: "item-a",
+                  leaseEpoch: 1,
+                  title: "Late work",
+                  prompt: "Late work",
+                  profile: {
+                    environment: { kind: "hosted_workspace" },
+                    harness: "claxedo-v2",
+                    agent: "build",
+                    model: { providerId: "openai", modelId: "gpt-5" },
+                    effort: "high",
+                    tools: [],
+                    connectionIds: [],
+                  },
+                },
+              ]
+            if (mutations.length === 2) return { accepted: false }
+            if (mutations.length === 3) return { settled: true }
+            return []
+          },
+        },
+      },
+    )
+
+    await expect(runtime?.reconcile()).resolves.toMatchObject({
+      launched: [{ settled: false, state: "cancelled" }],
+    })
+    expect(destroyed).toHaveLength(1)
+    expect(released).toEqual(destroyed)
+    expect(mutations[2]).toMatchObject({ outbox_id: "launch-a", attempt_id: "attempt-a" })
+  })
+
+  test("settles a rejected claimed placement behind the launch worker fence", async () => {
+    const db = new RuntimeDb({
+      workgraph_outbox: [
+        {
+          _id: "launch-row",
+          owner_user_id: "user-a",
+          id: "launch-a",
+          status: "claimed",
+          claimed_by: "worker-a",
+          claim_expires_at: 100,
+          payload: { attemptId: "attempt-a" },
+        },
+      ],
+    })
+    await expect(
+      handler(settleRejectedProvision)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        outbox_id: "launch-a",
+        attempt_id: "attempt-a",
+        worker_id: "worker-a",
+        now: 20,
+      }),
+    ).resolves.toEqual({ settled: true })
+    expect(db.row("workgraph_outbox", "launch-row")).toMatchObject({
+      status: "cancelled",
+      claimed_by: undefined,
+      claim_expires_at: undefined,
+    })
+  })
+
+  test("publishes a schema-valid ordered replacement cleanup attention transition", async () => {
+    const reset = {
+      state: "pending" as const,
+      proposalId: "proposal-a",
+      previousSource: { workSourceId: "source-a", revisionId: "revision-a", contentHash: "a".repeat(64) },
+      source: { workSourceId: "source-a", revisionId: "revision-b", contentHash: "b".repeat(64) },
+      requestedAt: 10,
+    }
+    const db = new RuntimeDb({
+      workgraph_outbox: [
+        {
+          _id: "control-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          id: "control-a",
+          stream_id: "stream-a",
+          status: "claimed",
+          claimed_by: "worker-a",
+          attempt_count: 3,
+          payload: { finalize: "replace", proposalId: "proposal-a" },
+        },
+      ],
+      workgraph_streams: [
+        {
+          _id: "stream-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          id: "stream-a",
+          replacement_reset: reset,
+          row_version: 4,
+          updated_at: 10,
+        },
+      ],
+      workgraph_change_cursors: [],
+      workgraph_stream_sequences: [],
+      workgraph_events: [],
+      workgraph_changes: [],
+    })
+    await expect(
+      handler(completeControlEffect)({ db } as never, {
+        service_token: "service-secret",
+        organization_id: "org-a",
+        owner_user_id: "user-a",
+        outbox_id: "control-a",
+        worker_id: "worker-a",
+        ok: false,
+        reason: "workspace cleanup unavailable",
+        now: 20,
+      }),
+    ).resolves.toEqual({ settled: true })
+    expect(
+      StreamReplacementResetSchema.parse(db.row("workgraph_streams", "stream-row")?.replacement_reset),
+    ).toMatchObject({ state: "attention", proposalId: "proposal-a" })
+    expect(db.row("workgraph_streams", "stream-row")).toMatchObject({ row_version: 5, updated_at: 20 })
+    expect(db.rowsFor("workgraph_changes")).toMatchObject([
+      {
+        cursor: 1,
+        resource_type: "stream",
+        resource_id: "stream-a",
+        change_type: "stream_replacement_reset_attention",
+        payload: { reason: "workspace cleanup unavailable" },
+      },
+    ])
   })
 
   test("reclaims a claimed control effect only after its worker fence expires", async () => {
@@ -195,6 +487,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       workgraph_outbox: [
         {
           _id: "control-row",
+          organization_id: "org-a",
           owner_user_id: "user-a",
           id: "control-a",
           stream_id: "stream-a",
@@ -225,6 +518,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       workgraph_outbox: [
         {
           _id: "control-row",
+          organization_id: "org-a",
           owner_user_id: "user-a",
           id: "control-a",
           status: "claimed",
@@ -285,6 +579,7 @@ describe("hosted WorkGraph runtime outbox", () => {
         },
         {
           _id: "control-row",
+          organization_id: "org-a",
           owner_user_id: "user-a",
           id: "control-a",
           idempotency_key: "attempt-a:interrupt",
@@ -348,11 +643,12 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(db.row("workgraph_attempts", "attempt-row")?.state).toBe("cancelled")
   })
 
-  test("keeps a deleting Stream durable until workspace cleanup acknowledgment", async () => {
+  test("keeps a deleting Stream durable until workspace ownership release is acknowledged", async () => {
     const db = new RuntimeDb({
       workgraph_outbox: [
         {
           _id: "control-row",
+          organization_id: "org-a",
           owner_user_id: "user-a",
           id: "control-a",
           stream_id: "stream-a",
@@ -364,6 +660,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       workgraph_streams: [
         {
           _id: "stream-row",
+          organization_id: "org-a",
           owner_user_id: "user-a",
           id: "stream-a",
           lifecycle_state: "active",
@@ -373,6 +670,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       workgraph_attempts: [
         {
           _id: "attempt-row",
+          organization_id: "org-a",
           owner_user_id: "user-a",
           id: "attempt-a",
           stream_id: "stream-a",
@@ -388,6 +686,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     await expect(
       handler(completeControlEffect)({ db } as never, {
         service_token: "service-secret",
+        organization_id: "org-a",
         owner_user_id: "user-a",
         outbox_id: "control-a",
         worker_id: "worker-a",
@@ -400,6 +699,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     await expect(
       handler(completeControlEffect)({ db } as never, {
         service_token: "service-secret",
+        organization_id: "org-a",
         owner_user_id: "user-a",
         outbox_id: "control-a",
         worker_id: "worker-a",
@@ -409,7 +709,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     ).resolves.toEqual({ settled: true })
   })
 
-  test("keeps close pending in valid public states and finalizes only after cleanup acknowledgment", async () => {
+  test("keeps close pending in valid public states and finalizes only after Session interruption acknowledgment", async () => {
     const db = new RuntimeDb({
       workgraph_outbox: [
         {
@@ -486,7 +786,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(db.row("workgraph_attempts", "attempt-row")?.state).toBe("cancelled")
   })
 
-  test("runs a due Recap through a normal tool-less Session and reconciles its durable result", async () => {
+  test("reconciles a hosted Recap whose terminal event is on the second history page", async () => {
     const mutations: Record<string, unknown>[] = []
     const runtime = createHostedWorkGraphRuntime(
       {
@@ -525,6 +825,8 @@ describe("hosted WorkGraph runtime outbox", () => {
       {
         executor: {
           mutation: async (_fn, args) => {
+            if (args.limit === 500 && Object.keys(args).length === 2)
+              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
             mutations.push(args)
             if (mutations.length <= 3) return []
             if (mutations.length === 4) return { completed: 1 }
@@ -545,33 +847,50 @@ describe("hosted WorkGraph runtime outbox", () => {
                   },
                 },
               ]
-            if (mutations.length === 6) return { settled: true }
-            if (mutations.length === 7)
+            if (mutations.length === 6 || mutations.length === 7) return { settled: true }
+            if (mutations.length === 8)
               return [
                 {
                   ownerUserId: "internal-user-a",
                   orgId: "org-a",
                   jobId: "recap-job",
                   leaseEpoch: 1,
-                  sessionId: "session-recap",
+                  sessionId: "ses_workgraph_recap_recap-job_1",
                   workspaceId: String(mutations[5]?.workspace_id),
                 },
               ]
-            return { settled: true }
+            if (mutations.length === 9) return { settled: true }
+            return []
           },
         },
         fetch: async (input, init) => {
           const url = new URL(String(input))
           if (url.pathname.endsWith("/api/session")) {
-            expect(JSON.parse(String(init?.body))).toMatchObject({ tools: [], location: { directory: "/workspace" } })
-            return Response.json({ id: "session-recap" })
+            const body = JSON.parse(String(init?.body))
+            expect(body).toMatchObject({
+              id: "ses_workgraph_recap_recap-job_1",
+              tools: [],
+              location: { directory: "/workspace" },
+            })
+            return Response.json({ id: body.id })
           }
-          if (url.pathname.endsWith("/history"))
+          if (url.pathname.endsWith("/history") && url.searchParams.get("after") === "0")
             return Response.json({
               data: [
-                { type: "session.next.text.ended", data: { text: JSON.stringify({ summary: "Launch is ready; billing remains.", actionableReferences: [] }) } },
-                { type: "session.next.step.ended", data: {} },
+                {
+                  type: "session.next.text.ended",
+                  durable: { seq: 1 },
+                  data: {
+                    text: JSON.stringify({ summary: "Launch is ready; billing remains.", actionableReferences: [] }),
+                  },
+                },
               ],
+              hasMore: true,
+            })
+          if (url.pathname.endsWith("/history") && url.searchParams.get("after") === "1")
+            return Response.json({
+              data: [{ type: "session.next.step.ended", durable: { seq: 2 }, data: {} }],
+              hasMore: false,
             })
           return Response.json({ data: { admitted: true } })
         },
@@ -586,10 +905,142 @@ describe("hosted WorkGraph runtime outbox", () => {
         results: [{ settled: true }],
       },
     })
-    expect(mutations).toContainEqual(expect.objectContaining({ job_id: "recap-job", summary: "Launch is ready; billing remains." }))
+    expect(mutations).toContainEqual(
+      expect.objectContaining({ job_id: "recap-job", summary: "Launch is ready; billing remains." }),
+    )
   })
 
-  test("runs source planning through a caller-owned normal Session and reconciles its strict result", async () => {
+  test("replays the same hosted Recap Session and prompt after a lost prompt response", async () => {
+    const mutations: Record<string, unknown>[] = []
+    const sessionBodies: Array<Record<string, unknown>> = []
+    const promptBodies: Array<Record<string, unknown>> = []
+    const admittedMessages = new Set<string>()
+    const claim = (leaseEpoch: number) => ({
+      ownerUserId: "internal-user-a",
+      orgId: "org-a",
+      jobId: "recap-lost",
+      leaseEpoch,
+      streamId: "stream-a",
+      ...(leaseEpoch === 2 ? { sessionId: "ses_workgraph_recap_recap-lost_1" } : {}),
+      prompt: "Summarize bounded changes",
+      profile: {
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "medium",
+        tools: [],
+      },
+    })
+    const runtime = createHostedWorkGraphRuntime(
+      {
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+      },
+      {
+        sandbox: {
+          sandboxManager: {
+            ensure: async () => ({
+              status: "ready",
+              sandboxId: "sandbox",
+              url: "https://runtime.test",
+              hostId: "host-a",
+              epoch: 1,
+              homeRegion: "us-east",
+            }),
+            target: async () => ({
+              status: "ready",
+              sandboxId: "sandbox",
+              url: "https://runtime.test",
+              hostId: "host-a",
+              epoch: 1,
+              homeRegion: "us-east",
+            }),
+          },
+        },
+        relay: {
+          provider: {
+            mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+            getRelayEndpoint: async () => "https://relay.test",
+          },
+        },
+        defaultHomeRegion: "us-east",
+      } as unknown as ControlPlaneServices,
+      {
+        executor: {
+          mutation: async (_fn, args) => {
+            if (args.limit === 500 && Object.keys(args).length === 2)
+              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
+            mutations.push(args)
+            const call = mutations.length
+            if ([1, 2, 3, 7, 8, 9, 10, 11, 12, 19, 20].includes(call)) return []
+            if (call === 4 || call === 13) return { completed: 0 }
+            if (call === 5) return [claim(1)]
+            if (call === 14) return [claim(2)]
+            if ([6, 15, 16, 18].includes(call)) return { settled: true }
+            if (call === 17)
+              return [
+                {
+                  ownerUserId: "internal-user-a",
+                  orgId: "org-a",
+                  jobId: "recap-lost",
+                  leaseEpoch: 2,
+                  sessionId: "ses_workgraph_recap_recap-lost_1",
+                  workspaceId: String(mutations[14]?.workspace_id),
+                },
+              ]
+            throw new Error(`Unexpected mutation ${call}`)
+          },
+        },
+        fetch: async (input, init) => {
+          const url = new URL(String(input))
+          if (url.pathname.endsWith("/api/session")) {
+            const body = JSON.parse(String(init?.body))
+            sessionBodies.push(body)
+            return Response.json({ id: body.id })
+          }
+          if (url.pathname.endsWith("/prompt")) {
+            const body = JSON.parse(String(init?.body))
+            promptBodies.push(body)
+            admittedMessages.add(body.id)
+            if (promptBodies.length === 1) throw new Error("response lost after durable prompt admission")
+            return Response.json({ data: { admitted: true } })
+          }
+          if (url.pathname.endsWith("/history"))
+            return Response.json({
+              data: [
+                {
+                  type: "session.next.text.ended",
+                  data: {
+                    text: JSON.stringify({ summary: "Launch is ready.", actionableReferences: [] }),
+                  },
+                },
+                { type: "session.next.step.ended", data: {} },
+              ],
+              hasMore: false,
+            })
+          return Response.json({ data: {} })
+        },
+      },
+    )
+
+    await expect(runtime?.reconcile()).resolves.toMatchObject({
+      background: { launched: [{ state: "running", settled: false }], results: [] },
+    })
+    await expect(runtime?.reconcile()).resolves.toMatchObject({
+      background: { launched: [{ state: "running", settled: true }], results: [{ settled: true }] },
+    })
+    expect(sessionBodies).toEqual([
+      expect.objectContaining({ id: "ses_workgraph_recap_recap-lost_1" }),
+      expect.objectContaining({ id: "ses_workgraph_recap_recap-lost_1" }),
+    ])
+    expect(promptBodies).toEqual([
+      expect.objectContaining({ id: "msg_recap_recap-lost" }),
+      expect.objectContaining({ id: "msg_recap_recap-lost" }),
+    ])
+    expect(admittedMessages.size).toBe(1)
+    expect(mutations.filter((mutation) => "summary" in mutation)).toHaveLength(1)
+  })
+
+  test("reconciles hosted source planning whose terminal event is on the second history page", async () => {
     const mutations: Record<string, unknown>[] = []
     const prompts: Array<Record<string, unknown>> = []
     const runtime = createHostedWorkGraphRuntime(
@@ -600,35 +1051,73 @@ describe("hosted WorkGraph runtime outbox", () => {
       {
         sandbox: {
           sandboxManager: {
-            ensure: async () => ({ status: "ready", sandboxId: "sandbox", url: "https://runtime.test", hostId: "host-a", epoch: 1, homeRegion: "us-east" }),
-            target: async () => ({ status: "ready", sandboxId: "sandbox", url: "https://runtime.test", hostId: "host-a", epoch: 1, homeRegion: "us-east" }),
+            ensure: async () => ({
+              status: "ready",
+              sandboxId: "sandbox",
+              url: "https://runtime.test",
+              hostId: "host-a",
+              epoch: 1,
+              homeRegion: "us-east",
+            }),
+            target: async () => ({
+              status: "ready",
+              sandboxId: "sandbox",
+              url: "https://runtime.test",
+              hostId: "host-a",
+              epoch: 1,
+              homeRegion: "us-east",
+            }),
           },
         },
-        relay: { provider: {
-          mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
-          getRelayEndpoint: async () => "https://relay.test",
-        } },
+        relay: {
+          provider: {
+            mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+            getRelayEndpoint: async () => "https://relay.test",
+          },
+        },
         defaultHomeRegion: "us-east",
       } as unknown as ControlPlaneServices,
       {
-        executor: { mutation: async (_fn, args) => {
-          mutations.push(args)
-          if (mutations.length <= 3) return []
-          if (mutations.length === 4) return { completed: 0 }
-          if (mutations.length <= 6) return []
-          if (mutations.length === 7) return [{
-            ownerUserId: "internal-user-a", orgId: "org-a", jobId: "source-plan-job", leaseEpoch: 1,
-            proposalId: "proposal-a", prompt: "Analyze exact source", profile: {
-              agent: "build", model: { providerId: "openai", modelId: "gpt-5" }, effort: "medium", tools: [],
-            },
-          }]
-          if (mutations.length === 8 || mutations.length === 9) return { settled: true }
-          if (mutations.length === 10) return [{
-            ownerUserId: "internal-user-a", orgId: "org-a", jobId: "source-plan-job", leaseEpoch: 1,
-            sessionId: "ses_workgraph_source-plan-job_1", workspaceId: String(mutations[7]?.workspace_id),
-          }]
-          return { settled: true }
-        } },
+        executor: {
+          mutation: async (_fn, args) => {
+            if (args.limit === 500 && Object.keys(args).length === 2)
+              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
+            mutations.push(args)
+            if (mutations.length <= 3) return []
+            if (mutations.length === 4) return { completed: 0 }
+            if (mutations.length <= 6) return []
+            if (mutations.length === 7)
+              return [
+                {
+                  ownerUserId: "internal-user-a",
+                  orgId: "org-a",
+                  jobId: "source-plan-job",
+                  leaseEpoch: 1,
+                  proposalId: "proposal-a",
+                  prompt: "Analyze exact source",
+                  profile: {
+                    agent: "build",
+                    model: { providerId: "openai", modelId: "gpt-5" },
+                    effort: "medium",
+                    tools: [],
+                  },
+                },
+              ]
+            if (mutations.length === 8 || mutations.length === 9) return { settled: true }
+            if (mutations.length === 10)
+              return [
+                {
+                  ownerUserId: "internal-user-a",
+                  orgId: "org-a",
+                  jobId: "source-plan-job",
+                  leaseEpoch: 1,
+                  sessionId: "ses_workgraph_source-plan-job_1",
+                  workspaceId: String(mutations[7]?.workspace_id),
+                },
+              ]
+            return { settled: true }
+          },
+        },
         fetch: async (input, init) => {
           const url = new URL(String(input))
           if (url.pathname.endsWith("/api/session")) {
@@ -639,18 +1128,48 @@ describe("hosted WorkGraph runtime outbox", () => {
             prompts.push(JSON.parse(String(init?.body)))
             return Response.json({ data: { admitted: true } })
           }
-          if (url.pathname.endsWith("/history")) return Response.json({ data: [
-            { type: "session.next.text.ended", data: { text: JSON.stringify({
-              source: { workSourceId: "source-a", revisionId: "revision-a", contentHash: "a".repeat(64) },
-              suggestedPlacement: { mode: "new_stream", streamTitle: "Ship cloud" }, placementMatches: [],
-              proposedOutcomes: [{ key: "ship", title: "Cloud shipped", successCriteria: ["Healthy"], execution: {} }],
-              proposedWorkItems: [{
-                key: "deploy", outcomeKey: "ship", title: "Deploy", dependencyKeys: [], execution: {},
-                completionContract: { version: 1, mode: "all", requirements: [{ id: "healthy", kind: "owner_confirmation", description: "Owner verifies health" }] },
-              }], duplicateMatches: [],
-            }) } },
-            { type: "session.next.step.ended", data: {} },
-          ] })
+          if (url.pathname.endsWith("/history") && url.searchParams.get("after") === "0")
+            return Response.json({
+              data: [
+                {
+                  type: "session.next.text.ended",
+                  durable: { seq: 1 },
+                  data: {
+                    text: JSON.stringify({
+                      source: { workSourceId: "source-a", revisionId: "revision-a", contentHash: "a".repeat(64) },
+                      suggestedPlacement: { mode: "new_stream", streamTitle: "Ship cloud" },
+                      placementMatches: [],
+                      proposedOutcomes: [
+                        { key: "ship", title: "Cloud shipped", successCriteria: ["Healthy"], execution: {} },
+                      ],
+                      proposedWorkItems: [
+                        {
+                          key: "deploy",
+                          outcomeKey: "ship",
+                          title: "Deploy",
+                          dependencyKeys: [],
+                          execution: {},
+                          completionContract: {
+                            version: 1,
+                            mode: "all",
+                            requirements: [
+                              { id: "healthy", kind: "owner_confirmation", description: "Owner verifies health" },
+                            ],
+                          },
+                        },
+                      ],
+                      duplicateMatches: [],
+                    }),
+                  },
+                },
+              ],
+              hasMore: true,
+            })
+          if (url.pathname.endsWith("/history") && url.searchParams.get("after") === "1")
+            return Response.json({
+              data: [{ type: "session.next.step.ended", durable: { seq: 2 }, data: {} }],
+              hasMore: false,
+            })
           return Response.json({ data: {} })
         },
       },
@@ -659,16 +1178,20 @@ describe("hosted WorkGraph runtime outbox", () => {
     await expect(runtime?.reconcile()).resolves.toMatchObject({
       background: { sourcePlanning: { launched: [{ state: "running" }], results: [{ settled: true }] } },
     })
-    expect(prompts).toEqual([expect.objectContaining({
-      id: "msg_workgraph_source-plan-job",
-      delivery: "steer",
-      resume: true,
-    })])
-    expect(mutations).toContainEqual(expect.objectContaining({
-      job_id: "source-plan-job",
-      session_id: "ses_workgraph_source-plan-job_1",
-      plan: expect.objectContaining({ proposedWorkItems: [expect.objectContaining({ title: "Deploy" })] }),
-    }))
+    expect(prompts).toEqual([
+      expect.objectContaining({
+        id: "msg_workgraph_source-plan-job",
+        delivery: "steer",
+        resume: true,
+      }),
+    ])
+    expect(mutations).toContainEqual(
+      expect.objectContaining({
+        job_id: "source-plan-job",
+        session_id: "ses_workgraph_source-plan-job_1",
+        plan: expect.objectContaining({ proposedWorkItems: [expect.objectContaining({ title: "Deploy" })] }),
+      }),
+    )
   })
 
   test("replays the same hosted source-planning Session and prompt after a lost prompt response", async () => {
@@ -676,40 +1199,77 @@ describe("hosted WorkGraph runtime outbox", () => {
     const sessionBodies: Array<Record<string, unknown>> = []
     const promptBodies: Array<Record<string, unknown>> = []
     const claim = (leaseEpoch: number) => ({
-      ownerUserId: "internal-user-a", orgId: "org-a", jobId: "source-plan-lost", leaseEpoch,
-      proposalId: "proposal-a", ...(leaseEpoch === 2 ? { sessionId: "ses_workgraph_source-plan-lost_1" } : {}),
-      prompt: "Analyze exact source", profile: {
-        agent: "build", model: { providerId: "openai", modelId: "gpt-5" }, effort: "medium", tools: [],
+      ownerUserId: "internal-user-a",
+      orgId: "org-a",
+      jobId: "source-plan-lost",
+      leaseEpoch,
+      proposalId: "proposal-a",
+      ...(leaseEpoch === 2 ? { sessionId: "ses_workgraph_source-plan-lost_1" } : {}),
+      prompt: "Analyze exact source",
+      profile: {
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "medium",
+        tools: [],
       },
     })
     const runtime = createHostedWorkGraphRuntime(
       { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
       {
-        sandbox: { sandboxManager: {
-          ensure: async () => ({ status: "ready", sandboxId: "sandbox", url: "https://runtime.test", hostId: "host-a", epoch: 1, homeRegion: "us-east" }),
-          target: async () => ({ status: "ready", sandboxId: "sandbox", url: "https://runtime.test", hostId: "host-a", epoch: 1, homeRegion: "us-east" }),
-        } },
-        relay: { provider: {
-          mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
-          getRelayEndpoint: async () => "https://relay.test",
-        } },
+        sandbox: {
+          sandboxManager: {
+            ensure: async () => ({
+              status: "ready",
+              sandboxId: "sandbox",
+              url: "https://runtime.test",
+              hostId: "host-a",
+              epoch: 1,
+              homeRegion: "us-east",
+            }),
+            target: async () => ({
+              status: "ready",
+              sandboxId: "sandbox",
+              url: "https://runtime.test",
+              hostId: "host-a",
+              epoch: 1,
+              homeRegion: "us-east",
+            }),
+          },
+        },
+        relay: {
+          provider: {
+            mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+            getRelayEndpoint: async () => "https://relay.test",
+          },
+        },
         defaultHomeRegion: "us-east",
       } as unknown as ControlPlaneServices,
       {
-        executor: { mutation: async (_fn, args) => {
-          mutations.push(args)
-          const call = mutations.length
-          if ([1, 2, 3, 5, 6, 9, 10, 11, 12, 14, 15].includes(call)) return []
-          if (call === 4 || call === 13) return { completed: 0 }
-          if (call === 7) return [claim(1)]
-          if (call === 16) return [claim(2)]
-          if ([8, 17, 18, 20].includes(call)) return { settled: true }
-          if (call === 19) return [{
-            ownerUserId: "internal-user-a", orgId: "org-a", jobId: "source-plan-lost", leaseEpoch: 2,
-            sessionId: "ses_workgraph_source-plan-lost_1", workspaceId: String(mutations[16]?.workspace_id),
-          }]
-          throw new Error(`Unexpected mutation ${call}`)
-        } },
+        executor: {
+          mutation: async (_fn, args) => {
+            if (args.limit === 500 && Object.keys(args).length === 2)
+              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
+            mutations.push(args)
+            const call = mutations.length
+            if ([1, 2, 3, 5, 6, 9, 10, 11, 12, 14, 15].includes(call)) return []
+            if (call === 4 || call === 13) return { completed: 0 }
+            if (call === 7) return [claim(1)]
+            if (call === 16) return [claim(2)]
+            if ([8, 17, 18, 20].includes(call)) return { settled: true }
+            if (call === 19)
+              return [
+                {
+                  ownerUserId: "internal-user-a",
+                  orgId: "org-a",
+                  jobId: "source-plan-lost",
+                  leaseEpoch: 2,
+                  sessionId: "ses_workgraph_source-plan-lost_1",
+                  workspaceId: String(mutations[16]?.workspace_id),
+                },
+              ]
+            throw new Error(`Unexpected mutation ${call}`)
+          },
+        },
         fetch: async (input, init) => {
           const url = new URL(String(input))
           if (url.pathname.endsWith("/api/session")) {
@@ -722,18 +1282,43 @@ describe("hosted WorkGraph runtime outbox", () => {
             if (promptBodies.length === 1) throw new Error("response lost after durable prompt admission")
             return Response.json({ data: { admitted: true } })
           }
-          if (url.pathname.endsWith("/history")) return Response.json({ data: [
-            { type: "session.next.text.ended", data: { text: JSON.stringify({
-              source: { workSourceId: "source-a", revisionId: "revision-a", contentHash: "a".repeat(64) },
-              suggestedPlacement: { mode: "new_stream", streamTitle: "Ship cloud" }, placementMatches: [],
-              proposedOutcomes: [{ key: "ship", title: "Cloud shipped", successCriteria: ["Healthy"], execution: {} }],
-              proposedWorkItems: [{
-                key: "deploy", outcomeKey: "ship", title: "Deploy", dependencyKeys: [], execution: {},
-                completionContract: { version: 1, mode: "all", requirements: [{ id: "healthy", kind: "owner_confirmation", description: "Owner verifies health" }] },
-              }], duplicateMatches: [],
-            }) } },
-            { type: "session.next.step.ended", data: {} },
-          ] })
+          if (url.pathname.endsWith("/history"))
+            return Response.json({
+              data: [
+                {
+                  type: "session.next.text.ended",
+                  data: {
+                    text: JSON.stringify({
+                      source: { workSourceId: "source-a", revisionId: "revision-a", contentHash: "a".repeat(64) },
+                      suggestedPlacement: { mode: "new_stream", streamTitle: "Ship cloud" },
+                      placementMatches: [],
+                      proposedOutcomes: [
+                        { key: "ship", title: "Cloud shipped", successCriteria: ["Healthy"], execution: {} },
+                      ],
+                      proposedWorkItems: [
+                        {
+                          key: "deploy",
+                          outcomeKey: "ship",
+                          title: "Deploy",
+                          dependencyKeys: [],
+                          execution: {},
+                          completionContract: {
+                            version: 1,
+                            mode: "all",
+                            requirements: [
+                              { id: "healthy", kind: "owner_confirmation", description: "Owner verifies health" },
+                            ],
+                          },
+                        },
+                      ],
+                      duplicateMatches: [],
+                    }),
+                  },
+                },
+                { type: "session.next.step.ended", data: {} },
+              ],
+              hasMore: false,
+            })
           return Response.json({ data: {} })
         },
       },
@@ -779,6 +1364,8 @@ describe("hosted WorkGraph runtime outbox", () => {
         background: false,
         executor: {
           mutation: async (_fn, args) => {
+            if (args.limit === 500 && Object.keys(args).length === 2)
+              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
             mutations.push(args)
             if (mutations.length === 1)
               return [
@@ -817,6 +1404,7 @@ describe("hosted WorkGraph runtime outbox", () => {
 
   test("binds a Connection Attempt before prompting and reconciles its result", async () => {
     const mutations: Record<string, unknown>[] = []
+    const ensureInputs: Record<string, unknown>[] = []
     const runtime = createHostedWorkGraphRuntime(
       {
         CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
@@ -826,14 +1414,17 @@ describe("hosted WorkGraph runtime outbox", () => {
       {
         sandbox: {
           sandboxManager: {
-            ensure: async () => ({
-              status: "ready",
-              sandboxId: "sandbox",
-              url: "https://runtime.test",
-              hostId: "host-a",
-              epoch: 1,
-              homeRegion: "us-east",
-            }),
+            ensure: async (_workspaceId: string, input: Record<string, unknown>) => {
+              ensureInputs.push(input)
+              return {
+                status: "ready",
+                sandboxId: "sandbox",
+                url: "https://runtime.test",
+                hostId: "host-a",
+                epoch: 1,
+                homeRegion: "us-east",
+              }
+            },
             target: async () => ({
               status: "ready",
               sandboxId: "sandbox",
@@ -860,6 +1451,8 @@ describe("hosted WorkGraph runtime outbox", () => {
         })(),
         executor: {
           mutation: async (_fn, args) => {
+            if (args.limit === 500 && Object.keys(args).length === 2)
+              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
             mutations.push(args)
             if (mutations.length === 1)
               return [
@@ -874,7 +1467,11 @@ describe("hosted WorkGraph runtime outbox", () => {
                   title: "No-op",
                   prompt: "Return done",
                   profile: {
-                    environment: { kind: "hosted_workspace" },
+                    environment: {
+                      kind: "hosted_workspace",
+                      repositoryUrl: "https://github.com/claxedo/workgraph-target.git",
+                    },
+                    repository: { baseRevision: "release" },
                     harness: "opencode",
                     agent: "build",
                     model: { providerId: "openai", modelId: "gpt-5" },
@@ -942,6 +1539,17 @@ describe("hosted WorkGraph runtime outbox", () => {
       results: [{ settled: true }],
     })
     expect(mutations).toHaveLength(6)
+    expect(ensureInputs[0]).toMatchObject({
+      env: {
+        WORKSPACE_RUNTIME_RUNNER: "opencode",
+        WORKSPACE_RUNTIME_WORKGRAPH_BROKER_ORIGIN: "https://central.test",
+      },
+      source: {
+        kind: "git",
+        repoUrl: "https://github.com/claxedo/workgraph-target.git",
+        branch: "release",
+      },
+    })
     expect(mutations[2]).toMatchObject({ workspace_id: expect.stringMatching(/^wg-/), session_id: "session-a" })
     expect(mutations[3]).toMatchObject({
       attemptId: "attempt-a",
@@ -1013,6 +1621,8 @@ describe("hosted WorkGraph runtime outbox", () => {
         background: false,
         executor: {
           mutation: async (_fn, args) => {
+            if (args.limit === 500 && Object.keys(args).length === 2)
+              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
             mutations.push(args)
             if (mutations.length === 1)
               return [
@@ -1055,11 +1665,87 @@ describe("hosted WorkGraph runtime outbox", () => {
     })
   })
 
+  test("durably compensates an indeterminate mark-running failure after Session creation", async () => {
+    const mutations: Record<string, unknown>[] = []
+    const runtime = createHostedWorkGraphRuntime(
+      { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      {
+        sandbox: {
+          sandboxManager: {
+            ensure: async () => ({
+              status: "ready",
+              sandboxId: "sandbox",
+              url: "https://runtime.test",
+              hostId: "host-a",
+              epoch: 1,
+              homeRegion: "us-east",
+            }),
+          },
+        },
+        relay: {
+          provider: {
+            mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+            getRelayEndpoint: async () => "https://relay.test",
+          },
+        },
+      } as unknown as ControlPlaneServices,
+      {
+        background: false,
+        executor: {
+          mutation: async (_fn, args) => {
+            if (args.limit === 500 && Object.keys(args).length === 2)
+              return [{ organizationId: "org-a", ownerUserId: "user-a" }]
+            mutations.push(args)
+            if (mutations.length === 1)
+              return [
+                {
+                  ownerUserId: "user-a",
+                  orgId: "org-a",
+                  outboxId: "launch-a",
+                  attemptId: "attempt-a",
+                  streamId: "stream-a",
+                  workItemId: "item-a",
+                  leaseEpoch: 1,
+                  title: "Indeterminate launch",
+                  prompt: "Run",
+                  profile: {
+                    environment: { kind: "hosted_workspace" },
+                    harness: "claxedo-v2",
+                    agent: "build",
+                    model: { providerId: "openai", modelId: "gpt-5" },
+                    effort: "high",
+                    tools: [],
+                    connectionIds: [],
+                  },
+                },
+              ]
+            if (mutations.length === 2) return { accepted: true }
+            if (mutations.length === 3) throw new Error("mark-running response lost")
+            if (mutations.length === 4) return { settled: true }
+            return []
+          },
+        },
+        fetch: async (url) =>
+          String(url).endsWith("/api/session") ? Response.json({ id: "session-indeterminate" }) : Response.json({}),
+      },
+    )
+
+    await expect(runtime?.reconcile()).resolves.toMatchObject({
+      launched: [{ settled: false, state: "compensating", reason: "mark-running response lost" }],
+    })
+    expect(mutations[3]).toMatchObject({
+      attempt_id: "attempt-a",
+      session_id: "session-indeterminate",
+      workspace_id: expect.stringMatching(/^wg-/),
+    })
+  })
+
   test("claims an admitted fenced Attempt and records truthful attention", async () => {
     const db = new RuntimeDb({
       workgraph_outbox: [
         {
           _id: "outbox-row",
+          organization_id: "org-a",
           owner_user_id: "user-a",
           id: "outbox-a",
           effect_type: "launch_attempt",
@@ -1072,6 +1758,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       workgraph_attempts: [
         {
           _id: "attempt-row",
+          organization_id: "org-a",
           owner_user_id: "user-a",
           id: "attempt-a",
           work_item_id: "item-a",
@@ -1084,6 +1771,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       workgraph_leases: [
         {
           _id: "lease-row",
+          organization_id: "org-a",
           owner_user_id: "user-a",
           resource_type: "work_item",
           resource_id: "item-a",
@@ -1093,7 +1781,9 @@ describe("hosted WorkGraph runtime outbox", () => {
           row_version: 1,
         },
       ],
-      workgraph_work_items: [{ _id: "item-row", owner_user_id: "user-a", id: "item-a", title: "No-op" }],
+      workgraph_work_items: [
+        { _id: "item-row", organization_id: "org-a", owner_user_id: "user-a", id: "item-a", title: "No-op" },
+      ],
       orgs: [{ _id: "org-a", owner_user_id: "user-a", kind: "personal" }],
     })
     const claims = (await handler(claimLaunches)({ db } as never, {
@@ -1102,7 +1792,17 @@ describe("hosted WorkGraph runtime outbox", () => {
       now: 10,
       limit: 10,
     })) as Array<{ outboxId: string; attemptId: string; leaseEpoch: number }>
-    expect(claims).toMatchObject([{ outboxId: "outbox-a", attemptId: "attempt-a", leaseEpoch: 2 }])
+    expect(claims).toMatchObject([
+      {
+        outboxId: "outbox-a",
+        attemptId: "attempt-a",
+        leaseEpoch: 2,
+        queueLagMs: 9,
+        activeLeaseAgeMs: 0,
+        expiredRecovery: false,
+        retryCount: 0,
+      },
+    ])
     expect(db.row("workgraph_outbox", "outbox-row")).toMatchObject({
       status: "claimed",
       claimed_by: "worker-a",
@@ -1175,45 +1875,56 @@ describe("hosted WorkGraph runtime outbox", () => {
 
   test("recovers an expired admitted launch after restart and fences its old callback epoch", async () => {
     const db = new RuntimeDb({
-      workgraph_outbox: [{
-        _id: "outbox-row",
-        owner_user_id: "user-a",
-        id: "outbox-a",
-        effect_type: "launch_attempt",
-        status: "pending",
-        available_at: 1,
-        attempt_count: 0,
-        payload: { attemptId: "attempt-a", leaseEpoch: 1 },
-      }],
-      workgraph_attempts: [{
-        _id: "attempt-row",
-        owner_user_id: "user-a",
-        id: "attempt-a",
-        work_item_id: "item-a",
-        stream_id: "stream-a",
-        state: "admitted",
-        resolved_execution: { environment: { kind: "hosted_workspace" } },
-        row_version: 1,
-      }],
-      workgraph_leases: [{
-        _id: "lease-row",
-        owner_user_id: "user-a",
-        resource_type: "work_item",
-        resource_id: "item-a",
-        holder_id: "attempt-a",
-        epoch: 1,
-        expires_at: 5,
-        row_version: 1,
-      }],
-      workgraph_work_items: [{ _id: "item-row", owner_user_id: "user-a", id: "item-a", title: "Resume launch" }],
+      workgraph_outbox: [
+        {
+          _id: "outbox-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          id: "outbox-a",
+          effect_type: "launch_attempt",
+          status: "pending",
+          available_at: 1,
+          attempt_count: 0,
+          payload: { attemptId: "attempt-a", leaseEpoch: 1 },
+        },
+      ],
+      workgraph_attempts: [
+        {
+          _id: "attempt-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          id: "attempt-a",
+          work_item_id: "item-a",
+          stream_id: "stream-a",
+          state: "admitted",
+          resolved_execution: { environment: { kind: "hosted_workspace" } },
+          row_version: 1,
+        },
+      ],
+      workgraph_leases: [
+        {
+          _id: "lease-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          resource_type: "work_item",
+          resource_id: "item-a",
+          holder_id: "attempt-a",
+          epoch: 1,
+          expires_at: 5,
+          row_version: 1,
+        },
+      ],
+      workgraph_work_items: [
+        { _id: "item-row", organization_id: "org-a", owner_user_id: "user-a", id: "item-a", title: "Resume launch" },
+      ],
       orgs: [{ _id: "org-a", owner_user_id: "user-a", kind: "personal" }],
     })
-    const claims = await handler(claimLaunches)({ db } as never, {
+    const claims = (await handler(claimLaunches)({ db } as never, {
       service_token: "service-secret",
       worker_id: "worker-restarted",
       now: 10,
       limit: 10,
-    }) as Array<{ attemptId: string; leaseEpoch: number }>
+    })) as Array<{ attemptId: string; leaseEpoch: number }>
     expect(claims).toMatchObject([{ attemptId: "attempt-a", leaseEpoch: 2 }])
     expect(db.row("workgraph_leases", "lease-row")).toMatchObject({ epoch: 2, expires_at: 600_010 })
     expect(db.row("workgraph_outbox", "outbox-row")).toMatchObject({
@@ -1221,23 +1932,31 @@ describe("hosted WorkGraph runtime outbox", () => {
       claimed_by: "worker-restarted",
       payload: { attemptId: "attempt-a", leaseEpoch: 2 },
     })
-    await expect(handler(markAttention)({ db } as never, {
-      service_token: "service-secret",
-      owner_user_id: "user-a",
-      outbox_id: "outbox-a",
-      attempt_id: "attempt-a",
-      lease_epoch: 1,
-      worker_id: "worker-restarted",
-      reason: "stale callback",
-      now: 11,
-    })).resolves.toEqual({ settled: false })
+    await expect(
+      handler(markAttention)({ db } as never, {
+        service_token: "service-secret",
+        owner_user_id: "user-a",
+        outbox_id: "outbox-a",
+        attempt_id: "attempt-a",
+        lease_epoch: 1,
+        worker_id: "worker-restarted",
+        reason: "stale callback",
+        now: 11,
+      }),
+    ).resolves.toEqual({ settled: false })
     expect(db.row("workgraph_attempts", "attempt-row")).toMatchObject({ state: "admitted", row_version: 2 })
     expect(db.row("workgraph_leases", "lease-row")).toMatchObject({ epoch: 2 })
   })
 })
 
 function handler(fn: unknown) {
-  return (fn as { _handler: (context: unknown, args: Record<string, unknown>) => Promise<unknown> })._handler
+  const run = (fn as { _handler: (context: unknown, args: Record<string, unknown>) => Promise<unknown> })._handler
+  return (context: unknown, args: Record<string, unknown>) =>
+    run(context, {
+      organization_id: "org-a",
+      owner_user_id: "user-a",
+      ...args,
+    })
 }
 
 async function reconcileAttemptHistory(history: unknown) {
@@ -1245,31 +1964,47 @@ async function reconcileAttemptHistory(history: unknown) {
   const runtime = createHostedWorkGraphRuntime(
     { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
     {
-      sandbox: { sandboxManager: {
-        target: async () => ({
-          status: "ready", sandboxId: "sandbox", url: "https://runtime.test", hostId: "host-a", epoch: 1, homeRegion: "us-east",
-        }),
-      } },
-      relay: { provider: {
-        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
-        getRelayEndpoint: async () => "https://relay.test",
-      } },
+      sandbox: {
+        sandboxManager: {
+          target: async () => ({
+            status: "ready",
+            sandboxId: "sandbox",
+            url: "https://runtime.test",
+            hostId: "host-a",
+            epoch: 1,
+            homeRegion: "us-east",
+          }),
+        },
+      },
+      relay: {
+        provider: {
+          mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+          getRelayEndpoint: async () => "https://relay.test",
+        },
+      },
     } as unknown as ControlPlaneServices,
     {
       background: false,
-      executor: { mutation: async (_fn, args) => {
-        mutations.push(args)
-        if (mutations.length === 1) return []
-        if (mutations.length === 2) return [{
-          ownerUserId: "user-a",
-          orgId: "org-a",
-          attemptId: "attempt-a",
-          leaseEpoch: 2,
-          sessionId: "session-a",
-          workspaceId: "workspace-a",
-        }]
-        return { settled: true }
-      } },
+      executor: {
+        mutation: async (_fn, args) => {
+          if (args.limit === 500 && Object.keys(args).length === 2)
+            return [{ organizationId: "org-a", ownerUserId: "user-a" }]
+          mutations.push(args)
+          if (mutations.length === 1) return []
+          if (mutations.length === 2)
+            return [
+              {
+                ownerUserId: "user-a",
+                orgId: "org-a",
+                attemptId: "attempt-a",
+                leaseEpoch: 2,
+                sessionId: "session-a",
+                workspaceId: "workspace-a",
+              },
+            ]
+          return { settled: true }
+        },
+      },
       fetch: async (input) => {
         const url = new URL(String(input))
         if (url.pathname.endsWith("/history")) return Response.json(history)
@@ -1282,10 +2017,11 @@ async function reconcileAttemptHistory(history: unknown) {
 }
 
 async function runControlEffect(input: {
-  effectType: "interrupt_attempt" | "cleanup_stream"
+  effectType: "interrupt_attempt" | "finalize_stream" | "cleanup_stream"
   payload: Record<string, unknown>
   fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   destroy?: () => Promise<unknown>
+  release?: (workspaceId: string) => Promise<void>
   targetStatus?: "ready" | "provisioning"
 }) {
   const mutations: Record<string, unknown>[] = []
@@ -1306,6 +2042,7 @@ async function runControlEffect(input: {
                   homeRegion: "us-east",
                 },
           destroy: input.destroy ?? (async () => ({ ok: true, status: "destroyed" })),
+          release: input.release ?? (async () => undefined),
         },
       },
       relay: {
@@ -1318,6 +2055,8 @@ async function runControlEffect(input: {
     {
       executor: {
         mutation: async (_fn, args) => {
+          if (args.limit === 500 && Object.keys(args).length === 2)
+            return [{ organizationId: "org-a", ownerUserId: "user-a" }]
           mutations.push(args)
           if (mutations.length <= 2) return []
           if (mutations.length === 3)
@@ -1344,10 +2083,26 @@ async function runControlEffect(input: {
 }
 
 class RuntimeDb {
-  constructor(private readonly rows: Record<string, Array<Record<string, any>>>) {}
+  private readonly rows: Record<string, Array<Record<string, any>>>
+
+  constructor(rows: Record<string, Array<Record<string, any>>>) {
+    this.rows = Object.fromEntries(
+      Object.entries(rows).map(([table, values]) => [
+        table,
+        values.map((row) => ({
+          ...(table.startsWith("workgraph_") || table === "workgraphs" ? { organization_id: "org-a" } : {}),
+          ...row,
+        })),
+      ]),
+    )
+  }
 
   row(table: string, id: string) {
     return this.rows[table]?.find((row) => row._id === id)
+  }
+
+  rowsFor(table: string) {
+    return this.rows[table] ?? []
   }
 
   query(table: string) {

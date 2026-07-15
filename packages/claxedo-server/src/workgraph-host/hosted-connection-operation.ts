@@ -10,6 +10,7 @@ import {
   type WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
 import {
+  SourceIssueConfigurationError,
   SourceIssueProviderError,
   SourceIssueResponseError,
   SourceIssueTransportError,
@@ -67,6 +68,7 @@ export function createHostedConnectionOperationExecutor(input: Readonly<{
     }) as BindingResult | null
     if (!resolved) throw new ConnectionOperationDeniedError("Connection operation is not bound to this Attempt")
     const context: WorkGraphContext = {
+      organizationId: principal.orgId as never,
       ownerUserId: resolved.context.ownerUserId as never,
       actor: { type: "agent", id: request.identity.attemptId as never },
       requestId: crypto.randomUUID() as never,
@@ -158,6 +160,9 @@ function operationFailure(error: unknown) {
   }
   if (error instanceof ConnectionTokenError) {
     return failure(error.status, error.code, "Connection token is unavailable", error.status === 503)
+  }
+  if (error instanceof SourceIssueConfigurationError) {
+    return failure(409, "connection_provider_configuration_required", "Connection provider configuration is required", false)
   }
   if (error instanceof SourceIssueUnauthorizedError) {
     return failure(error.status, "connection_provider_unauthorized", "Connection provider authorization failed", false)

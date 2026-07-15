@@ -38,6 +38,7 @@ const prev: Record<string, string | undefined> = {
   HOME: process.env.HOME,
   CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
   CLAXEDO_STATE_DIR: process.env.CLAXEDO_STATE_DIR,
+  CLAXEDO_WORKGRAPH_REPOSITORY: process.env.CLAXEDO_WORKGRAPH_REPOSITORY,
   POSTHOG_KEY: process.env.POSTHOG_KEY,
   CLAXEDO_ACP_IDLE_TIMEOUT_MS: process.env.CLAXEDO_ACP_IDLE_TIMEOUT_MS,
   CLAXEDO_ACP_PROMPT_TIMEOUT_MS: process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS,
@@ -47,6 +48,7 @@ const prev: Record<string, string | undefined> = {
 process.env.HOME = home
 process.env.CLAXEDO_DATA_DIR = data
 process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
+process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../..")
 process.env.POSTHOG_KEY = ""
 process.env.CLAXEDO_ACP_IDLE_TIMEOUT_MS = "60000"
 process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS = "15000"

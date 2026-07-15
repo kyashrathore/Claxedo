@@ -27,7 +27,7 @@ export function createHostedWorkGraphConnectionsPort(input: Readonly<{
     async resolveCapabilities(context, request) {
       const rows = await input.resolveMetadata(context, request.connectionIds)
       return rows.flatMap((row) => {
-        if (row.ownerUserId !== context.ownerUserId ||
+        if (row.orgId !== context.organizationId ||
           !request.connectionIds.includes(row.id) || !row.capabilities.includes(request.capability)) return []
         return [{
           id: row.id,

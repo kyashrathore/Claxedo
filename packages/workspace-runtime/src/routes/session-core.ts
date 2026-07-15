@@ -373,6 +373,7 @@ function sessionOperationGuard(
 
 export function createSessionRoutes(opts: Opts) {
   const app = new Hono()
+  const promptAdmissions = new Map<string, Set<string>>()
   const sessionBusReplay = createSseReplayBuffer<unknown>()
   opts.sessionBus.subscribe((event) => {
     sessionBusReplay.push(event)
@@ -675,6 +676,33 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
       const body = (await c.req.json().catch(() => ({}))) as SessionPromptBody
+      if (body.messageID) {
+        const admitted = promptAdmissions.get(id) ?? new Set<string>()
+        if (admitted.has(body.messageID)) return c.body(null, 204)
+        admitted.add(body.messageID)
+        promptAdmissions.set(id, admitted)
+        try {
+          if (c.req.header("x-claxedo-idempotency-retry") === "1") {
+            const messages = await opts.getMessages?.(c, directory, id) ?? await adapter.getMessages(id, directory)
+            const projected = messages.some((message) => rec(message.info)?.id === body.messageID)
+            const session = projected
+              ? undefined
+              : await (opts.getSession
+                  ? opts.getSession(c, directory, id, adapter)
+                  : adapter.getSession(id, directory))
+            if (
+              projected
+              || session?.status === "busy"
+              || session?.status === "recovering"
+              || session?.status === "retry"
+            ) return c.body(null, 204)
+          }
+        } catch (error) {
+          admitted.delete(body.messageID)
+          if (admitted.size === 0) promptAdmissions.delete(id)
+          throw error
+        }
+      }
       const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
       ;(async () => {
         try {

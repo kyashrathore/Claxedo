@@ -126,7 +126,7 @@ describe("connections service", () => {
     expect(await credentials.get(connectionWebhookSigningProviderId("connection-1"))).toBeUndefined()
   })
 
-  test("webhook signing secrets are limited to GitHub work-source Connections", async () => {
+  test("webhook signing secrets are limited to work-source Connections", async () => {
     const { service } = harness()
     await service.connect({ integrationId: "fake", fields: {}, secret: "good" })
     await expect(service.setWebhookSigningSecret("connection-1", "secret")).resolves.toEqual({

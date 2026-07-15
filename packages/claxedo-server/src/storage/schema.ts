@@ -1,4 +1,5 @@
 export { ClaxedoPageTable, ClaxedoPageStatusTable } from "./page.sql"
+export { ClaxedoDocumentTable, ClaxedoDocumentRevisionTable } from "./doc.sql"
 export {
   ClaxedoPageArenaTable,
   ClaxedoPageArenaAgentTable,

@@ -1,4 +1,7 @@
-import type { HarnessId } from "@/platform/identity/session-ref"
+import { HARNESS_IDS, type HarnessId } from "@/platform/identity/session-ref"
+import { HARNESS_DISPLAY_NAMES } from "@/ui/harness-display"
+
+export { HARNESS_DISPLAY_NAMES } from "@/ui/harness-display"
 
 export type HarnessType = HarnessId
 export type OptionsSource = "harness" | "catalog" | "empty"
@@ -6,12 +9,7 @@ export type HarnessState = { type?: HarnessType; binary?: string | null; model?:
 export type HarnessConfigOption = { id: string; name: string; category?: string | null; type: "select" | "boolean"; currentValue: unknown; options?: Array<{ value: string; name: string; description?: string }>; selectOptions?: Array<{ id: string; name: string }> }
 export type OptionsResponse = { options: HarnessConfigOption[]; source: OptionsSource; stale: boolean }
 
-export const HARNESS_DISPLAY_NAMES: Record<string, string> = {
-  "claude-agent-acp": "Claude", "claude-acp": "Claude", "codex-acp": "Codex", "claude-sdk": "Claude SDK", "codex-app-server": "Codex App Server", "cursor-sdk": "Cursor SDK", agent: "Cursor", "cursor-agent": "Cursor", "cursor-acp": "Cursor", opencode: "OpenCode", pi: "Pi",
-}
-
 export const DEFAULT_HARNESS_MODEL = { id: "default", name: "Default (recommended)" }
-const HARNESS_IDS = ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "opencode", "pi"] as const
 const harnessStatuses = ["configured", "ready", "applying", "error"] as const
 
 export function pickHarness(type?: string | null, binary?: string | null, access?: string | null): HarnessType | undefined {

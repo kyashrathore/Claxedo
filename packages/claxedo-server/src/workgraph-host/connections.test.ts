@@ -52,6 +52,7 @@ describe("WorkGraph Connections host adapter", () => {
 
 function context(): WorkGraphContext {
   return {
+    organizationId: "acme" as never,
     ownerUserId: OwnerUserIDSchema.parse("alice"),
     actor: { type: "user", id: ActorIDSchema.parse("alice") },
     requestId: RequestIDSchema.parse("request"),

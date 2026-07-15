@@ -20,11 +20,13 @@ function classify(path: string) {
 
 describe("route ownership", () => {
   test("runtime proxy strips stale decompression headers", () => {
-    const headers = runtimeProxyResponseHeaders(new Headers({
-      "content-type": "application/json",
-      "content-encoding": "gzip",
-      "content-length": "42",
-    }))
+    const headers = runtimeProxyResponseHeaders(
+      new Headers({
+        "content-type": "application/json",
+        "content-encoding": "gzip",
+        "content-length": "42",
+      }),
+    )
 
     expect(headers.get("content-type")).toBe("application/json")
     expect(headers.get("content-encoding")).toBeNull()
@@ -49,6 +51,8 @@ describe("route ownership", () => {
       "/api/workspace",
       "/api/workspace/providers",
       "/api/claxedo/network-policy",
+      "/api/claxedo/docs",
+      "/api/claxedo/docs/document_1/revisions/document_revision_1",
       "/pages",
       "/pages/some-page",
       "/api/workgraph",
@@ -73,10 +77,7 @@ describe("route ownership", () => {
   })
 
   test("Workspace Relay coordination routes are handled centrally", () => {
-    const paths = [
-      "/internal/relay/target",
-      "/internal/relay/revocation",
-    ]
+    const paths = ["/internal/relay/target", "/internal/relay/revocation"]
 
     for (const path of paths) {
       expect(classify(path)).toMatchObject({
@@ -206,7 +207,9 @@ describe("route ownership", () => {
   })
 
   test("route rules do not contain duplicate exact path claims", () => {
-    const exact = routeRules().filter((rule) => rule.match === "exact").flatMap((rule) => rule.paths)
+    const exact = routeRules()
+      .filter((rule) => rule.match === "exact")
+      .flatMap((rule) => rule.paths)
     expect(exact.filter((path, index) => exact.indexOf(path) !== index)).toEqual([])
   })
 

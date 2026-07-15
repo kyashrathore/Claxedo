@@ -23,11 +23,11 @@ const originalFetch = globalThis.fetch
 
 afterEach(async () => {
   globalThis.fetch = originalFetch
-  await fs.rm(root, { recursive: true, force: true })
   configureOpenCodeCompat("http://127.0.0.1:4096")
 })
 
-afterAll(() => {
+afterAll(async () => {
+  await fs.rm(root, { recursive: true, force: true })
   if (prev.ANTHROPIC_API_KEY === undefined) delete process.env.ANTHROPIC_API_KEY
   else process.env.ANTHROPIC_API_KEY = prev.ANTHROPIC_API_KEY
   if (prev.CLAXEDO_DATA_DIR === undefined) delete process.env.CLAXEDO_DATA_DIR

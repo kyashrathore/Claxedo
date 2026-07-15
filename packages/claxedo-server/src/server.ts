@@ -21,6 +21,8 @@ import { hostedOrgMembershipVerifier } from "./connections-host/org-membership"
 import { createConnectionTurnCredentials } from "./connections-host/turn-credentials"
 import { mirrorProcessEvents } from "./process-events"
 import { PagesRoutes } from "./routes/pages"
+import { DocsRoutes } from "./routes/docs"
+import { sqliteDocumentStore } from "./doc-store"
 import { AgentConfigRoutes } from "./routes/agent-config"
 import { SessionMetaRoutes } from "./routes/session-meta"
 import { WorkspaceRoutes } from "./routes/workspace"
@@ -28,6 +30,7 @@ import { OpenCodeCompatRoutes } from "./routes/opencode-compat"
 import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "./proxy"
 import { configureOpencodeMcpSync } from "./opencode-mcp-sync"
 import {
+  configureOpenCodeApplicationTools,
   configureOpenCodeEngine,
   drainOpenCodeEngine,
   opencodeEngineMode,
@@ -43,6 +46,7 @@ import {
 import {
   configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
+  releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
 } from "./embedded-workspace-runtime"
 import { configureOpenCodeAuth, opencodeHeaders } from "./opencode-auth"
@@ -52,9 +56,18 @@ import { migrateCredentials } from "./credentials/migrate"
 import { CredentialRoutes } from "./routes/credential"
 import { ProviderAuthRoutes } from "./routes/provider-auth"
 import { NetworkPolicyRoutes } from "./routes/network-policy"
-import { ControlPlaneCompositionError, createControlPlaneServices, type ControlPlaneRelay, type ControlPlaneServices } from "./control-plane/services"
+import {
+  ControlPlaneCompositionError,
+  createControlPlaneServices,
+  type ControlPlaneRelay,
+  type ControlPlaneServices,
+} from "./control-plane/services"
 import { betterAuthAdapter, clerkAuthAdapter, signedCloudAuthRequested } from "./control-plane/auth"
-import { assertHostedBootRequirements, deploymentMode, unsignedLocalRequestGuard } from "./control-plane/deployment-mode"
+import {
+  assertHostedBootRequirements,
+  deploymentMode,
+  unsignedLocalRequestGuard,
+} from "./control-plane/deployment-mode"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./control-plane/adapters/convex/convex-authority"
 import { createSqliteWorkspaceAuthority } from "./control-plane/adapters/sqlite/workspace-authority"
@@ -67,7 +80,7 @@ import { BootstrapRoutes } from "./routes/bootstrap"
 import { LivingAppsRoutes } from "./routes/living-apps"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "./control-plane/runtime-access-token"
 import { createControlPlaneRelayProvider } from "./relay-provider"
-import { listProjects, resolveWorkspace } from "./workspace-store"
+import { ensureWorkspace, listProjects, resolveWorkspace } from "./workspace-store"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "./region"
 import { mountControlPlaneChannels } from "./channels-control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
@@ -75,12 +88,16 @@ import { createClaxedoSessionEnvFactory } from "./workspace-runtime-integration/
 import {
   createLocalEmbeddedWorkGraph,
   mountLazyEmbeddedWorkGraph,
+  requireLocalWorkGraphRepositoryDirectory,
 } from "./server-workgraph"
 import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
 import { centralModelBackend } from "./central-session-runtime"
 import { dataDir } from "./paths"
 import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "./workgraph-host/local-execution"
 import { createLocalExecutionCapabilities } from "./workgraph-host/local-execution-capabilities"
+import { createLocalWorkGraphAgentTools, localSessionExecution } from "./workgraph-agent-tools"
+import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "./worktree-service"
+import { createFileWorkGraphSessionBindingStore, createHarnessWorkGraphGateway } from "./workgraph-session-gateway"
 
 const TrackBody = z.object({
   distinctId: z.string(),
@@ -164,17 +181,19 @@ function workspaceRouteOptions(services: ControlPlaneServices) {
 // (see `app.route("/api/claxedo/integrations", ...)` below). These return
 // per-user tokens and must never be readable cross-origin — CORS must not
 // hand back an Access-Control-Allow-Origin for them.
-const CONNECTIONS_CREDENTIAL_PATH =
-  /^\/api\/claxedo\/integrations\/connections\/[^/]+\/(token|auth-failure)\/?$/
+const CONNECTIONS_CREDENTIAL_PATH = /^\/api\/claxedo\/integrations\/connections\/[^/]+\/(token|auth-failure)\/?$/
 
 export function isConnectionsCredentialPath(path: string): boolean {
   return CONNECTIONS_CREDENTIAL_PATH.test(path)
 }
 
-export function createApp(services: ControlPlaneServices, options: {
-  onOpencodeAccess?: () => void
-  beforeLocalSessionList?: () => Promise<void>
-} = {}) {
+export function createApp(
+  services: ControlPlaneServices,
+  options: {
+    onOpencodeAccess?: () => void
+    beforeLocalSessionList?: () => Promise<void>
+  } = {},
+) {
   const app = new Hono()
   // Record the transport peer address for every request (including
   // @hono/node-ws upgrades, whose Requests lack the node-server internals)
@@ -285,15 +304,11 @@ export function createApp(services: ControlPlaneServices, options: {
       ...(services.relay.resolverToken ? { resolverToken: services.relay.resolverToken } : {}),
       ...(services.authority ? { authority: services.authority } : {}),
       targetLookup: localRelayTargetLookup({
-        ...(services.sandbox.sandboxManager
-          ? { sandboxManager: services.sandbox.sandboxManager }
-          : {}),
+        ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
         telemetry: services.telemetry,
       }),
       localTargetExists: localRelayTargetExists({
-        ...(services.sandbox.sandboxManager
-          ? { sandboxManager: services.sandbox.sandboxManager }
-          : {}),
+        ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
       }),
     }),
   )
@@ -402,6 +417,15 @@ export function createApp(services: ControlPlaneServices, options: {
     }),
   )
 
+  app.route(
+    "/api/claxedo/docs",
+    DocsRoutes({
+      store: () => sqliteDocumentStore,
+      services,
+      ...authRouteOptions(services),
+    }),
+  )
+
   // Agent config routes (centralized MCP + commands management)
   app.route(
     "/api/claxedo/agent-config",
@@ -422,9 +446,7 @@ export function createApp(services: ControlPlaneServices, options: {
     CredentialRoutes(services.credentials, {
       // Public/deployed boxes MUST set CLAXEDO_CREDENTIALS_TOKEN (see
       // CredentialRoutesOptions.token). Local loopback dev may leave it unset.
-      ...(process.env.CLAXEDO_CREDENTIALS_TOKEN?.trim()
-        ? { token: process.env.CLAXEDO_CREDENTIALS_TOKEN.trim() }
-        : {}),
+      ...(process.env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: process.env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
     }),
   )
   // Connections framework
@@ -471,7 +493,9 @@ export function createApp(services: ControlPlaneServices, options: {
     })
     console.log(`[claxedo-server] serving web UI from ${staticDir}`)
   } else if (staticDir) {
-    console.error(`[claxedo-server] WARN CLAXEDO_APP_DIST_DIR set but no index.html at ${staticDir} — web UI not mounted`)
+    console.error(
+      `[claxedo-server] WARN CLAXEDO_APP_DIST_DIR set but no index.html at ${staticDir} — web UI not mounted`,
+    )
   }
 
   return {
@@ -561,9 +585,7 @@ export function createDefaultLocalControlPlaneServices() {
       // working workspace/session features instead of `requireAuthority` 503s.
       // Signed mode without a URL never reaches here — the boot throw above
       // keeps signed/cloud auth fail-closed on Convex.
-      authority: authorityUrl
-        ? createConvexAuthority({ url: authorityUrl })
-        : createSqliteWorkspaceAuthority(),
+      authority: authorityUrl ? createConvexAuthority({ url: authorityUrl }) : createSqliteWorkspaceAuthority(),
       relay: localRelayFromEnv(sandboxManager),
       sandbox: {
         sandboxManager,
@@ -611,6 +633,14 @@ export async function shutdownControlPlaneRuntime() {
   await shutdownPostHog()
 }
 
+function sessionComposerHarness(harness: ReturnType<typeof defaultHarness>) {
+  if (harness.access === "acp") return `${harness.id}-acp`
+  if (harness.id === "claude") return "claude-sdk"
+  if (harness.id === "codex") return "codex-app-server"
+  if (harness.id === "cursor") return "cursor-sdk"
+  return harness.id
+}
+
 export function startControlPlaneStack(options: ControlPlaneStackOptions) {
   const port = options.port ?? 3001
   // No external opencodeUrl configured => embed the engine in-process (default).
@@ -623,6 +653,7 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
   } else {
     configureOpenCodeEngine({ embedded: true })
   }
+  configureOpenCodeApplicationTools(undefined)
   initPostHog()
   // D12: Sentry on the Node server — no-op unless CLAXEDO_SENTRY_DSN is set
   // (release = git SHA via CLAXEDO_RELEASE/GIT_SHA; events tagged unit=server
@@ -651,7 +682,8 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
   })
   async function refreshLocalSessionProjection() {
     await Promise.allSettled(
-      (await listProjects()).flatMap((project) => Object.values(project.workspaces))
+      (await listProjects())
+        .flatMap((project) => Object.values(project.workspaces))
         .filter((workspace) => workspace.kind !== "cloud" && workspace.available !== false)
         .map((workspace) => ensureEmbeddedWorkspaceRuntime(workspace, { config: "skip" })),
     )
@@ -666,9 +698,7 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
     // supervised-spawn mode owns the runtime's opencode via SANDBOX env). See
     // workspace-supervisor-runtime-env.ts — only server_url / relay auth is used.
     ...(services.relay.relayUrl ? { relay_url: services.relay.relayUrl } : {}),
-    ...(services.sandbox.defaultDriver
-      ? { default_sandbox_driver: services.sandbox.defaultDriver }
-      : {}),
+    ...(services.sandbox.defaultDriver ? { default_sandbox_driver: services.sandbox.defaultDriver } : {}),
   })
 
   // Migrate legacy plaintext credentials into the managed secret backend.
@@ -707,42 +737,130 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
       return localSessionProjectionReady
     },
   })
-  const workgraphSessions = import("./workgraph-session-gateway").then((gateway) =>
-    gateway.createSessionV2WorkGraphGateway(opencodeRequest, { connections: built.connections }))
+  const workgraphRuntimes = new Map<string, Promise<{
+    workspaceId: string
+    runtime: Awaited<ReturnType<typeof ensureEmbeddedWorkspaceRuntime>>
+  }>>()
+  const workgraphRuntime = (directory: string) => {
+    const hit = workgraphRuntimes.get(directory)
+    if (hit) return hit
+    const loading = (async () => {
+      const workspace = await ensureWorkspace({
+        workspaceId: workGraphWorkspaceId(directory),
+        workspace_name: "WorkGraph stream",
+        directory,
+      })
+      if (!workspace) throw new Error(`WorkGraph workspace could not be registered: ${directory}`)
+      return {
+        workspaceId: workspace.id,
+        runtime: await ensureEmbeddedWorkspaceRuntime(workspace),
+      }
+    })().catch((error) => {
+      workgraphRuntimes.delete(directory)
+      throw error
+    })
+    workgraphRuntimes.set(directory, loading)
+    return loading
+  }
+  const workgraphBindings = createFileWorkGraphSessionBindingStore(
+    path.join(dataDir(), "workgraph-session-bindings.json"),
+  )
+  const workgraphSessions = Promise.resolve(
+    createHarnessWorkGraphGateway(opencodeRequest, {
+      connections: built.connections,
+      resolveTeamOwner: (context) => `org:${context.organizationId}`,
+      bindings: workgraphBindings,
+      sessionRequest: async (directory, request) => {
+        return (await workgraphRuntime(directory)).runtime.app.fetch(request)
+      },
+      releaseSessionRuntime: async (directory) => {
+        const pending = workgraphRuntimes.get(directory)
+        if (!pending) return
+        workgraphRuntimes.delete(directory)
+        releaseEmbeddedWorkspaceRuntime((await pending).workspaceId)
+      },
+    }),
+  )
+  void workgraphBindings.all().then((bindings) =>
+    Promise.allSettled(bindings.map((binding) => workgraphRuntime(binding.directory))),
+  )
   const workgraphSessionGateway = {
     supportsConnections: !!built.connections,
     classifyAdmissionError: (error: unknown) => {
-      if (!error || typeof error !== "object" || !("status" in error) || typeof error.status !== "number") return "indeterminate" as const
-      const pathname = "pathname" in error && typeof error.pathname === "string" ? error.pathname : ""
-      if (pathname === "/api/session" && (error.status === 404 || error.status === 501)) return "unavailable" as const
-      if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 425 && error.status !== 429) return "rejected" as const
+      if (!error || typeof error !== "object" || !("status" in error) || typeof error.status !== "number")
+        return "indeterminate" as const
+      if (error.status === 404 || error.status === 501 || error.status === 503) return "unavailable" as const
+      if (
+        error.status >= 400 &&
+        error.status < 500 &&
+        error.status !== 408 &&
+        error.status !== 425 &&
+        error.status !== 429
+      )
+        return "rejected" as const
       return "indeterminate" as const
     },
-    admit: (input: Parameters<WorkGraphSessionGateway["admit"]>[0]) => workgraphSessions.then((sessions) => sessions.admit(input)),
-    cancel: (sessionId: string, reason: string) => workgraphSessions.then((sessions) => sessions.cancel(sessionId, reason)),
+    admit: (input: Parameters<WorkGraphSessionGateway["admit"]>[0]) =>
+      workgraphSessions.then((sessions) => sessions.admit(input)),
+    cancel: (sessionId: string, reason: string) =>
+      workgraphSessions.then((sessions) => sessions.cancel(sessionId, reason)),
     result: (sessionId: string) => workgraphSessions.then((sessions) => sessions.result(sessionId)),
+    releaseDirectory: (directory: string) =>
+      workgraphSessions.then((sessions) => sessions.releaseDirectory?.(directory) ?? Promise.resolve()),
   }
+  const workgraphRepositoryDirectory = requireLocalWorkGraphRepositoryDirectory(
+    process.env.CLAXEDO_WORKGRAPH_REPOSITORY,
+  )
   const workgraphDatabase = new Database(path.join(dataDir(), "workgraph-v2.db"))
-  const workgraphRepositoryDirectory = process.env.CLAXEDO_WORKGRAPH_REPOSITORY?.trim() || process.cwd()
   const workgraphExecution = createLocalWorkspaceExecution({
     worktreeRoot: path.join(dataDir(), "workgraph-worktrees"),
-    repositoryDirectory: async () => workgraphRepositoryDirectory,
+    legacyRepositoryDirectory: async () => workgraphRepositoryDirectory,
+    worktrees: {
+      provision: async (input) => {
+        const workspace = await provisionRegisteredWorktree({
+          repositoryDirectory: input.repositoryDirectory,
+          directory: input.directory,
+          workspaceId: workGraphWorkspaceId(input.directory),
+          workspaceName: `WorkGraph ${input.streamId}`,
+          checkout: { kind: "detached", revision: input.baseRevision },
+        })
+        return { directory: workspace.directory, workspaceId: workspace.id }
+      },
+      release: releaseRegisteredWorktree,
+    },
     sessions: workgraphSessionGateway,
   })
   const workgraph = createLocalEmbeddedWorkGraph({
     database: workgraphDatabase,
-    auth: authRouteOptions(services),
+    auth: {
+      ...authRouteOptions(services),
+      ...(services.authority ? { authority: services.authority } : {}),
+    },
     execution: workgraphExecution,
     executionCapabilities: createLocalExecutionCapabilities({
       opencodeRequest,
       repositoryDirectory: workgraphRepositoryDirectory,
-      harness: async () => defaultHarness(await loadUserConfig()).id,
+      harness: async () => sessionComposerHarness(defaultHarness(await loadUserConfig())),
       connections: built.connections,
+      resolveTeamOwner: (context) => `org:${context.organizationId}`,
     }),
-    recaps: { sessions: workgraphSessionGateway, directory: process.cwd() },
-    sourcePlanning: { sessions: workgraphSessionGateway, directory: process.cwd() },
+    recaps: { sessions: workgraphSessionGateway, directory: workgraphRepositoryDirectory },
+    sourcePlanning: { sessions: workgraphSessionGateway, directory: workgraphRepositoryDirectory },
     connections: built.connections,
+    resolveTeamOwner: (context) => `org:${context.organizationId}`,
+    telemetry: services.telemetry,
   })
+  if (!services.auth.config.enabled && services.auth.config.mode === "local-only" && !options.opencodeUrl) {
+    configureOpenCodeApplicationTools(() =>
+      workgraph.then((embedded) =>
+        createLocalWorkGraphAgentTools(embedded, {
+          organizationId: "local",
+          ownerUserId: "local",
+          sessionExecution: (sessionId) => localSessionExecution(opencodeRequest, sessionId),
+        }),
+      ),
+    )
+  }
   let unsubscribeWorkGraphSessionIntake = () => {}
   if (!services.auth.config.enabled && services.auth.config.mode === "local-only") {
     void Promise.all([workgraph, import("./workgraph-host/session-intake")]).then(([embedded, intake]) => {
@@ -751,6 +869,7 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
         opencodeRequest,
         port: embedded.sessionIntake,
         resolveContext: () => ({
+          organizationId: "local" as never,
           ownerUserId: "local" as never,
           actor: { type: "system" as const, id: "session_intake" as never },
           requestId: `session_intake_${crypto.randomUUID()}` as never,
@@ -764,31 +883,41 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
   const workgraphReconciler = setInterval(() => {
     if (reconcilingWorkGraph || !workgraphDatabase.open) return
     reconcilingWorkGraph = true
-    void workgraph.then(async (embedded) => {
-      const owners = workgraphDatabase.prepare(`
-        SELECT owner_user_id FROM wg_v2_streams
+    void workgraph
+      .then(async (embedded) => {
+        const owners = workgraphDatabase
+          .prepare(
+            `
+        SELECT organization_id, owner_user_id FROM wg_v2_streams
         UNION
-        SELECT owner_user_id FROM wg_v2_attempts WHERE lifecycle = 'running' AND session_id IS NOT NULL
+        SELECT organization_id, owner_user_id FROM wg_v2_attempts WHERE lifecycle = 'running' AND session_id IS NOT NULL
         UNION
-        SELECT owner_user_id FROM wg_v2_due_jobs WHERE job_type = 'source_plan' AND status IN ('pending', 'failed', 'running')
-      `).all() as Array<{ owner_user_id: string }>
-      await Promise.all(owners.map(async (owner) => {
-        const context = {
-          ownerUserId: owner.owner_user_id as never,
-          actor: { type: "system" as const, id: "workgraph_reconciler" as never },
-          requestId: `reconcile_${crypto.randomUUID()}` as never,
-          access: { mode: "owner" as const },
-        }
-        await embedded.reconcile(context)
-        await embedded.recaps.scheduleDue(context)
-        await embedded.recaps.runDue(context)
-        await embedded.sourcePlanning.runDue(context)
-      }))
-    }).catch((error) => {
-      console.error("[claxedo-server] WARN  workgraph reconciliation failed:", error)
-    }).finally(() => {
-      reconcilingWorkGraph = false
-    })
+        SELECT organization_id, owner_user_id FROM wg_v2_due_jobs WHERE job_type = 'source_plan' AND status IN ('pending', 'failed', 'running')
+      `,
+          )
+          .all() as Array<{ organization_id: string; owner_user_id: string }>
+        await Promise.all(
+          owners.map(async (owner) => {
+            const context = {
+              organizationId: owner.organization_id as never,
+              ownerUserId: owner.owner_user_id as never,
+              actor: { type: "system" as const, id: "workgraph_reconciler" as never },
+              requestId: `reconcile_${crypto.randomUUID()}` as never,
+              access: { mode: "owner" as const },
+            }
+            await embedded.reconcile(context)
+            await embedded.recaps.scheduleDue(context)
+            await embedded.recaps.runDue(context)
+            await embedded.sourcePlanning.runDue(context)
+          }),
+        )
+      })
+      .catch((error) => {
+        console.error("[claxedo-server] WARN  workgraph reconciliation failed:", error)
+      })
+      .finally(() => {
+        reconcilingWorkGraph = false
+      })
   }, 1_000)
   workgraphReconciler.unref()
 
@@ -806,6 +935,7 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
     clearInterval(workgraphReconciler)
     unsubscribeWorkGraphSessionIntake()
     if (workgraphDatabase.open) workgraphDatabase.close()
+    void drainOpenCodeEngine()
   })
 
   // Initialize agent hooks (wrapper scripts, shell integration)

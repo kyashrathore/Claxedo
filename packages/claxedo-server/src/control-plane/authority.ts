@@ -29,9 +29,7 @@ export type ProjectRoleArgs = {
   projectId: ProjectId
 }
 
-export type ProjectRoleResult =
-  | { ok: true; role: ProjectRole; orgId: OrgId }
-  | { ok: false }
+export type ProjectRoleResult = { ok: true; role: ProjectRole; orgId: OrgId } | { ok: false }
 
 export type AuthorizeProjectArgs = ProjectRoleArgs & {
   action: ProjectAction
@@ -97,149 +95,225 @@ export type WorkspaceAuthority = {
   authorizeWorkspaceOpen: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<void>
   openWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<WorkspaceOpenResult>
   listWorkspaces: (auth: SignedControlPlaneAuth) => Promise<unknown>
-  registerLocalForSharing: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    displayName: string
-    projectId?: string
-    repoUrl?: string
-    repoName?: string
-    gitBranch?: string
-    remoteDirectory?: string
-    homeRegion?: string
-  }) => Promise<unknown>
-  createLocalHostLinkChallenge: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    hostId: string
-  }) => Promise<{ challenge_id: string; nonce: string; expires_at: number }>
-  registerLocalHostLink: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    hostId: string
-    publicKey: string
-    challengeId: string
-    signature: string
-    displayName?: string
-    ttlMs?: number
-  }) => Promise<unknown>
-  heartbeatLocalHostLink: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    hostId: string
-    signature: string
-    ttlMs?: number
-  }) => Promise<unknown>
-  pauseLocalHostLink: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    hostId?: string
-    paused: boolean
-  }) => Promise<unknown>
-  activeLocalHostLink: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<
+  registerLocalForSharing: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      displayName: string
+      projectId?: string
+      repoUrl?: string
+      repoName?: string
+      gitBranch?: string
+      remoteDirectory?: string
+      homeRegion?: string
+    },
+  ) => Promise<unknown>
+  createLocalHostLinkChallenge: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      hostId: string
+    },
+  ) => Promise<{ challenge_id: string; nonce: string; expires_at: number }>
+  registerLocalHostLink: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      hostId: string
+      publicKey: string
+      challengeId: string
+      signature: string
+      displayName?: string
+      ttlMs?: number
+    },
+  ) => Promise<unknown>
+  heartbeatLocalHostLink: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      hostId: string
+      signature: string
+      ttlMs?: number
+    },
+  ) => Promise<unknown>
+  pauseLocalHostLink: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      hostId?: string
+      paused: boolean
+    },
+  ) => Promise<unknown>
+  activeLocalHostLink: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string },
+  ) => Promise<
     | { active: true; host_id: string; workspace_id: string; expires_at: number; last_seen_at: number }
     | { active: false }
   >
   deleteWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
-  createCloudWorkspace: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    projectId?: string
-    displayName: string
-    repoUrl?: string
-    repoName?: string
-    gitBranch?: string
-    homeRegion?: string
-  }) => Promise<unknown>
-  grantWorkspaceShare: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    role: "viewer" | "editor" | "admin"
-    grantedToTokenIdentifier?: string
-    grantedToClerkSubject?: string
-    grantedToClerkOrgId?: string
-  }) => Promise<unknown>
-  revokeWorkspaceShare: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    grantId?: string
-    grantedToTokenIdentifier?: string
-    grantedToClerkSubject?: string
-    grantedToClerkOrgId?: string
-  }) => Promise<unknown>
+  createCloudWorkspace: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      projectId?: string
+      displayName: string
+      repoUrl?: string
+      repoName?: string
+      gitBranch?: string
+      homeRegion?: string
+    },
+  ) => Promise<unknown>
+  grantWorkspaceShare: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      role: "viewer" | "editor" | "admin"
+      grantedToTokenIdentifier?: string
+      grantedToClerkSubject?: string
+      grantedToClerkOrgId?: string
+    },
+  ) => Promise<unknown>
+  revokeWorkspaceShare: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      grantId?: string
+      grantedToTokenIdentifier?: string
+      grantedToClerkSubject?: string
+      grantedToClerkOrgId?: string
+    },
+  ) => Promise<unknown>
 
   // sessions
-  authorizeSessionRead: (auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string }) => Promise<void>
+  authorizeSessionRead: (
+    auth: SignedControlPlaneAuth,
+    args: { sessionId: string; workspaceId: string },
+  ) => Promise<void>
   listSessions: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
-  readSessionMessages: (auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string }) => Promise<unknown>
-  syncSessionMessages: (auth: SignedControlPlaneAuth, args: {
-    sessionId: string
-    workspaceId: string
-    messages: unknown[]
-  }) => Promise<unknown>
-  upsertSessionVisibility: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    sessions: WorkspaceVisibility[]
-  }) => Promise<unknown>
-  replaceSessionVisibility: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    sessions: WorkspaceVisibility[]
-  }) => Promise<unknown>
-  deleteSessionVisibility: (auth: SignedControlPlaneAuth, args: {
-    sessionId: string
-    workspaceId: string
-  }) => Promise<unknown>
+  readSessionMessages: (
+    auth: SignedControlPlaneAuth,
+    args: { sessionId: string; workspaceId: string },
+  ) => Promise<unknown>
+  syncSessionMessages: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      sessionId: string
+      workspaceId: string
+      messages: unknown[]
+      intakeReady?: boolean
+    },
+  ) => Promise<unknown>
+  upsertSessionVisibility: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      sessions: WorkspaceVisibility[]
+    },
+  ) => Promise<unknown>
+  replaceSessionVisibility: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      sessions: WorkspaceVisibility[]
+    },
+  ) => Promise<unknown>
+  deleteSessionVisibility: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      sessionId: string
+      workspaceId: string
+    },
+  ) => Promise<unknown>
 
   // runtime tokens
-  recordRuntimeAccessToken: (auth: SignedControlPlaneAuth, args: {
-    jti: string
-    workspaceId: string
-    hostId: string
-    expiresAt: number
-  }) => Promise<unknown>
+  recordRuntimeAccessToken: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      jti: string
+      workspaceId: string
+      hostId: string
+      expiresAt: number
+    },
+  ) => Promise<unknown>
   runtimeAccessTokenActive: (args: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
-  revokeRuntimeAccessToken: (auth: SignedControlPlaneAuth, args: { jti: string; workspaceId: string }) => Promise<unknown>
-  revokeRuntimeAccessTokensForWorkspaceUser: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
+  revokeRuntimeAccessToken: (
+    auth: SignedControlPlaneAuth,
+    args: { jti: string; workspaceId: string },
+  ) => Promise<unknown>
+  revokeRuntimeAccessTokensForWorkspaceUser: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string },
+  ) => Promise<unknown>
 
   // agent extensions
   listWorkspaceAgentExtensions: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
   listWorkspaceAgentExtensionsForRuntime: (args: { workspaceId: string }) => Promise<unknown>
   authorizeWorkspaceAgentExtensionsAdmin: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<void>
-  upsertWorkspaceAgentExtension: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    extensionId: string
-    packageName: string
-    desired: unknown
-    lock: unknown
-  }) => Promise<unknown>
-  setWorkspaceAgentExtensionEnabled: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    extensionId: string
-    enabled: boolean
-  }) => Promise<unknown>
-  deleteWorkspaceAgentExtension: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    extensionId: string
-  }) => Promise<unknown>
+  upsertWorkspaceAgentExtension: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      extensionId: string
+      packageName: string
+      desired: unknown
+      lock: unknown
+    },
+  ) => Promise<unknown>
+  setWorkspaceAgentExtensionEnabled: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      extensionId: string
+      enabled: boolean
+    },
+  ) => Promise<unknown>
+  deleteWorkspaceAgentExtension: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      extensionId: string
+    },
+  ) => Promise<unknown>
   listAgentExtensionPolicyOverrides: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
   listAgentExtensionPolicyOverridesForRuntime: (args: { workspaceId: string }) => Promise<unknown>
-  setAgentExtensionPolicyOverride: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    extensionId: string
-    scope: "org" | "user" | "workspace"
-    enabled: boolean
-    reason?: string
-  }) => Promise<unknown>
-  deleteAgentExtensionPolicyOverride: (auth: SignedControlPlaneAuth, args: {
-    workspaceId: string
-    extensionId: string
-    scope: "org" | "user" | "workspace"
-  }) => Promise<unknown>
+  setAgentExtensionPolicyOverride: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      extensionId: string
+      scope: "org" | "user" | "workspace"
+      enabled: boolean
+      reason?: string
+    },
+  ) => Promise<unknown>
+  deleteAgentExtensionPolicyOverride: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      extensionId: string
+      scope: "org" | "user" | "workspace"
+    },
+  ) => Promise<unknown>
 
   // audit
-  auditDeny: (auth: SignedControlPlaneAuth | undefined, args: {
-    action: string
-    reason: string
-    workspaceId?: string
-    metadata?: Record<string, unknown>
-  }) => Promise<void>
-  auditAllow: (auth: SignedControlPlaneAuth, args: {
-    action: string
-    workspaceId?: string
-    metadata?: Record<string, unknown>
-  }) => Promise<void>
+  auditDeny: (
+    auth: SignedControlPlaneAuth | undefined,
+    args: {
+      action: string
+      reason: string
+      workspaceId?: string
+      metadata?: Record<string, unknown>
+    },
+  ) => Promise<void>
+  auditAllow: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      action: string
+      workspaceId?: string
+      metadata?: Record<string, unknown>
+    },
+  ) => Promise<void>
 }
 
 /**

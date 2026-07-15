@@ -7,6 +7,7 @@ describe("WorkGraph Connection webhook boundary", () => {
     const router = createWorkGraphWebhookRouter({
       verifier: { verify: async () => undefined },
       intake: { receive },
+      resolveOrganizationId: async () => "org-a",
     })
 
     const response = await router.request("/webhooks/github/team_connection", {
@@ -34,6 +35,7 @@ describe("WorkGraph Connection webhook boundary", () => {
         }),
       },
       intake: { receive },
+      resolveOrganizationId: async () => "org-a",
     })
 
     const response = await router.request("/webhooks/github/team_connection", {
@@ -44,6 +46,7 @@ describe("WorkGraph Connection webhook boundary", () => {
 
     expect(response.status).toBe(202)
     expect(receive).toHaveBeenCalledWith({
+      organizationId: "org-a",
       connectionId: "team_connection",
       provider: "github",
       deliveryId: "delivery_1",
@@ -51,6 +54,26 @@ describe("WorkGraph Connection webhook boundary", () => {
       attributes: { repo: "claxedo/cloud", state: "open" },
       receivedAt: 1,
     })
+  })
+
+  test("acknowledges processed Linear deliveries with the provider-required 200", async () => {
+    const router = createWorkGraphWebhookRouter({
+      verifier: {
+        verify: async () => ({
+          connectionId: "team_connection",
+          provider: "linear",
+          deliveryId: "delivery_1",
+          event: "Issue",
+          attributes: { team: ["ENG"] },
+          receivedAt: 1,
+        }),
+      },
+      intake: { receive: async () => ({ accepted: true, reason: "processed", refreshed: 1 }) },
+      resolveOrganizationId: async () => "org-a",
+    })
+
+    const response = await router.request("/webhooks/linear/team_connection", { method: "POST", body: "{}" })
+    expect(response.status).toBe(200)
   })
 
   test("returns retryable statuses for concurrent or failed processing", async () => {
@@ -65,6 +88,7 @@ describe("WorkGraph Connection webhook boundary", () => {
     const busy = createWorkGraphWebhookRouter({
       verifier: { verify: async () => verified },
       intake: { receive: async () => ({ accepted: false, reason: "in_progress", refreshed: 0 }) },
+      resolveOrganizationId: async () => "org-a",
     })
     const busyResponse = await busy.request("/webhooks/github/team_connection", { method: "POST", body: "{}" })
     expect(busyResponse.status).toBe(503)
@@ -74,6 +98,7 @@ describe("WorkGraph Connection webhook boundary", () => {
     const failed = createWorkGraphWebhookRouter({
       verifier: { verify: async () => verified },
       intake: { receive: async () => { throw new Error("temporary provider failure") } },
+      resolveOrganizationId: async () => "org-a",
     })
     const failedResponse = await failed.request("/webhooks/github/team_connection", { method: "POST", body: "{}" })
     expect(failedResponse.status).toBe(503)
@@ -85,6 +110,7 @@ describe("WorkGraph Connection webhook boundary", () => {
     const router = createWorkGraphWebhookRouter({
       verifier: { verify: async () => { throw new Error("credential store unavailable") } },
       intake: { receive: vi.fn() },
+      resolveOrganizationId: async () => "org-a",
     })
     const response = await router.request("/webhooks/github/team_connection", { method: "POST", body: "{}" })
     expect(response.status).toBe(503)
@@ -108,6 +134,7 @@ describe("WorkGraph Connection webhook boundary", () => {
     const router = createWorkGraphWebhookRouter({
       verifier: { verify },
       intake: { receive: vi.fn() },
+      resolveOrganizationId: async () => "org-a",
       maxBodyBytes: 10,
     })
 

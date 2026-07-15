@@ -89,6 +89,7 @@ async function upsertVisibilityRows(
     const hint = directoryHint(session.directory_hint)
     const projectId = await sessionProjectId(ctx, input.workspace, session.project_id)
     const patch = {
+      org_id: input.workspace.org_id,
       project_id: projectId,
       title: session.title,
       directory_hint: hint,
@@ -102,6 +103,7 @@ async function upsertVisibilityRows(
     await ctx.db.insert("session_history", {
       session_id: session.session_id,
       workspace_id: input.workspace._id,
+      org_id: input.workspace.org_id,
       project_id: projectId,
       created_by_user_id: input.user._id,
       title: session.title,
@@ -170,13 +172,19 @@ async function ensureSessionHistoryRow(
     .unique()
   if (existing && existing.workspace_id !== input.workspace._id) throw new Error("Session not found")
   if (existing) {
-    if (existing.deleted_at) await ctx.db.patch(existing._id, { deleted_at: undefined })
+    if (existing.deleted_at || (!existing.org_id && input.workspace.org_id)) {
+      await ctx.db.patch(existing._id, {
+        ...(existing.deleted_at ? { deleted_at: undefined } : {}),
+        ...(!existing.org_id && input.workspace.org_id ? { org_id: input.workspace.org_id } : {}),
+      })
+    }
     return
   }
   const now = Date.now()
   await ctx.db.insert("session_history", {
     session_id: input.session_id,
     workspace_id: input.workspace._id,
+    org_id: input.workspace.org_id,
     created_by_user_id: input.user._id,
     created_at: now,
     updated_at: now,
@@ -200,6 +208,7 @@ async function syncMessageRows(
     workspace: Record<string, unknown>
     session_id: string
     messages: unknown[]
+    intakeReady: boolean
   },
 ) {
   await ensureSessionHistoryRow(ctx, {
@@ -253,17 +262,42 @@ async function syncMessageRows(
   const summaryText = messageText(summary)
   const meaningful =
     input.messages.some((message) => messageRole(message) === "user" && messageText(message)) && summaryText
-  if (meaningful && typeof input.user._id === "string") {
+  if (input.intakeReady && meaningful && typeof input.user._id === "string") {
     const session = await ctx.db
       .query("session_history")
       .withIndex("by_session_id", (query: any) => query.eq("session_id", input.session_id))
       .unique()
+    if (!session?.org_id) throw new Error("Session organization is required for WorkGraph intake")
     await enqueueIndependentSessionIntake(ctx, {
+      organizationId: session.org_id,
       ownerUserId: input.user._id as Id<"users">,
       sessionId: input.session_id,
       title: typeof session?.title === "string" && session.title.trim() ? session.title.trim() : "AI work session",
       summary: summaryText.slice(0, 8_000),
       observedAt: now,
+      ...(
+        typeof input.workspace.git_remote === "string" && input.workspace.git_remote.trim()
+          ? {
+              execution: {
+                environment: {
+                  kind: "hosted_workspace",
+                  repositoryUrl: input.workspace.git_remote.trim(),
+                },
+                repository: { baseRevision: "HEAD" },
+              },
+            }
+          : typeof input.workspace.repo_url === "string" && input.workspace.repo_url.trim()
+            ? {
+                execution: {
+                  environment: {
+                    kind: "hosted_workspace",
+                    repositoryUrl: input.workspace.repo_url.trim(),
+                  },
+                  repository: { baseRevision: "HEAD" },
+                },
+              }
+            : {}
+      ),
     })
   }
 }
@@ -366,12 +400,14 @@ export const syncMessages = authedMutation({
     workspace_id: v.string(),
     session_id: v.string(),
     messages: v.array(v.any()),
+    intake_ready: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await syncMessageRows(ctx, {
       ...(await writableWorkspace(ctx, args.workspace_id)),
       session_id: args.session_id,
       messages: args.messages,
+      intakeReady: args.intake_ready ?? false,
     })
     return { ok: true }
   },
@@ -383,12 +419,14 @@ export const syncMessagesForService = serviceMutation({
     workspace_id: v.string(),
     session_id: v.string(),
     messages: v.array(v.any()),
+    intake_ready: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await syncMessageRows(ctx, {
       ...(await writableWorkspaceForUser(ctx, await upsertServiceUser(ctx, args.user), args.workspace_id)),
       session_id: args.session_id,
       messages: args.messages,
+      intakeReady: args.intake_ready ?? false,
     })
     return { ok: true }
   },

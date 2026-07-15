@@ -216,3 +216,10 @@ export function shutdownEmbeddedWorkspaceRuntimes() {
   for (const runtime of hosts.values()) disposeRuntime(runtime)
   hosts.clear()
 }
+
+export function releaseEmbeddedWorkspaceRuntime(workspaceId: string) {
+  const runtime = hosts.get(workspaceId)
+  if (!runtime) return
+  disposeRuntime(runtime)
+  hosts.delete(workspaceId)
+}

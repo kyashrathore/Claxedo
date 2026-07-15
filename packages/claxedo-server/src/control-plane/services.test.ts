@@ -431,7 +431,7 @@ describe("control-plane services", () => {
     expect(text).toContain("app.route(\"/api/control\", ControlPlaneHttpRoutes(services, authRouteOptions(services)))")
     expect(text).toContain("const centralControl = createCentralControlApp(services, {")
     expect(text).toContain("...authRouteOptions(services),")
-    expect(text).toContain("createEnv: createClaxedoSessionEnvFactory({ fetchOptions: runtimeProxyOptions }),")
+    expect(text).toContain("createEnv: createClaxedoSessionEnvFactory({ fetchOptions: runtimeProxyOptions, turnCredentials }),")
     expect(text).toContain("app.route(\"/\", centralControl.app)")
     expect(text).toContain("app.route(\"/api/claxedo/living-apps\", LivingAppsRoutes())")
   })
@@ -695,19 +695,9 @@ describe("control-plane services", () => {
     })
     expect(authorizeSessionRead).not.toHaveBeenCalled()
 
-    const created = await built.app.request("http://127.0.0.1/api/control/sessions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer local-test-token",
-        Origin: "http://127.0.0.1:4444",
-      },
-      body: JSON.stringify({ mode: "hybrid", title: "Signed central", workspaceId: "ws_central" }),
-    })
-    expect(created.status).toBe(201)
-    const body = await created.json() as { session: { id: string } }
+    const sessionId = "signed-central-session"
     sync.session_meta.mockImplementation(async (sessionID) =>
-      sessionID === body.session.id
+      sessionID === sessionId
         ? {
             sessionID,
             host: "central",
@@ -719,7 +709,7 @@ describe("control-plane services", () => {
           }
         : undefined)
 
-    const loopback = await built.app.request(`http://127.0.0.1/api/control/session/${body.session.id}/message`, {
+    const loopback = await built.app.request(`http://127.0.0.1/api/control/session/${sessionId}/message`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -742,7 +732,7 @@ describe("control-plane services", () => {
     authorizeSessionRead.mockImplementationOnce(async () => {
       throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Convex denied session access")
     })
-    const denied = await built.app.request(`https://control.example.test/api/control/session/${body.session.id}/message`, {
+    const denied = await built.app.request(`https://control.example.test/api/control/session/${sessionId}/message`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -760,7 +750,7 @@ describe("control-plane services", () => {
       error: { code: "workspace_authorization_denied" },
     })
 
-    const signed = await built.app.request(`https://control.example.test/api/control/session/${body.session.id}/message`, {
+    const signed = await built.app.request(`https://control.example.test/api/control/session/${sessionId}/message`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -782,7 +772,7 @@ describe("control-plane services", () => {
     expect(authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({
       user: expect.objectContaining({ subject: "user_1" }),
     }), {
-      sessionId: body.session.id,
+      sessionId,
       workspaceId: "ws_central",
     })
   })

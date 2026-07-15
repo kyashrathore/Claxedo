@@ -117,6 +117,11 @@ describe("harness store policy", () => {
       workspaceRuntime: false,
       workspaceKind: "local",
     })).toBe(false)
+    expect(shouldHydrateDraftFromHarnessStatus({
+      useLocalHarnessConfig: true,
+      workspaceRuntime: false,
+      workspaceKind: "cloud",
+    })).toBe(true)
     expect(refreshHarnessTypeForScope({ directory: "workspace:ws_1", harness: "opencode" })).toBe("opencode")
     expect(refreshHarnessTypeForScope({ directory: "/tmp/project", harness: "opencode" })).toBeUndefined()
     expect(refreshHarnessTypeForScope({ directory: "/tmp/project", harness: "claude-acp" })).toBe("claude-acp")

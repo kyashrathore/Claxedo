@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
 import {
   clearConversationChatRegistryForTest,
@@ -13,6 +13,14 @@ import { composerFocus } from "../composer/ui/composer-focus"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 
 beforeEach(() => configureAppPortsForTest())
+
+const realGlobalSdkModule = { ...(await import(`${import.meta.dir}/../../../app/providers/global-sdk/provider.tsx?session-commands-restore`)) }
+const realSelectModelModule = { ...(await import(`${import.meta.dir}/model/select-model.tsx?session-commands-restore`)) }
+
+afterAll(() => {
+  mock.module("@/app/providers/global-sdk/provider", () => realGlobalSdkModule)
+  mock.module("@/features/session/ui/model/select-model", () => realSelectModelModule)
+})
 
 const testGlobal = globalThis as typeof globalThis & {
   React?: { createElement: (component: unknown, props: unknown) => unknown }
@@ -124,6 +132,7 @@ mock.module("@/features/session/ui/dialogs/select-file", () => ({
 }))
 
 mock.module("@/features/session/ui/model/select-model", () => ({
+  ...realSelectModelModule,
   DialogSelectModel: (props: { model?: CapturedPicker }) => {
     modelDialogProps.push(props)
   },

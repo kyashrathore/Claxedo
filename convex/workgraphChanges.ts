@@ -1,8 +1,8 @@
 import { evaluateCompletionContract } from "@claxedo/workgraph/domain"
-import { AdmissionProposalDtoSchema, AttemptDetailDtoSchema, AttentionCursorError, AttentionItemSchema, AttentionPageSchema, EvidenceDtoSchema, EvidencePageCursorError, EvidencePageSchema, SnapshotResumeCursorError, WorkItemAttemptPageCursorError, WorkItemAttemptPageSchema, compareEvidenceCursorPosition, compareSnapshotCursorPosition, compareWorkItemAttemptPosition, createAttentionCursor, createEvidencePageCursor, createSnapshotResumeCursor, createWorkItemAttemptPageCursor, readAttentionCursor, readEvidencePageCursor, readSnapshotResumeCursor, readWorkItemAttemptPageCursor, type EvidenceSubject } from "@claxedo/workgraph/contracts"
+import { AdmissionProposalDtoSchema, AttemptDetailDtoSchema, AttentionCursorError, AttentionItemSchema, AttentionPageSchema, ChangeCursorError, EvidenceDtoSchema, EvidencePageCursorError, EvidencePageSchema, ModelSelectionSchema, RecapProfileDefaultsSchema, ReplacementReviewSchema, SnapshotResumeCursorError, WorkItemAttemptPageCursorError, WorkItemAttemptPageSchema, compareEvidenceCursorPosition, compareSnapshotCursorPosition, compareWorkItemAttemptPosition, createAttentionCursor, createChangeCursor, createEvidencePageCursor, createSnapshotResumeCursor, createWorkItemAttemptPageCursor, readAttentionCursor, readChangeCursor, readEvidencePageCursor, readSnapshotResumeCursor, readWorkItemAttemptPageCursor, type EvidenceSubject } from "@claxedo/workgraph/contracts"
 import { ConvexError, v } from "convex/values"
 import { authedQuery, serviceQuery } from "./model"
-import { assertWorkGraphOwnerReadable, requireOwnedWorkGraphContext, requireTrustedWorkGraphOwnerSubject } from "./workgraphModel"
+import { assertWorkGraphOwnerReadable, requireOwnedWorkGraphContext, requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
 import { attentionPositionKey } from "./workgraphAttention"
 
 const MAX_PAGE = 100
@@ -25,40 +25,44 @@ const query = v.union(
   v.object({ kind: v.literal("work_item_detail"), workItemId: v.string() }),
   v.object({ kind: v.literal("work_item_attempts"), workItemId: v.string(), limit: v.number(), after: v.optional(v.string()) }),
   v.object({ kind: v.literal("admission_proposal"), proposalId: v.string() }),
+  v.object({ kind: v.literal("replacement_review"), streamId: v.string(), previousSource: v.object({ workSourceId: v.string(), revisionId: v.string(), contentHash: v.string() }) }),
   v.object({ kind: v.literal("attempt"), attemptId: v.string() }),
   v.object({ kind: v.literal("decision"), decisionId: v.string() }),
   v.object({ kind: v.literal("recap"), recapId: v.string() }),
   v.object({ kind: v.literal("evidence"), evidenceId: v.string() }),
   v.object({ kind: v.literal("evidence_list"), subject: evidenceSubject, limit: v.number(), after: v.optional(v.string()) }),
 )
-const ownerQueryArgs = { query }
+const ownerQueryArgs = { organization_id: v.id("orgs"), query }
 
 export const read = authedQuery({
   args: ownerQueryArgs,
   handler: async (ctx, args) => {
     const owned = await requireOwnedWorkGraphContext(ctx)
-    return readWorkGraphProjection(ctx, String(owned.owner_user_id), args.query.kind, args.query)
+    const membership = await ctx.db.query("org_memberships")
+      .withIndex("by_org_user", (query: any) => query.eq("org_id", args.organization_id).eq("user_id", owned.owner_user_id)).unique()
+    if (!membership) throw new Error("WorkGraph organization membership is required")
+    return readWorkGraphProjection(ctx, String(args.organization_id), String(owned.owner_user_id), args.query.kind, args.query)
   },
 })
 
 export const readForService = serviceQuery({
   args: { ...ownerQueryArgs, owner_subject: v.string() },
   handler: async (ctx, args) => {
-    const owner = await requireTrustedWorkGraphOwnerSubject(ctx, args.service_token, args.owner_subject)
-    return readWorkGraphProjection(ctx, String(owner._id), args.query.kind, args.query)
+    const tenant = await requireTrustedWorkGraphTenantSubject(ctx, args.service_token, args.organization_id, args.owner_subject)
+    return readWorkGraphProjection(ctx, String(tenant.organization_id), String(tenant.owner_user_id), args.query.kind, args.query)
   },
 })
 
 /** Shared projection implementation keeps interactive and service reads identical. */
-export async function readWorkGraphProjection(ctx: any, owner: string, kind: string, input: Record<string, any>) {
-  await assertWorkGraphOwnerReadable(ctx, owner)
-  if (kind === "defaults") return defaultsDto(await owned(ctx, "workgraphs", owner, "workgraph_default"), owner)
+export async function readWorkGraphProjection(ctx: any, organization: string, owner: string, kind: string, input: Record<string, any>) {
+  await assertWorkGraphOwnerReadable(ctx, organization, owner)
+  if (kind === "defaults") return defaultsDto(await owned(ctx, "workgraphs", organization, owner, "workgraph_default"), owner)
   if (kind === "stream") {
-    const stream = await owned(ctx, "workgraph_streams", owner, requireText(input.streamId, "streamId"))
+    const stream = await owned(ctx, "workgraph_streams", organization, owner, requireText(input.streamId, "streamId"))
     return stream ? streamDto(stream, owner) : null
   }
   if (kind === "source_revision") {
-    const revision = await owned(ctx, "work_source_revisions", owner, requireText(input.revisionId, "revisionId"))
+    const revision = await owned(ctx, "work_source_revisions", organization, owner, requireText(input.revisionId, "revisionId"))
     if (!revision || revision.work_source_id !== requireText(input.workSourceId, "workSourceId")) return null
     return {
       id: revision.id, workSourceId: revision.work_source_id, revisionNumber: revision.revision_number,
@@ -67,37 +71,39 @@ export async function readWorkGraphProjection(ctx: any, owner: string, kind: str
     }
   }
   if (kind === "source") {
-    const source = await owned(ctx, "work_sources", owner, requireText(input.workSourceId, "workSourceId"))
+    const source = await owned(ctx, "work_sources", organization, owner, requireText(input.workSourceId, "workSourceId"))
     return source ? sourceDto(source, owner) : null
   }
   if (kind === "sources") {
     const limit = requireLimit(input.limit)
-    const result = await ctx.db.query("work_sources").withIndex("by_owner", (q: any) => q.eq("owner_user_id", owner))
-      .paginate({ cursor: input.after ?? null, numItems: limit })
+    const cursor = input.after === undefined ? null : readTenantCursor(input.after, "work_sources", organization, owner)
+    const result = await ctx.db.query("work_sources").withIndex("by_tenant", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner))
+      .paginate({ cursor, numItems: limit })
     return {
       sources: result.page.map((row: any) => sourceDto(row, owner)),
       hasMore: !result.isDone,
-      ...(!result.isDone ? { nextCursor: result.continueCursor } : {}),
+      ...(!result.isDone ? { nextCursor: createTenantCursor("work_sources", organization, owner, result.continueCursor) } : {}),
     }
   }
   if (kind === "work_item") {
-    const item = await owned(ctx, "workgraph_work_items", owner, requireText(input.workItemId, "workItemId"))
+    const item = await owned(ctx, "workgraph_work_items", organization, owner, requireText(input.workItemId, "workItemId"))
     if (!item) return null
     const evidence = await ctx.db.query("workgraph_evidence")
-      .withIndex("by_owner_subject", (q: any) => q.eq("owner_user_id", owner).eq("subject_type", "work_item").eq("subject_id", item.id)).collect()
+      .withIndex("by_tenant_subject", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("subject_type", "work_item").eq("subject_id", item.id))
+      .filter((q: any) => q.eq(q.field("organization_id"), organization)).collect()
     const subject = { type: "work_item" as const, workItemId: item.id }
     const normalized = evidence.map((row: any) => ({
       ...row.reference, id: row.id, subject, recordedAt: row.created_at, recordedBy: row.provenance.actor,
     }))
-    return { ...await workItemDto(ctx, item, owner), completionSatisfied: evaluateCompletionContract(item.completion_contract, subject as any, normalized as any).satisfied }
+    return { ...await workItemDto(ctx, organization, item, owner), completionSatisfied: evaluateCompletionContract(item.completion_contract, subject as any, normalized as any).satisfied }
   }
   if (kind === "work_item_detail") {
-    const item = await owned(ctx, "workgraph_work_items", owner, requireText(input.workItemId, "workItemId"))
-    return item ? workItemDto(ctx, item, owner) : null
+    const item = await owned(ctx, "workgraph_work_items", organization, owner, requireText(input.workItemId, "workItemId"))
+    return item ? workItemDto(ctx, organization, item, owner) : null
   }
   if (kind === "work_item_attempts") {
     try {
-      return await workItemAttemptsPage(ctx, owner, input)
+      return await workItemAttemptsPage(ctx, organization, owner, input)
     } catch (error) {
       if (error instanceof WorkItemAttemptPageCursorError) {
         throw new ConvexError({ code: "cursor_invalid", reason: error.reason })
@@ -106,28 +112,29 @@ export async function readWorkGraphProjection(ctx: any, owner: string, kind: str
     }
   }
   if (kind === "admission_proposal") {
-    const proposal = await owned(ctx, "workgraph_admission_proposals", owner, requireText(input.proposalId, "proposalId"))
+    const proposal = await owned(ctx, "workgraph_admission_proposals", organization, owner, requireText(input.proposalId, "proposalId"))
     return proposal ? admissionDto(proposal, owner) : null
   }
+  if (kind === "replacement_review") return replacementReview(ctx, organization, owner, input)
   if (kind === "attempt") {
-    const attempt = await owned(ctx, "workgraph_attempts", owner, requireText(input.attemptId, "attemptId"))
+    const attempt = await owned(ctx, "workgraph_attempts", organization, owner, requireText(input.attemptId, "attemptId"))
     return attempt ? attemptDetailDto(attempt, owner) : null
   }
   if (kind === "decision") {
-    const decision = await owned(ctx, "workgraph_decisions", owner, requireText(input.decisionId, "decisionId"))
-    return decision ? decisionDto(ctx, decision, owner) : null
+    const decision = await owned(ctx, "workgraph_decisions", organization, owner, requireText(input.decisionId, "decisionId"))
+    return decision ? decisionDto(ctx, organization, decision, owner) : null
   }
   if (kind === "recap") {
-    const recap = await owned(ctx, "workgraph_recaps", owner, requireText(input.recapId, "recapId"))
+    const recap = await owned(ctx, "workgraph_recaps", organization, owner, requireText(input.recapId, "recapId"))
     return recap ? recapDto(recap, owner) : null
   }
   if (kind === "evidence") {
-    const evidence = await owned(ctx, "workgraph_evidence", owner, requireText(input.evidenceId, "evidenceId"))
-    return evidence ? evidenceDto(ctx, evidence, owner) : null
+    const evidence = await owned(ctx, "workgraph_evidence", organization, owner, requireText(input.evidenceId, "evidenceId"))
+    return evidence ? evidenceDto(ctx, organization, evidence, owner) : null
   }
   if (kind === "evidence_list") {
     try {
-      return await evidencePage(ctx, owner, requireEvidenceSubject(input.subject), input)
+      return await evidencePage(ctx, organization, owner, requireEvidenceSubject(input.subject), input)
     } catch (error) {
       if (isEvidencePageCursorError(error)) {
         throw new ConvexError({ code: "cursor_invalid", reason: error.reason })
@@ -137,7 +144,7 @@ export async function readWorkGraphProjection(ctx: any, owner: string, kind: str
   }
   if (kind === "attention") {
     try {
-      return await attentionPage(ctx, owner, input)
+      return await attentionPage(ctx, organization, owner, input)
     } catch (error) {
       if (error instanceof AttentionCursorError) {
         throw new ConvexError({ code: "cursor_invalid", reason: error.reason })
@@ -147,7 +154,7 @@ export async function readWorkGraphProjection(ctx: any, owner: string, kind: str
   }
   if (kind === "snapshot") {
     try {
-      return await snapshot(ctx, owner, input)
+      return await snapshot(ctx, organization, owner, input)
     } catch (error) {
       if (error instanceof SnapshotResumeCursorError || snapshotCursorError(error)) {
         throw new ConvexError({ code: "cursor_invalid", reason: error.reason })
@@ -155,17 +162,90 @@ export async function readWorkGraphProjection(ctx: any, owner: string, kind: str
       throw error
     }
   }
-  return changes(ctx, owner, kind, input)
+  try {
+    return await changes(ctx, organization, owner, kind, input)
+  } catch (error) {
+    if (error instanceof ChangeCursorError) {
+      throw new ConvexError({ code: "cursor_invalid", reason: error.reason })
+    }
+    throw error
+  }
 }
 
-async function workItemAttemptsPage(ctx: any, owner: string, input: Record<string, any>) {
+async function replacementReview(ctx: any, organization: string, owner: string, input: Record<string, any>) {
+  const streamId = requireText(input.streamId, "streamId")
+  const previousSource = input.previousSource as { workSourceId?: unknown; revisionId?: unknown; contentHash?: unknown } | undefined
+  const workSourceId = requireText(previousSource?.workSourceId, "previousSource.workSourceId")
+  const revisionId = requireText(previousSource?.revisionId, "previousSource.revisionId")
+  const contentHash = requireText(previousSource?.contentHash, "previousSource.contentHash")
+  const [stream, revision] = await Promise.all([
+    owned(ctx, "workgraph_streams", organization, owner, streamId),
+    owned(ctx, "work_source_revisions", organization, owner, revisionId),
+  ])
+  if (!stream || !revision || revision.work_source_id !== workSourceId || revision.content_hash !== contentHash) return undefined
+  const base = { streamId, streamTitle: stream.title }
+  if (stream.replacement_reset && stream.replacement_reset.state !== "completed") {
+    return ReplacementReviewSchema.parse({ ...base, status: "unavailable", reason: "Stream replacement cleanup is still pending" })
+  }
+  const receipts = await ctx.db.query("workgraph_durable_effect_receipts")
+    .withIndex("by_tenant_stream", (query: any) => query.eq("organization_id", organization).eq("owner_user_id", owner).eq("stream_id", streamId))
+    .take(1)
+  if (receipts.length) {
+    return ReplacementReviewSchema.parse({ ...base, status: "durable", reason: "Durable effects cannot be replaced" })
+  }
+  const current = (await ctx.db.query("workgraph_work_items")
+    .withIndex("by_tenant_stream", (query: any) => query.eq("organization_id", organization).eq("owner_user_id", owner).eq("stream_id", streamId))
+    .collect())
+    .filter((item: any) => item.state !== "completed" && item.state !== "abandoned")
+    .sort((left: any, right: any) => String(left.id).localeCompare(String(right.id)))
+  if (current.some((item: any) => !item.source_revision_refs.some((source: any) =>
+    source.work_source_id === workSourceId && source.revision_id === revisionId && source.content_hash === contentHash))) {
+    return ReplacementReviewSchema.parse({ ...base, status: "unrelated", reason: "Stream contains unrelated nonterminal work; keep or fork instead" })
+  }
+  if (!current.length) {
+    return ReplacementReviewSchema.parse({ ...base, status: "empty", reason: "No source-linked Tasks remain to replace" })
+  }
+  return ReplacementReviewSchema.parse({
+    ...base,
+    status: "eligible",
+    targets: current.map((item: any) => ({
+      workItemId: item.id,
+      expectedVersion: item.row_version,
+      title: item.title,
+      state: item.state,
+    })),
+  })
+}
+
+function createTenantCursor(kind: string, organization: string, owner: string, cursor: string) {
+  return ["wgt1", kind, organization, owner, cursor].map(encodeURIComponent).join(":")
+}
+
+function readTenantCursor(value: unknown, kind: string, organization: string, owner: string) {
+  if (typeof value !== "string") throw new ConvexError({ code: "cursor_invalid", reason: "invalid" })
+  const parts = decodeTenantCursor(value)
+  if (parts.length !== 5 || parts[0] !== "wgt1" || !parts[4]) throw new ConvexError({ code: "cursor_invalid", reason: "invalid" })
+  if (parts[2] !== organization || parts[3] !== owner) throw new ConvexError({ code: "cursor_invalid", reason: "owner_mismatch" })
+  if (parts[1] !== kind) throw new ConvexError({ code: "cursor_invalid", reason: "filter_mismatch" })
+  return parts[4]
+}
+
+function decodeTenantCursor(value: string) {
+  try {
+    return value.split(":").map((part) => decodeURIComponent(part))
+  } catch {
+    throw new ConvexError({ code: "cursor_invalid", reason: "invalid" })
+  }
+}
+
+async function workItemAttemptsPage(ctx: any, organization: string, owner: string, input: Record<string, any>) {
   const workItemId = requireText(input.workItemId, "workItemId")
   const limit = requireLimit(input.limit)
-  const resume = input.after === undefined ? undefined : readWorkItemAttemptPageCursor(input.after, owner, workItemId)
-  const rows = await ctx.db.query("workgraph_attempts").withIndex("by_owner_item_attempt", (q: any) => {
-    const range = q.eq("owner_user_id", owner).eq("work_item_id", workItemId)
+  const resume = input.after === undefined ? undefined : readWorkItemAttemptPageCursor(input.after, organization, owner, workItemId)
+  const rows = await ctx.db.query("workgraph_attempts").withIndex("by_tenant_item_attempt", (q: any) => {
+    const range = q.eq("organization_id", organization).eq("owner_user_id", owner).eq("work_item_id", workItemId)
     return resume ? range.gt("attempt_number", resume.attemptNumber) : range
-  }).take(limit + 1)
+  }).filter((q: any) => q.eq(q.field("organization_id"), organization)).take(limit + 1)
   const ordered = rows
     .filter((row: any) => !resume || compareWorkItemAttemptPosition(
       { attemptNumber: row.attempt_number, id: row.id },
@@ -182,6 +262,7 @@ async function workItemAttemptsPage(ctx: any, owner: string, input: Record<strin
     hasMore,
     ...(hasMore ? {
       nextCursor: createWorkItemAttemptPageCursor({
+        organizationId: organization,
         ownerUserId: owner,
         workItemId,
         attemptNumber: page.at(-1)!.attempt_number,
@@ -191,85 +272,90 @@ async function workItemAttemptsPage(ctx: any, owner: string, input: Record<strin
   })
 }
 
-async function attentionPage(ctx: any, owner: string, input: Record<string, any>) {
+async function attentionPage(ctx: any, organization: string, owner: string, input: Record<string, any>) {
   const limit = requireLimit(input.limit)
-  const resume = input.after === undefined ? undefined : readAttentionCursor(input.after, owner)
-  const [summary, rows] = await Promise.all([
-    ctx.db.query("workgraph_attention_summaries").withIndex("by_owner", (query: any) => query.eq("owner_user_id", owner)).unique(),
-    ctx.db.query("workgraph_attention_entries").withIndex("by_owner_position", (query: any) => {
-      const range = query.eq("owner_user_id", owner)
+  const resume = input.after === undefined ? undefined : readAttentionCursor(input.after, organization, owner)
+  const summary = await ctx.db.query("workgraph_attention_summaries").withIndex("by_tenant", (query: any) => query.eq("organization_id", organization).eq("owner_user_id", owner)).unique()
+  const source = ctx.db.query("workgraph_attention_entries").withIndex("by_tenant_position", (query: any) => {
+      const range = query.eq("organization_id", organization).eq("owner_user_id", owner)
       return resume ? range.gt("position_key", attentionPositionKey(resume)) : range
-    }).take(limit + 1),
-  ])
+    })
+  const rows = await (summary?.cleared_through_at === undefined
+    ? source
+    : source.filter((query: any) => query.gt(query.field("updated_at"), summary.cleared_through_at)))
+    .take(limit + 1)
   if (!summary) {
-    const root = await owned(ctx, "workgraphs", owner, "workgraph_default")
+    const root = await owned(ctx, "workgraphs", organization, owner, "workgraph_default")
     if (root) throw new Error("Attention projection is not initialized for this owner")
   }
-  const page = await Promise.all(rows.slice(0, limit).map((row: any) => attentionProjectionItem(ctx, owner, row, summary)))
+  const page = await Promise.all(rows.slice(0, limit).map((row: any) => attentionProjectionItem(ctx, organization, owner, row, summary)))
   const hasMore = rows.length > limit
   return AttentionPageSchema.parse({
     items: page,
-    total: summary?.total ?? 0,
+    total: summary ? summary.visible_total ?? summary.total : 0,
     hasMore,
-    ...(hasMore ? { nextCursor: createAttentionCursor(owner, page.at(-1)!) } : {}),
+    ...(hasMore ? { nextCursor: createAttentionCursor(organization, owner, page.at(-1)!) } : {}),
   })
 }
 
-async function attentionProjectionItem(ctx: any, owner: string, entry: any, summary: any) {
+async function attentionProjectionItem(ctx: any, organization: string, owner: string, entry: any, summary: any) {
+  const read = summary?.read_through_at !== undefined && entry.updated_at <= summary.read_through_at
+    ? { readAt: summary.read_through_at }
+    : {}
   if (entry.kind === "unorganized_ai_work") {
     const counts = { externalIssues: summary.external_issue_count, sessions: summary.session_count, total: summary.external_issue_count + summary.session_count }
-    return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, counts })
+    return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, counts })
   }
   if (entry.kind === "configuration_required") {
     if (entry.source_type === "workgraph_connection_metadata") {
-      const row = await ctx.db.query("workgraph_connection_metadata").withIndex("by_owner_connection", (query: any) => query.eq("owner_user_id", owner).eq("connection_id", entry.id)).unique()
+      const row = await ctx.db.query("workgraph_connection_metadata").withIndex("by_organization_connection", (query: any) => query.eq("organization_id", organization).eq("connection_id", entry.id)).unique()
       if (!row) throw new Error(`Attention source ${entry.kind}:${entry.id} disappeared during its owner-scoped read`)
       return AttentionItemSchema.parse({
-        kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at,
+        kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read,
         requirement: { type: "connection", connectionId: row.connection_id, integrationId: row.integration_id, status: row.status, ...(row.account_label === undefined ? {} : { accountLabel: row.account_label }) },
       })
     }
-    const row = await owned(ctx, "workgraph_due_jobs", owner, entry.id)
+    const row = await owned(ctx, "workgraph_due_jobs", organization, owner, entry.id)
     const marker = row?.payload?.configurationRequirement
     if (!row || marker?.type !== "generation" || typeof row.last_error !== "string" || !row.last_error.trim()) throw new Error(`Attention source ${entry.kind}:${entry.id} is not a generation requirement`)
     return AttentionItemSchema.parse({
-      kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at,
+      kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read,
       requirement: { type: "generation", jobId: row.id, purpose: marker.purpose, scope: marker.scope, reason: row.last_error },
     })
   }
   const table = entry.source_type
-  const row = await owned(ctx, table, owner, entry.id)
+  const row = await owned(ctx, table, organization, owner, entry.id)
   if (!row) throw new Error(`Attention source ${entry.kind}:${entry.id} disappeared during its owner-scoped read`)
-  if (entry.kind === "admission_proposal") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, record: admissionDto(row, owner) })
-  if (entry.kind === "decision") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, record: await decisionDto(ctx, row, owner) })
-  if (entry.kind === "work_item") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, record: await workItemDto(ctx, row, owner) })
-  if (entry.kind === "attempt") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, record: attemptDto(row, owner) })
+  if (entry.kind === "admission_proposal") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: admissionDto(row, owner) })
+  if (entry.kind === "decision") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: await decisionDto(ctx, organization, row, owner) })
+  if (entry.kind === "work_item") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: await workItemDto(ctx, organization, row, owner) })
+  if (entry.kind === "attempt") return AttentionItemSchema.parse({ kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read, record: attemptDto(row, owner) })
   if (entry.kind !== "recap_notification") throw new Error(`Unsupported Attention projection kind ${String(entry.kind)}`)
-  const recap = await owned(ctx, "workgraph_recaps", owner, row.recap_id)
+  const recap = await owned(ctx, "workgraph_recaps", organization, owner, row.recap_id)
   if (!recap) throw new Error(`Attention Recap ${row.recap_id} disappeared during its owner-scoped read`)
   return AttentionItemSchema.parse({
-    kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at,
+    kind: entry.kind, ownerUserId: owner, id: entry.id, updatedAt: entry.updated_at, ...read,
     notification: { id: row.id, ownerUserId: owner, version: row.row_version, kind: "actionable_recap", state: row.state, streamId: row.stream_id, recapId: row.recap_id, createdAt: row.created_at, updatedAt: row.updated_at, ...(row.read_at === undefined ? {} : { readAt: row.read_at }) },
     recap: recapDto(recap, owner),
   })
 }
-async function evidencePage(ctx: any, owner: string, subject: EvidenceSubject, input: Record<string, any>) {
+async function evidencePage(ctx: any, organization: string, owner: string, subject: EvidenceSubject, input: Record<string, any>) {
   const limit = requireLimit(input.limit)
-  const resume = input.after === undefined ? undefined : readEvidencePageCursor(input.after, owner, subject)
+  const resume = input.after === undefined ? undefined : readEvidencePageCursor(input.after, organization, owner, subject)
   const subjectId = evidenceSubjectId(subject)
   const query = () => ctx.db.query("workgraph_evidence")
   const rows = (resume ? [
-    ...await query().withIndex("by_owner_subject_created_id", (q: any) =>
-      q.eq("owner_user_id", owner).eq("subject_type", subject.type).eq("subject_id", subjectId)
+    ...await query().withIndex("by_tenant_subject_created_id", (q: any) =>
+      q.eq("organization_id", organization).eq("owner_user_id", owner).eq("subject_type", subject.type).eq("subject_id", subjectId)
         .eq("created_at", resume.recordedAt).gt("id", resume.evidenceId)
-    ).take(limit + 1),
-    ...await query().withIndex("by_owner_subject_created_id", (q: any) =>
-      q.eq("owner_user_id", owner).eq("subject_type", subject.type).eq("subject_id", subjectId)
+    ).filter((q: any) => q.eq(q.field("organization_id"), organization)).take(limit + 1),
+    ...await query().withIndex("by_tenant_subject_created_id", (q: any) =>
+      q.eq("organization_id", organization).eq("owner_user_id", owner).eq("subject_type", subject.type).eq("subject_id", subjectId)
         .gt("created_at", resume.recordedAt)
-    ).take(limit + 1),
-  ] : await query().withIndex("by_owner_subject_created_id", (q: any) =>
-    q.eq("owner_user_id", owner).eq("subject_type", subject.type).eq("subject_id", subjectId)
-  ).take(limit + 1))
+    ).filter((q: any) => q.eq(q.field("organization_id"), organization)).take(limit + 1),
+  ] : await query().withIndex("by_tenant_subject_created_id", (q: any) =>
+    q.eq("organization_id", organization).eq("owner_user_id", owner).eq("subject_type", subject.type).eq("subject_id", subjectId)
+  ).filter((q: any) => q.eq(q.field("organization_id"), organization)).take(limit + 1))
     .sort((left: any, right: any) => compareEvidenceCursorPosition(
       { recordedAt: left.created_at, id: left.id },
       { recordedAt: right.created_at, id: right.id },
@@ -278,10 +364,11 @@ async function evidencePage(ctx: any, owner: string, subject: EvidenceSubject, i
   const page = rows.slice(0, limit)
   const hasMore = rows.length > limit
   return EvidencePageSchema.parse({
-    evidence: await Promise.all(page.map((row: any) => evidenceDto(ctx, row, owner))),
+    evidence: await Promise.all(page.map((row: any) => evidenceDto(ctx, organization, row, owner))),
     hasMore,
     ...(hasMore ? {
       nextCursor: createEvidencePageCursor({
+        organizationId: organization,
         ownerUserId: owner,
         subject,
         recordedAt: page.at(-1)!.created_at,
@@ -291,7 +378,7 @@ async function evidencePage(ctx: any, owner: string, subject: EvidenceSubject, i
   })
 }
 
-async function evidenceDto(ctx: any, row: any, owner: string) {
+async function evidenceDto(ctx: any, organization: string, row: any, owner: string) {
   const evidence = {
     ...row.reference,
     id: row.id,
@@ -305,7 +392,8 @@ async function evidenceDto(ctx: any, row: any, owner: string) {
   const operationId = row.provenance?.operationId
   const receipt = typeof operationId === "string"
     ? await ctx.db.query("workgraph_durable_effect_receipts")
-      .withIndex("by_owner_idempotency", (q: any) => q.eq("owner_user_id", owner).eq("idempotency_key", `${operationId}:integration`))
+      .withIndex("by_tenant_idempotency", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("idempotency_key", `${operationId}:integration`))
+      .filter((query: any) => query.eq(query.field("organization_id"), organization))
       .unique()
     : undefined
   return EvidenceDtoSchema.parse({
@@ -348,26 +436,30 @@ function snapshotCursorError(error: unknown): error is Readonly<{
   return error.reason === "invalid" || error.reason === "owner_mismatch" || error.reason === "invalidated"
 }
 
-async function snapshot(ctx: any, owner: string, input: Record<string, any>) {
+async function snapshot(ctx: any, organization: string, owner: string, input: Record<string, any>) {
   const limit = requireLimit(input.limit)
-  const cursor = await ctx.db.query("workgraph_change_cursors").withIndex("by_owner", (q: any) => q.eq("owner_user_id", owner)).unique()
-  const snapshotCursor = String(Math.max(0, (cursor?.next_cursor ?? 1) - 1))
+  const cursor = await ctx.db.query("workgraph_change_cursors").withIndex("by_tenant", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner)).unique()
+  const snapshotCursor = createChangeCursor({
+    organizationId: organization,
+    ownerUserId: owner,
+    position: Math.max(0, (cursor?.next_cursor ?? 1) - 1),
+  })
   const resume = input.after === undefined
     ? { offset: 0, capturedAt: Date.now(), position: undefined }
-    : readSnapshotResumeCursor(input.after, owner, snapshotCursor)
+    : readSnapshotResumeCursor(input.after, organization, owner, snapshotCursor)
   const specs = [
     { table: "workgraph_streams", recordType: "stream", dto: (row: any) => streamDto(row, owner) },
     { table: "workgraph_outcomes", recordType: "outcome", dto: (row: any) => outcomeDto(row, owner) },
-    { table: "workgraph_work_items", recordType: "work_item", dto: (row: any) => workItemDto(ctx, row, owner) },
+    { table: "workgraph_work_items", recordType: "work_item", dto: (row: any) => workItemDto(ctx, organization, row, owner) },
     { table: "workgraph_attempts", recordType: "attempt", dto: (row: any) => attemptDto(row, owner) },
-    { table: "workgraph_decisions", recordType: "decision", dto: (row: any) => decisionDto(ctx, row, owner) },
+    { table: "workgraph_decisions", recordType: "decision", dto: (row: any) => decisionDto(ctx, organization, row, owner) },
     { table: "workgraph_recaps", recordType: "recap", dto: (row: any) => recapDto(row, owner) },
     { table: "workgraph_admission_proposals", recordType: "admission_proposal", dto: (row: any) => admissionDto(row, owner) },
   ]
   const [root, ...batches] = await Promise.all([
-    owned(ctx, "workgraphs", owner, "workgraph_default"),
+    owned(ctx, "workgraphs", organization, owner, "workgraph_default"),
     ...specs.map(async (spec) => Promise.all(
-      (await snapshotRows(ctx, owner, spec.table, spec.recordType, resume.position, limit + 1))
+      (await snapshotRows(ctx, organization, owner, spec.table, spec.recordType, resume.position, limit + 1))
         .filter((row: any) => spec.recordType !== "admission_proposal" || row.source)
         .map(spec.dto),
     )),
@@ -383,6 +475,7 @@ async function snapshot(ctx: any, owner: string, input: Record<string, any>) {
     hasMore,
     ...(hasMore ? {
       nextCursor: createSnapshotResumeCursor({
+        organizationId: organization,
         ownerUserId: owner,
         snapshotCursor,
         offset: resume.offset + page.length,
@@ -395,6 +488,7 @@ async function snapshot(ctx: any, owner: string, input: Record<string, any>) {
 
 async function snapshotRows(
   ctx: any,
+  organization: string,
   owner: string,
   table: string,
   recordType: string,
@@ -403,17 +497,18 @@ async function snapshotRows(
 ) {
   const query = () => ctx.db.query(table)
   if (!position) {
-    return query().withIndex("by_owner_created_id", (q: any) => q.eq("owner_user_id", owner)).take(limit)
+    return query().withIndex("by_tenant_created_id", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner))
+      .filter((q: any) => q.eq(q.field("organization_id"), organization)).take(limit)
   }
   const sameTimestamp = recordType.localeCompare(position.recordType) < 0
     ? []
-    : await query().withIndex("by_owner_created_id", (q: any) => {
-      const range = q.eq("owner_user_id", owner).eq("created_at", position.createdAt)
+    : await query().withIndex("by_tenant_created_id", (q: any) => {
+      const range = q.eq("organization_id", organization).eq("owner_user_id", owner).eq("created_at", position.createdAt)
       return recordType === position.recordType ? range.gt("id", position.id) : range
-    }).take(limit)
-  const later = await query().withIndex("by_owner_created_id", (q: any) =>
-    q.eq("owner_user_id", owner).gt("created_at", position.createdAt)
-  ).take(limit)
+    }).filter((q: any) => q.eq(q.field("organization_id"), organization)).take(limit)
+  const later = await query().withIndex("by_tenant_created_id", (q: any) =>
+    q.eq("organization_id", organization).eq("owner_user_id", owner).gt("created_at", position.createdAt)
+  ).filter((q: any) => q.eq(q.field("organization_id"), organization)).take(limit)
   return [...sameTimestamp, ...later]
     .sort((left, right) => left.created_at - right.created_at || String(left.id).localeCompare(String(right.id)))
     .slice(0, limit)
@@ -428,17 +523,19 @@ function defaultsDto(row: any, owner: string) {
   }
 }
 
-async function changes(ctx: any, owner: string, kind: string, input: Record<string, any>) {
-  const after = input.after === undefined ? 0 : requireCursor(input.after)
+async function changes(ctx: any, organization: string, owner: string, kind: string, input: Record<string, any>) {
+  const streamId = kind === "stream_changes" ? requireText(input.streamId, "streamId") : undefined
+  const scope = streamId ? { type: "stream" as const, streamId } : { type: "all" as const }
+  const after = input.after === undefined ? 0 : readChangeCursor(input.after, organization, owner, scope)
   const limit = requireLimit(input.limit ?? 50)
   const rows = kind === "stream_changes"
-    ? await ctx.db.query("workgraph_changes").withIndex("by_owner_stream_cursor", (q: any) => q.eq("owner_user_id", owner).eq("stream_id", requireText(input.streamId, "streamId")).gt("cursor", after)).take(limit)
-    : await ctx.db.query("workgraph_changes").withIndex("by_owner_cursor", (q: any) => q.eq("owner_user_id", owner).gt("cursor", after)).take(limit)
+    ? await ctx.db.query("workgraph_changes").withIndex("by_tenant_stream_cursor", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("stream_id", streamId).gt("cursor", after)).filter((q: any) => q.eq(q.field("organization_id"), organization)).take(limit)
+    : await ctx.db.query("workgraph_changes").withIndex("by_tenant_cursor", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).gt("cursor", after)).filter((q: any) => q.eq(q.field("organization_id"), organization)).take(limit)
   return Promise.all(rows.map(async (row: any) => {
-    const event = await ctx.db.query("workgraph_events").withIndex("by_owner_operation", (q: any) => q.eq("owner_user_id", owner).eq("operation_id", row.operation_id)).unique()
+    const event = await ctx.db.query("workgraph_events").withIndex("by_tenant_operation", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("operation_id", row.operation_id)).filter((q: any) => q.eq(q.field("organization_id"), organization)).unique()
     if (!event) throw new Error(`Missing WorkGraph event for operation ${row.operation_id}`)
     return {
-      cursor: String(row.cursor), ownerUserId: owner, resource: { type: row.resource_type, id: row.resource_id },
+      cursor: createChangeCursor({ organizationId: organization, ownerUserId: owner, scope, position: row.cursor }), ownerUserId: owner, resource: { type: row.resource_type, id: row.resource_id },
       event: {
         schemaVersion: 1, id: event.id, ownerUserId: owner, ...(event.stream_id ? { streamId: event.stream_id } : {}),
         sequence: event.sequence, type: event.event_type, payload: event.payload,
@@ -450,13 +547,20 @@ async function changes(ctx: any, owner: string, kind: string, input: Record<stri
 }
 
 function streamDto(row: any, owner: string) {
+  const recap = RecapProfileDefaultsSchema.safeParse(row.recap_defaults ?? {})
+  const recapQuietHours = recap.success && recap.data.model && recap.data.effort ? recap.data.quietHours ?? 0 : 0
   return {
     recordType: "stream", schemaVersion: 1, ownerUserId: owner, version: row.row_version, createdAt: row.created_at, updatedAt: row.updated_at,
     provenance: recordProvenance(row), id: row.id, title: row.title, ...(row.description === undefined ? {} : { description: row.description }),
     lifecycleState: row.lifecycle_state, visibility: row.visibility, pinned: row.pinned, executionDefaults: row.execution_defaults ?? {},
     recapDefaults: row.recap_defaults ?? {}, ...(row.memory === undefined ? {} : { memory: row.memory }),
-    activity: Object.keys(row.activity ?? {}).length ? row.activity : { lastActivityAt: row.updated_at, recapDueAt: row.updated_at + 8 * 60 * 60 * 1000 },
-    ...(row.envelope === undefined ? {} : { envelope: row.envelope }), durableEffectCount: row.durable_effect_count,
+    activity: Object.keys(row.activity ?? {}).length ? row.activity : {
+      lastActivityAt: row.updated_at,
+      recapDueAt: row.updated_at + recapQuietHours * 60 * 60 * 1000,
+    },
+    ...(row.envelope === undefined ? {} : { envelope: row.envelope }),
+    ...(row.replacement_reset === undefined ? {} : { replacementReset: row.replacement_reset }),
+    durableEffectCount: row.durable_effect_count,
     sourceRevisionRefs: refs(row.source_revision_refs),
   }
 }
@@ -479,8 +583,9 @@ function outcomeDto(row: any, owner: string) {
   }
 }
 
-async function workItemDto(ctx: any, row: any, owner: string) {
-  const dependencies = await ctx.db.query("workgraph_work_item_dependencies").withIndex("by_owner_item", (q: any) => q.eq("owner_user_id", owner).eq("work_item_id", row.id)).collect()
+async function workItemDto(ctx: any, organization: string, row: any, owner: string) {
+  const dependencies = await ctx.db.query("workgraph_work_item_dependencies").withIndex("by_tenant_item", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("work_item_id", row.id))
+    .filter((q: any) => q.eq(q.field("organization_id"), organization)).collect()
   return {
     recordType: "work_item", ...base(row, owner), id: row.id, streamId: row.stream_id,
     ...(row.outcome_id === undefined ? {} : { outcomeId: row.outcome_id }), title: row.title,
@@ -514,8 +619,9 @@ function attemptDetailDto(row: any, owner: string) {
   })
 }
 
-async function decisionDto(ctx: any, row: any, owner: string) {
-  const affected = await ctx.db.query("workgraph_decision_work_items").withIndex("by_owner_decision", (q: any) => q.eq("owner_user_id", owner).eq("decision_id", row.id)).collect()
+async function decisionDto(ctx: any, organization: string, row: any, owner: string) {
+  const affected = await ctx.db.query("workgraph_decision_work_items").withIndex("by_tenant_decision", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner).eq("decision_id", row.id))
+    .filter((q: any) => q.eq(q.field("organization_id"), organization)).collect()
   return {
     recordType: "decision", ...base(row, owner), id: row.id, streamId: row.stream_id, state: row.state, question: row.question,
     options: row.options, ...(row.recommendation_option_id === undefined ? {} : { recommendationOptionId: row.recommendation_option_id }),
@@ -528,6 +634,10 @@ async function decisionDto(ctx: any, row: any, owner: string) {
 function recapDto(row: any, owner: string) {
   const invalidated = row.generation?.method === "deterministic_fallback" ||
     (row.generation?.state === "succeeded" && !row.generation?.sessionId)
+  const legacyModel = ModelSelectionSchema.safeParse(row.generation?.model)
+  const legacyEffort = typeof row.generation?.effort === "string" && row.generation.effort.trim()
+    ? row.generation.effort
+    : undefined
   return {
     recordType: "recap", schemaVersion: 1, ownerUserId: owner, version: 1, createdAt: row.created_at, updatedAt: row.created_at,
     provenance: recordProvenance(row), id: row.id, streamId: row.stream_id,
@@ -537,8 +647,8 @@ function recapDto(row: any, owner: string) {
     generation: invalidated
       ? {
           state: "invalidated",
-          model: row.generation?.model ?? { providerId: "opencode", modelId: "legacy" },
-          effort: row.generation?.effort ?? "unknown",
+          ...(legacyModel.success ? { model: legacyModel.data } : {}),
+          ...(legacyEffort ? { effort: legacyEffort } : {}),
           reason: "Retired deterministic Recap fallback is non-authoritative",
           source: "retired_non_session_generation",
         }
@@ -587,9 +697,9 @@ function camelPlacement(value: any) { return value.mode === "existing" ? { mode:
 function camelOutcome(value: any) { return { key: value.key, title: value.title, ...(value.description === undefined ? {} : { description: value.description }), successCriteria: value.successCriteria ?? value.success_criteria, execution: value.execution } }
 function camelItem(value: any) { return { key: value.key, ...(value.outcomeKey ?? value.outcome_key ? { outcomeKey: value.outcomeKey ?? value.outcome_key } : {}), title: value.title, ...(value.description === undefined ? {} : { description: value.description }), dependencyKeys: value.dependencyKeys ?? value.dependency_keys, completionContract: value.completionContract ?? value.completion_contract, execution: value.execution } }
 function requireText(value: unknown, field: string) { if (typeof value !== "string" || !value.trim()) throw new Error(`Invalid ${field}`); return value }
-function requireCursor(value: unknown) { const cursor = Number(value); if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error("Invalid cursor"); return cursor }
 function requireLimit(value: unknown) { const limit = Number(value); if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_PAGE) throw new Error("Invalid limit"); return limit }
 
-async function owned(ctx: any, table: string, owner: string, id: string) {
-  return ctx.db.query(table).withIndex("by_owner_id", (q: any) => q.eq("owner_user_id", owner).eq("id", id)).unique()
+async function owned(ctx: any, table: string, organization: string, owner: string, id: string) {
+  return ctx.db.query(table).withIndex("by_tenant", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner))
+    .filter((query: any) => query.eq(query.field("id"), id)).unique()
 }

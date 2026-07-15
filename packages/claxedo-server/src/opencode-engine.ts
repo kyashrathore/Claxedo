@@ -41,6 +41,8 @@ type EngineConfig = { mode: "external-url"; url: string; headers?: HeadersInit }
 // external engine and no config serves sessions in-process (R5). Only a
 // composition root ever writes this.
 let config: EngineConfig = { mode: "embedded" }
+let applicationTools: (() => Promise<Readonly<Record<string, OpenCodeApplicationToolRegistration>>>) | undefined
+let disposeApplicationTools: (() => Promise<void>) | undefined
 
 /**
  * Structured, actionable failure surfaced to consumers when the embedded engine
@@ -75,6 +77,29 @@ export function configureOpenCodeEngine(input: { url: string; headers?: HeadersI
 
 export function opencodeEngineMode(): OpenCodeEngineMode {
   return config.mode
+}
+
+export type OpenCodeApplicationToolRegistration = Readonly<{
+  description: string
+  inputSchema: Record<string, unknown>
+  outputSchema?: Record<string, unknown>
+  execute(
+    input: unknown,
+    context: Readonly<{
+      sessionID: string
+      agent: string
+      assistantMessageID: string
+      toolCallID: string
+    }>,
+  ): Promise<unknown>
+}>
+
+export function configureOpenCodeApplicationTools(
+  factory: (() => Promise<Readonly<Record<string, OpenCodeApplicationToolRegistration>>>) | undefined,
+) {
+  if (loadedModule && factory)
+    throw new Error("OpenCode application tools must be configured before the embedded engine starts")
+  applicationTools = factory
 }
 
 /**
@@ -120,6 +145,8 @@ async function embeddedHandler(): Promise<EmbeddedHandler> {
     try {
       const mod = await loader()
       loadedModule = mod
+      if (applicationTools)
+        disposeApplicationTools = await mod.ApplicationToolRuntime.register(await applicationTools())
       const handler = mod.Server.Default().app.fetch
       return handler as EmbeddedHandler
     } catch (cause) {
@@ -129,6 +156,7 @@ async function embeddedHandler(): Promise<EmbeddedHandler> {
       }
       // Reset so a later request (after the artifact is built) can retry.
       embeddedHandlerPromise = undefined
+      loadedModule = undefined
       throw new OpenCodeEngineUnavailableError(cause)
     }
   })()
@@ -173,8 +201,14 @@ export const opencodeRequest: OpenCodeRequestFn = async (request) => {
  */
 export async function drainOpenCodeEngine(): Promise<void> {
   if (!loadedModule) return
+  const module = loadedModule
+  const disposeTools = disposeApplicationTools
+  loadedModule = undefined
+  embeddedHandlerPromise = undefined
+  disposeApplicationTools = undefined
   try {
-    await loadedModule.InstanceRuntime.disposeAllInstances()
+    await disposeTools?.()
+    await module.InstanceRuntime.disposeAllInstances()
   } catch (err) {
     console.error("[opencode-engine] WARN  drain failed:", err)
   }
