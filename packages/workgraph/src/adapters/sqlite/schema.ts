@@ -69,6 +69,7 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
       provider TEXT NOT NULL,
       provider_user_id TEXT NOT NULL,
       filters_json TEXT NOT NULL,
+      target_json TEXT,
       refresh_policy_json TEXT NOT NULL DEFAULT '{}',
       sync_policy TEXT NOT NULL DEFAULT 'announce',
       status TEXT NOT NULL DEFAULT 'active',
@@ -780,6 +781,10 @@ export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
   }
   if (!streamColumns.some((column) => column.name === "activity_granularity")) {
     db.exec("ALTER TABLE wg_v2_streams ADD COLUMN activity_granularity TEXT NOT NULL DEFAULT 'progress'")
+  }
+  const sourceViewColumns = db.query("PRAGMA table_info(wg_v2_source_views)").all() as Array<{ name: string }>
+  if (!sourceViewColumns.some((column) => column.name === "target_json")) {
+    db.exec("ALTER TABLE wg_v2_source_views ADD COLUMN target_json TEXT")
   }
   const changeColumns = db.query("PRAGMA table_info(wg_v2_changes)").all() as Array<{ name: string }>
   if (!changeColumns.some((column) => column.name === "snapshot_relevant")) {

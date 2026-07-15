@@ -54,6 +54,7 @@ import * as SessionQueries from "@/features/session/data/sync/queries"
 import * as SessionCache from "@/features/session/data/sync/directory-session-cache"
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
 import * as DocWorkGraph from "@/app/integrations/doc-workgraph"
+import * as SettingsSourceViews from "@/app/integrations/settings-source-views"
 
 configureSessionAppPorts({
   useSDK: SDK.useSDK,
@@ -128,6 +129,7 @@ configureSettingsAppPorts({
   useCommand: Command.useCommand,
   DialogConnectIntegration: ConnectIntegration.DialogConnectIntegration,
   Link: LinkModule.Link,
+  useSettingsSourceViews: SettingsSourceViews.useSettingsSourceViews,
 })
 
 configureDocumentsAppPorts({

@@ -8,6 +8,9 @@ import type * as Models from "@/features/session/providers/models"
 import type * as Command from "@/app/providers/command"
 import type * as ConnectIntegration from "@/app/dialogs/connect-integration"
 import type * as LinkModule from "@/app/controls/link"
+import type * as SettingsSourceViews from "@/app/integrations/settings-source-views"
+
+export type SourceViewProject = SettingsSourceViews.SourceViewProject
 
 export type SettingsAppPorts = {
   useProviders: typeof Providers.useProviders
@@ -22,6 +25,7 @@ export type SettingsAppPorts = {
   useCommand: typeof Command.useCommand
   DialogConnectIntegration: typeof ConnectIntegration.DialogConnectIntegration
   Link: typeof LinkModule.Link
+  useSettingsSourceViews: typeof SettingsSourceViews.useSettingsSourceViews
 }
 
 let ports: SettingsAppPorts | undefined
@@ -51,3 +55,4 @@ export const parseKeybind = bind("parseKeybind")
 export const useCommand = bind("useCommand")
 export const DialogConnectIntegration = bind("DialogConnectIntegration")
 export const Link = bind("Link")
+export const useSettingsSourceViews = bind("useSettingsSourceViews")

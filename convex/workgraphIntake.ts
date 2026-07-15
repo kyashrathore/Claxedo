@@ -249,6 +249,7 @@ async function createSourceView(ctx: WriteCtx, organizationId: Id<"orgs">, owner
     provider,
     provider_user_id: requiredString(view.providerUserId, "view.providerUserId"),
     filters: sourceFilters(provider, view.filters),
+    ...(view.target === undefined ? {} : { target: sourceViewTarget(view.target) }),
     refresh_policy: {},
     sync_policy: syncPolicy(view.syncPolicy),
     status: "active",
@@ -268,6 +269,7 @@ async function updateSourceView(ctx: WriteCtx, organizationId: Id<"orgs">, owner
   const target = {
     providerUserId: requiredString(operation.providerUserId, "providerUserId"),
     filters: sourceFilters(sourceProvider(row.provider), operation.filters),
+    ...((operation.target ?? row.target) === undefined ? {} : { target: sourceViewTarget(operation.target ?? row.target) }),
     syncPolicy: syncPolicy(operation.syncPolicy),
     status: sourceViewStatus(operation.status),
   }
@@ -282,6 +284,7 @@ async function updateSourceView(ctx: WriteCtx, organizationId: Id<"orgs">, owner
     ...row,
     provider_user_id: target.providerUserId,
     filters: target.filters,
+    ...(target.target ? { target: target.target } : {}),
     sync_policy: target.syncPolicy,
     status: target.status,
     row_version: row.row_version + 1,
@@ -672,7 +675,7 @@ async function isOrgMember(ctx: Ctx, ownerUserId: Id<"users">, orgId: Id<"orgs">
     .unique()
 }
 
-function sourceViewDto(row: Pick<Doc<"workgraph_source_views">, "id" | "owner_user_id" | "team_connection_id" | "provider" | "provider_user_id" | "filters" | "sync_policy" | "status" | "row_version" | "created_at" | "updated_at">) {
+function sourceViewDto(row: Pick<Doc<"workgraph_source_views">, "id" | "owner_user_id" | "team_connection_id" | "provider" | "provider_user_id" | "filters" | "target" | "sync_policy" | "status" | "row_version" | "created_at" | "updated_at">) {
   return {
     id: row.id,
     ownerUserId: String(row.owner_user_id),
@@ -681,6 +684,7 @@ function sourceViewDto(row: Pick<Doc<"workgraph_source_views">, "id" | "owner_us
     provider: row.provider,
     providerUserId: row.provider_user_id,
     filters: row.filters,
+    ...(row.target ? { target: row.target } : {}),
     syncPolicy: row.sync_policy,
     status: row.status,
     createdAt: row.created_at,
@@ -822,15 +826,53 @@ async function requireSourceViewConnection(
 }
 
 function sameSourceView(
-  view: Pick<Doc<"workgraph_source_views">, "provider_user_id" | "filters" | "sync_policy" | "status">,
-  input: Readonly<{ providerUserId: string; filters: Record<string, string>; syncPolicy: string; status: string }>,
+  view: Pick<Doc<"workgraph_source_views">, "provider_user_id" | "filters" | "target" | "sync_policy" | "status">,
+  input: Readonly<{ providerUserId: string; filters: Record<string, string>; target?: unknown; syncPolicy: string; status: string }>,
 ) {
   const filters = object(view.filters, "Source View filters")
   return view.provider_user_id === input.providerUserId
     && view.sync_policy === input.syncPolicy
     && view.status === input.status
+    && JSON.stringify(view.target) === JSON.stringify(input.target)
     && Object.keys(filters).length === Object.keys(input.filters).length
     && Object.entries(filters).every(([key, value]) => input.filters[key] === value)
+}
+
+function sourceViewTarget(value: unknown) {
+  const target = object(value, "Source View target")
+  const environment = object(target.environment, "Source View target environment")
+  const repository = object(target.repository, "Source View target repository")
+  const kind = requiredString(environment.kind, "Source View target environment kind")
+  const baseRevision = requiredString(repository.baseRevision, "Source View target base revision")
+  if (kind === "local_worktree") {
+    return {
+      environment: { kind, directory: requiredString(environment.directory, "Source View target project directory") },
+      repository: {
+        ...(repository.remoteUrl === undefined ? {} : { remoteUrl: requiredUrl(repository.remoteUrl, "Source View target repository URL") }),
+        baseRevision,
+      },
+    }
+  }
+  if (kind !== "hosted_workspace") throw new Error("Source View target environment is unsupported")
+  const repositoryUrl = requiredUrl(environment.repositoryUrl, "Source View target repository URL")
+  return {
+    environment: { kind, repositoryUrl },
+    repository: {
+      remoteUrl: repository.remoteUrl === undefined ? repositoryUrl : requiredUrl(repository.remoteUrl, "Source View target remote URL"),
+      baseRevision,
+    },
+  }
+}
+
+function requiredUrl(value: unknown, name: string) {
+  const result = requiredString(value, name)
+  try {
+    const url = new URL(result)
+    if (url.username || url.password || secretValue(result)) throw new Error()
+    return url.toString()
+  } catch {
+    throw new Error(`${name} must be a credential-free URL`)
+  }
 }
 
 function admission(value: unknown) {

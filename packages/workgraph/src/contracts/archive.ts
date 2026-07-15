@@ -20,6 +20,7 @@ import {
   WorkGraphEventIDSchema,
   WorkGraphEventTypeSchema,
 } from "./events"
+import { SourceViewTargetSchema } from "./source-view"
 import {
   AttemptIDSchema,
   CompletionRequirementIDSchema,
@@ -157,6 +158,7 @@ const SourceViewArchiveValueSchema = z.strictObject({
   provider: z.enum(["github", "linear", "jira"]),
   providerUserId: text,
   filters: z.record(z.string(), z.string()),
+  target: SourceViewTargetSchema.optional(),
   syncPolicy: z.enum(["silent", "announce", "full"]),
   status: z.enum(["active", "paused"]),
 })

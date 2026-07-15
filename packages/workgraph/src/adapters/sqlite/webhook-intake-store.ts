@@ -69,6 +69,7 @@ function sourceView(row: SourceViewRow): SourceView {
     provider: row.provider as SourceView["provider"],
     providerUserId: row.provider_user_id,
     filters: JSON.parse(row.filters_json) as Record<string, string>,
+    ...(row.target_json ? { target: JSON.parse(row.target_json) as SourceView["target"] } : {}),
     syncPolicy: row.sync_policy as SourceView["syncPolicy"],
     status: row.status as SourceView["status"],
     createdAt: Number(row.created_at),
@@ -83,6 +84,7 @@ type SourceViewRow = Readonly<{
   provider: string
   provider_user_id: string
   filters_json: string
+  target_json: string | null
   sync_policy: string
   status: string
   row_version: number

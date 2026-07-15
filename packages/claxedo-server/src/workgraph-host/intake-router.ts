@@ -48,6 +48,7 @@ type SourceViews = Readonly<{
     provider: "github" | "linear" | "jira"
     providerUserId: string
     filters: Readonly<Record<string, string>>
+    target?: SourceView["target"]
     syncPolicy?: "silent" | "announce" | "full"
   }): Promise<SourceView>
   update(context: WorkGraphContext, id: string, input: z.infer<typeof UpdateSourceViewInputSchema>): Promise<SourceView>

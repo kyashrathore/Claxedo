@@ -64,6 +64,7 @@ describe("WorkGraph intake router", () => {
       provider: "github" as const,
       providerUserId: "octocat",
       filters: { repo: "claxedo/cloud" },
+      target: { environment: { kind: "hosted_workspace" as const, repositoryUrl: "https://github.com/claxedo/cloud.git" }, repository: { remoteUrl: "https://github.com/claxedo/cloud.git", baseRevision: "dev" } },
       syncPolicy: "announce" as const,
       status: "paused" as const,
       createdAt: 1,
@@ -105,7 +106,7 @@ describe("WorkGraph intake router", () => {
     const updated = await router.request("http://workgraph.test/source-views/view_1", {
       method: "PUT",
       headers: json,
-      body: JSON.stringify({ expectedVersion: 1, providerUserId: "octocat", filters: { repo: "claxedo/cloud" }, syncPolicy: "announce", status: "paused" }),
+      body: JSON.stringify({ expectedVersion: 1, providerUserId: "octocat", filters: { repo: "claxedo/cloud" }, target: sourceView.target, syncPolicy: "announce", status: "paused" }),
     })
     const deleted = await router.request("http://workgraph.test/source-views/view_1", {
       method: "DELETE",
@@ -128,7 +129,7 @@ describe("WorkGraph intake router", () => {
     expect(await updated.json()).toMatchObject({ id: "view_1", version: 2, status: "paused" })
     expect(await restored.json()).toMatchObject({ id: "candidate_1", version: 3, state: "unorganized" })
     expect(calls).toEqual([
-      { action: "update", id: "view_1", input: { expectedVersion: 1, providerUserId: "octocat", filters: { repo: "claxedo/cloud" }, syncPolicy: "announce", status: "paused" } },
+      { action: "update", id: "view_1", input: { expectedVersion: 1, providerUserId: "octocat", filters: { repo: "claxedo/cloud" }, target: sourceView.target, syncPolicy: "announce", status: "paused" } },
       { action: "delete", id: "view_1", expectedVersion: 2 },
       { action: "dismiss", id: "candidate_1", expectedVersion: 1 },
       { action: "restore", id: "candidate_1", expectedVersion: 2 },

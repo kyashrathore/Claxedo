@@ -482,6 +482,10 @@ describe("WorkGraph API", () => {
       provider: "github",
       providerUserId: "octocat",
       filters: { repo: "claxedo/cloud" },
+      target: {
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/cloud.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/cloud.git", baseRevision: "dev" },
+      },
       syncPolicy: "announce",
       status: "paused",
       createdAt: 1,
@@ -508,10 +512,19 @@ describe("WorkGraph API", () => {
       },
     })
 
+    await client.createSourceView({
+      teamConnectionId: "connection_1" as never,
+      provider: "github",
+      providerUserId: "octocat",
+      filters: { repo: "claxedo/cloud" },
+      target: sourceView.target,
+      syncPolicy: "announce",
+    })
     await client.updateSourceView("view_1", {
       expectedVersion: 1,
       providerUserId: "octocat",
       filters: { repo: "claxedo/cloud" },
+      target: sourceView.target,
       syncPolicy: "announce",
       status: "paused",
     })
@@ -520,7 +533,8 @@ describe("WorkGraph API", () => {
     await client.restoreIntakeCandidate("candidate_1", 2)
 
     expect(calls).toEqual([
-      { path: "/api/workgraph/source-views/view_1", method: "PUT", body: { expectedVersion: 1, providerUserId: "octocat", filters: { repo: "claxedo/cloud" }, syncPolicy: "announce", status: "paused" } },
+      { path: "/api/workgraph/source-views", method: "POST", body: { teamConnectionId: "connection_1", provider: "github", providerUserId: "octocat", filters: { repo: "claxedo/cloud" }, target: sourceView.target, syncPolicy: "announce" } },
+      { path: "/api/workgraph/source-views/view_1", method: "PUT", body: { expectedVersion: 1, providerUserId: "octocat", filters: { repo: "claxedo/cloud" }, target: sourceView.target, syncPolicy: "announce", status: "paused" } },
       { path: "/api/workgraph/source-views/view_1", method: "DELETE", body: { expectedVersion: 2 } },
       { path: "/api/workgraph/intake/candidate_1/dismiss", method: "POST", body: { expectedVersion: 1 } },
       { path: "/api/workgraph/intake/candidate_1/restore", method: "POST", body: { expectedVersion: 2 } },

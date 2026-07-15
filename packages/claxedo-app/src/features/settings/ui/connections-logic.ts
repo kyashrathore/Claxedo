@@ -8,6 +8,13 @@
  * into error strings, and are cleared on success and on reset().
  */
 import { createStore } from "solid-js/store"
+import {
+  SourceViewTargetSchema,
+  type CreateSourceViewInput,
+  type SourceViewDto,
+  type SourceViewRefreshResponse,
+  type UpdateSourceViewInput,
+} from "@claxedo/workgraph/contracts"
 
 export type IntegrationPrompt = {
   id: string
@@ -136,6 +143,99 @@ export function createConnectionsStore(options: { request: ConnectionsRequest })
 }
 
 export type ConnectionsStore = ReturnType<typeof createConnectionsStore>
+
+export type SourceViewsPort = {
+  list: () => Promise<{ sourceViews: SourceViewDto[] }>
+  create: (input: CreateSourceViewInput) => Promise<SourceViewDto>
+  update: (id: string, input: UpdateSourceViewInput) => Promise<SourceViewDto>
+  delete: (id: string, expectedVersion: number) => Promise<SourceViewDto>
+  refresh: (id: string) => Promise<SourceViewRefreshResponse>
+}
+
+export function createSourceViewsStore(port: SourceViewsPort) {
+  const [state, setState] = createStore({
+    loading: false,
+    loaded: false,
+    error: undefined as string | undefined,
+    busy: undefined as string | undefined,
+    views: [] as SourceViewDto[],
+    refreshResult: {} as Record<string, string>,
+  })
+
+  async function load() {
+    setState({ loading: true, error: undefined })
+    try {
+      const result = await port.list()
+      setState({ loading: false, loaded: true, views: result.sourceViews })
+    } catch (error) {
+      setState({ loading: false, error: sourceViewError(error) })
+    }
+  }
+
+  async function mutate(id: string, operation: () => Promise<SourceViewDto>) {
+    setState({ busy: id, error: undefined })
+    try {
+      const view = await operation()
+      setState("views", (current) => current.some((entry) => entry.id === view.id)
+        ? current.map((entry) => entry.id === view.id ? view : entry)
+        : [...current, view])
+      return true
+    } catch (error) {
+      setState("error", sourceViewError(error))
+      return false
+    } finally {
+      setState("busy", undefined)
+    }
+  }
+
+  const create = (input: CreateSourceViewInput) => mutate("new", () => port.create(input))
+  const update = (view: SourceViewDto, input: Omit<UpdateSourceViewInput, "expectedVersion">) =>
+    mutate(view.id, () => port.update(view.id, {
+      ...input,
+      filters: Object.fromEntries(Object.entries(input.filters)),
+      ...(input.target ? { target: SourceViewTargetSchema.parse(input.target) } : {}),
+      expectedVersion: view.version,
+    }))
+  const remove = async (view: SourceViewDto) => {
+    setState({ busy: view.id, error: undefined })
+    try {
+      await port.delete(view.id, view.version)
+      setState("views", (current) => current.filter((entry) => entry.id !== view.id))
+      return true
+    } catch (error) {
+      setState("error", sourceViewError(error))
+      return false
+    } finally {
+      setState("busy", undefined)
+    }
+  }
+  const refresh = async (view: SourceViewDto) => {
+    setState({ busy: view.id, error: undefined })
+    try {
+      const result = await port.refresh(view.id)
+      setState("refreshResult", view.id, `${result.created} new · ${result.updated} updated`)
+      return true
+    } catch (error) {
+      setState("error", sourceViewError(error))
+      return false
+    } finally {
+      setState("busy", undefined)
+    }
+  }
+
+  return { state, load, create, update, remove, refresh }
+}
+
+function sourceViewError(error: unknown) {
+  if (!error || typeof error !== "object") return "Source view request failed"
+  if ("code" in error && error.code === "source_issue_provider_unauthorized") return "This account needs to be reconnected before issues can refresh."
+  if ("code" in error && error.code === "source_view_version_conflict") return "This source view changed elsewhere. Reload and try again."
+  if ("code" in error && typeof error.code === "string" && (error.code.startsWith("source_issue_") || error.code.startsWith("source_view_"))) {
+    return "The issue source could not be updated. Check the account and mapping, then try again."
+  }
+  if ("message" in error && typeof error.message === "string") return error.message
+  return "Source view request failed"
+}
 
 // ── Connect flow ────────────────────────────────────────────────────────────
 

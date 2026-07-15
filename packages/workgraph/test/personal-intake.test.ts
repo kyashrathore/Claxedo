@@ -10,6 +10,7 @@ import {
   RequestIDSchema,
   readIntakeCandidatePageCursor,
   StreamIDSchema,
+  type WorkGraphCommandRequest,
   type WorkGraphContext,
 } from "../src/contracts"
 import { createGitHubSourceIssueConnector } from "../src/connectors/github/source-view"
@@ -47,6 +48,16 @@ describe("Connections-backed personal intake", () => {
     Reflect.set(nestedCredential, "metadata", { authorization: "Bearer connection-secret" })
     await expect(create(nestedCredential)).rejects.toBeInstanceOf(SourceViewFilterError)
     await expect(create({ project: "cloud" })).rejects.toThrow('Supported filters: repo, state, labels')
+    await expect(sourceViews.create(context("alice"), {
+      teamConnectionId,
+      provider: "github",
+      providerUserId: "alice-gh",
+      filters: { repo: "acme/cloud" },
+      target: {
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://secret-token@github.com/acme/cloud.git" },
+        repository: { remoteUrl: "https://secret-token@github.com/acme/cloud.git", baseRevision: "HEAD" },
+      },
+    })).rejects.toThrow("credential material")
     expect(state.viewRows.size).toBe(0)
   })
 
@@ -88,6 +99,56 @@ describe("Connections-backed personal intake", () => {
     expect(await sourceViews.update(context("alice"), created.id, update)).toEqual(updated)
     await expect(sourceViews.update(context("alice"), created.id, { ...update, status: "active" }))
       .rejects.toBeInstanceOf(SourceViewVersionConflictError)
+  })
+
+  it("infers a GitHub Stream target and carries it into external candidate admission", async () => {
+    const provider = await fakeProvider((_request, response) => {
+      response.setHeader("content-type", "application/json")
+      response.end(JSON.stringify({ items: [{ id: 1001, number: 1, title: "Mapped issue", body: "Ship it", state: "open", updated_at: "2026-07-13T00:00:00Z" }] }))
+    })
+    const state = memoryState()
+    const sourceViews = createSourceViewService({ store: state.views, connections: teamConnections("shared-team-token"), ids: ids("view"), clock: fixedClock })
+    const view = await sourceViews.create(context("alice"), {
+      teamConnectionId,
+      provider: "github",
+      providerUserId: "alice-gh",
+      filters: { repo: "acme/cloud" },
+    })
+    const requests: WorkGraphCommandRequest[] = []
+    const commands: Parameters<typeof createIntakeService>[0]["commands"] = {
+      execute: async (_context, request) => {
+        requests.push(request)
+        return commandResult(request)
+      },
+    }
+    const intake = intakeService(state, teamConnections("shared-team-token"), provider, { commands })
+    const refreshed = await intake.refresh(context("alice"), view.id)
+    await intake.stage(context("alice"), refreshed.candidates[0]!.id)
+
+    expect(view.target).toEqual({
+      environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/acme/cloud.git" },
+      repository: { remoteUrl: "https://github.com/acme/cloud.git", baseRevision: "HEAD" },
+    })
+    expect(requests.find((request) => request.command.type === "propose_admission")?.command).toMatchObject({ execution: view.target })
+  })
+
+  it("refuses external admission until its Source View has a Stream target", async () => {
+    const provider = await fakeProvider((_request, response) => {
+      response.setHeader("content-type", "application/json")
+      response.end(JSON.stringify({ items: [{ id: 1002, number: 2, title: "Unmapped issue", body: "Map me", state: "open", updated_at: "2026-07-13T00:00:00Z" }] }))
+    })
+    const state = memoryState()
+    const sourceViews = createSourceViewService({ store: state.views, connections: teamConnections("shared-team-token"), ids: ids("view"), clock: fixedClock })
+    const view = await sourceViews.create(context("alice"), {
+      teamConnectionId,
+      provider: "github",
+      providerUserId: "alice-gh",
+      filters: {},
+    })
+    const intake = intakeService(state, teamConnections("shared-team-token"), provider)
+    const refreshed = await intake.refresh(context("alice"), view.id)
+
+    await expect(intake.stage(context("alice"), refreshed.candidates[0]!.id)).rejects.toThrow("requires a Stream target")
   })
 
   it("dismisses and restores only unorganized candidates with version fencing", async () => {
@@ -178,6 +239,8 @@ describe("Connections-backed personal intake", () => {
 
     expect(alice.candidates.map((candidate) => candidate.title)).toEqual(["alice issue"])
     expect(bob.candidates.map((candidate) => candidate.title)).toEqual(["bob issue"])
+    expect(aliceView.target?.repository.remoteUrl).toBe("https://github.com/acme/alice.git")
+    expect(bobView.target?.repository.remoteUrl).toBe("https://github.com/acme/bob.git")
     expect(await intake.list(context("alice"))).toHaveLength(1)
     expect(await intake.list(context("bob"))).toHaveLength(1)
     expect(observed.every((entry) => entry.authorization === "Bearer shared-team-token")).toBe(true)
@@ -412,6 +475,7 @@ function memoryState() {
       const same = current.providerUserId === input.providerUserId
         && current.syncPolicy === input.syncPolicy
         && current.status === input.status
+        && JSON.stringify(current.target) === JSON.stringify(input.target)
         && Object.keys(current.filters).length === Object.keys(input.filters).length
         && Object.entries(current.filters).every(([name, value]) => input.filters[name] === value)
       if (current.version !== input.expectedVersion) {
@@ -422,6 +486,7 @@ function memoryState() {
         ...current,
         providerUserId: input.providerUserId,
         filters: input.filters,
+        ...(input.target ? { target: input.target } : {}),
         syncPolicy: input.syncPolicy,
         status: input.status,
         version: current.version + 1,

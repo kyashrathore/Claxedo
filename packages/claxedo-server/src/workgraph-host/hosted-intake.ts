@@ -17,6 +17,7 @@ import type { ConnectionWebhookVerifier } from "@claxedo/connections"
 import {
   IntakeCandidatePageCursorError,
   IntakeCandidatePageSchema,
+  SourceViewTargetSchema,
   type AdmissionProposalID,
   type CommandResult,
   type IntakeCandidatePageCursorErrorReason,
@@ -229,6 +230,7 @@ function sourceView(value: unknown): SourceView {
     provider: provider(row.provider),
     providerUserId: requiredString(row.providerUserId, "providerUserId"),
     filters: stringRecord(row.filters, "filters"),
+    ...(row.target === undefined ? {} : { target: SourceViewTargetSchema.parse(row.target) }),
     syncPolicy: syncPolicy(row.syncPolicy),
     status: row.status === "paused" ? "paused" : row.status === "active" ? "active" : invalid("status"),
     createdAt: number(row.createdAt, "createdAt"),
@@ -246,6 +248,7 @@ function ownedSourceView(value: unknown, context: WorkGraphContext): SourceView 
     provider: provider(row.provider),
     providerUserId: requiredString(row.providerUserId, "providerUserId"),
     filters: stringRecord(row.filters, "filters"),
+    ...(row.target === undefined ? {} : { target: SourceViewTargetSchema.parse(row.target) }),
     syncPolicy: syncPolicy(row.syncPolicy),
     status: row.status === "paused" ? "paused" : row.status === "active" ? "active" : invalid("status"),
     createdAt: number(row.createdAt, "createdAt"),

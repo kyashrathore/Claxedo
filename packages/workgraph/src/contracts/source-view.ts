@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { AdmissionProposalIDSchema } from "./commands"
-import { ExecutionProfileDefaultsSchema } from "./execution"
+import { ExecutionEnvironmentSchema, ExecutionProfileDefaultsSchema, RepositoryTargetSchema, executionEnvironmentHasTarget } from "./execution"
 import { ConnectionIDSchema } from "./ids"
 import { WorkSourceRevisionRefSchema } from "./work-source"
 
@@ -16,6 +16,12 @@ export type SourceSyncPolicy = z.infer<typeof SourceSyncPolicySchema>
 export const SourceViewStatusSchema = z.enum(["active", "paused"])
 export type SourceViewStatus = z.infer<typeof SourceViewStatusSchema>
 
+export const SourceViewTargetSchema = z.strictObject({
+  environment: ExecutionEnvironmentSchema.refine(executionEnvironmentHasTarget, "Source View environment requires a project target"),
+  repository: RepositoryTargetSchema,
+})
+export type SourceViewTarget = z.infer<typeof SourceViewTargetSchema>
+
 export const SourceViewDtoSchema = z.strictObject({
   id: text,
   ownerUserId: text,
@@ -24,6 +30,7 @@ export const SourceViewDtoSchema = z.strictObject({
   provider: SourceProviderSchema,
   providerUserId: text,
   filters: z.record(z.string(), z.string()),
+  target: SourceViewTargetSchema.optional(),
   syncPolicy: SourceSyncPolicySchema,
   status: SourceViewStatusSchema,
   createdAt: timestamp,
@@ -36,6 +43,7 @@ export const CreateSourceViewInputSchema = z.strictObject({
   provider: SourceProviderSchema,
   providerUserId: text,
   filters: z.record(z.string(), z.string()).default({}),
+  target: SourceViewTargetSchema.optional(),
   syncPolicy: SourceSyncPolicySchema.optional(),
 })
 export type CreateSourceViewInput = z.infer<typeof CreateSourceViewInputSchema>
@@ -44,6 +52,7 @@ export const UpdateSourceViewInputSchema = z.strictObject({
   expectedVersion: z.number().int().positive(),
   providerUserId: text,
   filters: z.record(z.string(), z.string()),
+  target: SourceViewTargetSchema.optional(),
   syncPolicy: SourceSyncPolicySchema,
   status: SourceViewStatusSchema,
 })
@@ -89,3 +98,4 @@ export const SourceViewRefreshResponseSchema = z.strictObject({
   updated: z.number().int().nonnegative(),
   candidates: z.array(IntakeCandidateDtoSchema),
 })
+export type SourceViewRefreshResponse = z.infer<typeof SourceViewRefreshResponseSchema>

@@ -221,6 +221,10 @@ describe("Convex WorkGraph intake", () => {
       provider: "github",
       providerUserId: "octocat",
       filters: { repo: "claxedo/cloud" },
+      target: {
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/cloud.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/cloud.git", baseRevision: "dev" },
+      },
       syncPolicy: "announce",
       createdAt: 10,
       updatedAt: 10,
@@ -238,7 +242,7 @@ describe("Convex WorkGraph intake", () => {
     }
     await expect(applyWorkGraphIntakeOperation(harness as never, "owner_a" as never, update)).resolves.toMatchObject({
       ok: true,
-      view: { version: 2, providerUserId: "octocat-updated", status: "paused" },
+      view: { version: 2, providerUserId: "octocat-updated", status: "paused", target: view.target },
     })
     await expect(applyWorkGraphIntakeOperation(harness as never, "owner_a" as never, {
       ...update,

@@ -91,6 +91,7 @@ export async function exportWorkGraphArchive(ctx: any, organization: string, own
     ...rows.workgraph_source_views.map((row) => record("source_view", row.id, {
       ...storedBase(row), workgraphId: row.workgraph_id, teamConnectionId: row.team_connection_id,
       provider: row.provider, providerUserId: row.provider_user_id, filters: row.filters,
+      ...(row.target ? { target: row.target } : {}),
       syncPolicy: row.sync_policy, status: row.status,
     })),
     ...rows.workgraph_intake_candidates.map((row) => record("intake_candidate", row.id, candidateValue(row))),
@@ -489,7 +490,7 @@ async function insertRecord(ctx: any, organization: string, owner: string, recor
   if (record.kind === "work_source_revision") return ctx.db.insert("work_source_revisions", { organization_id: organization, owner_user_id: owner, id: record.id, work_source_id: value.workSourceId, revision_number: value.revisionNumber, content: value.content, content_hash: value.contentHash, origin: value.origin, created_by: value.createdBy, schema_version: value.schemaVersion, created_at: value.createdAt })
   if (record.kind === "source_view") {
     if (connectionOrgs.get(record.id) !== organization) throw new Error("Source View Connection organization mismatch")
-    return ctx.db.insert("workgraph_source_views", { organization_id: organization, owner_user_id: owner, id: record.id, workgraph_id: value.workgraphId, team_connection_id: value.teamConnectionId, provider: value.provider, provider_user_id: value.providerUserId, filters: value.filters, sync_policy: value.syncPolicy, status: value.status, ...physicalBase(value) })
+    return ctx.db.insert("workgraph_source_views", { organization_id: organization, owner_user_id: owner, id: record.id, workgraph_id: value.workgraphId, team_connection_id: value.teamConnectionId, provider: value.provider, provider_user_id: value.providerUserId, filters: value.filters, ...(value.target ? { target: value.target } : {}), sync_policy: value.syncPolicy, status: value.status, ...physicalBase(value) })
   }
   if (record.kind === "intake_candidate") return ctx.db.insert("workgraph_intake_candidates", { organization_id: organization, owner_user_id: owner, id: record.id, workgraph_id: value.workgraphId, ...(value.sourceViewId ? { source_view_id: value.sourceViewId } : {}), candidate_kind: value.candidateKind, title: value.title, body: value.body, normalized: candidateNormalized(value), status: value.state, ...(value.observedRevision ? { observed_revision: value.observedRevision } : {}), ...physicalBase(value) })
   if (record.kind === "external_identity") return ctx.db.insert("workgraph_external_identities", { organization_id: organization, owner_user_id: owner, id: record.id, ...(value.intakeCandidateId ? { intake_candidate_id: value.intakeCandidateId } : {}), provider: value.provider, team_connection_id: value.teamConnectionId, external_id: value.externalId, ...(value.externalKey ? { external_key: value.externalKey } : {}), ...(value.externalUrl ? { external_url: value.externalUrl } : {}), ...(value.observedRevision ? { observed_revision: value.observedRevision } : {}), metadata: value.metadata, schema_version: value.schemaVersion, created_at: value.createdAt, updated_at: value.updatedAt })

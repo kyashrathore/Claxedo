@@ -2,6 +2,7 @@ import type {
   ConnectionID,
   SourceProvider as ContractSourceProvider,
   SourceSyncPolicy as ContractSourceSyncPolicy,
+  SourceViewTarget,
   SourceViewDto,
   WorkGraphContext,
 } from "../contracts"
@@ -21,6 +22,7 @@ export type SourceView = Readonly<SourceViewDto>
 export type SourceViewMutableInput = Readonly<{
   providerUserId: string
   filters: Readonly<Record<string, string>>
+  target?: SourceViewTarget
   syncPolicy: SourceSyncPolicy
   status: "active" | "paused"
 }>
@@ -61,11 +63,14 @@ export function createSourceViewService(input: Readonly<{
       provider: SourceProvider
       providerUserId: string
       filters: Readonly<Record<string, string>>
+      target?: SourceViewTarget
       syncPolicy?: SourceSyncPolicy
     }>) {
       requireOwner(context)
       await requireConnection(input.connections, context, request)
       const now = clock.now()
+      const filters = sanitizeSourceViewFilters(request.provider, request.filters)
+      const target = validateSourceViewTarget(request.target) ?? inferredGitHubTarget(request.provider, filters)
       return input.store.create(context, {
         id: input.ids.next(),
         ownerUserId: context.ownerUserId,
@@ -73,7 +78,8 @@ export function createSourceViewService(input: Readonly<{
         teamConnectionId: request.teamConnectionId,
         provider: request.provider,
         providerUserId: required(request.providerUserId, "providerUserId"),
-        filters: sanitizeSourceViewFilters(request.provider, request.filters),
+        filters,
+        ...(target ? { target } : {}),
         syncPolicy: request.syncPolicy ?? "announce",
         status: "active",
         createdAt: now,
@@ -84,9 +90,11 @@ export function createSourceViewService(input: Readonly<{
       requireOwner(context)
       const current = await input.store.read(context, required(id, "sourceViewId"))
       if (!current) throw new SourceViewNotFoundError()
+      const sourceTarget = request.target ?? current.target
       const target = {
         providerUserId: required(request.providerUserId, "providerUserId"),
         filters: sanitizeSourceViewFilters(current.provider, request.filters),
+        ...(sourceTarget ? { target: validateSourceViewTarget(sourceTarget) } : {}),
         syncPolicy: syncPolicy(request.syncPolicy),
         status: sourceViewStatus(request.status),
       }
@@ -109,6 +117,29 @@ export function createSourceViewService(input: Readonly<{
     read: (context: WorkGraphContext, id: string) => input.store.read(context, id),
     list: (context: WorkGraphContext) => input.store.list(context),
   }
+}
+
+function inferredGitHubTarget(provider: SourceProvider, filters: Readonly<Record<string, string>>): SourceViewTarget | undefined {
+  if (provider !== "github" || !/^[^/\s]+\/[^/\s]+$/.test(filters.repo ?? "")) return
+  const repositoryUrl = `https://github.com/${filters.repo}.git`
+  return {
+    environment: { kind: "hosted_workspace", repositoryUrl },
+    repository: { remoteUrl: repositoryUrl, baseRevision: "HEAD" },
+  }
+}
+
+function validateSourceViewTarget(target: SourceViewTarget | undefined) {
+  if (!target) return
+  rejectSecretMaterial(target)
+  const urls = [
+    target.environment.kind === "hosted_workspace" ? target.environment.repositoryUrl : undefined,
+    target.repository.remoteUrl,
+  ].filter((value): value is string => !!value)
+  if (urls.some((value) => {
+    const url = new URL(value)
+    return !!url.username || !!url.password
+  })) throw new SourceViewFilterError("Source View targets cannot contain credential material")
+  return target
 }
 
 export function providerMatchesIntegration(provider: SourceProvider, integrationId: string) {
@@ -179,6 +210,7 @@ function sameMutableSourceView(view: SourceView, input: SourceViewMutableInput) 
   return view.providerUserId === input.providerUserId
     && view.syncPolicy === input.syncPolicy
     && view.status === input.status
+    && JSON.stringify(view.target) === JSON.stringify(input.target)
     && Object.keys(view.filters).length === Object.keys(input.filters).length
     && Object.entries(view.filters).every(([key, value]) => input.filters[key] === value)
 }

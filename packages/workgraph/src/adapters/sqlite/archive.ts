@@ -214,8 +214,8 @@ export function createSqliteWorkGraphArchivePort(
         records.filter(kind("source_view")).forEach((record) => database.prepare(`
           INSERT INTO wg_v2_source_views
             (organization_id, owner_user_id, id, workgraph_id, team_connection_id, provider, provider_user_id,
-             filters_json, sync_policy, status, row_version, schema_version, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             filters_json, target_json, sync_policy, status, row_version, schema_version, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           context.organizationId, context.ownerUserId,
           record.id,
@@ -224,6 +224,7 @@ export function createSqliteWorkGraphArchivePort(
           record.value.provider,
           record.value.providerUserId,
           JSON.stringify(record.value.filters),
+          record.value.target ? JSON.stringify(record.value.target) : null,
           record.value.syncPolicy,
           record.value.status,
           record.value.version,
@@ -833,6 +834,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       provider: string(row.provider),
       providerUserId: string(row.provider_user_id),
       filters: json(row.filters_json),
+      ...(row.target_json === null ? {} : { target: json(row.target_json) }),
       syncPolicy: string(row.sync_policy),
       status: string(row.status),
     },

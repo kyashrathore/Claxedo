@@ -36,8 +36,8 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
         database.prepare(`
           INSERT INTO wg_v2_source_views
             (organization_id, owner_user_id, id, workgraph_id, team_connection_id, provider, provider_user_id,
-             filters_json, sync_policy, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             filters_json, target_json, sync_policy, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           context.organizationId, context.ownerUserId,
           view.id,
@@ -46,6 +46,7 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
           view.provider,
           view.providerUserId,
           JSON.stringify(filters),
+          view.target ? JSON.stringify(view.target) : null,
           view.syncPolicy,
           view.status,
           view.createdAt,
@@ -74,20 +75,22 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
         if (!row) return { ok: false as const, reason: "not_found" as const }
         const filters = sanitizeSourceViewFilters(row.provider as SourceView["provider"], input.filters)
         const current = sourceView(row)!
+        const target = input.target ?? current.target
         if (row.row_version !== input.expectedVersion) {
-          if (row.row_version === input.expectedVersion + 1 && sameSourceView(current, { ...input, filters })) {
+          if (row.row_version === input.expectedVersion + 1 && sameSourceView(current, { ...input, filters, ...(target ? { target } : {}) })) {
             return { ok: true as const, view: current }
           }
           return { ok: false as const, reason: "version_conflict" as const }
         }
         const result = database.prepare(`
           UPDATE wg_v2_source_views SET
-            provider_user_id = ?, filters_json = ?, sync_policy = ?, status = ?,
+            provider_user_id = ?, filters_json = ?, target_json = ?, sync_policy = ?, status = ?,
             row_version = row_version + 1, updated_at = ?
           WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
         `).run(
           input.providerUserId,
           JSON.stringify(filters),
+          target ? JSON.stringify(target) : null,
           input.syncPolicy,
           input.status,
           input.updatedAt,
@@ -450,6 +453,7 @@ function sourceView(row: SourceViewRow | undefined): SourceView | undefined {
     provider: row.provider as SourceView["provider"],
     providerUserId: row.provider_user_id,
     filters: JSON.parse(row.filters_json) as Record<string, string>,
+    ...(row.target_json ? { target: JSON.parse(row.target_json) as SourceView["target"] } : {}),
     syncPolicy: row.sync_policy as SourceView["syncPolicy"],
     status: row.status as SourceView["status"],
     createdAt: Number(row.created_at),
@@ -516,10 +520,11 @@ function normalized(value: ExternalIntakeCandidate) {
   }
 }
 
-function sameSourceView(view: SourceView, input: Pick<SourceView, "providerUserId" | "filters" | "syncPolicy" | "status">) {
+function sameSourceView(view: SourceView, input: Pick<SourceView, "providerUserId" | "filters" | "target" | "syncPolicy" | "status">) {
   return view.providerUserId === input.providerUserId
     && view.syncPolicy === input.syncPolicy
     && view.status === input.status
+    && JSON.stringify(view.target) === JSON.stringify(input.target)
     && Object.keys(view.filters).length === Object.keys(input.filters).length
     && Object.entries(view.filters).every(([key, value]) => input.filters[key] === value)
 }
@@ -539,6 +544,7 @@ type SourceViewRow = Readonly<{
   provider: string
   provider_user_id: string
   filters_json: string
+  target_json: string | null
   sync_policy: string
   status: string
   row_version: number

@@ -569,6 +569,10 @@ function canonicalRecords() {
         provider: "github",
         providerUserId: "octocat",
         filters: { repo: "claxedo/claxedo" },
+        target: {
+          environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/claxedo.git" },
+          repository: { remoteUrl: "https://github.com/claxedo/claxedo.git", baseRevision: "dev" },
+        },
         syncPolicy: "announce",
         status: "active",
       },

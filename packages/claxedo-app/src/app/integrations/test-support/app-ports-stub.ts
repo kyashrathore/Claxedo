@@ -125,6 +125,7 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   useCommand: lazy("@/app/providers/command", "useCommand"),
   DialogConnectIntegration: lazy("@/app/dialogs/connect-integration", "DialogConnectIntegration"),
   Link: lazy("@/app/controls/link", "Link"),
+  useSettingsSourceViews: lazy("@/app/integrations/settings-source-views", "useSettingsSourceViews"),
 }
 
 const documentsThunks: Thunks<DocumentsAppPorts> = {

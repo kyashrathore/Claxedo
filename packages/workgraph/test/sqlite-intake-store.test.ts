@@ -138,6 +138,7 @@ describe("SQLite personal intake stores", () => {
       updatedAt: 2,
     })
     expect(updated).toMatchObject({ ok: true, view: { version: 2, providerUserId: "alice-updated", status: "paused" } })
+    expect(updated).toMatchObject({ ok: true, view: { target: { environment: { repositoryUrl: "https://github.com/acme/alice.git" }, repository: { baseRevision: "dev" } } } })
     expect(await stores.sourceViews.update(alice, "view", {
       expectedVersion: 1,
       providerUserId: "alice-updated",
@@ -276,6 +277,10 @@ function view(owner: string): SourceView {
     provider: "github",
     providerUserId: `${owner}-gh`,
     filters: { repo: `acme/${owner}` },
+    target: {
+      environment: { kind: "hosted_workspace", repositoryUrl: `https://github.com/acme/${owner}.git` },
+      repository: { remoteUrl: `https://github.com/acme/${owner}.git`, baseRevision: "dev" },
+    },
     syncPolicy: "announce",
     status: "active",
     createdAt: 1,

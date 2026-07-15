@@ -370,6 +370,7 @@ export default defineSchema({
     provider: v.string(),
     provider_user_id: v.string(),
     filters: v.any(),
+    target: v.optional(v.any()),
     refresh_policy: v.optional(v.any()),
     sync_policy: v.string(),
     status: v.string(),

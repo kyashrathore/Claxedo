@@ -2,10 +2,13 @@ import { describe, expect, test } from "bun:test"
 import {
   createConnectFlow,
   createConnectionsStore,
+  createSourceViewsStore,
   isOAuthOnly,
   type ConnectionsRequest,
   type IntegrationInfo,
+  type SourceViewsPort,
 } from "./connections-logic"
+import { SourceViewDtoSchema, type SourceViewDto } from "@claxedo/workgraph/contracts"
 
 type RecordedRequest = { path: string; method: string; body: unknown }
 
@@ -117,6 +120,72 @@ describe("connections list store", () => {
     expect(result.ok).toBe(false)
     expect(result.error).toContain("rejected")
     expect(store.state.loaded).toBe(true)
+  })
+})
+
+describe("personal source views store", () => {
+  const target = {
+    environment: { kind: "hosted_workspace" as const, repositoryUrl: "https://github.com/acme/cloud.git" },
+    repository: { remoteUrl: "https://github.com/acme/cloud.git", baseRevision: "dev" },
+  }
+  const sourceView = (input: Partial<SourceViewDto> = {}) => SourceViewDtoSchema.parse({
+    id: "view_1",
+    ownerUserId: "user_1",
+    version: 1,
+    teamConnectionId: "connection_1",
+    provider: "github",
+    providerUserId: "octocat",
+    filters: { repo: "acme/cloud" },
+    target,
+    syncPolicy: "announce",
+    status: "active",
+    createdAt: 1,
+    updatedAt: 1,
+    ...input,
+  })
+
+  test("loads, creates, pauses, refreshes, and deletes through the injected WorkGraph port", async () => {
+    const calls: string[] = []
+    let view = sourceView()
+    const port: SourceViewsPort = {
+      list: async () => ({ sourceViews: [view] }),
+      create: async (input) => (calls.push("create"), sourceView({ id: "view_2", ...input })),
+      update: async (id, input) => (calls.push(`update:${id}:${input.expectedVersion}`), view = sourceView({
+        providerUserId: input.providerUserId,
+        filters: input.filters,
+        ...(input.target ? { target: input.target } : {}),
+        syncPolicy: input.syncPolicy,
+        status: input.status,
+        version: 2,
+      })),
+      delete: async (id, version) => (calls.push(`delete:${id}:${version}`), view),
+      refresh: async (id) => (calls.push(`refresh:${id}`), { created: 2, updated: 1, candidates: [] }),
+    }
+    const store = createSourceViewsStore(port)
+
+    await store.load()
+    expect(store.state.views).toEqual([view])
+    expect(await store.create({ teamConnectionId: "connection_1" as never, provider: "github", providerUserId: "hubot", filters: { repo: "acme/api" }, target })).toBe(true)
+    expect([await store.update(view, { providerUserId: "octocat", filters: view.filters, target, syncPolicy: "announce", status: "paused" }), store.state.error]).toEqual([true, undefined])
+    expect(store.state.views.find((entry) => entry.id === "view_1")?.status).toBe("paused")
+    expect(await store.refresh(view)).toBe(true)
+    expect(store.state.refreshResult.view_1).toBe("2 new · 1 updated")
+    expect(await store.remove(view)).toBe(true)
+    expect(store.state.views.some((entry) => entry.id === "view_1")).toBe(false)
+    expect(calls).toEqual(["create", "update:view_1:1", "refresh:view_1", "delete:view_1:2"])
+  })
+
+  test("maps typed provider failures without exposing their raw secret-bearing message", async () => {
+    const store = createSourceViewsStore({
+      list: async () => ({ sourceViews: [] }),
+      create: async () => { throw { code: "source_issue_provider_unauthorized", message: "provider rejected secret-token" } },
+      update: async () => sourceView(),
+      delete: async () => sourceView(),
+      refresh: async () => ({ created: 0, updated: 0, candidates: [] }),
+    })
+    await store.create({ teamConnectionId: "connection_1" as never, provider: "github", providerUserId: "octocat", filters: {}, target })
+    expect(store.state.error).toContain("reconnected")
+    expect(store.state.error).not.toContain("secret-token")
   })
 })
 

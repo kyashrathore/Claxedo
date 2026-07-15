@@ -473,9 +473,11 @@ describe("SQLite canonical WorkGraph archive", () => {
     source.prepare(`
       INSERT INTO wg_v2_source_views
         (organization_id, owner_user_id, id, workgraph_id, team_connection_id, provider, provider_user_id,
-         filters_json, sync_policy, status, created_at, updated_at)
+         filters_json, target_json, sync_policy, status, created_at, updated_at)
       VALUES ('organization', 'owner', 'source_view_1', 'workgraph_default', 'connection_team', 'github', 'yash',
-        '{"repo":"claxedo/claxedo","state":"open"}', 'announce', 'active', 10, 11)
+        '{"repo":"claxedo/claxedo","state":"open"}',
+        '{"environment":{"kind":"hosted_workspace","repositoryUrl":"https://github.com/claxedo/claxedo.git"},"repository":{"remoteUrl":"https://github.com/claxedo/claxedo.git","baseRevision":"dev"}}',
+        'announce', 'active', 10, 11)
     `).run()
     source.prepare(`
       INSERT INTO wg_v2_intake_candidates
@@ -495,6 +497,9 @@ describe("SQLite canonical WorkGraph archive", () => {
     `).run()
 
     const archive = await createSqliteWorkGraphArchivePort(source).export(owner())
+    expect(archive.records.find((record) => record.kind === "source_view")?.value).toMatchObject({
+      target: { environment: { repositoryUrl: "https://github.com/claxedo/claxedo.git" }, repository: { baseRevision: "dev" } },
+    })
     await expect(createSqliteWorkGraphArchivePort(unavailable).restore(owner(), {
       operationId: operation("connection_missing"),
       archive,

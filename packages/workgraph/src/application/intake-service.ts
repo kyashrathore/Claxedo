@@ -150,7 +150,11 @@ export function createIntakeService(input: Readonly<{
       const proposalResult = await admissions.propose(context, {
         operationId: `intake:${context.ownerUserId}:${candidate.id}:proposal` as OperationID,
         source,
-        ...(candidate.candidateKind === "session" && candidate.execution ? { execution: candidate.execution } : {}),
+        ...(candidate.candidateKind === "session" && candidate.execution
+          ? { execution: candidate.execution }
+          : candidate.candidateKind === "external_issue"
+            ? await sourceViewExecution(input.sourceViews, context, candidate.sourceViewId)
+            : {}),
       })
       if (!proposalResult.ok) throw new IntakeStateError(proposalResult.error.message)
       return input.candidates.stage(context, candidate.id, {
@@ -203,6 +207,12 @@ export function createIntakeService(input: Readonly<{
       return { applied: true, reason: effect }
     },
   }
+}
+
+async function sourceViewExecution(store: SourceViewStore, context: WorkGraphContext, sourceViewId: string) {
+  const sourceView = await requireSourceView(store, context, sourceViewId)
+  if (!sourceView.target) throw new IntakeStateError("Source view requires a Stream target before admission")
+  return { execution: sourceView.target }
 }
 
 function intakeSourceDocument(candidate: IntakeCandidate) {
