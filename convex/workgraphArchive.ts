@@ -9,6 +9,7 @@ import {
   type CanonicalWorkGraphArchiveRecord,
   type WorkGraphArchiveRestoreErrorReason,
 } from "@claxedo/workgraph/contracts"
+import { dependencyGraphHasCycle } from "@claxedo/workgraph/domain"
 import { serviceMutation, serviceQuery } from "./model"
 import { assertWorkGraphOwnerReadable, assertWorkGraphOwnerWritable, requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
 import { initializeAttentionProjection, syncAttentionRecord, syncCandidateTransition } from "./workgraphAttention"
@@ -358,6 +359,18 @@ async function validateReferences(ctx: any, organization: string, owner: string,
   }
   const dependencyLinks = archive.records.filter((record) => record.kind === "work_item_dependency")
   const decisionLinks = archive.records.filter((record) => record.kind === "decision_work_item")
+  const workItems = archive.records.filter((record) => record.kind === "work_item")
+  const workItemStreams = new Map(workItems.map((record) => [record.id, String(record.value.streamId)]))
+  if (dependencyLinks.some((record) =>
+    workItemStreams.get(record.value.workItemId) !== workItemStreams.get(record.value.dependsOnWorkItemId))) {
+    return rejected("malformed")
+  }
+  if (dependencyGraphHasCycle(workItems.map((record) => ({
+    id: record.id,
+    dependencyIds: record.value.dependencyIds,
+  })))) {
+    return rejected("malformed")
+  }
   const sequences = new Set<string>()
   const cursors = new Set<number>()
   for (const record of archive.records) {

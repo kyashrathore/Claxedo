@@ -341,6 +341,81 @@ describe("SQLite canonical WorkGraph archive", () => {
     })).resolves.toMatchObject({ ok: true })
   })
 
+  it("rejects a cyclic dependency archive without materializing a partial tenant", async () => {
+    const source = database()
+    const target = database()
+    let id = 0
+    const service = createSqliteWorkGraphService({
+      database: source,
+      clock: { now: () => 1_000 + id },
+      ids: { next: (kind) => `${kind}_cycle_${++id}` },
+    }).service
+    const stream = await service.execute(owner(), {
+      operationId: operation("cycle_stream"),
+      command: { version: 1, type: "create_stream", title: "Cycle" },
+    })
+    if (!stream.ok || typeof stream.value !== "object" || !stream.value || Array.isArray(stream.value)) {
+      throw new Error("Expected Stream")
+    }
+    const first = await service.execute(owner(), {
+      operationId: operation("cycle_first"),
+      command: {
+        version: 1,
+        type: "create_work_item",
+        streamId: stream.value.streamId as never,
+        title: "First",
+        completionContract: completion("first"),
+      },
+    })
+    if (!first.ok || typeof first.value !== "object" || !first.value || Array.isArray(first.value)) {
+      throw new Error("Expected first Task")
+    }
+    const firstId = first.value.workItemId as never
+    const second = await service.execute(owner(), {
+      operationId: operation("cycle_second"),
+      command: {
+        version: 1,
+        type: "create_work_item",
+        streamId: stream.value.streamId as never,
+        title: "Second",
+        dependencyIds: [firstId],
+        completionContract: completion("second"),
+      },
+    })
+    if (!second.ok || typeof second.value !== "object" || !second.value || Array.isArray(second.value)) {
+      throw new Error("Expected second Task")
+    }
+    const secondId = second.value.workItemId as never
+    const exported = await createSqliteWorkGraphArchivePort(source, { now: () => 2_000 }).export(owner())
+    const cyclic = WorkGraphArchiveSchema.parse({
+      ...exported,
+      records: [
+        ...exported.records.map((record) =>
+          record.kind === "work_item" && record.id === firstId
+            ? { ...record, value: { ...record.value, dependencyIds: [secondId] } }
+            : record,
+        ),
+        {
+          kind: "work_item_dependency",
+          id: "dependency_cycle_reverse",
+          value: {
+            schemaVersion: 1,
+            workItemId: firstId,
+            dependsOnWorkItemId: secondId,
+            dependencyKind: "blocks",
+            createdAt: 2_000,
+          },
+        },
+      ].sort((left, right) => `${left.kind}:${left.id}`.localeCompare(`${right.kind}:${right.id}`)),
+    })
+
+    await expect(createSqliteWorkGraphArchivePort(target).restore(owner(), {
+      operationId: operation("restore_cycle"),
+      archive: cyclic,
+    })).rejects.toMatchObject({ reason: "malformed" })
+    expect(target.prepare("SELECT COUNT(*) AS count FROM wg_v2_workgraphs").get()).toEqual({ count: 0 })
+  })
+
   it("rejects live execution state instead of exporting an unsafe archive", async () => {
     const source = database()
     const service = createSqliteWorkGraphService({ database: source, ids: { next: (kind) => `${kind}_live` } }).service

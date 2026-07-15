@@ -1,4 +1,5 @@
 export { evaluateCompletionContract } from "./completion"
+export { dependencyGraphHasCycle } from "./dependencies"
 export {
   validateExecutionProfileDefaultsAgainstCapabilities,
   validateRecapProfileDefaultsAgainstCapabilities,

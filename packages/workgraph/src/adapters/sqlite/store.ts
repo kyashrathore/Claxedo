@@ -83,6 +83,7 @@ import type {
   ReplacementReviewInput,
   WorkItemDto,
 } from "../../contracts"
+import { dependencyGraphHasCycle } from "../../domain"
 import {
   AttemptDetailDtoSchema,
   WorkItemAttemptPageSchema,
@@ -1665,6 +1666,13 @@ function applyCommand(
     )
     if (command.dependencyIds && !dependenciesExist)
       return rejected(request.operationId, "not_found", "Dependency not found")
+    if (command.dependencyIds) {
+      const graph = readSqliteDependencyGraph(database, context, item.stream_id)
+      graph.set(command.workItemId, dependencyIds)
+      if (dependencyGraphHasCycle([...graph].map(([id, currentDependencyIds]) => ({ id, dependencyIds: currentDependencyIds })))) {
+        return rejected(request.operationId, "validation_error", "Work Item dependencies contain a cycle")
+      }
+    }
     database
       .prepare(
         `
@@ -2241,10 +2249,10 @@ function applyCommand(
     if (!validOutcomeRefs || !validDependencyRefs)
       return rejected(request.operationId, "validation_error", "Admission references an unknown proposal key")
     if (
-      admissionDependencyCycle(
+      dependencyGraphHasCycle(
         (command.workItems ?? []).map((item) => ({
-          key: item.proposalKey,
-          dependencies: item.dependencyProposalKeys ?? [],
+          id: item.proposalKey,
+          dependencyIds: item.dependencyProposalKeys ?? [],
         })),
       )
     )
@@ -2978,20 +2986,35 @@ function applyCommand(
   return rejected(request.operationId, "internal_error", "Unsupported SQLite command")
 }
 
-function admissionDependencyCycle(items: ReadonlyArray<Readonly<{ key: string; dependencies: readonly string[] }>>) {
-  const dependencies = new Map(items.map((item) => [item.key, item.dependencies]))
-  const visiting = new Set<string>()
-  const visited = new Set<string>()
-  const visit = (key: string): boolean => {
-    if (visiting.has(key)) return true
-    if (visited.has(key)) return false
-    visiting.add(key)
-    const cyclic = (dependencies.get(key) ?? []).some(visit)
-    visiting.delete(key)
-    visited.add(key)
-    return cyclic
-  }
-  return items.some((item) => visit(item.key))
+function readSqliteDependencyGraph(database: Database, context: WorkGraphContext, streamId: string) {
+  const graph = new Map<string, string[]>(
+    (database
+      .prepare(
+        `
+      SELECT id FROM wg_v2_work_items
+      WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?
+    `,
+      )
+      .all(context.organizationId, context.ownerUserId, streamId) as Array<{ id: string }>).map((row) => [row.id, []]),
+  )
+  const dependencies = database
+    .prepare(
+      `
+    SELECT dependencies.work_item_id, dependencies.depends_on_work_item_id
+    FROM wg_v2_work_item_dependencies dependencies
+    JOIN wg_v2_work_items items
+      ON items.organization_id = dependencies.organization_id
+      AND items.owner_user_id = dependencies.owner_user_id
+      AND items.id = dependencies.work_item_id
+    WHERE dependencies.organization_id = ? AND dependencies.owner_user_id = ? AND items.stream_id = ?
+  `,
+    )
+    .all(context.organizationId, context.ownerUserId, streamId) as Array<{
+    work_item_id: string
+    depends_on_work_item_id: string
+  }>
+  dependencies.forEach((row) => graph.get(row.work_item_id)?.push(row.depends_on_work_item_id))
+  return graph
 }
 
 function validateSqliteReplacement(

@@ -42,6 +42,57 @@ function initializeAttentionProjection(ctx: any, ownerUserId: string, now: numbe
 }
 
 describe("Convex WorkGraph store", () => {
+  test("rejects transitive dependency cycles without replacing the previous dependency set", async () => {
+    const harness = new ConvexHarness(["owner_a"])
+    const streamId = value(await execute(harness, "owner_a", "cycle_stream", {
+      type: "create_stream",
+      title: "Cycle Stream",
+    }), "streamId")
+    const first = value(await execute(harness, "owner_a", "cycle_first", {
+      type: "create_work_item",
+      streamId,
+      title: "First",
+      completionContract: ownerConfirmationContract(),
+    }), "workItemId")
+    const second = value(await execute(harness, "owner_a", "cycle_second", {
+      type: "create_work_item",
+      streamId,
+      title: "Second",
+      completionContract: ownerConfirmationContract(),
+    }), "workItemId")
+    const third = value(await execute(harness, "owner_a", "cycle_third", {
+      type: "create_work_item",
+      streamId,
+      title: "Third",
+      completionContract: ownerConfirmationContract(),
+    }), "workItemId")
+
+    await expect(execute(harness, "owner_a", "cycle_second_update", {
+      type: "update_work_item",
+      workItemId: second,
+      expectedVersion: 1,
+      dependencyIds: [first],
+    })).resolves.toMatchObject({ ok: true })
+    await expect(execute(harness, "owner_a", "cycle_third_update", {
+      type: "update_work_item",
+      workItemId: third,
+      expectedVersion: 1,
+      dependencyIds: [second],
+    })).resolves.toMatchObject({ ok: true })
+
+    await expect(execute(harness, "owner_a", "cycle_first_update", {
+      type: "update_work_item",
+      workItemId: first,
+      expectedVersion: 1,
+      dependencyIds: [third],
+    })).resolves.toMatchObject({
+      ok: false,
+      error: { code: "validation_error", message: "Work Item dependencies contain a cycle" },
+    })
+    expect(harness.rowsFor("workgraph_work_item_dependencies").filter((row) => row.work_item_id === first)).toEqual([])
+    expect(harness.rowsFor("workgraph_work_items").find((row) => row.id === first)).toMatchObject({ row_version: 1 })
+  })
+
   test.each([
     ["autonomous", 2],
     ["supervised", 1],
@@ -2039,6 +2090,59 @@ describe("Convex WorkGraph store", () => {
       archive_hash: await hashWorkGraphArchive({ ...exported.archive, exportedAt: 101 }),
       archive: { ...exported.archive, exportedAt: 101 },
     })).resolves.toEqual({ ok: false, reason: "idempotency_conflict" })
+  })
+
+  test("rejects a cyclic dependency archive without materializing a partial tenant", async () => {
+    const source = new ConvexHarness(["owner_a"])
+    const streamId = value(await execute(source, "owner_a", "archive_cycle_stream", {
+      type: "create_stream",
+      title: "Cycle",
+    }), "streamId")
+    const first = value(await execute(source, "owner_a", "archive_cycle_first", {
+      type: "create_work_item",
+      streamId,
+      title: "First",
+      completionContract: ownerConfirmationContract(),
+    }), "workItemId")
+    const second = value(await execute(source, "owner_a", "archive_cycle_second", {
+      type: "create_work_item",
+      streamId,
+      title: "Second",
+      dependencyIds: [first],
+      completionContract: ownerConfirmationContract(),
+    }), "workItemId")
+    const exported = await exportWorkGraphArchive(source, "owner_a", "clerk_owner_a", 100)
+    if (!exported.ok) throw new Error(exported.reason)
+    const cyclic = WorkGraphArchiveSchema.parse({
+      ...exported.archive,
+      records: [
+        ...exported.archive.records.map((record) =>
+          record.kind === "work_item" && record.id === first
+            ? { ...record, value: { ...record.value, dependencyIds: [second] } }
+            : record,
+        ),
+        {
+          kind: "work_item_dependency",
+          id: "dependency_cycle_reverse",
+          value: {
+            schemaVersion: 1,
+            workItemId: first,
+            dependsOnWorkItemId: second,
+            dependencyKind: "blocks",
+            createdAt: 100,
+          },
+        },
+      ].sort((left, right) => `${left.kind}:${left.id}`.localeCompare(`${right.kind}:${right.id}`)),
+    })
+    const target = new ConvexHarness(["owner_a"])
+
+    await expect(restoreWorkGraphArchive(target, "owner_a", "clerk_owner_a", {
+      operation_id: "restore_cycle",
+      archive_hash: await hashWorkGraphArchive(cyclic),
+      archive: cyclic,
+      restored_at: 200,
+    })).resolves.toEqual({ ok: false, reason: "malformed" })
+    expect(target.rowsFor("workgraphs")).toEqual([])
   })
 
   test("round-trips a completed replacement reset and refuses active reset execution state", async () => {

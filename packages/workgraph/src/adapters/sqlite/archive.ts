@@ -14,6 +14,7 @@ import {
   type WorkGraphPublicRecord,
   type WorkSourceOrigin,
 } from "../../contracts"
+import { dependencyGraphHasCycle } from "../../domain"
 import type { WorkGraphArchivePort, WorkGraphArchiveRestoreResult } from "../../ports"
 import type { RawDatabase, SqliteInput } from "../../sqlite"
 import { assertNoSqliteWorkGraphOwnerDeletion, SqliteWorkGraphOwnerDeletionInProgressError } from "./deletion-barrier"
@@ -887,6 +888,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
     },
   }))
   const attempts = publicRecords.filter((record) => record.recordType === "attempt").map((record) => {
+    const { executionReferences: _executionReferences, ...archiveValue } = publicValue(record)
     const row = database.prepare(`
       SELECT envelope_id, child_workspace_id, session_id FROM wg_v2_attempts
       WHERE organization_id = ? AND owner_user_id = ? AND id = ?
@@ -904,7 +906,7 @@ function exportRecords(database: NonNullable<ReturnType<ReturnType<typeof initia
       kind: "attempt" as const,
       id: record.id,
       value: {
-        ...publicValue(record),
+        ...archiveValue,
         ...(Object.keys(executionIdentity).length === 0 ? {} : { executionIdentity }),
       },
     }
@@ -1650,12 +1652,24 @@ function validateReferences(records: CanonicalWorkGraphArchiveRecord[]) {
     if (record.kind === "completed_external_effect") require("operation_result", record.value.operationId)
     if (record.kind === "terminal_scheduled_job" && record.value.streamId) require("stream", record.value.streamId)
   })
-  records.filter(kind("work_item")).forEach((record) => {
+  const workItems = records.filter(kind("work_item"))
+  workItems.forEach((record) => {
     const related = records.filter(kind("work_item_dependency"))
       .filter((dependency) => dependency.value.workItemId === record.id)
       .map((dependency) => dependency.value.dependsOnWorkItemId)
     if (!sameMembers(record.value.dependencyIds, related)) throw new WorkGraphArchiveRestoreError("malformed")
   })
+  const workItemStreams = new Map(workItems.map((record) => [record.id, record.value.streamId]))
+  if (records.filter(kind("work_item_dependency")).some((record) =>
+    workItemStreams.get(record.value.workItemId) !== workItemStreams.get(record.value.dependsOnWorkItemId))) {
+    throw new WorkGraphArchiveRestoreError("malformed")
+  }
+  if (dependencyGraphHasCycle(workItems.map((record) => ({
+    id: record.id,
+    dependencyIds: record.value.dependencyIds,
+  })))) {
+    throw new WorkGraphArchiveRestoreError("malformed")
+  }
   records.filter(kind("decision")).forEach((record) => {
     const related = records.filter(kind("decision_work_item"))
       .filter((link) => link.value.decisionId === record.id)

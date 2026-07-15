@@ -404,6 +404,39 @@ describe("SQLite WorkGraph public commands", () => {
     expect(fixture.database.prepare("SELECT depends_on_work_item_id FROM wg_v2_work_item_dependencies WHERE work_item_id = ?").all(itemId)).toEqual([{ depends_on_work_item_id: dependencyId }])
   })
 
+  it("rejects transitive dependency cycles without replacing the previous dependency set", async () => {
+    const fixture = await setup()
+    const streamId = await createStream(fixture)
+    const first = await createItem(fixture, streamId, undefined, "First")
+    const second = await createItem(fixture, streamId, undefined, "Second")
+    const third = await createItem(fixture, streamId, undefined, "Third")
+
+    expect(await execute(fixture, "update_work_item", {
+      workItemId: second,
+      expectedVersion: 1,
+      dependencyIds: [first],
+    })).toMatchObject({ ok: true })
+    expect(await execute(fixture, "update_work_item", {
+      workItemId: third,
+      expectedVersion: 1,
+      dependencyIds: [second],
+    })).toMatchObject({ ok: true })
+
+    expect(await execute(fixture, "update_work_item", {
+      workItemId: first,
+      expectedVersion: 1,
+      dependencyIds: [third],
+    })).toMatchObject({
+      ok: false,
+      error: { code: "validation_error", message: "Work Item dependencies contain a cycle" },
+    })
+    expect(fixture.database.prepare(
+      "SELECT depends_on_work_item_id FROM wg_v2_work_item_dependencies WHERE work_item_id = ?",
+    ).all(first)).toEqual([])
+    expect(fixture.database.prepare("SELECT row_version FROM wg_v2_work_items WHERE id = ?").get(first))
+      .toEqual({ row_version: 1 })
+  })
+
   it("persists visibility and localizes Decision mutations to affected rows", async () => {
     const fixture = await setup()
     const streamId = await createStream(fixture)

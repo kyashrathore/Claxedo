@@ -2,6 +2,7 @@ import { v } from "convex/values"
 import { AdmissionAgentPlanSchema, AdmissionProposalGenerationSchema, AuthoringSourceRevisionSchema, ExecutionProfileDefaultsSchema, PublicEventPayloadSchema, WorkGraphCommandSchema, WorkSourceOriginSchema, createChangeCursor, type ChangeCursor, type ExecutionMode } from "@claxedo/workgraph/contracts"
 import { rankDuplicateMatches, rankStreamMatches } from "@claxedo/workgraph/matching"
 import {
+  dependencyGraphHasCycle,
   evaluateCompletionContract,
   validateExecutionProfileDefaultsAgainstCapabilities,
   validateRecapProfileDefaultsAgainstCapabilities,
@@ -589,6 +590,13 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
     )
     if (command.dependencyIds && dependencies.some((row: any) => !row || row.stream_id !== item.stream_id)) {
       return rejected(input.operationId, "not_found", "Dependency not found")
+    }
+    if (command.dependencyIds) {
+      const graph = await readConvexDependencyGraph(ctx, input.organizationId, input.ownerUserId, item.stream_id)
+      graph.set(item.id, dependencyIds)
+      if (dependencyGraphHasCycle([...graph].map(([id, currentDependencyIds]) => ({ id, dependencyIds: currentDependencyIds })))) {
+        return rejected(input.operationId, "validation_error", "Work Item dependencies contain a cycle")
+      }
     }
     await ctx.db.patch(item._id, {
       ...(command.outcomeId === undefined ? {} : { outcome_id: command.outcomeId ?? undefined }),
@@ -1399,7 +1407,7 @@ async function confirmAdmission(ctx: any, input: CommandInput, command: any, now
   ) {
     return rejected(input.operationId, "validation_error", "Admission references an unknown proposal key")
   }
-  if (admissionDependencyCycle((command.workItems ?? []).map((item: any) => ({ key: item.proposalKey, dependencies: item.dependencyProposalKeys ?? [] }))))
+  if (dependencyGraphHasCycle((command.workItems ?? []).map((item: any) => ({ id: item.proposalKey, dependencyIds: item.dependencyProposalKeys ?? [] }))))
     return rejected(input.operationId, "validation_error", "Admission Work Item dependencies contain a cycle")
   if (command.selection.mode === "replace") {
     const replacement = await validateConvexReplacement(ctx, input.organizationId, input.ownerUserId, {
@@ -1610,20 +1618,24 @@ export function appendSourceRevision<Reference extends { work_source_id: string;
     : [...existing, revision]
 }
 
-function admissionDependencyCycle(items: ReadonlyArray<Readonly<{ key: string; dependencies: readonly string[] }>>) {
-  const dependencies = new Map(items.map((item) => [item.key, item.dependencies]))
-  const visiting = new Set<string>()
-  const visited = new Set<string>()
-  const visit = (key: string): boolean => {
-    if (visiting.has(key)) return true
-    if (visited.has(key)) return false
-    visiting.add(key)
-    const cyclic = (dependencies.get(key) ?? []).some(visit)
-    visiting.delete(key)
-    visited.add(key)
-    return cyclic
-  }
-  return items.some((item) => visit(item.key))
+async function readConvexDependencyGraph(ctx: any, organizationId: string, ownerUserId: string, streamId: string) {
+  const items = await ctx.db
+    .query("workgraph_work_items")
+    .withIndex("by_tenant_stream", (query: any) =>
+      query.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId).eq("stream_id", streamId),
+    )
+    .collect()
+  const graph = new Map<string, string[]>(
+    items.map((row: any): [string, string[]] => [String(row.id), []]),
+  )
+  const dependencies = await ctx.db
+    .query("workgraph_work_item_dependencies")
+    .withIndex("by_tenant_stream", (query: any) =>
+      query.eq("organization_id", organizationId).eq("owner_user_id", ownerUserId).eq("stream_id", streamId),
+    )
+    .collect()
+  dependencies.forEach((row: any) => graph.get(row.work_item_id)?.push(row.depends_on_work_item_id))
+  return graph
 }
 
 async function validateConvexReplacement(
