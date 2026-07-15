@@ -8,7 +8,7 @@ import { Popover } from "@opencode-ai/ui/popover"
 import { RichTextEditor } from "@/ui/rich-text"
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, onCleanup, onMount, Show, Switch, type Accessor } from "solid-js"
 import { Portal } from "solid-js/web"
-import { createWorkGraphClient, WorkGraphApiError, type WorkGraphClient } from "./api"
+import { createWorkGraphClient, WorkGraphApiError, type WorkGraphClient, type WorkGraphSessionOpener } from "./api"
 import { ProjectPicker, type LocalProjectOption } from "./project-picker"
 import { useWorkGraphSyncLifecycle } from "./sync-lifecycle"
 import { environmentChoices } from "./waiting/settings-capabilities"
@@ -45,7 +45,7 @@ export function WorkGraphContent(props: {
   request?: typeof fetch
   client?: WorkGraphClient
   panel?: WorkGraphPanelBridge
-  onOpenSession?: (reference: { sessionId: string; workspaceId?: string }) => void
+  onOpenSession?: WorkGraphSessionOpener
   executionContext?: ExecutionEnvironment
   localProjects?: readonly LocalProjectOption[]
   onChooseLocalProject?: () => Promise<string | undefined>

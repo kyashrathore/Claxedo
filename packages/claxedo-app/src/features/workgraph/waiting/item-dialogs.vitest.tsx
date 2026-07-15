@@ -250,7 +250,12 @@ describe("WaitingItemDialog — failed task", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("thread not found: thread_missing")
     await fireEvent.click(screen.getByRole("button", { name: "Open session session_failed" }))
-    expect(onOpenSession).toHaveBeenCalledWith({ sessionId: "session_failed", workspaceId: "workspace_failed" })
+    expect(onOpenSession).toHaveBeenCalledWith({
+      sessionId: "session_failed",
+      workspaceId: "workspace_failed",
+      harness: failedAttempt.attempt.resolvedExecution.harness,
+      environment: failedAttempt.attempt.resolvedExecution.environment,
+    })
     expect(onClose).toHaveBeenCalledOnce()
   })
 

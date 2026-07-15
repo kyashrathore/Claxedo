@@ -190,6 +190,11 @@ function fingerprint(input: unknown) {
 
 function unrestorable(harness: AcpHarnessId, err: unknown) {
   if (missing(err)) return true
+  // Codex ACP reports a generic internal error when a session created by a
+  // disposed process cannot be resumed. This happens safely before prompt
+  // submission, so replace the agent-side session and preserve the durable
+  // Claxedo Session identity.
+  if (harness === "codex" && errorMessage(err) === "Internal error") return true
   return harness === "cursor" && errorMessage(err).includes("Invalid params")
 }
 

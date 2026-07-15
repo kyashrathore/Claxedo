@@ -224,10 +224,62 @@ describe("WorkGraph overview actions", () => {
     expect(screen.queryByRole("button", { name: "Delete task Deploy production" })).not.toBeInTheDocument()
   })
 
-  test("opens the latest related Session from an active task row", async () => {
+  test("retries an attention task directly from its row", async () => {
+    const commands: Array<Record<string, unknown>> = []
+    const request = workGraphRequest({
+      records: () => [stream, outcome, activeItem, attentionAttempt],
+      command: (command) => {
+        commands.push(command)
+        return success()
+      },
+    })
+
+    render(() =>
+      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
+    )
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Retry task Deploy production" }))
+    await waitFor(() =>
+      expect(commands).toEqual([
+        { version: 1, type: "retry_work_item", workItemId: "item_active", expectedVersion: 1 },
+      ]),
+    )
+  })
+
+  test("retries every attention task directly from its Stream row", async () => {
+    const secondItem = { ...activeItem, id: "item_second", title: "Verify production", version: 3 }
+    const secondAttempt = { ...attentionAttempt, id: "attempt_2", workItemId: secondItem.id }
+    const commands: Array<Record<string, unknown>> = []
+    const request = workGraphRequest({
+      records: () => [stream, outcome, activeItem, secondItem, attentionAttempt, secondAttempt],
+      command: (command) => {
+        commands.push(command)
+        return success()
+      },
+    })
+
+    render(() =>
+      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
+    )
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Retry stream Ship Claxedo cloud" }))
+    await waitFor(() =>
+      expect(commands).toEqual([
+        { version: 1, type: "retry_work_item", workItemId: "item_active", expectedVersion: 1 },
+        { version: 1, type: "retry_work_item", workItemId: "item_second", expectedVersion: 3 },
+      ]),
+    )
+  })
+
+  test("opens the latest related Session from the snapshot without a click-time read", async () => {
     const onOpenSession = vi.fn()
     const earlierAttempt = { ...runningAttempt, state: "result" as const }
-    const latestAttempt = { ...runningAttempt, id: "attempt_2", attemptNumber: 2 }
+    const latestAttempt = {
+      ...runningAttempt,
+      id: "attempt_2",
+      attemptNumber: 2,
+      executionReferences: { sessionId: "session_running", workspaceId: "workspace_running" },
+    }
     const attemptReads: string[] = []
     const request = workGraphRequest({
       records: () => [stream, outcome, activeItem, earlierAttempt, latestAttempt],
@@ -250,9 +302,14 @@ describe("WorkGraph overview actions", () => {
 
     await fireEvent.click(await screen.findByRole("button", { name: "Open session for Deploy production" }))
     await waitFor(() =>
-      expect(onOpenSession).toHaveBeenCalledWith({ sessionId: "session_running", workspaceId: "workspace_running" }),
+      expect(onOpenSession).toHaveBeenCalledWith({
+        sessionId: "session_running",
+        workspaceId: "workspace_running",
+        harness: latestAttempt.resolvedExecution.harness,
+        environment: latestAttempt.resolvedExecution.environment,
+      }),
     )
-    expect(attemptReads).toEqual(["attempt_2"])
+    expect(attemptReads).toEqual([])
   })
 
   test("shows a Stream-owned recap marker only when a latest recap exists, opening a focus/hover preview", async () => {
@@ -657,4 +714,10 @@ const runningAttempt = {
   admittedAt: 1,
   startedAt: 1,
   sourceRevisionRefs: [],
+}
+const attentionAttempt = {
+  ...runningAttempt,
+  state: "attention" as const,
+  finishedAt: 2,
+  attentionReason: "Harness Session request failed",
 }

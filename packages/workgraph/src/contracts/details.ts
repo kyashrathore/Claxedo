@@ -11,6 +11,7 @@ import { WorkItemStateSchema } from "./lifecycle"
 import {
   AdmissionProposalDtoSchema,
   AttemptDtoSchema,
+  AttemptExecutionReferencesSchema,
   DecisionDtoSchema,
   RecapDtoSchema,
   WorkItemDtoSchema,
@@ -20,7 +21,6 @@ import { WorkSourceRevisionRefSchema } from "./work-source"
 
 const prefix = "wgat1"
 const maxLength = 512
-const runtimeReference = z.string().trim().min(1).max(512)
 
 export const AdmissionProposalReadInputSchema = z.strictObject({ proposalId: AdmissionProposalIDSchema })
 export type AdmissionProposalReadInput = z.infer<typeof AdmissionProposalReadInputSchema>
@@ -82,14 +82,6 @@ export const ReplacementReviewSchema = z.discriminatedUnion("status", [
   }),
 ])
 export type ReplacementReview = z.infer<typeof ReplacementReviewSchema>
-
-export const AttemptExecutionReferencesSchema = z.strictObject({
-  sessionId: runtimeReference.optional(),
-  workspaceId: runtimeReference.optional(),
-  childWorkspaceId: runtimeReference.optional(),
-}).refine((references) => references.sessionId || references.workspaceId || references.childWorkspaceId, {
-  message: "Attempt execution references cannot be empty",
-})
 
 export const AttemptDetailDtoSchema = z.strictObject({
   attempt: AttemptDtoSchema,

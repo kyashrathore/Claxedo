@@ -253,6 +253,35 @@ describe("session prompt route", () => {
     })
   })
 
+  it("applies a selected runtime model before creating a session", async () => {
+    const directory = process.cwd()
+    const calls: string[] = []
+    const app = SessionRoutes(() => ({
+      ...adapter({}),
+      adapterCapabilities: ["runtime-config"] as const,
+      setModel(model: string) {
+        calls.push(`setModel:${model}`)
+      },
+      setAuth() {},
+      async createSession() {
+        calls.push("createSession")
+        return { id: "session-created" }
+      },
+    }))
+
+    const res = await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Created",
+        model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+      }),
+    })
+
+    expect(res.status).toBe(201)
+    expect(calls).toEqual(["setModel:gpt-5.5", "createSession"])
+  })
+
   it("passes session context into resolveDirectory for detail routes", async () => {
     const directory = process.cwd()
     const calls: Array<{ sessionId?: string }> = []

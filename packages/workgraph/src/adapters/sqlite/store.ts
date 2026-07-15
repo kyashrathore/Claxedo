@@ -3879,6 +3879,11 @@ function readAttemptRecords(database: Database, context: WorkGraphContext, attem
 }
 
 function attemptDto(database: Database, context: WorkGraphContext, row: AttemptRecordRow) {
+  const executionReferences = {
+    ...(row.session_id ? { sessionId: row.session_id } : {}),
+    ...(row.envelope_id ? { workspaceId: row.envelope_id } : {}),
+    ...(row.child_workspace_id ? { childWorkspaceId: row.child_workspace_id } : {}),
+  }
   return AttemptDtoSchema.parse({
     recordType: "attempt",
     schemaVersion: 1,
@@ -3899,6 +3904,7 @@ function attemptDto(database: Database, context: WorkGraphContext, row: AttemptR
     ...(row.terminal_result_json ? { result: JSON.parse(row.terminal_result_json) } : {}),
     ...(row.attention_reason ? { attentionReason: row.attention_reason } : {}),
     sourceRevisionRefs: readSourceRefs(database, context, "attempt", row.id),
+    ...(Object.keys(executionReferences).length ? { executionReferences } : {}),
   })
 }
 

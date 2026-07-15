@@ -157,7 +157,13 @@ export function createHarnessWorkGraphGateway(
       const binding = existing ?? await (async () => {
         const created = await request({ directory: input.directory, harness: input.profile.harness }, "/session", {
           method: "POST",
-          body: JSON.stringify({ title: input.title }),
+          body: JSON.stringify({
+            title: input.title,
+            model: {
+              providerID: input.profile.model.providerId,
+              modelID: input.profile.model.modelId,
+            },
+          }),
         })
         const body = record(await created.json())
         const runtimeSessionId = clean(body?.id)

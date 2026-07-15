@@ -11,10 +11,9 @@ import { ActionError, createAction } from "./dialog-action"
 import { ProposalContent } from "./item-dialog-proposal"
 import type { WorkGraphWaitingSource } from "./waiting-source"
 import { DetailState, DialogField, DialogSection, WorkGraphDialog } from "./workgraph-dialog"
+import type { WorkGraphSessionOpener, WorkGraphSessionReference } from "../api"
 
 type Selection = AttentionItem | undefined
-type SessionReference = { sessionId: string; workspaceId?: string }
-
 /**
  * Opens a focused dialog over the WorkGraph screen for the selected Waiting
  * item. Opening never resolves the item; it only leaves Waiting after its real
@@ -28,7 +27,7 @@ type ItemContentProps = {
   onClose: () => void
   /** Opens the shared WorkGraph settings panel tab (for configuration_required). */
   onOpenSettings?: () => void
-  onOpenSession?: (reference: SessionReference) => void
+  onOpenSession?: WorkGraphSessionOpener
 }
 
 export function WaitingItemDialog(props: {
@@ -40,11 +39,11 @@ export function WaitingItemDialog(props: {
   /** Opens the shared WorkGraph settings panel tab (for configuration_required). */
   onOpenSettings?: () => void
   /** Opens an execution Session through the app shell's canonical Session route. */
-  onOpenSession?: (reference: SessionReference) => void
+  onOpenSession?: WorkGraphSessionOpener
 }) {
-  const openSession = (reference: SessionReference) => {
+  const openSession = async (reference: WorkGraphSessionReference) => {
+    await props.onOpenSession?.(reference)
     props.onClose()
-    props.onOpenSession?.(reference)
   }
   const retryAction = createAction(() => {
     props.onResolved()
@@ -220,7 +219,7 @@ function DecisionContent(props: {
 function TaskContent(props: {
   item: Extract<AttentionItem, { kind: "work_item" }>
   source: WorkGraphWaitingSource
-  onOpenSession?: (reference: SessionReference) => void
+  onOpenSession?: WorkGraphSessionOpener
 }) {
   const [workItem, { refetch }] = createResource(() => props.source.workItem(props.item.record.id))
   // The true latest attempt, resolved by following strict page cursors to the
@@ -266,7 +265,7 @@ function TaskContent(props: {
   )
 }
 
-function AttemptContent(props: { attemptId: string; source: WorkGraphWaitingSource; onOpenSession?: (reference: SessionReference) => void }) {
+function AttemptContent(props: { attemptId: string; source: WorkGraphWaitingSource; onOpenSession?: WorkGraphSessionOpener }) {
   const [detail, { refetch }] = createResource(() => props.source.attempt(props.attemptId))
   return (
     <DetailState resource={detail} retry={refetch}>
@@ -284,7 +283,7 @@ function AttemptContent(props: { attemptId: string; source: WorkGraphWaitingSour
  * credential-bearing field: no repository remote URL, no lease/control-plane
  * tokens, no secrets. Only safe Session/workspace references are shown.
  */
-function AttemptDetailView(props: { detail: AttemptDetailDto; onOpenSession?: (reference: SessionReference) => void }) {
+function AttemptDetailView(props: { detail: AttemptDetailDto; onOpenSession?: WorkGraphSessionOpener }) {
   const attempt = () => props.detail.attempt
   const exec = (): ResolvedExecutionProfile => attempt().resolvedExecution
   const references = () => props.detail.executionReferences
@@ -321,7 +320,12 @@ function AttemptDetailView(props: { detail: AttemptDetailDto; onOpenSession?: (r
                   type="button"
                   class="workgraph-session-link"
                   aria-label={`Open session ${sessionId()}`}
-                  onClick={() => openSession()({ sessionId: sessionId(), ...(references()?.workspaceId ? { workspaceId: references()!.workspaceId } : {}) })}
+                  onClick={() => void openSession()({
+                    sessionId: sessionId(),
+                    ...(references()?.workspaceId ? { workspaceId: references()!.workspaceId } : {}),
+                    harness: exec().harness,
+                    environment: exec().environment,
+                  })}
                 >
                   {sessionId()}
                 </button>

@@ -155,6 +155,16 @@ export const AttemptResultSchema = z.strictObject({
 })
 export type AttemptResult = z.infer<typeof AttemptResultSchema>
 
+const runtimeReference = z.string().trim().min(1).max(512)
+export const AttemptExecutionReferencesSchema = z.strictObject({
+  sessionId: runtimeReference.optional(),
+  workspaceId: runtimeReference.optional(),
+  childWorkspaceId: runtimeReference.optional(),
+}).refine((references) => references.sessionId || references.workspaceId || references.childWorkspaceId, {
+  message: "Attempt execution references cannot be empty",
+})
+export type AttemptExecutionReferences = z.infer<typeof AttemptExecutionReferencesSchema>
+
 export const AttemptDtoSchema = z
   .strictObject({
     recordType: z.literal("attempt"),
@@ -171,6 +181,7 @@ export const AttemptDtoSchema = z
     result: AttemptResultSchema.optional(),
     attentionReason: text.optional(),
     sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
+    executionReferences: AttemptExecutionReferencesSchema.optional(),
   })
   .transform(deepFreeze)
 export type AttemptDto = z.infer<typeof AttemptDtoSchema>

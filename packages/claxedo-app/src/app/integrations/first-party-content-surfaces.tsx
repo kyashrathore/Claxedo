@@ -18,6 +18,16 @@ import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useServer } from "@/app/connection/server"
 import { ensureLocalProject } from "@/features/workspaces/data/query/project-ensure"
 import { WorkGraphContent } from "../../features/workgraph"
+import type { WorkGraphSessionReference } from "@/features/workgraph/api"
+import { bypassFetchThrottle } from "@/lib/fetch-throttle"
+import { isHarnessId, sessionRefForWorkspaceSession, type SessionRef } from "@/platform/identity/session-ref"
+import {
+  routeBridgeClaxedoSessionMetaUrl,
+  routeSessionWorkspaceBacking,
+} from "@/app/workbench/state/route-bridge-resolution"
+import { sessionInventoryTarget, type RouteIntentInventory } from "@/app/workbench/state/route-intent"
+import { sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
+import type { SessionInventoryRow } from "@/features/session/data/query/types"
 
 // Lazy content surfaces: keep non-session feature bundles out of the eager main
 // chunk. SessionContent stays eager so runner/model async work inside the
@@ -42,6 +52,13 @@ function MarketplaceSurface(props: { context: ContentSurfaceRenderContext }) {
   return <MarketplaceContent directory={props.context.meta.directory} request={platform.fetch} />
 }
 
+type WorkGraphSessionTarget = {
+  directory: NonNullable<SessionRef["cwd"]>
+  sessionId: string
+  title: string
+  sessionRef: SessionRef
+}
+
 function WorkGraphSurface(props: { context: ContentSurfaceRenderContext }) {
   const platform = usePlatform()
   const state = useClaxedoState()
@@ -51,6 +68,9 @@ function WorkGraphSurface(props: { context: ContentSurfaceRenderContext }) {
   const server = useServer()
   const dialog = useDialog()
   const projectsQuery = useQuery(() => queryOptions.projects())
+  const sessionInventoryQuery = useQuery(() =>
+    sessionInventoryQueryOptions<SessionInventoryRow>({ baseUrl: globalSDK.url }),
+  )
   // Bridge WorkGraph's "Needs you" / Settings controls to the one shared
   // WorkspacePanel. WorkGraph owns no workspace, so it drives the panel as a
   // global-navigation surface and portals its views into the panel slots.
@@ -109,6 +129,17 @@ function WorkGraphSurface(props: { context: ContentSurfaceRenderContext }) {
     })
     return directory
   }
+  const openSession = (reference: WorkGraphSessionReference) => openWorkGraphSession({
+    reference,
+    request: platform.fetch ?? fetch,
+    serverUrl: globalSDK.url,
+    projects: projectsQuery.data ?? [],
+    inventory: sessionInventoryQuery.data,
+    open: (target) => {
+      state.layout.openSession(target.directory, target.sessionId, target.title, { sessionRef: target.sessionRef })
+    },
+    navigate,
+  })
   return (
     <WorkGraphContent
       active={props.context.ctx.isVisible}
@@ -117,9 +148,88 @@ function WorkGraphSurface(props: { context: ContentSurfaceRenderContext }) {
       executionContext={executionContext()}
       localProjects={localProjects()}
       onChooseLocalProject={chooseLocalProject}
-      onOpenSession={(reference) => navigate(sessionRoute(reference.sessionId))}
+      onOpenSession={openSession}
     />
   )
+}
+
+export async function openWorkGraphSession(input: {
+  reference: WorkGraphSessionReference
+  request: typeof fetch
+  serverUrl?: string
+  projects: Parameters<typeof routeSessionWorkspaceBacking>[0]["projects"]
+  inventory?: RouteIntentInventory
+  open: (target: WorkGraphSessionTarget) => void
+  navigate: (path: string) => void
+}) {
+  const inventoryTarget = input.inventory
+    ? sessionInventoryTarget(input.reference.sessionId, input.inventory)
+    : undefined
+  if (inventoryTarget?.sessionRef) {
+    input.open({
+      directory: inventoryTarget.directory,
+      sessionId: input.reference.sessionId,
+      title: inventoryTarget.title ?? "Session",
+      sessionRef: input.reference.harness && isHarnessId(input.reference.harness)
+        ? { ...inventoryTarget.sessionRef, harness: { id: input.reference.harness } }
+        : inventoryTarget.sessionRef,
+    })
+    input.navigate(sessionRoute(input.reference.sessionId))
+    return
+  }
+
+  const response = await input.request(
+    routeBridgeClaxedoSessionMetaUrl({
+      serverUrl: input.serverUrl,
+      sessionID: input.reference.sessionId,
+    }),
+    bypassFetchThrottle({}),
+  )
+  if (!response.ok) throw new Error(`Session unavailable (${response.status})`)
+
+  const session = record(await response.json())
+  const sessionId = string(session?.sessionID) ?? string(session?.sessionId)
+  if (sessionId && sessionId !== input.reference.sessionId) throw new Error("Session metadata did not match the requested Session")
+  const directory = string(session?.directory)
+  if (!directory || directory === "/workspace") throw new Error("Session project is unavailable")
+  const workspaceId = string(session?.workspaceID) ?? string(session?.workspaceId)
+  const catalogWorkspace = routeSessionWorkspaceBacking({
+    projects: input.projects,
+    directory,
+    workspaceId,
+  })
+  const workspace = catalogWorkspace ?? (
+    input.reference.environment?.kind === "hosted_workspace" && workspaceId
+      ? { workspaceId, kind: "cloud" as const }
+      : undefined
+  )
+  const sessionRef = sessionRefForWorkspaceSession({
+    sessionId: input.reference.sessionId,
+    directory,
+    ...(workspace ? { workspace } : {}),
+    ...(input.reference.harness && isHarnessId(input.reference.harness)
+      ? { harness: { id: input.reference.harness } }
+      : {}),
+  })
+  if (!sessionRef) throw new Error("Session project is unavailable")
+
+  input.open({
+    directory,
+    sessionId: input.reference.sessionId,
+    title: string(session?.title) ?? "Session",
+    sessionRef,
+  })
+  input.navigate(sessionRoute(input.reference.sessionId))
+}
+
+function record(input: unknown) {
+  return input && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : undefined
+}
+
+function string(input: unknown) {
+  return typeof input === "string" && input.length > 0 ? input : undefined
 }
 
 // Neutral placeholder while non-session surface chunks load — matches the

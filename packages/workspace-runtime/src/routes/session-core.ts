@@ -14,6 +14,7 @@ import type {
   HarnessCapabilities,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import { hasAdapterCapability } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   messageUpdated,
   permissionReplied,
@@ -415,7 +416,8 @@ export function createSessionRoutes(opts: Opts) {
     })
     .post("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
-      const body = (await c.req.json().catch(() => ({}))) as { title?: string }
+      const body = (await c.req.json().catch(() => ({}))) as { title?: string; model?: unknown }
+      const config = normalizeSessionConfigUpdate(body)
       const draftId = parseDraftId(c.req.header("x-claxedo-draft-id"))
       const workspaceId = await opts.resolveWorkspaceId?.(c, directory)
       opts.publishSessionLifecycle?.({
@@ -427,9 +429,13 @@ export function createSessionRoutes(opts: Opts) {
         ts: Date.now(),
       })
       try {
+        const adapter = await opts.resolveAdapter(c)
+        if (config.model && hasAdapterCapability(adapter, "runtime-config")) {
+          adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)
+        }
         const session = opts.createSession
           ? await opts.createSession(c, directory, body.title)
-          : await (await opts.resolveAdapter(c)).createSession(directory, body.title)
+          : await adapter.createSession(directory, body.title)
         await after(opts.afterCreateSession?.(c, directory, session))
         opts.publishSessionLifecycle?.({
           type: "session.lifecycle",

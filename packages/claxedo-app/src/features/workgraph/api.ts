@@ -50,6 +50,7 @@ import {
   type WorkSourceRevisionRef,
   type SnapshotResumeCursor,
   type IntakeCandidatePageCursor,
+  type ResolvedExecutionProfile,
   WorkGraphNotificationPageSchema,
   WorkGraphNotificationSchema,
   CreateSourceViewInputSchema,
@@ -77,6 +78,17 @@ const WorkSourcesResponseSchema = z.strictObject({
   hasMore: z.boolean(),
   nextCursor: z.string().trim().min(1).max(512).optional(),
 })
+
+export type WorkGraphSessionReference = {
+  sessionId: string
+  workspaceId?: string
+  harness?: ResolvedExecutionProfile["harness"]
+  environment?: ResolvedExecutionProfile["environment"]
+}
+
+export type WorkGraphSessionOpener = (
+  reference: WorkGraphSessionReference,
+) => void | Promise<void>
 
 const WorkGraphApiErrorCodeSchema = z.union([
   CommandErrorCodeSchema,
@@ -233,7 +245,11 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       return read(`/work-items/${encodeURIComponent(workItemId)}/attempts?${query}`, (value) => WorkItemAttemptPageSchema.parse(value))
     },
     attempt: (attemptId: string) =>
-      read(`/attempts/${encodeURIComponent(attemptId)}`, (value) => AttemptDetailDtoSchema.parse(value)),
+      read(
+        `/attempts/${encodeURIComponent(attemptId)}`,
+        (value) => AttemptDetailDtoSchema.parse(value),
+        bypassFetchThrottle({}),
+      ),
     decision: (decisionId: string) =>
       read(`/decisions/${encodeURIComponent(decisionId)}`, (value) => DecisionDtoSchema.parse(value)),
     recap: (recapId: string) =>

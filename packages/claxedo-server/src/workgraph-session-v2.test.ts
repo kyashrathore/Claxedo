@@ -81,7 +81,14 @@ describe("mounted WorkGraph Session V2 gateway", () => {
       profile: { ...profile, harness: "codex-app-server", tools: ["terminal"] },
     })).resolves.toBe("ses_workgraph_attempt_codex")
     expect(calls.slice(0, 2)).toEqual([
-      { path: "/session", harness: "codex-app-server", body: { title: "Item" } },
+      {
+        path: "/session",
+        harness: "codex-app-server",
+        body: {
+          title: "Item",
+          model: { providerID: "openai", modelID: "gpt-5" },
+        },
+      },
       {
         path: "/session/ses_codex/prompt_async",
         harness: "codex-app-server",

@@ -13,7 +13,7 @@ import { Popover } from "@opencode-ai/ui/popover"
 import { createResource, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Persist, persisted } from "@/platform/persistence/persist"
-import type { WorkGraphClient } from "./api"
+import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
 
 type Mutate = (action: () => Promise<CommandResult>) => Promise<boolean>
 
@@ -27,7 +27,7 @@ export function WorkGraphStreamTree(props: {
   client: WorkGraphClient
   mutate: Mutate
   onOpenStreamSettings: (stream: StreamDto) => void
-  onOpenSession?: (reference: { sessionId: string; workspaceId?: string }) => void
+  onOpenSession?: WorkGraphSessionOpener
 }) {
   // Expanded Streams are route-restorable: WorkGraph is a single global surface,
   // so the set persists under a global key and survives a /workgraph reload. The
@@ -80,7 +80,7 @@ function StreamTreeItem(props: {
   client: WorkGraphClient
   mutate: Mutate
   onOpenStreamSettings: (stream: StreamDto) => void
-  onOpenSession?: (reference: { sessionId: string; workspaceId?: string }) => void
+  onOpenSession?: WorkGraphSessionOpener
 }) {
   const liveAttempts = () =>
     props.attempts.filter((attempt) => ["admitted", "placing", "running"].includes(attempt.state))
@@ -167,6 +167,11 @@ function StreamTreeItem(props: {
   }
   const [executeOpen, setExecuteOpen] = createSignal(false)
   const [executing, setExecuting] = createSignal(false)
+  const [retrying, setRetrying] = createSignal(false)
+  const retryableItems = () =>
+    props.stream.lifecycleState === "active"
+      ? props.items.filter((item) => isRetryable(item, props.attempts))
+      : []
   // The mode is always explicit — the popover never defaults; the user picks
   // supervised (one ready batch, then stop) or autonomous (keep launching newly
   // ready tasks until blocked/attention/complete), and we call that exact mode.
@@ -178,6 +183,19 @@ function StreamTreeItem(props: {
       if (launched) setExecuteOpen(false)
     } finally {
       setExecuting(false)
+    }
+  }
+  const retryStream = async (event: MouseEvent) => {
+    event.stopPropagation()
+    if (retrying()) return
+    setRetrying(true)
+    try {
+      for (const item of retryableItems()) {
+        const retried = await props.mutate(() => props.client.retryWorkItem(item.id, item.version))
+        if (!retried) return
+      }
+    } finally {
+      setRetrying(false)
     }
   }
 
@@ -317,6 +335,17 @@ function StreamTreeItem(props: {
             </div>
           </Popover>
         </Show>
+        <Show when={retryableItems().length}>
+          <button
+            type="button"
+            class="workgraph-row-settings"
+            aria-label={`Retry stream ${props.stream.title}`}
+            disabled={retrying()}
+            onClick={(event) => void retryStream(event)}
+          >
+            <Icon name="reset" size="small" />
+          </button>
+        </Show>
         <button
           type="button"
           class="workgraph-row-settings"
@@ -433,7 +462,7 @@ function OutcomeGroup(props: {
   streamId: string
   client: WorkGraphClient
   mutate: Mutate
-  onOpenSession?: (reference: { sessionId: string; workspaceId?: string }) => void
+  onOpenSession?: WorkGraphSessionOpener
 }) {
   const shipped = () => props.outcome?.state === "completed"
   return (
@@ -483,7 +512,7 @@ function WorkItemLeaf(props: {
   attempts: AttemptDto[]
   client: WorkGraphClient
   mutate: Mutate
-  onOpenSession?: (reference: { sessionId: string; workspaceId?: string }) => void
+  onOpenSession?: WorkGraphSessionOpener
 }) {
   const waits = () => props.item.dependencyIds.length
   const latestAttempt = () =>
@@ -496,7 +525,6 @@ function WorkItemLeaf(props: {
       (attempt) => attempt.workItemId === props.item.id && ["admitted", "placing", "running"].includes(attempt.state),
     )
   const [busy, setBusy] = createSignal(false)
-  const [openingSession, setOpeningSession] = createSignal(false)
   const [sessionError, setSessionError] = createSignal<string>()
   const remove = async (event: MouseEvent) => {
     event.stopPropagation()
@@ -508,26 +536,36 @@ function WorkItemLeaf(props: {
       setBusy(false)
     }
   }
+  const retry = async (event: MouseEvent) => {
+    event.stopPropagation()
+    if (busy() || !isRetryable(props.item, props.attempts)) return
+    setBusy(true)
+    setSessionError()
+    try {
+      await props.mutate(() => props.client.retryWorkItem(props.item.id, props.item.version))
+    } finally {
+      setBusy(false)
+    }
+  }
   const openSession = async (event: MouseEvent) => {
     event.stopPropagation()
     const attempt = latestAttempt()
-    if (!attempt || openingSession()) return
-    setOpeningSession(true)
+    if (!attempt) return
     setSessionError()
     try {
-      const references = (await props.client.attempt(attempt.id)).executionReferences
+      const references = attempt.executionReferences ?? (await props.client.attempt(attempt.id)).executionReferences
       if (!references?.sessionId) {
         setSessionError("Session unavailable")
         return
       }
-      props.onOpenSession?.({
+      await props.onOpenSession?.({
         sessionId: references.sessionId,
         ...(references.workspaceId ? { workspaceId: references.workspaceId } : {}),
+        harness: attempt.resolvedExecution.harness,
+        environment: attempt.resolvedExecution.environment,
       })
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : "Session unavailable")
-    } finally {
-      setOpeningSession(false)
     }
   }
   const showState = () => props.item.state !== "pending"
@@ -548,15 +586,26 @@ function WorkItemLeaf(props: {
         <span class="workgraph-leaf-state text-text-weaker">{props.item.state.replaceAll("_", " ")}</span>
       </Show>
       <Show when={sessionError()}>{(message) => <span class="workgraph-leaf-session-error" role="alert">{message()}</span>}</Show>
+      <Show when={isRetryable(props.item, props.attempts)}>
+        <button
+          type="button"
+          class="workgraph-leaf-session"
+          aria-label={`Retry task ${props.item.title}`}
+          disabled={busy()}
+          onClick={(event) => void retry(event)}
+        >
+          <span>{busy() ? "Retrying…" : "Retry"}</span>
+          <Icon name="reset" size="small" />
+        </button>
+      </Show>
       <Show when={sessionAvailable()}>
         <button
           type="button"
           class="workgraph-leaf-session"
           aria-label={`Open session for ${props.item.title}`}
-          disabled={openingSession()}
           onClick={(event) => void openSession(event)}
         >
-          <span>{openingSession() ? "Opening…" : "Session"}</span>
+          <span>Session</span>
           <Icon name="arrow-right" size="small" />
         </button>
       </Show>
@@ -572,6 +621,17 @@ function WorkItemLeaf(props: {
         </button>
       </Show>
     </div>
+  )
+}
+
+function isRetryable(item: WorkItemDto, attempts: AttemptDto[]) {
+  if (["completed", "abandoned"].includes(item.state)) return false
+  if (["failed", "verification_failed"].includes(item.state)) return true
+  return ["attention", "failed", "cancelled"].includes(
+    attempts
+      .filter((attempt) => attempt.workItemId === item.id)
+      .toSorted((left, right) => left.attemptNumber - right.attemptNumber)
+      .at(-1)?.state ?? "",
   )
 }
 

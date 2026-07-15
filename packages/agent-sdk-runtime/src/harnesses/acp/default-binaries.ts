@@ -6,7 +6,7 @@ import path from "node:path"
 // them transitively, and image builds collect the pins from here.
 const ACP_BIN_PACKAGES: Record<string, string> = {
   "claude-agent-acp": "@zed-industries/claude-agent-acp",
-  "codex-acp": "@zed-industries/codex-acp",
+  "codex-acp": "@agentclientprotocol/codex-acp",
 }
 
 /**
