@@ -135,7 +135,10 @@ async function runtimeProcess(sandbox: SandboxOperations) {
     sandbox.getProcess(RUNTIME_PROCESS_ID),
     "workspace-runtime process lookup",
   ).catch((error) => {
-    if (error instanceof Error && error.message.includes("ProcessNotFoundError")) return null
+    const message = typeof error === "object" && error !== null && "message" in error
+      ? String(error.message)
+      : String(error)
+    if (message.includes("ProcessNotFoundError")) return null
     throw error
   })
 }
