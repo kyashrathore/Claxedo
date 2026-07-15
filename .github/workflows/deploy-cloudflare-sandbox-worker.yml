@@ -39,10 +39,6 @@ jobs:
   deploy:
     if: ${{ inputs.deploy_worker }}
     runs-on: ubuntu-latest
-    # The control-plane release reads its credentials from this environment.
-    # Bind the independently dispatched sandbox release to the same source so
-    # the Worker's API_TOKEN and the driver's bearer token cannot drift.
-    environment: staging
     defaults:
       run:
         working-directory: packages/claxedo-server/scripts/sandbox/cloudflare-worker
@@ -92,12 +88,23 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npm run deploy
 
-      # The native driver authenticates its control calls with the same
-      # deployment credential currently composed by the control-plane Worker.
-      # Reapply it after every Worker version deploy so persisted secrets cannot
-      # drift across independently published versions.
+  synchronize-control-token:
+    needs: deploy
+    if: ${{ always() && needs.deploy.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: packages/claxedo-server/scripts/sandbox/cloudflare-worker
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # The native driver and this Worker read the same staging credential even
+      # though the container deployment uses a repository-scoped token with
+      # broader image permissions. This job also supports a fast sync-only
+      # dispatch when deploy_worker is false.
       - name: Synchronize sandbox control token
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: printf '%s' "$CLOUDFLARE_API_TOKEN" | npx wrangler secret put API_TOKEN
+        run: printf '%s' "$CLOUDFLARE_API_TOKEN" | npx --yes wrangler@4.50.0 secret put API_TOKEN
