@@ -9,7 +9,7 @@ import {
 } from "@claxedo/workgraph/contracts"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { WaitingItemDialog } from "./item-dialogs"
+import { TaskDialog, WaitingItemDialog } from "./item-dialogs"
 import type { WorkGraphWaitingSource } from "./waiting-source"
 
 afterEach(cleanup)
@@ -44,7 +44,10 @@ function baseSource(overrides: Partial<WorkGraphWaitingSource>): WorkGraphWaitin
     waiting: vi.fn(),
     proposal: vi.fn(),
     workItem: vi.fn(),
+    stream: vi.fn(async () => ({ activityGranularity: "progress" }) as never),
     latestAttempt: vi.fn(),
+    activity: vi.fn(async () => ({ entries: [], hasMore: false })),
+    evidence: vi.fn(async () => []),
     attempt: vi.fn(),
     decision: vi.fn(async () => decision),
     recap: vi.fn(),
@@ -59,6 +62,7 @@ function baseSource(overrides: Partial<WorkGraphWaitingSource>): WorkGraphWaitin
     dismissIntakeCandidate: vi.fn(),
     cancelAttempt: vi.fn(),
     retryWorkItem: vi.fn(),
+    executeWorkItem: vi.fn(),
     replacementReview: vi.fn(),
     ...overrides,
   } as WorkGraphWaitingSource
@@ -292,6 +296,96 @@ describe("WaitingItemDialog — failed task", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
   })
 })
+
+describe("TaskDialog — execution and activity", () => {
+  test("runs a pending Task directly from the fixed footer", async () => {
+    const executeWorkItem = vi.fn(async () => ok)
+    const onResolved = vi.fn()
+    const onClose = vi.fn()
+    const item = { ...failedWorkItem, state: "pending" as const }
+    const source = baseSource({
+      workItem: vi.fn(async () => item),
+      latestAttempt: vi.fn(async () => undefined),
+      executeWorkItem,
+    })
+
+    render(() => <TaskDialog item={item} source={source} onClose={onClose} onResolved={onResolved} />)
+    expect(await screen.findByText("No attempt has run yet.")).toBeInTheDocument()
+    const run = screen.getByRole("button", { name: "Run task" })
+    expect(run.closest(".workgraph-item-dialog-footer")).not.toBeNull()
+    await fireEvent.click(run)
+
+    await waitFor(() => expect(executeWorkItem).toHaveBeenCalledWith(item.id, "autonomous"))
+    expect(onResolved).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  test("appends paginated activity without duplicating an overlapping entry", async () => {
+    const activity = vi.fn(async (_id: string, options?: { after?: string }) => options?.after
+      ? {
+          entries: [activityEntry("activity_1", "First checkpoint"), activityEntry("activity_2", "Evidence recorded")],
+          hasMore: false,
+        }
+      : {
+          entries: [activityEntry("activity_1", "First checkpoint")],
+          hasMore: true,
+          nextCursor: "activity:next",
+        })
+    const source = baseSource({
+      workItem: vi.fn(async () => failedWorkItem),
+      latestAttempt: vi.fn(async () => failedAttempt),
+      activity: activity as never,
+    })
+
+    render(() => <TaskDialog item={failedWorkItem} source={source} onClose={() => {}} onResolved={() => {}} />)
+    expect(await screen.findByText("First checkpoint")).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole("button", { name: "Load earlier activity" }))
+    expect(await screen.findByText("Evidence recorded")).toBeInTheDocument()
+    expect(screen.getAllByText("First checkpoint")).toHaveLength(1)
+  })
+
+  test("requests activity at the owning Stream's configured detail", async () => {
+    const activity = vi.fn(async () => ({ entries: [], hasMore: false }))
+    const source = baseSource({
+      workItem: vi.fn(async () => failedWorkItem),
+      stream: vi.fn(async () => ({ activityGranularity: "detailed" }) as never),
+      latestAttempt: vi.fn(async () => failedAttempt),
+      activity,
+    })
+
+    render(() => <TaskDialog item={failedWorkItem} source={source} onClose={() => {}} onResolved={() => {}} />)
+    await screen.findByText("detailed")
+    expect(activity).toHaveBeenCalledWith(failedWorkItem.id, { after: undefined, granularity: "detailed", limit: 25 })
+  })
+
+  test("closes after handing the real Session to the app shell", async () => {
+    const onClose = vi.fn()
+    const onOpenSession = vi.fn(async () => {})
+    const source = baseSource({
+      workItem: vi.fn(async () => failedWorkItem),
+      latestAttempt: vi.fn(async () => failedAttempt),
+    })
+
+    render(() => <TaskDialog item={failedWorkItem} source={source} onClose={onClose} onResolved={() => {}} onOpenSession={onOpenSession} />)
+    await fireEvent.click(await screen.findByRole("button", { name: `Open session ${failedAttempt.executionReferences.sessionId}` }))
+    expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: failedAttempt.executionReferences.sessionId }))
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+})
+
+function activityEntry(id: string, summary: string) {
+  return {
+    id,
+    streamId: "stream_1",
+    workItemId: failedWorkItem.id,
+    category: "checkpoint" as const,
+    importance: "progress" as const,
+    summary,
+    occurredAt: 10,
+    actor: { type: "agent" as const, id: "session_1" },
+    source: { type: "checkpoint" as const, id: `checkpoint_${id}` },
+  }
+}
 
 describe("WaitingItemDialog — first admission", () => {
   test("keeps an explicit Confirm that submits the plan exactly as proposed", async () => {

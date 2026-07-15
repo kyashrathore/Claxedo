@@ -11,6 +11,31 @@ beforeEach(() => localStorage.clear())
 afterEach(() => cleanup())
 
 describe("WorkGraph overview actions", () => {
+  test("opens a pending Task inspector and starts it autonomously", async () => {
+    const commands: Array<Record<string, unknown>> = []
+    const request = workGraphRequest({
+      records: () => [stream, outcome, pendingItem],
+      command: (command) => {
+        commands.push(command)
+        return success()
+      },
+    })
+    render(() =>
+      createComponent(WorkGraphContent, { client: createWorkGraphClient({ baseUrl: "http://test.local", request }) }),
+    )
+
+    await fireEvent.click(await screen.findByRole("button", { name: `Open task ${pendingItem.title}` }))
+    expect(await screen.findByText("No attempt has run yet.")).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole("button", { name: "Run task" }))
+
+    await waitFor(() => expect(commands).toContainEqual({
+      version: 1,
+      type: "execute_work_item",
+      workItemId: pendingItem.id,
+      executionMode: "autonomous",
+    }))
+  })
+
   test("describes the Stream-owned execution target without inheritance language", async () => {
     const targeted = {
       ...stream,
@@ -555,6 +580,21 @@ function workGraphRequest(input: {
     if (pathname.includes("/recaps/")) return Response.json(recap)
     if (pathname.includes("/attempts/") && input.attempt) return Response.json(input.attempt(pathname.split("/").at(-1)!))
     if (pathname.endsWith("/notifications")) return Response.json({ notifications: [], hasMore: false })
+    if (pathname.endsWith("/evidence")) return Response.json({ evidence: [], hasMore: false })
+    if (pathname.includes("/work-items/") && pathname.endsWith("/activity")) {
+      return Response.json({ entries: [], hasMore: false })
+    }
+    if (pathname.includes("/work-items/") && pathname.endsWith("/attempts")) {
+      return Response.json({ attempts: [], hasMore: false })
+    }
+    if (pathname.includes("/work-items/")) {
+      const id = pathname.split("/").at(-1)
+      const item = input.records().find((record) => (
+        !!record && typeof record === "object" && "recordType" in record && record.recordType === "work_item" &&
+        "id" in record && record.id === id
+      ))
+      return Response.json(item)
+    }
     if (pathname.endsWith("/defaults"))
       return Response.json({
         recordType: "workgraph",

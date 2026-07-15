@@ -521,6 +521,54 @@
   gap: 0.15rem;
 }
 
+.workgraph-activity-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.workgraph-activity-row {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr) minmax(4rem, auto);
+  gap: 0.55rem;
+  align-items: start;
+  padding: 0.5rem 0;
+}
+
+.workgraph-activity-row + .workgraph-activity-row {
+  border-top: 1px solid color-mix(in srgb, var(--border-weak-base) 55%, transparent);
+}
+
+.workgraph-activity-icon {
+  display: grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  color: var(--icon-weak-base);
+}
+
+.workgraph-activity-icon[data-category="decision"] {
+  color: var(--icon-warning-base);
+}
+
+.workgraph-activity-icon[data-category="evidence"] {
+  color: var(--icon-success-base);
+}
+
+.workgraph-activity-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.workgraph-activity-source {
+  max-width: 10rem;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .workgraph-detail-candidate {
   display: flex;
   align-items: center;

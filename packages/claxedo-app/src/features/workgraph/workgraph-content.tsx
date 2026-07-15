@@ -13,7 +13,7 @@ import { ProjectPicker, type LocalProjectOption } from "./project-picker"
 import { useWorkGraphSyncLifecycle } from "./sync-lifecycle"
 import { environmentChoices } from "./waiting/settings-capabilities"
 import { WaitingCard, createWaitingCardController } from "./waiting/waiting-card"
-import { WaitingItemDialog } from "./waiting/item-dialogs"
+import { TaskDialog, WaitingItemDialog } from "./waiting/item-dialogs"
 import { WaitingPanelBody } from "./waiting/waiting-panel"
 import { WorkGraphSettingsPanel } from "./settings-panel"
 import { toWaitingRow, waitingSourceFromClient } from "./waiting/waiting-source"
@@ -70,10 +70,8 @@ export function WorkGraphContent(props: {
   const [baseRevision, setBaseRevision] = createSignal("HEAD")
   const [mutationError, setMutationError] = createSignal<WorkGraphApiError>()
 
-  // Focused item dialog + per-stream settings dialog (focused, over this screen).
-  // The selection carries the exact element that invoked it so focus can be
-  // restored deterministically after the dialog acts.
   const [selectedWaiting, setSelectedWaiting] = createSignal<{ item: AttentionItem; invoker: HTMLElement }>()
+  const [selectedTask, setSelectedTask] = createSignal<{ item: WorkItemDto; invoker: HTMLElement }>()
   const [streamSettings, setStreamSettings] = createSignal<StreamDto>()
   // Stable references for the focus-restoration fallback hierarchy. Row focus is
   // always scoped to the Needs you panel — never a global text query.
@@ -172,6 +170,10 @@ export function WorkGraphContent(props: {
   const streams = createMemo(() => records().filter((record): record is StreamDto => record.recordType === "stream"))
   const attempts = createMemo(() => records().filter((record): record is AttemptDto => record.recordType === "attempt"))
   const workItems = createMemo(() => records().filter((record): record is WorkItemDto => record.recordType === "work_item"))
+  const selectedTaskItem = createMemo(() => selectedTask() && (
+    workItems().find((item) => item.id === selectedTask()!.item.id) ?? selectedTask()!.item
+  ))
+  const selectedTaskGranularity = createMemo(() => streams().find((stream) => stream.id === selectedTaskItem()?.streamId)?.activityGranularity)
   const outcomes = createMemo(() => records().filter((record): record is OutcomeDto => record.recordType === "outcome"))
   const activeAttempts = createMemo(() => attempts().filter((attempt) => ["admitted", "placing", "running"].includes(attempt.state)))
   const sortedStreams = createMemo(() => [...streams()].sort((a, b) => b.activity.lastActivityAt - a.activity.lastActivityAt))
@@ -316,6 +318,14 @@ export function WorkGraphContent(props: {
     waitingRefetch = undefined
     setSelectedWaiting({ item, invoker: element })
   }
+  const selectTask = (item: WorkItemDto, invoker: HTMLElement) => setSelectedTask({ item, invoker })
+  const closeTask = () => {
+    const invoker = selectedTask()?.invoker
+    if (!invoker) return
+    setSelectedTask(undefined)
+    queueMicrotask(() => focusElement(invoker))
+  }
+  const resolvedTask = () => void refetch()
   // A real domain transition: remember the pre-refetch ordering and start the
   // attention refetch, but defer the focus move to close (see closeWaiting) so it
   // lands after the dialog has actually torn down.
@@ -602,6 +612,7 @@ export function WorkGraphContent(props: {
                   client={client}
                   mutate={mutate}
                   onOpenStreamSettings={openStreamSettings}
+                  onOpenTask={selectTask}
                   onOpenSession={props.onOpenSession}
                 />
               </div>
@@ -669,6 +680,7 @@ export function WorkGraphContent(props: {
         )}
       </Show>
       <WaitingItemDialog selection={selectedWaiting()?.item} source={source} onClose={closeWaiting} onResolved={resolvedWaiting} onOpenSettings={openWorkGraphSettings} onOpenSession={props.onOpenSession} />
+      <TaskDialog item={selectedTaskItem()} refreshToken={snapshot()?.snapshotCursor} activityGranularity={selectedTaskGranularity()} source={source} onClose={closeTask} onResolved={resolvedTask} onOpenSession={props.onOpenSession} />
     </main>
   )
 }

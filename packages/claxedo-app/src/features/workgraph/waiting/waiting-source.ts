@@ -6,12 +6,18 @@ import type {
   AttentionPage,
   CommandResult,
   DecisionDto,
+  EvidenceDto,
+  EvidencePageCursor,
   IntakeCandidatePage,
   IntakeCandidatePageCursor,
   RecapDto,
   ReplacementReview,
+  StreamDto,
   WorkGraphDefaultsDto,
   WorkItemAttemptPageCursor,
+  TaskActivityPage,
+  TaskActivityPageCursor,
+  StreamActivityGranularity,
   WorkItemDto,
   WorkSourceRevisionRef,
 } from "@claxedo/workgraph/contracts"
@@ -31,12 +37,22 @@ export type WorkGraphWaitingSource = {
   clear: WorkGraphClient["clearAttention"]
   proposal: (proposalId: string) => Promise<AdmissionProposalDto>
   workItem: (workItemId: string) => Promise<WorkItemDto>
+  stream: (streamId: string) => Promise<StreamDto>
   /**
    * The true latest attempt for a Work Item — determined by following strict
    * page cursors to the end, so it is correct even beyond the first page.
    * Resolves to undefined when no attempt has run.
    */
   latestAttempt: (workItemId: string) => Promise<AttemptDetailDto | undefined>
+  activity: (
+    workItemId: string,
+    options?: Readonly<{
+      after?: TaskActivityPageCursor
+      granularity?: StreamActivityGranularity
+      limit?: number
+    }>,
+  ) => Promise<TaskActivityPage>
+  evidence: (workItemId: string) => Promise<EvidenceDto[]>
   attempt: (attemptId: string) => Promise<AttemptDetailDto>
   decision: (decisionId: string) => Promise<DecisionDto>
   recap: (recapId: string) => Promise<RecapDto>
@@ -52,6 +68,7 @@ export type WorkGraphWaitingSource = {
   dismissIntakeCandidate: (candidateId: string, expectedVersion: number) => Promise<unknown>
   cancelAttempt: (attemptId: string, expectedVersion: number, reason: string) => Promise<CommandResult>
   retryWorkItem: (workItemId: string, expectedVersion: number) => Promise<CommandResult>
+  executeWorkItem: WorkGraphClient["executeWorkItem"]
   /**
    * Server-truth review for a Work Source *revision* admission (i.e. a proposal
    * whose `previousSource` is set). Returns the target Stream's title (needed to
@@ -72,7 +89,10 @@ export function waitingSourceFromClient(client: WorkGraphClient): WorkGraphWaiti
     clear: () => client.clearAttention(),
     proposal: (id) => client.proposal(id),
     workItem: (id) => client.workItem(id),
+    stream: (id) => client.stream(id),
     latestAttempt: (id) => latestAttempt(client, id),
+    activity: (id, options) => client.workItemActivity(id, options),
+    evidence: (id) => workItemEvidence(client, id),
     attempt: (id) => client.attempt(id),
     decision: (id) => client.decision(id),
     recap: (id) => client.recap(id),
@@ -87,6 +107,7 @@ export function waitingSourceFromClient(client: WorkGraphClient): WorkGraphWaiti
     dismissIntakeCandidate: (id, version) => client.dismissIntakeCandidate(id, version),
     cancelAttempt: (id, version, reason) => client.cancelAttempt(id, version, reason),
     retryWorkItem: (id, version) => client.retryWorkItem(id, version),
+    executeWorkItem: (id, mode) => client.executeWorkItem(id, mode),
     replacementReview: (input) => client.replacementReview(input),
   }
 }
@@ -106,6 +127,20 @@ async function latestAttempt(client: WorkGraphClient, workItemId: string) {
       if (!best || detail.attempt.attemptNumber > best.attempt.attemptNumber) best = detail
     }
     if (!page.hasMore || !page.nextCursor) return best
+    after = page.nextCursor
+  }
+}
+
+async function workItemEvidence(client: WorkGraphClient, workItemId: string) {
+  const evidence: EvidenceDto[] = []
+  let after: EvidencePageCursor | undefined
+  for (;;) {
+    const page = await client.evidencePage(
+      { type: "work_item", workItemId },
+      { limit: 100, ...(after ? { after } : {}) },
+    )
+    evidence.push(...page.evidence)
+    if (!page.hasMore || !page.nextCursor) return evidence
     after = page.nextCursor
   }
 }

@@ -4,8 +4,13 @@ import type {
   IntakeCandidateDto,
   IntakeCandidatePageCursor,
   ResolvedExecutionProfile,
+  StreamActivityGranularity,
+  TaskActivityEntry,
+  TaskActivityPageCursor,
+  WorkItemDto,
 } from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
+import { Icon } from "@opencode-ai/ui/icon"
 import { createMemo, createResource, createSignal, For, type JSX, onMount, Show } from "solid-js"
 import { ActionError, createAction } from "./dialog-action"
 import { ProposalContent } from "./item-dialog-proposal"
@@ -14,6 +19,55 @@ import { DetailState, DialogField, DialogSection, WorkGraphDialog } from "./work
 import type { WorkGraphSessionOpener, WorkGraphSessionReference } from "../api"
 
 type Selection = AttentionItem | undefined
+
+export function TaskDialog(props: {
+  item: WorkItemDto | undefined
+  source: WorkGraphWaitingSource
+  onClose: () => void
+  onResolved: () => void
+  onOpenSession?: WorkGraphSessionOpener
+  refreshToken?: string
+  activityGranularity?: StreamActivityGranularity
+}) {
+  const openSession = async (reference: WorkGraphSessionReference) => {
+    await props.onOpenSession?.(reference)
+    props.onClose()
+  }
+  const action = createAction(() => {
+    props.onResolved()
+    props.onClose()
+  })
+  const retryable = () => props.item && ["failed", "verification_failed"].includes(props.item.state)
+  const executable = () => props.item?.state === "pending"
+  const footer = () => {
+    const item = props.item
+    if (!item || (!retryable() && !executable())) return
+    return (
+      <>
+        <Show when={action.error()}>
+          {(message) => <span class="workgraph-dialog-footer-error" role="alert">{message()}</span>}
+        </Show>
+        <Button
+          size="small"
+          variant="primary"
+          disabled={action.busy()}
+          onClick={() => void action.run(() => retryable()
+            ? props.source.retryWorkItem(item.id, item.version)
+            : props.source.executeWorkItem(item.id, "autonomous"))}
+        >
+          {action.busy() ? "Starting…" : retryable() ? "Run again" : "Run task"}
+        </Button>
+      </>
+    )
+  }
+  return (
+    <WorkGraphDialog open={!!props.item} onClose={props.onClose} title="Task" size="large" scrollBody footer={footer()}>
+      <Show when={props.item} keyed>
+        {(item) => <TaskContent workItemId={item.id} refreshToken={props.refreshToken} activityGranularity={props.activityGranularity} source={props.source} onOpenSession={openSession} />}
+      </Show>
+    </WorkGraphDialog>
+  )
+}
 /**
  * Opens a focused dialog over the WorkGraph screen for the selected Waiting
  * item. Opening never resolves the item; it only leaves Waiting after its real
@@ -28,6 +82,7 @@ type ItemContentProps = {
   /** Opens the shared WorkGraph settings panel tab (for configuration_required). */
   onOpenSettings?: () => void
   onOpenSession?: WorkGraphSessionOpener
+  activityGranularity?: StreamActivityGranularity
 }
 
 export function WaitingItemDialog(props: {
@@ -110,7 +165,7 @@ function NonDecision(props: ItemContentProps) {
 function AfterProposal(props: ItemContentProps) {
   return (
     <Show when={props.item.kind === "work_item" && props.item} keyed fallback={<AfterWorkItem {...props} />}>
-      {(item) => <TaskContent item={item} source={props.source} onOpenSession={props.onOpenSession} />}
+      {(item) => <TaskContent workItemId={item.record.id} source={props.source} onOpenSession={props.onOpenSession} />}
     </Show>
   )
 }
@@ -217,14 +272,31 @@ function DecisionContent(props: {
 // ── Task (work item) + Attempt execution/results ──────────────────────────
 
 function TaskContent(props: {
-  item: Extract<AttentionItem, { kind: "work_item" }>
+  workItemId: string
+  refreshToken?: string
+  activityGranularity?: StreamActivityGranularity
   source: WorkGraphWaitingSource
   onOpenSession?: WorkGraphSessionOpener
 }) {
-  const [workItem, { refetch }] = createResource(() => props.source.workItem(props.item.record.id))
+  const [workItem, { refetch }] = createResource(
+    () => [props.workItemId, props.refreshToken] as const,
+    ([workItemId]) => props.source.workItem(workItemId),
+  )
+  const [stream, { refetch: refetchStream }] = createResource(
+    () => props.activityGranularity ? undefined : workItem()?.streamId,
+    (streamId) => props.source.stream(streamId),
+  )
+  const activityKey = createMemo(() => {
+    const granularity = props.activityGranularity ?? stream()?.activityGranularity
+    if (!granularity) return
+    return { granularity, refreshToken: props.refreshToken ?? workItem()?.version }
+  })
   // The true latest attempt, resolved by following strict page cursors to the
   // end — never an arbitrary first-page attempt.
-  const [latest] = createResource(() => props.source.latestAttempt(props.item.record.id))
+  const [latest] = createResource(
+    () => [props.workItemId, props.refreshToken] as const,
+    ([workItemId]) => props.source.latestAttempt(workItemId),
+  )
   return (
     <DetailState resource={workItem} retry={refetch}>
       {(item) => (
@@ -234,16 +306,7 @@ function TaskContent(props: {
           <Show when={item.dependencyIds.length}>
             <DialogField label="Waits for">{item.dependencyIds.length} task(s)</DialogField>
           </Show>
-          <DialogSection title="Completion requirements">
-            <For each={item.completionContract.requirements}>
-              {(requirement) => (
-                <div class="workgraph-detail-plan-item">
-                  <span class="text-text-base">{requirement.kind.replaceAll("_", " ")}</span>
-                  <span class="text-[11px] text-text-base">{requirement.description}</span>
-                </div>
-              )}
-            </For>
-          </DialogSection>
+          <CompletionRequirements item={item} source={props.source} />
           <DialogSection title="Latest attempt">
             <Show when={latest.loading && !latest()}>
               <div class="workgraph-detail-status" role="status">
@@ -259,10 +322,129 @@ function TaskContent(props: {
               {(detail) => <AttemptDetailView detail={detail()} onOpenSession={props.onOpenSession} />}
             </Show>
           </DialogSection>
+          <Show when={activityKey()} keyed fallback={
+            <DialogSection title="Activity">
+              <Show when={!stream.error} fallback={<div class="workgraph-detail-status is-error" role="alert">Activity settings could not be loaded. <button type="button" class="workgraph-detail-retry" onClick={() => void refetchStream()}>Retry</button></div>}>
+                <div class="workgraph-detail-status" role="status">Loading activity…</div>
+              </Show>
+            </DialogSection>
+          }>
+            {(key) => <TaskActivity workItemId={item.id} granularity={key.granularity} source={props.source} />}
+          </Show>
         </div>
       )}
     </DetailState>
   )
+}
+
+function CompletionRequirements(props: { item: WorkItemDto; source: WorkGraphWaitingSource }) {
+  const [evidence] = createResource(() => props.item.id, (workItemId) => props.source.evidence(workItemId))
+  const recorded = createMemo(() => new Set(evidence()?.flatMap((entry) => entry.requirementId ? [entry.requirementId] : []) ?? []))
+  return (
+    <DialogSection title="Completion requirements">
+      <For each={props.item.completionContract.requirements}>
+        {(requirement) => (
+          <div class="workgraph-detail-plan-item">
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-text-base">{requirement.kind.replaceAll("_", " ")}</span>
+              <Show when={evidence()}>
+                <span class="font-mono text-[10px]" classList={{
+                  "text-icon-success-base": recorded().has(requirement.id),
+                  "text-icon-critical-base": !recorded().has(requirement.id) && ["result_ready", "verification_failed"].includes(props.item.state),
+                  "text-text-weaker": !recorded().has(requirement.id) && !["result_ready", "verification_failed"].includes(props.item.state),
+                }}>
+                  {recorded().has(requirement.id) ? "evidence recorded" : ["result_ready", "verification_failed"].includes(props.item.state) ? "evidence needed" : "pending"}
+                </span>
+              </Show>
+            </div>
+            <span class="text-[11px] text-text-base">{requirement.description}</span>
+          </div>
+        )}
+      </For>
+      <Show when={evidence.error}>
+        <div class="workgraph-detail-status is-error" role="alert">Evidence could not be loaded.</div>
+      </Show>
+    </DialogSection>
+  )
+}
+
+function TaskActivity(props: {
+  workItemId: string
+  granularity: StreamActivityGranularity
+  source: WorkGraphWaitingSource
+}) {
+  const [entries, setEntries] = createSignal<TaskActivityEntry[]>([])
+  const [nextCursor, setNextCursor] = createSignal<TaskActivityPageCursor>()
+  const [loading, setLoading] = createSignal(false)
+  const [loaded, setLoaded] = createSignal(false)
+  const [error, setError] = createSignal<string>()
+  const load = async (after?: TaskActivityPageCursor) => {
+    if (loading()) return
+    setLoading(true)
+    setError()
+    try {
+      const page = await props.source.activity(props.workItemId, { after, granularity: props.granularity, limit: 25 })
+      setEntries((current) => {
+        const byId = new Map((after ? current : []).map((entry) => [entry.id, entry]))
+        page.entries.forEach((entry) => byId.set(entry.id, entry))
+        return Array.from(byId.values())
+      })
+      setNextCursor(page.hasMore ? page.nextCursor : undefined)
+      setLoaded(true)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setLoading(false)
+    }
+  }
+  onMount(() => void load())
+  return (
+    <DialogSection title="Activity" trailing={<span class="text-[10px] text-text-weaker">{props.granularity}</span>}>
+      <Show when={error()}>{(message) => <div class="workgraph-detail-status is-error" role="alert">{message()}</div>}</Show>
+      <Show when={loading() && !loaded()}>
+        <div class="workgraph-detail-status" role="status">Loading activity…</div>
+      </Show>
+      <Show when={loaded() && entries().length === 0}>
+        <span class="text-[12px] text-text-weaker">No activity yet.</span>
+      </Show>
+      <ol class="workgraph-activity-list">
+        <For each={entries()}>{(entry) => <TaskActivityRow entry={entry} />}</For>
+      </ol>
+      <Show when={nextCursor()}>
+        {(cursor) => (
+          <button type="button" class="workgraph-detail-retry" disabled={loading()} onClick={() => void load(cursor())}>
+            {loading() ? "Loading…" : "Load earlier activity"}
+          </button>
+        )}
+      </Show>
+    </DialogSection>
+  )
+}
+
+function TaskActivityRow(props: { entry: TaskActivityEntry }) {
+  return (
+    <li class="workgraph-activity-row">
+      <span class="workgraph-activity-icon" data-category={props.entry.category} aria-hidden="true">
+        <Icon name={activityIcon(props.entry.category)} size="small" />
+      </span>
+      <div class="workgraph-activity-copy">
+        <span class="text-[12px] leading-5 text-text-base">{props.entry.summary}</span>
+        <span class="font-mono text-[10px] text-text-weaker">
+          {props.entry.category.replaceAll("_", " ")} · {new Date(props.entry.occurredAt).toLocaleString()}
+        </span>
+      </div>
+      <span class="workgraph-activity-source font-mono text-[10px] text-text-weaker">{props.entry.source.id}</span>
+    </li>
+  )
+}
+
+function activityIcon(category: TaskActivityEntry["category"]): "task" | "terminal" | "check-small" | "help" | "link" | "status" {
+  if (category === "attempt") return "terminal"
+  if (category === "checkpoint") return "check-small"
+  if (category === "decision") return "help"
+  if (category === "evidence") return "link"
+  if (category === "external_effect") return "status"
+  return "task"
 }
 
 function AttemptContent(props: { attemptId: string; source: WorkGraphWaitingSource; onOpenSession?: WorkGraphSessionOpener }) {

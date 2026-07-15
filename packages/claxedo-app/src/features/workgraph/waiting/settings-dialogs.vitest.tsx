@@ -331,6 +331,7 @@ describe("StreamSettingsDialog", () => {
 
     // Harness is advertised regardless of environment, so it is a safe field to edit here.
     fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "opencode" } })
+    fireEvent.change(screen.getByLabelText("Detail"), { target: { value: "detailed" } })
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
@@ -339,6 +340,7 @@ describe("StreamSettingsDialog", () => {
     expect(version).toBe(7)
     expect(settings.execution.harness).toBe("opencode")
     expect(settings.recap).toBeDefined()
+    expect(settings.activityGranularity).toBe("detailed")
   })
 
   test("distinguishes Stream-owned targets from WorkGraph profile defaults", async () => {

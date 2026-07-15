@@ -6,6 +6,7 @@ import {
   type ExecutionProfileDefaults,
   type RecapProfileDefaults,
   type StreamDto,
+  type StreamActivityGranularity,
   type WorkGraphDefaultsDto,
 } from "@claxedo/workgraph/contracts"
 import { Button } from "@opencode-ai/ui/button"
@@ -84,7 +85,7 @@ export function WorkGraphSettingsView(props: {
 export type StreamSettingsSource = {
   workgraphDefaults: () => Promise<WorkGraphDefaultsDto>
   /** Atomic update of both execution and recap overrides at one expected version. */
-  save: (streamId: string, expectedVersion: number, settings: { execution: ExecutionProfileDefaults; recap: RecapProfileDefaults }) => Promise<CommandResult>
+  save: (streamId: string, expectedVersion: number, settings: { execution: ExecutionProfileDefaults; recap: RecapProfileDefaults; activityGranularity: StreamActivityGranularity }) => Promise<CommandResult>
 }
 
 type StreamSettingsProps = {
@@ -141,6 +142,7 @@ function StreamSettingsContent(props: StreamSettingsProps & { active: boolean; f
               showRecap
               execution={stream.executionDefaults}
               recap={stream.recapDefaults}
+              activityGranularity={stream.activityGranularity}
               inheritedExecution={workgraph.defaults.execution}
               capabilities={props.capabilities}
               capabilitiesError={props.capabilitiesError}
@@ -148,8 +150,8 @@ function StreamSettingsContent(props: StreamSettingsProps & { active: boolean; f
               localProjects={props.localProjects}
               onChooseLocalProject={props.onChooseLocalProject}
               onCancel={props.onClose}
-              save={async (execution, recap) => {
-                const result = await props.source.save(stream.id, stream.version, { execution, recap })
+              save={async (execution, recap, activityGranularity) => {
+                const result = await props.source.save(stream.id, stream.version, { execution, recap, activityGranularity: activityGranularity ?? "progress" })
                 if (result.ok) props.onClose()
                 return result
               }}
@@ -174,6 +176,7 @@ type SettingsFormProps = {
   showRecap: boolean
   execution: ExecutionProfileDefaults
   recap: RecapProfileDefaults
+  activityGranularity?: StreamActivityGranularity
   inheritedExecution?: ExecutionProfileDefaults
   capabilities?: ExecutionCapabilities
   capabilitiesError?: WorkGraphApiError
@@ -181,7 +184,7 @@ type SettingsFormProps = {
   localProjects?: readonly LocalProjectOption[]
   onChooseLocalProject?: () => Promise<string | undefined>
   onCancel: () => void
-  save: (execution: ExecutionProfileDefaults, recap: RecapProfileDefaults) => Promise<CommandResult>
+  save: (execution: ExecutionProfileDefaults, recap: RecapProfileDefaults, activityGranularity?: StreamActivityGranularity) => Promise<CommandResult>
 }
 
 /** Remount once a capability catalog arrives so catalog-derived defaults are
@@ -242,6 +245,7 @@ function SettingsFormBody(props: SettingsFormProps) {
   const [recapProvider, setRecapProvider] = createSignal(recap.model?.providerId ?? "")
   const [recapModel, setRecapModel] = createSignal(modelKey(recap.model))
   const [quietHours, setQuietHours] = createSignal(recap.quietHours?.toString() ?? "")
+  const [activityGranularity, setActivityGranularity] = createSignal<StreamActivityGranularity>(props.activityGranularity ?? "progress")
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string>()
 
@@ -463,7 +467,7 @@ function SettingsFormBody(props: SettingsFormProps) {
       // WorkGraph settings never edit recap, so its loaded object is passed through
       // unchanged; the Stream form edits recap and rebuilds it from the fields.
       const recap = props.showRecap ? buildRecap() : props.recap
-      const result = await props.save(buildExecution(), recap)
+      const result = await props.save(buildExecution(), recap, props.showRecap ? activityGranularity() : undefined)
       if (!result.ok) setError(result.error.code === "version_conflict" ? "These settings changed elsewhere. Reload before saving." : result.error.message)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -515,6 +519,20 @@ function SettingsFormBody(props: SettingsFormProps) {
             <ConnectionRow label="Connections" description="External accounts an attempt may use through scoped broker tools." options={connectionOptions()} selected={connectionIds()} onToggle={toggleConnection} override={connectionsOverride()} onOverride={setConnectionsMode} emptyLabel={emptyLabel} editable={hasCaps()} />
           </Show>
           <Show when={props.showRecap}>
+            <div class="workgraph-settings-section-title">Activity</div>
+            <SelectRow
+              label="Detail"
+              description="How much meaningful Task progress appears in the activity timeline. Lifecycle, blockers, evidence, and completion always remain visible."
+              value={activityGranularity()}
+              onChange={(value) => setActivityGranularity(value as StreamActivityGranularity)}
+              options={[
+                { value: "milestones", label: "Milestones" },
+                { value: "progress", label: "Progress" },
+                { value: "detailed", label: "Detailed" },
+              ]}
+              editable
+              emptyLabel="Progress"
+            />
             <div class="workgraph-settings-section-title">Recap behavior</div>
             <SelectRow label="Provider" ariaLabel="Recap provider" description="Model service used to compose recaps." value={recapProvider()} onChange={changeRecapProvider} options={recapProviderOptions()} editable={hasCaps()} emptyLabel={emptyLabel} />
             <SelectRow label="Model" ariaLabel="Recap model" description="Model that condenses completed work into a recap." value={recapModel()} onChange={changeRecapModel} options={recapModelOptions()} editable={hasCaps()} emptyLabel={emptyLabel} />

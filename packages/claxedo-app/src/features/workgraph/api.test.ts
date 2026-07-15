@@ -423,6 +423,38 @@ describe("WorkGraph API", () => {
     ])
   })
 
+  test("reads bounded Task activity with explicit granularity and cursor paging", async () => {
+    const calls: string[] = []
+    const entry = {
+      id: "activity_1",
+      streamId: "stream_1",
+      workItemId: "item_1",
+      category: "checkpoint",
+      importance: "progress",
+      summary: "Validated the migration boundary",
+      occurredAt: 10,
+      actor: { type: "agent", id: "session_1" },
+      source: { type: "checkpoint", id: "checkpoint_1" },
+    }
+    const client = createWorkGraphClient({
+      baseUrl: "http://127.0.0.1:3001",
+      request: async (input) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url)
+        calls.push(`${url.pathname}${url.search}`)
+        return Response.json({ entries: [entry], hasMore: true, nextCursor: "activity:next" })
+      },
+    })
+
+    await expect(client.workItemActivity("item_1", {
+      granularity: "detailed",
+      after: "activity:previous" as never,
+      limit: 1,
+    })).resolves.toMatchObject({ entries: [{ id: "activity_1" }], hasMore: true })
+    expect(calls).toEqual([
+      "/api/workgraph/work-items/item_1/activity?granularity=detailed&limit=1&after=activity%3Aprevious",
+    ])
+  })
+
   test("surfaces an invalid Evidence cursor and rejects a non-canonical page", async () => {
     let invalid = true
     const client = createWorkGraphClient({
@@ -522,6 +554,7 @@ describe("WorkGraph API", () => {
     await client.updateStreamSettings("stream_1", 5, {
       execution: { effort: "high" },
       recap: { effort: "low", quietHours: 12 },
+      activityGranularity: "detailed",
     })
     await client.updateWorkItemExecution("item_1", 3, {})
     await client.executeWorkItem("item_1", "supervised")
@@ -537,7 +570,7 @@ describe("WorkGraph API", () => {
       { operationId: "operation_fixed", command: { version: 1, type: "create_outcome", streamId: "stream_1", title: "Deploy", successCriteria: ["Healthy in production"] } },
       { operationId: "operation_fixed", command: { version: 1, type: "create_work_item", streamId: "stream_1", outcomeId: "outcome_1", title: "Run deployment", dependencyIds: ["item_0"], completionContract: { version: 1, mode: "all", requirements: [{ id: "requirement_1", kind: "verification", description: "Smoke test passes", instructions: "Run smoke test" }] } } },
       { operationId: "operation_fixed", command: { version: 1, type: "update_outcome", outcomeId: "outcome_1", expectedVersion: 2, execution: { effort: "high", model: { providerId: "openai", modelId: "gpt-5.1" } } } },
-      { operationId: "operation_fixed", command: { version: 1, type: "update_stream", streamId: "stream_1", expectedVersion: 5, execution: { effort: "high" }, recap: { effort: "low", quietHours: 12 } } },
+      { operationId: "operation_fixed", command: { version: 1, type: "update_stream", streamId: "stream_1", expectedVersion: 5, execution: { effort: "high" }, recap: { effort: "low", quietHours: 12 }, activityGranularity: "detailed" } },
       { operationId: "operation_fixed", command: { version: 1, type: "update_work_item", workItemId: "item_1", expectedVersion: 3, execution: {} } },
       { operationId: "operation_fixed", command: { version: 1, type: "execute_work_item", workItemId: "item_1", executionMode: "supervised" } },
       { operationId: "operation_fixed", command: { version: 1, type: "cancel_attempt", attemptId: "attempt_1", expectedVersion: 3, reason: "Owner stopped it" } },

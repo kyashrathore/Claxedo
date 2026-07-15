@@ -27,6 +27,7 @@ export function WorkGraphStreamTree(props: {
   client: WorkGraphClient
   mutate: Mutate
   onOpenStreamSettings: (stream: StreamDto) => void
+  onOpenTask: (item: WorkItemDto, invoker: HTMLElement) => void
   onOpenSession?: WorkGraphSessionOpener
 }) {
   // Expanded Streams are route-restorable: WorkGraph is a single global surface,
@@ -60,6 +61,7 @@ export function WorkGraphStreamTree(props: {
               client={props.client}
               mutate={props.mutate}
               onOpenStreamSettings={props.onOpenStreamSettings}
+              onOpenTask={props.onOpenTask}
               onOpenSession={props.onOpenSession}
             />
           )}
@@ -80,6 +82,7 @@ function StreamTreeItem(props: {
   client: WorkGraphClient
   mutate: Mutate
   onOpenStreamSettings: (stream: StreamDto) => void
+  onOpenTask: (item: WorkItemDto, invoker: HTMLElement) => void
   onOpenSession?: WorkGraphSessionOpener
 }) {
   const liveAttempts = () =>
@@ -419,6 +422,7 @@ function StreamTreeItem(props: {
                 client={props.client}
                 mutate={props.mutate}
                 onOpenSession={props.onOpenSession}
+                onOpenTask={props.onOpenTask}
               />
             )}
           </For>
@@ -430,13 +434,14 @@ function StreamTreeItem(props: {
               client={props.client}
               mutate={props.mutate}
               onOpenSession={props.onOpenSession}
+              onOpenTask={props.onOpenTask}
             />
           </Show>
           <Show when={props.outcomes.length === 0}>
             <div class="workgraph-leaves workgraph-stream-leaves">
               <For each={unassigned()}>
                 {(item) => (
-                  <WorkItemLeaf item={item} attempts={props.attempts} client={props.client} mutate={props.mutate} onOpenSession={props.onOpenSession} />
+                  <WorkItemLeaf item={item} attempts={props.attempts} client={props.client} mutate={props.mutate} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />
                 )}
               </For>
             </div>
@@ -462,6 +467,7 @@ function OutcomeGroup(props: {
   streamId: string
   client: WorkGraphClient
   mutate: Mutate
+  onOpenTask: (item: WorkItemDto, invoker: HTMLElement) => void
   onOpenSession?: WorkGraphSessionOpener
 }) {
   const shipped = () => props.outcome?.state === "completed"
@@ -491,7 +497,7 @@ function OutcomeGroup(props: {
       </div>
       <div class="workgraph-leaves">
         <For each={props.items}>
-          {(item) => <WorkItemLeaf item={item} attempts={props.attempts} client={props.client} mutate={props.mutate} onOpenSession={props.onOpenSession} />}
+          {(item) => <WorkItemLeaf item={item} attempts={props.attempts} client={props.client} mutate={props.mutate} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />}
         </For>
         <Show when={props.outcome}>
           <InlineAddTask
@@ -512,6 +518,7 @@ function WorkItemLeaf(props: {
   attempts: AttemptDto[]
   client: WorkGraphClient
   mutate: Mutate
+  onOpenTask: (item: WorkItemDto, invoker: HTMLElement) => void
   onOpenSession?: WorkGraphSessionOpener
 }) {
   const waits = () => props.item.dependencyIds.length
@@ -575,7 +582,18 @@ function WorkItemLeaf(props: {
   }
 
   return (
-    <div class="workgraph-leaf">
+    <div
+      class="workgraph-leaf"
+      role="button"
+      tabIndex={0}
+      aria-label={`Open task ${props.item.title}`}
+      onClick={(event) => props.onOpenTask(props.item, event.currentTarget)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return
+        event.preventDefault()
+        props.onOpenTask(props.item, event.currentTarget)
+      }}
+    >
       <span class="workgraph-status-dot" data-tone={statusTone(props.item.state)} aria-hidden="true" />
       <span class="workgraph-leaf-title text-text-base">{props.item.title}</span>
       <Show when={waits()}>

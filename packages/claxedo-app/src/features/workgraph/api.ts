@@ -16,6 +16,9 @@ import {
   ReplacementReviewSchema,
   WorkItemAttemptPageCursorSchema,
   WorkItemAttemptPageSchema,
+  TaskActivityPageCursorSchema,
+  TaskActivityPageSchema,
+  StreamActivityGranularitySchema,
   WorkItemDtoSchema,
   AdmissionSelectionSchema,
   AdmissionOutcomeInputSchema,
@@ -41,6 +44,8 @@ import {
   type ExecutionMode,
   type EvidencePageCursor,
   type WorkItemAttemptPageCursor,
+  type TaskActivityPageCursor,
+  type StreamActivityGranularity,
   type StreamDto,
   type WorkGraphDefaultsDto,
   type ExecutionCapabilities,
@@ -244,6 +249,21 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       if (options.after) query.set("after", WorkItemAttemptPageCursorSchema.parse(options.after))
       return read(`/work-items/${encodeURIComponent(workItemId)}/attempts?${query}`, (value) => WorkItemAttemptPageSchema.parse(value))
     },
+    workItemActivity: (
+      workItemId: string,
+      options: Readonly<{
+        after?: TaskActivityPageCursor
+        granularity?: StreamActivityGranularity
+        limit?: number
+      }> = {},
+    ) => {
+      const query = new URLSearchParams({
+        granularity: StreamActivityGranularitySchema.parse(options.granularity ?? "progress"),
+        limit: String(options.limit ?? 25),
+      })
+      if (options.after) query.set("after", TaskActivityPageCursorSchema.parse(options.after))
+      return read(`/work-items/${encodeURIComponent(workItemId)}/activity?${query}`, (value) => TaskActivityPageSchema.parse(value))
+    },
     attempt: (attemptId: string) =>
       read(
         `/attempts/${encodeURIComponent(attemptId)}`,
@@ -346,6 +366,7 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       settings: Readonly<{
         execution: z.input<typeof ExecutionProfileDefaultsSchema>
         recap: z.input<typeof RecapProfileDefaultsSchema>
+        activityGranularity?: StreamActivityGranularity
       }>,
     ) => execute({
       version: 1,
@@ -354,6 +375,7 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
       expectedVersion,
       execution: settings.execution,
       recap: settings.recap,
+      ...(settings.activityGranularity ? { activityGranularity: settings.activityGranularity } : {}),
     }),
     updateOutcomeExecution: (outcomeId: string, expectedVersion: number, execution: z.input<typeof ExecutionProfileDefaultsSchema>) => execute({
       version: 1,
