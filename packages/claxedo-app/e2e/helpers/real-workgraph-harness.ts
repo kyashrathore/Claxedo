@@ -8,6 +8,7 @@ import {
   createAttempts,
   createConnectionsService,
   createIntegrationRegistry,
+  createIntegrationsRoutes,
   createMemoryConnectionStore,
   createMemoryCredentialStore,
 } from "../../../claxedo-connections/src/index"
@@ -52,7 +53,12 @@ export type RealWorkGraphHarness = Readonly<{
     artifacts: readonly string[],
   ) => Promise<CommandResult>
   projectIndependentSession: (input: Readonly<{ sessionId: string; title: string; summary: string }>) => Promise<"created" | "existing" | "ignored">
-  connectionEvidence: () => Readonly<{ requests: readonly ControlledSourceIssueRequest[]; connectionId: string }>
+  connectionEvidence: () => Readonly<{
+    requests: readonly ControlledSourceIssueRequest[]
+    effects: readonly ControlledSourceIssueEffect[]
+    connectionId: string
+    connectionIds: Readonly<Record<"github" | "linear" | "jira", string>>
+  }>
   controlledExecutionDiagnostics: () => Readonly<{
     queued: readonly ControlledExecutionResult[]
     attempts: readonly (readonly [string, "running" | ControlledExecutionResult])[]
@@ -77,8 +83,19 @@ type ControlledExecutionResult =
   | Readonly<{ state: "failed"; message: string }>
 
 type ControlledSourceIssueRequest = Readonly<{
+  provider: "github" | "linear" | "jira"
   providerUserId: string
   filters: Readonly<Record<string, string>>
+  authorized: boolean
+}>
+
+type ControlledSourceIssueEffect = Readonly<{
+  provider: "github" | "linear" | "jira"
+  action: "comment" | "update"
+  externalId: string
+  body: string
+  status?: string
+  idempotencyKey: string
   authorized: boolean
 }>
 
@@ -105,59 +122,74 @@ export async function createRealWorkGraphHarness(input: Readonly<{
   const queuedExecutionResults: ControlledExecutionResult[] = []
   const attempts = new Map<string, "running" | ControlledExecutionResult>()
   const sourceIssueRequests: ControlledSourceIssueRequest[] = []
+  const sourceIssueEffects: ControlledSourceIssueEffect[] = []
   let now = Date.now()
   const organizationId = input.organizationId ?? "local"
   const ownerUserId = input.ownerUserId ?? "local"
   const teamOwner = `org:${organizationId}`
   const registry = createIntegrationRegistry()
-  registry.register({
-    id: "github",
-    name: "GitHub",
+  const integrationFixtures = [
+    { integrationId: "github", provider: "github", name: "GitHub", tokenType: "bearer", accountLabel: "claxedo/claxedo" },
+    { integrationId: "linear", provider: "linear", name: "Linear", tokenType: "bearer", accountLabel: "Claxedo Engineering" },
+    { integrationId: "atlassian", provider: "jira", name: "Atlassian", tokenType: "basic", accountLabel: "claxedo.atlassian.net" },
+  ] as const
+  integrationFixtures.forEach((integration) => registry.register({
+    id: integration.integrationId,
+    name: integration.name,
     methods: ["key"],
-    capabilities: ["code-host", "work-source"],
-    keyTokenType: "bearer",
+    capabilities: integration.provider === "github" ? ["code-host", "work-source"] : ["work-source"],
+    keyTokenType: integration.tokenType,
     prompts: [{ id: "token", label: "Token", secret: true }],
-  }, { verify: async () => ({ ok: true as const, accountLabel: "claxedo/claxedo" }) })
+  }, { verify: async () => ({ ok: true as const, accountLabel: integration.accountLabel }) }))
+  let connectionNumber = 0
   const connections = createConnectionsService({
     registry,
     credentials: createMemoryCredentialStore(),
     connections: createMemoryConnectionStore(),
     attempts: createAttempts({ sweepIntervalMs: 0 }),
-    newId: () => "connection_browser_github",
+    newId: () => `connection_browser_${++connectionNumber}`,
     now: () => now,
   })
-  const connected = await connections.connect({ integrationId: "github", owner: teamOwner, fields: {}, secret: "browser-e2e-secret" })
-  if (!connected.ok) throw new Error(`Controlled GitHub Connection failed: ${connected.code}`)
-  const github: SourceIssueConnector = {
-    provider: "github",
-    async list(authorization, request) {
-      sourceIssueRequests.push({
-        providerUserId: request.providerUserId,
-        filters: request.filters,
-        authorized: authorization.token === "browser-e2e-secret" && authorization.tokenType === "bearer",
-      })
-      return {
-        issues: [{
-          externalId: "101",
-          externalKey: "#101",
-          externalUrl: "https://github.example/claxedo/claxedo/issues/101",
-          title: "Connection-filtered launch issue",
-          body: "Reached through the team GitHub Connection with the owner's source filter.",
-          status: "open",
-          updatedAt: now,
-          revision: "browser-e2e-1",
-        }],
-      }
-    },
-    async comment() { throw new Error("Controlled GitHub connector did not expect a comment") },
-    async update() { throw new Error("Controlled GitHub connector did not expect an update") },
-  }
+  await Promise.all(integrationFixtures.map(async (integration) => {
+    const result = await connections.connect({
+      integrationId: integration.integrationId,
+      owner: teamOwner,
+      fields: {},
+      secret: `browser-e2e-${integration.provider}-secret`,
+    })
+    if (!result.ok) throw new Error(`Controlled ${integration.name} Connection failed: ${result.code}`)
+  }))
+  const connectedRows = await connections.list({ teamOwner })
+  const connectionIds = Object.fromEntries(integrationFixtures.map((integration) => {
+    const row = connectedRows.find((connection) => connection.integrationId === integration.integrationId)
+    if (!row) throw new Error(`Controlled ${integration.name} Connection was not stored`)
+    return [integration.provider, row.id]
+  })) as Record<"github" | "linear" | "jira", string>
+  const connectionsRoutes = createIntegrationsRoutes(connections, {
+    owner: () => ownerUserId,
+    teamOwner: () => teamOwner,
+    ownerlessRows: "refuse",
+  })
+  const sourceIssueConnectors = integrationFixtures.map((integration) => controlledSourceIssueConnector({
+    provider: integration.provider,
+    token: `browser-e2e-${integration.provider}-secret`,
+    tokenType: integration.tokenType,
+    now: () => now,
+    requests: sourceIssueRequests,
+    effects: sourceIssueEffects,
+  }))
   let executeAttempt: ((context: WorkGraphContext, request: WorkGraphAttemptOperationRequest) => Promise<CommandResult>) | undefined
   const realSessions = input.realSessions
-    ? await createRealSessionRuntime(directory, (context, request) => {
-        if (!executeAttempt) throw new Error("WorkGraph Attempt command broker is not ready")
-        return executeAttempt(context, request)
-      })
+    ? await createRealSessionRuntime(directory, (forward) => createSessionV2WorkGraphGateway(forward, {
+        executeAttempt: (context, request, signal) => {
+          if (signal.aborted) throw signal.reason
+          if (!executeAttempt) throw new Error("WorkGraph Attempt command broker is not ready")
+          return executeAttempt(context, request)
+        },
+        connections,
+        connectors: Object.fromEntries(sourceIssueConnectors.map((connector) => [connector.provider, connector])),
+        resolveTeamOwner: (context) => `org:${context.organizationId}`,
+      }))
     : undefined
   const execution = createLocalWorkspaceExecution({
     worktreeRoot: path.join(directory, "worktrees"),
@@ -185,7 +217,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     execution,
     connections,
     resolveTeamOwner: (context) => `org:${context.organizationId}`,
-    sourceIssueConnectors: [github],
+    sourceIssueConnectors,
     executionCapabilities: createExecutionCapabilitiesPort({
       environment: {
         kind: "local_worktree",
@@ -280,7 +312,16 @@ export async function createRealWorkGraphHarness(input: Readonly<{
   const server = createServer((incoming, outgoing) => {
     const request = { controller: new AbortController(), incoming, outgoing }
     activeRequests.add(request)
-    void respond(incoming, outgoing, input.port, embedded, realSessions, () => backgroundFailure, request.controller)
+    void respond(
+      incoming,
+      outgoing,
+      input.port,
+      embedded,
+      realSessions,
+      (request) => connectionsRoutes.fetch(request),
+      () => backgroundFailure,
+      request.controller,
+    )
       .catch((error) => {
         capture(error)
         if (!outgoing.headersSent) {
@@ -360,7 +401,12 @@ export async function createRealWorkGraphHarness(input: Readonly<{
       meaningful: true,
       becameIdleAt: now,
     })),
-    connectionEvidence: () => ({ requests: [...sourceIssueRequests], connectionId: "connection_browser_github" }),
+    connectionEvidence: () => ({
+      requests: [...sourceIssueRequests],
+      effects: [...sourceIssueEffects],
+      connectionId: connectionIds.github,
+      connectionIds: { ...connectionIds },
+    }),
     controlledExecutionDiagnostics: () => ({
       queued: [...queuedExecutionResults],
       attempts: [...attempts.entries()],
@@ -406,6 +452,84 @@ export async function createRealWorkGraphHarness(input: Readonly<{
         if (backgroundFailure) throw backgroundFailure
       })()
       return closing
+    },
+  }
+}
+
+function controlledSourceIssueConnector(input: Readonly<{
+  provider: "github" | "linear" | "jira"
+  token: string
+  tokenType: "bearer" | "basic"
+  now: () => number
+  requests: ControlledSourceIssueRequest[]
+  effects: ControlledSourceIssueEffect[]
+}>): SourceIssueConnector {
+  const issue = input.provider === "github"
+    ? {
+        externalId: "101",
+        externalKey: "#101",
+        externalUrl: "https://github.example/claxedo/claxedo/issues/101",
+        title: "Connection-filtered launch issue",
+        body: "Reached through the team GitHub Connection with the owner's source filter.",
+      }
+    : input.provider === "linear"
+      ? {
+          externalId: "linear-101",
+          externalKey: "LIN-101",
+          externalUrl: "https://linear.example/claxedo/issue/LIN-101",
+          title: "Linear launch issue",
+          body: "Reached through the team Linear Connection with the owner's source filter.",
+        }
+      : {
+          externalId: "jira-101",
+          externalKey: "CLX-101",
+          externalUrl: "https://claxedo.atlassian.example/browse/CLX-101",
+          title: "Jira launch issue",
+          body: "Reached through the team Atlassian Connection with the owner's JQL filter.",
+        }
+  const authorized = (authorization: Readonly<{ token: string; tokenType: "bearer" | "basic" }>) =>
+    authorization.token === input.token && authorization.tokenType === input.tokenType
+  return {
+    provider: input.provider,
+    async list(authorization, request) {
+      input.requests.push({
+        provider: input.provider,
+        providerUserId: request.providerUserId,
+        filters: request.filters,
+        authorized: authorized(authorization),
+      })
+      if (!authorized(authorization)) throw new Error(`Controlled ${input.provider} connector received invalid authorization`)
+      return {
+        issues: [{
+          ...issue,
+          status: "open",
+          updatedAt: input.now(),
+          revision: `browser-e2e-${input.provider}-1`,
+        }],
+      }
+    },
+    async comment(authorization, effect) {
+      input.effects.push({
+        provider: input.provider,
+        action: "comment",
+        externalId: effect.externalId,
+        body: effect.body,
+        idempotencyKey: effect.idempotencyKey,
+        authorized: authorized(authorization),
+      })
+      if (!authorized(authorization)) throw new Error(`Controlled ${input.provider} connector received invalid authorization`)
+    },
+    async update(authorization, effect) {
+      input.effects.push({
+        provider: input.provider,
+        action: "update",
+        externalId: effect.externalId,
+        body: effect.body ?? "",
+        ...(effect.status ? { status: effect.status } : {}),
+        idempotencyKey: effect.idempotencyKey,
+        authorized: authorized(authorization),
+      })
+      if (!authorized(authorization)) throw new Error(`Controlled ${input.provider} connector received invalid authorization`)
     },
   }
 }
@@ -456,32 +580,46 @@ function createGenerationSessions(): WorkGraphSessionGateway {
       if (request.title.startsWith("Plan: ")) {
         const source = sourceReference(request.prompt)
         const evidence = sourcePlanningEvidence(request.prompt)
+        const external = externalPlanningSource(request.prompt)
         return {
           state: "succeeded",
           summary: JSON.stringify({
             source,
             suggestedPlacement: evidence.targetStreamId
               ? { mode: "existing", streamId: evidence.targetStreamId }
-              : { mode: "new_stream", streamTitle: "Planned from AI context" },
+              : { mode: "new_stream", streamTitle: external ? `${external.externalKey ?? external.provider} · ${external.title}` : "Planned from AI context" },
             placementMatches: [],
-            proposedOutcomes: [{
-              key: "launch-ready",
-              title: "Launch is ready",
-              successCriteria: ["Launch readiness is verified"],
-              execution: {},
-            }],
-            proposedWorkItems: [{
-              key: "verify-launch",
-              outcomeKey: "launch-ready",
-              title: "Verify launch readiness",
-              dependencyKeys: [],
-              completionContract: {
-                version: 1,
-                mode: "all",
-                requirements: [{ id: "owner-verification", kind: "owner_confirmation", description: "Owner verifies launch readiness" }],
-              },
-              execution: {},
-            }],
+            proposedOutcomes: external ? [] : [{
+                key: "launch-ready",
+                title: "Launch is ready",
+                successCriteria: ["Launch readiness is verified"],
+                execution: {},
+              }],
+            proposedWorkItems: external
+              ? [{
+                  key: `resolve-${external.provider}-issue`,
+                  title: `Resolve ${external.externalKey ?? external.title}`,
+                  description: `${external.content}\n\nUse the trusted bound Connection to publish a meaningful result for external issue ${external.externalId}.`,
+                  dependencyKeys: [],
+                  completionContract: {
+                    version: 1,
+                    mode: "all",
+                    requirements: [{ id: "real-session-proof", kind: "test", description: "The real project Session completes through its scoped WorkGraph tool" }],
+                  },
+                  execution: {},
+                }]
+              : [{
+                  key: "verify-launch",
+                  outcomeKey: "launch-ready",
+                  title: "Verify launch readiness",
+                  dependencyKeys: [],
+                  completionContract: {
+                    version: 1,
+                    mode: "all",
+                    requirements: [{ id: "owner-verification", kind: "owner_confirmation", description: "Owner verifies launch readiness" }],
+                  },
+                  execution: {},
+                }],
             duplicateMatches: [],
           }),
           artifacts: [],
@@ -520,6 +658,39 @@ function sourcePlanningEvidence(prompt: string): Readonly<{ targetStreamId?: str
     : {}
 }
 
+function externalPlanningSource(prompt: string) {
+  const title = prompt.split("\n").find((line) => line.startsWith("Source title: "))?.slice("Source title: ".length).trim()
+  const contentStart = prompt.indexOf("Source content: ")
+  const evidenceStart = prompt.indexOf("\nBounded current placement and duplicate evidence: ", contentStart)
+  if (!title || contentStart < 0 || evidenceStart < 0) return
+  const content = prompt.slice(contentStart + "Source content: ".length, evidenceStart)
+  const fenced = content.match(/## WorkGraph intake evidence\s+```json\s+([\s\S]*?)\s+```/)
+  if (!fenced?.[1]) return
+  const evidence = JSON.parse(fenced[1]) as Record<string, unknown>
+  if (
+    evidence.candidateKind !== "external_issue" ||
+    !["github", "linear", "jira"].includes(String(evidence.provider)) ||
+    typeof evidence.externalId !== "string"
+  ) return
+  return {
+    title,
+    content,
+    provider: evidence.provider as "github" | "linear" | "jira",
+    externalId: evidence.externalId,
+    ...(typeof evidence.externalKey === "string" ? { externalKey: evidence.externalKey } : {}),
+  }
+}
+
+function connectionInvocation(serializedRequest: string) {
+  const connectionId = serializedRequest.match(/Trusted Connection handles:\\n- ([^\\"]+)/)?.[1]
+    ?? serializedRequest.match(/Trusted Connection handles:\n- ([^\n]+)/)?.[1]
+  const externalId = serializedRequest.match(/\\?"externalId\\?":\s*\\?"([^"\\]+)\\?"/)?.[1]
+  if (!connectionId || !externalId) {
+    throw new Error("Connection-bound real Session prompt omitted its trusted Connection or external issue identity")
+  }
+  return { connectionId, externalId }
+}
+
 function recapStreamId(prompt: string) {
   const line = prompt.split("\n").find((candidate) => candidate.startsWith("Stream: "))
   const separator = line?.lastIndexOf(" (") ?? -1
@@ -543,7 +714,7 @@ type RealSessionRuntime = Readonly<{
 
 async function createRealSessionRuntime(
   directory: string,
-  executeAttempt: (context: WorkGraphContext, request: WorkGraphAttemptOperationRequest) => Promise<CommandResult>,
+  createGateway: (request: Parameters<typeof createSessionV2WorkGraphGateway>[0]) => WorkGraphSessionGateway,
 ): Promise<RealSessionRuntime> {
   const records = new Map<string, RealSessionRecord>()
   const providerRequests: unknown[] = []
@@ -558,26 +729,52 @@ async function createRealSessionRuntime(
     }
     const messages = Array.isArray(body.messages) ? body.messages : []
     const toolResults = messages.filter((message) => object(message)?.role === "tool").length
-    if (toolResults === 0) {
+    const connectionBound = serialized.includes("connection_work_source_comment")
+    if (connectionBound && toolResults === 0) {
+      const invocation = connectionInvocation(serialized)
+      sendProviderTool(outgoing, "call_connection_comment", "connection_work_source_comment", {
+        connectionId: invocation.connectionId,
+        externalId: invocation.externalId,
+        body: `Claxedo completed the requested work for ${invocation.externalId} in a project-scoped autonomous Session.`,
+        idempotencyKey: `workgraph-e2e:${invocation.externalId}:result`,
+      })
+      return
+    }
+    if (connectionBound && toolResults === 1 && !latestToolSucceeded(messages)) {
+      sendProviderText(outgoing, "The provider result was not accepted, so the WorkGraph Task remains incomplete.")
+      return
+    }
+    if (toolResults === (connectionBound ? 1 : 0)) {
       sendProviderTool(outgoing, "call_workgraph_progress", "workgraph_report_progress", {
         level: "milestone",
         summary: "Verified the project-scoped Session and started the requested work",
       })
       return
     }
-    if (toolResults === 1) {
+    if (toolResults === (connectionBound ? 2 : 1)) {
+      const invocation = connectionBound ? connectionInvocation(serialized) : undefined
       sendProviderTool(outgoing, "call_workgraph_complete", "workgraph_complete_task", {
         summary: "Completed the WorkGraph Task through its real project Session",
         artifacts: ["file:WORKGRAPH_REAL_SESSION_E2E.md"],
-        evidence: [{
-          requirementId: "real-session-proof",
-          evidence: {
-            kind: "test_result",
-            summary: "The real Session V2 transcript and scoped completion tool both succeeded",
-            passed: true,
-            command: "workgraph real-session e2e",
+        evidence: [
+          {
+            requirementId: "real-session-proof",
+            evidence: {
+              kind: "test_result",
+              summary: "The real Session V2 transcript and scoped completion tool both succeeded",
+              passed: true,
+              command: "workgraph real-session e2e",
+            },
           },
-        }],
+          ...(invocation ? [{
+            evidence: {
+              kind: "integration",
+              summary: `Published the result to external issue ${invocation.externalId}`,
+              effect: "accepted_external_write",
+              reference: `connection:${invocation.connectionId}:issue:${invocation.externalId}`,
+            },
+          }] : []),
+        ],
       })
       return
     }
@@ -628,12 +825,7 @@ async function createRealSessionRuntime(
       return response
     })
   }
-  const sessionGateway = createSessionV2WorkGraphGateway(forward, {
-    executeAttempt: (context, request, signal) => {
-      if (signal.aborted) throw signal.reason
-      return executeAttempt(context, request)
-    },
-  })
+  const sessionGateway = createGateway(forward)
   const gateway: WorkGraphSessionGateway = {
     ...sessionGateway,
     admit: async (input) => {
@@ -680,6 +872,16 @@ async function createRealSessionRuntime(
         })
       })
     },
+  }
+}
+
+function latestToolSucceeded(messages: unknown[]) {
+  const content = object(messages.findLast((message) => object(message)?.role === "tool"))?.content
+  if (typeof content !== "string") return false
+  try {
+    return object(JSON.parse(content))?.ok === true
+  } catch {
+    return false
   }
 }
 
@@ -782,6 +984,7 @@ async function respond(
   port: number,
   embedded: LocalEmbeddedWorkGraph,
   realSessions: RealSessionRuntime | undefined,
+  connectionsRequest: (request: Request) => Promise<Response>,
   failure: () => unknown,
   controller: AbortController,
 ) {
@@ -810,6 +1013,21 @@ async function respond(
     }
     const url = new URL(incoming.url ?? "/", `http://127.0.0.1:${port}`)
     const pathname = url.pathname
+    if (pathname === "/api/claxedo/integrations" || pathname.startsWith("/api/claxedo/integrations/")) {
+      const body = await readIncomingBody(incoming)
+      const routeUrl = new URL(url)
+      routeUrl.pathname = pathname.replace(/^\/api\/claxedo\/integrations/, "") || "/"
+      const response = await connectionsRequest(new Request(routeUrl, {
+        method: incoming.method,
+        headers: Object.entries(incoming.headers).flatMap(([key, value]) => value === undefined ? [] : [[key, Array.isArray(value) ? value.join(",") : value]]),
+        ...(["GET", "HEAD"].includes(incoming.method ?? "GET") ? {} : { body: body.toString() }),
+      }))
+      outgoing.statusCode = response.status
+      response.headers.forEach((value, key) => outgoing.setHeader(key, value))
+      setCors(outgoing)
+      outgoing.end(Buffer.from(await response.arrayBuffer()))
+      return
+    }
     if (incoming.method === "GET" && (pathname === "/project" || pathname === "/experimental/project")) {
       sendJson(outgoing, [workGraphProject(realSessions)])
       return

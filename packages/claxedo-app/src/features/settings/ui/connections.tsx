@@ -136,7 +136,7 @@ export const SettingsConnections: Component = () => {
                 {(integration) => {
                   const connections = () => store.connectionsFor(integration.id)
                   return (
-                    <div class="flex flex-col gap-3 min-h-16 py-3 border-b border-border-weak-base last:border-none">
+                    <div class="flex flex-col gap-3 min-h-16 py-3 border-b border-border-weak-base last:border-none" data-integration={integration.id}>
                       <div class="flex flex-wrap items-center justify-between gap-4">
                         <div class="flex flex-col gap-1 min-w-0">
                           <span class="text-14-medium text-text-strong">{integration.name}</span>

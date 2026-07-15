@@ -28,7 +28,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     // This one journey boots a separate production OpenCode process and native
     // SQLite runtime. Give that test-infrastructure cold start its own budget;
     // user-visible WorkGraph and Session readiness retain their strict assertions.
-    if (realSessions) testInfo.setTimeout(120_000)
+    if (realSessions) testInfo.setTimeout(testInfo.title.includes("GitHub, Linear, and Jira") ? 240_000 : 120_000)
     harness = await createRealWorkGraphHarness({
       port: apiPort,
       realSessions,
@@ -287,61 +287,206 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     harness.assertHealthy()
   })
 
-  test("discovers a user-filtered team Connection issue and adds it to WorkGraph from Needs you", async ({
+  test("executes GitHub, Linear, and Jira issues through real Session V2 Connections end to end", async ({
     page,
     request,
   }) => {
-    await configureGeneration(request)
+    await configureRealGeneration(request)
     const connection = harness.connectionEvidence()
-    const sourceViewResponse = await request.post(`${harness.apiUrl}/api/workgraph/source-views`, {
-      data: {
-        teamConnectionId: connection.connectionId,
-        provider: "github",
-        providerUserId: "octocat",
-        filters: { repo: "claxedo/claxedo", state: "open" },
-        target: streamTarget(),
+    const issues = [
+      {
+        integration: "github",
+        provider: "github" as const,
+        identity: "octocat",
+        filterLabel: /Repository/,
+        filterValue: "claxedo/claxedo",
+        externalId: "101",
+        externalKey: "#101",
+        title: "Connection-filtered launch issue",
       },
-    })
-    if (sourceViewResponse.status() !== 201) {
-      throw new Error(
-        `Source View creation failed (${sourceViewResponse.status()}): ${await sourceViewResponse.text()}`,
-      )
+      {
+        integration: "linear",
+        provider: "linear" as const,
+        identity: "linear-user",
+        filterLabel: /Team/,
+        filterValue: "ENG",
+        externalId: "linear-101",
+        externalKey: "LIN-101",
+        title: "Linear launch issue",
+      },
+      {
+        integration: "atlassian",
+        provider: "jira" as const,
+        identity: "jira-user",
+        filterLabel: /JQL/,
+        filterValue: "project = CLX AND status != Done",
+        externalId: "jira-101",
+        externalKey: "CLX-101",
+        title: "Jira launch issue",
+      },
+    ]
+
+    await page.goto("/workgraph")
+    const settings = await openConnectionsSettings(page)
+    for (const issue of issues) {
+      const integration = settings.locator(`[data-integration="${issue.integration}"]`)
+      await integration.getByRole("button", { name: "Add issue source" }).click()
+      const form = settings.locator('[data-component="source-view-form"]')
+      await form.getByLabel(/Your provider identity/).fill(issue.identity)
+      await form.getByLabel(issue.filterLabel).fill(issue.filterValue)
+      await form.getByLabel(/Project/).selectOption(repositoryDirectory)
+      await form.getByLabel(/Base revision/).fill("HEAD")
+      await form.getByLabel(/Result sync/).selectOption("announce")
+      await form.getByRole("button", { name: "Save source" }).click()
+      await expect(form).toHaveCount(0)
+      await integration.getByRole("button", { name: "Refresh" }).click()
+      await expect(integration.getByText(/1 new · 0 updated/)).toBeVisible()
     }
-    const sourceView = (await sourceViewResponse.json()) as SourceViewResponse
-    const refresh = await request.post(
-      `${harness.apiUrl}/api/workgraph/source-views/${encodeURIComponent(sourceView.id)}/refresh`,
-    )
-    expect(refresh.ok()).toBe(true)
-    const refreshed = (await refresh.json()) as SourceViewRefreshResponse
-    const candidateId = refreshed.candidates.find((candidate) => candidate.externalId === "101")?.id
-    expect(candidateId).toBeTruthy()
+
+    const sourceViews = (await readJson<SourceViewsResponse>(request, "/api/workgraph/source-views")).sourceViews
+    expect(sourceViews).toHaveLength(3)
+    for (const issue of issues) {
+      const sourceView = sourceViews.find((view) => view.provider === issue.provider)
+      if (!sourceView) throw new Error(`${issue.provider} Source View did not persist through Settings`)
+      expect(sourceView.teamConnectionId).toBe(connection.connectionIds[issue.provider])
+    }
     await expect
       .poll(() => harness.connectionEvidence().requests)
       .toEqual([
         {
+          provider: "github",
           providerUserId: "octocat",
           filters: { repo: "claxedo/claxedo", state: "open" },
           authorized: true,
         },
+        {
+          provider: "linear",
+          providerUserId: "linear-user",
+          filters: { team: "ENG" },
+          authorized: true,
+        },
+        {
+          provider: "jira",
+          providerUserId: "jira-user",
+          filters: { jql: "project = CLX AND status != Done" },
+          authorized: true,
+        },
       ])
 
-    await page.goto("/workgraph")
+    await page.keyboard.press("Escape")
+    await expect(settings).toBeHidden()
+    const discoveredCandidates = (await readJson<CandidatePageResponse>(request, "/api/workgraph/intake?limit=50")).candidates
+      .filter((candidate) => candidate.candidateKind === "external_issue")
+    expect(discoveredCandidates).toHaveLength(3)
     const panel = await openWaitingItemPanel(page, /Unorganized AI work/)
     await panel.getByRole("button", { name: /Unorganized AI work/ }).click()
     const dialog = page.getByRole("dialog", { name: "Unorganized AI work" })
-    await expect(dialog.getByText("#101 · Connection-filtered launch issue", { exact: true })).toBeVisible()
-    await expect(dialog.getByText("github · open · unorganized", { exact: true })).toBeVisible()
-    await dialog.getByRole("button", { name: "Add to WorkGraph" }).click()
+    for (const issue of issues) {
+      const row = dialog.locator(".workgraph-detail-candidate").filter({ hasText: `${issue.externalKey} · ${issue.title}` })
+      await expect(row.getByText(`${issue.provider} · open · unorganized`, { exact: true })).toBeVisible()
+      await row.getByRole("button", { name: "Add to WorkGraph" }).click()
+      const candidateId = discoveredCandidates.find((candidate) => candidate.externalId === issue.externalId)?.id
+      if (!candidateId) throw new Error(`${issue.provider} refresh did not persist its external issue candidate`)
+      await expect.poll(async () =>
+        (await readJson<CandidateResponse>(request, `/api/workgraph/intake/${encodeURIComponent(candidateId)}`)).state,
+      ).toBe("staged")
+    }
 
-    const candidate = await readJson<CandidateResponse>(
-      request,
-      `/api/workgraph/intake/${encodeURIComponent(String(candidateId))}`,
-    )
-    expect(candidate).toMatchObject({
-      state: "staged",
-      sourceViewId: sourceView.id,
-      admissionProposalId: expect.any(String),
-    })
+    const staged = await Promise.all(discoveredCandidates.map((candidate) =>
+      readJson<CandidateResponse>(request, `/api/workgraph/intake/${encodeURIComponent(candidate.id)}`)))
+    expect(staged).toHaveLength(3)
+    expect(staged.every((candidate) => candidate.state === "staged" && candidate.admissionProposalId)).toBe(true)
+    for (let index = 0; index < issues.length; index++) {
+      expect(await harness.runSourcePlanning()).toMatchObject({ state: "completed" })
+    }
+
+    await page.keyboard.press("Escape")
+    await page.reload()
+    const proposalsPanel = page.locator('aside[aria-label="Workspace panel"]:visible')
+    await expect(proposalsPanel).toBeVisible()
+    await expect(proposalsPanel.getByRole("tab", { name: "Needs you" })).toHaveAttribute("aria-selected", "true")
+    for (let index = 0; index < issues.length; index++) {
+      await proposalsPanel.getByRole("button", { name: /Review proposed work/ }).first().click()
+      const proposal = page.getByRole("dialog", { name: "Review proposed work" })
+      await expect(proposal.getByText(/New stream/)).toBeVisible()
+      await proposal.getByRole("button", { name: "Confirm" }).click()
+      await expect(proposal).toBeHidden()
+    }
+
+    await page.reload()
+    for (const issue of issues) {
+      const streamTitle = `${issue.externalKey} · ${issue.title}`
+      const taskTitle = `Resolve ${issue.externalKey}`
+      await expect(page.getByRole("button", { name: new RegExp(`^(?:Expand|Collapse) ${escapeRegex(streamTitle)}$`) })).toBeVisible()
+      await page.getByRole("button", { name: `Execute stream ${streamTitle}` }).click()
+      await page.getByRole("menu", { name: `Execute stream ${streamTitle}` })
+        .getByRole("menuitem", { name: "Autonomous" })
+        .click()
+      const workItemId = await workItemIdByTitle(request, taskTitle)
+      await expect.poll(async () => {
+        await harness.runReconcile()
+        return (await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)).state
+      }, { timeout: 30_000 }).toBe("completed").catch(async (error) => {
+        throw new Error(`${String(error)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      })
+
+      const session = harness.realSessionEvidence().find((record) => record.title === taskTitle)
+      if (!session) throw new Error(`${issue.provider} execution did not create its real project Session`)
+      await page.reload()
+      const streamToggle = page.getByRole("button", {
+        name: new RegExp(`^(?:Expand|Collapse) ${escapeRegex(streamTitle)}$`),
+      })
+      await expect(streamToggle).toBeVisible()
+      if (await streamToggle.getAttribute("aria-expanded") !== "true") await streamToggle.click()
+      await page.getByRole("button", { name: `Open session for ${taskTitle}` }).click()
+      await expect(page).toHaveURL(`/s/${session.sessionId}`)
+      await expect(page.locator("[data-session-title]").getByText(taskTitle, { exact: true }))
+        .toBeVisible({ timeout: 30_000 })
+      await expect(page.getByText("Completed the WorkGraph Task in the real project Session.", { exact: true })).toBeVisible()
+      await expect.poll(() => harness.connectionEvidence().effects.filter((effect) =>
+        effect.provider === issue.provider && effect.externalId === issue.externalId,
+      )).toEqual([{
+        provider: issue.provider,
+        action: "comment",
+        externalId: issue.externalId,
+        body: `Claxedo completed the requested work for ${issue.externalId} in a project-scoped autonomous Session.`,
+        idempotencyKey: `workgraph-e2e:${issue.externalId}:result`,
+        authorized: true,
+      }]).catch((error) => {
+        throw new Error(`${String(error)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      })
+      await expect(page.getByText("Thread not found", { exact: false })).toHaveCount(0)
+      await expect(page.getByText("Session unavailable", { exact: false })).toHaveCount(0)
+      await page.goto("/workgraph")
+    }
+
+    await expect.poll(() => harness.connectionEvidence().effects).toEqual(issues.map((issue) => ({
+      provider: issue.provider,
+      action: "comment",
+      externalId: issue.externalId,
+      body: `Claxedo completed the requested work for ${issue.externalId} in a project-scoped autonomous Session.`,
+      idempotencyKey: `workgraph-e2e:${issue.externalId}:result`,
+      authorized: true,
+    })))
+    const confirmed = await Promise.all(discoveredCandidates.map((candidate) =>
+      readJson<CandidateResponse>(request, `/api/workgraph/intake/${encodeURIComponent(candidate.id)}`)))
+    expect(confirmed.every((candidate) => candidate.state === "confirmed")).toBe(true)
+
+    await page.reload()
+    for (const issue of issues) {
+      const streamTitle = `${issue.externalKey} · ${issue.title}`
+      const streamId = await streamIdByTitle(request, streamTitle)
+      const detail = await readJson<StreamResponse>(request, `/api/workgraph/streams/${encodeURIComponent(streamId)}`)
+      expect(detail.durableEffectCount).toBe(1)
+      const closeTrigger = page.getByRole("button", { name: `Close stream ${streamTitle}` })
+      await closeTrigger.click()
+      const closePopoverId = await closeTrigger.getAttribute("aria-controls")
+      if (!closePopoverId) throw new Error(`${streamTitle} close action did not open its confirmation`)
+      await page.locator(`#${closePopoverId}`).getByRole("button", { name: "Close stream", exact: true }).click()
+      await expect.poll(async () =>
+        (await readJson<StreamDetailResponse>(request, `/api/workgraph/streams/${encodeURIComponent(streamId)}`)).lifecycleState,
+      ).toBe("closed")
+    }
     harness.assertHealthy()
   })
 
@@ -1098,6 +1243,14 @@ const generationDefaults = {
   recap: {},
 }
 
+const realGenerationDefaults = {
+  execution: {
+    ...generationDefaults.execution,
+    model: { providerId: "workgraph-e2e", modelId: "workgraph-model" },
+  },
+  recap: {},
+}
+
 function streamTarget() {
   return {
     environment: { kind: "local_worktree" as const, directory: repositoryDirectory },
@@ -1115,6 +1268,15 @@ async function configureGeneration(request: APIRequestContext) {
     type: "update_workgraph_defaults",
     expectedVersion: 1,
     defaults: generationDefaults,
+  })
+}
+
+async function configureRealGeneration(request: APIRequestContext) {
+  await command(request, {
+    version: 1,
+    type: "update_workgraph_defaults",
+    expectedVersion: 1,
+    defaults: realGenerationDefaults,
   })
 }
 
@@ -1162,6 +1324,16 @@ async function openNeedsYouPanel(page: Page) {
   return panel
 }
 
+async function openConnectionsSettings(page: Page) {
+  await page.getByTestId("rail-account-trigger").click()
+  await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
+  const dialog = page.locator('[data-slot="dialog-container"]').last()
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole("tab", { name: "Connections", exact: true }).click()
+  await expect(dialog.getByRole("heading", { name: "Connections", exact: true })).toBeVisible()
+  return dialog
+}
+
 async function command(request: APIRequestContext, input: WorkGraphCommandRequest["command"]) {
   const result = await rawCommand(request, input)
   if (!result.ok) throw new Error(result.error.message)
@@ -1184,6 +1356,10 @@ async function readJson<Value>(request: APIRequestContext, pathname: string) {
   return (await response.json()) as Value
 }
 
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
 async function streamIdByTitle(request: APIRequestContext, title: string) {
   await expect
     .poll(
@@ -1197,6 +1373,19 @@ async function streamIdByTitle(request: APIRequestContext, title: string) {
   const stream = records.find((record) => record.recordType === "stream" && record.title === title)
   if (!stream) throw new Error(`Stream was not found: ${title}`)
   return stream.id
+}
+
+async function workItemIdByTitle(request: APIRequestContext, title: string) {
+  await expect.poll(async () =>
+    (await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")).records.find(
+      (record) => record.recordType === "work_item" && record.title === title,
+    )?.id,
+  ).toBeTruthy()
+  const workItem = (await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")).records.find(
+    (record) => record.recordType === "work_item" && record.title === title,
+  )
+  if (!workItem) throw new Error(`Task was not found: ${title}`)
+  return workItem.id
 }
 
 async function sourceRevisionReference(request: APIRequestContext, workSourceId: string, revisionId: string) {
@@ -1267,7 +1456,11 @@ type DefaultsResponse = Readonly<{
   defaults: Readonly<{ execution: Record<string, unknown>; recap: Record<string, unknown> }>
 }>
 type SnapshotResponse = Readonly<{ records: Array<Readonly<{ recordType: string; id: string; title?: string }>> }>
-type StreamResponse = Readonly<{ executionDefaults: Record<string, unknown>; recapDefaults: Record<string, unknown> }>
+type StreamResponse = Readonly<{
+  executionDefaults: Record<string, unknown>
+  recapDefaults: Record<string, unknown>
+  durableEffectCount: number
+}>
 type StreamDetailResponse = Readonly<{ version: number; lifecycleState: string }>
 type StreamWithSourcesResponse = Readonly<{
   sourceRevisionRefs: Array<Readonly<{ workSourceId: string; revisionId: string; contentHash: string }>>
@@ -1275,8 +1468,9 @@ type StreamWithSourcesResponse = Readonly<{
 type SourceRevisionResponse = Readonly<{ contentHash: string }>
 type ProposalResponse = Readonly<{ state: string }>
 type ReviewableProposalResponse = Extract<AdmissionProposalDto, { state: "proposed" }>
-type SourceViewResponse = Readonly<{ id: string }>
-type SourceViewRefreshResponse = Readonly<{ candidates: Array<Readonly<{ id: string; externalId: string }>> }>
+type SourceViewsResponse = Readonly<{
+  sourceViews: Array<Readonly<{ id: string; teamConnectionId: string; provider: "github" | "linear" | "jira" }>>
+}>
 type CandidatePageResponse = Readonly<{
   candidates: Array<
     Readonly<{

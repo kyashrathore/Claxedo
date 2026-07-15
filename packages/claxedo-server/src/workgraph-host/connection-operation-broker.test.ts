@@ -108,6 +108,36 @@ describe("WorkGraph connection operation broker", () => {
     await expect(broker.execute(identity(), list(), principal())).rejects.toThrow("unauthorized")
     expect(failures).toEqual(["github_401"])
   })
+
+  it("routes an Atlassian Connection through the Jira work-source connector", async () => {
+    let comments = 0
+    const broker = createConnectionOperationBroker({
+      bindings: { resolve: async () => binding({ tools: [CONNECTION_OPERATION_TOOLS.comment] }) },
+      connections: {
+        resolveCapabilities: async () => [{
+          ...handle(),
+          integrationId: "atlassian",
+          withAuthorization: async (use) => use({ token: "jira-token", tokenType: "bearer" }),
+        }],
+      },
+      connectors: {
+        jira: {
+          provider: "jira",
+          list: async () => ({ issues: [] }),
+          comment: async () => { comments++ },
+          update: async () => undefined,
+        },
+      },
+    })
+
+    await expect(broker.execute(identity(), {
+      type: "comment",
+      externalId: "CLX-101",
+      body: "Done",
+      idempotencyKey: "jira-result",
+    }, principal())).resolves.toEqual({ type: "comment", ok: true })
+    expect(comments).toBe(1)
+  })
 })
 
 function context(): WorkGraphContext {

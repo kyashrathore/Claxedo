@@ -71,8 +71,9 @@ export function createConnectionOperationBroker(input: Readonly<{
         capability: "work-source",
       })
       const handle = handles.length === 1 && handles[0]?.id === identity.connectionId ? handles[0] : undefined
-      const connector = handle ? connectors[handle.integrationId] : undefined
-      if (!handle || !connector || connector.provider !== handle.integrationId) {
+      const provider = handle?.integrationId === "atlassian" ? "jira" : handle?.integrationId
+      const connector = provider ? connectors[provider] : undefined
+      if (!handle || !connector || connector.provider !== provider) {
         throw new ConnectionOperationDeniedError("Connection capability is unavailable")
       }
       return handle.withAuthorization(async (authorization) => {
