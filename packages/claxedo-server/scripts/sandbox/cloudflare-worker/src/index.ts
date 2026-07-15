@@ -66,8 +66,8 @@ const RUNTIME_READY_TIMEOUT_MS = 30_000
 const RUNTIME_PROCESS_ID = "claxedo-workspace-runtime"
 
 interface SandboxProcess {
+  id: string
   status: "starting" | "running" | "completed" | "failed" | "killed" | "error"
-  getStatus(): Promise<SandboxProcess["status"]>
   waitForPort(port: number, options: {
     mode: "http"
     path: string
@@ -77,7 +77,7 @@ interface SandboxProcess {
 }
 
 interface SandboxOperations {
-  getProcess(id: string): Promise<SandboxProcess | null>
+  listProcesses(): Promise<SandboxProcess[]>
   startProcess(command: string, options: {
     env: Record<string, string>
     processId: string
@@ -131,16 +131,8 @@ async function runtimeReady(process: SandboxProcess, port: number, timeout = RUN
 }
 
 async function runtimeProcess(sandbox: SandboxOperations) {
-  return bounded<SandboxProcess | null>(
-    sandbox.getProcess(RUNTIME_PROCESS_ID),
-    "workspace-runtime process lookup",
-  ).catch((error) => {
-    const message = typeof error === "object" && error !== null && "message" in error
-      ? String(error.message)
-      : String(error)
-    if (message.includes("ProcessNotFoundError")) return null
-    throw error
-  })
+  return bounded(sandbox.listProcesses(), "workspace-runtime process lookup")
+    .then((processes) => processes.find((process) => process.id === RUNTIME_PROCESS_ID) ?? null)
 }
 
 async function ensureRuntimeProcess(
@@ -152,8 +144,8 @@ async function ensureRuntimeProcess(
   const existing = await runtimeProcess(sandbox)
   if (existing && ["starting", "running"].includes(existing.status) && await runtimeReady(existing, port)) return true
   if (existing) {
-    const status = await bounded(existing.getStatus(), "workspace-runtime status refresh")
-    if (["starting", "running"].includes(status)) return false
+    const refreshed = await runtimeProcess(sandbox)
+    if (refreshed && ["starting", "running"].includes(refreshed.status)) return false
     await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
   }
 
