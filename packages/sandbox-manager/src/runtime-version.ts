@@ -1,6 +1,4 @@
-import { createRequire } from "module"
-
-const require = createRequire(import.meta.url)
+import packageJson from "../package.json"
 
 let versionCache: string | undefined
 
@@ -11,10 +9,6 @@ export function workspaceRuntimeVersion() {
     versionCache = envVersion
     return versionCache
   }
-  try {
-    versionCache = require("@claxedo/workspace-runtime/package.json").version as string
-    return versionCache
-  } catch {}
-  versionCache = "0.0.0"
+  versionCache = packageJson.dependencies["@claxedo/workspace-runtime"]
   return versionCache
 }

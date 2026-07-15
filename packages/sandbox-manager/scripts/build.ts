@@ -45,6 +45,5 @@ execFileSync(path.join(ROOT, "node_modules/.bin/esbuild"), [
   "--external:@daytona/sdk",
   "--external:@vercel/sandbox",
   "--external:modal",
-  "--banner:js=import { createRequire as __createRequire } from 'module';var require = __createRequire(import.meta.url);",
 ], { stdio: "inherit", cwd: ROOT })
 execFileSync(path.join(ROOT, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.json"], { stdio: "inherit", cwd: ROOT })
