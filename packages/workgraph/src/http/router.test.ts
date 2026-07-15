@@ -292,6 +292,7 @@ describe("WorkGraph northbound HTTP router", () => {
       tools: [{ id: "terminal", harnessId: "opencode" }],
       connections: [],
     })
+    expect(fixture.executionContexts[0]).toBe(fixture.resolvedContexts[0])
     expect((await fixture.app.request("/execution-capabilities?ownerUserId=owner_b", fixture.auth("owner_a"))).status).toBe(400)
     expect((await fixture.app.request("/execution-capabilities?workspaceId=workspace_1", fixture.auth("owner_a"))).status).toBe(400)
     expect((await fixture.app.request("/execution-capabilities", fixture.auth("shared_owner_a"))).status).toBe(403)
@@ -523,6 +524,8 @@ function createFixture() {
   const operations = new Map<string, Readonly<{ fingerprint: string; result: CommandResult }>>()
   const deletionResults = new Map<string, WorkGraphOwnerDeletionResult>()
   const attentionAcknowledgements: Array<{ owner: string; operation: string }> = []
+  const resolvedContexts: WorkGraphContext[] = []
+  const executionContexts: WorkGraphContext[] = []
   let nextId = 0
   let now = 1_000
   const notifications = new Map<string, WorkGraphNotification>([1, 2].map((id) => [`notification_${id}`, {
@@ -690,6 +693,7 @@ function createFixture() {
     }),
     executionCapabilities: {
       read: async (owner) => {
+        executionContexts.push(owner)
         return {
           schemaVersion: 1,
           organizationId: owner.organizationId,
@@ -806,13 +810,17 @@ function createFixture() {
     resolveContext: (request) => {
       const match = /^Bearer (shared_)?(owner_[ab])$/.exec(request.headers.get("authorization") ?? "")
       if (!match) return undefined
-      return context(match[2]!, match[1] ? "shared_read" : "owner")
+      const resolved = context(match[2]!, match[1] ? "shared_read" : "owner")
+      resolvedContexts.push(resolved)
+      return resolved
     },
   })
 
   return {
     app,
     attentionAcknowledgements,
+    resolvedContexts,
+    executionContexts,
     auth: (owner: string) => ({ headers: { authorization: `Bearer ${owner}` } }),
     command: (owner: string, body: unknown) => app.request("/commands", {
       method: "POST",

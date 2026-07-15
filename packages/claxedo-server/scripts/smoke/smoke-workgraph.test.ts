@@ -4,19 +4,23 @@ import { workGraphSmoke } from "./smoke-workgraph"
 describe("WorkGraph deployment smoke", () => {
   test("proves same-user cross-organization and same-organization cross-user isolation", async () => {
     const requests: Array<{ url: URL; init?: RequestInit }> = []
-    const sourceToken = "Bearer token_user_a_org_a"
-    const otherOrganizationToken = "Bearer token_user_a_org_b"
-    const otherUserToken = "Bearer token_user_b_org_a"
+    const sourceToken = `Bearer ${token("user_a", "org_a")}`
+    const otherOrganizationToken = `Bearer ${token("user_a", "org_b")}`
+    const otherUserToken = `Bearer ${token("user_b", "org_a")}`
+    const sessions = new Map<string, { userId: string; organizationId: string }>()
     let deleted = false
     const request = async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url)
       requests.push({ url, init })
       if (url.hostname === "api.clerk.com" && url.pathname === "/v1/sessions") {
         const body = JSON.parse(String(init?.body))
-        return Response.json({ id: `session_${body.user_id}_${body.active_organization_id}` })
+        const id = `session_${body.user_id}_${body.active_organization_id}`
+        sessions.set(id, { userId: body.user_id, organizationId: body.active_organization_id })
+        return Response.json({ id })
       }
-      if (url.hostname === "api.clerk.com" && url.pathname.endsWith("/tokens")) {
-        return Response.json({ jwt: url.pathname.split("/")[3]!.replace("session_", "token_") })
+      if (url.hostname === "api.clerk.com" && url.pathname.endsWith("/tokens/convex")) {
+        const session = sessions.get(url.pathname.split("/")[3]!)!
+        return Response.json({ jwt: token(session.userId, session.organizationId) })
       }
       if (url.hostname === "api.clerk.com" && url.pathname.endsWith("/revoke")) {
         return Response.json({ revoked: true })
@@ -130,6 +134,12 @@ describe("WorkGraph deployment smoke", () => {
       { user_id: "user_b", active_organization_id: "org_a" },
     ])
     expect(requests.filter((entry) => entry.url.pathname.endsWith("/revoke"))).toHaveLength(3)
+    expect(requests.filter((entry) => entry.url.pathname.endsWith("/tokens/convex"))).not.toHaveLength(0)
+    expect(
+      requests
+        .filter((entry) => entry.url.pathname.endsWith("/tokens/convex"))
+        .every((entry) => JSON.parse(String(entry.init?.body)).expires_in_seconds === 900),
+    ).toBe(true)
     expect(
       requests.some(
         (entry) =>
@@ -212,6 +222,10 @@ describe("WorkGraph deployment smoke", () => {
     ).rejects.toThrow("WORKGRAPH_SMOKE_ORGANIZATION_B_ID is required")
   })
 })
+
+function token(userId: string, organizationId: string) {
+  return `header.${Buffer.from(JSON.stringify({ aud: "convex", sub: userId, org_id: organizationId })).toString("base64url")}.signature`
+}
 
 function authorization(init: RequestInit | undefined) {
   return new Headers(init?.headers).get("authorization")

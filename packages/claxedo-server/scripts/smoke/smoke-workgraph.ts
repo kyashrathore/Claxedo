@@ -1,6 +1,6 @@
 type SmokeEnvironment = Readonly<Record<string, string | undefined>>
 
-type Session = Readonly<{ id: string }>
+type Session = Readonly<{ id: string; organizationId: string }>
 
 export async function workGraphSmoke(env: SmokeEnvironment = process.env, request: typeof fetch = fetch) {
   const base = required(env.BASE_URL, "BASE_URL").replace(/\/+$/, "")
@@ -169,21 +169,41 @@ async function createClerkSession(
   })
   const id = record(body)?.id
   if (typeof id !== "string" || !id.trim()) throw new Error("Clerk session creation returned no Session ID")
-  return { id }
+  return { id, organizationId }
 }
 
 async function createClerkSessionToken(request: typeof fetch, secret: string, session: Session) {
   const body = await jsonRequest(
     request,
-    `https://api.clerk.com/v1/sessions/${encodeURIComponent(session.id)}/tokens`,
+    `https://api.clerk.com/v1/sessions/${encodeURIComponent(session.id)}/tokens/convex`,
     {
       method: "POST",
       headers: clerkHeaders(secret),
+      body: JSON.stringify({ expires_in_seconds: 900 }),
     },
   )
   const jwt = record(body)?.jwt
   if (typeof jwt !== "string" || !jwt.trim()) throw new Error("Clerk session token creation returned no JWT")
+  const claims = jwtClaims(jwt)
+  const audience = claims.aud
+  const organizationId = claims.org_id ?? record(claims.o)?.id
+  if (audience !== "convex" && (!Array.isArray(audience) || !audience.includes("convex"))) {
+    throw new Error("Clerk convex JWT template must include the convex audience")
+  }
+  if (organizationId !== session.organizationId) {
+    throw new Error("Clerk convex JWT template must include the active organization as org_id")
+  }
   return jwt
+}
+
+function jwtClaims(token: string) {
+  const encoded = token.split(".")[1]
+  if (!encoded) throw new Error("Clerk session token creation returned a malformed JWT")
+  try {
+    return record(JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"))) ?? {}
+  } catch {
+    throw new Error("Clerk session token creation returned a malformed JWT")
+  }
 }
 
 async function revokeClerkSession(request: typeof fetch, secret: string, session: Session) {

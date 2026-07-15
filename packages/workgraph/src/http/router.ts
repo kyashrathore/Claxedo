@@ -111,7 +111,7 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
     const candidate = await Promise.resolve().then(() => input.resolveContext(context.req.raw)).catch(() => undefined)
     const resolved = WorkGraphHttpContextSchema.safeParse(candidate)
     if (!resolved.success) return errorResponse(context, 401, "unauthorized", "Trusted WorkGraph context is required", false)
-    context.set("workGraphContext", resolved.data)
+    context.set("workGraphContext", candidate as WorkGraphContext)
     await next()
   })
 
