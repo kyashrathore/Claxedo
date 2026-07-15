@@ -21,6 +21,7 @@ import {
   environmentChoices,
   environmentPolicy,
   harnessChoices,
+  modelChoices,
   providerChoices,
   providerModelChoices,
   toolChoices,
@@ -166,6 +167,7 @@ function StreamSettingsContent(props: StreamSettingsProps & { active: boolean; f
 type ConnectionId = NonNullable<ExecutionProfileDefaults["connectionIds"]>[number]
 
 const modelKey = (model?: { providerId: string; modelId: string }) => (model ? `${model.providerId}/${model.modelId}` : "")
+const providerlessHarness = (harnessId: string) => harnessId === "pi"
 
 /** Title-cases a catalog enum value for display without inventing new options. */
 const humanize = (value: string) => (value ? value.charAt(0).toUpperCase() + value.slice(1).replace(/[-_]/g, " ") : value)
@@ -265,7 +267,11 @@ function SettingsFormBody(props: SettingsFormProps) {
   const harnessIds = () => (hasCaps() ? harnessChoices(cap()) : [])
   const agentsFor = () => (hasCaps() && harness() ? agentChoices(cap(), harness()) : [])
   const providersFor = () => (hasCaps() && harness() ? providerChoices(cap(), harness()) : [])
-  const modelsFor = () => (hasCaps() && harness() && provider() ? providerModelChoices(cap(), harness(), provider()) : [])
+  const modelsFor = () => {
+    if (!hasCaps() || !harness()) return []
+    if (providerlessHarness(harness())) return modelChoices(cap(), harness())
+    return provider() ? providerModelChoices(cap(), harness(), provider()) : []
+  }
   const chosenModel = () => modelsFor().find((option) => modelKey(option) === model())
   const effortsFor = () => {
     const chosen = chosenModel()
@@ -283,7 +289,11 @@ function SettingsFormBody(props: SettingsFormProps) {
   const connectionsFor = () => (hasCaps() && harness() === "opencode" ? connectionChoices(cap()) : [])
   const recapHarness = () => harness() || props.inheritedExecution?.harness || ""
   const recapProvidersFor = () => (hasCaps() && recapHarness() ? providerChoices(cap(), recapHarness()) : [])
-  const recapModelsFor = () => (hasCaps() && recapHarness() && recapProvider() ? providerModelChoices(cap(), recapHarness(), recapProvider()) : [])
+  const recapModelsFor = () => {
+    if (!hasCaps() || !recapHarness()) return []
+    if (providerlessHarness(recapHarness())) return modelChoices(cap(), recapHarness())
+    return recapProvider() ? providerModelChoices(cap(), recapHarness(), recapProvider()) : []
+  }
   const chosenRecapModel = () => recapModelsFor().find((option) => modelKey(option) === recapModel())
   const recapEffortsFor = () => {
     const chosen = chosenRecapModel()
@@ -294,11 +304,17 @@ function SettingsFormBody(props: SettingsFormProps) {
   const harnessOptions = () => harnessIds().map((id) => ({ value: id, label: HARNESS_DISPLAY_NAMES[id] ?? humanize(id) }))
   const agentOptions = () => agentsFor().map((option) => ({ value: option.id, label: option.label }))
   const providerOptions = () => providersFor().map((id) => ({ value: id, label: humanize(id) }))
-  const modelOptions = () => modelsFor().map((option) => ({ value: modelKey(option), label: option.label }))
+  const modelOptions = () => modelsFor().map((option) => ({
+    value: modelKey(option),
+    label: providerlessHarness(harness()) ? `${option.label} (${humanize(option.providerId)})` : option.label,
+  }))
   const effortOptions = () => effortsFor().map((value) => ({ value, label: value }))
   const baseRevisionOptions = () => (baseRevisionFreeText() ? [] : baseRevisionCatalog().map((value) => ({ value, label: value })))
   const recapProviderOptions = () => recapProvidersFor().map((id) => ({ value: id, label: humanize(id) }))
-  const recapModelOptions = () => recapModelsFor().map((option) => ({ value: modelKey(option), label: option.label }))
+  const recapModelOptions = () => recapModelsFor().map((option) => ({
+    value: modelKey(option),
+    label: providerlessHarness(recapHarness()) ? `${option.label} (${humanize(option.providerId)})` : option.label,
+  }))
   const recapEffortOptions = () => recapEffortsFor().map((value) => ({ value, label: value }))
   const connectionOptions = () => connectionsFor().map((connection) => ({ id: connection.id as string, label: connection.accountLabel ?? connection.integrationId }))
 
@@ -308,12 +324,14 @@ function SettingsFormBody(props: SettingsFormProps) {
     return providers.find((providerId) => providerModelChoices(cap(), harnessId, providerId).some((option) => option.efforts.length > 0)) ?? providers[0] ?? ""
   }
   const selectModelDefaults = (harnessId: string, providerId: string) => {
-    const next = preferredModel(providerModelChoices(cap(), harnessId, providerId))
+    const next = preferredModel(providerlessHarness(harnessId) ? modelChoices(cap(), harnessId) : providerModelChoices(cap(), harnessId, providerId))
+    setProvider(next?.providerId ?? providerId)
     setModel(next ? modelKey(next) : "")
     setEffort(next?.efforts[0] ?? "")
   }
   const selectRecapModelDefaults = (harnessId: string, providerId: string) => {
-    const next = preferredModel(providerModelChoices(cap(), harnessId, providerId))
+    const next = preferredModel(providerlessHarness(harnessId) ? modelChoices(cap(), harnessId) : providerModelChoices(cap(), harnessId, providerId))
+    setRecapProvider(next?.providerId ?? providerId)
     setRecapModel(next ? modelKey(next) : "")
     setRecapEffort(next?.efforts[0] ?? "")
   }
@@ -344,16 +362,20 @@ function SettingsFormBody(props: SettingsFormProps) {
     selectModelDefaults(harness(), id)
   }
   const changeModel = (value: string) => {
+    const next = modelsFor().find((option) => modelKey(option) === value)
+    if (next) setProvider(next.providerId)
     setModel(value)
-    setEffort(modelsFor().find((option) => modelKey(option) === value)?.efforts[0] ?? "")
+    setEffort(next?.efforts[0] ?? "")
   }
   const changeRecapProvider = (id: string) => {
     setRecapProvider(id)
     selectRecapModelDefaults(recapHarness(), id)
   }
   const changeRecapModel = (value: string) => {
+    const next = recapModelsFor().find((option) => modelKey(option) === value)
+    if (next) setRecapProvider(next.providerId)
     setRecapModel(value)
-    setRecapEffort(recapModelsFor().find((option) => modelKey(option) === value)?.efforts[0] ?? "")
+    setRecapEffort(next?.efforts[0] ?? "")
   }
 
   const automaticTools = () => {
@@ -512,7 +534,9 @@ function SettingsFormBody(props: SettingsFormProps) {
           </Show>
           <SelectRow label="Harness" description="Agent runtime that owns the session and its permissions." value={harness()} onChange={changeHarness} options={harnessOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={props.inheritedExecution?.harness} />
           <SelectRow label="Agent" description="Behavior profile used for planning and execution." value={agent()} onChange={setAgent} options={agentOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={props.inheritedExecution?.agent} />
-          <SelectRow label="Provider" description="Model service connected to the selected harness." value={provider()} onChange={changeProvider} options={providerOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={props.inheritedExecution?.model?.providerId} />
+          <Show when={!providerlessHarness(harness())}>
+            <SelectRow label="Provider" description="Model service connected to the selected harness." value={provider()} onChange={changeProvider} options={providerOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={props.inheritedExecution?.model?.providerId} />
+          </Show>
           <SelectRow label="Model" description="Model used for every provider turn in the attempt." value={model()} onChange={changeModel} options={modelOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={modelKey(props.inheritedExecution?.model) || undefined} />
           <SelectRow label="Effort" description="Reasoning depth requested from the selected model." value={effort()} onChange={setEffort} options={effortOptions()} editable={hasCaps()} emptyLabel={emptyLabel} inherited={props.inheritedExecution?.effort} />
           <Show when={harness() === "opencode"}>
@@ -534,7 +558,9 @@ function SettingsFormBody(props: SettingsFormProps) {
               emptyLabel="Progress"
             />
             <div class="workgraph-settings-section-title">Recap behavior</div>
-            <SelectRow label="Provider" ariaLabel="Recap provider" description="Model service used to compose recaps." value={recapProvider()} onChange={changeRecapProvider} options={recapProviderOptions()} editable={hasCaps()} emptyLabel={emptyLabel} />
+            <Show when={!providerlessHarness(recapHarness())}>
+              <SelectRow label="Provider" ariaLabel="Recap provider" description="Model service used to compose recaps." value={recapProvider()} onChange={changeRecapProvider} options={recapProviderOptions()} editable={hasCaps()} emptyLabel={emptyLabel} />
+            </Show>
             <SelectRow label="Model" ariaLabel="Recap model" description="Model that condenses completed work into a recap." value={recapModel()} onChange={changeRecapModel} options={recapModelOptions()} editable={hasCaps()} emptyLabel={emptyLabel} />
             <SelectRow label="Effort" ariaLabel="Recap effort" description="Reasoning depth used while composing the recap." value={recapEffort()} onChange={setRecapEffort} options={recapEffortOptions()} editable={hasCaps()} emptyLabel={emptyLabel} />
             <TextRow label="Quiet hours" description="Minimum idle window before a recap is eligible to run." value={quietHours()} onChange={setQuietHours} placeholder="e.g. 8" numeric />

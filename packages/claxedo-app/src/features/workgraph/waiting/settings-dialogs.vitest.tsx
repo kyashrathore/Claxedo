@@ -66,6 +66,7 @@ const capabilities = {
     { harnessId: "opencode", providerId: "anthropic", modelId: "claude-sonnet-4-5", label: "Sonnet", efforts: ["high", "low"] },
     { harnessId: "opencode", providerId: "openai", modelId: "gpt-5", label: "GPT-5", efforts: ["medium", "high"] },
     { harnessId: "pi", providerId: "google", modelId: "gemini-2.5-pro", label: "Gemini 2.5 Pro", efforts: ["high"] },
+    { harnessId: "pi", providerId: "openai", modelId: "gpt-5-mini", label: "GPT-5 Mini", efforts: ["medium"] },
     { harnessId: "codex-app-server", providerId: "codex-app-server", modelId: "gpt-5.5", label: "GPT-5.5", efforts: ["low", "high"] },
   ],
   tools: [
@@ -175,10 +176,28 @@ describe("WorkGraphSettingsView", () => {
 
     fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
     expect((screen.getByLabelText("Agent") as HTMLSelectElement).value).toBe("plan")
-    expect((screen.getByLabelText("Provider") as HTMLSelectElement).value).toBe("google")
+    expect(screen.queryByLabelText("Provider")).toBeNull()
     expect((screen.getByLabelText("Model") as HTMLSelectElement).value).toBe("google/gemini-2.5-pro")
-    expect(screen.queryByRole("option", { name: "Sonnet" })).toBeNull()
+    expect(screen.getByRole("option", { name: "Gemini 2.5 Pro (Google)" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "GPT-5 Mini (Openai)" })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "openai/gpt-5-mini" } })
+    expect((screen.getByLabelText("Effort") as HTMLSelectElement).value).toBe("medium")
 
+  })
+
+  test("Pi omits provider configuration while saving the provider-backed model identity", async () => {
+    const source = { defaults: vi.fn(async () => emptyDefaultsDto), saveDefaults: vi.fn(async () => ok) }
+    render(() => <WorkGraphSettingsView active={true} source={source} capabilities={capabilities} />)
+    await screen.findByRole("heading", { name: "WorkGraph settings" })
+
+    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
+    expect(screen.queryByLabelText("Provider")).toBeNull()
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "openai/gpt-5-mini" } })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => expect(source.saveDefaults).toHaveBeenCalledTimes(1))
+    const [, payload] = source.saveDefaults.mock.calls[0]!
+    expect(payload.execution.model).toEqual({ providerId: "openai", modelId: "gpt-5-mini" })
   })
 
   test("saves with the loaded version (CAS)", async () => {
@@ -403,6 +422,25 @@ describe("StreamSettingsDialog", () => {
     expect((screen.getByLabelText("Recap model") as HTMLSelectElement).value).toBe("anthropic/claude-sonnet-4-5")
     expect((screen.getByLabelText("Recap effort") as HTMLSelectElement).value).toBe("high")
     expect((screen.getByLabelText("Quiet hours") as HTMLInputElement).value).toBe("8")
+  })
+
+  test("Pi uses provider-backed model pickers without execution or Recap provider controls", async () => {
+    const save = vi.fn(async () => ok)
+    const source = { workgraphDefaults: vi.fn(async () => defaultsDto), save }
+    render(() => <StreamSettingsDialog open={true} onClose={() => {}} stream={streamDto} source={source} capabilities={capabilities} />)
+    await screen.findByText("Stream settings")
+
+    fireEvent.change(screen.getByLabelText("Harness"), { target: { value: "pi" } })
+    expect(screen.queryByLabelText("Provider")).toBeNull()
+    expect(screen.queryByLabelText("Recap provider")).toBeNull()
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "openai/gpt-5-mini" } })
+    fireEvent.change(screen.getByLabelText("Recap model"), { target: { value: "google/gemini-2.5-pro" } })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    const [, , settings] = save.mock.calls[0]!
+    expect(settings.execution.model).toEqual({ providerId: "openai", modelId: "gpt-5-mini" })
+    expect(settings.recap.model).toEqual({ providerId: "google", modelId: "gemini-2.5-pro" })
   })
 
   test("allows an explicit empty Connections override without exposing tool permissions", async () => {
