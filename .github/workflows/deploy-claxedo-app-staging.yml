@@ -9,6 +9,7 @@ on:
     branches: [dev]
     paths:
       - packages/claxedo-app/**
+      - .github/actions/setup-bun/action.yml
       - .github/workflows/deploy-claxedo-app.yml
       - .github/workflows/deploy-claxedo-app-staging.yml
 
@@ -35,8 +36,15 @@ jobs:
           AFTER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          changed=$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA")
-          ordered=$(printf '%s\n' "$changed" | awk '/^(convex\/|packages\/(claxedo-server|claxedo-connections|workgraph|agent-sdk-runtime|channels|sandbox-manager|wakes|workspace-relay|workspace-relay-protocol)\/|\.github\/workflows\/(deploy-control-plane|deploy-claxedo-app|deploy-claxedo-app-staging)\.yml$)/')
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+            changed=$(git diff-tree --no-commit-id --name-only -r "$AFTER_SHA")
+          else
+            if ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
+            fi
+            changed=$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA")
+          fi
+          ordered=$(printf '%s\n' "$changed" | awk '/^(convex\/|packages\/(claxedo-server|claxedo-connections|workgraph|agent-sdk-runtime|channels|sandbox-manager|wakes|workspace-relay|workspace-relay-protocol)\/|\.github\/actions\/setup-bun\/action\.yml$|\.github\/workflows\/(deploy-control-plane|deploy-claxedo-app|deploy-claxedo-app-staging)\.yml$)/')
           if [ -n "$ordered" ]; then
             echo "App deployment is delegated to the ordered control-plane workflow because this commit changes its deployment unit:"
             printf '%s\n' "$ordered"

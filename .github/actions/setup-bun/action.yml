@@ -53,6 +53,14 @@ runs:
       run: python3 -m pip install setuptools || pip install setuptools || true
       shell: bash
 
+    # node-gyp-build falls back to the node-gyp executable when a dependency
+    # has no matching prebuild. Pinning the executable avoids Bun's implicit
+    # `bunx node-gyp@latest` path, which can install an incomplete transient
+    # package and fail before native dependencies are built.
+    - name: Install native build tooling
+      run: npm install --global node-gyp@12.4.0
+      shell: bash
+
     - name: Install dependencies
       run: |
         # Workaround for patched peer variants

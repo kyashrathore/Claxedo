@@ -47,6 +47,7 @@ on:
       - packages/wakes/**
       - packages/workspace-relay/**
       - packages/workspace-relay-protocol/**
+      - .github/actions/setup-bun/action.yml
       - .github/workflows/deploy-control-plane.yml
       - .github/workflows/deploy-claxedo-app.yml
       - .github/workflows/deploy-claxedo-app-staging.yml
@@ -115,6 +116,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun
+
+      - name: Build WorkGraph packages for Convex
+        run: bun run --cwd packages/workgraph build
 
       # ADR ordering: Convex FIRST (push-only, no server-side rollback; old
       # Workers must keep working against new Convex, so Convex changes are
@@ -285,6 +289,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun
+
+      - name: Build WorkGraph packages for Convex
+        run: bun run --cwd packages/workgraph build
 
       # Same ADR ordering as staging: Convex before Worker, with the app
       # released only after the Worker and authenticated smoke are healthy.

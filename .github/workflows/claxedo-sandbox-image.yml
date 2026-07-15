@@ -10,6 +10,7 @@ on:
       - packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts
       - packages/claxedo-server/src/workspace-runtime-integration/host-entry.ts
       - packages/workspace-runtime/package.json
+      - .github/actions/setup-bun/action.yml
       - .github/workflows/claxedo-sandbox-image.yml
   workflow_dispatch:
     inputs:

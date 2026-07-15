@@ -7,6 +7,7 @@ const controlPlane = fs.readFileSync(path.join(root, ".github/workflows/deploy-c
 const convex = fs.readFileSync(path.join(root, ".github/workflows/deploy-convex.yml"), "utf8")
 const app = fs.readFileSync(path.join(root, ".github/workflows/deploy-claxedo-app.yml"), "utf8")
 const appStaging = fs.readFileSync(path.join(root, ".github/workflows/deploy-claxedo-app-staging.yml"), "utf8")
+const setupBun = fs.readFileSync(path.join(root, ".github/actions/setup-bun/action.yml"), "utf8")
 const deployedBrowser = fs.readFileSync(
   path.join(root, "packages/claxedo-app/e2e/playwright/deployed-workgraph.spec.ts"),
   "utf8",
@@ -79,6 +80,26 @@ describe("Claxedo Cloud deployment workflow", () => {
     ]) {
       expect(controlPlane).toContain(name)
     }
+  })
+
+  test("prepares clean runners before native install, Convex packaging, and push routing", () => {
+    expect(setupBun).toContain("npm install --global node-gyp@12.4.0")
+    expect(setupBun.indexOf("npm install --global node-gyp@12.4.0")).toBeLessThan(
+      setupBun.indexOf("bun install ${{ inputs.install-flags }}"),
+    )
+    const stagingBuild = controlPlane.indexOf("- name: Build WorkGraph packages for Convex")
+    const stagingDryRun = controlPlane.indexOf("- name: Convex dry-run (config generation gate)")
+    const productionBuild = controlPlane.lastIndexOf("- name: Build WorkGraph packages for Convex")
+    const productionDryRun = controlPlane.lastIndexOf("- name: Convex dry-run (config generation gate)")
+    expect(stagingBuild).toBeGreaterThanOrEqual(0)
+    expect(stagingBuild).toBeLessThan(stagingDryRun)
+    expect(productionBuild).toBeGreaterThan(stagingBuild)
+    expect(productionBuild).toBeLessThan(productionDryRun)
+    expect(appStaging).toContain('git cat-file -e "$BEFORE_SHA^{commit}"')
+    expect(appStaging).toContain('git fetch --no-tags --depth=1 origin "$BEFORE_SHA"')
+    expect(appStaging).toContain('git diff-tree --no-commit-id --name-only -r "$AFTER_SHA"')
+    expect(controlPlane).toContain("- .github/actions/setup-bun/action.yml")
+    expect(appStaging).toContain("- .github/actions/setup-bun/action.yml")
   })
 
   test("allows staging app deploys only through a lock-owning caller", () => {
