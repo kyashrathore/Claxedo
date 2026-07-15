@@ -26,11 +26,14 @@ describe("Convex migrations discipline (D14)", () => {
 
   test("migration #001 retro-registers the runtime_leases legacy-field backfill", () => {
     const source = fs.readFileSync(path.join(convexRoot, "migrations.ts"), "utf8")
+    const schema = fs.readFileSync(path.join(convexRoot, "schema.ts"), "utf8")
     expect(source).toContain('table: "runtime_leases"')
     // The normalize LOGIC stays in sandboxLeases.ts; the migration reuses it
     // instead of forking a second implementation.
     expect(source).toContain("hasLegacyLeaseFields")
     expect(source).toContain("legacyLeaseDocument")
+    expect(schema).toContain("provider: v.optional(v.string())")
+    expect(schema).toContain("provider_runtime_id: v.optional(v.string())")
   })
 
   test("the retired hand-rolled backfill survives only as the documented break-glass export", () => {

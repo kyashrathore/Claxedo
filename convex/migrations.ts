@@ -20,12 +20,10 @@ export const migrations = new Migrations<DataModel>(components.migrations)
 // Generic runner: `npx convex run migrations:run '{"fn": "migrations:<name>"}'`.
 export const run = migrations.runner()
 
-// #001 — retro-registration of the hand-rolled `sandboxLeases.normalizeLegacyFields`
-// backfill (provider-era field names → driver/driver_resource_id rename on
-// runtime_leases). The legacy fields are already gone from convex/schema.ts,
-// so on a schema-validated deployment this is a no-op sweep; it exists so the
-// component ledger — not operator memory — records that the backfill is
-// complete on each deployment before any future contract step.
+// #001 — provider-era field names -> driver/driver_resource_id on
+// runtime_leases. The schema accepts both shapes during the expand and migrate
+// phases. The component ledger records completion before a later contract
+// release removes the optional legacy fields.
 export const normalizeRuntimeLeaseLegacyFields = migrations.define({
   table: "runtime_leases",
   migrateOne: async (ctx, lease) => {

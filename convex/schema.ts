@@ -261,6 +261,10 @@ export default defineSchema({
   runtime_leases: defineTable({
     workspace_id: v.string(),
     home_region: v.string(),
+    // Expand phase for the provider -> driver field migration. Keep these
+    // optional until every deployment has recorded the migration completion.
+    provider: v.optional(v.string()),
+    provider_runtime_id: v.optional(v.string()),
     driver: v.optional(v.string()),
     epoch: v.number(),
     status: v.union(

@@ -34,12 +34,14 @@ describe("Claxedo Cloud deployment workflow", () => {
   test("orders staging and production as Convex, Worker, smoke, then app", () => {
     const staging = [
       controlPlane.indexOf("- name: Deploy Convex (staging deployment)"),
+      controlPlane.indexOf("- name: Normalize legacy runtime lease fields (staging)"),
       controlPlane.indexOf("- name: Deploy control-plane Worker (staging)"),
       controlPlane.indexOf("  smoke-staging:"),
       controlPlane.indexOf("  deploy-app-staging:"),
     ]
     const production = [
       controlPlane.indexOf("- name: Deploy Convex (production deployment)"),
+      controlPlane.indexOf("- name: Normalize legacy runtime lease fields (production)"),
       controlPlane.indexOf("- name: Deploy control-plane Worker (production)"),
       controlPlane.indexOf("- name: Behavioral smoke (production)"),
       controlPlane.indexOf("  deploy-app-production:"),

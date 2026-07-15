@@ -16,7 +16,7 @@ const IMAGE_REQUIRED_DEPENDENCIES = [
   "better-sqlite3",
   "node-pty",
   "@zed-industries/claude-agent-acp",
-  "@zed-industries/codex-acp",
+  "@agentclientprotocol/codex-acp",
 ]
 
 export const HOST_BUNDLE_FILENAME = "workspace-runtime-host.mjs"

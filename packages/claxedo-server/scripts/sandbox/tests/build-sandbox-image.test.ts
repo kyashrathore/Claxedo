@@ -60,7 +60,7 @@ describe("build-sandbox-image", () => {
           "better-sqlite3": "12.10.0",
           "node-pty": "1.1.0",
           "@zed-industries/claude-agent-acp": "0.22.1",
-          "@zed-industries/codex-acp": "0.10.0",
+          "@agentclientprotocol/codex-acp": "0.10.0",
           "@claxedo/agent-sdk-runtime": "0.5.1",
           hono: "4.12.12",
         },
@@ -79,7 +79,7 @@ describe("build-sandbox-image", () => {
       "better-sqlite3": "12.10.0",
       "node-pty": "1.1.0",
       "@zed-industries/claude-agent-acp": "0.22.1",
-      "@zed-industries/codex-acp": "0.10.0",
+      "@agentclientprotocol/codex-acp": "0.10.0",
       hono: "4.12.12",
       "just-bash": "3.0.1",
     })
@@ -96,7 +96,7 @@ describe("build-sandbox-image", () => {
       "better-sqlite3",
       "node-pty",
       "@zed-industries/claude-agent-acp",
-      "@zed-industries/codex-acp",
+      "@agentclientprotocol/codex-acp",
     ]))
   })
 
