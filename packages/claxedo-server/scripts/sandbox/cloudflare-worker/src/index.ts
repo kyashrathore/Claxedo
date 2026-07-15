@@ -47,6 +47,17 @@ const WORKSPACE_RUNTIME_PORT = 3002
 const TRACE_ID_HEADER = "x-claxedo-trace-id"
 const CONTAINER_OPERATION_TIMEOUT_MS = 10_000
 const RUNTIME_READY_TIMEOUT_MS = 30_000
+const RUNTIME_PROCESS_ID = "claxedo-workspace-runtime"
+
+interface SandboxProcess {
+  status: "starting" | "running" | "completed" | "failed" | "killed" | "error"
+  waitForPort(port: number, options: {
+    mode: "http"
+    path: string
+    status: { min: number; max: number }
+    timeout: number
+  }): Promise<void>
+}
 
 function roundedMs(value: number) {
   return Math.round(value * 100) / 100
@@ -79,28 +90,13 @@ async function bounded<T>(operation: Promise<T>, name: string, timeoutMs = CONTA
   }
 }
 
-async function runtimeResponding(sandbox: ReturnType<typeof getSandbox>, url: URL, port: number) {
-  const target = new URL("/global/health", url.origin)
-  return bounded<Response>(sandbox.containerFetch(new Request(target), port), "workspace-runtime health probe", 2_000)
-    .then((res: Response) => res.ok)
-    .catch(() => false)
-}
-
-async function runtimeReady(sandbox: ReturnType<typeof getSandbox>, url: URL, port: number) {
-  const target = new URL("/global/health", url.origin)
-  const deadline = Date.now() + RUNTIME_READY_TIMEOUT_MS
-  while (Date.now() < deadline) {
-    const ready = await bounded<Response>(
-      sandbox.containerFetch(new Request(target), port),
-      "workspace-runtime health probe",
-      2_000,
-    )
-      .then((res: Response) => res.ok)
-      .catch(() => false)
-    if (ready) return true
-    await new Promise((resolve) => setTimeout(resolve, 500))
-  }
-  return false
+async function runtimeReady(process: SandboxProcess, port: number, timeout = RUNTIME_READY_TIMEOUT_MS) {
+  return process.waitForPort(port, {
+    mode: "http",
+    path: "/global/health",
+    status: { min: 200, max: 399 },
+    timeout,
+  }).then(() => true).catch(() => false)
 }
 
 function json(data: unknown, status = 200) {
@@ -221,24 +217,30 @@ export default {
               signingSecret: env.EGRESS_SIGNING_SECRET,
             })
           }
-          // A healthy runtime already owns its boot environment. Return before
-          // setEnvVars: once the SDK has a default shell session, setEnvVars
-          // applies every key through a separate shell export and can block a
-          // retry for minutes.
-          if (await runtimeResponding(sandbox, url, port)) {
+          // Inspect the managed process before probing its port. containerFetch
+          // waits internally for the port and cannot be cancelled by an outer
+          // Promise.race, so using it as a preflight can overlap startProcess
+          // and cancel the runtime launch.
+          const existing = await bounded<SandboxProcess | null>(
+            sandbox.getProcess(RUNTIME_PROCESS_ID),
+            "workspace-runtime process lookup",
+          )
+          if (existing && ["starting", "running"].includes(existing.status) && await runtimeReady(existing, port)) {
             const proxyUrl = `${url.origin}/sandbox/${encodeURIComponent(sandboxId)}/proxy`
             return json({ ready: true, url: proxyUrl, port })
           }
+          if (existing && ["starting", "running"].includes(existing.status)) {
+            return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
+          }
 
-          await bounded(sandbox.setEnvVars(containerEnv), "sandbox environment setup")
-          await bounded(
+          const process = await bounded<SandboxProcess>(
             sandbox.startProcess(command, {
               env: containerEnv,
-              processId: "claxedo-workspace-runtime",
+              processId: RUNTIME_PROCESS_ID,
             }),
             "workspace-runtime process start",
           )
-          if (!await runtimeReady(sandbox, url, port)) {
+          if (!await runtimeReady(process, port)) {
             return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
           }
           const proxyUrl = `${url.origin}/sandbox/${encodeURIComponent(sandboxId)}/proxy`
@@ -247,7 +249,11 @@ export default {
 
         case "touch-runtime": {
           const port: number = typeof body.port === "number" ? body.port : WORKSPACE_RUNTIME_PORT
-          return json({ ok: true, ready: await runtimeReady(sandbox, url, port) })
+          const process = await bounded<SandboxProcess | null>(
+            sandbox.getProcess(RUNTIME_PROCESS_ID),
+            "workspace-runtime process lookup",
+          )
+          return json({ ok: true, ready: Boolean(process && await runtimeReady(process, port, 2_000)) })
         }
 
       default:
