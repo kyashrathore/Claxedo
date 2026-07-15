@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createRequire } from "node:module"
 import os from "node:os"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { spawn, spawnSync } from "node:child_process"
 import {
   createAttempts,
@@ -31,6 +32,12 @@ import { createExecutionCapabilitiesPort } from "../../../claxedo-server/src/wor
 import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../../claxedo-server/src/workgraph-host/local-execution"
 import { createSessionV2WorkGraphGateway } from "../../../claxedo-server/src/workgraph-session-gateway"
 import { buildSessionListResponse, parseSessionListQuery } from "../../../claxedo-server/src/session-list"
+import {
+  createLocalWorkGraphAgentTools,
+  localSessionContext,
+  localSessionExecution,
+} from "../../../claxedo-server/src/workgraph-agent-tools"
+import type { OpenCodeApplicationToolRegistration } from "../../../claxedo-server/src/opencode-engine"
 
 const repository = path.resolve(import.meta.dirname, "../../../..")
 type WorkGraphDatabase = Parameters<typeof createLocalEmbeddedWorkGraph>[0]["database"]
@@ -282,6 +289,14 @@ export async function createRealWorkGraphHarness(input: Readonly<{
           evidence: request.operation.evidence,
         },
   })
+  if (realSessions) {
+    await realSessions.configureApplicationTools(await createLocalWorkGraphAgentTools(embedded, {
+      organizationId,
+      ownerUserId,
+      sessionExecution: (sessionId) => localSessionExecution(realSessions.fetch, sessionId),
+      sessionContext: (sessionId) => localSessionContext(realSessions.fetch, sessionId),
+    }))
+  }
   let backgroundFailure: unknown
   let lastReconcile: unknown
   let background = Promise.resolve<unknown>(undefined)
@@ -702,6 +717,8 @@ type RealSessionRuntime = Readonly<{
   gateway: WorkGraphSessionGateway
   records: Map<string, RealSessionRecord>
   fetch: (request: Request) => Promise<Response>
+  configureApplicationTools: (tools: Readonly<Record<string, OpenCodeApplicationToolRegistration>>) => Promise<void>
+  invokeApplicationTool: (input: unknown) => Promise<unknown>
   diagnostics: () => Readonly<{
     providerRequests: number
     toolResults: readonly unknown[]
@@ -718,6 +735,8 @@ async function createRealSessionRuntime(
   createGateway: (request: Parameters<typeof createSessionV2WorkGraphGateway>[0]) => WorkGraphSessionGateway,
 ): Promise<RealSessionRuntime> {
   const records = new Map<string, RealSessionRecord>()
+  const sessionConfigs = new Map<string, Record<string, unknown>>()
+  let applicationTools: Readonly<Record<string, OpenCodeApplicationToolRegistration>> = {}
   const providerRequests: unknown[] = []
   const proxyErrors: unknown[] = []
   const provider = createServer(async (incoming, outgoing) => {
@@ -730,6 +749,118 @@ async function createRealSessionRuntime(
     }
     const messages = Array.isArray(body.messages) ? body.messages : []
     const toolResults = messages.filter((message) => object(message)?.role === "tool").length
+    const continueLedger = serialized.includes("Refresh the WorkGraph ledger, complete the first Task with evidence, and select the next ready Task.")
+    if (continueLedger) {
+      const results = successfulCommandResults(messages)
+      const payloads = toolResultPayloads(messages)
+      if (toolResults > 0 && payloads.length !== toolResults) {
+        sendProviderText(outgoing, "The trusted WorkGraph ledger tool failed, so the current Session did not advance.")
+        return
+      }
+      if (toolResults === 6) {
+        sendProviderTool(outgoing, "call_ledger_refresh", "workgraph_refresh_context", {})
+        return
+      }
+      if (toolResults === 7) {
+        sendProviderTool(outgoing, "call_ledger_complete_first", "workgraph_complete_current_work", {
+          operation_id: "e2e-ledger-complete-first",
+          summary: "Completed the first bounded ledger Task",
+          evidence: [{
+            requirement_id: "ledger-first-proof",
+            evidence: {
+              kind: "test_result",
+              summary: "The first logical boundary passed its focused verification",
+              passed: true,
+            },
+          }],
+        })
+        return
+      }
+      if (toolResults === 8) {
+        sendProviderTool(outgoing, "call_ledger_select_second", "workgraph_select_work", {
+          operation_id: "e2e-ledger-select-second",
+          work_item_id: commandResultId(results[2], "workItemId"),
+        })
+        return
+      }
+      if (toolResults === 9) {
+        sendProviderTool(outgoing, "call_ledger_current", "workgraph_current_work", {})
+        return
+      }
+      sendProviderText(outgoing, "Completed the first ledger Task and selected the next ready Task in this same Session.")
+      return
+    }
+    const startLedger = serialized.includes("Maintain a bounded WorkGraph ledger in this Session and checkpoint the first Task.")
+    if (startLedger) {
+      const results = successfulCommandResults(messages)
+      const payloads = toolResultPayloads(messages)
+      if (toolResults > 0 && payloads.length !== toolResults) {
+        sendProviderText(outgoing, "The trusted WorkGraph ledger tool failed, so no Session attachment was fabricated.")
+        return
+      }
+      if (toolResults === 0) {
+        sendProviderTool(outgoing, "call_ledger_create_stream", "workgraph_create_stream", {
+          operation_id: "e2e-ledger-create-stream",
+          title: "Long-running Session ledger",
+          description: "A bounded ledger of meaningful verification boundaries.",
+        })
+        return
+      }
+      const streamId = commandResultId(results[0], "streamId")
+      const completionContract = (id: string) => ({
+        version: 1,
+        mode: "all",
+        requirements: [{
+          id,
+          kind: "test",
+          description: "The logical boundary passes focused verification",
+        }],
+      })
+      if (toolResults === 1) {
+        sendProviderTool(outgoing, "call_ledger_create_first", "workgraph_create_task", {
+          operation_id: "e2e-ledger-create-first",
+          stream_id: streamId,
+          title: "Verify the first ledger boundary",
+          completion_contract: completionContract("ledger-first-proof"),
+        })
+        return
+      }
+      const firstTaskId = commandResultId(results[1], "workItemId")
+      if (toolResults === 2) {
+        sendProviderTool(outgoing, "call_ledger_create_second", "workgraph_create_task", {
+          operation_id: "e2e-ledger-create-second",
+          stream_id: streamId,
+          title: "Verify the second ledger boundary",
+          dependency_ids: [firstTaskId],
+          completion_contract: completionContract("ledger-second-proof"),
+        })
+        return
+      }
+      if (toolResults === 3) {
+        sendProviderTool(outgoing, "call_ledger_bind", "workgraph_bind_session", {
+          operation_id: "e2e-ledger-bind",
+          stream_id: streamId,
+        })
+        return
+      }
+      if (toolResults === 4) {
+        sendProviderTool(outgoing, "call_ledger_select_first", "workgraph_select_work", {
+          operation_id: "e2e-ledger-select-first",
+          work_item_id: firstTaskId,
+        })
+        return
+      }
+      if (toolResults === 5) {
+        sendProviderTool(outgoing, "call_ledger_checkpoint", "workgraph_record_progress", {
+          operation_id: "e2e-ledger-checkpoint-first",
+          level: "progress",
+          summary: "First logical boundary verified",
+        })
+        return
+      }
+      sendProviderText(outgoing, "Bound this Session to the ledger and recorded the first meaningful checkpoint.")
+      return
+    }
     const chatCreation = serialized.includes("Use Claxedo MCP to create the WorkGraph stream MCP review pipeline with three dependent tasks.")
     if (chatCreation) {
       const results = successfulCommandResults(messages)
@@ -842,34 +973,41 @@ async function createRealSessionRuntime(
   })
   const providerPort = await listen(provider, 0)
   const opencodePort = await availablePort()
-  const config = providerConfig(`http://127.0.0.1:${providerPort}/v1`, claxedoServerUrl)
-  const opencode = spawn(
-    "bun",
-    ["run", "--conditions=browser", "./src/index.ts", "serve", "--pure", "--hostname", "127.0.0.1", "--port", String(opencodePort)],
-    {
-      cwd: path.join(repository, "packages/opencode"),
-      env: {
-        ...process.env,
-        OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
-        WORKGRAPH_E2E_API_KEY: "test-key",
-        XDG_CACHE_HOME: path.join(directory, "xdg-cache"),
-        XDG_CONFIG_HOME: path.join(directory, "xdg-config"),
-        XDG_DATA_HOME: path.join(directory, "xdg-data"),
-        OPENCODE_DISABLE_AUTOSHARE: "true",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
+  const applicationToolPlugin = path.join(directory, "workgraph-application-tools.mjs")
+  const config = providerConfig(
+    `http://127.0.0.1:${providerPort}/v1`,
+    claxedoServerUrl,
+    pathToFileURL(applicationToolPlugin).href,
   )
   const logs: string[] = []
   const proxyRequests: unknown[] = []
-  opencode.stdout.on("data", (chunk) => logs.push(String(chunk)))
-  opencode.stderr.on("data", (chunk) => logs.push(String(chunk)))
-  await waitForOpenCode(opencodePort, opencode, logs)
+  let opencode: ReturnType<typeof spawn> | undefined
   const forward = async (request: Request) => {
+    if (!opencode) throw new Error("OpenCode runtime is not configured")
     const url = new URL(request.url)
     const headers = new Headers(request.headers)
     const body = ["GET", "HEAD"].includes(request.method) ? undefined : await request.text()
     proxyRequests.push({ method: request.method, path: `${url.pathname}${url.search}`, body })
+    const configMatch = url.pathname.match(/^\/(?:api\/)?session\/([^/]+)\/config$/)
+    if (configMatch && request.method === "GET") return Response.json(sessionConfigs.get(configMatch[1]!) ?? {})
+    if (configMatch && request.method === "PATCH") {
+      const update = object(JSON.parse(body || "{}")) ?? {}
+      const harness = object(update.harness)
+      const harnessId = typeof harness?.id === "string"
+        ? harness.id
+        : typeof harness?.type === "string"
+          ? harness.type
+          : undefined
+      const next = {
+        ...(sessionConfigs.get(configMatch[1]!) ?? {}),
+        ...(harnessId ? { harness: { id: harnessId, access: "native" } } : {}),
+        ...(object(update.model) || update.model === null ? { model: update.model } : {}),
+        ...(typeof update.variant === "string" || update.variant === null ? { variant: update.variant } : {}),
+        ...(typeof update.agent === "string" || update.agent === null ? { agent: update.agent } : {}),
+      }
+      sessionConfigs.set(configMatch[1]!, next)
+      return Response.json(next)
+    }
     headers.set("x-opencode-directory", url.searchParams.get("directory") ?? headers.get("x-opencode-directory") ?? repository)
     return fetch(`http://127.0.0.1:${opencodePort}${url.pathname}${url.search}`, {
       method: request.method,
@@ -882,6 +1020,26 @@ async function createRealSessionRuntime(
         status: response.status,
         body: await response.clone().text(),
       })
+      if (response.ok && request.method === "POST" && (url.pathname === "/session" || url.pathname === "/api/session")) {
+        const responseBody = object(await response.clone().json())
+        const session = object(responseBody?.data) ?? responseBody
+        const sessionId = typeof session?.id === "string" ? session.id : undefined
+        const location = object(session?.location)
+        const sessionDirectory = typeof session?.directory === "string" && session.directory.trim()
+          ? session.directory
+          : typeof location?.directory === "string" && location.directory.trim()
+            ? location.directory
+            : headers.get("x-opencode-directory")
+        if (!sessionId || !sessionDirectory) throw new Error("OpenCode Session creation omitted its identity or project directory")
+        const timestamp = Date.now()
+        records.set(sessionId, {
+          sessionId,
+          directory: sessionDirectory,
+          title: typeof session?.title === "string" && session.title.trim() ? session.title : "New session",
+          createdAt: records.get(sessionId)?.createdAt ?? timestamp,
+          updatedAt: timestamp,
+        })
+      }
       return response
     })
   }
@@ -906,6 +1064,50 @@ async function createRealSessionRuntime(
     gateway,
     records,
     fetch: forward,
+    configureApplicationTools: async (tools) => {
+      applicationTools = tools
+      fs.writeFileSync(
+        applicationToolPlugin,
+        applicationToolPluginSource(tools, `${claxedoServerUrl}/api/workgraph/application-tool`),
+      )
+      opencode = spawn(
+        "bun",
+        ["run", "--conditions=browser", "./src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", String(opencodePort)],
+        {
+          cwd: path.join(repository, "packages/opencode"),
+          env: {
+            ...process.env,
+            OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
+            WORKGRAPH_E2E_API_KEY: "test-key",
+            XDG_CACHE_HOME: path.join(directory, "xdg-cache"),
+            XDG_CONFIG_HOME: path.join(directory, "xdg-config"),
+            XDG_DATA_HOME: path.join(directory, "xdg-data"),
+            OPENCODE_DISABLE_AUTOSHARE: "true",
+            OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      )
+      opencode.stdout.on("data", (chunk) => logs.push(String(chunk)))
+      opencode.stderr.on("data", (chunk) => logs.push(String(chunk)))
+      await waitForOpenCode(opencodePort, opencode, logs)
+    },
+    invokeApplicationTool: async (input) => {
+      const invocation = object(input)
+      const sessionID = typeof invocation?.sessionID === "string" ? invocation.sessionID : undefined
+      const name = typeof invocation?.name === "string" ? invocation.name : undefined
+      const toolCallID = typeof invocation?.toolCallID === "string" ? invocation.toolCallID : undefined
+      if (!sessionID || !name || !toolCallID) throw new Error("Application tool callback omitted its Session, tool, or call identity")
+      if (!records.has(sessionID)) throw new Error(`Application tool callback referenced unknown Session ${sessionID}`)
+      const tool = applicationTools[name]
+      if (!tool) throw new Error(`Application tool callback referenced unknown tool ${name}`)
+      return tool.execute(invocation.input, {
+        sessionID,
+        agent: "build",
+        assistantMessageID: "e2e-application-tool",
+        toolCallID,
+      })
+    },
     diagnostics: () => ({
       providerRequests: providerRequests.length,
       toolResults: providerRequests.flatMap((request) => {
@@ -919,6 +1121,7 @@ async function createRealSessionRuntime(
     }),
     close: async () => {
       await closeServer(provider)
+      if (!opencode) return
       if (opencode.exitCode === null) opencode.kill("SIGTERM")
       await new Promise<void>((resolve) => {
         if (opencode.exitCode !== null) return resolve()
@@ -953,6 +1156,31 @@ function successfulCommandResults(messages: unknown[]) {
   })
 }
 
+function toolResultPayloads(messages: unknown[]) {
+  return messages.flatMap((message) => {
+    if (object(message)?.role !== "tool") return []
+    const result = toolResultPayload(object(message)?.content)
+    return result ? [result] : []
+  })
+}
+
+function toolResultPayload(input: unknown): Record<string, unknown> | undefined {
+  if (typeof input === "string") {
+    try {
+      return toolResultPayload(JSON.parse(input))
+    } catch {
+      return
+    }
+  }
+  if (Array.isArray(input)) return input.map(toolResultPayload).find((result) => result !== undefined)
+  const value = object(input)
+  if (!value) return
+  if (typeof value.ok === "boolean" || typeof value.recordType === "string" || "binding" in value) return value
+  return [value.output, value.text, value.content, value.value]
+    .map(toolResultPayload)
+    .find((result) => result !== undefined)
+}
+
 function successfulCommandResult(input: unknown): Record<string, unknown> | undefined {
   if (typeof input === "string") {
     try {
@@ -976,11 +1204,12 @@ function commandResultId(result: Record<string, unknown> | undefined, key: strin
   return value
 }
 
-function providerConfig(baseUrl: string, claxedoServerUrl: string) {
+function providerConfig(baseUrl: string, claxedoServerUrl: string, applicationToolPlugin: string) {
   return {
     formatter: false,
     lsp: false,
     model: "workgraph-e2e/workgraph-model",
+    plugin: [applicationToolPlugin],
     mcp: {
       claxedo: {
         type: "local",
@@ -1016,6 +1245,42 @@ function providerConfig(baseUrl: string, claxedoServerUrl: string) {
       },
     },
   }
+}
+
+function applicationToolPluginSource(
+  tools: Readonly<Record<string, OpenCodeApplicationToolRegistration>>,
+  callbackUrl: string,
+) {
+  const definitions = Object.fromEntries(Object.entries(tools).map(([name, registration]) => {
+    const properties = object(registration.inputSchema.properties) ?? {}
+    const required = Array.isArray(registration.inputSchema.required)
+      ? registration.inputSchema.required.filter((key): key is string => typeof key === "string")
+      : []
+    return [name, {
+      description: registration.description,
+      args: Object.fromEntries(required.flatMap((key) => key in properties ? [[key, properties[key]]] : [])),
+    }]
+  }))
+  return [
+    `const callbackUrl = ${JSON.stringify(callbackUrl)}`,
+    `const definitions = ${JSON.stringify(definitions)}`,
+    "export default async () => ({",
+    "  tool: Object.fromEntries(Object.entries(definitions).map(([name, definition]) => [name, {",
+    "    description: definition.description,",
+    "    args: definition.args,",
+    "    execute: async (input, context) => {",
+    "      const response = await fetch(callbackUrl, {",
+    "        method: 'POST',",
+    "        headers: { 'content-type': 'application/json' },",
+    "        body: JSON.stringify({ sessionID: context.sessionID, name, input, toolCallID: context.callID }),",
+    "      })",
+    "      if (!response.ok) throw new Error(`Application tool callback failed: ${response.status} ${await response.text()}`)",
+    "      return JSON.stringify(await response.json())",
+    "    },",
+    "  }]))",
+    "})",
+    "",
+  ].join("\n")
 }
 
 function sendProviderText(outgoing: ServerResponse, text: string) {
@@ -1116,6 +1381,11 @@ async function respond(
     }
     const url = new URL(incoming.url ?? "/", `http://127.0.0.1:${port}`)
     const pathname = url.pathname
+    if (incoming.method === "POST" && pathname === "/api/workgraph/application-tool") {
+      if (!realSessions) throw new Error("Application tool callback requires the real Session runtime")
+      sendJson(outgoing, await realSessions.invokeApplicationTool(JSON.parse((await readIncomingBody(incoming)).toString() || "{}")))
+      return
+    }
     if (pathname === "/api/claxedo/integrations" || pathname.startsWith("/api/claxedo/integrations/")) {
       const body = await readIncomingBody(incoming)
       const routeUrl = new URL(url)

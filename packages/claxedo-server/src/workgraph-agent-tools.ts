@@ -188,7 +188,9 @@ export async function localSessionContext(
   if (!sessionResponse.ok) throw new Error(`Unable to resolve Session ${sessionId} project context`)
   const session = await sessionResponse.json() as Record<string, unknown>
   if (session.id !== sessionId || typeof session.directory !== "string" || !session.directory.trim()) return undefined
-  const config = configResponse.ok ? await configResponse.json() as Record<string, unknown> : undefined
+  const config = configResponse.ok && configResponse.headers.get("content-type")?.toLowerCase().includes("json")
+    ? await configResponse.json() as Record<string, unknown>
+    : undefined
   const harness = config?.harness && typeof config.harness === "object"
     ? config.harness as Record<string, unknown>
     : undefined

@@ -134,6 +134,20 @@ describe("embedded WorkGraph agent tools", () => {
     })
   })
 
+  test("retains trusted Session and project identity when selection config is unavailable", async () => {
+    const context = await localSessionContext(async (request) => {
+      if (new URL(request.url).pathname.endsWith("/config")) {
+        return new Response("<!doctype html>", { status: 200, headers: { "content-type": "text/html" } })
+      }
+      return Response.json({ id: "session-1", projectID: "project-1", directory: "/projects/repo" })
+    }, "session-1")
+
+    expect(context).toEqual({
+      sessionId: "session-1",
+      projectId: "project-1",
+    })
+  })
+
   test("derives Pi ledger execution without requiring provider configuration", async () => {
     const context = await localSessionContext(async (request) => {
       if (new URL(request.url).pathname.endsWith("/config")) {

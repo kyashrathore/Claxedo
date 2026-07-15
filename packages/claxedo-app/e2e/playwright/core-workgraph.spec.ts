@@ -920,6 +920,72 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     harness.assertHealthy()
   })
 
+  test("keeps one long-running real Session V2 across a bounded WorkGraph ledger checkpoint and Task handoff", async ({
+    page,
+    request,
+  }) => {
+    await page.goto("/workgraph")
+    await page.getByRole("button", { name: "WorkGraph settings" }).click()
+    const settings = page.getByRole("complementary", { name: "Workspace panel" })
+    await settings.getByLabel("Harness").selectOption("opencode")
+    await settings.getByLabel("Agent").selectOption("build")
+    await settings.getByLabel("Provider", { exact: true }).selectOption("workgraph-e2e")
+    await settings.getByLabel("Model", { exact: true }).selectOption("workgraph-e2e/workgraph-model")
+    await settings.getByLabel("Effort", { exact: true }).selectOption("high")
+    await settings.getByRole("button", { name: "Save" }).click()
+    await settings.getByRole("button", { name: "Close workspace panel" }).click()
+    const project = page.locator('[data-testid="project-header"]').filter({ hasText: "Claxedo" })
+    await project.click()
+    await project.hover()
+    await project.getByRole("button", { name: /New session in/ }).click()
+
+    const firstPrompt = "Maintain a bounded WorkGraph ledger in this Session and checkpoint the first Task."
+    const firstInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await firstInput.fill(firstPrompt)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect(page).toHaveURL(/(?:\/s\/|\/session\/)[^/]+$/, { timeout: 30_000 })
+    await expectAssistantReplyVisible(page, "Bound this Session to the ledger and recorded the first meaningful checkpoint.")
+    const sessionId = page.url().match(/(?:\/s\/|\/session\/)([^/]+)$/)?.[1]
+    if (!sessionId) throw new Error("Long-running ledger did not create a project Session")
+
+    const secondPrompt = "Refresh the WorkGraph ledger, complete the first Task with evidence, and select the next ready Task."
+    const secondInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await secondInput.click()
+    await page.keyboard.insertText(secondPrompt)
+    await expect(secondInput).toContainText(secondPrompt)
+    const secondSubmit = page.locator(SELECTORS.submitControl).last()
+    await expect(secondSubmit).toBeEnabled()
+    await secondSubmit.click()
+    await expectAssistantReplyVisible(page, "Completed the first ledger Task and selected the next ready Task in this same Session.")
+    await expect(page).toHaveURL(new RegExp(`(?:/s/|/session/)${sessionId}$`))
+
+    await page.getByRole("button", { name: "Open WorkGraph" }).click()
+    await expect(page.getByRole("main", { name: "WorkGraph" })).toBeVisible()
+    const streamToggle = page.getByRole("button", { name: /^(?:Expand|Collapse) Long-running Session ledger$/ })
+    await expect(streamToggle).toBeVisible()
+    if (await streamToggle.getAttribute("aria-expanded") !== "true") await streamToggle.click()
+    const snapshot = await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")
+    const stream = snapshot.records.find((candidate) =>
+      candidate.recordType === "stream" && candidate.title === "Long-running Session ledger")
+    if (!stream) throw new Error("Long-running Session did not persist its ledger Stream")
+    const first = snapshot.records.find((candidate) =>
+      candidate.recordType === "work_item" && candidate.streamId === stream.id && candidate.title === "Verify the first ledger boundary")
+    const second = snapshot.records.find((candidate) =>
+      candidate.recordType === "work_item" && candidate.streamId === stream.id && candidate.title === "Verify the second ledger boundary")
+    expect(first).toMatchObject({ state: "completed", dependencyIds: [] })
+    expect(second).toMatchObject({ state: "active", dependencyIds: [first?.id] })
+
+    await page.getByRole("button", { name: "Open task Verify the first ledger boundary" }).click()
+    const dialog = page.getByRole("dialog", { name: "Task" })
+    await expect(dialog.getByText("First logical boundary verified", { exact: true })).toBeVisible()
+    await expect(dialog.getByText("The first logical boundary passed its focused verification", { exact: true })).toBeVisible()
+    await dialog.getByRole("button", { name: `Open session ${sessionId}` }).click()
+    await expect(page).toHaveURL(`/s/${sessionId}`)
+    await expectAssistantReplyVisible(page, "Completed the first ledger Task and selected the next ready Task in this same Session.")
+    expect(harness.realSessionEvidence().filter((session) => session.sessionId === sessionId)).toHaveLength(1)
+    harness.assertHealthy()
+  })
+
   test("destroys a disposable Stream worktree but explicitly closes durable-effect work", async ({ page, request }) => {
     await configureGeneration(request)
     const disposable = await command(request, {

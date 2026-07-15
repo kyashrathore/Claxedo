@@ -171,6 +171,8 @@ describe("durable local execution", () => {
       .toEqual({ lifecycle: "active" })
     expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_agent_checkpoints WHERE attempt_id = ?").get(attempt.id))
       .toEqual({ count: 1 })
+    expect(await fixture.service.queries.changes.list(owner(), {}))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ event: expect.objectContaining({ type: "attempt_completed" }) })]))
   })
 
   it("keeps a Task result_ready when explicit completion evidence does not satisfy its contract", async () => {

@@ -49,6 +49,7 @@ export const WorkGraphEventTypeSchema = z.enum([
   "work_item_execution_requested",
   "attempt_admitted",
   "attempt_state_changed",
+  "attempt_completed",
   "attempt_lease_recovered",
   "attempt_cancelled",
   "decision_proposed",

@@ -19,6 +19,8 @@ import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { ApplicationTools } from "@opencode-ai/core/tool/application-tools"
+import { Tool as CoreTool } from "@opencode-ai/core/tool/tool"
 
 const configLayer = TestConfig.layer({
   directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".opencode")])),
@@ -48,7 +50,7 @@ const brokenPluginLayer = Layer.succeed(
   }),
 )
 
-const root = LayerNode.group([ToolRegistry.node, Agent.node])
+const root = LayerNode.group([ApplicationTools.node, ToolRegistry.node, Agent.node])
 const replacements = [
   [Config.node, configLayer],
   [RuntimeFlags.node, RuntimeFlags.layer()],
@@ -62,6 +64,52 @@ afterEach(async () => {
 })
 
 describe("tool.registry", () => {
+  it.instance("exposes process-owned application tools to legacy Session prompts", () =>
+    Effect.gen(function* () {
+      const applications = yield* ApplicationTools.Service
+      yield* applications.register({
+        workgraph_create_stream: CoreTool.makeDynamic({
+          description: "Create a WorkGraph Stream",
+          inputSchema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
+          outputSchema: { type: "object" },
+          execute: (input, context) => Effect.succeed({ input, sessionID: context.sessionID }),
+        }),
+        read: CoreTool.makeDynamic({
+          description: "Process-owned read override",
+          inputSchema: { type: "object" },
+          outputSchema: { type: "object" },
+          execute: () => Effect.succeed({ source: "application" }),
+        }),
+      })
+      const registry = yield* ToolRegistry.Service
+      const all = yield* registry.all()
+      const applicationTool = all.find((tool) => tool.id === "workgraph_create_stream")
+
+      expect(applicationTool?.description).toBe("Create a WorkGraph Stream")
+      expect(all.filter((tool) => tool.id === "read")).toHaveLength(1)
+      expect(all.find((tool) => tool.id === "read")?.description).toBe("Process-owned read override")
+      expect(applicationTool?.jsonSchema).toMatchObject({
+        properties: { title: { type: "string" } },
+        required: ["title"],
+      })
+      if (!applicationTool) throw new Error("application tool was not projected into the legacy registry")
+      const agents = yield* Agent.Service
+      const result = yield* applicationTool.execute({ title: "Ship ledger" }, {
+        sessionID: SessionID.make("ses_application_tool"),
+        messageID: MessageID.make("msg_application_tool"),
+        agent: (yield* agents.defaultInfo()).name,
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      })
+      expect(JSON.parse(result.output)).toEqual({
+        input: { title: "Ship ledger" },
+        sessionID: "ses_application_tool",
+      })
+    }).pipe(Effect.scoped),
+  )
+
   it.instance("does not expose task_status", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

@@ -6508,6 +6508,7 @@ type ChangeRow = {
     | "work_item_execution_requested"
     | "attempt_admitted"
     | "attempt_state_changed"
+    | "attempt_completed"
     | "attempt_cancelled"
     | "decision_proposed"
     | "decision_answered"

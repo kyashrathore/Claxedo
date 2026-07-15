@@ -51,6 +51,8 @@ import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { ApplicationTools } from "@opencode-ai/core/tool/application-tools"
+import { Tool as CoreTool } from "@opencode-ai/core/tool/tool"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel
@@ -87,6 +89,7 @@ const layer = Layer.effect(
     const agents = yield* Agent.Service
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
+    const applications = yield* ApplicationTools.Service
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
@@ -241,7 +244,13 @@ const layer = Layer.effect(
 
     const all: Interface["all"] = Effect.fn("ToolRegistry.all")(function* () {
       const s = yield* InstanceState.get(state)
-      return [...s.builtin, ...s.custom] as Tool.Def[]
+      const processOwned = new Map(
+        Array.from(applications.entries(), ([id, entry]) => [id, legacyApplicationTool(id, entry.tool)]),
+      )
+      return [
+        ...[...s.builtin, ...s.custom].filter((tool) => !processOwned.has(tool.id)),
+        ...processOwned.values(),
+      ] as Tool.Def[]
     })
 
     const ids: Interface["ids"] = Effect.fn("ToolRegistry.ids")(function* () {
@@ -316,6 +325,49 @@ const layer = Layer.effect(
 
 function isZodType(value: unknown): value is z.ZodType {
   return typeof value === "object" && value !== null && "_zod" in value
+}
+
+function legacyApplicationTool(id: string, applicationTool: CoreTool.AnyTool): Tool.Def {
+  const definition = CoreTool.definition(id, applicationTool)
+  return {
+    id,
+    description: definition.description,
+    parameters: Schema.Unknown,
+    jsonSchema: definition.inputSchema as JSONSchema7,
+    execute: (input, context) => {
+      const toolCallID = context.callID ?? `call_${crypto.randomUUID()}`
+      return CoreTool.settle(applicationTool, {
+        type: "tool-call",
+        id: toolCallID,
+        name: id,
+        input,
+      }, {
+        sessionID: context.sessionID as never,
+        agent: context.agent as never,
+        assistantMessageID: context.messageID as never,
+        toolCallID,
+      }).pipe(
+        Effect.map((output) => {
+          const attachments = output.content.flatMap((item) => item.type === "file" ? [{
+            type: "file" as const,
+            mime: item.mime,
+            ...(item.name ? { filename: item.name } : {}),
+            url: item.uri,
+          }] : [])
+          return {
+            title: id,
+            metadata: {},
+            output: output.content.flatMap((item) => item.type === "text" ? [item.text] : []).join("\n") ||
+              (typeof output.structured === "string"
+                ? output.structured
+                : JSON.stringify(output.structured) ?? String(output.structured)),
+            ...(attachments.length ? { attachments } : {}),
+          }
+        }),
+        Effect.orDie,
+      )
+    },
+  }
 }
 
 function isPluginTool(value: unknown): value is ToolDefinition {
@@ -412,6 +464,7 @@ export const node = LayerNode.make({
     Format.node,
     Truncate.node,
     RuntimeFlags.node,
+    ApplicationTools.node,
     Database.node,
     Ripgrep.node,
   ],
