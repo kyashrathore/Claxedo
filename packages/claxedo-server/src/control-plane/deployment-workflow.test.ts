@@ -8,6 +8,10 @@ const convex = fs.readFileSync(path.join(root, ".github/workflows/deploy-convex.
 const app = fs.readFileSync(path.join(root, ".github/workflows/deploy-claxedo-app.yml"), "utf8")
 const appStaging = fs.readFileSync(path.join(root, ".github/workflows/deploy-claxedo-app-staging.yml"), "utf8")
 const sandboxImage = fs.readFileSync(path.join(root, ".github/workflows/claxedo-sandbox-image.yml"), "utf8")
+const sandboxWorker = fs.readFileSync(
+  path.join(root, ".github/workflows/deploy-cloudflare-sandbox-worker.yml"),
+  "utf8",
+)
 const setupBun = fs.readFileSync(path.join(root, ".github/actions/setup-bun/action.yml"), "utf8")
 const deployedBrowser = fs.readFileSync(
   path.join(root, "packages/claxedo-app/e2e/playwright/deployed-workgraph.spec.ts"),
@@ -123,6 +127,9 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(sandboxImage).toContain("run: bun run --cwd packages/sandbox-manager build")
     expect(sandboxImage).toContain("- packages/sandbox-manager/**")
     expect(sandboxImage).not.toContain("- packages/sandbox-manager/src/image.ts")
+    expect(sandboxWorker).toContain("npx tsx ../build-sandbox-image.ts --bundle-only --out=.build")
+    expect(sandboxWorker).toContain("npx wrangler secret put API_TOKEN")
+    expect(controlPlane).toContain("wrangler secret put CLOUDFLARE_API_TOKEN --env staging")
     expect(controlPlane).toContain("- .github/actions/setup-bun/action.yml")
     expect(appStaging).toContain("- .github/actions/setup-bun/action.yml")
   })

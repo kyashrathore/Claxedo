@@ -57,8 +57,7 @@ jobs:
       # instead of npm-installing @claxedo/workspace-runtime — publishing is a
       # separate release concern and no longer gates image builds.
       - name: Bundle workspace-runtime host into the wrangler build context
-        working-directory: packages/claxedo-server/scripts/sandbox
-        run: npx tsx build-sandbox-image.ts --bundle-only --out=cloudflare-worker/.build
+        run: npx tsx ../build-sandbox-image.ts --bundle-only --out=.build
 
       # The bundle step also writes scripts/sandbox/.build/build-info.json with
       # the content build-id / snapshot name. Surface it so operators can wire
@@ -67,9 +66,8 @@ jobs:
       # sandboxes (ensureSnapshot returns early for an existing name).
       - name: Surface sandbox build identity
         if: always()
-        working-directory: packages/claxedo-server/scripts/sandbox
         run: |
-          INFO=.build/build-info.json
+          INFO=../.build/build-info.json
           if [ -f "$INFO" ]; then
             echo "### Sandbox build identity" >> "$GITHUB_STEP_SUMMARY"
             echo '```json' >> "$GITHUB_STEP_SUMMARY"
@@ -86,3 +84,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npm run deploy
+
+      # The native driver authenticates its control calls with the same
+      # deployment credential currently composed by the control-plane Worker.
+      # Reapply it after every Worker version deploy so persisted secrets cannot
+      # drift across independently published versions.
+      - name: Synchronize sandbox control token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: printf '%s' "$CLOUDFLARE_API_TOKEN" | npx wrangler secret put API_TOKEN
