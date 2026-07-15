@@ -180,7 +180,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
   }))
   let executeAttempt: ((context: WorkGraphContext, request: WorkGraphAttemptOperationRequest) => Promise<CommandResult>) | undefined
   const realSessions = input.realSessions
-    ? await createRealSessionRuntime(directory, (forward) => createSessionV2WorkGraphGateway(forward, {
+    ? await createRealSessionRuntime(directory, `http://127.0.0.1:${input.port}`, (forward) => createSessionV2WorkGraphGateway(forward, {
         executeAttempt: (context, request, signal) => {
           if (signal.aborted) throw signal.reason
           if (!executeAttempt) throw new Error("WorkGraph Attempt command broker is not ready")
@@ -714,6 +714,7 @@ type RealSessionRuntime = Readonly<{
 
 async function createRealSessionRuntime(
   directory: string,
+  claxedoServerUrl: string,
   createGateway: (request: Parameters<typeof createSessionV2WorkGraphGateway>[0]) => WorkGraphSessionGateway,
 ): Promise<RealSessionRuntime> {
   const records = new Map<string, RealSessionRecord>()
@@ -729,6 +730,65 @@ async function createRealSessionRuntime(
     }
     const messages = Array.isArray(body.messages) ? body.messages : []
     const toolResults = messages.filter((message) => object(message)?.role === "tool").length
+    const chatCreation = serialized.includes("Use Claxedo MCP to create the WorkGraph stream MCP review pipeline with three dependent tasks.")
+    if (chatCreation) {
+      const results = successfulCommandResults(messages)
+      if (toolResults > 0 && results.length !== toolResults) {
+        sendProviderText(outgoing, "Claxedo MCP rejected the requested WorkGraph creation, so no substitute work was created.")
+        return
+      }
+      if (toolResults === 0) {
+        sendProviderTool(outgoing, "call_claxedo_create_stream", "claxedo_workgraph_create_stream", {
+          operation_id: "e2e-chat-create-stream",
+          title: "MCP review pipeline",
+          description: "Review and verify the WorkGraph implementation through real project Sessions.",
+        })
+        return
+      }
+      const streamId = commandResultId(results[0], "streamId")
+      const completionContract = {
+        version: 1,
+        mode: "all",
+        requirements: [{
+          id: "real-session-proof",
+          kind: "test",
+          description: "The real project Session completes through its scoped WorkGraph tool",
+        }],
+      }
+      if (toolResults === 1) {
+        sendProviderTool(outgoing, "call_claxedo_create_review", "claxedo_workgraph_create_task", {
+          operation_id: "e2e-chat-create-review",
+          stream_id: streamId,
+          title: "Review the WorkGraph implementation",
+          completion_contract: completionContract,
+        })
+        return
+      }
+      const reviewId = commandResultId(results[1], "workItemId")
+      if (toolResults === 2) {
+        sendProviderTool(outgoing, "call_claxedo_create_journeys", "claxedo_workgraph_create_task", {
+          operation_id: "e2e-chat-create-journeys",
+          stream_id: streamId,
+          title: "Exercise the WorkGraph user journeys",
+          dependency_ids: [reviewId],
+          completion_contract: completionContract,
+        })
+        return
+      }
+      const journeysId = commandResultId(results[2], "workItemId")
+      if (toolResults === 3) {
+        sendProviderTool(outgoing, "call_claxedo_create_summary", "claxedo_workgraph_create_task", {
+          operation_id: "e2e-chat-create-summary",
+          stream_id: streamId,
+          title: "Summarize the WorkGraph verification",
+          dependency_ids: [journeysId],
+          completion_contract: completionContract,
+        })
+        return
+      }
+      sendProviderText(outgoing, "Created MCP review pipeline with three dependency-ordered Tasks.")
+      return
+    }
     const connectionBound = serialized.includes("connection_work_source_comment")
     if (connectionBound && toolResults === 0) {
       const invocation = connectionInvocation(serialized)
@@ -782,7 +842,7 @@ async function createRealSessionRuntime(
   })
   const providerPort = await listen(provider, 0)
   const opencodePort = await availablePort()
-  const config = providerConfig(`http://127.0.0.1:${providerPort}/v1`)
+  const config = providerConfig(`http://127.0.0.1:${providerPort}/v1`, claxedoServerUrl)
   const opencode = spawn(
     "bun",
     ["run", "--conditions=browser", "./src/index.ts", "serve", "--pure", "--hostname", "127.0.0.1", "--port", String(opencodePort)],
@@ -885,11 +945,52 @@ function latestToolSucceeded(messages: unknown[]) {
   }
 }
 
-function providerConfig(baseUrl: string) {
+function successfulCommandResults(messages: unknown[]) {
+  return messages.flatMap((message) => {
+    if (object(message)?.role !== "tool") return []
+    const result = successfulCommandResult(object(message)?.content)
+    return result ? [result] : []
+  })
+}
+
+function successfulCommandResult(input: unknown): Record<string, unknown> | undefined {
+  if (typeof input === "string") {
+    try {
+      return successfulCommandResult(JSON.parse(input))
+    } catch {
+      return
+    }
+  }
+  if (Array.isArray(input)) return input.map(successfulCommandResult).find((result) => result !== undefined)
+  const value = object(input)
+  if (!value) return
+  if (value.ok === true && object(value.value)) return value
+  return [value.output, value.text, value.content, value.value]
+    .map(successfulCommandResult)
+    .find((result) => result !== undefined)
+}
+
+function commandResultId(result: Record<string, unknown> | undefined, key: string) {
+  const value = object(result?.value)?.[key]
+  if (typeof value !== "string" || !value) throw new Error(`Claxedo MCP result omitted ${key}`)
+  return value
+}
+
+function providerConfig(baseUrl: string, claxedoServerUrl: string) {
   return {
     formatter: false,
     lsp: false,
     model: "workgraph-e2e/workgraph-model",
+    mcp: {
+      claxedo: {
+        type: "local",
+        command: ["bun", "run", path.join(repository, "packages/claxedo-mcp/src/server.ts")],
+        environment: {
+          CLAXEDO_SERVER_URL: claxedoServerUrl,
+          OPENCODE_API_DIR: repository,
+        },
+      },
+    },
     provider: {
       "workgraph-e2e": {
         name: "WorkGraph E2E",
@@ -969,9 +1070,11 @@ function object(input: unknown) {
   return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
 }
 
-function readIncomingBody(incoming: NodeJS.ReadableStream) {
+function readIncomingBody(incoming: IncomingMessage) {
+  const chunks: Buffer[] = []
+  for (let chunk = incoming.read(); chunk !== null; chunk = incoming.read()) chunks.push(Buffer.from(chunk))
+  if (incoming.complete || incoming.readableEnded) return Promise.resolve(Buffer.concat(chunks))
   return new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = []
     incoming.on("data", (chunk) => chunks.push(Buffer.from(chunk)))
     incoming.on("end", () => resolve(Buffer.concat(chunks)))
     incoming.on("error", reject)
@@ -1157,7 +1260,10 @@ function sendJson(response: ServerResponse, value: unknown) {
 function setCors(response: ServerResponse) {
   response.setHeader("access-control-allow-origin", "*")
   response.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
-  response.setHeader("access-control-allow-headers", "authorization,content-type,x-request-id,x-opencode-directory,x-claxedo-idempotency-retry")
+  response.setHeader(
+    "access-control-allow-headers",
+    "authorization,content-type,x-request-id,x-opencode-directory,x-claxedo-idempotency-retry,x-claxedo-draft-id",
+  )
 }
 
 function listen(server: Server, port: number) {

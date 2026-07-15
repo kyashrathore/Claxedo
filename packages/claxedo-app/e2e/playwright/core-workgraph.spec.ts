@@ -17,6 +17,7 @@ import type {
 import fs from "node:fs"
 import path from "node:path"
 import { createRealWorkGraphHarness, type RealWorkGraphHarness } from "../helpers/real-workgraph-harness"
+import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const apiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
 const repositoryDirectory = path.resolve(import.meta.dirname, "../../../..")
@@ -28,7 +29,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     // This one journey boots a separate production OpenCode process and native
     // SQLite runtime. Give that test-infrastructure cold start its own budget;
     // user-visible WorkGraph and Session readiness retain their strict assertions.
-    if (realSessions) testInfo.setTimeout(testInfo.title.includes("GitHub, Linear, and Jira") ? 240_000 : 120_000)
+    if (realSessions) testInfo.setTimeout(240_000)
     harness = await createRealWorkGraphHarness({
       port: apiPort,
       realSessions,
@@ -40,7 +41,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     // The embedded HTTP server can then shut down without waiting for another
     // poll window; this exercises the production unmount/navigation cleanup.
     await test.step("close the WorkGraph page", () => page.close())
-    await test.step("close the real WorkGraph harness", () => harness.close())
+    if (harness) await test.step("close the real WorkGraph harness", () => harness.close())
   })
 
   test("uses one WorkspacePanel and supports manual streams, tasks, and tabless settings", async ({
@@ -829,6 +830,96 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     harness.assertHealthy()
   })
 
+  test("creates dependent work from project chat through real Claxedo MCP and executes every Task in real Session V2", async ({
+    page,
+    request,
+  }) => {
+    await page.goto("/workgraph")
+    await page.getByRole("button", { name: "WorkGraph settings" }).click()
+    const settings = page.getByRole("complementary", { name: "Workspace panel" })
+    await settings.getByLabel("Harness").selectOption("opencode")
+    await settings.getByLabel("Agent").selectOption("build")
+    await settings.getByLabel("Provider", { exact: true }).selectOption("workgraph-e2e")
+    await settings.getByLabel("Model", { exact: true }).selectOption("workgraph-e2e/workgraph-model")
+    await settings.getByLabel("Effort", { exact: true }).selectOption("high")
+    await settings.getByRole("button", { name: "Save" }).click()
+    await settings.getByRole("button", { name: "Close workspace panel" }).click()
+
+    const project = page.locator('[data-testid="project-header"]').filter({ hasText: "Claxedo" })
+    await project.click()
+    await project.hover()
+    await project.getByRole("button", { name: /New session in/ }).click()
+    const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await expect(input).toHaveAttribute("contenteditable", "true")
+    const prompt = "Use Claxedo MCP to create the WorkGraph stream MCP review pipeline with three dependent tasks."
+    await input.click()
+    await input.fill(prompt)
+    await expect(input).toContainText(prompt)
+    const submit = page.locator(SELECTORS.submitControl).last()
+    await expect(submit).toBeEnabled()
+    await submit.click()
+    await expect(page).toHaveURL(/(?:\/s\/[^/]+|\/w\/[^/]+\/session\/[^/]+)$/, { timeout: 30_000 })
+      .catch((error) => {
+        throw new Error(`${String(error)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      })
+    await expectAssistantReplyVisible(page, "Created MCP review pipeline with three dependency-ordered Tasks.")
+
+    await page.goto("/workgraph")
+    await expect(page.getByRole("button", { name: "Collapse MCP review pipeline" })).toBeVisible()
+    const taskTitles = [
+      "Review the WorkGraph implementation",
+      "Exercise the WorkGraph user journeys",
+      "Summarize the WorkGraph verification",
+    ]
+    for (const title of taskTitles) await expect(page.getByText(title, { exact: true })).toBeVisible()
+
+    const snapshot = await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")
+    const stream = snapshot.records.find((candidate) =>
+      candidate.recordType === "stream" && candidate.title === "MCP review pipeline")
+    if (!stream) throw new Error("Claxedo MCP did not persist the requested Stream")
+    expect(stream.executionDefaults).toMatchObject({
+      environment: { kind: "local_worktree", directory: repositoryDirectory },
+      repository: { baseRevision: "HEAD" },
+    })
+    const tasks = taskTitles.map((title) => snapshot.records.find((candidate) =>
+      candidate.recordType === "work_item" && candidate.streamId === stream.id && candidate.title === title))
+    if (tasks.some((task) => !task)) throw new Error("Claxedo MCP did not persist all three requested Tasks")
+    expect(tasks.map((task) => task?.dependencyIds)).toEqual([[], [tasks[0]?.id], [tasks[1]?.id]])
+
+    await page.getByRole("button", { name: "Execute stream MCP review pipeline" }).click()
+    await page.getByRole("menu", { name: "Execute stream MCP review pipeline" })
+      .getByRole("menuitem", { name: "Autonomous" })
+      .click()
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      const current = await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")
+      return taskTitles.map((title) => current.records.find((candidate) =>
+        candidate.recordType === "work_item" && candidate.streamId === stream.id && candidate.title === title)?.state)
+    }, { timeout: 45_000 }).toEqual(["completed", "completed", "completed"])
+
+    const sessions = harness.realSessionEvidence().filter((session) => taskTitles.includes(session.title))
+    expect(sessions.map((session) => session.title)).toEqual(taskTitles)
+    for (const session of sessions) {
+      await page.reload()
+      const streamToggle = page.getByRole("button", { name: /^(?:Expand|Collapse) MCP review pipeline$/ })
+      if (await streamToggle.getAttribute("aria-expanded") !== "true") await streamToggle.click()
+      await page.getByRole("button", { name: `Open session for ${session.title}` }).click()
+      await expect(page).toHaveURL(`/s/${session.sessionId}`)
+      await expectAssistantReplyVisible(page, "Completed the WorkGraph Task in the real project Session.")
+      const project = page.locator('[data-testid="project-header"]').filter({ hasText: "Claxedo" })
+      await expect(project).toBeVisible()
+      const disclosure = project.locator('[role="button"][aria-label$="project"]')
+      if (await disclosure.getAttribute("aria-expanded") !== "true") await disclosure.click()
+      await expect(page.locator(
+        `[data-testid="rail-sidebar-session-row"][data-session-id="${session.sessionId}"]`,
+      )).toContainText(session.title)
+      await expect(page.getByText("Thread not found", { exact: false })).toHaveCount(0)
+      await expect(page.getByText("Session unavailable", { exact: false })).toHaveCount(0)
+      await page.goto("/workgraph")
+    }
+    harness.assertHealthy()
+  })
+
   test("destroys a disposable Stream worktree but explicitly closes durable-effect work", async ({ page, request }) => {
     await configureGeneration(request)
     const disposable = await command(request, {
@@ -1455,7 +1546,17 @@ async function expectNoSeriousAxeViolations(page: import("@playwright/test").Pag
 type DefaultsResponse = Readonly<{
   defaults: Readonly<{ execution: Record<string, unknown>; recap: Record<string, unknown> }>
 }>
-type SnapshotResponse = Readonly<{ records: Array<Readonly<{ recordType: string; id: string; title?: string }>> }>
+type SnapshotResponse = Readonly<{
+  records: Array<Readonly<{
+    recordType: string
+    id: string
+    title?: string
+    streamId?: string
+    state?: string
+    dependencyIds?: string[]
+    executionDefaults?: Record<string, unknown>
+  }>>
+}>
 type StreamResponse = Readonly<{
   executionDefaults: Record<string, unknown>
   recapDefaults: Record<string, unknown>
