@@ -152,6 +152,17 @@ describe("CloudflareSandboxDriver", () => {
     expect(result).toEqual({ provisioning: true, retryAfterMs: 2_000 })
   })
 
+  test("timed-out ensure is reported as provisioning so callers can retry", async () => {
+    const fetch = vi.fn((_url: unknown, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true })
+      }),
+    ) as unknown as typeof globalThis.fetch
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch, timeoutMs: 5 })
+
+    expect(await driver.ensureHost(createInput)).toEqual({ provisioning: true, retryAfterMs: 2_000 })
+  })
+
   test("4xx or missing url throws (real failure, not retried as provisioning)", async () => {
     const { fetch } = harness(() => ({ status: 400, json: { error: "bad request" } }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })

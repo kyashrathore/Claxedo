@@ -69,7 +69,7 @@ const DEFAULT_WORKSPACE_DIR = "/workspace"
 // verified by running the built image. The runtime
 // self-configures from the injected WORKSPACE_RUNTIME_* env.
 const DEFAULT_RUNTIME_COMMAND = "/usr/local/bin/workspace-runtime"
-const DEFAULT_TIMEOUT_MS = 120_000
+const DEFAULT_TIMEOUT_MS = 45_000
 
 function cleanUrl(input: string) {
   return input.replace(/\/+$/, "")
@@ -163,7 +163,7 @@ export function createCloudflareSandboxDriver(
     const sandboxId = sandboxIdFor(input.workspaceId)
     const hostId = sandboxId
     const egress = egressRegistrations(input)
-    const { status, data } = await call<{ ready?: boolean; url?: string; error?: string }>(
+    const response = await call<{ ready?: boolean; url?: string; error?: string }>(
       sandboxId,
       "ensure-runtime",
       {
@@ -172,7 +172,12 @@ export function createCloudflareSandboxDriver(
         command: runtimeCommand,
         ...(egress ? { egress } : {}),
       },
-    )
+    ).catch((error) => {
+      if (error instanceof Error && error.name === "TimeoutError") return undefined
+      throw error
+    })
+    if (!response) return { provisioning: true as const, retryAfterMs: 2_000 }
+    const { status, data } = response
     if (status >= 500) return { provisioning: true as const, retryAfterMs: 2_000 }
     if (status >= 400 || !data?.url) {
       throw new Error(`Cloudflare ensure-runtime failed (${status}): ${data?.error ?? "no runtime url"}`)

@@ -45,6 +45,8 @@ async function resolveEgressSecret(env: Env, sandboxId: string, host: string) {
 // provider's CLAXEDO_WR_PORT default). The data-plane proxy forwards here.
 const WORKSPACE_RUNTIME_PORT = 3002
 const TRACE_ID_HEADER = "x-claxedo-trace-id"
+const CONTAINER_OPERATION_TIMEOUT_MS = 10_000
+const RUNTIME_READY_TIMEOUT_MS = 30_000
 
 function roundedMs(value: number) {
   return Math.round(value * 100) / 100
@@ -63,12 +65,36 @@ function withServerTiming(response: Response, name: string, startedAt: number, t
   })
 }
 
+async function bounded<T>(operation: Promise<T>, name: string, timeoutMs = CONTAINER_OPERATION_TIMEOUT_MS) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${name} timed out after ${timeoutMs}ms`)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+async function runtimeResponding(sandbox: ReturnType<typeof getSandbox>, url: URL, port: number) {
+  const target = new URL("/global/health", url.origin)
+  return bounded<Response>(sandbox.containerFetch(new Request(target), port), "workspace-runtime health probe", 2_000)
+    .then((res: Response) => res.ok)
+    .catch(() => false)
+}
+
 async function runtimeReady(sandbox: ReturnType<typeof getSandbox>, url: URL, port: number) {
   const target = new URL("/global/health", url.origin)
-  const deadline = Date.now() + 30_000
+  const deadline = Date.now() + RUNTIME_READY_TIMEOUT_MS
   while (Date.now() < deadline) {
-    const ready = await sandbox
-      .containerFetch(new Request(target), port)
+    const ready = await bounded<Response>(
+      sandbox.containerFetch(new Request(target), port),
+      "workspace-runtime health probe",
+      2_000,
+    )
       .then((res: Response) => res.ok)
       .catch(() => false)
     if (ready) return true
@@ -195,22 +221,26 @@ export default {
               signingSecret: env.EGRESS_SIGNING_SECRET,
             })
           }
-          await sandbox.setEnvVars(containerEnv)
-          // One sentinel process per sandbox: a marker file makes the start
-          // idempotent so re-poll/resume does not spawn duplicate runtimes.
-          const marker = "/tmp/.claxedo-runtime-started"
-          const already = await sandbox
-            .exec(`test -f ${marker} && echo yes || echo no`, { timeout: 5000 })
-            .then((r: any) => (r.stdout ?? "").trim() === "yes")
-            .catch(() => false)
-          if (!already) {
-            await sandbox.startProcess(command, { envVars: containerEnv })
+          // A healthy runtime already owns its boot environment. Return before
+          // setEnvVars: once the SDK has a default shell session, setEnvVars
+          // applies every key through a separate shell export and can block a
+          // retry for minutes.
+          if (await runtimeResponding(sandbox, url, port)) {
+            const proxyUrl = `${url.origin}/sandbox/${encodeURIComponent(sandboxId)}/proxy`
+            return json({ ready: true, url: proxyUrl, port })
           }
+
+          await bounded(sandbox.setEnvVars(containerEnv), "sandbox environment setup")
+          await bounded(
+            sandbox.startProcess(command, {
+              env: containerEnv,
+              processId: "claxedo-workspace-runtime",
+            }),
+            "workspace-runtime process start",
+          )
           if (!await runtimeReady(sandbox, url, port)) {
-            await sandbox.exec(`rm -f ${marker}`, { timeout: 5000 }).catch(() => undefined)
             return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
           }
-          await sandbox.exec(`touch ${marker}`, { timeout: 5000 }).catch(() => undefined)
           const proxyUrl = `${url.origin}/sandbox/${encodeURIComponent(sandboxId)}/proxy`
           return json({ ready: true, url: proxyUrl, port })
         }
