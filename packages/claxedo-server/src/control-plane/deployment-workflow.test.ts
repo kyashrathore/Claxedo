@@ -92,12 +92,28 @@ describe("Claxedo Cloud deployment workflow", () => {
     )
     const stagingBuild = controlPlane.indexOf("- name: Build WorkGraph packages for Convex")
     const stagingDryRun = controlPlane.indexOf("- name: Convex dry-run (config generation gate)")
+    const stagingWorkspaceBuild = controlPlane.indexOf("- name: Build control-plane workspace packages")
+    const stagingWorker = controlPlane.indexOf("- name: Deploy control-plane Worker (staging)")
     const productionBuild = controlPlane.lastIndexOf("- name: Build WorkGraph packages for Convex")
     const productionDryRun = controlPlane.lastIndexOf("- name: Convex dry-run (config generation gate)")
+    const productionWorkspaceBuild = controlPlane.lastIndexOf("- name: Build control-plane workspace packages")
+    const productionWorker = controlPlane.indexOf("- name: Deploy control-plane Worker (production)")
+    expect(stagingWorkspaceBuild).toBeGreaterThanOrEqual(0)
+    expect(stagingWorkspaceBuild).toBeLessThan(stagingWorker)
     expect(stagingBuild).toBeGreaterThanOrEqual(0)
     expect(stagingBuild).toBeLessThan(stagingDryRun)
     expect(productionBuild).toBeGreaterThan(stagingBuild)
     expect(productionBuild).toBeLessThan(productionDryRun)
+    expect(productionWorkspaceBuild).toBeGreaterThan(stagingWorkspaceBuild)
+    expect(productionWorkspaceBuild).toBeLessThan(productionWorker)
+    for (const command of [
+      "bun run --cwd packages/workspace-relay-protocol build",
+      "bun run --cwd packages/workspace-relay build",
+      "bun run --cwd packages/claxedo-connections build",
+      "bun run --cwd packages/sandbox-manager build",
+    ]) {
+      expect(controlPlane.match(new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))).toHaveLength(2)
+    }
     expect(appStaging).toContain('git cat-file -e "$BEFORE_SHA^{commit}"')
     expect(appStaging).toContain('git fetch --no-tags --depth=1 origin "$BEFORE_SHA"')
     expect(appStaging).toContain('git diff-tree --no-commit-id --name-only -r "$AFTER_SHA"')
