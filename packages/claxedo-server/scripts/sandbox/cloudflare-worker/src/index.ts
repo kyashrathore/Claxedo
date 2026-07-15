@@ -10,7 +10,23 @@ import { EGRESS_TARGET_HEADER, handleEgressRequest, mintEgressToken } from "./eg
 // Local export is required for Wrangler's [[containers]].class_name binding to
 // attach this Worker's Dockerfile to the Durable Object class.
 const CloudflareSandboxBase = CloudflareSandbox as new (...args: never[]) => object
-export class Sandbox extends CloudflareSandboxBase {}
+export class Sandbox extends CloudflareSandboxBase {
+  private workspaceRuntimeEnsure?: Promise<boolean>
+
+  ensureWorkspaceRuntime(command: string, env: Record<string, string>, port: number) {
+    if (this.workspaceRuntimeEnsure) return this.workspaceRuntimeEnsure
+    const operation = ensureRuntimeProcess(this as unknown as SandboxOperations, command, env, port)
+    this.workspaceRuntimeEnsure = operation
+    return operation.finally(() => {
+      if (this.workspaceRuntimeEnsure === operation) this.workspaceRuntimeEnsure = undefined
+    })
+  }
+
+  async workspaceRuntimeReady(port: number) {
+    const process = await runtimeProcess(this as unknown as SandboxOperations)
+    return Boolean(process && await runtimeReady(process, port, 2_000))
+  }
+}
 
 // Minimal structural view of the KV binding we use (avoids a hard dependency
 // on @cloudflare/workers-types global scope at build time).
@@ -60,6 +76,20 @@ interface SandboxProcess {
   }): Promise<void>
 }
 
+interface SandboxOperations {
+  getProcess(id: string): Promise<SandboxProcess | null>
+  startProcess(command: string, options: {
+    env: Record<string, string>
+    processId: string
+  }): Promise<SandboxProcess>
+  cleanupCompletedProcesses(): Promise<number>
+}
+
+interface ManagedSandbox {
+  ensureWorkspaceRuntime(command: string, env: Record<string, string>, port: number): Promise<boolean>
+  workspaceRuntimeReady(port: number): Promise<boolean>
+}
+
 function roundedMs(value: number) {
   return Math.round(value * 100) / 100
 }
@@ -100,7 +130,7 @@ async function runtimeReady(process: SandboxProcess, port: number, timeout = RUN
   }).then(() => true).catch(() => false)
 }
 
-async function runtimeProcess(sandbox: ReturnType<typeof getSandbox>) {
+async function runtimeProcess(sandbox: SandboxOperations) {
   return bounded<SandboxProcess | null>(
     sandbox.getProcess(RUNTIME_PROCESS_ID),
     "workspace-runtime process lookup",
@@ -108,6 +138,27 @@ async function runtimeProcess(sandbox: ReturnType<typeof getSandbox>) {
     if (error instanceof Error && error.message.includes("ProcessNotFoundError")) return null
     throw error
   })
+}
+
+async function ensureRuntimeProcess(
+  sandbox: SandboxOperations,
+  command: string,
+  env: Record<string, string>,
+  port: number,
+) {
+  const existing = await runtimeProcess(sandbox)
+  if (existing && ["starting", "running"].includes(existing.status) && await runtimeReady(existing, port)) return true
+  if (existing) {
+    const status = await bounded(existing.getStatus(), "workspace-runtime status refresh")
+    if (["starting", "running"].includes(status)) return false
+    await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
+  }
+
+  const process = await bounded<SandboxProcess>(
+    sandbox.startProcess(command, { env, processId: RUNTIME_PROCESS_ID }),
+    "workspace-runtime process start",
+  )
+  return runtimeReady(process, port)
 }
 
 function json(data: unknown, status = 200) {
@@ -177,7 +228,7 @@ export default {
 
     const sandboxId = parts[1]
     const action = parts[2] || ""
-    const sandbox = getSandbox(env.Sandbox, sandboxId)
+    const sandbox = getSandbox(env.Sandbox, sandboxId) as ReturnType<typeof getSandbox> & ManagedSandbox
 
     try {
       // DELETE /sandbox/:id
@@ -228,31 +279,11 @@ export default {
               signingSecret: env.EGRESS_SIGNING_SECRET,
             })
           }
-          // Inspect the managed process before probing its port. containerFetch
-          // waits internally for the port and cannot be cancelled by an outer
-          // Promise.race, so using it as a preflight can overlap startProcess
-          // and cancel the runtime launch.
-          const existing = await runtimeProcess(sandbox)
-          if (existing && ["starting", "running"].includes(existing.status) && await runtimeReady(existing, port)) {
-            const proxyUrl = `${url.origin}/sandbox/${encodeURIComponent(sandboxId)}/proxy`
-            return json({ ready: true, url: proxyUrl, port })
-          }
-          if (existing) {
-            const status = await bounded(existing.getStatus(), "workspace-runtime status refresh")
-            if (["starting", "running"].includes(status)) {
-              return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
-            }
-            await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
-          }
-
-          const process = await bounded<SandboxProcess>(
-            sandbox.startProcess(command, {
-              env: containerEnv,
-              processId: RUNTIME_PROCESS_ID,
-            }),
-            "workspace-runtime process start",
-          )
-          if (!await runtimeReady(process, port)) {
+          // Runtime bring-up is a Durable Object RPC with a per-sandbox
+          // single-flight promise. Catalog refreshes and execution retries can
+          // overlap, but they must join one process launch rather than cancel
+          // each other's container operations.
+          if (!await sandbox.ensureWorkspaceRuntime(command, containerEnv, port)) {
             return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
           }
           const proxyUrl = `${url.origin}/sandbox/${encodeURIComponent(sandboxId)}/proxy`
@@ -261,8 +292,7 @@ export default {
 
         case "touch-runtime": {
           const port: number = typeof body.port === "number" ? body.port : WORKSPACE_RUNTIME_PORT
-          const process = await runtimeProcess(sandbox)
-          return json({ ok: true, ready: Boolean(process && await runtimeReady(process, port, 2_000)) })
+          return json({ ok: true, ready: await sandbox.workspaceRuntimeReady(port) })
         }
 
       default:
