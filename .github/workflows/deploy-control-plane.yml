@@ -168,7 +168,8 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: printf '%s' "$CLOUDFLARE_API_TOKEN" | bunx wrangler secret put CLOUDFLARE_API_TOKEN --env staging
+          SANDBOX_CONTROL_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
+        run: printf '%s' "$SANDBOX_CONTROL_TOKEN" | bunx wrangler secret put CLOUDFLARE_SANDBOX_API_TOKEN --env staging
 
   smoke-staging:
     needs: deploy-staging

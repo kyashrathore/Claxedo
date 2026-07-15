@@ -77,7 +77,7 @@ export function sandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
 
   if (name === "cloudflare") {
     const workerUrl = clean(env.CLOUDFLARE_SANDBOX_WORKER_URL)
-    const apiToken = clean(env.CLOUDFLARE_API_TOKEN)
+    const apiToken = clean(env.CLOUDFLARE_SANDBOX_API_TOKEN) ?? clean(env.CLOUDFLARE_API_TOKEN)
     if (!workerUrl || !apiToken) return
     return createCloudflareSandboxDriver({
       workerUrl,
@@ -166,7 +166,10 @@ function deviceAuthProvider(env: HostedWorkerEnv): HostedDeviceAuthProvider | un
 }
 
 function defaultSandboxDriverName(env: HostedWorkerEnv) {
-  if (clean(env.CLOUDFLARE_SANDBOX_WORKER_URL) && clean(env.CLOUDFLARE_API_TOKEN)) return "cloudflare"
+  if (
+    clean(env.CLOUDFLARE_SANDBOX_WORKER_URL) &&
+    (clean(env.CLOUDFLARE_SANDBOX_API_TOKEN) || clean(env.CLOUDFLARE_API_TOKEN))
+  ) return "cloudflare"
   if (clean(env.DAYTONA_API_KEY) && clean(env.CLAXEDO_DAYTONA_SNAPSHOT)) {
     return "daytona"
   }

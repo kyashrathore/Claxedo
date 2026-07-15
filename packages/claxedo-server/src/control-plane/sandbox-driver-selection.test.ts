@@ -12,6 +12,15 @@ describe("sandbox driver selection", () => {
     expect(driver?.id).toBe("cloudflare")
   })
 
+  test("composes Cloudflare with a dedicated sandbox bearer independent of deployment credentials", () => {
+    const driver = sandboxDriver({
+      CLAXEDO_SANDBOX_DRIVER: "cloudflare",
+      CLOUDFLARE_SANDBOX_WORKER_URL: "https://sbx.example.com",
+      CLOUDFLARE_SANDBOX_API_TOKEN: "sandbox-secret",
+    })
+    expect(driver?.id).toBe("cloudflare")
+  })
+
   test("Cloudflare selection without worker url/token yields no driver (fail-soft)", () => {
     expect(sandboxDriver({ CLAXEDO_SANDBOX_DRIVER: "cloudflare" })).toBeUndefined()
     expect(
@@ -27,7 +36,7 @@ describe("sandbox driver selection", () => {
   test("default selection auto-picks native Worker-safe drivers from their own credentials", () => {
     expect(sandboxDriver({
       CLOUDFLARE_SANDBOX_WORKER_URL: "https://sbx.example.com",
-      CLOUDFLARE_API_TOKEN: "secret",
+      CLOUDFLARE_SANDBOX_API_TOKEN: "secret",
     })?.id).toBe("cloudflare")
     expect(sandboxDriver({
       DAYTONA_API_KEY: "dtn-key",

@@ -79,7 +79,7 @@ authority URL, relay URL, resolver token, or the signing key is missing.
 | `CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN`                   | unsigned relay-revocation queries to Convex                                                                           |
 | `CLAXEDO_RUNTIME_ADMIN_TOKEN`                           | authorizes `/internal/sandbox-manager/*` and `/internal/workgraph/reconcile`; must differ from the resolver token     |
 | `CLAXEDO_SANDBOX_DRIVER`                                | optional cloud sandbox driver: `cloudflare`, `daytona`, or `fetch`; auto-selected from present credentials when unset |
-| Cloudflare driver                                       | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_SANDBOX_WORKER_URL`                                                               |
+| Cloudflare driver                                       | `CLOUDFLARE_SANDBOX_API_TOKEN`, `CLOUDFLARE_SANDBOX_WORKER_URL` (`CLOUDFLARE_API_TOKEN` remains a compatibility fallback) |
 | Daytona driver                                          | `DAYTONA_API_KEY`, `CLAXEDO_DAYTONA_SNAPSHOT`                                                                         |
 | `CLAXEDO_DEVICE_LOGIN_ISSUER` (+ optional `_CLIENT_ID`) | device-login broker (Phase A)                                                                                         |
 | `CLAXEDO_POSTHOG_KEY`, `CLAXEDO_POSTHOG_HOST`           | optional telemetry (fetch-based)                                                                                      |
