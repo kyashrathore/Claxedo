@@ -9,6 +9,7 @@ describe("WorkGraph deployment smoke", () => {
     const otherUserToken = `Bearer ${token("user_b", "org_a")}`
     const sessions = new Map<string, { userId: string; organizationId: string }>()
     let deleted = false
+    let capabilityRefreshes = 0
     const request = async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url)
       requests.push({ url, init })
@@ -48,6 +49,18 @@ describe("WorkGraph deployment smoke", () => {
         })
       }
       if (url.pathname === "/api/workgraph/execution-capabilities/refresh") {
+        capabilityRefreshes += 1
+        if (capabilityRefreshes === 1) {
+          return Response.json({
+            error: {
+              code: "execution_capabilities_unavailable",
+              capability: "catalog_workspace",
+              reason: "runtime_unavailable",
+              message: "The hosted capability catalog is provisioning; retry after 2000ms",
+              retryable: true,
+            },
+          }, { status: 503 })
+        }
         return Response.json({ refreshed: true })
       }
       if (url.pathname === "/internal/workgraph/reconcile") return Response.json({ ok: true, summary: {} })
@@ -119,6 +132,7 @@ describe("WorkGraph deployment smoke", () => {
           WORKGRAPH_SMOKE_MODEL_ID: "no-op",
           WORKGRAPH_SMOKE_EFFORT: "low",
           WORKGRAPH_SMOKE_TOOLS_JSON: "[]",
+          WORKGRAPH_SMOKE_RETRY_DELAY_MS: "1",
         },
         request as typeof fetch,
       ),
@@ -134,6 +148,7 @@ describe("WorkGraph deployment smoke", () => {
       { user_id: "user_b", active_organization_id: "org_a" },
     ])
     expect(requests.filter((entry) => entry.url.pathname.endsWith("/revoke"))).toHaveLength(3)
+    expect(capabilityRefreshes).toBe(2)
     expect(requests.filter((entry) => entry.url.pathname.endsWith("/tokens/convex"))).not.toHaveLength(0)
     expect(
       requests

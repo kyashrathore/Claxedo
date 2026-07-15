@@ -10,6 +10,7 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
   const organizationA = required(env.WORKGRAPH_SMOKE_ORGANIZATION_A_ID, "WORKGRAPH_SMOKE_ORGANIZATION_A_ID")
   const organizationB = required(env.WORKGRAPH_SMOKE_ORGANIZATION_B_ID, "WORKGRAPH_SMOKE_ORGANIZATION_B_ID")
   const reconcileToken = required(env.WORKGRAPH_SMOKE_RECONCILE_TOKEN, "WORKGRAPH_SMOKE_RECONCILE_TOKEN")
+  const retryDelayMs = positiveInteger(env.WORKGRAPH_SMOKE_RETRY_DELAY_MS ?? "2000", "WORKGRAPH_SMOKE_RETRY_DELAY_MS")
   if (userA === userB) throw new Error("WorkGraph smoke identities must be different users")
   if (organizationA === organizationB) throw new Error("WorkGraph smoke identities must use different organizations")
 
@@ -37,8 +38,8 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
   )
   const sessions = [sessionAOrganizationA, sessionAOrganizationB, sessionBOrganizationA]
   try {
-    await refreshExecutionCapabilities(request, base, clerkSecret, sessionAOrganizationA)
-    const capabilities = await readExecutionCapabilities(request, base, clerkSecret, sessionAOrganizationA)
+    await refreshExecutionCapabilities(request, base, clerkSecret, sessionAOrganizationA, retryDelayMs)
+    const capabilities = await readExecutionCapabilities(request, base, clerkSecret, sessionAOrganizationA, retryDelayMs)
     const execution = requireExecutionProfile(capabilities, env)
 
     const tokenA = await createClerkSessionToken(request, clerkSecret, sessionAOrganizationA)
@@ -313,11 +314,19 @@ async function jsonRequest(request: typeof fetch, url: string, init?: RequestIni
   }
 }
 
-async function readExecutionCapabilities(request: typeof fetch, base: string, clerkSecret: string, session: Session) {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+async function readExecutionCapabilities(
+  request: typeof fetch,
+  base: string,
+  clerkSecret: string,
+  session: Session,
+  retryDelayMs: number,
+) {
+  const deadline = Date.now() + 120_000
+  let lastError: ReturnType<typeof executionCapabilitiesError> | undefined
+  while (Date.now() < deadline) {
     const response = await request(`${base}/api/workgraph/execution-capabilities`, {
       headers: authorization(await createClerkSessionToken(request, clerkSecret, session)),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(Math.max(1, Math.min(15_000, deadline - Date.now()))),
     })
     const body = parseJson(await response.text(), "/api/workgraph/execution-capabilities")
     if (response.ok) {
@@ -325,12 +334,15 @@ async function readExecutionCapabilities(request: typeof fetch, base: string, cl
       return body
     }
     const error = executionCapabilitiesError(body, response.status)
+    lastError = error
     if (!error.retryable) {
       throw new Error(`Execution capability ${error.capability}/${error.reason} is unavailable: ${error.message}`)
     }
-    await wait(10_000)
+    await wait(Math.min(retryDelayMs, Math.max(0, deadline - Date.now())))
   }
-  throw new Error("Execution capability route remained retryable-unavailable for two minutes")
+  throw new Error(
+    `Execution capability route remained retryable-unavailable for two minutes${lastError ? `: ${lastError.capability}/${lastError.reason}: ${lastError.message}` : ""}`,
+  )
 }
 
 async function refreshExecutionCapabilities(
@@ -338,18 +350,28 @@ async function refreshExecutionCapabilities(
   base: string,
   clerkSecret: string,
   session: Session,
+  retryDelayMs: number,
 ) {
-  const response = await request(`${base}/api/workgraph/execution-capabilities/refresh`, {
-    method: "POST",
-    headers: authorization(await createClerkSessionToken(request, clerkSecret, session)),
-    signal: AbortSignal.timeout(120_000),
-  })
-  const body = parseJson(await response.text(), "/api/workgraph/execution-capabilities/refresh")
-  if (response.ok) return
-  const error = executionCapabilitiesError(body, response.status)
-  if (!error.retryable) {
-    throw new Error(`Execution capability ${error.capability}/${error.reason} is unavailable: ${error.message}`)
+  const deadline = Date.now() + 120_000
+  let lastError: ReturnType<typeof executionCapabilitiesError> | undefined
+  while (Date.now() < deadline) {
+    const response = await request(`${base}/api/workgraph/execution-capabilities/refresh`, {
+      method: "POST",
+      headers: authorization(await createClerkSessionToken(request, clerkSecret, session)),
+      signal: AbortSignal.timeout(Math.max(1, Math.min(60_000, deadline - Date.now()))),
+    })
+    const body = parseJson(await response.text(), "/api/workgraph/execution-capabilities/refresh")
+    if (response.ok) return
+    const error = executionCapabilitiesError(body, response.status)
+    lastError = error
+    if (!error.retryable) {
+      throw new Error(`Execution capability ${error.capability}/${error.reason} is unavailable: ${error.message}`)
+    }
+    await wait(Math.min(retryDelayMs, Math.max(0, deadline - Date.now())))
   }
+  throw new Error(
+    `Execution capability refresh remained retryable-unavailable for two minutes${lastError ? `: ${lastError.capability}/${lastError.reason}: ${lastError.message}` : ""}`,
+  )
 }
 
 function executionCapabilitiesError(input: unknown, status: number) {
@@ -563,6 +585,12 @@ function required(value: string | undefined, name: string) {
   const cleaned = value?.trim()
   if (!cleaned) throw new Error(`${name} is required`)
   return cleaned
+}
+
+function positiveInteger(value: string, name: string) {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer`)
+  return parsed
 }
 
 function authorization(token: string) {
