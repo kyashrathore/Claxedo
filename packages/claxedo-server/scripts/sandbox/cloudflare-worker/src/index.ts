@@ -100,6 +100,16 @@ async function runtimeReady(process: SandboxProcess, port: number, timeout = RUN
   }).then(() => true).catch(() => false)
 }
 
+async function runtimeProcess(sandbox: ReturnType<typeof getSandbox>) {
+  return bounded<SandboxProcess | null>(
+    sandbox.getProcess(RUNTIME_PROCESS_ID),
+    "workspace-runtime process lookup",
+  ).catch((error) => {
+    if (error instanceof Error && error.message.includes("ProcessNotFoundError")) return null
+    throw error
+  })
+}
+
 function json(data: unknown, status = 200) {
   return Response.json(data, { status })
 }
@@ -222,10 +232,7 @@ export default {
           // waits internally for the port and cannot be cancelled by an outer
           // Promise.race, so using it as a preflight can overlap startProcess
           // and cancel the runtime launch.
-          const existing = await bounded<SandboxProcess | null>(
-            sandbox.getProcess(RUNTIME_PROCESS_ID),
-            "workspace-runtime process lookup",
-          )
+          const existing = await runtimeProcess(sandbox)
           if (existing && ["starting", "running"].includes(existing.status) && await runtimeReady(existing, port)) {
             const proxyUrl = `${url.origin}/sandbox/${encodeURIComponent(sandboxId)}/proxy`
             return json({ ready: true, url: proxyUrl, port })
@@ -254,10 +261,7 @@ export default {
 
         case "touch-runtime": {
           const port: number = typeof body.port === "number" ? body.port : WORKSPACE_RUNTIME_PORT
-          const process = await bounded<SandboxProcess | null>(
-            sandbox.getProcess(RUNTIME_PROCESS_ID),
-            "workspace-runtime process lookup",
-          )
+          const process = await runtimeProcess(sandbox)
           return json({ ok: true, ready: Boolean(process && await runtimeReady(process, port, 2_000)) })
         }
 
