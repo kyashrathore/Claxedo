@@ -34,6 +34,7 @@ describe("Convex migrations discipline (D14)", () => {
     expect(source).toContain("legacyLeaseDocument")
     expect(schema).toContain("provider: v.optional(v.string())")
     expect(schema).toContain("provider_runtime_id: v.optional(v.string())")
+    expect(schema).toContain("remote_access_enabled: v.optional(v.boolean())")
   })
 
   test("the retired hand-rolled backfill survives only as the documented break-glass export", () => {

@@ -25,6 +25,9 @@ export default defineSchema({
     name: v.optional(v.string()),
     image_url: v.optional(v.string()),
     kind: v.optional(v.union(v.literal("human"), v.literal("agent"))),
+    // Compatibility envelope for rows written before the hosted remote-access
+    // switch moved out of the user document.
+    remote_access_enabled: v.optional(v.boolean()),
     created_at: v.number(),
     updated_at: v.number(),
   })
