@@ -1,6 +1,7 @@
 import type { ConnectionCapabilityHandle, ConnectionsPort, LiveConnectionAuthorization } from "../ports"
 import { hashWorkSourceContent } from "./work-source-service"
 import { createSourceAdmissionService, type AdmissionCommandGateway } from "./source-admission-service"
+import { WorkGraphConnectionToolNames } from "../contracts"
 import type {
   AdmissionProposalID,
   IntakeCandidateListInput,
@@ -212,7 +213,13 @@ export function createIntakeService(input: Readonly<{
 async function sourceViewExecution(store: SourceViewStore, context: WorkGraphContext, sourceViewId: string) {
   const sourceView = await requireSourceView(store, context, sourceViewId)
   if (!sourceView.target) throw new IntakeStateError("Source view requires a Stream target before admission")
-  return { execution: sourceView.target }
+  return {
+    execution: {
+      ...sourceView.target,
+      connectionIds: [sourceView.teamConnectionId],
+      tools: [...WorkGraphConnectionToolNames],
+    },
+  }
 }
 
 function intakeSourceDocument(candidate: IntakeCandidate) {

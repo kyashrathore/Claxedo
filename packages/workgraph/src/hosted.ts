@@ -26,6 +26,7 @@ export {
 export { createNotificationService, NotificationVersionConflictError } from "./application/notification-service"
 export { createAttentionAcknowledgementService } from "./application/attention-acknowledgement-service"
 export type { AttentionAcknowledgementStore } from "./application/attention-acknowledgement-service"
+export { buildAttemptPrompt } from "./application/attempt-prompt"
 export {
   createSourceViewService,
   SourceViewConnectionError,

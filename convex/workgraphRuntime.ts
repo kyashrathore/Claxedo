@@ -1,5 +1,6 @@
 import type { GenericMutationCtx } from "convex/server"
 import { v } from "convex/values"
+import { buildAttemptPrompt } from "@claxedo/workgraph/hosted"
 import { serviceMutation } from "./model"
 import type { DataModel, Doc, Id } from "./_generated/dataModel"
 import { removeAttentionRecord, syncAttentionRecord } from "./workgraphAttention"
@@ -148,7 +149,14 @@ export const claimLaunches = serviceMutation({
           retryCount,
           orgId: String(row.organization_id),
           title: item.title,
-          prompt: item.description?.trim() || item.title,
+          prompt: buildAttemptPrompt({
+            title: item.title,
+            description: item.description,
+            completionContract: item.completion_contract,
+            connectionIds: Array.isArray(attempt.resolved_execution.connectionIds)
+              ? attempt.resolved_execution.connectionIds.filter((id: unknown): id is string => typeof id === "string")
+              : [],
+          }),
           profile: attempt.resolved_execution,
         }
       }),

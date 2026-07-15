@@ -129,7 +129,17 @@ describe("Connections-backed personal intake", () => {
       environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/acme/cloud.git" },
       repository: { remoteUrl: "https://github.com/acme/cloud.git", baseRevision: "HEAD" },
     })
-    expect(requests.find((request) => request.command.type === "propose_admission")?.command).toMatchObject({ execution: view.target })
+    expect(requests.find((request) => request.command.type === "propose_admission")?.command).toMatchObject({
+      execution: {
+        ...view.target,
+        connectionIds: [teamConnectionId],
+        tools: [
+          "connection_work_source_list",
+          "connection_work_source_comment",
+          "connection_work_source_update",
+        ],
+      },
+    })
   })
 
   it("refuses external admission until its Source View has a Stream target", async () => {

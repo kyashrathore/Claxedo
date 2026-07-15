@@ -118,6 +118,7 @@ import {
   type WorkGraphCommandHandlers,
 } from "../../ports/store"
 import type { ExecutionSessionID, StreamEnvelopeID, WorkspaceExecutionPort } from "../../ports/workspace-execution"
+import { buildAttemptPrompt } from "../../application/attempt-prompt"
 import type { AttemptRuntimePort } from "../../ports/attempt-runtime"
 import type { ExecutionCapabilitiesPort } from "../../ports/execution-capabilities"
 import type { SqliteInput } from "../../sqlite"
@@ -4870,6 +4871,7 @@ async function launchAttempt(
     | undefined
   if (!row) return
   const envelope = row.envelope_identity_json ? (JSON.parse(row.envelope_identity_json) as { id?: string }) : undefined
+  const profile = ResolvedExecutionProfileSchema.parse(JSON.parse(row.resolved_execution_profile_json))
   await placeAdmittedAttempt(
     context,
     {
@@ -4877,8 +4879,13 @@ async function launchAttempt(
       streamId: row.stream_id,
       workItemId: row.work_item_id,
       title: row.title,
-      prompt: `${row.title}\n\n${row.description}\n\nCompletion contract:\n${row.completion_contract_json}`,
-      profile: JSON.parse(row.resolved_execution_profile_json),
+      prompt: buildAttemptPrompt({
+        title: row.title,
+        description: row.description,
+        completionContract: row.completion_contract_json,
+        connectionIds: profile.connectionIds,
+      }),
+      profile,
       ...(envelope?.id ? { envelopeId: envelope.id as never } : {}),
     },
     {

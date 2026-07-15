@@ -4,7 +4,7 @@ import { recordSemanticAttemptResult } from "../src/application/completion-servi
 import { cleanupStreamBeforeRemoval } from "../src/application/stream-lifecycle-service"
 import { createSqliteWorkGraphService } from "../src/adapters/sqlite/store"
 import type { AttemptID, CompletionContract, OperationID, StreamID, WorkGraphContext, WorkItemID } from "../src/contracts"
-import type { WorkspaceExecutionPort } from "../src/ports"
+import type { ExecutionCapabilitiesPort, WorkspaceExecutionPort } from "../src/ports"
 
 const databases: BetterSqlite3.Database[] = []
 afterEach(() => databases.splice(0).forEach((database) => database.close()))
@@ -37,6 +37,38 @@ describe("durable local execution", () => {
     expect(calls).toEqual(["envelope", "launch"])
     expect(await execute(fixture, "delete_stream", { streamId, expectedVersion: 1, reason: "Discard" })).toMatchObject({ ok: true })
     expect(calls).toEqual(["envelope", "launch", "cancel", "cleanup"])
+  })
+
+  it("launches with the completion contract and trusted Connection handles in the Attempt prompt", async () => {
+    let prompt = ""
+    const connectionId = branded("connection_source")
+    const fixture = setup({
+      ...runtime([]),
+      launch: async (_context, input) => {
+        prompt = input.prompt
+        return { sessionId: branded(`session_${input.attemptId}`), envelopeId: input.envelopeId, projectId: input.workspaceId }
+      },
+    }, connectedCapabilities(connectionId))
+    const profile = {
+      ...execution,
+      tools: ["connection_work_source_comment"],
+      connectionIds: [connectionId],
+    }
+    const streamId = resultId(await execute(fixture, "create_stream", { title: "Ship", execution: profile }), "streamId")
+    const workItemId = resultId(await execute(fixture, "create_work_item", {
+      streamId,
+      title: "Resolve CLX-101",
+      description: "Provider issue CLX-101 requests a launch-readiness fix.",
+      completionContract: contract,
+    }), "workItemId")
+
+    await execute(fixture, "execute_work_item", { workItemId, executionMode: "autonomous" })
+
+    expect(prompt).toContain("Resolve CLX-101")
+    expect(prompt).toContain("Provider issue CLX-101 requests a launch-readiness fix.")
+    expect(prompt).toContain('"id":"proof"')
+    expect(prompt).toContain("Trusted Connection handles:\n- connection_source")
+    expect(prompt).toContain("capability-scoped handles")
   })
 
   it("replays an admitted operation without launching a second Session", async () => {
@@ -231,12 +263,34 @@ function runtime(calls: string[]): WorkspaceExecutionPort {
   }
 }
 
-function setup(executionPort: WorkspaceExecutionPort) {
+function setup(executionPort: WorkspaceExecutionPort, executionCapabilities: ExecutionCapabilitiesPort = testExecutionCapabilities) {
   const database = new BetterSqlite3(":memory:")
   databases.push(database)
   let id = 0
   let now = 1_000
-  return { database, ...createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, execution: executionPort, clock: { now: () => now++ }, ids: { next: (kind) => `${kind}_${++id}` } }) }
+  return { database, ...createSqliteWorkGraphService({ database, executionCapabilities, execution: executionPort, clock: { now: () => now++ }, ids: { next: (kind) => `${kind}_${++id}` } }) }
+}
+
+function connectedCapabilities(connectionId: string): ExecutionCapabilitiesPort {
+  return {
+    read: async (context) => {
+      const capabilities = await testExecutionCapabilities.read(context)
+      return {
+        ...capabilities,
+        tools: [...capabilities.tools, {
+          harnessId: "claxedo-v2",
+          id: "connection_work_source_comment",
+          requiresConnectionCapability: "work-source",
+        }],
+        connections: [{
+          id: connectionId as never,
+          integrationId: "github",
+          scope: "team",
+          grantedCapabilities: ["work-source"],
+        }],
+      }
+    },
+  }
 }
 function execute(fixture: ReturnType<typeof setup>, type: string, command: Record<string, unknown>) {
   return fixture.service.execute(owner(), { operationId: branded<OperationID>(`operation_${crypto.randomUUID()}`), command: { version: 1, type, ...command } } as never)

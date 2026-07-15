@@ -1789,7 +1789,10 @@ describe("hosted WorkGraph runtime outbox", () => {
           work_item_id: "item-a",
           stream_id: "stream-a",
           state: "admitted",
-          resolved_execution: { environment: { kind: "hosted_workspace" } },
+          resolved_execution: {
+            environment: { kind: "hosted_workspace" },
+            connectionIds: ["connection-source"],
+          },
           row_version: 1,
         },
       ],
@@ -1807,7 +1810,19 @@ describe("hosted WorkGraph runtime outbox", () => {
         },
       ],
       workgraph_work_items: [
-        { _id: "item-row", organization_id: "org-a", owner_user_id: "user-a", id: "item-a", title: "No-op" },
+        {
+          _id: "item-row",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          id: "item-a",
+          title: "Resolve CLX-101",
+          description: "Provider issue CLX-101 requests a launch-readiness fix.",
+          completion_contract: {
+            version: 1,
+            mode: "all",
+            requirements: [{ id: "proof", kind: "test", description: "Tests pass" }],
+          },
+        },
       ],
       orgs: [{ _id: "org-a", owner_user_id: "user-a", kind: "personal" }],
     })
@@ -1816,7 +1831,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       worker_id: "worker-a",
       now: 10,
       limit: 10,
-    })) as Array<{ outboxId: string; attemptId: string; leaseEpoch: number }>
+    })) as Array<{ outboxId: string; attemptId: string; leaseEpoch: number; prompt: string }>
     expect(claims).toMatchObject([
       {
         outboxId: "outbox-a",
@@ -1828,6 +1843,10 @@ describe("hosted WorkGraph runtime outbox", () => {
         retryCount: 0,
       },
     ])
+    expect(claims[0]?.prompt).toContain("Resolve CLX-101")
+    expect(claims[0]?.prompt).toContain("Provider issue CLX-101 requests a launch-readiness fix.")
+    expect(claims[0]?.prompt).toContain('"id":"proof"')
+    expect(claims[0]?.prompt).toContain("Trusted Connection handles:\n- connection-source")
     expect(db.row("workgraph_outbox", "outbox-row")).toMatchObject({
       status: "claimed",
       claimed_by: "worker-a",
