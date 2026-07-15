@@ -63,6 +63,10 @@ import {
   createHostedConnectionOperationExecutor,
   createHostedConnectionOperationHandler,
 } from "./workgraph-host/hosted-connection-operation"
+import {
+  createHostedAttemptOperationExecutor,
+  createHostedAttemptOperationHandler,
+} from "./workgraph-host/hosted-attempt-operation"
 import { createHostedConnectionsSetup } from "./workgraph-host/hosted-connections-setup"
 import { DocsRoutes } from "./routes/docs"
 import { createConvexDocumentStore } from "./document-host/convex-store"
@@ -182,6 +186,10 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   const connectionOperationExecutor = createHostedConnectionOperationExecutor({ env: plane.env })
   const connectionOperationHandler = connectionOperationExecutor
     ? createHostedConnectionOperationHandler({ env: plane.env, execute: connectionOperationExecutor })
+    : undefined
+  const attemptOperationExecutor = createHostedAttemptOperationExecutor({ env: plane.env })
+  const attemptOperationHandler = attemptOperationExecutor
+    ? createHostedAttemptOperationHandler({ env: plane.env, execute: attemptOperationExecutor })
     : undefined
   const forwardWorkGraph = (request: Request) => {
     const url = new URL(request.url)
@@ -349,6 +357,12 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
       app.use("/internal/workgraph/connection-operation", workGraphHttpTelemetry(workgraph.operationalTelemetry))
     }
     app.post("/internal/workgraph/connection-operation", (context) => connectionOperationHandler(context.req.raw))
+  }
+  if (attemptOperationHandler) {
+    if (workgraph.operationalTelemetry) {
+      app.use("/internal/workgraph/attempt-operation", workGraphHttpTelemetry(workgraph.operationalTelemetry))
+    }
+    app.post("/internal/workgraph/attempt-operation", (context) => attemptOperationHandler(context.req.raw))
   }
 
   // WP-BILLING (D4, ADR 014 addendum): Polar webhook + checkout + portal live

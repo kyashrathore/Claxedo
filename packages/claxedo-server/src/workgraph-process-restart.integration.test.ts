@@ -105,7 +105,21 @@ describe("local WorkGraph process recovery", () => {
       artifacts: ["commit:restart-proof"],
     })
     expect(await post(second.origin, "/runtime/reconcile", {})).toMatchObject({
-      results: [expect.objectContaining({ settled: true, workItemState: "result_ready" })],
+      results: [expect.objectContaining({ settled: false, awaitingExplicitCompletion: true })],
+    })
+    await command(second.origin, "restart_explicit_completion", {
+      version: 1,
+      type: "complete_attempt",
+      attemptId: admitted.value.attemptId,
+      sessionId: `session_${admitted.value.attemptId}`,
+      workspaceId: restartedRuntime.sessions[`session_${admitted.value.attemptId}`].directory,
+      leaseEpoch: 1,
+      summary: "Recovered process completed the original Attempt",
+      artifacts: ["commit:restart-proof"],
+      evidence: [{
+        requirementId: "restart-proof",
+        evidence: { kind: "test_result", summary: "Owner verification pending", passed: false },
+      }],
     })
 
     const settled = await snapshot(second.origin)

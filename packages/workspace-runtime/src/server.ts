@@ -22,6 +22,10 @@ import {
   type WorkGraphConnectionBrokerRequestLimits,
   type WorkGraphConnectionOperationBroker,
 } from "./routes/workgraph-connection-tools"
+import {
+  WorkGraphAttemptToolRoutes,
+  type WorkGraphAttemptOperationBroker,
+} from "./routes/workgraph-attempt-tools"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth, type WorkspaceRuntimeManagementTarget } from "./management-auth"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import {
@@ -88,6 +92,9 @@ export type WorkspaceRuntimeServerOptions = {
   /** Exact central origin allowed to receive a bound Runtime Access Token. */
   workgraphConnectionBrokerOrigin?: string
   workgraphConnectionBrokerRequestLimits?: WorkGraphConnectionBrokerRequestLimits
+  /** Trusted Attempt command broker; hosted runtimes use the exact central origin below. */
+  workgraphAttemptBroker?: WorkGraphAttemptOperationBroker
+  workgraphAttemptBrokerOrigin?: string
 }
 
 type ListenPolicyEnv = {
@@ -456,6 +463,41 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   // execution itself is only reachable through each Session's nonce-bound
   // loopback callback, which supplies the canonical Session identity.
   app.route(WorkspaceRuntimeRoutes.sessionEnv, SessionEnvRoutes())
+  type SessionToolRegistration = Parameters<typeof host.registerSessionTools>[0]
+  const sessionToolGroups = new Map<string, Map<string, SessionToolRegistration>>()
+  const registerSessionToolGroup = (group: string) => async (registration: SessionToolRegistration) => {
+    const groups = sessionToolGroups.get(registration.sessionId) ?? new Map<string, SessionToolRegistration>()
+    groups.set(group, registration)
+    sessionToolGroups.set(registration.sessionId, groups)
+    await host.registerSessionTools({
+      sessionId: registration.sessionId,
+      ...(registration.harness ? { harness: registration.harness } : {}),
+      callbackUrl: registration.callbackUrl,
+      tools: [...groups.values()].flatMap((value) => value.tools.map((tool) => ({
+        ...tool,
+        callbackUrl: value.callbackUrl,
+      }))),
+    })
+  }
+  const unregisterSessionToolGroup = (group: string) => async (sessionId: string) => {
+    const groups = sessionToolGroups.get(sessionId)
+    groups?.delete(group)
+    if (!groups?.size) {
+      sessionToolGroups.delete(sessionId)
+      await host.unregisterSessionTools(sessionId)
+      return
+    }
+    const registrations = [...groups.values()]
+    await host.registerSessionTools({
+      sessionId,
+      ...(registrations[0]?.harness ? { harness: registrations[0].harness } : {}),
+      callbackUrl: registrations[0]!.callbackUrl,
+      tools: registrations.flatMap((value) => value.tools.map((tool) => ({
+        ...tool,
+        callbackUrl: value.callbackUrl,
+      }))),
+    })
+  }
   const workgraphConnectionTools = WorkGraphConnectionToolRoutes({
     workspaceId: options.target?.workspaceId ?? workspaceId(),
     ...(options.workgraphConnectionBroker ? { broker: options.workgraphConnectionBroker } : {}),
@@ -463,10 +505,18 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.workgraphConnectionBrokerRequestLimits
       ? { brokerRequestLimits: options.workgraphConnectionBrokerRequestLimits }
       : {}),
-    registerSessionTools: host.registerSessionTools,
-    unregisterSessionTools: host.unregisterSessionTools,
+    registerSessionTools: registerSessionToolGroup("connections"),
+    unregisterSessionTools: unregisterSessionToolGroup("connections"),
   })
   app.route("/", workgraphConnectionTools)
+  const workgraphAttemptTools = WorkGraphAttemptToolRoutes({
+    workspaceId: options.target?.workspaceId ?? workspaceId(),
+    ...(options.workgraphAttemptBroker ? { broker: options.workgraphAttemptBroker } : {}),
+    ...(options.workgraphAttemptBrokerOrigin ? { brokerOrigin: options.workgraphAttemptBrokerOrigin } : {}),
+    registerSessionTools: registerSessionToolGroup("attempt"),
+    unregisterSessionTools: unregisterSessionToolGroup("attempt"),
+  })
+  app.route("/", workgraphAttemptTools)
 
   app.get(WorkspaceRuntimeRoutes.health, (c) =>
     c.json(runtimeLiveness(host, options)),
@@ -480,6 +530,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     if (disposed) return
     disposed = true
     workgraphConnectionTools.dispose()
+    workgraphAttemptTools.dispose()
     host.dispose()
   }
   return { app, host: { ...host, dispose }, dispose, injectWebSocket, upgradeWebSocket }

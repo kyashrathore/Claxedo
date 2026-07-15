@@ -36,6 +36,8 @@ const supported = new Set([
   "propose_decision",
   "answer_decision",
   "dismiss_decision",
+  "record_attempt_checkpoint",
+  "complete_attempt",
   "record_evidence",
   "close_outcome",
   "reopen_outcome",
@@ -1037,6 +1039,205 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       stream.id,
       { streamId: stream.id, reason: command.reason },
       stream.id,
+    )
+  }
+  if (command.type === "record_attempt_checkpoint" || command.type === "complete_attempt") {
+    const attempt = await owned(ctx, "workgraph_attempts", input.organizationId, input.ownerUserId, command.attemptId)
+    if (!attempt || attempt.session_id !== command.sessionId)
+      return rejected(input.operationId, "not_found", "Active Attempt Session not found")
+    if (attempt.state !== "running")
+      return rejected(input.operationId, "invalid_transition", "Attempt is not running")
+    const lease = attempt.execution_kind === "managed"
+      ? await ctx.db
+          .query("workgraph_leases")
+          .withIndex("by_tenant_resource", (query: any) => query
+            .eq("organization_id", input.organizationId)
+            .eq("owner_user_id", input.ownerUserId)
+            .eq("resource_type", "work_item")
+            .eq("resource_id", attempt.work_item_id))
+          .filter((query: any) => query.eq(query.field("organization_id"), input.organizationId))
+          .unique()
+      : undefined
+    if (attempt.execution_kind === "managed" && (
+      !lease ||
+      lease.holder_id !== attempt.id ||
+      lease.epoch !== command.leaseEpoch ||
+      lease.expires_at <= now
+    )) return rejected(input.operationId, "version_conflict", "Attempt lease is no longer active")
+    const sessionBindings = await ctx.db
+      .query("workgraph_session_bindings")
+      .withIndex("by_tenant_session", (query: any) => query
+        .eq("organization_id", input.organizationId)
+        .eq("owner_user_id", input.ownerUserId)
+        .eq("session_id", command.sessionId))
+      .collect()
+    const existingBinding = sessionBindings.find((binding: any) =>
+      binding.state === "active" && binding.current_attempt_id === attempt.id)
+    if (!existingBinding || existingBinding.project_id !== command.workspaceId)
+      return rejected(input.operationId, "invalid_transition", "Attempt Session is not bound to this workspace")
+    const bindingId = existingBinding.id
+
+    if (command.type === "record_attempt_checkpoint") {
+      const evidenceIds = command.evidenceIds ?? []
+      const evidence = await Promise.all(evidenceIds.map((id: string) =>
+        owned(ctx, "workgraph_evidence", input.organizationId, input.ownerUserId, id)))
+      if (evidence.some((record: any) => !record || !(
+        (record.subject_type === "work_item" && record.subject_id === attempt.work_item_id) ||
+        record.reference?.sourceAttemptId === attempt.id
+      ))) return rejected(input.operationId, "not_found", "Checkpoint evidence does not belong to the Attempt")
+      const checkpointId = resourceId("agent_checkpoint", input)
+      await ctx.db.insert("workgraph_agent_checkpoints", {
+        organization_id: input.organizationId,
+        owner_user_id: input.ownerUserId,
+        id: checkpointId,
+        stream_id: attempt.stream_id,
+        work_item_id: attempt.work_item_id,
+        attempt_id: attempt.id,
+        session_binding_id: bindingId,
+        level: command.level,
+        summary: command.summary,
+        evidence_ids: evidenceIds,
+        occurred_at: now,
+        operation_id: input.operationId,
+        provenance: provenance(input),
+        row_version: 1,
+        schema_version: 1,
+        created_at: now,
+        updated_at: now,
+      })
+      return pending(
+        "agent_checkpoint_recorded",
+        "attempt",
+        attempt.id,
+        { attemptId: attempt.id, checkpointId },
+        attempt.stream_id,
+      )
+    }
+
+    const item = await owned(ctx, "workgraph_work_items", input.organizationId, input.ownerUserId, attempt.work_item_id)
+    if (!item) return rejected(input.operationId, "not_found", "Attempt Task not found")
+    const evidenceIds = await Promise.all(command.evidence.map(async (completionEvidence: any, index: number) => {
+      const evidenceId = `${resourceId("evidence", input)}_${index}`
+      const durable = completionEvidence.evidence.kind === "integration" && completionEvidence.evidence.effect !== "other"
+      const receiptId = durable ? `${resourceId("receipt", input)}_${index}` : undefined
+      await ctx.db.insert("workgraph_evidence", {
+        organization_id: input.organizationId,
+        owner_user_id: input.ownerUserId,
+        id: evidenceId,
+        stream_id: attempt.stream_id,
+        subject_type: "work_item",
+        subject_id: attempt.work_item_id,
+        evidence_kind: completionEvidence.evidence.kind,
+        summary: completionEvidence.evidence.summary,
+        reference: {
+          ...completionEvidence.evidence,
+          requirementId: completionEvidence.requirementId,
+          sourceAttemptId: attempt.id,
+          ...(receiptId ? { durableEffectReceiptId: receiptId } : {}),
+        },
+        provenance: provenance(input),
+        schema_version: 1,
+        created_at: now,
+      })
+      if (receiptId) {
+        await ctx.db.insert("workgraph_durable_effect_receipts", {
+          organization_id: input.organizationId,
+          owner_user_id: input.ownerUserId,
+          id: receiptId,
+          stream_id: attempt.stream_id,
+          attempt_id: attempt.id,
+          effect_kind: completionEvidence.evidence.effect,
+          idempotency_key: `${input.operationId}:integration:${index}`,
+          external_reference: { reference: completionEvidence.evidence.reference },
+          provenance: provenance(input),
+          schema_version: 1,
+          created_at: now,
+        })
+      }
+      return evidenceId
+    }))
+    await ctx.db.patch(attempt._id, {
+      state: "result",
+      result: { summary: command.summary, artifacts: command.artifacts ?? [] },
+      finished_at: now,
+      attention_reason: undefined,
+      row_version: attempt.row_version + 1,
+      updated_at: now,
+    })
+    const resultReady = {
+      ...item,
+      state: "result_ready",
+      evidence_ids: [...item.evidence_ids, ...evidenceIds],
+      row_version: item.row_version + 1,
+      updated_at: now,
+    }
+    await ctx.db.patch(item._id, {
+      state: resultReady.state,
+      evidence_ids: resultReady.evidence_ids,
+      row_version: resultReady.row_version,
+      updated_at: resultReady.updated_at,
+    })
+    const allEvidence = await ctx.db.query("workgraph_evidence")
+      .withIndex("by_tenant_subject", (query: any) => query
+        .eq("organization_id", input.organizationId)
+        .eq("owner_user_id", input.ownerUserId)
+        .eq("subject_type", "work_item")
+        .eq("subject_id", item.id))
+      .filter((query: any) => query.eq(query.field("organization_id"), input.organizationId))
+      .collect()
+    const completed = evaluateCompletionContract(
+      item.completion_contract,
+      { type: "work_item", workItemId: item.id } as never,
+      allEvidence.map((row: any) => ({
+        ...row.reference,
+        id: row.id,
+        subject: { type: "work_item", workItemId: item.id },
+        recordedAt: row.created_at,
+        recordedBy: row.provenance.actor,
+      })) as never,
+    ).satisfied
+    if (completed) {
+      await ctx.db.patch(item._id, {
+        state: "completed",
+        completed_at: now,
+        evidence_ids: resultReady.evidence_ids,
+        row_version: resultReady.row_version,
+        updated_at: now,
+      })
+    }
+    await syncAttentionResource(ctx, input.organizationId, input.ownerUserId, "workgraph_attempts", attempt.id)
+    await syncAttentionResource(ctx, input.organizationId, input.ownerUserId, "workgraph_work_items", item.id)
+    if (lease) await ctx.db.delete(lease._id)
+    if (attempt.execution_kind === "managed") {
+      const binding = existingBinding ?? (await ctx.db
+        .query("workgraph_session_bindings")
+        .withIndex("by_tenant_id", (query: any) => query
+          .eq("organization_id", input.organizationId)
+          .eq("owner_user_id", input.ownerUserId)
+          .eq("id", bindingId))
+        .unique())
+      if (binding) await ctx.db.patch(binding._id, {
+        state: "released",
+        released_at: now,
+        row_version: binding.row_version + 1,
+        updated_at: now,
+      })
+    }
+    if (completed) {
+      const stream = await owned(ctx, "workgraph_streams", input.organizationId, input.ownerUserId, attempt.stream_id)
+      if (stream) await continueAutonomousStream(ctx, stream, now)
+    }
+    return pending(
+      "attempt_completed",
+      "attempt",
+      attempt.id,
+      {
+        attemptId: attempt.id,
+        workItemId: item.id,
+        workItemState: completed ? "completed" : "result_ready",
+        evidenceIds,
+      },
+      attempt.stream_id,
     )
   }
   if (command.type === "record_evidence") {

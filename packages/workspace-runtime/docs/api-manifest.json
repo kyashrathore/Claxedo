@@ -11,12 +11,18 @@
   ],
   "rootRuntimeExports": [
     "Pty",
+    "WORKGRAPH_ATTEMPT_BINDING_PATH",
+    "WORKGRAPH_ATTEMPT_TOOL_INPUT_SCHEMAS",
+    "WORKGRAPH_ATTEMPT_TOOL_NAMES",
+    "WORKGRAPH_ATTEMPT_TOOL_PATH",
+    "WORKGRAPH_ATTEMPT_TOOL_SCHEMAS",
     "WORKGRAPH_CONNECTION_BINDING_PATH",
     "WORKGRAPH_CONNECTION_TOOL_INPUT_SCHEMAS",
     "WORKGRAPH_CONNECTION_TOOL_NAMES",
     "WORKGRAPH_CONNECTION_TOOL_PATH",
     "WORKGRAPH_CONNECTION_TOOL_SCHEMAS",
     "WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER",
+    "WorkGraphAttemptToolRoutes",
     "WorkGraphConnectionOperationRequestSchema",
     "WorkGraphConnectionOperationResponseSchema",
     "WorkGraphConnectionToolRoutes",
@@ -42,6 +48,8 @@
     "workspaceRuntimeRoute"
   ],
   "routePrefixes": [
+    "/api/workgraph/attempt-binding",
+    "/api/workgraph/attempt-tools",
     "/api/workgraph/connection-binding",
     "/api/workgraph/tools",
     "/api/wr/health",

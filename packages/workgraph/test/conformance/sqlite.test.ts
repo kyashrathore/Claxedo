@@ -120,7 +120,7 @@ const execution: WorkspaceExecutionPort = {
     repository: input.repository,
     workspaceId: "/tmp/workgraph-conformance",
   }),
-  launch: async (_context, input) => ({ sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId }),
+  launch: async (_context, input) => ({ sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph-conformance" }),
   cancel: async () => undefined,
   result: async () => ({ state: "running" }),
   cleanup: async () => undefined,

@@ -145,6 +145,10 @@ type Opts = {
     directory: RuntimeDirectory
     sessionId: string
   }) => ActiveTurnScope | undefined
+  transformPromptBody?: (
+    c: Ctx,
+    input: { sessionId: string; directory: RuntimeDirectory; body: SessionPromptBody },
+  ) => Promise<SessionPromptBody> | SessionPromptBody
 }
 
 const DRAFT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
@@ -559,7 +563,8 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
       const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
-      const body = (await c.req.json().catch(() => ({}))) as SessionPromptBody
+      const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
+      const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
       const activeTurn = runtime && opts.createActiveTurnScope
         ? opts.createActiveTurnScope({ c, adapter, directory, sessionId: id })
         : undefined
@@ -681,7 +686,8 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
-      const body = (await c.req.json().catch(() => ({}))) as SessionPromptBody
+      const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
+      const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
       if (body.messageID) {
         const admitted = promptAdmissions.get(id) ?? new Set<string>()
         if (admitted.has(body.messageID)) return c.body(null, 204)

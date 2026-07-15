@@ -17,8 +17,10 @@ export type WorkGraphSessionGateway = Readonly<{
   admit: (
     input: Readonly<{
       attemptId: string
+      leaseEpoch?: number
       sessionId?: string
       directory: string
+      workspaceId?: string
       title: string
       prompt: string
       profile: ResolvedExecutionProfile
@@ -149,13 +151,16 @@ export function createLocalWorkspaceExecution(
       return {
         sessionId: (await input.sessions.admit({
           attemptId: request.attemptId,
+          leaseEpoch: request.leaseEpoch,
           directory,
+          workspaceId: request.workspaceId,
           title: String(request.workItemId),
           prompt: request.prompt,
           profile: request.profile,
           context,
         })) as ExecutionSessionID,
         envelopeId: request.envelopeId,
+        projectId: request.workspaceId,
       }
     },
     cancel: async (_context, request) => input.sessions.cancel(request.sessionId, request.reason),
@@ -184,7 +189,8 @@ export function createLocalWorkspaceExecution(
               ))
         for (const child of children) await removeWorktree(child)
         if (request.reason === "reconcile") return
-        await removeWorktree(envelopeDirectory(context, request.streamId))
+        const directory = envelopeDirectory(context, request.streamId)
+        await removeWorktree(directory)
         await fs.rm(root, { recursive: true, force: true })
       }),
   }

@@ -400,7 +400,7 @@ function autonomousExecution(launched: () => void): WorkspaceExecutionPort {
     }),
     launch: async (_context, input) => {
       launched()
-      return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId }
+      return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph-owner-deletion" }
     },
     cancel: async () => undefined,
     result: async () => ({ state: "running" }),

@@ -113,6 +113,7 @@ describe("WorkGraph ports", () => {
     expectTypeOf<Parameters<WorkspaceExecutionPort["cleanup"]>[0]>().toEqualTypeOf<WorkGraphContext>()
     expectTypeOf<Parameters<WorkspaceExecutionPort["launch"]>[1]>().not.toHaveProperty("credentials")
     expectTypeOf<Parameters<WorkspaceExecutionPort["launch"]>[1]>().toHaveProperty("connectionIds")
+    expectTypeOf<Parameters<WorkspaceExecutionPort["launch"]>[1]>().toHaveProperty("workspaceId")
   })
 
   it("creates, revises, and reads exact manual Work Source revisions", () => {

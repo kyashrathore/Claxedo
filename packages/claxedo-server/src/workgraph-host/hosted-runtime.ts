@@ -143,6 +143,7 @@ export function createHostedWorkGraphRuntime(
               if (claim.profile.connectionIds.length > 0 && (!connectionTools.length || !brokerUrl)) {
                 throw new Error("Connection-bound Attempts require explicit Connection tools and a central broker URL")
               }
+              if (!brokerUrl) throw new Error("Hosted Attempts require a central broker URL")
               const manager = services.sandbox.sandboxManager
               const provider = services.relay.provider
               if (!manager || !provider) throw new Error("Hosted sandbox manager and relay provider are required")
@@ -264,6 +265,19 @@ export function createHostedWorkGraphRuntime(
                   throw new Error("Durable launch compensation was rejected after the final launch fence")
                 return { settled: false, state: "compensating" }
               }
+              await runtime("/api/workgraph/attempt-binding", {
+                method: "POST",
+                body: JSON.stringify({
+                  version: 1,
+                  identity: {
+                    attemptId: claim.attemptId,
+                    sessionId,
+                    workspaceId,
+                    leaseEpoch: claim.leaseEpoch,
+                  },
+                  brokerUrl,
+                }),
+              })
               if (claim.profile.connectionIds.length > 0) {
                 await client.mutation(api.workgraphConnections.bindAttemptConnections, {
                   service_token: serviceToken,
@@ -370,15 +384,27 @@ export function createHostedWorkGraphRuntime(
                   event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"),
               )
               if (!terminal) return { settled: false, state: "running" }
-              const cleanup = await request(
-                `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/workgraph/connection-binding/${encodeURIComponent(attempt.sessionId)}`,
-                {
-                  method: "DELETE",
-                  headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
-                },
-              )
-              if (!cleanup.ok) {
-                throw new Error(`Hosted Session Connection cleanup failed: ${cleanup.status} ${await cleanup.text()}`)
+              const [connectionCleanup, attemptCleanup] = await Promise.all([
+                request(
+                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/workgraph/connection-binding/${encodeURIComponent(attempt.sessionId)}`,
+                  {
+                    method: "DELETE",
+                    headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
+                  },
+                ),
+                request(
+                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/api/workgraph/attempt-binding/${encodeURIComponent(attempt.sessionId)}`,
+                  {
+                    method: "DELETE",
+                    headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
+                  },
+                ),
+              ])
+              if (!connectionCleanup.ok) {
+                throw new Error(`Hosted Session Connection cleanup failed: ${connectionCleanup.status} ${await connectionCleanup.text()}`)
+              }
+              if (!attemptCleanup.ok) {
+                throw new Error(`Hosted Session Attempt cleanup failed: ${attemptCleanup.status} ${await attemptCleanup.text()}`)
               }
               if (terminal.type.startsWith("session.next.step.failed")) {
                 return await client.mutation(
@@ -394,14 +420,12 @@ export function createHostedWorkGraphRuntime(
               const files = Array.isArray(terminal.data.files)
                 ? terminal.data.files.filter((file): file is string => typeof file === "string" && !!file.trim())
                 : []
-              return await client.mutation(
-                api.workgraphRuntime.recordResult,
-                resultArgs(attempt, serviceToken, {
-                  summary: summary.trim(),
-                  artifacts: files.map((file) => `file:${file.trim()}`),
-                  now: now(),
-                }),
-              )
+              return {
+                settled: false,
+                state: "awaiting_explicit_completion",
+                summary: summary.trim(),
+                artifacts: files.map((file) => `file:${file.trim()}`),
+              }
             } catch (error) {
               return await client.mutation(
                 api.workgraphRuntime.recordFailure,

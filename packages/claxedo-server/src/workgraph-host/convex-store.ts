@@ -97,6 +97,8 @@ export const CONVEX_WORKGRAPH_SUPPORTED_COMMANDS = [
   "propose_decision",
   "answer_decision",
   "dismiss_decision",
+  "record_attempt_checkpoint",
+  "complete_attempt",
   "record_evidence",
   "close_outcome",
   "reopen_outcome",

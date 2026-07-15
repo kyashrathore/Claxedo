@@ -12,10 +12,7 @@ export async function recordSemanticAttemptResult(
 ) {
   if (result.state === "pending" || result.state === "running") return { settled: false as const }
   if (result.state === "succeeded") {
-    if (!(await store.recordResult(context, { ...ids, state: "result", summary: result.summary, artifacts: result.artifacts }))) {
-      return { settled: false as const }
-    }
-    return { settled: true as const, workItemState: "result_ready" as const }
+    return { settled: false as const, awaitingExplicitCompletion: true as const }
   }
   if (result.state === "failed") {
     if (!(await store.recordResult(context, { ...ids, state: "failed", reason: result.message }))) {

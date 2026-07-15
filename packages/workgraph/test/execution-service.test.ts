@@ -28,7 +28,7 @@ describe("durable local execution", () => {
     `).get()).toMatchObject({
       lifecycle: "running",
       attempt_number: 1,
-      session_id: "session_1",
+      session_id: expect.stringMatching(/^session_attempt_/),
       item_lifecycle: "active",
       resolved_execution_profile_json: JSON.stringify(execution),
     })
@@ -68,15 +68,104 @@ describe("durable local execution", () => {
       .toEqual([{ attempt_number: 1 }, { attempt_number: 2 }])
   })
 
-  it("records runtime success as result_ready, never semantic completion", async () => {
+  it("does not infer an Attempt result from provider-turn success", async () => {
     const writes: unknown[] = []
     const settled = await recordSemanticAttemptResult(owner(), { attemptId: branded("attempt"), workItemId: branded("item"), leaseEpoch: 1 }, {
       state: "succeeded",
       summary: "Patch produced",
       artifacts: ["diff://1"],
     }, { recordResult: async (_context, input) => { writes.push(input); return true } })
-    expect(settled).toEqual({ settled: true, workItemState: "result_ready" })
-    expect(writes).toEqual([expect.objectContaining({ state: "result", summary: "Patch produced" })])
+    expect(settled).toEqual({ settled: false, awaitingExplicitCompletion: true })
+    expect(writes).toEqual([])
+  })
+
+  it("atomically records scoped progress and evidence-backed completion before advancing dependencies", async () => {
+    const fixture = setup(runtime([]))
+    const streamId = resultId(await execute(fixture, "create_stream", { title: "Ship", execution }), "streamId")
+    const firstId = resultId(await execute(fixture, "create_work_item", {
+      streamId,
+      title: "First wave",
+      completionContract: contract,
+    }), "workItemId")
+    const secondId = resultId(await execute(fixture, "create_work_item", {
+      streamId,
+      title: "Second wave",
+      dependencyIds: [firstId],
+      completionContract: contract,
+    }), "workItemId")
+    await execute(fixture, "execute_stream", { streamId, executionMode: "autonomous" })
+    const attempt = fixture.database.prepare(`
+      SELECT id, session_id, lease_epoch FROM wg_v2_attempts WHERE work_item_id = ?
+    `).get(firstId) as { id: AttemptID; session_id: string; lease_epoch: number }
+
+    await expect(execute(fixture, "record_attempt_checkpoint", {
+      attemptId: attempt.id,
+      sessionId: attempt.session_id,
+      workspaceId: "/tmp/another-workspace",
+      leaseEpoch: attempt.lease_epoch,
+      level: "progress",
+      summary: "Must not cross workspace authority",
+    })).resolves.toMatchObject({ ok: false, error: { code: "invalid_transition" } })
+    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_agent_checkpoints WHERE attempt_id = ?").get(attempt.id))
+      .toEqual({ count: 0 })
+
+    await expect(execute(fixture, "record_attempt_checkpoint", {
+      attemptId: attempt.id,
+      sessionId: attempt.session_id,
+      workspaceId: "/tmp/worktree",
+      leaseEpoch: attempt.lease_epoch,
+      level: "progress",
+      summary: "Implementation boundary reached",
+    })).resolves.toMatchObject({ ok: true, value: { attemptId: attempt.id } })
+    const completed = await execute(fixture, "complete_attempt", {
+      attemptId: attempt.id,
+      sessionId: attempt.session_id,
+      workspaceId: "/tmp/worktree",
+      leaseEpoch: attempt.lease_epoch,
+      summary: "First wave complete",
+      artifacts: ["commit:abc"],
+      evidence: [{
+        requirementId: "proof",
+        evidence: { kind: "test_result", summary: "Tests pass", passed: true },
+      }],
+    })
+    expect(completed).toMatchObject({ ok: true, value: { workItemId: firstId, workItemState: "completed" } })
+    expect(fixture.database.prepare(`
+      SELECT lifecycle, terminal_result_json, finished_at FROM wg_v2_attempts WHERE id = ?
+    `).get(attempt.id)).toMatchObject({ lifecycle: "result", finished_at: expect.any(String) })
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(firstId))
+      .toEqual({ lifecycle: "completed" })
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(secondId))
+      .toEqual({ lifecycle: "active" })
+    expect(fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_agent_checkpoints WHERE attempt_id = ?").get(attempt.id))
+      .toEqual({ count: 1 })
+  })
+
+  it("keeps a Task result_ready when explicit completion evidence does not satisfy its contract", async () => {
+    const fixture = setup(runtime([]))
+    const streamId = resultId(await execute(fixture, "create_stream", { title: "Ship", execution }), "streamId")
+    const workItemId = resultId(await execute(fixture, "create_work_item", {
+      streamId,
+      title: "Verify",
+      completionContract: contract,
+    }), "workItemId")
+    await execute(fixture, "execute_work_item", { workItemId, executionMode: "supervised" })
+    const attempt = fixture.database.prepare(`
+      SELECT id, session_id, lease_epoch FROM wg_v2_attempts WHERE work_item_id = ?
+    `).get(workItemId) as { id: AttemptID; session_id: string; lease_epoch: number }
+    await execute(fixture, "complete_attempt", {
+      attemptId: attempt.id,
+      sessionId: attempt.session_id,
+      workspaceId: "/tmp/worktree",
+      leaseEpoch: attempt.lease_epoch,
+      summary: "Work returned without valid proof",
+      evidence: [{
+        requirementId: "proof",
+        evidence: { kind: "test_result", summary: "Tests failed", passed: false },
+      }],
+    })
+    expect(fixture.database.prepare("SELECT lifecycle FROM wg_v2_work_items WHERE id = ?").get(workItemId))
+      .toEqual({ lifecycle: "result_ready" })
   })
 
   it("does not let a stale placement failure erase a recovered lease epoch", async () => {
@@ -132,7 +221,10 @@ const contract = { version: 1, mode: "all", requirements: [{ id: branded("proof"
 function runtime(calls: string[]): WorkspaceExecutionPort {
   return {
     provisionOrAdopt: async (_context, input) => { calls.push("envelope"); return { id: branded("envelope_1"), streamId: input.streamId, environment: input.environment, repository: input.repository, workspaceId: "/tmp/worktree" } },
-    launch: async (_context, input) => { calls.push("launch"); return { sessionId: branded("session_1"), envelopeId: input.envelopeId } },
+    launch: async (_context, input) => {
+      calls.push("launch")
+      return { sessionId: branded(`session_${input.attemptId}`), envelopeId: input.envelopeId, projectId: "/tmp/worktree" }
+    },
     cancel: async () => { calls.push("cancel") },
     result: async () => ({ state: "running" }),
     cleanup: async () => { calls.push("cleanup") },

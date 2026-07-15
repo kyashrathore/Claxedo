@@ -312,7 +312,11 @@ describe("hosted WorkGraph runtime outbox", () => {
     const destroyed: string[] = []
     const released: string[] = []
     const runtime = createHostedWorkGraphRuntime(
-      { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      {
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+        CLAXEDO_PUBLIC_URL: "https://central.test",
+      },
       {
         sandbox: {
           sandboxManager: {
@@ -1402,7 +1406,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(mutations[1]).toMatchObject({ reason: expect.stringContaining("explicit Connection tools") })
   })
 
-  test("binds a Connection Attempt before prompting and reconciles its result", async () => {
+  test("binds scoped Attempt and Connection tools before prompting without inferring completion", async () => {
     const mutations: Record<string, unknown>[] = []
     const ensureInputs: Record<string, unknown>[] = []
     const runtime = createHostedWorkGraphRuntime(
@@ -1522,6 +1526,19 @@ describe("hosted WorkGraph runtime outbox", () => {
             })
             return Response.json({ bound: true })
           }
+          if (url.pathname.endsWith("/api/workgraph/attempt-binding")) {
+            expect(JSON.parse(String(init?.body))).toEqual({
+              version: 1,
+              identity: {
+                attemptId: "attempt-a",
+                sessionId: "session-a",
+                workspaceId: String(mutations[2]?.workspace_id),
+                leaseEpoch: 2,
+              },
+              brokerUrl: "https://central.test",
+            })
+            return Response.json({ bound: true })
+          }
           if (url.pathname.endsWith("/history"))
             return Response.json({
               data: [
@@ -1536,9 +1553,9 @@ describe("hosted WorkGraph runtime outbox", () => {
     )
     await expect(runtime?.reconcile()).resolves.toMatchObject({
       launched: [{ state: "running" }],
-      results: [{ settled: true }],
+      results: [{ settled: false, state: "awaiting_explicit_completion" }],
     })
-    expect(mutations).toHaveLength(6)
+    expect(mutations).toHaveLength(5)
     expect(ensureInputs[0]).toMatchObject({
       env: {
         WORKSPACE_RUNTIME_RUNNER: "opencode",
@@ -1557,7 +1574,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       connectionIds: ["connection-a"],
       tools: ["connection_work_source_list"],
     })
-    expect(mutations[5]).toMatchObject({ session_id: "session-a", summary: "done", artifacts: ["file:result.txt"] })
+    expect(mutations).not.toContainEqual(expect.objectContaining({ summary: "done", artifacts: ["file:result.txt"] }))
   })
 
   test("records session_output_missing instead of fabricating hosted success", async () => {
@@ -1596,7 +1613,11 @@ describe("hosted WorkGraph runtime outbox", () => {
   test("durably compensates when cancellation wins after the final launch fence", async () => {
     const mutations: Record<string, unknown>[] = []
     const runtime = createHostedWorkGraphRuntime(
-      { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      {
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+        CLAXEDO_PUBLIC_URL: "https://central.test",
+      },
       {
         sandbox: {
           sandboxManager: {
@@ -1668,7 +1689,11 @@ describe("hosted WorkGraph runtime outbox", () => {
   test("durably compensates an indeterminate mark-running failure after Session creation", async () => {
     const mutations: Record<string, unknown>[] = []
     const runtime = createHostedWorkGraphRuntime(
-      { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
+      {
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+        CLAXEDO_PUBLIC_URL: "https://central.test",
+      },
       {
         sandbox: {
           sandboxManager: {
@@ -2008,7 +2033,9 @@ async function reconcileAttemptHistory(history: unknown) {
       fetch: async (input) => {
         const url = new URL(String(input))
         if (url.pathname.endsWith("/history")) return Response.json(history)
-        if (url.pathname.includes("/connection-binding/")) return new Response(null, { status: 204 })
+        if (url.pathname.includes("/connection-binding/") || url.pathname.includes("/attempt-binding/")) {
+          return new Response(null, { status: 204 })
+        }
         throw new Error(`Unexpected hosted runtime request ${url.pathname}`)
       },
     },

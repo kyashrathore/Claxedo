@@ -91,6 +91,7 @@ export const SessionToolRegistration = Schema.Struct({
     description: Schema.String,
     inputSchema: Schema.Record(Schema.String, Schema.Unknown),
     outputSchema: Schema.Record(Schema.String, Schema.Unknown).pipe(Schema.optional),
+    callbackUrl: Schema.String.pipe(Schema.optional),
   })),
 })
 

@@ -18,7 +18,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
       const executionRuntime = runtime({
         launch: async (_context, input) => {
           launches.push(input.attemptId)
-          return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId }
+          return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
         },
       })
       const fixture = setup(executionRuntime)
@@ -104,7 +104,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
     const executionRuntime = runtime({
       launch: async (_context, input) => {
         launches.push(input.attemptId)
-        return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId }
+        return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
       },
     })
     const fixture = setup(executionRuntime)
@@ -246,7 +246,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
         },
         launch: async (_context, input) => {
           launches.push(input.attemptId)
-          return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId }
+          return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
         },
       }),
     )
@@ -299,7 +299,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
         },
         launch: async (_context, input) => {
           launches.push(input.attemptId)
-          return { sessionId: "session_1" as never, envelopeId: input.envelopeId }
+          return { sessionId: "session_1" as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
         },
         cleanup: async () => {
           cleanups.push("cleanup")
@@ -383,7 +383,7 @@ describe("WorkGraph execution fencing and durable runtime effects", () => {
             durationMs: 300_000,
           }),
         ).toMatchObject({ leaseEpoch: 2, recovered: true })
-        return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId }
+        return { sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }
       },
       cancel: async (_context, input) => {
         cancellations.push(input.sessionId)
@@ -684,6 +684,7 @@ function runtime(overrides: Partial<WorkspaceExecutionPort> = {}): WorkspaceExec
     launch: async (_context, input) => ({
       sessionId: `session_${input.attemptId}` as never,
       envelopeId: input.envelopeId,
+      projectId: "/tmp/workgraph",
     }),
     cancel: async () => undefined,
     result: async () => ({ state: "running" }),

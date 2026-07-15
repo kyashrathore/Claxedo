@@ -185,6 +185,8 @@ export const SQLITE_WORKGRAPH_SUPPORTED_COMMANDS = [
   "propose_decision",
   "answer_decision",
   "dismiss_decision",
+  "record_attempt_checkpoint",
+  "complete_attempt",
   "record_evidence",
   "close_outcome",
   "reopen_outcome",
@@ -553,6 +555,7 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
             context,
             attemptId as AttemptID,
             clock.now(),
+            ids,
             schedulePlacementCompensationDrain,
           ),
         ),
@@ -664,6 +667,8 @@ export function createSqliteWorkGraphStore(input: SqliteWorkGraphStoreInput): Sq
     propose_decision: executeWithAutonomousContinuation,
     answer_decision: executeWithAutonomousContinuation,
     dismiss_decision: executeWithAutonomousContinuation,
+    record_attempt_checkpoint: execute,
+    complete_attempt: executeWithAutonomousContinuation,
     record_evidence: executeWithAutonomousContinuation,
     close_outcome: executeWithAutonomousContinuation,
     reopen_outcome: executeWithAutonomousContinuation,
@@ -995,7 +1000,7 @@ async function drainSqliteAutonomousStreams(
       .all(context.organizationId, context.ownerUserId, stream.id) as Array<{ id: AttemptID }>
     await Promise.all(
       admitted.map((attempt) =>
-        launchAttempt(database, execution, context, attempt.id, now(), schedulePlacementCompensationDrain),
+        launchAttempt(database, execution, context, attempt.id, now(), ids, schedulePlacementCompensationDrain),
       ),
     )
   }
@@ -2866,6 +2871,251 @@ function applyCommand(
       command.streamId,
     )
   }
+  if (command.type === "record_attempt_checkpoint" || command.type === "complete_attempt") {
+    const attempt = database
+      .prepare(
+        `
+      SELECT id, stream_id, work_item_id, lifecycle, execution_kind, session_id, envelope_id, lease_epoch
+      FROM wg_v2_attempts
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+    `,
+      )
+      .get(context.organizationId, context.ownerUserId, command.attemptId) as
+      | {
+          id: AttemptID
+          stream_id: StreamID
+          work_item_id: WorkItemID
+          lifecycle: string
+          execution_kind: string
+          session_id: string | null
+          envelope_id: string | null
+          lease_epoch: number
+        }
+      | undefined
+    if (!attempt || attempt.session_id !== command.sessionId)
+      return rejected(request.operationId, "not_found", "Active Attempt Session not found")
+    if (attempt.lifecycle !== "running")
+      return rejected(request.operationId, "invalid_transition", "Attempt is not running")
+    if (attempt.execution_kind === "managed") {
+      if (command.leaseEpoch !== attempt.lease_epoch)
+        return rejected(request.operationId, "version_conflict", "Attempt lease changed")
+      const lease = database
+        .prepare(
+          `
+        SELECT 1 FROM wg_v2_leases
+        WHERE organization_id = ? AND owner_user_id = ? AND resource_type = 'work_item' AND resource_id = ?
+          AND holder_id = ? AND epoch = ? AND CAST(expires_at AS INTEGER) > ?
+      `,
+        )
+        .get(
+          context.organizationId,
+          context.ownerUserId,
+          attempt.work_item_id,
+          attempt.id,
+          attempt.lease_epoch,
+          occurredAt,
+        )
+      if (!lease) return rejected(request.operationId, "version_conflict", "Attempt lease is no longer active")
+    }
+    const activeBinding = database
+      .prepare(
+        `
+      SELECT id, project_id FROM wg_v2_session_bindings
+      WHERE organization_id = ? AND owner_user_id = ? AND session_id = ? AND current_attempt_id = ? AND state = 'active'
+    `,
+      )
+      .get(context.organizationId, context.ownerUserId, command.sessionId, attempt.id) as
+      | { id: string; project_id: string }
+      | undefined
+    if (!activeBinding || activeBinding.project_id !== command.workspaceId)
+      return rejected(request.operationId, "invalid_transition", "Attempt Session is not bound to this workspace")
+    const bindingId = activeBinding.id
+
+    if (command.type === "record_attempt_checkpoint") {
+      const evidenceIds = command.evidenceIds ?? []
+      const invalidEvidence = evidenceIds.some((id) => {
+        const evidence = database
+          .prepare(
+            `
+          SELECT subject_type, subject_id, source_attempt_id FROM wg_v2_evidence
+          WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        `,
+          )
+          .get(context.organizationId, context.ownerUserId, id) as
+          | { subject_type: string; subject_id: string; source_attempt_id: string | null }
+          | undefined
+        return !evidence || !(
+          (evidence.subject_type === "work_item" && evidence.subject_id === attempt.work_item_id) ||
+          evidence.source_attempt_id === attempt.id
+        )
+      })
+      if (invalidEvidence) return rejected(request.operationId, "not_found", "Checkpoint evidence does not belong to the Attempt")
+      const checkpointId = ids.next("agent_checkpoint")
+      database
+        .prepare(
+          `
+        INSERT INTO wg_v2_agent_checkpoints
+          (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_id, session_binding_id,
+           level, summary, evidence_ids_json, occurred_at, provenance_json, operation_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        )
+        .run(
+          context.organizationId,
+          context.ownerUserId,
+          checkpointId,
+          attempt.stream_id,
+          attempt.work_item_id,
+          attempt.id,
+          bindingId,
+          command.level,
+          command.summary,
+          JSON.stringify(evidenceIds),
+          occurredAt,
+          JSON.stringify({ actor: context.actor, operationId: request.operationId }),
+          request.operationId,
+          occurredAt,
+          occurredAt,
+        )
+      return pending(
+        "agent_checkpoint_recorded",
+        "attempt",
+        attempt.id,
+        { attemptId: attempt.id, checkpointId },
+        attempt.stream_id,
+      )
+    }
+
+    const hasDurableEvidence = command.evidence.some(
+      (input) => input.evidence.kind === "integration" && input.evidence.effect !== "other",
+    )
+    if (
+      hasDurableEvidence &&
+      database
+        .prepare(
+          `
+        SELECT 1 FROM wg_v2_stream_cleanup_reservations
+        WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ? AND state = 'reserved'
+      `,
+        )
+        .get(context.organizationId, context.ownerUserId, attempt.stream_id)
+    ) {
+      return rejected(request.operationId, "blocked", "Stream cleanup has already been reserved")
+    }
+    const evidenceIds = command.evidence.map((input, index) => {
+      const evidenceId = ids.next("evidence")
+      const receiptId = input.evidence.kind === "integration" && input.evidence.effect !== "other"
+        ? ids.next("receipt")
+        : undefined
+      database
+        .prepare(
+          `
+        INSERT INTO wg_v2_evidence
+          (organization_id, owner_user_id, id, stream_id, subject_type, subject_id, requirement_id,
+           source_attempt_id, evidence_kind, summary, reference_json, provenance_json, created_at)
+        VALUES (?, ?, ?, ?, 'work_item', ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        )
+        .run(
+          context.organizationId,
+          context.ownerUserId,
+          evidenceId,
+          attempt.stream_id,
+          attempt.work_item_id,
+          input.requirementId ?? null,
+          attempt.id,
+          input.evidence.kind,
+          input.evidence.summary,
+          JSON.stringify({ ...input.evidence, ...(receiptId ? { durableEffectReceiptId: receiptId } : {}) }),
+          JSON.stringify({ actor: context.actor, operationId: request.operationId, requestId: context.requestId }),
+          occurredAt,
+        )
+      if (receiptId && input.evidence.kind === "integration") {
+        database
+          .prepare(
+            `
+          INSERT INTO wg_v2_durable_effect_receipts
+            (organization_id, owner_user_id, id, stream_id, attempt_id, effect_kind, idempotency_key,
+             external_reference_json, provenance_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+          )
+          .run(
+            context.organizationId,
+            context.ownerUserId,
+            receiptId,
+            attempt.stream_id,
+            attempt.id,
+            input.evidence.effect,
+            `${request.operationId}:integration:${index}`,
+            JSON.stringify({ reference: input.evidence.reference }),
+            JSON.stringify({ actor: context.actor, operationId: request.operationId }),
+            occurredAt,
+          )
+      }
+      return evidenceId
+    })
+    database
+      .prepare(
+        `
+      UPDATE wg_v2_attempts
+      SET lifecycle = 'result', terminal_result_json = ?, attention_reason = NULL, finished_at = ?,
+        updated_at = ?, row_version = row_version + 1
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle = 'running'
+    `,
+      )
+      .run(
+        JSON.stringify({ summary: command.summary, artifactRefs: command.artifacts ?? [], finishedAt: occurredAt }),
+        occurredAt,
+        occurredAt,
+        context.organizationId,
+        context.ownerUserId,
+        attempt.id,
+      )
+    database
+      .prepare(
+        `
+      UPDATE wg_v2_work_items
+      SET lifecycle = 'result_ready', updated_at = ?, row_version = row_version + 1
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle NOT IN ('completed', 'abandoned')
+    `,
+      )
+      .run(occurredAt, context.organizationId, context.ownerUserId, attempt.work_item_id)
+    if (attempt.execution_kind === "managed") {
+      database
+        .prepare(
+          `
+        DELETE FROM wg_v2_leases
+        WHERE organization_id = ? AND owner_user_id = ? AND resource_type = 'work_item' AND resource_id = ?
+          AND holder_id = ? AND epoch = ?
+      `,
+        )
+        .run(context.organizationId, context.ownerUserId, attempt.work_item_id, attempt.id, attempt.lease_epoch)
+      database
+        .prepare(
+          `
+        UPDATE wg_v2_session_bindings
+        SET state = 'released', released_at = ?, updated_at = ?, row_version = row_version + 1
+        WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND state = 'active'
+      `,
+        )
+        .run(occurredAt, occurredAt, context.organizationId, context.ownerUserId, bindingId)
+    }
+    const completion = promoteSatisfiedResultReadyWork(database, context, attempt.work_item_id, occurredAt)
+    return pending(
+      completion.outcomeId ? "outcome_ready_to_close" : "attempt_completed",
+      "attempt",
+      attempt.id,
+      {
+        attemptId: attempt.id,
+        workItemId: attempt.work_item_id,
+        workItemState: completion.completed ? "completed" : "result_ready",
+        evidenceIds,
+        ...(completion.outcomeId ? { outcomeId: completion.outcomeId } : {}),
+      },
+      attempt.stream_id,
+    )
+  }
   if (command.type === "record_evidence") {
     const subject = findEvidenceSubject(database, context, command.subject)
     if (!subject) return rejected(request.operationId, "not_found", "Evidence subject not found")
@@ -4584,6 +4834,7 @@ async function launchAttempt(
   context: WorkGraphContext,
   attemptId: AttemptID,
   occurredAt: number,
+  ids: Readonly<{ next: (kind: string) => string }>,
   schedulePlacementCompensationDrain?: () => void,
 ) {
   const row = database
@@ -4711,6 +4962,44 @@ async function launchAttempt(
               input.leaseEpoch,
             )
           if (changed.changes !== 1) return false
+          const activeBinding = database
+            .prepare(
+              `
+            SELECT current_attempt_id FROM wg_v2_session_bindings
+            WHERE organization_id = ? AND owner_user_id = ? AND session_id = ? AND state = 'active'
+          `,
+            )
+            .get(context.organizationId, context.ownerUserId, input.launch.sessionId) as
+            | { current_attempt_id: string | null }
+            | undefined
+          if (activeBinding && activeBinding.current_attempt_id !== attemptId) {
+            throw new Error("Execution Session is already bound to another Attempt")
+          }
+          if (!activeBinding) {
+            database
+              .prepare(
+                `
+              INSERT INTO wg_v2_session_bindings
+                (organization_id, owner_user_id, id, stream_id, session_id, project_id, current_work_item_id,
+                 current_attempt_id, state, bound_at, provenance_json, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+            `,
+              )
+              .run(
+                context.organizationId,
+                context.ownerUserId,
+                ids.next("session_binding"),
+                row.stream_id,
+                input.launch.sessionId,
+                input.launch.projectId,
+                row.work_item_id,
+                attemptId,
+                occurredAt,
+                JSON.stringify({ actor: context.actor }),
+                occurredAt,
+                occurredAt,
+              )
+          }
           appendRuntimeChange(
             database,
             context,

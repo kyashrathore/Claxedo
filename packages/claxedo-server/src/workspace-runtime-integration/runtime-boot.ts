@@ -92,6 +92,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
         ),
     ...(opencodeUrl ? { opencodeUrl } : {}),
     ...(workgraphConnectionBrokerOrigin ? { workgraphConnectionBrokerOrigin } : {}),
+    ...(workgraphConnectionBrokerOrigin ? { workgraphAttemptBrokerOrigin: workgraphConnectionBrokerOrigin } : {}),
     harness: claxedoRuntimeRunnerFromEnv(env),
     corsOrigin: claxedoCorsOrigin,
     // Claxedo keeps OpenCode compat ON unless its env flag disables it. The

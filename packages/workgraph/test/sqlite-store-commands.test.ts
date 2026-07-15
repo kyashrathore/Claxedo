@@ -1019,7 +1019,7 @@ function replacementExecution(overrides: Partial<WorkspaceExecutionPort>): Works
       repository: input.repository,
       workspaceId: "/tmp/replacement",
     }),
-    launch: async (_context, input) => ({ sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId }),
+    launch: async (_context, input) => ({ sessionId: `session_${input.attemptId}` as never, envelopeId: input.envelopeId, projectId: "/tmp/replacement" }),
     cancel: async () => undefined,
     result: async () => ({ state: "running" }),
     cleanup: async () => undefined,

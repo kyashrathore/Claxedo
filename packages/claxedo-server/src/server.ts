@@ -97,7 +97,7 @@ import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "./w
 import { createLocalExecutionCapabilities } from "./workgraph-host/local-execution-capabilities"
 import { createLocalWorkGraphAgentTools, localSessionExecution } from "./workgraph-agent-tools"
 import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "./worktree-service"
-import { createFileWorkGraphSessionBindingStore, createHarnessWorkGraphGateway } from "./workgraph-session-gateway"
+import type { CommandResult, WorkGraphAttemptOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 
 const TrackBody = z.object({
   distinctId: z.string(),
@@ -647,6 +647,18 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
   // An explicit opencodeUrl is the external-URL opt-in. NOTHING listens on :4096.
   const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
   const services = options.services
+  let executeWorkGraphAttempt: ((context: WorkGraphContext, request: WorkGraphAttemptOperationRequest) => Promise<CommandResult>) | undefined
+  const localWorkGraphAttempts = new Map<string, Readonly<{
+    identity: WorkGraphAttemptOperationRequest["identity"]
+    context: WorkGraphContext
+  }>>()
+  const sameAttemptIdentity = (
+    left: WorkGraphAttemptOperationRequest["identity"],
+    right: WorkGraphAttemptOperationRequest["identity"],
+  ) => left.attemptId === right.attemptId
+    && left.sessionId === right.sessionId
+    && left.workspaceId === right.workspaceId
+    && left.leaseEpoch === right.leaseEpoch
   configureOpenCodeAuth(options.opencodePassword)
   if (options.opencodeUrl) {
     configureOpenCodeEngine({ url: options.opencodeUrl, headers: opencodeHeaders() })
@@ -665,6 +677,15 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
     opencodeRequest,
     opencodeCompat,
     piModelBackend: centralModelBackend().modelBackend,
+    workgraphAttemptBroker: async (request, signal) => {
+      if (signal.aborted) throw signal.reason ?? new Error("WorkGraph Attempt operation was cancelled")
+      const binding = localWorkGraphAttempts.get(request.identity.sessionId)
+      if (!binding || !sameAttemptIdentity(binding.identity, request.identity)) {
+        throw new Error("WorkGraph Attempt operation identity is not bound to this runtime")
+      }
+      if (!executeWorkGraphAttempt) throw new Error("WorkGraph Attempt command broker is not ready")
+      return executeWorkGraphAttempt(binding.context, request)
+    },
     // See `projectLocalSessionMetaFromEvent` above: a harness session's
     // async auto-title (opencode's own LLM rename, or an ACP harness's
     // post-turn `maybeEmitTitle`) is published only over that workspace's
@@ -762,14 +783,33 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
     workgraphRuntimes.set(directory, loading)
     return loading
   }
-  const workgraphBindings = createFileWorkGraphSessionBindingStore(
-    path.join(dataDir(), "workgraph-session-bindings.json"),
-  )
-  const workgraphSessions = Promise.resolve(
-    createHarnessWorkGraphGateway(opencodeRequest, {
+  const workgraphSessionModule = import("./workgraph-session-gateway")
+  const workgraphBindings = workgraphSessionModule.then((gateway) =>
+    gateway.createFileWorkGraphSessionBindingStore(path.join(dataDir(), "workgraph-session-bindings.json")))
+  const workgraphSessions = Promise.all([workgraphSessionModule, workgraphBindings]).then(([gateway, bindings]) =>
+    gateway.createHarnessWorkGraphGateway(opencodeRequest, {
       connections: built.connections,
       resolveTeamOwner: (context) => `org:${context.organizationId}`,
-      bindings: workgraphBindings,
+      executeAttempt: async (context, request, signal) => {
+        if (signal.aborted) throw signal.reason
+        if (!executeWorkGraphAttempt) throw new Error("WorkGraph Attempt command broker is not ready")
+        return executeWorkGraphAttempt(context, request)
+      },
+      attemptContexts: {
+        bind: async (input) => {
+          const existing = localWorkGraphAttempts.get(input.identity.sessionId)
+          if (existing && (
+            !sameAttemptIdentity(existing.identity, input.identity) ||
+            existing.context.organizationId !== input.context.organizationId ||
+            existing.context.ownerUserId !== input.context.ownerUserId
+          )) throw new Error("WorkGraph Session is already bound to another Attempt owner")
+          localWorkGraphAttempts.set(input.identity.sessionId, input)
+        },
+        release: async (sessionId) => {
+          localWorkGraphAttempts.delete(sessionId)
+        },
+      },
+      bindings,
       sessionRequest: async (directory, request) => {
         return (await workgraphRuntime(directory)).runtime.app.fetch(request)
       },
@@ -779,9 +819,8 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
         workgraphRuntimes.delete(directory)
         releaseEmbeddedWorkspaceRuntime((await pending).workspaceId)
       },
-    }),
-  )
-  void workgraphBindings.all().then((bindings) =>
+    }))
+  void workgraphBindings.then((store) => store.all()).then((bindings) =>
     Promise.allSettled(bindings.map((binding) => workgraphRuntime(binding.directory))),
   )
   const workgraphSessionGateway = {
@@ -849,6 +888,34 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
     connections: built.connections,
     resolveTeamOwner: (context) => `org:${context.organizationId}`,
     telemetry: services.telemetry,
+  })
+  void workgraph.then((embedded) => {
+    executeWorkGraphAttempt = (context, request) => embedded.service.execute(context, {
+      operationId: request.operation.operationId,
+      command: request.operation.type === "record_checkpoint"
+        ? {
+            version: 1,
+            type: "record_attempt_checkpoint",
+            attemptId: request.identity.attemptId,
+            sessionId: request.identity.sessionId,
+            workspaceId: request.identity.workspaceId,
+            ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+            level: request.operation.level,
+            summary: request.operation.summary,
+            evidenceIds: request.operation.evidenceIds,
+          }
+        : {
+            version: 1,
+            type: "complete_attempt",
+            attemptId: request.identity.attemptId,
+            sessionId: request.identity.sessionId,
+            workspaceId: request.identity.workspaceId,
+            ...(request.identity.leaseEpoch === undefined ? {} : { leaseEpoch: request.identity.leaseEpoch }),
+            summary: request.operation.summary,
+            artifacts: request.operation.artifacts,
+            evidence: request.operation.evidence,
+          },
+    })
   })
   if (!services.auth.config.enabled && services.auth.config.mode === "local-only" && !options.opencodeUrl) {
     configureOpenCodeApplicationTools(() =>

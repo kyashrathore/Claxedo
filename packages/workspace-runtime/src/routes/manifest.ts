@@ -17,6 +17,8 @@ export const WorkspaceRuntimeRoutes = {
   sessionEnv: `${WorkspaceRuntimeApiPrefix}/session-env`,
   workgraphConnectionBinding: "/api/workgraph/connection-binding",
   workgraphConnectionTools: "/api/workgraph/tools",
+  workgraphAttemptBinding: "/api/workgraph/attempt-binding",
+  workgraphAttemptTools: "/api/workgraph/attempt-tools",
 } as const
 
 export type WorkspaceRuntimeRouteFamily = keyof typeof WorkspaceRuntimeRoutes

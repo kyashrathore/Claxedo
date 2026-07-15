@@ -46,6 +46,18 @@ export {
   WorkGraphConnectionOperationResponseSchema,
   WorkGraphConnectionToolRoutes,
 } from "./routes/workgraph-connection-tools"
+export {
+  WORKGRAPH_ATTEMPT_BINDING_PATH,
+  WORKGRAPH_ATTEMPT_TOOL_INPUT_SCHEMAS,
+  WORKGRAPH_ATTEMPT_TOOL_NAMES,
+  WORKGRAPH_ATTEMPT_TOOL_PATH,
+  WORKGRAPH_ATTEMPT_TOOL_SCHEMAS,
+  WorkGraphAttemptToolRoutes,
+} from "./routes/workgraph-attempt-tools"
+export type {
+  WorkGraphAttemptOperationBroker,
+  WorkGraphAttemptToolRouteHandle,
+} from "./routes/workgraph-attempt-tools"
 export type {
   WorkGraphConnectionBrokerRequestLimits,
   WorkGraphConnectionOperationBroker,

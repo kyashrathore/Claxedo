@@ -607,7 +607,8 @@ function createFixture() {
     "create_work_item", "update_work_item", "propose_admission", "retry_admission_planning", "dismiss_admission",
     "reopen_admission", "confirm_admission", "set_stream_lifecycle",
     "set_stream_visibility", "execute_stream", "execute_work_item", "cancel_attempt", "retry_work_item",
-    "propose_decision", "answer_decision", "dismiss_decision", "record_evidence", "close_outcome", "reopen_outcome",
+    "propose_decision", "answer_decision", "dismiss_decision", "record_attempt_checkpoint", "complete_attempt",
+    "record_evidence", "close_outcome", "reopen_outcome",
     "close_stream", "delete_stream",
   ].map((type) => [type, execute])) as WorkGraphCommandHandlers
 

@@ -13,13 +13,13 @@ describe("WorkGraph execution reconciler", () => {
     expect(writes).toEqual([])
   })
 
-  it("persists an explicit semantic result and leaves evidence-based completion pending", async () => {
+  it("does not infer completion from a successful provider turn", async () => {
     const writes: unknown[] = []
     const result = await reconcileWorkGraphAttempt(owner(), ids, execution({ state: "succeeded", summary: "Implemented", artifacts: ["commit:abc"] }), {
       recordResult: async (_context, input) => { writes.push(input); return true },
     })
-    expect(result).toEqual({ settled: true, workItemState: "result_ready" })
-    expect(writes).toEqual([expect.objectContaining({ state: "result", summary: "Implemented", artifacts: ["commit:abc"] })])
+    expect(result).toEqual({ settled: false, awaitingExplicitCompletion: true })
+    expect(writes).toEqual([])
   })
 })
 

@@ -767,12 +767,40 @@ export const markRunning = serviceMutation({
     const { outbox, attempt, lease } = await fenced(ctx, args)
     if (!outbox || !attempt || attempt.cancellation?.state === "pending" || !lease || attempt.state !== "admitted")
       return { settled: false }
+    const sessionBindings = await ctx.db
+      .query("workgraph_session_bindings")
+      .withIndex("by_tenant_session", (query: any) => query
+        .eq("organization_id", args.organization_id)
+        .eq("owner_user_id", args.owner_user_id)
+        .eq("session_id", args.session_id))
+      .collect()
+    const activeBinding = sessionBindings.find((binding) => binding.state === "active")
+    if (activeBinding && activeBinding.current_attempt_id !== attempt.id) {
+      throw new Error("Execution Session is already bound to another Attempt")
+    }
     await ctx.db.patch(attempt._id, {
       state: "running",
       envelope_id: args.workspace_id,
       session_id: args.session_id,
       started_at: args.now,
       row_version: attempt.row_version + 1,
+      updated_at: args.now,
+    })
+    if (!activeBinding) await ctx.db.insert("workgraph_session_bindings", {
+      organization_id: args.organization_id,
+      owner_user_id: args.owner_user_id,
+      id: `session_binding_managed_${attempt.id}`,
+      stream_id: attempt.stream_id,
+      session_id: args.session_id,
+      project_id: args.workspace_id,
+      current_work_item_id: attempt.work_item_id,
+      current_attempt_id: attempt.id,
+      state: "active",
+      bound_at: args.now,
+      provenance: { actor: { type: "system", id: "workgraph_hosted_runtime" } },
+      row_version: 1,
+      schema_version: 1,
+      created_at: args.now,
       updated_at: args.now,
     })
     await ctx.db.patch(outbox._id, { status: "completed", updated_at: args.now })

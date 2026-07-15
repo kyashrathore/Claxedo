@@ -27,6 +27,8 @@ export type StreamEnvelope = Readonly<{
 export type ExecutionLaunch = Readonly<{
   sessionId: ExecutionSessionID
   envelopeId: StreamEnvelopeID
+  /** Stable project identity used to open and bind the Session transcript. */
+  projectId: string
 }>
 
 export type ExecutionResult =
@@ -52,7 +54,9 @@ export type WorkspaceExecutionPort = Readonly<{
       streamId: StreamID
       workItemId: WorkItemID
       attemptId: AttemptID
+      leaseEpoch: number
       envelopeId: StreamEnvelopeID
+      workspaceId: string
       prompt: string
       profile: ResolvedExecutionProfile
       connectionIds: readonly ConnectionID[]

@@ -44,6 +44,82 @@ function initializeAttentionProjection(ctx: any, ownerUserId: string, now: numbe
 }
 
 describe("Convex WorkGraph store", () => {
+  test("records scoped progress and explicit completion before advancing autonomous dependencies", async () => {
+    vi.stubEnv("CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", "service-secret")
+    const harness = new ConvexHarness(["owner_a"])
+    const streamId = value(await execute(harness, "owner_a", "explicit_stream", {
+      type: "create_stream",
+      title: "Explicit completion",
+      execution: {
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/explicit.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/explicit.git", baseRevision: "HEAD" },
+        harness: "opencode",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
+      },
+    }), "streamId")
+    const contract = {
+      version: 1,
+      mode: "all",
+      requirements: [{ id: "tests", kind: "test", description: "Tests pass" }],
+    }
+    const firstId = value(await execute(harness, "owner_a", "explicit_first", {
+      type: "create_work_item",
+      streamId,
+      title: "First",
+      completionContract: contract,
+    }), "workItemId")
+    const secondId = value(await execute(harness, "owner_a", "explicit_second", {
+      type: "create_work_item",
+      streamId,
+      title: "Second",
+      dependencyIds: [firstId],
+      completionContract: contract,
+    }), "workItemId")
+    const admitted = await execute(harness, "owner_a", "explicit_execute", {
+      type: "execute_work_item",
+      workItemId: firstId,
+      executionMode: "autonomous",
+    })
+    await launchConvexConformanceAttempt(harness, testOrganizationId, "owner_a", admitted)
+    const attempt = harness.rowsFor("workgraph_attempts").find((row) => row.work_item_id === firstId)!
+    const lease = harness.rowsFor("workgraph_leases").find((row) => row.holder_id === attempt.id)!
+
+    const checkpoint = await execute(harness, "owner_a", "explicit_checkpoint", {
+      type: "record_attempt_checkpoint",
+      attemptId: attempt.id,
+      sessionId: attempt.session_id,
+      workspaceId: `workspace_${attempt.id}`,
+      leaseEpoch: lease.epoch,
+      level: "progress",
+      summary: "Implementation boundary reached",
+    })
+    expect(checkpoint).toMatchObject({ ok: true, value: { attemptId: attempt.id } })
+    await expect(execute(harness, "owner_a", "explicit_complete", {
+      type: "complete_attempt",
+      attemptId: attempt.id,
+      sessionId: attempt.session_id,
+      workspaceId: `workspace_${attempt.id}`,
+      leaseEpoch: lease.epoch,
+      summary: "First wave complete",
+      artifacts: ["commit:abc"],
+      evidence: [{
+        requirementId: "tests",
+        evidence: { kind: "test_result", summary: "Focused tests pass", passed: true },
+      }],
+    })).resolves.toMatchObject({ ok: true, value: { workItemId: firstId, workItemState: "completed" } })
+    expect(harness.rowsFor("workgraph_work_items").find((row) => row.id === firstId)).toMatchObject({ state: "completed" })
+    expect(harness.rowsFor("workgraph_attempts").find((row) => row.id === attempt.id)).toMatchObject({
+      state: "result",
+      finished_at: expect.any(Number),
+    })
+    expect(harness.rowsFor("workgraph_agent_checkpoints")).toContainEqual(expect.objectContaining({ attempt_id: attempt.id }))
+    expect(harness.rowsFor("workgraph_attempts").find((row) => row.work_item_id === secondId)).toMatchObject({ state: "admitted" })
+  })
+
   test("defaults and persists Stream activity granularity", async () => {
     const harness = new ConvexHarness(["owner_a"])
     const defaultId = value(await execute(harness, "owner_a", "granularity_default", {
@@ -728,6 +804,8 @@ describe("Convex WorkGraph store", () => {
       "propose_decision",
       "answer_decision",
       "dismiss_decision",
+      "record_attempt_checkpoint",
+      "complete_attempt",
       "record_evidence",
       "close_outcome",
       "reopen_outcome",

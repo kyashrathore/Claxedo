@@ -107,6 +107,12 @@ describe("canonical personal WorkGraph journey", () => {
     })).toMatchObject({ ok: true })
     fixture.runtime.succeedAll()
     await fixture.reconcile()
+    expect((await fixture.snapshot()).records.filter((candidate) => candidate.recordType === "attempt").map((attempt) => attempt.state))
+      .toEqual(["running", "running"])
+    await Promise.all([
+      fixture.completeAttempt(backend.id, "backend-proof"),
+      fixture.completeAttempt(frontend.id, "frontend-proof"),
+    ])
     const settled = await fixture.snapshot()
     expect(settled.records.filter((candidate) => candidate.recordType === "attempt")).toEqual(expect.arrayContaining([
       expect.objectContaining({ state: "result", result: expect.objectContaining({ artifactRefs: expect.arrayContaining(["commit:e2e"]) }) }),
@@ -178,6 +184,8 @@ describe("canonical personal WorkGraph journey", () => {
     await fixture.execute("execute_work_item", { workItemId, executionMode: "supervised" })
     fixture.runtime.succeedAll()
     await fixture.reconcile()
+    expect(record(await fixture.snapshot(), "work_item", (candidate) => candidate.id === workItemId).state).toBe("active")
+    await fixture.completeAttempt(workItemId, "proof")
     await fixture.execute("record_evidence", {
       subject: { type: "work_item", workItemId },
       requirementId: "proof",
@@ -273,6 +281,35 @@ function setup() {
       if (result.state !== "completed") throw new Error(JSON.stringify(result))
     },
     snapshot: () => adapter.service.query(owner(), "snapshot", "page", { limit: 500 }),
+    completeAttempt: async (workItemId: string, requirementId: string) => {
+      const attempt = database.prepare(`
+        SELECT attempts.id, attempts.session_id, attempts.lease_epoch, bindings.project_id
+        FROM wg_v2_attempts attempts
+        JOIN wg_v2_session_bindings bindings
+          ON bindings.organization_id = attempts.organization_id
+          AND bindings.owner_user_id = attempts.owner_user_id
+          AND bindings.session_id = attempts.session_id
+          AND bindings.current_attempt_id = attempts.id
+          AND bindings.state = 'active'
+        WHERE attempts.organization_id = ? AND attempts.owner_user_id = ?
+          AND attempts.work_item_id = ? AND attempts.lifecycle = 'running'
+      `).get(owner().organizationId, owner().ownerUserId, workItemId) as
+        | { id: string; session_id: string; lease_epoch: number; project_id: string }
+        | undefined
+      if (!attempt) throw new Error("Expected a running Attempt binding")
+      return execute("complete_attempt", {
+        attemptId: attempt.id,
+        sessionId: attempt.session_id,
+        workspaceId: attempt.project_id,
+        leaseEpoch: attempt.lease_epoch,
+        summary: "Execution completed",
+        artifacts: ["commit:e2e"],
+        evidence: [{
+          requirementId,
+          evidence: { kind: "test_result", summary: "Awaiting independent verification", passed: false },
+        }],
+      })
+    },
     reconcile: async () => Promise.all(listSqliteReconcilableAttempts(database, owner()).map(async (attempt) => {
       const renewal = renewSqliteAttemptLease(database, owner(), {
         attemptId: attempt.attemptId,
@@ -307,7 +344,7 @@ function controlledExecution() {
     launch: async (_context, input) => {
       const sessionId = `session:${input.attemptId}` as never
       results.set(sessionId, "running")
-      return { sessionId, envelopeId: input.envelopeId }
+      return { sessionId, envelopeId: input.envelopeId, projectId: "/tmp/workgraph-e2e" }
     },
     cancel: async (_context, input) => { results.delete(input.sessionId) },
     result: async (_context, input) => results.get(input.sessionId) === "succeeded"

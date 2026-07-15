@@ -2700,3 +2700,83 @@ describe("workspace host harness registry seam (Unit 3)", () => {
     host.dispose()
   })
 })
+
+describe("scoped Session tool compatibility", () => {
+  test("injects nonce-bound tool instructions for a non-OpenCode harness", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-scoped-tools-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    let resolvePrompt!: (input: { parts: unknown[] }) => void
+    const prompted = new Promise<{ parts: unknown[] }>((resolve) => { resolvePrompt = resolve })
+    const adapter = {
+      listSessions: async () => [],
+      getSession: async () => null,
+      createSession: async () => ({ id: "session-1" }),
+      updateSession: async () => null,
+      getSessionConfig: async () => ({ model: { providerID: "openai", modelID: "gpt-5" }, agent: "build", variant: "high" }),
+      updateSessionConfig: async () => ({ model: { providerID: "openai", modelID: "gpt-5" }, agent: "build", variant: "high" }),
+      deleteSession: async () => undefined,
+      readHarnessCapabilities: () => ({
+        harness: "pi",
+        abort: false,
+        reconnect: false,
+        replay: true,
+        permissions: false,
+        questions: false,
+        todos: false,
+        commands: false,
+        fork: false,
+        revert: false,
+        unrevert: false,
+        configOptions: false,
+      }),
+      sendMessage: async function* (_id: string, input: { parts: unknown[] }) {
+        resolvePrompt(input)
+      },
+      getMessages: async () => [],
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const registry: WorkspaceHarnessRegistry = [{
+      match: (runner) => runner.id === "pi",
+      create: () => adapter,
+    }]
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "pi", access: "native" },
+      harnesses: registry,
+      target: { workspaceId: "workspace-1", directory: dir },
+    })
+    await host.registerSessionTools({
+      sessionId: "session-1",
+      callbackUrl: "http://127.0.0.1:4567/callback/nonce",
+      tools: [{
+        name: "workgraph_complete_task",
+        description: "Complete the bound Task with evidence.",
+        inputSchema: { type: "object", required: ["summary", "evidence"] },
+      }],
+    })
+
+    const response = await app.request(`http://localhost/session/session-1/prompt_async?directory=${encodeURIComponent(dir)}&harness=pi`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        messageID: "message-1",
+        parts: [{ type: "text", text: "Ship it" }],
+        agent: "build",
+        model: { providerID: "openai", modelID: "gpt-5" },
+        variant: "high",
+      }),
+    })
+    expect(response.status).toBe(204)
+    const input = await prompted
+    const context = JSON.stringify(input.parts.at(-1))
+    expect(context).toContain("claxedo_scoped_session_tools")
+    expect(context).toContain("workgraph_complete_task")
+    expect(context).toContain("http://127.0.0.1:4567/callback/nonce")
+    expect(context).toContain("session-1")
+    expect(context).not.toContain("attemptId")
+    expect(context).not.toContain("streamId")
+    expect(context).not.toContain("workItemId")
+    host.dispose()
+  })
+})

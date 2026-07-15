@@ -111,6 +111,158 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     await expect(gateway.result("ses_workgraph_attempt_codex")).rejects.toThrow("non-OpenCode harnesses must not use Session V2")
   })
 
+  it("binds non-OpenCode harness tools before prompting without exposing durable Attempt identity", async () => {
+    const calls: Array<{ path: string; method: string; body?: unknown }> = []
+    const contexts: unknown[] = []
+    const released: string[] = []
+    const context = {
+      organizationId: "acme" as never,
+      ownerUserId: OwnerUserIDSchema.parse("local"),
+      actor: { type: "user" as const, id: ActorIDSchema.parse("local") },
+      requestId: RequestIDSchema.parse("request"),
+      access: { mode: "owner" as const },
+    }
+    const gateway = createHarnessWorkGraphGateway(async () => {
+      throw new Error("Pi must use the workspace runtime")
+    }, {
+      executeAttempt: async (_context, request) => ({
+        ok: true,
+        operationId: request.operation.operationId,
+        cursor: "1" as never,
+        value: {},
+      }),
+      attemptContexts: {
+        bind: async (input) => { contexts.push(input) },
+        release: async (sessionId) => { released.push(sessionId) },
+      },
+      sessionRequest: async (_directory, request) => {
+        const path = new URL(request.url).pathname
+        calls.push({
+          path,
+          method: request.method,
+          ...(request.body ? { body: await request.clone().json() } : {}),
+        })
+        if (path === "/session") return Response.json({ id: "runtime-pi-session" }, { status: 201 })
+        if (path === "/api/workgraph/attempt-binding") return Response.json({ bound: true })
+        if (path.endsWith("/prompt_async")) return new Response(null, { status: 204 })
+        if (path.endsWith("/abort")) return Response.json({ aborted: true })
+        if (path.startsWith("/api/workgraph/attempt-binding/")) return Response.json({ unbound: true })
+        throw new Error(`Unexpected request ${path}`)
+      },
+    })
+
+    await expect(gateway.admit({
+      attemptId: "attempt-pi",
+      leaseEpoch: 9,
+      sessionId: "workgraph-pi-session",
+      directory: "/repo/worktree",
+      workspaceId: "workspace-stream",
+      title: "Item",
+      prompt: "Implement the task",
+      profile: { ...profile, harness: "pi", tools: [] },
+      context,
+    })).resolves.toBe("workgraph-pi-session")
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      "POST /session",
+      "POST /api/workgraph/attempt-binding",
+      "POST /session/runtime-pi-session/prompt_async",
+    ])
+    expect(calls[1]?.body).toEqual({
+      version: 1,
+      identity: {
+        attemptId: "attempt-pi",
+        sessionId: "workgraph-pi-session",
+        workspaceId: "workspace-stream",
+        leaseEpoch: 9,
+      },
+      runtimeSessionId: "runtime-pi-session",
+      harness: "pi",
+      brokerUrl: "http://127.0.0.1",
+    })
+    expect(contexts).toEqual([{
+      identity: expect.objectContaining({ attemptId: "attempt-pi", sessionId: "workgraph-pi-session" }),
+      context,
+    }])
+    const prompt = calls[2]?.body as { parts: unknown[] }
+    expect(JSON.stringify(prompt.parts)).not.toContain("attempt-pi")
+    expect(JSON.stringify(prompt.parts)).not.toContain("workspace-stream")
+
+    await gateway.cancel("workgraph-pi-session", "test cleanup")
+    expect(calls.map((call) => `${call.method} ${call.path}`).slice(-2)).toEqual([
+      "POST /session/runtime-pi-session/abort",
+      "DELETE /api/workgraph/attempt-binding/workgraph-pi-session",
+    ])
+    expect(released).toEqual(["workgraph-pi-session"])
+  })
+
+  it("releases non-OpenCode Attempt tools when the Session reaches a terminal turn", async () => {
+    const calls: string[] = []
+    const released: string[] = []
+    const gateway = createHarnessWorkGraphGateway(async () => {
+      throw new Error("Pi must use the workspace runtime")
+    }, {
+      executeAttempt: async (_context, request) => ({
+        ok: true,
+        operationId: request.operation.operationId,
+        cursor: "1" as never,
+        value: {},
+      }),
+      attemptContexts: {
+        bind: async () => {},
+        release: async (sessionId) => { released.push(sessionId) },
+      },
+      sessionRequest: async (_directory, request) => {
+        const pathname = new URL(request.url).pathname
+        calls.push(`${request.method} ${pathname}`)
+        if (pathname === "/session") return Response.json({ id: "runtime-pi-session" }, { status: 201 })
+        if (pathname === "/api/workgraph/attempt-binding") return Response.json({ bound: true })
+        if (pathname.endsWith("/prompt_async")) return new Response(null, { status: 204 })
+        if (pathname === "/session/runtime-pi-session") {
+          return Response.json({ lastTurn: { status: "completed", completedAt: 2 } })
+        }
+        if (pathname === "/session/runtime-pi-session/message") {
+          return Response.json([
+            { info: { role: "assistant" }, parts: [{ type: "text", text: "Implemented and verified" }] },
+          ])
+        }
+        if (pathname === "/api/workgraph/attempt-binding/workgraph-pi-session") {
+          return Response.json({ unbound: true })
+        }
+        throw new Error(`Unexpected request ${pathname}`)
+      },
+    })
+    const context = {
+      organizationId: "acme" as never,
+      ownerUserId: OwnerUserIDSchema.parse("local"),
+      actor: { type: "user" as const, id: ActorIDSchema.parse("local") },
+      requestId: RequestIDSchema.parse("request-terminal"),
+      access: { mode: "owner" as const },
+    }
+
+    await gateway.admit({
+      attemptId: "attempt-pi",
+      leaseEpoch: 9,
+      sessionId: "workgraph-pi-session",
+      directory: "/repo/worktree",
+      workspaceId: "workspace-stream",
+      title: "Item",
+      prompt: "Implement the task",
+      profile: { ...profile, harness: "pi", tools: [] },
+      context,
+    })
+    await expect(gateway.result("workgraph-pi-session")).resolves.toEqual({
+      state: "succeeded",
+      summary: "Implemented and verified",
+      artifacts: [],
+    })
+    expect(calls.slice(-3)).toEqual([
+      "GET /session/runtime-pi-session",
+      "DELETE /api/workgraph/attempt-binding/workgraph-pi-session",
+      "GET /session/runtime-pi-session/message",
+    ])
+    expect(released).toEqual(["workgraph-pi-session"])
+  })
+
   it("does not replay a non-OpenCode prompt after an indeterminate admission response", async () => {
     let promptRequests = 0
     let executions = 0
@@ -315,6 +467,90 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     expect(calls.map((call) => `${call.method} ${call.path}`).slice(-2)).toEqual([
       "POST /api/session/ses_connected/interrupt",
       "DELETE /api/session/ses_connected/tool",
+    ])
+  })
+
+  it("binds Attempt tools to trusted execution identity and removes them on cancel", async () => {
+    const calls: Array<{ path: string; method: string; body?: unknown }> = []
+    const operations: unknown[] = []
+    const gateway = createSessionV2WorkGraphGateway(async (request) => {
+      calls.push({
+        path: new URL(request.url).pathname,
+        method: request.method,
+        ...(request.body ? { body: await request.clone().json() } : {}),
+      })
+      if (new URL(request.url).pathname === "/api/session") return Response.json({ id: "ses_attempt" })
+      return request.method === "DELETE" ? new Response(null, { status: 204 }) : Response.json({ data: { admittedSeq: 1 } })
+    }, {
+      executeAttempt: async (_context, request) => {
+        operations.push(request)
+        return { ok: true, operationId: request.operation.operationId, cursor: "1" as never, value: { recorded: true } }
+      },
+    })
+    const context = {
+      organizationId: "acme" as never,
+      ownerUserId: OwnerUserIDSchema.parse("local"),
+      actor: { type: "user" as const, id: ActorIDSchema.parse("local") },
+      requestId: RequestIDSchema.parse("request"),
+      access: { mode: "owner" as const },
+    }
+
+    await expect(gateway.admit({
+      attemptId: "attempt-1",
+      leaseEpoch: 7,
+      directory: "/repo",
+      title: "Item",
+      prompt: "Ship it",
+      profile,
+      context,
+    })).resolves.toBe("ses_attempt")
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      "POST /api/session",
+      "POST /api/session/ses_attempt/tool",
+      "POST /api/session/ses_attempt/prompt",
+    ])
+    const registration = calls[1]?.body as {
+      callbackUrl: string
+      tools: Array<{ name: string; callbackUrl: string }>
+    }
+    expect(registration.tools.map((tool) => tool.name)).toEqual([
+      "workgraph_report_progress",
+      "workgraph_complete_task",
+    ])
+    expect(registration.tools.every((tool) => tool.callbackUrl === registration.callbackUrl)).toBe(true)
+
+    const used = await fetch(registration.callbackUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sessionID: "ses_attempt",
+        name: "workgraph_report_progress",
+        toolCallID: "call-1",
+        input: { level: "milestone", summary: "Implemented the boundary" },
+      }),
+    })
+    expect(used.status).toBe(200)
+    expect(operations).toEqual([{
+      version: 1,
+      identity: {
+        attemptId: "attempt-1",
+        sessionId: "ses_attempt",
+        workspaceId: "/repo",
+        leaseEpoch: 7,
+      },
+      operation: {
+        type: "record_checkpoint",
+        operationId: "attempt_tool_attempt-1_call-1",
+        level: "milestone",
+        summary: "Implemented the boundary",
+        evidenceIds: [],
+      },
+    }])
+
+    await gateway.cancel("ses_attempt", "test cleanup")
+    expect(calls.map((call) => `${call.method} ${call.path}`).slice(-2)).toEqual([
+      "POST /api/session/ses_attempt/interrupt",
+      "DELETE /api/session/ses_attempt/tool",
     ])
   })
 

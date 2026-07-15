@@ -749,6 +749,26 @@ function providerUnavailable(harness: RuntimeRunner) {
   }
 }
 
+function scopedToolPrompt(
+  sessionId: string,
+  registration: {
+    callbackUrl: string
+    tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
+  },
+) {
+  return [
+    "<claxedo_scoped_session_tools>",
+    "These trusted tools apply only to the current Session. Their callback derives tenant, workspace, Stream, Task, Attempt, and lease identity from a nonce-bound host binding; never add or change those identities.",
+    "Invoke a tool from the sandbox shell by POSTing JSON shaped as {\"sessionID\",\"name\",\"toolCallID\",\"input\"} to the callback URL. Use a stable unique toolCallID and reuse it if the response is lost.",
+    `Session ID: ${JSON.stringify(sessionId)}`,
+    `Callback URL: ${JSON.stringify(registration.callbackUrl)}`,
+    "Available tools:",
+    ...registration.tools.map((tool) => `${tool.name}: ${tool.description}\nInput schema: ${JSON.stringify(tool.inputSchema)}`),
+    "Use progress tools only at meaningful logical boundaries. If a completion tool is available, call it with evidence before giving the final response.",
+    "</claxedo_scoped_session_tools>",
+  ].join("\n")
+}
+
 function requestDirectory(c: any) {
   return assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory") || workspaceDir())
 }
@@ -822,6 +842,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const sessionAdapterRunners = new Map<string, RuntimeRunner>()
   const adapterConfigStamps = new WeakMap<AgentHarnessAdapter, string>()
   const activeTurns = new Map<AgentHarnessAdapter, Set<ActiveTurn>>()
+  const sessionToolPrompts = new Map<string, {
+    harness?: string
+    callbackUrl: string
+    tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
+  }>()
 
   function adapterKey(next: RuntimeRunner) {
     const process = processConnection(next)
@@ -1499,6 +1524,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         listPermissions: (c, directory) => listPermissions(c as { req: { query: (k: string) => string | undefined } }, directory),
         listQuestions: (c, directory) => listQuestions(c as { req: { query: (k: string) => string | undefined } }, directory),
         createActiveTurnScope: (input) => createActiveTurnScope(input),
+        transformPromptBody: ({ sessionId, body }) => {
+          const registration = sessionToolPrompts.get(sessionId)
+          if (!registration) return body
+          return {
+            ...body,
+            parts: [...(body.parts ?? []), { type: "text", text: scopedToolPrompt(sessionId, registration) }],
+          }
+        },
         getMessages: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) return undefined
           const messages = store().getMessages(sessionId)
@@ -1584,8 +1617,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     },
     async registerSessionTools(input) {
       const directory = options.target?.directory ?? workspaceDir()
-      const next = await adapterForSession({ sessionId: input.sessionId, directory })
-      if (!hasAdapterCapability(next, "http-proxy")) throw new Error("Session harness does not support Core V2 tools")
+      const harness = normalizeHarnessIdentity(input.harness)
+      const next = await adapterForSession({
+        sessionId: input.sessionId,
+        directory,
+        ...(harness ? { harness } : {}),
+      })
+      if (!hasAdapterCapability(next, "http-proxy")) {
+        sessionToolPrompts.set(input.sessionId, input)
+        return
+      }
+      sessionToolPrompts.delete(input.sessionId)
       const response = await next.getRequestFn().then((request) => request(new Request(
         `${OPENCODE_INTERNAL_BASE}/api/session/${encodeURIComponent(input.sessionId)}/tool`,
         {
@@ -1599,8 +1641,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       if (!response.ok) throw new Error(`Core Session tool registration failed: ${response.status} ${await response.text()}`)
     },
     async unregisterSessionTools(sessionId) {
+      const registration = sessionToolPrompts.get(sessionId)
+      sessionToolPrompts.delete(sessionId)
       const directory = options.target?.directory ?? workspaceDir()
-      const next = await adapterForSession({ sessionId, directory })
+      const harness = normalizeHarnessIdentity(registration?.harness)
+      const next = await adapterForSession({ sessionId, directory, ...(harness ? { harness } : {}) })
       if (!hasAdapterCapability(next, "http-proxy")) return
       const response = await next.getRequestFn().then((request) => request(new Request(
         `${OPENCODE_INTERNAL_BASE}/api/session/${encodeURIComponent(sessionId)}/tool`,
@@ -1619,6 +1664,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       }
       sessionAdapters.clear()
       sessionRuntimes.clear()
+      sessionToolPrompts.clear()
       sessionConfigStore?.close?.()
       sessionConfigStore = undefined
     },

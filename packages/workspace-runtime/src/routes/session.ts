@@ -22,6 +22,7 @@ import { withDir } from "../compat-events"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import { assertTarget, workspaceId } from "../target"
 import { sessionStatusSnapshot } from "./session-status-snapshot"
+import type { SessionPromptBody } from "../session/service"
 
 function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
   const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
@@ -97,6 +98,11 @@ export function SessionRoutes(
       directory: string
       sessionId: string
     }) => { signal?: AbortSignal; dispose?: () => void } | undefined
+    transformPromptBody?: (input: {
+      sessionId: string
+      directory: string
+      body: SessionPromptBody
+    }) => Promise<SessionPromptBody> | SessionPromptBody
     getSessionConfig?: (input: {
       adapter: AgentHarnessAdapter
       directory: string
@@ -185,6 +191,9 @@ export function SessionRoutes(
     resolveWorkspaceId: () => workspaceId(),
     createActiveTurnScope: options?.createActiveTurnScope
       ? ({ adapter, directory, sessionId }) => options.createActiveTurnScope?.({ adapter, directory: requiredDirectory(directory), sessionId })
+      : undefined,
+    transformPromptBody: options?.transformPromptBody
+      ? (_c, input) => options.transformPromptBody!({ ...input, directory: requiredDirectory(input.directory) })
       : undefined,
     getSessionConfig: options?.getSessionConfig
       ? (_c, directory, sessionId, adapter) => options.getSessionConfig!({

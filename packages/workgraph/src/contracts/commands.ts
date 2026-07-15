@@ -5,6 +5,7 @@ import { ExecutionProfileDefaultsSchema, RecapProfileDefaultsSchema, WorkGraphDe
 import {
   AttemptIDSchema,
   DecisionIDSchema,
+  EvidenceIDSchema,
   OperationIDSchema,
   OutcomeIDSchema,
   RequestIDSchema,
@@ -16,7 +17,7 @@ import {
 import { StreamLifecycleStateSchema, StreamVisibilitySchema } from "./lifecycle"
 import { AuthoringSourceRevisionSchema, WorkSourceRevisionRefSchema } from "./work-source"
 import { ChangeCursorSchema } from "./change-cursor"
-import { StreamActivityGranularitySchema } from "./activity"
+import { AgentCheckpointLevelSchema, StreamActivityGranularitySchema } from "./activity"
 
 export { ChangeCursorSchema, type ChangeCursor } from "./change-cursor"
 
@@ -340,6 +341,38 @@ export const RecordEvidenceCommandSchema = z.strictObject({
 })
 export type RecordEvidenceCommand = z.infer<typeof RecordEvidenceCommandSchema>
 
+export const RecordAttemptCheckpointCommandSchema = z.strictObject({
+  version,
+  type: z.literal("record_attempt_checkpoint"),
+  attemptId: AttemptIDSchema,
+  sessionId: text.max(512),
+  workspaceId: text.max(1_024),
+  leaseEpoch: z.number().int().positive().optional(),
+  level: AgentCheckpointLevelSchema,
+  summary: z.string().trim().min(1).max(1_000),
+  evidenceIds: z.array(EvidenceIDSchema).max(100).default([]),
+})
+export type RecordAttemptCheckpointCommand = z.infer<typeof RecordAttemptCheckpointCommandSchema>
+
+export const AttemptCompletionEvidenceInputSchema = z.strictObject({
+  requirementId: text.optional(),
+  evidence: EvidenceInputSchema,
+})
+export type AttemptCompletionEvidenceInput = z.infer<typeof AttemptCompletionEvidenceInputSchema>
+
+export const CompleteAttemptCommandSchema = z.strictObject({
+  version,
+  type: z.literal("complete_attempt"),
+  attemptId: AttemptIDSchema,
+  sessionId: text.max(512),
+  workspaceId: text.max(1_024),
+  leaseEpoch: z.number().int().positive().optional(),
+  summary: z.string().trim().min(1).max(10_000),
+  artifacts: z.array(text).max(100).default([]),
+  evidence: z.array(AttemptCompletionEvidenceInputSchema).min(1).max(100),
+})
+export type CompleteAttemptCommand = z.infer<typeof CompleteAttemptCommandSchema>
+
 export const CloseOutcomeCommandSchema = z.strictObject({
   version,
   type: z.literal("close_outcome"),
@@ -412,6 +445,8 @@ export const WorkGraphCommandSchema = z.discriminatedUnion("type", [
   ProposeDecisionCommandSchema,
   AnswerDecisionCommandSchema,
   DismissDecisionCommandSchema,
+  RecordAttemptCheckpointCommandSchema,
+  CompleteAttemptCommandSchema,
   RecordEvidenceCommandSchema,
   CloseOutcomeCommandSchema,
   ReopenOutcomeCommandSchema,

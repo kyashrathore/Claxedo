@@ -33,7 +33,9 @@ describe("local WorkGraph workspace execution", () => {
         streamId: "stream_1" as never,
         workItemId: "item_1" as never,
         attemptId: "attempt_1" as never,
+        leaseEpoch: 1,
         envelopeId: "envelope_1" as never,
+        workspaceId: "/tmp/workspace",
         prompt: "Use the connected code host",
         profile: { ...profile, connectionIds: ["connection_1" as never] },
         connectionIds: ["connection_1" as never],
@@ -88,7 +90,9 @@ describe("local WorkGraph workspace execution", () => {
       streamId,
       workItemId: "item_1" as never,
       attemptId: "attempt_1" as never,
+      leaseEpoch: 1,
       envelopeId: envelope.id,
+      workspaceId: envelope.workspaceId,
       prompt: "Implement it",
       profile,
       connectionIds: [],
@@ -102,6 +106,7 @@ describe("local WorkGraph workspace execution", () => {
     const worktrees = `${root}/worktrees`
     const provisioned: Array<{ repositoryDirectory: string; directory: string; baseRevision: string }> = []
     const released: string[] = []
+    const admissions: Array<{ directory: string; workspaceId?: string }> = []
     const execution = createLocalWorkspaceExecution({
       worktreeRoot: worktrees,
       worktrees: {
@@ -113,7 +118,10 @@ describe("local WorkGraph workspace execution", () => {
         release: async (directory) => { released.push(directory) },
       },
       sessions: {
-        admit: async () => "session_1",
+        admit: async (input) => {
+          admissions.push(input)
+          return "session_1"
+        },
         cancel: async () => undefined,
         result: async () => ({ state: "running" }),
       },
@@ -128,6 +136,21 @@ describe("local WorkGraph workspace execution", () => {
     expect(provisioned).toEqual([
       expect.objectContaining({ repositoryDirectory: repository, baseRevision: "HEAD" }),
     ])
+    const launched = await execution.launch(owner(), {
+      streamId: "stream_1" as StreamID,
+      workItemId: "item_1" as never,
+      attemptId: "attempt_1" as never,
+      leaseEpoch: 1,
+      envelopeId: envelope.id,
+      workspaceId: envelope.workspaceId,
+      prompt: "Implement it",
+      profile,
+      connectionIds: [],
+    })
+    expect(admissions).toEqual([
+      expect.objectContaining({ directory: provisioned[0]!.directory, workspaceId: "ws_stream_1" }),
+    ])
+    expect(launched.projectId).toBe("ws_stream_1")
     await execution.cleanup(owner(), {
       streamId: "stream_1" as StreamID,
       envelopeId: envelope.id,
@@ -227,7 +250,9 @@ describe("local WorkGraph workspace execution", () => {
       streamId,
       workItemId: `item_${attemptId}` as never,
       attemptId: attemptId as never,
+      leaseEpoch: 1,
       envelopeId: envelope.id,
+      workspaceId: envelope.workspaceId,
       prompt: "Work in the Stream workspace",
       profile,
       connectionIds: [],

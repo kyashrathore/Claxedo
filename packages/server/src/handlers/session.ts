@@ -86,19 +86,27 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         Effect.fn(function* (ctx) {
           const callbackUrl = yield* loopbackCallbackUrl(ctx.payload.callbackUrl)
           const registry = yield* ToolRegistry.Service
+          const tools = yield* Effect.forEach(ctx.payload.tools, (item) =>
+            Effect.gen(function* () {
+              const itemCallbackUrl = item.callbackUrl
+                ? yield* loopbackCallbackUrl(item.callbackUrl)
+                : callbackUrl
+              return [
+                item.name,
+                remoteSessionTool({
+                  sessionID: ctx.params.sessionID,
+                  callbackUrl: itemCallbackUrl,
+                  name: item.name,
+                  description: item.description,
+                  inputSchema: item.inputSchema,
+                  outputSchema: item.outputSchema ?? {},
+                }),
+              ] as const
+            }),
+          )
           yield* registry.registerSession(
             ctx.params.sessionID,
-            Object.fromEntries(ctx.payload.tools.map((item) => [
-              item.name,
-              remoteSessionTool({
-                sessionID: ctx.params.sessionID,
-                callbackUrl,
-                name: item.name,
-                description: item.description,
-                inputSchema: item.inputSchema,
-                outputSchema: item.outputSchema ?? {},
-              }),
-            ])),
+            Object.fromEntries(tools),
           ).pipe(
             Effect.mapError((error) => new InvalidRequestError({ message: error.message, field: "tools" })),
           )

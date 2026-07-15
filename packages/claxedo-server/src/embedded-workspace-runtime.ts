@@ -1,6 +1,11 @@
 import path from "path"
 import fs from "fs/promises"
-import { createWorkspaceRuntimeApp, Pty, type WorkspaceRuntimeServerOptions } from "@claxedo/workspace-runtime"
+import {
+  createWorkspaceRuntimeApp,
+  Pty,
+  type WorkGraphAttemptOperationBroker,
+  type WorkspaceRuntimeServerOptions,
+} from "@claxedo/workspace-runtime"
 import { opencodeRequest as defaultOpencodeRequest, type OpenCodeRequestFn } from "./opencode-engine"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { dataDir } from "./paths"
@@ -43,6 +48,7 @@ const hosts = new Map<string, EmbeddedRuntime>()
 let configuredOpencodeRequest: OpenCodeRequestFn = defaultOpencodeRequest
 let configuredOpencodeCompat = true
 let configuredPiModelBackend: PiModelBackendResolver | undefined
+let configuredWorkGraphAttemptBroker: WorkGraphAttemptOperationBroker | undefined
 // Host-supplied sink for a harness session's async auto-title (and any other
 // session.created/session.updated event). A harness session's title is
 // re-emitted asynchronously — e.g. a post-turn ACP auto-title
@@ -62,12 +68,14 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   opencodeRequest: OpenCodeRequestFn
   opencodeCompat?: boolean
   piModelBackend?: PiModelBackendResolver
+  workgraphAttemptBroker?: WorkGraphAttemptOperationBroker
   onSessionMetaEvent?: (event: OpencodeEvent) => void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
 }) {
   configuredOpencodeRequest = input.opencodeRequest
   configuredOpencodeCompat = input.opencodeCompat ?? true
   configuredPiModelBackend = input.piModelBackend
+  configuredWorkGraphAttemptBroker = input.workgraphAttemptBroker
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
 }
@@ -84,6 +92,7 @@ function options(ws: Workspace, opencodeRequest: OpenCodeRequestFn): WorkspaceRu
   return {
     opencodeRequest,
     ...(configuredPiModelBackend ? { piModelBackend: configuredPiModelBackend } : {}),
+    ...(configuredWorkGraphAttemptBroker ? { workgraphAttemptBroker: configuredWorkGraphAttemptBroker } : {}),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),

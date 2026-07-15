@@ -500,6 +500,36 @@ describe("embedded local WorkGraph v2", () => {
     const workItemId = ((await item.json()) as { value: { workItemId: string } }).value.workItemId
     expect((await command(app, "operation_execute", { version: 1, type: "execute_work_item", workItemId, executionMode: "autonomous" })).status).toBe(200)
     await embedded.reconcile({ organizationId: "local" as never, ownerUserId: "local" as never, actor: { type: "system", id: "reconciler" as never }, requestId: "reconcile" as never, access: { mode: "owner" } })
+    const beforeCompletion = await app.request("/api/workgraph/snapshot", localAuth())
+    expect(((await beforeCompletion.json()) as { records: Array<{ recordType: string; state?: string }> }).records)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ recordType: "work_item", state: "active" }),
+        expect.objectContaining({ recordType: "attempt", state: "running" }),
+      ]))
+    const attempt = embedded.database.prepare(`
+      SELECT attempts.id, attempts.session_id, attempts.lease_epoch, bindings.project_id
+      FROM wg_v2_attempts attempts
+      JOIN wg_v2_session_bindings bindings
+        ON bindings.organization_id = attempts.organization_id
+        AND bindings.owner_user_id = attempts.owner_user_id
+        AND bindings.session_id = attempts.session_id
+        AND bindings.current_attempt_id = attempts.id
+      WHERE attempts.work_item_id = ? AND attempts.lifecycle = 'running'
+    `).get(workItemId) as { id: string; session_id: string; lease_epoch: number; project_id: string }
+    expect((await command(app, "operation_explicit_completion", {
+      version: 1,
+      type: "complete_attempt",
+      attemptId: attempt.id,
+      sessionId: attempt.session_id,
+      workspaceId: attempt.project_id,
+      leaseEpoch: attempt.lease_epoch,
+      summary: "Done",
+      artifacts: ["commit:abc"],
+      evidence: [{
+        requirementId: "proof",
+        evidence: { kind: "test_result", summary: "Independent proof pending", passed: false },
+      }],
+    })).status).toBe(200)
     const snapshot = await app.request("/api/workgraph/snapshot", localAuth())
     const records = ((await snapshot.json()) as { records: Array<{ recordType: string; state?: string; result?: unknown }> }).records
     expect(records).toEqual(expect.arrayContaining([
@@ -585,7 +615,7 @@ async function command(
 function terminalExecution(): WorkspaceExecutionPort {
   return {
     provisionOrAdopt: async (_context, input) => ({ id: "envelope_1" as never, streamId: input.streamId, environment: input.environment, repository: input.repository, workspaceId: "/tmp/worktree" }),
-    launch: async (_context, input) => ({ sessionId: "session_1" as never, envelopeId: input.envelopeId }),
+    launch: async (_context, input) => ({ sessionId: "session_1" as never, envelopeId: input.envelopeId, projectId: "/tmp/workgraph" }),
     cancel: async () => undefined,
     result: async () => ({ state: "succeeded", summary: "Done", artifacts: ["commit:abc"] }),
     cleanup: async () => undefined,

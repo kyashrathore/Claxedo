@@ -51,8 +51,9 @@ export type WorkspaceHost = {
   capabilities: () => WorkspaceCapabilities
   registerSessionTools: (input: {
     sessionId: string
+    harness?: string
     callbackUrl: string
-    tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown> }>
+    tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; callbackUrl?: string }>
   }) => Promise<void>
   unregisterSessionTools: (sessionId: string) => Promise<void>
   dispose: () => void
