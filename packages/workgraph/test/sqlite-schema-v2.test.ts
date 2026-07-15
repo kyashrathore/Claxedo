@@ -38,6 +38,7 @@ describe("WorkGraph SQLite v2 schema", () => {
 
     expect(tables(db)).toEqual([
       "wg_v2_admission_proposals",
+      "wg_v2_agent_checkpoints",
       "wg_v2_archive_restores",
       "wg_v2_attempts",
       "wg_v2_attention_acknowledgements",
@@ -60,6 +61,7 @@ describe("WorkGraph SQLite v2 schema", () => {
       "wg_v2_recaps",
       "wg_v2_record_source_revisions",
       "wg_v2_runtime_effects",
+      "wg_v2_session_bindings",
       "wg_v2_source_views",
       "wg_v2_stream_cleanup_reservations",
       "wg_v2_stream_sequences",

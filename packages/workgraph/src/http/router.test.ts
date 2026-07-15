@@ -568,6 +568,7 @@ function createFixture() {
       pinned: false,
       executionDefaults: {},
       recapDefaults: {},
+      activityGranularity: request.command.activityGranularity ?? existing?.activityGranularity ?? "progress",
       activity: { lastActivityAt: timestamp, recapDueAt: timestamp + 28_800_000 },
       durableEffectCount: 0,
       sourceRevisionRefs: [],

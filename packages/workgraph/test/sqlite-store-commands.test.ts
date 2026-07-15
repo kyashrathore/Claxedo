@@ -404,6 +404,27 @@ describe("SQLite WorkGraph public commands", () => {
     expect(fixture.database.prepare("SELECT depends_on_work_item_id FROM wg_v2_work_item_dependencies WHERE work_item_id = ?").all(itemId)).toEqual([{ depends_on_work_item_id: dependencyId }])
   })
 
+  it("defaults and persists Stream activity granularity", async () => {
+    const fixture = await setup()
+    const defaultStreamId = await createStream(fixture)
+    await expect(fixture.adapter.service.query(owner(), "streams", "read", { streamId: defaultStreamId }))
+      .resolves.toMatchObject({ activityGranularity: "progress" })
+    const created = await execute(fixture, "create_stream", {
+      title: "Milestones",
+      activityGranularity: "milestones",
+    })
+    const streamId = branded<StreamID>(resultId(created, "streamId"))
+    await expect(fixture.adapter.service.query(owner(), "streams", "read", { streamId }))
+      .resolves.toMatchObject({ activityGranularity: "milestones" })
+    expect(await execute(fixture, "update_stream", {
+      streamId,
+      expectedVersion: 1,
+      activityGranularity: "detailed",
+    })).toMatchObject({ ok: true })
+    await expect(fixture.adapter.service.query(owner(), "streams", "read", { streamId }))
+      .resolves.toMatchObject({ activityGranularity: "detailed" })
+  })
+
   it("rejects transitive dependency cycles without replacing the previous dependency set", async () => {
     const fixture = await setup()
     const streamId = await createStream(fixture)

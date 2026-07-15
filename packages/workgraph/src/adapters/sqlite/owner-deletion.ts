@@ -29,6 +29,8 @@ const ownerTablesInDeletionOrder = [
   "wg_v2_stream_cleanup_reservations",
   "wg_v2_runtime_effects",
   "wg_v2_leases",
+  "wg_v2_agent_checkpoints",
+  "wg_v2_session_bindings",
   "wg_v2_attempts",
   "wg_v2_decisions",
   "wg_v2_work_items",

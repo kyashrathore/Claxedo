@@ -715,6 +715,8 @@ async function deleteStreamGraph(
     "workgraph_outbox",
     "workgraph_due_jobs",
     "workgraph_notifications",
+    "workgraph_agent_checkpoints",
+    "workgraph_session_bindings",
     "workgraph_work_items",
   ] as const
   for (const table of tables) {

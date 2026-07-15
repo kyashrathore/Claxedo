@@ -224,6 +224,7 @@ const memoryFactory: StoreConformanceFactory = async (input) => {
             pinned: false,
             executionDefaults: {},
             recapDefaults: {},
+            activityGranularity: "progress" as const,
             activity: { lastActivityAt: 1_000, recapDueAt: 29_800_000 },
             durableEffectCount: stream.durableEffectCount,
             sourceRevisionRefs: [],

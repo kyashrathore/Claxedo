@@ -24,6 +24,7 @@ export type {
 } from "./http/contracts";
 export { initializeWorkGraphSqliteSchema } from "./adapters/sqlite/schema";
 export { createSqliteWorkGraphArchivePort } from "./adapters/sqlite/archive";
+export { createSqliteWorkGraphActivityPorts } from "./adapters/sqlite/activity-store";
 export { createSqliteWorkGraphOwnerDeletionPort } from "./adapters/sqlite/owner-deletion";
 export { createSqliteIntakeStores } from "./adapters/sqlite/intake-store";
 export { createSqliteWebhookIntakeStore } from "./adapters/sqlite/webhook-intake-store";

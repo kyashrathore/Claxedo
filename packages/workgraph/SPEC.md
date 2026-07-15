@@ -98,7 +98,7 @@ Every core adapter provides:
 
 Portable tenant export and restore use a separate versioned archive port and conformance contract. SQLite and Convex implement archive, restart, workspace cleanup, and permanent deletion in repository verification. The staged deployment exercises the Convex path again under signed tenant authority before Cloud release acceptance.
 
-Core conformance version 5 distinguishes the opaque `SnapshotResumeCursor` used only to continue one page chain from the `ChangeCursor` watermark returned as `snapshotCursor`. Collection cursors bind organization, owner, collection or filter, and keyset position. Snapshot resume cursors additionally bind the snapshot watermark and capture time; malformed, cross-tenant, cross-filter, and tenant-mutation-invalidated cursors fail with `cursor_invalid`. App and standalone MCP consumers validate and aggregate the full page chain and may discard one invalidated partial chain for one clean restart before surfacing failure.
+Core conformance version 6 distinguishes the opaque `SnapshotResumeCursor` used only to continue one page chain from the `ChangeCursor` watermark returned as `snapshotCursor`. Collection cursors bind organization, owner, collection or filter, and keyset position. Snapshot resume cursors additionally bind the snapshot watermark and capture time; malformed, cross-tenant, cross-filter, and snapshot-relevant-mutation-invalidated cursors fail with `cursor_invalid`. Checkpoint and Session-binding changes that do not alter snapshot records preserve the current page chain and are consumed afterward through ordered changes. App and standalone MCP consumers validate and aggregate the full page chain and may discard one invalidated partial chain for one clean restart before surfacing failure.
 
 ### 4.1 Convex adapter
 
@@ -254,7 +254,7 @@ Workers reconcile admitted Attempts, expired leases, due source refresh, connect
 1. One `(organization, user)` tenant cannot access another tenant's private WorkGraph records, including the same user represented in two organizations.
 2. Cloud composition uses Convex without SQLite or Node-native database imports.
 3. Local composition uses SQLite without a hosted dependency.
-4. A custom adapter passes core conformance version 5, including tenant-bound cursor pagination, mutation invalidation, exact snapshot-to-change convergence across adapter restart, leases, Attempt runtime recovery, and source-revision replacement fencing. An adapter offering portable tenant migration also passes archive conformance version 1.
+4. A custom adapter passes core conformance version 6, including tenant-bound cursor pagination, snapshot-relevant mutation invalidation, exact snapshot-to-change convergence across adapter restart, leases, Attempt runtime recovery, source-revision replacement fencing, Session-binding exact retry, and bounded Task-activity pagination. An adapter offering portable tenant migration also passes archive conformance version 1.
 5. WorkGraph persistence, events, logs, and responses contain no provider credentials.
 6. Organization Connections can produce user-filtered personal candidates without transferring credential or Connection-metadata ownership into WorkGraph.
 7. Intake candidates cannot execute before staging.

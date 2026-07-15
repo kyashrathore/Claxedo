@@ -22,6 +22,8 @@ export const WORKGRAPH_OWNER_TABLES = [
   "workgraph_cleanup_receipts",
   "workgraph_runtime_effects",
   "workgraph_leases",
+  "workgraph_agent_checkpoints",
+  "workgraph_session_bindings",
   "workgraph_attempts",
   "workgraph_decisions",
   "workgraph_work_items",

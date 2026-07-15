@@ -32,7 +32,7 @@ The legacy schema fixture owns static DDL only. Runtime graph, scheduler, provid
 
 ## Portable archive surface
 
-Core adapter conformance version 5 covers tenant isolation, atomic commands, opaque tenant-and-filter-bound cursors, ordered snapshots and changes across adapter restart, leases, Attempt runtime recovery, and source-revision replacement fencing. Archive conformance version 1 separately covers canonical tenant export/restore, exact retry, and rejection of cross-tenant, non-empty, conflicting, malformed, or secret-bearing restores.
+Core adapter conformance version 6 covers tenant isolation, atomic commands, opaque tenant-and-filter-bound cursors, ordered snapshots and changes across adapter restart, leases, Attempt runtime recovery, source-revision replacement fencing, Session-binding idempotency, and bounded Task-activity pagination. Archive conformance version 1 separately covers canonical tenant export/restore, exact retry, and rejection of cross-tenant, non-empty, conflicting, malformed, or secret-bearing restores.
 
 SQLite and Convex implement the archive port, workspace cleanup, and organization/user-level permanent deletion. Stream visibility archive is a separate lifecycle presentation state and does not perform portable export. Cloud release acceptance remains gated on the ordered Convex-functions, Worker, and app staging deployment followed by signed policy and browser verification.
 

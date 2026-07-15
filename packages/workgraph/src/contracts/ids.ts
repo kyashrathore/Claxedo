@@ -32,6 +32,12 @@ export type WorkItemID = z.infer<typeof WorkItemIDSchema>
 export const AttemptIDSchema = id("AttemptID")
 export type AttemptID = z.infer<typeof AttemptIDSchema>
 
+export const AgentCheckpointIDSchema = id("AgentCheckpointID")
+export type AgentCheckpointID = z.infer<typeof AgentCheckpointIDSchema>
+
+export const SessionBindingIDSchema = id("SessionBindingID")
+export type SessionBindingID = z.infer<typeof SessionBindingIDSchema>
+
 export const DecisionIDSchema = id("DecisionID")
 export type DecisionID = z.infer<typeof DecisionIDSchema>
 

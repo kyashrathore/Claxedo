@@ -43,6 +43,7 @@ describe("Convex generated API artifacts", () => {
       "sandboxLeases",
       "sessions",
       "users",
+      "workgraphActivity",
       "workgraphArchive",
       "workgraphAttention",
       "workgraphBackground",

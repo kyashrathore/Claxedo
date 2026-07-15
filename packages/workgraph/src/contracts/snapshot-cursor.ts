@@ -64,6 +64,16 @@ export function readSnapshotResumeCursor(
   ownerUserId: string,
   currentSnapshotCursor: string,
 ): DecodedSnapshotResumeCursor {
+  const decoded = decodeSnapshotResumeCursor(cursor, organizationId, ownerUserId)
+  if (decoded.snapshotCursor !== currentSnapshotCursor) throw new SnapshotResumeCursorError("invalidated")
+  return decoded
+}
+
+export function decodeSnapshotResumeCursor(
+  cursor: string,
+  organizationId: string,
+  ownerUserId: string,
+): DecodedSnapshotResumeCursor {
   if (cursor.length > maxLength) throw new SnapshotResumeCursorError("invalid")
   const parts = cursor.split(":")
   if (parts.length !== 9 || parts[0] !== prefix) throw new SnapshotResumeCursorError("invalid")
@@ -78,7 +88,6 @@ export function readSnapshotResumeCursor(
   const recordType = decodeComponent(parts[7]!)
   const id = decodeComponent(parts[8]!)
   if (!recordTypes.has(recordType)) throw new SnapshotResumeCursorError("invalid")
-  if (snapshotCursor !== currentSnapshotCursor) throw new SnapshotResumeCursorError("invalidated")
   return {
     organizationId,
     ownerUserId,

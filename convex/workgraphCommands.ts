@@ -194,6 +194,7 @@ export async function applyWorkGraphCommand(ctx: any, input: CommandInput) {
     resource_id: pending.resourceId,
     change_type: pending.type,
     payload,
+    snapshot_relevant: true,
     schema_version: 1,
     created_at: now,
   })
@@ -347,6 +348,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       pinned: false,
       execution_defaults: command.execution ?? {},
       recap_defaults: recap ?? command.recap ?? {},
+      activity_granularity: command.activityGranularity ?? "progress",
       activity: { lastActivityAt: now, recapDueAt },
       recap_due_at: recapDueAt,
       durable_effect_count: 0,
@@ -369,6 +371,7 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
       ...(command.description === undefined ? {} : { description: command.description }),
       ...(command.execution === undefined ? {} : { execution_defaults: command.execution }),
       ...(command.recap === undefined ? {} : { recap_defaults: command.recap }),
+      ...(command.activityGranularity === undefined ? {} : { activity_granularity: command.activityGranularity }),
       row_version: stream.row_version + 1,
       updated_at: now,
     })
@@ -2135,6 +2138,59 @@ export async function appendSystemWorkGraphChange(ctx: any, input: Readonly<{
     resource_id: input.resourceId,
     change_type: input.changeType,
     payload: input.payload,
+    snapshot_relevant: true,
+    schema_version: 1,
+    created_at: input.now,
+  })
+  return cursor
+}
+
+export async function appendOwnedWorkGraphChange(ctx: any, input: Readonly<{
+  organizationId: string
+  ownerUserId: string
+  operationId: string
+  requestId?: string
+  eventId: string
+  changeId: string
+  resourceType: string
+  resourceId: string
+  changeType: string
+  payload: Record<string, unknown>
+  actor: Readonly<{ type: "user" | "agent" | "system"; id: string }>
+  streamId: string
+  snapshotRelevant?: boolean
+  now: number
+}>) {
+  const cursor = await allocateCursor(ctx, input.organizationId, input.ownerUserId, input.now)
+  const sequence = await allocateSequence(ctx, input.organizationId, input.ownerUserId, input.streamId, input.now)
+  await ctx.db.insert("workgraph_events", {
+    organization_id: input.organizationId,
+    owner_user_id: input.ownerUserId,
+    id: input.eventId,
+    stream_id: input.streamId,
+    sequence,
+    operation_id: input.operationId,
+    request_id: input.requestId ?? input.operationId,
+    event_type: input.changeType,
+    actor_type: input.actor.type,
+    actor_id: input.actor.id,
+    payload: input.payload,
+    occurred_at: input.now,
+    schema_version: 1,
+  })
+  await ctx.db.insert("workgraph_changes", {
+    organization_id: input.organizationId,
+    owner_user_id: input.ownerUserId,
+    id: input.changeId,
+    cursor,
+    stream_id: input.streamId,
+    operation_id: input.operationId,
+    event_id: input.eventId,
+    resource_type: input.resourceType,
+    resource_id: input.resourceId,
+    change_type: input.changeType,
+    payload: input.payload,
+    snapshot_relevant: input.snapshotRelevant ?? true,
     schema_version: 1,
     created_at: input.now,
   })

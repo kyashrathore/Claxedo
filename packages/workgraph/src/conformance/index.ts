@@ -19,12 +19,13 @@ import type { AttemptRuntimePort } from "../ports/attempt-runtime"
 import type { WorkGraphCommandHandlers } from "../ports/store"
 
 export * from "./archive"
+export * from "./activity"
 export * from "./attention"
 export * from "./owner-deletion"
 export * from "./replacement"
 export * from "./snapshot-restart"
 
-export const WORKGRAPH_ADAPTER_CONFORMANCE_VERSION = 5 as const
+export const WORKGRAPH_ADAPTER_CONFORMANCE_VERSION = 6 as const
 
 export const WORKGRAPH_ADAPTER_CONFORMANCE_SCOPE = {
   covered: [
@@ -43,6 +44,8 @@ export const WORKGRAPH_ADAPTER_CONFORMANCE_SCOPE = {
     "lease_acquire_renew_expire",
     "attempt_runtime_recovery",
     "source_revision_replacement_fencing",
+    "session_binding_owner_isolation_and_exact_retry",
+    "bounded_task_activity_pagination_and_restart",
   ],
   remaining: [
     "migration_export_restore_roundtrip",

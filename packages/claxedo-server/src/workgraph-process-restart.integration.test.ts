@@ -41,7 +41,10 @@ describe("local WorkGraph process recovery", () => {
       version: 1,
       type: "create_stream",
       title: "Recover after process loss",
-      execution: executionProfile,
+      execution: {
+        ...executionProfile,
+        environment: { kind: "local_worktree", directory: repository },
+      },
     })) as { value: { streamId: string } }
     const item = (await command(first.origin, "restart_item", {
       version: 1,

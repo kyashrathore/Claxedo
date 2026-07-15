@@ -1,9 +1,10 @@
 import { evaluateCompletionContract } from "@claxedo/workgraph/domain"
-import { AdmissionProposalDtoSchema, AttemptDetailDtoSchema, AttentionCursorError, AttentionItemSchema, AttentionPageSchema, ChangeCursorError, EvidenceDtoSchema, EvidencePageCursorError, EvidencePageSchema, ModelSelectionSchema, RecapProfileDefaultsSchema, ReplacementReviewSchema, SnapshotResumeCursorError, WorkItemAttemptPageCursorError, WorkItemAttemptPageSchema, compareEvidenceCursorPosition, compareSnapshotCursorPosition, compareWorkItemAttemptPosition, createAttentionCursor, createChangeCursor, createEvidencePageCursor, createSnapshotResumeCursor, createWorkItemAttemptPageCursor, readAttentionCursor, readChangeCursor, readEvidencePageCursor, readSnapshotResumeCursor, readWorkItemAttemptPageCursor, type EvidenceSubject } from "@claxedo/workgraph/contracts"
+import { AdmissionProposalDtoSchema, AttemptDetailDtoSchema, AttentionCursorError, AttentionItemSchema, AttentionPageSchema, ChangeCursorError, EvidenceDtoSchema, EvidencePageCursorError, EvidencePageSchema, ModelSelectionSchema, RecapProfileDefaultsSchema, ReplacementReviewSchema, SnapshotResumeCursorError, TaskActivityPageCursorError, WorkItemAttemptPageCursorError, WorkItemAttemptPageSchema, compareEvidenceCursorPosition, compareSnapshotCursorPosition, compareWorkItemAttemptPosition, createAttentionCursor, createChangeCursor, createEvidencePageCursor, createSnapshotResumeCursor, createWorkItemAttemptPageCursor, decodeSnapshotResumeCursor, readAttentionCursor, readChangeCursor, readEvidencePageCursor, readWorkItemAttemptPageCursor, type EvidenceSubject } from "@claxedo/workgraph/contracts"
 import { ConvexError, v } from "convex/values"
 import { authedQuery, serviceQuery } from "./model"
 import { assertWorkGraphOwnerReadable, requireOwnedWorkGraphContext, requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
 import { attentionPositionKey } from "./workgraphAttention"
+import { readTaskActivityProjection } from "./workgraphActivity"
 
 const MAX_PAGE = 100
 const evidenceSubject = v.union(
@@ -24,6 +25,7 @@ const query = v.union(
   v.object({ kind: v.literal("work_item"), workItemId: v.string() }),
   v.object({ kind: v.literal("work_item_detail"), workItemId: v.string() }),
   v.object({ kind: v.literal("work_item_attempts"), workItemId: v.string(), limit: v.number(), after: v.optional(v.string()) }),
+  v.object({ kind: v.literal("work_item_activity"), workItemId: v.string(), granularity: v.union(v.literal("milestones"), v.literal("progress"), v.literal("detailed")), limit: v.number(), after: v.optional(v.string()) }),
   v.object({ kind: v.literal("admission_proposal"), proposalId: v.string() }),
   v.object({ kind: v.literal("replacement_review"), streamId: v.string(), previousSource: v.object({ workSourceId: v.string(), revisionId: v.string(), contentHash: v.string() }) }),
   v.object({ kind: v.literal("attempt"), attemptId: v.string() }),
@@ -106,6 +108,16 @@ export async function readWorkGraphProjection(ctx: any, organization: string, ow
       return await workItemAttemptsPage(ctx, organization, owner, input)
     } catch (error) {
       if (error instanceof WorkItemAttemptPageCursorError) {
+        throw new ConvexError({ code: "cursor_invalid", reason: error.reason })
+      }
+      throw error
+    }
+  }
+  if (kind === "work_item_activity") {
+    try {
+      return await readTaskActivityProjection(ctx, organization, owner, input)
+    } catch (error) {
+      if (error instanceof TaskActivityPageCursorError) {
         throw new ConvexError({ code: "cursor_invalid", reason: error.reason })
       }
       throw error
@@ -439,14 +451,25 @@ function snapshotCursorError(error: unknown): error is Readonly<{
 async function snapshot(ctx: any, organization: string, owner: string, input: Record<string, any>) {
   const limit = requireLimit(input.limit)
   const cursor = await ctx.db.query("workgraph_change_cursors").withIndex("by_tenant", (q: any) => q.eq("organization_id", organization).eq("owner_user_id", owner)).unique()
-  const snapshotCursor = createChangeCursor({
+  const currentSnapshotCursor = createChangeCursor({
     organizationId: organization,
     ownerUserId: owner,
     position: Math.max(0, (cursor?.next_cursor ?? 1) - 1),
   })
   const resume = input.after === undefined
     ? { offset: 0, capturedAt: Date.now(), position: undefined }
-    : readSnapshotResumeCursor(input.after, organization, owner, snapshotCursor)
+    : decodeSnapshotResumeCursor(input.after, organization, owner)
+  if ("snapshotCursor" in resume && resume.snapshotCursor !== currentSnapshotCursor) {
+    const relevant = await ctx.db.query("workgraph_changes")
+      .withIndex("by_tenant_snapshot_cursor", (query: any) => query
+        .eq("organization_id", organization)
+        .eq("owner_user_id", owner)
+        .eq("snapshot_relevant", true)
+        .gt("cursor", readChangeCursor(resume.snapshotCursor, organization, owner)))
+      .first()
+    if (relevant) throw new SnapshotResumeCursorError("invalidated")
+  }
+  const snapshotCursor = "snapshotCursor" in resume ? resume.snapshotCursor : currentSnapshotCursor
   const specs = [
     { table: "workgraph_streams", recordType: "stream", dto: (row: any) => streamDto(row, owner) },
     { table: "workgraph_outcomes", recordType: "outcome", dto: (row: any) => outcomeDto(row, owner) },
@@ -554,6 +577,7 @@ function streamDto(row: any, owner: string) {
     provenance: recordProvenance(row), id: row.id, title: row.title, ...(row.description === undefined ? {} : { description: row.description }),
     lifecycleState: row.lifecycle_state, visibility: row.visibility, pinned: row.pinned, executionDefaults: row.execution_defaults ?? {},
     recapDefaults: row.recap_defaults ?? {}, ...(row.memory === undefined ? {} : { memory: row.memory }),
+    activityGranularity: row.activity_granularity ?? "progress",
     activity: Object.keys(row.activity ?? {}).length ? row.activity : {
       lastActivityAt: row.updated_at,
       recapDueAt: row.updated_at + recapQuietHours * 60 * 60 * 1000,
@@ -601,6 +625,7 @@ function attemptDto(row: any, owner: string) {
   return {
     recordType: "attempt", ...base(row, owner), id: row.id, streamId: row.stream_id, workItemId: row.work_item_id,
     attemptNumber: row.attempt_number, state: row.state, resolvedExecution: row.resolved_execution, admittedAt: row.admitted_at,
+    executionKind: row.execution_kind ?? "managed",
     ...(row.started_at === undefined ? {} : { startedAt: row.started_at }), ...(row.finished_at === undefined ? {} : { finishedAt: row.finished_at }),
     ...(row.result === undefined ? {} : { result: row.result }), ...(row.attention_reason === undefined ? {} : { attentionReason: row.attention_reason }),
     sourceRevisionRefs: refs(row.source_revision_refs),

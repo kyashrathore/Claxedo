@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { AttentionCursorError, AttentionPageSchema, ChangeCursorError, ChangeEnvelopeSchema, SnapshotResumeCursorError, WorkGraphArchiveRestoreError, WorkGraphArchiveSchema, WorkGraphSnapshotPageSchema, WorkSourcePageCursorError, createChangeCursor, readChangeCursor, hashWorkGraphArchive } from "@claxedo/workgraph/contracts"
-import { workGraphAdapterConformance, workGraphArchiveConformance, workGraphAttentionConformance, workGraphSnapshotRestartConformance } from "@claxedo/workgraph/conformance"
+import { workGraphActivityConformance, workGraphAdapterConformance, workGraphArchiveConformance, workGraphAttentionConformance, workGraphSnapshotRestartConformance } from "@claxedo/workgraph/conformance"
 import { workGraphReplacementConformance } from "../../../workgraph/src/conformance/replacement"
 import type { AttemptRuntimePort, WorkGraphArchivePort } from "@claxedo/workgraph/ports"
 import { createWorkGraphHttpRouter } from "@claxedo/workgraph"
 import { applyWorkGraphCommand, reconcileAutonomousStreams } from "../../../../convex/workgraphCommands"
 import { readWorkGraphProjection as readTenantWorkGraphProjection } from "../../../../convex/workgraphChanges"
+import { applyWorkGraphActivityMutation, readSessionBinding, readTaskActivityProjection } from "../../../../convex/workgraphActivity"
 import { claimControlEffects, claimLaunches, completeControlEffect, markRunning, recordResult, renewWorkGraphAttemptLease, settleRejectedProvision } from "../../../../convex/workgraphRuntime"
 import { exportWorkGraphArchive as exportTenantWorkGraphArchive, restoreWorkGraphArchive as restoreTenantWorkGraphArchive } from "../../../../convex/workgraphArchive"
 import { initializeAttentionProjection as initializeTenantAttentionProjection, syncAttentionRecord, syncCandidateTransition, syncConnectionAttention } from "../../../../convex/workgraphAttention"
@@ -13,6 +14,7 @@ import { backfillCandidateAttention } from "../../../../convex/migrations"
 import {
   CONVEX_WORKGRAPH_SUPPORTED_COMMANDS,
   CONVEX_WORKGRAPH_UNSUPPORTED_COMMANDS,
+  createConvexWorkGraphActivityPorts,
   createConvexWorkGraphService,
   createConvexWorkGraphStore,
   createConvexWorkGraphArchivePort,
@@ -42,6 +44,222 @@ function initializeAttentionProjection(ctx: any, ownerUserId: string, now: numbe
 }
 
 describe("Convex WorkGraph store", () => {
+  test("defaults and persists Stream activity granularity", async () => {
+    const harness = new ConvexHarness(["owner_a"])
+    const defaultId = value(await execute(harness, "owner_a", "granularity_default", {
+      type: "create_stream",
+      title: "Default",
+    }), "streamId")
+    await expect(readWorkGraphProjection(harness, "owner_a", "stream", { streamId: defaultId }))
+      .resolves.toMatchObject({ activityGranularity: "progress" })
+    const streamId = value(await execute(harness, "owner_a", "granularity_create", {
+      type: "create_stream",
+      title: "Milestones",
+      activityGranularity: "milestones",
+    }), "streamId")
+    await expect(readWorkGraphProjection(harness, "owner_a", "stream", { streamId }))
+      .resolves.toMatchObject({ activityGranularity: "milestones" })
+    await expect(execute(harness, "owner_a", "granularity_update", {
+      type: "update_stream",
+      streamId,
+      expectedVersion: 1,
+      activityGranularity: "detailed",
+    })).resolves.toMatchObject({ ok: true })
+    await expect(readWorkGraphProjection(harness, "owner_a", "stream", { streamId }))
+      .resolves.toMatchObject({ activityGranularity: "detailed" })
+  })
+
+  test("persists attached Session activity with idempotent changes and stable pagination", async () => {
+    const harness = new ConvexHarness(["owner_a", "owner_b"])
+    const streamId = value(await execute(harness, "owner_a", "activity_stream", {
+      type: "create_stream",
+      title: "Ledger",
+    }), "streamId")
+    const first = value(await execute(harness, "owner_a", "activity_first", {
+      type: "create_work_item",
+      streamId,
+      title: "First",
+      completionContract: ownerConfirmationContract(),
+    }), "workItemId")
+    const second = value(await execute(harness, "owner_a", "activity_second", {
+      type: "create_work_item",
+      streamId,
+      title: "Second",
+      completionContract: ownerConfirmationContract(),
+    }), "workItemId")
+    let activityNow = Date.now() + 1_000
+    const mutation = (ownerUserId: string, command: Record<string, unknown>) => harness.transaction(() =>
+      applyWorkGraphActivityMutation(harness, {
+        organizationId: testOrganizationId,
+        ownerUserId,
+        actor: { type: "agent", id: "agent_activity" },
+        now: ++activityNow,
+        command,
+      }))
+    const binding = await mutation("owner_a", {
+      type: "bind_session",
+      operationId: "activity_bind",
+      streamId,
+      sessionId: "session_project",
+      projectId: "project_local",
+    })
+    if (binding.recordType !== "session_binding") throw new Error("Expected Session binding")
+    await expect(mutation("owner_b", {
+      type: "bind_session",
+      operationId: "activity_foreign_bind",
+      streamId,
+      sessionId: "session_project",
+      projectId: "project_local",
+    })).rejects.toMatchObject({ code: "not_found" })
+    const attachment = {
+      type: "attach_session_task",
+      operationId: "activity_attach",
+      bindingId: binding.id,
+      expectedVersion: 1,
+      workItemId: first,
+      resolvedExecution: {
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/execution-mode.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/execution-mode.git", baseRevision: "HEAD" },
+        harness: "claxedo-v2",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
+      },
+    }
+    const attached = await mutation("owner_a", attachment)
+    if (attached.recordType !== "session_binding") throw new Error("Expected attached Session binding")
+    await expect(mutation("owner_a", attachment)).resolves.toEqual(attached)
+    const checkpointInput = {
+      type: "record_agent_checkpoint",
+      operationId: "activity_checkpoint",
+      bindingId: binding.id,
+      level: "progress",
+      summary: "Validated the first boundary",
+      evidenceIds: [],
+    }
+    const checkpoint = await mutation("owner_a", checkpointInput)
+    await expect(mutation("owner_a", checkpointInput)).resolves.toEqual(checkpoint)
+    expect(harness.rowsFor("workgraph_agent_checkpoints")).toHaveLength(1)
+    expect(harness.rowsFor("workgraph_changes").filter((row) => row.resource_type === "agent_checkpoint"))
+      .toHaveLength(1)
+
+    const firstPage = await readTaskActivityProjection(harness, testOrganizationId, "owner_a", {
+      workItemId: first,
+      granularity: "progress",
+      limit: 2,
+    })
+    expect(firstPage).toMatchObject({ entries: expect.any(Array), hasMore: true, nextCursor: expect.any(String) })
+    expect(firstPage.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ category: "checkpoint", summary: "Validated the first boundary" }),
+      expect.objectContaining({ category: "attempt" }),
+    ]))
+    await mutation("owner_a", {
+      type: "record_agent_checkpoint",
+      operationId: "activity_newer_checkpoint",
+      bindingId: binding.id,
+      level: "milestone",
+      summary: "A newer boundary",
+      evidenceIds: [],
+    })
+    await expect(readTaskActivityProjection(harness, testOrganizationId, "owner_a", {
+      workItemId: first,
+      granularity: "progress",
+      after: firstPage.nextCursor,
+      limit: 20,
+    })).resolves.not.toMatchObject({
+      entries: expect.arrayContaining([expect.objectContaining({ summary: "A newer boundary" })]),
+    })
+
+    await expect(mutation("owner_a", {
+      ...attachment,
+      operationId: "activity_attach_second_early",
+      expectedVersion: 2,
+      workItemId: second,
+    })).rejects.toMatchObject({ code: "invalid_transition" })
+    const firstItem = harness.rowsFor("workgraph_work_items").find((row) => row.id === first)!
+    const firstAttempt = harness.rowsFor("workgraph_attempts").find((row) => row.id === attached.currentAttemptId)!
+    await harness.patch(firstItem._id, { state: "completed", completed_at: 200 })
+    await harness.patch(firstAttempt._id, { state: "result", finished_at: 200 })
+    await expect(mutation("owner_a", {
+      ...attachment,
+      operationId: "activity_attach_second",
+      expectedVersion: 2,
+      workItemId: second,
+    })).resolves.toMatchObject({ currentWorkItemId: second, version: 3 })
+
+    const adapter = createConvexWorkGraphActivityPorts({
+      serviceToken: "service-secret",
+      executor: {
+        mutation: async (_fn, args) => ({
+          ok: true,
+          value: await harness.transaction(() => applyWorkGraphActivityMutation(harness, {
+            organizationId: String(args.organization_id),
+            ownerUserId: String(args.owner_subject),
+            actor: { type: String(args.actor_type) as "agent" | "system", id: String(args.actor_id) },
+            requestId: String(args.request_id),
+            now: ++activityNow,
+            command: args.command as Record<string, unknown>,
+          })),
+        }),
+        query: async (_fn, args) => {
+          if (typeof args.binding_id === "string") {
+            return readSessionBinding(harness, String(args.organization_id), String(args.owner_subject), args.binding_id)
+          }
+          const query = args.query as Record<string, unknown> & { kind: string }
+          return readTenantWorkGraphProjection(
+            harness,
+            String(args.organization_id),
+            String(args.owner_subject),
+            query.kind,
+            query,
+          )
+        },
+      },
+    })
+    await expect(adapter.sessionBindings.read(owner("owner_a"), binding.id)).resolves.toMatchObject({
+      id: binding.id,
+      currentWorkItemId: second,
+    })
+    await expect(adapter.sessionBindings.recordCheckpoint(owner("owner_a"), {
+      operationId: "activity_adapter_checkpoint" as never,
+      bindingId: binding.id,
+      level: "progress",
+      summary: "Recorded through the Convex adapter",
+      evidenceIds: [],
+    })).resolves.toMatchObject({ summary: "Recorded through the Convex adapter" })
+    await expect(adapter.activity.list(owner("owner_a"), {
+      workItemId: second as never,
+      granularity: "progress",
+      limit: 20,
+    })).resolves.toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({ summary: "Recorded through the Convex adapter" }),
+      ]),
+    })
+    const secondAttempt = harness.rowsFor("workgraph_attempts").find((row) => row.id ===
+      harness.rowsFor("workgraph_session_bindings").find((row) => row.id === binding.id)?.current_attempt_id)!
+    await harness.patch(secondAttempt._id, { state: "result", finished_at: ++activityNow, updated_at: activityNow })
+    const exported = await exportWorkGraphArchive(harness, "owner_a", "clerk_owner_a", ++activityNow)
+    if (!exported.ok) throw new Error(exported.reason)
+    expect(exported.archive.records).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "session_binding", id: binding.id }),
+      expect.objectContaining({ kind: "agent_checkpoint" }),
+      expect.objectContaining({ kind: "attempt", value: expect.objectContaining({ executionKind: "attached" }) }),
+    ]))
+    const target = new ConvexHarness(["owner_a"])
+    await expect(restoreWorkGraphArchive(target, "owner_a", "clerk_owner_a", {
+      operation_id: "activity_restore",
+      archive_hash: await hashWorkGraphArchive(exported.archive),
+      archive: exported.archive,
+      restored_at: ++activityNow,
+    })).resolves.toMatchObject({ ok: true })
+    const roundTrip = await exportWorkGraphArchive(target, "owner_a", "clerk_owner_a", ++activityNow)
+    if (!roundTrip.ok) throw new Error(roundTrip.reason)
+    expect(roundTrip.archive.records).toEqual(exported.archive.records)
+  })
+
   test("rejects transitive dependency cycles without replacing the previous dependency set", async () => {
     const harness = new ConvexHarness(["owner_a"])
     const streamId = value(await execute(harness, "owner_a", "cycle_stream", {
@@ -102,7 +320,8 @@ describe("Convex WorkGraph store", () => {
       type: "create_stream",
       title: "Mode Stream",
       execution: {
-        environment: { kind: "hosted_workspace" },
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/execution-mode.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/execution-mode.git", baseRevision: "HEAD" },
         harness: "opencode",
         agent: "build",
         model: { providerId: "openai", modelId: "gpt-5" },
@@ -768,8 +987,6 @@ describe("Convex WorkGraph store", () => {
       expectedVersion: 1,
       defaults: {
         execution: {
-          environment: { kind: "hosted_workspace" },
-          repository: { remoteUrl: "https://example.com/claxedo.git", baseRevision: "dev" },
           harness: "opencode",
           agent: "build",
           model: { providerId: "openai", modelId: "gpt-5" },
@@ -781,8 +998,8 @@ describe("Convex WorkGraph store", () => {
       },
     }
     const updated = await execute(harness, "owner_a", "defaults_once", command)
+    if (!updated.ok) throw new Error(`Expected WorkGraph defaults update: ${JSON.stringify(updated)}`)
     expect(updated).toMatchObject({ ok: true })
-    if (!updated.ok) throw new Error("Expected WorkGraph defaults update")
     expect(readChangeCursor(updated.cursor, testOrganizationId, "owner_a")).toBe(1)
     expect(await execute(harness, "owner_a", "defaults_once", command)).toEqual(updated)
     await expect(execute(harness, "owner_a", "defaults_once", {
@@ -820,7 +1037,14 @@ describe("Convex WorkGraph store", () => {
     )
 
     const streamId = value(
-      await execute(harness, "owner_a", "defaults_stream", { type: "create_stream", title: "Inherited execution" }),
+      await execute(harness, "owner_a", "defaults_stream", {
+        type: "create_stream",
+        title: "Inherited execution",
+        execution: {
+          environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/inherited.git" },
+          repository: { remoteUrl: "https://github.com/claxedo/inherited.git", baseRevision: "dev" },
+        },
+      }),
       "streamId",
     )
     const workItemId = value(
@@ -842,7 +1066,11 @@ describe("Convex WorkGraph store", () => {
       executionMode: "autonomous",
     })).resolves.toMatchObject({ ok: true, value: { attemptId: expect.any(String) } })
     expect(harness.rowsFor("workgraph_attempts")).toContainEqual(expect.objectContaining({
-      resolved_execution: command.defaults.execution,
+      resolved_execution: {
+        ...command.defaults.execution,
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/inherited.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/inherited.git", baseRevision: "dev" },
+      },
     }))
   })
 
@@ -1449,6 +1677,60 @@ describe("Convex WorkGraph store", () => {
       created_at: 1,
       stream_id: streamId,
     })
+    await harness.insert("workgraph_attempts", {
+      owner_user_id: "owner_a",
+      id: "attached_attempt",
+      stream_id: streamId,
+      work_item_id: "joined_item",
+      attempt_number: 1,
+      state: "result",
+      execution_kind: "attached",
+      resolved_execution: {},
+      admitted_at: 1,
+      started_at: 1,
+      finished_at: 2,
+      session_id: "attached_session",
+      source_revision_refs: [],
+      provenance: {},
+      row_version: 1,
+      schema_version: 1,
+      created_at: 1,
+      updated_at: 2,
+    })
+    await harness.insert("workgraph_session_bindings", {
+      owner_user_id: "owner_a",
+      id: "session_binding",
+      stream_id: streamId,
+      session_id: "attached_session",
+      project_id: "project_local",
+      current_work_item_id: "joined_item",
+      current_attempt_id: "attached_attempt",
+      state: "active",
+      bound_at: 1,
+      provenance: {},
+      row_version: 1,
+      schema_version: 1,
+      created_at: 1,
+      updated_at: 1,
+    })
+    await harness.insert("workgraph_agent_checkpoints", {
+      owner_user_id: "owner_a",
+      id: "agent_checkpoint",
+      stream_id: streamId,
+      work_item_id: "joined_item",
+      attempt_id: "attached_attempt",
+      session_binding_id: "session_binding",
+      level: "progress",
+      summary: "Ready to delete",
+      evidence_ids: [],
+      occurred_at: 2,
+      operation_id: "checkpoint_operation",
+      provenance: {},
+      row_version: 1,
+      schema_version: 1,
+      created_at: 2,
+      updated_at: 2,
+    })
     await expect(
       execute(harness, "owner_a", "delete", { type: "delete_stream", streamId, expectedVersion: 1, reason: "discard" }),
     ).resolves.toMatchObject({ ok: true })
@@ -1478,6 +1760,9 @@ describe("Convex WorkGraph store", () => {
     expect(harness.rowsFor("workgraph_streams")).toEqual([])
     expect(harness.rowsFor("workgraph_work_items")).toEqual([])
     expect(harness.rowsFor("workgraph_decision_work_items")).toEqual([])
+    expect(harness.rowsFor("workgraph_agent_checkpoints")).toEqual([])
+    expect(harness.rowsFor("workgraph_session_bindings")).toEqual([])
+    expect(harness.rowsFor("workgraph_attempts")).toEqual([])
     expect(harness.rowsFor("workgraph_events").map((row) => row.stream_id)).toEqual([streamId, streamId])
     expect(harness.rowsFor("workgraph_changes").map((row) => row.stream_id)).toEqual([streamId, streamId])
   })
@@ -1756,7 +2041,8 @@ describe("Convex WorkGraph store", () => {
         type: "create_stream",
         title: "Cloud execution",
         execution: {
-          environment: { kind: "hosted_workspace" },
+          environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/cloud-execution.git" },
+          repository: { remoteUrl: "https://github.com/claxedo/cloud-execution.git", baseRevision: "HEAD" },
           harness: "opencode",
           agent: "build",
           model: { providerId: "openai", modelId: "gpt-5" },
@@ -2391,6 +2677,21 @@ describe("Convex WorkGraph store", () => {
       provenance: { actor: { type: "agent", id: "build" }, operationId: "attempt_all" },
       row_version: 1, schema_version: 1, created_at: 10, updated_at: 12,
     })
+    await source.db.insert("workgraph_session_bindings", {
+      owner_user_id: "owner_a", id: "binding_all", stream_id: streamId, session_id: "session_attempt",
+      project_id: "project_all", current_work_item_id: firstItemId, current_attempt_id: "attempt_all",
+      state: "active", bound_at: 10,
+      provenance: { actor: { type: "agent", id: "build" }, operationId: "binding_all" },
+      row_version: 1, schema_version: 1, created_at: 10, updated_at: 12,
+    })
+    await source.db.insert("workgraph_agent_checkpoints", {
+      owner_user_id: "owner_a", id: "checkpoint_all", stream_id: streamId, work_item_id: firstItemId,
+      attempt_id: "attempt_all", session_binding_id: "binding_all", level: "progress",
+      summary: "Validated the canonical archive", evidence_ids: [], occurred_at: 11,
+      operation_id: "checkpoint_all",
+      provenance: { actor: { type: "agent", id: "build" }, operationId: "checkpoint_all" },
+      row_version: 1, schema_version: 1, created_at: 11, updated_at: 11,
+    })
     await source.db.insert("workgraph_source_views", {
       owner_user_id: "owner_a", id: "view_all", workgraph_id: "workgraph_default",
       team_connection_id: "connection_1", provider: "github", provider_user_id: "octocat", filters: {},
@@ -2445,7 +2746,7 @@ describe("Convex WorkGraph store", () => {
     if (!exported.ok) throw new Error(exported.reason)
     expect(new Set(exported.archive.records.map((record) => record.kind))).toEqual(new Set([
       "workgraph", "work_source", "work_source_revision", "source_view", "intake_candidate", "external_identity",
-      "stream", "outcome", "work_item", "work_item_dependency", "attempt", "decision", "decision_work_item",
+      "stream", "outcome", "work_item", "work_item_dependency", "attempt", "session_binding", "agent_checkpoint", "decision", "decision_work_item",
       "evidence", "durable_effect_receipt", "recap", "notification", "record_source_revision", "admission_proposal",
       "operation_result", "event", "change", "runtime_effect", "migration_intake", "completed_external_effect",
       "terminal_scheduled_job",
@@ -2693,7 +2994,7 @@ describe("Convex WorkGraph Attention conformance v1", () => {
   })) test(conformance.name, conformance.run)
 })
 
-describe("Convex AtomicWorkGraphStore conformance v5", () => {
+describe("Convex AtomicWorkGraphStore conformance v6", () => {
   for (const conformance of workGraphAdapterConformance(async (input) => {
     vi.stubEnv("CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", "service-secret")
     const organizationId = String(input.owners.first.organizationId)
@@ -2709,7 +3010,8 @@ describe("Convex AtomicWorkGraphStore conformance v5", () => {
       service: createConvexWorkGraphService({ serviceToken: "service-secret", executor }),
       attemptRuntime,
       executionProfile: {
-        environment: { kind: "hosted_workspace" },
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/conformance.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/conformance.git", baseRevision: "HEAD" },
         harness: "claxedo-v2",
         agent: "build",
         model: { providerId: "openai", modelId: "gpt-5" },
@@ -2719,6 +3021,78 @@ describe("Convex AtomicWorkGraphStore conformance v5", () => {
       },
       restart: async () => ({ attemptRuntime: convexConformanceAttemptRuntime(harness) }),
       faults: { failNextAppend: () => harness.failNextInsert("workgraph_events") },
+    }
+  })) test(conformance.name, conformance.run)
+})
+
+describe("Convex WorkGraph activity conformance v1", () => {
+  for (const conformance of workGraphActivityConformance(async (input) => {
+    const organizationId = String(input.owners.first.organizationId)
+    const harness = new ConvexHarness(
+      [String(input.owners.first.ownerUserId), String(input.owners.second.ownerUserId)],
+      organizationId,
+    )
+    let seed = 0
+    const executor = {
+      mutation: async (_fn: unknown, args: Record<string, unknown>) => ({
+        ok: true,
+        value: await harness.transaction(() => applyWorkGraphActivityMutation(harness, {
+          organizationId: String(args.organization_id),
+          ownerUserId: String(args.owner_subject),
+          actor: { type: String(args.actor_type) as "agent" | "system", id: String(args.actor_id) },
+          requestId: String(args.request_id),
+          now: 1_000,
+          command: args.command as Record<string, unknown>,
+        })),
+      }),
+      query: async (_fn: unknown, args: Record<string, unknown>) => {
+        if (typeof args.binding_id === "string") {
+          return readSessionBinding(harness, String(args.organization_id), String(args.owner_subject), args.binding_id)
+        }
+        const query = args.query as Record<string, unknown>
+        return readTaskActivityProjection(
+          harness,
+          String(args.organization_id),
+          String(args.owner_subject),
+          query,
+        )
+      },
+    }
+    const ports = () => createConvexWorkGraphActivityPorts({ serviceToken: "service-secret", executor })
+    const initial = ports()
+    return {
+      ...initial,
+      snapshot: async (context, query) => WorkGraphSnapshotPageSchema.parse(await readTenantWorkGraphProjection(
+        harness,
+        organizationId,
+        String(context.ownerUserId),
+        "snapshot",
+        query,
+      )),
+      seed: async (context) => {
+        const suffix = ++seed
+        const command = (operationId: string, value: Record<string, unknown>) => applyWorkGraphCommand(harness, {
+          organizationId,
+          ownerUserId: String(context.ownerUserId),
+          ownerSubject: String(context.ownerUserId),
+          actor: context.actor,
+          requestId: String(context.requestId),
+          operationId,
+          command: { version: 1, ...value },
+        })
+        const streamId = value(await command(`activity_conformance_stream_${suffix}`, {
+          type: "create_stream",
+          title: `Activity ${suffix}`,
+        }), "streamId")
+        const workItemId = value(await command(`activity_conformance_item_${suffix}`, {
+          type: "create_work_item",
+          streamId,
+          title: `Task ${suffix}`,
+          completionContract: ownerConfirmationContract(),
+        }), "workItemId")
+        return { streamId: streamId as never, workItemId: workItemId as never }
+      },
+      restart: async () => ports(),
     }
   })) test(conformance.name, conformance.run)
 })
@@ -3120,8 +3494,10 @@ class ConvexHarness {
 
   query(table: string) {
     let selected = [...(this.rows.get(table) ?? [])]
+    let selectedIndex = ""
     const chain = {
       withIndex: (index: string, build: (query: any) => any) => {
+        selectedIndex = index
         const filters: Array<[string, string, unknown]> = []
         const query = {
           eq: (field: string, expected: unknown) => {
@@ -3132,15 +3508,22 @@ class ConvexHarness {
             filters.push([field, "gt", expected])
             return query
           },
+          lt: (field: string, expected: unknown) => {
+            filters.push([field, "lt", expected])
+            return query
+          },
+          lte: (field: string, expected: unknown) => {
+            filters.push([field, "lte", expected])
+            return query
+          },
         }
         build(query)
         selected = selected.filter((row) =>
           filters.every(([field, operator, expected]) =>
-            operator === "eq"
-              ? row[field] === expected
-              : typeof row[field] === "number" && typeof expected === "number"
-                ? row[field] > expected
-                : String(row[field]).localeCompare(String(expected)) > 0,
+            operator === "eq" ? row[field] === expected
+              : operator === "gt" ? compareHarnessValue(row[field], expected) > 0
+                : operator === "lt" ? compareHarnessValue(row[field], expected) < 0
+                  : compareHarnessValue(row[field], expected) <= 0,
           ),
         )
         if (index === "by_owner_created_id") {
@@ -3156,6 +3539,10 @@ class ConvexHarness {
           and: (...predicates: Array<(row: Record<string, unknown>) => boolean>) => (row: Record<string, unknown>) => predicates.every((predicate) => predicate(row)),
           or: (...predicates: Array<(row: Record<string, unknown>) => boolean>) => (row: Record<string, unknown>) => predicates.some((predicate) => predicate(row)),
           neq: (field: string, expected: unknown) => (row: Record<string, unknown>) => row[field] !== expected,
+          lt: (field: string, expected: unknown) => (row: Record<string, unknown>) =>
+            typeof row[field] === "number" && typeof expected === "number"
+              ? row[field] < expected
+              : String(row[field]).localeCompare(String(expected)) < 0,
           lte: (field: string, expected: number) => (row: Record<string, unknown>) => Number(row[field]) <= expected,
         }
         selected = selected.filter(build(query))
@@ -3169,7 +3556,15 @@ class ConvexHarness {
       take: async (limit: number) => selected.slice(0, limit),
       first: async () => selected[0] ?? null,
       order: (direction: "asc" | "desc") => {
-        selected.sort((left, right) => (Number(left.updated_at ?? left.created_at ?? 0) - Number(right.updated_at ?? right.created_at ?? 0)) * (direction === "desc" ? -1 : 1))
+        const fields = selectedIndex === "by_tenant_item_occurred_id" ? ["occurred_at", "id"]
+          : selectedIndex === "by_tenant_item_updated_id" ? ["updated_at", "id"]
+            : ["by_tenant_resource_created_id", "by_tenant_subject_created_id", "by_tenant_stream_created_id", "by_tenant_stream_occurred_id"].includes(selectedIndex)
+              ? [selectedIndex === "by_tenant_stream_occurred_id" ? "occurred_at" : "created_at", "id"]
+              : ["updated_at", "occurred_at", "created_at", "sequence", "id"]
+        selected.sort((left, right) => {
+          const comparison = fields.reduce((result, field) => result || compareHarnessValue(left[field], right[field]), 0)
+          return comparison * (direction === "desc" ? -1 : 1)
+        })
         return chain
       },
     }
@@ -3209,6 +3604,14 @@ class ConvexHarness {
         rows.filter((row) => row._id !== id),
       )
   }
+}
+
+function compareHarnessValue(left: unknown, right: unknown) {
+  if (left === right) return 0
+  if (typeof left === "number" && typeof right === "number") return left - right
+  if (left === undefined) return -1
+  if (right === undefined) return 1
+  return String(left).localeCompare(String(right))
 }
 
 function handler(fn: unknown) {

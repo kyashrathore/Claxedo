@@ -31,6 +31,7 @@ import {
   OutcomeIDSchema,
   OwnerUserIDSchema,
   RecapIDSchema,
+  SessionBindingIDSchema,
   StreamIDSchema,
   WorkGraphIDSchema,
   WorkItemIDSchema,
@@ -62,6 +63,12 @@ import {
   StreamReplacementResetSchema,
   WorkGraphRecordReferenceSchema,
 } from "./records"
+import {
+  AgentCheckpointLevelSchema,
+  DEFAULT_STREAM_ACTIVITY_GRANULARITY,
+  SessionBindingStateSchema,
+  StreamActivityGranularitySchema,
+} from "./activity"
 import { WorkSourceOriginSchema, WorkSourceRevisionRefSchema } from "./work-source"
 
 export const WORKGRAPH_ARCHIVE_VERSION = 1 as const
@@ -78,6 +85,8 @@ export const WorkGraphArchiveRecordKindSchema = z.enum([
   "work_item",
   "work_item_dependency",
   "attempt",
+  "session_binding",
+  "agent_checkpoint",
   "decision",
   "decision_work_item",
   "evidence",
@@ -212,6 +221,7 @@ const StreamArchiveValueSchema = z.strictObject({
   pinned: z.boolean(),
   executionDefaults: ExecutionProfileDefaultsSchema,
   recapDefaults: RecapProfileDefaultsSchema,
+  activityGranularity: StreamActivityGranularitySchema.default(DEFAULT_STREAM_ACTIVITY_GRANULARITY),
   memory: StreamMemorySchema.optional(),
   activity: StreamActivitySchema,
   envelope: StreamEnvelopeSchema.optional(),
@@ -286,6 +296,7 @@ const AttemptArchiveValueSchema = z.strictObject({
   workItemId: WorkItemIDSchema,
   attemptNumber: z.number().int().positive(),
   state: AttemptStateSchema,
+  executionKind: z.enum(["managed", "attached"]).default("managed"),
   resolvedExecution: ResolvedExecutionProfileSchema,
   admittedAt: timestamp,
   startedAt: timestamp.optional(),
@@ -300,6 +311,36 @@ const AttemptArchiveValueSchema = z.strictObject({
     })
     .optional(),
   sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
+})
+
+const SessionBindingArchiveValueSchema = z.strictObject({
+  ...publicMutable,
+  streamId: StreamIDSchema,
+  sessionId: text.max(512),
+  projectId: text.max(512),
+  currentWorkItemId: WorkItemIDSchema.optional(),
+  currentAttemptId: AttemptIDSchema.optional(),
+  state: SessionBindingStateSchema,
+  boundAt: timestamp,
+  releasedAt: timestamp.optional(),
+}).superRefine((binding, context) => {
+  if (binding.currentAttemptId && !binding.currentWorkItemId) {
+    context.addIssue({ code: "custom", path: ["currentAttemptId"], message: "A bound Attempt requires a current Work Item" })
+  }
+  if ((binding.state === "released") === (binding.releasedAt !== undefined)) return
+  context.addIssue({ code: "custom", path: ["releasedAt"], message: "Released bindings require releasedAt" })
+})
+
+const AgentCheckpointArchiveValueSchema = z.strictObject({
+  ...publicMutable,
+  streamId: StreamIDSchema,
+  workItemId: WorkItemIDSchema,
+  attemptId: AttemptIDSchema,
+  sessionBindingId: SessionBindingIDSchema,
+  level: AgentCheckpointLevelSchema,
+  summary: text.max(1_000),
+  evidenceIds: z.array(EvidenceIDSchema).max(100),
+  occurredAt: timestamp,
 })
 
 const DecisionArchiveValueSchema = z.strictObject({
@@ -566,6 +607,8 @@ export const WorkGraphArchiveRecordSchema = z.discriminatedUnion("kind", [
   archiveRecord("work_item", WorkItemArchiveValueSchema),
   archiveRecord("work_item_dependency", WorkItemDependencyArchiveValueSchema),
   archiveRecord("attempt", AttemptArchiveValueSchema),
+  archiveRecord("session_binding", SessionBindingArchiveValueSchema),
+  archiveRecord("agent_checkpoint", AgentCheckpointArchiveValueSchema),
   archiveRecord("decision", DecisionArchiveValueSchema),
   archiveRecord("decision_work_item", DecisionWorkItemArchiveValueSchema),
   archiveRecord("evidence", EvidenceArchiveValueSchema),

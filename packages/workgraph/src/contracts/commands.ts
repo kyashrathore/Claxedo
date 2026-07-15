@@ -16,6 +16,7 @@ import {
 import { StreamLifecycleStateSchema, StreamVisibilitySchema } from "./lifecycle"
 import { AuthoringSourceRevisionSchema, WorkSourceRevisionRefSchema } from "./work-source"
 import { ChangeCursorSchema } from "./change-cursor"
+import { StreamActivityGranularitySchema } from "./activity"
 
 export { ChangeCursorSchema, type ChangeCursor } from "./change-cursor"
 
@@ -70,6 +71,7 @@ export const CreateStreamCommandSchema = z.strictObject({
   source: WorkSourceRevisionRefSchema.optional(),
   execution: ExecutionProfileDefaultsSchema.optional(),
   recap: RecapProfileDefaultsSchema.optional(),
+  activityGranularity: StreamActivityGranularitySchema.optional(),
 })
 export type CreateStreamCommand = z.infer<typeof CreateStreamCommandSchema>
 
@@ -82,6 +84,7 @@ export const UpdateStreamCommandSchema = z.strictObject({
   description: z.string().optional(),
   execution: ExecutionProfileDefaultsSchema.optional(),
   recap: RecapProfileDefaultsSchema.optional(),
+  activityGranularity: StreamActivityGranularitySchema.optional(),
 })
 export type UpdateStreamCommand = z.infer<typeof UpdateStreamCommandSchema>
 

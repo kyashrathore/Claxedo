@@ -308,6 +308,21 @@ function canonicalRecords() {
       },
     },
     {
+      kind: "agent_checkpoint",
+      id: "checkpoint_1",
+      value: {
+        ...publicRecord,
+        streamId: "stream_1",
+        workItemId: "work_item_1",
+        attemptId: "attempt_1",
+        sessionBindingId: "binding_1",
+        level: "progress",
+        summary: "Validated the release boundary",
+        evidenceIds: ["evidence_1"],
+        occurredAt: 1,
+      },
+    },
+    {
       kind: "change",
       id: "change_1",
       value: {
@@ -528,6 +543,20 @@ function canonicalRecords() {
         createdAt: 1,
         updatedAt: 2,
         completedAt: 2,
+      },
+    },
+    {
+      kind: "session_binding",
+      id: "binding_1",
+      value: {
+        ...publicRecord,
+        streamId: "stream_1",
+        sessionId: "session_1",
+        projectId: "project_1",
+        currentWorkItemId: "work_item_1",
+        currentAttemptId: "attempt_1",
+        state: "active",
+        boundAt: 1,
       },
     },
     {

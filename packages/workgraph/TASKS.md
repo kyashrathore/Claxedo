@@ -21,7 +21,7 @@ This ledger records delivery status against the personal-first contracts in [PRD
 - Tenant-scoped bounded Attention pages unify reviewable proposals, Decisions, Task and Attempt attention, actionable Recaps, configuration requirements, and aggregated external-issue or independent-Session candidates without loading the full snapshot.
 - Provider webhook paths use Connections-owned signing credentials, user-filtered Source View routing, durable delivery deduplication, bounded fan-out, and refresh enqueueing; hosted verification remains open.
 - Actionable Recaps atomically publish exactly one durable tenant-scoped in-app notification. Notification acknowledgement uses versioned compare-and-set against the rendered delivery; final Convex verification remains part of hosted hardening.
-- Core adapter conformance version 5 covers opaque tenant-and-filter-bound cursors, snapshot pagination and restart convergence, leases, Attempt runtime recovery, and source-revision replacement fencing across maintained repository compositions.
+- Core adapter conformance version 6 covers opaque tenant-and-filter-bound cursors, snapshot pagination and restart convergence, leases, Attempt runtime recovery, source-revision replacement fencing, Session-binding exact retry, and bounded Task-activity pagination across maintained repository compositions.
 - Archive conformance version 1 covers canonical tenant export/restore and rejection semantics for SQLite and Convex.
 - SQLite and Convex cover snapshot resume, archive, cleanup, owner deletion, and concurrent deletion/write barriers in repository verification.
 - Targeted Evidence reads provide exact tenant/subject-bound paginated inspection in SQLite and Convex.

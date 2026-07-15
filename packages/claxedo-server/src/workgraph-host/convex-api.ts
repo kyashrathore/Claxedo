@@ -12,6 +12,10 @@ type WorkGraphConvexApi = {
     read: ConvexQuery
     readForService: ConvexQuery
   }
+  workgraphActivity: {
+    mutateForService: ConvexMutation
+    readBindingForService: ConvexQuery
+  }
   workgraphAttention: {
     acknowledgeForService: ConvexMutation
   }

@@ -21,6 +21,15 @@ import type {
   ReplacementReviewInput,
   WorkItemAttemptListInput,
   WorkItemAttemptPage,
+  TaskActivityListInput,
+  TaskActivityPage,
+  AgentCheckpointDto,
+  AttachSessionTaskInput,
+  BindSessionInput,
+  RecordAgentCheckpointInput,
+  ReleaseSessionBindingInput,
+  SessionBindingDto,
+  SessionBindingID,
   WorkItemDto,
   StreamDto,
   StreamID,
@@ -46,6 +55,10 @@ import {
   RecapDtoSchema,
   ReplacementReviewSchema,
   SnapshotResumeCursorError,
+  TaskActivityPageCursorError,
+  TaskActivityPageSchema,
+  AgentCheckpointDtoSchema,
+  SessionBindingDtoSchema,
   WorkItemAttemptPageCursorError,
   WorkItemAttemptPageSchema,
   WorkItemDtoSchema,
@@ -56,8 +69,9 @@ import {
   hashWorkGraphArchive,
   validateWorkGraphArchive,
 } from "@claxedo/workgraph/contracts"
-import type { AttentionCursorErrorReason, ChangeCursorErrorReason, EvidencePageCursorErrorReason, SnapshotResumeCursorErrorReason, WorkItemAttemptPageCursorErrorReason, WorkSourcePageCursorErrorReason } from "@claxedo/workgraph/contracts"
-import type { WorkGraphArchivePort, WorkGraphArchiveRestoreResult } from "@claxedo/workgraph/ports"
+import type { AttentionCursorErrorReason, ChangeCursorErrorReason, EvidencePageCursorErrorReason, SnapshotResumeCursorErrorReason, TaskActivityPageCursorErrorReason, WorkItemAttemptPageCursorErrorReason, WorkSourcePageCursorErrorReason } from "@claxedo/workgraph/contracts"
+import { WorkGraphSessionBindingError } from "@claxedo/workgraph/ports"
+import type { WorkGraphActivityPort, WorkGraphArchivePort, WorkGraphArchiveRestoreResult, WorkGraphSessionBindingErrorCode, WorkGraphSessionBindingPort } from "@claxedo/workgraph/ports"
 import { createWorkGraphService, defineAtomicWorkGraphStore } from "@claxedo/workgraph/hosted"
 import { ConvexHttpClient } from "convex/browser"
 import { workGraphConvexApi } from "./convex-api"
@@ -169,6 +183,8 @@ export function createConvexWorkGraphStore(input: Input) {
       if (attentionReason) throw new AttentionCursorError(attentionReason)
       const attemptReason = kind === "work_item_attempts" ? attemptCursorErrorReason(error) : undefined
       if (attemptReason) throw new WorkItemAttemptPageCursorError(attemptReason)
+      const activityReason = kind === "work_item_activity" ? taskActivityCursorErrorReason(error) : undefined
+      if (activityReason) throw new TaskActivityPageCursorError(activityReason)
       const changeReason = kind === "changes" || kind === "stream_changes" ? changeCursorErrorReason(error) : undefined
       if (changeReason) throw new ChangeCursorError(changeReason)
       const sourceReason = kind === "sources" ? workSourceCursorErrorReason(error) : undefined
@@ -268,6 +284,8 @@ export function createConvexWorkGraphStore(input: Input) {
           page.attempts.forEach((detail) => publicOwner(context, detail.attempt))
           return page
         },
+        listActivity: async (context: WorkGraphContext, queryInput: TaskActivityListInput): Promise<TaskActivityPage> =>
+          TaskActivityPageSchema.parse(await read(context, "work_item_activity", queryInput)),
         read: async (context: WorkGraphContext, queryInput: Readonly<{ workItemId: string }>) =>
           await read(context, "work_item", queryInput) as undefined | { id: string; completionSatisfied: boolean } ?? undefined,
       },
@@ -368,8 +386,111 @@ function attemptCursorReason(value: unknown): value is WorkItemAttemptPageCursor
   return value === "invalid" || value === "owner_mismatch" || value === "work_item_mismatch"
 }
 
+function taskActivityCursorErrorReason(error: unknown): TaskActivityPageCursorErrorReason | undefined {
+  if (error instanceof TaskActivityPageCursorError) return error.reason
+  const value = error && typeof error === "object" && "data" in error ? error.data : error
+  if (!value || typeof value !== "object" || !("code" in value) || value.code !== "cursor_invalid" || !("reason" in value)) return
+  if (value.reason === "invalid" || value.reason === "owner_mismatch" || value.reason === "work_item_mismatch" || value.reason === "granularity_mismatch") {
+    return value.reason
+  }
+}
+
 export function createConvexWorkGraphService(input: Input) {
   return createWorkGraphService(createConvexWorkGraphStore(input))
+}
+
+export function createConvexWorkGraphActivityPorts(input: Input): Readonly<{
+  activity: WorkGraphActivityPort
+  sessionBindings: WorkGraphSessionBindingPort
+}> {
+  if (!input.executor && !input.url) throw new Error("Convex WorkGraph URL is required")
+  if (!input.serviceToken) throw new Error("Convex WorkGraph service token is required for Session binding operations")
+  const exec = input.executor ?? createWorkGraphConvexExecutor(input.url!, input.bearerToken)
+  const owner = (context: WorkGraphContext) => {
+    if (context.access.mode !== "owner") throw new WorkGraphSessionBindingError("not_found", "Owner access is required")
+    return context.ownerUserId
+  }
+  const mutate = async (
+    context: WorkGraphContext,
+    command: Record<string, unknown>,
+  ): Promise<SessionBindingDto | AgentCheckpointDto> => {
+    const result = await exec.mutation(workGraphConvexApi.workgraphActivity.mutateForService, {
+      service_token: input.serviceToken,
+      organization_id: context.organizationId,
+      owner_subject: owner(context),
+      actor_type: context.actor.type === "system" ? "system" : "agent",
+      actor_id: context.actor.id,
+      request_id: context.requestId,
+      command,
+    }) as Readonly<{
+      ok: true
+      value: unknown
+    }> | Readonly<{
+      ok: false
+      error: Readonly<{ code: unknown; message: unknown }>
+    }>
+    if (!result.ok) {
+      const code = sessionBindingErrorCode(result.error.code) ? result.error.code : "conflict"
+      const message = typeof result.error.message === "string" ? result.error.message : "Convex WorkGraph activity mutation failed"
+      throw new WorkGraphSessionBindingError(code, message)
+    }
+    if (result.value && typeof result.value === "object" && "recordType" in result.value && result.value.recordType === "agent_checkpoint") {
+      return AgentCheckpointDtoSchema.parse(result.value)
+    }
+    return SessionBindingDtoSchema.parse(result.value)
+  }
+  const sessionBindings: WorkGraphSessionBindingPort = {
+    bind: async (context, binding: BindSessionInput) => {
+      const result = await mutate(context, { type: "bind_session", ...binding })
+      if (result.recordType !== "session_binding") throw new WorkGraphSessionBindingError("conflict", "Convex returned the wrong activity record")
+      return result
+    },
+    attachTask: async (context, attachment: AttachSessionTaskInput) => {
+      const result = await mutate(context, { type: "attach_session_task", ...attachment })
+      if (result.recordType !== "session_binding") throw new WorkGraphSessionBindingError("conflict", "Convex returned the wrong activity record")
+      return result
+    },
+    recordCheckpoint: async (context, checkpoint: RecordAgentCheckpointInput) => {
+      const result = await mutate(context, { type: "record_agent_checkpoint", ...checkpoint })
+      if (result.recordType !== "agent_checkpoint") throw new WorkGraphSessionBindingError("conflict", "Convex returned the wrong activity record")
+      return result
+    },
+    release: async (context, release: ReleaseSessionBindingInput) => {
+      const result = await mutate(context, { type: "release_session_binding", ...release })
+      if (result.recordType !== "session_binding") throw new WorkGraphSessionBindingError("conflict", "Convex returned the wrong activity record")
+      return result
+    },
+    read: async (context, bindingId: SessionBindingID) => {
+      const result = await exec.query(workGraphConvexApi.workgraphActivity.readBindingForService, {
+        service_token: input.serviceToken,
+        organization_id: context.organizationId,
+        owner_subject: owner(context),
+        binding_id: bindingId,
+      })
+      return result ? SessionBindingDtoSchema.parse(result) : undefined
+    },
+  }
+  const activity: WorkGraphActivityPort = {
+    list: async (context, queryInput) => {
+      try {
+        return TaskActivityPageSchema.parse(await exec.query(workGraphConvexApi.workgraphChanges.readForService, {
+          service_token: input.serviceToken,
+          organization_id: context.organizationId,
+          owner_subject: owner(context),
+          query: { kind: "work_item_activity", ...queryInput },
+        }))
+      } catch (error) {
+        const reason = taskActivityCursorErrorReason(error)
+        if (reason) throw new TaskActivityPageCursorError(reason)
+        throw error
+      }
+    },
+  }
+  return { activity, sessionBindings }
+}
+
+function sessionBindingErrorCode(value: unknown): value is WorkGraphSessionBindingErrorCode {
+  return value === "not_found" || value === "conflict" || value === "not_ready" || value === "invalid_transition"
 }
 
 export function createConvexWorkGraphArchivePort(input: Input): WorkGraphArchivePort {

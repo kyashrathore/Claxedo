@@ -25,6 +25,7 @@ import {
   WorkItemStateSchema,
 } from "./lifecycle"
 import { WorkSourceRevisionRefSchema } from "./work-source"
+import { DEFAULT_STREAM_ACTIVITY_GRANULARITY, StreamActivityGranularitySchema } from "./activity"
 
 const text = z.string().trim().min(1)
 const timestamp = z.number().int().nonnegative()
@@ -99,6 +100,7 @@ export const StreamDtoSchema = z.strictObject({
   pinned: z.boolean(),
   executionDefaults: ExecutionProfileDefaultsSchema,
   recapDefaults: RecapProfileDefaultsSchema,
+  activityGranularity: StreamActivityGranularitySchema.default(DEFAULT_STREAM_ACTIVITY_GRANULARITY),
   memory: StreamMemorySchema.optional(),
   activity: StreamActivitySchema,
   envelope: StreamEnvelopeSchema.optional(),
@@ -181,6 +183,7 @@ export const AttemptDtoSchema = z
     result: AttemptResultSchema.optional(),
     attentionReason: text.optional(),
     sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
+    executionKind: z.enum(["managed", "attached"]).default("managed"),
     executionReferences: AttemptExecutionReferencesSchema.optional(),
   })
   .transform(deepFreeze)

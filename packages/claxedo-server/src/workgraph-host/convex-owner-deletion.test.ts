@@ -302,6 +302,22 @@ async function seedOwner(
       envelope_id: stream.envelopeId,
       child_workspace_id: stream.childIsolationId,
     }))
+    await harness.insert("workgraph_session_bindings", ownerRow(context, {
+      id: `binding_${stream.streamId}`,
+      stream_id: stream.streamId,
+      session_id: `session_${stream.streamId}`,
+      project_id: `project_${stream.streamId}`,
+      current_attempt_id: `attempt_${stream.streamId}`,
+      state: "active",
+    }))
+    await harness.insert("workgraph_agent_checkpoints", ownerRow(context, {
+      id: `checkpoint_${stream.streamId}`,
+      stream_id: stream.streamId,
+      attempt_id: `attempt_${stream.streamId}`,
+      session_binding_id: `binding_${stream.streamId}`,
+      level: "progress",
+      summary: "Owner deletion checkpoint",
+    }))
   }
   await harness.insert("workgraph_outbox", ownerRow(context, { id: "completed_outbox", status: "completed" }))
   await harness.insert("workgraph_due_jobs", ownerRow(context, { id: "completed_job", status: "completed" }))

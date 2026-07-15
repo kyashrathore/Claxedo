@@ -315,6 +315,36 @@ function seedWorkspace(
        envelope_id, child_workspace_id, terminal_result_json, created_at, updated_at, finished_at)
     VALUES (?, ?, ?, ?, ?, 1, 'result', '{}', ?, ?, '{"summary":"done","artifacts":[]}', 10, 11, 11)
   `).run(context.organizationId, context.ownerUserId, `attempt_${workItemId}`, streamId, workItemId, envelopeId, childIsolationId)
+  database.prepare(`
+    INSERT INTO wg_v2_session_bindings
+      (organization_id, owner_user_id, id, stream_id, session_id, project_id, current_work_item_id,
+       current_attempt_id, state, bound_at, provenance_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 10, '{}', 10, 10)
+  `).run(
+    context.organizationId,
+    context.ownerUserId,
+    `binding_${workItemId}`,
+    streamId,
+    `session_${workItemId}`,
+    `project_${workItemId}`,
+    workItemId,
+    `attempt_${workItemId}`,
+  )
+  database.prepare(`
+    INSERT INTO wg_v2_agent_checkpoints
+      (organization_id, owner_user_id, id, stream_id, work_item_id, attempt_id, session_binding_id,
+       level, summary, evidence_ids_json, occurred_at, provenance_json, operation_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'progress', 'Owner deletion checkpoint', '[]', 10, '{}', ?, 10, 10)
+  `).run(
+    context.organizationId,
+    context.ownerUserId,
+    `checkpoint_${workItemId}`,
+    streamId,
+    workItemId,
+    `attempt_${workItemId}`,
+    `binding_${workItemId}`,
+    `checkpoint_operation_${workItemId}`,
+  )
 }
 
 function seedOperationalState(database: BetterSqlite3.Database, context: WorkGraphContext) {

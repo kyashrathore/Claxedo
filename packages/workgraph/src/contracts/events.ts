@@ -1,12 +1,14 @@
 import { z } from "zod"
 import { AdmissionProposalIDSchema, ChangeCursorSchema, CommandProvenanceSchema } from "./commands"
 import {
+  AgentCheckpointIDSchema,
   AttemptIDSchema,
   DecisionIDSchema,
   EvidenceIDSchema,
   OutcomeIDSchema,
   OwnerUserIDSchema,
   RecapIDSchema,
+  SessionBindingIDSchema,
   StreamIDSchema,
   WorkItemIDSchema,
   WorkGraphIDSchema,
@@ -54,6 +56,10 @@ export const WorkGraphEventTypeSchema = z.enum([
   "decision_dismissed",
   "evidence_recorded",
   "recap_published",
+  "session_bound",
+  "session_task_attached",
+  "session_binding_released",
+  "agent_checkpoint_recorded",
 ])
 export type WorkGraphEventType = z.infer<typeof WorkGraphEventTypeSchema>
 
@@ -102,6 +108,8 @@ export const ChangeResourceSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("decision"), id: DecisionIDSchema }),
   z.strictObject({ type: z.literal("evidence"), id: EvidenceIDSchema }),
   z.strictObject({ type: z.literal("recap"), id: RecapIDSchema }),
+  z.strictObject({ type: z.literal("session_binding"), id: SessionBindingIDSchema }),
+  z.strictObject({ type: z.literal("agent_checkpoint"), id: AgentCheckpointIDSchema }),
   z.strictObject({ type: z.literal("admission_proposal"), id: AdmissionProposalIDSchema }),
 ])
 export type ChangeResource = z.infer<typeof ChangeResourceSchema>

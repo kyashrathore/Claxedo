@@ -1419,6 +1419,10 @@ class BackgroundDb {
             predicates.push((row) => Number(row[field] ?? 0) <= value)
             return query
           },
+          gt: (field: string, value: number) => {
+            predicates.push((row) => Number(row[field] ?? 0) > value)
+            return query
+          },
         }
         build(query)
         selected = selected.filter((row) => predicates.every((predicate) => predicate(row)))

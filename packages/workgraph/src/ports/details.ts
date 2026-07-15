@@ -11,6 +11,8 @@ import type {
   WorkItemAttemptPage,
   WorkItemDto,
   WorkItemReadInputSchema,
+  TaskActivityListInput,
+  TaskActivityPage,
 } from "../contracts"
 import type { z } from "zod"
 import type { OwnerQuery } from "./store"
@@ -22,6 +24,7 @@ export type WorkGraphDetailQueries = Readonly<{
   workItems: Readonly<{
     readDetail: OwnerQuery<z.infer<typeof WorkItemReadInputSchema>, WorkItemDto | undefined>
     listAttempts: OwnerQuery<z.infer<typeof WorkItemAttemptListInputSchema>, WorkItemAttemptPage>
+    listActivity: OwnerQuery<TaskActivityListInput, TaskActivityPage>
   }>
   attempts: Readonly<{
     read: OwnerQuery<z.infer<typeof AttemptReadInputSchema>, AttemptDetailDto | undefined>

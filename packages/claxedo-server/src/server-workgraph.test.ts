@@ -244,8 +244,6 @@ describe("embedded local WorkGraph v2", () => {
       expectedVersion: 1,
       defaults: {
         execution: {
-          environment: { kind: "local_worktree" },
-          repository: { baseRevision: "HEAD" },
           harness: "claxedo-v2",
           agent: "build",
           model: { providerId: "openai", modelId: "gpt-5" },
@@ -258,6 +256,10 @@ describe("embedded local WorkGraph v2", () => {
       version: 1,
       type: "create_stream",
       title: "Session-backed recap",
+      execution: {
+        environment: { kind: "local_worktree", directory: "/repo" },
+        repository: { baseRevision: "HEAD" },
+      },
       recap: { model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", quietHours: 8 },
     })
     streamId = ((await created.json()) as { value: { streamId: string } }).value.streamId
@@ -625,6 +627,6 @@ function localExecutionCapabilities(): ExecutionCapabilitiesPort {
 }
 
 const profile = {
-  environment: { kind: "local_worktree" as const }, repository: { baseRevision: "HEAD" }, harness: "claxedo-v2", agent: "build",
+  environment: { kind: "local_worktree" as const, directory: "/repo" }, repository: { baseRevision: "HEAD" }, harness: "claxedo-v2", agent: "build",
   model: { providerId: "openai", modelId: "gpt-5" }, effort: "high", tools: [], connectionIds: [],
 }

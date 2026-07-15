@@ -13,6 +13,7 @@ import {
   createAttentionCursor,
   createChangeCursor,
   createEvidencePageCursor,
+  decodeSnapshotResumeCursor,
   createSnapshotResumeCursor,
   createWorkSourcePageCursor,
   DecisionDtoSchema,
@@ -24,7 +25,7 @@ import {
   readAttentionCursor,
   readChangeCursor,
   readEvidencePageCursor,
-  readSnapshotResumeCursor,
+  SnapshotResumeCursorError,
   readWorkSourcePageCursor,
   RecapDtoSchema,
   RecapProfileDefaultsSchema,
@@ -82,6 +83,8 @@ import type {
   ReplacementReview,
   ReplacementReviewInput,
   WorkItemDto,
+  WorkGraphEventType,
+  ChangeResource,
 } from "../../contracts"
 import { dependencyGraphHasCycle } from "../../domain"
 import {
@@ -120,6 +123,8 @@ import type { ExecutionCapabilitiesPort } from "../../ports/execution-capabiliti
 import type { SqliteInput } from "../../sqlite"
 import { assertNoSqliteWorkGraphOwnerDeletion, SqliteWorkGraphOwnerDeletionInProgressError } from "./deletion-barrier"
 import { initializeWorkGraphSqliteSchema } from "./schema"
+import { createSqliteWorkGraphActivityPorts } from "./activity-store"
+import type { TaskActivityListInput, TaskActivityPage } from "../../contracts/activity"
 
 const rootId = "workgraph_default"
 const ownerEventScopeId = "__workgraph_owner_events__"
@@ -263,6 +268,7 @@ type SqliteQueries = Readonly<{
     ) => Promise<Readonly<{ id: string; completionSatisfied: boolean }> | undefined>
     readDetail: (context: WorkGraphContext, input: Readonly<{ workItemId: string }>) => Promise<WorkItemDto | undefined>
     listAttempts: (context: WorkGraphContext, input: WorkItemAttemptListInput) => Promise<WorkItemAttemptPage>
+    listActivity: (context: WorkGraphContext, input: TaskActivityListInput) => Promise<TaskActivityPage>
   }>
   attempts: Readonly<{
     read: (context: WorkGraphContext, input: Readonly<{ attemptId: string }>) => Promise<AttemptDetailDto | undefined>
@@ -1266,8 +1272,8 @@ function applyCommand(
       .prepare(
         `
       INSERT INTO wg_v2_streams
-        (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, execution_defaults_json, recap_defaults_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+        (organization_id, owner_user_id, id, workgraph_id, title, purpose, lifecycle, execution_defaults_json, recap_defaults_json, activity_granularity, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -1279,6 +1285,7 @@ function applyCommand(
         command.description ?? command.title,
         JSON.stringify(command.execution ?? {}),
         JSON.stringify(recap),
+        command.activityGranularity ?? "progress",
         occurredAt,
         occurredAt,
       )
@@ -1297,6 +1304,7 @@ function applyCommand(
         title = COALESCE(?, title), purpose = COALESCE(?, purpose),
         execution_defaults_json = COALESCE(?, execution_defaults_json),
         recap_defaults_json = COALESCE(?, recap_defaults_json),
+        activity_granularity = COALESCE(?, activity_granularity),
         row_version = row_version + 1, updated_at = ?
       WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ?
     `,
@@ -1306,6 +1314,7 @@ function applyCommand(
         command.description ?? null,
         command.execution === undefined ? null : JSON.stringify(command.execution),
         command.recap === undefined ? null : JSON.stringify(command.recap),
+        command.activityGranularity ?? null,
         occurredAt,
         context.organizationId,
         context.ownerUserId,
@@ -3156,6 +3165,7 @@ function readSqliteReplacementReview(
 }
 
 function createQueries(database: Database, clock: Readonly<{ now: () => number }>) {
+  const activity = createSqliteWorkGraphActivityPorts({ database, clock }).activity
   return {
     snapshot: {
       page: async (
@@ -3167,14 +3177,26 @@ function createQueries(database: Database, clock: Readonly<{ now: () => number }
             "SELECT next_cursor - 1 AS cursor FROM wg_v2_change_cursors WHERE organization_id = ? AND owner_user_id = ?",
           )
           .get(context.organizationId, context.ownerUserId) as { cursor: number } | undefined
-        const snapshotCursor = createChangeCursor({
+        const currentSnapshotCursor = createChangeCursor({
           organizationId: context.organizationId,
           ownerUserId: context.ownerUserId,
           position: cursor?.cursor ?? 0,
         })
         const resume = input.after
-          ? readSnapshotResumeCursor(input.after, context.organizationId, context.ownerUserId, snapshotCursor)
+          ? decodeSnapshotResumeCursor(input.after, context.organizationId, context.ownerUserId)
           : { offset: 0, capturedAt: clock.now() }
+        if ("snapshotCursor" in resume && resume.snapshotCursor !== currentSnapshotCursor) {
+          const relevant = database.prepare(`
+            SELECT 1 FROM wg_v2_changes
+            WHERE organization_id = ? AND owner_user_id = ? AND snapshot_relevant = 1 AND cursor > ? LIMIT 1
+          `).get(
+            context.organizationId,
+            context.ownerUserId,
+            readChangeCursor(resume.snapshotCursor, context.organizationId, context.ownerUserId),
+          )
+          if (relevant) throw new SnapshotResumeCursorError("invalidated")
+        }
+        const snapshotCursor = "snapshotCursor" in resume ? resume.snapshotCursor : currentSnapshotCursor
         const records = [
           readWorkGraphDefaultsRecord(database, context),
           ...readStreamRecords(database, context),
@@ -3498,6 +3520,7 @@ function createQueries(database: Database, clock: Readonly<{ now: () => number }
             : {}),
         })
       },
+      listActivity: (context: WorkGraphContext, input: TaskActivityListInput) => activity.list(context, input),
       read: async (context: WorkGraphContext, input: Readonly<{ workItemId: string }>) => {
         const item = database
           .prepare(
@@ -3762,6 +3785,7 @@ function readStreamRecords(database: Database, context: WorkGraphContext, stream
       pinned: !!row.pinned,
       executionDefaults: JSON.parse(row.execution_defaults_json),
       recapDefaults,
+      activityGranularity: row.activity_granularity,
       ...(typeof memory.summary === "string" && memory.summary.trim() ? { memory } : {}),
       activity: {
         lastActivityAt: activityAt,
@@ -3920,6 +3944,7 @@ function attemptDto(database: Database, context: WorkGraphContext, row: AttemptR
     workItemId: row.work_item_id,
     attemptNumber: row.attempt_number,
     state: row.lifecycle,
+    executionKind: row.execution_kind,
     resolvedExecution: JSON.parse(row.resolved_execution_profile_json),
     admittedAt: Number(row.created_at),
     ...(row.started_at ? { startedAt: Number(row.started_at) } : {}),
@@ -6206,6 +6231,7 @@ type StreamRecordRow = {
   pinned: number
   execution_defaults_json: string
   recap_defaults_json: string
+  activity_granularity: string
   memory_card_json: string
   replacement_reset_json: string | null
   last_activity_at: string | number | null
@@ -6252,6 +6278,7 @@ type AttemptRecordRow = {
   work_item_id: string
   attempt_number: number
   lifecycle: string
+  execution_kind: "managed" | "attached"
   resolved_execution_profile_json: string
   envelope_id: string | null
   child_workspace_id: string | null
