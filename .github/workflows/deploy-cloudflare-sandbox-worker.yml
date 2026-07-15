@@ -53,6 +53,9 @@ jobs:
       - name: Install worker dependencies
         run: npm install
 
+      - name: Build sandbox manager
+        run: bun run --cwd ../../../../sandbox-manager build
+
       # The image ships the in-repo workspace-runtime host bundle (COPY .build/)
       # instead of npm-installing @claxedo/workspace-runtime — publishing is a
       # separate release concern and no longer gates image builds.
