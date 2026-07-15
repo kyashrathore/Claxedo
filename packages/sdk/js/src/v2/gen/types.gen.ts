@@ -11597,6 +11597,7 @@ export type V2SessionListResponse = V2SessionListResponses[keyof V2SessionListRe
 export type V2SessionCreateData = {
   body: {
     id?: string
+    title?: string
     agent?: string
     model?: ModelRef
     tools?: Array<string>

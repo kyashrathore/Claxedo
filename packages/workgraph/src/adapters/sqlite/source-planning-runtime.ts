@@ -4,14 +4,13 @@ import {
   AdmissionAgentPlanSchema,
   createChangeCursor,
   ExecutionProfileDefaultsSchema,
-  ResolvedExecutionProfileSchema,
+  ResolvedGenerationProfileSchema,
   type AdmissionAgentPlan,
   type ExecutionProfileDefaults,
-  type ResolvedExecutionProfile,
+  type ResolvedGenerationProfile,
   type WorkGraphContext,
   type WorkSourceRevisionRef,
 } from "../../contracts"
-import { resolveExecutionProfile } from "../../domain/execution-profile"
 import type { ExecutionResult } from "../../ports"
 import { initializeWorkGraphSqliteSchema } from "./schema"
 import { requireSessionDirectory } from "./session-directory"
@@ -27,7 +26,7 @@ export type SourcePlanningSessionGateway = Readonly<{
     directory: string
     title: string
     prompt: string
-    profile: ResolvedExecutionProfile
+    profile: ResolvedGenerationProfile
     context: WorkGraphContext
   }>): Promise<string>
   result(sessionId: string): Promise<ExecutionResult>
@@ -323,23 +322,23 @@ function sourcePlanningProfile(
   database: BetterSqlite3.Database,
   context: WorkGraphContext,
   execution?: ExecutionProfileDefaults,
-): ResolvedExecutionProfile {
+): ResolvedGenerationProfile {
   const row = database.prepare("SELECT defaults_json FROM wg_v2_workgraphs WHERE organization_id = ? AND owner_user_id = ? AND id = 'workgraph_default'")
     .get(context.organizationId, context.ownerUserId) as { defaults_json: string } | undefined
   if (!row) throw new Error("Source planning requires configured WorkGraph execution defaults")
   const defaults = ExecutionProfileDefaultsSchema.parse(JSON.parse(row.defaults_json))
-  const resolved = resolveExecutionProfile({
-    workgraph: {
-      ...defaults,
-      tools: [],
-      connectionIds: [],
-    },
-    ...(execution ? { stream: execution } : {}),
-  })
-  if (!resolved.ok) {
-    throw new Error(`Source planning execution profile is incomplete: ${resolved.error.missingFields.join(", ")}`)
+  const selected = {
+    ...defaults,
+    ...execution,
+    tools: [],
+    connectionIds: [],
   }
-  return resolved.profile
+  const profile = ResolvedGenerationProfileSchema.safeParse(selected)
+  if (!profile.success) {
+    const missing = ["harness", "agent", "model", "effort"].filter((field) => selected[field as keyof typeof selected] === undefined)
+    throw new Error(`Source planning generation profile is incomplete: ${missing.join(", ")}`)
+  }
+  return profile.data
 }
 
 function sourcePlanningSession(database: BetterSqlite3.Database, context: WorkGraphContext, jobId: string) {
@@ -350,7 +349,7 @@ function sourcePlanningSession(database: BetterSqlite3.Database, context: WorkGr
     sessionAdmissionConfirmed?: boolean
   } : undefined
   if (!payload?.sessionId) return undefined
-  const profile = ResolvedExecutionProfileSchema.safeParse(payload.generationProfile)
+  const profile = ResolvedGenerationProfileSchema.safeParse(payload.generationProfile)
   if (!profile.success) throw new Error("Source planning Session has no valid durable generation profile")
   return { id: payload.sessionId, admitted: payload.sessionAdmissionConfirmed === true, profile: profile.data }
 }
@@ -362,7 +361,7 @@ function markSession(
   workerId: string,
   leaseEpoch: number,
   sessionId: string,
-  profile: ResolvedExecutionProfile,
+  profile: ResolvedGenerationProfile,
   admitted: boolean,
   now: number,
 ) {
@@ -559,7 +558,7 @@ function planningLineage(value: PlanningLineage) {
 }
 
 function sourcePlanningConfigurationFailure(reason: string) {
-  return reason.startsWith("Source planning execution profile is incomplete:") ||
+  return reason.startsWith("Source planning generation profile is incomplete:") ||
     reason === "Source planning Session has no valid durable generation profile"
 }
 

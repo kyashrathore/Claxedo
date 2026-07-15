@@ -4176,11 +4176,7 @@ function readAttemptRecords(database: Database, context: WorkGraphContext, attem
 }
 
 function attemptDto(database: Database, context: WorkGraphContext, row: AttemptRecordRow) {
-  const executionReferences = {
-    ...(row.session_id ? { sessionId: row.session_id } : {}),
-    ...(row.envelope_id ? { workspaceId: row.envelope_id } : {}),
-    ...(row.child_workspace_id ? { childWorkspaceId: row.child_workspace_id } : {}),
-  }
+  const executionReferences = attemptExecutionReferences(database, context, row)
   return AttemptDtoSchema.parse({
     recordType: "attempt",
     schemaVersion: 1,
@@ -4207,15 +4203,27 @@ function attemptDto(database: Database, context: WorkGraphContext, row: AttemptR
 }
 
 function attemptDetailDto(database: Database, context: WorkGraphContext, row: AttemptRecordRow) {
-  const executionReferences = {
-    ...(row.session_id ? { sessionId: row.session_id } : {}),
-    ...(row.envelope_id ? { workspaceId: row.envelope_id } : {}),
-    ...(row.child_workspace_id ? { childWorkspaceId: row.child_workspace_id } : {}),
-  }
+  const executionReferences = attemptExecutionReferences(database, context, row)
   return AttemptDetailDtoSchema.parse({
     attempt: attemptDto(database, context, row),
     ...(Object.keys(executionReferences).length ? { executionReferences } : {}),
   })
+}
+
+function attemptExecutionReferences(database: Database, context: WorkGraphContext, row: AttemptRecordRow) {
+  const binding = row.session_id
+    ? database.prepare(
+      `SELECT project_id FROM wg_v2_session_bindings
+       WHERE organization_id = ? AND owner_user_id = ? AND session_id = ? AND current_attempt_id = ?
+       ORDER BY updated_at DESC LIMIT 1`,
+    ).get(context.organizationId, context.ownerUserId, row.session_id, row.id) as { project_id: string } | undefined
+    : undefined
+  const workspaceId = binding?.project_id ?? row.envelope_id ?? undefined
+  return {
+    ...(row.session_id ? { sessionId: row.session_id } : {}),
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(row.child_workspace_id ? { childWorkspaceId: row.child_workspace_id } : {}),
+  }
 }
 
 function readDecisionRecords(database: Database, context: WorkGraphContext, decisionId?: string) {
@@ -4868,6 +4876,7 @@ async function launchAttempt(
       attemptId,
       streamId: row.stream_id,
       workItemId: row.work_item_id,
+      title: row.title,
       prompt: `${row.title}\n\n${row.description}\n\nCompletion contract:\n${row.completion_contract_json}`,
       profile: JSON.parse(row.resolved_execution_profile_json),
       ...(envelope?.id ? { envelopeId: envelope.id as never } : {}),

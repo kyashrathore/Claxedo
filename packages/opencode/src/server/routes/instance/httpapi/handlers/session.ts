@@ -1,4 +1,6 @@
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { SessionV2 } from "@opencode-ai/core/session"
+import { SessionMessage } from "@opencode-ai/core/session/message"
 import { Agent } from "@/agent/agent"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -15,8 +17,9 @@ import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
+import { projectSessionV2Messages } from "@/session/message-v1-compat"
 import { NamedError } from "@opencode-ai/core/util/error"
-import { Cause, Effect, Option, Schema, Scope } from "effect"
+import { Cause, DateTime, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { InstanceState } from "@/effect/instance-state"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -48,6 +51,7 @@ const tryParseJson = (text: string) =>
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* Session.Service
+    const sessionV2 = yield* SessionV2.Service
     const shareSvc = yield* SessionShare.Service
     const promptSvc = yield* SessionPrompt.Service
     const revertSvc = yield* SessionRevert.Service
@@ -115,9 +119,16 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           catch: () => new HttpApiError.BadRequest({}),
         })
       }
-      yield* requireSession(ctx.params.sessionID)
+      const current = yield* requireSession(ctx.params.sessionID)
       if (ctx.query.limit === undefined || ctx.query.limit === 0) {
-        return yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
+        const legacy = yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
+        if (legacy.length > 0) return legacy
+        return projectSessionV2Messages(
+          current,
+          yield* sessionV2
+            .messages({ sessionID: ctx.params.sessionID, order: "asc" })
+            .pipe(Effect.mapError(() => new HttpApiError.BadRequest({}))),
+        )
       }
 
       const page = yield* SessionError.mapStorageNotFound(
@@ -127,19 +138,54 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           before: ctx.query.before,
         }),
       )
-      if (!page.cursor) return page.items
+      if (page.items.length > 0) {
+        if (!page.cursor) return page.items
+
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const url = Option.getOrElse(HttpServerRequest.toURL(request), () => new URL(request.url, "http://localhost"))
+        url.searchParams.set("limit", ctx.query.limit.toString())
+        url.searchParams.set("before", page.cursor)
+        return HttpServerResponse.jsonUnsafe(page.items, {
+          headers: {
+            "Access-Control-Expose-Headers": "Link, X-Next-Cursor",
+            Link: `<${url.toString()}>; rel="next"`,
+            "X-Next-Cursor": page.cursor,
+          },
+        })
+      }
+
+      const before = ctx.query.before ? MessageV2.cursor.decode(ctx.query.before) : undefined
+      const projected = yield* sessionV2
+        .messages({
+          sessionID: ctx.params.sessionID,
+          limit: ctx.query.limit + 1,
+          order: "desc",
+          cursor: before
+            ? { id: SessionMessage.ID.make(before.id), direction: "next" }
+            : undefined,
+        })
+        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+      const more = projected.length > ctx.query.limit
+      const selected = more ? projected.slice(0, ctx.query.limit) : projected
+      const items = projectSessionV2Messages(current, selected.toReversed())
+      const tail = selected.at(-1)
+      if (!more || !tail) return items
+      const cursor = MessageV2.cursor.encode({
+        id: SessionV1.MessageID.ascending(tail.id),
+        time: DateTime.toEpochMillis(tail.time.created),
+      })
 
       const request = yield* HttpServerRequest.HttpServerRequest
       // toURL() honors the Host + x-forwarded-proto headers, so the Link
       // header echoes the real origin instead of a hard-coded localhost.
       const url = Option.getOrElse(HttpServerRequest.toURL(request), () => new URL(request.url, "http://localhost"))
       url.searchParams.set("limit", ctx.query.limit.toString())
-      url.searchParams.set("before", page.cursor)
-      return HttpServerResponse.jsonUnsafe(page.items, {
+      url.searchParams.set("before", cursor)
+      return HttpServerResponse.jsonUnsafe(items, {
         headers: {
           "Access-Control-Expose-Headers": "Link, X-Next-Cursor",
           Link: `<${url.toString()}>; rel="next"`,
-          "X-Next-Cursor": page.cursor,
+          "X-Next-Cursor": cursor,
         },
       })
     })

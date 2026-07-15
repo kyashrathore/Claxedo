@@ -351,7 +351,7 @@ function CompletionRequirements(props: { item: WorkItemDto; source: WorkGraphWai
                 <span class="font-mono text-[10px]" classList={{
                   "text-icon-success-base": recorded().has(requirement.id),
                   "text-icon-critical-base": !recorded().has(requirement.id) && ["result_ready", "verification_failed"].includes(props.item.state),
-                  "text-text-weaker": !recorded().has(requirement.id) && !["result_ready", "verification_failed"].includes(props.item.state),
+                  "text-text-base": !recorded().has(requirement.id) && !["result_ready", "verification_failed"].includes(props.item.state),
                 }}>
                   {recorded().has(requirement.id) ? "evidence recorded" : ["result_ready", "verification_failed"].includes(props.item.state) ? "evidence needed" : "pending"}
                 </span>
@@ -475,8 +475,8 @@ function AttemptDetailView(props: { detail: AttemptDetailDto; onOpenSession?: Wo
       <Show when={attempt().attentionReason}>
         {(reason) => (
           <div class="workgraph-attempt-error" role="alert">
-            <span class="text-[11px] font-semibold">{attempt().state === "failed" ? "Attempt failed" : "Attempt needs attention"}</span>
-            <span class="text-[12px] leading-5">{reason()}</span>
+            <span class="text-[11px] font-semibold text-text-strong">{attempt().state === "failed" ? "Attempt failed" : "Attempt needs attention"}</span>
+            <span class="text-[12px] leading-5 text-text-base">{reason()}</span>
           </div>
         )}
       </Show>

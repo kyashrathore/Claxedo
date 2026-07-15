@@ -32,15 +32,19 @@ export const ModelSelectionSchema = z.strictObject({
 })
 export type ModelSelection = z.infer<typeof ModelSelectionSchema>
 
-const executionProfileShape = {
-  environment: ExecutionEnvironmentSchema,
-  repository: RepositoryTargetSchema.optional(),
+const generationProfileShape = {
   harness: z.string().trim().min(1),
   agent: z.string().trim().min(1),
   model: ModelSelectionSchema,
   effort: z.string().trim().min(1),
   tools: z.array(z.string().trim().min(1)),
   connectionIds: z.array(ConnectionIDSchema),
+}
+
+const executionProfileShape = {
+  environment: ExecutionEnvironmentSchema,
+  repository: RepositoryTargetSchema.optional(),
+  ...generationProfileShape,
 }
 
 export const ExecutionProfileDefaultsSchema = z.preprocess(
@@ -54,6 +58,13 @@ export const ResolvedExecutionProfileSchema = z.preprocess(
   z.strictObject(executionProfileShape).readonly(),
 ).transform(deepFreeze)
 export type ResolvedExecutionProfile = z.infer<typeof ResolvedExecutionProfileSchema>
+
+/** Session generation selects a harness/model but does not own Task placement. */
+export const ResolvedGenerationProfileSchema = z.preprocess(
+  withoutExecutionTarget,
+  z.strictObject(generationProfileShape).readonly(),
+).transform(deepFreeze)
+export type ResolvedGenerationProfile = z.infer<typeof ResolvedGenerationProfileSchema>
 
 export const ExecutionProfileLevelSchema = z.enum(["workgraph", "stream", "outcome", "work_item"])
 export type ExecutionProfileLevel = z.infer<typeof ExecutionProfileLevelSchema>
@@ -101,4 +112,13 @@ function withoutLegacyPolicies(value: unknown) {
   delete result.integration
   delete result.isolation
   return result
+}
+
+function withoutExecutionTarget(value: unknown) {
+  const result = withoutLegacyPolicies(value)
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result
+  const generation = { ...(result as Record<string, unknown>) }
+  delete generation.environment
+  delete generation.repository
+  return generation
 }

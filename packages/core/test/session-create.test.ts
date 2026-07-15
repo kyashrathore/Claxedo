@@ -86,12 +86,14 @@ describe("SessionV2.create", () => {
       expect(
         yield* session.create({
           location: Location.Ref.make({ directory: location.directory, workspaceID }),
+          title: "Review the WorkGraph implementation",
           agent: AgentV2.ID.make("build"),
           model,
           tools: ["terminal", "browser"],
         }),
       ).toMatchObject({
         location: { directory: location.directory, workspaceID },
+        title: "Review the WorkGraph implementation",
         agent: "build",
         model,
         tools: ["terminal", "browser"],
@@ -105,6 +107,7 @@ describe("SessionV2.create", () => {
       const created = yield* session.create({ id, location })
       const changed = [
         { id, location: Location.Ref.make({ directory: AbsolutePath.make("/other") }) },
+        { id, location, title: "different" },
         { id, location, agent: AgentV2.ID.make("build") },
         {
           id,

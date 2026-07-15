@@ -32,6 +32,7 @@ describe("local WorkGraph workspace execution", () => {
       execution.launch(owner(), {
         streamId: "stream_1" as never,
         workItemId: "item_1" as never,
+        title: "Use connected code host",
         attemptId: "attempt_1" as never,
         leaseEpoch: 1,
         envelopeId: "envelope_1" as never,
@@ -89,6 +90,7 @@ describe("local WorkGraph workspace execution", () => {
     await execution.launch(owner(), {
       streamId,
       workItemId: "item_1" as never,
+      title: "Implement the feature",
       attemptId: "attempt_1" as never,
       leaseEpoch: 1,
       envelopeId: envelope.id,
@@ -97,7 +99,11 @@ describe("local WorkGraph workspace execution", () => {
       profile,
       connectionIds: [],
     })
-    expect(admissions).toEqual([expect.objectContaining({ directory: envelope.workspaceId, prompt: "Implement it" })])
+    expect(admissions).toEqual([expect.objectContaining({
+      directory: envelope.workspaceId,
+      title: "Implement the feature",
+      prompt: "Implement it",
+    })])
   })
 
   it("uses the registered worktree service and exposes its routable workspace identity", async () => {
@@ -139,6 +145,7 @@ describe("local WorkGraph workspace execution", () => {
     const launched = await execution.launch(owner(), {
       streamId: "stream_1" as StreamID,
       workItemId: "item_1" as never,
+      title: "Implement the feature",
       attemptId: "attempt_1" as never,
       leaseEpoch: 1,
       envelopeId: envelope.id,
@@ -249,6 +256,7 @@ describe("local WorkGraph workspace execution", () => {
     await Promise.all(["attempt_1", "attempt_2"].map((attemptId) => execution.launch(owner(), {
       streamId,
       workItemId: `item_${attemptId}` as never,
+      title: `Work ${attemptId}`,
       attemptId: attemptId as never,
       leaseEpoch: 1,
       envelopeId: envelope.id,

@@ -5487,6 +5487,7 @@ export class Session3 extends HeyApiClient {
   public create<ThrowOnError extends boolean = false>(
     parameters?: {
       id?: string
+      title?: string
       agent?: string
       model?: ModelRef
       tools?: Array<string>
@@ -5500,6 +5501,7 @@ export class Session3 extends HeyApiClient {
         {
           args: [
             { in: "body", key: "id" },
+            { in: "body", key: "title" },
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
             { in: "body", key: "tools" },

@@ -1,9 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
-import { createComponent } from "solid-js"
+import { createComponent, createSignal } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { Persist, setPersisted } from "@/platform/persistence/persist"
 import { createWorkGraphClient } from "./api"
 import { WorkGraphContent } from "./workgraph-content"
+import { WorkGraphStreamTree } from "./workgraph-overview"
 
 // The route-restorable expanded-Stream set persists to localStorage; reset it so
 // each test starts from the first-visit default rather than a prior test's set.
@@ -378,6 +379,36 @@ describe("WorkGraph overview actions", () => {
     const input = await screen.findByRole("textbox", { name: "Add task to Ship Claxedo cloud" })
     // The "Add task" affordance and its placeholder hint stay intact alongside the accessible name.
     expect(input).toHaveAttribute("placeholder", "Task title, then Enter")
+  })
+
+  test("preserves an inline Task draft when a refreshed snapshot replaces Stream DTO objects", async () => {
+    const [streams, setStreams] = createSignal([stream])
+    const client = createWorkGraphClient({
+      baseUrl: "http://test.local",
+      request: workGraphRequest({ records: streams, command: () => success() }),
+    })
+    render(() => (
+      <WorkGraphStreamTree
+        streams={streams()}
+        outcomes={[]}
+        items={[]}
+        attempts={[]}
+        empty={<div>No streams</div>}
+        relativeTime={() => "now"}
+        client={client}
+        mutate={async () => true}
+        onOpenStreamSettings={() => undefined}
+        onOpenTask={() => undefined}
+      />
+    ))
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add task" }))
+    const input = screen.getByRole("textbox", { name: "Add task to Ship Claxedo cloud" })
+    await fireEvent.input(input, { target: { value: "Keep this draft" } })
+    setStreams([{ ...stream, version: 2, updatedAt: 2 }])
+
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Add task to Ship Claxedo cloud" })).toHaveValue("Keep this draft"))
+    expect(screen.getByRole("textbox", { name: "Add task to Ship Claxedo cloud" })).toBe(input)
   })
 
   test("scopes the inline Add task input name to its Outcome", async () => {

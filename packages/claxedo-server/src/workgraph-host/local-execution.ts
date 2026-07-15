@@ -2,7 +2,7 @@ import path from "node:path"
 import fs from "node:fs/promises"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import type { ResolvedExecutionProfile, WorkGraphContext } from "@claxedo/workgraph/contracts"
+import type { ResolvedGenerationProfile, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import type {
   ExecutionResult,
   ExecutionSessionID,
@@ -23,7 +23,7 @@ export type WorkGraphSessionGateway = Readonly<{
       workspaceId?: string
       title: string
       prompt: string
-      profile: ResolvedExecutionProfile
+      profile: ResolvedGenerationProfile
       context?: WorkGraphContext
     }>,
   ) => Promise<string>
@@ -154,7 +154,7 @@ export function createLocalWorkspaceExecution(
           leaseEpoch: request.leaseEpoch,
           directory,
           workspaceId: request.workspaceId,
-          title: String(request.workItemId),
+          title: request.title,
           prompt: request.prompt,
           profile: request.profile,
           context,

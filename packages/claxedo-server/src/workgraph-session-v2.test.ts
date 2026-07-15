@@ -316,6 +316,7 @@ describe("mounted WorkGraph Session V2 gateway", () => {
       {
         path: "/api/session",
         body: {
+          title: "Item",
           agent: "build",
           model: { providerID: "openai", id: "gpt-5", variant: "high" },
           tools: ["terminal"],
@@ -509,6 +510,9 @@ describe("mounted WorkGraph Session V2 gateway", () => {
       "POST /api/session/ses_attempt/tool",
       "POST /api/session/ses_attempt/prompt",
     ])
+    expect(calls[0]?.body).toMatchObject({
+      tools: ["terminal", "workgraph_report_progress", "workgraph_complete_task"],
+    })
     const registration = calls[1]?.body as {
       callbackUrl: string
       tools: Array<{ name: string; callbackUrl: string }>

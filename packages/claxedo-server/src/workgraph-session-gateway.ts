@@ -6,6 +6,7 @@ import type { SourceIssueConnector } from "@claxedo/workgraph/connectors"
 import { WorkGraphAttemptToolRoutes, WorkGraphConnectionToolRoutes } from "@claxedo/workspace-runtime"
 import {
   WorkGraphAttemptIdentitySchema,
+  WorkGraphAttemptToolNames,
   type CommandResult,
   type WorkGraphAttemptOperationRequest,
   type WorkGraphContext,
@@ -389,13 +390,17 @@ export function createSessionV2WorkGraphGateway(
           method: "POST",
           body: JSON.stringify({
             ...(input.sessionId ? { id: input.sessionId } : {}),
+            title: input.title,
             agent: input.profile.agent,
             model: {
               providerID: input.profile.model.providerId,
               id: input.profile.model.modelId,
               variant: input.profile.effort,
             },
-            tools: input.profile.tools,
+            tools: [
+              ...input.profile.tools,
+              ...(input.leaseEpoch !== undefined && options.executeAttempt ? WorkGraphAttemptToolNames : []),
+            ].filter((tool, index, tools) => tools.indexOf(tool) === index),
             location: { directory: input.directory },
           }),
         },

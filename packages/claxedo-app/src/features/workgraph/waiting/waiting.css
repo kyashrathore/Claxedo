@@ -116,7 +116,7 @@
 .workgraph-waiting-action {
   padding: 0.25rem 0.35rem;
   border-radius: var(--radius-md);
-  color: var(--text-weak);
+  color: var(--text-base);
   font-size: 0.6875rem;
   transition: background 110ms ease, color 110ms ease;
 }

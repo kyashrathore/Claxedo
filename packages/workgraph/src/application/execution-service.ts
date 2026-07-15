@@ -12,6 +12,7 @@ export type AdmittedAttempt = Readonly<{
   attemptId: AttemptID
   streamId: StreamID
   workItemId: WorkItemID
+  title: string
   prompt: string
   profile: ResolvedExecutionProfile
   envelopeId?: StreamEnvelope["id"]
@@ -97,6 +98,7 @@ export async function placeAdmittedAttempt(
       launch = await execution.launch(context, {
         streamId: attempt.streamId,
         workItemId: attempt.workItemId,
+        title: attempt.title,
         attemptId: attempt.attemptId,
         leaseEpoch,
         envelopeId: envelope.id,

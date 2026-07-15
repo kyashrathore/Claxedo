@@ -570,7 +570,7 @@ function SettingRow(props: { label: string; description?: string; note?: string;
       <div class="workgraph-setting-copy">
         <div class="workgraph-setting-label text-text-base">{props.label}</div>
         <Show when={props.description}>
-          <div class="workgraph-setting-desc text-text-weaker">{props.description}</div>
+          <div class="workgraph-setting-desc text-text-base">{props.description}</div>
         </Show>
       </div>
       <div class="workgraph-setting-side">

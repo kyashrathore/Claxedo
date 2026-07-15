@@ -10,7 +10,7 @@ import type {
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
-import { createResource, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import { createResource, createSignal, For, type Accessor, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
@@ -48,15 +48,15 @@ export function WorkGraphStreamTree(props: {
   return (
     <Show when={props.streams.length} fallback={props.empty}>
       <section class="workgraph-tree" aria-label="Streams">
-        <For each={props.streams}>
+        <KeyedById records={props.streams}>
           {(stream) => (
             <StreamTreeItem
-              stream={stream}
-              outcomes={props.outcomes.filter((outcome) => outcome.streamId === stream.id)}
-              items={props.items.filter((item) => item.streamId === stream.id && item.state !== "abandoned")}
-              attempts={props.attempts.filter((attempt) => attempt.streamId === stream.id)}
-              expanded={isExpanded(stream.id)}
-              onToggle={() => toggle(stream.id)}
+              stream={stream()}
+              outcomes={props.outcomes.filter((outcome) => outcome.streamId === stream().id)}
+              items={props.items.filter((item) => item.streamId === stream().id && item.state !== "abandoned")}
+              attempts={props.attempts.filter((attempt) => attempt.streamId === stream().id)}
+              expanded={isExpanded(stream().id)}
+              onToggle={() => toggle(stream().id)}
               relativeTime={props.relativeTime}
               client={props.client}
               mutate={props.mutate}
@@ -65,7 +65,7 @@ export function WorkGraphStreamTree(props: {
               onOpenSession={props.onOpenSession}
             />
           )}
-        </For>
+        </KeyedById>
       </section>
     </Show>
   )
@@ -412,11 +412,11 @@ function StreamTreeItem(props: {
       </div>
       <Show when={props.expanded}>
         <div class="workgraph-stream-children">
-          <For each={props.outcomes}>
+          <KeyedById records={props.outcomes}>
             {(outcome) => (
               <OutcomeGroup
-                outcome={outcome}
-                items={props.items.filter((item) => item.outcomeId === outcome.id)}
+                outcome={outcome()}
+                items={props.items.filter((item) => item.outcomeId === outcome().id)}
                 attempts={props.attempts}
                 streamId={props.stream.id}
                 client={props.client}
@@ -425,7 +425,7 @@ function StreamTreeItem(props: {
                 onOpenTask={props.onOpenTask}
               />
             )}
-          </For>
+          </KeyedById>
           <Show when={props.outcomes.length > 0 && unassigned().length}>
             <OutcomeGroup
               items={unassigned()}
@@ -439,11 +439,11 @@ function StreamTreeItem(props: {
           </Show>
           <Show when={props.outcomes.length === 0}>
             <div class="workgraph-leaves workgraph-stream-leaves">
-              <For each={unassigned()}>
+              <KeyedById records={unassigned()}>
                 {(item) => (
-                  <WorkItemLeaf item={item} attempts={props.attempts} client={props.client} mutate={props.mutate} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />
+                  <WorkItemLeaf item={item()} attempts={props.attempts} client={props.client} mutate={props.mutate} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />
                 )}
-              </For>
+              </KeyedById>
             </div>
           </Show>
           <div class="workgraph-stream-add">
@@ -496,9 +496,9 @@ function OutcomeGroup(props: {
         </Show>
       </div>
       <div class="workgraph-leaves">
-        <For each={props.items}>
-          {(item) => <WorkItemLeaf item={item} attempts={props.attempts} client={props.client} mutate={props.mutate} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />}
-        </For>
+        <KeyedById records={props.items}>
+          {(item) => <WorkItemLeaf item={item()} attempts={props.attempts} client={props.client} mutate={props.mutate} onOpenTask={props.onOpenTask} onOpenSession={props.onOpenSession} />}
+        </KeyedById>
         <Show when={props.outcome}>
           <InlineAddTask
             streamId={props.streamId}
@@ -731,6 +731,20 @@ function InlineAddTask(props: {
         />
       </div>
     </Show>
+  )
+}
+
+function KeyedById<T extends { id: string }>(props: {
+  records: T[]
+  children: (record: Accessor<T>) => JSX.Element
+}) {
+  // Snapshot refreshes replace DTO objects. Reconcile rows by their durable ID so
+  // local interaction state (an open editor, typed draft, focus, or popover) is not
+  // destroyed merely because an unrelated WorkGraph change arrived.
+  return (
+    <For each={props.records.map((record) => record.id)}>
+      {(id) => props.children(() => props.records.find((record) => record.id === id)!)}
+    </For>
   )
 }
 

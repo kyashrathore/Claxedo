@@ -58,7 +58,7 @@ export function WaitingCard(props: {
         <span class="workgraph-card-title-icon" aria-hidden="true"><Icon name="workgraph" size="small" /></span>
         <span class="workgraph-card-title text-text-weak">Needs you</span>
         <span class="workgraph-card-gap" aria-hidden="true" />
-        <Show when={props.unread > 0}><span class="workgraph-attention-dot" aria-label={`${props.unread} unread`} /></Show>
+        <Show when={props.unread > 0}><span role="img" class="workgraph-attention-dot" aria-label={`${props.unread} unread`} /></Show>
         <span class="workgraph-card-total text-text-base" aria-label={`${props.total} waiting`}>{props.total}</span>
         <Show when={props.mode === "floating"}>
           <IconButton variant="ghost" size="small" icon="close" aria-label="Close waiting context" onClick={props.onClose} />

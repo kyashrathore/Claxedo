@@ -6,7 +6,7 @@
  * uses only public commands plus the same source-planning and Recap background
  * runtimes used by the product.
  */
-import { expect, test, type APIRequestContext } from "@playwright/test"
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
 import { AxeBuilder } from "@axe-core/playwright"
 import type {
   AdmissionProposalDto,
@@ -19,11 +19,20 @@ import path from "node:path"
 import { createRealWorkGraphHarness, type RealWorkGraphHarness } from "../helpers/real-workgraph-harness"
 
 const apiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
+const repositoryDirectory = path.resolve(import.meta.dirname, "../../../..")
 let harness: RealWorkGraphHarness
 
-test.describe.serial("@core personal WorkGraph real local journey", () => {
-  test.beforeEach(async () => {
-    harness = await createRealWorkGraphHarness({ port: apiPort })
+test.describe.serial("@core @workgraph-real personal WorkGraph real local journey", () => {
+  test.beforeEach(async ({}, testInfo) => {
+    const realSessions = testInfo.title.includes("real Session V2")
+    // This one journey boots a separate production OpenCode process and native
+    // SQLite runtime. Give that test-infrastructure cold start its own budget;
+    // user-visible WorkGraph and Session readiness retain their strict assertions.
+    if (realSessions) testInfo.setTimeout(120_000)
+    harness = await createRealWorkGraphHarness({
+      port: apiPort,
+      realSessions,
+    })
   })
 
   test.afterEach(async ({ page }) => {
@@ -48,15 +57,17 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     await expect(panel).toBeVisible()
     await expect(panel.getByRole("tab", { name: "Needs you" })).toHaveAttribute("aria-selected", "true")
     await expect(panel.getByRole("tab", { name: "Settings" })).toBeVisible()
-    await expect(page.getByTestId("workgraph-panel-body-slot")).toBeEmpty()
+    await expect(panel.getByText("Nothing needs you right now", { exact: true })).toBeVisible()
     await expect(page.getByRole("dialog", { name: "Waiting on you" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Close workspace panel" })).toHaveCount(1)
-    await page.getByRole("button", { name: "Close workspace panel" }).click()
+    await panel.getByRole("button", { name: "Close workspace panel" }).click()
 
     await page.getByRole("button", { name: "New stream" }).click()
     const create = page.getByRole("dialog", { name: "New stream" })
     await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill("Ship the browser contract")
     await create.getByRole("textbox", { name: "Description" }).fill("Keep the WorkGraph state visible and organized.")
+    await create.getByLabel("Project directory").selectOption(repositoryDirectory)
+    await create.getByLabel("Base revision").fill("HEAD")
     await create.getByRole("button", { name: "Create" }).click()
     await expect(create).toBeHidden()
 
@@ -73,48 +84,44 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     await expect(panel.getByRole("heading", { name: "WorkGraph settings" })).toBeVisible()
     await expectNoSeriousAxeViolations(page, 'aside[aria-label="Workspace panel"]')
     await expect(panel.getByRole("tablist", { name: "WorkGraph panel" })).toHaveCount(1)
-    await panel.getByLabel("Environment").selectOption("local_worktree")
-    await panel.getByLabel("Base revision").fill("dev")
-    await panel.getByLabel("Isolation").selectOption("stream")
-    await panel.getByLabel("Cleanup").selectOption("retain")
-    await panel.getByLabel("Integration").selectOption("manual")
+    await panel.getByLabel("Harness").selectOption("opencode")
+    await panel.getByLabel("Agent").selectOption("build")
+    await panel.getByLabel("Provider", { exact: true }).selectOption("openai")
+    await panel.getByLabel("Model", { exact: true }).selectOption("openai/gpt-5")
+    await panel.getByLabel("Effort", { exact: true }).selectOption("high")
     await panel.getByRole("button", { name: "Save" }).click()
     await expect
       .poll(async () => (await readJson<DefaultsResponse>(request, "/api/workgraph/defaults")).defaults.execution)
       .toMatchObject({
-        environment: { kind: "local_worktree" },
-        repository: { baseRevision: "dev" },
-        isolation: "stream",
-        cleanup: "retain",
-        integration: "manual",
+        harness: "opencode",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
       })
-    await page.getByRole("button", { name: "Close workspace panel" }).click()
+    await panel.getByRole("button", { name: "Close workspace panel" }).click()
 
     await page.getByRole("button", { name: "Stream settings for Ship the browser contract" }).click()
-    const streamSettings = page.getByRole("dialog", { name: "Stream settings" })
-    await expect(streamSettings.getByRole("tab")).toHaveCount(0)
+    const streamSettings = panel
+    await expect(streamSettings.getByRole("heading", { name: "Stream settings" })).toBeVisible()
+    await expect(page.getByRole("dialog", { name: "Stream settings" })).toHaveCount(0)
+    await expect(streamSettings.getByRole("tab", { name: "Settings" })).toHaveAttribute("aria-selected", "true")
     await streamSettings.getByLabel("Environment").selectOption("local_worktree")
+    await streamSettings.getByLabel("Project directory").selectOption(repositoryDirectory)
     await streamSettings.getByLabel("Base revision").fill("HEAD")
     await streamSettings.getByLabel("Harness").selectOption("opencode")
-    await streamSettings.getByLabel("Isolation").selectOption("child")
-    await streamSettings.getByLabel("Cleanup").selectOption("retain")
-    await streamSettings.getByLabel("Integration").selectOption("manual")
     await streamSettings.getByLabel("Recap model").selectOption("openai/gpt-5")
     await streamSettings.getByLabel("Recap effort").selectOption("high")
     await streamSettings.getByLabel("Quiet hours").fill("6")
     await streamSettings.getByRole("button", { name: "Save" }).click()
-    await expect(streamSettings).toBeHidden()
+    await expect(panel).toBeHidden()
 
     const streamId = await streamIdByTitle(request, "Ship the browser contract")
     await expect
       .poll(async () => readJson<StreamResponse>(request, `/api/workgraph/streams/${encodeURIComponent(streamId)}`))
       .toMatchObject({
         executionDefaults: {
-          environment: { kind: "local_worktree" },
+          environment: { kind: "local_worktree", directory: repositoryDirectory },
           repository: { baseRevision: "HEAD" },
-          isolation: "child",
-          cleanup: "retain",
-          integration: "manual",
         },
         recapDefaults: {
           model: { providerId: "openai", modelId: "gpt-5" },
@@ -147,10 +154,15 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
       },
     })
     const planning = await harness.runSourcePlanning()
-    expect(planning).toMatchObject({ state: "completed" })
+    expect(
+      planning,
+      JSON.stringify({ ...planning, ...("error" in planning ? { error: String(planning.error) } : {}) }),
+    ).toMatchObject({ state: "completed" })
 
     await page.goto("/workgraph")
-    await page.getByRole("button", { name: /^Needs you — 1 waiting on you$/ }).click()
+    const card = page.getByRole("complementary", { name: "Waiting on you" })
+    await expect(card).toBeVisible()
+    await card.getByRole("button", { name: /Review proposed work/ }).click()
     const panel = page.getByRole("complementary", { name: "Workspace panel" })
     await expect(panel.getByRole("tab", { name: "Needs you" })).toHaveAttribute("aria-selected", "true")
     const proposal = panel.getByRole("button", { name: /Review proposed work/ })
@@ -237,8 +249,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     expect(secondProposal.diffSummary).toEqual(expect.any(String))
 
     await page.goto("/workgraph")
-    await page.getByRole("button", { name: /^Needs you — 1 waiting on you$/ }).click()
-    const panel = page.getByRole("complementary", { name: "Workspace panel" })
+    const panel = await openWaitingItemPanel(page, /Review proposed work/)
     await panel.getByRole("button", { name: /Review proposed work/ }).click()
     const dialog = page.getByRole("dialog", { name: "Review proposed work" })
     await expect(dialog.getByText(firstRef.revisionId, { exact: true })).toBeVisible()
@@ -288,6 +299,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
         provider: "github",
         providerUserId: "octocat",
         filters: { repo: "claxedo/claxedo", state: "open" },
+        target: streamTarget(),
       },
     })
     if (sourceViewResponse.status() !== 201) {
@@ -314,8 +326,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
       ])
 
     await page.goto("/workgraph")
-    await page.getByRole("button", { name: /Needs you — 1 waiting on you/ }).click()
-    const panel = page.getByRole("complementary", { name: "Workspace panel" })
+    const panel = await openWaitingItemPanel(page, /Unorganized AI work/)
     await panel.getByRole("button", { name: /Unorganized AI work/ }).click()
     const dialog = page.getByRole("dialog", { name: "Unorganized AI work" })
     await expect(dialog.getByText("#101 · Connection-filtered launch issue", { exact: true })).toBeVisible()
@@ -351,8 +362,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     expect(sessionCandidateId).toBeTruthy()
 
     await page.goto("/workgraph")
-    await page.getByRole("button", { name: /Needs you — 1 waiting on you/ }).click()
-    const panel = page.getByRole("complementary", { name: "Workspace panel" })
+    const panel = await openWaitingItemPanel(page, /Unorganized AI work/)
     await panel.getByRole("button", { name: /Unorganized AI work/ }).click()
     const candidates = page.getByRole("dialog", { name: "Unorganized AI work" })
     await expect(candidates.getByText("Launch architecture brainstorm", { exact: true })).toBeVisible()
@@ -365,7 +375,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
 
     expect(await harness.runSourcePlanning()).toMatchObject({ state: "completed" })
     await page.reload()
-    await page.getByRole("button", { name: /Needs you — 1 waiting on you/ }).click()
+    await openWaitingItemPanel(page, /Review proposed work/)
     await panel.getByRole("button", { name: /Review proposed work/ }).click()
     const proposal = page.getByRole("dialog", { name: "Review proposed work" })
     await proposal.getByRole("button", { name: "Confirm" }).click()
@@ -386,7 +396,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     )?.id
     expect(dismissedCandidateId).toBeTruthy()
     await page.reload()
-    await page.getByRole("button", { name: /Needs you — 1 waiting on you/ }).click()
+    await openWaitingItemPanel(page, /Unorganized AI work/)
     await panel.getByRole("button", { name: /Unorganized AI work/ }).click()
     await expect(candidates.getByText("Discarded AI note", { exact: true })).toBeVisible()
     await candidates.getByRole("button", { name: "Dismiss" }).click()
@@ -407,11 +417,15 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     await page.getByRole("button", { name: "New stream" }).click()
     const create = page.getByRole("dialog", { name: "New stream" })
     await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill("Recap the launch")
+    await create.getByLabel("Project directory").selectOption(repositoryDirectory)
+    await create.getByLabel("Base revision").fill("HEAD")
     await create.getByRole("button", { name: "Create" }).click()
     const streamId = await streamIdByTitle(request, "Recap the launch")
 
     await page.getByRole("button", { name: "Stream settings for Recap the launch" }).click()
-    const streamSettings = page.getByRole("dialog", { name: "Stream settings" })
+    const streamSettings = page.getByRole("complementary", { name: "Workspace panel" })
+    await expect(streamSettings.getByRole("heading", { name: "Stream settings" })).toBeVisible()
+    await expect(page.getByRole("dialog", { name: "Stream settings" })).toHaveCount(0)
     await streamSettings.getByLabel("Harness").selectOption("opencode")
     await streamSettings.getByLabel("Recap model").selectOption("openai/gpt-5")
     await streamSettings.getByLabel("Recap effort").selectOption("high")
@@ -461,6 +475,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
       version: 1,
       type: "create_stream",
       title: "Execution inspection",
+      execution: streamExecution(),
     })
     const streamId = String(stream.value.streamId)
     const task = await command(request, {
@@ -495,8 +510,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
       })
       .toContainEqual({ id: workItemId, kind: "work_item", state: "failed" })
 
-    await page.getByRole("button", { name: /Needs you — 1 waiting on you/ }).click()
-    const panel = page.getByRole("complementary", { name: "Workspace panel" })
+    const panel = await openWaitingItemPanel(page, /Execute and inspect the launch/)
     await panel.getByRole("button", { name: /Execute and inspect the launch/ }).click()
     const dialog = page.getByRole("dialog", { name: "Task" })
     await expect(dialog).toBeVisible()
@@ -509,15 +523,43 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
       summary: "Retry completed in the retained worktree",
       artifacts: ["commit:retry-e2e"],
     })
-    await dialog.getByRole("button", { name: "Retry task" }).click()
+    await dialog.getByRole("button", { name: "Run again" }).click()
     await expect
       .poll(async () => {
-        await harness.runReconcile()
+        const attempts = await readJson<AttemptPageResponse>(
+          request,
+          `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/attempts?limit=10`,
+        )
+        return attempts.attempts.at(-1)?.attempt.state
+      })
+      .toBe("running")
+    await expect(harness.runReconcile()).resolves.toContainEqual({
+      settled: false,
+      awaitingExplicitCompletion: true,
+    })
+    await expect(
+      harness.completeControlledAttempt(
+        workItemId,
+        "Retry completed in the retained worktree",
+        ["commit:retry-e2e"],
+      ),
+    ).resolves.toMatchObject({ ok: true })
+    await expect
+      .poll(async () => {
         return (
           await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)
         ).state
       })
       .toBe("result_ready")
+      .catch(async (error) => {
+        const attempts = await readJson<unknown>(
+          request,
+          `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/attempts?limit=10`,
+        )
+        throw new Error(
+          `${String(error)}\nAttempts: ${JSON.stringify(attempts)}\nControlled runtime: ${JSON.stringify(harness.controlledExecutionDiagnostics())}`,
+        )
+      })
     await expect
       .poll(async () => {
         const attention = await readJson<AttentionResponse>(request, "/api/workgraph/attention?limit=50")
@@ -526,7 +568,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
       .toContainEqual({ id: workItemId, kind: "work_item", state: "result_ready" })
 
     await page.reload()
-    await page.getByRole("button", { name: /Needs you — 1 waiting on you/ }).click()
+    await openWaitingItemPanel(page, /Execute and inspect the launch/)
     await panel.getByRole("button", { name: /Execute and inspect the launch/ }).click()
     await expect(dialog.getByText("#2 · result", { exact: true })).toBeVisible()
     await expect(dialog.getByText("Retry completed in the retained worktree", { exact: true })).toBeVisible()
@@ -535,9 +577,91 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     harness.assertHealthy()
   })
 
+  test("executes through a real Session V2 and renders its project transcript", async ({ page, request }) => {
+    const stream = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Real Session execution",
+      execution: {
+        ...streamTarget(),
+        harness: "opencode",
+        agent: "build",
+        model: { providerId: "workgraph-e2e", modelId: "workgraph-model" },
+        effort: "high",
+        tools: ["read", "edit"],
+        connectionIds: [],
+      },
+    })
+    const streamId = String(stream.value.streamId)
+    const task = await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: streamId as never,
+      title: "Prove the real Session transcript",
+      completionContract: {
+        version: 1,
+        mode: "all",
+        requirements: [{
+          id: "real-session-proof",
+          kind: "test",
+          description: "The project Session completes through its scoped WorkGraph tool",
+        }],
+      },
+    })
+    const workItemId = String(task.value.workItemId)
+
+    await page.goto("/workgraph")
+    await page.getByRole("button", { name: "Execute stream Real Session execution" }).click()
+    await page.getByRole("menu", { name: "Execute stream Real Session execution" })
+      .getByRole("menuitem", { name: "Supervised" })
+      .click()
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      return (await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)).state
+    }, { timeout: 10_000 }).toBe("completed").catch(async (error) => {
+      const attempts = await readJson<unknown>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/attempts?limit=10`)
+      throw new Error(`${String(error)}\nAttempts: ${JSON.stringify(attempts)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+    })
+
+    const session = harness.realSessionEvidence()[0]
+    expect(session).toBeDefined()
+    expect(session?.directory).toBe(harness.worktreeDirectory(streamId))
+    const durableSession = await readJson<{ title: string }>(
+      request,
+      `/session/${encodeURIComponent(session!.sessionId)}?directory=${encodeURIComponent(session!.directory)}`,
+    )
+    expect(durableSession.title, JSON.stringify(harness.realSessionDiagnostics())).toBe("Prove the real Session transcript")
+    await page.reload()
+    await page.getByRole("button", { name: "Expand Real Session execution" }).click()
+    await page.getByRole("button", { name: "Open session for Prove the real Session transcript" }).click()
+    await expect(page).toHaveURL(`/s/${session!.sessionId}`)
+    await expect(page.getByText("Completed the WorkGraph Task in the real project Session.", { exact: true }))
+      .toBeVisible({ timeout: 30_000 })
+      .catch((error) => {
+        throw new Error(`${String(error)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      })
+    const project = page.locator('[data-testid="project-header"]').filter({ hasText: "Claxedo" })
+    await expect(project).toBeVisible()
+    const projectDisclosure = project.locator('[role="button"][aria-label$="project"]')
+    if (await projectDisclosure.getAttribute("aria-expanded") !== "true") await projectDisclosure.click()
+    const sessionRow = page.locator(
+      `[data-testid="rail-sidebar-session-row"][data-session-id="${session!.sessionId}"]`,
+    )
+    await expect(sessionRow).toBeVisible()
+    await expect(sessionRow).toContainText("Prove the real Session transcript")
+    await expect(page.getByText("Thread not found", { exact: false })).toHaveCount(0)
+    await expect(page.getByText("Session unavailable", { exact: false })).toHaveCount(0)
+    harness.assertHealthy()
+  })
+
   test("destroys a disposable Stream worktree but explicitly closes durable-effect work", async ({ page, request }) => {
     await configureGeneration(request)
-    const disposable = await command(request, { version: 1, type: "create_stream", title: "Disposable implementation" })
+    const disposable = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Disposable implementation",
+      execution: streamExecution(),
+    })
     const disposableStreamId = String(disposable.value.streamId)
     const disposableTask = await command(request, {
       version: 1,
@@ -582,6 +706,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
       version: 1,
       type: "create_stream",
       title: "Merged durable implementation",
+      execution: streamExecution(),
     })
     const durableStreamId = String(durable.value.streamId)
     const shippedTask = await command(request, {
@@ -622,7 +747,26 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     })
     await expect
       .poll(async () => {
-        await harness.runReconcile()
+        const attempts = await readJson<AttemptPageResponse>(
+          request,
+          `/api/workgraph/work-items/${encodeURIComponent(String(shippedTask.value.workItemId))}/attempts?limit=10`,
+        )
+        return attempts.attempts.at(-1)?.attempt.state
+      })
+      .toBe("running")
+    await expect(harness.runReconcile()).resolves.toContainEqual({
+      settled: false,
+      awaitingExplicitCompletion: true,
+    })
+    await expect(
+      harness.completeControlledAttempt(
+        String(shippedTask.value.workItemId),
+        "Merged through the real retained worktree",
+        ["pr:482"],
+      ),
+    ).resolves.toMatchObject({ ok: true })
+    await expect
+      .poll(async () => {
         return (
           await readJson<WorkItemResponse>(
             request,
@@ -707,8 +851,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     const decisionId = String(proposed.value.decisionId)
 
     await page.goto("/workgraph")
-    await page.getByRole("button", { name: /Needs you — 1 waiting on you/ }).click()
-    const panel = page.getByRole("complementary", { name: "Workspace panel" })
+    const panel = await openWaitingItemPanel(page, /Which authentication strategy should we ship\?/)
     const row = panel.getByRole("button", { name: /Which authentication strategy should we ship\?/ })
     await row.focus()
     await expect(row).toBeFocused()
@@ -752,7 +895,12 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     request,
   }) => {
     await configureGeneration(request)
-    const stream = await command(request, { version: 1, type: "create_stream", title: "Parallel launch branches" })
+    const stream = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Parallel launch branches",
+      execution: streamExecution(),
+    })
     const streamId = String(stream.value.streamId)
     const affected = await command(request, {
       version: 1,
@@ -794,9 +942,9 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
       workItemId: unrelatedId as never,
       executionMode: "supervised",
     })
+    await completeControlledExecution(request, unrelatedId, "Manifest branch executed", ["manifest.yaml"])
     await expect
       .poll(async () => {
-        await harness.runReconcile()
         return (
           await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(unrelatedId)}`)
         ).state
@@ -809,8 +957,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
       .toMatchObject({ state: "pending" })
 
     await page.goto("/workgraph")
-    await page.getByRole("button", { name: /Needs you — 2 waiting on you/ }).click()
-    const panel = page.getByRole("complementary", { name: "Workspace panel" })
+    const panel = await openWaitingItemPanel(page, /Which authentication strategy unblocks the affected branch/)
     await panel.getByRole("button", { name: /Which authentication strategy unblocks the affected branch/ }).click()
     await page
       .getByRole("dialog", { name: "Decision" })
@@ -828,9 +975,9 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
       workItemId: affectedId as never,
       executionMode: "supervised",
     })
+    await completeControlledExecution(request, affectedId, "Authentication branch executed", ["auth.ts"])
     await expect
       .poll(async () => {
-        await harness.runReconcile()
         return (
           await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(affectedId)}`)
         ).state
@@ -847,7 +994,7 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     )
     expect(unrelatedAttempts.attempts).toHaveLength(1)
     expect(affectedAttempts.attempts).toHaveLength(1)
-    expect(unrelatedAttempts.attempts[0]?.executionReferences?.workspaceId).toMatch(/^envelope_/)
+    expect(unrelatedAttempts.attempts[0]?.executionReferences?.workspaceId).toBe(harness.worktreeDirectory(streamId))
     expect(affectedAttempts.attempts[0]?.executionReferences?.workspaceId).toBe(
       unrelatedAttempts.attempts[0]?.executionReferences?.workspaceId,
     )
@@ -888,6 +1035,8 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
     await page.getByRole("button", { name: "New stream" }).click()
     const create = page.getByRole("dialog", { name: "New stream" })
     await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill("Persist the narrow surface")
+    await create.getByLabel("Project directory").selectOption(repositoryDirectory)
+    await create.getByLabel("Base revision").fill("HEAD")
     await create.getByRole("button", { name: "Create" }).click()
     await expect(create).toBeHidden()
 
@@ -909,19 +1058,25 @@ test.describe.serial("@core personal WorkGraph real local journey", () => {
 
 const generationDefaults = {
   execution: {
-    environment: { kind: "local_worktree" as const },
-    repository: { baseRevision: "HEAD" },
     harness: "opencode",
     agent: "build",
     model: { providerId: "openai", modelId: "gpt-5" },
     effort: "high",
     tools: ["read", "edit"],
     connectionIds: [],
-    isolation: "stream" as const,
-    cleanup: "retain" as const,
-    integration: "manual" as const,
   },
   recap: {},
+}
+
+function streamTarget() {
+  return {
+    environment: { kind: "local_worktree" as const, directory: repositoryDirectory },
+    repository: { baseRevision: "HEAD" },
+  }
+}
+
+function streamExecution() {
+  return { ...generationDefaults.execution, ...streamTarget() }
 }
 
 async function configureGeneration(request: APIRequestContext) {
@@ -931,6 +1086,42 @@ async function configureGeneration(request: APIRequestContext) {
     expectedVersion: 1,
     defaults: generationDefaults,
   })
+}
+
+async function completeControlledExecution(
+  request: APIRequestContext,
+  workItemId: string,
+  summary: string,
+  artifacts: readonly string[],
+) {
+  await expect
+    .poll(async () => {
+      const attempts = await readJson<AttemptPageResponse>(
+        request,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/attempts?limit=10`,
+      )
+      return attempts.attempts.at(-1)?.attempt.state
+    })
+    .toBe("running")
+  await expect(harness.runReconcile()).resolves.toContainEqual({
+    settled: false,
+    awaitingExplicitCompletion: true,
+  })
+  const result = await harness.completeControlledAttempt(workItemId, summary, artifacts)
+  expect(result, JSON.stringify(result)).toMatchObject({ ok: true })
+}
+
+async function openWaitingItemPanel(page: Page, name: RegExp) {
+  const card = page.getByRole("complementary", { name: "Waiting on you" })
+  const panel = page.getByRole("complementary", { name: "Workspace panel" })
+  await expect.poll(async () => await card.isVisible() || await panel.isVisible()).toBe(true)
+  if (!(await card.isVisible())) {
+    await page.getByRole("button", { name: /Needs you/ }).click()
+    await expect(card).toBeVisible()
+  }
+  await card.getByRole("button", { name }).click()
+  await expect(panel).toBeVisible()
+  return panel
 }
 
 async function command(request: APIRequestContext, input: WorkGraphCommandRequest["command"]) {
@@ -1066,7 +1257,7 @@ type WorkItemResponse = Readonly<{ version: number; state: string }>
 type AttemptPageResponse = Readonly<{
   attempts: Array<
     Readonly<{
-      attempt: Readonly<{ id: string }>
+      attempt: Readonly<{ id: string; state: string }>
       executionReferences?: Readonly<{ workspaceId?: string }>
     }>
   >

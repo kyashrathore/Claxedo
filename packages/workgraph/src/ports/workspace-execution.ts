@@ -53,6 +53,7 @@ export type WorkspaceExecutionPort = Readonly<{
     input: Readonly<{
       streamId: StreamID
       workItemId: WorkItemID
+      title: string
       attemptId: AttemptID
       leaseEpoch: number
       envelopeId: StreamEnvelopeID

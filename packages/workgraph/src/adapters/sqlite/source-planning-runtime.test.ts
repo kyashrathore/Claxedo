@@ -41,7 +41,7 @@ describe("SQLite durable source planning runtime", () => {
       await expect(runtime.runDue(owner())).resolves.toMatchObject({
         state: "failed",
         error: expect.objectContaining({
-          message: expect.stringContaining("Source planning execution profile is incomplete"),
+          message: expect.stringContaining("Source planning generation profile is incomplete"),
         }),
       })
       expect(admissions).toBe(0)

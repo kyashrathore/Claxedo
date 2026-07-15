@@ -56,7 +56,7 @@ export function WaitingPanelBody(props: {
         <div class="workgraph-waiting">
           <div class="workgraph-waiting-intro">
             <div class="workgraph-waiting-intro-head">
-              <Show when={props.unread > 0}><span class="workgraph-attention-dot" aria-label={`${props.unread} unread`} /></Show>
+              <Show when={props.unread > 0}><span role="img" class="workgraph-attention-dot" aria-label={`${props.unread} unread`} /></Show>
               <span class="text-[12px] font-semibold text-text-strong">Needs you</span>
               <span class="workgraph-count" aria-label={`${props.items.length} waiting`}>{props.items.length}</span>
               <span class="workgraph-card-gap" aria-hidden="true" />
