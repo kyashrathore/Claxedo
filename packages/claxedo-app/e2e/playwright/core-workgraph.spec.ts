@@ -408,6 +408,36 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     harness.assertHealthy()
   })
 
+  test("persists Attention mark-read and clear acknowledgements across reloads", async ({ page }) => {
+    expect(
+      await harness.projectIndependentSession({
+        sessionId: "session_attention_acknowledgement",
+        title: "Review the durable Attention acknowledgement",
+        summary: "This meaningful Session should remain visible until the owner clears Attention.",
+      }),
+    ).toBe("created")
+
+    await page.goto("/workgraph")
+    let panel = await openWaitingItemPanel(page, /Unorganized AI work/)
+    await expect(panel.getByLabel(/unread/)).toBeVisible()
+    await panel.getByRole("button", { name: "Mark all read" }).click()
+    await expect(panel.getByRole("button", { name: "Mark all read" })).toBeDisabled()
+    await expect(panel.getByLabel(/unread/)).toHaveCount(0)
+
+    await page.reload()
+    panel = await openNeedsYouPanel(page)
+    await expect(panel.getByRole("button", { name: "Mark all read" })).toBeDisabled()
+    await expect(panel.getByRole("button", { name: /Unorganized AI work/ })).toBeVisible()
+    await panel.getByRole("button", { name: "Clear" }).click()
+    await expect(panel.getByText("Nothing needs you right now", { exact: true })).toBeVisible()
+
+    await page.reload()
+    panel = await openNeedsYouPanel(page)
+    await expect(panel.getByText("Nothing needs you right now", { exact: true })).toBeVisible()
+    await expect(page.getByRole("complementary", { name: "Waiting on you" })).toHaveCount(0)
+    harness.assertHealthy()
+  })
+
   test("publishes an agent-session Recap and lazy-loads its Stream row preview on hover and focus", async ({
     page,
     request,
@@ -1121,6 +1151,14 @@ async function openWaitingItemPanel(page: Page, name: RegExp) {
   }
   await card.getByRole("button", { name }).click()
   await expect(panel).toBeVisible()
+  return panel
+}
+
+async function openNeedsYouPanel(page: Page) {
+  const panel = page.getByRole("complementary", { name: "Workspace panel" })
+  if (!(await panel.isVisible())) await page.getByRole("button", { name: "Needs you", exact: true }).click()
+  await expect(panel).toBeVisible()
+  await expect(panel.getByRole("tab", { name: "Needs you" })).toHaveAttribute("aria-selected", "true")
   return panel
 }
 
