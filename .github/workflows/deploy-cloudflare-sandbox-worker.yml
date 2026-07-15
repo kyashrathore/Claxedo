@@ -39,6 +39,10 @@ jobs:
   deploy:
     if: ${{ inputs.deploy_worker }}
     runs-on: ubuntu-latest
+    # The control-plane release reads its credentials from this environment.
+    # Bind the independently dispatched sandbox release to the same source so
+    # the Worker's API_TOKEN and the driver's bearer token cannot drift.
+    environment: staging
     defaults:
       run:
         working-directory: packages/claxedo-server/scripts/sandbox/cloudflare-worker

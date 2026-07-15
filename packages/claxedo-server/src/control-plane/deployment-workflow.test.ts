@@ -129,6 +129,7 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(sandboxImage).not.toContain("- packages/sandbox-manager/src/image.ts")
     expect(sandboxWorker).toContain("npx tsx ../build-sandbox-image.ts --bundle-only --out=.build")
     expect(sandboxWorker).toContain("bun run --cwd ../../../../sandbox-manager build")
+    expect(sandboxWorker).toContain("environment: staging")
     expect(sandboxWorker).toContain("npx wrangler secret put API_TOKEN")
     expect(controlPlane).toContain("wrangler secret put CLOUDFLARE_API_TOKEN --env staging")
     expect(controlPlane).toContain("- .github/actions/setup-bun/action.yml")
