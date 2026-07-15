@@ -389,6 +389,14 @@ import type {
   V2SessionWaitResponses,
   V2SkillListErrors,
   V2SkillListResponses,
+  V2WorkgraphActivityErrors,
+  V2WorkgraphActivityResponses,
+  V2WorkgraphCommandErrors,
+  V2WorkgraphCommandResponses,
+  V2WorkgraphExecutionCapabilitiesErrors,
+  V2WorkgraphExecutionCapabilitiesResponses,
+  V2WorkgraphRefreshExecutionCapabilitiesErrors,
+  V2WorkgraphRefreshExecutionCapabilitiesResponses,
   VcsApplyErrors,
   VcsApplyResponses,
   VcsDiffErrors,
@@ -399,6 +407,7 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  WorkGraphCommandRequest,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -6993,6 +7002,109 @@ export class ProjectCopy2 extends HeyApiClient {
   }
 }
 
+export class Workgraph extends HeyApiClient {
+  /**
+   * Execute WorkGraph command
+   *
+   * Execute one idempotent, versioned WorkGraph command for the authenticated owner.
+   */
+  public command<ThrowOnError extends boolean = false>(
+    parameters: {
+      workGraphCommandRequest: WorkGraphCommandRequest
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "workGraphCommandRequest", map: "body" }] }])
+    return (options?.client ?? this.client).post<V2WorkgraphCommandResponses, V2WorkgraphCommandErrors, ThrowOnError>({
+      url: "/api/workgraph/commands",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Get WorkGraph execution capabilities
+   *
+   * Read the current owner-bound, side-effect-free execution capability catalog.
+   */
+  public executionCapabilities<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      V2WorkgraphExecutionCapabilitiesResponses,
+      V2WorkgraphExecutionCapabilitiesErrors,
+      ThrowOnError
+    >({ url: "/api/workgraph/execution-capabilities", ...options })
+  }
+
+  /**
+   * Refresh WorkGraph execution capabilities
+   *
+   * Explicitly refresh the authenticated owner's execution capability catalog.
+   */
+  public refreshExecutionCapabilities<ThrowOnError extends boolean = false>(
+    parameters: {
+      body: {
+        [key: string]: unknown
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "body", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      V2WorkgraphRefreshExecutionCapabilitiesResponses,
+      V2WorkgraphRefreshExecutionCapabilitiesErrors,
+      ThrowOnError
+    >({
+      url: "/api/workgraph/execution-capabilities/refresh",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * List WorkGraph Task activity
+   *
+   * Read a bounded Task activity page at milestones, progress, or detailed granularity.
+   */
+  public activity<ThrowOnError extends boolean = false>(
+    parameters: {
+      workItemId: string
+      granularity?: "milestones" | "progress" | "detailed"
+      after?: string
+      limit?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "workItemId" },
+            { in: "query", key: "granularity" },
+            { in: "query", key: "after" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2WorkgraphActivityResponses, V2WorkgraphActivityErrors, ThrowOnError>({
+      url: "/api/workgraph/work-items/{workItemId}/activity",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class V2 extends HeyApiClient {
   private _health?: Health
   get health(): Health {
@@ -7078,6 +7190,11 @@ export class V2 extends HeyApiClient {
   get projectCopy(): ProjectCopy2 {
     return (this._projectCopy ??= new ProjectCopy2({ client: this.client }))
   }
+
+  private _workgraph?: Workgraph
+  get workgraph(): Workgraph {
+    return (this._workgraph ??= new Workgraph({ client: this.client }))
+  }
 }
 
 export class Tool2 extends HeyApiClient {
@@ -7112,6 +7229,7 @@ export class Tool2 extends HeyApiClient {
         outputSchema?: {
           [key: string]: unknown
         }
+        callbackUrl?: string
       }>
     },
     options?: Options<never, ThrowOnError>,

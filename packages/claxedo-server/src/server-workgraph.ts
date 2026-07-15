@@ -91,6 +91,7 @@ export async function createLocalEmbeddedWorkGraph(
   const service = operationalTelemetry
     ? instrumentWorkGraphCommands(adapter.service, operationalTelemetry)
     : adapter.service
+  const activityPorts = workgraph.createSqliteWorkGraphActivityPorts({ database: input.database })
   const recaps = workgraph.createSqliteRecapRuntime({
     database: input.database,
     ...(input.recaps?.clock ? { clock: input.recaps.clock } : {}),
@@ -252,6 +253,8 @@ export async function createLocalEmbeddedWorkGraph(
   return {
     database: input.database,
     service,
+    activity: activityPorts.activity,
+    sessionBindings: activityPorts.sessionBindings,
     router,
     resolveContext,
     reconcile,

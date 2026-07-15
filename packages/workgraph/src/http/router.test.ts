@@ -218,6 +218,11 @@ describe("WorkGraph northbound HTTP router", () => {
         hasMore: false,
       })
       expect((await app.request(`/work-items/${itemBody.value.workItemId}/attempts?after=malformed&limit=10`)).status).toBe(409)
+      expect(await (await app.request(`/work-items/${itemBody.value.workItemId}/activity?limit=10`)).json()).toMatchObject({
+        entries: expect.any(Array),
+        hasMore: false,
+      })
+      expect((await app.request(`/work-items/${itemBody.value.workItemId}/activity?after=malformed&limit=10`)).status).toBe(409)
       const recorded = await app.request("/commands", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -653,6 +658,7 @@ function createFixture() {
       workItems: {
         readDetail: async () => undefined,
         listAttempts: async () => ({ attempts: [], hasMore: false }),
+        listActivity: async () => ({ entries: [], hasMore: false }),
       },
       sources: {
         list: async () => ({ sources: [], hasMore: false }),

@@ -20,6 +20,7 @@ import {
 } from "../control-plane/adapters/worker/hosted-compose"
 import {
   createConvexWorkGraphArchivePort,
+  createConvexWorkGraphActivityPorts,
   createWorkGraphConvexExecutor,
   createConvexWorkGraphService,
   type WorkGraphConvexExecutor,
@@ -133,6 +134,11 @@ export function createHostedWorkGraph(
   const service = operationalTelemetry
     ? instrumentWorkGraphCommands(rawService, operationalTelemetry, input.now)
     : rawService
+  const activityPorts = createConvexWorkGraphActivityPorts({
+    ...(url ? { url } : {}),
+    serviceToken,
+    executor,
+  })
   const ownerContext = async (auth: SignedControlPlaneAuth, requestId: string): Promise<WorkGraphContext> => {
     const organizationId = await trustedOrganizationId(authority, auth)
     const context: WorkGraphContext = {
@@ -238,6 +244,8 @@ export function createHostedWorkGraph(
   }
   return {
     service,
+    activity: activityPorts.activity,
+    sessionBindings: activityPorts.sessionBindings,
     executor,
     serviceToken,
     resolveContext,

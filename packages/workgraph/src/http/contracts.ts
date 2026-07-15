@@ -27,6 +27,9 @@ import {
   WorkItemAttemptListInputSchema,
   WorkItemAttemptPageCursorSchema,
   WorkItemAttemptPageSchema,
+  StreamActivityGranularitySchema,
+  TaskActivityPageCursorSchema,
+  TaskActivityPageSchema,
   WorkItemDtoSchema,
   WorkItemReadInputSchema,
   StreamDtoSchema,
@@ -89,6 +92,11 @@ export const WorkGraphHttpDecisionReadSchema = DecisionReadInputSchema
 export const WorkGraphHttpRecapReadSchema = RecapReadInputSchema
 export const WorkGraphHttpWorkItemAttemptsQuerySchema = z.strictObject({
   after: WorkItemAttemptPageCursorSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+})
+export const WorkGraphHttpWorkItemActivityQuerySchema = z.strictObject({
+  granularity: StreamActivityGranularitySchema.default("progress"),
+  after: TaskActivityPageCursorSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 })
 
@@ -242,6 +250,15 @@ export type WorkGraphHttpQueries = Readonly<{
       context: z.infer<typeof WorkGraphContextSchema>,
       input: z.infer<typeof WorkItemAttemptListInputSchema>,
     ) => Promise<z.infer<typeof WorkItemAttemptPageSchema>>
+    listActivity: (
+      context: z.infer<typeof WorkGraphContextSchema>,
+      input: Readonly<{
+        workItemId: z.infer<typeof WorkItemIDSchema>
+        granularity: z.infer<typeof StreamActivityGranularitySchema>
+        after?: z.infer<typeof TaskActivityPageCursorSchema>
+        limit: number
+      }>,
+    ) => Promise<z.infer<typeof TaskActivityPageSchema>>
   }>
   attempts: Readonly<{
     read: (

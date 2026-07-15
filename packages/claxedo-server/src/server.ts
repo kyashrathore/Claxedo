@@ -95,7 +95,7 @@ import { centralModelBackend } from "./central-session-runtime"
 import { dataDir } from "./paths"
 import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "./workgraph-host/local-execution"
 import { createLocalExecutionCapabilities } from "./workgraph-host/local-execution-capabilities"
-import { createLocalWorkGraphAgentTools, localSessionExecution } from "./workgraph-agent-tools"
+import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution } from "./workgraph-agent-tools"
 import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "./worktree-service"
 import type { CommandResult, WorkGraphAttemptOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 
@@ -924,6 +924,7 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
           organizationId: "local",
           ownerUserId: "local",
           sessionExecution: (sessionId) => localSessionExecution(opencodeRequest, sessionId),
+          sessionContext: (sessionId) => localSessionContext(opencodeRequest, sessionId),
         }),
       ),
     )

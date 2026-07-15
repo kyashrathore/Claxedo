@@ -6,7 +6,7 @@ import type { AttemptRuntimePort, WorkGraphArchivePort } from "@claxedo/workgrap
 import { createWorkGraphHttpRouter } from "@claxedo/workgraph"
 import { applyWorkGraphCommand, reconcileAutonomousStreams } from "../../../../convex/workgraphCommands"
 import { readWorkGraphProjection as readTenantWorkGraphProjection } from "../../../../convex/workgraphChanges"
-import { applyWorkGraphActivityMutation, readSessionBinding, readTaskActivityProjection } from "../../../../convex/workgraphActivity"
+import { applyWorkGraphActivityMutation, readSessionBinding, readSessionBindingForSession, readTaskActivityProjection } from "../../../../convex/workgraphActivity"
 import { claimControlEffects, claimLaunches, completeControlEffect, markRunning, recordResult, renewWorkGraphAttemptLease, settleRejectedProvision } from "../../../../convex/workgraphRuntime"
 import { exportWorkGraphArchive as exportTenantWorkGraphArchive, restoreWorkGraphArchive as restoreTenantWorkGraphArchive } from "../../../../convex/workgraphArchive"
 import { initializeAttentionProjection as initializeTenantAttentionProjection, syncAttentionRecord, syncCandidateTransition, syncConnectionAttention } from "../../../../convex/workgraphAttention"
@@ -3126,6 +3126,9 @@ describe("Convex WorkGraph activity conformance v1", () => {
       query: async (_fn: unknown, args: Record<string, unknown>) => {
         if (typeof args.binding_id === "string") {
           return readSessionBinding(harness, String(args.organization_id), String(args.owner_subject), args.binding_id)
+        }
+        if (typeof args.session_id === "string") {
+          return readSessionBindingForSession(harness, String(args.organization_id), String(args.owner_subject), args.session_id)
         }
         const query = args.query as Record<string, unknown>
         return readTaskActivityProjection(

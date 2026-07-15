@@ -1,5 +1,6 @@
 import { OpenApi } from "effect/unstable/httpapi"
 import { OpenCodeHttpApi } from "./api"
+import { WorkGraphApi } from "@opencode-ai/protocol/api"
 import { QueryBooleanOpenApi } from "./groups/query"
 
 type OpenApiParameter = {
@@ -71,6 +72,7 @@ const QueryParameterSchemas: Record<string, OpenApiSchema> = {
   "GET /api/session start": { type: "number" },
   "GET /api/session roots": QueryBooleanOpenApi,
   "GET /api/session/{sessionID}/message limit": { type: "number" },
+  "GET /api/workgraph/work-items/{workItemId}/activity limit": { type: "integer", minimum: 1, maximum: 100 },
 }
 
 const LegacyComponentDescriptions: Record<string, string> = {
@@ -527,7 +529,7 @@ function normalizeParameter(param: OpenApiParameter, route: string) {
   param.schema = stripOptionalNull(param.schema)
 }
 
-export const PublicApi = OpenCodeHttpApi.annotateMerge(
+export const PublicApi = OpenCodeHttpApi.addHttpApi(WorkGraphApi).annotateMerge(
   OpenApi.annotations({
     title: "opencode",
     version: "1.0.0",

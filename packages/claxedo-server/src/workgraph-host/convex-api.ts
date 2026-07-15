@@ -15,6 +15,7 @@ type WorkGraphConvexApi = {
   workgraphActivity: {
     mutateForService: ConvexMutation
     readBindingForService: ConvexQuery
+    readBindingForSessionForService: ConvexQuery
   }
   workgraphAttention: {
     acknowledgeForService: ConvexMutation

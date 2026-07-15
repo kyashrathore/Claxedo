@@ -104,6 +104,28 @@ export const readBindingForService = serviceQuery({
   },
 })
 
+export const readBindingForSessionForService = serviceQuery({
+  args: {
+    organization_id: v.id("orgs"),
+    owner_subject: v.string(),
+    session_id: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const tenant = await requireTrustedWorkGraphTenantSubject(
+      ctx,
+      args.service_token,
+      args.organization_id,
+      args.owner_subject,
+    )
+    return readSessionBindingForSession(
+      ctx,
+      String(tenant.organization_id),
+      String(tenant.owner_user_id),
+      args.session_id,
+    )
+  },
+})
+
 export async function applyWorkGraphActivityMutation(ctx: any, context: ActivityContext) {
   if (await workGraphOwnerDeletionBarrier(ctx, context.organizationId, context.ownerUserId)) {
     throw new WorkGraphSessionBindingError("conflict", "WorkGraph owner deletion is in progress")
@@ -124,6 +146,22 @@ export async function readSessionBinding(
   bindingId: string,
 ) {
   const binding = await owned(ctx, "workgraph_session_bindings", organizationId, ownerUserId, bindingId)
+  return binding ? bindingDto(ownerUserId, binding) : undefined
+}
+
+export async function readSessionBindingForSession(
+  ctx: any,
+  organizationId: string,
+  ownerUserId: string,
+  sessionId: string,
+) {
+  const binding = await ctx.db.query("workgraph_session_bindings")
+    .withIndex("by_tenant_session", (query: any) => query
+      .eq("organization_id", organizationId)
+      .eq("owner_user_id", ownerUserId)
+      .eq("session_id", sessionId))
+    .filter((query: any) => query.eq(query.field("state"), "active"))
+    .first()
   return binding ? bindingDto(ownerUserId, binding) : undefined
 }
 

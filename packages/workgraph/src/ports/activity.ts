@@ -21,6 +21,7 @@ export type WorkGraphSessionBindingPort = Readonly<{
   recordCheckpoint(context: WorkGraphContext, input: RecordAgentCheckpointInput): Promise<AgentCheckpointDto>
   release(context: WorkGraphContext, input: ReleaseSessionBindingInput): Promise<SessionBindingDto>
   read(context: WorkGraphContext, bindingId: SessionBindingID): Promise<SessionBindingDto | undefined>
+  readForSession(context: WorkGraphContext, sessionId: string): Promise<SessionBindingDto | undefined>
 }>
 
 export type WorkGraphSessionBindingErrorCode = "not_found" | "conflict" | "not_ready" | "invalid_transition"

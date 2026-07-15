@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { EmbeddedWorkGraphTransport } from "@claxedo/mcp/workgraph-tools"
+import type { EmbeddedWorkGraphTransport, WorkGraphCreationContext } from "@claxedo/mcp/workgraph-tools"
 import type { ExecutionProfileDefaults, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import type { LocalEmbeddedWorkGraph } from "./server-workgraph"
 import { OPENCODE_INTERNAL_BASE, type OpenCodeApplicationToolRegistration, type OpenCodeRequestFn } from "./opencode-engine"
@@ -35,12 +35,22 @@ export function createLocalEmbeddedWorkGraphTransport(
         workItemId: workItemId as never,
         ...input,
       } as never),
+    listWorkItemActivity: (workItemId, input) =>
+      embedded.service.queries.workItems.listActivity(resolveContext(), {
+        workItemId: workItemId as never,
+        ...input,
+      } as never),
     readAttempt: (attemptId) => embedded.service.queries.attempts.read(resolveContext(), { attemptId }),
     readDecision: (decisionId) => embedded.service.queries.decisions.read(resolveContext(), { decisionId }),
     readRecap: (recapId) => embedded.service.queries.recaps.read(resolveContext(), { recapId }),
     readEvidence: (evidenceId) =>
       embedded.service.queries.evidence.read(resolveContext(), { evidenceId: evidenceId as never }),
     listEvidence: (input) => embedded.service.queries.evidence.list(resolveContext(), input as never),
+    bindSession: (input) => embedded.sessionBindings.bind(resolveContext(), input as never),
+    readSessionBinding: (sessionId) => embedded.sessionBindings.readForSession(resolveContext(), sessionId),
+    attachSessionTask: (input) => embedded.sessionBindings.attachTask(resolveContext(), input as never),
+    recordSessionCheckpoint: (input) => embedded.sessionBindings.recordCheckpoint(resolveContext(), input as never),
+    releaseSessionBinding: (input) => embedded.sessionBindings.release(resolveContext(), input as never),
   }
   if (embedded.executionCapabilities) {
     Object.assign(transport, {
@@ -85,6 +95,7 @@ export async function createLocalWorkGraphAgentTools(
     organizationId: string
     ownerUserId: string
     sessionExecution?: (sessionId: string) => Promise<ExecutionProfileDefaults | undefined>
+    sessionContext?: (sessionId: string) => Promise<WorkGraphCreationContext["session"] | undefined>
   }>,
 ): Promise<Readonly<Record<string, OpenCodeApplicationToolRegistration>>> {
   const { callWorkGraph, registerWorkGraphTools } = await import("@claxedo/mcp/workgraph-tools")
@@ -110,13 +121,16 @@ export async function createLocalWorkGraphAgentTools(
             const execution = name === "workgraph_create_stream"
               ? await owner.sessionExecution?.(invocation.sessionID)
               : undefined
+            const session = sessionToolNames.has(name)
+              ? await owner.sessionContext?.(invocation.sessionID)
+              : undefined
             return callWorkGraph(
               createLocalEmbeddedWorkGraphTransport(embedded, () =>
                 context(invocation.sessionID, invocation.toolCallID),
               ),
               name as never,
               input.parse(value),
-              execution ? { execution } : undefined,
+              execution || session ? { ...(execution ? { execution } : {}), ...(session ? { session } : {}) } : undefined,
             )
           },
         },
@@ -124,6 +138,16 @@ export async function createLocalWorkGraphAgentTools(
     }),
   )
 }
+
+const sessionToolNames = new Set([
+  "workgraph_bind_session",
+  "workgraph_current_work",
+  "workgraph_select_work",
+  "workgraph_record_progress",
+  "workgraph_refresh_context",
+  "workgraph_complete_current_work",
+  "workgraph_release_session",
+])
 
 export async function localSessionExecution(
   request: OpenCodeRequestFn,
@@ -144,5 +168,55 @@ export async function localSessionExecution(
   return {
     environment: { kind: "local_worktree", directory },
     repository: { baseRevision: "HEAD" },
+  }
+}
+
+export async function localSessionContext(
+  request: OpenCodeRequestFn,
+  sessionId: string,
+): Promise<WorkGraphCreationContext["session"] | undefined> {
+  const [sessionResponse, configResponse] = await Promise.all([
+    request(new Request(`${OPENCODE_INTERNAL_BASE}/session/${encodeURIComponent(sessionId)}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
+    })),
+    request(new Request(`${OPENCODE_INTERNAL_BASE}/session/${encodeURIComponent(sessionId)}/config`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
+    })),
+  ])
+  if (!sessionResponse.ok) throw new Error(`Unable to resolve Session ${sessionId} project context`)
+  const session = await sessionResponse.json() as Record<string, unknown>
+  if (session.id !== sessionId || typeof session.directory !== "string" || !session.directory.trim()) return undefined
+  const config = configResponse.ok ? await configResponse.json() as Record<string, unknown> : undefined
+  const harness = config?.harness && typeof config.harness === "object"
+    ? config.harness as Record<string, unknown>
+    : undefined
+  const model = config?.model && typeof config.model === "object"
+    ? config.model as Record<string, unknown>
+    : undefined
+  const selectedModel = typeof model?.providerID === "string" && typeof model.modelID === "string"
+    ? { providerId: model.providerID, modelId: model.modelID }
+    : harness?.id === "pi"
+      ? { providerId: "pi", modelId: "virtual" }
+      : undefined
+  const resolvedExecution = typeof harness?.id === "string" && selectedModel
+    ? {
+        environment: { kind: "local_worktree" as const, directory: session.directory.trim() },
+        repository: { baseRevision: "HEAD" },
+        harness: harness.id,
+        agent: typeof config?.agent === "string" && config.agent.trim() ? config.agent : "build",
+        model: selectedModel,
+        effort: typeof config?.variant === "string" && config.variant.trim() ? config.variant : "medium",
+        tools: [],
+        connectionIds: [],
+      }
+    : undefined
+  return {
+    sessionId,
+    projectId: typeof session.projectID === "string" && session.projectID.trim()
+      ? session.projectID
+      : session.directory.trim(),
+    ...(resolvedExecution ? { resolvedExecution } : {}),
   }
 }

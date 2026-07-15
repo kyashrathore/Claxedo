@@ -19,9 +19,13 @@ import {
   IntakeCandidatePageSchema,
   RecapDtoSchema,
   RecapProfileDefaultsSchema,
+  ResolvedExecutionProfileSchema,
+  SessionBindingDtoSchema,
   SourceViewDtoSchema,
   SourceViewListResponseSchema,
   SourceViewRefreshResponseSchema,
+  StreamActivityGranularitySchema,
+  TaskActivityPageSchema,
   StreamDtoSchema,
   WorkGraphChangeEnvelopeSchema,
   WorkGraphCommandRequestSchema,
@@ -61,6 +65,7 @@ export type EmbeddedWorkGraphTransport = Readonly<{
   readProposal?(proposalId: string): Promise<unknown>
   readWorkItem?(workItemId: string): Promise<unknown>
   listWorkItemAttempts?(workItemId: string, input: Readonly<{ after?: string; limit: number }>): Promise<unknown>
+  listWorkItemActivity?(workItemId: string, input: Readonly<{ granularity: "milestones" | "progress" | "detailed"; after?: string; limit: number }>): Promise<unknown>
   readAttempt?(attemptId: string): Promise<unknown>
   readDecision?(decisionId: string): Promise<unknown>
   readRecap?(recapId: string): Promise<unknown>
@@ -77,10 +82,20 @@ export type EmbeddedWorkGraphTransport = Readonly<{
   dismissCandidate?(candidateId: string, expectedVersion: number): Promise<unknown>
   restoreCandidate?(candidateId: string, expectedVersion: number): Promise<unknown>
   syncCandidate?(candidateId: string, input: Readonly<{ idempotencyKey: string; summary: string; status?: string }>): Promise<unknown>
+  bindSession?(input: Readonly<Record<string, unknown>>): Promise<unknown>
+  readSessionBinding?(sessionId: string): Promise<unknown>
+  attachSessionTask?(input: Readonly<Record<string, unknown>>): Promise<unknown>
+  recordSessionCheckpoint?(input: Readonly<Record<string, unknown>>): Promise<unknown>
+  releaseSessionBinding?(input: Readonly<Record<string, unknown>>): Promise<unknown>
 }>
 type WorkGraphTransport = Request | EmbeddedWorkGraphTransport
 export type WorkGraphCreationContext = Readonly<{
   execution?: z.input<typeof ExecutionProfileDefaultsSchema>
+  session?: Readonly<{
+    sessionId: string
+    projectId: string
+    resolvedExecution?: z.input<typeof ResolvedExecutionProfileSchema>
+  }>
 }>
 export type WorkGraphCreationContextProvider = WorkGraphCreationContext | (() => Promise<WorkGraphCreationContext>)
 
@@ -94,6 +109,16 @@ export class WorkGraphRecordNotFoundError extends Error {
   ) {
     super(`WorkGraph ${recordType} '${recordId}' was not found`)
     this.name = "WorkGraphRecordNotFoundError"
+  }
+}
+
+export class WorkGraphSessionAttachmentDeniedError extends Error {
+  readonly code = "session_attachment_denied"
+  readonly status = 403
+
+  constructor() {
+    super("WorkGraph Session attachment requires trusted embedded Session context")
+    this.name = "WorkGraphSessionAttachmentDeniedError"
   }
 }
 
@@ -133,7 +158,17 @@ export const WORKGRAPH_CAPABILITY_MAP = [
   { uiAction: "Read the ordered WorkGraph change feed", tool: "workgraph_changes", mutating: false },
   { uiAction: "Create or revise a Work Source", tool: "workgraph_source", mutating: true },
   { uiAction: "Create a Stream", tool: "workgraph_create_stream", mutating: true },
+  { uiAction: "Create an Outcome", tool: "workgraph_create_outcome", mutating: true },
+  { uiAction: "Create a Task", tool: "workgraph_create_task", mutating: true },
   { uiAction: "Create an Outcome or Work Item", tool: "workgraph_create_work", mutating: true },
+  { uiAction: "Update a Stream, Outcome, or Task", tool: "workgraph_update", mutating: true },
+  { uiAction: "Bind the current Session to a Stream", tool: "workgraph_bind_session", mutating: true },
+  { uiAction: "Read the current Session's WorkGraph work", tool: "workgraph_current_work", mutating: false },
+  { uiAction: "Select the current Session's Task", tool: "workgraph_select_work", mutating: true },
+  { uiAction: "Record meaningful current-Task progress", tool: "workgraph_record_progress", mutating: true },
+  { uiAction: "Refresh the current Session's WorkGraph context", tool: "workgraph_refresh_context", mutating: false },
+  { uiAction: "Complete the current Session's Task with evidence", tool: "workgraph_complete_current_work", mutating: true },
+  { uiAction: "Release the current Session's WorkGraph binding", tool: "workgraph_release_session", mutating: true },
   { uiAction: "Propose source admission", tool: "workgraph_propose_admission", mutating: true },
   { uiAction: "Confirm source admission", tool: "workgraph_admit", mutating: true },
   { uiAction: "Retry, dismiss, or reopen a source proposal", tool: "workgraph_review_proposal", mutating: true },
@@ -160,6 +195,7 @@ export const WORKGRAPH_CAPABILITY_MAP = [
   { uiAction: "Record evidence", tool: "workgraph_record_evidence", mutating: true },
   { uiAction: "List or inspect evidence", tool: "workgraph_evidence", mutating: false },
   { uiAction: "List a Work Item's Attempts", tool: "workgraph_attempts", mutating: false },
+  { uiAction: "Read a Task's bounded activity", tool: "workgraph_activity", mutating: false },
   { uiAction: "Read a Recap", tool: "workgraph_recap", mutating: false },
   { uiAction: "Close a Stream or Outcome", tool: "workgraph_close", mutating: true },
   { uiAction: "Delete an eligible Stream", tool: "workgraph_delete", mutating: true },
@@ -178,8 +214,18 @@ export const WORKGRAPH_TOOL_SCHEMAS = {
   workgraph_source_revision: { work_source_id: z.string(), revision_id: z.string() },
   workgraph_changes: { cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional(), wait_ms: z.number().int().min(0).max(30_000).optional() },
   workgraph_source: { ...operation, action: z.enum(["create", "revise"]), title: z.string().optional(), content: z.string(), work_source_id: z.string().optional(), expected_revision_id: z.string().optional() },
-  workgraph_create_stream: { ...operation, title: z.string(), description: z.string().optional(), source: z.object(sourceRef).optional(), execution: ExecutionProfileDefaultsSchema.optional() },
+  workgraph_create_stream: { ...operation, title: z.string(), description: z.string().optional(), source: z.object(sourceRef).optional(), execution: ExecutionProfileDefaultsSchema.optional(), recap: RecapProfileDefaultsSchema.optional(), activity_granularity: StreamActivityGranularitySchema.optional() },
+  workgraph_create_outcome: { ...operation, stream_id: z.string(), title: z.string(), description: z.string().optional(), success_criteria: z.array(z.string()).min(1), execution: ExecutionProfileDefaultsSchema.optional() },
+  workgraph_create_task: { ...operation, stream_id: z.string(), title: z.string(), description: z.string().optional(), outcome_id: z.string().optional(), priority: z.number().int().nonnegative().optional(), dependency_ids: z.array(z.string()).optional(), source: z.object(sourceRef).optional(), completion_contract: CompletionContractSchema, execution: ExecutionProfileDefaultsSchema.optional() },
   workgraph_create_work: { ...operation, kind: z.enum(["outcome", "work_item"]), stream_id: z.string(), title: z.string(), description: z.string().optional(), outcome_id: z.string().optional(), priority: z.number().int().nonnegative().optional(), dependency_ids: z.array(z.string()).optional(), source: z.object(sourceRef).optional(), success_criteria: z.array(z.string()).min(1).optional(), completion_contract: CompletionContractSchema.optional(), execution: ExecutionProfileDefaultsSchema.optional() },
+  workgraph_update: { ...operation, target_type: z.enum(["stream", "outcome", "work_item"]), target_id: z.string(), expected_version: z.number().int().positive(), title: z.string().optional(), description: z.string().optional(), success_criteria: z.array(z.string()).min(1).optional(), outcome_id: z.string().nullable().optional(), priority: z.number().int().nonnegative().optional(), dependency_ids: z.array(z.string()).optional(), completion_contract: CompletionContractSchema.optional(), execution: ExecutionProfileDefaultsSchema.optional(), recap: RecapProfileDefaultsSchema.optional(), activity_granularity: StreamActivityGranularitySchema.optional() },
+  workgraph_bind_session: { ...operation, stream_id: z.string() },
+  workgraph_current_work: {},
+  workgraph_select_work: { ...operation, work_item_id: z.string() },
+  workgraph_record_progress: { ...operation, level: z.enum(["milestone", "progress", "detail"]), summary: z.string().trim().min(1).max(1_000), evidence_ids: z.array(z.string()).max(100).optional() },
+  workgraph_refresh_context: {},
+  workgraph_complete_current_work: { ...operation, summary: z.string().trim().min(1).max(10_000), artifacts: z.array(z.string()).max(100).optional(), evidence: z.array(z.strictObject({ requirement_id: z.string().optional(), evidence: EvidenceInputSchema })).min(1).max(100) },
+  workgraph_release_session: { ...operation },
   workgraph_propose_admission: { ...operation, source: z.object(sourceRef), target_stream_id: z.string().optional() },
   workgraph_admit: { ...operation, proposal_id: z.string(), expected_version: z.number().int().nonnegative(), source: z.object(sourceRef), disposition: z.enum(["create", "existing", "keep", "replace", "fork"]), stream_id: z.string().optional(), stream_title: z.string().optional(), replace_work_items: ReviewedReplacementWorkItemsSchema.describe("Required for replace. Exact reviewed Work Items and versions that the replacement may abandon.").optional(), outcomes: z.array(AdmissionOutcomeInputSchema).optional(), work_items: z.array(AdmissionWorkItemInputSchema).optional() },
   workgraph_review_proposal: { ...operation, action: z.enum(["retry", "dismiss", "reopen"]), proposal_id: z.string(), expected_version: z.number().int().nonnegative() },
@@ -206,10 +252,21 @@ export const WORKGRAPH_TOOL_SCHEMAS = {
   workgraph_record_evidence: { ...operation, subject: EvidenceSubjectSchema, requirement_id: z.string().optional(), source_attempt_id: z.string().optional(), evidence: EvidenceInputSchema },
   workgraph_evidence: { action: z.enum(["list", "get"]), subject: EvidenceSubjectSchema.optional(), evidence_id: z.string().optional(), cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
   workgraph_attempts: { work_item_id: z.string(), cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
+  workgraph_activity: { work_item_id: z.string(), granularity: StreamActivityGranularitySchema.optional(), cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
   workgraph_recap: { action: z.literal("get").optional(), stream_id: z.string().optional(), recap_id: z.string().optional() },
   workgraph_close: { ...operation, target_type: z.enum(["stream", "outcome"]), target_id: z.string(), expected_version: z.number().int().nonnegative(), reason: z.string() },
   workgraph_delete: { ...operation, stream_id: z.string(), expected_version: z.number().int().nonnegative(), reason: z.string() },
 } satisfies Record<(typeof WORKGRAPH_CAPABILITY_MAP)[number]["tool"], Record<string, z.ZodType>>
+
+const sessionContextTools = new Set<keyof typeof WORKGRAPH_TOOL_SCHEMAS>([
+  "workgraph_bind_session",
+  "workgraph_current_work",
+  "workgraph_select_work",
+  "workgraph_record_progress",
+  "workgraph_refresh_context",
+  "workgraph_complete_current_work",
+  "workgraph_release_session",
+])
 
 export function registerWorkGraphTools(
   register: Register,
@@ -225,7 +282,7 @@ export function registerWorkGraphTools(
       { description: `[WorkGraph] ${capability.uiAction}. The server derives the organization and user from trusted request context; results include the same record and change cursor used by the app.`, inputSchema: WORKGRAPH_TOOL_SCHEMAS[capability.tool] },
       async (input) => {
         try {
-          const context = capability.tool === "workgraph_create_stream" && typeof creationContext === "function"
+          const context = (capability.tool === "workgraph_create_stream" || sessionContextTools.has(capability.tool)) && typeof creationContext === "function"
             ? await creationContext()
             : typeof creationContext === "function" ? undefined : creationContext
           const result = await callWorkGraph(transport, capability.tool, input, context)
@@ -241,6 +298,9 @@ export function registerWorkGraphTools(
                 recordId: error.recordId,
               },
             }, true)
+          }
+          if (error instanceof WorkGraphSessionAttachmentDeniedError) {
+            return text({ error: { code: error.code, status: error.status, message: error.message } }, true)
           }
           if (error instanceof McpHttpError) {
             return text({
@@ -265,6 +325,83 @@ export async function callWorkGraph(
   creationContext?: WorkGraphCreationContext,
 ) {
   rejectTenantSelectors(input)
+  if (sessionContextTools.has(tool)) {
+    const session = creationContext?.session
+    if (!session) throw new WorkGraphSessionAttachmentDeniedError()
+    if (typeof transport === "function") throw new WorkGraphSessionAttachmentDeniedError()
+    if (tool === "workgraph_bind_session") {
+      return SessionBindingDtoSchema.parse(await requiredMethod(transport.bindSession, tool)({
+        operationId: requiredString(input, "operation_id"),
+        streamId: requiredString(input, "stream_id"),
+        sessionId: session.sessionId,
+        projectId: session.projectId,
+      }))
+    }
+    const binding = await requiredMethod(transport.readSessionBinding, tool)(session.sessionId)
+    if (!binding) {
+      if (tool === "workgraph_current_work" || tool === "workgraph_refresh_context") return { binding: null }
+      throw new Error("The current Session is not bound to a WorkGraph Stream")
+    }
+    const current = SessionBindingDtoSchema.parse(binding)
+    if (tool === "workgraph_current_work") return { binding: current }
+    if (tool === "workgraph_select_work") {
+      if (!session.resolvedExecution) throw new Error("The current Session execution profile is incomplete")
+      return SessionBindingDtoSchema.parse(await requiredMethod(transport.attachSessionTask, tool)({
+        operationId: requiredString(input, "operation_id"),
+        bindingId: current.id,
+        expectedVersion: current.version,
+        workItemId: requiredString(input, "work_item_id"),
+        resolvedExecution: session.resolvedExecution,
+      }))
+    }
+    if (tool === "workgraph_record_progress") {
+      return requiredMethod(transport.recordSessionCheckpoint, tool)({
+        operationId: requiredString(input, "operation_id"),
+        bindingId: current.id,
+        level: requiredString(input, "level"),
+        summary: requiredString(input, "summary"),
+        evidenceIds: input.evidence_ids ?? [],
+      })
+    }
+    if (tool === "workgraph_refresh_context") {
+      return {
+        binding: current,
+        ...(current.currentWorkItemId
+          ? { workItem: await requiredMethod(transport.readWorkItem, tool)(current.currentWorkItemId) }
+          : {}),
+        ...(current.currentAttemptId
+          ? { attempt: await requiredMethod(transport.readAttempt, tool)(current.currentAttemptId) }
+          : {}),
+      }
+    }
+    if (tool === "workgraph_complete_current_work") {
+      if (!current.currentAttemptId || !current.currentWorkItemId) {
+        throw new Error("The current Session has no active WorkGraph Task")
+      }
+      const request = WorkGraphCommandRequestSchema.parse({
+        operationId: requiredString(input, "operation_id"),
+        command: {
+          version: 1,
+          type: "complete_attempt",
+          attemptId: current.currentAttemptId,
+          sessionId: session.sessionId,
+          workspaceId: session.projectId,
+          summary: requiredString(input, "summary"),
+          artifacts: input.artifacts ?? [],
+          evidence: (input.evidence as Array<Record<string, unknown>>).map((entry) => ({
+            ...(typeof entry.requirement_id === "string" ? { requirementId: entry.requirement_id } : {}),
+            evidence: entry.evidence,
+          })),
+        },
+      })
+      return CommandResultSchema.parse(await transport.execute(request))
+    }
+    return SessionBindingDtoSchema.parse(await requiredMethod(transport.releaseSessionBinding, tool)({
+      operationId: requiredString(input, "operation_id"),
+      bindingId: current.id,
+      expectedVersion: current.version,
+    }))
+  }
   if (tool === "workgraph_get_defaults") {
     if (typeof transport !== "function") return requiredMethod(transport.readDefaults, tool)()
     return transport("/api/workgraph/defaults", { method: "GET" })
@@ -452,6 +589,20 @@ export async function callWorkGraph(
       })
       : await transport(`/api/workgraph/work-items/${encodeURIComponent(id)}/attempts?${query}`, { method: "GET" })
     return WorkItemAttemptPageSchema.parse(value)
+  }
+  if (tool === "workgraph_activity") {
+    const id = requiredString(input, "work_item_id")
+    const granularity = typeof input.granularity === "string" ? input.granularity as "milestones" | "progress" | "detailed" : "progress"
+    const query = pageQuery(input, 50)
+    query.set("granularity", granularity)
+    const value = typeof transport !== "function"
+      ? await requiredMethod(transport.listWorkItemActivity, tool)(id, {
+          granularity,
+          ...(typeof input.cursor === "string" ? { after: input.cursor } : {}),
+          limit: typeof input.limit === "number" ? input.limit : 50,
+        })
+      : await transport(`/api/workgraph/work-items/${encodeURIComponent(id)}/activity?${query}`, { method: "GET" })
+    return TaskActivityPageSchema.parse(value)
   }
   if (tool === "workgraph_evidence") {
     const action = requiredString(input, "action")
@@ -681,8 +832,16 @@ function embeddedSupports(transport: EmbeddedWorkGraphTransport, tool: keyof typ
     workgraph_update_candidate: "dismissCandidate",
     workgraph_sync_candidate: "syncCandidate",
     workgraph_attempts: "listWorkItemAttempts",
+    workgraph_activity: "listWorkItemActivity",
     workgraph_evidence: "listEvidence",
     workgraph_recap: "readRecap",
+    workgraph_bind_session: "bindSession",
+    workgraph_current_work: "readSessionBinding",
+    workgraph_select_work: "attachSessionTask",
+    workgraph_record_progress: "recordSessionCheckpoint",
+    workgraph_refresh_context: "readSessionBinding",
+    workgraph_complete_current_work: "readSessionBinding",
+    workgraph_release_session: "releaseSessionBinding",
   }
   const method = methods[tool]
   if (tool === "workgraph_changes") return false
@@ -738,9 +897,15 @@ export function toCommandRequest(
     ...(typeof input.description === "string" ? { description: input.description } : {}),
     ...(input.source ? { source: camelSource(input.source) } : {}),
     ...(input.execution ? { execution: input.execution } : creationContext?.execution ? { execution: creationContext.execution } : {}),
+    ...(input.recap ? { recap: input.recap } : {}),
+    ...(typeof input.activity_granularity === "string" ? { activityGranularity: input.activity_granularity } : {}),
   })
-  if (tool === "workgraph_create_work" || tool === "workgraph_create_followup") {
-    const kind = tool === "workgraph_create_followup" ? "work_item" : requiredString(input, "kind")
+  if (tool === "workgraph_create_outcome" || tool === "workgraph_create_task" || tool === "workgraph_create_work" || tool === "workgraph_create_followup") {
+    const kind = tool === "workgraph_create_outcome"
+      ? "outcome"
+      : tool === "workgraph_create_task" || tool === "workgraph_create_followup"
+        ? "work_item"
+        : requiredString(input, "kind")
     if (kind === "outcome") return command(operationId, {
       type: "create_outcome",
       streamId: requiredString(input, "stream_id"),
@@ -760,6 +925,38 @@ export function toCommandRequest(
       ...(input.source ? { source: camelSource(input.source) } : {}),
       completionContract: input.completion_contract,
       ...(input.execution ? { execution: input.execution } : {}),
+    })
+  }
+  if (tool === "workgraph_update") {
+    const type = requiredString(input, "target_type")
+    const id = requiredString(input, "target_id")
+    const common = {
+      expectedVersion: input.expected_version,
+      ...(typeof input.title === "string" ? { title: input.title } : {}),
+      ...(typeof input.description === "string" ? { description: input.description } : {}),
+      ...(input.execution ? { execution: input.execution } : {}),
+    }
+    if (type === "stream") return command(operationId, {
+      type: "update_stream",
+      streamId: id,
+      ...common,
+      ...(input.recap ? { recap: input.recap } : {}),
+      ...(typeof input.activity_granularity === "string" ? { activityGranularity: input.activity_granularity } : {}),
+    })
+    if (type === "outcome") return command(operationId, {
+      type: "update_outcome",
+      outcomeId: id,
+      ...common,
+      ...(input.success_criteria ? { successCriteria: input.success_criteria } : {}),
+    })
+    return command(operationId, {
+      type: "update_work_item",
+      workItemId: id,
+      ...common,
+      ...(Object.hasOwn(input, "outcome_id") ? { outcomeId: input.outcome_id } : {}),
+      ...(typeof input.priority === "number" ? { priority: input.priority } : {}),
+      ...(input.dependency_ids ? { dependencyIds: input.dependency_ids } : {}),
+      ...(input.completion_contract ? { completionContract: input.completion_contract } : {}),
     })
   }
   if (tool === "workgraph_propose_admission") return command(operationId, {

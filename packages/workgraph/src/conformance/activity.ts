@@ -47,11 +47,17 @@ export function workGraphActivityConformance(
         }
         const binding = await fixture.sessionBindings.bind(owners.first, input)
         assertDeepEqual(await fixture.sessionBindings.bind(owners.first, input), binding, "Exact bind retry changed its result")
+        assertDeepEqual(
+          await fixture.sessionBindings.readForSession(owners.first, input.sessionId),
+          binding,
+          "Active Session binding could not be restored from Session identity",
+        )
         await assertBindingError(() => fixture.sessionBindings.bind(owners.first, {
           ...input,
           projectId: "project_changed",
         }), "conflict")
         assert(await fixture.sessionBindings.read(owners.second, binding.id) === undefined, "Binding crossed its owner boundary")
+        assert(await fixture.sessionBindings.readForSession(owners.second, input.sessionId) === undefined, "Session lookup crossed its owner boundary")
         await fixture.sessionBindings.bind(owners.second, {
           operationId: operation("activity_bind"),
           streamId: second.streamId,

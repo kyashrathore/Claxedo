@@ -17,6 +17,8 @@ import {
   RecapDtoSchema,
   WorkItemAttemptPageCursorError,
   WorkItemAttemptPageSchema,
+  TaskActivityPageSchema,
+  TaskActivityPageCursorError,
   WorkItemDtoSchema,
   StreamDtoSchema,
   WorkSourceDtoSchema,
@@ -60,6 +62,7 @@ import {
   WorkGraphHttpReplacementReviewQuerySchema,
   WorkGraphHttpWorkItemReadSchema,
   WorkGraphHttpWorkItemAttemptsQuerySchema,
+  WorkGraphHttpWorkItemActivityQuerySchema,
   WorkGraphHttpAttemptReadSchema,
   WorkGraphHttpDecisionReadSchema,
   WorkGraphHttpRecapReadSchema,
@@ -464,6 +467,27 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
     } catch (error) {
       if (isWorkItemAttemptPageCursorError(error)) {
         return errorResponse(context, 409, "cursor_invalid", "Task Attempt cursor is no longer valid", false)
+      }
+      throw error
+    }
+  })
+
+  router.get("/work-items/:workItemId/activity", async (context) => {
+    const id = WorkGraphHttpWorkItemReadSchema.safeParse({ workItemId: context.req.param("workItemId") })
+    const query = WorkGraphHttpWorkItemActivityQuerySchema.safeParse(context.req.query())
+    if (!id.success || !query.success) return errorResponse(context, 400, "validation_error", "Invalid Task activity query", false)
+    try {
+      const page = TaskActivityPageSchema.parse(await input.service.queries.workItems.listActivity(
+        context.get("workGraphContext"),
+        { workItemId: id.data.workItemId, ...query.data },
+      ))
+      if (page.entries.some((entry) => entry.workItemId !== id.data.workItemId)) {
+        throw new Error("Task activity query crossed its trusted Task boundary")
+      }
+      return context.json(page)
+    } catch (error) {
+      if (error instanceof TaskActivityPageCursorError) {
+        return errorResponse(context, 409, "cursor_invalid", "Task activity cursor is no longer valid", false)
       }
       throw error
     }

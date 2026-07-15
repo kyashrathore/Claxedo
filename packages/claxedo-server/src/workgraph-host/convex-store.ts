@@ -471,6 +471,15 @@ export function createConvexWorkGraphActivityPorts(input: Input): Readonly<{
       })
       return result ? SessionBindingDtoSchema.parse(result) : undefined
     },
+    readForSession: async (context, sessionId: string) => {
+      const result = await exec.query(workGraphConvexApi.workgraphActivity.readBindingForSessionForService, {
+        service_token: input.serviceToken,
+        organization_id: context.organizationId,
+        owner_subject: owner(context),
+        session_id: sessionId,
+      })
+      return result ? SessionBindingDtoSchema.parse(result) : undefined
+    },
   }
   const activity: WorkGraphActivityPort = {
     list: async (context, queryInput) => {

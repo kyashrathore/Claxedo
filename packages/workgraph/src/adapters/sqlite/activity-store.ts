@@ -318,6 +318,15 @@ export function createSqliteWorkGraphActivityPorts(input: Readonly<{
       `).get(context.organizationId, context.ownerUserId, bindingId) as BindingRow | undefined
       return row ? bindingDto(context, row) : undefined
     },
+
+    readForSession: async (context, sessionId) => {
+      requireOwner(context)
+      const row = database.prepare(`
+        SELECT * FROM wg_v2_session_bindings
+        WHERE organization_id = ? AND owner_user_id = ? AND session_id = ? AND state = 'active'
+      `).get(context.organizationId, context.ownerUserId, sessionId) as BindingRow | undefined
+      return row ? bindingDto(context, row) : undefined
+    },
   }
 
   const activity: WorkGraphActivityPort = {

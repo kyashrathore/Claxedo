@@ -5,6 +5,7 @@ import {
   WORKGRAPH_CAPABILITY_MAP,
   WORKGRAPH_TOOL_SCHEMAS,
   WorkGraphRecordNotFoundError,
+  WorkGraphSessionAttachmentDeniedError,
   callWorkGraph,
   registerWorkGraphTools,
   toCommandRequest,
@@ -17,9 +18,206 @@ describe("WorkGraph MCP parity", () => {
       expect.objectContaining({ uiAction: "Update personal WorkGraph defaults", tool: "workgraph_update_defaults" }),
       expect.objectContaining({ uiAction: "Create or revise a Work Source", tool: "workgraph_source" }),
       expect.objectContaining({ uiAction: "Create a Stream", tool: "workgraph_create_stream" }),
+      expect.objectContaining({ uiAction: "Create an Outcome", tool: "workgraph_create_outcome" }),
+      expect.objectContaining({ uiAction: "Create a Task", tool: "workgraph_create_task" }),
+      expect.objectContaining({ uiAction: "Update a Stream, Outcome, or Task", tool: "workgraph_update" }),
       expect.objectContaining({ uiAction: "Update Stream execution defaults", tool: "workgraph_update_execution" }),
       expect.objectContaining({ uiAction: "Retry a Work Item", tool: "workgraph_retry" }),
     ]))
+  })
+
+  it("requires canonical Outcome success criteria and Task completion contracts at the tool boundary", () => {
+    expect(z.strictObject(WORKGRAPH_TOOL_SCHEMAS.workgraph_create_outcome).safeParse({
+      operation_id: "operation-outcome",
+      stream_id: "stream-1",
+      title: "Launch",
+    }).success).toBe(false)
+    expect(z.strictObject(WORKGRAPH_TOOL_SCHEMAS.workgraph_create_task).safeParse({
+      operation_id: "operation-task",
+      stream_id: "stream-1",
+      title: "Verify launch",
+    }).success).toBe(false)
+    expect(toCommandRequest("workgraph_create_outcome", {
+      operation_id: "operation-outcome",
+      stream_id: "stream-1",
+      title: "Launch",
+      success_criteria: ["Production is healthy"],
+    })).toEqual({
+      operationId: "operation-outcome",
+      command: {
+        version: 1,
+        type: "create_outcome",
+        streamId: "stream-1",
+        title: "Launch",
+        successCriteria: ["Production is healthy"],
+      },
+    })
+    expect(toCommandRequest("workgraph_create_task", {
+      operation_id: "operation-task",
+      stream_id: "stream-1",
+      title: "Verify launch",
+      completion_contract: {
+        version: 1,
+        mode: "all",
+        requirements: [{ id: "tests", kind: "test", description: "Tests pass" }],
+      },
+    })).toMatchObject({
+      command: {
+        type: "create_work_item",
+        completionContract: {
+          requirements: [{ id: "tests", kind: "test", description: "Tests pass" }],
+        },
+      },
+    })
+  })
+
+  it("maps general edits to the exact versioned Stream, Outcome, and Task commands", () => {
+    expect(toCommandRequest("workgraph_update", {
+      operation_id: "operation-stream-update",
+      target_type: "stream",
+      target_id: "stream-1",
+      expected_version: 2,
+      title: "Launch safely",
+      activity_granularity: "detailed",
+    })).toEqual({
+      operationId: "operation-stream-update",
+      command: {
+        version: 1,
+        type: "update_stream",
+        streamId: "stream-1",
+        expectedVersion: 2,
+        title: "Launch safely",
+        activityGranularity: "detailed",
+      },
+    })
+    expect(toCommandRequest("workgraph_update", {
+      operation_id: "operation-outcome-update",
+      target_type: "outcome",
+      target_id: "outcome-1",
+      expected_version: 3,
+      success_criteria: ["SLO holds"],
+    })).toEqual({
+      operationId: "operation-outcome-update",
+      command: {
+        version: 1,
+        type: "update_outcome",
+        outcomeId: "outcome-1",
+        expectedVersion: 3,
+        successCriteria: ["SLO holds"],
+      },
+    })
+    expect(toCommandRequest("workgraph_update", {
+      operation_id: "operation-task-update",
+      target_type: "work_item",
+      target_id: "task-1",
+      expected_version: 4,
+      outcome_id: null,
+      dependency_ids: ["task-0"],
+      priority: 2,
+    })).toEqual({
+      operationId: "operation-task-update",
+      command: {
+        version: 1,
+        type: "update_work_item",
+        workItemId: "task-1",
+        expectedVersion: 4,
+        outcomeId: null,
+        dependencyIds: ["task-0"],
+        priority: 2,
+      },
+    })
+  })
+
+  it("denies standalone MCP Session attachment without trusted embedded identity", async () => {
+    await expect(callWorkGraph(vi.fn(), "workgraph_bind_session", {
+      operation_id: "operation-bind",
+      stream_id: "stream-1",
+    })).rejects.toBeInstanceOf(WorkGraphSessionAttachmentDeniedError)
+  })
+
+  it("binds, selects, checkpoints, and completes through trusted current-Session identity", async () => {
+    const unselected = sessionBinding()
+    const selected = sessionBinding({ currentWorkItemId: "task-1", currentAttemptId: "attempt-1", version: 2 })
+    const transport = {
+      execute: vi.fn(async (request) => ({ ok: true, operationId: request.operationId, cursor: "cursor-1", value: { workItemId: "task-1" } })),
+      snapshot: vi.fn(),
+      readStream: vi.fn(),
+      readWorkItem: vi.fn(async () => ({ id: "task-1" })),
+      readAttempt: vi.fn(async () => ({ id: "attempt-1" })),
+      bindSession: vi.fn(async () => unselected),
+      readSessionBinding: vi.fn(async () => unselected),
+      attachSessionTask: vi.fn(async () => selected),
+      recordSessionCheckpoint: vi.fn(async () => ({ recordType: "agent_checkpoint" })),
+      releaseSessionBinding: vi.fn(async () => ({ ...selected, state: "released", releasedAt: 2, version: 3 })),
+    }
+    const context = {
+      session: {
+        sessionId: "session-1",
+        projectId: "project-1",
+        resolvedExecution: {
+          environment: { kind: "local_worktree" as const, directory: "/repo" },
+          repository: { baseRevision: "HEAD" },
+          harness: "opencode",
+          agent: "build",
+          model: { providerId: "openai", modelId: "gpt-5" },
+          effort: "high",
+          tools: [],
+          connectionIds: [],
+        },
+      },
+    }
+    await callWorkGraph(transport, "workgraph_bind_session", {
+      operation_id: "operation-bind",
+      stream_id: "stream-1",
+    }, context)
+    expect(transport.bindSession).toHaveBeenCalledWith({
+      operationId: "operation-bind",
+      streamId: "stream-1",
+      sessionId: "session-1",
+      projectId: "project-1",
+    })
+    await callWorkGraph(transport, "workgraph_select_work", {
+      operation_id: "operation-select",
+      work_item_id: "task-1",
+    }, context)
+    expect(transport.attachSessionTask).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: "operation-select",
+      bindingId: "binding-1",
+      workItemId: "task-1",
+      expectedVersion: 1,
+      resolvedExecution: context.session.resolvedExecution,
+    }))
+    transport.readSessionBinding.mockResolvedValue(selected)
+    await callWorkGraph(transport, "workgraph_record_progress", {
+      operation_id: "operation-progress",
+      level: "progress",
+      summary: "Core flow is working",
+    }, context)
+    expect(transport.recordSessionCheckpoint).toHaveBeenCalledWith({
+      operationId: "operation-progress",
+      bindingId: "binding-1",
+      level: "progress",
+      summary: "Core flow is working",
+      evidenceIds: [],
+    })
+    await callWorkGraph(transport, "workgraph_complete_current_work", {
+      operation_id: "operation-complete",
+      summary: "Implemented and verified",
+      evidence: [{ requirement_id: "tests", evidence: { kind: "test_result", summary: "Tests pass", passed: true } }],
+    }, context)
+    expect(transport.execute).toHaveBeenCalledWith({
+      operationId: "operation-complete",
+      command: {
+        version: 1,
+        type: "complete_attempt",
+        attemptId: "attempt-1",
+        sessionId: "session-1",
+        workspaceId: "project-1",
+        summary: "Implemented and verified",
+        artifacts: [],
+        evidence: [{ requirementId: "tests", evidence: { kind: "test_result", summary: "Tests pass", passed: true } }],
+      },
+    })
   })
 
   it("uses the app's exact execution-default and retry commands", () => {
@@ -165,6 +363,19 @@ describe("WorkGraph MCP parity", () => {
       ["/api/workgraph/intake?limit=15&after=candidate-1", { method: "GET" }],
       ["/api/workgraph/changes?limit=10&after=change-1&waitMs=500", { method: "GET" }],
     ])
+  })
+
+  it("reads bounded Task activity with progress granularity by default", async () => {
+    const request = vi.fn(async () => ({ entries: [], hasMore: false }))
+    await expect(callWorkGraph(request, "workgraph_activity", {
+      work_item_id: "task-1",
+      cursor: "activity-1",
+      limit: 20,
+    })).resolves.toEqual({ entries: [], hasMore: false })
+    expect(request).toHaveBeenCalledWith(
+      "/api/workgraph/work-items/task-1/activity?limit=20&after=activity-1&granularity=progress",
+      { method: "GET" },
+    )
   })
 
   it("marks actionable Recap notifications read with optimistic concurrency", async () => {
@@ -817,11 +1028,14 @@ describe("WorkGraph MCP parity", () => {
       "workgraph_get",
       "workgraph_source_revision",
       "workgraph_changes",
+      "workgraph_current_work",
+      "workgraph_refresh_context",
       "workgraph_source_views",
       "workgraph_intake",
       "workgraph_get_candidate",
       "workgraph_evidence",
       "workgraph_attempts",
+      "workgraph_activity",
       "workgraph_recap",
     ])
   })
@@ -944,6 +1158,25 @@ function invalidatedRecap(id: string, streamId: string, updatedAt: number) {
       reason: "Retired non-session generation",
       source: "retired_non_session_generation" as const,
     },
+  }
+}
+
+function sessionBinding(overrides: Record<string, unknown> = {}) {
+  return {
+    recordType: "session_binding" as const,
+    schemaVersion: 1 as const,
+    ownerUserId: "user_1",
+    id: "binding-1",
+    version: 1,
+    streamId: "stream-1",
+    sessionId: "session-1",
+    projectId: "project-1",
+    state: "active" as const,
+    boundAt: 1,
+    createdAt: 1,
+    updatedAt: 1,
+    provenance: { actor: { type: "agent" as const, id: "session-1" }, operationId: "operation-bind" },
+    ...overrides,
   }
 }
 

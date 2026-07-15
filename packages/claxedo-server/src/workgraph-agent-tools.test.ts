@@ -1,7 +1,10 @@
 import fs from "node:fs"
 import path from "node:path"
+import Database from "better-sqlite3"
 import { describe, expect, test, vi } from "vitest"
-import { createLocalWorkGraphAgentTools } from "./workgraph-agent-tools"
+import { createLocalWorkGraphAgentTools, localSessionContext } from "./workgraph-agent-tools"
+import { createLocalEmbeddedWorkGraph } from "./server-workgraph"
+import type { WorkspaceExecutionPort } from "@claxedo/workgraph"
 
 describe("embedded WorkGraph agent tools", () => {
   test("invoke the process-owned service with trusted owner context and no HTTP transport", async () => {
@@ -11,7 +14,7 @@ describe("embedded WorkGraph agent tools", () => {
       cursor: "cursor-1",
       value: { streamId: "stream-1" },
     }))
-    const tools = await createLocalWorkGraphAgentTools(embedded(execute), {
+    const tools = await createLocalWorkGraphAgentTools(embedded(execute) as never, {
       organizationId: "organization-a",
       ownerUserId: "owner-a",
     })
@@ -52,7 +55,7 @@ describe("embedded WorkGraph agent tools", () => {
   })
 
   test("does not expose organization or owner selectors in a tool input", async () => {
-    const tools = await createLocalWorkGraphAgentTools(embedded(vi.fn()), {
+    const tools = await createLocalWorkGraphAgentTools(embedded(vi.fn()) as never, {
       organizationId: "organization-a",
       ownerUserId: "owner-a",
     })
@@ -80,7 +83,7 @@ describe("embedded WorkGraph agent tools", () => {
       cursor: "cursor-1",
       value: { streamId: "stream-1" },
     }))
-    const tools = await createLocalWorkGraphAgentTools(embedded(execute), {
+    const tools = await createLocalWorkGraphAgentTools(embedded(execute) as never, {
       organizationId: "organization-a",
       ownerUserId: "owner-a",
       sessionExecution: async (sessionId) => ({
@@ -103,7 +106,276 @@ describe("embedded WorkGraph agent tools", () => {
       }),
     }))
   })
+
+  test("derives trusted Session, project, and execution identity for ledger tools", async () => {
+    const context = await localSessionContext(async (request) => {
+      const pathname = new URL(request.url).pathname
+      if (pathname.endsWith("/config")) return Response.json({
+        harness: { id: "codex-app-server", access: "native" },
+        model: { providerID: "openai", modelID: "gpt-5" },
+        variant: "high",
+        agent: "build",
+      })
+      return Response.json({ id: "session-1", projectID: "project-1", directory: "/projects/repo" })
+    }, "session-1")
+    expect(context).toEqual({
+      sessionId: "session-1",
+      projectId: "project-1",
+      resolvedExecution: {
+        environment: { kind: "local_worktree", directory: "/projects/repo" },
+        repository: { baseRevision: "HEAD" },
+        harness: "codex-app-server",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
+      },
+    })
+  })
+
+  test("derives Pi ledger execution without requiring provider configuration", async () => {
+    const context = await localSessionContext(async (request) => {
+      if (new URL(request.url).pathname.endsWith("/config")) {
+        return Response.json({ harness: { id: "pi", access: "native" }, agent: "build" })
+      }
+      return Response.json({ id: "session-pi", projectID: "project-1", directory: "/projects/repo" })
+    }, "session-pi")
+    expect(context?.resolvedExecution).toMatchObject({
+      harness: "pi",
+      model: { providerId: "pi", modelId: "virtual" },
+    })
+  })
+
+  test("binds the invoking Session without exposing Session or project selectors", async () => {
+    const bind = vi.fn(async (_context, input) => binding(input.sessionId, input.projectId))
+    const tools = await createLocalWorkGraphAgentTools({
+      ...embedded(vi.fn()),
+      sessionBindings: {
+        bind,
+        readForSession: vi.fn(),
+        attachTask: vi.fn(),
+        recordCheckpoint: vi.fn(),
+        release: vi.fn(),
+      },
+    } as never, {
+      organizationId: "organization-a",
+      ownerUserId: "owner-a",
+      sessionContext: async (sessionId) => ({
+        sessionId,
+        projectId: "project-1",
+      }),
+    })
+
+    await tools.workgraph_bind_session!.execute(
+      { operation_id: "operation-bind", stream_id: "stream-1" },
+      { sessionID: "session-1", agent: "build", assistantMessageID: "message-1", toolCallID: "call-bind" },
+    )
+    expect(bind).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: "organization-a",
+      ownerUserId: "owner-a",
+      actor: { type: "agent", id: "session-1" },
+    }), {
+      operationId: "operation-bind",
+      streamId: "stream-1",
+      sessionId: "session-1",
+      projectId: "project-1",
+    })
+  })
+
+  test("keeps one real Session across Task checkpoints, completion, and the next ready Task", async () => {
+    const database = new Database(":memory:")
+    try {
+      const workgraph = await createLocalEmbeddedWorkGraph({
+        database,
+        execution: terminalExecution(),
+        executionCapabilities: {
+          read: async (context) => ({
+            schemaVersion: 1,
+            organizationId: context.organizationId,
+            ownerUserId: context.ownerUserId,
+            catalogRevision: "a".repeat(64),
+            observedAt: Date.now(),
+            expiresAt: Date.now() + 300_000,
+            environments: [{
+              kind: "local_worktree",
+              repositoryRequired: true,
+              remoteUrlInput: false,
+              baseRevisionInput: true,
+            }],
+            harnesses: [{ id: "codex" }],
+            agents: [{ harnessId: "codex", id: "build", label: "Build" }],
+            models: [{
+              harnessId: "codex",
+              providerId: "codex-app-server",
+              modelId: "gpt-5.5",
+              label: "GPT-5.5",
+              efforts: ["high"],
+            }],
+            tools: [{ harnessId: "codex", id: "terminal" }],
+            repository: { baseRevisions: ["HEAD"] },
+            connections: [],
+          }),
+        },
+      })
+      const session = {
+        sessionId: "session-ledger",
+        projectId: "/projects/repo",
+        resolvedExecution: {
+          environment: { kind: "local_worktree" as const, directory: "/projects/repo" },
+          repository: { baseRevision: "HEAD" },
+          harness: "codex",
+          agent: "build",
+          model: { providerId: "codex-app-server", modelId: "gpt-5.5" },
+          effort: "high",
+          tools: [],
+          connectionIds: [],
+        },
+      }
+      const tools = await createLocalWorkGraphAgentTools(workgraph, {
+        organizationId: "local",
+        ownerUserId: "local",
+        sessionExecution: async () => session.resolvedExecution,
+        sessionContext: async () => session,
+      })
+      const invoke = (name: keyof typeof tools, input: Record<string, unknown>) =>
+        tools[name]!.execute(input, {
+          sessionID: session.sessionId,
+          agent: "build",
+          assistantMessageID: "message-ledger",
+          toolCallID: `${String(name)}-${String(input.operation_id ?? "read")}`,
+        })
+      const streamId = resultId(await invoke("workgraph_create_stream", {
+        operation_id: "ledger-stream",
+        title: "Ledger journey",
+      }), "streamId")
+      const outcomeId = resultId(await invoke("workgraph_create_outcome", {
+        operation_id: "ledger-outcome",
+        stream_id: streamId,
+        title: "Journey verified",
+        success_criteria: ["Both Tasks completed"],
+      }), "outcomeId")
+      const firstTaskId = resultId(await invoke("workgraph_create_task", {
+        operation_id: "ledger-task-first",
+        stream_id: streamId,
+        outcome_id: outcomeId,
+        title: "Verify first boundary",
+        completion_contract: completion("first-proof"),
+      }), "workItemId")
+      const secondTaskId = resultId(await invoke("workgraph_create_task", {
+        operation_id: "ledger-task-second",
+        stream_id: streamId,
+        outcome_id: outcomeId,
+        title: "Verify second boundary",
+        dependency_ids: [firstTaskId],
+        completion_contract: completion("second-proof"),
+      }), "workItemId")
+
+      await invoke("workgraph_bind_session", { operation_id: "ledger-bind", stream_id: streamId })
+      await invoke("workgraph_select_work", { operation_id: "ledger-select-first", work_item_id: firstTaskId })
+      const checkpoint = await invoke("workgraph_record_progress", {
+        operation_id: "ledger-checkpoint",
+        level: "progress",
+        summary: "First logical boundary verified",
+      })
+      expect(await invoke("workgraph_record_progress", {
+        operation_id: "ledger-checkpoint",
+        level: "progress",
+        summary: "First logical boundary verified",
+      })).toEqual(checkpoint)
+      const completionResult = await invoke("workgraph_complete_current_work", {
+        operation_id: "ledger-complete-first",
+        summary: "First Task complete",
+        evidence: [{
+          requirement_id: "first-proof",
+          evidence: { kind: "test_result", summary: "Focused test passed", passed: true },
+        }],
+      })
+      expect(await invoke("workgraph_complete_current_work", {
+        operation_id: "ledger-complete-first",
+        summary: "First Task complete",
+        evidence: [{
+          requirement_id: "first-proof",
+          evidence: { kind: "test_result", summary: "Focused test passed", passed: true },
+        }],
+      })).toEqual(completionResult)
+
+      const next = await invoke("workgraph_select_work", {
+        operation_id: "ledger-select-second",
+        work_item_id: secondTaskId,
+      }) as { sessionId?: string; currentWorkItemId?: string }
+      expect(next).toMatchObject({ sessionId: session.sessionId, currentWorkItemId: secondTaskId })
+      expect(await invoke("workgraph_current_work", {})).toMatchObject({
+        binding: { sessionId: session.sessionId, currentWorkItemId: secondTaskId },
+      })
+      expect(await invoke("workgraph_activity", { work_item_id: firstTaskId })).toMatchObject({
+        entries: expect.arrayContaining([
+          expect.objectContaining({ category: "checkpoint", summary: "First logical boundary verified" }),
+          expect.objectContaining({ category: "attempt", summary: expect.stringContaining("result") }),
+        ]),
+      })
+    } finally {
+      database.close()
+    }
+  })
 })
+
+function resultId(result: unknown, key: string) {
+  if (!result || typeof result !== "object" || !("ok" in result) || result.ok !== true || !("value" in result)) {
+    throw new Error(`Expected successful ${key} result: ${JSON.stringify(result)}`)
+  }
+  const value = result.value && typeof result.value === "object" && key in result.value
+    ? result.value[key as keyof typeof result.value]
+    : undefined
+  if (typeof value !== "string") throw new Error(`Expected ${key}`)
+  return value
+}
+
+function completion(id: string) {
+  return {
+    version: 1,
+    mode: "all",
+    requirements: [{ id, kind: "test", description: "The focused test passes" }],
+  }
+}
+
+function terminalExecution(): WorkspaceExecutionPort {
+  return {
+    provisionOrAdopt: async (_context, input) => ({
+      id: "envelope-ledger" as never,
+      streamId: input.streamId,
+      environment: input.environment,
+      repository: input.repository,
+      workspaceId: "/projects/repo",
+    }),
+    launch: async (_context, input) => ({
+      sessionId: "managed-session" as never,
+      envelopeId: input.envelopeId,
+      projectId: "/projects/repo",
+    }),
+    cancel: async () => undefined,
+    result: async () => ({ state: "running" }),
+    cleanup: async () => undefined,
+  }
+}
+
+function binding(sessionId: string, projectId: string) {
+  return {
+    recordType: "session_binding",
+    schemaVersion: 1,
+    ownerUserId: "owner-a",
+    id: "binding-1",
+    version: 1,
+    streamId: "stream-1",
+    sessionId,
+    projectId,
+    state: "active",
+    boundAt: 1,
+    createdAt: 1,
+    updatedAt: 1,
+    provenance: { actor: { type: "agent", id: sessionId }, operationId: "operation-bind" },
+  }
+}
 
 function embedded(execute: ReturnType<typeof vi.fn>) {
   const empty = async () => undefined
@@ -119,7 +391,7 @@ function embedded(execute: ReturnType<typeof vi.fn>) {
         streams: { read: empty },
         sources: { list: empty, read: empty, readRevision: empty },
         proposals: { read: empty },
-        workItems: { readDetail: empty, listAttempts: empty },
+        workItems: { readDetail: empty, listAttempts: empty, listActivity: empty },
         attempts: { read: empty },
         decisions: { read: empty },
         recaps: { read: empty },
@@ -127,5 +399,5 @@ function embedded(execute: ReturnType<typeof vi.fn>) {
       },
     },
     notifications: { list: empty, markRead: empty },
-  } as never
+  }
 }

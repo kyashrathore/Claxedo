@@ -2956,6 +2956,234 @@ export type EffectHttpApiErrorForbidden = {
   _tag: "Forbidden"
 }
 
+export type WorkGraphCommandRequest = {
+  operationId: string
+  command: {
+    [key: string]: unknown
+  }
+}
+
+export type WorkGraphCommandResult = {
+  ok: true
+  operationId: string
+  cursor: string
+  value: unknown
+  idempotentReplay?: boolean
+}
+
+export type WorkGraphCommandBadRequest = {
+  ok: false
+  operationId: string
+  error: {
+    code: string
+    message: string
+    retryable: boolean
+    details?: {
+      [key: string]: unknown
+    }
+  }
+}
+
+export type WorkGraphCommandForbidden = {
+  ok: false
+  operationId: string
+  error: {
+    code: string
+    message: string
+    retryable: boolean
+    details?: {
+      [key: string]: unknown
+    }
+  }
+}
+
+export type WorkGraphCommandNotFound = {
+  ok: false
+  operationId: string
+  error: {
+    code: string
+    message: string
+    retryable: boolean
+    details?: {
+      [key: string]: unknown
+    }
+  }
+}
+
+export type WorkGraphCommandConflict = {
+  ok: false
+  operationId: string
+  error: {
+    code: string
+    message: string
+    retryable: boolean
+    details?: {
+      [key: string]: unknown
+    }
+  }
+}
+
+export type WorkGraphCommandRejected = {
+  ok: false
+  operationId: string
+  error: {
+    code: string
+    message: string
+    retryable: boolean
+    details?: {
+      [key: string]: unknown
+    }
+  }
+}
+
+export type WorkGraphCommandFailure = {
+  ok: false
+  operationId: string
+  error: {
+    code: string
+    message: string
+    retryable: boolean
+    details?: {
+      [key: string]: unknown
+    }
+  }
+}
+
+export type WorkGraphCommandUnavailable = {
+  ok: false
+  operationId: string
+  error: {
+    code: string
+    message: string
+    retryable: boolean
+    details?: {
+      [key: string]: unknown
+    }
+  }
+}
+
+export type WorkGraphExecutionCapabilities = {
+  schemaVersion: 1
+  organizationId: string
+  ownerUserId: string
+  catalogRevision: string
+  observedAt: number
+  expiresAt: number
+  environments: Array<{
+    kind: "local_worktree" | "hosted_workspace"
+    repositoryRequired: boolean
+    remoteUrlInput: boolean
+    baseRevisionInput: boolean
+  }>
+  harnesses: Array<{
+    id: string
+  }>
+  agents: Array<{
+    harnessId: string
+    id: string
+    label: string
+    description?: string
+    mode?: "primary" | "subagent" | "all"
+  }>
+  models: Array<{
+    harnessId: string
+    providerId: string
+    modelId: string
+    label: string
+    efforts: Array<string>
+  }>
+  tools: Array<{
+    harnessId: string
+    id: string
+    description?: string
+    requiresConnectionCapability?: string
+  }>
+  repository: {
+    remoteUrl?: string
+    baseRevisions: Array<string>
+  }
+  connections: Array<{
+    id: string
+    integrationId: string
+    scope: "personal" | "team"
+    accountLabel?: string
+    grantedCapabilities: Array<string>
+  }>
+}
+
+export type WorkGraphBadRequest = {
+  error: {
+    code: string
+    message: string
+    retryable: boolean
+  }
+}
+
+export type WorkGraphForbidden = {
+  error: {
+    code: string
+    message: string
+    retryable: boolean
+  }
+}
+
+export type WorkGraphExecutionCapabilitiesUnavailable = {
+  error: {
+    code: "execution_capabilities_unavailable"
+    capability:
+      | "catalog_workspace"
+      | "runtime"
+      | "harnesses"
+      | "agents"
+      | "models"
+      | "tools"
+      | "repository"
+      | "connections"
+    reason:
+      | "catalog_workspace_unavailable"
+      | "runtime_unavailable"
+      | "catalog_invalid"
+      | "repository_unavailable"
+      | "connections_unavailable"
+    message: string
+    retryable: boolean
+  }
+}
+
+export type WorkGraphActor = {
+  type: "user" | "agent" | "system"
+  id: string
+}
+
+export type WorkGraphActivityEntry = {
+  id: string
+  streamId: string
+  workItemId: string
+  category: "lifecycle" | "attempt" | "checkpoint" | "decision" | "evidence" | "external_effect"
+  importance: "milestones" | "progress" | "detailed"
+  summary: string
+  occurredAt: number
+  actor: WorkGraphActor
+  source: {
+    type: string
+    id: string
+  }
+}
+
+export type WorkGraphActivityPage = {
+  entries: Array<WorkGraphActivityEntry>
+  hasMore: boolean
+  nextCursor?: string
+}
+
+export type WorkGraphConflict = {
+  error: {
+    code: string
+    message: string
+    retryable: boolean
+  }
+}
+
 export type EventTuiPromptAppend2 = {
   id: string
   type: "tui.prompt.append"
@@ -12031,6 +12259,7 @@ export type ServerSessionSessionToolRegisterData = {
       outputSchema?: {
         [key: string]: unknown
       }
+      callbackUrl?: string
     }>
   }
   path: {
@@ -13703,3 +13932,175 @@ export type PtyConnectResponses = {
 }
 
 export type PtyConnectResponse = PtyConnectResponses[keyof PtyConnectResponses]
+
+export type V2WorkgraphCommandData = {
+  body: WorkGraphCommandRequest
+  path?: never
+  query?: never
+  url: "/api/workgraph/commands"
+}
+
+export type V2WorkgraphCommandErrors = {
+  /**
+   * WorkGraphCommandBadRequest | InvalidRequestError
+   */
+  400: WorkGraphCommandBadRequest | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkGraphCommandForbidden
+   */
+  403: WorkGraphCommandForbidden
+  /**
+   * WorkGraphCommandNotFound
+   */
+  404: WorkGraphCommandNotFound
+  /**
+   * WorkGraphCommandConflict
+   */
+  409: WorkGraphCommandConflict
+  /**
+   * WorkGraphCommandRejected
+   */
+  422: WorkGraphCommandRejected
+  /**
+   * WorkGraphCommandFailure
+   */
+  500: WorkGraphCommandFailure
+  /**
+   * WorkGraphCommandUnavailable
+   */
+  503: WorkGraphCommandUnavailable
+}
+
+export type V2WorkgraphCommandError = V2WorkgraphCommandErrors[keyof V2WorkgraphCommandErrors]
+
+export type V2WorkgraphCommandResponses = {
+  /**
+   * WorkGraphCommandResult
+   */
+  200: WorkGraphCommandResult
+}
+
+export type V2WorkgraphCommandResponse = V2WorkgraphCommandResponses[keyof V2WorkgraphCommandResponses]
+
+export type V2WorkgraphExecutionCapabilitiesData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/workgraph/execution-capabilities"
+}
+
+export type V2WorkgraphExecutionCapabilitiesErrors = {
+  /**
+   * WorkGraphBadRequest | InvalidRequestError
+   */
+  400: WorkGraphBadRequest | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkGraphForbidden
+   */
+  403: WorkGraphForbidden
+  /**
+   * WorkGraphExecutionCapabilitiesUnavailable
+   */
+  503: WorkGraphExecutionCapabilitiesUnavailable
+}
+
+export type V2WorkgraphExecutionCapabilitiesError =
+  V2WorkgraphExecutionCapabilitiesErrors[keyof V2WorkgraphExecutionCapabilitiesErrors]
+
+export type V2WorkgraphExecutionCapabilitiesResponses = {
+  /**
+   * WorkGraphExecutionCapabilities
+   */
+  200: WorkGraphExecutionCapabilities
+}
+
+export type V2WorkgraphExecutionCapabilitiesResponse =
+  V2WorkgraphExecutionCapabilitiesResponses[keyof V2WorkgraphExecutionCapabilitiesResponses]
+
+export type V2WorkgraphRefreshExecutionCapabilitiesData = {
+  body: {
+    [key: string]: unknown
+  }
+  path?: never
+  query?: never
+  url: "/api/workgraph/execution-capabilities/refresh"
+}
+
+export type V2WorkgraphRefreshExecutionCapabilitiesErrors = {
+  /**
+   * WorkGraphBadRequest | InvalidRequestError
+   */
+  400: WorkGraphBadRequest | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkGraphForbidden
+   */
+  403: WorkGraphForbidden
+  /**
+   * WorkGraphExecutionCapabilitiesUnavailable
+   */
+  503: WorkGraphExecutionCapabilitiesUnavailable
+}
+
+export type V2WorkgraphRefreshExecutionCapabilitiesError =
+  V2WorkgraphRefreshExecutionCapabilitiesErrors[keyof V2WorkgraphRefreshExecutionCapabilitiesErrors]
+
+export type V2WorkgraphRefreshExecutionCapabilitiesResponses = {
+  /**
+   * WorkGraphExecutionCapabilities
+   */
+  200: WorkGraphExecutionCapabilities
+}
+
+export type V2WorkgraphRefreshExecutionCapabilitiesResponse =
+  V2WorkgraphRefreshExecutionCapabilitiesResponses[keyof V2WorkgraphRefreshExecutionCapabilitiesResponses]
+
+export type V2WorkgraphActivityData = {
+  body?: never
+  path: {
+    workItemId: string
+  }
+  query?: {
+    granularity?: "milestones" | "progress" | "detailed"
+    after?: string
+    limit?: number
+  }
+  url: "/api/workgraph/work-items/{workItemId}/activity"
+}
+
+export type V2WorkgraphActivityErrors = {
+  /**
+   * WorkGraphBadRequest | InvalidRequestError
+   */
+  400: WorkGraphBadRequest | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * WorkGraphConflict
+   */
+  409: WorkGraphConflict
+}
+
+export type V2WorkgraphActivityError = V2WorkgraphActivityErrors[keyof V2WorkgraphActivityErrors]
+
+export type V2WorkgraphActivityResponses = {
+  /**
+   * WorkGraphActivityPage
+   */
+  200: WorkGraphActivityPage
+}
+
+export type V2WorkgraphActivityResponse = V2WorkgraphActivityResponses[keyof V2WorkgraphActivityResponses]
