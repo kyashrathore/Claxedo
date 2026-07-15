@@ -636,7 +636,7 @@ describe("session HttpApi", () => {
         const legacy = yield* requestJson<SessionV1.WithParts[]>(`/session/${session.id}/message?limit=80`, {
           headers,
         })
-        expect(legacy.find((item) => item.info.id === wakeID)).toMatchObject({
+        expect(legacy.find((item) => String(item.info.id) === wakeID)).toMatchObject({
           info: { id: wakeID, role: "user" },
           parts: [{ type: "text", text: "hello again" }],
         })
