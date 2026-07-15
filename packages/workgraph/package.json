@@ -16,6 +16,7 @@
     "typecheck:test": "bun x tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
+    "@noble/hashes": "2.2.0",
     "better-sqlite3": "12.10.0",
     "hono": "4.10.7",
     "zod": "4.1.8"

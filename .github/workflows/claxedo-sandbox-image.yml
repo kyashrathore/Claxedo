@@ -6,6 +6,7 @@ on:
       - dev
     paths:
       - packages/claxedo-server/scripts/sandbox/Dockerfile
+      - packages/sandbox-manager/package.json
       - packages/sandbox-manager/src/image.ts
       - packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts
       - packages/claxedo-server/src/workspace-runtime-integration/host-entry.ts
@@ -30,6 +31,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun
+
+      - name: Build sandbox manager
+        run: bun run --cwd packages/sandbox-manager build
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0

@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto"
+import { sha256 } from "@noble/hashes/sha2.js"
+import { bytesToHex } from "@noble/hashes/utils.js"
 import type { OperationID, WorkGraphContext, WorkSourceID, WorkSourceRevisionID } from "../contracts"
 import type { WorkSourcePort } from "../ports"
 
@@ -24,7 +25,7 @@ export function createWorkSourceService(port: WorkSourcePort) {
 }
 
 export function hashWorkSourceContent(content: string) {
-  return createHash("sha256").update(content).digest("hex")
+  return bytesToHex(sha256(new TextEncoder().encode(content)))
 }
 
 /** Builds bounded model context while the immutable revision retains all text. */

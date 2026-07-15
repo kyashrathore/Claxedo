@@ -7,6 +7,7 @@ const controlPlane = fs.readFileSync(path.join(root, ".github/workflows/deploy-c
 const convex = fs.readFileSync(path.join(root, ".github/workflows/deploy-convex.yml"), "utf8")
 const app = fs.readFileSync(path.join(root, ".github/workflows/deploy-claxedo-app.yml"), "utf8")
 const appStaging = fs.readFileSync(path.join(root, ".github/workflows/deploy-claxedo-app-staging.yml"), "utf8")
+const sandboxImage = fs.readFileSync(path.join(root, ".github/workflows/claxedo-sandbox-image.yml"), "utf8")
 const setupBun = fs.readFileSync(path.join(root, ".github/actions/setup-bun/action.yml"), "utf8")
 const deployedBrowser = fs.readFileSync(
   path.join(root, "packages/claxedo-app/e2e/playwright/deployed-workgraph.spec.ts"),
@@ -98,6 +99,10 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(appStaging).toContain('git cat-file -e "$BEFORE_SHA^{commit}"')
     expect(appStaging).toContain('git fetch --no-tags --depth=1 origin "$BEFORE_SHA"')
     expect(appStaging).toContain('git diff-tree --no-commit-id --name-only -r "$AFTER_SHA"')
+    expect(sandboxImage.indexOf("- name: Build sandbox manager")).toBeLessThan(
+      sandboxImage.indexOf("- name: Build and push sandbox image"),
+    )
+    expect(sandboxImage).toContain("run: bun run --cwd packages/sandbox-manager build")
     expect(controlPlane).toContain("- .github/actions/setup-bun/action.yml")
     expect(appStaging).toContain("- .github/actions/setup-bun/action.yml")
   })
