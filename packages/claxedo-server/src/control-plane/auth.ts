@@ -126,7 +126,7 @@ export function tokenVerifierAsClerk(
     const claims = verified.claims as Record<string, unknown>
     const aud = claims.aud
     const iss = claims.iss
-    const orgClaim = claims.org_id ?? (claims as { orgId?: unknown }).orgId
+    const orgClaim = orgId(claims)
     const issuer = typeof iss === "string" ? iss : ""
     const tokenIdentifier =
       typeof claims.jti === "string"
@@ -158,8 +158,11 @@ function enabled(input?: string) {
   return ["1", "true", "yes"].includes((input ?? "").trim().toLowerCase())
 }
 
-function orgId(payload: { org_id?: unknown; orgId?: unknown }) {
-  const value = payload.org_id ?? payload.orgId
+function orgId(payload: { org_id?: unknown; orgId?: unknown; o?: unknown }) {
+  const organization = payload.o && typeof payload.o === "object" && !Array.isArray(payload.o)
+    ? (payload.o as Record<string, unknown>).id
+    : undefined
+  const value = payload.org_id ?? payload.orgId ?? organization
   return typeof value === "string" && value.trim() ? value : undefined
 }
 

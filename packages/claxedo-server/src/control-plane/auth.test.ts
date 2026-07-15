@@ -270,7 +270,7 @@ describe("control plane auth", () => {
     })
   })
 
-  test("verifies bearer tokens through the configured remote Clerk JWKS", async () => {
+  test("verifies current and legacy organization claims through the configured remote Clerk JWKS", async () => {
     const keys = await generateKeyPair("EdDSA", { extractable: true })
     const jwk = {
       ...await exportJWK(keys.publicKey),
@@ -287,7 +287,15 @@ describe("control plane auth", () => {
       res.writeHead(200, { "content-type": "application/json" })
       res.end(JSON.stringify({ keys: [jwk] }))
     })
-    const token = await new SignJWT({ org_id: "org_1" })
+    const legacyToken = await new SignJWT({ org_id: "org_1" })
+      .setProtectedHeader({ alg: "EdDSA", kid: "clerk_test_key" })
+      .setIssuedAt()
+      .setIssuer(issuer)
+      .setAudience("convex")
+      .setSubject("user_1")
+      .setExpirationTime("2m")
+      .sign(keys.privateKey)
+    const currentToken = await new SignJWT({ o: { id: "org_1", rol: "admin", slg: "example" } })
       .setProtectedHeader({ alg: "EdDSA", kid: "clerk_test_key" })
       .setIssuedAt()
       .setIssuer(issuer)
@@ -296,28 +304,30 @@ describe("control plane auth", () => {
       .setExpirationTime("2m")
       .sign(keys.privateKey)
 
-    await expect(controlPlaneAuthContext(new Request("http://localhost", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }), {
-      config: {
-        enabled: true,
-        issuer,
-        jwksUrl: `${issuer}/.well-known/jwks.json`,
-        audience: "convex",
-      },
-    })).resolves.toEqual({
-      mode: "signed",
-      token,
-      user: {
-        subject: "user_1",
-        tokenIdentifier: `${issuer}|user_1`,
-        issuer,
-        audience: "convex",
-        orgId: "org_1",
-      },
-    })
+    for (const token of [legacyToken, currentToken]) {
+      await expect(controlPlaneAuthContext(new Request("http://localhost", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }), {
+        config: {
+          enabled: true,
+          issuer,
+          jwksUrl: `${issuer}/.well-known/jwks.json`,
+          audience: "convex",
+        },
+      })).resolves.toEqual({
+        mode: "signed",
+        token,
+        user: {
+          subject: "user_1",
+          tokenIdentifier: `${issuer}|user_1`,
+          issuer,
+          audience: "convex",
+          orgId: "org_1",
+        },
+      })
+    }
   })
 })
 

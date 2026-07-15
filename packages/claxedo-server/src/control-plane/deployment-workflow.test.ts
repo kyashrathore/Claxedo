@@ -121,6 +121,8 @@ describe("Claxedo Cloud deployment workflow", () => {
       sandboxImage.indexOf("- name: Build and push sandbox image"),
     )
     expect(sandboxImage).toContain("run: bun run --cwd packages/sandbox-manager build")
+    expect(sandboxImage).toContain("- packages/sandbox-manager/**")
+    expect(sandboxImage).not.toContain("- packages/sandbox-manager/src/image.ts")
     expect(controlPlane).toContain("- .github/actions/setup-bun/action.yml")
     expect(appStaging).toContain("- .github/actions/setup-bun/action.yml")
   })
