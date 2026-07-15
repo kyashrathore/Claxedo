@@ -30,7 +30,19 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     }
   })
 
-  it("routes composer harnesses through the shared harness-aware Session runtime", async () => {
+  it.each([
+    "claude-acp",
+    "codex-acp",
+    "cursor-acp",
+    "claude-sdk",
+    "codex-app-server",
+    "cursor-sdk",
+    "pi",
+  ])("routes the %s composer harness through the shared harness-aware Session runtime", async (harness) => {
+    const suffix = harness.replaceAll("-", "_")
+    const runtimeSessionId = `ses_runtime_${suffix}`
+    const sessionId = `ses_workgraph_${suffix}`
+    const attemptId = `attempt_${suffix}`
     const calls: Array<{ path: string; harness: string | null; body?: unknown }> = []
     const byAttempt = new Map<string, { attemptId: string; sessionId: string; directory: string; harness: string }>()
     const released: string[] = []
@@ -44,12 +56,12 @@ describe("mounted WorkGraph Session V2 gateway", () => {
           harness: url.searchParams.get("harness"),
           ...(request.body ? { body: await request.clone().json() } : {}),
         })
-        if (url.pathname === "/session") return Response.json({ id: "ses_codex" }, { status: 201 })
+        if (url.pathname === "/session") return Response.json({ id: runtimeSessionId }, { status: 201 })
         if (url.pathname.endsWith("/prompt_async")) return new Response(null, { status: 204 })
-        if (url.pathname === "/session/ses_codex") {
-          return Response.json({ id: "ses_codex", lastTurn: { status: "completed", completedAt: 2 } })
+        if (url.pathname === `/session/${runtimeSessionId}`) {
+          return Response.json({ id: runtimeSessionId, lastTurn: { status: "completed", completedAt: 2 } })
         }
-        if (url.pathname === "/session/ses_codex/message") {
+        if (url.pathname === `/session/${runtimeSessionId}/message`) {
           return Response.json([
             { info: { id: "user", role: "user" }, parts: [{ type: "text", text: "Ship it" }] },
             { info: { id: "assistant", role: "assistant" }, parts: [{ type: "text", text: "Implemented and verified" }] },
@@ -73,27 +85,27 @@ describe("mounted WorkGraph Session V2 gateway", () => {
     })
 
     await expect(gateway.admit({
-      attemptId: "attempt_codex",
-      sessionId: "ses_workgraph_attempt_codex",
+      attemptId,
+      sessionId,
       directory: "/repo",
       title: "Item",
       prompt: "Ship it",
-      profile: { ...profile, harness: "codex-app-server", tools: ["terminal"] },
-    })).resolves.toBe("ses_workgraph_attempt_codex")
+      profile: { ...profile, harness, tools: ["terminal"] },
+    })).resolves.toBe(sessionId)
     expect(calls.slice(0, 2)).toEqual([
       {
         path: "/session",
-        harness: "codex-app-server",
+        harness,
         body: {
           title: "Item",
           model: { providerID: "openai", modelID: "gpt-5" },
         },
       },
       {
-        path: "/session/ses_codex/prompt_async",
-        harness: "codex-app-server",
+        path: `/session/${runtimeSessionId}/prompt_async`,
+        harness,
         body: {
-          messageID: "msg_workgraph_attempt_codex",
+          messageID: `msg_workgraph_${attemptId}`,
           parts: [{ type: "text", text: "Ship it" }],
           agent: "build",
           model: { providerID: "openai", modelID: "gpt-5" },
@@ -101,14 +113,14 @@ describe("mounted WorkGraph Session V2 gateway", () => {
         },
       },
     ])
-    await expect(gateway.result("ses_workgraph_attempt_codex")).resolves.toEqual({
+    await expect(gateway.result(sessionId)).resolves.toEqual({
       state: "succeeded",
       summary: "Implemented and verified",
       artifacts: [],
     })
     await gateway.releaseDirectory?.("/repo")
     expect(released).toEqual(["/repo"])
-    await expect(gateway.result("ses_workgraph_attempt_codex")).rejects.toThrow("non-OpenCode harnesses must not use Session V2")
+    await expect(gateway.result(sessionId)).rejects.toThrow("non-OpenCode harnesses must not use Session V2")
   })
 
   it("binds non-OpenCode harness tools before prompting without exposing durable Attempt identity", async () => {
