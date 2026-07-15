@@ -1921,7 +1921,7 @@ function hasOwnerRow(database: Database, table: string, context: WorkGraphContex
 }
 
 function snapshotRelevantChange(changeType: string) {
-  return !["session_bound", "agent_checkpoint_recorded", "session_binding_released"].includes(changeType)
+  return !["session_bound", "agent_checkpoint_recorded", "session_binding_released", "intake_candidate_changed"].includes(changeType)
 }
 
 function kind<Kind extends CanonicalWorkGraphArchiveRecord["kind"]>(value: Kind) {

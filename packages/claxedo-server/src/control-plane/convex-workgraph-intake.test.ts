@@ -142,6 +142,14 @@ describe("Convex WorkGraph intake", () => {
       identityKey: "owner_a:github:connection_1:42",
       candidate,
     })).resolves.toMatchObject({ created: true, candidate: { candidateKind: "external_issue", externalId: "42" } })
+    await expect(harness.query("workgraph_changes").collect()).resolves.toEqual([
+      expect.objectContaining({
+        change_type: "intake_candidate_changed",
+        resource_type: "workgraph",
+        resource_id: "workgraph_default",
+        snapshot_relevant: false,
+      }),
+    ])
     await expect(applyWorkGraphIntakeOperation(harness as never, "owner_a" as never, {
       type: "upsert_external",
       identityKey: "owner_a:github:connection_1:42",

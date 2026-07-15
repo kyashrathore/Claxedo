@@ -11,6 +11,42 @@ const databases: Database.Database[] = []
 afterEach(() => databases.splice(0).forEach((database) => database.close()))
 
 describe("SQLite personal intake stores", () => {
+  it("advances the live change feed when intake Attention changes", async () => {
+    const database = open()
+    const stores = createSqliteIntakeStores(database)
+    const alice = context("alice")
+    await stores.sourceViews.create(alice, view("alice"))
+
+    await stores.candidates.upsertExternal(alice, {
+      candidate: issue("alice", "candidate-a", "New issue"),
+      identityKey: "alice:github:team:42",
+    })
+    await stores.candidates.transition(alice, "candidate-a", {
+      expectedVersion: 1,
+      from: "unorganized",
+      to: "dismissed",
+      updatedAt: 2,
+    })
+    await createSqliteSessionIntakePort(database).createUnorganized(alice, {
+      sessionId: "session-42",
+      title: "Independent discovery",
+      body: "Found follow-up work",
+      idempotencyKey: "session-42:discovery-1",
+      observedAt: 3,
+    })
+
+    expect(database.prepare(`
+      SELECT change_type, resource_type, resource_id, snapshot_relevant
+      FROM wg_v2_changes
+      WHERE organization_id = ? AND owner_user_id = ?
+      ORDER BY cursor
+    `).all(alice.organizationId, alice.ownerUserId)).toEqual([
+      { change_type: "intake_candidate_changed", resource_type: "workgraph", resource_id: "workgraph_default", snapshot_relevant: 0 },
+      { change_type: "intake_candidate_changed", resource_type: "workgraph", resource_id: "workgraph_default", snapshot_relevant: 0 },
+      { change_type: "intake_candidate_changed", resource_type: "workgraph", resource_id: "workgraph_default", snapshot_relevant: 0 },
+    ])
+  })
+
   it("keeps source views and external identities owner-scoped and idempotent", async () => {
     const database = open()
     const stores = createSqliteIntakeStores(database)

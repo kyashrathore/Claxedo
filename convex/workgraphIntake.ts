@@ -10,6 +10,7 @@ import { serviceMutation, serviceQuery } from "./model"
 import { assertWorkGraphOwnerReadable, assertWorkGraphOwnerWritable, requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
 import type { DataModel, Doc, Id } from "./_generated/dataModel"
 import { initializeAttentionProjection, syncAttentionRecord, syncCandidateTransition } from "./workgraphAttention"
+import { appendSystemWorkGraphChange } from "./workgraphCommands"
 
 type ReadCtx = GenericQueryCtx<DataModel>
 type WriteCtx = GenericMutationCtx<DataModel>
@@ -366,6 +367,7 @@ async function upsertExternal(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUs
     if (saved !== existing) {
       await ctx.db.patch(existing._id, saved)
       await syncCandidateTransition(ctx, existing, saved)
+      await appendIntakeCandidateChange(ctx, saved)
     }
     await ctx.db.patch(existingIdentity._id, {
       external_key: optionalString(input.externalKey, "candidate.externalKey"),
@@ -395,6 +397,7 @@ async function upsertExternal(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUs
   }
   await ctx.db.insert("workgraph_intake_candidates", candidate)
   await syncCandidateTransition(ctx, undefined, candidate)
+  await appendIntakeCandidateChange(ctx, candidate)
   const identity = {
     intake_candidate_id: candidate.id,
     external_key: optionalString(input.externalKey, "candidate.externalKey"),
@@ -465,6 +468,7 @@ async function stageCandidate(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUs
   await ctx.db.patch(row._id, saved)
   await syncAttentionRecord(ctx, "workgraph_admission_proposals", { ...proposal, intake_candidate_id: row.id, updated_at: saved.updated_at })
   await syncCandidateTransition(ctx, row, saved)
+  await appendIntakeCandidateChange(ctx, saved)
   return candidateDto(saved)
 }
 
@@ -492,7 +496,25 @@ async function transitionCandidate(ctx: WriteCtx, organizationId: Id<"orgs">, ow
   }
   await ctx.db.patch(row._id, updated)
   await syncCandidateTransition(ctx, row, updated)
+  await appendIntakeCandidateChange(ctx, updated)
   return { ok: true as const, candidate: candidateDto(updated) }
+}
+
+export function appendIntakeCandidateChange(ctx: WriteCtx, candidate: any) {
+  return appendSystemWorkGraphChange(ctx, {
+    organizationId: String(candidate.organization_id),
+    ownerUserId: String(candidate.owner_user_id),
+    operationId: `intake:${candidate.id}:${candidate.row_version}:${candidate.status}`,
+    eventId: `event_${crypto.randomUUID()}`,
+    changeId: `change_${crypto.randomUUID()}`,
+    resourceType: "workgraph",
+    resourceId: "workgraph_default",
+    changeType: "intake_candidate_changed",
+    payload: { candidateId: candidate.id, candidateVersion: candidate.row_version, state: candidate.status },
+    actorId: "workgraph_intake",
+    snapshotRelevant: false,
+    now: candidate.updated_at,
+  })
 }
 
 async function beginReceipt(ctx: WriteCtx, organizationId: Id<"orgs">, ownerUserId: Id<"users">, operation: Record<string, unknown>) {

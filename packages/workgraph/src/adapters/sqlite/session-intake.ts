@@ -3,6 +3,7 @@ import type BetterSqlite3 from "better-sqlite3"
 import type { SessionIntakePort } from "../../application/session-intake-service"
 import { assertNoSqliteWorkGraphOwnerDeletion } from "./deletion-barrier"
 import { initializeWorkGraphSqliteSchema } from "./schema"
+import { appendIntakeCandidateChange } from "./intake-store"
 
 const rootId = "workgraph_default"
 
@@ -38,7 +39,14 @@ export function createSqliteSessionIntakePort(databaseInput: BetterSqlite3.Datab
           input.observedAt,
           input.observedAt,
         )
-        return result.changes === 1 ? "created" : "existing"
+        if (result.changes !== 1) return "existing"
+        appendIntakeCandidateChange(database, context, {
+          id,
+          version: 1,
+          state: "unorganized",
+          updatedAt: input.observedAt,
+        })
+        return "created"
       })()
     },
   }

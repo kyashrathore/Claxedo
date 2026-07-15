@@ -519,7 +519,7 @@ async function insertRecord(ctx: any, organization: string, owner: string, recor
 }
 
 function snapshotRelevantChange(changeType: string) {
-  return !["session_bound", "agent_checkpoint_recorded", "session_binding_released"].includes(changeType)
+  return !["session_bound", "agent_checkpoint_recorded", "session_binding_released", "intake_candidate_changed"].includes(changeType)
 }
 
 async function validate(input: unknown): Promise<{ ok: true; archive: CanonicalWorkGraphArchive } | { ok: false; reason: WorkGraphArchiveRestoreErrorReason }> {

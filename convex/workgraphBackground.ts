@@ -6,6 +6,7 @@ import type { DataModel, Doc, Id } from "./_generated/dataModel"
 import { appendSystemWorkGraphChange } from "./workgraphCommands"
 import { assertWorkGraphOwnerWritable, workGraphOwnerDeletionBarrier } from "./workgraphModel"
 import { initializeAttentionProjection, syncAttentionRecord, syncCandidateTransition } from "./workgraphAttention"
+import { appendIntakeCandidateChange } from "./workgraphIntake"
 
 type Ctx = GenericMutationCtx<DataModel>
 const leaseDuration = 5 * 60 * 1000
@@ -355,6 +356,7 @@ export const drainSessionIntake = serviceMutation({
         }
         await ctx.db.insert("workgraph_intake_candidates", saved)
         await syncCandidateTransition(ctx, undefined, saved)
+        await appendIntakeCandidateChange(ctx, saved)
       }
       await ctx.db.patch(job._id, { status: "completed", row_version: job.row_version + 1, updated_at: args.now })
     }

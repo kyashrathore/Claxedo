@@ -2310,6 +2310,7 @@ export async function appendSystemWorkGraphChange(ctx: any, input: Readonly<{
   payload: Record<string, unknown>
   actorId: string
   streamId?: string
+  snapshotRelevant?: boolean
   now: number
 }>) {
   const cursor = await allocateCursor(ctx, input.organizationId, input.ownerUserId, input.now)
@@ -2339,7 +2340,7 @@ export async function appendSystemWorkGraphChange(ctx: any, input: Readonly<{
     resource_id: input.resourceId,
     change_type: input.changeType,
     payload: input.payload,
-    snapshot_relevant: true,
+    snapshot_relevant: input.snapshotRelevant ?? true,
     schema_version: 1,
     created_at: input.now,
   })

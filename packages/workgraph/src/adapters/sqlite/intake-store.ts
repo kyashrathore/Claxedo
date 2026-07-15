@@ -192,6 +192,7 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
           )
           const saved = readCandidate(database, context, identity.intake_candidate_id)
           if (saved?.candidateKind !== "external_issue") throw new Error("External identity resolved to a non-external candidate")
+          if (existing.status === "unorganized" && !frozen.admissionDraft) appendIntakeCandidateChange(database, context, saved)
           return { candidate: saved, created: false }
         }
         database.prepare(`
@@ -229,6 +230,7 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
           input.candidate.createdAt,
           input.candidate.updatedAt,
         )
+        appendIntakeCandidateChange(database, context, input.candidate)
         return { candidate: input.candidate, created: true }
       })()
     },
@@ -327,7 +329,9 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
           WHERE organization_id = ? AND owner_user_id = ? AND id = ?
         `).run(JSON.stringify({ ...data, source: input.source, admissionProposalId: input.proposalId }), now, context.organizationId, context.ownerUserId, id)
         if (!result.changes) throw new Error("Candidate cannot be staged")
-        return readCandidate(database, context, id)!
+        const saved = readCandidate(database, context, id)!
+        appendIntakeCandidateChange(database, context, saved)
+        return saved
       })()
     },
     async transition(context, id, input) {
@@ -350,7 +354,9 @@ export function createSqliteIntakeStores(databaseInput: BetterSqlite3.Database):
           WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND row_version = ? AND status = ?
         `).run(input.to, input.updatedAt, context.organizationId, context.ownerUserId, id, input.expectedVersion, input.from)
         if (result.changes !== 1) return { ok: false as const, reason: "version_conflict" as const }
-        return { ok: true as const, candidate: readCandidate(database, context, id)! }
+        const saved = readCandidate(database, context, id)!
+        appendIntakeCandidateChange(database, context, saved)
+        return { ok: true as const, candidate: saved }
       })()
     },
   }
@@ -435,6 +441,89 @@ function ensureRoot(database: BetterSqlite3.Database, context: WorkGraphContext,
   database.prepare(`
     INSERT OR IGNORE INTO wg_v2_workgraphs (organization_id, owner_user_id, id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
   `).run(context.organizationId, context.ownerUserId, rootId, now, now)
+}
+
+export function appendIntakeCandidateChange(
+  database: BetterSqlite3.Database,
+  context: WorkGraphContext,
+  candidate: Readonly<{ id: string; version: number; state: string; updatedAt: number }>,
+) {
+  const operationId = `intake:${candidate.id}:${candidate.version}:${candidate.state}`
+  const inserted = database.prepare(`
+    INSERT OR IGNORE INTO wg_v2_operation_results
+      (organization_id, owner_user_id, id, command_type, request_hash, result_status, result_json, created_at)
+    VALUES (?, ?, ?, 'intake_candidate_changed', ?, 200, '{"ok":true}', ?)
+  `).run(context.organizationId, context.ownerUserId, operationId, operationId, candidate.updatedAt)
+  if (inserted.changes !== 1) return
+
+  database.prepare(`
+    INSERT OR IGNORE INTO wg_v2_change_cursors
+      (organization_id, owner_user_id, next_cursor, created_at, updated_at)
+    VALUES (?, ?, 1, ?, ?)
+  `).run(context.organizationId, context.ownerUserId, candidate.updatedAt, candidate.updatedAt)
+  const cursor = (database.prepare(`
+    SELECT next_cursor FROM wg_v2_change_cursors
+    WHERE organization_id = ? AND owner_user_id = ?
+  `).get(context.organizationId, context.ownerUserId) as { next_cursor: number }).next_cursor
+  database.prepare(`
+    UPDATE wg_v2_change_cursors
+    SET next_cursor = next_cursor + 1, row_version = row_version + 1, updated_at = ?
+    WHERE organization_id = ? AND owner_user_id = ?
+  `).run(candidate.updatedAt, context.organizationId, context.ownerUserId)
+
+  const sequenceScope = "__workgraph_owner_events__"
+  database.prepare(`
+    INSERT OR IGNORE INTO wg_v2_stream_sequences
+      (organization_id, owner_user_id, stream_id, next_sequence, created_at, updated_at)
+    VALUES (?, ?, ?, 1, ?, ?)
+  `).run(context.organizationId, context.ownerUserId, sequenceScope, candidate.updatedAt, candidate.updatedAt)
+  const sequence = (database.prepare(`
+    SELECT next_sequence FROM wg_v2_stream_sequences
+    WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?
+  `).get(context.organizationId, context.ownerUserId, sequenceScope) as { next_sequence: number }).next_sequence
+  database.prepare(`
+    UPDATE wg_v2_stream_sequences
+    SET next_sequence = next_sequence + 1, row_version = row_version + 1, updated_at = ?
+    WHERE organization_id = ? AND owner_user_id = ? AND stream_id = ?
+  `).run(candidate.updatedAt, context.organizationId, context.ownerUserId, sequenceScope)
+
+  const payload = JSON.stringify({ candidateId: candidate.id, candidateVersion: candidate.version, state: candidate.state })
+  database.prepare(`
+    INSERT INTO wg_v2_events
+      (organization_id, owner_user_id, id, stream_id, sequence, schema_version, operation_id, event_type,
+       actor_type, actor_id, request_id, payload_json, occurred_at)
+    VALUES (?, ?, ?, NULL, ?, 1, ?, 'intake_candidate_changed', ?, ?, ?, ?, ?)
+  `).run(
+    context.organizationId,
+    context.ownerUserId,
+    `event_${randomUUID()}`,
+    sequence,
+    operationId,
+    context.actor.type,
+    context.actor.id,
+    context.requestId,
+    payload,
+    candidate.updatedAt,
+  )
+  database.prepare(`
+    INSERT INTO wg_v2_changes
+      (organization_id, owner_user_id, cursor, id, stream_id, operation_id, resource_type, resource_id,
+       change_type, payload_json, snapshot_relevant, created_at)
+    VALUES (?, ?, ?, ?, NULL, ?, 'workgraph', ?, 'intake_candidate_changed', ?, 0, ?)
+  `).run(
+    context.organizationId,
+    context.ownerUserId,
+    cursor,
+    `change_${randomUUID()}`,
+    operationId,
+    rootId,
+    payload,
+    candidate.updatedAt,
+  )
+  database.prepare(`
+    UPDATE wg_v2_operation_results SET change_cursor = ?
+    WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+  `).run(cursor, context.organizationId, context.ownerUserId, operationId)
 }
 
 function readCandidate(database: BetterSqlite3.Database, context: WorkGraphContext, id: string) {

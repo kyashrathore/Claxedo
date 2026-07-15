@@ -60,6 +60,7 @@ export const WorkGraphEventTypeSchema = z.enum([
   "session_task_attached",
   "session_binding_released",
   "agent_checkpoint_recorded",
+  "intake_candidate_changed",
 ])
 export type WorkGraphEventType = z.infer<typeof WorkGraphEventTypeSchema>
 
