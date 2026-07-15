@@ -51,6 +51,7 @@ const RUNTIME_PROCESS_ID = "claxedo-workspace-runtime"
 
 interface SandboxProcess {
   status: "starting" | "running" | "completed" | "failed" | "killed" | "error"
+  getStatus(): Promise<SandboxProcess["status"]>
   waitForPort(port: number, options: {
     mode: "http"
     path: string
@@ -229,8 +230,12 @@ export default {
             const proxyUrl = `${url.origin}/sandbox/${encodeURIComponent(sandboxId)}/proxy`
             return json({ ready: true, url: proxyUrl, port })
           }
-          if (existing && ["starting", "running"].includes(existing.status)) {
-            return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
+          if (existing) {
+            const status = await bounded(existing.getStatus(), "workspace-runtime status refresh")
+            if (["starting", "running"].includes(status)) {
+              return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
+            }
+            await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
           }
 
           const process = await bounded<SandboxProcess>(
