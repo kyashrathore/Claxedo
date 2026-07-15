@@ -40,6 +40,6 @@ new_sqlite_classes = ["Sandbox"]
 # namespace (`wrangler kv namespace create EGRESS_SECRETS`) and set the signing
 # secret (`wrangler secret put EGRESS_SIGNING_SECRET`). Brokering stays off
 # until both are configured.
-[[kv_namespaces]]
-binding = "EGRESS_SECRETS"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+# Add an EGRESS_SECRETS KV binding here only after creating a real namespace.
+# The Worker keeps credential brokering disabled when this optional binding or
+# EGRESS_SIGNING_SECRET is absent.
