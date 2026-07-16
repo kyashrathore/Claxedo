@@ -19,7 +19,7 @@ type Executor = { mutation(fn: Mutation, args: Record<string, unknown>): Promise
 
 type TranscriptRetention = (input: Readonly<{
   organizationId: string
-  ownerUserId: string
+  ownerSubject: string
   workspaceId: string
   sessionId: string
 }>) => Promise<void>
@@ -46,7 +46,7 @@ export function createHostedAttemptOperationExecutor(input: Readonly<{
     if (request.operation.type === "complete" && input.retainTranscript) {
       await input.retainTranscript({
         organizationId: principal.orgId,
-        ownerUserId: principal.ownerUserId,
+        ownerSubject: principal.ownerUserId,
         workspaceId: request.identity.workspaceId,
         sessionId: request.identity.sessionId,
       })

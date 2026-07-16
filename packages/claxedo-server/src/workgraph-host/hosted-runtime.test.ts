@@ -1840,17 +1840,17 @@ describe("hosted WorkGraph runtime outbox", () => {
   })
 
   test("retains the transcript durably before a hosted completion is accepted", async () => {
-    const publishedSnapshots: Record<string, unknown>[] = []
+    const retained: Record<string, unknown>[] = []
     const snapshotRequests: string[] = []
     const retain = createHostedSessionTranscriptRetention(
       { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
       transcriptServices(),
       {
         now: () => 42,
-        sessionPublisher: {
-          launch: async () => {},
-          snapshot: async (input) => {
-            publishedSnapshots.push(input)
+        executor: {
+          mutation: async (_fn, args) => {
+            retained.push(args)
+            return { ok: true }
           },
         },
         fetch: async (input, init) => {
@@ -1869,38 +1869,39 @@ describe("hosted WorkGraph runtime outbox", () => {
     )
     await retain!({
       organizationId: "org-a",
-      ownerUserId: "user-a",
+      ownerSubject: "clerk-user-a",
       workspaceId: "workspace-a",
       sessionId: "session-a",
     })
     expect(snapshotRequests).toEqual([
       "https://relay.test/workspaces/workspace-a/session/session-a/message?snapshot=1",
     ])
-    expect(publishedSnapshots).toEqual([
+    expect(retained).toEqual([
       {
-        organizationId: "org-a",
-        ownerUserId: "user-a",
-        workspaceId: "workspace-a",
-        sessionId: "session-a",
+        service_token: "service-secret",
+        organization_id: "org-a",
+        owner_subject: "clerk-user-a",
+        workspace_id: "workspace-a",
+        session_id: "session-a",
+        updated_at: 42,
         messages: [
           expect.objectContaining({ info: expect.objectContaining({ role: "user" }) }),
           expect.objectContaining({ info: expect.objectContaining({ role: "assistant" }) }),
         ],
-        now: 42,
       },
     ])
   })
 
   test("rejects completion retention until the transcript holds user and assistant messages", async () => {
-    const publishedSnapshots: Record<string, unknown>[] = []
+    const retained: Record<string, unknown>[] = []
     const retain = createHostedSessionTranscriptRetention(
       { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
       transcriptServices(),
       {
-        sessionPublisher: {
-          launch: async () => {},
-          snapshot: async (input) => {
-            publishedSnapshots.push(input)
+        executor: {
+          mutation: async (_fn, args) => {
+            retained.push(args)
+            return { ok: true }
           },
         },
         fetch: async () => Response.json({ messages: [], maxEventOrdinal: 0 }),
@@ -1909,12 +1910,12 @@ describe("hosted WorkGraph runtime outbox", () => {
     await expect(
       retain!({
         organizationId: "org-a",
-        ownerUserId: "user-a",
+        ownerSubject: "clerk-user-a",
         workspaceId: "workspace-a",
         sessionId: "session-a",
       }),
     ).rejects.toBeInstanceOf(HostedTranscriptRetentionError)
-    expect(publishedSnapshots).toEqual([])
+    expect(retained).toEqual([])
   })
 
   test("maps a failed transcript pull into a retryable retention error", async () => {
@@ -1922,13 +1923,13 @@ describe("hosted WorkGraph runtime outbox", () => {
       { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
       transcriptServices(),
       {
-        sessionPublisher: { launch: async () => {}, snapshot: async () => {} },
+        executor: { mutation: async () => ({ ok: true }) },
         fetch: async () => new Response("boom", { status: 502 }),
       },
     )
     const failure = await retain!({
       organizationId: "org-a",
-      ownerUserId: "user-a",
+      ownerSubject: "clerk-user-a",
       workspaceId: "workspace-a",
       sessionId: "session-a",
     }).catch((error) => error)

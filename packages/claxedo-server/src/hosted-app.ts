@@ -89,7 +89,7 @@ export type HostedAppOverrides = {
   /** Test seam for the complete_attempt transcript-retention gate. */
   attemptTranscriptRetention?: (input: {
     organizationId: string
-    ownerUserId: string
+    ownerSubject: string
     workspaceId: string
     sessionId: string
   }) => Promise<void>

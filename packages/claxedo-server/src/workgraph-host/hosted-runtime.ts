@@ -10,6 +10,7 @@ type Mutation = FunctionReference<"mutation">
 const api = anyApi as unknown as {
   sessions: {
     syncWorkGraphSession: Mutation
+    retainWorkGraphSessionTranscript: Mutation
   }
   workspaces: {
     ensureWorkGraph: Mutation
@@ -1468,6 +1469,10 @@ export class HostedTranscriptRetentionError extends Error {
  * pull, or a transcript without both user and assistant messages — is a
  * retryable HostedTranscriptRetentionError, so the Attempt stays incomplete
  * instead of settling without a durable transcript.
+ *
+ * The caller (the attempt-operation broker) only holds the runtime token's
+ * Clerk subject, so the sync goes through the subject-resolving retention
+ * mutation rather than the internal-id session publisher.
  */
 export function createHostedSessionTranscriptRetention(
   env: HostedWorkerEnv,
@@ -1475,21 +1480,21 @@ export function createHostedSessionTranscriptRetention(
   options: {
     fetch?: RuntimeFetch
     now?: () => number
-    sessionPublisher?: HostedSessionPublisher
+    executor?: Executor
   } = {},
 ) {
   const url = clean(env.CLAXEDO_WORKGRAPH_CONVEX_URL) ?? clean(env.CLAXEDO_WORKSPACE_AUTHORITY_URL)
   const serviceToken = clean(env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
-  const sessionPublisher =
-    options.sessionPublisher ?? (url && serviceToken ? convexSessionPublisher(url, serviceToken) : undefined)
+  if (!serviceToken || (!url && !options.executor)) return
+  const client = options.executor ?? convexExecutor(url!)
   const provider = services.relay.provider
   const manager = services.sandbox.sandboxManager
-  if (!sessionPublisher || !provider || !manager) return
+  if (!provider || !manager) return
   const request = options.fetch ?? fetch
   const now = options.now ?? Date.now
   return async (input: {
     organizationId: string
-    ownerUserId: string
+    ownerSubject: string
     workspaceId: string
     sessionId: string
   }) => {
@@ -1499,7 +1504,7 @@ export function createHostedSessionTranscriptRetention(
       const token = await provider.mintRuntimeAccessToken({
         workspaceId: input.workspaceId,
         hostId: placement.hostId,
-        subject: input.ownerUserId,
+        subject: input.ownerSubject,
         orgId: input.organizationId,
         role: "owner",
         ttlMs: 10 * 60_000,
@@ -1519,13 +1524,14 @@ export function createHostedSessionTranscriptRetention(
       if (!roles.has("user") || !roles.has("assistant")) {
         throw new Error("Hosted Session transcript does not contain both user and assistant messages")
       }
-      await sessionPublisher.snapshot({
-        organizationId: input.organizationId,
-        ownerUserId: input.ownerUserId,
-        workspaceId: input.workspaceId,
-        sessionId: input.sessionId,
+      await client.mutation(api.sessions.retainWorkGraphSessionTranscript, {
+        service_token: serviceToken,
+        organization_id: input.organizationId,
+        owner_subject: input.ownerSubject,
+        workspace_id: input.workspaceId,
+        session_id: input.sessionId,
+        updated_at: now(),
         messages,
-        now: now(),
       })
     } catch (error) {
       throw new HostedTranscriptRetentionError(error instanceof Error ? error.message : String(error))

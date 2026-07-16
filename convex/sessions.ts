@@ -11,6 +11,7 @@ import {
   workspaceByPublicId,
 } from "./model"
 import { enqueueIndependentSessionIntake } from "./workgraphBackground"
+import { requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
 import type { Id } from "./_generated/dataModel"
 
 const sessionVisibility = v.object({
@@ -491,6 +492,58 @@ export const syncWorkGraphSession = serviceMutation({
     })
     await syncMessageRows(ctx, {
       user,
+      workspace,
+      session_id: args.session_id,
+      messages: args.messages,
+      intakeReady: false,
+    })
+    return { ok: true }
+  },
+})
+
+// Completion-time transcript retention for hosted WorkGraph Attempts. The
+// caller (the attempt-operation broker) only holds the runtime token's
+// Clerk subject, so the durable owner is resolved through the same trusted
+// tenant-subject path the WorkGraph command executor uses. The workspace must
+// already exist (the launch sync created it) — an absent workspace fails the
+// retention rather than fabricating one at completion time.
+export const retainWorkGraphSessionTranscript = serviceMutation({
+  args: {
+    organization_id: v.id("orgs"),
+    owner_subject: v.string(),
+    workspace_id: v.string(),
+    session_id: v.string(),
+    updated_at: v.optional(v.number()),
+    messages: v.array(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const tenant = await requireTrustedWorkGraphTenantSubject(
+      ctx,
+      args.service_token,
+      args.organization_id,
+      args.owner_subject,
+    )
+    const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
+    if (
+      !workspace ||
+      workspace.deleted_at ||
+      workspace.owner_user_id !== tenant.owner_user_id ||
+      workspace.org_id !== args.organization_id
+    ) {
+      throw new Error("WorkGraph Session workspace not found")
+    }
+    await upsertVisibilityRows(ctx, {
+      user: tenant.user,
+      workspace,
+      sessions: [
+        {
+          session_id: args.session_id,
+          updated_at: args.updated_at,
+        },
+      ],
+    })
+    await syncMessageRows(ctx, {
+      user: tenant.user,
       workspace,
       session_id: args.session_id,
       messages: args.messages,

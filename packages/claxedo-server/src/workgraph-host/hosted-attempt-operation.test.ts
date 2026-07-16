@@ -80,7 +80,7 @@ describe("hosted Attempt operation endpoint", () => {
         },
       },
       retainTranscript: async (input) => {
-        calls.push(`retain:${input.workspaceId}/${input.sessionId}:${input.organizationId}:${input.ownerUserId}`)
+        calls.push(`retain:${input.workspaceId}/${input.sessionId}:${input.organizationId}:${input.ownerSubject}`)
       },
     })!
 
