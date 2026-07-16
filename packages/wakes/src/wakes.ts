@@ -10,6 +10,7 @@ import type {
   SpawnTurn,
   Token,
   Wake,
+  WakeDriver,
   WakeId,
   WakeResult,
   WakeSink,
@@ -28,6 +29,12 @@ export interface CreateWakesOptions {
    * sink fails its fire (the row stays reclaimable) instead of firing wrong.
    */
   sinks?: Record<string, WakeSink>
+  /**
+   * Push driver: hinted after every time-triggered create so firing needn't
+   * wait for the polling sweep. Optional — without one, behavior is exactly
+   * the polled `runDue()` loop.
+   */
+  driver?: WakeDriver
   authorize?: Authorize
   budgets?: Budgets
   /** Injectable clock (epoch ms). Default `Date.now`. */
@@ -64,7 +71,13 @@ export interface Wakes {
   cancel(wakeIdOrToken: string): Promise<void>
   resolve(token: Token, answer: string, resolver: Actor): Promise<ResolveOutcome>
   deliverEvent(eventKey: string, payload: Json, deliveryId?: string): Promise<{ fired: number }>
-  runDue(): Promise<{ fired: number }>
+  /**
+   * Fire due wakes. With `serialKey` (string = that lane, null = null-key
+   * wakes) the run is lane-scoped for a push driver: it reclaims and claims
+   * only that lane and skips the expiry sweep. Without it, the full polled
+   * pass runs (expiry + reclaim + claim across all lanes).
+   */
+  runDue(serialKey?: string | null): Promise<{ fired: number }>
   /** Boot sweep: re-drive every `firing` row left by a crash. Call on startup. */
   recover(): Promise<{ recovered: number }>
   once<T>(sessionId: SessionId, effectKey: string, fn: () => Promise<T> | T): Promise<T>
@@ -76,7 +89,7 @@ const toMs = (v: number | Date | undefined | null): number | null =>
   v == null ? null : v instanceof Date ? v.getTime() : v
 
 export function createWakes(opts: CreateWakesOptions): Wakes {
-  const { store, spawnTurn, computeNextRun } = opts
+  const { store, spawnTurn, computeNextRun, driver } = opts
   const authorize = opts.authorize ?? (() => true)
   const now = opts.now ?? Date.now
   const limits = resolveBudgets(opts.budgets)
@@ -103,6 +116,16 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
     return { trigger: "at", intent: JSON.parse(wake.intentJson) }
   }
 
+  // Lossy hint, never load-bearing: a throwing driver must not fail the
+  // create — the row is durable and the polling sweep will deliver it.
+  function nudge(serialKey: string | null, fireAt: number): void {
+    try {
+      driver?.nudge({ serialKey, fireAt })
+    } catch {
+      // the sweep is the backstop
+    }
+  }
+
   // A wake in `firing`: run its sink (at-least-once), record `fired`, and for a
   // recurring `at` wake, enqueue the next occurrence idempotently.
   async function driveFiring(wake: Wake): Promise<void> {
@@ -127,6 +150,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         },
         { skipBudget: true },
       )
+      nudge(wake.serialKey, nextFireAt)
     }
   }
 
@@ -202,7 +226,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       } else {
         throw new Error("schedule requires `at` or `cron`")
       }
-      return insertWake({
+      const created = await insertWake({
         triggerType: "at",
         sessionId: input.sessionId ?? null,
         workspaceId: input.workspaceId,
@@ -216,6 +240,8 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         createdBy: input.createdBy,
         idempotencyKey: input.idempotencyKey,
       })
+      nudge(input.serialKey ?? null, fireAt)
+      return created
     },
 
     async watch(input) {
@@ -282,27 +308,29 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       return { fired }
     },
 
-    async runDue() {
+    async runDue(serialKey) {
       const t = now()
       let fired = 0
-      for (const wake of await store.findExpirable(t)) {
-        // Resolve the sink before the terminal CAS so an unregistered kind
-        // cannot silently swallow the gave-up notification.
-        const sink = sinkFor(wake)
-        if (await store.cas(wake.id, "pending", "expired", { firedAt: t })) {
-          await sink(wake, {
-            trigger: "at",
-            intent: JSON.parse(wake.intentJson),
-            expired: true,
-          })
-          fired++
+      if (serialKey === undefined) {
+        for (const wake of await store.findExpirable(t)) {
+          // Resolve the sink before the terminal CAS so an unregistered kind
+          // cannot silently swallow the gave-up notification.
+          const sink = sinkFor(wake)
+          if (await store.cas(wake.id, "pending", "expired", { firedAt: t })) {
+            await sink(wake, {
+              trigger: "at",
+              intent: JSON.parse(wake.intentJson),
+              expired: true,
+            })
+            fired++
+          }
         }
       }
-      for (const wake of await store.findReclaimable(t)) {
+      for (const wake of await store.findReclaimable(t, serialKey)) {
         await driveFiring(wake)
         fired++
       }
-      for (const wake of await store.claimDue(t, leaseMs, batchLimit)) {
+      for (const wake of await store.claimDue(t, leaseMs, batchLimit, serialKey)) {
         await driveFiring(wake)
         fired++
       }

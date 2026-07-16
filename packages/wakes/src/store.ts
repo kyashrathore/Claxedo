@@ -21,8 +21,10 @@ export interface WakeStore {
    * concurrency, and must honor serialization lanes: never claim a wake whose
    * `serialKey` already has a `firing` row, and never claim two wakes of the
    * same key in one batch (earliest per key wins; null keys are unrestricted).
+   * `serialKey` scopes the claim to one lane: a string claims only that key,
+   * null claims only null-key wakes, undefined claims across all lanes.
    */
-  claimDue(nowMs: number, leaseMs: number, limit: number): Promise<Wake[]>
+  claimDue(nowMs: number, leaseMs: number, limit: number, serialKey?: string | null): Promise<Wake[]>
 
   /**
    * The guarded transition: set state `to` (+ patch) only if current state is `from`.
@@ -33,8 +35,12 @@ export interface WakeStore {
   findPendingByEventKey(eventKey: string): Promise<Wake[]>
   /** Pending wakes past their expiry (any trigger type). */
   findExpirable(nowMs: number): Promise<Wake[]>
-  /** `firing` rows whose lease has lapsed (crashed mid-fire) — reclaim + re-drive. */
-  findReclaimable(nowMs: number): Promise<Wake[]>
+  /**
+   * `firing` rows whose lease has lapsed (crashed mid-fire) — reclaim + re-drive.
+   * `serialKey` scopes like `claimDue` (string = that lane, null = null-key
+   * rows, undefined = all).
+   */
+  findReclaimable(nowMs: number, serialKey?: string | null): Promise<Wake[]>
   /** All `firing` rows — the boot-sweep set. */
   listFiring(): Promise<Wake[]>
   listForSession(sessionId: SessionId): Promise<Wake[]>

@@ -83,6 +83,18 @@ export type SpawnTurn = (sessionId: SessionId | null, result: WakeResult) => Pro
  */
 export type WakeSink = (wake: Wake, result: WakeResult) => Promise<void> | void
 
+/**
+ * Push driver: the engine hints it whenever a wake may be runnable, so firing
+ * needn't wait for a poll. The hint is lossy by design — a driver may drop
+ * it (the periodic sweep is the backstop that guarantees delivery); it must
+ * never throw into the caller. `fireAt` may be in the future (a driver that
+ * can arm precise timers, e.g. a Durable Object alarm, uses it; the Node
+ * driver only acts on due-now hints).
+ */
+export interface WakeDriver {
+  nudge(hint: { serialKey: string | null; fireAt: number }): void
+}
+
 /** Host authz: may this actor resolve an approval for this workspace? */
 export type Authorize = (actor: Actor, workspaceId: WorkspaceId) => Promise<boolean> | boolean
 

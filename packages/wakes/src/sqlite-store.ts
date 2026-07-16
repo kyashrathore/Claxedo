@@ -154,11 +154,15 @@ export class SqliteWakeStore implements WakeStore {
     return r ? rowToWake(r) : null
   }
 
-  async claimDue(nowMs: number, leaseMs: number, limit: number): Promise<Wake[]> {
+  async claimDue(nowMs: number, leaseMs: number, limit: number, serialKey?: string | null): Promise<Wake[]> {
     // Lane rule: a serial-keyed wake is claimable only when no other wake of
     // its key is already `firing`, and one claim batch takes at most one wake
     // per key (earliest first). Null-key wakes have no lane (own partition
-    // via COALESCE to their unique id).
+    // via COALESCE to their unique id). `serialKey` scopes the claim:
+    // undefined = all lanes, null = only null-key wakes, string = that lane.
+    const laneFilter =
+      serialKey === undefined ? "" : serialKey === null ? "AND serial_key IS NULL" : "AND serial_key = ?"
+    const laneParams = typeof serialKey === "string" ? [serialKey] : []
     const rows = this.db
       .prepare(
         `UPDATE wakes SET state = 'firing', lease_until = ?, attempts = attempts + 1
@@ -168,6 +172,7 @@ export class SqliteWakeStore implements WakeStore {
                     ROW_NUMBER() OVER (PARTITION BY COALESCE(serial_key, id) ORDER BY fire_at ASC, id ASC) AS lane_rank
              FROM wakes
              WHERE trigger_type = 'at' AND state = 'pending' AND fire_at IS NOT NULL AND fire_at <= ?
+               ${laneFilter}
                AND (serial_key IS NULL OR serial_key NOT IN (
                  SELECT serial_key FROM wakes WHERE state = 'firing' AND serial_key IS NOT NULL
                ))
@@ -177,7 +182,7 @@ export class SqliteWakeStore implements WakeStore {
          )
          RETURNING *`,
       )
-      .all(nowMs + leaseMs, nowMs, limit) as Row[]
+      .all(nowMs + leaseMs, nowMs, ...laneParams, limit) as Row[]
     return rows.map(rowToWake)
   }
 
@@ -212,11 +217,16 @@ export class SqliteWakeStore implements WakeStore {
     ).map(rowToWake)
   }
 
-  async findReclaimable(nowMs: number): Promise<Wake[]> {
+  async findReclaimable(nowMs: number, serialKey?: string | null): Promise<Wake[]> {
+    const laneFilter =
+      serialKey === undefined ? "" : serialKey === null ? "AND serial_key IS NULL" : "AND serial_key = ?"
+    const laneParams = typeof serialKey === "string" ? [serialKey] : []
     return (
       this.db
-        .prepare("SELECT * FROM wakes WHERE state = 'firing' AND lease_until IS NOT NULL AND lease_until <= ?")
-        .all(nowMs) as Row[]
+        .prepare(
+          `SELECT * FROM wakes WHERE state = 'firing' AND lease_until IS NOT NULL AND lease_until <= ? ${laneFilter}`,
+        )
+        .all(nowMs, ...laneParams) as Row[]
     ).map(rowToWake)
   }
 
