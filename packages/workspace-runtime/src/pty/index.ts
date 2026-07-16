@@ -6,7 +6,7 @@
  */
 
 import { type IPty } from "node-pty"
-import z from "zod"
+import z from "zod/v3"
 import { Log } from "../log"
 import type { WSContext } from "hono/ws"
 import * as fs from "fs"

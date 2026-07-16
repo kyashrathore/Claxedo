@@ -8,7 +8,7 @@ import {
   type WorkGraphAttemptToolName,
 } from "@claxedo/workgraph/contracts"
 import { Hono } from "hono"
-import z from "zod"
+import z from "zod/v3"
 import { bearerToken, boundedJsonBody, errorBody } from "./http"
 
 export const WORKGRAPH_ATTEMPT_TOOL_NAMES = WorkGraphAttemptToolNames

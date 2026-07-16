@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { serve } from "@hono/node-server"
-import z from "zod"
+import z from "zod/v3"
 import {
   WorkGraphConnectionOperationRequestSchema,
   WorkGraphConnectionOperationResponseSchema,

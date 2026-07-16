@@ -1,6 +1,6 @@
 import fs from "fs/promises"
 import path from "path"
-import z from "zod"
+import z from "zod/v3"
 import { stateDir } from "../paths"
 import { Log } from "../log"
 

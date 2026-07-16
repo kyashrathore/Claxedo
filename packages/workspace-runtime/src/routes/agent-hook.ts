@@ -6,7 +6,7 @@
  */
 
 import { Hono } from "hono"
-import z from "zod"
+import z from "zod/v3"
 import { workspaceRuntimeBus } from "../bus"
 import { Log } from "../log"
 import { boundedJsonBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"

@@ -1,3 +1,4 @@
+import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 import {
@@ -98,6 +99,13 @@ describe("build-sandbox-image", () => {
       "@zed-industries/claude-agent-acp",
       "@agentclientprotocol/codex-acp",
     ]))
+    expect(deps.zod).toBe("4.1.8")
+  })
+
+  test("production image starts the flattened workspace-runtime dependency graph", () => {
+    const dockerfile = fs.readFileSync(path.resolve(import.meta.dirname, "../cloudflare-worker/Dockerfile"), "utf8")
+    expect(dockerfile).toContain("timeout 5s workspace-runtime")
+    expect(dockerfile).toContain('[ "$status" -ne 124 ]')
   })
 
   test("workspace package build order is topological (dependencies before dependents, workspace-runtime last)", () => {

@@ -17,7 +17,7 @@
  */
 
 import { parse as parseJsonc } from "jsonc-parser"
-import z from "zod"
+import z from "zod/v3"
 import path from "path"
 import fs from "fs/promises"
 

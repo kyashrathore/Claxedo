@@ -5,7 +5,7 @@
  */
 
 import { Hono, type Context } from "hono"
-import z from "zod"
+import z from "zod/v3"
 import { lazy } from "../lazy"
 import { Pty } from "../pty/index"
 import { Process } from "../managed-processes/schema"

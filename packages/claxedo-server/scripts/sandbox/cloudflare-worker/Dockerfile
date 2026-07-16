@@ -58,3 +58,14 @@ RUN cd /opt/workspace-runtime && \
     command -v workspace-runtime && \
     command -v claude-agent-acp && \
     command -v codex-acp
+
+# Load the exact flattened production dependency graph and keep the host alive
+# long enough to prove it reached its serving loop. A module-load crash exits
+# before timeout and fails the image build; a healthy server is stopped by
+# timeout with its documented status 124.
+RUN set +e; \
+    timeout 5s workspace-runtime >/tmp/workspace-runtime-smoke.log 2>&1; \
+    status=$?; \
+    set -e; \
+    if [ "$status" -ne 124 ]; then cat /tmp/workspace-runtime-smoke.log; exit 1; fi; \
+    rm /tmp/workspace-runtime-smoke.log

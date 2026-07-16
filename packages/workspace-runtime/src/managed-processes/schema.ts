@@ -1,4 +1,4 @@
-import z from "zod"
+import z from "zod/v3"
 
 function mark<T extends z.ZodTypeAny>(schema: T, ref: string): T {
   const hit = schema as T & { meta?: (data: { ref: string }) => T }
