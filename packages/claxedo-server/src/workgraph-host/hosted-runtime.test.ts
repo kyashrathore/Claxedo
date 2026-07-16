@@ -1637,6 +1637,7 @@ describe("hosted WorkGraph runtime outbox", () => {
             return Response.json({ id: "session-a" }, { status: 201 })
           }
           if (url.pathname.endsWith("/api/workgraph/connection-binding")) {
+            expect(new Headers(init?.headers).get("x-claxedo-workgraph-broker-token")).toBe("runtime-token")
             expect(JSON.parse(String(init?.body))).toEqual({
               version: 1,
               identity: {
@@ -1651,6 +1652,7 @@ describe("hosted WorkGraph runtime outbox", () => {
             return Response.json({ bound: true })
           }
           if (url.pathname.endsWith("/api/workgraph/attempt-binding")) {
+            expect(new Headers(init?.headers).get("x-claxedo-workgraph-broker-token")).toBe("runtime-token")
             expect(JSON.parse(String(init?.body))).toEqual({
               version: 1,
               identity: {

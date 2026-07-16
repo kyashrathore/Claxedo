@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import { serve } from "@hono/node-server"
 import z from "zod/v3"
 import {
+  WorkGraphBrokerTokenHeader,
   WorkGraphConnectionOperationRequestSchema,
   WorkGraphConnectionOperationResponseSchema,
   WorkGraphConnectionToolNames,
@@ -209,7 +210,7 @@ export function WorkGraphConnectionToolRoutes(input: {
     if (parsed.data.identity.workspaceId !== input.workspaceId) {
       return c.json(errorBody("connection_binding_workspace_mismatch", "Connection binding workspace does not match runtime"), 403)
     }
-    const token = bearerToken(c.req.header("authorization"))
+    const token = c.req.header(WorkGraphBrokerTokenHeader)?.trim() || bearerToken(c.req.header("authorization"))
     if (!token && !input.broker) {
       return c.json(errorBody("connection_binding_auth_required", "A Runtime Access Token is required"), 401)
     }

@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server"
 import {
   CommandResultSchema,
+  WorkGraphBrokerTokenHeader,
   WorkGraphAttemptOperationRequestSchema,
   WorkGraphAttemptToolNames,
   type CommandResult,
@@ -148,7 +149,7 @@ export function WorkGraphAttemptToolRoutes(input: {
     } catch {
       return context.json(errorBody("attempt_binding_broker_invalid", "Attempt broker URL is invalid"), 400)
     }
-    const token = bearerToken(context.req.header("authorization"))
+    const token = context.req.header(WorkGraphBrokerTokenHeader)?.trim() || bearerToken(context.req.header("authorization"))
     if (!input.broker && (!token || !brokerOrigin)) {
       return context.json(errorBody("attempt_binding_auth_required", "A trusted Attempt broker is required"), 401)
     }

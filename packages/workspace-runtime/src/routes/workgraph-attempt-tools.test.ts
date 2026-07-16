@@ -142,23 +142,31 @@ describe("WorkGraph Attempt tools", () => {
 
   it("bounds remote broker responses while streaming", async () => {
     let callbackUrl = ""
+    let brokerAuthorization: string | null = null
     const app = WorkGraphAttemptToolRoutes({
       workspaceId: "workspace-1",
       brokerOrigin: "https://central.test",
       maxResponseBytes: 1_024,
-      fetch: async () => new Response(new ReadableStream({
-        start(controller) {
-          controller.enqueue(new Uint8Array(800))
-          controller.enqueue(new Uint8Array(800))
-          controller.close()
-        },
-      })),
+      fetch: async (_input, init) => {
+        brokerAuthorization = new Headers(init?.headers).get("authorization")
+        return new Response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(800))
+            controller.enqueue(new Uint8Array(800))
+            controller.close()
+          },
+        }))
+      },
       registerSessionTools: async (input) => { callbackUrl = input.callbackUrl },
     })
     handles.push(app)
     const bound = await app.request("/api/workgraph/attempt-binding", {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer runtime-token" },
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer relay-host-token",
+        "x-claxedo-workgraph-broker-token": "runtime-token",
+      },
       body: JSON.stringify({
         version: 1,
         identity: { attemptId: "attempt-1", sessionId: "session-1", workspaceId: "workspace-1" },
@@ -177,6 +185,7 @@ describe("WorkGraph Attempt tools", () => {
       }),
     })
     expect(response.status).toBe(502)
+    expect(brokerAuthorization).toBe("Bearer runtime-token")
     expect(await response.json()).toMatchObject({ error: { code: "attempt_operation_failed" } })
   })
 })

@@ -2,7 +2,7 @@ import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
 import { defaultHomeRegion } from "../region"
 import type { ControlPlaneServices } from "../control-plane/services"
-import { AdmissionAgentPlanSchema, WorkGraphAttemptToolNames } from "@claxedo/workgraph/contracts"
+import { AdmissionAgentPlanSchema, WorkGraphAttemptToolNames, WorkGraphBrokerTokenHeader } from "@claxedo/workgraph/contracts"
 import { clean, type HostedWorkerEnv } from "../control-plane/adapters/worker/hosted-compose"
 import { createWorkGraphOperationalReporter, type WorkGraphOperationalReporter } from "./operational-telemetry"
 
@@ -319,6 +319,7 @@ export function createHostedWorkGraphRuntime(
               })
               await runtime("/api/workgraph/attempt-binding", {
                 method: "POST",
+                headers: { [WorkGraphBrokerTokenHeader]: token.token },
                 body: JSON.stringify({
                   version: 1,
                   identity: {
@@ -343,6 +344,7 @@ export function createHostedWorkGraphRuntime(
                 })
                 await runtime("/api/workgraph/connection-binding", {
                   method: "POST",
+                  headers: { [WorkGraphBrokerTokenHeader]: token.token },
                   body: JSON.stringify({
                     version: 1,
                     identity: { attemptId: claim.attemptId, sessionId, workspaceId },

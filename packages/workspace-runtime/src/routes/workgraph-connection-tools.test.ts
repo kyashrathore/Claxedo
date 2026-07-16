@@ -65,7 +65,11 @@ describe("WorkGraph Connection tools", () => {
     })).status).toBe(401)
     expect((await app.request("/api/workgraph/connection-binding", {
       method: "POST",
-      headers: { authorization: "Bearer rat-secret", "content-type": "application/json" },
+      headers: {
+        authorization: "Bearer relay-host-token",
+        "content-type": "application/json",
+        "x-claxedo-workgraph-broker-token": "rat-secret",
+      },
       body: JSON.stringify(binding),
     })).status).toBe(200)
 
