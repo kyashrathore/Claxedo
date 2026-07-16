@@ -141,6 +141,9 @@ function runtimeHarness(input: unknown) {
 
 function runtimeAgents(input: unknown, harnessId: string) {
   if (!Array.isArray(input)) throw invalidCatalog("agents", "The runtime Agent catalog was malformed")
+  if (input.length === 0) {
+    return [{ harnessId, id: "build", label: "build", mode: "primary" as const }]
+  }
   const agents = input.flatMap((value) => {
     const row = record(value)
     const id = clean(row?.name)

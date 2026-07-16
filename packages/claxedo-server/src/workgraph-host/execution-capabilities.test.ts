@@ -114,7 +114,7 @@ describe("WorkGraph execution capability composition", () => {
     })
   })
 
-  test("fails with a typed catalog error instead of treating upstream failure as an empty catalog", async () => {
+  test("uses the canonical build Agent when a harness cannot enumerate live Agent choices", async () => {
     const capabilities = createExecutionCapabilitiesPort({
       environment: {
         kind: "local_worktree",
@@ -123,6 +123,24 @@ describe("WorkGraph execution capability composition", () => {
         baseRevisionInput: true,
       },
       readRuntime: async () => ({ ...runtime, agents: [] }),
+      readRepository: async () => ({ baseRevisions: ["HEAD"] }),
+      readConnections: async () => [],
+    })
+
+    await expect(capabilities.read(context, {})).resolves.toMatchObject({
+      agents: [{ harnessId: "opencode", id: "build", label: "build", mode: "primary" }],
+    })
+  })
+
+  test("fails closed when a non-empty Agent catalog contains no valid choices", async () => {
+    const capabilities = createExecutionCapabilitiesPort({
+      environment: {
+        kind: "local_worktree",
+        repositoryRequired: true,
+        remoteUrlInput: false,
+        baseRevisionInput: true,
+      },
+      readRuntime: async () => ({ ...runtime, agents: [{ description: "missing name" }] }),
       readRepository: async () => ({ baseRevisions: ["HEAD"] }),
       readConnections: async () => [],
     })
