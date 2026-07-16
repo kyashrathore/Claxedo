@@ -8,10 +8,10 @@ ENV PATH=/root/.local/bin:/root/.amp/bin:$PATH
 # contributor to image size (opencode ~544MB, claude ~228MB, codex ~218MB,
 # gemini ~156MB, pi ~147MB) and the push bottleneck — so they are build-arg
 # driven and default to a LEAN set. Pass the full list to restore every runner:
-#   --build-arg CLAXEDO_NPM_AGENTS="opencode-ai@1.15.10 @anthropic-ai/claude-code@2.1.150 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.75.5"
+#   --build-arg CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.150 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.75.5"
 # NOTE: `wrangler deploy` cannot inject --build-arg, so the DEFAULT below is what
 # ships via wrangler. Override only for local `docker build`.
-ARG CLAXEDO_NPM_AGENTS="opencode-ai@1.15.10 @anthropic-ai/claude-code@2.1.150 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.75.5"
+ARG CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.150 @openai/codex@0.133.0 @google/gemini-cli@0.43.0 @earendil-works/pi-coding-agent@0.75.5"
 # Set to "1" to also install the curl-based agents (cursor, amp, droid) — adds
 # ~430MB and most deployments don't use them, so off by default.
 ARG CLAXEDO_CURL_AGENTS="1"
@@ -34,7 +34,6 @@ RUN npm i -g --min-release-age=2 tsx@4.22.3 ${CLAXEDO_NPM_AGENTS} && \
       ln -sf /root/.local/bin/droid /usr/local/bin/droid && \
       command -v cursor-agent && command -v amp && command -v droid; \
     fi && \
-    command -v opencode && \
     command -v claude && \
     command -v codex && \
     command -v gemini && \
@@ -58,6 +57,7 @@ RUN cd /opt/workspace-runtime && \
     ln -sf /opt/workspace-runtime/node_modules/.bin/claude-agent-acp /usr/local/bin/claude-agent-acp && \
     ln -sf /opt/workspace-runtime/node_modules/.bin/codex-acp /usr/local/bin/codex-acp && \
     command -v workspace-runtime && \
+    command -v opencode && \
     command -v claude-agent-acp && \
     command -v codex-acp
 
@@ -67,7 +67,7 @@ RUN set -eu; \
     mkdir -p /tmp/opencode-session-v2-smoke; \
     opencode serve --hostname=127.0.0.1 --port=4096 >/tmp/opencode-session-v2.log 2>&1 & \
     pid=$!; \
-    trap 'kill "$pid" 2>/dev/null || true' EXIT; \
+    trap 'kill -9 "$pid" 2>/dev/null || true' EXIT; \
     ready=0; \
     for attempt in $(seq 1 60); do \
       if curl -fsS -X POST \
@@ -78,8 +78,8 @@ RUN set -eu; \
     done; \
     if [ "$ready" -ne 1 ]; then cat /tmp/opencode-session-v2.log; exit 1; fi; \
     node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-session-v2.json','utf8'));const id=value.id||value.data?.id;if(id!=='ses_workgraph_image_smoke')throw new Error('Session V2 create did not adopt the requested id')"; \
-    kill "$pid"; \
-    wait "$pid" || true; \
+    kill -9 "$pid" 2>/dev/null || true; \
+    wait "$pid" 2>/dev/null || true; \
     trap - EXIT
 
 # Load the exact flattened production dependency graph and keep the host alive

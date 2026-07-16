@@ -119,7 +119,9 @@ describe("build-sandbox-image", () => {
       expect(dockerfile).toContain(`install -m 0755 /opt/workspace-runtime/${OPENCODE_BINARY_FILENAME} /usr/local/bin/opencode`)
       expect(dockerfile).toContain("http://127.0.0.1:4096/api/session")
       expect(dockerfile).toContain("Session V2 create did not adopt the requested id")
+      expect(dockerfile).toContain('kill -9 "$pid"')
     }
+    expect(dockerfiles.every((dockerfile) => !dockerfile.includes("opencode-ai@"))).toBe(true)
   })
 
   test("Cloudflare data-plane proxy targets the canonical workspace-runtime port", () => {
