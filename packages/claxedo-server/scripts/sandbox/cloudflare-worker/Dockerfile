@@ -49,15 +49,38 @@ COPY .build/ /opt/workspace-runtime/
 RUN cd /opt/workspace-runtime && \
     npm install --omit=dev --min-release-age=2 --legacy-peer-deps && \
     test -f /opt/workspace-runtime/workspace-runtime-host.mjs && \
+    test -x /opt/workspace-runtime/opencode && \
     test -x /opt/workspace-runtime/node_modules/.bin/claude-agent-acp && \
     test -x /opt/workspace-runtime/node_modules/.bin/codex-acp && \
     printf '#!/usr/bin/env bash\nexec node /opt/workspace-runtime/workspace-runtime-host.mjs "$@"\n' > /usr/local/bin/workspace-runtime && \
     chmod +x /usr/local/bin/workspace-runtime && \
+    install -m 0755 /opt/workspace-runtime/opencode /usr/local/bin/opencode && \
     ln -sf /opt/workspace-runtime/node_modules/.bin/claude-agent-acp /usr/local/bin/claude-agent-acp && \
     ln -sf /opt/workspace-runtime/node_modules/.bin/codex-acp /usr/local/bin/codex-acp && \
     command -v workspace-runtime && \
     command -v claude-agent-acp && \
     command -v codex-acp
+
+# Fail the image build unless the bundled checkout serves WorkGraph's durable
+# Session V2 create contract as JSON (rather than an HTML app-shell fallback).
+RUN set -eu; \
+    mkdir -p /tmp/opencode-session-v2-smoke; \
+    opencode serve --hostname=127.0.0.1 --port=4096 >/tmp/opencode-session-v2.log 2>&1 & \
+    pid=$!; \
+    trap 'kill "$pid" 2>/dev/null || true' EXIT; \
+    ready=0; \
+    for attempt in $(seq 1 60); do \
+      if curl -fsS -X POST \
+        -H 'content-type: application/json' \
+        -d '{"id":"ses_workgraph_image_smoke","location":{"directory":"/tmp/opencode-session-v2-smoke"}}' \
+        http://127.0.0.1:4096/api/session >/tmp/opencode-session-v2.json; then ready=1; break; fi; \
+      sleep 0.25; \
+    done; \
+    if [ "$ready" -ne 1 ]; then cat /tmp/opencode-session-v2.log; exit 1; fi; \
+    node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-session-v2.json','utf8'));const id=value.id||value.data?.id;if(id!=='ses_workgraph_image_smoke')throw new Error('Session V2 create did not adopt the requested id')"; \
+    kill "$pid"; \
+    wait "$pid" || true; \
+    trap - EXIT
 
 # Load the exact flattened production dependency graph and keep the host alive
 # long enough to prove it reached its serving loop. A module-load crash exits
