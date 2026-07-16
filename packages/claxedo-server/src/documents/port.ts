@@ -51,7 +51,7 @@ export type SnapshotRef = Readonly<{
   pins: readonly string[]
 }>
 
-export type WriteResult = DocumentRead & Readonly<{ snapshot: SnapshotRef }>
+export type WriteResult = DocumentRead & Readonly<{ snapshot?: SnapshotRef }>
 
 export type WriteRequest = Readonly<{
   markdown: string

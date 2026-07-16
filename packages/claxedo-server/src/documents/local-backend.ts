@@ -37,6 +37,7 @@ import {
   createRepositoryDocumentWorkspace,
   type RepositoryDocumentHandle,
 } from "./repository"
+import { readRepositoryFile } from "./repository-file-authority"
 import { sessionMatchesDocumentProject } from "./session-grants"
 import { hydrateSessionDocument, reachableLocalSessionWorkspace } from "./session-hydration"
 import { createDocumentWatchService } from "./watch"
@@ -61,7 +62,12 @@ export type LocalDocumentsBackendDependencies = Readonly<{
 
 export type LocalDocumentsBackendOptions = Readonly<{
   managed?: Omit<LocalManagedOptions, "dataRoot">
+  faults?: Readonly<{
+    afterRepositoryMoveParentVerified?: (input: Readonly<{ parent: string; target: string }>) => void | Promise<void>
+  }>
 }>
+
+const MAX_REPOSITORY_MOVE_BYTES = 2 * 1024 * 1024
 
 export function createLocalDocumentsBackend(
   dependencies: LocalDocumentsBackendDependencies,
@@ -169,15 +175,23 @@ export function createLocalDocumentsBackend(
     const root = await fs.promises.realpath(resolved.directory)
     const target = path.resolve(root, relativePath)
     if (target === root || !target.startsWith(root + path.sep)) throw new DocumentNotFoundError(relativePath)
-    await fs.promises.mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
-    const parent = await fs.promises.realpath(path.dirname(target))
-    if (parent !== root && !parent.startsWith(root + path.sep)) throw new DocumentNotFoundError(relativePath)
-    const authority = await fs.promises.stat(parent)
+    const verified = await secureRepositoryMoveParent(root, path.dirname(target), relativePath)
+    await options.faults?.afterRepositoryMoveParentVerified?.({ parent: verified.current, target })
+    const authority = await fs.promises.lstat(verified.current)
+    if (
+      authority.isSymbolicLink() ||
+      !authority.isDirectory() ||
+      authority.dev !== verified.authority.dev ||
+      authority.ino !== verified.authority.ino ||
+      (await fs.promises.realpath(verified.current)) !== verified.current
+    ) {
+      throw new DocumentNotFoundError(relativePath)
+    }
     return {
       root,
       target,
       relativePath: path.relative(root, target),
-      parent,
+      parent: verified.current,
       authority: { dev: authority.dev, ino: authority.ino },
     }
   }
@@ -289,12 +303,7 @@ export function createLocalDocumentsBackend(
         },
         writeRepository: async (markdown, input) => {
           const destination = await repositoryMoveTarget(input.workspaceId, input.relativePath, input.projectId)
-          const existing = await fs.promises
-            .readFile(destination.target, "utf8")
-            .catch((error: NodeJS.ErrnoException) => {
-              if (error.code === "ENOENT") return undefined
-              throw error
-            })
+          const existing = await readRepositoryMoveFile(destination.target)
           if (existing !== undefined) {
             if (existing !== markdown)
               throw new DocumentStorageError(
@@ -334,19 +343,16 @@ export function createLocalDocumentsBackend(
             }
           } catch (error) {
             if (error instanceof DocumentStorageError) throw error
-            const current = await fs.promises.readFile(destination.target, "utf8").catch(() => undefined)
+            const current = await readRepositoryMoveFile(destination.target)
             if (current !== markdown) throw error
           } finally {
             await fs.promises.unlink(temporary).catch(() => undefined)
           }
         },
         readRepository: async (input) =>
-          await fs.promises
-            .readFile(
-              (await repositoryMoveTarget(input.workspaceId, input.relativePath, input.projectId)).target,
-              "utf8",
-            )
-            .catch((error: NodeJS.ErrnoException) => (error.code === "ENOENT" ? undefined : Promise.reject(error))),
+          await readRepositoryMoveFile(
+            (await repositoryMoveTarget(input.workspaceId, input.relativePath, input.projectId)).target,
+          ),
         indexOrigin: async (input) => findDocumentIndexEntry(input.orgId, input.documentId)?.origin_kind,
         flipIndex: async (input, sourceVersion, expected) => {
           const destination = await repositoryMoveTarget(input.workspaceId, input.relativePath, input.projectId)
@@ -560,4 +566,56 @@ export function createLocalDocumentsBackend(
       }
     },
   } satisfies DocumentsBackend<Handle>
+}
+
+async function secureRepositoryMoveParent(root: string, target: string, notFoundId: string) {
+  const relative = path.relative(root, target)
+  if (relative === "") return { current: root, authority: await fs.promises.lstat(root) }
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new DocumentNotFoundError(notFoundId)
+  }
+  const segments = relative.split(path.sep).filter(Boolean)
+  const resolved = await segments.reduce(async (previous, segment) => {
+    const state = await previous
+    const verified = await fs.promises.lstat(state.current)
+    if (
+      verified.dev !== state.authority.dev ||
+      verified.ino !== state.authority.ino ||
+      !verified.isDirectory() ||
+      verified.isSymbolicLink() ||
+      (await fs.promises.realpath(state.current)) !== state.current
+    ) {
+      throw new DocumentNotFoundError(notFoundId)
+    }
+    const candidate = path.join(state.current, segment)
+    const existing = await fs.promises.lstat(candidate).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined
+      throw error
+    })
+    if (existing?.isSymbolicLink() || (existing && !existing.isDirectory())) {
+      throw new DocumentNotFoundError(notFoundId)
+    }
+    if (!existing) throw new DocumentNotFoundError(notFoundId)
+    const created = await fs.promises.lstat(candidate)
+    const real = await fs.promises.realpath(candidate)
+    if (
+      !created.isDirectory() ||
+      created.isSymbolicLink() ||
+      real !== candidate ||
+      (real !== root && !real.startsWith(root + path.sep))
+    ) {
+      throw new DocumentNotFoundError(notFoundId)
+    }
+    return { current: real, authority: created }
+  }, Promise.resolve({ current: root, authority: await fs.promises.lstat(root) }))
+  return resolved
+}
+
+async function readRepositoryMoveFile(target: string) {
+  return await readRepositoryFile("repository-move", target, MAX_REPOSITORY_MOVE_BYTES)
+    .then((read) => read.markdown)
+    .catch((error: unknown) => {
+      if (error instanceof DocumentNotFoundError) return undefined
+      throw error
+    })
 }

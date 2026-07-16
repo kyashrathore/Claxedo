@@ -14,6 +14,36 @@ import {
 } from "./session-hydration"
 
 describe("managed document session hydration", () => {
+  test("parks invalid UTF-8 agent bytes without altering canonical content", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-hydration-invalid-utf8-"))
+    let canonical = "before"
+    const hydrated = await hydrateSessionDocument({
+      sessionId: "session-invalid-utf8",
+      workspaceRoot: root,
+      documentId: "document-invalid-utf8",
+      displayName: "Plan",
+      markdown: canonical,
+      baseVersion: "version-1",
+      sync: async (markdown) => {
+        canonical = markdown
+        return "version-2"
+      },
+    })
+
+    try {
+      await fs.writeFile(hydrated, new Uint8Array([0xff, 0xfe, 0x41]))
+      await expect(syncHydratedSessionDocuments("session-invalid-utf8")).rejects.toThrow("not valid UTF-8")
+      expect(canonical).toBe("before")
+      expect(new Uint8Array(await fs.readFile(hydrated))).toEqual(new Uint8Array([0xff, 0xfe, 0x41]))
+      await expect(
+        fs.readFile(path.join(sessionDocs(root, "session-invalid-utf8"), "manifest.json"), "utf8").then(JSON.parse),
+      ).resolves.toMatchObject({ documents: [{ state: "conflicted", baseVersion: "version-1" }] })
+    } finally {
+      forgetHydratedSessionRuntime("session-invalid-utf8")
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("hydrates only selected documents and conditionally syncs ordinary file edits", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-hydration-"))
     let canonical = "before"

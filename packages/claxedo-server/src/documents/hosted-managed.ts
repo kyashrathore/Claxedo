@@ -455,7 +455,8 @@ export function createHostedManagedDocumentWorkspace(
 export type R2ObjectBody = Readonly<{
   etag: string
   uploaded: Date
-  arrayBuffer(): Promise<ArrayBuffer>
+  size: number
+  body: ReadableStream<Uint8Array>
 }>
 
 export type R2BucketBinding = Readonly<{
@@ -477,15 +478,18 @@ export type R2BucketBinding = Readonly<{
 
 export function createR2ConditionalObjectStore(
   bucket: R2BucketBinding,
-  options: Readonly<{ maxListObjects?: number }> = {},
+  options: Readonly<{ maxListObjects?: number; maxObjectBytes?: number }> = {},
 ): ConditionalObjectStore {
+  const maxObjectBytes = options.maxObjectBytes ?? DEFAULT_MAX_DOCUMENT_BYTES
   return {
     async get(key) {
       const object = await bucket.get(key)
       if (!object) return undefined
+      if (object.size > maxObjectBytes) throw new DocumentTooLargeError(object.size, maxObjectBytes)
+      const body = await readR2Body(object, maxObjectBytes)
       return {
         key,
-        body: new Uint8Array(await object.arrayBuffer()),
+        body,
         etag: object.etag,
         uploadedAt: object.uploaded.getTime(),
       }
@@ -517,6 +521,32 @@ export function createR2ConditionalObjectStore(
       } while (cursor)
       return results
     },
+  }
+}
+
+async function readR2Body(object: R2ObjectBody, maxBytes: number) {
+  const buffer = new Uint8Array(Math.min(maxBytes + 1, object.size + 1))
+  const reader = object.body.getReader()
+  let offset = 0
+  let complete = false
+  try {
+    while (offset < buffer.byteLength) {
+      const result = await reader.read()
+      if (result.done) {
+        complete = true
+        break
+      }
+      const available = Math.min(result.value.byteLength, buffer.byteLength - offset)
+      buffer.set(result.value.subarray(0, available), offset)
+      offset += available
+      if (available < result.value.byteLength) throw new DocumentTooLargeError(offset + 1, maxBytes)
+    }
+    if (offset > maxBytes) throw new DocumentTooLargeError(offset, maxBytes)
+    if (!complete && !(await reader.read()).done) throw new DocumentTooLargeError(offset + 1, maxBytes)
+    if (offset !== object.size) throw new DocumentInvalidEntryError("R2 object size changed while reading")
+    return buffer.subarray(0, offset)
+  } finally {
+    await reader.cancel().catch(() => undefined)
   }
 }
 

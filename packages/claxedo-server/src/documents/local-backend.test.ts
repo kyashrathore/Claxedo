@@ -86,6 +86,7 @@ describe("local documents backend composition", () => {
     await git(repository, ["config", "user.email", "documents@example.com"])
     await git(repository, ["config", "user.name", "Documents Test"])
     await fs.writeFile(path.join(repository, "README.md"), "repository\n")
+    await fs.mkdir(path.join(repository, "docs"))
     await git(repository, ["add", "README.md"])
     await git(repository, ["commit", "-m", "initial"])
     let race = false
@@ -169,7 +170,206 @@ describe("local documents backend composition", () => {
     expect(await fs.readFile(path.join(root, "documents", relativePath), "utf8")).toBe("# Agent winner\n")
     expect(await fs.readFile(path.join(repository, "docs", "plan.md"), "utf8")).toBe("# Plan\n")
   })
+
+  test("rejects a repository move through a symlink before creating outside directories", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-documents-backend-symlink-root-"))
+    const repository = await fs.mkdtemp(path.join(os.tmpdir(), "local-documents-backend-symlink-repository-"))
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "local-documents-backend-symlink-outside-"))
+    roots.push(root, repository, outside)
+    await git(repository, ["init"])
+    await fs.symlink(outside, path.join(repository, "escape"))
+    const backend = createLocalDocumentsBackend({
+      dataDir: () => root,
+      async resolveWorkspace(input) {
+        if (input.workspaceId !== "workspace_1") return undefined
+        return {
+          id: "workspace_1",
+          project_id: "project_1",
+          directory: repository,
+          kind: "local",
+          created_at: 1,
+          updated_at: 1,
+        }
+      },
+      async sessionMeta() {
+        return undefined
+      },
+      reportError() {},
+      runGit: (args, directory, options) => git(directory, args, options),
+    })
+    const relativePath = backend.managedRelativePath({
+      projectId: "project_1",
+      documentId: "document_symlink",
+      slug: "Plan",
+    })
+    const created = await backend.workspace.create({
+      origin: "managed",
+      placement: "local",
+      projectId: "project_1",
+      documentId: "document_symlink",
+      relativePath,
+    }, { markdown: "# Plan\n", actor: { type: "user", id: "user_1" } })
+    const timestamp = new Date().toISOString()
+    const indexed = backend.index.create({
+      id: "document_symlink",
+      org_id: "org_1",
+      project_id: "project_1",
+      display_name: "Plan",
+      origin_kind: "managed",
+      placement_kind: "local",
+      placement_id: "local",
+      managed_relative_path: relativePath,
+      repository_id: null,
+      workspace_id: null,
+      repository_relative_path: null,
+      branch: null,
+      status: "draft",
+      session_id: null,
+      archived_at: null,
+      created_at: timestamp,
+      updated_at: timestamp,
+      last_opened_at: null,
+      last_known_file_version: created.version,
+    })
+
+    await expect(
+      backend.moveToRepository(indexed, {
+        workspaceId: "workspace_1",
+        relativePath: "escape/created/plan.md",
+      }),
+    ).rejects.toThrow()
+    await expect(fs.access(path.join(outside, "created"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  test("rejects repository moves whose destination parent does not already exist", async () => {
+    const value = await moveFixture()
+
+    await expect(
+      value.backend.moveToRepository(value.indexed, {
+        workspaceId: "workspace_1",
+        relativePath: "missing/plan.md",
+      }),
+    ).rejects.toMatchObject({ code: "document_not_found" })
+    await expect(fs.access(path.join(value.repository, "missing"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  test("rejects a repository move when its verified parent is swapped for an escaping symlink", async () => {
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "local-documents-backend-parent-swap-outside-"))
+    roots.push(outside)
+    let detached = ""
+    let swapped = false
+    const value = await moveFixture({
+      faults: {
+        async afterRepositoryMoveParentVerified({ parent }) {
+          if (swapped) return
+          swapped = true
+          detached = `${parent}-detached`
+          await fs.rename(parent, detached)
+          await fs.symlink(outside, parent)
+        },
+      },
+    })
+    await fs.mkdir(path.join(value.repository, "docs"))
+
+    try {
+      await expect(
+        value.backend.moveToRepository(value.indexed, {
+          workspaceId: "workspace_1",
+          relativePath: "docs/plan.md",
+        }),
+      ).rejects.toMatchObject({ code: "document_not_found" })
+      await expect(fs.access(path.join(outside, "plan.md"))).rejects.toMatchObject({ code: "ENOENT" })
+    } finally {
+      await fs.rm(path.join(value.repository, "docs"), { force: true })
+      if (detached) await fs.rename(detached, path.join(value.repository, "docs"))
+    }
+  })
+
+  test("bounds reads of an existing repository move destination", async () => {
+    const value = await moveFixture()
+    await fs.mkdir(path.join(value.repository, "docs"))
+    await fs.writeFile(path.join(value.repository, "docs", "plan.md"), "x".repeat(2 * 1024 * 1024 + 1))
+
+    await expect(
+      value.backend.moveToRepository(value.indexed, {
+        workspaceId: "workspace_1",
+        relativePath: "docs/plan.md",
+      }),
+    ).rejects.toMatchObject({ code: "document_too_large" })
+  })
 })
+
+async function moveFixture(options?: Parameters<typeof createLocalDocumentsBackend>[1]) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-documents-backend-move-fixture-"))
+  const repository = await fs.mkdtemp(path.join(os.tmpdir(), "local-documents-backend-move-repository-"))
+  roots.push(root, repository)
+  await git(repository, ["init"])
+  await git(repository, ["config", "user.email", "documents@example.com"])
+  await git(repository, ["config", "user.name", "Documents Test"])
+  await fs.writeFile(path.join(repository, "README.md"), "repository\n")
+  await git(repository, ["add", "README.md"])
+  await git(repository, ["commit", "-m", "initial"])
+  const backend = createLocalDocumentsBackend(
+    {
+      dataDir: () => root,
+      async resolveWorkspace(input) {
+        if (input.workspaceId !== "workspace_1") return undefined
+        return {
+          id: "workspace_1",
+          project_id: "project_1",
+          directory: repository,
+          kind: "local",
+          created_at: 1,
+          updated_at: 1,
+        }
+      },
+      async sessionMeta() {
+        return undefined
+      },
+      reportError() {},
+      runGit: (args, directory, runOptions) => git(directory, args, runOptions),
+    },
+    options,
+  )
+  const relativePath = backend.managedRelativePath({
+    projectId: "project_1",
+    documentId: "document_fixture",
+    slug: "Plan",
+  })
+  const created = await backend.workspace.create(
+    {
+      origin: "managed",
+      placement: "local",
+      projectId: "project_1",
+      documentId: "document_fixture",
+      relativePath,
+    },
+    { markdown: "# Plan\n", actor: { type: "user", id: "user_1" } },
+  )
+  const timestamp = new Date().toISOString()
+  const indexed = backend.index.create({
+    id: "document_fixture",
+    org_id: "org_1",
+    project_id: "project_1",
+    display_name: "Plan",
+    origin_kind: "managed",
+    placement_kind: "local",
+    placement_id: "local",
+    managed_relative_path: relativePath,
+    repository_id: null,
+    workspace_id: null,
+    repository_relative_path: null,
+    branch: null,
+    status: "draft",
+    session_id: null,
+    archived_at: null,
+    created_at: timestamp,
+    updated_at: timestamp,
+    last_opened_at: null,
+    last_known_file_version: created.version,
+  })
+  return { backend, indexed, repository }
+}
 
 async function git(
   directory: string,

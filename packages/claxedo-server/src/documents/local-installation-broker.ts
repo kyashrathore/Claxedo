@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono"
 import { timingSafeEqualStrings } from "../control-plane/web-crypto"
-import type { DocumentsBackend } from "./backend"
+import { withDocumentOperation, type DocumentsBackend } from "./backend"
 import type { DocumentIndexEntry } from "./index-store"
 import type { DocumentVersion } from "./port"
 import { DocumentVersionConflictError } from "./errors"
@@ -65,9 +65,6 @@ export function LocalInstallationDocumentBroker(options: {
   app.put("/:id", async (context) => {
     if (!(await requireActiveJob(context, jobs, options.env)))
       return context.json({ error: "document_capability_denied" }, 403)
-    const entry = await entryFor(options.backend, context)
-    if (!entry) return context.json({ error: "not_found" }, 404)
-    if (entry.archived_at) return context.json({ error: "archived" }, 409)
     const body = await readBrokerBody(context.req.raw).catch((error) =>
       error instanceof BrokerBodyTooLargeError
         ? context.json({ error: "document_body_too_large" }, 413)
@@ -76,26 +73,33 @@ export function LocalInstallationDocumentBroker(options: {
     if (body instanceof Response) return body
     if (typeof body.markdown !== "string" || typeof body.sessionId !== "string")
       return context.json({ error: "invalid" }, 400)
+    const markdown = body.markdown
+    const sessionId = body.sessionId
     const expected = context.req.header("if-match")
     if (!expected) return context.json({ error: "version_required" }, 428)
-    const written = await options.backend.workspace
-      .write(await options.backend.workspace.resolve(portEntry(entry)), {
-        markdown: body.markdown,
-        expectedVersion: expected as DocumentVersion,
-        actor: { type: "agent", id: body.sessionId },
-        sessionId: body.sessionId,
+    return await withDocumentOperation(options.backend, context.req.param("id"), async () => {
+      const entry = await entryFor(options.backend, context)
+      if (!entry) return context.json({ error: "not_found" }, 404)
+      if (entry.archived_at) return context.json({ error: "archived" }, 409)
+      const written = await options.backend.workspace
+        .write(await options.backend.workspace.resolve(portEntry(entry)), {
+          markdown,
+          expectedVersion: expected as DocumentVersion,
+          actor: { type: "agent", id: sessionId },
+          sessionId,
+        })
+        .catch((error) => {
+          if (error instanceof DocumentVersionConflictError) {
+            return context.json({ error: "document_version_conflict", currentVersion: error.currentVersion }, 409)
+          }
+          throw error
+        })
+      if (written instanceof Response) return written
+      await options.backend.index.update({ orgId: entry.org_id, projectId: entry.project_id }, entry.id, {
+        last_known_file_version: written.version,
       })
-      .catch((error) => {
-        if (error instanceof DocumentVersionConflictError) {
-          return context.json({ error: "document_version_conflict", currentVersion: error.currentVersion }, 409)
-        }
-        throw error
-      })
-    if (written instanceof Response) return written
-    await options.backend.index.update({ orgId: entry.org_id, projectId: entry.project_id }, entry.id, {
-      last_known_file_version: written.version,
+      return context.json(written)
     })
-    return context.json(written)
   })
   return app
 }

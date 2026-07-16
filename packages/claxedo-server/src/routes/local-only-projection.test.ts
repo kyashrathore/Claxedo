@@ -145,7 +145,7 @@ describe("local-only projection middleware", () => {
     }
   })
 
-  test("loopback peer forwarding for a non-loopback client is not local", async () => {
+  test("never treats forwarded traffic as unsigned local", async () => {
     const request = new Request("http://127.0.0.1/api/workgraph/runs", {
       headers: { "x-forwarded-for": "198.51.100.9, 127.0.0.1" },
     })
@@ -156,7 +156,28 @@ describe("local-only projection middleware", () => {
       headers: { "x-forwarded-for": "127.0.0.1" },
     })
     stampRequestPeerAddress(localForward, { incoming: { socket: { remoteAddress: "127.0.0.1" } } })
-    expect(isLoopbackLocalRequest(localForward)).toBe(true)
+    expect(isLoopbackLocalRequest(localForward)).toBe(false)
+
+    const spoofedChain = new Request("http://127.0.0.1/api/workgraph/runs", {
+      headers: { "x-forwarded-for": "127.0.0.2, 203.0.113.7" },
+    })
+    stampRequestPeerAddress(spoofedChain, { incoming: { socket: { remoteAddress: "127.0.0.1" } } })
+    expect(isLoopbackLocalRequest(spoofedChain)).toBe(false)
+
+    for (const header of [
+      "forwarded",
+      "x-forwarded-host",
+      "x-forwarded-proto",
+      "x-real-ip",
+      "cf-connecting-ip",
+      "true-client-ip",
+    ]) {
+      const forwarded = new Request("http://localhost/api/workgraph/runs", {
+        headers: { [header]: "127.0.0.1" },
+      })
+      stampRequestPeerAddress(forwarded, { incoming: { socket: { remoteAddress: "127.0.0.1" } } })
+      expect(isLoopbackLocalRequest(forwarded)).toBe(false)
+    }
   })
 
   test("peerAddressStamp middleware records env.incoming for gates behind it", async () => {

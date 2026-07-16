@@ -105,6 +105,31 @@ describe("repository document workspace conformance", () => {
 })
 
 describe("repository document recovery and Git contracts", () => {
+  test("a committed repository write remains successful when snapshot bookkeeping fails", async () => {
+    const value = await fixture({
+      git: {
+        faults: {
+          beforeSnapshotContentWrite() {
+            throw new Error("snapshot storage unavailable")
+          },
+        },
+      },
+    })
+    const handle = await value.workspace.resolve(value.entry)
+    const initial = await value.workspace.read(handle)
+
+    const written = await value.workspace.write(handle, {
+      markdown: "committed despite bookkeeping failure\n",
+      expectedVersion: initial.version,
+      actor,
+    })
+    expect(written).toMatchObject({ markdown: "committed despite bookkeeping failure\n" })
+    expect(written.snapshot).toBeUndefined()
+    await expect(fs.readFile(path.join(value.root, "doc.md"), "utf8")).resolves.toBe(
+      "committed despite bookkeeping failure\n",
+    )
+  })
+
   test("EC-C1 reports a deleted file as missing without losing its index identity", async () => {
     const value = await fixture()
     const handle = await value.workspace.resolve(value.entry)
@@ -252,6 +277,28 @@ describe("repository document recovery and Git contracts", () => {
       }),
     ).rejects.toMatchObject({ code: "document_version_conflict" })
     expect(await fs.readFile(path.join(value.root, "doc.md"), "utf8")).toBe("new-target writer\n")
+  })
+
+  test("CAS rollback bounds a writer that enlarges the newly installed file", async () => {
+    const oversized = "x".repeat(2 * 1024 * 1024 + 1)
+    const value = await fixture({
+      files: {
+        faults: {
+          afterReplacementInstalled: async ({ target }) => fs.writeFile(target, oversized),
+        },
+      },
+    })
+    const handle = await value.workspace.resolve(value.entry)
+    const current = await value.workspace.read(handle)
+
+    await expect(
+      value.workspace.write(handle, {
+        markdown: "human draft\n",
+        expectedVersion: current.version,
+        actor,
+      }),
+    ).rejects.toMatchObject({ code: "document_too_large" })
+    expect((await fs.stat(path.join(value.root, "doc.md"))).size).toBe(Buffer.byteLength(oversized))
   })
 
   test("CAS preserves a retained-descriptor writer on the claimed old inode", async () => {
@@ -530,6 +577,27 @@ describe("repository document recovery and Git contracts", () => {
     await expect(value.workspace.readSnapshot(handle, snapshot.id)).rejects.toMatchObject({
       code: "document_snapshot_corrupt",
     })
+  })
+
+  test("bounds and repairs oversized repository snapshot content during capture", async () => {
+    const value = await fixture()
+    const handle = await value.workspace.resolve(value.entry)
+    const markdown = (await value.workspace.read(handle)).markdown
+    const snapshot = await value.workspace.snapshot(handle, { reason: "bounded capture", actor })
+    const content = path.join(
+      value.root,
+      ".git",
+      "claxedo-document-snapshots",
+      "document-1",
+      `${snapshot.id}.md`,
+    )
+    await fs.chmod(content, 0o600)
+    await fs.writeFile(content, "x".repeat(2 * 1024 * 1024 + 1))
+
+    await expect(value.workspace.snapshot(handle, { reason: "repair oversized", actor })).resolves.toMatchObject({
+      id: snapshot.id,
+    })
+    expect((await fs.stat(content)).size).toBe(Buffer.byteLength(markdown))
   })
 
   test("rejects malformed repository snapshot sidecars before list or GC can consume them", async () => {

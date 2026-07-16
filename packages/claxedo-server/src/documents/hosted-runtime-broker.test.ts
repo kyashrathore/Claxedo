@@ -13,7 +13,7 @@ import type { SignedControlPlaneAuth } from "../control-plane/auth"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { createHostedDocumentRuntimeBroker } from "./hosted-runtime-broker"
 import type { DocumentIndexEntry } from "./index-store"
-import { verifyDocumentRelayJobToken } from "../control-plane/runtime-access-token"
+import { verifyDocumentRelayJobToken, verifyDocumentSessionToken } from "../control-plane/runtime-access-token"
 
 const auth = { user: { subject: "user_1" } } as SignedControlPlaneAuth
 const entry = {
@@ -62,23 +62,33 @@ describe("hosted document runtime broker", () => {
     expect(services.relay.provider!.mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ role: "editor" }))
   })
 
-  test("activates the write capability only after hydration acknowledges it", async () => {
+  test("registers the write capability after hydration ACK and before runtime activation", async () => {
     const fixture = await runtimeFixture()
-    const registerCapability = vi.fn(async () => undefined)
+    const order: string[] = []
+    const registerCapability = vi.fn(async () => {
+      order.push("register")
+    })
     const received = Promise.withResolvers<void>()
     const hydration = Promise.withResolvers<Response>()
     const opened = createHostedDocumentRuntimeBroker(fixture.services, fixture.env, async (_input, init) => {
-      expect(JSON.parse(String(init?.body))).toMatchObject({
-        writeback: { token: expect.any(String) },
-      })
-      received.resolve()
-      return await hydration.promise
+      const body = JSON.parse(String(init?.body))
+      if ("writeback" in body) {
+        order.push("hydrate")
+        expect(body).toMatchObject({ writeback: { token: expect.any(String) } })
+        received.resolve()
+        return await hydration.promise
+      }
+      order.push("activate")
+      expect(registerCapability).toHaveBeenCalledOnce()
+      expect(body).toEqual({})
+      return Response.json({ path: "/workspace/document.md" })
     }).open({ ...fixture.input, registerCapability })
     await received.promise
     expect(registerCapability).not.toHaveBeenCalled()
     hydration.resolve(Response.json({ path: "/workspace/document.md" }))
     await expect(opened).resolves.toEqual({ path: "/workspace/document.md" })
     expect(registerCapability).toHaveBeenCalledOnce()
+    expect(order).toEqual(["hydrate", "register", "activate"])
   })
 
   test("does not activate a capability received by a runtime that rejects hydration", async () => {
@@ -218,14 +228,135 @@ describe("hosted document runtime broker", () => {
         CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(signing.privateKey),
         CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "EdDSA",
         CLAXEDO_PUBLIC_URL: "https://control.test",
-      }, async (_url, init) => runtime.app.fetch(new Request("http://runtime.test/api/wr/documents/hydrate", init)))
+      }, async (input, init) => {
+        const pathname = new URL(String(input)).pathname
+        return await runtime.app.fetch(new Request(`http://runtime.test${pathname.slice(pathname.indexOf("/api/wr/"))}`, init))
+      })
       const opened = await broker.open({
         entry, sessionId: "session_1", auth, origin: "https://control.test",
         read: { markdown: canonical, version: version as never, modifiedAt: 1 },
+        registerCapability: async () => undefined,
       })
       await fs.writeFile(opened.path, "agent edit")
       await flushRuntimeDocument("session_1", "document_1")
       expect({ canonical, version }).toEqual({ canonical: "agent edit", version: "v2" })
+    } finally {
+      forgetRuntimeDocuments()
+      await runtime.host.dispose()
+      globalThis.fetch = originalFetch
+      if (previousRoot === undefined) delete process.env.WORKSPACE_RUNTIME_DIRECTORY
+      else process.env.WORKSPACE_RUNTIME_DIRECTORY = previousRoot
+      if (previousControl === undefined) delete process.env.CLAXEDO_CONTROL_PLANE_URL
+      else process.env.CLAXEDO_CONTROL_PLANE_URL = previousControl
+      if (previousPublic === undefined) delete process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM
+      else process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = previousPublic
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("registers replacement authority before activating a dirty restart flush", async () => {
+    const signing = await generateKeyPair("EdDSA", { extractable: true })
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-relay-dirty-restart-"))
+    const previousRoot = process.env.WORKSPACE_RUNTIME_DIRECTORY
+    const previousControl = process.env.CLAXEDO_CONTROL_PLANE_URL
+    const previousPublic = process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM
+    const env = {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(signing.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "EdDSA",
+      CLAXEDO_PUBLIC_URL: "https://control.test",
+    }
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = root
+    process.env.CLAXEDO_CONTROL_PLANE_URL = "https://control.test"
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(signing.publicKey)
+    const runtime = createWorkspaceRuntimeApp({
+      exposure: relayWorkspaceRuntimeExposure({
+        key: signing.publicKey,
+        workspaceId: "ws_1",
+        hostId: "host_1",
+        trustedDirectToken: "runtime-token",
+      }),
+    })
+    const order: string[] = []
+    let canonical = "before"
+    let version = "v1"
+    let activeJti: string | undefined
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      order.push("writeback")
+      const token = new Headers(init?.headers).get("authorization")?.replace(/^Bearer\s+/i, "")
+      if (!token) return new Response("missing", { status: 401 })
+      const claims = await verifyDocumentSessionToken(
+        token,
+        {
+          orgId: "org_1",
+          projectId: "project_1",
+          workspaceId: "ws_1",
+          sessionId: "session_1",
+          documentId: "document_1",
+        },
+        env,
+      )
+      if (claims.jti !== activeJti) return new Response("inactive", { status: 403 })
+      if (new Headers(init?.headers).get("if-match") !== version) return new Response("conflict", { status: 409 })
+      canonical = (JSON.parse(String(init?.body)) as { markdown: string }).markdown
+      version = "v2"
+      return Response.json({ version })
+    }) as unknown as typeof fetch
+
+    try {
+      const services = {
+        authority: {
+          resolveSession: vi.fn(async () => ({ workspace_id: "ws_1" })),
+          authorizeSessionRead: vi.fn(async () => undefined),
+          openWorkspace: vi.fn(async () => ({
+            role: "editor",
+            workspace: { workspace_id: "ws_1", org_id: "org_1", project_id: "project_1" },
+          })),
+        },
+        sandbox: {
+          sandboxManager: {
+            target: vi.fn(async () => ({ status: "ready", hostId: "host_1", homeRegion: "us-east" })),
+          },
+        },
+        relay: {
+          provider: {
+            mintRuntimeAccessToken: vi.fn(async () => ({ token: "runtime-token", expiresAt: Date.now() + 300_000 })),
+            getRelayEndpoint: vi.fn(async () => "https://relay.test"),
+          },
+        },
+      } as unknown as ControlPlaneServices
+      const relay = async (input: string | URL | Request, init?: RequestInit) => {
+        const pathname = new URL(String(input)).pathname
+        const runtimePath = pathname.slice(pathname.indexOf("/api/wr/"))
+        order.push(runtimePath.endsWith("/activate") ? "activate" : "hydrate")
+        return await runtime.app.fetch(new Request(`http://runtime.test${runtimePath}`, init))
+      }
+      const broker = createHostedDocumentRuntimeBroker(services, env, relay)
+      const first = await broker.open({
+        entry,
+        sessionId: "session_1",
+        auth,
+        origin: "https://control.test",
+        read: { markdown: canonical, version: version as never, modifiedAt: 1 },
+      })
+      await fs.writeFile(first.path, "dirty after runtime crash")
+      forgetRuntimeDocuments()
+
+      const reopened = await broker.open({
+        entry,
+        sessionId: "session_1",
+        auth,
+        origin: "https://control.test",
+        read: { markdown: canonical, version: version as never, modifiedAt: 1 },
+        registerCapability: async (capability) => {
+          order.push("register")
+          activeJti = capability.jti
+        },
+      })
+
+      expect(reopened.path).toBe(first.path)
+      expect({ canonical, version }).toEqual({ canonical: "dirty after runtime crash", version: "v2" })
+      expect(order).toEqual(["hydrate", "hydrate", "register", "activate", "writeback"])
     } finally {
       forgetRuntimeDocuments()
       await runtime.host.dispose()

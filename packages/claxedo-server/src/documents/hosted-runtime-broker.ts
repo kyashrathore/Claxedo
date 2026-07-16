@@ -83,6 +83,14 @@ export function createHostedDocumentRuntimeBroker(
         env,
       )
       const controlPlaneUrl = configuredControlPlaneUrl(env)
+      const documentJob = {
+        token: job.token,
+        userId: input.auth.user.subject,
+        orgId,
+        projectId: input.entry.project_id,
+        localWorkspaceId: workspaceId,
+        cloudWorkspaceId: workspaceId,
+      }
       const response = await fetchRelayResponse(fetcher,
         `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}/api/wr/documents/hydrate`,
         {
@@ -104,14 +112,7 @@ export function createHostedDocumentRuntimeBroker(
               token: capability.token,
               expiresAt: capability.expiresAt,
             },
-            job: {
-              token: job.token,
-              userId: input.auth.user.subject,
-              orgId,
-              projectId: input.entry.project_id,
-              localWorkspaceId: workspaceId,
-              cloudWorkspaceId: workspaceId,
-            },
+            job: documentJob,
           }),
           signal: input.signal,
         },
@@ -126,7 +127,36 @@ export function createHostedDocumentRuntimeBroker(
         jti: capability.jti,
         jobExpiresAt,
       })
-      return { path: (result as Record<string, unknown>).path as string }
+      const hydratedPath = (result as Record<string, unknown>).path as string
+      if (input.registerCapability) {
+        const activation = await fetchRelayResponse(fetcher,
+          `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}/api/wr/documents/${encodeURIComponent(input.sessionId)}/${encodeURIComponent(input.entry.id)}/activate`,
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${access.token}`,
+              "content-type": "application/json",
+              "x-opencode-directory": `workspace:${workspaceId}`,
+            },
+            body: "{}",
+            signal: input.signal,
+          },
+          options,
+        )
+        if (!activation.response.ok) {
+          throw new Error(`Session runtime document activation failed: ${activation.response.status}`)
+        }
+        const activated = parseRelayJson(activation.body, "Session runtime document activation")
+        if (
+          !activated ||
+          typeof activated !== "object" ||
+          Array.isArray(activated) ||
+          (activated as Record<string, unknown>).path !== hydratedPath
+        ) {
+          throw new Error("Session runtime document activation response is invalid")
+        }
+      }
+      return { path: hydratedPath }
     },
     async resolve(input: {
       entry: DocumentIndexEntry

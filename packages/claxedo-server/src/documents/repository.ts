@@ -6,7 +6,7 @@ import {
   documentErrorFromCause,
   nodeErrorCode,
 } from "./errors"
-import type { DocumentEntry, DocumentHandle, DocumentVersion, DocumentWorkspace } from "./port"
+import type { DocumentEntry, DocumentHandle, DocumentVersion, DocumentWorkspace, SnapshotRef } from "./port"
 import { createLocalRepositoryFileAuthority, normalizeRepositoryRelativePath } from "./repository-file-authority"
 import type {
   LocalRepositoryFileAuthorityOptions,
@@ -114,12 +114,12 @@ export function createRepositoryDocumentWorkspace(
         request.expectedVersion,
         maxDocumentBytes,
       )
-      const snapshot = await options.git.capture(resolved.root, handle.documentId, read.markdown, {
+      const snapshot = await advisoryCapture(() => options.git.capture(resolved.root, handle.documentId, read.markdown, {
         reason: "document.written",
         actor: request.actor,
         ...(request.sessionId ? { sessionId: request.sessionId } : {}),
-      })
-      return { ...read, snapshot }
+      }), handle.documentId)
+      return { ...read, ...(snapshot ? { snapshot } : {}) }
     },
 
     async snapshot(handle, request) {
@@ -158,12 +158,12 @@ export function createRepositoryDocumentWorkspace(
         request.expectedVersion,
         maxDocumentBytes,
       )
-      const snapshot = await options.git.capture(resolved.root, handle.documentId, read.markdown, {
+      const snapshot = await advisoryCapture(() => options.git.capture(resolved.root, handle.documentId, read.markdown, {
         reason: `document.restored:${snapshotId}`,
         actor: request.actor,
         ...(request.sessionId ? { sessionId: request.sessionId } : {}),
-      })
-      return { ...read, snapshot }
+      }), handle.documentId)
+      return { ...read, ...(snapshot ? { snapshot } : {}) }
     },
 
     async pinSnapshot(handle, snapshotId, pin) {
@@ -278,4 +278,11 @@ function repositoryEntry(entry: DocumentEntry | RepositoryDocumentHandle) {
   }
   normalizeRepositoryRelativePath(entry.relativePath)
   return entry
+}
+
+async function advisoryCapture(create: () => Promise<SnapshotRef>, documentId: string) {
+  return await create().catch((error: unknown) => {
+    console.error(`[documents] repository snapshot maintenance failed for ${documentId}:`, error)
+    return undefined
+  })
 }

@@ -36,6 +36,7 @@ import type { DocumentIndexEntry } from "../documents/index-store"
 import type { DocumentExternalChange } from "../documents/watch"
 import { ClaxedoDB } from "../storage/db"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "./documents"
+import { peerAddressStamp } from "./local-only-projection"
 import {
   disposeHydratedSessionDocuments,
   hydrateSessionDocument,
@@ -127,7 +128,7 @@ function signedApp(allowed?: readonly ProjectAction[]) {
 }
 
 function localApp() {
-  return new Hono().route(
+  return new Hono().use(peerAddressStamp()).route(
     "/documents",
     DocumentsRoutes({
       backend,
@@ -644,6 +645,11 @@ describe("DocumentsRoutes", () => {
   test("allows unsigned loopback and rejects unsigned non-loopback", async () => {
     expect((await localApp().request("http://localhost/documents?project_id=project_local")).status).toBe(200)
     expect((await localApp().request("http://app.example/documents?project_id=project_local")).status).toBe(401)
+    expect((await localApp().request(
+      "http://localhost/documents?project_id=project_local",
+      { headers: { "x-forwarded-for": "127.0.0.2, 203.0.113.7" } },
+      { incoming: { socket: { remoteAddress: "127.0.0.1" } } },
+    )).status).toBe(401)
   })
 
   test("fails honestly when a hosted composition has not supplied D11 storage", async () => {

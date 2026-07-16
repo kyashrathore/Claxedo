@@ -7,6 +7,17 @@ import { Hono } from "hono"
 import { z } from "zod"
 import { boundedJson, RequestBodyTooLargeError } from "./bounded-json"
 
+const Job = z
+  .object({
+    token: z.string().min(1),
+    userId: z.string().min(1),
+    orgId: z.string().min(1),
+    projectId: z.string().min(1),
+    localWorkspaceId: z.string().min(1),
+    cloudWorkspaceId: z.string().min(1),
+  })
+  .strict()
+
 const Input = z
   .object({
     sessionId: z.string().regex(/^[A-Za-z0-9_-]+$/),
@@ -22,18 +33,11 @@ const Input = z
         expiresAt: z.number().int().positive(),
       })
       .strict(),
-    job: z
-      .object({
-        token: z.string().min(1),
-        userId: z.string().min(1),
-        orgId: z.string().min(1),
-        projectId: z.string().min(1),
-        localWorkspaceId: z.string().min(1),
-        cloudWorkspaceId: z.string().min(1),
-      })
-      .strict(),
+    job: Job,
   })
   .strict()
+
+const Activation = z.object({}).strict()
 
 type RuntimeDocument = {
   key: string
@@ -42,8 +46,9 @@ type RuntimeDocument = {
   baseVersion: string
   lastMarkdown: string
   writeback: { url: string; renewUrl: string; token: string; expiresAt: number }
-  watcher: FSWatcher
-  state: "active" | "conflicted"
+  job: z.infer<typeof Job>
+  watcher?: FSWatcher
+  state: "pending" | "active" | "conflicted"
   tail: Promise<void>
   timer?: ReturnType<typeof setTimeout>
   renewal?: ReturnType<typeof setTimeout>
@@ -155,39 +160,58 @@ export function RuntimeDocumentHydrationRoutes(
             baseVersion: dirty?.baseVersion ?? input.baseVersion,
             lastMarkdown: input.markdown,
             writeback: input.writeback,
-            watcher: undefined as unknown as FSWatcher,
-            state: "active",
+            job: input.job,
+            state: "pending",
             tail: Promise.resolve(),
             renewalTimer: options.renewalTimer ?? { set: setTimeout, clear: clearTimeout, now: Date.now },
             requestTimeoutMs,
             ...(options.beforeReadOpen ? { beforeReadOpen: options.beforeReadOpen } : {}),
           }
-          document.watcher = watch(directory, { persistent: false }, () => {
-            if (!isCurrent(document)) return
-            if (document.timer) clearTimeout(document.timer)
-            document.timer = setTimeout(() => {
-              void syncRuntimeDocument(document).catch((error) => {
-                console.error(`[runtime-document] write-back failed for ${input.documentId}:`, error)
-              })
-            }, 100)
-          })
-          document.watcher.on("error", (error) => {
-            void withDocumentLifecycle(document.key, async () => {
-              if (!isCurrent(document)) return
-              document.state = "conflicted"
-              await persistFromPath(document)
-              console.error(`[runtime-document] watcher failed for ${input.documentId}:`, error)
-            }).catch(() => undefined)
-          })
-          options.afterWatcherCreated?.(document.watcher)
           const previous = documents.get(key)
           close(previous)
           documents.set(key, document)
-          scheduleRenewal(document)
           await persist(input.sessionId, input.documentId, document)
-          if (markdown !== input.markdown) await enqueueSync(document)
           return context.json({ path: target })
         })
+      })
+    })
+    .post("/api/wr/documents/:sessionId/:documentId/activate", async (context) => {
+      if (!options.trustedTransport) return context.notFound()
+      const sessionId = context.req.param("sessionId")
+      const documentId = context.req.param("documentId")
+      if (!/^[A-Za-z0-9_-]+$/.test(sessionId) || !/^[A-Za-z0-9_-]+$/.test(documentId)) {
+        return context.json({ error: "document_request_invalid" }, 400)
+      }
+      Activation.parse(await boundedJson(context.req.raw, MAX_DOCUMENT_BYTES))
+      return await withDocumentLifecycle(`${sessionId}:${documentId}`, async () => {
+        const document = documents.get(`${sessionId}:${documentId}`)
+        if (!document) return context.json({ error: "document_hydration_not_found" }, 404)
+        const authorized = await (options.verifyJob ?? verifyDocumentJobCapability)(document.job.token, {
+          userId: document.job.userId,
+          orgId: document.job.orgId,
+          projectId: document.job.projectId,
+          localWorkspaceId: document.job.localWorkspaceId,
+          cloudWorkspaceId: document.job.cloudWorkspaceId,
+          sessionId,
+          documentId,
+          operation: "write",
+        }).then(
+          () => true,
+          () => false,
+        )
+        if (!authorized) return context.json({ error: "document_activation_capability_invalid" }, 403)
+        if (document.state === "conflicted") return context.json({ error: "document_conflicted" }, 409)
+        if (document.state === "active") return context.json({ path: document.path })
+        installWatcher(document, options.afterWatcherCreated)
+        await enqueue(document, () => syncAuthorized(document)).catch((error) => {
+          document.watcher?.close()
+          document.watcher = undefined
+          throw error
+        })
+        document.state = "active"
+        await persistFromPath(document)
+        scheduleRenewal(document)
+        return context.json({ path: document.path })
       })
     })
     .post("/api/wr/documents/:sessionId/:documentId/resolve", async (context) => {
@@ -273,6 +297,9 @@ export function RuntimeDocumentHydrationRoutes(
 
 export async function flushRuntimeDocument(sessionId: string, documentId: string) {
   const key = `${sessionId}:${documentId}`
+  const current = documents.get(key)
+  if (!current) throw new Error("Runtime document is not hydrated")
+  if (current.state === "pending") throw new Error("Runtime document is not activated")
   await withDocumentLifecycle(key, async () => {
     const document = documents.get(key)
     if (!document) throw new Error("Runtime document is not hydrated")
@@ -299,7 +326,7 @@ async function disposeRuntimeSessionDocumentsNow(sessionId: string) {
     await withDocumentLifecycle(key, async () => {
       if (!isCurrent(document)) return
       try {
-        await enqueueSync(document)
+        if (document.state !== "pending") await enqueueSync(document)
       } catch (error) {
         failures.push(error)
       }
@@ -324,7 +351,7 @@ export function forgetRuntimeDocuments() {
 }
 
 function scheduleRenewal(document: RuntimeDocument) {
-  if (!isCurrent(document)) return
+  if (!isCurrent(document) || document.state !== "active") return
   if (document.renewal) document.renewalTimer.clear(document.renewal)
   document.renewal = document.renewalTimer.set(
     () =>
@@ -383,11 +410,20 @@ async function release(document: RuntimeDocument) {
 }
 
 function enqueueSync(document: RuntimeDocument) {
-  document.tail = document.tail.catch(() => undefined).then(() => sync(document))
+  return enqueue(document, () => sync(document))
+}
+
+function enqueue(document: RuntimeDocument, run: () => Promise<void>) {
+  document.tail = document.tail.catch(() => undefined).then(run)
   return document.tail
 }
 
 async function sync(document: RuntimeDocument) {
+  if (document.state === "pending") throw new Error("Runtime document is not activated")
+  return await syncAuthorized(document)
+}
+
+async function syncAuthorized(document: RuntimeDocument) {
   if (document.state === "conflicted") throw new Error("Runtime document is conflicted")
   const markdown = await readContained(document.root, document.path, document.beforeReadOpen)
   if (markdown === document.lastMarkdown) return
@@ -509,9 +545,38 @@ async function withDocumentLifecycle<T>(key: string, mutate: () => Promise<T>) {
 }
 
 function close(document?: RuntimeDocument) {
-  document?.watcher.close()
+  document?.watcher?.close()
   if (document?.timer) clearTimeout(document.timer)
   if (document?.renewal) document.renewalTimer.clear(document.renewal)
+}
+
+function installWatcher(document: RuntimeDocument, afterCreated?: (watcher: FSWatcher) => void) {
+  if (document.watcher) return
+  const watcher = watch(path.dirname(document.path), { persistent: false }, () => {
+    if (!isCurrent(document) || document.state !== "active") return
+    if (document.timer) clearTimeout(document.timer)
+    document.timer = setTimeout(() => {
+      void syncRuntimeDocument(document).catch((error) => {
+        console.error(`[runtime-document] write-back failed for ${document.key}:`, error)
+      })
+    }, 100)
+  })
+  document.watcher = watcher
+  watcher.on("error", (error) => {
+    void withDocumentLifecycle(document.key, async () => {
+      if (!isCurrent(document)) return
+      document.state = "conflicted"
+      await persistFromPath(document)
+      console.error(`[runtime-document] watcher failed for ${document.key}:`, error)
+    }).catch(() => undefined)
+  })
+  try {
+    afterCreated?.(watcher)
+  } catch (error) {
+    watcher.close()
+    document.watcher = undefined
+    throw error
+  }
 }
 
 async function fetchWithTimeout(input: string | URL, init: RequestInit, timeoutMs: number) {
@@ -632,26 +697,48 @@ async function readContained(root: string, target: string, beforeOpen?: () => vo
   const before = await fs.lstat(target)
   await beforeOpen?.()
   const handle = await fs.open(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
-  const opened = await handle.stat()
-  const after = await fs.realpath(target).catch(() => undefined)
-  const finalParent = await fs.realpath(path.dirname(target)).catch(() => undefined)
-  const finalAuthority = finalParent ? await fs.stat(finalParent).catch(() => undefined) : undefined
-  if (
-    !opened.isFile() ||
-    opened.dev !== before.dev ||
-    opened.ino !== before.ino ||
-    !after ||
-    !inside(root, after) ||
-    finalParent !== parent ||
-    finalAuthority?.dev !== authority.dev ||
-    finalAuthority?.ino !== authority.ino
-  ) {
+  try {
+    const opened = await handle.stat()
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
+      throw new Error("Runtime document path changed while opening")
+    }
+    if (opened.size > MAX_DOCUMENT_BYTES) throw new Error("Runtime document exceeds 2 MiB")
+    const body = await readFileBounded(handle, MAX_DOCUMENT_BYTES, opened.size)
+    const final = await handle.stat()
+    const after = await fs.realpath(target).catch(() => undefined)
+    const finalParent = await fs.realpath(path.dirname(target)).catch(() => undefined)
+    const finalAuthority = finalParent ? await fs.stat(finalParent).catch(() => undefined) : undefined
+    if (
+      body.byteLength !== final.size ||
+      opened.dev !== final.dev ||
+      opened.ino !== final.ino ||
+      opened.size !== final.size ||
+      opened.mtimeMs !== final.mtimeMs ||
+      !after ||
+      !inside(root, after) ||
+      finalParent !== parent ||
+      finalAuthority?.dev !== authority.dev ||
+      finalAuthority?.ino !== authority.ino
+    ) {
+      throw new Error("Runtime document changed while reading")
+    }
+    if (body.includes(0)) throw new Error("Runtime document is not valid UTF-8 text")
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body)
+  } finally {
     await handle.close()
-    throw new Error("Runtime document path changed while opening")
   }
-  const body = await handle.readFile().finally(() => handle.close())
-  if (body.byteLength > MAX_DOCUMENT_BYTES) throw new Error("Runtime document exceeds 2 MiB")
-  return new TextDecoder("utf-8", { fatal: true }).decode(body)
+}
+
+async function readFileBounded(handle: fs.FileHandle, maxBytes: number, expectedBytes: number) {
+  const body = Buffer.allocUnsafe(Math.min(maxBytes + 1, expectedBytes + 1))
+  let offset = 0
+  while (offset < body.byteLength) {
+    const result = await handle.read(body, offset, body.byteLength - offset, offset)
+    if (!result.bytesRead) break
+    offset += result.bytesRead
+  }
+  if (offset > maxBytes) throw new Error("Runtime document exceeds 2 MiB")
+  return body.subarray(0, offset)
 }
 
 async function secureDirectory(root: string, start: string, segments: readonly string[]) {
@@ -679,7 +766,7 @@ async function recoverPersisted(manifestPath: string, documentId: string) {
     typeof entry.path !== "string" ||
     typeof entry.baseVersion !== "string" ||
     typeof entry.lastSyncedHash !== "string" ||
-    (entry.state !== "active" && entry.state !== "conflicted")
+    (entry.state !== "pending" && entry.state !== "active" && entry.state !== "conflicted")
   )
     throw new Error("Runtime document manifest is invalid")
   return { path: entry.path, baseVersion: entry.baseVersion, lastSyncedHash: entry.lastSyncedHash, state: entry.state }

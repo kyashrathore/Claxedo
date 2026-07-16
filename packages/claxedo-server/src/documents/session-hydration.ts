@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { constants, watch, type FSWatcher } from "node:fs"
+import { BoundedFileTooLargeError, readBoundedFile } from "./bounded-file-read"
 import { contentHash } from "./version"
 
 type ManifestEntry = {
@@ -35,6 +36,7 @@ const sessions = new Map<string, Map<string, HydratedDocument>>()
 const manifestMutations = new Map<string, Promise<void>>()
 const sessionLifecycles = new Map<string, Promise<void>>()
 const documentLifecycles = new Map<string, Promise<void>>()
+const MAX_HYDRATED_DOCUMENT_BYTES = 2 * 1024 * 1024
 
 type HydrateSessionDocumentInput = {
   sessionId: string
@@ -503,16 +505,52 @@ async function currentHydratedMarkdown(manifestPath: string, root: string, docum
 async function readContained(root: string, target: string, beforeOpen?: () => void | Promise<void>) {
   const real = await fs.realpath(target)
   if (!inside(root, real)) throw new Error("Hydrated document manifest path escapes the workspace")
+  const parent = await fs.realpath(path.dirname(target))
+  const authority = await fs.stat(parent)
   const before = await fs.lstat(target)
   await beforeOpen?.()
   const handle = await fs.open(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
-  const opened = await handle.stat()
-  const after = await fs.realpath(target).catch(() => undefined)
-  if (opened.dev !== before.dev || opened.ino !== before.ino || !after || !inside(root, after)) {
+  try {
+    const opened = await handle.stat()
+    const after = await fs.realpath(target).catch(() => undefined)
+    const finalParent = await fs.realpath(path.dirname(target)).catch(() => undefined)
+    const finalAuthority = finalParent ? await fs.stat(finalParent).catch(() => undefined) : undefined
+    if (
+      !opened.isFile() ||
+      opened.dev !== before.dev ||
+      opened.ino !== before.ino ||
+      !after ||
+      !inside(root, after) ||
+      finalParent !== parent ||
+      finalAuthority?.dev !== authority.dev ||
+      finalAuthority?.ino !== authority.ino
+    ) {
+      throw new Error("Hydrated document path changed while opening")
+    }
+    const { content: body, after: final } = await readBoundedFile(handle, MAX_HYDRATED_DOCUMENT_BYTES).catch(
+      (error: unknown) => {
+        if (error instanceof BoundedFileTooLargeError) throw new Error("Hydrated document exceeds 2 MiB")
+        throw error
+      },
+    )
+    if (
+      body.byteLength !== final.size ||
+      opened.dev !== final.dev ||
+      opened.ino !== final.ino ||
+      opened.size !== final.size ||
+      opened.mtimeMs !== final.mtimeMs
+    ) {
+      throw new Error("Hydrated document changed while reading")
+    }
+    if (body.includes(0)) throw new Error("Hydrated document is not valid UTF-8 text")
+    try {
+      return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body)
+    } catch (error) {
+      throw new Error("Hydrated document is not valid UTF-8 text", { cause: error })
+    }
+  } finally {
     await handle.close()
-    throw new Error("Hydrated document path changed while opening")
   }
-  return handle.readFile("utf8").finally(() => handle.close())
 }
 
 async function writeContained(root: string, target: string, content: string, beforeOpen?: () => void | Promise<void>) {

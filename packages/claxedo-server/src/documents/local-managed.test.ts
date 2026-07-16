@@ -58,6 +58,31 @@ describe("local managed DocumentWorkspace conformance", () => {
 })
 
 describe("local managed document file semantics", () => {
+  test("a committed write remains successful when snapshot bookkeeping fails", async () => {
+    let failSnapshot = false
+    const value = await fixture({
+      history: {
+        faults: {
+          beforeMkdir() {
+            if (failSnapshot) throw new Error("snapshot storage unavailable")
+          },
+        },
+      },
+    })
+    const handle = await value.workspace.resolve(value.entry)
+    const initial = await value.workspace.read(handle)
+    failSnapshot = true
+
+    const written = await value.workspace.write(handle, {
+      markdown: "committed despite bookkeeping failure",
+      expectedVersion: initial.version,
+      actor,
+    })
+    expect(written).toMatchObject({ markdown: "committed despite bookkeeping failure" })
+    expect(written.snapshot).toBeUndefined()
+    await expect(fs.readFile(handle.canonicalPath, "utf8")).resolves.toBe("committed despite bookkeeping failure")
+  })
+
   test("EC-A4 rejects invalid UTF-8 and keeps the latest valid snapshot restorable", async () => {
     const value = await fixture()
     const handle = await value.workspace.resolve(value.entry)
@@ -518,6 +543,29 @@ describe("local managed lock ownership", () => {
 })
 
 describe("local managed history", () => {
+  test("snapshot content enforces its allocation bound before trusting sidecar size", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-history-bounds-"))
+    roots.add(dataRoot)
+    const history = createDocumentHistory({ root: dataRoot, maxDocumentBytes: 4, maxSnapshots: 2, maxAgeMs: 1000 })
+    const snapshot = await history.create("document_bounded", { markdown: "safe", reason: "safe", actor })
+    const directory = path.join(dataRoot, "document-history", "document_bounded")
+    const oversized = Buffer.from("large")
+    await fs.chmod(path.join(directory, `${snapshot.id}.md`), 0o600)
+    await fs.writeFile(path.join(directory, `${snapshot.id}.md`), oversized)
+    await fs.writeFile(
+      path.join(directory, `${snapshot.id}.json`),
+      JSON.stringify({
+        ...snapshot,
+        size: oversized.byteLength,
+        sha256: createHash("sha256").update(oversized).digest("hex"),
+      }),
+    )
+
+    await expect(history.read("document_bounded", snapshot.id)).rejects.toMatchObject({
+      code: "document_snapshot_corrupt",
+    })
+  })
+
   test("snapshot metadata reads are bounded without truncating ordered or pinned results", async () => {
     const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-history-metadata-concurrency-"))
     roots.add(dataRoot)

@@ -12,7 +12,7 @@ describe("R2 conditional object store against Miniflare", () => {
       script: "export default { fetch() { return new Response('ok') } }",
       r2Buckets: ["DOCUMENTS"],
     })
-    bucket = await miniflare.getR2Bucket("DOCUMENTS")
+    bucket = (await miniflare.getR2Bucket("DOCUMENTS")) as unknown as R2BucketBinding
   })
 
   afterAll(async () => {

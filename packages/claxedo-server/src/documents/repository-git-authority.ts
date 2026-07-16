@@ -1,3 +1,4 @@
+import { constants } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
 import {
@@ -25,6 +26,7 @@ import {
   requireBoundedSnapshotMetadata,
 } from "./snapshot-pins"
 import { contentHash } from "./version"
+import { BoundedFileTooLargeError, readBoundedFile } from "./bounded-file-read"
 
 const DEFAULT_MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 const DEFAULT_MAX_SNAPSHOTS = 50
@@ -98,6 +100,7 @@ export type LocalRepositoryGitAuthorityOptions = Readonly<{
     afterHeadUpdate?: (input: Readonly<{ target: string; commit: string }>) => void | Promise<void>
     afterSnapshotMetadataRemoved?: (snapshotId: SnapshotID) => void | Promise<void>
     beforeSnapshotMetadataRead?: (snapshotId: SnapshotID) => void | Promise<void>
+    beforeSnapshotContentWrite?: (snapshotId: SnapshotID) => void | Promise<void>
   }>
 }>
 
@@ -220,8 +223,16 @@ export function createLocalRepositoryGitAuthority(
           if (error instanceof DocumentSnapshotNotFoundError) return undefined
           throw error
         })
-        const content = await fs.readFile(path.join(directory, `${id}.md`), "utf8").catch(() => undefined)
-        if (existing && content !== undefined && contentHash(content) === id) return existing
+        const content = await readSnapshotContent(directory, id).catch((error: unknown) => {
+          if (
+            error instanceof DocumentSnapshotNotFoundError ||
+            error instanceof DocumentSnapshotCorruptError
+          ) {
+            return undefined
+          }
+          throw error
+        })
+        if (existing && content && contentHash(content.markdown) === id) return existing
         const latest = (await listSnapshots(root, documentId))[0]
         const snapshot: SnapshotRef = existing ?? {
           id,
@@ -234,6 +245,7 @@ export function createLocalRepositoryGitAuthority(
           pins: [],
         }
         await fs.mkdir(directory, { recursive: true, mode: 0o700 })
+        await options.faults?.beforeSnapshotContentWrite?.(id)
         await replaceSnapshotFile(path.join(directory, `${id}.md`), markdown, 0o400)
         await replaceSnapshotFile(path.join(directory, `${id}.json`), requireBoundedSnapshotMetadata(snapshot), 0o600)
         await collectSnapshotsUnlocked(root, documentId)
@@ -246,14 +258,11 @@ export function createLocalRepositoryGitAuthority(
     async read(root, documentId, snapshotId) {
       const directory = await snapshotDirectory(root, documentId)
       const snapshot = await readSnapshotMetadata(directory, snapshotId)
-      const markdown = await fs.readFile(path.join(directory, `${snapshotId}.md`), "utf8").catch((error: unknown) => {
-        if (nodeErrorCode(error) === "ENOENT") throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
-        throw error
-      })
-      if (Buffer.byteLength(markdown) !== snapshot.size || contentHash(markdown) !== snapshot.sha256) {
+      const current = await readSnapshotContent(directory, snapshotId)
+      if (current.content.byteLength !== snapshot.size || contentHash(current.content) !== snapshot.sha256) {
         throw new DocumentSnapshotCorruptError(snapshotId)
       }
-      return { markdown, snapshot }
+      return { markdown: current.markdown, snapshot }
     },
 
     async pin(root, documentId, snapshotId, pin) {
@@ -430,19 +439,53 @@ async function readSnapshotMetadata(directory: string, snapshotId: SnapshotID) {
   }
 }
 
+async function readSnapshotContent(directory: string, snapshotId: SnapshotID) {
+  const target = path.join(directory, `${snapshotId}.md`)
+  const handle = await fs.open(target, constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: unknown) => {
+    if (nodeErrorCode(error) === "ENOENT") throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
+    throw new DocumentSnapshotCorruptError(snapshotId, { cause: error })
+  })
+  const current = await readBoundedFile(handle, DEFAULT_MAX_DOCUMENT_BYTES)
+    .catch((error: unknown) => {
+      if (error instanceof BoundedFileTooLargeError) throw new DocumentSnapshotCorruptError(snapshotId)
+      throw error
+    })
+    .finally(() => handle.close())
+  const pathStat = await fs.stat(target).catch(() => undefined)
+  if (
+    !current.before.isFile() ||
+    current.before.dev !== current.after.dev ||
+    current.before.ino !== current.after.ino ||
+    current.before.size !== current.after.size ||
+    current.before.mtimeMs !== current.after.mtimeMs ||
+    !pathStat ||
+    pathStat.dev !== current.after.dev ||
+    pathStat.ino !== current.after.ino
+  ) {
+    throw new DocumentSnapshotCorruptError(snapshotId)
+  }
+  try {
+    const markdown = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(current.content)
+    if (markdown.includes("\0")) throw new Error("NUL byte")
+    return { markdown, content: current.content }
+  } catch (error) {
+    throw new DocumentSnapshotCorruptError(snapshotId, { cause: error })
+  }
+}
+
 async function readBoundedSnapshotMetadata(file: string, snapshotId: SnapshotID) {
   const handle = await fs.open(file, "r").catch((error: unknown) => {
     if (nodeErrorCode(error) === "ENOENT") throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
     throw error
   })
   try {
-    const before = await handle.stat()
-    if (before.size > MAX_SNAPSHOT_METADATA_BYTES) throw new DocumentSnapshotCorruptError(snapshotId)
-    const buffer = Buffer.allocUnsafe(MAX_SNAPSHOT_METADATA_BYTES + 1)
-    const bytesRead = await readIntoBuffer(handle, buffer, 0)
-    const after = await handle.stat()
+    const { before, content, after } = await readBoundedFile(handle, MAX_SNAPSHOT_METADATA_BYTES).catch(
+      (error: unknown) => {
+        if (error instanceof BoundedFileTooLargeError) throw new DocumentSnapshotCorruptError(snapshotId)
+        throw error
+      },
+    )
     if (
-      bytesRead > MAX_SNAPSHOT_METADATA_BYTES ||
       before.dev !== after.dev ||
       before.ino !== after.ino ||
       before.size !== after.size ||
@@ -450,17 +493,10 @@ async function readBoundedSnapshotMetadata(file: string, snapshotId: SnapshotID)
     ) {
       throw new DocumentSnapshotCorruptError(snapshotId)
     }
-    return buffer.subarray(0, bytesRead)
+    return content
   } finally {
     await handle.close()
   }
-}
-
-async function readIntoBuffer(handle: fs.FileHandle, buffer: Buffer, offset: number): Promise<number> {
-  if (offset === buffer.byteLength) return offset
-  const result = await handle.read(buffer, offset, buffer.byteLength - offset, offset)
-  if (result.bytesRead === 0) return offset
-  return await readIntoBuffer(handle, buffer, offset + result.bytesRead)
 }
 
 function snapshotRef(value: unknown, snapshotId: SnapshotID): SnapshotRef | undefined {

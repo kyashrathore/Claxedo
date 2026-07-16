@@ -18,6 +18,7 @@ import {
   nodeErrorCode,
 } from "./errors"
 import { createDocumentHistory } from "./history"
+import { BoundedFileTooLargeError, readBoundedFile } from "./bounded-file-read"
 import type {
   DocumentActor,
   DocumentEntry,
@@ -26,6 +27,7 @@ import type {
   DocumentVersion,
   DocumentWorkspace,
   SnapshotID,
+  SnapshotRef,
   SnapshotRequest,
   WriteResult,
 } from "./port"
@@ -108,6 +110,7 @@ export function createLocalManagedDocumentWorkspace(options: LocalManagedOptions
   const maxDocumentBytes = options.maxDocumentBytes ?? DEFAULT_MAX_DOCUMENT_BYTES
   const history = createDocumentHistory({
     root,
+    maxDocumentBytes,
     maxSnapshots: options.history?.maxSnapshots ?? DEFAULT_MAX_SNAPSHOTS,
     maxAgeMs: options.history?.maxAgeMs ?? DEFAULT_MAX_SNAPSHOT_AGE_MS,
     ...(options.history?.faults ? { faults: options.history.faults } : {}),
@@ -123,13 +126,13 @@ export function createLocalManagedDocumentWorkspace(options: LocalManagedOptions
         await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
         await atomicReplace(handle, documentsRoot, request.markdown, null, maxDocumentBytes, false, options.faults)
         const read = await readDocument(handle, maxDocumentBytes, documentsRoot, options.faults)
-        const snapshot = await history.create(handle.documentId, {
+        const snapshot = await advisorySnapshot(() => history.create(handle.documentId, {
           markdown: read.markdown,
           reason: "document.created",
           actor: request.actor,
           ...(request.sessionId ? { sessionId: request.sessionId } : {}),
-        })
-        return { ...read, snapshot }
+        }), handle.documentId)
+        return { ...read, ...(snapshot ? { snapshot } : {}) }
       })
     },
 
@@ -153,13 +156,13 @@ export function createLocalManagedDocumentWorkspace(options: LocalManagedOptions
         })
         await atomicReplace(handle, documentsRoot, request.markdown, request.expectedVersion, maxDocumentBytes, true, options.faults)
         const read = await readDocument(handle, maxDocumentBytes, documentsRoot, options.faults)
-        const snapshot = await history.create(handle.documentId, {
+        const snapshot = await advisorySnapshot(() => history.create(handle.documentId, {
           markdown: read.markdown,
           reason: "document.written",
           actor: request.actor,
           ...(request.sessionId ? { sessionId: request.sessionId } : {}),
-        })
-        return { ...read, snapshot }
+        }), handle.documentId)
+        return { ...read, ...(snapshot ? { snapshot } : {}) }
       })
     },
 
@@ -223,13 +226,13 @@ export function createLocalManagedDocumentWorkspace(options: LocalManagedOptions
         await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
         await atomicReplace(handle, documentsRoot, desired.markdown, request.expectedVersion, maxDocumentBytes, true, options.faults)
         const read = await readDocument(handle, maxDocumentBytes, documentsRoot, options.faults)
-        const snapshot = await history.create(handle.documentId, {
+        const snapshot = await advisorySnapshot(() => history.create(handle.documentId, {
           markdown: read.markdown,
           reason: `document.restored:${snapshotId}`,
           actor: request.actor,
           ...(request.sessionId ? { sessionId: request.sessionId } : {}),
-        })
-        return { ...read, snapshot }
+        }), handle.documentId)
+        return { ...read, ...(snapshot ? { snapshot } : {}) }
       }),
 
     pinSnapshot: (handle, snapshotId, pin) =>
@@ -380,10 +383,12 @@ async function standaloneFileVersion(file: string, documentId: string, maxDocume
     throw documentErrorFromCause(error, `reading archived document ${documentId}`, documentId)
   })
   try {
-    const before = await handle.stat()
-    if (before.size > maxDocumentBytes) throw new DocumentTooLargeError(before.size, maxDocumentBytes)
-    const content = await handle.readFile()
-    const after = await handle.stat()
+    const { before, content, after } = await readBoundedFile(handle, maxDocumentBytes).catch((error: unknown) => {
+      if (error instanceof BoundedFileTooLargeError) {
+        throw new DocumentTooLargeError(error.actualBytes, maxDocumentBytes)
+      }
+      throw error
+    })
     if (
       before.dev !== after.dev ||
       before.ino !== after.ino ||
@@ -534,10 +539,12 @@ async function readPinnedFile(
     })
     try {
       await verifyPinnedParent(pinned)
-      const before = await handle.stat()
-      if (before.size > maxDocumentBytes) throw new DocumentTooLargeError(before.size, maxDocumentBytes)
-      const content = await handle.readFile()
-      const after = await handle.stat()
+      const { before, content, after } = await readBoundedFile(handle, maxDocumentBytes).catch((error: unknown) => {
+        if (error instanceof BoundedFileTooLargeError) {
+          throw new DocumentTooLargeError(error.actualBytes, maxDocumentBytes)
+        }
+        throw error
+      })
       await verifyPinnedParent(pinned)
       const current = await fs.stat(file).catch((error: unknown) => {
         throw documentErrorFromCause(error, `reading document ${documentId}`, documentId)
@@ -765,6 +772,13 @@ async function removeTemporaryTyped(temporary: string, documentId: string) {
 function expectedVersionMatches(expected: DocumentVersion | null, current: DocumentVersion | null) {
   if (expected === null || current === null) return expected === current
   return documentVersionsMatch(expected, current)
+}
+
+async function advisorySnapshot(create: () => Promise<SnapshotRef>, documentId: string) {
+  return await create().catch((error: unknown) => {
+    console.error(`[documents] snapshot maintenance failed for ${documentId}:`, error)
+    return undefined
+  })
 }
 
 async function resolvePinnedPath(root: string, relativePath: string) {

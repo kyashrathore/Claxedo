@@ -369,7 +369,14 @@ function r2Bucket() {
   return {
     get: async (key: string) => {
       const value = values.get(key)
-      return value ? { etag: value.etag, uploaded: value.uploaded, arrayBuffer: async () => value.body.slice().buffer as ArrayBuffer } : null
+      return value
+        ? {
+            etag: value.etag,
+            uploaded: value.uploaded,
+            size: value.body.byteLength,
+            body: new Response(value.body.slice()).body!,
+          }
+        : null
     },
     put: async (key: string, body: Uint8Array, options?: { onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }) => {
       const current = values.get(key)

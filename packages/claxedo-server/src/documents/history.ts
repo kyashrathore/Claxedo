@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto"
+import { constants } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
 import {
@@ -12,11 +13,13 @@ import { mapBounded } from "./map-bounded"
 import { boundedSnapshotPins, expiredSnapshotLease, requireBoundedSnapshotMetadata } from "./snapshot-pins"
 import type { DocumentActor, SnapshotID, SnapshotRef } from "./port"
 import { contentHash } from "./version"
+import { BoundedFileTooLargeError, readBoundedFile } from "./bounded-file-read"
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 export type HistoryOptions = Readonly<{
   root: string
+  maxDocumentBytes?: number
   maxSnapshots: number
   maxAgeMs: number
   now?: () => number
@@ -44,7 +47,14 @@ export function createDocumentHistory(options: HistoryOptions) {
   if (options.maxAgeMs < 0 || Number.isNaN(options.maxAgeMs)) {
     throw new DocumentInvalidEntryError("Snapshot retention age must be a non-negative duration")
   }
+  if (
+    options.maxDocumentBytes !== undefined &&
+    (!Number.isSafeInteger(options.maxDocumentBytes) || options.maxDocumentBytes < 0)
+  ) {
+    throw new DocumentInvalidEntryError("Snapshot content limit must be a non-negative safe integer")
+  }
   const now = options.now ?? Date.now
+  const maxDocumentBytes = options.maxDocumentBytes ?? 2 * 1024 * 1024
 
   return {
     async create(documentId: string, input: CreateSnapshotInput) {
@@ -101,16 +111,35 @@ export function createDocumentHistory(options: HistoryOptions) {
     async read(documentId: string, snapshotId: SnapshotID) {
       const directory = historyDirectory(options.root, documentId)
       const metadata = await readMetadata(directory, snapshotId)
-      const content = await fs.readFile(path.join(directory, `${snapshotId}.md`)).catch((error: unknown) => {
+      const target = path.join(directory, `${snapshotId}.md`)
+      const handle = await fs.open(target, constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: unknown) => {
         if (nodeErrorCode(error) === "ENOENT") throw new DocumentSnapshotNotFoundError(snapshotId, { cause: error })
         throw documentErrorFromCause(error, `reading snapshot ${snapshotId}`)
       })
-      if (content.byteLength !== metadata.size || contentHash(content) !== metadata.sha256) {
+      const current = await readBoundedFile(handle, maxDocumentBytes)
+        .catch((error: unknown) => {
+          if (error instanceof BoundedFileTooLargeError) throw new DocumentSnapshotCorruptError(snapshotId)
+          throw documentErrorFromCause(error, `reading snapshot ${snapshotId}`)
+        })
+        .finally(() => handle.close())
+      const pathStat = await fs.stat(target).catch(() => undefined)
+      if (
+        !current.before.isFile() ||
+        current.before.dev !== current.after.dev ||
+        current.before.ino !== current.after.ino ||
+        current.before.size !== current.after.size ||
+        current.before.mtimeMs !== current.after.mtimeMs ||
+        !pathStat ||
+        pathStat.dev !== current.after.dev ||
+        pathStat.ino !== current.after.ino ||
+        current.content.byteLength !== metadata.size ||
+        contentHash(current.content) !== metadata.sha256
+      ) {
         throw new DocumentSnapshotCorruptError(snapshotId)
       }
       try {
         return {
-          markdown: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(content),
+          markdown: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(current.content),
           metadata,
         }
       } catch (error) {

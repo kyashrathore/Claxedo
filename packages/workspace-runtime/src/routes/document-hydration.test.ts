@@ -158,6 +158,7 @@ describe("runtime document hydration", () => {
         }),
       })
       .then((response) => response.json() as Promise<{ path: string }>)
+    await activateRuntimeDocument(app, "session_resolve", "document_resolve")
     await fs.writeFile(hydrated.path, "session draft")
     await expect(flushRuntimeDocument("session_resolve", "document_resolve")).rejects.toThrow("conflicted")
 
@@ -228,6 +229,7 @@ describe("runtime document hydration", () => {
       }),
     })
     const opened = (await response.json()) as { path: string }
+    await activateRuntimeDocument(app, "session_1", "document_1")
     expect(await fs.readFile(opened.path, "utf8")).toBe("before")
     expect(
       await fs.readFile(path.join(root, ".claxedo", "sessions", "session_1", "docs", "manifest.json"), "utf8"),
@@ -287,6 +289,7 @@ describe("runtime document hydration", () => {
       }),
     })
     const opened = (await response.json()) as { path: string }
+    await activateRuntimeDocument(app, "session_1", "document_1")
     await fs.writeFile(opened.path, "session draft")
     await expect(flushRuntimeDocument("session_1", "document_1")).rejects.toThrow("conflicted")
     expect(await fs.readFile(opened.path, "utf8")).toBe("session draft")
@@ -343,6 +346,7 @@ describe("runtime document hydration", () => {
         }),
       })
       .then((response) => response.json() as Promise<{ path: string }>)
+    await activateRuntimeDocument(app, "session_dispose_conflict", "document_dispose_conflict")
     await fs.writeFile(hydrated.path, "preserved conflict draft")
     await expect(flushRuntimeDocument("session_dispose_conflict", "document_dispose_conflict")).rejects.toThrow(
       "conflicted",
@@ -413,6 +417,7 @@ describe("runtime document hydration", () => {
         }),
       })
       .then((response) => response.json() as Promise<{ path: string }>)
+    await activateRuntimeDocument(app, "session_timeout", "document_timeout")
     await fs.writeFile(hydrated.path, "retry after timeout")
 
     await expect(flushRuntimeDocument("session_timeout", "document_timeout")).rejects.toThrow("timed out")
@@ -454,6 +459,7 @@ describe("runtime document hydration", () => {
             body: JSON.stringify(hydrationBody("session_response_bound", "document_response_bound")),
           })
           .then((response) => response.json() as Promise<{ path: string }>)
+        await activateRuntimeDocument(app, "session_response_bound", "document_response_bound")
         await fs.writeFile(hydrated.path, "retry after bounded response failure")
 
         await expect(flushRuntimeDocument("session_response_bound", "document_response_bound")).rejects.toThrow(
@@ -517,6 +523,7 @@ describe("runtime document hydration", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       })
+      await activateRuntimeDocument(app, "session_race", "document_race")
       const disposing = disposeRuntimeSessionDocuments("session_race")
       await releaseEntered.promise
       const replacing = app.request("/api/wr/documents/hydrate", {
@@ -540,6 +547,7 @@ describe("runtime document hydration", () => {
         replacing.then((response) => response.json() as Promise<{ path: string }>),
         disposing,
       ])
+      await activateRuntimeDocument(app, "session_race", "document_race")
 
       expect(await fs.readFile(replacement.path, "utf8")).toBe("replacement")
       await fs.writeFile(replacement.path, "replacement edit")
@@ -631,6 +639,7 @@ describe("runtime document hydration", () => {
           body: JSON.stringify(hydrationBody("session_flush_dispose", "document_flush_dispose")),
         })
         .then((response) => response.json() as Promise<{ path: string }>)
+      await activateRuntimeDocument(app, "session_flush_dispose", "document_flush_dispose")
       const disposing = disposeRuntimeSessionDocuments("session_flush_dispose")
       await releaseEntered.promise
       await fs.writeFile(hydrated.path, "late manual edit")
@@ -683,6 +692,7 @@ describe("runtime document hydration", () => {
           body: JSON.stringify(hydrationBody("session_watcher_dispose", "document_watcher_dispose")),
         })
         .then((response) => response.json() as Promise<{ path: string }>)
+      await activateRuntimeDocument(app, "session_watcher_dispose", "document_watcher_dispose")
       const disposing = disposeRuntimeSessionDocuments("session_watcher_dispose")
       await releaseEntered.promise
       await fs.writeFile(hydrated.path, "late watcher edit")
@@ -744,6 +754,7 @@ describe("runtime document hydration", () => {
         }),
       })
       .then((response) => response.json() as Promise<{ path: string }>)
+    await activateRuntimeDocument(app, "session_retry", "document_retry")
     await fs.writeFile(hydrated.path, "retry me")
 
     await expect(flushRuntimeDocument("session_retry", "document_retry")).rejects.toThrow("503")
@@ -805,6 +816,7 @@ describe("runtime document hydration", () => {
         }),
       })
       .then((response) => response.json() as Promise<{ path: string }>)
+    await activateRuntimeDocument(app, "session_renew", "document_renew")
 
     expect(timer.delays()).toEqual([60_000])
     timer.run(0)
@@ -880,6 +892,7 @@ describe("runtime document hydration", () => {
             }),
           })
           .then((response) => response.json() as Promise<{ path: string }>)
+        await activateRuntimeDocument(app, "session_failed_renew", "document_failed_renew")
         await fs.writeFile(hydrated.path, "preserved draft")
         timer.run(0)
         const manifest = path.join(root, ".claxedo", "sessions", "session_failed_renew", "docs", "manifest.json")
@@ -945,6 +958,7 @@ describe("runtime document hydration", () => {
           }),
         })
         .then((response) => response.json() as Promise<{ path: string }>)
+      await activateRuntimeDocument(app, "session_refresh", `document_${strategy}`)
       await fs.writeFile(hydrated.path, "session draft")
       await expect(flushRuntimeDocument("session_refresh", `document_${strategy}`)).rejects.toThrow("conflicted")
       const resolved = await app.request(`/api/wr/documents/session_refresh/document_${strategy}/resolve`, {
@@ -1020,6 +1034,7 @@ describe("runtime document hydration", () => {
         }),
       })
       .then((response) => response.json() as Promise<{ path: string }>)
+    await activateRuntimeDocument(app, "session_invalid", "document_invalid")
     await fs.writeFile(hydrated.path, "draft")
     await expect(flushRuntimeDocument("session_invalid", "document_invalid")).rejects.toThrow("conflicted")
     expect(
@@ -1169,7 +1184,7 @@ describe("runtime document hydration", () => {
     await fs.rm(root, { recursive: true, force: true })
   })
 
-  test("recovers a dirty manifest after runtime restart before replacing the session copy", async () => {
+  test("flushes a recovered dirty manifest only after explicit capability activation", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-restart-"))
     let canonical = "before"
     const fetcher = mock(async (_url: string | URL | Request, init?: RequestInit) => {
@@ -1222,8 +1237,65 @@ describe("runtime document hydration", () => {
       body: JSON.stringify(body),
     })
     expect(second.status).toBe(200)
+    expect(canonical).toBe("before")
+    const activated = await app.request("/api/wr/documents/session_1/document_1/activate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    })
+    expect(activated.status).toBe(200)
     expect(canonical).toBe("dirty after crash")
     expect(await fs.readFile(first.path, "utf8")).toBe("dirty after crash")
+    await fs.rm(root, { recursive: true, force: true })
+  })
+
+  test("keeps edits, flushes, watchers, and renewal inert while activation is pending or rejected", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-pending-activation-"))
+    const activationEntered = deferred<void>()
+    const rejectActivation = deferred<void>()
+    const timer = renewalTimer(1_000_000)
+    const callback = mock(async () => Response.json({ version: "v2" }))
+    globalThis.fetch = callback as typeof fetch
+    const app = new Hono().route(
+      "/",
+      RuntimeDocumentHydrationRoutes({
+        workspaceRoot: root,
+        trustedTransport: true,
+        controlPlaneOrigin: "https://control.test",
+        renewalTimer: timer,
+        verifyJob: async (_token, expected) => {
+          if (expected.operation !== "write") return {}
+          activationEntered.resolve()
+          await rejectActivation.promise
+          throw new Error("activation rejected")
+        },
+      }),
+    )
+    const hydrated = await app
+      .request("/api/wr/documents/hydrate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(hydrationBody("session_pending", "document_pending")),
+      })
+      .then((response) => response.json() as Promise<{ path: string }>)
+    const activating = app.request("/api/wr/documents/session_pending/document_pending/activate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    })
+    await activationEntered.promise
+    await fs.writeFile(hydrated.path, "edit while activation hangs")
+    await Bun.sleep(150)
+    await expect(flushRuntimeDocument("session_pending", "document_pending")).rejects.toThrow("not activated")
+    expect(callback).not.toHaveBeenCalled()
+    expect(timer.delays()).toEqual([])
+
+    rejectActivation.resolve()
+    expect((await activating).status).toBe(403)
+    await Bun.sleep(150)
+    await expect(flushRuntimeDocument("session_pending", "document_pending")).rejects.toThrow("not activated")
+    expect(callback).not.toHaveBeenCalled()
+    expect(timer.delays()).toEqual([])
     await fs.rm(root, { recursive: true, force: true })
   })
 
@@ -1280,7 +1352,13 @@ describe("runtime document hydration", () => {
       body: JSON.stringify({ ...body, markdown: "remote v2", baseVersion: "v2" }),
     })
 
-    expect(restarted.status).toBe(500)
+    expect(restarted.status).toBe(200)
+    const activated = await app.request("/api/wr/documents/session_restart/document_restart/activate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    })
+    expect(activated.status).toBe(500)
     expect(versions).toEqual(["v1"])
     expect(await fs.readFile(hydrated.path, "utf8")).toBe("dirty from v1")
     expect(
@@ -1429,6 +1507,16 @@ function hydrationBody(sessionId: string, documentId: string) {
       expiresAt: Date.now() + 300_000,
     },
   }
+}
+
+async function activateRuntimeDocument(app: Hono, sessionId: string, documentId: string) {
+  const response = await app.request(`/api/wr/documents/${sessionId}/${documentId}/activate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  })
+  expect(response.status).toBe(200)
+  return response
 }
 
 function callbackResponse(

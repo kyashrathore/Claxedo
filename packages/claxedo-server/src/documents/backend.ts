@@ -218,7 +218,7 @@ export type DocumentEventReason =
 type DocumentEventScope = Readonly<{ orgId: string; projectId: string }>
 
 const eventListeners = new Map<string, Set<(event: Record<string, unknown>) => void>>()
-const documentOperationTails = new Map<string, Promise<void>>()
+const documentOperationTails = new WeakMap<object, Map<string, Promise<void>>>()
 
 export function subscribeDocumentEvents(
   orgId: string,
@@ -254,20 +254,23 @@ export function publishDocumentEvent(
   for (const listener of eventListeners.get(eventKey(scope.orgId, scope.projectId)) ?? []) listener(event)
 }
 
-export async function withDocumentOperation<T>(documentId: string, run: () => Promise<T>) {
-  const previous = documentOperationTails.get(documentId) ?? Promise.resolve()
+export async function withDocumentOperation<T>(owner: object, key: string, run: () => Promise<T>) {
+  const operations = documentOperationTails.get(owner) ?? new Map<string, Promise<void>>()
+  documentOperationTails.set(owner, operations)
+  const previous = operations.get(key) ?? Promise.resolve()
   let release = () => {}
   const current = new Promise<void>((resolve) => {
     release = resolve
   })
   const tail = previous.then(() => current)
-  documentOperationTails.set(documentId, tail)
+  operations.set(key, tail)
   await previous
   try {
     return await run()
   } finally {
     release()
-    if (documentOperationTails.get(documentId) === tail) documentOperationTails.delete(documentId)
+    if (operations.get(key) === tail) operations.delete(key)
+    if (!operations.size) documentOperationTails.delete(owner)
   }
 }
 

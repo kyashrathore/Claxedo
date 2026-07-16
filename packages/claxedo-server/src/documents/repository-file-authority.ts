@@ -14,6 +14,7 @@ import {
 } from "./errors"
 import type { DocumentRead, DocumentVersion } from "./port"
 import { contentHash, documentVersionsMatch, localDocumentVersion } from "./version"
+import { BoundedFileTooLargeError, readBoundedFile } from "./bounded-file-read"
 
 const DEFAULT_SCAN_CONCURRENCY = 8
 const MAX_RECOVERY_SCAN_CANDIDATES = 10_000
@@ -287,11 +288,11 @@ async function readPinnedRepositoryFile(
     })
     try {
       if (pinned) await verifyRepositoryParent(pinned)
-      const before = await file.stat()
+      const { before, content, after } = await readBoundedFile(file, maxBytes).catch((error: unknown) => {
+        if (error instanceof BoundedFileTooLargeError) throw new DocumentTooLargeError(error.actualBytes, maxBytes)
+        throw error
+      })
       if (!before.isFile()) throw new DocumentPathError("Repository document target is not a regular file")
-      if (before.size > maxBytes) throw new DocumentTooLargeError(before.size, maxBytes)
-      const content = await file.readFile()
-      const after = await file.stat()
       if (pinned) await verifyRepositoryParent(pinned)
       const current = await fs.stat(target).catch((error: unknown) => {
         if (nodeErrorCode(error) === "ENOENT") return undefined
@@ -335,12 +336,19 @@ async function rollbackRepositoryReplacement(
 ) {
   await verifyRepositoryParent(pinned)
   const [target, source] = await Promise.all([statIfPresent(pinned.target), statIfPresent(temporary)])
+  const installed =
+    target && source && target.dev === source.dev && target.ino === source.ino
+      ? await readPinnedRepositoryFile(pinned.target, "rollback", maxBytes, pinned).catch(() => undefined)
+      : undefined
   const installedStillOurs =
     target &&
     source &&
     target.dev === source.dev &&
     target.ino === source.ino &&
-    contentHash(await fs.readFile(pinned.target)) === installedHash
+    installed &&
+    installed.identity.dev === target.dev &&
+    installed.identity.ino === target.ino &&
+    contentHash(installed.content) === installedHash
   if (installedStillOurs) await fs.unlink(pinned.target)
   if (claimedPath && !(await pathExists(pinned.target))) {
     await fs.link(claimedPath, pinned.target).catch((error: unknown) => {

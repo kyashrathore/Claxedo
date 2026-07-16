@@ -100,7 +100,8 @@ function r2(storage: ReturnType<typeof emulator>) {
         ? {
             etag: object.etag,
             uploaded: new Date(object.uploadedAt),
-            arrayBuffer: async () => object.body.slice().buffer as ArrayBuffer,
+            size: object.body.byteLength,
+            body: new Response(object.body.slice()).body!,
           }
         : null
     },
@@ -169,7 +170,9 @@ describe("hosted managed documents and session write-back", () => {
     let value: { body: Uint8Array; etag: string; uploaded: Date } | undefined
     const bucket = {
       async get() {
-        return value ? { ...value, arrayBuffer: async () => value!.body.buffer as ArrayBuffer } : null
+        return value
+          ? { ...value, size: value.body.byteLength, body: new Response(value.body.slice()).body! }
+          : null
       },
       async put(
         _key: string,
@@ -203,6 +206,61 @@ describe("hosted managed documents and session write-back", () => {
       },
     })
     await expect(broken.list("")).rejects.toThrow("truncated without a cursor")
+  })
+
+  test("R2 reads reject declared and streamed overflow without unbounded buffering", async () => {
+    let oversizedBodyReads = 0
+    const oversized = createR2ConditionalObjectStore(
+      {
+        async get() {
+          return {
+            etag: "oversized",
+            uploaded: new Date(1),
+            size: 5,
+            get body() {
+              oversizedBodyReads++
+              return new Response(new Uint8Array(5)).body!
+            },
+          }
+        },
+        async put() {
+          return null
+        },
+        async delete() {},
+        async list() {
+          return { objects: [], truncated: false }
+        },
+      },
+      { maxObjectBytes: 4 },
+    )
+    await expect(oversized.get("oversized")).rejects.toMatchObject({
+      code: "document_too_large",
+      actualBytes: 5,
+      maxBytes: 4,
+    })
+    expect(oversizedBodyReads).toBe(0)
+
+    const dishonest = createR2ConditionalObjectStore(
+      {
+        async get() {
+          return {
+            etag: "dishonest",
+            uploaded: new Date(1),
+            size: 1,
+            body: new Response(new Uint8Array([1, 2, 3])).body!,
+          }
+        },
+        async put() {
+          return null
+        },
+        async delete() {},
+        async list() {
+          return { objects: [], truncated: false }
+        },
+      },
+      { maxObjectBytes: 4 },
+    )
+    await expect(dishonest.get("dishonest")).rejects.toMatchObject({ code: "document_too_large" })
   })
 
   test("hosted snapshots are bounded while durable pins survive backend recreation", async () => {
@@ -797,7 +855,8 @@ describe("hosted managed documents and session write-back", () => {
             ? {
                 etag: object.etag,
                 uploaded: new Date(object.uploadedAt),
-                arrayBuffer: async () => object.body.buffer as ArrayBuffer,
+                size: object.body.byteLength,
+                body: new Response(object.body.slice()).body!,
               }
             : null
         },

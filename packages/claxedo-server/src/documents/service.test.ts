@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest"
 import type { DocumentsBackend } from "./backend"
 import { createDocumentsService } from "./service"
 import type { DocumentHandle, DocumentVersion, SnapshotID, SnapshotRef } from "./port"
-import type { DocumentIndexEntry } from "./index-store"
+import type { DocumentIndexEntry, DocumentIndexScope } from "./index-store"
 
 const handle = {
   origin: "managed",
@@ -68,6 +68,14 @@ function fixture() {
     unpinSnapshot: vi.fn(async (_handle: typeof handle, _snapshotId: SnapshotID, _pin: string) => snapshot([])),
     collectSnapshots: vi.fn(async () => undefined),
   }
+  const runtimeWriteback = vi.fn(async () => ({
+    markdown: "runtime",
+    version: "v2" as DocumentVersion,
+    modifiedAt: 2,
+    snapshot: snapshot([]),
+  }))
+  const runtimeRenew = vi.fn(async () => ({ token: "rotated", expiresAt: Date.now() + 300_000 }))
+  const runtimeResolve = vi.fn(async () => ({ path: "/workspace/plan.md", version: "v2" }))
   const backend = {
     index: {
       list: vi.fn(async () => (entry ? [entry] : [])),
@@ -80,8 +88,14 @@ function fixture() {
       remove,
       update,
       relocate: vi.fn(),
-      archive: vi.fn(),
-      restore: vi.fn(),
+      archive: vi.fn(async (_scope: DocumentIndexScope, _documentId: string) => {
+        entry = { ...entry!, archived_at: new Date().toISOString() }
+        return entry
+      }),
+      restore: vi.fn(async (_scope: DocumentIndexScope, _documentId: string) => {
+        entry = { ...entry!, archived_at: null }
+        return entry
+      }),
       listStatuses: vi.fn(async () => []),
       transitionStatus: vi.fn(),
       resolveLocalProjectId: vi.fn(async () => "project_1"),
@@ -89,8 +103,21 @@ function fixture() {
     workspace,
     managedRelativePath: ({ documentId }: { documentId: string }) => `${documentId}/plan.md`,
     placement: "local",
+    runtimeWriteback,
+    runtimeRenew,
+    runtimeResolve,
   } satisfies DocumentsBackend<typeof handle>
-  return { backend, workspace, remove, update, setEntry: (next?: DocumentIndexEntry) => (entry = next) }
+  return {
+    backend,
+    workspace,
+    remove,
+    update,
+    runtimeWriteback,
+    runtimeRenew,
+    runtimeResolve,
+    getEntry: () => entry,
+    setEntry: (next?: DocumentIndexEntry) => (entry = next),
+  }
 }
 
 const scope = {
@@ -100,6 +127,58 @@ const scope = {
 } as const
 
 describe("Documents service", () => {
+  test.each(["writeback", "renew", "resolve"] as const)(
+    "fences runtime %s behind archive and rechecks live archival state",
+    async (operation) => {
+      const value = fixture()
+      const service = createDocumentsService(value.backend)
+      const archiveEntered = Promise.withResolvers<void>()
+      const releaseArchive = Promise.withResolvers<void>()
+      value.backend.index.archive.mockImplementationOnce(async (archiveScope, documentId) => {
+        expect(archiveScope).toMatchObject({ orgId: "org_1", projectId: "project_1" })
+        expect(documentId).toBe("document_1")
+        const current = value.getEntry()
+        archiveEntered.resolve()
+        await releaseArchive.promise
+        const archived = { ...current!, archived_at: new Date().toISOString() }
+        value.setEntry(archived)
+        return archived
+      })
+      const archiving = service.archive(scope, "document_1")
+      await archiveEntered.promise
+      const input = {
+        token: "session-token",
+        orgId: "org_1",
+        projectId: "project_1",
+        workspaceId: "workspace_1",
+        sessionId: "session_1",
+      }
+      const runtimeOperation =
+        operation === "writeback"
+          ? value.runtimeWriteback
+          : operation === "renew"
+            ? value.runtimeRenew
+            : value.runtimeResolve
+      const runtime =
+        operation === "writeback"
+          ? service.runtimeWriteback("document_1", { ...input, markdown: "late", expectedVersion: "v1" })
+          : operation === "renew"
+            ? service.runtimeRenew("document_1", input)
+            : service.runtimeResolve(
+                value.getEntry()!,
+                { auth: { user: { subject: "user_1" } } as never, sessionId: "session_1", choice: "draft" },
+              )
+      const runtimeRejected = expect(runtime).rejects.toThrow()
+
+      await Promise.resolve()
+      expect(runtimeOperation).not.toHaveBeenCalled()
+      releaseArchive.resolve()
+      await expect(archiving).resolves.toMatchObject({ archived_at: expect.any(String) })
+      await runtimeRejected
+      expect(runtimeOperation).not.toHaveBeenCalled()
+    },
+  )
+
   test("rolls back the index when managed content creation fails", async () => {
     const value = fixture()
     value.workspace.create.mockRejectedValueOnce(new Error("storage unavailable"))
@@ -125,6 +204,64 @@ describe("Documents service", () => {
     })
 
     expect(value.update).toHaveBeenCalledWith(scope, "document_1", { last_known_file_version: "v2" })
+  })
+
+  test("rolls back a canonical write before reporting index reconciliation failure", async () => {
+    const value = fixture()
+    value.workspace.write
+      .mockResolvedValueOnce({
+        markdown: "committed",
+        version: "v3" as DocumentVersion,
+        modifiedAt: 3,
+        snapshot: snapshot([]),
+      })
+      .mockResolvedValueOnce({
+        markdown: "body",
+        version: "v4" as DocumentVersion,
+        modifiedAt: 4,
+        snapshot: snapshot([]),
+      })
+    value.update.mockRejectedValueOnce(new Error("index unavailable"))
+
+    await expect(
+      createDocumentsService(value.backend).writeContent(scope, "document_1", {
+        markdown: "committed",
+        expectedVersion: "v1" as DocumentVersion,
+      }),
+    ).rejects.toThrow("index unavailable")
+    expect(value.workspace.write).toHaveBeenLastCalledWith(
+      handle,
+      expect.objectContaining({ markdown: "body", expectedVersion: "v3" }),
+    )
+  })
+
+  test("returns the committed write when index reconciliation and safe rollback both fail", async () => {
+    const value = fixture()
+    value.workspace.read
+      .mockResolvedValueOnce({ markdown: "body", version: "v2" as DocumentVersion, modifiedAt: 2 })
+      .mockResolvedValueOnce({ markdown: "committed", version: "v3" as DocumentVersion, modifiedAt: 3 })
+    value.workspace.write
+      .mockResolvedValueOnce({
+        markdown: "committed",
+        version: "v3" as DocumentVersion,
+        modifiedAt: 3,
+        snapshot: snapshot([]),
+      })
+      .mockRejectedValueOnce(new Error("rollback unavailable"))
+    value.update.mockRejectedValueOnce(new Error("index unavailable"))
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
+
+    await expect(
+      createDocumentsService(value.backend).writeContent(scope, "document_1", {
+        markdown: "committed",
+        expectedVersion: "v1" as DocumentVersion,
+      }),
+    ).resolves.toMatchObject({ markdown: "committed", version: "v3" })
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("index reconciliation and rollback failed"),
+      expect.any(Error),
+    )
+    error.mockRestore()
   })
 
   test("pins a WorkGraph revision once before removing leases sequentially", async () => {

@@ -39,6 +39,15 @@ function loopbackHost(input: string) {
 type IncomingMessageLike = { socket?: { remoteAddress?: string } }
 
 const requestPeerAddresses = new WeakMap<Request, string>()
+const FORWARDED_CLIENT_HEADERS = [
+  "forwarded",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-real-ip",
+  "cf-connecting-ip",
+  "true-client-ip",
+] as const
 
 // @hono/node-ws rebuilds upgrade Requests without the node-server internals,
 // so the app stamps the peer address explicitly from `c.env.incoming` (set by
@@ -83,14 +92,13 @@ export function requestPeerAddress(request: Request): string | undefined {
 }
 
 export function isLoopbackLocalRequest(request: Request) {
+  // Forwarding destroys the direct socket-to-client relationship required by
+  // unsigned-local mode. Header chains are client-spoofable unless a specific
+  // trusted proxy policy parses them, so this generic gate always fails closed.
+  if (FORWARDED_CLIENT_HEADERS.some((header) => request.headers.has(header))) return false
   const peer = requestPeerAddress(request)
   if (peer !== undefined) {
     if (!isLoopbackAddress(peer)) return false
-    // Loopback peer + forwarded marker = a local reverse proxy fronting
-    // external traffic. Trust the proxy's client claim over the socket;
-    // clients adding the header themselves can only restrict their access.
-    const forwardedClient = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-    if (forwardedClient && !isLoopbackAddress(forwardedClient)) return false
   }
   // When no connection info exists (in-process fetch: tests, embedded
   // callers, Workers) the Host/Origin checks below remain the gate,
