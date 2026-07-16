@@ -1519,6 +1519,32 @@ describe("Convex WorkGraph store", () => {
       }),
     })
     const streamId = String((await command.json() as { value: { streamId: string } }).value.streamId)
+    await harness.db.insert("workgraph_attempts", {
+      owner_user_id: "durable_user_a",
+      id: "attempt_subject_owned",
+      stream_id: streamId,
+      work_item_id: "task_subject_owned",
+      attempt_number: 1,
+      state: "running",
+      resolved_execution: {
+        environment: { kind: "hosted_workspace", repositoryUrl: "https://github.com/claxedo/subject-owned.git" },
+        repository: { remoteUrl: "https://github.com/claxedo/subject-owned.git", baseRevision: "HEAD" },
+        harness: "opencode",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+        tools: [],
+        connectionIds: [],
+      },
+      admitted_at: 1,
+      session_id: "session_subject_owned",
+      source_revision_refs: [],
+      provenance: { actor: { type: "system", id: "test" } },
+      schema_version: 1,
+      row_version: 1,
+      created_at: 1,
+      updated_at: 1,
+    })
 
     const snapshot = await app.request("/snapshot?limit=10")
     expect(snapshot.status).toBe(200)
@@ -1528,6 +1554,12 @@ describe("Convex WorkGraph store", () => {
     const stream = await app.request(`/streams/${streamId}`)
     expect(stream.status).toBe(200)
     expect(await stream.json()).toMatchObject({ id: streamId, ownerUserId: "clerk_user_a" })
+    const attempt = await app.request("/attempts/attempt_subject_owned")
+    expect(attempt.status).toBe(200)
+    expect(await attempt.json()).toMatchObject({
+      attempt: { id: "attempt_subject_owned", ownerUserId: "clerk_user_a" },
+      executionReferences: { sessionId: "session_subject_owned" },
+    })
     const changes = await app.request("/changes?limit=10")
     expect(changes.status).toBe(200)
     expect(await changes.json()).toMatchObject({ changes: [{

@@ -234,8 +234,7 @@ export function createConvexWorkGraphStore(input: Input) {
           const detail = await read(context, "attempt", queryInput)
           if (!detail) return undefined
           const parsed = AttemptDetailDtoSchema.parse(detail)
-          publicOwner(context, parsed.attempt)
-          return parsed
+          return { ...parsed, attempt: publicOwner(context, parsed.attempt) }
         },
       },
       decisions: {
