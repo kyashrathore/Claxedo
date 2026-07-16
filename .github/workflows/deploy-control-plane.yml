@@ -271,6 +271,7 @@ jobs:
         run: bun run scripts/smoke/sync-clerk-workgraph-fixtures.ts
 
       - name: WorkGraph authenticated persistence and no-op execution smoke
+        timeout-minutes: 15
         working-directory: packages/claxedo-server
         env:
           BASE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}

@@ -153,9 +153,16 @@ const echo = Layer.effectDiscard(
 )
 const echoNode = makeLocationNode({ name: "test/session-runner-tools", layer: echo, deps: [ToolRegistry.node] })
 let modelResolveHook = Effect.void
+let modelResolveFailure: SessionRunnerModel.Error | undefined
 let currentModel = model
 const models = SessionRunnerModel.layerWith((session) =>
-  modelResolveHook.pipe(Effect.as(session.model?.id === "replacement" ? replacementModel : currentModel)),
+  modelResolveHook.pipe(
+    Effect.andThen(
+      modelResolveFailure
+        ? Effect.fail(modelResolveFailure)
+        : Effect.succeed(session.model?.id === "replacement" ? replacementModel : currentModel),
+    ),
+  ),
 )
 const systemContextKey = SystemContext.Key.make("test/context")
 let systemBaseline = "Initial context"
@@ -317,6 +324,7 @@ const setup = Effect.gen(function* () {
   systemUnavailable = false
   systemLoadHook = Effect.void
   modelResolveHook = Effect.void
+  modelResolveFailure = undefined
   currentModel = model
   skillBaselines.clear()
   responses = undefined
@@ -3038,6 +3046,43 @@ describe("SessionRunnerLLM", () => {
       expect(yield* session.context(sessionID)).toMatchObject([
         { type: "user", text: "Fail before step" },
         { type: "assistant", finish: "error", error: { type: "unknown", message: "Provider unavailable" } },
+      ])
+    }),
+  )
+
+  it.effect("durably records model resolution failures before provider execution", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      yield* db
+        .update(SessionTable)
+        .set({
+          agent: "build",
+          model: { providerID: "opencode", id: "mimo-v2.5-free", variant: "low" },
+        })
+        .where(eq(SessionTable.id, sessionID))
+        .run()
+        .pipe(Effect.orDie)
+      const session = yield* SessionV2.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Reject invalid model variant" }), resume: false })
+      modelResolveFailure = new SessionRunnerModel.VariantUnavailableError({
+        providerID: ProviderV2.ID.make("opencode"),
+        modelID: ModelV2.ID.make("mimo-v2.5-free"),
+        variant: ModelV2.VariantID.make("low"),
+      })
+      requests.length = 0
+
+      expect((yield* session.resume(sessionID).pipe(Effect.flip)).message).toBe(
+        "Variant unavailable for opencode/mimo-v2.5-free: low",
+      )
+      expect(requests).toHaveLength(0)
+      expect(yield* session.context(sessionID)).toMatchObject([
+        { type: "user", text: "Reject invalid model variant" },
+        {
+          type: "assistant",
+          finish: "error",
+          error: { type: "unknown", message: "Variant unavailable for opencode/mimo-v2.5-free: low" },
+        },
       ])
     }),
   )

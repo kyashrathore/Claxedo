@@ -191,7 +191,16 @@ const layer = Layer.effect(
       }
       const system =
         initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
-      const model = yield* models.resolve(session)
+      const model = yield* models.resolve(session).pipe(
+        Effect.tapError((error) => {
+          if (!session.model) return Effect.void
+          return createLLMEventPublisher(events, {
+            sessionID: session.id,
+            agent: agent.id,
+            model: session.model,
+          }).failAssistant(error.message)
+        }),
+      )
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps

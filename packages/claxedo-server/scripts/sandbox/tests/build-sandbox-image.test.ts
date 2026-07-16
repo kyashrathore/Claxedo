@@ -120,6 +120,8 @@ describe("build-sandbox-image", () => {
       expect(dockerfile).toContain("http://127.0.0.1:2593/api/session")
       expect(dockerfile).toContain("Session V2 create did not adopt the requested id")
       expect(dockerfile).toContain("Session V2 history was truncated across workspace-runtime")
+      expect(dockerfile).toContain("ses_workgraph_image_failure")
+      expect(dockerfile).toContain("session.next.step.failed")
       expect(dockerfile).toContain("accept-encoding: gzip")
       expect(dockerfile).toContain("setsid opencode serve")
       expect(dockerfile).toContain("os.killpg")

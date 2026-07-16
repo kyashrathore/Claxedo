@@ -86,6 +86,57 @@ describe("WorkGraph execution capability composition", () => {
     })
   })
 
+  test("publishes only variants executable by the Session V2 model catalog", async () => {
+    const capabilities = createExecutionCapabilitiesPort({
+      environment: {
+        kind: "hosted_workspace",
+        repositoryRequired: false,
+        remoteUrlInput: true,
+        baseRevisionInput: true,
+      },
+      readRuntime: async () => ({
+        ...runtime,
+        providers: {
+          data: [
+            {
+              id: "mimo-v2.5-free",
+              providerID: "opencode",
+              name: "MiMo V2.5 Free",
+              status: "active",
+              enabled: true,
+              variants: [],
+            },
+            {
+              id: "gpt-5",
+              providerID: "openai",
+              name: "GPT-5",
+              status: "active",
+              enabled: true,
+              variants: [{ id: "high" }],
+            },
+            {
+              id: "retired",
+              providerID: "openai",
+              status: "deprecated",
+              enabled: true,
+              variants: [],
+            },
+          ],
+        },
+      }),
+      readRepository: async () => ({ baseRevisions: [] }),
+      readConnections: async () => [],
+      now: () => 123,
+    })
+
+    await expect(capabilities.read(context, {})).resolves.toMatchObject({
+      models: [
+        { providerId: "opencode", modelId: "mimo-v2.5-free", efforts: ["default"] },
+        { providerId: "openai", modelId: "gpt-5", efforts: ["default", "high"] },
+      ],
+    })
+  })
+
   test("gives every live observation an exact immutable revision and bounded expiry", async () => {
     let now = 100
     const capabilities = createExecutionCapabilitiesPort({
@@ -198,7 +249,7 @@ describe("WorkGraph execution capability composition", () => {
           const value =
             new URL(request.url).pathname === "/agent"
               ? runtime.agents
-              : new URL(request.url).pathname === "/provider"
+              : new URL(request.url).pathname === "/api/model"
                 ? runtime.providers
                 : runtime.tools
           return Response.json(value)
@@ -206,7 +257,7 @@ describe("WorkGraph execution capability composition", () => {
       })
 
       const result = await capabilities.read(context, {})
-      expect(requested).toEqual(["/agent", "/provider", "/experimental/tool/ids"])
+      expect(requested).toEqual(["/agent", "/api/model", "/experimental/tool/ids"])
       expect(result.repository.baseRevisions).toContain("HEAD")
       expect(result.repository.baseRevisions).toContain("main")
       expect(result.harnesses).toEqual([
@@ -248,7 +299,7 @@ describe("WorkGraph execution capability composition", () => {
         opencodeRequest: async (request) => {
           const pathname = new URL(request.url).pathname
           return Response.json(
-            pathname === "/agent" ? runtime.agents : pathname === "/provider" ? runtime.providers : runtime.tools,
+            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
           )
         },
         connections: {
@@ -366,7 +417,7 @@ describe("WorkGraph execution capability composition", () => {
         requested.push(url.pathname)
         if (url.pathname.endsWith("/session/capabilities")) return Response.json(runtime.harness)
         if (url.pathname.endsWith("/agent")) return Response.json(runtime.agents)
-        if (url.pathname.endsWith("/provider")) return Response.json(runtime.providers)
+        if (url.pathname.endsWith("/api/model")) return Response.json(runtime.providers)
         if (url.pathname.endsWith("/experimental/tool/ids")) return Response.json(runtime.tools)
         throw new Error(`Unexpected request ${url.pathname}`)
       },
@@ -396,7 +447,7 @@ describe("WorkGraph execution capability composition", () => {
     expect(requested.map((path) => path.replace(/\/workspaces\/wg-catalog-[^/]+/, "/workspaces/catalog"))).toEqual([
       "/workspaces/catalog/session/capabilities",
       "/workspaces/catalog/agent",
-      "/workspaces/catalog/provider",
+      "/workspaces/catalog/api/model",
       "/workspaces/catalog/experimental/tool/ids",
     ])
   })
@@ -461,7 +512,7 @@ describe("WorkGraph execution capability composition", () => {
         await releaseCatalog.promise
         if (pathname.endsWith("/session/capabilities")) return Response.json(runtime.harness)
         if (pathname.endsWith("/agent")) return Response.json(runtime.agents)
-        if (pathname.endsWith("/provider")) return Response.json(runtime.providers)
+        if (pathname.endsWith("/api/model")) return Response.json(runtime.providers)
         if (pathname.endsWith("/experimental/tool/ids")) return Response.json(runtime.tools)
         throw new Error(`Unexpected request ${pathname}`)
       },
@@ -539,7 +590,7 @@ describe("WorkGraph execution capability composition", () => {
         }
         if (pathname.endsWith("/session/capabilities")) return Response.json(runtime.harness)
         if (pathname.endsWith("/agent")) return Response.json(runtime.agents)
-        if (pathname.endsWith("/provider")) return Response.json(runtime.providers)
+        if (pathname.endsWith("/api/model")) return Response.json(runtime.providers)
         if (pathname.endsWith("/experimental/tool/ids")) return Response.json(runtime.tools)
         throw new Error(`Unexpected request ${pathname}`)
       },
@@ -599,7 +650,7 @@ describe("WorkGraph execution capability composition", () => {
         const pathname = new URL(request).pathname
         if (pathname.endsWith("/session/capabilities")) return Response.json(runtime.harness)
         if (pathname.endsWith("/agent")) return Response.json(runtime.agents)
-        if (pathname.endsWith("/provider")) return Response.json(runtime.providers)
+        if (pathname.endsWith("/api/model")) return Response.json(runtime.providers)
         if (pathname.endsWith("/experimental/tool/ids")) return Response.json(runtime.tools)
         throw new Error(`Unexpected request ${pathname}`)
       },
@@ -707,7 +758,7 @@ describe("WorkGraph execution capability composition", () => {
       connectionToolIds: [],
       requestTimeoutMs: 10,
       request: async (request, init) => {
-        if (!new URL(request).pathname.endsWith("/provider")) return Response.json({})
+        if (!new URL(request).pathname.endsWith("/api/model")) return Response.json({})
         return await new Promise<Response>((_, reject) => {
           init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true })
         })
@@ -716,7 +767,7 @@ describe("WorkGraph execution capability composition", () => {
 
     await expect(capabilities.refresh(context)).rejects.toMatchObject({
       code: "execution_capabilities_unavailable",
-      message: expect.stringContaining("/provider via relay.test failed"),
+      message: expect.stringContaining("/api/model via relay.test failed"),
     })
     expect(destroyed).toHaveLength(1)
   })
@@ -779,7 +830,7 @@ describe("WorkGraph execution capability composition", () => {
         requested.push(pathname)
         if (pathname.endsWith("/session/capabilities")) return Response.json(runtime.harness)
         if (pathname.endsWith("/agent")) return Response.json(runtime.agents)
-        if (pathname.endsWith("/provider")) return Response.json(runtime.providers)
+        if (pathname.endsWith("/api/model")) return Response.json(runtime.providers)
         if (pathname.endsWith("/experimental/tool/ids")) return Response.json(runtime.tools)
         throw new Error(`Unexpected request ${pathname}`)
       },

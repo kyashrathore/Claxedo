@@ -86,6 +86,19 @@ RUN set -eu; \
     done; \
     curl -fsS -H 'accept-encoding: gzip' 'http://127.0.0.1:2593/api/session/ses_workgraph_image_smoke/history?limit=100&after=0' >/tmp/opencode-session-v2-history.json; \
     node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-session-v2-history.json','utf8'));if(!Array.isArray(value.data)||value.data.length!==20)throw new Error('Session V2 history was truncated across workspace-runtime')"; \
+    curl -fsS -X POST -H 'content-type: application/json' \
+      -d '{"id":"ses_workgraph_image_failure","agent":"build","model":{"providerID":"missing-provider","id":"missing-model","variant":"invalid"},"location":{"directory":"/tmp/opencode-session-v2-smoke"}}' \
+      http://127.0.0.1:2593/api/session >/dev/null; \
+    curl -fsS -X POST -H 'content-type: application/json' \
+      -d '{"id":"msg_workgraph_image_failure","prompt":{"text":"Prove pre-provider failures are durable."},"resume":true}' \
+      http://127.0.0.1:2593/api/session/ses_workgraph_image_failure/prompt >/dev/null; \
+    failed=0; \
+    for attempt in $(seq 1 40); do \
+      curl -fsS 'http://127.0.0.1:2593/api/session/ses_workgraph_image_failure/history?limit=100&after=0' >/tmp/opencode-session-v2-failure.json; \
+      if node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-session-v2-failure.json','utf8'));if(!value.data?.some((event)=>event.type.startsWith('session.next.step.failed')))process.exit(1)"; then failed=1; break; fi; \
+      sleep 0.25; \
+    done; \
+    if [ "$failed" -ne 1 ]; then cat /tmp/opencode-session-v2.log /tmp/workspace-runtime-smoke.log; exit 1; fi; \
     stop_servers; \
     trap - EXIT
 

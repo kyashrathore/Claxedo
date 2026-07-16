@@ -180,7 +180,7 @@ async function readHostedCatalog(
   const [harness, agents, providers, tools] = await Promise.all([
     request("/session/capabilities?directory=%2Fworkspace"),
     request("/agent?directory=%2Fworkspace"),
-    request("/provider"),
+    request("/api/model"),
     request("/experimental/tool/ids"),
   ]).catch((error) => {
     if (error instanceof ExecutionCapabilitiesUnavailableError) throw error

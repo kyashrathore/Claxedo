@@ -165,6 +165,27 @@ function runtimeAgents(input: unknown, harnessId: string) {
 
 function runtimeModels(input: unknown, harnessId: string) {
   const root = record(input)
+  if (Array.isArray(root?.data)) {
+    return root.data.flatMap((value) => {
+      const model = record(value)
+      const providerId = clean(model?.providerID)
+      const modelId = clean(model?.id)
+      if (!providerId || !modelId || model?.enabled === false || model?.status === "deprecated") return []
+      const variants = Array.isArray(model?.variants)
+        ? model.variants.flatMap((value) => {
+            const id = clean(record(value)?.id)
+            return id ? [id] : []
+          })
+        : []
+      return [{
+        harnessId,
+        providerId,
+        modelId,
+        label: clean(model?.name) ?? modelId,
+        efforts: unique(["default", ...variants]),
+      }]
+    })
+  }
   if (!root || !Array.isArray(root.all) || !Array.isArray(root.connected)) {
     throw invalidCatalog("models", "The runtime Provider catalog was malformed")
   }

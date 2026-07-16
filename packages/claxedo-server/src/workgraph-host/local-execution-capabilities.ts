@@ -36,7 +36,7 @@ export function createLocalExecutionCapabilities(input: Readonly<{
       const [activeHarness, agents, providers, tools] = await Promise.all([
         input.harness(),
         runtimeJson(input, "/agent"),
-        runtimeJson(input, "/provider"),
+        runtimeJson(input, "/api/model"),
         runtimeJson(input, "/experimental/tool/ids"),
       ])
       const harnesses = [

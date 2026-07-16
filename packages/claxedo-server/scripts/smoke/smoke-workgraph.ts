@@ -3,6 +3,9 @@ type SmokeEnvironment = Readonly<Record<string, string | undefined>>
 type Session = Readonly<{ id: string; organizationId: string }>
 
 export async function workGraphSmoke(env: SmokeEnvironment = process.env, request: typeof fetch = fetch) {
+  const startedAt = Date.now()
+  const progress = (message: string) =>
+    console.log(`[workgraph-smoke +${Math.floor((Date.now() - startedAt) / 1_000)}s] ${message}`)
   const base = required(env.BASE_URL, "BASE_URL").replace(/\/+$/, "")
   const clerkSecret = required(env.CLERK_SECRET_KEY, "CLERK_SECRET_KEY")
   const userA = required(env.WORKGRAPH_SMOKE_USER_A_ID, "WORKGRAPH_SMOKE_USER_A_ID")
@@ -14,11 +17,14 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
   if (userA === userB) throw new Error("WorkGraph smoke identities must be different users")
   if (organizationA === organizationB) throw new Error("WorkGraph smoke identities must use different organizations")
 
+  progress("probing fail-closed WorkGraph authentication")
   const garbage = await request(`${base}/api/workgraph/snapshot?limit=1`, {
     headers: { authorization: `Bearer workgraph-smoke-invalid-${Date.now()}` },
+    signal: AbortSignal.timeout(15_000),
   })
   if (garbage.status !== 401) throw new Error(`WorkGraph fail-closed probe expected 401, got ${garbage.status}`)
 
+  progress("creating Clerk smoke Sessions")
   const sessionAOrganizationA = await createClerkSession(request, clerkSecret, userA, organizationA)
   const sessionAOrganizationB = await createClerkSession(request, clerkSecret, userA, organizationB).catch(
     async (error) => {
@@ -38,10 +44,13 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
   )
   const sessions = [sessionAOrganizationA, sessionAOrganizationB, sessionBOrganizationA]
   try {
+    progress("refreshing hosted execution capabilities")
     await refreshExecutionCapabilities(request, base, clerkSecret, sessionAOrganizationA, retryDelayMs)
+    progress("reading hosted execution capabilities")
     const capabilities = await readExecutionCapabilities(request, base, clerkSecret, sessionAOrganizationA, retryDelayMs)
     const execution = requireExecutionProfile(capabilities, env)
 
+    progress("creating the authenticated Stream")
     const tokenA = await createClerkSessionToken(request, clerkSecret, sessionAOrganizationA)
     const operationId = `smoke_${Date.now()}`
     const streamId = commandValue(
@@ -55,6 +64,7 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
     )
     let executionError: unknown
     try {
+      progress(`created Stream ${streamId}; creating its Task`)
       const workItemId = commandValue(
         await command(request, base, tokenA, `${operationId}_task`, {
           version: 1,
@@ -96,6 +106,7 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
         throw new Error("Created Stream and Task are absent from the authenticated Convex snapshot")
       }
 
+      progress(`created Task ${workItemId}; verifying tenant isolation`)
       const cursor = snapshotCursor(cursorPage)
       await assertTenantIsolation(
         request,
@@ -126,6 +137,7 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
         "Stream after tenant-isolation probes",
       )
 
+      progress("tenant isolation passed; admitting hosted execution")
       const attemptId = commandValue(
         await command(request, base, tokenA, `${operationId}_execute`, {
           version: 1,
@@ -135,13 +147,15 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
         }),
         "attemptId",
       )
-      await reconcileAttempt(request, base, clerkSecret, sessionAOrganizationA, reconcileToken, attemptId)
+      progress(`created Attempt ${attemptId}; reconciling execution`)
+      await reconcileAttempt(request, base, clerkSecret, sessionAOrganizationA, reconcileToken, attemptId, progress)
       console.log(`WorkGraph hosted signed user-and-organization isolation and execution passed for ${streamId}`)
     } catch (error) {
       executionError = error
       throw error
     } finally {
       try {
+        progress(`deleting smoke Stream ${streamId}`)
         await command(
           request,
           base,
@@ -155,14 +169,17 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
             reason: "Hosted deployment smoke cleanup",
           },
         )
-        await reconcileDeletion(request, base, clerkSecret, sessionAOrganizationA, reconcileToken, streamId)
+        await reconcileDeletion(request, base, clerkSecret, sessionAOrganizationA, reconcileToken, streamId, progress)
+        progress(`deleted smoke Stream ${streamId}`)
       } catch (cleanupError) {
         if (!executionError) throw cleanupError
         console.warn(`Hosted deployment smoke cleanup also failed: ${errorMessage(cleanupError)}`)
       }
     }
   } finally {
+    progress("revoking Clerk smoke Sessions")
     await Promise.all(sessions.map((session) => revokeClerkSession(request, clerkSecret, session)))
+    progress("revoked Clerk smoke Sessions")
   }
 }
 
@@ -508,9 +525,19 @@ async function reconcileAttempt(
   session: Session,
   reconcileToken: string,
   attemptId: string,
+  progress: (message: string) => void,
 ) {
-  for (let cycle = 0; cycle < 30; cycle += 1) {
-    await triggerReconciliation(request, base, reconcileToken)
+  const deadline = Date.now() + 6 * 60_000
+  let cycle = 0
+  while (Date.now() < deadline) {
+    cycle += 1
+    progress(`reconciling Attempt ${attemptId} (cycle ${cycle})`)
+    try {
+      await triggerReconciliation(request, base, reconcileToken, Math.max(1, deadline - Date.now()))
+    } catch (error) {
+      if (Date.now() >= deadline) break
+      throw error
+    }
     const detail = record(
       await jsonRequest(request, `${base}/api/workgraph/attempts/${encodeURIComponent(attemptId)}`, {
         headers: authorization(await createClerkSessionToken(request, clerkSecret, session)),
@@ -520,6 +547,7 @@ async function reconcileAttempt(
     if (attempt?.id !== attemptId || typeof attempt.state !== "string") {
       throw new Error("Hosted Attempt detail returned an invalid envelope")
     }
+    progress(`Attempt ${attemptId} is ${attempt.state}`)
     if (attempt.state === "result") {
       const references = record(detail?.executionReferences)
       if (typeof references?.workspaceId !== "string" || typeof references.sessionId !== "string") {
@@ -531,7 +559,7 @@ async function reconcileAttempt(
       const reason = typeof attempt.attentionReason === "string" ? `: ${attempt.attentionReason}` : ""
       throw new Error(`Hosted Attempt reached ${attempt.state} instead of a result${reason}`)
     }
-    await wait(12_000)
+    await wait(Math.min(12_000, Math.max(0, deadline - Date.now())))
   }
   throw new Error("Hosted Attempt did not produce a result within six minutes")
 }
@@ -543,25 +571,35 @@ async function reconcileDeletion(
   session: Session,
   reconcileToken: string,
   streamId: string,
+  progress: (message: string) => void,
 ) {
-  for (let cycle = 0; cycle < 10; cycle += 1) {
-    await triggerReconciliation(request, base, reconcileToken)
+  const deadline = Date.now() + 2 * 60_000
+  let cycle = 0
+  while (Date.now() < deadline) {
+    cycle += 1
+    progress(`reconciling Stream deletion ${streamId} (cycle ${cycle})`)
+    try {
+      await triggerReconciliation(request, base, reconcileToken, Math.max(1, deadline - Date.now()))
+    } catch (error) {
+      if (Date.now() >= deadline) break
+      throw error
+    }
     const response = await request(`${base}/api/workgraph/streams/${encodeURIComponent(streamId)}`, {
       headers: authorization(await createClerkSessionToken(request, clerkSecret, session)),
       signal: AbortSignal.timeout(15_000),
     })
     if (response.status === 404) return
     if (!response.ok) throw new Error(`Deleted Stream verification failed: ${response.status} ${await response.text()}`)
-    await wait(12_000)
+    await wait(Math.min(12_000, Math.max(0, deadline - Date.now())))
   }
   throw new Error("Hosted Stream cleanup did not complete within two minutes")
 }
 
-async function triggerReconciliation(request: typeof fetch, base: string, token: string) {
+async function triggerReconciliation(request: typeof fetch, base: string, token: string, timeoutMs = 120_000) {
   const response = await request(`${base}/internal/workgraph/reconcile`, {
     method: "POST",
     headers: authorization(token),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(timeoutMs),
   })
   const body = parseJson(await response.text(), "/internal/workgraph/reconcile")
   if (!response.ok || record(body)?.ok !== true) {
