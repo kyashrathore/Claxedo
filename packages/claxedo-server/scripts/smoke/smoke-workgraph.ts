@@ -53,6 +53,7 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
       }),
       "streamId",
     )
+    let executionError: unknown
     try {
       const workItemId = commandValue(
         await command(request, base, tokenA, `${operationId}_task`, {
@@ -136,21 +137,29 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
       )
       await reconcileAttempt(request, base, clerkSecret, sessionAOrganizationA, reconcileToken, attemptId)
       console.log(`WorkGraph hosted signed user-and-organization isolation and execution passed for ${streamId}`)
+    } catch (error) {
+      executionError = error
+      throw error
     } finally {
-      await command(
-        request,
-        base,
-        await createClerkSessionToken(request, clerkSecret, sessionAOrganizationA),
-        `${operationId}_cleanup`,
-        {
-          version: 1,
-          type: "delete_stream",
-          streamId,
-          expectedVersion: 1,
-          reason: "Hosted deployment smoke cleanup",
-        },
-      )
-      await reconcileDeletion(request, base, clerkSecret, sessionAOrganizationA, reconcileToken, streamId)
+      try {
+        await command(
+          request,
+          base,
+          await createClerkSessionToken(request, clerkSecret, sessionAOrganizationA),
+          `${operationId}_cleanup`,
+          {
+            version: 1,
+            type: "delete_stream",
+            streamId,
+            expectedVersion: 1,
+            reason: "Hosted deployment smoke cleanup",
+          },
+        )
+        await reconcileDeletion(request, base, clerkSecret, sessionAOrganizationA, reconcileToken, streamId)
+      } catch (cleanupError) {
+        if (!executionError) throw cleanupError
+        console.warn(`Hosted deployment smoke cleanup also failed: ${errorMessage(cleanupError)}`)
+      }
     }
   } finally {
     await Promise.all(sessions.map((session) => revokeClerkSession(request, clerkSecret, session)))
@@ -519,7 +528,8 @@ async function reconcileAttempt(
       return
     }
     if (attempt.state === "attention" || attempt.state === "failed" || attempt.state === "cancelled") {
-      throw new Error(`Hosted Attempt reached ${attempt.state} instead of a result`)
+      const reason = typeof attempt.attentionReason === "string" ? `: ${attempt.attentionReason}` : ""
+      throw new Error(`Hosted Attempt reached ${attempt.state} instead of a result${reason}`)
     }
     await wait(12_000)
   }

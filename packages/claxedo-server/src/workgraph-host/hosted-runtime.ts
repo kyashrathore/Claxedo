@@ -114,7 +114,7 @@ export function createHostedWorkGraphRuntime(
   const workerId = clean(env.CLAXEDO_WORKGRAPH_WORKER_ID) ?? "claxedo-worker"
   const telemetry = createWorkGraphOperationalReporter({ telemetry: services.telemetry, env, now })
   return {
-    reconcile: async () => {
+    reconcile: async (run: { background?: boolean } = {}) => {
       const claimedAt = now()
       try {
         const tenants = (await client.mutation(api.workgraphRuntime.listWorkerTenants, {
@@ -438,7 +438,7 @@ export function createHostedWorkGraphRuntime(
           }),
         )
         const background =
-          options.background === false
+          options.background === false || run.background === false
             ? undefined
             : await reconcileBackground(client, services, request, serviceToken, workerId, now, tenants, telemetry)
         recordAttemptTelemetry(telemetry, claims, running, launched, results, now() - claimedAt)

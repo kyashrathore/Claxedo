@@ -32,6 +32,30 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(await workGraphWorkspaceId("org-a", "owner-a", "stream-b")).not.toBe(first)
   })
 
+  test("lets the synchronous admin pass reconcile Attempts without draining background queues", async () => {
+    const mutations: Record<string, unknown>[] = []
+    const runtime = createHostedWorkGraphRuntime(
+      {
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+      },
+      {} as ControlPlaneServices,
+      {
+        executor: {
+          mutation: async (_fn, args) => {
+            mutations.push(args)
+            if (args.limit === 500) return [{ organizationId: "org-a", ownerUserId: "user-a" }]
+            return []
+          },
+        },
+      },
+    )
+
+    await expect(runtime?.reconcile({ background: false })).resolves.toEqual({ launched: [], results: [] })
+    expect(mutations).toHaveLength(3)
+    expect(mutations.some((args) => args.limit === 25)).toBe(false)
+  })
+
   test("accepts only strict structured ordinary-Session Recap output", () => {
     expect(
       parseHostedRecapOutput(
