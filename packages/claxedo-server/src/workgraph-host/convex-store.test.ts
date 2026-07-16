@@ -1455,7 +1455,8 @@ describe("Convex WorkGraph store", () => {
     })
     await harness.db.insert("workgraph_attempts", {
       ...common, id: "attempt_2", stream_id: streamId, work_item_id: workItemId, attempt_number: 2,
-      state: "failed", resolved_execution, admitted_at: 2, finished_at: 3, source_revision_refs: [],
+      state: "result", resolved_execution, admitted_at: 2, finished_at: 3,
+      result: { summary: "Inspection complete", artifacts: ["commit:abc"] }, source_revision_refs: [],
     })
     await harness.db.insert("workgraph_admission_proposals", {
       ...common, id: "proposal_1", state: "planning",
@@ -1478,6 +1479,12 @@ describe("Convex WorkGraph store", () => {
     expect(await (await app("owner_a").request("/attempts/attempt_1")).json()).toMatchObject({
       attempt: { id: "attempt_1" },
       executionReferences: { sessionId: "session_1", workspaceId: "workspace_1" },
+    })
+    expect(await (await app("owner_a").request("/attempts/attempt_2")).json()).toMatchObject({
+      attempt: {
+        id: "attempt_2",
+        result: { summary: "Inspection complete", artifactRefs: ["commit:abc"], finishedAt: 3 },
+      },
     })
     expect(await (await app("owner_a").request(`/decisions/${decisionId}`)).json()).toMatchObject({ id: decisionId })
     expect(await (await app("owner_a").request("/recaps/recap_1")).json()).toMatchObject({ id: "recap_1" })

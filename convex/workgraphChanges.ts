@@ -627,7 +627,11 @@ function attemptDto(row: any, owner: string) {
     attemptNumber: row.attempt_number, state: row.state, resolvedExecution: row.resolved_execution, admittedAt: row.admitted_at,
     executionKind: row.execution_kind ?? "managed",
     ...(row.started_at === undefined ? {} : { startedAt: row.started_at }), ...(row.finished_at === undefined ? {} : { finishedAt: row.finished_at }),
-    ...(row.result === undefined ? {} : { result: row.result }), ...(row.attention_reason === undefined ? {} : { attentionReason: row.attention_reason }),
+    ...(row.result === undefined ? {} : { result: {
+      summary: row.result.summary,
+      artifactRefs: row.result.artifactRefs ?? row.result.artifacts,
+      finishedAt: row.result.finishedAt ?? row.finished_at,
+    } }), ...(row.attention_reason === undefined ? {} : { attentionReason: row.attention_reason }),
     sourceRevisionRefs: refs(row.source_revision_refs),
   }
 }
