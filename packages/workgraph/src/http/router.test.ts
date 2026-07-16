@@ -8,6 +8,7 @@ import type {
   OperationID,
   OwnerUserID,
   RequestID,
+  SnapshotResumeCursor,
   StreamDto,
   StreamID,
   WorkGraphCommandRequest,
@@ -35,6 +36,16 @@ import { createWorkGraphHttpRouter } from "./router"
 const branded = <Type>(value: string) => value as Type
 
 describe("WorkGraph northbound HTTP router", () => {
+  it("normalizes snapshot cursor errors thrown by a separately bundled contract entrypoint", async () => {
+    const fixture = createFixture()
+    const response = await fixture.app.request("/snapshot?after=bundled_cursor_error&limit=1", fixture.auth("owner_a"))
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({
+      error: { code: "cursor_invalid", message: "Snapshot cursor is no longer valid", retryable: false },
+    })
+  })
+
   it("persists owner-scoped Attention read and clear acknowledgements", async () => {
     const fixture = createFixture()
     expect(await (await fixture.app.request("/attention/read", { method: "POST", headers: { authorization: "Bearer owner_a" } })).json())
@@ -637,7 +648,15 @@ function createFixture() {
         }),
       },
       snapshot: {
-        page: async (context: WorkGraphContext): Promise<WorkGraphSnapshotPage> => {
+        page: async (
+          context: WorkGraphContext,
+          input: Readonly<{ after?: SnapshotResumeCursor; limit: number }>,
+        ): Promise<WorkGraphSnapshotPage> => {
+          if (input.after === "bundled_cursor_error") {
+            const error = new Error("canonical error from a separately bundled entrypoint")
+            error.name = "SnapshotResumeCursorError"
+            throw Object.assign(error, { code: "cursor_invalid" as const, reason: "owner_mismatch" as const })
+          }
           const ownerChanges = changes.get(context.ownerUserId) ?? []
           const records = Array.from(streams.values()).filter((stream) => stream.ownerUserId === context.ownerUserId)
           return {

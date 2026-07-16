@@ -286,7 +286,7 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
     const snapshot = await input.service.queries.snapshot.page(context.get("workGraphContext"), query.data)
       .then(WorkGraphSnapshotPageSchema.parse)
       .catch((error) => {
-        if (error instanceof SnapshotResumeCursorError) {
+        if (isCursorError(error, "SnapshotResumeCursorError")) {
           return errorResponse(context, 409, "cursor_invalid", "Snapshot cursor is no longer valid", false)
         }
         throw error
@@ -684,8 +684,8 @@ export function createWorkGraphHttpRouter<Queries extends WorkGraphHttpQueries>(
 
 function isCursorError(
   error: unknown,
-  name: "ChangeCursorError" | "NotificationPageCursorError" | "WorkSourcePageCursorError",
-): error is ChangeCursorError | NotificationPageCursorError | WorkSourcePageCursorError {
+  name: "ChangeCursorError" | "NotificationPageCursorError" | "SnapshotResumeCursorError" | "WorkSourcePageCursorError",
+): error is ChangeCursorError | NotificationPageCursorError | SnapshotResumeCursorError | WorkSourcePageCursorError {
   return error instanceof Error && error.name === name && "code" in error && error.code === "cursor_invalid"
 }
 

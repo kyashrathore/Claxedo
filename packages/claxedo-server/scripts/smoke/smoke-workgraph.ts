@@ -291,7 +291,9 @@ async function assertTenantIsolation(
   })
   const cursorBody = parseJson(await cursorResponse.text(), "/api/workgraph/snapshot cross-tenant cursor")
   if (cursorResponse.status !== 409 || record(record(cursorBody)?.error)?.code !== "cursor_invalid") {
-    throw new Error(`${boundary} accepted a snapshot cursor from the source tenant`)
+    throw new Error(
+      `${boundary} cursor isolation expected 409/cursor_invalid, got ${cursorResponse.status}/${String(record(record(cursorBody)?.error)?.code ?? "missing_error_code")}`,
+    )
   }
 }
 
