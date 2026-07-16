@@ -62,12 +62,20 @@ describe("Convex WorkGraph persistence policy", () => {
         tableName: "users",
       })
       const indexes = (table as unknown as { indexes: Array<{ fields: string[] }> }).indexes
+      const tenantIndexes = tableName === "workgraph_outbox"
+        ? indexes.filter((index) => index.fields[0] !== "status")
+        : indexes
       expect(
-        indexes.length > 0 &&
-          indexes.every((index) => index.fields[0] === "organization_id" && index.fields[1] === "owner_user_id"),
+        tenantIndexes.length > 0 &&
+          tenantIndexes.every(
+            (index) => index.fields[0] === "organization_id" && index.fields[1] === "owner_user_id",
+          ),
         tableName,
       ).toBe(true)
     }
+    expect(
+      (schema.tables.workgraph_outbox as unknown as { indexes: Array<{ fields: string[] }> }).indexes,
+    ).toContainEqual(expect.objectContaining({ fields: ["status", "available_at"] }))
     expect(schema.tables.workgraph_connection_metadata.validator.fields.organization_id).toMatchObject({
       isOptional: "required",
       kind: "id",
@@ -99,7 +107,7 @@ describe("Convex WorkGraph persistence policy", () => {
     ).toContainEqual(expect.objectContaining({ fields: ["organization_id", "owner_user_id", "state", "updated_at"] }))
   })
 
-  test("keeps every WorkGraph runtime and background access on tuple-leading indexes", async () => {
+  test("keeps tenant work on tuple-leading indexes and bounds the explicit global dispatch scan", async () => {
     const sources = await Promise.all(
       [
         "workgraphArchive.ts",
@@ -118,6 +126,12 @@ describe("Convex WorkGraph persistence policy", () => {
     expect(runtime).not.toMatch(/\.query\("(?:workgraph|work_|work_sources)[^\n]*"\)\s*\.filter/)
     expect(runtime).not.toMatch(/withIndex\("by_owner/)
     expect(runtime).not.toMatch(/withIndex\("by_(?:execution_state_updated|recap_due|state_updated)/)
+    const staleTenants = runtime.slice(
+      runtime.indexOf("export const listStaleTenants"),
+      runtime.indexOf("export const claimLaunches"),
+    )
+    expect(staleTenants).toContain('withIndex("by_status_available"')
+    expect(staleTenants).toMatch(/\.take\(limit\)/)
     for (const worker of [
       "claimLaunches",
       "claimControlEffects",

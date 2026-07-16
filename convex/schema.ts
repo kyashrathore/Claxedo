@@ -1036,6 +1036,7 @@ export default defineSchema({
     .index("by_tenant_id", ["organization_id", "owner_user_id", "id"])
     .index("by_tenant_stream", ["organization_id", "owner_user_id", "stream_id"])
     .index("by_tenant_idempotency", ["organization_id", "owner_user_id", "idempotency_key"])
+    .index("by_status_available", ["status", "available_at"])
     .index("by_tenant_status_available", ["organization_id", "owner_user_id", "status", "available_at"]),
 
   workgraph_due_jobs: defineTable({

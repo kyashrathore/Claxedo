@@ -1,7 +1,7 @@
 import type { GenericMutationCtx } from "convex/server"
 import { v } from "convex/values"
 import { buildAttemptPrompt } from "@claxedo/workgraph/hosted"
-import { serviceMutation } from "./model"
+import { serviceMutation, serviceQuery } from "./model"
 import type { DataModel, Doc, Id } from "./_generated/dataModel"
 import { removeAttentionRecord, syncAttentionRecord } from "./workgraphAttention"
 import { appendSystemWorkGraphChange, reconcileAutonomousStreams } from "./workgraphCommands"
@@ -17,6 +17,37 @@ export const listWorkerTenants = serviceMutation({
       organizationId: String(membership.org_id),
       ownerUserId: String(membership.user_id),
     })),
+})
+
+/** Bounded global backstop scan for tenants whose durable effects missed a fast-lane nudge. */
+export const listStaleTenants = serviceQuery({
+  args: {
+    now: v.number(),
+    threshold_ms: v.optional(v.number()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const staleBefore = args.now - Math.max(1, args.threshold_ms ?? 60_000)
+    const limit = Math.max(1, Math.min(500, args.limit ?? 500))
+    const rows = (await Promise.all(
+      ["pending", "claimed"].map((status) =>
+        ctx.db
+          .query("workgraph_outbox")
+          .withIndex("by_status_available", (query) =>
+            query.eq("status", status).lte("available_at", staleBefore),
+          )
+          .take(limit),
+      ),
+    )).flat()
+    return Array.from(
+      new Map(
+        rows.map((row) => [
+          JSON.stringify([row.organization_id, row.owner_user_id]),
+          { organizationId: String(row.organization_id), ownerUserId: String(row.owner_user_id) },
+        ]),
+      ).values(),
+    ).slice(0, limit)
+  },
 })
 
 /** Claim durable advisory launch effects. Convex admission remains the authority. */

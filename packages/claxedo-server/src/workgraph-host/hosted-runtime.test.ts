@@ -3,6 +3,7 @@ import {
   claimControlEffects,
   claimLaunches,
   completeControlEffect,
+  listStaleTenants,
   listRunning,
   markAttention,
   recordFailure,
@@ -33,6 +34,58 @@ afterEach(() => {
 })
 
 describe("hosted WorkGraph runtime outbox", () => {
+  test("lists each tenant with stale unsettled outbox work once", async () => {
+    const db = new RuntimeDb({
+      workgraph_outbox: [
+        {
+          _id: "stale-pending-a",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          status: "pending",
+          available_at: 39_000,
+        },
+        {
+          _id: "duplicate-stale-a",
+          organization_id: "org-a",
+          owner_user_id: "user-a",
+          status: "claimed",
+          available_at: 20_000,
+        },
+        {
+          _id: "stale-claimed-b",
+          organization_id: "org-b",
+          owner_user_id: "user-b",
+          status: "claimed",
+          available_at: 10_000,
+        },
+        {
+          _id: "fresh-pending",
+          organization_id: "org-fresh",
+          owner_user_id: "user-fresh",
+          status: "pending",
+          available_at: 40_001,
+        },
+        {
+          _id: "terminal",
+          organization_id: "org-terminal",
+          owner_user_id: "user-terminal",
+          status: "completed",
+          available_at: 1,
+        },
+      ],
+    })
+
+    await expect(
+      handler(listStaleTenants)({ db } as never, {
+        service_token: "service-secret",
+        now: 100_000,
+      }),
+    ).resolves.toEqual([
+      { organizationId: "org-a", ownerUserId: "user-a" },
+      { organizationId: "org-b", ownerUserId: "user-b" },
+    ])
+  })
+
   test("partitions workspace identity by organization, owner, and Stream scope", async () => {
     const first = await workGraphWorkspaceId("org-a", "owner-a", "stream-a")
     expect(await workGraphWorkspaceId("org-a", "owner-a", "stream-a")).toBe(first)
@@ -2699,6 +2752,10 @@ class RuntimeDb {
         const query = {
           eq: (field: string, value: unknown) => {
             conditions.push([field, value])
+            return query
+          },
+          lte: (field: string, value: number) => {
+            selected = selected.filter((row) => Number(row[field]) <= value)
             return query
           },
         }
