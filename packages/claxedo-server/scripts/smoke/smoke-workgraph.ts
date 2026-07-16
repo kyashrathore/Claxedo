@@ -85,7 +85,7 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
                 id: "hosted_smoke",
                 kind: "verification",
                 description: "The signed Cloud composition returns a durable result without changing the workspace",
-                instructions: "Do not edit files or call tools. Return one short deployment smoke confirmation.",
+                instructions: "Do not edit files or use workspace tools. Complete through the required WorkGraph completion tool with verification evidence.",
               },
             ],
           },

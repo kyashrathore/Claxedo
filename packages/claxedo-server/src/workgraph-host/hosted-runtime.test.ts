@@ -1664,6 +1664,9 @@ describe("hosted WorkGraph runtime outbox", () => {
                 text: expect.stringContaining("A text response without this tool call does not complete the Attempt"),
               },
             })
+            expect(JSON.parse(String(init?.body))).toMatchObject({
+              prompt: { text: expect.stringContaining('"evidence":{"kind":"test_result"') },
+            })
             return Response.json({ data: { admitted: true } })
           }
           if (url.pathname.endsWith("/history"))

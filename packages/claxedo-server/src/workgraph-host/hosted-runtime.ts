@@ -540,6 +540,7 @@ function managedAttemptPrompt(prompt: string) {
     "WorkGraph execution protocol:",
     "Before your final response, call workgraph_complete_task with a concise summary and evidence for every completion requirement.",
     "Each evidence entry must identify its requirementId. A text response without this tool call does not complete the Attempt.",
+    "Use the exact input shape {\"summary\":\"...\",\"artifacts\":[],\"evidence\":[{\"requirementId\":\"<requirement id>\",\"evidence\":{\"kind\":\"test_result\",\"summary\":\"...\",\"passed\":true}}]} (select the appropriate supported evidence kind for the requirement).",
     "Use workgraph_report_progress only for meaningful intermediate boundaries.",
   ].join("\n")
 }
