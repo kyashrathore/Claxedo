@@ -2,6 +2,19 @@ type SmokeEnvironment = Readonly<Record<string, string | undefined>>
 
 type Session = Readonly<{ id: string; organizationId: string }>
 
+type SmokeStream = Readonly<{
+  streamId: string
+  session: Session
+  deleteOperationId: string
+  reason: string
+}>
+
+export function classifyAttemptPlacement(state: string) {
+  if (["placing", "running", "result"].includes(state)) return "started" as const
+  if (state === "admitted") return "pending" as const
+  throw new Error(`Hosted Attempt reached ${state} before placement start was observed`)
+}
+
 export async function workGraphSmoke(env: SmokeEnvironment = process.env, request: typeof fetch = fetch) {
   const startedAt = Date.now()
   const progress = (message: string) =>
@@ -68,6 +81,17 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
       }),
       "streamId",
     )
+    const cleanupStreams = new Map<string, SmokeStream>([
+      [
+        streamId,
+        {
+          streamId,
+          session: sessionAOrganizationA,
+          deleteOperationId: `${operationId}_cleanup`,
+          reason: "Hosted deployment smoke cleanup",
+        },
+      ],
+    ])
     let executionError: unknown
     try {
       progress(`created Stream ${streamId}; creating its Task`)
@@ -143,7 +167,33 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
         "Stream after tenant-isolation probes",
       )
 
+      progress("proving bare Stream control-effect settlement")
+      const bareStream = await createBareStream(
+        request,
+        base,
+        tokenA,
+        `${operationId}_bare`,
+        `Hosted bare settlement smoke ${operationId}`,
+        sessionAOrganizationA,
+      )
+      cleanupStreams.set(bareStream.streamId, bareStream)
+      await deleteStreamWithinBudget(request, base, tokenA, bareStream, retryDelayMs, progress)
+      cleanupStreams.delete(bareStream.streamId)
+
+      progress("creating tenant B Stream for isolated settlement proof")
+      const tokenB = await createClerkSessionToken(request, clerkSecret, sessionBOrganizationA)
+      const tenantBStream = await createBareStream(
+        request,
+        base,
+        tokenB,
+        `${operationId}_tenant_b`,
+        `Hosted tenant B settlement smoke ${operationId}`,
+        sessionBOrganizationA,
+      )
+      cleanupStreams.set(tenantBStream.streamId, tenantBStream)
+
       progress("tenant isolation passed; admitting hosted execution")
+      const executeStartedAt = Date.now()
       const attemptId = commandValue(
         await command(request, base, tokenA, `${operationId}_execute`, {
           version: 1,
@@ -153,6 +203,21 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
         }),
         "attemptId",
       )
+      const fastPathResults = await Promise.allSettled([
+        waitForAttemptPlacement(
+          request,
+          base,
+          tokenA,
+          attemptId,
+          executeStartedAt,
+          retryDelayMs,
+          progress,
+        ),
+        deleteStreamWithinBudget(request, base, tokenB, tenantBStream, retryDelayMs, progress),
+      ])
+      if (fastPathResults[1]!.status === "fulfilled") cleanupStreams.delete(tenantBStream.streamId)
+      const fastPathFailure = fastPathResults.find((result) => result.status === "rejected")
+      if (fastPathFailure?.status === "rejected") throw fastPathFailure.reason
       progress(`created Attempt ${attemptId}; reconciling execution`)
       const references = await reconcileAttempt(
         request,
@@ -170,27 +235,23 @@ export async function workGraphSmoke(env: SmokeEnvironment = process.env, reques
       executionError = error
       throw error
     } finally {
-      try {
-        progress(`deleting smoke Stream ${streamId}`)
-        await command(
-          request,
-          base,
-          await createClerkSessionToken(request, clerkSecret, sessionAOrganizationA),
-          `${operationId}_cleanup`,
-          {
-            version: 1,
-            type: "delete_stream",
-            streamId,
-            expectedVersion: 1,
-            reason: "Hosted deployment smoke cleanup",
-          },
-        )
-        await reconcileDeletion(request, base, clerkSecret, sessionAOrganizationA, reconcileToken, streamId, progress)
-        progress(`deleted smoke Stream ${streamId}`)
-      } catch (cleanupError) {
-        if (!executionError) throw cleanupError
-        console.warn(`Hosted deployment smoke cleanup also failed: ${errorMessage(cleanupError)}`)
+      const cleanupErrors: unknown[] = []
+      for (const cleanup of cleanupStreams.values()) {
+        try {
+          await cleanupStream(
+            request,
+            base,
+            clerkSecret,
+            reconcileToken,
+            cleanup,
+            progress,
+          )
+        } catch (cleanupError) {
+          cleanupErrors.push(cleanupError)
+          console.warn(`Hosted deployment smoke cleanup also failed: ${errorMessage(cleanupError)}`)
+        }
       }
+      if (!executionError && cleanupErrors.length > 0) throw cleanupErrors[0]
     }
   } finally {
     progress("revoking Clerk smoke Sessions")
@@ -534,6 +595,97 @@ function requireExecutionProfile(input: unknown, env: SmokeEnvironment) {
   }
 }
 
+async function createBareStream(
+  request: typeof fetch,
+  base: string,
+  token: string,
+  operationId: string,
+  title: string,
+  session: Session,
+): Promise<SmokeStream> {
+  return {
+    streamId: commandValue(
+      await command(request, base, token, operationId, {
+        version: 1,
+        type: "create_stream",
+        title,
+      }),
+      "streamId",
+    ),
+    session,
+    deleteOperationId: `${operationId}_delete`,
+    reason: "Hosted fast-lane settlement smoke cleanup",
+  }
+}
+
+async function waitForAttemptPlacement(
+  request: typeof fetch,
+  base: string,
+  token: string,
+  attemptId: string,
+  startedAt: number,
+  retryDelayMs: number,
+  progress: (message: string) => void,
+) {
+  const deadline = startedAt + 10_000
+  while (Date.now() < deadline) {
+    const response = await request(`${base}/api/workgraph/attempts/${encodeURIComponent(attemptId)}`, {
+      headers: authorization(token),
+      signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+    })
+    const body = parseJson(await response.text(), "/api/workgraph/attempts placement latency")
+    if (!response.ok) throw new Error(`Hosted Attempt placement verification failed: ${response.status}`)
+    const attempt = record(record(body)?.attempt)
+    if (attempt?.id !== attemptId || typeof attempt.state !== "string") {
+      throw new Error("Hosted Attempt detail returned an invalid envelope")
+    }
+    if (classifyAttemptPlacement(attempt.state) === "started") {
+      const latencyMs = Date.now() - startedAt
+      if (latencyMs >= 10_000) throw new Error(`Hosted Attempt placement started after ${latencyMs}ms; budget is <10000ms`)
+      progress(`Attempt ${attemptId} placement reached ${attempt.state} after ${latencyMs}ms without manual reconciliation`)
+      return
+    }
+    await wait(Math.min(retryDelayMs, 500, Math.max(0, deadline - Date.now())))
+  }
+  throw new Error("Hosted Attempt placement did not start within <10000ms without manual reconciliation")
+}
+
+async function deleteStreamWithinBudget(
+  request: typeof fetch,
+  base: string,
+  token: string,
+  stream: SmokeStream,
+  retryDelayMs: number,
+  progress: (message: string) => void,
+) {
+  const startedAt = Date.now()
+  await command(request, base, token, stream.deleteOperationId, {
+    version: 1,
+    type: "delete_stream",
+    streamId: stream.streamId,
+    expectedVersion: 1,
+    reason: stream.reason,
+  })
+  const deadline = startedAt + 20_000
+  while (Date.now() < deadline) {
+    const response = await request(`${base}/api/workgraph/streams/${encodeURIComponent(stream.streamId)}`, {
+      headers: authorization(token),
+      signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+    })
+    if (response.status === 404) {
+      const latencyMs = Date.now() - startedAt
+      if (latencyMs >= 20_000) throw new Error(`Hosted Stream deletion settled after ${latencyMs}ms; budget is <20000ms`)
+      progress(`Stream ${stream.streamId} control effect settled after ${latencyMs}ms without manual reconciliation`)
+      return
+    }
+    if (!response.ok) {
+      throw new Error(`Hosted Stream deletion verification failed: ${response.status} ${await response.text()}`)
+    }
+    await wait(Math.min(retryDelayMs, 500, Math.max(0, deadline - Date.now())))
+  }
+  throw new Error(`Hosted Stream ${stream.streamId} control effect did not settle within <20000ms without manual reconciliation`)
+}
+
 async function reconcileAttempt(
   request: typeof fetch,
   base: string,
@@ -650,6 +802,36 @@ async function reconcileDeletion(
     await wait(Math.min(12_000, Math.max(0, deadline - Date.now())))
   }
   throw new Error("Hosted Stream cleanup did not complete within two minutes")
+}
+
+async function cleanupStream(
+  request: typeof fetch,
+  base: string,
+  clerkSecret: string,
+  reconcileToken: string,
+  stream: SmokeStream,
+  progress: (message: string) => void,
+) {
+  progress(`deleting smoke Stream ${stream.streamId}`)
+  const token = await createClerkSessionToken(request, clerkSecret, stream.session)
+  const current = await request(`${base}/api/workgraph/streams/${encodeURIComponent(stream.streamId)}`, {
+    headers: authorization(token),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (current.status === 404) {
+    progress(`smoke Stream ${stream.streamId} was already deleted`)
+    return
+  }
+  if (!current.ok) throw new Error(`Smoke Stream cleanup read failed: ${current.status} ${await current.text()}`)
+  await command(request, base, token, stream.deleteOperationId, {
+    version: 1,
+    type: "delete_stream",
+    streamId: stream.streamId,
+    expectedVersion: 1,
+    reason: stream.reason,
+  })
+  await reconcileDeletion(request, base, clerkSecret, stream.session, reconcileToken, stream.streamId, progress)
+  progress(`deleted smoke Stream ${stream.streamId}`)
 }
 
 async function triggerReconciliation(request: typeof fetch, base: string, token: string, timeoutMs = 120_000) {

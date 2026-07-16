@@ -98,7 +98,7 @@ test.describe.serial("deployed WorkGraph", () => {
     // assert on the stream card itself rather than any text occurrence. The
     // snapshot hides deletion-pending Streams immediately, so the card clears
     // within one live-sync window; durable teardown continues in background.
-    await expect(streamContainer(page, streamTitle)).toBeHidden({ timeout: 45_000 })
+    await expect(streamContainer(page, streamTitle)).toBeHidden({ timeout: 30_000 })
 
     expect(workGraphAuthorizations.length).toBeGreaterThan(0)
     expect(workGraphAuthorizations.every((authorization) => authorization.startsWith("Bearer "))).toBe(true)

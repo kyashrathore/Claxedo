@@ -1,14 +1,30 @@
 import { describe, expect, test } from "vitest"
-import { workGraphSmoke } from "./smoke-workgraph"
+import { classifyAttemptPlacement, workGraphSmoke } from "./smoke-workgraph"
 
 describe("WorkGraph deployment smoke", () => {
+  test("accepts only a claimed or launched Attempt as placement evidence", () => {
+    expect(classifyAttemptPlacement("admitted")).toBe("pending")
+    for (const state of ["placing", "running", "result"]) {
+      expect(classifyAttemptPlacement(state)).toBe("started")
+    }
+    for (const state of ["attention", "failed", "cancelled"]) {
+      expect(() => classifyAttemptPlacement(state)).toThrow(`reached ${state} before placement start was observed`)
+    }
+  })
+
   test("proves same-user cross-organization and same-organization cross-user isolation", async () => {
     const requests: Array<{ url: URL; init?: RequestInit }> = []
     const sourceToken = `Bearer ${token("user_a", "org_a")}`
     const otherOrganizationToken = `Bearer ${token("user_a", "org_b")}`
     const otherUserToken = `Bearer ${token("user_b", "org_a")}`
     const sessions = new Map<string, { userId: string; organizationId: string }>()
-    let deleted = false
+    const streams = new Map<
+      string,
+      { authorization: string; deletionRequested: boolean; deletionReads: number; deleted: boolean }
+    >()
+    let nextStream = 0
+    let manualReconciles = 0
+    let executionAdmitted = false
     let capabilityRefreshes = 0
     const request = async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url)
@@ -68,31 +84,55 @@ describe("WorkGraph deployment smoke", () => {
         }
         return Response.json({ refreshed: true })
       }
-      if (url.pathname === "/internal/workgraph/reconcile") return Response.json({ ok: true, summary: {} })
+      if (url.pathname === "/internal/workgraph/reconcile") {
+        manualReconciles += 1
+        return Response.json({ ok: true, summary: {} })
+      }
       if (url.pathname === "/api/workgraph/commands") {
         const body = JSON.parse(String(init?.body))
         if (body.command.type === "update_stream" && authorization(init) !== sourceToken) {
           return Response.json({ error: { code: "not_found" } }, { status: 404 })
         }
         if (body.command.type === "create_stream") {
-          return Response.json({ ok: true, value: { streamId: "stream_1" } })
+          const streamId = `stream_${++nextStream}`
+          streams.set(streamId, {
+            authorization: authorization(init)!,
+            deletionRequested: false,
+            deletionReads: 0,
+            deleted: false,
+          })
+          return Response.json({ ok: true, value: { streamId } })
         }
         if (body.command.type === "create_work_item") {
           return Response.json({ ok: true, value: { workItemId: "item_1" } })
         }
         if (body.command.type === "execute_work_item") {
+          executionAdmitted = true
           return Response.json({ ok: true, value: { attemptId: "attempt_1" } })
         }
         if (body.command.type === "delete_stream") {
-          deleted = true
-          return Response.json({ ok: true, value: { streamId: "stream_1" } })
+          const stream = streams.get(body.command.streamId)
+          if (!stream || stream.authorization !== authorization(init)) {
+            return Response.json({ error: { code: "not_found" } }, { status: 404 })
+          }
+          stream.deletionRequested = true
+          return Response.json({ ok: true, value: { streamId: body.command.streamId } })
         }
       }
-      if (url.pathname === "/api/workgraph/streams/stream_1") {
-        if (deleted || authorization(init) !== sourceToken) {
+      if (url.pathname.startsWith("/api/workgraph/streams/")) {
+        const streamId = url.pathname.split("/").at(-1)!
+        const stream = streams.get(streamId)
+        if (!stream || stream.deleted || authorization(init) !== stream.authorization) {
           return Response.json({ error: { code: "not_found" } }, { status: 404 })
         }
-        return Response.json({ id: "stream_1" })
+        if (stream.deletionRequested) {
+          stream.deletionReads += 1
+          if (streamId === "stream_1" ? manualReconciles > 0 : stream.deletionReads > 1) {
+            stream.deleted = true
+            return Response.json({ error: { code: "not_found" } }, { status: 404 })
+          }
+        }
+        return Response.json({ id: streamId })
       }
       if (url.pathname === "/api/workgraph/work-items/item_1") {
         if (authorization(init) !== sourceToken) {
@@ -101,6 +141,13 @@ describe("WorkGraph deployment smoke", () => {
         return Response.json({ id: "item_1" })
       }
       if (url.pathname === "/api/workgraph/attempts/attempt_1") {
+        if (!executionAdmitted) return Response.json({ error: { code: "not_found" } }, { status: 404 })
+        if (manualReconciles === 0) {
+          return Response.json({
+            attempt: { id: "attempt_1", state: "running", startedAt: Date.now() },
+            executionReferences: { workspaceId: "workgraph_workspace_1", sessionId: "session_runtime_1" },
+          })
+        }
         return Response.json({
           attempt: { id: "attempt_1", state: "result" },
           executionReferences: { workspaceId: "workgraph_workspace_1", sessionId: "session_runtime_1" },
@@ -179,6 +226,42 @@ describe("WorkGraph deployment smoke", () => {
     ])
     expect(requests.filter((entry) => entry.url.pathname.endsWith("/revoke"))).toHaveLength(3)
     expect(capabilityRefreshes).toBe(2)
+    const commands = requests
+      .filter((entry) => entry.url.pathname === "/api/workgraph/commands")
+      .map((entry) => ({
+        authorization: authorization(entry.init),
+        body: JSON.parse(String(entry.init?.body)),
+      }))
+    expect(commands.filter((entry) => entry.body.command.type === "create_stream")).toHaveLength(3)
+    expect(commands.filter((entry) => entry.body.command.type === "delete_stream")).toHaveLength(3)
+    expect(
+      commands.some(
+        (entry) =>
+          entry.authorization === otherUserToken &&
+          entry.body.command.type === "delete_stream" &&
+          entry.body.command.streamId === "stream_3",
+      ),
+    ).toBe(true)
+    const firstManualReconcile = requests.findIndex((entry) => entry.url.pathname === "/internal/workgraph/reconcile")
+    expect(requests.findIndex((entry) => entry.url.pathname === "/api/workgraph/attempts/attempt_1")).toBeLessThan(
+      firstManualReconcile,
+    )
+    for (const pathname of ["/api/workgraph/streams/stream_2", "/api/workgraph/streams/stream_3"]) {
+      expect(requests.findLastIndex((entry) => entry.url.pathname === pathname)).toBeLessThan(firstManualReconcile)
+    }
+    const executeRequest = requests.findIndex(
+      (entry) =>
+        entry.url.pathname === "/api/workgraph/commands" &&
+        JSON.parse(String(entry.init?.body)).command.type === "execute_work_item",
+    )
+    const tenantBDeleteRequest = requests.findIndex(
+      (entry) =>
+        entry.url.pathname === "/api/workgraph/commands" &&
+        authorization(entry.init) === otherUserToken &&
+        JSON.parse(String(entry.init?.body)).command.type === "delete_stream",
+    )
+    expect(executeRequest).toBeLessThan(tenantBDeleteRequest)
+    expect(tenantBDeleteRequest).toBeLessThan(firstManualReconcile)
     expect(requests.filter((entry) => entry.url.pathname.endsWith("/tokens/convex"))).not.toHaveLength(0)
     expect(
       requests
