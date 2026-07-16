@@ -46,6 +46,7 @@ export type WorkGraphMonitor = Readonly<{
 }>
 
 export type WorkGraphOperationalReporter = ReturnType<typeof createWorkGraphOperationalReporter>
+export type WorkGraphReconciliationTrigger = "nudge" | "cron"
 
 const defaultWindowMs = 5 * 60_000
 
@@ -155,6 +156,7 @@ export function createWorkGraphOperationalReporter(
     },
     reconciliation(
       input: Readonly<{
+        trigger?: WorkGraphReconciliationTrigger
         outcome: "succeeded" | "failed"
         latencyMs: number
         lagMs: number
@@ -165,6 +167,7 @@ export function createWorkGraphOperationalReporter(
       }>,
     ) {
       capture("workgraph.reconciliation", {
+        trigger: input.trigger ?? "cron",
         outcome: input.outcome,
         latencyMs: boundedDuration(input.latencyMs),
         lagMs: boundedDuration(input.lagMs),

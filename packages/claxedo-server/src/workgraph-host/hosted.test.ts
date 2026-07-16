@@ -4,10 +4,15 @@ import type { ConnectionWebhookVerifier } from "@claxedo/connections"
 import type { ControlPlaneCredentials } from "../control-plane/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { ExecutionCapabilitiesUnavailableError, type ExecutionCapabilitiesPort } from "@claxedo/workgraph/ports"
-import { createChangeCursor, EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS } from "@claxedo/workgraph/contracts"
+import {
+  createChangeCursor,
+  EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
+  type CommandResult,
+} from "@claxedo/workgraph/contracts"
 import type { SignedControlPlaneAuth } from "../control-plane/auth"
 import type { WorkspaceAuthority } from "../control-plane/authority"
 import { createHostedWorkGraph } from "./hosted"
+import type { SettlementDispatcher } from "./settlement-dispatcher"
 
 const authConfig = { enabled: true as const, issuer: "https://clerk.test", jwksUrl: "https://clerk.test/jwks" }
 
@@ -22,6 +27,9 @@ function composition(
     capabilityReadWait?: Readonly<{ attempts: number; intervalMs: number }>
     /** Share one durable attestation store across compositions ("isolates"). */
     attested?: { value?: unknown }
+    dispatcher?: SettlementDispatcher
+    commandResult?: CommandResult
+    commandError?: Error
   }>,
 ) {
   const attested = options?.attested ?? {}
@@ -46,9 +54,12 @@ function composition(
     ...(sandboxManager ? { sandboxManager } : {}),
     ...(executionCapabilities ? { executionCapabilities } : {}),
     ...(now ? { now } : {}),
+    ...(options?.dispatcher ? { settlementDispatcher: options.dispatcher } : {}),
     executor: {
       mutation: async (_fn, args) => {
         calls.push(args)
+        if (args.actor_type && options?.commandError) throw options.commandError
+        if (args.actor_type && options?.commandResult) return options.commandResult
         if (args.capabilities) {
           attested.value = args.capabilities
           return { attested: true }
@@ -489,6 +500,109 @@ describe("hosted WorkGraph composition", () => {
       actor_id: "user_a",
       request_id: "request-hosted",
     })
+  })
+
+  test("nudges settlement for the authenticated tenant after a successful delete command", async () => {
+    const nudge = vi.fn()
+    const workgraph = composition([], undefined, undefined, undefined, undefined, undefined, {
+      dispatcher: { nudge },
+    })
+
+    const response = await workgraph.router.request("/commands", {
+      method: "POST",
+      headers: { authorization: "Bearer user_a", "content-type": "application/json" },
+      body: JSON.stringify({
+        operationId: "delete_a",
+        command: {
+          version: 1,
+          type: "delete_stream",
+          streamId: "stream_a",
+          expectedVersion: 1,
+          reason: "Discard",
+        },
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(nudge).toHaveBeenCalledOnce()
+    expect(nudge).toHaveBeenCalledWith({ organizationId: "org_internal_a", ownerUserId: "user_a" })
+  })
+
+  test("does not nudge settlement when a command returns a failure", async () => {
+    const nudge = vi.fn()
+    const workgraph = composition([], undefined, undefined, undefined, undefined, undefined, {
+      dispatcher: { nudge },
+      commandResult: {
+        ok: false,
+        operationId: "delete_failure" as never,
+        error: { code: "validation_error", message: "Delete rejected", retryable: false },
+      },
+    })
+
+    const response = await workgraph.router.request("/commands", {
+      method: "POST",
+      headers: { authorization: "Bearer user_a", "content-type": "application/json" },
+      body: JSON.stringify({
+        operationId: "delete_failure",
+        command: {
+          version: 1,
+          type: "delete_stream",
+          streamId: "stream_a",
+          expectedVersion: 1,
+          reason: "Discard",
+        },
+      }),
+    })
+
+    expect(response.status).toBe(400)
+    expect(nudge).not.toHaveBeenCalled()
+  })
+
+  test("does not nudge settlement when a command mutation throws", async () => {
+    const nudge = vi.fn()
+    const workgraph = composition([], undefined, undefined, undefined, undefined, undefined, {
+      dispatcher: { nudge },
+      commandError: new Error("persistence unavailable"),
+    })
+
+    const response = await workgraph.router.request("/commands", {
+      method: "POST",
+      headers: { authorization: "Bearer user_a", "content-type": "application/json" },
+      body: JSON.stringify({
+        operationId: "create_failure",
+        command: { version: 1, type: "create_stream", title: "Unavailable" },
+      }),
+    })
+
+    expect(response.status).toBe(500)
+    expect(nudge).not.toHaveBeenCalled()
+  })
+
+  test("returns the successful command response when the settlement dispatcher throws", async () => {
+    const nudge = vi.fn(() => {
+      throw new Error("dispatcher unavailable")
+    })
+    const workgraph = composition([], undefined, undefined, undefined, undefined, undefined, {
+      dispatcher: { nudge },
+    })
+
+    const response = await workgraph.router.request("/commands", {
+      method: "POST",
+      headers: { authorization: "Bearer user_a", "content-type": "application/json" },
+      body: JSON.stringify({
+        operationId: "create_a",
+        command: { version: 1, type: "create_stream", title: "Still succeeds" },
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      ok: true,
+      operationId: "create_a",
+      cursor: "1",
+      value: { streamId: "stream_user_a" },
+    })
+    expect(nudge).toHaveBeenCalledOnce()
   })
 
   test("accepts Connection-verified provider callbacks without requiring Clerk auth", async () => {

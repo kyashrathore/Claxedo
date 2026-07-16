@@ -2,6 +2,7 @@ import {
   ExecutionCapabilitiesSchema,
   isExecutionCapabilityCatalogFresh,
   WorkGraphConnectionToolNames,
+  type WorkGraphCommandRequest,
   type WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
 import {
@@ -51,6 +52,7 @@ import {
   instrumentWorkGraphCommands,
   workGraphHttpTelemetry,
 } from "./operational-telemetry"
+import { noopSettlementDispatcher, type SettlementDispatcher } from "./settlement-dispatcher"
 
 export type HostedWorkGraph = ReturnType<typeof createHostedWorkGraph>
 
@@ -94,6 +96,7 @@ export function createHostedWorkGraph(
     capabilityReadWait?: Readonly<{ attempts: number; intervalMs: number }>
     now?: () => number
     telemetry?: ControlPlaneTelemetry
+    settlementDispatcher?: SettlementDispatcher
     /** Test/custom-host seam; Cloud uses the encrypted per-org credential store. */
     webhookCredentials?: (orgId: string) => ControlPlaneCredentials
   }>,
@@ -142,9 +145,26 @@ export function createHostedWorkGraph(
         ...(input.now ? { now: input.now } : {}),
       })
     : undefined
-  const service = operationalTelemetry
+  const commandService = operationalTelemetry
     ? instrumentWorkGraphCommands(rawService, operationalTelemetry, input.now)
     : rawService
+  const settlementDispatcher = input.settlementDispatcher ?? noopSettlementDispatcher
+  const service = {
+    ...commandService,
+    async execute(context: WorkGraphContext, request: WorkGraphCommandRequest) {
+      const result = await commandService.execute(context, request)
+      if (!result.ok) return result
+      try {
+        settlementDispatcher.nudge({
+          organizationId: context.organizationId,
+          ownerUserId: context.ownerUserId,
+        })
+      } catch {
+        // A settlement nudge is advisory; the durable command result owns the response.
+      }
+      return result
+    },
+  }
   const activityPorts = createConvexWorkGraphActivityPorts({
     ...(url ? { url } : {}),
     serviceToken,

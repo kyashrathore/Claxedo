@@ -4,7 +4,11 @@ import { defaultHomeRegion } from "../region"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { AdmissionAgentPlanSchema, WorkGraphAttemptToolNames, WorkGraphBrokerTokenHeader } from "@claxedo/workgraph/contracts"
 import { clean, type HostedWorkerEnv } from "../control-plane/adapters/worker/hosted-compose"
-import { createWorkGraphOperationalReporter, type WorkGraphOperationalReporter } from "./operational-telemetry"
+import {
+  createWorkGraphOperationalReporter,
+  type WorkGraphOperationalReporter,
+  type WorkGraphReconciliationTrigger,
+} from "./operational-telemetry"
 
 type Mutation = FunctionReference<"mutation">
 const api = anyApi as unknown as {
@@ -152,8 +156,13 @@ export function createHostedWorkGraphRuntime(
   const sessionPublisher =
     options.sessionPublisher ?? (options.executor ? undefined : convexSessionPublisher(url, serviceToken))
   return {
-    reconcile: async (run: { background?: boolean; tenants?: WorkerTenant[] } = {}) => {
+    reconcile: async (run: {
+      background?: boolean
+      tenants?: WorkerTenant[]
+      trigger?: WorkGraphReconciliationTrigger
+    } = {}) => {
       const claimedAt = now()
+      const trigger = run.trigger ?? "cron"
       try {
         const tenants =
           run.tenants ??
@@ -572,10 +581,11 @@ export function createHostedWorkGraphRuntime(
           options.background === false || run.background === false
             ? undefined
             : await reconcileBackground(client, services, request, serviceToken, workerId, now, tenants, telemetry)
-        recordAttemptTelemetry(telemetry, claims, running, launched, results, now() - claimedAt)
+        recordAttemptTelemetry(telemetry, trigger, claims, running, launched, results, now() - claimedAt)
         return { launched, results, ...(background ? { background } : {}) }
       } catch (error) {
         telemetry.reconciliation({
+          trigger,
           outcome: "failed",
           latencyMs: now() - claimedAt,
           lagMs: 0,
@@ -1296,6 +1306,7 @@ async function tenantRows(
 
 function recordAttemptTelemetry(
   telemetry: WorkGraphOperationalReporter,
+  trigger: WorkGraphReconciliationTrigger,
   claims: readonly Claim[],
   running: readonly RunningAttempt[],
   launched: readonly unknown[],
@@ -1305,6 +1316,7 @@ function recordAttemptTelemetry(
   const observations = [...launched, ...results]
   recordQueueTelemetry(telemetry, "attempt", claims, running, observations)
   telemetry.reconciliation({
+    trigger,
     outcome: "succeeded",
     latencyMs,
     lagMs: maxNumber(claims, "queueLagMs"),
