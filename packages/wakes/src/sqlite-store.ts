@@ -94,7 +94,10 @@ CREATE TABLE IF NOT EXISTS effect_receipts (
 
 export type SqliteWakeStoreOptions = { path?: string; db?: Database.Database }
 
-/** better-sqlite3-backed WakeStore. Pass `:memory:` (default) or a file path. */
+/**
+ * better-sqlite3-backed WakeStore. Pass `:memory:` (default) or a file path.
+ * Internals are synchronous; the async signatures satisfy the port.
+ */
 export class SqliteWakeStore implements WakeStore {
   readonly db: Database.Database
 
@@ -105,7 +108,7 @@ export class SqliteWakeStore implements WakeStore {
     this.db.exec(SCHEMA)
   }
 
-  insert(wake: Wake): { inserted: boolean } {
+  async insert(wake: Wake): Promise<{ inserted: boolean }> {
     const cols = (Object.keys(FIELD_TO_COL) as (keyof Wake)[]).map((f) => FIELD_TO_COL[f])
     const placeholders = cols.map(() => "?").join(", ")
     const values = (Object.keys(FIELD_TO_COL) as (keyof Wake)[]).map((f) => wake[f] ?? null)
@@ -115,24 +118,24 @@ export class SqliteWakeStore implements WakeStore {
     return { inserted: res.changes > 0 }
   }
 
-  get(id: WakeId): Wake | null {
+  async get(id: WakeId): Promise<Wake | null> {
     const r = this.db.prepare("SELECT * FROM wakes WHERE id = ?").get(id) as Row | undefined
     return r ? rowToWake(r) : null
   }
 
-  getByToken(token: Token): Wake | null {
+  async getByToken(token: Token): Promise<Wake | null> {
     const r = this.db.prepare("SELECT * FROM wakes WHERE token = ?").get(token) as Row | undefined
     return r ? rowToWake(r) : null
   }
 
-  getByIdempotencyKey(workspaceId: WorkspaceId, key: string): Wake | null {
+  async getByIdempotencyKey(workspaceId: WorkspaceId, key: string): Promise<Wake | null> {
     const r = this.db
       .prepare("SELECT * FROM wakes WHERE workspace_id = ? AND idempotency_key = ?")
       .get(workspaceId, key) as Row | undefined
     return r ? rowToWake(r) : null
   }
 
-  claimDue(nowMs: number, leaseMs: number, limit: number): Wake[] {
+  async claimDue(nowMs: number, leaseMs: number, limit: number): Promise<Wake[]> {
     const rows = this.db
       .prepare(
         `UPDATE wakes SET state = 'firing', lease_until = ?, attempts = attempts + 1
@@ -147,7 +150,7 @@ export class SqliteWakeStore implements WakeStore {
     return rows.map(rowToWake)
   }
 
-  cas(id: WakeId, from: WakeState, to: WakeState, patch?: Partial<Wake>): boolean {
+  async cas(id: WakeId, from: WakeState, to: WakeState, patch?: Partial<Wake>): Promise<boolean> {
     const setCols = ["state = ?"]
     const setVals: unknown[] = [to]
     if (patch) {
@@ -164,13 +167,13 @@ export class SqliteWakeStore implements WakeStore {
     return res.changes > 0
   }
 
-  findPendingByEventKey(eventKey: string): Wake[] {
+  async findPendingByEventKey(eventKey: string): Promise<Wake[]> {
     return (
       this.db.prepare("SELECT * FROM wakes WHERE event_key = ? AND state = 'pending'").all(eventKey) as Row[]
     ).map(rowToWake)
   }
 
-  findExpirable(nowMs: number): Wake[] {
+  async findExpirable(nowMs: number): Promise<Wake[]> {
     return (
       this.db
         .prepare("SELECT * FROM wakes WHERE state = 'pending' AND expires_at IS NOT NULL AND expires_at <= ?")
@@ -178,7 +181,7 @@ export class SqliteWakeStore implements WakeStore {
     ).map(rowToWake)
   }
 
-  findReclaimable(nowMs: number): Wake[] {
+  async findReclaimable(nowMs: number): Promise<Wake[]> {
     return (
       this.db
         .prepare("SELECT * FROM wakes WHERE state = 'firing' AND lease_until IS NOT NULL AND lease_until <= ?")
@@ -186,42 +189,42 @@ export class SqliteWakeStore implements WakeStore {
     ).map(rowToWake)
   }
 
-  listFiring(): Wake[] {
+  async listFiring(): Promise<Wake[]> {
     return (this.db.prepare("SELECT * FROM wakes WHERE state = 'firing'").all() as Row[]).map(rowToWake)
   }
 
-  listForSession(sessionId: SessionId): Wake[] {
+  async listForSession(sessionId: SessionId): Promise<Wake[]> {
     return (this.db.prepare("SELECT * FROM wakes WHERE session_id = ?").all(sessionId) as Row[]).map(rowToWake)
   }
 
-  countLive(workspaceId: WorkspaceId): number {
+  async countLive(workspaceId: WorkspaceId): Promise<number> {
     const r = this.db
       .prepare("SELECT COUNT(*) AS n FROM wakes WHERE workspace_id = ? AND state = 'pending'")
       .get(workspaceId) as { n: number }
     return r.n
   }
 
-  countCreatedSince(workspaceId: WorkspaceId, sinceMs: number): number {
+  async countCreatedSince(workspaceId: WorkspaceId, sinceMs: number): Promise<number> {
     const r = this.db
       .prepare("SELECT COUNT(*) AS n FROM wakes WHERE workspace_id = ? AND created_at >= ?")
       .get(workspaceId, sinceMs) as { n: number }
     return r.n
   }
 
-  getReceipt(key: string): string | null {
+  async getReceipt(key: string): Promise<string | null> {
     const r = this.db.prepare("SELECT result_json FROM effect_receipts WHERE key = ?").get(key) as
       | { result_json: string }
       | undefined
     return r ? r.result_json : null
   }
 
-  putReceipt(key: string, resultJson: string): void {
+  async putReceipt(key: string, resultJson: string): Promise<void> {
     this.db
       .prepare("INSERT OR IGNORE INTO effect_receipts (key, result_json, created_at) VALUES (?, ?, ?)")
       .run(key, resultJson, Date.now())
   }
 
-  gc(beforeMs: number): number {
+  async gc(beforeMs: number): Promise<number> {
     const res = this.db
       .prepare("DELETE FROM wakes WHERE state IN ('fired', 'expired', 'cancelled') AND created_at < ?")
       .run(beforeMs)

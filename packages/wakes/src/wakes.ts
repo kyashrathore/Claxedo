@@ -44,21 +44,21 @@ type CommonCreate = {
 }
 
 export interface Wakes {
-  schedule(input: CommonCreate & { at?: number | Date; cron?: string }): { wakeId: WakeId }
-  watch(input: CommonCreate & { eventKey: string }): { wakeId: WakeId }
-  requestApproval(input: CommonCreate & { prompt: string; expiresAt: number | Date }): {
+  schedule(input: CommonCreate & { at?: number | Date; cron?: string }): Promise<{ wakeId: WakeId }>
+  watch(input: CommonCreate & { eventKey: string }): Promise<{ wakeId: WakeId }>
+  requestApproval(input: CommonCreate & { prompt: string; expiresAt: number | Date }): Promise<{
     token: Token
     wakeId: WakeId
-  }
-  cancel(wakeIdOrToken: string): void
+  }>
+  cancel(wakeIdOrToken: string): Promise<void>
   resolve(token: Token, answer: string, resolver: Actor): Promise<ResolveOutcome>
   deliverEvent(eventKey: string, payload: Json, deliveryId?: string): Promise<{ fired: number }>
   runDue(): Promise<{ fired: number }>
   /** Boot sweep: re-drive every `firing` row left by a crash. Call on startup. */
   recover(): Promise<{ recovered: number }>
   once<T>(sessionId: SessionId, effectKey: string, fn: () => Promise<T> | T): Promise<T>
-  listForSession(sessionId: SessionId): Wake[]
-  gc(olderThanMs: number): number
+  listForSession(sessionId: SessionId): Promise<Wake[]>
+  gc(olderThanMs: number): Promise<number>
 }
 
 const toMs = (v: number | Date | undefined | null): number | null =>
@@ -81,11 +81,11 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
   // recurring `at` wake, enqueue the next occurrence idempotently.
   async function driveFiring(wake: Wake): Promise<void> {
     await spawnTurn(wake.sessionId, resultForWake(wake))
-    store.cas(wake.id, "firing", "fired", { firedAt: now(), leaseUntil: null })
+    await store.cas(wake.id, "firing", "fired", { firedAt: now(), leaseUntil: null })
     if (wake.triggerType === "at" && wake.schedule) {
       if (!computeNextRun) throw new Error("recurring wake requires the computeNextRun option")
       const nextFireAt = computeNextRun(wake.schedule, wake.fireAt ?? now())
-      insertWake(
+      await insertWake(
         {
           triggerType: "at",
           sessionId: wake.sessionId,
@@ -104,19 +104,19 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
 
   // pending → firing (the guard) → drive. Returns false if the guard failed.
   async function fireFromPending(wake: Wake, resultJson: string, patch?: Partial<Wake>): Promise<boolean> {
-    const ok = store.cas(wake.id, "pending", "firing", { resultJson, leaseUntil: now() + leaseMs, ...patch })
+    const ok = await store.cas(wake.id, "pending", "firing", { resultJson, leaseUntil: now() + leaseMs, ...patch })
     if (!ok) return false
-    await driveFiring(store.get(wake.id)!)
+    await driveFiring((await store.get(wake.id))!)
     return true
   }
 
-  function insertWake(
+  async function insertWake(
     fields: Partial<Wake> & { workspaceId: WorkspaceId; triggerType: Wake["triggerType"] },
     o?: { skipBudget?: boolean },
-  ): { wakeId: WakeId } {
+  ): Promise<{ wakeId: WakeId }> {
     const t = now()
     if (!o?.skipBudget) {
-      enforceBudgets(store, limits, {
+      await enforceBudgets(store, limits, {
         workspaceId: fields.workspaceId,
         depth: fields.depth ?? 0,
         fireAt: fields.fireAt ?? null,
@@ -124,7 +124,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       })
     }
     if (fields.idempotencyKey) {
-      const existing = store.getByIdempotencyKey(fields.workspaceId, fields.idempotencyKey)
+      const existing = await store.getByIdempotencyKey(fields.workspaceId, fields.idempotencyKey)
       if (existing) return { wakeId: existing.id }
     }
     const wake: Wake = {
@@ -150,16 +150,16 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       leaseUntil: null,
       attempts: 0,
     }
-    const { inserted } = store.insert(wake)
+    const { inserted } = await store.insert(wake)
     if (!inserted && fields.idempotencyKey) {
-      const existing = store.getByIdempotencyKey(fields.workspaceId, fields.idempotencyKey)
+      const existing = await store.getByIdempotencyKey(fields.workspaceId, fields.idempotencyKey)
       if (existing) return { wakeId: existing.id }
     }
     return { wakeId: wake.id }
   }
 
   return {
-    schedule(input) {
+    async schedule(input) {
       const t = now()
       let fireAt: number
       let schedule: string | null = null
@@ -186,7 +186,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       })
     },
 
-    watch(input) {
+    async watch(input) {
       return insertWake({
         triggerType: "on_event",
         sessionId: input.sessionId ?? null,
@@ -200,8 +200,8 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       })
     },
 
-    requestApproval(input) {
-      const { wakeId } = insertWake({
+    async requestApproval(input) {
+      const { wakeId } = await insertWake({
         triggerType: "on_approval",
         sessionId: input.sessionId ?? null,
         workspaceId: input.workspaceId,
@@ -214,16 +214,16 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         idempotencyKey: input.idempotencyKey,
       })
       // On an idempotent hit the returned wake carries the original token.
-      return { token: store.get(wakeId)!.token!, wakeId }
+      return { token: (await store.get(wakeId))!.token!, wakeId }
     },
 
-    cancel(wakeIdOrToken) {
-      const wake = store.get(wakeIdOrToken) ?? store.getByToken(wakeIdOrToken)
-      if (wake) store.cas(wake.id, "pending", "cancelled", { firedAt: now() })
+    async cancel(wakeIdOrToken) {
+      const wake = (await store.get(wakeIdOrToken)) ?? (await store.getByToken(wakeIdOrToken))
+      if (wake) await store.cas(wake.id, "pending", "cancelled", { firedAt: now() })
     },
 
     async resolve(token, answer, resolver) {
-      const wake = store.getByToken(token)
+      const wake = await store.getByToken(token)
       if (!wake) return { ok: false, reason: "not_found" }
       if (wake.state === "expired") return { ok: false, reason: "too_late" }
       if (wake.state !== "pending") return { ok: false, reason: "already_resolved" }
@@ -231,12 +231,15 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       const result: WakeResult = { trigger: "on_approval", answer, resolvedBy: resolver }
       const ok = await fireFromPending(wake, JSON.stringify(result), { resolvedBy: JSON.stringify(resolver) })
       if (ok) return { ok: true }
-      return { ok: false, reason: store.get(wake.id)?.state === "expired" ? "too_late" : "already_resolved" }
+      return {
+        ok: false,
+        reason: (await store.get(wake.id))?.state === "expired" ? "too_late" : "already_resolved",
+      }
     },
 
     async deliverEvent(eventKey, payload) {
       let fired = 0
-      for (const wake of store.findPendingByEventKey(eventKey)) {
+      for (const wake of await store.findPendingByEventKey(eventKey)) {
         const result: WakeResult = { trigger: "on_event", intent: JSON.parse(wake.intentJson), payload }
         if (await fireFromPending(wake, JSON.stringify(result))) fired++
       }
@@ -246,8 +249,8 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
     async runDue() {
       const t = now()
       let fired = 0
-      for (const wake of store.findExpirable(t)) {
-        if (store.cas(wake.id, "pending", "expired", { firedAt: t })) {
+      for (const wake of await store.findExpirable(t)) {
+        if (await store.cas(wake.id, "pending", "expired", { firedAt: t })) {
           await spawnTurn(wake.sessionId, {
             trigger: "at",
             intent: JSON.parse(wake.intentJson),
@@ -256,11 +259,11 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
           fired++
         }
       }
-      for (const wake of store.findReclaimable(t)) {
+      for (const wake of await store.findReclaimable(t)) {
         await driveFiring(wake)
         fired++
       }
-      for (const wake of store.claimDue(t, leaseMs, batchLimit)) {
+      for (const wake of await store.claimDue(t, leaseMs, batchLimit)) {
         await driveFiring(wake)
         fired++
       }
@@ -269,7 +272,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
 
     async recover() {
       let recovered = 0
-      for (const wake of store.listFiring()) {
+      for (const wake of await store.listFiring()) {
         await driveFiring(wake)
         recovered++
       }
@@ -278,18 +281,18 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
 
     async once(sessionId, effectKey, fn) {
       const key = `${sessionId}::${effectKey}`
-      const cached = store.getReceipt(key)
+      const cached = await store.getReceipt(key)
       if (cached !== null) return JSON.parse(cached)
       const result = await fn()
-      store.putReceipt(key, JSON.stringify(result ?? null))
+      await store.putReceipt(key, JSON.stringify(result ?? null))
       return result
     },
 
-    listForSession(sessionId) {
+    async listForSession(sessionId) {
       return store.listForSession(sessionId)
     },
 
-    gc(olderThanMs) {
+    async gc(olderThanMs) {
       return store.gc(now() - olderThanMs)
     },
   }

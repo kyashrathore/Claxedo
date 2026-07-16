@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest"
 import {
   createWakes,
-  SqliteWakeStore,
   getWakeToolDefinitions,
   handleWakeToolCall,
   type Wakes,
   type WakeToolContext,
 } from "../src/index"
+import { SqliteWakeStore } from "../src/sqlite"
 
 const WS = "ws1"
 
@@ -40,7 +40,7 @@ describe("schedule_followup", () => {
     const { clock, wakes, ctx } = setup("s1", 2)
     const r = await handleWakeToolCall("schedule_followup", { when: "+3d", intent: { note: "chase" } }, ctx)
     expect(r.ok).toBe(true)
-    const [w] = wakes.listForSession("s1")
+    const [w] = await wakes.listForSession("s1")
     expect(w!.sessionId).toBe("s1")
     expect(w!.workspaceId).toBe(WS)
     expect(w!.fireAt).toBe(clock.t + 3 * 86400_000)
@@ -69,17 +69,17 @@ describe("request_approval", () => {
 describe("cancel_wake", () => {
   it("cancels only wakes owned by this session", async () => {
     const a = setup("s1")
-    const { wakeId } = a.wakes.schedule({ sessionId: "s2", workspaceId: WS, at: a.clock.t + 1000, intent: {} })
+    const { wakeId } = await a.wakes.schedule({ sessionId: "s2", workspaceId: WS, at: a.clock.t + 1000, intent: {} })
     // s1's tool context cannot cancel s2's wake
     const r = await handleWakeToolCall("cancel_wake", { wake_id: wakeId }, a.ctx)
     expect(r.ok).toBe(false)
-    expect(a.store.get(wakeId)!.state).toBe("pending")
+    expect((await a.store.get(wakeId))!.state).toBe("pending")
 
     // but it can cancel its own
-    const own = a.wakes.schedule({ sessionId: "s1", workspaceId: WS, at: a.clock.t + 1000, intent: {} })
+    const own = await a.wakes.schedule({ sessionId: "s1", workspaceId: WS, at: a.clock.t + 1000, intent: {} })
     const r2 = await handleWakeToolCall("cancel_wake", { wake_id: own.wakeId }, a.ctx)
     expect(r2.ok).toBe(true)
-    expect(a.store.get(own.wakeId)!.state).toBe("cancelled")
+    expect((await a.store.get(own.wakeId))!.state).toBe("cancelled")
   })
 })
 
@@ -87,7 +87,7 @@ describe("watch", () => {
   it("parses expires_in and registers the event key", async () => {
     const { clock, wakes, ctx } = setup()
     await handleWakeToolCall("watch", { event_key: "ci:pass:x", expires_in: "12h" }, ctx)
-    const [w] = wakes.listForSession("s1")
+    const [w] = await wakes.listForSession("s1")
     expect(w!.eventKey).toBe("ci:pass:x")
     expect(w!.expiresAt).toBe(clock.t + 12 * 3600_000)
   })

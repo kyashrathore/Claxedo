@@ -9,12 +9,18 @@ const DIST = path.join(ROOT, "dist")
 if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true })
 fs.mkdirSync(DIST, { recursive: true })
 
-// Single public entry point; npm deps left external.
-execFileSync(
-  process.execPath,
-  ["build", "src/index.ts", "--target=node", "--format=esm", "--outfile=dist/index.mjs", "--packages=external"],
-  { stdio: "inherit", cwd: ROOT },
-)
+// Two public entry points; npm deps left external. The root entry must stay
+// free of better-sqlite3 (edge-runtime safe); the sqlite subpath carries it.
+for (const [entry, outfile] of [
+  ["src/index.ts", "dist/index.mjs"],
+  ["src/sqlite.ts", "dist/sqlite.mjs"],
+]) {
+  execFileSync(
+    process.execPath,
+    ["build", entry, "--target=node", "--format=esm", `--outfile=${outfile}`, "--packages=external"],
+    { stdio: "inherit", cwd: ROOT },
+  )
+}
 
 // Emit the declaration tree so the entry point type-resolves.
 execFileSync(path.join(ROOT, "node_modules/.bin/tsc"), ["-p", "tsconfig.build.json"], {

@@ -27,21 +27,21 @@ export function resolveBudgets(b?: Budgets): Required<Budgets> {
  * Enforce per-workspace limits at the create path. Throws BudgetError on breach.
  * `fireAt` is checked against the horizon only when present (time triggers).
  */
-export function enforceBudgets(
+export async function enforceBudgets(
   store: WakeStore,
   limits: Required<Budgets>,
   input: { workspaceId: WorkspaceId; depth: number; fireAt: number | null; nowMs: number },
-): void {
+): Promise<void> {
   if (input.depth > limits.maxDepth) {
     throw new BudgetError("depth", `self-schedule depth ${input.depth} exceeds max ${limits.maxDepth}`)
   }
   if (input.fireAt !== null && input.fireAt > input.nowMs + limits.maxHorizonMs) {
     throw new BudgetError("horizon", `fireAt exceeds max horizon of ${limits.maxHorizonMs}ms`)
   }
-  if (store.countLive(input.workspaceId) >= limits.maxLiveWakes) {
+  if ((await store.countLive(input.workspaceId)) >= limits.maxLiveWakes) {
     throw new BudgetError("max_live", `workspace has too many live wakes (max ${limits.maxLiveWakes})`)
   }
-  if (store.countCreatedSince(input.workspaceId, input.nowMs - HOUR_MS) >= limits.creationRatePerHour) {
+  if ((await store.countCreatedSince(input.workspaceId, input.nowMs - HOUR_MS)) >= limits.creationRatePerHour) {
     throw new BudgetError("rate", `wake creation rate exceeded (max ${limits.creationRatePerHour}/h)`)
   }
 }

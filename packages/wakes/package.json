@@ -32,6 +32,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
+    },
+    "./sqlite": {
+      "types": "./dist/sqlite.d.ts",
+      "import": "./dist/sqlite.mjs",
+      "default": "./dist/sqlite.mjs"
     }
   },
   "files": [

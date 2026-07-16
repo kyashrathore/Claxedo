@@ -30,12 +30,12 @@ import { HTTPException } from "hono/http-exception"
 import {
   createWakes,
   createScheduler,
-  SqliteWakeStore,
   handleWakeToolCall,
   getWakeToolDefinitions,
   type Wakes,
   type WakeResult,
 } from "@claxedo/wakes"
+import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import { createSessionRoutes, runtimeEventsHandler, type RuntimeSessionBusEvent } from "@claxedo/workspace-runtime/routes"
 import type { ControlPlaneServices } from "./control-plane/services"
 import type { SessionMeta } from "./session-meta"

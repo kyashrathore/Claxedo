@@ -2,8 +2,8 @@ export { createWakes } from "./wakes"
 export type { Wakes, CreateWakesOptions } from "./wakes"
 export { createScheduler } from "./scheduler"
 export type { Scheduler } from "./scheduler"
-export { SqliteWakeStore } from "./sqlite-store"
-export type { SqliteWakeStoreOptions } from "./sqlite-store"
+// SqliteWakeStore is deliberately NOT exported here: the root entry must stay
+// importable in edge runtimes (no better-sqlite3). Use `@claxedo/wakes/sqlite`.
 export type { WakeStore } from "./store"
 export { BudgetError } from "./budgets"
 export { generateToken } from "./token"

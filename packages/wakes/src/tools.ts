@@ -131,12 +131,12 @@ export async function handleWakeToolCall(
   switch (name) {
     case "schedule_followup": {
       const at = parseWhen(args.when, now)
-      const { wakeId } = ctx.wakes.schedule({ ...common, at, intent: args.intent })
+      const { wakeId } = await ctx.wakes.schedule({ ...common, at, intent: args.intent })
       return { ok: true, text: `Scheduled a follow-up for ${new Date(at).toISOString()} (wake ${wakeId}).` }
     }
     case "watch": {
       const ttl = args.expires_in ? parseDuration(args.expires_in) : parseDuration("7d")
-      const { wakeId } = ctx.wakes.watch({
+      const { wakeId } = await ctx.wakes.watch({
         ...common,
         eventKey: args.event_key,
         intent: args.intent,
@@ -146,7 +146,7 @@ export async function handleWakeToolCall(
     }
     case "request_approval": {
       const ttl = args.expires_in ? parseDuration(args.expires_in) : parseDuration("1d")
-      const { token, wakeId } = ctx.wakes.requestApproval({
+      const { token, wakeId } = await ctx.wakes.requestApproval({
         ...common,
         prompt: args.prompt,
         expiresAt: now + ttl,
@@ -155,9 +155,9 @@ export async function handleWakeToolCall(
       return { ok: true, text: `Requested approval: "${args.prompt}". Waiting for an authorized human (wake ${wakeId}).` }
     }
     case "cancel_wake": {
-      const owned = ctx.wakes.listForSession(ctx.sessionId).some((w) => w.id === args.wake_id)
+      const owned = (await ctx.wakes.listForSession(ctx.sessionId)).some((w) => w.id === args.wake_id)
       if (!owned) return { ok: false, text: `No pending wake "${args.wake_id}" for this session.` }
-      ctx.wakes.cancel(args.wake_id)
+      await ctx.wakes.cancel(args.wake_id)
       return { ok: true, text: `Cancelled wake ${args.wake_id}.` }
     }
     default:
