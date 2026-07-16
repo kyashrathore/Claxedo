@@ -181,10 +181,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
         run: >-
           bunx wrangler deploy --env staging
           --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
+          --var "CLAXEDO_PUBLIC_URL:${CONTROL_PLANE_URL}"
           --var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"
 
       - name: Synchronize staging sandbox control token
@@ -398,10 +400,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
         run: >-
           bunx wrangler deploy --env ""
           --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
+          --var "CLAXEDO_PUBLIC_URL:${CONTROL_PLANE_URL}"
           --var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"
 
       - name: Behavioral smoke (production)

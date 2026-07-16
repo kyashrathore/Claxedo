@@ -144,6 +144,7 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(controlPlane.match(/WORKGRAPH_SMOKE_BASE_REVISION: \$\{\{ github\.sha \}\}/g)).toHaveLength(2)
     expect(controlPlane).toContain('working-directory: packages/workspace-relay')
     expect(controlPlane).toContain('wrangler deploy --env staging --var "CLAXEDO_RELEASE:${GITHUB_SHA}"')
+    expect(controlPlane.match(/--var "CLAXEDO_PUBLIC_URL:\$\{CONTROL_PLANE_URL\}"/g)).toHaveLength(2)
     expect(controlPlane).toContain('--var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"')
     expect(controlPlane).toContain("- .github/actions/setup-bun/action.yml")
     expect(appStaging).toContain("- .github/actions/setup-bun/action.yml")
