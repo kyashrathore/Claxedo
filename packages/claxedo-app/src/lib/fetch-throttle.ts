@@ -48,6 +48,12 @@ export function bypassFetchThrottle<T extends RequestInit>(init: T): T {
   return { ...init, [FETCH_BYPASS]: true } as T
 }
 
+// Read side of the marker. Survives object spread (own enumerable symbol
+// key), so intermediaries that clone inits via `{ ...init }` keep it.
+export function isFetchThrottleBypassed(init?: RequestInit): boolean {
+  return (init as FetchThrottleInit | undefined)?.[FETCH_BYPASS] === true
+}
+
 type FetchThrottle = {
   acquire: () => Promise<() => void>
   inFlight: () => number
@@ -120,7 +126,7 @@ export async function throttledFetch(
   init?: RequestInit | undefined,
   input?: string | URL | Request,
 ): Promise<Response> {
-  if (isEventStreamRequest(init, input) || (init as FetchThrottleInit | undefined)?.[FETCH_BYPASS]) {
+  if (isEventStreamRequest(init, input) || isFetchThrottleBypassed(init)) {
     return underlying()
   }
   const release = await getFetchThrottle().acquire()
