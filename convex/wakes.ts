@@ -164,6 +164,37 @@ export const insertWake = serviceMutation({
   },
 })
 
+/**
+ * State-aware lane creator: skip the insert when a PENDING wake of the same
+ * kind already waits on this lane (a pending dirty-flag covers every command
+ * before it fires). Engine idempotency keys can't express this — they dedup
+ * forever, so a fired wake would swallow later commands.
+ */
+export async function createLaneWakeIfIdle(
+  ctx: MutationCtx,
+  wake: WakeInput & { serialKey: string },
+): Promise<{ wakeId: string; created: boolean }> {
+  const pending = await ctx.db
+    .query("wakes")
+    .withIndex("by_lane_state", (q) => q.eq("serial_key", wake.serialKey).eq("state", "pending"))
+    .collect()
+  const existing = pending.find((doc) => doc.kind === wake.kind)
+  if (existing) return { wakeId: existing.id, created: false }
+  const result = await createWakeInTx(ctx, wake)
+  return { wakeId: result.wakeId, created: true }
+}
+
+export const nudgeLaneWake = serviceMutation({
+  args: wakeFields,
+  handler: async (ctx, args) => {
+    const { service_token: _token, ...wake } = args
+    if (typeof wake.serialKey !== "string" || !wake.serialKey) {
+      throw new Error("nudgeLaneWake requires a serialKey lane")
+    }
+    return createLaneWakeIfIdle(ctx, wake as WakeInput & { serialKey: string })
+  },
+})
+
 export const getWake = serviceQuery({
   args: { id: v.string() },
   handler: async (ctx, args) => {

@@ -37,11 +37,30 @@ import {
   WorkGraphSettler,
   type WorkGraphSettlerNamespace,
 } from "./workgraph-host/cloudflare-settlement-dispatcher"
+import { WakeLane, type WakeLaneNamespace, type WakeLaneState } from "./wakes-host/wake-lane"
+import { composeHostedWakes } from "./wakes-host/hosted-wakes"
+import { createWakeSettlementDispatcher } from "./wakes-host/wake-settlement-dispatcher"
+import { clean } from "./control-plane/adapters/worker/hosted-compose"
 
 export { WorkGraphSettler }
 
+/**
+ * The concrete per-lane Durable Object (wakes-v2 U6): binds the generic
+ * WakeLane to the hosted wakes composition (Convex store + workgraph_settle
+ * sink). Cloudflare instantiates DO classes itself, hence the subclass.
+ */
+export class ClaxedoWakeLane extends WakeLane {
+  constructor(state: WakeLaneState, env: Record<string, unknown>) {
+    super(state, env, {
+      createWakes: (doEnv, inDoDriver) => composeHostedWakes(doEnv as HostedWorkerEnv, inDoDriver),
+    })
+  }
+}
+
 type WorkerEnv = Record<string, unknown> & {
   WORKGRAPH_SETTLER?: WorkGraphSettlerNamespace
+  WAKE_LANE?: WakeLaneNamespace
+  CLAXEDO_WAKES_SETTLEMENT?: string
 }
 
 // D12: route reportError/reportPaymentError (the payment page-class hook the
@@ -78,14 +97,33 @@ function buildApp(env: WorkerEnv): Hono {
   // Every trigger path (cron, admin route, smoke cycles) shares one per-isolate
   // guard: overlapping reconciles have hung the Workers runtime.
   const workGraphReconcile = workGraphRuntime ? skipOverlappingReconcile(workGraphRuntime.reconcile) : undefined
+  // Wakes-path settlement (plan 2026-07-17-002 U8) is flag-gated: with
+  // CLAXEDO_WAKES_SETTLEMENT=1 and the WAKE_LANE binding, command nudges go
+  // durable-wake-first through the per-lane DO; otherwise the proven
+  // WorkGraphSettler path stays in charge. Same SettlementDispatcher port
+  // either way — hosted.ts cannot tell the difference.
+  const wakesSettlementUrl = clean(hostedEnv.CLAXEDO_WORKGRAPH_CONVEX_URL) ?? clean(hostedEnv.CLAXEDO_WORKSPACE_AUTHORITY_URL)
+  const wakesSettlementToken = clean(hostedEnv.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
+  const useWakesSettlement =
+    env.CLAXEDO_WAKES_SETTLEMENT === "1" && !!env.WAKE_LANE && !!wakesSettlementUrl && !!wakesSettlementToken
   const app = createHostedApp(plane, {
     ...(workGraphReconcile ? { workGraphReconcile } : {}),
-    ...(env.WORKGRAPH_SETTLER
+    ...(useWakesSettlement
       ? {
           workGraphSettlementDispatcherForRequest: (waitUntil: (promise: Promise<unknown>) => void) =>
-            createCloudflareSettlementDispatcher({ namespace: env.WORKGRAPH_SETTLER!, waitUntil }),
+            createWakeSettlementDispatcher({
+              namespace: env.WAKE_LANE!,
+              waitUntil,
+              url: wakesSettlementUrl!,
+              serviceToken: wakesSettlementToken!,
+            }),
         }
-      : {}),
+      : env.WORKGRAPH_SETTLER
+        ? {
+            workGraphSettlementDispatcherForRequest: (waitUntil: (promise: Promise<unknown>) => void) =>
+              createCloudflareSettlementDispatcher({ namespace: env.WORKGRAPH_SETTLER!, waitUntil }),
+          }
+        : {}),
   })
   // D12: Hono converts route exceptions into 500s internally, so they never
   // escape to withSentry — report them here, keeping Hono's default response
