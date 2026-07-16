@@ -18,9 +18,15 @@ function composition(
   sandboxManager?: SandboxManager,
   executionCapabilities?: ExecutionCapabilitiesPort,
   now?: () => number,
+  options?: Readonly<{
+    capabilityReadWait?: Readonly<{ attempts: number; intervalMs: number }>
+    /** Share one durable attestation store across compositions ("isolates"). */
+    attested?: { value?: unknown }
+  }>,
 ) {
-  let attestedCapabilities: unknown
+  const attested = options?.attested ?? {}
   return createHostedWorkGraph({
+    capabilityReadWait: options?.capabilityReadWait ?? { attempts: 1, intervalMs: 1 },
     env: {
       CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
       CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
@@ -44,7 +50,7 @@ function composition(
       mutation: async (_fn, args) => {
         calls.push(args)
         if (args.capabilities) {
-          attestedCapabilities = args.capabilities
+          attested.value = args.capabilities
           return { attested: true }
         }
         if (args.renew_only) return { ok: true, state: "renewed" }
@@ -103,7 +109,7 @@ function composition(
           args.owner_subject &&
           args.now !== undefined &&
           Object.keys(args).length === 4
-        ) return attestedCapabilities ?? null
+        ) return attested.value ?? null
         if (args.connectionId === "connection_1" && !("query" in args)) return {
           id: "connection_1",
           integrationId: "github",
@@ -231,6 +237,41 @@ test("hosted capability GET joins the signed owner activation already started by
   release()
 
   await expect(activation).resolves.toEqual({ status: "ready" })
+  await expect(response.then(async (value) => ({ status: value.status, body: await value.json() }))).resolves.toMatchObject({
+    status: 200,
+    body: { ownerUserId: "user_a", environments: [{ kind: "hosted_workspace" }] },
+  })
+  expect(discover).toHaveBeenCalledTimes(1)
+})
+
+test("hosted capability GET waits for the attestation published by an activation in another isolate", async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const discover = vi.fn(async (context: Parameters<ExecutionCapabilitiesPort["read"]>[0]) => {
+    await gate
+    return capabilityCatalog(context)
+  })
+  const attested: { value?: unknown } = {}
+  const bootstrapIsolate = composition([], undefined, undefined, undefined, { read: discover, refresh: discover }, undefined, { attested })
+  const readIsolate = composition([], undefined, undefined, undefined, { read: discover, refresh: discover }, undefined, {
+    attested,
+    capabilityReadWait: { attempts: 200, intervalMs: 2 },
+  })
+
+  let responseSettled = false
+  const response = Promise.resolve(readIsolate.router.request("/execution-capabilities", {
+    headers: { authorization: "Bearer user_a" },
+  })).then((value) => {
+    responseSettled = true
+    return value
+  })
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  expect(responseSettled).toBe(false)
+
+  const activation = bootstrapIsolate.activateOwner(signedAuth("user_a"))
+  release()
+  await expect(activation).resolves.toEqual({ status: "ready" })
+
   await expect(response.then(async (value) => ({ status: value.status, body: await value.json() }))).resolves.toMatchObject({
     status: 200,
     body: { ownerUserId: "user_a", environments: [{ kind: "hosted_workspace" }] },

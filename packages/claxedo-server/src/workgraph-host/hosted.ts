@@ -85,6 +85,13 @@ export function createHostedWorkGraph(
     relayProvider?: RelayProvider
     defaultHomeRegion?: ClaxedoRegion
     executionCapabilities?: ExecutionCapabilitiesPort
+    /**
+     * How long a capability GET waits on the persisted attestation before
+     * surfacing a retryable unavailability. Owner activation runs from
+     * bootstrap in another request — possibly another isolate — so the
+     * persisted attestation is the only durable rendezvous.
+     */
+    capabilityReadWait?: Readonly<{ attempts: number; intervalMs: number }>
     now?: () => number
     telemetry?: ControlPlaneTelemetry
     /** Test/custom-host seam; Cloud uses the encrypted per-org credential store. */
@@ -233,6 +240,8 @@ export function createHostedWorkGraph(
     void pending.then(clear, clear)
     return pending
   }
+  // Covers the 30s catalog-startup bound of a concurrently running activation.
+  const capabilityReadWait = input.capabilityReadWait ?? { attempts: 16, intervalMs: 2_000 }
   const readableExecutionCapabilities = executionCapabilities
     ? {
         ...executionCapabilities,
@@ -240,7 +249,20 @@ export function createHostedWorkGraph(
           const auth = signedAuthByContext.get(context)
           const activation = auth ? ownerActivations.get(activationKey(auth)) : undefined
           if (activation) await activation
-          return executionCapabilities.read(context, request)
+          // The read stays discovery-free: it only re-reads the persisted
+          // attestation while bootstrap's owner activation — which may be
+          // running in another isolate, invisible to the map above — publishes
+          // a fresh one. Non-retryable failures surface immediately.
+          for (let attempt = 1; ; attempt += 1) {
+            try {
+              return await executionCapabilities.read(context, request)
+            } catch (error) {
+              const retryable =
+                error instanceof ExecutionCapabilitiesUnavailableError && error.retryable
+              if (!retryable || attempt >= capabilityReadWait.attempts) throw error
+            }
+            await new Promise((resolve) => setTimeout(resolve, capabilityReadWait.intervalMs))
+          }
         },
       }
     : undefined
