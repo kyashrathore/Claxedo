@@ -79,6 +79,7 @@ describe("Claxedo Cloud deployment workflow", () => {
       "CLOUDFLARE_API_TOKEN",
       "CLOUDFLARE_ACCOUNT_ID",
       "CLERK_SECRET_KEY",
+      "CLERK_WEBHOOK_SECRET",
       "CLAXEDO_RUNTIME_ADMIN_TOKEN",
       "CONTROL_PLANE_URL",
       "WORKSPACE_RELAY_URL",
@@ -137,6 +138,7 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(sandboxWorker).toContain("npx --yes wrangler@4.50.0 secret put API_TOKEN")
     expect(sandboxWorker).toContain("SANDBOX_CONTROL_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}")
     expect(controlPlane).toContain("wrangler secret put CLOUDFLARE_SANDBOX_API_TOKEN --env staging")
+    expect(controlPlane).toContain('convex env set CLERK_WEBHOOK_SECRET "$CLERK_WEBHOOK_SECRET"')
     expect(controlPlane).toContain('working-directory: packages/workspace-relay')
     expect(controlPlane).toContain('wrangler deploy --env staging --var "CLAXEDO_RELEASE:${GITHUB_SHA}"')
     expect(controlPlane).toContain('--var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"')

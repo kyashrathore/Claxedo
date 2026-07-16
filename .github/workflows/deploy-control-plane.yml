@@ -20,6 +20,7 @@ name: deploy-control-plane
 #   CLOUDFLARE_ACCOUNT_ID   — the account to deploy into
 #   CLERK_SECRET_KEY        — Clerk Backend API key used only to mint short-lived
 #                             smoke sessions for the configured test users
+#   CLERK_WEBHOOK_SECRET    — Svix signing secret for the Clerk -> Convex identity mirror
 #   CLAXEDO_RUNTIME_ADMIN_TOKEN — Worker admin bearer used by the smoke to run
 #                                  the same bounded WorkGraph reconciler as cron
 # Environment-scoped variables:
@@ -82,6 +83,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           CLAXEDO_RUNTIME_ADMIN_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
           CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
@@ -105,7 +107,7 @@ jobs:
           set -euo pipefail
           required=(
             CONVEX_DEPLOY_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
-            CLERK_SECRET_KEY CLAXEDO_RUNTIME_ADMIN_TOKEN CONTROL_PLANE_URL WORKSPACE_RELAY_URL
+            CLERK_SECRET_KEY CLERK_WEBHOOK_SECRET CLAXEDO_RUNTIME_ADMIN_TOKEN CONTROL_PLANE_URL WORKSPACE_RELAY_URL
             WORKGRAPH_SMOKE_USER_A_ID WORKGRAPH_SMOKE_USER_A_EMAIL WORKGRAPH_SMOKE_USER_B_ID
             WORKGRAPH_SMOKE_ORGANIZATION_A_ID WORKGRAPH_SMOKE_ORGANIZATION_B_ID
             WORKGRAPH_SMOKE_HARNESS WORKGRAPH_SMOKE_AGENT WORKGRAPH_SMOKE_PROVIDER_ID
@@ -150,6 +152,12 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bunx convex deploy --typecheck enable --message "staging ${GITHUB_SHA}"
+
+      - name: Synchronize Clerk webhook signing secret (staging)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+        run: bunx convex env set CLERK_WEBHOOK_SECRET "$CLERK_WEBHOOK_SECRET"
 
       - name: Normalize legacy runtime lease fields (staging)
         env:
@@ -287,6 +295,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
           CLAXEDO_RUNTIME_ADMIN_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
           CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
@@ -310,7 +319,7 @@ jobs:
           set -euo pipefail
           required=(
             CONVEX_DEPLOY_KEY CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
-            CLERK_SECRET_KEY CLAXEDO_RUNTIME_ADMIN_TOKEN CONTROL_PLANE_URL WORKSPACE_RELAY_URL
+            CLERK_SECRET_KEY CLERK_WEBHOOK_SECRET CLAXEDO_RUNTIME_ADMIN_TOKEN CONTROL_PLANE_URL WORKSPACE_RELAY_URL
             WORKGRAPH_SMOKE_USER_A_ID WORKGRAPH_SMOKE_USER_A_EMAIL WORKGRAPH_SMOKE_USER_B_ID
             WORKGRAPH_SMOKE_ORGANIZATION_A_ID WORKGRAPH_SMOKE_ORGANIZATION_B_ID
             WORKGRAPH_SMOKE_HARNESS WORKGRAPH_SMOKE_AGENT WORKGRAPH_SMOKE_PROVIDER_ID
@@ -347,6 +356,12 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bunx convex deploy --typecheck enable --message "production ${GITHUB_SHA}"
+
+      - name: Synchronize Clerk webhook signing secret (production)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+        run: bunx convex env set CLERK_WEBHOOK_SECRET "$CLERK_WEBHOOK_SECRET"
 
       - name: Normalize legacy runtime lease fields (production)
         env:
