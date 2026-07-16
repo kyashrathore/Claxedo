@@ -52,7 +52,7 @@ jobs:
 
       - name: Verify Worker bundle
         working-directory: packages/claxedo-server
-        run: bun run check:worker-safe
+        run: timeout 5m bunx wrangler deploy --env staging --dry-run --outdir dist-worker
 
       - name: Deploy migration-only control-plane Worker
         working-directory: packages/claxedo-server
