@@ -144,6 +144,125 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(mutations.some((args) => args.limit === 25)).toBe(false)
   })
 
+  test("settles launches and control effects only for an explicit tenant without listing tenants", async () => {
+    const mutations: Record<string, unknown>[] = []
+    const released: string[] = []
+    let listWorkerTenantsCalls = 0
+    let claimLaunchCalls = 0
+    const runtime = createHostedWorkGraphRuntime(
+      {
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+        CLAXEDO_PUBLIC_URL: "https://central.test",
+      },
+      {
+        sandbox: {
+          sandboxManager: {
+            ensure: async () => ({
+              status: "ready",
+              sandboxId: "sandbox",
+              url: "https://runtime.test",
+              hostId: "host-a",
+              epoch: 1,
+              homeRegion: "us-east",
+            }),
+            target: async () => ({
+              status: "ready",
+              sandboxId: "sandbox",
+              url: "https://runtime.test",
+              hostId: "host-a",
+              epoch: 1,
+              homeRegion: "us-east",
+            }),
+            release: async (workspaceId: string) => {
+              released.push(workspaceId)
+            },
+          },
+        },
+        relay: {
+          provider: {
+            mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+            getRelayEndpoint: async () => "https://relay.test",
+          },
+        },
+      } as unknown as ControlPlaneServices,
+      {
+        executor: {
+          mutation: async (_fn, args) => {
+            if (!("organization_id" in args)) {
+              listWorkerTenantsCalls++
+              return [{ organizationId: "org-other", ownerUserId: "user-other" }]
+            }
+            mutations.push(args)
+            if (args.organization_id !== "org-a" || args.owner_user_id !== "user-a") return []
+            if (args.limit === 10 && "worker_id" in args) {
+              claimLaunchCalls++
+              if (claimLaunchCalls > 1) return []
+              return [
+                {
+                  ownerUserId: "user-a",
+                  ownerSubject: "user-a",
+                  orgId: "org-a",
+                  outboxId: "launch-a",
+                  attemptId: "attempt-a",
+                  streamId: "stream-a",
+                  workItemId: "item-a",
+                  leaseEpoch: 1,
+                  title: "Explicit tenant work",
+                  prompt: "Run explicit tenant work",
+                  profile: {
+                    environment: { kind: "hosted_workspace" },
+                    harness: "claxedo-v2",
+                    agent: "build",
+                    model: { providerId: "openai", modelId: "gpt-5" },
+                    effort: "high",
+                    tools: [],
+                    connectionIds: [],
+                  },
+                },
+              ]
+            }
+            if (args.outbox_id === "launch-a" && "workspace_id" in args) return { settled: true }
+            if (args.outbox_id === "launch-a") return { accepted: true }
+            if (args.limit === 10) return []
+            if (args.limit === 25 && "worker_id" in args)
+              return [
+                {
+                  ownerUserId: "user-a",
+                  orgId: "org-a",
+                  outboxId: "control-a",
+                  streamId: "stream-a",
+                  effectType: "finalize_stream",
+                  payload: { finalize: "delete", sessions: [] },
+                },
+              ]
+            if (args.outbox_id === "control-a") return { settled: true }
+            if (args.limit === 25) return { completed: 0 }
+            return []
+          },
+        },
+        fetch: async (input) => {
+          if (new URL(String(input)).pathname.endsWith("/api/session")) return Response.json({ id: "session-a" })
+          return Response.json({})
+        },
+      },
+    )
+
+    await expect(
+      runtime?.reconcile({ tenants: [{ organizationId: "org-a", ownerUserId: "user-a" }] }),
+    ).resolves.toMatchObject({
+      launched: [{ settled: true, state: "running" }],
+      background: { controls: [{ settled: true }] },
+    })
+    expect(listWorkerTenantsCalls).toBe(0)
+    expect(released).toHaveLength(1)
+    expect(mutations).not.toContainEqual(expect.objectContaining({ organization_id: "org-other" }))
+    expect(mutations).toContainEqual(
+      expect.objectContaining({ outbox_id: "launch-a", workspace_id: expect.any(String) }),
+    )
+    expect(mutations).toContainEqual(expect.objectContaining({ outbox_id: "control-a", ok: true }))
+  })
+
   test("accepts only strict structured ordinary-Session Recap output", () => {
     expect(
       parseHostedRecapOutput(

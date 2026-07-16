@@ -127,7 +127,7 @@ type RunningRecap = {
 }
 type SourcePlanClaim = Omit<RecapClaim, "streamId"> & { proposalId: string; sessionId?: string }
 type RunningSourcePlan = RunningRecap
-type WorkerTenant = { organizationId: string; ownerUserId: string }
+export type WorkerTenant = { organizationId: string; ownerUserId: string }
 
 /** Durable Worker dispatcher over SandboxManager → authenticated relay → Session V2. */
 export function createHostedWorkGraphRuntime(
@@ -152,13 +152,15 @@ export function createHostedWorkGraphRuntime(
   const sessionPublisher =
     options.sessionPublisher ?? (options.executor ? undefined : convexSessionPublisher(url, serviceToken))
   return {
-    reconcile: async (run: { background?: boolean } = {}) => {
+    reconcile: async (run: { background?: boolean; tenants?: WorkerTenant[] } = {}) => {
       const claimedAt = now()
       try {
-        const tenants = (await client.mutation(api.workgraphRuntime.listWorkerTenants, {
-          service_token: serviceToken,
-          limit: 500,
-        })) as WorkerTenant[]
+        const tenants =
+          run.tenants ??
+          ((await client.mutation(api.workgraphRuntime.listWorkerTenants, {
+            service_token: serviceToken,
+            limit: 500,
+          })) as WorkerTenant[])
         const claims = (await tenantRows(client, api.workgraphRuntime.claimLaunches, tenants, {
           service_token: serviceToken,
           worker_id: workerId,
