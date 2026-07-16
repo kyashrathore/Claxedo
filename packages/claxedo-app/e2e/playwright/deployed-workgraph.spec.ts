@@ -26,6 +26,10 @@ test.describe.serial("deployed WorkGraph", () => {
   test("authenticates, persists a Stream and Task across desktop and narrow reloads, then deletes them", async ({
     page,
   }, testInfo) => {
+    // Stream deletion is durable: the command marks the record and the
+    // every-minute reconcile lane finalizes it, so the card disappears within
+    // the cron cadence plus one live-sync window rather than instantly.
+    testInfo.setTimeout(360_000)
     const pageErrors: Error[] = []
     const failedResponses: string[] = []
     const workGraphAuthorizations: string[] = []
@@ -91,8 +95,9 @@ test.describe.serial("deployed WorkGraph", () => {
     await stream.getByRole("button", { name: `Delete stream ${streamTitle}` }).click()
     await page.getByRole("button", { name: "Delete stream", exact: true }).click()
     // The portaled confirmation popover repeats the title while it closes, so
-    // assert on the stream card itself rather than any text occurrence.
-    await expect(streamContainer(page, streamTitle)).toBeHidden()
+    // assert on the stream card itself rather than any text occurrence. The
+    // card clears once the reconcile lane finalizes the durable deletion.
+    await expect(streamContainer(page, streamTitle)).toBeHidden({ timeout: 150_000 })
 
     expect(workGraphAuthorizations.length).toBeGreaterThan(0)
     expect(workGraphAuthorizations.every((authorization) => authorization.startsWith("Bearer "))).toBe(true)

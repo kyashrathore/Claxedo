@@ -29,6 +29,8 @@ import { runScheduledBillingReconciliation } from "./billing/reconcile"
 import { reportError, setErrorReporterSink } from "./observability/report"
 import { sentryInitOptions } from "./observability/sentry-config"
 import { createHostedWorkGraphRuntime } from "./workgraph-host/hosted-runtime"
+import { skipOverlappingReconcile } from "./workgraph-host/reconcile-serialize"
+import type { WorkGraphReconcileResult } from "./routes/hosted-workgraph-admin"
 
 // D12: route reportError/reportPaymentError (the payment page-class hook the
 // billing routes call) into the request's Sentry scope. withSentry runs the
@@ -47,6 +49,7 @@ let cached: {
   app: Hono
   plane: HostedControlPlane
   workGraphRuntime?: NonNullable<ReturnType<typeof createHostedWorkGraphRuntime>>
+  workGraphReconcile?: () => Promise<WorkGraphReconcileResult>
 } | undefined
 
 // D9 fail-closed hosted boot: `composeHostedControlPlane` asserts every
@@ -59,8 +62,11 @@ function buildApp(env: HostedWorkerEnv): Hono {
   if (cached) return cached.app
   const plane = composeHostedControlPlane(env)
   const workGraphRuntime = createHostedWorkGraphRuntime(env, plane.services)
+  // Every trigger path (cron, admin route, smoke cycles) shares one per-isolate
+  // guard: overlapping reconciles have hung the Workers runtime.
+  const workGraphReconcile = workGraphRuntime ? skipOverlappingReconcile(workGraphRuntime.reconcile) : undefined
   const app = createHostedApp(plane, {
-    ...(workGraphRuntime ? { workGraphReconcile: workGraphRuntime.reconcile } : {}),
+    ...(workGraphReconcile ? { workGraphReconcile } : {}),
   })
   // D12: Hono converts route exceptions into 500s internally, so they never
   // escape to withSentry — report them here, keeping Hono's default response
@@ -78,7 +84,7 @@ function buildApp(env: HostedWorkerEnv): Hono {
       return c.text("Internal Server Error", 500)
     })
   }
-  cached = { app, plane, ...(workGraphRuntime ? { workGraphRuntime } : {}) }
+  cached = { app, plane, ...(workGraphRuntime ? { workGraphRuntime } : {}), ...(workGraphReconcile ? { workGraphReconcile } : {}) }
   return app
 }
 
@@ -123,7 +129,16 @@ const handler = {
   // failure here (missing config, missing token, non-2xx GC) THROWS so the
   // cron invocation is recorded as failed and reaches Sentry via withSentry —
   // a silently-dead reaper is the failure mode this design exists to avoid.
-  async scheduled(_controller: ScheduledController, env: HostedWorkerEnv, ctx?: ExecutionContext): Promise<void> {
+  async scheduled(controller: ScheduledController, env: HostedWorkerEnv, ctx?: ExecutionContext): Promise<void> {
+    // The every-minute staging lane settles only durable WorkGraph control
+    // effects (deletion finalization, execution placement) so clients observe
+    // command outcomes within their live sync window. The heavier sandbox GC
+    // and billing sweeps stay on the 15-minute lane below.
+    if (controller?.cron === "* * * * *") {
+      buildApp(env)
+      await cached!.workGraphReconcile?.()
+      return
+    }
     // F17 (adversarial review): the sandbox GC sweep and the billing
     // reconciliation sweep are ISOLATED — a throwing/failing GC pass must not
     // starve the billing sweep (the downgrade-recovery + deleted-org "bills
@@ -170,7 +185,7 @@ const handler = {
     try {
       const app = buildApp(env)
       void app
-      await cached!.workGraphRuntime?.reconcile()
+      await cached!.workGraphReconcile?.()
     } catch (err) {
       reportError(err, { tags: { source: "worker_scheduled", reason: "workgraph_reconcile_failed" } })
       if (!gcError) gcError = err

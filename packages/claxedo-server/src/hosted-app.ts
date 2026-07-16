@@ -45,7 +45,6 @@ import { HostedControlRoutes } from "./routes/hosted-control"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "./control-plane/hosted-services"
 import type { ControlPlaneServices } from "./control-plane/services"
 import { createFixedWindowConnectionRateLimiter } from "./control-plane/rate-limit"
-import { reportError } from "./observability/report"
 import { BillingRoutes } from "./billing/billing-routes"
 import { createEntitlementGate, type EntitlementGate } from "./billing/entitlement"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "./control-plane/auth"
@@ -341,30 +340,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
 
   app.all("/api/workgraph", (context) => forwardWorkGraph(context.req.raw))
-  app.all("/api/workgraph/*", async (context) => {
-    const response = await forwardWorkGraph(context.req.raw)
-    // Accepted commands often enqueue durable control effects (deletion
-    // finalization, execution placement) that otherwise wait for the 15-minute
-    // reconcile cron. Settle them now so the client observes the outcome
-    // within its live sync window.
-    if (
-      overrides.workGraphReconcile &&
-      response.ok &&
-      context.req.method === "POST" &&
-      new URL(context.req.url).pathname === "/api/workgraph/commands"
-    ) {
-      const settle = overrides.workGraphReconcile().then(
-        () => undefined,
-        (error) => reportError(error, { tags: { source: "workgraph_command", reason: "workgraph_reconcile_failed" } }),
-      )
-      try {
-        context.executionCtx.waitUntil(settle)
-      } catch {
-        void settle
-      }
-    }
-    return response
-  })
+  app.all("/api/workgraph/*", (context) => forwardWorkGraph(context.req.raw))
   app.route(
     "/api/claxedo/docs",
     DocsRoutes({
