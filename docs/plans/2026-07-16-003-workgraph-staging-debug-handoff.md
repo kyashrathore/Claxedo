@@ -199,6 +199,9 @@ These commits are on `origin/dev` and form the relevant delivery chain:
 | `a6bbe06994` | Recover missing explicit completion once. | Prevented a successful provider run from remaining incomplete when the first completion response was lost; the recovery is durable and bounded. |
 | `4a4518655d` | Avoid redundant Clerk organization activation on every token read. | Reduced repeated Clerk frontend calls and one source of rate-limit amplification. |
 | `d1e9d428e6` | Wait for catalog workspace provisioning and project Attention ownership. | Locally correct and covered by tests; staging revealed that first-request synchronization and Attention HTTP projection are still incomplete. |
+| `cc652cecaa` | Retain hosted transcripts before completion is accepted. | Fixed the empty-snapshot retention defects (store-projection shadowing, empty-sync clobbering) and gated `complete_attempt` on durable transcript retention. |
+| `6b87c048cf` | Serialize reconcile and settle effects on a fast lane. | Fixed `/internal/workgraph/reconcile returned malformed JSON` (overlapping reconciles in one isolate) and settles durable effects within ~60s. |
+| `a1efc16389` | Retain completion transcripts through the trusted subject path. | Fixed the retention gate’s Clerk-subject vs internal-user-id mismatch via `sessions.retainWorkGraphSessionTranscript`; backend smoke green on run `29516828808`. |
 
 ## Attempts and findings in the latest debugging loop
 
@@ -334,6 +337,49 @@ Recommended test-hardening after the product endpoints pass:
 - consider minting a dedicated short-lived Clerk Session/token through the Backend API once per test run, then installing that supported state in the browser if Clerk’s official helper supports it;
 - keep production code free of test-bypass tokens;
 - continue asserting that WorkGraph Authorization headers contain the intended Clerk subject and organization.
+
+### Transcript retention failure (solved 2026-07-16)
+
+Observed failure in the backend smoke (run `29509642365`, twice, after a pass on identical retention code at 13:58 in run `29504342469`):
+
+```text
+error: Hosted Session transcript was not retained
+    at verifyHostedSession (scripts/smoke/smoke-workgraph.ts:616)
+```
+
+Probing `GET /api/control/sessions/:id/messages` for the failed Sessions returned `{allowed: true, messages: [], maxEventOrdinal: 0}` permanently, while the Attempt had settled normally with durable references.
+
+Diagnosis — the “session lives in a repo-clone subdirectory” suspicion was REFUTED: both the engine (`Session.get`/`MessageV2.page`) and the workspace-runtime `RuntimeStore` read messages by session id only, with no directory predicate on any read. Three real defects stacked:
+
+1. **The retention pull never had an authoritative source.** The reconcile pulls `GET /session/:id/message?snapshot=1`, which workspace-runtime serves from its `RuntimeStore` projection. That projection NEVER mirrors messages for Session V2 (OpenCode-proxied) sessions — the opencode adapter is a pure HTTP proxy with no store ingestion. Real transcripts were only served by accidentally falling through to `adapter.getMessages` (engine truth) when the store had NO session row. Any `GET /session` list against the runtime (`bindDiscoveredSession`) binds a bare message-less row, after which the snapshot short-circuits to `{messages: [], ...}` forever.
+2. **Settlement raced the sync.** Attempts settle through the broker (`workgraph_complete_task` → `/internal/workgraph/attempt-operation` → Convex `complete_attempt`) between reconcile polls, so the LAST reconcile snapshot could predate any persisted message. Pass versus fail was pull timing — the launch reconcile often pulls the snapshot within a second of admitting the prompt, and no later cycle runs if the Attempt settles before the next trigger.
+3. `OpenCodeHarnessAdapter.getMessages` swallows any non-OK engine response into `[]`, so a failed engine read was indistinguishable from an empty transcript.
+
+Fix (commits `cc652cecaa` and `a1efc16389`):
+
+- workspace-runtime `getMessages`/`getMessageSnapshot` treat an empty store projection as non-authoritative and fall through to the adapter (ships in the SANDBOX IMAGE — see the pin warning below);
+- the reconcile never syncs an empty snapshot over a previously retained transcript;
+- `complete_attempt` is accepted only after `createHostedSessionTranscriptRetention` pulls the transcript, requires both `user` and `assistant` messages, and durably syncs it into Convex; any failure rejects the completion as retryable `attempt_transcript_not_retained` (503), so an Attempt can no longer settle without its transcript.
+
+Identity trap hit on the first deployment of the gate (run `29515874998`, every completion rejected → “Hosted Session ended without workgraph_complete_task after one completion retry”): the attempt-operation principal’s `ownerUserId` is the runtime access token’s CLERK SUBJECT, but `sessions.syncWorkGraphSession` requires the INTERNAL Convex user id. The gate now syncs through the new `sessions.retainWorkGraphSessionTranscript` mutation, which resolves the owner via `requireTrustedWorkGraphTenantSubject` (`owner_subject`), mirroring `workgraphCommands.executeForService`, and requires the workspace to already exist.
+
+Sandbox image pin warning: the workspace-runtime half of the fix only reaches staging through the sandbox image. Image `40370c8513` (built from `cc652cecaa`) was pinned via `CLAXEDO_SANDBOX_BUILD_ID` on the staging environment before the proving run — deploying the Worker alone does NOT update the runtime.
+
+Result: run `29516828808` (SHA `a1efc16389`) passed `smoke-staging` end to end, including the unweakened retention check (transcript with both roles verified against the deployed control plane). The `deploy-app-staging` browser-gate failure in the same run is the separate stream-card-deletion workstream, not retention.
+
+Regressions added:
+
+- `packages/workspace-runtime/src/workspace/runtime.test.ts` — a bound session with an empty message projection serves the adapter transcript for both the plain and `snapshot=1` reads;
+- `packages/claxedo-server/src/workgraph-host/hosted-runtime.test.ts` — the reconcile never syncs an empty snapshot; retention pulls, verifies roles, and syncs through the subject-resolving mutation; failed pulls map to retryable retention errors;
+- `packages/claxedo-server/src/workgraph-host/hosted-attempt-operation.test.ts` — completions retain before the Convex command and reject as retryable 503 without settling when retention fails; checkpoints skip retention.
+
+Relevant files:
+
+- `packages/workspace-runtime/src/workspace/runtime.ts`
+- `packages/claxedo-server/src/workgraph-host/hosted-runtime.ts`
+- `packages/claxedo-server/src/workgraph-host/hosted-attempt-operation.ts`
+- `packages/claxedo-server/src/hosted-app.ts`
+- `convex/sessions.ts`
 
 ## Latest deployment evidence
 
@@ -753,8 +799,12 @@ WORKGRAPH_SMOKE_PROVIDER_ID='...' \
 WORKGRAPH_SMOKE_MODEL_ID='...' \
 WORKGRAPH_SMOKE_EFFORT='low' \
 WORKGRAPH_SMOKE_TOOLS_JSON='[]' \
+WORKGRAPH_SMOKE_REPOSITORY_URL='https://github.com/kyashrathore/Claxedo.git' \
+WORKGRAPH_SMOKE_BASE_REVISION='<deployed sha>' \
 bun run smoke:workgraph
 ```
+
+`WORKGRAPH_SMOKE_REPOSITORY_URL` and `WORKGRAPH_SMOKE_BASE_REVISION` are required by the script; CI derives them from `github.server_url`/`github.repository` and `github.sha`.
 
 Use environment injection or a local ignored env file; do not paste values into shell history on shared systems.
 
