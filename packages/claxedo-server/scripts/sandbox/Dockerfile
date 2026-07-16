@@ -58,4 +58,14 @@ RUN cd /opt/workspace-runtime && \
     command -v claude-agent-acp && \
     command -v codex-acp
 
+# Prove the flattened production dependency graph reaches the serving loop.
+# A healthy host is stopped by GNU timeout with status 124; any module-load or
+# startup crash exits earlier and fails the image build with its captured log.
+RUN set +e; \
+    timeout 5s workspace-runtime >/tmp/workspace-runtime-smoke.log 2>&1; \
+    status=$?; \
+    set -e; \
+    if [ "$status" -ne 124 ]; then cat /tmp/workspace-runtime-smoke.log; exit 1; fi; \
+    rm /tmp/workspace-runtime-smoke.log
+
 WORKDIR /workspace

@@ -103,9 +103,10 @@ describe("build-sandbox-image", () => {
   })
 
   test("production image starts the flattened workspace-runtime dependency graph", () => {
-    const dockerfile = fs.readFileSync(path.resolve(import.meta.dirname, "../cloudflare-worker/Dockerfile"), "utf8")
-    expect(dockerfile).toContain("timeout 5s workspace-runtime")
-    expect(dockerfile).toContain('[ "$status" -ne 124 ]')
+    const dockerfiles = ["../Dockerfile", "../cloudflare-worker/Dockerfile"]
+      .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
+    expect(dockerfiles.every((dockerfile) => dockerfile.includes("timeout 5s workspace-runtime"))).toBe(true)
+    expect(dockerfiles.every((dockerfile) => dockerfile.includes('[ "$status" -ne 124 ]'))).toBe(true)
   })
 
   test("workspace package build order is topological (dependencies before dependents, workspace-runtime last)", () => {
