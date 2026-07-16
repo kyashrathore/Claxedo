@@ -210,8 +210,10 @@ export function createConvexWorkGraphStore(input: Input) {
           publicSnapshot(context, await read(context, "snapshot", queryInput) as WorkGraphSnapshotPage),
       },
       attention: {
-        list: async (context: WorkGraphContext, queryInput: AttentionListInput): Promise<AttentionPage> =>
-          AttentionPageSchema.parse(await read(context, "attention", queryInput)),
+        list: async (context: WorkGraphContext, queryInput: AttentionListInput): Promise<AttentionPage> => {
+          const page = AttentionPageSchema.parse(await read(context, "attention", queryInput))
+          return { ...page, items: page.items.map((item) => publicOwner(context, item)) }
+        },
       },
       streams: {
         read: async (context: WorkGraphContext, queryInput: Readonly<{ streamId: StreamID }>) => {

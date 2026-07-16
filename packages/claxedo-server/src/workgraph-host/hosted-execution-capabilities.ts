@@ -21,12 +21,14 @@ type HostedExecutionCapabilitiesInput = Readonly<{
   connectionToolIds: readonly string[]
   now?: () => number
   requestTimeoutMs?: number
+  catalogStartupTimeoutMs?: number
   modelCatalogTimeoutMs?: number
   modelCatalogRetryDelayMs?: number
   request?: (url: string, init?: RequestInit) => Promise<Response>
 }>
 
 const DEFAULT_CATALOG_REQUEST_TIMEOUT_MS = 30_000
+const DEFAULT_CATALOG_STARTUP_TIMEOUT_MS = 30_000
 const DEFAULT_MODEL_CATALOG_RETRY_DELAY_MS = 500
 
 export function createHostedExecutionCapabilities(input: HostedExecutionCapabilitiesInput) {
@@ -255,34 +257,39 @@ async function provisionCatalogWorkspace(input: HostedExecutionCapabilitiesInput
     )
   }
   const workspaceId = await catalogWorkspaceId(context.organizationId, context.ownerUserId)
-  const placement = await input.sandboxManager.ensure(workspaceId, {
-    homeRegion: input.defaultHomeRegion,
-    runtimeCwd: "/workspace",
-    labels: {
-      workload: "workgraph-catalog",
-      organizationId: context.organizationId,
-      ownerUserId: context.ownerUserId,
-    },
-    source: { kind: "empty" },
-    exposure: { kind: "relay" },
-  })
-  if (placement.status === "provisioning") {
-    throw new ExecutionCapabilitiesUnavailableError(
-      "catalog_workspace",
-      "runtime_unavailable",
-      `The hosted capability catalog is provisioning; retry after ${placement.retryAfterMs}ms`,
-      true,
-    )
+  const deadline = Date.now() + (input.catalogStartupTimeoutMs ?? DEFAULT_CATALOG_STARTUP_TIMEOUT_MS)
+  while (true) {
+    const placement = await input.sandboxManager.ensure(workspaceId, {
+      homeRegion: input.defaultHomeRegion,
+      runtimeCwd: "/workspace",
+      labels: {
+        workload: "workgraph-catalog",
+        organizationId: context.organizationId,
+        ownerUserId: context.ownerUserId,
+      },
+      source: { kind: "empty" },
+      exposure: { kind: "relay" },
+    })
+    if (placement.status === "ready") return workspaceId
+    if (placement.status !== "provisioning") {
+      throw new ExecutionCapabilitiesUnavailableError(
+        "catalog_workspace",
+        "runtime_unavailable",
+        placement.error ?? "The hosted capability catalog runtime is unavailable",
+        true,
+      )
+    }
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) {
+      throw new ExecutionCapabilitiesUnavailableError(
+        "catalog_workspace",
+        "runtime_unavailable",
+        `The hosted capability catalog remained provisioning for ${input.catalogStartupTimeoutMs ?? DEFAULT_CATALOG_STARTUP_TIMEOUT_MS}ms`,
+        true,
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(1, placement.retryAfterMs), remaining)))
   }
-  if (placement.status !== "ready") {
-    throw new ExecutionCapabilitiesUnavailableError(
-      "catalog_workspace",
-      "runtime_unavailable",
-      placement.error ?? "The hosted capability catalog runtime is unavailable",
-      true,
-    )
-  }
-  return workspaceId
 }
 
 async function readTransientHostedCatalog(input: HostedExecutionCapabilitiesInput, context: WorkGraphContext) {

@@ -12,7 +12,7 @@ describe("hosted WorkGraph Attention acknowledgements", () => {
           calls.push(args)
           const operation = args.operation as { type: string; now: number }
           return {
-            ownerUserId: "owner",
+            ownerUserId: "internal_user_id",
             readAt: operation.now,
             ...(operation.type === "clear" ? { clearedAt: operation.now } : {}),
           }

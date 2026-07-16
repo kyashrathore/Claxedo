@@ -1217,6 +1217,30 @@ describe("Convex WorkGraph store", () => {
       .rejects.toMatchObject({ name: "SnapshotResumeCursorError", code: "cursor_invalid", reason: "invalidated" })
   })
 
+  test("projects hosted Attention ownership from the internal user id to the public owner identity", async () => {
+    const service = createConvexWorkGraphService({
+      serviceToken: "service-secret",
+      executor: {
+        mutation: async () => undefined,
+        query: async () => ({
+          items: [{
+            id: "unorganized_ai_work",
+            ownerUserId: "internal_user_id",
+            kind: "unorganized_ai_work",
+            updatedAt: 5,
+            counts: { externalIssues: 1, sessions: 0, total: 1 },
+          }],
+          total: 1,
+          hasMore: false,
+        }),
+      },
+    })
+
+    await expect(service.query(owner("clerk_subject"), "attention", "list", { limit: 50 })).resolves.toMatchObject({
+      items: [{ ownerUserId: "clerk_subject" }],
+    })
+  })
+
   test.each([
     ["changes", ChangeCursorError],
     ["stream_changes", ChangeCursorError],

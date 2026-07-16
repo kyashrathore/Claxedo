@@ -778,6 +778,61 @@ describe("WorkGraph execution capability composition", () => {
     expect(destroyed).toHaveLength(1)
   })
 
+  test("waits for a newly provisioned catalog workspace before discovering capabilities", async () => {
+    let ensureCalls = 0
+    const capabilities = createHostedExecutionCapabilities({
+      authority: { resolveOrgId: async () => "org_1" } as unknown as WorkspaceAuthority,
+      sandboxManager: {
+        ensure: async (workspaceId: string) => {
+          ensureCalls += 1
+          if (ensureCalls === 1) return { status: "provisioning", retryAfterMs: 1 }
+          return {
+            status: "ready",
+            workspaceId,
+            sandboxId: "sandbox_1",
+            url: "https://host.test",
+            hostId: "host_1",
+            epoch: 1,
+            homeRegion: "us-east",
+          }
+        },
+        target: async (workspaceId: string) => ({
+          status: "ready",
+          workspaceId,
+          sandboxId: "sandbox_1",
+          url: "https://host.test",
+          hostId: "host_1",
+          epoch: 1,
+          homeRegion: "us-east",
+        }),
+        destroy: async () => ({ ok: true, status: "destroyed" }),
+        release: async () => ({ released: true }),
+      } as unknown as SandboxManager,
+      relayProvider: {
+        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1, jti: "jti_1" }),
+        getRelayEndpoint: async () => "https://relay.test",
+      } as unknown as RelayProvider,
+      defaultHomeRegion: "us-east",
+      auth: () => signedAuth,
+      readConnections: async () => [],
+      connectionToolIds: [],
+      request: async (request) => {
+        const pathname = new URL(request).pathname
+        if (pathname.endsWith("/session/capabilities")) return Response.json(runtime.harness)
+        if (pathname.endsWith("/agent")) return Response.json(runtime.agents)
+        if (pathname.endsWith("/api/model")) return Response.json(runtime.providers)
+        if (pathname.endsWith("/experimental/tool/ids")) return Response.json(runtime.tools)
+        throw new Error(`Unexpected request ${pathname}`)
+      },
+    })
+
+    await expect(capabilities.refresh(context)).resolves.toMatchObject({
+      environments: [{ kind: "hosted_workspace" }],
+      harnesses: [{ id: "opencode" }],
+    })
+    expect(ensureCalls).toBe(2)
+  })
+
   test("isolates hosted catalog workspace identity and cache by organization and owner", async () => {
     const ensured: Array<{ workspaceId: string; labels: Record<string, string> }> = []
     const capabilities = createHostedExecutionCapabilities({
@@ -793,14 +848,15 @@ describe("WorkGraph execution capability composition", () => {
       auth: () => signedAuth,
       readConnections: async () => [],
       connectionToolIds: [],
+      catalogStartupTimeoutMs: 2,
     })
     const otherOrganization = { ...context, organizationId: "org_2" } as WorkGraphContext
 
     await expect(capabilities.refresh(context)).rejects.toMatchObject({ reason: "runtime_unavailable" })
     await expect(capabilities.refresh(otherOrganization)).rejects.toMatchObject({ reason: "runtime_unavailable" })
 
-    expect(ensured[0]!.workspaceId).not.toBe(ensured[1]!.workspaceId)
-    expect(ensured.map((entry) => entry.labels)).toEqual([
+    expect(new Set(ensured.map((entry) => entry.workspaceId)).size).toBe(2)
+    expect([...new Map(ensured.map((entry) => [entry.workspaceId, entry.labels])).values()]).toEqual([
       { workload: "workgraph-catalog", organizationId: "org_1", ownerUserId: "owner_1" },
       { workload: "workgraph-catalog", organizationId: "org_2", ownerUserId: "owner_1" },
     ])

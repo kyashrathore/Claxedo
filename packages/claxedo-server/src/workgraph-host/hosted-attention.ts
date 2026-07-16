@@ -11,13 +11,15 @@ export function createHostedAttentionAcknowledgementService(input: Readonly<{
   serviceToken: string
   now?: () => number
 }>) {
-  const acknowledge = async (context: WorkGraphContext, type: "mark_all_read" | "clear") =>
-    AttentionAcknowledgementSchema.parse(await input.executor.mutation(workGraphConvexApi.workgraphAttention.acknowledgeForService, {
+  const acknowledge = async (context: WorkGraphContext, type: "mark_all_read" | "clear") => {
+    const acknowledgement = AttentionAcknowledgementSchema.parse(await input.executor.mutation(workGraphConvexApi.workgraphAttention.acknowledgeForService, {
       service_token: input.serviceToken,
       organization_id: context.organizationId,
       owner_subject: context.ownerUserId,
       operation: { type, now: (input.now ?? Date.now)() },
     }))
+    return { ...acknowledgement, ownerUserId: context.ownerUserId }
+  }
 
   return createAttentionAcknowledgementService({
     markAllRead: (context) => acknowledge(context, "mark_all_read"),
