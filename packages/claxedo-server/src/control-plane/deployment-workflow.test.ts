@@ -103,6 +103,8 @@ describe("Claxedo Cloud deployment workflow", () => {
     const stagingDryRun = controlPlane.indexOf("- name: Convex dry-run (config generation gate)")
     const stagingWorkspaceBuild = controlPlane.indexOf("- name: Build control-plane workspace packages")
     const stagingWorker = controlPlane.indexOf("- name: Deploy control-plane Worker (staging)")
+    const appWorkGraphBuild = app.indexOf("- name: Build WorkGraph package for app")
+    const appBuild = app.indexOf("- name: Build app for the verified control plane")
     const productionBuild = controlPlane.lastIndexOf("- name: Build WorkGraph packages for Convex")
     const productionDryRun = controlPlane.lastIndexOf("- name: Convex dry-run (config generation gate)")
     const productionWorkspaceBuild = controlPlane.lastIndexOf("- name: Build control-plane workspace packages")
@@ -115,6 +117,8 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(productionBuild).toBeLessThan(productionDryRun)
     expect(productionWorkspaceBuild).toBeGreaterThan(stagingWorkspaceBuild)
     expect(productionWorkspaceBuild).toBeLessThan(productionWorker)
+    expect(appWorkGraphBuild).toBeGreaterThanOrEqual(0)
+    expect(appWorkGraphBuild).toBeLessThan(appBuild)
     for (const command of [
       "bun run --cwd packages/workspace-relay-protocol build",
       "bun run --cwd packages/workspace-relay build",
