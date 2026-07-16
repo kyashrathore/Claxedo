@@ -20,6 +20,7 @@ type ConvexApi = {
   sessions: {
     authorizeRead: ConvexQuery
     list: ConvexQuery
+    resolve: ConvexQuery
     readMessages: ConvexQuery
     syncMessages: ConvexMutation
     syncMessagesForService: ConvexMutation

@@ -62,6 +62,10 @@ function fakePlane(
         },
       ]),
       listSessions: vi.fn(async () => []),
+      resolveSession: vi.fn(async (_auth, args) => ({
+        session_id: args.sessionId,
+        workspace_id: "ws_1",
+      })),
       readSessionMessages: vi.fn(async () => ({ allowed: true, messages: [] })),
       syncSessionMessages: vi.fn(async () => ({})),
       upsertSessionVisibility: vi.fn(async () => ({})),
@@ -605,6 +609,46 @@ describe("hosted app", () => {
     expect(plane.services.authority!.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
       workspaceId: "ws_1",
     })
+  })
+
+  test("hosted Session reads resolve the retained workspace and transcript", async () => {
+    const plane = fakePlane()
+    plane.services.authority!.readSessionMessages = vi.fn(async () => ({
+      allowed: true,
+      messages: [{ info: { id: "msg_1", role: "assistant" }, parts: [{ type: "text", text: "done" }] }],
+    }))
+    const app = createHostedApp(plane)
+    const gateway = await app.fetch(
+      new Request("http://cp.test/api/control/sessions/ses_1/gateway", {
+        headers: { authorization: "Bearer user_1" },
+      }),
+    )
+    expect(gateway.status).toBe(200)
+    expect(await gateway.json()).toEqual({
+      gatewayUrl: null,
+      workspaceId: "ws_1",
+      directory: null,
+      harnessHost: "central",
+    })
+    const messages = await app.fetch(
+      new Request("http://cp.test/api/control/sessions/ses_1/messages?workspaceId=ws_1", {
+        headers: { authorization: "Bearer user_1" },
+      }),
+    )
+    expect(messages.status).toBe(200)
+    expect(await messages.json()).toMatchObject({
+      allowed: true,
+      messages: [{ info: { id: "msg_1" } }],
+      maxEventOrdinal: 0,
+    })
+    expect(plane.services.authority!.resolveSession).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "user_1" }),
+      { sessionId: "ses_1" },
+    )
+    expect(plane.services.authority!.readSessionMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "user_1" }),
+      { sessionId: "ses_1", workspaceId: "ws_1" },
+    )
   })
 
   test("local-only routes are absent from the hosted app", async () => {

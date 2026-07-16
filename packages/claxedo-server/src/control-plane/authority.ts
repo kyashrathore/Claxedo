@@ -191,6 +191,7 @@ export type WorkspaceAuthority = {
     args: { sessionId: string; workspaceId: string },
   ) => Promise<void>
   listSessions: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
+  resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string },

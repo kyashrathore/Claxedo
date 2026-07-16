@@ -8,6 +8,12 @@ import { createWorkGraphOperationalReporter, type WorkGraphOperationalReporter }
 
 type Mutation = FunctionReference<"mutation">
 const api = anyApi as unknown as {
+  sessions: {
+    syncWorkGraphSession: Mutation
+  }
+  workspaces: {
+    ensureWorkGraph: Mutation
+  }
   workgraphRuntime: {
     listWorkerTenants: Mutation
     claimLaunches: Mutation
@@ -71,6 +77,27 @@ type Claim = {
 
 type Executor = { mutation: (fn: Mutation, args: Record<string, unknown>) => Promise<unknown> }
 type RuntimeFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+type HostedSessionPublisher = {
+  launch: (input: {
+    organizationId: string
+    ownerUserId: string
+    workspaceId: string
+    sessionId: string
+    title: string
+    repoUrl?: string
+    branch?: string
+    homeRegion?: string
+    now: number
+  }) => Promise<void>
+  snapshot: (input: {
+    organizationId: string
+    ownerUserId: string
+    workspaceId: string
+    sessionId: string
+    messages: unknown[]
+    now: number
+  }) => Promise<void>
+}
 type RecapClaim = {
   ownerUserId: string
   orgId: string
@@ -103,7 +130,13 @@ type WorkerTenant = { organizationId: string; ownerUserId: string }
 export function createHostedWorkGraphRuntime(
   env: HostedWorkerEnv,
   services: ControlPlaneServices,
-  options: { executor?: Executor; fetch?: RuntimeFetch; now?: () => number; background?: boolean } = {},
+  options: {
+    executor?: Executor
+    fetch?: RuntimeFetch
+    now?: () => number
+    background?: boolean
+    sessionPublisher?: HostedSessionPublisher
+  } = {},
 ) {
   const url = clean(env.CLAXEDO_WORKGRAPH_CONVEX_URL) ?? clean(env.CLAXEDO_WORKSPACE_AUTHORITY_URL)
   const serviceToken = clean(env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
@@ -113,6 +146,8 @@ export function createHostedWorkGraphRuntime(
   const now = options.now ?? Date.now
   const workerId = clean(env.CLAXEDO_WORKGRAPH_WORKER_ID) ?? "claxedo-worker"
   const telemetry = createWorkGraphOperationalReporter({ telemetry: services.telemetry, env, now })
+  const sessionPublisher =
+    options.sessionPublisher ?? (options.executor ? undefined : convexSessionPublisher(url, serviceToken))
   return {
     reconcile: async (run: { background?: boolean } = {}) => {
       const claimedAt = now()
@@ -161,19 +196,20 @@ export function createHostedWorkGraphRuntime(
                   WORKSPACE_RUNTIME_RUNNER: claim.profile.harness,
                   ...(brokerOrigin ? { WORKSPACE_RUNTIME_WORKGRAPH_BROKER_ORIGIN: brokerOrigin } : {}),
                 },
-                source: claim.profile.environment.kind === "hosted_workspace" && claim.profile.environment.repositoryUrl
-                  ? {
-                      kind: "git",
-                      repoUrl: claim.profile.environment.repositoryUrl,
-                      branch: claim.profile.repository?.baseRevision ?? "HEAD",
-                    }
-                  : claim.profile.repository?.remoteUrl
+                source:
+                  claim.profile.environment.kind === "hosted_workspace" && claim.profile.environment.repositoryUrl
                     ? {
                         kind: "git",
-                        repoUrl: claim.profile.repository.remoteUrl,
-                        branch: claim.profile.repository.baseRevision,
+                        repoUrl: claim.profile.environment.repositoryUrl,
+                        branch: claim.profile.repository?.baseRevision ?? "HEAD",
                       }
-                  : { kind: "empty" },
+                    : claim.profile.repository?.remoteUrl
+                      ? {
+                          kind: "git",
+                          repoUrl: claim.profile.repository.remoteUrl,
+                          branch: claim.profile.repository.baseRevision,
+                        }
+                      : { kind: "empty" },
                 exposure: { kind: "relay" },
               })
               if (placement.status === "provisioning") {
@@ -265,6 +301,21 @@ export function createHostedWorkGraphRuntime(
                   throw new Error("Durable launch compensation was rejected after the final launch fence")
                 return { settled: false, state: "compensating" }
               }
+              await sessionPublisher?.launch({
+                organizationId: claim.orgId,
+                ownerUserId: claim.ownerUserId,
+                workspaceId,
+                sessionId,
+                title: claim.title,
+                ...(claim.profile.environment.repositoryUrl
+                  ? { repoUrl: claim.profile.environment.repositoryUrl }
+                  : claim.profile.repository?.remoteUrl
+                    ? { repoUrl: claim.profile.repository.remoteUrl }
+                    : {}),
+                ...(claim.profile.repository?.baseRevision ? { branch: claim.profile.repository.baseRevision } : {}),
+                homeRegion: placement.homeRegion,
+                now: now(),
+              })
               await runtime("/api/workgraph/attempt-binding", {
                 method: "POST",
                 body: JSON.stringify({
@@ -383,6 +434,25 @@ export function createHostedWorkGraphRuntime(
                 (event) =>
                   event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"),
               )
+              if (sessionPublisher) {
+                const snapshot = await request(
+                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(attempt.workspaceId)}/session/${encodeURIComponent(attempt.sessionId)}/message?snapshot=1`,
+                  {
+                    headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
+                  },
+                )
+                if (!snapshot.ok) {
+                  throw new Error(`Hosted Session transcript failed: ${snapshot.status} ${await snapshot.text()}`)
+                }
+                await sessionPublisher.snapshot({
+                  organizationId: attempt.orgId,
+                  ownerUserId: attempt.ownerUserId,
+                  workspaceId: attempt.workspaceId,
+                  sessionId: attempt.sessionId,
+                  messages: hostedSessionMessages(await snapshot.json()),
+                  now: now(),
+                })
+              }
               if (!terminal) return { settled: false, state: "running" }
               const [connectionCleanup, attemptCleanup] = await Promise.all([
                 request(
@@ -401,10 +471,14 @@ export function createHostedWorkGraphRuntime(
                 ),
               ])
               if (!connectionCleanup.ok) {
-                throw new Error(`Hosted Session Connection cleanup failed: ${connectionCleanup.status} ${await connectionCleanup.text()}`)
+                throw new Error(
+                  `Hosted Session Connection cleanup failed: ${connectionCleanup.status} ${await connectionCleanup.text()}`,
+                )
               }
               if (!attemptCleanup.ok) {
-                throw new Error(`Hosted Session Attempt cleanup failed: ${attemptCleanup.status} ${await attemptCleanup.text()}`)
+                throw new Error(
+                  `Hosted Session Attempt cleanup failed: ${attemptCleanup.status} ${await attemptCleanup.text()}`,
+                )
               }
               if (terminal.type.startsWith("session.next.step.failed")) {
                 return await client.mutation(
@@ -485,13 +559,14 @@ async function reconcileBackground(
   const controlResults = await Promise.all(
     controls.map(async (control) => {
       const startedAt = now()
-      const operation = control.effectType === "interrupt_attempt"
-        ? "cancel" as const
-        : control.payload.finalize === "delete"
-          ? "release" as const
-          : control.payload.finalize === "replace"
-            ? "cleanup" as const
-            : "finalize" as const
+      const operation =
+        control.effectType === "interrupt_attempt"
+          ? ("cancel" as const)
+          : control.payload.finalize === "delete"
+            ? ("release" as const)
+            : control.payload.finalize === "replace"
+              ? ("cleanup" as const)
+              : ("finalize" as const)
       try {
         const manager = services.sandbox.sandboxManager
         const provider = services.relay.provider
@@ -1278,6 +1353,15 @@ function hostedSessionHistoryPage(value: unknown): Readonly<{ data: SessionEvent
   return { data, hasMore: page.hasMore }
 }
 
+function hostedSessionMessages(value: unknown) {
+  if (Array.isArray(value)) return value
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Hosted Session transcript was invalid")
+  const messages = (value as Record<string, unknown>).messages
+  if (!Array.isArray(messages)) throw new Error("Hosted Session transcript was invalid")
+  return messages
+}
+
 async function hostedSessionHistory(
   runtime: (path: string, init?: RequestInit) => Promise<Response>,
   sessionId: string,
@@ -1298,4 +1382,59 @@ async function hostedSessionHistory(
 function convexExecutor(url: string): Executor {
   const client = new ConvexHttpClient(url)
   return { mutation: (fn, args) => client.mutation(fn, args) }
+}
+
+function convexSessionPublisher(url: string, serviceToken: string): HostedSessionPublisher {
+  const client = new ConvexHttpClient(url)
+  return {
+    launch: async (input) => {
+      await client.mutation(api.workspaces.ensureWorkGraph, {
+        service_token: serviceToken,
+        organization_id: input.organizationId,
+        owner_user_id: input.ownerUserId,
+        workspace_id: input.workspaceId,
+        display_name: `WorkGraph · ${input.title}`,
+        ...(input.repoUrl ? { repo_url: input.repoUrl, repo_name: repositoryName(input.repoUrl) } : {}),
+        ...(input.branch ? { git_branch: input.branch } : {}),
+        ...(input.homeRegion ? { home_region: input.homeRegion } : {}),
+      })
+      await client.mutation(api.sessions.syncWorkGraphSession, {
+        service_token: serviceToken,
+        organization_id: input.organizationId,
+        owner_user_id: input.ownerUserId,
+        workspace_id: input.workspaceId,
+        session_id: input.sessionId,
+        title: input.title,
+        created_at: input.now,
+        updated_at: input.now,
+        messages: [],
+      })
+    },
+    snapshot: async (input) => {
+      await client.mutation(api.workspaces.ensureWorkGraph, {
+        service_token: serviceToken,
+        organization_id: input.organizationId,
+        owner_user_id: input.ownerUserId,
+        workspace_id: input.workspaceId,
+      })
+      await client.mutation(api.sessions.syncWorkGraphSession, {
+        service_token: serviceToken,
+        organization_id: input.organizationId,
+        owner_user_id: input.ownerUserId,
+        workspace_id: input.workspaceId,
+        session_id: input.sessionId,
+        updated_at: input.now,
+        messages: input.messages,
+      })
+    },
+  }
+}
+
+function repositoryName(repoUrl: string) {
+  const name = new URL(repoUrl).pathname
+    .split("/")
+    .filter(Boolean)
+    .at(-1)
+    ?.replace(/\.git$/, "")
+  return name || "WorkGraph"
 }

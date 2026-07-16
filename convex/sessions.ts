@@ -91,8 +91,8 @@ async function upsertVisibilityRows(
     const patch = {
       org_id: input.workspace.org_id,
       project_id: projectId,
-      title: session.title,
-      directory_hint: hint,
+      ...(session.title === undefined ? {} : { title: session.title }),
+      ...(hint === undefined ? {} : { directory_hint: hint }),
       updated_at: session.updated_at ?? now,
       deleted_at: undefined,
     }
@@ -275,29 +275,27 @@ async function syncMessageRows(
       title: typeof session?.title === "string" && session.title.trim() ? session.title.trim() : "AI work session",
       summary: summaryText.slice(0, 8_000),
       observedAt: now,
-      ...(
-        typeof input.workspace.git_remote === "string" && input.workspace.git_remote.trim()
+      ...(typeof input.workspace.git_remote === "string" && input.workspace.git_remote.trim()
+        ? {
+            execution: {
+              environment: {
+                kind: "hosted_workspace",
+                repositoryUrl: input.workspace.git_remote.trim(),
+              },
+              repository: { baseRevision: "HEAD" },
+            },
+          }
+        : typeof input.workspace.repo_url === "string" && input.workspace.repo_url.trim()
           ? {
               execution: {
                 environment: {
                   kind: "hosted_workspace",
-                  repositoryUrl: input.workspace.git_remote.trim(),
+                  repositoryUrl: input.workspace.repo_url.trim(),
                 },
                 repository: { baseRevision: "HEAD" },
               },
             }
-          : typeof input.workspace.repo_url === "string" && input.workspace.repo_url.trim()
-            ? {
-                execution: {
-                  environment: {
-                    kind: "hosted_workspace",
-                    repositoryUrl: input.workspace.repo_url.trim(),
-                  },
-                  repository: { baseRevision: "HEAD" },
-                },
-              }
-            : {}
-      ),
+          : {}),
     })
   }
 }
@@ -395,6 +393,28 @@ export const readMessages = authedQuery({
   },
 })
 
+export const resolve = authedQuery({
+  args: {
+    session_id: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db
+      .query("session_history")
+      .withIndex("by_session_id", (query: any) => query.eq("session_id", args.session_id))
+      .unique()
+    if (!session || session.deleted_at) return null
+    const workspace = await ctx.db.get(session.workspace_id)
+    if (!workspace || !(await authorizeWorkspace(ctx, workspace, "read"))) return null
+    return {
+      session_id: session.session_id,
+      workspace_id: workspace.workspace_id,
+      title: session.title,
+      created_at: session.created_at,
+      updated_at: session.updated_at,
+    }
+  },
+})
+
 export const syncMessages = authedMutation({
   args: {
     workspace_id: v.string(),
@@ -427,6 +447,54 @@ export const syncMessagesForService = serviceMutation({
       session_id: args.session_id,
       messages: args.messages,
       intakeReady: args.intake_ready ?? false,
+    })
+    return { ok: true }
+  },
+})
+
+export const syncWorkGraphSession = serviceMutation({
+  args: {
+    organization_id: v.id("orgs"),
+    owner_user_id: v.id("users"),
+    workspace_id: v.string(),
+    session_id: v.string(),
+    title: v.optional(v.string()),
+    created_at: v.optional(v.number()),
+    updated_at: v.optional(v.number()),
+    messages: v.array(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const [user, workspace] = await Promise.all([
+      ctx.db.get(args.owner_user_id),
+      workspaceByPublicId(ctx.db, args.workspace_id),
+    ])
+    if (
+      !user ||
+      !workspace ||
+      workspace.deleted_at ||
+      workspace.owner_user_id !== args.owner_user_id ||
+      workspace.org_id !== args.organization_id
+    ) {
+      throw new Error("WorkGraph Session workspace not found")
+    }
+    await upsertVisibilityRows(ctx, {
+      user,
+      workspace,
+      sessions: [
+        {
+          session_id: args.session_id,
+          title: args.title,
+          created_at: args.created_at,
+          updated_at: args.updated_at,
+        },
+      ],
+    })
+    await syncMessageRows(ctx, {
+      user,
+      workspace,
+      session_id: args.session_id,
+      messages: args.messages,
+      intakeReady: false,
     })
     return { ok: true }
   },

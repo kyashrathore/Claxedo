@@ -17,6 +17,7 @@
  *   GET  /.well-known/jwks.json
  *   POST /api/auth/device/code | /api/auth/device/token
  *   GET  /api/control/sessions   (signed session visibility inventory)
+ *   GET  /api/control/sessions/:id/gateway | /messages
  *   GET  /api/workspace/:id/connection
  *   POST /api/workspace/:id/connection/refresh
  *   POST /api/workspace/:id/user-hosted/challenge
@@ -397,6 +398,61 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
         sessions: await services.authority.listSessions(authResult.auth, { workspaceId }),
       })
     })
+    app.get("/api/control/sessions/:sessionId/gateway", async (c) => {
+      const authResult = await signedOrError(
+        c.req.raw,
+        {
+          authConfig: services.auth.config,
+          ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+          requireSigned: true,
+        },
+        services,
+      )
+      if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
+      if (!authResult.auth || !services.authority?.resolveSession) {
+        return c.json({ error: { code: "SESSION_NOT_FOUND", message: "Session not found" } }, 404)
+      }
+      const resolved = (await services.authority.resolveSession(authResult.auth, {
+        sessionId: c.req.param("sessionId"),
+      })) as { workspace_id?: string } | null
+      if (!resolved?.workspace_id) {
+        return c.json({ error: { code: "SESSION_NOT_FOUND", message: "Session not found" } }, 404)
+      }
+      return c.json({
+        gatewayUrl: null,
+        workspaceId: resolved.workspace_id,
+        directory: null,
+        harnessHost: "central",
+      })
+    })
+    app.get("/api/control/sessions/:sessionId/messages", async (c) => {
+      const workspaceId = c.req.query("workspaceId")
+      if (!workspaceId || !services.authority?.readSessionMessages) {
+        return c.json({ error: { code: "WORKSPACE_ID_REQUIRED", message: "workspaceId is required" } }, 400)
+      }
+      const authResult = await signedOrError(
+        c.req.raw,
+        {
+          authConfig: services.auth.config,
+          ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+          requireSigned: true,
+        },
+        services,
+      )
+      if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
+      if (!authResult.auth) {
+        return c.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
+      }
+      const body = await services.authority.readSessionMessages(authResult.auth, {
+        sessionId: c.req.param("sessionId"),
+        workspaceId,
+      })
+      return c.json({
+        ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
+        messages: hostedAuthorityMessages(body),
+        maxEventOrdinal: 0,
+      })
+    })
   }
 
   app.route(
@@ -436,6 +492,12 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   )
 
   return app
+}
+
+function hostedAuthorityMessages(input: unknown) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return []
+  const messages = (input as Record<string, unknown>).messages
+  return Array.isArray(messages) ? messages : []
 }
 
 function ownerActivationWithTelemetry(

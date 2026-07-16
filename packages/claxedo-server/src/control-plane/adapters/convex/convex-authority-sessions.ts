@@ -37,6 +37,16 @@ export function sessionAuthority(input: ConvexAuthorityInput, serviceArgs: Servi
         workspace_id: args.workspaceId,
       })
     },
+    async resolveSession(
+      auth: SignedControlPlaneAuth,
+      args: {
+        sessionId: string
+      },
+    ) {
+      return requireExecutor(input, auth).query(convexApi.sessions.resolve, {
+        session_id: args.sessionId,
+      })
+    },
     async readSessionMessages(
       auth: SignedControlPlaneAuth,
       args: {

@@ -10,6 +10,8 @@ import {
   renewWorkGraphAttemptLease,
   settleRejectedProvision,
 } from "../../../../convex/workgraphRuntime"
+import { ensureWorkGraph } from "../../../../convex/workspaces"
+import { syncWorkGraphSession } from "../../../../convex/sessions"
 import { createHostedWorkGraphRuntime, parseHostedRecapOutput, workGraphWorkspaceId } from "./hosted-runtime"
 import type { ControlPlaneServices } from "../control-plane/services"
 import { StreamReplacementResetSchema } from "@claxedo/workgraph/contracts"
@@ -30,6 +32,85 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(await workGraphWorkspaceId("org-b", "owner-a", "stream-a")).not.toBe(first)
     expect(await workGraphWorkspaceId("org-a", "owner-b", "stream-a")).not.toBe(first)
     expect(await workGraphWorkspaceId("org-a", "owner-a", "stream-b")).not.toBe(first)
+  })
+
+  test("retains hosted WorkGraph Sessions in the repository project", async () => {
+    const db = new RuntimeDb({
+      users: [{ _id: "user-a", token_identifier: "user-a" }],
+      orgs: [{ _id: "org-a", owner_user_id: "user-a", kind: "personal" }],
+      org_memberships: [{ _id: "org-member", org_id: "org-a", user_id: "user-a", role: "owner" }],
+      projects: [{ _id: "project-row", project_id: "project-existing", org_id: "org-a", owner_user_id: "user-a" }],
+      project_memberships: [{ _id: "project-member", project_id: "project-row", user_id: "user-a", role: "owner" }],
+      workspaces: [
+        {
+          _id: "workspace-existing",
+          workspace_id: "workspace-existing",
+          org_id: "org-a",
+          owner_user_id: "user-a",
+          project_id: "project-existing",
+          backing: "cloud-vm",
+          access: "cloud",
+          display_name: "Existing",
+          repo_url: "https://github.com/claxedo/workgraph-target.git",
+        },
+      ],
+      workspace_memberships: [],
+      session_history: [],
+      session_messages: [],
+    })
+    await handler(ensureWorkGraph)({ db } as never, {
+      service_token: "service-secret",
+      organization_id: "org-a",
+      owner_user_id: "user-a",
+      workspace_id: "wg-stream-a",
+      display_name: "WorkGraph · Review",
+      repo_url: "https://github.com/claxedo/workgraph-target.git",
+      git_branch: "dev",
+      home_region: "us-east",
+    })
+    expect(db.row("workspaces", "workspaces-2")).toMatchObject({
+      workspace_id: "wg-stream-a",
+      project_id: "project-existing",
+      display_name: "WorkGraph · Review",
+      repo_url: "https://github.com/claxedo/workgraph-target.git",
+      git_branch: "dev",
+    })
+    await handler(ensureWorkGraph)({ db } as never, {
+      service_token: "service-secret",
+      organization_id: "org-a",
+      owner_user_id: "user-a",
+      workspace_id: "wg-stream-a",
+    })
+    expect(db.row("workspaces", "workspaces-2")).toMatchObject({
+      project_id: "project-existing",
+      display_name: "WorkGraph · Review",
+      repo_url: "https://github.com/claxedo/workgraph-target.git",
+    })
+    await handler(syncWorkGraphSession)({ db } as never, {
+      service_token: "service-secret",
+      organization_id: "org-a",
+      owner_user_id: "user-a",
+      workspace_id: "wg-stream-a",
+      session_id: "session-a",
+      title: "Review",
+      created_at: 10,
+      updated_at: 20,
+      messages: [
+        { info: { id: "msg-user", role: "user" }, parts: [{ type: "text", text: "Review it" }] },
+        { info: { id: "msg-assistant", role: "assistant" }, parts: [{ type: "text", text: "Done" }] },
+      ],
+    })
+    expect(db.row("session_history", "session_history-1")).toMatchObject({
+      session_id: "session-a",
+      title: "Review",
+      workspace_id: "workspaces-2",
+    })
+    expect(db.rowsFor("session_messages")).toHaveLength(2)
+    expect(db.rowsFor("session_messages")[1]).toMatchObject({
+      session_id: "session-a",
+      role: "assistant",
+      data: { info: { id: "msg-assistant" } },
+    })
   })
 
   test("lets the synchronous admin pass reconcile Attempts without draining background queues", async () => {
@@ -288,7 +369,9 @@ describe("hosted WorkGraph runtime outbox", () => {
         destroyed.push("destroyed")
         return { ok: true, status: "destroyed" }
       },
-      release: async (workspaceId) => { released.push(workspaceId) },
+      release: async (workspaceId) => {
+        released.push(workspaceId)
+      },
     })
     expect(mutations[3]).toMatchObject({ ok: true })
     expect(destroyed).toEqual([])
@@ -303,7 +386,9 @@ describe("hosted WorkGraph runtime outbox", () => {
       destroy: async () => {
         throw new Error("delete finalization must not destroy compute")
       },
-      release: async (workspaceId) => { released.push(workspaceId) },
+      release: async (workspaceId) => {
+        released.push(workspaceId)
+      },
     })
     expect(mutations[3]).toMatchObject({ ok: true })
     expect(released).toHaveLength(1)
@@ -1433,6 +1518,8 @@ describe("hosted WorkGraph runtime outbox", () => {
   test("binds scoped Attempt and Connection tools before prompting without inferring completion", async () => {
     const mutations: Record<string, unknown>[] = []
     const ensureInputs: Record<string, unknown>[] = []
+    const publishedLaunches: Record<string, unknown>[] = []
+    const publishedSnapshots: Record<string, unknown>[] = []
     const runtime = createHostedWorkGraphRuntime(
       {
         CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
@@ -1477,6 +1564,14 @@ describe("hosted WorkGraph runtime outbox", () => {
           let value = 10
           return () => value++
         })(),
+        sessionPublisher: {
+          launch: async (input) => {
+            publishedLaunches.push(input)
+          },
+          snapshot: async (input) => {
+            publishedSnapshots.push(input)
+          },
+        },
         executor: {
           mutation: async (_fn, args) => {
             if (args.limit === 500 && Object.keys(args).length === 2)
@@ -1571,6 +1666,13 @@ describe("hosted WorkGraph runtime outbox", () => {
               ],
               hasMore: false,
             })
+          if (url.pathname.endsWith("/message")) {
+            expect(url.searchParams.get("snapshot")).toBe("1")
+            return Response.json([
+              { info: { id: "msg_user", role: "user" }, parts: [{ type: "text", text: "Return done" }] },
+              { info: { id: "msg_assistant", role: "assistant" }, parts: [{ type: "text", text: "done" }] },
+            ])
+          }
           return Response.json({ data: { admitted: true } })
         },
       },
@@ -1599,6 +1701,25 @@ describe("hosted WorkGraph runtime outbox", () => {
       tools: ["connection_work_source_list"],
     })
     expect(mutations).not.toContainEqual(expect.objectContaining({ summary: "done", artifacts: ["file:result.txt"] }))
+    expect(publishedLaunches).toEqual([
+      expect.objectContaining({
+        organizationId: "org-a",
+        ownerUserId: "internal-user-a",
+        sessionId: "session-a",
+        title: "No-op",
+        repoUrl: "https://github.com/claxedo/workgraph-target.git",
+        branch: "release",
+      }),
+    ])
+    expect(publishedSnapshots).toEqual([
+      expect.objectContaining({
+        sessionId: "session-a",
+        messages: [
+          expect.objectContaining({ info: expect.objectContaining({ id: "msg_user" }) }),
+          expect.objectContaining({ info: expect.objectContaining({ id: "msg_assistant" }) }),
+        ],
+      }),
+    ])
   })
 
   test("records session_output_missing instead of fabricating hosted success", async () => {
@@ -2173,6 +2294,14 @@ class RuntimeDb {
 
   rowsFor(table: string) {
     return this.rows[table] ?? []
+  }
+
+  async get(id: string) {
+    return (
+      Object.values(this.rows)
+        .flat()
+        .find((row) => row._id === id) ?? null
+    )
   }
 
   query(table: string) {
