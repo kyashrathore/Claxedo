@@ -13,7 +13,12 @@ import { describe, expect, test, vi } from "vitest"
 
 const appFetch = vi.fn(async () => new Response("ok"))
 const reconcile = vi.fn(async () => ({ launched: [], results: [], background: {} }))
-const settlerFetch = vi.fn(async () => new Response(null, { status: 204 }))
+const runBillingSweep = vi.fn(async (_env: unknown) => {})
+const listStaleTenants = vi.fn(async () => [
+  { organizationId: "org-a", ownerUserId: "user-a" },
+  { organizationId: "org-b", ownerUserId: "user-b" },
+])
+const settlerFetch = vi.fn(async (_request: Request) => new Response(null, { status: 204 }))
 const settlerNamespace = {
   idFromName: vi.fn((name: string) => name),
   get: vi.fn(() => ({ fetch: settlerFetch })),
@@ -41,8 +46,12 @@ vi.mock("./hosted-app", () => ({
   createHostedApp,
 }))
 
+vi.mock("./billing/reconcile", () => ({
+  runScheduledBillingReconciliation: runBillingSweep,
+}))
+
 vi.mock("./workgraph-host/hosted-runtime", () => ({
-  createHostedWorkGraphRuntime: vi.fn(() => ({ reconcile })),
+  createHostedWorkGraphRuntime: vi.fn(() => ({ listStaleTenants, reconcile })),
 }))
 
 describe("worker entrypoint", () => {
@@ -104,5 +113,76 @@ describe("worker entrypoint", () => {
     await options?.workGraphReconcile?.()
 
     expect(reconcile).toHaveBeenCalledWith()
+  })
+
+  test("nudges each stale tenant from the runtime without running the global reconcile on the minute lane", async () => {
+    const worker = (await import("./worker")).default
+    const work: Promise<unknown>[] = []
+    const ctx = {
+      waitUntil: vi.fn((promise: Promise<unknown>) => work.push(promise)),
+      passThroughOnException: vi.fn(),
+    }
+    const env = {
+      CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+      WORKGRAPH_SETTLER: settlerNamespace,
+    }
+    appFetch.mockClear()
+    listStaleTenants.mockClear()
+    reconcile.mockClear()
+    runBillingSweep.mockClear()
+    settlerNamespace.idFromName.mockClear()
+    settlerFetch.mockClear()
+
+    await worker.scheduled({ cron: "* * * * *", scheduledTime: 123_456 }, env, ctx as never)
+    await Promise.all(work)
+
+    expect(listStaleTenants).toHaveBeenCalledTimes(1)
+    expect(listStaleTenants).toHaveBeenCalledWith()
+    expect(settlerNamespace.idFromName.mock.calls.map(([name]) => name)).toEqual([
+      JSON.stringify(["org-a", "user-a"]),
+      JSON.stringify(["org-b", "user-b"]),
+    ])
+    expect(settlerFetch).toHaveBeenCalledTimes(2)
+    await expect(Promise.all(settlerFetch.mock.calls.map(([request]) => request.json()))).resolves.toEqual([
+      { organizationId: "org-a", ownerUserId: "user-a" },
+      { organizationId: "org-b", ownerUserId: "user-b" },
+    ])
+    expect(reconcile).not.toHaveBeenCalled()
+    expect(appFetch).not.toHaveBeenCalled()
+    expect(runBillingSweep).not.toHaveBeenCalled()
+  })
+
+  test("keeps the full global reconcile on the 15-minute lane", async () => {
+    const worker = (await import("./worker")).default
+    const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() }
+    const env = {
+      CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin-secret",
+      WORKGRAPH_SETTLER: settlerNamespace,
+    }
+    appFetch.mockClear()
+    listStaleTenants.mockClear()
+    reconcile.mockClear()
+    runBillingSweep.mockClear()
+
+    await worker.scheduled({ cron: "*/15 * * * *", scheduledTime: 123_456 }, env, ctx as never)
+
+    expect(appFetch).toHaveBeenCalledTimes(1)
+    expect(runBillingSweep).toHaveBeenCalledTimes(1)
+    expect(reconcile).toHaveBeenCalledTimes(1)
+    expect(reconcile).toHaveBeenCalledWith()
+    expect(listStaleTenants).not.toHaveBeenCalled()
+  })
+
+  test("fails the minute backstop loudly when stale work cannot be dispatched", async () => {
+    const worker = (await import("./worker")).default
+    const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() }
+    const minute = { cron: "* * * * *", scheduledTime: 123_456 }
+    reconcile.mockClear()
+    listStaleTenants.mockClear()
+
+    await expect(worker.scheduled(minute, {}, ctx as never)).rejects.toThrow("WORKGRAPH_SETTLER")
+
+    expect(listStaleTenants).toHaveBeenCalledTimes(1)
+    expect(reconcile).not.toHaveBeenCalled()
   })
 })

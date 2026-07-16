@@ -39,7 +39,7 @@ import {
 
 export { WorkGraphSettler }
 
-type WorkerEnv = HostedWorkerEnv & {
+type WorkerEnv = Record<string, unknown> & {
   WORKGRAPH_SETTLER?: WorkGraphSettlerNamespace
 }
 
@@ -71,8 +71,9 @@ let cached: {
 // not open, when hosted config is missing.
 function buildApp(env: WorkerEnv): Hono {
   if (cached) return cached.app
-  const plane = composeHostedControlPlane(env)
-  const workGraphRuntime = createHostedWorkGraphRuntime(env, plane.services)
+  const hostedEnv = env as unknown as HostedWorkerEnv
+  const plane = composeHostedControlPlane(hostedEnv)
+  const workGraphRuntime = createHostedWorkGraphRuntime(hostedEnv, plane.services)
   // Every trigger path (cron, admin route, smoke cycles) shares one per-isolate
   // guard: overlapping reconciles have hung the Workers runtime.
   const workGraphReconcile = workGraphRuntime ? skipOverlappingReconcile(workGraphRuntime.reconcile) : undefined
@@ -153,9 +154,24 @@ const handler = {
     // and billing sweeps stay on the 15-minute lane below.
     if (controller?.cron === "* * * * *") {
       buildApp(env)
-      await cached!.workGraphReconcile?.()
+      const runtime = cached!.workGraphRuntime
+      if (!runtime) return
+      const tenants = await runtime.listStaleTenants()
+      if (tenants.length === 0) return
+      if (!env.WORKGRAPH_SETTLER) {
+        throw new Error("WorkGraph settlement backstop requires WORKGRAPH_SETTLER")
+      }
+      if (!ctx) {
+        throw new Error("WorkGraph settlement backstop requires a Worker ExecutionContext")
+      }
+      const dispatcher = createCloudflareSettlementDispatcher({
+        namespace: env.WORKGRAPH_SETTLER,
+        waitUntil: (promise) => ctx.waitUntil(promise),
+      })
+      tenants.forEach((tenant) => dispatcher.nudge(tenant))
       return
     }
+    const hostedEnv = env as unknown as HostedWorkerEnv
     // F17 (adversarial review): the sandbox GC sweep and the billing
     // reconciliation sweep are ISOLATED — a throwing/failing GC pass must not
     // starve the billing sweep (the downgrade-recovery + deleted-org "bills
@@ -166,7 +182,7 @@ const handler = {
     let gcError: unknown
     try {
       const app = buildApp(env)
-      const token = env.CLAXEDO_RUNTIME_ADMIN_TOKEN?.trim()
+      const token = hostedEnv.CLAXEDO_RUNTIME_ADMIN_TOKEN?.trim()
       if (!token) {
         throw new Error("Sandbox reconciliation cron requires CLAXEDO_RUNTIME_ADMIN_TOKEN")
       }
@@ -194,7 +210,7 @@ const handler = {
     // cannot mask the GC failure. No-op when CLAXEDO_POLAR_ACCESS_TOKEN is
     // absent (billing not deployed).
     try {
-      await runScheduledBillingReconciliation(env)
+      await runScheduledBillingReconciliation(hostedEnv)
     } catch (err) {
       reportError(err, { tags: { source: "worker_scheduled", reason: "billing_sweep_failed" } })
     }
@@ -214,6 +230,6 @@ const handler = {
 }
 
 export default Sentry.withSentry(
-  (env: WorkerEnv) => sentryInitOptions(env, "worker"),
+  (env: WorkerEnv) => sentryInitOptions(env as unknown as HostedWorkerEnv, "worker"),
   handler,
 )

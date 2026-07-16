@@ -33,7 +33,7 @@ export const listStaleTenants = serviceQuery({
       ["pending", "claimed"].map((status) =>
         ctx.db
           .query("workgraph_outbox")
-          .withIndex("by_status_available", (query) =>
+          .withIndex("by_status_available", (query: any) =>
             query.eq("status", status).lte("available_at", staleBefore),
           )
           .take(limit),
