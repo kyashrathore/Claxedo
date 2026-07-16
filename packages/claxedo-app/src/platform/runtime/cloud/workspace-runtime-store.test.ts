@@ -10,6 +10,7 @@ import {
   type WorkspaceProvisionEvent,
 } from "./workspace-runtime-store"
 import { queryClient } from "@/platform/query/query-client"
+import { isFetchThrottleBypassed } from "@/lib/fetch-throttle"
 
 // happy-dom's preloaded window must survive this suite: deleting it without
 // restoring poisons whichever test file shares the process afterwards
@@ -309,7 +310,7 @@ function userHostedConnectionBody(workspaceId: string) {
 describe("prepareUserHostedRuntime", () => {
   test("mints the relay connection, probes health through the relay, and reports ready", async () => {
     const seen: string[] = []
-    const healthHeaders: string[] = []
+    const healthProbeInits: (RequestInit | undefined)[] = []
     const request: typeof fetch = mock(async (input, init) => {
       const url = requestUrl(input)
       seen.push(url)
@@ -317,7 +318,7 @@ describe("prepareUserHostedRuntime", () => {
         return new Response(JSON.stringify(userHostedConnectionBody("ws_uh_ready")), { status: 200 })
       }
       if (url === "https://relay.uh.test/workspaces/ws_uh_ready/api/wr/health") {
-        healthHeaders.push(new Headers(init?.headers).get("x-fetch-bypass-throttle") ?? "")
+        healthProbeInits.push(init)
         return new Response(JSON.stringify({ status: "ready" }), { status: 200 })
       }
       throw new Error(`unexpected request: ${url}`)
@@ -332,7 +333,11 @@ describe("prepareUserHostedRuntime", () => {
     expect(result).toMatchObject({ ok: true, status: "ready" })
     // The health probe went through the relay (NOT a central /workspaces URL).
     expect(seen).toContain("https://relay.uh.test/workspaces/ws_uh_ready/api/wr/health")
-    expect(healthHeaders).toEqual(["1"])
+    // The probe skips the fetch throttle via the local-only marker; the marker
+    // must never travel as a wire header (the relay is cross-origin — a header
+    // would force a CORS preflight the relay doesn't allow-list).
+    expect(healthProbeInits.map((init) => isFetchThrottleBypassed(init))).toEqual([true])
+    expect(healthProbeInits.map((init) => new Headers(init?.headers).has("x-fetch-bypass-throttle"))).toEqual([false])
     expect(seen.some((u) => u === "https://control.test/workspaces/ws_uh_ready/api/wr/health")).toBe(false)
     // The connecting sequence is the user-hosted set, NOT cloud sandbox steps.
     expect(logs).toEqual(["connecting_workspace", "establishing_relay", "checking_health", "ready"])
