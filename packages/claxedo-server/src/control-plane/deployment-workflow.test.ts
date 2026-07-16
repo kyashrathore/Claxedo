@@ -83,6 +83,7 @@ describe("Claxedo Cloud deployment workflow", () => {
       "CLAXEDO_RUNTIME_ADMIN_TOKEN",
       "CONTROL_PLANE_URL",
       "WORKSPACE_RELAY_URL",
+      "SANDBOX_BUILD_ID",
       "APP_URL",
       "PAGES_PROJECT",
       "PAGES_BRANCH",
@@ -146,6 +147,9 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(controlPlane).toContain('wrangler deploy --env staging --var "CLAXEDO_RELEASE:${GITHUB_SHA}"')
     expect(controlPlane.match(/--var "CLAXEDO_PUBLIC_URL:\$\{CONTROL_PLANE_URL\}"/g)).toHaveLength(2)
     expect(controlPlane).toContain('--var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"')
+    expect(controlPlane.match(/SANDBOX_BUILD_ID: \$\{\{ vars\.CLAXEDO_SANDBOX_BUILD_ID \}\}/g)).toHaveLength(4)
+    expect(controlPlane.match(/--var "CLAXEDO_SANDBOX_BUILD_ID:\$\{SANDBOX_BUILD_ID\}"/g)).toHaveLength(2)
+    expect(controlPlane.match(/WORKSPACE_RELAY_URL SANDBOX_BUILD_ID/g)).toHaveLength(2)
     expect(controlPlane).toContain("- .github/actions/setup-bun/action.yml")
     expect(appStaging).toContain("- .github/actions/setup-bun/action.yml")
   })
