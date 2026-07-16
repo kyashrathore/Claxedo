@@ -65,9 +65,10 @@ RUN cd /opt/workspace-runtime && \
 # Session V2 create contract as JSON (rather than an HTML app-shell fallback).
 RUN set -eu; \
     mkdir -p /tmp/opencode-session-v2-smoke; \
-    opencode serve --hostname=127.0.0.1 --port=4096 >/tmp/opencode-session-v2.log 2>&1 & \
+    setsid opencode serve --hostname=127.0.0.1 --port=4096 >/tmp/opencode-session-v2.log 2>&1 & \
     pid=$!; \
-    trap 'kill -9 "$pid" 2>/dev/null || true' EXIT; \
+    stop_server() { python3 -c 'import os,signal,sys; os.killpg(int(sys.argv[1]), signal.SIGKILL)' "$pid" 2>/dev/null || true; }; \
+    trap stop_server EXIT; \
     ready=0; \
     for attempt in $(seq 1 60); do \
       if curl -fsS -X POST \
@@ -78,8 +79,7 @@ RUN set -eu; \
     done; \
     if [ "$ready" -ne 1 ]; then cat /tmp/opencode-session-v2.log; exit 1; fi; \
     node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-session-v2.json','utf8'));const id=value.id||value.data?.id;if(id!=='ses_workgraph_image_smoke')throw new Error('Session V2 create did not adopt the requested id')"; \
-    kill -9 "$pid" 2>/dev/null || true; \
-    wait "$pid" 2>/dev/null || true; \
+    stop_server; \
     trap - EXIT
 
 # Load the exact flattened production dependency graph and keep the host alive
