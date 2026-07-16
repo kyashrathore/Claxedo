@@ -268,10 +268,6 @@ export async function getAuthToken(options?: ClerkTokenOptions): Promise<string 
   if (!clerkLoadPromise) return null;
   await clerkLoadPromise;
   if (!clerkInstance?.session) return null;
-  const organization = clerkInstance.organization as { id?: string } | null | undefined;
-  if (organization?.id) {
-    await clerkInstance.setActive({ organization: organization.id });
-  }
 
   // Use the convex-templated token by default so claxedo-server can forward it to Convex.
   // claxedo-server only checks issuer/signature; Convex requires aud="convex" via auth.config.ts.
