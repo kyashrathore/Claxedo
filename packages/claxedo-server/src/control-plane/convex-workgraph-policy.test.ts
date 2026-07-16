@@ -136,6 +136,30 @@ describe("Convex WorkGraph persistence policy", () => {
     }
   })
 
+  test("indexes every Stream-owned table used by durable deletion", () => {
+    for (const tableName of [
+      "workgraph_work_item_dependencies",
+      "workgraph_decision_work_items",
+      "workgraph_evidence",
+      "workgraph_durable_effect_receipts",
+      "workgraph_attempts",
+      "workgraph_decisions",
+      "workgraph_recaps",
+      "workgraph_outcomes",
+      "workgraph_leases",
+      "workgraph_outbox",
+      "workgraph_due_jobs",
+      "workgraph_notifications",
+      "workgraph_agent_checkpoints",
+      "workgraph_session_bindings",
+      "workgraph_work_items",
+    ] as const) {
+      expect((schema.tables[tableName] as unknown as { indexes: Array<{ fields: string[] }> }).indexes, tableName).toContainEqual(
+        expect.objectContaining({ fields: ["organization_id", "owner_user_id", "stream_id"] }),
+      )
+    }
+  })
+
   test("does not place provider credentials in personal WorkGraph documents", () => {
     for (const tableName of workGraphTables) {
       const fields = Object.keys(schema.tables[tableName].validator.fields)

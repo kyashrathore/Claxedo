@@ -631,6 +631,7 @@ export default defineSchema({
     ...workGraphMutable,
   })
     .index("by_tenant_id", ["organization_id", "owner_user_id", "id"])
+    .index("by_tenant_stream", ["organization_id", "owner_user_id", "stream_id"])
     .index("by_tenant_operation", ["organization_id", "owner_user_id", "operation_id"])
     .index("by_tenant_item_occurred_id", ["organization_id", "owner_user_id", "work_item_id", "occurred_at", "id"])
     .index("by_tenant_binding", ["organization_id", "owner_user_id", "session_binding_id"]),
@@ -776,6 +777,7 @@ export default defineSchema({
   })
     .index("by_tenant", ["organization_id", "owner_user_id"])
     .index("by_tenant_id", ["organization_id", "owner_user_id", "id"])
+    .index("by_tenant_stream", ["organization_id", "owner_user_id", "stream_id"])
     .index("by_tenant_created_id", ["organization_id", "owner_user_id", "created_at", "id"])
     .index("by_tenant_stream_created", ["organization_id", "owner_user_id", "stream_id", "created_at"]),
 
